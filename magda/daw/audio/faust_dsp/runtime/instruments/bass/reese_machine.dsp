@@ -37,10 +37,10 @@ smoothed = si.smooth(ba.tau2pole(0.02));
 //
 //     Notch 1  Width 1  Drive 1  Bias 1      idx 0-3,  2 cells each
 //     Notch 2  Width 2  Drive 2  Bias 2      idx 4-7,  2 cells each
-//     Detune  Oscs  Sub Pitch  Sub  Output   idx 8-12, 2 / 1 / 3 / 1 / 1
+//     Detune  Oscs  Sub Pitch  Sub  Output   idx 8-12, 3 / 1 / 2 / 1 / 1
 //
-// Sub Pitch takes three cells because it carries three segments with the
-// longest labels; Oscs needs only one for "2" and "3".
+// Detune takes the widest cell of its row, being the patch's primary control.
+// Sub Pitch needs two for its three segments; Oscs one for "2" and "3".
 //
 // Control labels must also be unique across the whole patch, and none may be
 // freq / gain / gate in any casing. The instrument host groups harvested voice
@@ -123,7 +123,7 @@ env = en.asr(0.005, 1.0, 0.1, gate);
 // sounding like a chord.
 detuneRatio = pow(2.0, detune / 1200.0)
 with {
-    detune = hslider("Detune [unit:ct] [width:2] [idx:8]", 14, 0, 50, 0.1) : smoothed;
+    detune = hslider("Detune [unit:ct] [width:3] [idx:8]", 14, 0, 50, 0.1) : smoothed;
 };
 
 // Two outputs: the saw stack, and the sub. They are kept apart here because
@@ -143,9 +143,9 @@ with {
     //
     // -2 is only useful in the upper half of the range: under an E1 it puts the
     // sub near 10 Hz, which is inaudible and spends headroom to be so.
-    subOct = nentry("Sub Pitch [width:3] [idx:10] [style:radio{'-2 Oct':0;'-1 Oct':1;'Unison':2}]",
+    subOct = nentry("Sub Pitch [width:2] [idx:10] [style:radio{'-2':0;'-1':1;'0':2}]",
                     1, 0, 2, 1);
-    // 0 -> two octaves down, 1 -> one, 2 -> the note.
+    // Octaves relative to the played note, so the labels are the offset itself.
     subRatio = pow(2.0, subOct - 2.0);
 
     subLevel = hslider("Sub [width:1] [idx:11]", 0.5, 0.0, 1.0, 0.001) : smoothed;
@@ -161,8 +161,8 @@ with {
 
     // A sine, not a saw: the sub is there for weight, and any harmonics it
     // carried would collide with the saw stack rather than reinforce it. That
-    // matters more at Unison, where it sits in the same octave as the saws and
-    // only the fundamental is wanted.
+    // matters most at 0, where it sits in the same octave as the saws and only
+    // the fundamental is wanted.
     sub = os.osc(freq * subRatio) * subLevel;
 };
 
