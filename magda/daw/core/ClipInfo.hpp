@@ -33,9 +33,9 @@ inline double wrapPhase(double value, double period) {
  *
  * PINNED: persisted in project files as these integers, and MAGDA-owned. The
  * values happen to equal tracktion::AudioFadeCurve::Type today so the engine
- * bridge is a cast; a static_assert in the audio layer holds that equality, and
- * if the engine ever renumbers, the bridge grows a mapping rather than these
- * values changing. See docs/architecture/persisted-enums.md.
+ * bridge is a cast; a static_assert in audio/EngineEnumPins.cpp holds that
+ * equality, and if the engine ever renumbers, the bridge grows a mapping rather
+ * than these values changing.
  */
 enum class FadeCurve : int { Linear = 1, Convex = 2, Concave = 3, SCurve = 4 };
 

@@ -72,7 +72,6 @@ enum class LaunchMode {
  * PINNED: these integers are written into project files. They are MAGDA's own
  * constants - the engine does not define them and must not renumber them.
  * Append new values at the end; never reorder or reuse a value.
- * See docs/architecture/persisted-enums.md.
  */
 enum class LaunchQuantize : int {
     None = 0,          // Immediate

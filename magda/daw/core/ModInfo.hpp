@@ -64,8 +64,8 @@ enum class SyncDivision {
  * carries, so it lands in project files through automation curves and macro/mod
  * links. It is MAGDA's own enumeration; the values equal
  * tracktion::engine::ModifierCommon::RateType today, which is what lets the
- * engine bridge be a cast, and a static_assert in the audio layer holds that
- * equality. See docs/architecture/persisted-enums.md.
+ * engine bridge be a cast, and a static_assert in audio/EngineEnumPins.cpp holds
+ * that equality.
  *
  * MAGDA's Rate control does not expose every value (no 1/16 dotted/triplet, no
  * 1/64s); the unexposed ones exist so a value written by the engine or by an

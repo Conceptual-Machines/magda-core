@@ -18,9 +18,9 @@
  * MAGDA side: every existing project file is keyed on it. Replace the cast at
  * the bridge with an explicit mapping and delete the corresponding assert.
  *
- * MAGDA-owned enums with no engine counterpart (LaunchQuantize, FollowAction)
- * are documented alongside these in docs/architecture/persisted-enums.md but
- * need no assert - nothing external can move them.
+ * MAGDA-owned enums with no engine counterpart (LaunchQuantize, FollowAction in
+ * core/ClipTypes.hpp) are persisted the same way but need no assert - nothing
+ * external can move them. Their declarations carry the same PINNED note.
  */
 
 namespace magda {
