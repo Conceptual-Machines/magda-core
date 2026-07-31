@@ -31,6 +31,13 @@
 //
 // Appending a parameter to the end of a device is safe and only needs the file
 // regenerated. Anything else needs a migration.
+//
+// The file is the UNION across build configurations. Optional device packs mean
+// the roster is not fixed: MAGDA_PRO_DEVICES is OFF by default and ON in CI, so
+// `magda-pro-stub` exists only in some builds. A device in the file that this
+// build cannot instantiate is therefore not an error - the build that does have
+// it checks its order. A device this build CAN instantiate but that is missing
+// from the file still is.
 // -----------------------------------------------------------------------------
 
 namespace {
@@ -120,6 +127,36 @@ juce::StringArray collectSchema(te::Edit& edit) {
     return lines;
 }
 
+juce::String deviceTypeOf(const juce::String& line) {
+    return line.upToFirstOccurrenceOf(" ", false, false);
+}
+
+/// The frozen file is the UNION of every build configuration's device roster, so
+/// regenerating from one configuration must not drop the devices another one
+/// contributes. Live lines win; untouched entries are carried over verbatim.
+juce::StringArray mergedSchema(const juce::StringArray& live, const juce::File& existingFile) {
+    juce::StringArray merged = live;
+
+    if (existingFile.existsAsFile()) {
+        juce::StringArray existing;
+        existing.addLines(existingFile.loadFileAsString());
+        existing.removeEmptyStrings();
+
+        for (const auto& line : existing) {
+            const auto deviceType = deviceTypeOf(line);
+            const bool replacedByLive =
+                std::any_of(live.begin(), live.end(), [&](const juce::String& candidate) {
+                    return deviceTypeOf(candidate) == deviceType;
+                });
+            if (!replacedByLive)
+                merged.add(line);
+        }
+    }
+
+    merged.sort(false);
+    return merged;
+}
+
 class DeviceParamSchemaFreezeTest final : public juce::UnitTest {
   public:
     DeviceParamSchemaFreezeTest() : juce::UnitTest("Device Param Schema Freeze", "magda") {}
@@ -146,9 +183,14 @@ class DeviceParamSchemaFreezeTest final : public juce::UnitTest {
         const auto file = schemaFile();
 
         if (shouldRewrite()) {
+            // Merge, never replace. Optional device packs mean the roster depends
+            // on the build configuration (MAGDA_PRO_DEVICES is OFF by default and
+            // ON in CI), so a wholesale rewrite from one configuration would drop
+            // every device the other one contributes and the file would ping-pong.
             // Explicit LF: replaceWithText defaults to CRLF, which would make the
-            // committed file churn between platforms every time it is regenerated.
-            file.replaceWithText(live.joinIntoString("\n") + "\n", false, false, "\n");
+            // committed file churn between platforms.
+            file.replaceWithText(mergedSchema(live, file).joinIntoString("\n") + "\n", false, false,
+                                 "\n");
             logMessage("Rewrote " + file.getFullPathName());
         }
 
@@ -166,18 +208,18 @@ class DeviceParamSchemaFreezeTest final : public juce::UnitTest {
         // Compare device by device so a failure names the device that moved
         // rather than dumping the whole table.
         for (const auto& frozenLine : frozen) {
-            const auto deviceType = frozenLine.upToFirstOccurrenceOf(" ", false, false);
+            const auto deviceType = deviceTypeOf(frozenLine);
             const auto* liveLine =
                 std::find_if(live.begin(), live.end(), [&](const juce::String& candidate) {
-                    return candidate.upToFirstOccurrenceOf(" ", false, false) == deviceType;
+                    return deviceTypeOf(candidate) == deviceType;
                 });
 
             if (liveLine == live.end()) {
-                // A device that no longer instantiates is not a schema break by
-                // itself (it may be gone on purpose), but it must be a
-                // deliberate edit to the freeze file.
-                expect(false, "device missing from this build: " + deviceType +
-                                  " (remove it from the freeze file if intentional)");
+                // Not a schema break: the file is the union across build
+                // configurations, and this one does not build that device (an
+                // optional pack is off). Its order is checked by the build that
+                // does have it.
+                logMessage("not built in this configuration, order unchecked here: " + deviceType);
                 continue;
             }
 
@@ -187,11 +229,13 @@ class DeviceParamSchemaFreezeTest final : public juce::UnitTest {
                              "append new parameters at the end, or write a migration.");
         }
 
+        // The other direction stays fatal: a device this build CAN instantiate
+        // must be recorded, or adding one would quietly escape the freeze.
         for (const auto& liveLine : live) {
-            const auto deviceType = liveLine.upToFirstOccurrenceOf(" ", false, false);
+            const auto deviceType = deviceTypeOf(liveLine);
             const bool known =
                 std::any_of(frozen.begin(), frozen.end(), [&](const juce::String& candidate) {
-                    return candidate.upToFirstOccurrenceOf(" ", false, false) == deviceType;
+                    return deviceTypeOf(candidate) == deviceType;
                 });
             expect(known, "new device '" + deviceType +
                               "' is not in the freeze file (regenerate with "

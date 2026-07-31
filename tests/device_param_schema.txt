@@ -10,6 +10,7 @@ faust-instrument 66 param_01,param_02,param_03,param_04,param_05,param_06,param_
 impulseResponse 5 gain,highPassMidiNoteNumber,lowPassMidiNoteNumber,mix,filterQ
 levels 0
 lowpass 1 frequency
+magda-pro-stub 0
 magda_bell 5 magda_bell_strike_position,magda_bell_strike_tone,magda_bell_strike_sharpness,magda_bell_decay,magda_bell_gain
 magda_bitcrusher 6 magda_bitcrusher_rate,magda_bitcrusher_bits,magda_bitcrusher_drive,magda_bitcrusher_tone,magda_bitcrusher_mix,magda_bitcrusher_output
 magda_chorus 8 magda_chorus_voices,magda_chorus_sync,magda_chorus_rate,magda_chorus_division,magda_chorus_depth,magda_chorus_feedback,magda_chorus_mix,magda_chorus_width
