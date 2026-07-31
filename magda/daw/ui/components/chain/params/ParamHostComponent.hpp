@@ -66,6 +66,11 @@ class ParamHostComponent : public juce::Component {
         return totalPages_;
     }
 
+    /// Whether a pagination row is actually in play. The layout only says it
+    /// *wants* pagination; a device whose parameters fit one page has nothing
+    /// to put in that row, so the row is neither reserved nor drawn.
+    bool paginates() const;
+
     void setGridVisible(bool visible);
     void setPaginationVisible(bool visible);
 

@@ -260,6 +260,7 @@ class DeviceSlotComponent : public NodeComponent,
     // Height to carve for faustUI_: the bare header, plus its credit strip
     // when the loaded patch declares metadata.
     int faustHeaderHeight() const;
+    int paginationRowHeight() const;
 
     std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<FaustCustomView> faustCustomView_;
