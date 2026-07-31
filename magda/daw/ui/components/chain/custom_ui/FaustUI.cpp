@@ -66,9 +66,9 @@ FaustUI::FaustUI() {
     saveButton_->onClick = [this] { saveDspToFile(); };
     addAndMakeVisible(*saveButton_);
 
-    editButton_ = std::make_unique<magda::SvgButton>("Edit DSP", BinaryData::script_svg,
-                                                     BinaryData::script_svgSize);
-    editButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    editButton_ = std::make_unique<magda::SvgButton>("Edit DSP", BinaryData::code_blocks_svg,
+                                                     BinaryData::code_blocks_svgSize);
+    editButton_->setOriginalColor(juce::Colour(0xFFE3E3E3));
     editButton_->setIconPadding(1.5f);
     editButton_->onClick = [this] { showCodeEditor(); };
     addAndMakeVisible(*editButton_);
