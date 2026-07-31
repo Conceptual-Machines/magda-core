@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "FaustParamPool.hpp"
+
 namespace magda::daw::audio {
 
 namespace {
@@ -16,6 +18,40 @@ magda::ParameterInfo placeholderForInactive(const FaustParamSlot& slot) {
     info.defaultValue = 0.0f;
     info.scale = magda::ParameterScale::Linear;
     info.modulatable = false;
+    return info;
+}
+
+magda::ParameterInfo voiceModeInfo() {
+    magda::ParameterInfo info;
+    info.paramIndex = FaustParamPool::kSize;
+    info.name = "Voice Mode";
+    info.minValue = 0.0f;
+    info.maxValue = 2.0f;
+    info.defaultValue = 0.0f;
+    info.currentValue = 0.0f;
+    info.scale = magda::ParameterScale::Discrete;
+    info.choices = {"Poly", "Mono", "Legato"};
+    // Segmented buttons rather than a dropdown: three short labels, and the
+    // mode is worth reading at a glance without opening anything.
+    info.radioChoices = true;
+    // Voice allocation is a structural choice, not a sound-design one. Letting
+    // an LFO flip it every cycle would just retrigger the flush path.
+    info.modulatable = false;
+    return info;
+}
+
+magda::ParameterInfo glideInfo() {
+    magda::ParameterInfo info;
+    info.paramIndex = FaustParamPool::kSize + 1;
+    info.name = "Glide";
+    info.unit = "ms";
+    info.minValue = 0.0f;
+    info.maxValue = 2000.0f;
+    info.defaultValue = 0.0f;
+    info.currentValue = 0.0f;
+    // Linear, and starting at 0: 0 has to mean "off" exactly, which a log
+    // scale cannot represent.
+    info.scale = magda::ParameterScale::Linear;
     return info;
 }
 
@@ -114,6 +150,10 @@ magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
 }
 
 }  // namespace
+
+magda::ParameterInfo faustInstrumentHostParamInfo(int hostIndex) {
+    return hostIndex == 0 ? voiceModeInfo() : glideInfo();
+}
 
 magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot) {
     // Hidden slots are part of the live binding (the host writes to
