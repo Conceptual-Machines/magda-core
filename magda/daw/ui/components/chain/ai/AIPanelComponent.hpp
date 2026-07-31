@@ -49,8 +49,12 @@ class AIPanelComponent : public juce::Component, private juce::Timer {
 
     void resized() override;
     void paint(juce::Graphics& g) override;
+    // The editors cache resolved colours, so a runtime theme switch needs them
+    // re-applied rather than just repainted.
+    void lookAndFeelChanged() override;
 
   private:
+    static void applySelectionColours(juce::TextEditor& editor);
     void submitPrompt();
     void appendOutput(const juce::String& line);
     void appendStreamingToken(const juce::String& token);

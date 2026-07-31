@@ -75,6 +75,16 @@ class AIPanelComponent::GenerateThread : public juce::Thread {
     llm::Conversation conversation_;
 };
 
+// Selection colours have to be set explicitly: JUCE defaults
+// highlightedTextColourId to black, which is unreadable against a dark
+// background, so dragging over the transcript blacked the text out. Same
+// treatment AIChatConsoleContent gives its own editors.
+void AIPanelComponent::applySelectionColours(juce::TextEditor& editor) {
+    editor.setColour(juce::TextEditor::highlightColourId,
+                     DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    editor.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
+}
+
 AIPanelComponent::AIPanelComponent() {
     output_.setMultiLine(true, true);
     output_.setReadOnly(true);
@@ -86,6 +96,7 @@ AIPanelComponent::AIPanelComponent() {
     output_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
     output_.setColour(juce::TextEditor::textColourId,
                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    applySelectionColours(output_);
     output_.setFont(FontManager::getInstance().getUIFont(11.0f));
     addAndMakeVisible(output_);
 
@@ -96,6 +107,7 @@ AIPanelComponent::AIPanelComponent() {
     input_.setColour(juce::TextEditor::backgroundColourId,
                      DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
     input_.setColour(juce::TextEditor::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    applySelectionColours(input_);
     input_.setFont(FontManager::getInstance().getUIFont(11.0f));
     input_.onReturnKey = [this]() { submitPrompt(); };
     addAndMakeVisible(input_);
@@ -304,6 +316,31 @@ void AIPanelComponent::resized() {
     input_.setBounds(inputArea);
 
     refreshModelLabel();
+}
+
+void AIPanelComponent::lookAndFeelChanged() {
+    // Only the palette-resolved colours the editors cached at construction.
+    // output_'s textColourId is deliberately re-set here too: it is used as the
+    // "colour for the next inserted section", so restoring the themed default
+    // keeps subsequent appends in the new palette. Already-inserted sections
+    // keep whatever colour they were written with, which is the intent for the
+    // yellow / green status lines.
+    output_.setColour(juce::TextEditor::backgroundColourId,
+                      DarkTheme::getColour(DarkTheme::BACKGROUND));
+    output_.setColour(juce::TextEditor::textColourId,
+                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    applySelectionColours(output_);
+
+    input_.setColour(juce::TextEditor::backgroundColourId,
+                     DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    input_.setColour(juce::TextEditor::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    input_.setTextToShowWhenEmpty("describe the sound...",
+                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.4f));
+    applySelectionColours(input_);
+
+    modelLabel_.setColour(juce::Label::textColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.5f));
+    repaint();
 }
 
 void AIPanelComponent::paint(juce::Graphics& g) {
