@@ -76,6 +76,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/drum_grid.svg
     ../../assets/icons/general/faust-text-logo.svg
     ../../assets/icons/general/script.svg
+    ../../assets/icons/general/code_blocks.svg
     ../../assets/icons/general/speaker.svg
     ../../assets/icons/general/speaker_simple.svg
     ../../assets/icons/general/master_on.svg

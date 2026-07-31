@@ -41,8 +41,11 @@ void paintSeparators(juce::Graphics& g, juce::Rectangle<int> contentArea,
         g.drawHorizontalLine(headerBottom, left, right);
     }
 
+    // Rule under the pagination row. `paginationHeight` is 0 when the grid has
+    // a single page: there is no row to separate, and drawing it anyway left a
+    // line with an empty band above it.
     const bool runtimeFaust = state.traits.isFaust || state.traits.isFaustInstrument;
-    if (!state.traits.compiledPresentation &&
+    if (paginationHeight > 0 && !state.traits.compiledPresentation &&
         (!state.internalDevice || runtimeFaust || !state.hasCustomUI)) {
         constexpr int paginationTopPadding = 2;
         constexpr int paginationBottomPadding = 4;

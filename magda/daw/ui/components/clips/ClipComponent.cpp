@@ -66,6 +66,29 @@ double timelineEndSeconds(const ClipInfo& clip, double bpm) {
     return clip.getTimelineEnd(bpm);
 }
 
+// Left-resize moves the clip start, so the preview has to carry the derived
+// source-domain phase (offset/loopStart/midiOffset) across as well as the
+// placement. Used for the dragged clip and every other clip in the selection.
+void applyLeftResizePreview(ClipInfo& target, const ClipInfo& preview, double bpm) {
+    ClipOperations::setTimelinePlacement(target, timelineStartSeconds(preview, bpm),
+                                         timelineLengthSeconds(preview, bpm), bpm);
+    target.offset = preview.offset;
+    target.loopStart = preview.loopStart;
+    target.midiOffset = preview.midiOffset;
+}
+
+// Undo the fields applyLeftResizePreview touched (plus midiTrimOffset, which
+// resizeContainerFromLeft accumulates), so the resize commands capture the
+// pre-drag state for undo.
+void restoreLeftResizePreview(ClipInfo& target, const ClipInfo& snapshot, double startSeconds,
+                              double lengthSeconds, double bpm) {
+    ClipOperations::setTimelinePlacement(target, startSeconds, lengthSeconds, bpm);
+    target.offset = snapshot.offset;
+    target.loopStart = snapshot.loopStart;
+    target.midiOffset = snapshot.midiOffset;
+    target.midiTrimOffset = snapshot.midiTrimOffset;
+}
+
 void showMidiClipLibrarySaveFailedAlert() {
     juce::AlertWindow::showMessageBoxAsync(
         juce::AlertWindow::WarningIcon, "Save MIDI Clip Failed",
@@ -1244,6 +1267,26 @@ bool ClipComponent::hitTest(int x, int y) {
 // Mouse Handling
 // ============================================================================
 
+void ClipComponent::captureMultiResizeSnapshots() {
+    dragStartSelectedLengths_.clear();
+    dragStartSelectedClipSnapshots_.clear();
+
+    const auto& selected = SelectionManager::getInstance().getSelectedClips();
+    if (selected.size() <= 1 || selected.count(clipId_) == 0)
+        return;
+
+    auto& cm = ClipManager::getInstance();
+    const double tempo = parentPanel_ ? parentPanel_->getTempo() : DEFAULT_BPM;
+    for (auto cid : selected) {
+        if (cid == clipId_)
+            continue;
+        if (const auto* c = cm.getClip(cid)) {
+            dragStartSelectedLengths_[cid] = timelineLengthSeconds(*c, tempo);
+            dragStartSelectedClipSnapshots_[cid] = *c;
+        }
+    }
+}
+
 void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     const auto* clip = getClipInfo();
     if (!clip) {
@@ -1631,6 +1674,9 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             dragMode_ = DragMode::ResizeLeft;
             dragStartClipSnapshot_ = *clip;
             resizePreviewClip_ = *clip;
+            // Capture original state of other selected clips so the drag can
+            // preview them resizing together (the commit path already does)
+            captureMultiResizeSnapshots();
         }
     } else if (isOnRightEdge(e.x)) {
         if (e.mods.isShiftDown() &&
@@ -1642,8 +1688,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             dragMode_ = DragMode::ResizeRight;
             dragStartClipSnapshot_ = *clip;
             // Capture original lengths of other selected clips for multi-resize
-            dragStartSelectedLengths_.clear();
-            dragStartSelectedClipSnapshots_.clear();
+            captureMultiResizeSnapshots();
             multiResizeMaxDelta_ = std::numeric_limits<double>::max();
             const auto& selected = SelectionManager::getInstance().getSelectedClips();
             if (selected.size() > 1 && selected.count(clipId_)) {
@@ -1653,10 +1698,6 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
                     const auto* c = cm.getClip(cid);
                     if (!c)
                         continue;
-                    if (cid != clipId_) {
-                        dragStartSelectedLengths_[cid] = timelineLengthSeconds(*c, tempo);
-                        dragStartSelectedClipSnapshots_[cid] = *c;
-                    }
 
                     // Find max resize before hitting next non-selected clip
                     auto trackClips = cm.getClipsOnTrack(c->trackId);
@@ -1913,13 +1954,33 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             if (resizeThrottle_.check()) {
                 auto& cm = magda::ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
-                    ClipOperations::setTimelinePlacement(
-                        *mutableClip, timelineStartSeconds(resizePreviewClip_, tempoBPM),
-                        timelineLengthSeconds(resizePreviewClip_, tempoBPM), tempoBPM);
-                    mutableClip->offset = resizePreviewClip_.offset;
-                    mutableClip->loopStart = resizePreviewClip_.loopStart;
-                    mutableClip->midiOffset = resizePreviewClip_.midiOffset;
-                    cm.forceNotifyClipPropertyChanged(clipId_);
+                    applyLeftResizePreview(*mutableClip, resizePreviewClip_, tempoBPM);
+
+                    std::vector<magda::ClipId> changedClips;
+                    changedClips.push_back(clipId_);
+
+                    // Also preview the other selected clips with the same delta,
+                    // each recomputed from its own pre-drag snapshot
+                    const double lengthDelta = finalLength - dragStartLength_;
+                    for (auto& [cid, origLen] : dragStartSelectedLengths_) {
+                        auto snapshotIt = dragStartSelectedClipSnapshots_.find(cid);
+                        if (snapshotIt == dragStartSelectedClipSnapshots_.end())
+                            continue;
+                        auto* otherClip = cm.getClip(cid);
+                        if (!otherClip)
+                            continue;
+
+                        ClipInfo otherPreview = snapshotIt->second;
+                        ClipOperations::resizeContainerFromLeft(
+                            otherPreview, juce::jmax(0.1, origLen + lengthDelta), tempoBPM);
+                        if (!otherPreview.loopEnabled && otherPreview.isAudio())
+                            otherPreview.loopStart = otherPreview.offset;
+
+                        applyLeftResizePreview(*otherClip, otherPreview, tempoBPM);
+                        changedClips.push_back(cid);
+                    }
+
+                    cm.forceNotifyMultipleClipPropertiesChanged(changedClips);
                 }
             }
 
@@ -2383,18 +2444,28 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 {
                     auto& cm = ClipManager::getInstance();
                     if (auto* c = cm.getClip(clipId_)) {
-                        ClipOperations::setTimelinePlacement(*c, dragStartTime_, dragStartLength_,
-                                                             commitTempoBPM);
-                        c->offset = dragStartClipSnapshot_.offset;
-                        c->loopStart = dragStartClipSnapshot_.loopStart;
-                        c->midiOffset = dragStartClipSnapshot_.midiOffset;
-                        c->midiTrimOffset = dragStartClipSnapshot_.midiTrimOffset;
+                        restoreLeftResizePreview(*c, dragStartClipSnapshot_, dragStartTime_,
+                                                 dragStartLength_, commitTempoBPM);
+                    }
+                    // Same for the other selected clips previewed during the drag
+                    for (auto& [cid, origLen] : dragStartSelectedLengths_) {
+                        auto snapshotIt = dragStartSelectedClipSnapshots_.find(cid);
+                        if (snapshotIt == dragStartSelectedClipSnapshots_.end())
+                            continue;
+                        if (auto* c = cm.getClip(cid)) {
+                            restoreLeftResizePreview(
+                                *c, snapshotIt->second,
+                                timelineStartSeconds(snapshotIt->second, commitTempoBPM), origLen,
+                                commitTempoBPM);
+                        }
                     }
                 }
 
                 if (onClipResized) {
                     onClipResized(clipId_, finalLength, true);
                 }
+                dragStartSelectedLengths_.clear();
+                dragStartSelectedClipSnapshots_.clear();
                 break;
             }
 

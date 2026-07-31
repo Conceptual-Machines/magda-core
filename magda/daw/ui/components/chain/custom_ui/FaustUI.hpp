@@ -21,8 +21,11 @@ class FaustCustomView;
 /**
  * @brief Bespoke header strip shared by runtime Faust effects and instruments.
  *
- * This component renders the Faust-specific header — logo, DSP name
- * box, Load DSP icon, Edit code icon — and *only* that strip. The
+ * Three bands separated by single vertical rules:
+ *
+ *     FAUST logo | patch name over its metadata | Save / Load / Edit
+ *
+ * This component renders that strip and *only* that strip. The
  * device's parameter widgets are rendered by the standard
  * DeviceSlotComponent::paramGrid_, driven by the ParameterInfo that
  * FaustProcessor produces from the FaustPlugin pool. Sharing the
@@ -42,15 +45,16 @@ class FaustUI : public juce::Component {
   public:
     static constexpr int kHeaderHeight = 36;
 
-    /// Extra row below the header, shown only when the loaded patch
-    /// declares any of author / version / license / description.
-    static constexpr int kInfoStripHeight = 16;
+    /// Second text row in the identity band, carrying `author | version |
+    /// license` under the patch name. Present only for patches that declare
+    /// that metadata.
+    static constexpr int kMetaRowHeight = 12;
 
     /// Total height the host should carve for this component. Collapses to
     /// `kHeaderHeight` for patches that declare no metadata, so an
     /// unannotated .dsp gives up no grid space.
     int getDesiredHeight() const {
-        return kHeaderHeight + (showInfoStrip_ ? kInfoStripHeight : 0);
+        return kHeaderHeight + (showMetaRow_ ? kMetaRowHeight : 0);
     }
 
     FaustUI();
@@ -66,6 +70,9 @@ class FaustUI : public juce::Component {
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    // Label colours are cached by setColour, so they need re-applying when the
+    // palette changes; paint-time roles look themselves up and self-heal.
+    void lookAndFeelChanged() override;
 
   private:
     void showLoadMenu();
@@ -87,14 +94,20 @@ class FaustUI : public juce::Component {
 
     std::unique_ptr<juce::Drawable> logo_;
     juce::Rectangle<float> logoBounds_;
-    juce::Rectangle<float> nameBorderBounds_;
-    juce::Label nameLabel_;
 
-    // Info strip state, refreshed whenever the loaded DSP changes.
-    // `infoStripText_` is the one-line credit; the full description goes to
-    // the name box tooltip, since it is prose and does not fit a 16px row.
-    bool showInfoStrip_ = false;
-    juce::String infoStripText_;
+    // Band geometry, recomputed in resized(). The rules are painted at these
+    // x positions so the icons and the text block share their grid.
+    int logoRuleX_ = 0;
+    int actionRuleX_ = 0;
+
+    juce::Label nameLabel_;
+    juce::Rectangle<int> metaBounds_;
+
+    // Identity state, refreshed whenever the loaded DSP changes. `metaText_`
+    // is the one-line credit under the name; the full description goes to the
+    // name tooltip, since it is prose and does not fit a 12px row.
+    bool showMetaRow_ = false;
+    juce::String metaText_;
     juce::Label errorLabel_;
     std::unique_ptr<magda::SvgButton> saveButton_;
     std::unique_ptr<magda::SvgButton> loadButton_;

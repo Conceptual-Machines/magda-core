@@ -265,6 +265,10 @@ class ClipComponent : public juce::Component,
     // Helper to get current clip info
     const ClipInfo* getClipInfo() const;
 
+    // Capture pre-drag length + full state of the other selected clips so a
+    // multi-clip resize can preview them live and restore them before commit.
+    void captureMultiResizeSnapshots();
+
     // Context menu
     void showContextMenu();
 

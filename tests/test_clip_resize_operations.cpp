@@ -942,3 +942,154 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         REQUIRE(clip.offset == Catch::Approx(1.0));
     }
 }
+
+// ============================================================================
+// Multi-clip left resize preview (#1950)
+// ============================================================================
+
+TEST_CASE("Multi-clip left-resize preview recomputes every clip from its snapshot",
+          "[clip][resize][left][multi][regression]") {
+    /**
+     * REGRESSION TEST (#1950)
+     *
+     * Dragging the left handle of a multi-clip selection previewed only the
+     * dragged clip; the rest jumped into place on mouse release. The drag now
+     * applies the same length delta to every selected clip on each throttled
+     * tick.
+     *
+     * The invariant that makes that safe: each tick recomputes from the
+     * clip's PRE-DRAG snapshot, never from its current (already previewed)
+     * state. Applying the delta to live state accumulates drift, and for MIDI
+     * it accumulates midiTrimOffset once per tick.
+     *
+     * This mirrors the loop in ClipComponent::mouseDrag / DragMode::ResizeLeft.
+     */
+
+    const double bpm = 120.0;
+
+    // One throttled drag tick: rebuild the preview from the snapshot.
+    auto previewTick = [bpm](const ClipInfo& snapshot, double originalLength, double lengthDelta) {
+        ClipInfo preview = snapshot;
+        ClipOperations::resizeContainerFromLeft(preview,
+                                                juce::jmax(0.1, originalLength + lengthDelta), bpm);
+        if (!preview.loopEnabled && preview.isAudio())
+            preview.loopStart = preview.offset;
+        return preview;
+    };
+
+    SECTION("Every selected clip shifts by the same delta, whatever its own start") {
+        ClipInfo dragged;
+        dragged.setAudioContent();
+        dragged.audio().source.filePath = "a.wav";
+        ClipOperations::setTimelinePlacement(dragged, 0.0, 4.0, bpm);
+        dragged.offset = 2.0;
+
+        ClipInfo other;
+        other.setAudioContent();
+        other.audio().source.filePath = "b.wav";
+        ClipOperations::setTimelinePlacement(other, 10.0, 6.0, bpm);
+        other.offset = 3.0;
+
+        // Drag the left handle right by 1 second: both clips shrink by 1
+        const double lengthDelta = -1.0;
+
+        ClipInfo draggedPreview = previewTick(dragged, 4.0, lengthDelta);
+        ClipInfo otherPreview = previewTick(other, 6.0, lengthDelta);
+
+        REQUIRE(draggedPreview.getTimelineStart(bpm) == Catch::Approx(1.0));
+        REQUIRE(draggedPreview.getTimelineLength(bpm) == Catch::Approx(3.0));
+        REQUIRE(otherPreview.getTimelineStart(bpm) == Catch::Approx(11.0));
+        REQUIRE(otherPreview.getTimelineLength(bpm) == Catch::Approx(5.0));
+
+        // Ends stay pinned — left resize only moves the start
+        REQUIRE(draggedPreview.getTimelineEnd(bpm) == Catch::Approx(4.0));
+        REQUIRE(otherPreview.getTimelineEnd(bpm) == Catch::Approx(16.0));
+
+        // Each clip trims its own audio from its own offset
+        REQUIRE(draggedPreview.offset == Catch::Approx(3.0));
+        REQUIRE(otherPreview.offset == Catch::Approx(4.0));
+        REQUIRE(draggedPreview.loopStart == Catch::Approx(draggedPreview.offset));
+        REQUIRE(otherPreview.loopStart == Catch::Approx(otherPreview.offset));
+    }
+
+    SECTION("Successive ticks do not drift - final tick equals a single-shot resize") {
+        ClipInfo snapshot;
+        snapshot.setAudioContent();
+        snapshot.audio().source.filePath = "b.wav";
+        ClipOperations::setTimelinePlacement(snapshot, 10.0, 6.0, bpm);
+        snapshot.offset = 3.0;
+
+        ClipInfo preview = snapshot;
+        for (double delta : {-0.25, -0.5, -0.75, -1.0})
+            preview = previewTick(snapshot, 6.0, delta);
+
+        ClipInfo singleShot = previewTick(snapshot, 6.0, -1.0);
+
+        REQUIRE(preview.getTimelineStart(bpm) == Catch::Approx(singleShot.getTimelineStart(bpm)));
+        REQUIRE(preview.getTimelineLength(bpm) == Catch::Approx(singleShot.getTimelineLength(bpm)));
+        REQUIRE(preview.offset == Catch::Approx(singleShot.offset));
+
+        // Dragging back to where it started restores the original state
+        ClipInfo backToStart = previewTick(snapshot, 6.0, 0.0);
+        REQUIRE(backToStart.getTimelineStart(bpm) == Catch::Approx(10.0));
+        REQUIRE(backToStart.getTimelineLength(bpm) == Catch::Approx(6.0));
+        REQUIRE(backToStart.offset == Catch::Approx(3.0));
+    }
+
+    SECTION("Non-looped MIDI accumulates midiTrimOffset once, not once per tick") {
+        ClipInfo snapshot;
+        snapshot.setMidiContent();
+        ClipOperations::setTimelinePlacement(snapshot, 0.0, 4.0, bpm);
+        snapshot.midiTrimOffset = 0.0;
+
+        ClipInfo preview = snapshot;
+        for (double delta : {-0.5, -1.0, -1.5, -2.0})
+            preview = previewTick(snapshot, 4.0, delta);
+
+        // 2 seconds at 120 BPM = 4 beats, counted once
+        REQUIRE(preview.getTimelineStart(bpm) == Catch::Approx(2.0));
+        REQUIRE(preview.getTimelineLength(bpm) == Catch::Approx(2.0));
+        REQUIRE(preview.midiTrimOffset == Catch::Approx(4.0));
+    }
+
+    SECTION("Preview matches what the commit path produces for each clip") {
+        // The commit path restores the pre-drag snapshot, then resizes to
+        // originalLength + lengthDelta. The preview must land in the same place.
+        ClipInfo snapshot;
+        snapshot.setAudioContent();
+        snapshot.audio().source.filePath = "c.wav";
+        ClipOperations::setTimelinePlacement(snapshot, 4.0, 5.0, bpm);
+        snapshot.offset = 1.0;
+        snapshot.speedRatio = 2.0;
+
+        const double lengthDelta = 1.5;  // expanding leftwards
+
+        ClipInfo preview = previewTick(snapshot, 5.0, lengthDelta);
+
+        ClipInfo committed = snapshot;  // restored before the resize command runs
+        ClipOperations::resizeContainerFromLeft(committed, 5.0 + lengthDelta, bpm);
+        if (!committed.loopEnabled && committed.isAudio())
+            committed.loopStart = committed.offset;
+
+        REQUIRE(preview.getTimelineStart(bpm) == Catch::Approx(committed.getTimelineStart(bpm)));
+        REQUIRE(preview.getTimelineLength(bpm) == Catch::Approx(committed.getTimelineLength(bpm)));
+        REQUIRE(preview.offset == Catch::Approx(committed.offset));
+        REQUIRE(preview.loopStart == Catch::Approx(committed.loopStart));
+    }
+
+    SECTION("A short clip in the selection clamps instead of inverting") {
+        ClipInfo shortClip;
+        shortClip.setAudioContent();
+        shortClip.audio().source.filePath = "d.wav";
+        ClipOperations::setTimelinePlacement(shortClip, 8.0, 0.5, bpm);
+        shortClip.offset = 0.0;
+
+        // Drag right far past the short clip's own length
+        ClipInfo preview = previewTick(shortClip, 0.5, -2.0);
+
+        REQUIRE(preview.getTimelineLength(bpm) >= 0.1);
+        REQUIRE(preview.getTimelineStart(bpm) < preview.getTimelineEnd(bpm));
+        // End still pinned where it was
+        REQUIRE(preview.getTimelineEnd(bpm) == Catch::Approx(8.5));
+    }
+}
