@@ -1269,9 +1269,14 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
         area, collapsedMeterArea_, traits_, device_, isInternalDevice(),
         {.levelMeter = stripsAnalysisChrome() ? nullptr : &levelMeter_,
          .midiNoteStrip = &midiNoteStrip_,
+         // Learn is expanded-only, but it still has to be handed over so the
+         // collapsed pass hides it — otherwise it lingers at its stale header
+         // bounds over the collapsed strip.
          .headerControls = {.macroButton = exposesDeviceModulation() ? macroButton_.get() : nullptr,
                             .modButton = exposesDeviceModulation() ? modButton_.get() : nullptr,
                             .aiButton = aiButton_.get(),
+                            .learnButton = learnButton_.get(),
+                            .sidechainButton = scButton_.get(),
                             .multiOutButton = multiOutButton_.get(),
                             .uiButton = uiButton_.get(),
                             .deltaButton = deltaButton_.get(),
