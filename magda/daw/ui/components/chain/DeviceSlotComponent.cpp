@@ -1573,7 +1573,11 @@ void DeviceSlotComponent::chainNodeSelectionChanged(const magda::ChainNodePath& 
     const bool wasAlreadySelected = isSelected();
     NodeComponent::chainNodeSelectionChanged(path);
 
-    if (wasAlreadySelected || !nodePath_.isValid() || path != nodePath_) {
+    // Likewise skip it when this selection is part of a header-bar collapse
+    // gesture — opening the macro panel on the click that collapses the device
+    // is the opposite of what the user asked for.
+    if (wasAlreadySelected || isCollapseGestureActive() || !nodePath_.isValid() ||
+        path != nodePath_) {
         return;
     }
 

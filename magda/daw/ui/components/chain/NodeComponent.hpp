@@ -282,6 +282,16 @@ class NodeComponent : public juce::Component,
     bool frozen_ = false;
     bool chainDisabled_ = false;  // track chain power off (grey only, see setChainDisabled)
     bool mouseDownForSelection_ = false;
+    // True only while mouseUp dispatches the selection for a header-bar click,
+    // i.e. a collapse gesture. Subclasses check it to skip side effects that
+    // would fight the gesture — chiefly the "open macros on select"
+    // preference, which otherwise flings the macro panel open on the very
+    // click that was meant to collapse the node.
+    bool collapseGestureActive_ = false;
+
+    bool isCollapseGestureActive() const {
+        return collapseGestureActive_;
+    }
 
     // Collapsed state (show header only)
     bool collapsed_ = false;
