@@ -426,7 +426,7 @@ juce::String PluginApiLive::applyFaustSource(const ChainNodePath& path,
     }
 
     juce::String error;
-    if (!faust->loadDspSource(displayName, source, error, daw::audio::FaustCustomViewKind::None))
+    if (!faust->loadDspSource(displayName, source, error))
         return "compile error: " + error;
 
     bridge->getPluginManager().refreshDeviceParameters(path);

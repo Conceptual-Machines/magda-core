@@ -1,5 +1,7 @@
 declare name "MagdaPitchShifter";
 declare description "Two-delay-line pitch shifter (ef.transpose) - single voice, full +/-24 semitone range. Granular crossfade artefacts are the character.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

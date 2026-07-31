@@ -13,6 +13,7 @@
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -85,7 +86,7 @@ class ChorusHarvester : public ::UI {
 
         ChorusHarvest::Control c;
         c.idx = merged.slotIndex;
-        c.kind = merged.isMenuStyle ? FaustParamSlot::Kind::Discrete : kind;
+        c.kind = merged.isChoiceStyle() ? FaustParamSlot::Kind::Discrete : kind;
         c.zone = zone;
         c.choices = merged.menuChoices;
         c.gateSlotIndex = merged.gateSlotIndex;
@@ -474,8 +475,9 @@ const CompiledPluginSpec& getMagdaChorusSpec() {
             "Voices share a single LFO with per-voice phase offsets for spread. "
             "Rate runs free in Hz or locks to tempo Division. "
             "Depth, Feedback, Mix and Width complete the controls.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaChorusCompiledPlugin(info);
+        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
+            return tracktion_adapter::pluginHandle(
+                new MagdaChorusCompiledPlugin(tracktion_adapter::creationInfo(context)));
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),

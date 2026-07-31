@@ -110,6 +110,44 @@ TEST_CASE("paramInfoFromSlot - paramIndex preserved", "[faust][paraminfo]") {
     REQUIRE(info.paramIndex == 42);
 }
 
+TEST_CASE("paramInfoFromSlot - author group propagates", "[faust][paraminfo]") {
+    auto slot = makeContinuousSlot(3, "Cutoff");
+    slot.group = "Filter";
+    auto info = paramInfoFromSlot(slot);
+    REQUIRE(info.group == "Filter");
+}
+
+TEST_CASE("paramInfoFromSlot - tooltip propagates", "[faust][paraminfo]") {
+    auto slot = makeContinuousSlot(3, "Cutoff");
+    slot.tooltip = "Filter corner frequency";
+    REQUIRE(paramInfoFromSlot(slot).tooltip == "Filter corner frequency");
+}
+
+TEST_CASE("paramInfoFromSlot - tooltip survives the hidden-slot path", "[faust][paraminfo]") {
+    // Hidden slots go through placeholderForInactive, which builds a fresh
+    // ParameterInfo and so has to copy the UI-only fields separately.
+    auto slot = makeContinuousSlot(3, "Tempo");
+    slot.hidden = true;
+    slot.tooltip = "Project tempo in BPM";
+    REQUIRE(paramInfoFromSlot(slot).tooltip == "Project tempo in BPM");
+}
+
+TEST_CASE("paramInfoFromSlot - radio style requests segmented choices", "[faust][paraminfo]") {
+    auto slot = makeDiscreteSlot(0, "Voice", {{0.0f, "Mono"}, {1.0f, "Poly"}});
+    slot.choiceStyle = FaustChoiceStyle::Radio;
+    REQUIRE(paramInfoFromSlot(slot).radioChoices);
+}
+
+TEST_CASE("paramInfoFromSlot - menu style stays a dropdown", "[faust][paraminfo]") {
+    auto slot = makeDiscreteSlot(0, "Mode", {{0.0f, "Off"}, {1.0f, "On"}});
+    slot.choiceStyle = FaustChoiceStyle::Menu;
+    auto info = paramInfoFromSlot(slot);
+    REQUIRE_FALSE(info.radioChoices);
+    // Both styles are still the same discrete parameter underneath.
+    REQUIRE(info.scale == ParameterScale::Discrete);
+    REQUIRE(info.choices.size() == 2);
+}
+
 // ============================================================================
 // Boolean
 // ============================================================================
@@ -134,6 +172,31 @@ TEST_CASE("paramInfoFromSlot - trigger is a momentary boolean", "[faust][paramin
     REQUIRE(info.scale == ParameterScale::Boolean);
     REQUIRE(info.momentary);
     REQUIRE_FALSE(info.modulatable);
+}
+
+// ============================================================================
+// Hidden
+// ============================================================================
+
+TEST_CASE("paramInfoFromSlot - hidden slot degrades to a placeholder",
+          "[faust][paraminfo][hidden]") {
+    // A `[hidden:1]` slot is still active: the host writes its zone every
+    // block, which is the whole point of [role:projecttempo]. It just carries
+    // no user-facing parameter, so paramInfoFromSlot returns the same inert
+    // placeholder it gives an inactive slot.
+    //
+    // That is exactly why FaustProcessor::populateParameters filters on
+    // `active && !hidden` rather than relying on this: a placeholder still
+    // has a valid paramIndex, so pushing it into DeviceInfo::parameters made
+    // FaustDeviceLayout render it as a visible "(slot N)" cell.
+    auto slot = makeContinuousSlot(3, "BPM", 10.0f, 360.0f);
+    slot.hidden = true;
+
+    auto info = paramInfoFromSlot(slot);
+    CHECK(info.paramIndex == 3);
+    CHECK(info.name != "BPM");
+    CHECK(info.name.contains("slot"));
+    CHECK_FALSE(info.modulatable);
 }
 
 // ============================================================================
@@ -174,4 +237,47 @@ TEST_CASE("paramInfoFromSlot - discrete with empty choices yields fallback", "[f
     auto info = paramInfoFromSlot(s);
     REQUIRE(info.choices.size() == 1);
     REQUIRE(info.choices[0] == "(empty)");
+}
+
+// ============================================================================
+// Meters
+// ============================================================================
+
+TEST_CASE("meterInfoFromOutput carries description and style", "[faust][paraminfo]") {
+    FaustOutputSlot output;
+    output.index = 2;
+    output.active = true;
+    output.label = "GR";
+    output.unit = "dB";
+    output.group = "Dynamics";
+    output.tooltip = "Gain reduction";
+    output.minValue = 0.0f;
+    output.maxValue = 24.0f;
+    output.widthCells = 2;
+    output.vertical = true;
+    output.style = FaustOutputStyle::Numerical;
+
+    const auto info = meterInfoFromOutput(output);
+
+    REQUIRE(info.meterIndex == 2);
+    REQUIRE(info.name == "GR");
+    REQUIRE(info.unit == "dB");
+    REQUIRE(info.group == "Dynamics");
+    REQUIRE(info.tooltip == "Gain reduction");
+    REQUIRE(info.minValue == 0.0f);
+    REQUIRE(info.maxValue == 24.0f);
+    REQUIRE(info.widthCells == 2);
+    REQUIRE(info.vertical);
+    REQUIRE(info.style == magda::MeterStyle::Numerical);
+}
+
+TEST_CASE("meterInfoFromOutput maps the remaining styles", "[faust][paraminfo]") {
+    FaustOutputSlot output;
+    output.active = true;
+
+    output.style = FaustOutputStyle::Bar;
+    REQUIRE(meterInfoFromOutput(output).style == magda::MeterStyle::Bar);
+
+    output.style = FaustOutputStyle::Led;
+    REQUIRE(meterInfoFromOutput(output).style == magda::MeterStyle::Led);
 }

@@ -4,7 +4,6 @@
 
 #include <memory>
 
-#include "audio/plugins/FaustCustomViewKind.hpp"
 #include "core/ChainNodePath.hpp"
 
 namespace magda::daw::audio {
@@ -20,7 +19,7 @@ namespace magda::daw::ui {
 class FaustCustomView;
 
 /**
- * @brief Bespoke header strip for FaustPlugin.
+ * @brief Bespoke header strip shared by runtime Faust effects and instruments.
  *
  * This component renders the Faust-specific header — logo, DSP name
  * box, Load DSP icon, Edit code icon — and *only* that strip. The
@@ -42,6 +41,17 @@ class FaustCustomView;
 class FaustUI : public juce::Component {
   public:
     static constexpr int kHeaderHeight = 36;
+
+    /// Extra row below the header, shown only when the loaded patch
+    /// declares any of author / version / license / description.
+    static constexpr int kInfoStripHeight = 16;
+
+    /// Total height the host should carve for this component. Collapses to
+    /// `kHeaderHeight` for patches that declare no metadata, so an
+    /// unannotated .dsp gives up no grid space.
+    int getDesiredHeight() const {
+        return kHeaderHeight + (showInfoStrip_ ? kInfoStripHeight : 0);
+    }
 
     FaustUI();
     ~FaustUI() override;
@@ -66,8 +76,10 @@ class FaustUI : public juce::Component {
     // library separate from MAGDA .mps presets.
     static juce::File userEffectsDir();
     void showCodeEditor();
-    bool tryLoad(const juce::String& name, const juce::String& source,
-                 magda::daw::audio::FaustCustomViewKind viewKind);
+    // The custom view comes from the source's own `declare magda_view`, so
+    // every load path resolves it the same way with nothing to pass in.
+    bool tryLoad(const juce::String& name, const juce::String& source);
+
     void refreshNameLabel();
 
     magda::daw::audio::IFaustEditorModel* plugin_ = nullptr;
@@ -77,6 +89,12 @@ class FaustUI : public juce::Component {
     juce::Rectangle<float> logoBounds_;
     juce::Rectangle<float> nameBorderBounds_;
     juce::Label nameLabel_;
+
+    // Info strip state, refreshed whenever the loaded DSP changes.
+    // `infoStripText_` is the one-line credit; the full description goes to
+    // the name box tooltip, since it is prose and does not fit a 16px row.
+    bool showInfoStrip_ = false;
+    juce::String infoStripText_;
     juce::Label errorLabel_;
     std::unique_ptr<magda::SvgButton> saveButton_;
     std::unique_ptr<magda::SvgButton> loadButton_;

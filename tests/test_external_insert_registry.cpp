@@ -1,3 +1,5 @@
+#include <tracktion_engine/tracktion_engine.h>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "audio/plugins/InternalPluginRegistry.hpp"

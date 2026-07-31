@@ -82,10 +82,10 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/SidechainUI.cpp
     custom_ui/PitchShiftUI.cpp
     custom_ui/ImpulseResponseUI.cpp
+    custom_ui/FaustMeterPanel.cpp
     custom_ui/FaustUI.cpp
     custom_ui/FaustCodeEditorWindow.cpp
     custom_ui/FaustCustomUIRegistry.cpp
-    custom_ui/FaustInstrumentTabbedUI.cpp
     custom_ui/FourOscUI.cpp
     custom_ui/PolySynthUI.cpp
     custom_ui/FMUI.cpp
@@ -197,10 +197,10 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/FilterUI.hpp
     custom_ui/PitchShiftUI.hpp
     custom_ui/ImpulseResponseUI.hpp
+    custom_ui/FaustMeterPanel.hpp
     custom_ui/FaustUI.hpp
     custom_ui/FaustCodeEditorWindow.hpp
     custom_ui/FaustCustomUIRegistry.hpp
-    custom_ui/FaustInstrumentTabbedUI.hpp
     custom_ui/LayoutStableTabbedComponent.hpp
     custom_ui/FourOscUI.hpp
     custom_ui/HaloUI.hpp

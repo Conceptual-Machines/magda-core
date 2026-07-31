@@ -1,5 +1,7 @@
 declare name "MagdaCompressor";
 declare description "Clean stereo feed-forward compressor with peak/RMS detection, soft knee, stereo link, sidechain high-pass, parallel mix, and output safety limiting.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

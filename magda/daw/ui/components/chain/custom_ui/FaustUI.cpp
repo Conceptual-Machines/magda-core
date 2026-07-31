@@ -89,24 +89,83 @@ void FaustUI::setPlugin(magda::daw::audio::IFaustEditorModel* plugin) {
     refreshNameLabel();
 }
 
-void FaustUI::refreshNameLabel() {
-    if (plugin_ == nullptr) {
-        nameLabel_.setText({}, juce::dontSendNotification);
-        return;
+namespace {
+
+// Compose the patch's declared metadata into the name box's tooltip.
+// Returns the bare name when the patch declares none of it, so a patch
+// without metadata reads exactly as it did before.
+juce::String describePatch(const juce::String& name,
+                           const magda::daw::audio::FaustPatchInfo& info) {
+    juce::String title = name;
+    if (info.version.isNotEmpty())
+        title << " " << info.version;
+    if (info.isEmpty())
+        return title;
+
+    juce::StringArray lines;
+    lines.add(title);
+    if (info.author.isNotEmpty())
+        lines.add("by " + info.author);
+    if (info.license.isNotEmpty())
+        lines.add(info.license);
+    if (info.description.isNotEmpty()) {
+        lines.add({});
+        lines.add(info.description);
     }
-    nameLabel_.setText(plugin_->getDspName(), juce::dontSendNotification);
+    return lines.joinIntoString("\n");
 }
 
-bool FaustUI::tryLoad(const juce::String& name, const juce::String& source,
-                      magda::daw::audio::FaustCustomViewKind viewKind) {
-    DBG("[FaustUI] tryLoad name='" << name << "' src.len=" << source.length()
-                                   << " viewKind=" << static_cast<int>(viewKind));
+// One-line credit for the info strip. Description is deliberately left out
+// It is prose and belongs in the tooltip, not a 16px row.
+juce::String creditLine(const magda::daw::audio::FaustPatchInfo& info) {
+    juce::StringArray parts;
+    if (info.author.isNotEmpty())
+        parts.add(info.author);
+    if (info.version.isNotEmpty())
+        parts.add("v" + info.version);
+    if (info.license.isNotEmpty())
+        parts.add(info.license);
+    return parts.joinIntoString("  |  ");
+}
+
+}  // namespace
+
+void FaustUI::refreshNameLabel() {
+    const bool wasShowingStrip = showInfoStrip_;
+
+    if (plugin_ == nullptr) {
+        nameLabel_.setText({}, juce::dontSendNotification);
+        nameLabel_.setTooltip({});
+        showInfoStrip_ = false;
+        infoStripText_ = {};
+    } else {
+        const auto name = plugin_->getDspName();
+        const auto info = plugin_->getPatchInfo();
+        nameLabel_.setText(name, juce::dontSendNotification);
+        nameLabel_.setTooltip(describePatch(name, info));
+        infoStripText_ = creditLine(info);
+        showInfoStrip_ = !info.isEmpty();
+    }
+
+    // The strip changes this component's desired height, so the parent has
+    // to re-carve. Without this the strip would only appear after some
+    // unrelated resize.
+    if (showInfoStrip_ != wasShowingStrip) {
+        if (auto* parent = getParentComponent())
+            parent->resized();
+    }
+    resized();
+    repaint();
+}
+
+bool FaustUI::tryLoad(const juce::String& name, const juce::String& source) {
+    DBG("[FaustUI] tryLoad name='" << name << "' src.len=" << source.length());
     if (plugin_ == nullptr) {
         DBG("[FaustUI] tryLoad: plugin_ is NULL — bailing");
         return false;
     }
     juce::String err;
-    if (!plugin_->loadDspSource(name, source, err, viewKind)) {
+    if (!plugin_->loadDspSource(name, source, err)) {
         DBG("[FaustUI] tryLoad: loadDspSource FAILED: " << err);
         errorLabel_.setText(err, juce::dontSendNotification);
         return false;
@@ -224,7 +283,7 @@ void FaustUI::showLoadMenu() {
                                const int idx = result - 1;
                                if (idx >= 0 && idx < static_cast<int>(starters.size())) {
                                    const auto& s = starters[static_cast<size_t>(idx)];
-                                   tryLoad(s.name, s.source, s.viewKind);
+                                   tryLoad(s.name, s.source);
                                }
                                return;
                            }
@@ -233,8 +292,7 @@ void FaustUI::showLoadMenu() {
                                const auto file = savedFiles[idx];
                                if (file.existsAsFile())
                                    tryLoad(file.getFileNameWithoutExtension(),
-                                           file.loadFileAsString(),
-                                           magda::daw::audio::FaustCustomViewKind::None);
+                                           file.loadFileAsString());
                            }
                        });
 }
@@ -248,8 +306,7 @@ void FaustUI::loadFromFile() {
             auto file = fc.getResult();
             if (!file.existsAsFile() || plugin_ == nullptr)
                 return;
-            tryLoad(file.getFileNameWithoutExtension(), file.loadFileAsString(),
-                    magda::daw::audio::FaustCustomViewKind::None);
+            tryLoad(file.getFileNameWithoutExtension(), file.loadFileAsString());
         });
 }
 
@@ -301,12 +358,10 @@ void FaustUI::showCodeEditor() {
             auto editedName = plugin_->getDspName();
             if (editedName.isEmpty())
                 editedName = "Custom";
-            // Preserve the existing custom-view kind across in-place
-            // edits — a user tweaking the bundled MagdaDrive source
-            // shouldn't lose its bespoke view because the code editor
-            // re-saved the same DSP.
-            const auto preservedKind = plugin_->getCustomViewKind();
-            if (!plugin_->loadDspSource(editedName, src, err, preservedKind))
+            // No need to preserve the view across an in-place edit: it is read
+            // back out of the edited source, so it survives as long as the
+            // `declare magda_view` line does.
+            if (!plugin_->loadDspSource(editedName, src, err))
                 return false;
             errorLabel_.setText({}, juce::dontSendNotification);
             refreshNameLabel();
@@ -345,14 +400,32 @@ void FaustUI::paint(juce::Graphics& g) {
         g.drawRoundedRectangle(nameBorderBounds_, 3.0f, 1.0f);
     }
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     const auto bounds = getLocalBounds();
+
+    // Credit strip under the header, present only for patches that declare
+    // metadata. Separated from the header row by its own rule so the two
+    // read as distinct bands rather than one tall header.
+    if (showInfoStrip_ && infoStripText_.isNotEmpty()) {
+        auto strip = bounds.withTop(kHeaderHeight);
+
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.drawHorizontalLine(kHeaderHeight, static_cast<float>(bounds.getX()),
+                             static_cast<float>(bounds.getRight()));
+
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(9.0f));
+        g.drawText(infoStripText_, strip.reduced(8, 0), juce::Justification::centredLeft, true);
+    }
+
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawHorizontalLine(bounds.getBottom() - 1, static_cast<float>(bounds.getX()),
                          static_cast<float>(bounds.getRight()));
 }
 
 void FaustUI::resized() {
-    auto area = getLocalBounds().reduced(6, 4);
+    // The header row keeps its original geometry regardless of the strip;
+    // the strip is painted, not laid out, so it owns no child components.
+    auto area = getLocalBounds().withHeight(kHeaderHeight).reduced(6, 4);
 
     // Logo on the left.
     logoBounds_ = area.removeFromLeft(72).toFloat();

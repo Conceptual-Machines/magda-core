@@ -1,5 +1,7 @@
 declare name "MagdaPhaser";
-declare description "Stereo phaser — sweeping notch comb with switchable stage count and feedback.";
+declare description "Stereo phaser: sweeping notch comb with switchable stage count and feedback.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 
@@ -46,7 +48,7 @@ fratio     = 1.5;
 phaserN(N) = pf.phaser2_stereo(N, notchWidth, frqMin, fratio, frqMax,
                                 rate, depth, feedback, 0);
 
-// Stereo wet path — selectn over the four stage counts. CPU is small;
+// Stereo wet path - selectn over the four stage counts. CPU is small;
 // only one branch is heard.
 wet = _,_ <: (phaserN(2), phaserN(4), phaserN(6), phaserN(8))
            : ro.interleave(2, 4)

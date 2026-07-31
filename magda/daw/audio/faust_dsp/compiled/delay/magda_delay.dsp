@@ -1,5 +1,7 @@
 declare name "MagdaDelay";
 declare description "Stereo digital delay with tempo sync, feedback tone, and ping-pong cross-feedback.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 
@@ -14,7 +16,7 @@ import("stdfaust.lib");
 // Free-time delay (used when sync is off). Gated: greyed when Sync (slot 2)
 // is ON, because the free-time value has no effect while sync is active.
 time      = hslider("Time [unit:ms] [idx:0] [gate:!2]", 250, 1, 2000, 1)
-            : si.smooth(ba.tau2pole(0.05));   // 50 ms parameter smoothing — keeps
+            : si.smooth(ba.tau2pole(0.05));   // 50 ms parameter smoothing - keeps
                                               // automating Time from pitch-bending
                                               // the buffer pointer.
 
@@ -56,7 +58,7 @@ cross     = hslider("Cross [idx:6]",    0.0,  0.0, 1.0,  0.001);
 
 // Hidden host-driven BPM. The MAGDA host writes the live project tempo
 // into this slot's zone every audio block via the
-// FaustControlRole::ProjectTempo plumbing — see FaustParamSlot.
+// FaustControlRole::ProjectTempo plumbing - see FaustParamSlot.
 //
 // `[idx:63]` pins it to the last pool slot so the placeholder cell the
 // param grid renders for hidden slots ends up on a far page, out of
@@ -80,7 +82,7 @@ freeSamples    = time * ma.SR / 1000.0;
 
 // Pick the active branch.  `sync` is 0 or 1. Smooth the blended result so
 // flipping Sync (or stepping Division, or BPM changes) doesn't slam the
-// read pointer to a new offset — that produced an audible click and a
+// read pointer to a new offset - that produced an audible click and a
 // brief feedback runaway as the buffer pointer jumped past in-flight
 // echoes. ~50 ms one-pole keeps the transition inaudible while still
 // settling fast enough to feel responsive.
@@ -93,7 +95,7 @@ tone(x) = x * (1.0 - abs(tilt))
         + (x : fi.lowpass (2, 1000.0)) * max(0.0, -tilt)
         + (x : fi.highpass(2, 1000.0)) * max(0.0,  tilt);
 
-// One channel's delay line — fractional sample delay + tone shaping.
+// One channel's delay line - fractional sample delay + tone shaping.
 oneLine = de.fdelay(MAX_DELAY_SAMPLES, delaySamples) : tone;
 
 // Cross-mix two recirculation taps.  cross = 0 keeps each tap on its own
@@ -103,10 +105,10 @@ xmix(a, b) = a * (1.0 - cross) + b * cross,
 
 // Dry-input asymmetry. xmix alone does nothing for mono material because
 // stereo-symmetric input (L = R) stays symmetric through every linear
-// operation in the feedback loop — swapping equal taps yields equal taps.
+// operation in the feedback loop - swapping equal taps yields equal taps.
 // Routing more of the dry signal toward L as cross→1 (R toward silence)
 // breaks that symmetry: the first echo lands on L, bounces to R via the
-// swapped feedback, back to L, and so on — classic ping-pong. Stereo
+// swapped feedback, back to L, and so on - classic ping-pong. Stereo
 // material gets gently mono'd at the wet input at high cross, which is
 // the conventional ping-pong feel anyway. cross = 0 is a clean
 // passthrough so parallel stereo behaviour is preserved.

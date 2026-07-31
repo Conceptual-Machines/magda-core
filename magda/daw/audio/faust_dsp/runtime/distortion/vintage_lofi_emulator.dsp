@@ -6,33 +6,20 @@ declare version "1.0";
 
 import("stdfaust.lib");
 
-// --- 5 Interlocking Radio Buttons ---
-b1 = checkbox("1. E-mu SP-1200 [1987: 26.04 kHz + Ringing]");
-b2 = checkbox("2. Ensoniq ASR-10 [1992: 30.00 kHz]");
-b3 = checkbox("3. Roland W-30   [1989: 15.00 kHz]");
-b4 = checkbox("4. Lo-Fi Mode 1 [Generic: 22.05 kHz]");
-b5 = checkbox("5. Lo-Fi Mode 2 [Crushed: 11.025 kHz]");
+// --- Sampler model: one exclusive selection, 0 is clean bypass ---
+// Was five interlocking checkboxes resolved by a priority encoder; the
+// host renders an exclusive selector directly from [style:radio].
+mode = vgroup("Sampler", nentry("Model[idx:0][style:radio{'Off':0;'SP-1200':1;'ASR-10':2;'W-30':3;'Lo-Fi 1':4;'Lo-Fi 2':5}]", 0, 0, 5, 1));
 
-// --- New Target Gain Parameter ---
-lofiGain = hslider("6. Lo-Fi FX Gain [dB] [tooltip: Amplifies the output level of the lo-fi engine texturing independently of the dry signal.]", 0.0, -12.0, 12.0, 0.1) : ba.db2linear;
+// --- Target Gain Parameter ---
+lofiGain = vgroup("Output", hslider("Lo-Fi FX Gain[idx:1][unit:dB][tooltip: Amplifies the output level of the lo-fi engine texturing independently of the dry signal.]", 0.0, -12.0, 12.0, 0.1)) : ba.db2linear;
 
-// --- 7. New Hard Clipper Master Toggle ---
-clipToggle = checkbox("7. Master Hard Clipper (0.0 dBFS) [tooltip: Strictly clamps output peaks between -1.0 and 1.0 to prevent host channel clipping.]");
+// --- Hard Clipper Master Toggle ---
+clipToggle = vgroup("Output", checkbox("Master Hard Clipper[idx:2][tooltip: Strictly clamps output peaks between -1.0 and 1.0 to prevent host channel clipping.]"));
 
 process(left, right) = outL, outR
 with {
-    // 1. Radio Button Priority Encoder Matrix
-    mode = select2(b5 == 1.0,
-            select2(b4 == 1.0,
-                select2(b3 == 1.0,
-                    select2(b2 == 1.0,
-                        select2(b1 == 1.0, 0, 1),
-                    2),
-                3),
-            4),
-         5);
-
-    // 2. Exact Integer Clock Period Calculation Based on a 48000 Hz Host Rate
+    // 1. Exact Integer Clock Period Calculation Based on a 48000 Hz Host Rate
     staticPeriod = select2(mode == 5,
                     select2(mode == 4,
                         select2(mode == 3,
@@ -95,7 +82,7 @@ with {
     wetR = right + (artifactR * lofiGain);
 
     // 9. Automatic Clean Bypass Gate
-    anyModeActive = (b1 + b2 + b3 + b4 + b5) > 0.0;
+    anyModeActive = mode > 0;
     finalL = select2(anyModeActive, left, wetL);
     finalR = select2(anyModeActive, right, wetR);
 

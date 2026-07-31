@@ -26,6 +26,7 @@ namespace magda::daw::ui {
  * Supports link mode: when a mod/macro is in link mode, clicking this param creates a link.
  */
 class ParamSlotComponent : public juce::Component,
+                           public juce::SettableTooltipClient,
                            public juce::DragAndDropTarget,
                            public magda::LinkModeManagerListener,
                            public magda::MidiLearnCoordinatorListener,
@@ -192,6 +193,20 @@ class ParamSlotComponent : public juce::Component,
     // Build a ParamLinkContext from current state
     ParamLinkContext buildLinkContext() const;
 
+    // Create/refresh the segmented row for a discrete param. Reuses the
+    // existing buttons when the choice count is unchanged so a value echo
+    // doesn't churn child components on every refresh.
+    void rebuildChoiceButtons(const magda::ParameterInfo& info,
+                              const std::function<void(double)>& onValueChanged);
+    void hideChoiceButtons();
+    // Point whichever discrete widget is live at the choice `value` selects.
+    // Called from setParamValue so automation echoes move the widget, not just
+    // the underlying slider.
+    void syncDiscreteSelection(double value);
+    // Push a param's help text onto every widget that can own the mouse, since
+    // JUCE resolves tooltips from the component under the pointer only.
+    void applyTooltip(const juce::String& tooltip);
+
     // LinkModeManagerListener implementation
     void modLinkModeChanged(bool active, const magda::ModSelection& selection) override;
     void macroLinkModeChanged(bool active, const magda::MacroSelection& selection) override;
@@ -241,6 +256,9 @@ class ParamSlotComponent : public juce::Component,
     std::unique_ptr<juce::ComboBox> discreteCombo_;   // For discrete/choice parameters
     std::unique_ptr<juce::ToggleButton> boolToggle_;  // For boolean parameters
     std::unique_ptr<MomentaryParamButton> momentaryButton_;
+    // For discrete params whose author asked for visible buttons — one segment
+    // per choice. Empty when the cell renders a dropdown instead.
+    std::vector<std::unique_ptr<juce::TextButton>> choiceButtons_;
     magda::ParameterInfo paramInfo_;  // Parameter metadata for formatting
 
     // Shift+drag state for mod amount editing

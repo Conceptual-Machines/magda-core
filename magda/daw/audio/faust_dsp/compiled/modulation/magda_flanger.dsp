@@ -1,10 +1,12 @@
 declare name "MagdaFlanger";
-declare description "Stereo flanger — short modulated delay with feedback, sync- or free-rate.";
+declare description "Stereo flanger: short modulated delay with feedback, sync- or free-rate.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 
 // ============================================================================
-// User controls — pinned to [idx:N] for stable host-slot ordering.
+// User controls - pinned to [idx:N] for stable host-slot ordering.
 // ============================================================================
 sync = checkbox("Sync [idx:0]");
 
@@ -51,8 +53,8 @@ freqHz   = ((1.0 - sync) * rate_hz + sync * syncedHz)
 lfoAt(phaseOffset) = sin((os.lf_sawpos(freqHz) + phaseOffset) * 2.0 * ma.PI);
 
 // ============================================================================
-// Flanger — single short modulated delay per channel with feedback.
-// Centre ≈ 3 ms, swing ≈ ±2.5 ms — the tight range that gives the
+// Flanger - single short modulated delay per channel with feedback.
+// Centre ≈ 3 ms, swing ≈ ±2.5 ms - the tight range that gives the
 // signature comb-filter sweep when fed back into itself.
 // ============================================================================
 CENTER_MS = 3.0;

@@ -1,12 +1,14 @@
 declare name "MagdaDimensionHaas";
-declare description "Haas-effect stereo widener — short fixed delay on one channel produces a psychoacoustic stereo cue.";
+declare description "Haas-effect stereo widener: short fixed delay on one channel produces a psychoacoustic stereo cue.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 
 amount  = hslider("Amount [idx:1]", 0.5, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.03));
 // Rate is inert here but kept in the surface so the Dimension wrapper can
 // expose a uniform 6-slot panel across engines. Faust will optimise the
-// zone away if it has no effect — that's fine, the wrapper only writes
+// zone away if it has no effect - that's fine, the wrapper only writes
 // to zones that exist.
 rateHz  = hslider("Rate [unit:Hz] [idx:2]", 0.5, 0.05, 4.0, 0.01);
 width   = hslider("Width [idx:3]", 100.0, 0.0, 200.0, 0.1) / 100.0 : si.smooth(ba.tau2pole(0.05));
@@ -25,7 +27,7 @@ delaySamples = min(ms2samp(delayMs), MAX_DELAY - 1);
 
 haasDelay(x) = de.fdelay(MAX_DELAY, delaySamples, x);
 
-// Only the right channel is delayed — classic Haas configuration. The
+// Only the right channel is delayed - classic Haas configuration. The
 // listener localises sound at the leading (left) channel while the
 // trailing channel adds apparent spaciousness.
 wetL(l, r) = l;

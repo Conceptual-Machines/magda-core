@@ -39,4 +39,7 @@ void goToPreviousDeviceSlotParameterPage(magda::DeviceInfo& device, ParamHostCom
 void goToNextDeviceSlotParameterPage(magda::DeviceInfo& device, ParamHostComponent& paramGrid,
                                      DeviceSlotParameterPagingCallbacks callbacks);
 
+void goToDeviceSlotParameterPage(magda::DeviceInfo& device, ParamHostComponent& paramGrid,
+                                 int pageIndex, DeviceSlotParameterPagingCallbacks callbacks);
+
 }  // namespace magda::daw::ui

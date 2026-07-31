@@ -4,7 +4,7 @@
 
 #include <vector>
 
-#include "plugins/FaustCustomViewKind.hpp"
+#include "plugins/FaustPatchInfo.hpp"
 
 namespace magda::daw::audio {
 
@@ -13,8 +13,20 @@ struct StarterDsp {
     juce::String filename;  // File name as found on disk.
     juce::String source;    // The .dsp file contents.
     juce::String category;  // Containing folder, e.g. "texture".
-    FaustCustomViewKind viewKind = FaustCustomViewKind::None;  // From `declare magda_view`, if any.
 };
+
+/**
+ * @brief The custom view a patch asks for via `declare magda_view "Name";`.
+ *
+ * Empty when the patch declares none, which is the common case. The name is a
+ * key into the UI layer's view registry, so the catalogue of visuals stays
+ * hardcoded C++ while the choice of one is data in the .dsp.
+ *
+ * Read from source on every load rather than passed in by the caller: that way
+ * a file-picker load, an editor recompile and a bundled starter all resolve the
+ * same way, and no call site can forget to supply it.
+ */
+juce::String readCustomViewName(const juce::String& source);
 
 // Path to the Faust standard libraries directory bundled alongside the app.
 // Returned File may not exist when running outside an installed bundle (e.g.

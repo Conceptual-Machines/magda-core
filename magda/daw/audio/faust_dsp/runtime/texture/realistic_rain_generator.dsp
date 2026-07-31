@@ -9,13 +9,13 @@ import("stdfaust.lib");
 // ==========================================
 // 1. MAGDA ENVIRONMENTAL UI CONTROLS
 // ==========================================
-intensity   = hslider("1. Rain Intensity", 0.4, 0.0, 1.0, 0.01);
-roof_mix    = hslider("2. Tin Roof Impacts", 0.3, 0.0, 1.0, 0.01);
-puddle_mix  = hslider("3. Puddle Splashes", 0.2, 0.0, 1.0, 0.01);
-river_mix   = hslider("4. River/Deep Splashes", 0.1, 0.0, 1.0, 0.01);
+intensity   = vgroup("Rain", hslider("Intensity[idx:0]", 0.4, 0.0, 1.0, 0.01));
+roof_mix    = vgroup("Surfaces", hslider("Tin Roof Impacts[idx:1]", 0.3, 0.0, 1.0, 0.01));
+puddle_mix  = vgroup("Surfaces", hslider("Puddle Splashes[idx:2]", 0.2, 0.0, 1.0, 0.01));
+river_mix   = vgroup("Surfaces", hslider("River/Deep Splashes[idx:3]", 0.1, 0.0, 1.0, 0.01));
 
 // This single slider controls the entire hidden rain/reverb engine module
-rainVol     = hslider("5. Puddle Drops + Hidden Reverb [%]", 20.0, 0.0, 100.0, 1.0) / 100.0;
+rainVol     = vgroup("Rain", hslider("Drops + Reverb[idx:4][unit:%]", 20.0, 0.0, 100.0, 1.0)) / 100.0;
 
 // ==========================================
 // 2. MATH UTILITIES & COMPILER-SAFE MACROS

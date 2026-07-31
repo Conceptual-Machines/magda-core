@@ -1,5 +1,7 @@
 declare name "MagdaBitcrusher";
 declare description "Sample-rate and bit-depth reduction lo-fi crusher with input drive and a post-crush tone filter.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

@@ -1,10 +1,40 @@
 #include "params/ParamHostComponent.hpp"
 
+#include <algorithm>
+
 #include "ui/components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
+
+class ParamPageTabBar final : public juce::TabbedButtonBar {
+  public:
+    ParamPageTabBar() : juce::TabbedButtonBar(juce::TabbedButtonBar::TabsAtTop) {
+        setMinimumTabScaleFactor(0.5);
+    }
+
+    void setPages(const DeviceParamLayout& layout, const magda::DeviceInfo& device, int totalPages,
+                  int currentPage) {
+        suppressCallback_ = true;
+        clearTabs();
+        const auto tabColour = DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f);
+        for (int page = 0; page < totalPages; ++page)
+            addTab(layout.pageName(device, page), tabColour, -1);
+        setCurrentTabIndex(currentPage, false);
+        suppressCallback_ = false;
+    }
+
+    std::function<void(int)> onPageSelected;
+
+    void currentTabChanged(int newCurrentTabIndex, const juce::String&) override {
+        if (!suppressCallback_ && onPageSelected)
+            onPageSelected(newCurrentTabIndex);
+    }
+
+  private:
+    bool suppressCallback_ = false;
+};
 
 namespace {
 
@@ -73,6 +103,13 @@ ParamHostComponent::ParamHostComponent(std::unique_ptr<DeviceParamLayout> layout
     pageLabel_->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(*pageLabel_);
 
+    pageTabBar_ = std::make_unique<ParamPageTabBar>();
+    pageTabBar_->onPageSelected = [this](int pageIndex) {
+        if (onPageSelected)
+            onPageSelected(pageIndex);
+    };
+    addAndMakeVisible(*pageTabBar_);
+
     for (int i = 0; i < cellCount_; ++i) {
         paramSlots_[i] = std::make_unique<ParamSlotComponent>(i);
         addAndMakeVisible(*paramSlots_[i]);
@@ -84,8 +121,13 @@ ParamHostComponent::~ParamHostComponent() = default;
 void ParamHostComponent::updateParameterSlots(
     const magda::DeviceInfo& device, int currentPage,
     std::function<void(int paramIndex, double value)> onValueChanged) {
+    cellSpans_.assign(static_cast<size_t>(std::max(0, cellCount_)), 1);
+    usedRows_ = 0;
     for (int i = 0; i < cellCount_; ++i) {
         const auto cell = layout_->cellFor(device, i, currentPage);
+        cellSpans_[static_cast<size_t>(i)] = std::max(1, cell.span);
+        if (cell.mode != ParamCell::Mode::Hidden && cellsPerRow_ > 0)
+            usedRows_ = std::max(usedRows_, i / cellsPerRow_ + 1);
         switch (cell.mode) {
             case ParamCell::Mode::Filled: {
                 if (cell.paramArrayIndex < 0 ||
@@ -150,13 +192,17 @@ void ParamHostComponent::updateParamModulation(
     }
 }
 
-void ParamHostComponent::updatePageControls(int currentPage, int totalPages) {
+void ParamHostComponent::updatePageControls(const magda::DeviceInfo& device, int currentPage,
+                                            int totalPages) {
     currentPage_ = currentPage;
     totalPages_ = totalPages;
+    if (layout_->wantsPageTabs())
+        pageTabBar_->setPages(*layout_, device, totalPages_, currentPage_);
     pageLabel_->setText(juce::String(currentPage_ + 1) + "/" + juce::String(totalPages_),
                         juce::dontSendNotification);
     prevPageButton_->setEnabled(currentPage_ > 0);
     nextPageButton_->setEnabled(currentPage_ < totalPages_ - 1);
+    setPaginationVisible(true);
 }
 
 void ParamHostComponent::setGridVisible(bool visible) {
@@ -165,10 +211,12 @@ void ParamHostComponent::setGridVisible(bool visible) {
 }
 
 void ParamHostComponent::setPaginationVisible(bool visible) {
-    const bool effective = visible && layout_->wantsPagination();
-    prevPageButton_->setVisible(effective);
-    nextPageButton_->setVisible(effective);
-    pageLabel_->setVisible(effective);
+    const bool effective = visible && layout_->wantsPagination() && totalPages_ > 1;
+    const bool tabs = effective && layout_->wantsPageTabs();
+    prevPageButton_->setVisible(effective && !tabs);
+    nextPageButton_->setVisible(effective && !tabs);
+    pageLabel_->setVisible(effective && !tabs);
+    pageTabBar_->setVisible(tabs);
 }
 
 void ParamHostComponent::setLearnMode(bool active) {
@@ -207,6 +255,14 @@ void ParamHostComponent::setSlotSelected(int slotIndex, bool selected) {
     paramSlots_[slotIndex]->setSelected(selected);
 }
 
+int ParamHostComponent::getChromeHeight() const {
+    return 2 + (layout_->wantsPagination() ? PAGINATION_HEIGHT + 4 : 0);
+}
+
+void ParamHostComponent::setRowHeight(int rowHeight) {
+    rowHeight_ = std::max(0, rowHeight);
+}
+
 void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::Font& valueFont) {
     auto area = getLocalBounds();
 
@@ -223,15 +279,21 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
     }
 
     if (layout_->wantsPagination()) {
-        placeNavArrow(*prevPageButton_, paginationArea, true);
-        placeNavArrow(*nextPageButton_, paginationArea, false);
-        pageLabel_->setBounds(paginationArea);
+        if (layout_->wantsPageTabs()) {
+            pageTabBar_->setBounds(paginationArea);
+        } else {
+            placeNavArrow(*prevPageButton_, paginationArea, true);
+            placeNavArrow(*nextPageButton_, paginationArea, false);
+            pageLabel_->setBounds(paginationArea);
+        }
     }
 
     area = area.reduced(2, 0);
     const int numRows = (cellCount_ + cellsPerRow_ - 1) / cellsPerRow_;
     const int cellWidth = area.getWidth() / cellsPerRow_;
-    const int cellHeight = numRows > 0 ? area.getHeight() / numRows : area.getHeight();
+    const int cellHeight = rowHeight_ > 0 ? rowHeight_
+                           : numRows > 0  ? area.getHeight() / numRows
+                                          : area.getHeight();
 
     for (int i = 0; i < cellCount_; ++i) {
         const int row = i / cellsPerRow_;
@@ -239,8 +301,16 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
         const int x = area.getX() + col * cellWidth + 2;
         const int y = area.getY() + row * cellHeight + 2;
 
+        // A spanning cell keeps the gutters of a single one, so a wide control
+        // lines up with its narrow neighbours instead of gaining extra padding
+        // per cell it swallowed.
+        const int span = i < static_cast<int>(cellSpans_.size())
+                             ? std::max(1, cellSpans_[static_cast<size_t>(i)])
+                             : 1;
+        const int width = span * cellWidth - 4;
+
         paramSlots_[i]->setFonts(labelFont, valueFont);
-        paramSlots_[i]->setBounds(x, y, cellWidth - 4, cellHeight - 4);
+        paramSlots_[i]->setBounds(x, y, width, cellHeight - 4);
         // Visibility is owned by updateParameterSlots() via the layout —
         // don't override it on layout passes.
     }

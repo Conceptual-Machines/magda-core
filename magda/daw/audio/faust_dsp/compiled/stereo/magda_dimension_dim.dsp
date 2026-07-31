@@ -1,5 +1,7 @@
 declare name "MagdaDimensionDim";
-declare description "Roland Dimension D-style stereo widener — anti-phase LFO modulated delay lines with cross-channel mixing.";
+declare description "Roland Dimension D-style stereo widener: anti-phase LFO modulated delay lines with cross-channel mixing.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 
@@ -13,7 +15,7 @@ width   = hslider("Width [idx:3]", 100.0, 0.0, 200.0, 0.1) / 100.0 : si.smooth(b
 mix     = hslider("Mix [idx:4]", 1.0, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.02));
 outDb   = hslider("Output [unit:dB] [idx:5]", 0.0, -24.0, 12.0, 0.1) : si.smooth(ba.tau2pole(0.02));
 
-// Base delay sits in the Haas zone (~5..15 ms) — long enough for a stereo
+// Base delay sits in the Haas zone (~5..15 ms) - long enough for a stereo
 // image cue, short enough that the modulation reads as a gentle chorus
 // rather than an audible echo. Depth scales with Amount.
 baseMs = 8.0;
@@ -27,14 +29,14 @@ ms2samp(ms) = ms * ma.SR / 1000.0;
 
 lfo = os.osc(rateHz);
 delayLms = baseMs + lfo * depthMs;
-delayRms = baseMs - lfo * depthMs;  // anti-phase — this is what makes the image breathe
+delayRms = baseMs - lfo * depthMs;  // anti-phase - this is what makes the image breathe
 
 modulatedL(x) = de.fdelay(MAX_DELAY, min(ms2samp(delayLms), MAX_DELAY - 1), x);
 modulatedR(x) = de.fdelay(MAX_DELAY, min(ms2samp(delayRms), MAX_DELAY - 1), x);
 
 // Cross-channel feed: each output is its own modulated tap plus a touch
 // of the opposite channel's modulated tap. The cross-feed is what lifts
-// mono content into a wide stereo image — without it this is just chorus.
+// mono content into a wide stereo image - without it this is just chorus.
 crossGain = 0.5 * amount;
 
 wetL(l, r) = modulatedL(l) + crossGain * modulatedR(r);

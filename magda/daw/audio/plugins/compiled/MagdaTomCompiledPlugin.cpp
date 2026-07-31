@@ -11,22 +11,8 @@ namespace magda::daw::audio::compiled {
 
 const char* MagdaTomCompiledPlugin::xmlTypeName = "magda_tom";
 
-MagdaTomCompiledPlugin::MagdaTomCompiledPlugin(const te::PluginCreationInfo& info)
-    : MagdaCompiledPolyInstrument(info) {
+MagdaTomCompiledPlugin::MagdaTomCompiledPlugin() {
     initInstrument();
-}
-
-juce::String MagdaTomCompiledPlugin::getName() const {
-    return "Tom";
-}
-juce::String MagdaTomCompiledPlugin::getPluginType() {
-    return xmlTypeName;
-}
-juce::String MagdaTomCompiledPlugin::getShortName(int) {
-    return "Tom";
-}
-juce::String MagdaTomCompiledPlugin::getSelectableDescription() {
-    return "Tom";
 }
 
 ::dsp* MagdaTomCompiledPlugin::createVoiceDsp() const {
@@ -97,8 +83,8 @@ const CompiledPluginSpec& getMagdaTomSpec() {
                        "and a high-passed Noise stick/skin attack, each with its own level and "
                        "decay. Knob-tuned, MIDI-gated - drop it on a DrumGrid pad or play it "
                        "standalone.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaTomCompiledPlugin(info);
+        .createDevice = [](const DevicePluginCreationContext&) -> std::unique_ptr<MagdaDevice> {
+            return std::make_unique<MagdaTomCompiledPlugin>();
         },
         .isInstrument = true,
     };

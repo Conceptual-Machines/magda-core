@@ -20,15 +20,20 @@ juce::String readDeclare(const juce::String& source, juce::StringRef key) {
     return {};
 }
 
-FaustCustomViewKind viewKindFromName(const juce::String& name) {
-    // Keyed on the enum's own spelling, so a DSP opts into a bespoke view with
-    // `declare magda_view "MagdaDrive";` and this table never learns filenames.
-    if (name == "MagdaDrive")
-        return FaustCustomViewKind::MagdaDrive;
-    return FaustCustomViewKind::None;
+}  // namespace
+
+juce::String readCustomViewName(const juce::String& source) {
+    return readDeclare(source, "magda_view");
 }
 
-}  // namespace
+FaustPatchInfo readPatchInfo(const juce::String& source) {
+    FaustPatchInfo info;
+    info.author = readDeclare(source, "author");
+    info.version = readDeclare(source, "version");
+    info.license = readDeclare(source, "license");
+    info.description = readDeclare(source, "description");
+    return info;
+}
 
 juce::File getFaustLibrariesPath() {
     auto exe = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
@@ -72,7 +77,6 @@ std::vector<StarterDsp> getBundledStarterDsps() {
             dsp.name = file.getFileNameWithoutExtension().replaceCharacter('_', ' ');
         dsp.filename = file.getFileName();
         dsp.source = source;
-        dsp.viewKind = viewKindFromName(readDeclare(source, "magda_view"));
         // The subfolder the file sits in, e.g. <root>/texture -> "texture".
         // A file at the root has no category of its own; comparing against the
         // root itself keeps that independent of what the staged folder is

@@ -68,6 +68,10 @@ magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
     info.unit = slot.unit;
     info.scale = magda::ParameterScale::Discrete;
     info.modulatable = false;  // matches ParameterPresets::discrete
+    // `[style:radio{…}]` asks for visible buttons, `[style:menu{…}]` for a
+    // dropdown. Both are the same parameter; only the widget differs, and the
+    // UI is free to ignore the request when the list is too long for a cell.
+    info.radioChoices = (slot.choiceStyle == FaustChoiceStyle::Radio);
 
     // Sort choices by underlying value, then expose just the labels in
     // that order. ParameterInfo::Discrete indexes choices by
@@ -117,20 +121,57 @@ magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot) {
     // inspector. Funnel them through the inactive-placeholder path so
     // the slot index stays addressable for automation lookups while
     // the param grid filters them out by empty name.
-    if (!slot.active || slot.hidden)
-        return placeholderForInactive(slot);
-
+    magda::ParameterInfo info;
+    if (!slot.active || slot.hidden) {
+        info = placeholderForInactive(slot);
+        info.group = slot.group;
+        info.tooltip = slot.tooltip;
+        info.widthCells = slot.widthCells;
+        return info;
+    }
     switch (slot.kind) {
         case FaustParamSlot::Kind::Continuous:
-            return continuousInfo(slot);
+            info = continuousInfo(slot);
+            break;
         case FaustParamSlot::Kind::Boolean:
-            return booleanInfo(slot);
+            info = booleanInfo(slot);
+            break;
         case FaustParamSlot::Kind::Trigger:
-            return triggerInfo(slot);
+            info = triggerInfo(slot);
+            break;
         case FaustParamSlot::Kind::Discrete:
-            return discreteInfo(slot);
+            info = discreteInfo(slot);
+            break;
     }
-    return placeholderForInactive(slot);
+    info.group = slot.group;
+    info.tooltip = slot.tooltip;
+    info.widthCells = slot.widthCells;
+    return info;
+}
+
+magda::MeterInfo meterInfoFromOutput(const FaustOutputSlot& output) {
+    magda::MeterInfo info;
+    info.meterIndex = output.index;
+    info.name = output.label;
+    info.unit = output.unit;
+    info.group = output.group;
+    info.tooltip = output.tooltip;
+    info.minValue = output.minValue;
+    info.maxValue = output.maxValue;
+    info.widthCells = output.widthCells;
+    info.vertical = output.vertical;
+    switch (output.style) {
+        case FaustOutputStyle::Bar:
+            info.style = magda::MeterStyle::Bar;
+            break;
+        case FaustOutputStyle::Numerical:
+            info.style = magda::MeterStyle::Numerical;
+            break;
+        case FaustOutputStyle::Led:
+            info.style = magda::MeterStyle::Led;
+            break;
+    }
+    return info;
 }
 
 }  // namespace magda::daw::audio

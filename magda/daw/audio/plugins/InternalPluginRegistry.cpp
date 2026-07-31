@@ -4,7 +4,7 @@
 #include <mutex>
 #include <vector>
 
-#include "processors/base/DeviceProcessor.hpp"
+#include "plugins/MagdaDevice.hpp"
 
 namespace magda::daw::audio {
 
@@ -177,31 +177,28 @@ int internalPostFxAnalysisOrder(const juce::String& pluginId) {
     return -1;
 }
 
-te::Plugin::Ptr createInternalPluginFromSpec(const InternalPluginSpec& spec, te::Edit& edit,
+DevicePluginPtr createInternalPluginFromSpec(const InternalPluginSpec& spec,
+                                             DeviceSessionKey sessionKey,
                                              const juce::String& savedPluginState) {
-    if (spec.createInEdit == nullptr)
-        return nullptr;
-    return spec.createInEdit(spec, edit, savedPluginState);
-}
-
-te::Plugin::Ptr createRegisteredCustomPlugin(const te::PluginCreationInfo& info) {
-    const auto type = info.state[te::IDs::type].toString();
-    const auto* spec = findInternalPluginSpecForLoadType(type);
-    if (spec == nullptr || spec->createCustomPlugin == nullptr)
+    if (spec.createInSession == nullptr)
         return {};
-    return spec->createCustomPlugin(info);
+    return spec.createInSession(spec, sessionKey, savedPluginState);
 }
 
-std::unique_ptr<DeviceProcessor> createInternalPluginProcessor(const InternalPluginSpec& spec,
-                                                               DeviceId deviceId,
-                                                               te::Plugin::Ptr plugin) {
-    if (!plugin || spec.createProcessor == nullptr)
-        return nullptr;
+DevicePluginPtr createRegisteredPlugin(const DevicePluginCreationContext& context) {
+    const auto type = context.state[juce::Identifier("type")].toString();
+    const auto* spec = findInternalPluginSpecForLoadType(type);
+    if (spec == nullptr || spec->createPlugin == nullptr)
+        return {};
+    return spec->createPlugin(context);
+}
 
-    if (spec.matchesPlugin != nullptr && !spec.matchesPlugin(plugin.get()))
-        return nullptr;
-
-    return spec.createProcessor(deviceId, plugin);
+std::unique_ptr<MagdaDevice> createRegisteredDevice(const DevicePluginCreationContext& context) {
+    const auto type = context.state[juce::Identifier("type")].toString();
+    const auto* spec = findInternalPluginSpecForLoadType(type);
+    if (spec == nullptr || spec->createDevice == nullptr)
+        return {};
+    return spec->createDevice(context);
 }
 
 }  // namespace magda::daw::audio

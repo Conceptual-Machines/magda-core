@@ -1,5 +1,7 @@
 declare name "MagdaMultiband";
 declare description "OTT-style 3-band compressor: LR4 split, two OTT stages in series per band, symmetric expander, per-band brickwall limiter.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 
@@ -24,7 +26,7 @@ highGainDb = hslider("High Gain [unit:dB] [idx:6]", 0.0, -24.0, 24.0, 0.1) : si.
 mix       = hslider("Mix [idx:7]",              1.0, 0.0, 1.0,   0.001) : si.smooth(ba.tau2pole(0.05));
 outGainDb = hslider("Output [unit:dB] [idx:8]", 0.0, -24.0, 24.0, 0.1) : si.smooth(ba.tau2pole(0.05));
 
-// Per-band editor controls — low band (slots 9-17).
+// Per-band editor controls - low band (slots 9-17).
 lowThreshAboveDb       = hslider("Low Thresh Above [unit:dB] [idx:9]",         -24.0, -60.0,  0.0,  0.1) : si.smooth(ba.tau2pole(0.05));
 lowThreshBelowDb       = hslider("Low Thresh Below [unit:dB] [idx:10]",        -48.0, -80.0,  0.0,  0.1) : si.smooth(ba.tau2pole(0.05));
 lowRatioAbove          = hslider("Low Ratio Above [idx:11]",                    8.0,   1.0, 50.0, 0.01) : si.smooth(ba.tau2pole(0.05));
@@ -35,7 +37,7 @@ lowThreshExpandAboveDb = hslider("Low Thresh Expand Above [unit:dB] [idx:15]",  
 lowExpandRatioAbove    = hslider("Low Expand Ratio Above [idx:16]",              1.0,   1.0, 50.0, 0.01) : si.smooth(ba.tau2pole(0.05));
 lowLimitDb             = hslider("Low Limit [unit:dB] [idx:17]",                0.0, -24.0, 12.0,  0.1) : si.smooth(ba.tau2pole(0.005));
 
-// Per-band editor controls — mid band (slots 18-26).
+// Per-band editor controls - mid band (slots 18-26).
 midThreshAboveDb       = hslider("Mid Thresh Above [unit:dB] [idx:18]",        -24.0, -60.0,  0.0,  0.1) : si.smooth(ba.tau2pole(0.05));
 midThreshBelowDb       = hslider("Mid Thresh Below [unit:dB] [idx:19]",        -48.0, -80.0,  0.0,  0.1) : si.smooth(ba.tau2pole(0.05));
 midRatioAbove          = hslider("Mid Ratio Above [idx:20]",                    8.0,   1.0, 50.0, 0.01) : si.smooth(ba.tau2pole(0.05));
@@ -46,7 +48,7 @@ midThreshExpandAboveDb = hslider("Mid Thresh Expand Above [unit:dB] [idx:24]",  
 midExpandRatioAbove    = hslider("Mid Expand Ratio Above [idx:25]",              1.0,   1.0, 50.0, 0.01) : si.smooth(ba.tau2pole(0.05));
 midLimitDb             = hslider("Mid Limit [unit:dB] [idx:26]",                0.0, -24.0, 12.0,  0.1) : si.smooth(ba.tau2pole(0.005));
 
-// Per-band editor controls — high band (slots 27-35).
+// Per-band editor controls - high band (slots 27-35).
 highThreshAboveDb       = hslider("High Thresh Above [unit:dB] [idx:27]",        -24.0, -60.0,  0.0,  0.1) : si.smooth(ba.tau2pole(0.05));
 highThreshBelowDb       = hslider("High Thresh Below [unit:dB] [idx:28]",        -48.0, -80.0,  0.0,  0.1) : si.smooth(ba.tau2pole(0.05));
 highRatioAbove          = hslider("High Ratio Above [idx:29]",                    8.0,   1.0, 50.0, 0.01) : si.smooth(ba.tau2pole(0.05));
@@ -57,7 +59,7 @@ highThreshExpandAboveDb = hslider("High Thresh Expand Above [unit:dB] [idx:33]",
 highExpandRatioAbove    = hslider("High Expand Ratio Above [idx:34]",              1.0,   1.0, 50.0, 0.01) : si.smooth(ba.tau2pole(0.05));
 highLimitDb             = hslider("High Limit [unit:dB] [idx:35]",                0.0, -24.0, 12.0,  0.1) : si.smooth(ba.tau2pole(0.005));
 
-// Crossover frequencies — editor-only, hidden from knob grid.
+// Crossover frequencies - editor-only, hidden from knob grid.
 xoLow  = hslider("Low XO [unit:Hz] [scale:log] [scaleAnchor:200] [idx:36]",   120, 40,  500, 1) : si.smooth(ba.tau2pole(0.05));
 xoHigh = hslider("High XO [unit:Hz] [scale:log] [scaleAnchor:2000] [idx:37]", 2500, 500, 8000, 1) : si.smooth(ba.tau2pole(0.05));
 

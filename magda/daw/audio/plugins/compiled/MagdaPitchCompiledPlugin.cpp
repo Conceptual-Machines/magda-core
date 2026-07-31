@@ -14,6 +14,7 @@
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -83,7 +84,7 @@ class EngineHarvester : public ::UI {
 
         EngineHarvest::Control c;
         c.idx = merged.slotIndex;
-        c.kind = merged.isMenuStyle ? FaustParamSlot::Kind::Discrete : kind;
+        c.kind = merged.isChoiceStyle() ? FaustParamSlot::Kind::Discrete : kind;
         c.zone = zone;
         harvest.controls.push_back(std::move(c));
     }
@@ -391,8 +392,9 @@ const CompiledPluginSpec& getMagdaPitchSpec() {
                        "<b>Detuner</b>: two voices hard-panned L/R for chorus-style thickening.\n"
                        "<b>Harmonizer</b>: shifted voice summed with dry at a chosen interval.\n"
                        "All three use ef.transpose; transient smear and grain are by design.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaPitchCompiledPlugin(info);
+        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
+            return tracktion_adapter::pluginHandle(
+                new MagdaPitchCompiledPlugin(tracktion_adapter::creationInfo(context)));
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),

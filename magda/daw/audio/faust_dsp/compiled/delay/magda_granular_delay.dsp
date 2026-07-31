@@ -1,5 +1,7 @@
 declare name "MagdaGranularDelay";
-declare description "Stereo granular delay — feedback delay line read through a 4-voice windowed grain bank with pitch shift and position jitter.";
+declare description "Stereo granular delay: feedback delay line read through a 4-voice windowed grain bank with pitch shift and position jitter.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 
@@ -48,7 +50,7 @@ feedback  = hslider("Feedback [idx:6]", 0.30, 0.0, 0.95, 0.001);
 mix       = hslider("Mix [idx:7]", 0.40, 0.0, 1.0, 0.001);
 
 // Hidden host-driven BPM. See magda_delay for the role:projectTempo
-// plumbing — host writes the live edit tempo into this slot's zone
+// plumbing - host writes the live edit tempo into this slot's zone
 // every audio block.
 bpm       = nentry("BPM [role:projectTempo] [hidden:1] [idx:63]",
                    120.0, 20.0, 999.0, 0.001);
@@ -60,7 +62,7 @@ bpm       = nentry("BPM [role:projectTempo] [hidden:1] [idx:63]",
 MAX_DELAY = 192000;     // ~4 s at 48 kHz, plus headroom for higher SRs.
 NVOICES   = 4;          // 25%-overlap Hann grains per channel.
 
-// Delay-time selection (free vs. sync) — same as magda_delay.
+// Delay-time selection (free vs. sync) - same as magda_delay.
 syncedSamples = division * 60.0 / max(bpm, 1.0) * ma.SR;
 freeSamples   = time * ma.SR / 1000.0;
 delaySamples  = (1.0 - sync) * freeSamples + sync * syncedSamples;
@@ -69,7 +71,7 @@ delaySamples  = (1.0 - sync) * freeSamples + sync * syncedSamples;
 grainSamples  = size_ms * ma.SR / 1000.0;
 pitchRatio    = pow(2.0, pitch_st / 12.0);
 
-// Hann envelope — 0 at edges, 1 at center.
+// Hann envelope - 0 at edges, 1 at center.
 hann(x) = 0.5 - 0.5 * cos(2.0 * ma.PI * x);
 
 // One grain voice. `x` is the buffered (already-delayed-and-fed-back)
@@ -87,7 +89,7 @@ hann(x) = 0.5 - 0.5 * cos(2.0 * ma.PI * x);
 // buffer sample so the only audible content is Hann-shaped DC.)
 //
 // p          : 0..1 phasor at one cycle per grainSamples, offset by k/N
-// trig       : 1 at the moment p wraps (new grain start) — used to S&H
+// trig       : 1 at the moment p wraps (new grain start) - used to S&H
 //              the position jitter so it stays constant across the grain
 // posHold    : sample-and-held jitter, in samples
 // readOffset : centred on delaySamples at p=0.5; (p - 0.5) sweeps
@@ -112,7 +114,7 @@ with {
 oneGrainLine = _ <: par(k, NVOICES, voice(k)) :> *(2.0 / NVOICES);
 
 // Cross-mix two recirculation taps for ping-pong-style stereo from a
-// single shared `cross` (kept fixed at 0.5 here — gentle stereo coupling
+// single shared `cross` (kept fixed at 0.5 here - gentle stereo coupling
 // without an extra knob). cross=0 keeps each tap on its own side;
 // cross=1 fully swaps L↔R.
 xmix(a, b) = a * 0.5 + b * 0.5,

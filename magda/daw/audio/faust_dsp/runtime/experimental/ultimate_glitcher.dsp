@@ -1,34 +1,36 @@
 declare name "Ultimate Glitcher";
-declare description "True Parallel Polyrhythmic Glitch Matrix — Inspired by dblue Glitch 2 architecture. Features weighted stutter-freezing, a low-profile bitcrusher, parallel routing, and a protective master hard clipper.";
+declare description "True Parallel Polyrhythmic Glitch Matrix: Inspired by dblue Glitch 2 architecture. Features weighted stutter-freezing, a low-profile bitcrusher, parallel routing, and a protective master hard clipper.";
 declare author "mikobuntu";
 declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
 
+// The author's numbered label prefixes ("1. Reverser: ...") were standing in
+// for grouping. They are real vgroups now, so the host can tab them.
+
 // --- Global Engine Speed ---
-masterRate = hslider("0. Global Master Speed [Hz]", 1.0, 0.1, 10.0, 0.01);
+masterRate = vgroup("Global", hslider("Master Speed[idx:0][unit:Hz]", 1.0, 0.1, 10.0, 0.01));
+outputMix  = vgroup("Global", hslider("Master Mix[idx:1][unit:%]", 100.0, 0.0, 100.0, 1.0)) / 100.0;
 
 // --- Effect Lane Controls (Chance % and Intensity Parameters) ---
-gChance     = hslider("1. Reverser: Probability [%]", 40.0, 0.0, 100.0, 1.0) / 100.0;
-pitchRange  = hslider("1. Reverser: Max Pitch [Semitones]", 5.0, 1.0, 12.0, 1.0);
-stereoWide  = checkbox("1. Reverser: Stereo Widener [On/Off]");
+gChance     = vgroup("Reverser", hslider("Probability[idx:2][unit:%]", 40.0, 0.0, 100.0, 1.0)) / 100.0;
+pitchRange  = vgroup("Reverser", hslider("Max Pitch[idx:3][unit:st]", 5.0, 1.0, 12.0, 1.0));
+stereoWide  = vgroup("Reverser", checkbox("Stereo Widener[idx:4]"));
 
-stChance    = hslider("2. Stutter-Freeze: Probability [%]", 35.0, 0.0, 100.0, 1.0) / 100.0;
+stChance    = vgroup("Crush", hslider("Stutter-Freeze Probability[idx:5][unit:%]", 35.0, 0.0, 100.0, 1.0)) / 100.0;
 
-bcChance    = hslider("3. Bitcrusher: Probability [%]", 30.0, 0.0, 100.0, 1.0) / 100.0;
-bcBits      = hslider("3. Bitcrusher: Bit Depth [Bits]", 8.0, 2.0, 16.0, 0.5);
+bcChance    = vgroup("Crush", hslider("Bitcrusher Probability[idx:6][unit:%]", 30.0, 0.0, 100.0, 1.0)) / 100.0;
+bcBits      = vgroup("Crush", hslider("Bit Depth[idx:7]", 8.0, 2.0, 16.0, 0.5));
 
-rmChance    = hslider("4. Ring Mod: Probability [%]", 20.0, 0.0, 100.0, 1.0) / 100.0;
-rmFreq      = hslider("4. Ring Mod: Carrier Freq [Hz]", 350.0, 50.0, 1200.0, 1.0);
+rmChance    = vgroup("Crush", hslider("Ring Mod Probability[idx:8][unit:%]", 20.0, 0.0, 100.0, 1.0)) / 100.0;
+rmFreq      = vgroup("Crush", hslider("Carrier Freq[idx:9][unit:Hz][scale:log][scaleAnchor:350]", 350.0, 50.0, 1200.0, 1.0));
 
-phChance    = hslider("5. Phaser: Probability [%]", 2.0, 0.0, 100.0, 1.0) / 100.0;
-flChance    = hslider("6. Flanger: Probability [%]", 2.0, 0.0, 100.0, 1.0) / 100.0;
+phChance    = vgroup("Mod & Stop", hslider("Phaser Probability[idx:10][unit:%]", 2.0, 0.0, 100.0, 1.0)) / 100.0;
+flChance    = vgroup("Mod & Stop", hslider("Flanger Probability[idx:11][unit:%]", 2.0, 0.0, 100.0, 1.0)) / 100.0;
 
-tsChance    = hslider("7. Master Tape Stop: Probability [%]", 35.0, 0.0, 100.0, 1.0) / 100.0;
-tsTime      = hslider("7. Master Tape Stop: Duration [s]", 0.18, 0.05, 1.5, 0.01);
-
-outputMix   = hslider("8. Master Mix [%]", 100.0, 0.0, 100.0, 1.0) / 100.0;
+tsChance    = vgroup("Mod & Stop", hslider("Tape Stop Probability[idx:12][unit:%]", 35.0, 0.0, 100.0, 1.0)) / 100.0;
+tsTime      = vgroup("Mod & Stop", hslider("Tape Stop Duration[idx:13][unit:s]", 0.18, 0.05, 1.5, 0.01));
 
 process(left, right) = limL, limR
 with {

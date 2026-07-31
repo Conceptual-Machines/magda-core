@@ -11,7 +11,7 @@ namespace {
 bool skipsContentHeader(const DeviceSlotContentPaintState& state) {
     // Analysis devices (oscilloscope / spectrum) have no need for the
     // "manufacturer / name" subheader — the main header already names them.
-    return state.traits.isAnalysis || state.traits.isFaust ||
+    return state.traits.isAnalysis || state.traits.isFaust || state.traits.isFaustInstrument ||
            (state.traits.compiledPresentation != nullptr &&
             state.traits.compiledPresentation->layoutCellCount == 0);
 }
@@ -41,12 +41,13 @@ void paintSeparators(juce::Graphics& g, juce::Rectangle<int> contentArea,
         g.drawHorizontalLine(headerBottom, left, right);
     }
 
+    const bool runtimeFaust = state.traits.isFaust || state.traits.isFaustInstrument;
     if (!state.traits.compiledPresentation &&
-        (!state.internalDevice || state.traits.isFaust || !state.hasCustomUI)) {
+        (!state.internalDevice || runtimeFaust || !state.hasCustomUI)) {
         constexpr int paginationTopPadding = 2;
         constexpr int paginationBottomPadding = 4;
         const int paramGridTop =
-            contentArea.getY() + (state.traits.isFaust ? faustHeaderHeight : contentHeaderHeight);
+            contentArea.getY() + (runtimeFaust ? faustHeaderHeight : contentHeaderHeight);
         const int paginationBottom =
             paramGridTop + paginationTopPadding + paginationHeight + paginationBottomPadding;
         g.drawHorizontalLine(paginationBottom, left, right);

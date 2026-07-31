@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../core/DeviceInfo.hpp"
 #include "../../core/ParameterInfo.hpp"
 #include "FaustParamSlot.hpp"
 
@@ -28,5 +29,14 @@ namespace magda::daw::audio {
  * stays addressable for automation lane lookups).
  */
 magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot);
+
+/**
+ * @brief Build a `magda::MeterInfo` from a populated `FaustOutputSlot`.
+ *
+ * The output counterpart to paramInfoFromSlot. Carries the description only,
+ * the reading is polled from the pool by the cell, because a value copied into
+ * a snapshot is stale by the time it is drawn.
+ */
+magda::MeterInfo meterInfoFromOutput(const FaustOutputSlot& output);
 
 }  // namespace magda::daw::audio

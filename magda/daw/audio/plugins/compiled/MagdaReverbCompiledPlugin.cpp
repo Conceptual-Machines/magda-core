@@ -11,6 +11,7 @@
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 // All three engine DSPs are #included into THIS translation unit only —
 // each generated `.cpp` defines a self-contained class, so co-locating
@@ -93,7 +94,7 @@ class EngineHarvester : public ::UI {
 
         EngineHarvest::Control c;
         c.idx = merged.slotIndex;
-        c.kind = merged.isMenuStyle ? FaustParamSlot::Kind::Discrete : kind;
+        c.kind = merged.isChoiceStyle() ? FaustParamSlot::Kind::Discrete : kind;
         c.zone = zone;
         harvest.controls.push_back(std::move(c));
     }
@@ -420,8 +421,9 @@ const CompiledPluginSpec& getMagdaReverbSpec() {
                        "<b>Plate</b>: Dattorro diffusion network for studio-plate ambience.\n"
                        "<b>Hall</b>: Zita 8-tap FDN for smooth large-space tails.\n"
                        "<b>Room</b>: Freeverb Schroeder/Moorer network for small-space ambience.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaReverbCompiledPlugin(info);
+        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
+            return tracktion_adapter::pluginHandle(
+                new MagdaReverbCompiledPlugin(tracktion_adapter::creationInfo(context)));
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),

@@ -4,7 +4,7 @@
 
 #include <vector>
 
-#include "FaustCustomViewKind.hpp"
+#include "FaustPatchInfo.hpp"
 
 namespace magda::daw::audio {
 
@@ -28,9 +28,9 @@ class IFaustEditorModel {
     /// Lifetime-stable parameter pool the device harvested from its live DSP.
     virtual const FaustParamPool& getPool() const = 0;
 
-    /// Identifier for the bespoke custom view registered against the loaded
-    /// DSP, or None when the generic param grid is used.
-    virtual FaustCustomViewKind getCustomViewKind() const = 0;
+    /// Name of the bespoke custom view the loaded DSP asked for via
+    /// `declare magda_view`, or empty when the generic param grid is used.
+    virtual juce::String getCustomViewName() const = 0;
 
     /// Diagnostics from the most recent pool rebind (overflow / duplicate idx
     /// / out-of-range), surfaced in the FaustUI error label.
@@ -39,8 +39,9 @@ class IFaustEditorModel {
     /// Compile + swap in `source`, persisting it to plugin state. Returns true
     /// on success; on failure `err` carries the libfaust message and the
     /// previously-loaded DSP is left in place. Message thread only.
+    /// The custom view is read from `source` itself, so callers never pass one.
     virtual bool loadDspSource(const juce::String& name, const juce::String& source,
-                               juce::String& err, FaustCustomViewKind viewKind) = 0;
+                               juce::String& err) = 0;
 
     /// Put source into the editor/persisted state without compiling or
     /// swapping the active DSP. Used for deliberately unverified generation.
@@ -51,6 +52,11 @@ class IFaustEditorModel {
 
     /// The currently loaded .dsp source (what the code editor reads/edits).
     virtual juce::String getDspSource() const = 0;
+
+    /// Authorship metadata the loaded patch declares about itself. Empty
+    /// fields where the patch omits the declare; `isEmpty()` when it
+    /// declares none of them.
+    virtual FaustPatchInfo getPatchInfo() const = 0;
 };
 
 }  // namespace magda::daw::audio

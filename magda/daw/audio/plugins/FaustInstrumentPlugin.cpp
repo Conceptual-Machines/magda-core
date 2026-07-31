@@ -6,11 +6,9 @@
 #include <map>
 
 #include "FaustBackend.hpp"
-#include "FaustMetadataParser.hpp"
 #include "FaustResources.hpp"
+#include "FaustUIHarvester.hpp"
 #include "faust/dsp/poly-dsp.h"
-#include "faust/gui/UI.h"
-#include "faust/gui/meta.h"
 
 // NOTE: Faust's GUI base statics (GUI::fGuiList / gTimedZoneMap), required by
 // poly-dsp.h, are defined once in FaustPolyGuiStatics.cpp so multiple poly TUs
@@ -41,6 +39,10 @@ bool isReservedVoiceControl(const juce::String& cleanLabel) {
 constexpr const char* kDefaultDspSource = R"FAUST(
 import("stdfaust.lib");
 declare name "Faust Poly Synth";
+declare description "Detuned saw pair through a resonant lowpass. Replace this with your own DSP.";
+declare author "MAGDA";
+declare license "GPL-3.0";
+declare version "1.0";
 
 freq = hslider("freq", 440, 20, 20000, 0.01);
 gain = hslider("gain", 0.5, 0, 1, 0.01);
@@ -178,155 +180,6 @@ juce::String ensureStdfaustImport(const juce::String& source) {
     return juce::String("import(\"stdfaust.lib\");\n") + source;
 }
 
-// ---- Voice-aware harvester -------------------------------------------------
-//
-// mydsp_poly with group=false emits, under a "Polyphonic" tab: a grouped
-// "Voices" proxy box (whose zones only propagate via the global
-// GUI::updateAllGuis(), which we avoid), followed by one "Voice<n>" box per
-// voice carrying that voice's own directly-writable zones. We harvest the
-// individual voice boxes and group their zones by control label so a single
-// pool slot can fan a write out to every voice.
-struct VoiceHarvester : public ::UI {
-    struct RawControl {
-        FaustParamSlot::Kind kind = FaustParamSlot::Kind::Continuous;
-        juce::String label;
-        float minValue = 0.0f;
-        float maxValue = 1.0f;
-        float stepValue = 0.0f;
-        float defaultValue = 0.0f;
-        FAUSTFLOAT* zone = nullptr;
-        ControlMetadata metadata;
-        bool fromProxyGroup = false;  // under the shared "Voices" box → skip
-        juce::String group;           // top-level author group (tab name), may be empty
-    };
-
-    std::vector<RawControl> raw;
-    std::vector<ControlMetadata> groupStack;
-    std::vector<juce::String> groupLabelStack;  // cleaned labels, parallel to groupStack
-    std::map<FAUSTFLOAT*, ControlMetadata> pendingByZone;
-
-    void pushGroup(const char* label) {
-        auto parsed = parseFaustLabel(juce::String::fromUTF8(label != nullptr ? label : ""));
-        groupStack.push_back(parsed.metadata);
-        groupLabelStack.push_back(parsed.cleanLabel);
-    }
-    void popGroup() {
-        if (!groupStack.empty())
-            groupStack.pop_back();
-        if (!groupLabelStack.empty())
-            groupLabelStack.pop_back();
-    }
-
-    // The shared proxy box is labelled exactly "Voices"; individual voices are
-    // "Voice1".."VoiceN" (or "V1".. for >=8 voices). Treat a control as proxy
-    // if its nearest matching ancestor is the "Voices" box.
-    bool inProxyGroup() const {
-        for (auto it = groupLabelStack.rbegin(); it != groupLabelStack.rend(); ++it) {
-            if (*it == "Voices")
-                return true;
-            if (it->startsWith("Voice") || (it->length() >= 2 && (*it)[0] == 'V' &&
-                                            juce::CharacterFunctions::isDigit((*it)[1])))
-                return false;
-        }
-        return false;
-    }
-
-    // The author's intended tab group: the OUTERMOST group label that isn't a
-    // structural poly box ("Polyphonic" / "Voices" / "Voice<n>" / "V<n>").
-    // Empty when the control is declared flat (no author group) → "Params" tab.
-    juce::String topLevelAuthorGroup() const {
-        for (const auto& label : groupLabelStack) {  // outermost → innermost
-            if (label == "Polyphonic" || label == "Voices")
-                continue;
-            if (label.startsWith("Voice") || (label.length() >= 2 && label[0] == 'V' &&
-                                              juce::CharacterFunctions::isDigit(label[1])))
-                continue;
-            return label;
-        }
-        return {};
-    }
-
-    ControlMetadata mergedFor(FAUSTFLOAT* zone) {
-        ControlMetadata merged;
-        for (const auto& g : groupStack)
-            mergeFaustMetadata(merged, g);
-        if (auto it = pendingByZone.find(zone); it != pendingByZone.end()) {
-            mergeFaustMetadata(merged, it->second);
-            pendingByZone.erase(it);
-        }
-        return merged;
-    }
-
-    void emitControl(FaustParamSlot::Kind kind, const char* rawLabel, FAUSTFLOAT* zone,
-                     FAUSTFLOAT init, FAUSTFLOAT min, FAUSTFLOAT max, FAUSTFLOAT step) {
-        auto parsed = parseFaustLabel(juce::String::fromUTF8(rawLabel != nullptr ? rawLabel : ""));
-        ControlMetadata merged = mergedFor(zone);
-        mergeFaustMetadata(merged, parsed.metadata);
-
-        RawControl c;
-        c.kind = kind;
-        c.label = parsed.cleanLabel;
-        c.minValue = static_cast<float>(min);
-        c.maxValue = static_cast<float>(max);
-        c.stepValue = static_cast<float>(step);
-        c.defaultValue = static_cast<float>(init);
-        c.zone = zone;
-        c.metadata = std::move(merged);
-        c.fromProxyGroup = inProxyGroup();
-        c.group = topLevelAuthorGroup();
-        raw.push_back(std::move(c));
-    }
-
-    void openTabBox(const char* label) override {
-        pushGroup(label);
-    }
-    void openHorizontalBox(const char* label) override {
-        pushGroup(label);
-    }
-    void openVerticalBox(const char* label) override {
-        pushGroup(label);
-    }
-    void closeBox() override {
-        popGroup();
-    }
-
-    void addButton(const char* label, FAUSTFLOAT* zone) override {
-        emitControl(FaustParamSlot::Kind::Trigger, label, zone, 0, 0, 1, 1);
-    }
-    void addCheckButton(const char* label, FAUSTFLOAT* zone) override {
-        emitControl(FaustParamSlot::Kind::Boolean, label, zone, 0, 0, 1, 1);
-    }
-    void addVerticalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min,
-                           FAUSTFLOAT max, FAUSTFLOAT step) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone, init, min, max, step);
-    }
-    void addHorizontalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min,
-                             FAUSTFLOAT max, FAUSTFLOAT step) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone, init, min, max, step);
-    }
-    void addNumEntry(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min,
-                     FAUSTFLOAT max, FAUSTFLOAT step) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone, init, min, max, step);
-    }
-
-    void addHorizontalBargraph(const char*, FAUSTFLOAT*, FAUSTFLOAT, FAUSTFLOAT) override {}
-    void addVerticalBargraph(const char*, FAUSTFLOAT*, FAUSTFLOAT, FAUSTFLOAT) override {}
-    void addSoundfile(const char*, const char*, Soundfile**) override {}
-
-    void declare(FAUSTFLOAT* zone, const char* key, const char* value) override {
-        const auto k = juce::String::fromUTF8(key != nullptr ? key : "").toLowerCase();
-        const auto v = juce::String::fromUTF8(value != nullptr ? value : "");
-        ControlMetadata m;
-        applyFaustAnnotation(k, v, m);
-        if (zone == nullptr) {
-            if (!groupStack.empty())
-                mergeFaustMetadata(groupStack.back(), m);
-        } else {
-            mergeFaustMetadata(pendingByZone[zone], m);
-        }
-    }
-};
-
 }  // namespace
 
 FaustInstrumentPlugin::FaustState::~FaustState() {
@@ -384,33 +237,26 @@ std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compil
     for (int i = 0; i < FaustParamPool::kSize; ++i)
         previousSlots[static_cast<size_t>(i)] = pool_.slot(i);
 
-    VoiceHarvester harvester;
+    FaustUIHarvester harvester(FaustUIHarvester::Layout::PolyphonicVoices);
     state->poly->buildUserInterface(&harvester);
 
-    // Group the per-voice controls by label. Skip the shared proxy box and the
-    // reserved MIDI controls (freq/gain/gate). The first occurrence supplies
-    // range/metadata; every occurrence contributes a voice zone.
+    // Group the per-voice controls by label. The shared harvester has already
+    // removed the poly proxy controls; reserved MIDI controls (freq/gain/gate)
+    // are filtered here. The first occurrence supplies range/metadata; every
+    // occurrence contributes a voice zone.
     struct Grouped {
         HarvestedControl rep;
         std::vector<FAUSTFLOAT*> zones;
     };
     std::vector<Grouped> groups;
     std::map<juce::String, size_t> byLabel;
-    for (const auto& c : harvester.raw) {
-        if (c.fromProxyGroup || isReservedVoiceControl(c.label))
+    for (const auto& c : harvester.controls()) {
+        if (isReservedVoiceControl(c.label))
             continue;
         auto it = byLabel.find(c.label);
         if (it == byLabel.end()) {
             Grouped g;
-            g.rep.kind = c.kind;
-            g.rep.label = c.label;
-            g.rep.minValue = c.minValue;
-            g.rep.maxValue = c.maxValue;
-            g.rep.stepValue = c.stepValue;
-            g.rep.defaultValue = c.defaultValue;
-            g.rep.zone = c.zone;  // representative = first voice's zone
-            g.rep.metadata = c.metadata;
-            g.rep.group = c.group;
+            g.rep = c;
             g.zones.push_back(c.zone);
             byLabel.emplace(c.label, groups.size());
             groups.push_back(std::move(g));
@@ -427,11 +273,28 @@ std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compil
         reps.push_back(std::move(g.rep));
     }
 
-    DBG("[FaustInstrument] harvested " << static_cast<int>(harvester.raw.size())
-                                       << " raw controls -> " << static_cast<int>(reps.size())
+    DBG("[FaustInstrument] harvested " << static_cast<int>(harvester.controls().size())
+                                       << " voice controls -> " << static_cast<int>(reps.size())
                                        << " user params (excl. freq/gain/gate)");
 
-    auto report = pool_.rebindFromHarvest(reps);
+    // Bargraphs are per-voice too. Merge the occurrences of one author
+    // bargraph into a single output carrying every voice zone, so the meter
+    // reads the whole instrument rather than whichever voice Faust emitted
+    // first.
+    std::vector<HarvestedOutput> mergedOutputs;
+    std::map<juce::String, size_t> outputByLabel;
+    for (const auto& o : harvester.outputs()) {
+        auto it = outputByLabel.find(o.label);
+        if (it == outputByLabel.end()) {
+            outputByLabel.emplace(o.label, mergedOutputs.size());
+            mergedOutputs.push_back(o);
+        } else {
+            auto& target = mergedOutputs[it->second];
+            target.zones.insert(target.zones.end(), o.zones.begin(), o.zones.end());
+        }
+    }
+
+    auto report = pool_.rebindFromHarvest(reps, mergedOutputs);
     state->activeBindings = std::move(report.activeBindings);
     lastDiagnostics_ = std::move(report.diagnostics);
 
@@ -494,8 +357,6 @@ FaustInstrumentPlugin::FaustInstrumentPlugin(const te::PluginCreationInfo& info)
 
     const auto savedSource = state.getProperty("dspSource", juce::String()).toString();
     const auto savedName = state.getProperty("dspName", juce::String()).toString();
-    const auto savedViewKindRaw = static_cast<int>(
-        state.getProperty("dspViewKind", static_cast<int>(FaustCustomViewKind::None)));
 
     juce::String err;
     auto compiled = compileAndRebind(
@@ -507,13 +368,13 @@ FaustInstrumentPlugin::FaustInstrumentPlugin(const te::PluginCreationInfo& info)
 
     dspSource_ = savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource);
     dspName_ = savedName.isNotEmpty() ? savedName : juce::String("Faust Poly Synth");
-    viewKind_ = static_cast<FaustCustomViewKind>(savedViewKindRaw);
+    // Derived, not restored: the source is the only thing that has to persist.
+    viewName_ = readCustomViewName(dspSource_);
 
     std::atomic_store(&active_, compiled);
 
     state.setProperty("dspSource", dspSource_, nullptr);
     state.setProperty("dspName", dspName_, nullptr);
-    state.setProperty("dspViewKind", static_cast<int>(viewKind_), nullptr);
 
     retireTimer_.startTimer(100);
 
@@ -554,7 +415,7 @@ void FaustInstrumentPlugin::drainRetired() {
 }
 
 bool FaustInstrumentPlugin::loadDspSource(const juce::String& name, const juce::String& source,
-                                          juce::String& errorOut, FaustCustomViewKind viewKind) {
+                                          juce::String& errorOut) {
     auto compiled = compileAndRebind(source, errorOut);
     if (!compiled)
         return false;
@@ -569,10 +430,9 @@ bool FaustInstrumentPlugin::loadDspSource(const juce::String& name, const juce::
 
     dspName_ = name;
     dspSource_ = source;
-    viewKind_ = viewKind;
+    viewName_ = readCustomViewName(source);
     state.setProperty("dspName", dspName_, getUndoManager());
     state.setProperty("dspSource", dspSource_, getUndoManager());
-    state.setProperty("dspViewKind", static_cast<int>(viewKind_), getUndoManager());
 
     DBG("FaustInstrumentPlugin::loadDspSource ok name=" << name << " out=" << compiled->dspOut
                                                         << " active=" << pool_.activeCount());
@@ -635,6 +495,26 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         for (FAUSTFLOAT* zone : active->voiceZonesBySlot[static_cast<size_t>(b.slotIndex)]) {
             if (zone)
                 *zone = static_cast<FAUSTFLOAT>(value);
+        }
+    }
+
+    // Host-supplied controls. Sample the edit tempo once per block, then fan
+    // the BPM out to the matching zone in every voice. Runtime instruments use
+    // group=false, so unlike the effect host there is no single shared zone.
+    double cachedBpm = -1.0;
+    for (const auto& b : active->activeBindings) {
+        if (b.role != FaustControlRole::ProjectTempo)
+            continue;
+        if (b.slotIndex < 0 || b.slotIndex >= FaustParamPool::kSize)
+            continue;
+        const auto& zones = active->voiceZonesBySlot[static_cast<size_t>(b.slotIndex)];
+        if (zones.empty())
+            continue;
+        if (cachedBpm < 0.0)
+            cachedBpm = edit.tempoSequence.getBpmAt(fc.editTime.getStart());
+        for (FAUSTFLOAT* zone : zones) {
+            if (zone)
+                *zone = static_cast<FAUSTFLOAT>(cachedBpm);
         }
     }
 

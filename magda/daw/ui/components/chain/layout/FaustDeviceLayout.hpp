@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <vector>
+
 #include "layout/DeviceParamLayout.hpp"
 
 namespace magda::daw::ui {
@@ -7,15 +10,13 @@ namespace magda::daw::ui {
 /**
  * @brief Device layout for FaustPlugin devices.
  *
- * Faust DSPs declare each control's grid cell explicitly via `[idx:N]`,
- * which lands in `ParameterInfo::paramIndex` (the pool slot index). This
- * layout honours that mapping directly: cell `i` on page `p` displays
- * the param whose pool index is `p * cellCount + i`. Empty pool slots
- * render as truly hidden cells (no widget at all).
+ * Faust author groups define named pages. Controls are packed into each page
+ * in pool order, while `[idx:N]` remains the stable parameter identity used
+ * for automation, modulation, MIDI Learn, and gate references.
  *
  * Gate references (`[gate:N]` / `[gate:!N]`) target pool slot indices,
- * so this layout looks up the gating param by `paramIndex`, not by
- * array position.
+ * so this layout looks up the gating param by `paramIndex`, not by array
+ * position.
  */
 class FaustDeviceLayout final : public DeviceParamLayout {
   public:
@@ -32,10 +33,37 @@ class FaustDeviceLayout final : public DeviceParamLayout {
     bool wantsPagination() const override {
         return true;
     }
+    bool wantsPageTabs() const override {
+        return true;
+    }
 
     int totalPages(const magda::DeviceInfo& device) const override;
+    juce::String pageName(const magda::DeviceInfo& device, int pageIndex) const override;
     ParamCell cellFor(const magda::DeviceInfo& device, int cellIndex,
                       int currentPage) const override;
+    int pageForParameter(const magda::DeviceInfo& device, int paramIndex) const override;
+
+  private:
+    // One cell's worth of a page. `paramArrayIndex` is -1 for a cell that is
+    // empty, or that was absorbed by a wider neighbour to its left.
+    struct PageCell {
+        int paramArrayIndex = -1;
+        int span = 1;
+    };
+
+    struct GroupPage {
+        juce::String name;
+        // Exactly kCellCount entries, so a cell index maps straight to a slot.
+        std::vector<PageCell> cells;
+        int chunkIndex = 0;
+        int chunkCount = 1;
+    };
+
+    const std::vector<GroupPage>& pagesFor(const magda::DeviceInfo& device) const;
+
+    mutable std::uint64_t cachedSignature_ = 0;
+    mutable bool cacheValid_ = false;
+    mutable std::vector<GroupPage> cachedPages_;
 };
 
 }  // namespace magda::daw::ui

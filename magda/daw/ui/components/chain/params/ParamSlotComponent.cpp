@@ -1,5 +1,7 @@
 #include "params/ParamSlotComponent.hpp"
 
+#include <cmath>
+
 #include "core/LinkModeManager.hpp"
 #include "core/ParameterUtils.hpp"
 #include "params/ParamLinkMenu.hpp"
@@ -174,6 +176,12 @@ ParamSlotComponent::~ParamSlotComponent() {
 
     if (momentaryButton_)
         momentaryButton_->release();
+
+    // Detach the shared LookAndFeel before the buttons die.
+    for (auto& button : choiceButtons_) {
+        if (button)
+            button->setLookAndFeel(nullptr);
+    }
 
     if (amountLabel_.isOnDesktop()) {
         amountLabel_.removeFromDesktop();
@@ -446,6 +454,32 @@ void ParamSlotComponent::setParamValue(double value) {
     // lane readout against the curve. setValueWithInterval(..., 0.0, ...)
     // writes the exact value and still triggers the label refresh.
     valueSlider_.setValueWithInterval(value, 0.0, juce::dontSendNotification);
+
+    // A discrete widget owns its own selection, and neither value-only refresh
+    // path re-runs setParameterInfo: ParamHostComponent::updateParameterValues
+    // and the single-param echo in DeviceParameterChangeHandler both land here.
+    // Without this, an automation or macro move on a choice param leaves the
+    // dropdown (or the segmented row, which cannot self-toggle because
+    // selection is driven explicitly) showing a stale choice until the whole
+    // parameter list is rebuilt.
+    syncDiscreteSelection(value);
+}
+
+void ParamSlotComponent::syncDiscreteSelection(double value) {
+    const int count = static_cast<int>(paramInfo_.choices.size());
+    if (count <= 0)
+        return;
+
+    // Discrete params carry the choice index as their value.
+    const int selected = juce::jlimit(0, count - 1, static_cast<int>(std::lround(value)));
+
+    if (discreteCombo_ && discreteCombo_->isVisible())
+        discreteCombo_->setSelectedItemIndex(selected, juce::dontSendNotification);
+
+    for (int i = 0; i < static_cast<int>(choiceButtons_.size()); ++i) {
+        if (auto& button = choiceButtons_[static_cast<size_t>(i)])
+            button->setToggleState(i == selected, juce::dontSendNotification);
+    }
 }
 
 void ParamSlotComponent::refreshAutomationTarget() {
@@ -507,6 +541,7 @@ void ParamSlotComponent::setParameterInfo(const magda::ParameterInfo& info) {
 
     // Hide all widgets first
     valueSlider_.setVisible(false);
+    hideChoiceButtons();
     if (discreteCombo_)
         discreteCombo_->setVisible(false);
     if (boolToggle_)
@@ -545,18 +580,73 @@ void ParamSlotComponent::setParameterInfo(const magda::ParameterInfo& info) {
             boolToggle_->setVisible(true);
         }
     } else if (info.scale == magda::ParameterScale::Discrete && !info.choices.empty()) {
-        if (!discreteCombo_) {
-            discreteCombo_ = std::make_unique<juce::ComboBox>();
-            addAndMakeVisible(*discreteCombo_);
+        if (wantsSegmentedChoices(info)) {
+            rebuildChoiceButtons(info, deferToSlot);
+        } else {
+            if (!discreteCombo_) {
+                discreteCombo_ = std::make_unique<juce::ComboBox>();
+                addAndMakeVisible(*discreteCombo_);
+            }
+            configureDiscreteCombo(*discreteCombo_, info, deferToSlot);
+            discreteCombo_->setVisible(true);
         }
-        configureDiscreteCombo(*discreteCombo_, info, deferToSlot);
-        discreteCombo_->setVisible(true);
     } else {
         valueSlider_.setVisible(true);
         configureSliderFormatting(valueSlider_, info);
     }
 
+    applyTooltip(info.tooltip);
     resized();
+}
+
+void ParamSlotComponent::rebuildChoiceButtons(const magda::ParameterInfo& info,
+                                              const std::function<void(double)>& onValueChanged) {
+    const int count = static_cast<int>(info.choices.size());
+    if (static_cast<int>(choiceButtons_.size()) != count) {
+        choiceButtons_.clear();
+        for (int i = 0; i < count; ++i) {
+            auto button = std::make_unique<juce::TextButton>();
+            addAndMakeVisible(*button);
+            choiceButtons_.push_back(std::move(button));
+        }
+    }
+
+    // Discrete params carry the choice index as their value, matching what the
+    // dropdown reports through configureDiscreteCombo.
+    const int selected =
+        juce::jlimit(0, count - 1, static_cast<int>(std::lround(info.currentValue)));
+    for (int i = 0; i < count; ++i) {
+        auto& button = *choiceButtons_[static_cast<size_t>(i)];
+        configureChoiceButton(button, info.choices[static_cast<size_t>(i)], i, count,
+                              i == selected);
+        button.onClick = [cb = onValueChanged, i]() {
+            if (cb)
+                cb(static_cast<double>(i));
+        };
+        button.setVisible(true);
+    }
+}
+
+void ParamSlotComponent::hideChoiceButtons() {
+    for (auto& button : choiceButtons_) {
+        if (button)
+            button->setVisible(false);
+    }
+}
+
+void ParamSlotComponent::applyTooltip(const juce::String& tooltip) {
+    setTooltip(tooltip);
+    valueSlider_.setTooltip(tooltip);
+    if (discreteCombo_)
+        discreteCombo_->setTooltip(tooltip);
+    if (boolToggle_)
+        boolToggle_->setTooltip(tooltip);
+    if (momentaryButton_)
+        momentaryButton_->setTooltip(tooltip);
+    for (auto& button : choiceButtons_) {
+        if (button)
+            button->setTooltip(tooltip);
+    }
 }
 
 void ParamSlotComponent::setFonts(const juce::Font& labelFont, const juce::Font& valueFont) {
@@ -586,6 +676,13 @@ void ParamSlotComponent::lookAndFeelChanged() {
 
     if (discreteCombo_) {
         discreteCombo_->setColour(juce::ComboBox::textColourId, primaryText);
+    }
+
+    // Re-theme without touching toggle state, so a palette switch can't clear
+    // which segment is selected.
+    for (auto& button : choiceButtons_) {
+        if (button)
+            applyChoiceButtonColours(*button);
     }
 
     repaint();
@@ -698,6 +795,7 @@ void ParamSlotComponent::resized() {
         nameLabel_.setVisible(false);
         valueSlider_.setVisible(false);
         valueSlider_.setBounds(bounds);
+        hideChoiceButtons();
         if (discreteCombo_)
             discreteCombo_->setVisible(false);
         if (boolToggle_)
@@ -712,7 +810,18 @@ void ParamSlotComponent::resized() {
     int labelHeight = juce::jmin(12, getHeight() / 3);
     nameLabel_.setBounds(bounds.removeFromTop(labelHeight));
 
-    if (discreteCombo_ && discreteCombo_->isVisible()) {
+    if (!choiceButtons_.empty() && choiceButtons_.front()->isVisible()) {
+        auto row = bounds.reduced(2);
+        const int count = static_cast<int>(choiceButtons_.size());
+        // Derive each edge from the row width rather than accumulating a
+        // per-segment width, so rounding cannot leave a gap at the right edge.
+        for (int i = 0; i < count; ++i) {
+            const int left = row.getX() + (row.getWidth() * i) / count;
+            const int right = row.getX() + (row.getWidth() * (i + 1)) / count;
+            choiceButtons_[static_cast<size_t>(i)]->setBounds(left, row.getY(), right - left,
+                                                              row.getHeight());
+        }
+    } else if (discreteCombo_ && discreteCombo_->isVisible()) {
         discreteCombo_->setBounds(bounds.reduced(2));
     } else if (boolToggle_ && boolToggle_->isVisible()) {
         // Centre checkbox in the cell — needs enough space for JUCE tick rendering

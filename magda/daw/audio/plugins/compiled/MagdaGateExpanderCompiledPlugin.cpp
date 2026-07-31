@@ -12,6 +12,7 @@
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -79,8 +80,9 @@ class GateHarvester : public ::UI {
             }
         }
 
-        harvest.controls.push_back(
-            {merged.slotIndex, merged.isMenuStyle ? FaustParamSlot::Kind::Discrete : kind, zone});
+        harvest.controls.push_back({merged.slotIndex,
+                                    merged.isChoiceStyle() ? FaustParamSlot::Kind::Discrete : kind,
+                                    zone});
     }
 
     std::map<FAUSTFLOAT*, ControlMetadata> pendingByZone_;
@@ -351,8 +353,9 @@ const CompiledPluginSpec& getMagdaGateExpanderSpec() {
             "Range bounds the deepest cut. "
             "Attack and Release shape the envelope; "
             "Mix blends the gated signal back against dry for parallel gating.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaGateExpanderCompiledPlugin(info);
+        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
+            return tracktion_adapter::pluginHandle(
+                new MagdaGateExpanderCompiledPlugin(tracktion_adapter::creationInfo(context)));
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),

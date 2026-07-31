@@ -3,15 +3,12 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
-#include <map>
 #include <regex>
 
 #include "FaustBackend.hpp"
-#include "FaustMetadataParser.hpp"
 #include "FaustResources.hpp"
+#include "FaustUIHarvester.hpp"
 #include "faust/dsp/dsp.h"
-#include "faust/gui/UI.h"
-#include "faust/gui/meta.h"
 
 namespace magda::daw::audio {
 
@@ -24,112 +21,12 @@ namespace {
 // before bundled libraries are wired into the search path.
 constexpr const char* kDefaultDspSource = R"FAUST(
 declare name "Passthrough";
+declare description "Stereo passthrough. Replace this with your own DSP.";
+declare author "MAGDA";
+declare license "GPL-3.0";
+declare version "1.0";
 process = _, _;
 )FAUST";
-
-// Faust UI subclass that walks the live DSP's control tree and produces
-// HarvestedControls with already-cleaned labels and merged metadata.
-//
-// Faust's metadata model: declare(zone, key, value) calls precede the
-// add* call for that zone. When zone is null the declare is at group
-// scope (between the surrounding open*Box / closeBox). Group labels can
-// also carry annotations directly.
-struct UIHarvester : public ::UI {
-    std::vector<HarvestedControl> harvested;
-
-    // Stack of group-scope ControlMetadata, one frame per open box.
-    std::vector<ControlMetadata> groupStack;
-    // Pending control-level declares for the next addXxx, keyed by zone.
-    std::map<FAUSTFLOAT*, ControlMetadata> pendingByZone;
-
-    void pushGroup(const char* label) {
-        auto parsed = parseFaustLabel(juce::String::fromUTF8(label != nullptr ? label : ""));
-        groupStack.push_back(parsed.metadata);
-    }
-
-    ControlMetadata mergedFor(FAUSTFLOAT* zone) {
-        ControlMetadata merged;
-        for (const auto& g : groupStack)
-            mergeFaustMetadata(merged, g);
-        if (auto it = pendingByZone.find(zone); it != pendingByZone.end()) {
-            mergeFaustMetadata(merged, it->second);
-            pendingByZone.erase(it);
-        }
-        return merged;
-    }
-
-    void emitControl(FaustParamSlot::Kind kind, const char* rawLabel, FAUSTFLOAT* zone,
-                     FAUSTFLOAT init, FAUSTFLOAT min, FAUSTFLOAT max, FAUSTFLOAT step) {
-        auto parsed = parseFaustLabel(juce::String::fromUTF8(rawLabel != nullptr ? rawLabel : ""));
-        ControlMetadata merged = mergedFor(zone);
-        mergeFaustMetadata(merged, parsed.metadata);
-
-        HarvestedControl h;
-        h.kind = kind;
-        h.label = parsed.cleanLabel;
-        h.minValue = static_cast<float>(min);
-        h.maxValue = static_cast<float>(max);
-        h.stepValue = static_cast<float>(step);
-        h.defaultValue = static_cast<float>(init);
-        h.zone = zone;
-        h.metadata = std::move(merged);
-        harvested.push_back(std::move(h));
-    }
-
-    // Layout
-    void openTabBox(const char* label) override {
-        pushGroup(label);
-    }
-    void openHorizontalBox(const char* label) override {
-        pushGroup(label);
-    }
-    void openVerticalBox(const char* label) override {
-        pushGroup(label);
-    }
-    void closeBox() override {
-        if (!groupStack.empty())
-            groupStack.pop_back();
-    }
-
-    // Active widgets
-    void addButton(const char* label, FAUSTFLOAT* zone) override {
-        emitControl(FaustParamSlot::Kind::Trigger, label, zone, 0, 0, 1, 1);
-    }
-    void addCheckButton(const char* label, FAUSTFLOAT* zone) override {
-        emitControl(FaustParamSlot::Kind::Boolean, label, zone, 0, 0, 1, 1);
-    }
-    void addVerticalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min,
-                           FAUSTFLOAT max, FAUSTFLOAT step) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone, init, min, max, step);
-    }
-    void addHorizontalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min,
-                             FAUSTFLOAT max, FAUSTFLOAT step) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone, init, min, max, step);
-    }
-    void addNumEntry(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min,
-                     FAUSTFLOAT max, FAUSTFLOAT step) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone, init, min, max, step);
-    }
-
-    // Passive — bargraphs and soundfiles are out of scope; ignored.
-    void addHorizontalBargraph(const char*, FAUSTFLOAT*, FAUSTFLOAT, FAUSTFLOAT) override {}
-    void addVerticalBargraph(const char*, FAUSTFLOAT*, FAUSTFLOAT, FAUSTFLOAT) override {}
-    void addSoundfile(const char*, const char*, Soundfile**) override {}
-
-    // Metadata
-    void declare(FAUSTFLOAT* zone, const char* key, const char* value) override {
-        const auto k = juce::String::fromUTF8(key != nullptr ? key : "").toLowerCase();
-        const auto v = juce::String::fromUTF8(value != nullptr ? value : "");
-        ControlMetadata m;
-        applyFaustAnnotation(k, v, m);
-        if (zone == nullptr) {
-            if (!groupStack.empty())
-                mergeFaustMetadata(groupStack.back(), m);
-        } else {
-            mergeFaustMetadata(pendingByZone[zone], m);
-        }
-    }
-};
 
 // Map a normalized 0..1 value from the AutomatableParameter back to
 // the real units the live zone expects, using the binding's frozen
@@ -347,20 +244,29 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compileAndRebind(const juc
     for (int i = 0; i < FaustParamPool::kSize; ++i)
         previousSlots[static_cast<size_t>(i)] = pool_.slot(i);
 
-    UIHarvester harvester;
+    FaustUIHarvester harvester;
     state->dsp->buildUserInterface(&harvester);
-    DBG("[FaustPlugin] compileAndRebind: harvested " << static_cast<int>(harvester.harvested.size())
+    const auto& harvested = harvester.controls();
+    DBG("[FaustPlugin] compileAndRebind: harvested " << static_cast<int>(harvested.size())
                                                      << " controls from DSP");
-    for (size_t i = 0; i < harvester.harvested.size(); ++i) {
-        const auto& h = harvester.harvested[i];
+    for (size_t i = 0; i < harvested.size(); ++i) {
+        const auto& h = harvested[i];
         DBG("  [" << static_cast<int>(i) << "] kind=" << (int)h.kind << " label='" << h.label
                   << "' min=" << h.minValue << " max=" << h.maxValue
-                  << " idx=" << h.metadata.slotIndex << " menu=" << (int)h.metadata.isMenuStyle);
+                  << " idx=" << h.metadata.slotIndex << " choice=" << (int)h.metadata.choiceStyle);
     }
 
-    auto report = pool_.rebindFromHarvest(harvester.harvested);
+    auto report = pool_.rebindFromHarvest(harvested, harvester.outputs());
     state->activeBindings = std::move(report.activeBindings);
     lastDiagnostics_ = std::move(report.diagnostics);
+    if (scratchIn_.getNumSamples() > 0 && state->dspIn > scratchIn_.getNumChannels()) {
+        lastDiagnostics_.insert(
+            lastDiagnostics_.begin(),
+            "DSP needs " + juce::String(state->dspIn) +
+                " input channels, but the current audio graph has capacity for " +
+                juce::String(scratchIn_.getNumChannels()) +
+                "; reload the device or project to activate this patch");
+    }
     initialiseUnsetPoolValues(state->activeBindings, previousSlots);
 
     DBG("[FaustPlugin] compileAndRebind: pool active="
@@ -415,12 +321,11 @@ FaustPlugin::FaustPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) 
 
     const auto savedSource = state.getProperty("dspSource", juce::String()).toString();
     const auto savedName = state.getProperty("dspName", juce::String()).toString();
-    const auto savedViewKindRaw = static_cast<int>(
-        state.getProperty("dspViewKind", static_cast<int>(FaustCustomViewKind::None)));
 
     juce::String err;
     auto compiled = compileAndRebind(
         savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource), err);
+    activeDspMatchesSource_ = compiled != nullptr;
     if (!compiled) {
         DBG("FaustPlugin: failed to compile saved source: " << err << " — using default");
         compiled = compileAndRebind(kDefaultDspSource, err);
@@ -428,13 +333,13 @@ FaustPlugin::FaustPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) 
 
     dspSource_ = savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource);
     dspName_ = savedName.isNotEmpty() ? savedName : juce::String("Passthrough");
-    viewKind_ = static_cast<FaustCustomViewKind>(savedViewKindRaw);
+    // Derived, not restored: the source is the only thing that has to persist.
+    viewName_ = readCustomViewName(dspSource_);
 
     std::atomic_store(&active_, compiled);
 
     state.setProperty("dspSource", dspSource_, nullptr);
     state.setProperty("dspName", dspName_, nullptr);
-    state.setProperty("dspViewKind", static_cast<int>(viewKind_), nullptr);
 
     retireTimer_.startTimer(100);
 
@@ -478,13 +383,20 @@ void FaustPlugin::drainRetired() {
 }
 
 bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& source,
-                                juce::String& errorOut, FaustCustomViewKind viewKind) {
+                                juce::String& errorOut) {
     auto compiled = compileAndRebind(source, errorOut);
     if (!compiled)
         return false;
 
     auto previous = std::atomic_load(&active_);
     std::atomic_store(&active_, compiled);
+    activeDspMatchesSource_ = true;
+
+    // A stereo-only replacement can no longer consume TE's appended source
+    // channels. Drop the live routing immediately; refreshDeviceParameters()
+    // clears the corresponding DeviceInfo selection after a UI/API compile.
+    if (compiled->dspIn <= 2)
+        setSidechainSourceID({});
 
     if (previous) {
         const juce::ScopedLock lk(retiredLock_);
@@ -493,10 +405,9 @@ bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& so
 
     dspName_ = name;
     dspSource_ = source;
-    viewKind_ = viewKind;
+    viewName_ = readCustomViewName(source);
     state.setProperty("dspName", dspName_, getUndoManager());
     state.setProperty("dspSource", dspSource_, getUndoManager());
-    state.setProperty("dspViewKind", static_cast<int>(viewKind_), getUndoManager());
 
     DBG("FaustPlugin::loadDspSource ok name=" << name << " in=" << compiled->dspIn
                                               << " out=" << compiled->dspOut
@@ -508,6 +419,7 @@ void FaustPlugin::stageSourceForEditing(const juce::String& name, const juce::St
     // Editable state only — no compileAndRebind, no active_ swap. The live DSP
     // and the param pool stay as they are; the editor reads dspSource/dspName
     // from state, so the user sees the staged code and compiles it when ready.
+    activeDspMatchesSource_ = false;
     dspName_ = name;
     dspSource_ = source;
     state.setProperty("dspName", dspName_, getUndoManager());
@@ -528,6 +440,43 @@ void FaustPlugin::initialise(const te::PluginInitialisationInfo& info) {
 
     DBG("FaustPlugin::initialise sr=" << currentSampleRate_
                                       << " blockSize=" << info.blockSizeSamples);
+}
+
+bool FaustPlugin::canSidechain() {
+    const auto active = std::atomic_load(&active_);
+    return active && active->dspIn > 2;
+}
+
+void FaustPlugin::getChannelNames(juce::StringArray* inputs, juce::StringArray* outputs) {
+    const auto active = std::atomic_load(&active_);
+    const int inputCount = active ? active->dspIn : 2;
+    const int outputCount = active ? active->dspOut : 2;
+
+    if (inputs) {
+        for (int channel = 0; channel < inputCount; ++channel) {
+            if (channel == 0)
+                inputs->add("Left");
+            else if (channel == 1)
+                inputs->add("Right");
+            else if (channel == 2)
+                inputs->add(inputCount == 3 ? "Sidechain" : "Sidechain Left");
+            else if (channel == 3)
+                inputs->add("Sidechain Right");
+            else
+                inputs->add("Input " + juce::String(channel + 1));
+        }
+    }
+
+    if (outputs) {
+        for (int channel = 0; channel < outputCount; ++channel) {
+            if (channel == 0)
+                outputs->add("Left");
+            else if (channel == 1)
+                outputs->add("Right");
+            else
+                outputs->add("Output " + juce::String(channel + 1));
+        }
+    }
 }
 
 void FaustPlugin::deinitialise() {}
@@ -591,7 +540,7 @@ void FaustPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (hostChannels <= 0 || active->dspIn <= 0 || active->dspOut <= 0)
         return;
 
-    if (scratchIn_.getNumSamples() < n)
+    if (scratchIn_.getNumSamples() < n || scratchIn_.getNumChannels() < active->dspIn)
         return;
 
     inPtrs_.resize(static_cast<size_t>(active->dspIn));

@@ -33,6 +33,11 @@ struct DeviceSlotContentBodyControls {
     juce::Component* faustHeader = nullptr;
     juce::Component* faustCustomView = nullptr;
     int faustCustomViewPreferredHeight = 0;
+    // Strip of read-only readouts a runtime Faust patch declares via
+    // bargraphs. Null (or zero height) when the patch declares none, in which
+    // case the parameter grid keeps the whole body.
+    juce::Component* faustMeterPanel = nullptr;
+    int faustMeterPanelPreferredHeight = 0;
     juce::Component* compiledPanel = nullptr;
     int compiledPanelPreferredHeight = 0;
     // Minimum fraction of the slot body the curve panel must occupy.

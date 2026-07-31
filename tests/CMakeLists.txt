@@ -1,5 +1,8 @@
 # Test sources
 set(TEST_SOURCES
+    # Must be in both test targets: a debug-CRT dialog blocks a headless run
+    # until the CI job times out, hiding the diagnostic that caused it.
+    windows_no_dialogs.cpp
     test_audio_bridge.cpp
     test_vst3_preset.cpp
     test_audiobridge_track_limit_bug.cpp
@@ -38,6 +41,7 @@ set(TEST_SOURCES
     test_plugin_loading.cpp
     test_plugin_format.cpp
     test_internal_plugin_registry.cpp
+    test_device_sdk_handles.cpp
     test_external_insert_registry.cpp
     test_external_insert_enablement.cpp
     test_insert_capture.cpp
@@ -117,12 +121,22 @@ set(TEST_SOURCES
     test_llama_model_manager.cpp
     test_track_reorder.cpp
     test_automation_modes.cpp
+    test_automation_stepped_targets.cpp
     test_automation_singleton.cpp
     test_instruction_executor_context.cpp
     # Faust pool refactor (Phase 1: metadata parser)
     test_faust_metadata_parser.cpp
+    test_faust_ui_harvester.cpp
+    test_faust_device_layout.cpp
+    # Device layouts build into magda_daw_app, so layout tests need their implementations directly.
+    ../magda/daw/ui/components/chain/layout/StandardDeviceLayout.cpp
+    ../magda/daw/ui/components/chain/layout/FaustDeviceLayout.cpp
+    ../magda/daw/ui/components/chain/layout/CompiledFaustDeviceLayout.cpp
+    ../magda/daw/ui/components/chain/slot/DeviceSlotParamLayoutFactory.cpp
     test_faust_param_pool.cpp
     test_faust_param_info.cpp
+    test_faust_patch_info.cpp
+    test_faust_custom_view.cpp
     # Runtime execution backend (interp / wasm+wasmtime), issue #1382
     test_faust_backend.cpp
     # Parameter alias system tests (PR 1)
@@ -275,6 +289,7 @@ juce_add_console_app(magda_juce_tests
 # Add JUCE test sources
 target_sources(magda_juce_tests PRIVATE
     juce_tests_main.cpp
+    windows_no_dialogs.cpp
     test_zoom_simple.cpp
     test_export_transport_stop_juce.cpp
     test_offline_render_device_power_juce.cpp
@@ -301,6 +316,8 @@ target_sources(magda_juce_tests PRIVATE
     test_tempo_map_juce.cpp
     test_tempo_lane_bridge_juce.cpp
     test_tempo_lane_sync_juce.cpp
+    test_faust_sidechain_juce.cpp
+    test_faust_instrument_tempo_juce.cpp
     test_runtime_theme_juce.cpp
     test_user_theme_juce.cpp
     test_device_gain_slider.cpp

@@ -11,22 +11,8 @@ namespace magda::daw::audio::compiled {
 
 const char* MagdaDjembeCompiledPlugin::xmlTypeName = "magda_djembe";
 
-MagdaDjembeCompiledPlugin::MagdaDjembeCompiledPlugin(const te::PluginCreationInfo& info)
-    : MagdaCompiledPolyInstrument(info) {
+MagdaDjembeCompiledPlugin::MagdaDjembeCompiledPlugin() {
     initInstrument();
-}
-
-juce::String MagdaDjembeCompiledPlugin::getName() const {
-    return "Djembe";
-}
-juce::String MagdaDjembeCompiledPlugin::getPluginType() {
-    return xmlTypeName;
-}
-juce::String MagdaDjembeCompiledPlugin::getShortName(int) {
-    return "Djembe";
-}
-juce::String MagdaDjembeCompiledPlugin::getSelectableDescription() {
-    return "Djembe";
 }
 
 ::dsp* MagdaDjembeCompiledPlugin::createVoiceDsp() const {
@@ -75,8 +61,8 @@ const CompiledPluginSpec& getMagdaDjembeSpec() {
         .description = "Struck modal djembe: a hand-drum membrane physical model driven by a "
                        "strike exciter (Position / Sharpness). Follows the played note; modal "
                        "decay is intrinsic to the model, so there is no damping knob.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaDjembeCompiledPlugin(info);
+        .createDevice = [](const DevicePluginCreationContext&) -> std::unique_ptr<MagdaDevice> {
+            return std::make_unique<MagdaDjembeCompiledPlugin>();
         },
         .isInstrument = true,
     };
