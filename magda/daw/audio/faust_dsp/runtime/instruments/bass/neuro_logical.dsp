@@ -1,5 +1,5 @@
 import("stdfaust.lib");
-declare name "Neuro Machine";
+declare name "Neuro Logical";
 declare description "Two or three detuned saws driven through two notch-and-clip chains, over a clean sine sub. The beating between the outer saws is the Reese it starts from; the notches carve it hollow and the clippers give it teeth.";
 declare author "MAGDA";
 declare license "GPL-3.0";
