@@ -16,7 +16,7 @@
 
 namespace magda::daw::audio {
 
-const char* FaustInstrumentPlugin::xmlTypeName = "faustinstrument";
+const char* FaustInstrumentPlugin::xmlTypeName = "faust-instrument";
 
 namespace {
 

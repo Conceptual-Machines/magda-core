@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "../magda/daw/audio/FaustResources.hpp"
 #include "../magda/daw/audio/plugins/FaustPatchInfo.hpp"
 
 using namespace magda::daw::audio;
@@ -81,4 +82,27 @@ process = _, _;
 
     const auto info = readPatchInfo(source);
     CHECK(info.isEmpty());
+}
+
+// The bundled patch library is split at the top level so an instrument's Load
+// menu never lists FX patches. These folder names are the staging contract
+// between CMake's copy of faust_dsp/runtime and the scan at startup.
+
+TEST_CASE("The runtime patch roots are separate per device kind", "[faust][patchinfo]") {
+    const auto root = getFaustRuntimeDspPath();
+    const auto effects = getFaustRuntimeDspPath(FaustPatchKind::Effect);
+    const auto instruments = getFaustRuntimeDspPath(FaustPatchKind::Instrument);
+
+    CHECK(effects.getFileName() == "effects");
+    CHECK(instruments.getFileName() == "instruments");
+    CHECK(effects.getParentDirectory() == root);
+    CHECK(instruments.getParentDirectory() == root);
+    CHECK(effects != instruments);
+}
+
+TEST_CASE("Scanning a missing patch root yields no starters", "[faust][patchinfo]") {
+    // Unit tests run outside an app bundle, so nothing is staged. The scan has
+    // to answer empty rather than fault.
+    CHECK(getBundledStarterDsps(FaustPatchKind::Effect).empty());
+    CHECK(getBundledStarterDsps(FaustPatchKind::Instrument).empty());
 }

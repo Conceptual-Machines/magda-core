@@ -34,15 +34,20 @@ juce::String readCustomViewName(const juce::String& source);
 // case so the plugin always loads.
 juce::File getFaustLibrariesPath();
 
-// Path to the runtime .dsp library staged alongside the app. Like
+// Root of the runtime .dsp library staged alongside the app. Like
 // getFaustLibrariesPath(), the returned File may not exist outside an
 // installed bundle.
 juce::File getFaustRuntimeDspPath();
 
-// Every .dsp discovered under getFaustRuntimeDspPath(), recursively. Nothing
-// is hardcoded: dropping a file into the staged folder is enough for it to
-// appear, and each file describes itself via `declare name` / `declare
-// magda_view`. Returns empty when the folder is missing.
-std::vector<StarterDsp> getBundledStarterDsps();
+// The staged root for one device kind: `<root>/effects` or
+// `<root>/instruments`. Splitting at the top level rather than filtering one
+// shared tree means a new instrument category needs no FX-side exclusion.
+juce::File getFaustRuntimeDspPath(FaustPatchKind kind);
+
+// Every .dsp discovered under getFaustRuntimeDspPath(kind), recursively.
+// Nothing is hardcoded: dropping a file into that kind's staged folder is
+// enough for it to appear, and each file describes itself via `declare name` /
+// `declare magda_view`. Returns empty when the folder is missing.
+std::vector<StarterDsp> getBundledStarterDsps(FaustPatchKind kind);
 
 }  // namespace magda::daw::audio

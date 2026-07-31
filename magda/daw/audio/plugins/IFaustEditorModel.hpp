@@ -25,6 +25,12 @@ class IFaustEditorModel {
   public:
     virtual ~IFaustEditorModel() = default;
 
+    /// Which runtime Faust device this is. The editor header keys the patch
+    /// library off this — bundled starters, the user's saved patches and the
+    /// save destination are all split by kind, so an instrument never lists
+    /// FX patches and vice versa.
+    virtual FaustPatchKind getPatchKind() const = 0;
+
     /// Lifetime-stable parameter pool the device harvested from its live DSP.
     virtual const FaustParamPool& getPool() const = 0;
 

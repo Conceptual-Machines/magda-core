@@ -85,7 +85,8 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     // previously-loaded DSP (if any) is left in place. Safe to call from
     // the message thread while the audio thread is processing — the
     // FaustState swap is atomic.
-    bool loadDspSource(const juce::String& name, const juce::String& source, juce::String& errorOut) override;
+    bool loadDspSource(const juce::String& name, const juce::String& source,
+                       juce::String& errorOut) override;
 
     // Stage source into the editable state WITHOUT compiling or swapping the
     // live DSP. The code editor reads `dspSource` from state, so this puts
@@ -93,6 +94,10 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     // Used when AI-generated code can't be auto-verified (faust-mcp off).
     // Message thread only.
     void stageSourceForEditing(const juce::String& name, const juce::String& source) override;
+
+    FaustPatchKind getPatchKind() const override {
+        return FaustPatchKind::Effect;
+    }
 
     // Read access for the UI / parameter-info bridge (Phase 4b). The
     // pool's slot table is mutated only by `loadDspSource` on the

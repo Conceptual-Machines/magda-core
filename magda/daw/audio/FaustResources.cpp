@@ -56,8 +56,13 @@ juce::File getFaustRuntimeDspPath() {
 #endif
 }
 
-std::vector<StarterDsp> getBundledStarterDsps() {
-    const auto root = getFaustRuntimeDspPath();
+juce::File getFaustRuntimeDspPath(FaustPatchKind kind) {
+    return getFaustRuntimeDspPath().getChildFile(kind == FaustPatchKind::Instrument ? "instruments"
+                                                                                    : "effects");
+}
+
+std::vector<StarterDsp> getBundledStarterDsps(FaustPatchKind kind) {
+    const auto root = getFaustRuntimeDspPath(kind);
     if (!root.isDirectory())
         return {};
 

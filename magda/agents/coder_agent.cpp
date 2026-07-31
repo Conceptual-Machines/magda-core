@@ -98,7 +98,7 @@ class FaustCoderAgent : public CoderAgent {
 std::unique_ptr<CoderAgent> createCoderAgentFor(const juce::String& pluginId, MagdaApi* api) {
     switch (getInternalPluginCapabilities(pluginId).coderAgent) {
         case CoderAgentKind::Faust:
-            return std::make_unique<FaustCoderAgent>(pluginId.equalsIgnoreCase("faustinstrument")
+            return std::make_unique<FaustCoderAgent>(pluginId.equalsIgnoreCase("faust-instrument")
                                                          ? FaustAgent::Target::Instrument
                                                          : FaustAgent::Target::Effect,
                                                      api != nullptr ? &api->plugins() : nullptr);

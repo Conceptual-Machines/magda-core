@@ -95,6 +95,23 @@ std::span<const InternalParameterAliasSpec> getAllInternalParameterAliases();
 const InternalPluginSpec* findInternalPluginSpec(const juce::String& pluginId);
 const InternalPluginSpec* findInternalPluginSpecForLoadType(const juce::String& type);
 
+/**
+ * @brief Rewrite a plugin state tree that came in under a load alias so it
+ *        carries the registered canonical id instead.
+ *
+ * Resolving an alias is only half of a device rename. The plugin keeps this
+ * tree, and `te::Plugin::getPluginType()` reads `type` straight back out of it
+ * — which is where `DeviceInfo::pluginId` comes from. Left alone, every
+ * downstream comparison against the canonical id (inline UI selection, slot
+ * traits, the agent catalogue) would silently miss for projects saved under an
+ * older spelling. This is also the migration: the alias leaves the project the
+ * next time it is saved.
+ *
+ * Returns true when the tree was rewritten. No-op for a tree that already
+ * names its canonical id, or whose type resolves to no registered device.
+ */
+bool adoptCanonicalPluginType(const juce::ValueTree& state);
+
 /// Behavioural tags are pack-defined string identifiers (for example,
 /// "analysis" or "midi-generator"). They deliberately avoid recreating a
 /// closed core enum as the device catalog grows.

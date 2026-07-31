@@ -82,9 +82,14 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
     // and persist source+name to plugin state. Returns true on success; on
     // failure `errorOut` carries the libfaust message and the previously
     // loaded DSP is left in place. Message thread only — the swap is atomic.
-    bool loadDspSource(const juce::String& name, const juce::String& source, juce::String& errorOut) override;
+    bool loadDspSource(const juce::String& name, const juce::String& source,
+                       juce::String& errorOut) override;
 
     void stageSourceForEditing(const juce::String& name, const juce::String& source) override;
+
+    FaustPatchKind getPatchKind() const override {
+        return FaustPatchKind::Instrument;
+    }
 
     // Read access for the processor / parameter-info bridge.
     const FaustParamPool& getPool() const override {

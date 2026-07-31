@@ -116,7 +116,7 @@ inline InternalPluginVendor vendorFor(const daw::audio::InternalPluginSpec& spec
 inline InternalPlugin deviceAiIdFor(const juce::String& pluginId) {
     if (pluginId.equalsIgnoreCase("4osc"))
         return InternalPlugin::FourOsc;
-    if (pluginId.equalsIgnoreCase("faust"))
+    if (pluginId.equalsIgnoreCase("faust-fx"))
         return InternalPlugin::Faust;
     if (pluginId.equalsIgnoreCase("stepsequencer"))
         return InternalPlugin::StepSequencer;
@@ -150,7 +150,7 @@ inline InternalPluginCapabilities capabilitiesFor(const juce::String& pluginId) 
         capabilities.soundDesignAgent = SoundDesignAgentKind::StepSequencer;
     else if (pluginId.equalsIgnoreCase("polystepsequencer"))
         capabilities.soundDesignAgent = SoundDesignAgentKind::PolyStepSequencer;
-    else if (pluginId.equalsIgnoreCase("faust") || pluginId.equalsIgnoreCase("faustinstrument"))
+    else if (pluginId.equalsIgnoreCase("faust-fx") || pluginId.equalsIgnoreCase("faust-instrument"))
         capabilities.coderAgent = CoderAgentKind::Faust;
     else if (isGenericSoundGeneratorId(pluginId))
         capabilities.soundDesignAgent = SoundDesignAgentKind::Generic;

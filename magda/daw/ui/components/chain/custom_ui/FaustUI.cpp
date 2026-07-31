@@ -224,10 +224,13 @@ void FaustUI::showLoadMenu() {
         return;
 
     juce::PopupMenu menu;
-    // Grouped by the folder each .dsp was discovered in. getBundledStarterDsps
-    // sorts by category, so each run of equal categories is one submenu, and
-    // the ids stay in step with the vector index the callback resolves.
-    auto starters = magda::daw::audio::getBundledStarterDsps();
+    // Only this device kind's patches: an instrument cannot host an FX patch,
+    // and vice versa. Grouped by the folder each .dsp was discovered in.
+    // getBundledStarterDsps sorts by category, so each run of equal categories
+    // is one submenu, and the ids stay in step with the vector index the
+    // callback resolves.
+    const auto kind = patchKind();
+    auto starters = magda::daw::audio::getBundledStarterDsps(kind);
     int id = 1;
     juce::String currentCategory;
     juce::PopupMenu categoryMenu;
@@ -254,9 +257,9 @@ void FaustUI::showLoadMenu() {
     }
     flushCategory();
 
-    // User-saved effects from the FaustEffects library (written by the save
+    // User-saved patches from this kind's library (written by the save
     // button). Grouped in a submenu so the bundled starters stay tidy.
-    auto savedFiles = userEffectsDir().findChildFiles(juce::File::findFiles, false, "*.dsp");
+    auto savedFiles = userPatchDir(kind).findChildFiles(juce::File::findFiles, false, "*.dsp");
     savedFiles.sort();
     const int savedBaseId = id;
     if (!savedFiles.isEmpty()) {
@@ -264,7 +267,9 @@ void FaustUI::showLoadMenu() {
         for (const auto& f : savedFiles)
             savedMenu.addItem(id++, f.getFileNameWithoutExtension());
         menu.addSeparator();
-        menu.addSubMenu("My Effects", savedMenu);
+        menu.addSubMenu(kind == magda::daw::audio::FaustPatchKind::Instrument ? "My Instruments"
+                                                                              : "My Effects",
+                        savedMenu);
     }
 
     menu.addSeparator();
@@ -299,7 +304,7 @@ void FaustUI::showLoadMenu() {
 
 void FaustUI::loadFromFile() {
     fileChooser_ = std::make_unique<juce::FileChooser>("Choose a .dsp file",
-                                                       FaustUI::userEffectsDir(), "*.dsp");
+                                                       userPatchDir(patchKind()), "*.dsp");
     fileChooser_->launchAsync(
         juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [this](const juce::FileChooser& fc) {
@@ -310,8 +315,17 @@ void FaustUI::loadFromFile() {
         });
 }
 
-juce::File FaustUI::userEffectsDir() {
-    auto dir = magda::paths::dataDir().getChildFile("FaustEffects");
+magda::daw::audio::FaustPatchKind FaustUI::patchKind() const {
+    return plugin_ != nullptr ? plugin_->getPatchKind() : magda::daw::audio::FaustPatchKind::Effect;
+}
+
+juce::File FaustUI::userPatchDir(magda::daw::audio::FaustPatchKind kind) {
+    // Patches saved before the split all live in FaustEffects, instruments
+    // included. They stay listed under FX rather than being moved: the folder
+    // is the user's, and nothing about an unmoved file breaks.
+    auto dir = magda::paths::dataDir().getChildFile(
+        kind == magda::daw::audio::FaustPatchKind::Instrument ? "FaustInstruments"
+                                                              : "FaustEffects");
     dir.createDirectory();
     return dir;
 }
@@ -322,12 +336,13 @@ void FaustUI::saveDspToFile() {
     const auto source = plugin_->getDspSource();
     if (source.isEmpty())
         return;
+    const auto kind = patchKind();
     auto name = plugin_->getDspName();
     if (name.isEmpty())
-        name = "effect";
+        name = kind == magda::daw::audio::FaustPatchKind::Instrument ? "instrument" : "effect";
 
     fileChooser_ = std::make_unique<juce::FileChooser>(
-        "Save Faust DSP", userEffectsDir().getChildFile(name + ".dsp"), "*.dsp");
+        "Save Faust DSP", userPatchDir(kind).getChildFile(name + ".dsp"), "*.dsp");
     fileChooser_->launchAsync(juce::FileBrowserComponent::saveMode |
                                   juce::FileBrowserComponent::canSelectFiles |
                                   juce::FileBrowserComponent::warnAboutOverwriting,
