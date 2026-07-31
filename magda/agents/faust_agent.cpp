@@ -24,6 +24,15 @@ OUTPUT SCHEMA:
   "source": "<a complete, valid Faust program>"
 }
 
+PATCH METADATA — REQUIRED:
+- The source MUST open with these two declares, before the import and before any
+  control, with values identical to the JSON "name" and "description" fields:
+      declare name "<the JSON name>";
+      declare description "<the JSON description>";
+- MAGDA reads these back off the saved .dsp to title and describe the patch in the
+  library. Without them the patch shows up nameless with no description, so they
+  are as required as the DSP itself. Do not leave either one empty.
+
 POLYPHONIC INSTRUMENT RULES — REQUIRED:
 - This is one MIDI voice driven by MAGDA's Faust voice allocator. Declare exactly these reserved
   controls, with these lowercase labels and NO [idx:N] metadata:
@@ -57,6 +66,15 @@ OUTPUT SCHEMA:
   "description": "<one short sentence describing the sound/processor>",
   "source": "<a complete, valid Faust program>"
 }
+
+PATCH METADATA — REQUIRED:
+- The source MUST open with these two declares, before the import and before any
+  control, with values identical to the JSON "name" and "description" fields:
+      declare name "<the JSON name>";
+      declare description "<the JSON description>";
+- MAGDA reads these back off the saved .dsp to title and describe the patch in the
+  library. Without them the patch shows up nameless with no description, so they
+  are as required as the DSP itself. Do not leave either one empty.
 
 SOURCE RULES — VERY IMPORTANT:
 - Write process as a single processing chain from input to output, e.g.
@@ -99,31 +117,47 @@ User: "warm tape saturator with subtle wow"
 {
   "name": "Tape Warmth",
   "description": "Soft tape-style saturator with gentle wow modulation.",
-  "source": "import(\"stdfaust.lib\");\ndrive = hslider(\"Drive [idx:0]\", 3, 0, 10, 0.01);\nwow = hslider(\"Wow [idx:1]\", 0.3, 0, 1, 0.01);\nmix = hslider(\"Mix [idx:2]\", 0.8, 0, 1, 0.01);\nlfo = os.osc(0.6) * 0.002 * wow;\nsat(x) = ef.cubicnl(drive/10, 0) : *(0.7);\nprocess = _ <: *(1.0 + lfo) : sat : _ * mix + _ * (1.0 - mix);"
+  "source": "declare name \"Tape Warmth\";\ndeclare description \"Soft tape-style saturator with gentle wow modulation.\";\nimport(\"stdfaust.lib\");\ndrive = hslider(\"Drive [idx:0]\", 3, 0, 10, 0.01);\nwow = hslider(\"Wow [idx:1]\", 0.3, 0, 1, 0.01);\nmix = hslider(\"Mix [idx:2]\", 0.8, 0, 1, 0.01);\nlfo = os.osc(0.6) * 0.002 * wow;\nsat(x) = ef.cubicnl(drive/10, 0) : *(0.7);\nprocess = _ <: *(1.0 + lfo) : sat : _ * mix + _ * (1.0 - mix);"
 }
 
 User: "gentle plate reverb with mode switch"
 {
   "name": "Plate Lite",
   "description": "Short, dark plate reverb with a Plate / Hall mode.",
-  "source": "import(\"stdfaust.lib\");\nsize = hslider(\"Size [idx:0]\", 0.5, 0, 1, 0.01);\ndamp = hslider(\"Damp [idx:1]\", 0.6, 0, 1, 0.01);\nmix = hslider(\"Mix [idx:2]\", 0.35, 0, 1, 0.01);\nmode = hslider(\"Mode [idx:3][style:menu{'Plate':0;'Hall':1}]\", 0, 0, 1, 1);\nfreeze = checkbox(\"Freeze [idx:4]\");\nfb = (0.7 + size * 0.28 + mode * 0.02) * (1.0 - freeze) + freeze * 0.999;\nwet = re.mono_freeverb(fb, fb, damp, 0.5);\nprocess = _ <: (_ : *(1.0 - mix)), (_ : wet : *(mix)) :> _;"
+  "source": "declare name \"Plate Lite\";\ndeclare description \"Short, dark plate reverb with a Plate / Hall mode.\";\nimport(\"stdfaust.lib\");\nsize = hslider(\"Size [idx:0]\", 0.5, 0, 1, 0.01);\ndamp = hslider(\"Damp [idx:1]\", 0.6, 0, 1, 0.01);\nmix = hslider(\"Mix [idx:2]\", 0.35, 0, 1, 0.01);\nmode = hslider(\"Mode [idx:3][style:menu{'Plate':0;'Hall':1}]\", 0, 0, 1, 1);\nfreeze = checkbox(\"Freeze [idx:4]\");\nfb = (0.7 + size * 0.28 + mode * 0.02) * (1.0 - freeze) + freeze * 0.999;\nwet = re.mono_freeverb(fb, fb, damp, 0.5);\nprocess = _ <: (_ : *(1.0 - mix)), (_ : wet : *(mix)) :> _;"
 }
 )PROMPT";
 }
 
 namespace {
 
-// MAGDA-side validation of the [idx:N] parameter contract, run BEFORE the Faust
-// compile check. The Faust compiler treats our [...] tags as opaque label text,
-// so a missing / duplicate / out-of-range idx (or >64 controls) compiles fine
-// yet breaks parameter links on the next regeneration. Catch it here and feed
-// failures into the same retry loop the compiler errors use.
+// MAGDA-side validation of the [idx:N] parameter contract and the patch
+// metadata declares, run BEFORE the Faust compile check. The Faust compiler
+// treats our [...] tags as opaque label text and accepts a patch with no
+// declares at all, so a missing / duplicate / out-of-range idx (or >64
+// controls), or a nameless patch, compiles fine yet breaks parameter links on
+// the next regeneration or lands in the library with nothing to identify it.
+// Catch it here and feed failures into the same retry loop the compiler errors
+// use.
 bool validateSourceImpl(FaustAgent::Target target, const std::string& source,
                         std::string& errorOut) {
     static const std::regex controlDecl(
         R"RX((hslider|vslider|nentry|checkbox|button)\s*\(\s*"([^"]*)")RX");
 
     juce::StringArray problems;
+
+    // Same shape readPatchInfo() scans for, so anything that passes here is
+    // something MAGDA can actually read back off the saved .dsp.
+    const auto hasDeclare = [&source](const std::string& key) {
+        const std::regex re("declare\\s+" + key + "\\s+\"([^\"]+)\"");
+        std::smatch m;
+        return std::regex_search(source, m, re) && juce::String(m[1].str()).trim().isNotEmpty();
+    };
+    if (!hasDeclare("name"))
+        problems.add("source is missing a non-empty declare name \"...\"");
+    if (!hasDeclare("description"))
+        problems.add("source is missing a non-empty declare description \"...\"");
+
     std::array<bool, 64> used{};
     int userControlCount = 0;
     bool sawFreq = false;
