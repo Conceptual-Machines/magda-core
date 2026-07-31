@@ -21,10 +21,16 @@ magda::ParameterInfo placeholderForInactive(const FaustParamSlot& slot) {
     return info;
 }
 
+// Both host params share a page, named for what they do. Left ungrouped they
+// landed on the generic "Params" page, which says nothing next to a tab
+// carrying the patch's own name.
+constexpr const char* kHostParamGroup = "Voice";
+
 magda::ParameterInfo voiceModeInfo() {
     magda::ParameterInfo info;
     info.paramIndex = FaustParamPool::kSize;
     info.name = "Voice Mode";
+    info.group = kHostParamGroup;
     info.minValue = 0.0f;
     info.maxValue = 2.0f;
     info.defaultValue = 0.0f;
@@ -48,6 +54,7 @@ magda::ParameterInfo glideInfo() {
     magda::ParameterInfo info;
     info.paramIndex = FaustParamPool::kSize + 1;
     info.name = "Glide";
+    info.group = kHostParamGroup;
     info.unit = "ms";
     info.minValue = 0.0f;
     info.maxValue = 2000.0f;
