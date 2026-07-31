@@ -1,6 +1,6 @@
 import("stdfaust.lib");
 declare name "Reese Machine";
-declare description "Three detuned saws driven through two notch-and-clip stages, over a clean sine sub. The beating between the outer saws is the Reese; the notches carve it hollow and the clippers give it teeth.";
+declare description "Two or three detuned saws driven through two notch-and-clip stages, over a clean sine sub. The beating between the outer saws is the Reese; the notches carve it hollow and the clippers give it teeth.";
 declare author "MAGDA";
 declare license "GPL-3.0";
 declare version "1.0";
@@ -39,13 +39,14 @@ safeNotch(width, freq) = fi.notchw(min(width, ma.SR / 4.0), freq);
 // Osc
 // ============================================================================
 
-// Three saws: the note itself, plus the outer pair detuned symmetrically above
-// and below it. The slow beating between those two is the whole Reese sound, so
-// Detune is the patch's primary control and small values are the useful ones -
-// past roughly 30 cents it stops beating and starts sounding like a chord.
+// A pair of saws detuned symmetrically above and below the note, optionally
+// with a third at the note itself. The slow beating between the outer two is
+// the whole Reese sound, so Detune is the patch's primary control and small
+// values are the useful ones - past roughly 30 cents it stops beating and
+// starts sounding like a chord.
 //
-// Two outputs: the saw stack, and a sine one octave down. They are kept apart
-// here because they take different routes downstream - see `voice`.
+// Two outputs: the saw stack, and the sub. They are kept apart here because
+// they take different routes downstream - see `voice`.
 oscSection = vgroup("Osc", saws, sub)
 with {
     detune = hslider("Detune [unit:ct] [idx:0]", 14, 0, 50, 0.1) : smoothed;
@@ -54,13 +55,32 @@ with {
     ratio = pow(2.0, detune / 1200.0);
     subLevel = hslider("Sub [idx:14]", 0.5, 0.0, 1.0, 0.001) : smoothed;
 
+    // 0 keeps the detuned pair alone, 1 adds the centre saw. Smoothed rather
+    // than switched: the third saw is an audio signal being multiplied in, so
+    // an instant 0 to 1 step would click. Over the 20 ms ramp the divisor
+    // moves with it, which crossfades between the two voicings instead.
+    third = nentry("Oscs [idx:15] [style:radio{'2':0;'3':1}]", 1, 0, 1, 1) : smoothed;
+
+    // The detuned pair on its own is the Reese proper: nothing sits at the
+    // played pitch, so the two saws beat against each other with nothing
+    // anchoring them. The third saw plants the note underneath that movement,
+    // which reads as more solid and less seasick. Dividing by the live count
+    // keeps the level put across the switch.
     saws = (os.sawtooth(freq * ratio) +
-            os.sawtooth(freq) +
-            os.sawtooth(freq / ratio)) / 3.0;
+            os.sawtooth(freq / ratio) +
+            os.sawtooth(freq) * third) / (2.0 + third);
+
+    // Not smoothed, unlike the oscillator count: os.osc accumulates phase, so
+    // changing its frequency changes the increment while the phase stays
+    // continuous. The octave jump is therefore already click-free, and ramping
+    // it would turn a switch into a 20 ms portamento.
+    subUnison = nentry("Sub Pitch [idx:16] [style:radio{'-1 Oct':0;'Unison':1}]", 0, 0, 1, 1);
+
     // A sine, not a saw: the sub is there for weight, and any harmonics it
-    // carried would collide with the saw stack an octave up rather than
-    // reinforce it.
-    sub = os.osc(freq * 0.5) * subLevel;
+    // carried would collide with the saw stack rather than reinforce it. That
+    // matters more at Unison, where it sits in the same octave as the saws
+    // and only the fundamental is wanted.
+    sub = os.osc(freq * (0.5 + 0.5 * subUnison)) * subLevel;
 };
 
 // ============================================================================
