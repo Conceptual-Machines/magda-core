@@ -51,6 +51,11 @@ bool isReservedVoiceControl(const juce::String& cleanLabel) {
 // The user controls are wrapped in vgroup() boxes (Osc / Filter / Env) so the
 // instrument's tabbed UI gets one tab per group. Each group's controls are
 // declared inside the box via `with{}` so Faust composes them under that group.
+//
+// Mirrored by faust_dsp/runtime/instruments/synth/faust_poly_synth.dsp, which
+// is what puts it in the Load menu - keep the two in step. This copy stays
+// compiled in rather than being read from that file, so a device still comes up
+// making sound when nothing is staged (a dev build, a broken install).
 constexpr const char* kDefaultDspSource = R"FAUST(
 import("stdfaust.lib");
 declare name "Faust Poly Synth";

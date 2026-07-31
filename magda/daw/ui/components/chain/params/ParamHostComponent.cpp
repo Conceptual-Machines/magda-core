@@ -191,6 +191,7 @@ ParamHostComponent::~ParamHostComponent() = default;
 void ParamHostComponent::updateParameterSlots(
     const magda::DeviceInfo& device, int currentPage,
     std::function<void(int paramIndex, double value)> onValueChanged) {
+    const auto previousSpans = cellSpans_;
     cellSpans_.assign(static_cast<size_t>(std::max(0, cellCount_)), 1);
     usedRows_ = 0;
     for (int i = 0; i < cellCount_; ++i) {
@@ -217,6 +218,14 @@ void ParamHostComponent::updateParameterSlots(
                 break;
         }
     }
+
+    // Slot bounds are sized from cellSpans_, which this method is what
+    // discovers. It does not reliably run before layoutContent() - a device
+    // being shown for the first time lays out first and assigns slots after -
+    // so a `[width:N]` control kept the single-cell bounds of the previous pass
+    // and its label truncated. Re-lay-out when the spans actually moved.
+    if (hasLaidOut_ && cellSpans_ != previousSpans)
+        layoutContent(lastLabelFont_, lastValueFont_);
 }
 
 void ParamHostComponent::updateParameterValues(const magda::DeviceInfo& device, int currentPage) {
@@ -347,6 +356,10 @@ void ParamHostComponent::setRowHeight(int rowHeight) {
 }
 
 void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::Font& valueFont) {
+    lastLabelFont_ = labelFont;
+    lastValueFont_ = valueFont;
+    hasLaidOut_ = true;
+
     auto area = getLocalBounds();
 
     if (cellCount_ <= 0 || cellsPerRow_ <= 0) {
