@@ -104,6 +104,8 @@ set(TEST_SOURCES
     test_string_table.cpp
     # Arrangement pointer hit tester (#1719)
     test_arrangement_hit_tester.cpp
+    # Keyboard clip nudging (#1957)
+    test_clip_nudge.cpp
     test_mono_note_processor.cpp
     test_sends_and_track_deletion.cpp
     # Internal track-to-track routing (issue #1690)
@@ -311,6 +313,7 @@ target_sources(magda_juce_tests PRIVATE
     test_section_scoped_device_ids_juce.cpp
     test_clip_inspector_juce.cpp
     test_multi_clip_resize_preview_juce.cpp
+    test_clip_nudge_juce.cpp
     test_multiband_curve_view_juce.cpp
     test_timeline_extreme_zoom_paint_juce.cpp
     test_arrange_beat_native_juce.cpp

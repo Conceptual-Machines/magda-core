@@ -115,6 +115,12 @@ class MainView : public juce::Component,
     // Timer implementation (for metering updates)
     void timerCallback() override;
 
+    // Access to the arrangement clip surface (for command handlers — it owns
+    // the display track order the keyboard clip moves step through)
+    TrackContentPanel* getTrackContentPanel() {
+        return trackContentPanel.get();
+    }
+
     // Access to the timeline controller (for child components)
     TimelineController& getTimelineController() {
         return *timelineController;

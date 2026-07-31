@@ -64,15 +64,21 @@ class MidiEditorViewport : public juce::Viewport {
     std::vector<juce::Component*> componentsToRepaint;
 
     bool keyPressed(const juce::KeyPress& key) override {
-        // Alt/Option + arrow keys: allow viewport scrolling
-        // Plain arrow keys: don't handle, let grid component use them for note movement
+        // Arrow keys belong to the MIDI editor and never escape it. The grid
+        // component is a child, so anything reaching this viewport is a key the
+        // grid declined — Alt scrolls, the rest is swallowed. Letting them
+        // through would hand the arrangement's clip nudge (#1957, Shift+arrows)
+        // the chance to move the very clip being edited whenever no note is
+        // selected for the grid to act on.
         if (key.getKeyCode() == juce::KeyPress::upKey ||
             key.getKeyCode() == juce::KeyPress::downKey ||
             key.getKeyCode() == juce::KeyPress::leftKey ||
             key.getKeyCode() == juce::KeyPress::rightKey) {
+            // JUCE's ScrollBar only answers to unmodified arrows, so hand it
+            // the bare key; consumed either way, including at the scroll limits.
             if (key.getModifiers().isAltDown())
-                return juce::Viewport::keyPressed(key);
-            return false;
+                juce::Viewport::keyPressed(juce::KeyPress(key.getKeyCode()));
+            return true;
         }
         return juce::Viewport::keyPressed(key);
     }

@@ -131,6 +131,7 @@ When no time selection is active, editing operations apply to **selected clips**
 - **Split** (++cmd+e++) — Splits selected clips at the edit cursor position
 - **Render** (++cmd+b++) — Renders selected clips to audio in place
 - **Cut / Copy / Paste / Duplicate / Delete** — Operate on the selected clips
+- **Nudge** (++shift++ + arrow keys) — Moves selected clips one grid step along the timeline, or to the neighbouring track. See [Editing Clips](clips.md#editing-clips).
 
 ### Time Selection Editing
 

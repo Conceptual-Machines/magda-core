@@ -56,6 +56,19 @@ ViewMode getNextCycledViewMode(ViewMode mode, bool forward) {
     return ViewMode::Arrange;
 }
 
+// Keyboard clip moves (#1957) act on the arrangement half of the selection.
+// Disabled when there is none, so the arrow keys fall through to whatever else
+// wants them instead of being swallowed by a no-op command.
+bool hasSelectedArrangementClips() {
+    auto& clipManager = ClipManager::getInstance();
+    for (ClipId clipId : SelectionManager::getInstance().getSelectedClips()) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (clip != nullptr && clip->view == ClipView::Arrangement)
+            return true;
+    }
+    return false;
+}
+
 bool containsTimelineTime(const ClipInfo& clip, double timeSeconds, double bpm) {
     return timeSeconds > timelineStartSeconds(clip, bpm) &&
            timeSeconds < timelineEndSeconds(clip, bpm);
@@ -98,7 +111,8 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         splitOrTrim, joinClips, renderClip, renderTimeSelection, setLoopFromClip, toggleClipLoop,
         toggleClipEnabled, escapeAction, insertTime, duplicateTimeRange, duplicateLoopRange,
         splitAllTracksAtCursor, copyTimeRange, cutTimeRange, deleteTimeRange, copyLoopRange,
-        cutLoopRange, deleteLoopRange, pasteRipple,
+        cutLoopRange, deleteLoopRange, pasteRipple, nudgeClipsEarlier, nudgeClipsLater,
+        nudgeClipsUp, nudgeClipsDown,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio, closeProject,
         projectSettings, collectFiles, exportMidi, importDawProject, exportDawProject,
@@ -309,6 +323,37 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case escapeAction:
             result.setInfo("Exit Mode", "Exit link mode and clear the edit cursor", "Edit", 0);
             result.addDefaultKeypress(juce::KeyPress::escapeKey, 0);
+            break;
+
+        // Shift+arrows, as in Waveform. NOT Alt+arrows (Bitwig, Fender Studio):
+        // Alt on a clip body already means duplicate here — Alt+drag copies,
+        // Alt+Shift+drag ghost-copies — so Alt+arrow would have one modifier
+        // meaning copy under the mouse and move under the keyboard. That also
+        // leaves Alt+arrow open for a copy-nudge that matches Alt+drag.
+        case nudgeClipsEarlier:
+            result.setInfo("Nudge Clips Earlier", "Move selected clips one grid step earlier",
+                           "Edit", 0);
+            result.addDefaultKeypress(juce::KeyPress::leftKey, juce::ModifierKeys::shiftModifier);
+            result.setActive(hasSelectedArrangementClips());
+            break;
+
+        case nudgeClipsLater:
+            result.setInfo("Nudge Clips Later", "Move selected clips one grid step later", "Edit",
+                           0);
+            result.addDefaultKeypress(juce::KeyPress::rightKey, juce::ModifierKeys::shiftModifier);
+            result.setActive(hasSelectedArrangementClips());
+            break;
+
+        case nudgeClipsUp:
+            result.setInfo("Move Clips Up", "Move selected clips to the track above", "Edit", 0);
+            result.addDefaultKeypress(juce::KeyPress::upKey, juce::ModifierKeys::shiftModifier);
+            result.setActive(hasSelectedArrangementClips());
+            break;
+
+        case nudgeClipsDown:
+            result.setInfo("Move Clips Down", "Move selected clips to the track below", "Edit", 0);
+            result.addDefaultKeypress(juce::KeyPress::downKey, juce::ModifierKeys::shiftModifier);
+            result.setActive(hasSelectedArrangementClips());
             break;
 
         // File menu
@@ -1711,6 +1756,26 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 UndoManager::getInstance().endCompoundOperation();
             }
             return true;
+        }
+
+        case nudgeClipsEarlier:
+        case nudgeClipsLater:
+        case nudgeClipsUp:
+        case nudgeClipsDown: {
+            auto* clipPanel = mainView ? mainView->getTrackContentPanel() : nullptr;
+            if (clipPanel == nullptr)
+                return false;
+
+            const bool acrossTracks =
+                info.commandID == nudgeClipsUp || info.commandID == nudgeClipsDown;
+            const int direction =
+                (info.commandID == nudgeClipsEarlier || info.commandID == nudgeClipsUp) ? -1 : 1;
+
+            // Returning the panel's verdict rather than a blanket true leaves
+            // the key press unconsumed when the selection is already against
+            // the edge it is being pushed towards.
+            return acrossTracks ? clipPanel->nudgeSelectedClipsToAdjacentTrack(direction)
+                                : clipPanel->nudgeSelectedClipsHorizontally(direction);
         }
 
         case play:
