@@ -56,11 +56,9 @@ The time signature is displayed below the tempo in the transport bar. You can ch
 
 ## Metronome & Count-In
 
-The metronome (click track) can be toggled on or off using the metronome icon in the transport bar.
+Two small icons sit to the right of the tempo and time signature. The lower one is the metronome (click track), which toggles on or off when clicked. The upper one is a circle, and it sets the **count-in** (pre-roll) before recording starts.
 
-![Count-In Menu](assets/images/transport/count-in.png){ width="200" }
-
-**Right-click** the metronome icon to set a **count-in** (pre-roll) before recording starts:
+Click the circle to open the count-in menu:
 
 | Option | Description |
 |--------|-------------|
@@ -69,6 +67,8 @@ The metronome (click track) can be toggled on or off using the metronome icon in
 | **2 Beats** | Two beats of click before recording |
 | **1 Bar** | One full bar of click before recording |
 | **2 Bars** | Two full bars of click before recording |
+
+Once a count-in is set the circle lights up, and it stays dim while count-in is off. Hovering it shows the current setting.
 
 During count-in, the metronome plays but recording does not begin until the count-in period is complete.
 

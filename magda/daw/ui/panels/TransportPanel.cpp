@@ -163,6 +163,7 @@ void TransportPanel::paint(juce::Graphics& g) {
     drawGroupWrapper(tempoLabel->getBounds()
                          .getUnion(timeSigNumeratorLabel->getBounds())
                          .getUnion(timeSigDenominatorLabel->getBounds())
+                         .getUnion(countInButton->getBounds())
                          .getUnion(metronomeButton->getBounds()),
                      "", DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     if (gridVisible_) {
@@ -260,7 +261,7 @@ void TransportPanel::resized() {
     const int coreGroupW = 4 * buttonSize + 3 * buttonSpacing;             // play/stop/rec/auto
     const int loopBackW = 2 * buttonSize + buttonSpacing + buttonSpacing;  // loop + backToArr
     const int punchSectionW = 3 + boxWidth + 3;                            // 3 pre/post padding
-    const int metroSectionW = 90;
+    const int metroSectionW = 112;
     const int timeGroupW = boxWidth + groupSpacing;
     const int cursorGroupW = 10 + boxWidth + 24;
     const int gridSectionW = 6 + 30 + 4 + 44;
@@ -385,25 +386,36 @@ void TransportPanel::resized() {
 
     transportRight_ = x;
 
-    // Metronome + BPM section (always visible — tempo is essential)
+    // Metronome + BPM section (always visible, since tempo is essential).
+    // Layout is a wide readout column with a narrow icon gutter on its right:
+    // count-in rides the top row beside the BPM, metronome the bottom row
+    // beside the time signature. Previously the metronome overlapped the
+    // readout column, which is why the BPM and time signature were cramped.
     {
-        const int metroBoxWidth = 70;
+        const int metroBoxWidth = 92;
         const int metroX = x + (metroSectionW - metroBoxWidth) / 2;
-        const int metroIconSize = rowHeight;
-        tempoLabel->setBounds(metroX, rowY1, metroBoxWidth, rowHeight);
+        // Both gutter icons sit a touch under a full row so the readouts keep
+        // the vertical weight in the cluster.
+        const int iconSize = juce::jmax(12, rowHeight - 3);
+        const int gutterGap = 3;
+        const int textWidth = metroBoxWidth - iconSize - gutterGap;
+        const int gutterX = metroX + textWidth + gutterGap;
+
+        tempoLabel->setBounds(metroX, rowY1, textWidth, rowHeight);
 
         const int tsNumWidth = 24;
         const int tsDenWidth = 18;
         const int tsOverlap = 4;
         const int tsTotal = tsNumWidth + tsDenWidth - tsOverlap;
-        const int tsX = metroX + (metroBoxWidth - tsTotal) / 2;
+        const int tsX = metroX + (textWidth - tsTotal) / 2;
         timeSigNumeratorLabel->setBounds(tsX, rowY2, tsNumWidth, rowHeight);
         timeSigDenominatorLabel->setBounds(tsX + tsNumWidth - tsOverlap, rowY2, tsDenWidth,
                                            rowHeight);
 
-        const int metroBtnX = metroX + metroBoxWidth - metroIconSize;
-        metronomeButton->setBounds(metroBtnX, rowY2 + (rowHeight - metroIconSize) / 2,
-                                   metroIconSize, metroIconSize);
+        countInButton->setBounds(gutterX, rowY1 + (rowHeight - iconSize) / 2, iconSize, iconSize);
+        countInButton->toFront(false);
+
+        metronomeButton->setBounds(gutterX, rowY2 + (rowHeight - iconSize) / 2, iconSize, iconSize);
         metronomeButton->setAlpha(0.6f);
         metronomeButton->toFront(false);
         x += metroSectionW;
@@ -1125,8 +1137,16 @@ void TransportPanel::setupTempoAndQuantize() {
         if (onMetronomeToggle)
             onMetronomeToggle(newState);
     };
-    metronomeButton->addMouseListener(this, false);
     addAndMakeVisible(*metronomeButton);
+
+    // Count-in button. Left-click opens the length menu; there is no toggle,
+    // since "off" is one of the menu's own choices.
+    countInButton = std::make_unique<SvgButton>("CountIn", BinaryData::record_circle_svg,
+                                                BinaryData::record_circle_svgSize);
+    styleTransportButton(*countInButton, DarkTheme::ACCENT_PRIMARY, true);
+    countInButton->onClick = [this]() { showCountInMenu(); };
+    addAndMakeVisible(*countInButton);
+    setCountInMode(countInMode_);
 
     // Snap button (text-based toggle)
     snapButton = std::make_unique<juce::TextButton>("SNAP");
@@ -1572,9 +1592,7 @@ void TransportPanel::updateCpuTooltip() {
 }
 
 void TransportPanel::mouseDown(const juce::MouseEvent& e) {
-    if (e.originalComponent == metronomeButton.get() && e.mods.isRightButtonDown()) {
-        showCountInMenu();
-    } else if (e.originalComponent == automationWriteButton.get() && e.mods.isRightButtonDown()) {
+    if (e.originalComponent == automationWriteButton.get() && e.mods.isRightButtonDown()) {
         showAutomationModeMenu();
     } else if (e.originalComponent == qwertyKeyboardButton.get() && e.mods.isRightButtonDown() &&
                qwertyKeyboard_ != nullptr) {
@@ -1593,27 +1611,54 @@ void TransportPanel::mouseDown(const juce::MouseEvent& e) {
 
 void TransportPanel::showCountInMenu() {
     juce::PopupMenu menu;
+    // Without the header the list reads as a bare Off/1/2/1 Bar/2 Bars, which
+    // is exactly what a metronome click-interval setting would offer.
+    menu.addSectionHeader(tr("transport.count_in.header"));
     menu.addItem(1, tr("transport.count_in.off"), true, countInMode_ == 0);
     menu.addItem(5, tr("transport.count_in.1_beat"), true, countInMode_ == 4);
     menu.addItem(4, tr("transport.count_in.2_beats"), true, countInMode_ == 3);
     menu.addItem(2, tr("transport.count_in.1_bar"), true, countInMode_ == 1);
     menu.addItem(3, tr("transport.count_in.2_bars"), true, countInMode_ == 2);
 
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(metronomeButton.get()),
-                       [this](int result) {
-                           if (result <= 0)
+    juce::Component::SafePointer<TransportPanel> safeThis(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(countInButton.get()),
+                       [safeThis](int result) {
+                           if (safeThis == nullptr || result <= 0)
                                return;
                            // Map menu item IDs to CountIn enum values
                            static constexpr int idToMode[] = {0, 0, 1, 2, 3, 4};
                            int mode = idToMode[result];
-                           countInMode_ = mode;
-                           if (onCountInModeChange)
-                               onCountInModeChange(mode);
+                           safeThis->setCountInMode(mode);
+                           if (safeThis->onCountInModeChange)
+                               safeThis->onCountInModeChange(mode);
                        });
 }
 
 void TransportPanel::setCountInMode(int mode) {
     countInMode_ = mode;
+    if (countInButton) {
+        countInButton->setActive(mode != 0);
+        // Matches the metronome's resting dimness when off, full strength when
+        // armed, so the two gutter icons sit at the same weight until one of
+        // them has something to say.
+        countInButton->setAlpha(mode != 0 ? 1.0f : 0.6f);
+        countInButton->setTooltip(tr("transport.count_in.header") + ": " + countInModeLabel(mode));
+    }
+}
+
+juce::String TransportPanel::countInModeLabel(int mode) {
+    switch (mode) {
+        case 1:
+            return tr("transport.count_in.1_bar");
+        case 2:
+            return tr("transport.count_in.2_bars");
+        case 3:
+            return tr("transport.count_in.2_beats");
+        case 4:
+            return tr("transport.count_in.1_beat");
+        default:
+            return tr("transport.count_in.off");
+    }
 }
 
 void TransportPanel::showAutomationModeMenu() {
