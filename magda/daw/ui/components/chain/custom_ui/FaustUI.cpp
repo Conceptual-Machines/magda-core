@@ -412,6 +412,8 @@ void FaustUI::paint(juce::Graphics& g) {
         g.drawText(metaText_, metaBounds_, juce::Justification::centredLeft, true);
     }
 
+    // Re-set the colour: the meta row above leaves the text colour behind.
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawHorizontalLine(bounds.getBottom() - 1, static_cast<float>(bounds.getX()),
                          static_cast<float>(bounds.getRight()));
 }
