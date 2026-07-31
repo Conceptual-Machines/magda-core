@@ -86,6 +86,7 @@
     "help.about": "About MAGDA"
   },
   "transport": {
+    "count_in.header": "Count-In",
     "count_in.off": "Off",
     "count_in.1_beat": "1 Beat",
     "count_in.2_beats": "2 Beats",
