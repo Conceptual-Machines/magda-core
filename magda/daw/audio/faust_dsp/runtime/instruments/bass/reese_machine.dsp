@@ -16,6 +16,25 @@ gate = button("gate");
 // gain. Without this a knob drag steps the notch frequency once per block.
 smoothed = si.smooth(ba.tau2pole(0.02));
 
+// Control labels must be unique across the whole patch, and none of them may be
+// freq / gain / gate in any casing. The instrument host groups harvested voice
+// controls by their bare label - that is how it collects the sixteen per-voice
+// zones behind one parameter - so two controls sharing a label in different
+// groups merge into a single parameter driving both, and a label matching a
+// reserved voice control is dropped from the pool altogether. Hence the 1 / 2
+// suffixes below rather than a bare "Drive" in each stage. They earn their keep
+// twice over: macro links, MIDI Learn and automation targets list parameters
+// flat, with no tab to disambiguate them.
+
+// notchw designs its pole from wn = PI*(width/2)/SR, giving a pole radius of
+// (1 - wn)/(1 + wn). That leaves the positive real axis once width passes
+// 2*SR/PI - about 30 kHz at 48 kHz, 28 kHz at 44.1 - and the response stops
+// being a notch. Width therefore has a real ceiling rather than a taste-based
+// one; the slider stops short of it and this clamp keeps it honest at any
+// sample rate. A width of exactly 0 would put the pole on the unit circle,
+// which is why the sliders start at 1 Hz and not 0.
+safeNotch(width, freq) = fi.notchw(min(width, ma.SR / 4.0), freq);
+
 // ============================================================================
 // Osc
 // ============================================================================
@@ -53,26 +72,33 @@ with {
 // and the second notch then carves the harmonics the first clipper generated.
 // Two stages in series is what separates this from a detuned saw patch.
 //
-// Width is the notch's approximate -3 dB width in Hz (fi.notchw), not a Q, so
-// a narrow setting stays narrow as Freq sweeps up.
+// Width is the notch's approximate -3 dB width in Hz, not a Q, so a setting
+// stays the same number of Hz wide as the notch sweeps up and is therefore
+// proportionally narrower up there. That is the right behaviour here: these
+// notches are formants placed against a bass, so they want to hold their
+// absolute size rather than track the note.
 //
 // Bias offsets the signal before the nonlinearity, which adds even harmonics
 // and asymmetry. cubicnl_nodc rather than cubicnl: the offset would otherwise
 // leave a DC component behind, and two stages of it would compound.
-stage1(x) = vgroup("Stage 1", x : fi.notchw(width, nfreq) : ef.cubicnl_nodc(drive, bias))
+stage1(x) = vgroup("Stage 1", x : safeNotch(width, nfreq) : ef.cubicnl_nodc(drive, bias))
 with {
-    nfreq = hslider("Freq [unit:Hz] [scale:log] [idx:1]", 300, 40, 5000, 1) : smoothed;
-    width = hslider("Width [unit:Hz] [scale:log] [idx:2]", 200, 10, 2000, 1) : smoothed;
-    drive = hslider("Drive [idx:3]", 0.4, 0, 1, 0.001) : smoothed;
-    bias = hslider("Bias [idx:4]", 0.0, 0.0, 0.5, 0.001) : smoothed;
+    nfreq = hslider("Notch 1 [unit:Hz] [scale:log] [scaleAnchor:500] [idx:1]",
+                    300, 20, 18000, 1) : smoothed;
+    width = hslider("Width 1 [unit:Hz] [scale:log] [scaleAnchor:300] [idx:2]",
+                    200, 1, 12000, 1) : smoothed;
+    drive = hslider("Drive 1 [idx:3]", 0.4, 0, 1, 0.001) : smoothed;
+    bias = hslider("Bias 1 [idx:4]", 0.0, 0.0, 0.5, 0.001) : smoothed;
 };
 
-stage2(x) = vgroup("Stage 2", x : fi.notchw(width, nfreq) : ef.cubicnl_nodc(drive, bias))
+stage2(x) = vgroup("Stage 2", x : safeNotch(width, nfreq) : ef.cubicnl_nodc(drive, bias))
 with {
-    nfreq = hslider("Freq [unit:Hz] [scale:log] [idx:5]", 900, 40, 5000, 1) : smoothed;
-    width = hslider("Width [unit:Hz] [scale:log] [idx:6]", 400, 10, 2000, 1) : smoothed;
-    drive = hslider("Drive [idx:7]", 0.3, 0, 1, 0.001) : smoothed;
-    bias = hslider("Bias [idx:8]", 0.0, 0.0, 0.5, 0.001) : smoothed;
+    nfreq = hslider("Notch 2 [unit:Hz] [scale:log] [scaleAnchor:500] [idx:5]",
+                    900, 20, 18000, 1) : smoothed;
+    width = hslider("Width 2 [unit:Hz] [scale:log] [scaleAnchor:300] [idx:6]",
+                    400, 1, 12000, 1) : smoothed;
+    drive = hslider("Drive 2 [idx:7]", 0.3, 0, 1, 0.001) : smoothed;
+    bias = hslider("Bias 2 [idx:8]", 0.0, 0.0, 0.5, 0.001) : smoothed;
 };
 
 // ============================================================================
