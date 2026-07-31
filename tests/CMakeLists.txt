@@ -310,6 +310,7 @@ target_sources(magda_juce_tests PRIVATE
     test_midi_bridge_note_events_juce.cpp
     test_section_scoped_device_ids_juce.cpp
     test_clip_inspector_juce.cpp
+    test_multi_clip_resize_preview_juce.cpp
     test_multiband_curve_view_juce.cpp
     test_timeline_extreme_zoom_paint_juce.cpp
     test_arrange_beat_native_juce.cpp
@@ -332,6 +333,21 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/panels/content/inspector/clip/sections/ChordProgressionSection.cpp
     ../magda/daw/ui/panels/content/inspector/clip/sections/ClipFadesSection.cpp
     ../magda/daw/ui/panels/content/inspector/clip/sections/ClipTakesSection.cpp
+    ../magda/daw/ui/components/clips/ClipComponent.cpp
+    ../magda/daw/ui/components/tracks/TrackContentPanel.cpp
+    ../magda/daw/ui/components/tracks/TrackContentPanelClipDrag.cpp
+    ../magda/daw/ui/components/automation/AutomationLaneComponent.cpp
+    ../magda/daw/ui/components/automation/AutomationCurveEditor.cpp
+    ../magda/daw/ui/components/common/curve/CurveEditorBase.cpp
+    ../magda/daw/ui/components/common/curve/CurvePointComponent.cpp
+    ../magda/daw/ui/components/common/curve/CurveBezierHandle.cpp
+    ../magda/daw/ui/components/common/curve/CurveTensionHandle.cpp
+    ../magda/daw/ui/components/automation/AutomationClipComponent.cpp
+    ../magda/daw/ui/components/waveform/ClipWaveformPainter.cpp
+    ../magda/daw/ui/components/common/Toast.cpp
+    ../magda/daw/ui/dialogs/AISettingsDialog.cpp
+    ../magda/daw/ui/interaction/ArrangementCursorMap.cpp
+    ../magda/daw/ui/panels/state/PanelController.cpp
     ../magda/daw/ui/components/common/BarsBeatsTicksLabel.cpp
     ../magda/daw/ui/components/common/ValueLabelControl.cpp
     ../magda/daw/ui/components/common/DraggableValueLabel.cpp
@@ -351,6 +367,9 @@ target_sources(magda_juce_tests PRIVATE
 target_link_libraries(magda_juce_tests
     PRIVATE
     magda_daw
+    # ClipComponent's context menu reaches the AI settings dialog, which lives
+    # on the agents library.
+    magda_agents
     # JUCE (core/events/gui_basics) comes transitively from magda_daw, compiled
     # once there; direct links would recompile the JUCE stack into this target.
     # Linux: juce_gui_extra is pulled in transitively via magda_daw's
