@@ -1403,12 +1403,20 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
                 const bool toggle = magda::isToggleSelectClick(e.mods) ||
                                     (e.mods.isCtrlDown() && !e.mods.isShiftDown());
                 const bool range = magda::isRangeSelectClick(e.mods);
-                // The header bar is the collapse affordance, so a plain click
-                // there is a collapse gesture whether or not the node was
+                // The header *background* is the collapse affordance, so a plain
+                // click there is a collapse gesture whether or not the node was
                 // already selected. Flag it across the selection dispatch:
                 // selecting a node normally auto-opens its macro panel, which
                 // on this click reads as "I asked to collapse and got macros".
-                const bool headerClick = !toggle && !range && e.getPosition().y < getHeaderHeight();
+                //
+                // eventComponent must be this node. Header controls forward
+                // their events here via addMouseListener so a click on them also
+                // selects the device (the step sequencer's Export button, the
+                // drum pad's name label); those arrive with coordinates relative
+                // to the *child*, so a y of 0..buttonHeight would otherwise
+                // always land inside the header and fold the device away.
+                const bool headerClick = !toggle && !range && e.eventComponent == this &&
+                                         e.getPosition().y < getHeaderHeight();
                 collapseGestureActive_ = headerClick;
                 if (range)
                     rangeSelectFromAnchor();
