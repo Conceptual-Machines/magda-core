@@ -58,66 +58,106 @@ enum class SyncDivision {
 };
 
 /**
- * @brief Map MAGDA SyncDivision to TE's ModifierCommon::RateType ordinal.
+ * @brief Modifier rate type, slow to fast.
+ *
+ * PINNED: this is the discrete value a tempo-synced modifier's Rate parameter
+ * carries, so it lands in project files through automation curves and macro/mod
+ * links. It is MAGDA's own enumeration; the values equal
+ * tracktion::engine::ModifierCommon::RateType today, which is what lets the
+ * engine bridge be a cast, and a static_assert in audio/EngineEnumPins.cpp holds
+ * that equality.
+ *
+ * MAGDA's Rate control does not expose every value (no 1/16 dotted/triplet, no
+ * 1/64s); the unexposed ones exist so a value written by the engine or by an
+ * imported project still round-trips.
+ */
+enum class ModRateType : int {
+    Hertz = 0,
+    SixteenBars = 1,
+    EightBars = 2,
+    FourBars = 3,
+    TwoBars = 4,
+    Bar = 5,
+    DottedHalf = 6,
+    Half = 7,
+    TripletHalf = 8,
+    DottedQuarter = 9,
+    Quarter = 10,
+    TripletQuarter = 11,
+    DottedEighth = 12,
+    Eighth = 13,
+    TripletEighth = 14,
+    DottedSixteenth = 15,
+    Sixteenth = 16,
+    TripletSixteenth = 17,
+    DottedThirtySecond = 18,
+    ThirtySecond = 19,
+    TripletThirtySecond = 20,
+    DottedSixtyFourth = 21,
+    SixtyFourth = 22,
+    TripletSixtyFourth = 23,
+};
+
+/**
+ * @brief Map MAGDA SyncDivision to the persisted ModRateType ordinal.
  *
  * Mirror of audio/ModifierHelpers.hpp::mapSyncDivision but kept in core/ so
  * TrackManager and the automation lane code can convert without dragging
- * in TE's namespace. Numbers must match TE's RateType enum declaration
- * order (slow → fast: hertz=0, sixteenBars=1, ..., sixtyFourthT=23).
+ * in the engine's namespace.
  */
 inline int syncDivisionToTeRateOrdinal(SyncDivision div) {
     switch (div) {
         case SyncDivision::SixteenBars:
-            return 1;
+            return static_cast<int>(ModRateType::SixteenBars);
         case SyncDivision::EightBars:
-            return 2;
+            return static_cast<int>(ModRateType::EightBars);
         case SyncDivision::FourBars:
-            return 3;
+            return static_cast<int>(ModRateType::FourBars);
         case SyncDivision::TwoBars:
-            return 4;
+            return static_cast<int>(ModRateType::TwoBars);
         case SyncDivision::Whole:
-            return 5;  // bar
+            return static_cast<int>(ModRateType::Bar);
         case SyncDivision::DottedHalf:
-            return 6;
+            return static_cast<int>(ModRateType::DottedHalf);
         case SyncDivision::Half:
-            return 7;
+            return static_cast<int>(ModRateType::Half);
         case SyncDivision::TripletHalf:
-            return 8;
+            return static_cast<int>(ModRateType::TripletHalf);
         case SyncDivision::DottedQuarter:
-            return 9;
+            return static_cast<int>(ModRateType::DottedQuarter);
         case SyncDivision::Quarter:
-            return 10;
+            return static_cast<int>(ModRateType::Quarter);
         case SyncDivision::TripletQuarter:
-            return 11;
+            return static_cast<int>(ModRateType::TripletQuarter);
         case SyncDivision::DottedEighth:
-            return 12;
+            return static_cast<int>(ModRateType::DottedEighth);
         case SyncDivision::Eighth:
-            return 13;
+            return static_cast<int>(ModRateType::Eighth);
         case SyncDivision::TripletEighth:
-            return 14;
+            return static_cast<int>(ModRateType::TripletEighth);
         case SyncDivision::DottedSixteenth:
-            return 15;
+            return static_cast<int>(ModRateType::DottedSixteenth);
         case SyncDivision::Sixteenth:
-            return 16;
+            return static_cast<int>(ModRateType::Sixteenth);
         case SyncDivision::TripletSixteenth:
-            return 17;
+            return static_cast<int>(ModRateType::TripletSixteenth);
         case SyncDivision::DottedThirtySecond:
-            return 18;
+            return static_cast<int>(ModRateType::DottedThirtySecond);
         case SyncDivision::ThirtySecond:
-            return 19;
+            return static_cast<int>(ModRateType::ThirtySecond);
         case SyncDivision::TripletThirtySecond:
-            return 20;
+            return static_cast<int>(ModRateType::TripletThirtySecond);
     }
-    return 10;  // quarter fallback
+    return static_cast<int>(ModRateType::Quarter);
 }
 
 /**
- * @brief Inverse: TE ordinal → MAGDA SyncDivision (closest match).
+ * @brief Inverse: ModRateType ordinal → MAGDA SyncDivision (closest match).
  *
- * MAGDA's slider doesn't expose every TE division (no 1/16 D/T, no 1/64s)
- * so unsupported ordinals snap to the closest MAGDA-known division. Used
- * by automation playback when TE writes a discrete rateType value back
- * into MAGDA state.
+ * MAGDA's slider doesn't expose every division (no 1/16 D/T, no 1/64s) so
+ * unsupported ordinals snap to the closest MAGDA-known division. Used by
+ * automation playback when a discrete rateType value is written back into
+ * MAGDA state.
  */
 inline SyncDivision teRateOrdinalToSyncDivision(int ordinal) {
     switch (ordinal) {

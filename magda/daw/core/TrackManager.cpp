@@ -11,6 +11,7 @@
 #include "../engine/AudioEngine.hpp"
 #include "ClipManager.hpp"
 #include "Config.hpp"
+#include "DeviceState.hpp"
 #include "ModulatorEngine.hpp"
 #include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
@@ -108,8 +109,11 @@ juce::String formatClipIds(const std::vector<ClipId>& clipIds) {
     return text;
 }
 
+// v2 device state is captured already stripped of engine ids and modifier
+// assignments (see TracktionDeviceStateBridge.hpp), so only legacy engine XML
+// needs cleaning here.
 juce::String stripDuplicateRuntimePluginState(const juce::String& pluginState) {
-    if (pluginState.isEmpty())
+    if (pluginState.isEmpty() || !device_state::looksLikeLegacyEngineState(pluginState))
         return pluginState;
 
     auto xml = juce::parseXML(pluginState);
@@ -143,8 +147,23 @@ void scanEmbeddedDeviceIds(const juce::ValueTree& tree, int& maxDeviceId) {
 }
 
 void scanEmbeddedDeviceIds(const juce::String& pluginState, int& maxDeviceId) {
+    static const juce::Identifier embeddedDeviceIdProp("magdaDeviceId");
+
     if (pluginState.isEmpty())
         return;
+
+    // v2 device state: walk the MAGDA document (DrumGrid embeds a device id per
+    // pad chain, which the id allocator has to see).
+    if (auto doc = device_state::decode(pluginState)) {
+        device_state::forEachNode(doc->root, [&](const device_state::Node& node) {
+            if (const auto* value = node.props.getVarPointer(embeddedDeviceIdProp)) {
+                const int embeddedDeviceId = static_cast<int>(*value);
+                if (embeddedDeviceId != INVALID_DEVICE_ID)
+                    maxDeviceId = std::max(maxDeviceId, embeddedDeviceId);
+            }
+        });
+        return;
+    }
 
     auto xml = juce::parseXML(pluginState);
     if (!xml)

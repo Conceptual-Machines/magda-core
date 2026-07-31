@@ -289,6 +289,8 @@ set(_magda_tracktion_device_adapter_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/tracktion/CompiledFaustTracktionAdapter.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionDeviceAdapters.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionDeviceStateBridge.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionDeviceStateBridge.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionInternalPluginAdapter.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionMagdaDevicePlugin.cpp"
@@ -401,6 +403,8 @@ target_sources(magda_daw PRIVATE
     # Phase 2: Independent features
     PluginWindowBridge.cpp
     WarpMarkerManager.cpp
+    # Compile-time pins between MAGDA's persisted enums and the engine's (#1887)
+    EngineEnumPins.cpp
     # Phase 3: Core controllers
     TrackController.cpp
     plugin_manager/PluginManager.cpp

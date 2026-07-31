@@ -261,6 +261,7 @@ juce_add_binary_data(MagdaAssets
 # include-boundary guard) lands with the device-library carve (#1834).
 add_library(magda_types STATIC
     core/ParameterUtils.cpp
+    core/DeviceState.cpp
     # value-type headers (listed to document the leaf's surface)
     core/TypeIds.hpp
     core/TechnicalText.hpp
@@ -269,6 +270,7 @@ add_library(magda_types STATIC
     core/ParameterInfo.hpp
     core/ParameterUtils.hpp
     core/DeviceInfo.hpp
+    core/DeviceState.hpp
     core/KitRow.hpp
     core/MacroInfo.hpp
     core/ModInfo.hpp
