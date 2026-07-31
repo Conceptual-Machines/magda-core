@@ -5,13 +5,82 @@
 #include "ui/components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
+#include "ui/themes/LocalizedText.hpp"
 
 namespace magda::daw::ui {
+
+/**
+ * @brief Flat tab styling for the device page bar.
+ *
+ * Stock JUCE draws tabs as rounded, gradient-filled trapezoids, which is the
+ * one piece of chrome in a device slot that does not look like the rest of the
+ * app. DialogLookAndFeel already flattens them for dialogs; this is the same
+ * treatment sized for an 18px bar sitting inside a device rather than a 13px
+ * one across the top of a window.
+ *
+ * Colours are looked up per paint rather than cached, so a live theme change
+ * repaints correctly without needing lookAndFeelChanged plumbed through.
+ */
+class ParamPageTabLookAndFeel final : public juce::LookAndFeel_V4 {
+  public:
+    void drawTabButton(juce::TabBarButton& button, juce::Graphics& g, bool isMouseOver,
+                       bool isMouseDown) override {
+        const auto area = button.getActiveArea();
+        const bool isFront = button.isFrontTab();
+
+        if (isFront)
+            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        else if (isMouseOver)
+            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+        else
+            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+        g.fillRect(area);
+
+        // The selected page is marked by an accent rule along the bottom edge,
+        // where it reads as attached to the grid below it. Unselected tabs get
+        // a hairline instead, which keeps the row of them on one baseline.
+        if (isFront) {
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+            g.fillRect(area.getX(), area.getBottom() - 2, area.getWidth(), 2);
+        } else {
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.fillRect(area.getX(), area.getBottom() - 1, area.getWidth(), 1);
+        }
+
+        auto textColour =
+            isFront ? DarkTheme::getTextColour() : DarkTheme::getSecondaryTextColour();
+        if (isMouseDown)
+            textColour = textColour.brighter(0.2f);
+        g.setColour(textColour);
+        g.setFont(FontManager::getInstance().getUIFontMedium(10.0f));
+        drawLocalizedFittedText(g, button.getButtonText(), button.getTextArea(),
+                                juce::Justification::centred, 1, textColour);
+    }
+
+    // Tabs size to their label with even padding either side. The default
+    // implementation reserves room for the close button and an overlap the flat
+    // style does not draw, which left the short names oddly wide.
+    int getTabButtonBestWidth(juce::TabBarButton& button, int) override {
+        const auto font = FontManager::getInstance().getUIFontMedium(10.0f);
+        return juce::GlyphArrangement::getStringWidthInt(font, button.getButtonText()) + 18;
+    }
+
+    void drawTabAreaBehindFrontButton(juce::TabbedButtonBar&, juce::Graphics&, int, int) override {
+        // Backgrounds are drawn entirely by drawTabButton.
+    }
+};
 
 class ParamPageTabBar final : public juce::TabbedButtonBar {
   public:
     ParamPageTabBar() : juce::TabbedButtonBar(juce::TabbedButtonBar::TabsAtTop) {
         setMinimumTabScaleFactor(0.5);
+        setLookAndFeel(&tabLookAndFeel_);
+    }
+
+    ~ParamPageTabBar() override {
+        // A LookAndFeel must outlive every component pointing at it, and JUCE
+        // walks children on destruction, so detach before the member dies.
+        setLookAndFeel(nullptr);
     }
 
     void setPages(const DeviceParamLayout& layout, const magda::DeviceInfo& device, int totalPages,
@@ -33,6 +102,7 @@ class ParamPageTabBar final : public juce::TabbedButtonBar {
     }
 
   private:
+    ParamPageTabLookAndFeel tabLookAndFeel_;
     bool suppressCallback_ = false;
 };
 

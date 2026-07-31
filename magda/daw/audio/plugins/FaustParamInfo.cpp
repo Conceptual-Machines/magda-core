@@ -31,9 +31,13 @@ magda::ParameterInfo voiceModeInfo() {
     info.currentValue = 0.0f;
     info.scale = magda::ParameterScale::Discrete;
     info.choices = {"Poly", "Mono", "Legato"};
-    // Segmented buttons rather than a dropdown: three short labels, and the
-    // mode is worth reading at a glance without opening anything.
+    // Segmented buttons rather than a dropdown: the mode is worth reading at a
+    // glance without opening anything.
     info.radioChoices = true;
+    // Three segments sharing one cell truncates them to "Pol / Mo / Leg", which
+    // is worse than useless - "Mo" could be Mono or Modulation. Three cells is
+    // what "Legato" needs to survive at the grid's narrower sizes.
+    info.widthCells = 3;
     // Voice allocation is a structural choice, not a sound-design one. Letting
     // an LFO flip it every cycle would just retrigger the flush path.
     info.modulatable = false;
