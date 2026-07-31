@@ -31,8 +31,11 @@ namespace magda::daw::ui {
  * +------------------+
  * | [prompt input]   |  <- single-line TextEditor, Enter to submit
  * +------------------+
- * | model name   [X] |  <- footer: model id + clear-chat button
+ * | model    [#] [X] |  <- footer: model id + stop + clear-chat button
  * +------------------+
+ *
+ * The stop button only occupies footer space while a generation is in
+ * flight; when idle the model label spans the full width.
  */
 class AIPanelComponent : public juce::Component, private juce::Timer {
   public:
@@ -49,9 +52,19 @@ class AIPanelComponent : public juce::Component, private juce::Timer {
 
     void resized() override;
     void paint(juce::Graphics& g) override;
+    // The editors cache resolved colours, so a runtime theme switch needs them
+    // re-applied rather than just repainted.
+    void lookAndFeelChanged() override;
 
   private:
+    static void applySelectionColours(juce::TextEditor& editor);
+    // DrawableButton::setImages copies the drawable, so the icon has to be
+    // rebuilt from the SVG whenever the palette changes.
+    static void setThemedIcon(juce::DrawableButton& button, const void* svgData,
+                              std::size_t svgDataSize);
     void submitPrompt();
+    // Stop an in-flight generation at the user's request and log it.
+    void cancelGeneration();
     void appendOutput(const juce::String& line);
     void appendStreamingToken(const juce::String& token);
     void onGenerationFinished(juce::String status, juce::String conversationJson);
@@ -72,8 +85,9 @@ class AIPanelComponent : public juce::Component, private juce::Timer {
     bool busy_ = false;
     float busySpinnerPhase_ = 0.0f;
 
-    // Footer: model id (left) + clear-chat button (right).
+    // Footer: model id (left) + stop and clear-chat buttons (right).
     juce::Label modelLabel_;
+    juce::DrawableButton stopButton_{"stop", juce::DrawableButton::ImageFitted};
     juce::DrawableButton clearButton_{"clear", juce::DrawableButton::ImageFitted};
 
     void clearChat();
