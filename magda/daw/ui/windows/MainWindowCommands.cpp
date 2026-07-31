@@ -763,6 +763,28 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         }
 
         case duplicate: {
+            // Selected automation clip: duplicate it, the same thing its context
+            // menu's Duplicate entry does (#1949). Checked ahead of the time
+            // selection because an automation clip is an explicit, deliberate
+            // selection, and because Delete already resolves it in that order.
+            if (selectionManager.getSelectionType() == SelectionType::AutomationClip) {
+                const auto autoClipSel = selectionManager.getAutomationClipSelection();
+                if (autoClipSel.isValid()) {
+                    auto cmd = std::make_unique<DuplicateAutomationClipCommand>(autoClipSel.clipId);
+                    auto* cmdPtr = cmd.get();
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                    // Follow the copy, so holding the shortcut walks along the
+                    // lane rather than stacking every duplicate on the original.
+                    // duplicateClip() places it at the source's end beat and
+                    // leaves it on the same lane, so the selection's lane id
+                    // still applies.
+                    const auto newClipId = cmdPtr->getCreatedClipId();
+                    if (newClipId != INVALID_AUTOMATION_CLIP_ID)
+                        selectionManager.selectAutomationClip(newClipId, autoClipSel.laneId);
+                    return true;
+                }
+            }
             // Time selection duplicate: copy time range, paste at endTime
             if (hasActiveTimeSelection()) {
                 const auto& state = mainView->getTimelineController().getState();

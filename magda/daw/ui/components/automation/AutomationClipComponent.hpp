@@ -77,7 +77,13 @@ class AutomationClipComponent : public juce::Component,
     // Resize edge detection
     static constexpr int RESIZE_EDGE_WIDTH = 6;
 
+    void modifierKeysChanged(const juce::ModifierKeys& modifiers) override;
+
   private:
+    class AutomationLaneComponent* getLane() const;
+    /// True while the copy-on-drag gesture (default Alt) is held.
+    bool copyGestureHeld() const;
+
     AutomationClipId clipId_;
     double pixelsPerBeat_ = 10.0;
 
@@ -87,6 +93,10 @@ class AutomationClipComponent : public juce::Component,
     enum class DragMode { None, Move, ResizeLeft, ResizeRight };
     DragMode dragMode_ = DragMode::None;
     bool isDragging_ = false;
+    // Copy-vs-move, decided once when the drag starts so releasing the modifier
+    // mid-drag cannot change what the gesture turns out to be. Move drags only:
+    // copying while resizing an edge has no meaning.
+    bool isDuplicating_ = false;
 
     juce::Point<int> dragStartPos_;
     double dragStartBeat_ = 0.0;

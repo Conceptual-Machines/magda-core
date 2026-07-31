@@ -617,6 +617,12 @@ TEST_CASE("Clip commands - create/move/resize/delete/duplicate with undo",
     undoMgr.executeCommand(std::move(dup));
     const auto dupId = dupPtr->getCreatedClipId();
     REQUIRE(mgr.getClip(dupId)->startBeats == Approx(8.0));
+    // Same lane as its source, and registered on it. The Ctrl+D handler selects
+    // the copy using the lane id it already had for the source rather than
+    // looking the new clip up, so a duplicate landing on another lane would
+    // leave the selection pointing at the wrong one.
+    REQUIRE(mgr.getClip(dupId)->laneId == mgr.getClip(clipId)->laneId);
+    REQUIRE(fx.lane().clipIds == std::vector<AutomationClipId>{clipId, dupId});
     REQUIRE(undoMgr.undo());
     REQUIRE(mgr.getClip(dupId) == nullptr);
 
