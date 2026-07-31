@@ -68,23 +68,37 @@ enum class LaunchMode {
 
 /**
  * @brief Launch quantization for session clips
+ *
+ * PINNED: these integers are written into project files. They are MAGDA's own
+ * constants - the engine does not define them and must not renumber them.
+ * Append new values at the end; never reorder or reuse a value.
+ * See docs/architecture/persisted-enums.md.
  */
-enum class LaunchQuantize {
-    None,         // Immediate
-    EightBars,    // Snap to next 8-bar boundary
-    FourBars,     // Snap to next 4-bar boundary
-    TwoBars,      // Snap to next 2-bar boundary
-    OneBar,       // Snap to next bar
-    HalfBar,      // Snap to next half bar
-    QuarterBar,   // Snap to next beat
-    EighthBar,    // Snap to next eighth note
-    SixteenthBar  // Snap to next sixteenth note
+enum class LaunchQuantize : int {
+    None = 0,          // Immediate
+    EightBars = 1,     // Snap to next 8-bar boundary
+    FourBars = 2,      // Snap to next 4-bar boundary
+    TwoBars = 3,       // Snap to next 2-bar boundary
+    OneBar = 4,        // Snap to next bar
+    HalfBar = 5,       // Snap to next half bar
+    QuarterBar = 6,    // Snap to next beat
+    EighthBar = 7,     // Snap to next eighth note
+    SixteenthBar = 8,  // Snap to next sixteenth note
 };
 
 /**
  * @brief Follow action for session clips
+ *
+ * PINNED: persisted integers, MAGDA-owned. See LaunchQuantize above.
  */
-enum class FollowAction { None, PlayNext, PlayPrevious, PlayRandom, Stop, PlayAgain };
+enum class FollowAction : int {
+    None = 0,
+    PlayNext = 1,
+    PlayPrevious = 2,
+    PlayRandom = 3,
+    Stop = 4,
+    PlayAgain = 5,
+};
 
 /**
  * @brief Get display name for launch mode

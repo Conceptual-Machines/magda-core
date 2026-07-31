@@ -41,6 +41,8 @@ set(TEST_SOURCES
     test_plugin_loading.cpp
     test_plugin_format.cpp
     test_internal_plugin_registry.cpp
+    # Engine-neutral internal device state schema v2 (issue #1887)
+    test_device_state_codec.cpp
     test_device_sdk_handles.cpp
     test_external_insert_registry.cpp
     test_external_insert_enablement.cpp
@@ -306,6 +308,8 @@ target_sources(magda_juce_tests PRIVATE
     test_midi_signal_routing_juce.cpp
     test_drum_grid_serialization_juce.cpp
     test_device_services_juce.cpp
+    test_device_param_schema_juce.cpp
+    test_device_state_schema_juce.cpp
     test_master_sidechain_juce.cpp
     test_midi_bridge_note_events_juce.cpp
     test_section_scoped_device_ids_juce.cpp
@@ -386,7 +390,10 @@ target_link_libraries(magda_juce_tests
 )
 
 target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
-    MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1)
+    MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1
+    # Frozen device parameter order (#1887) lives in the source tree so an
+    # intentional change shows up as a reviewable diff.
+    MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt")
 
 # Include directories for JUCE tests
 target_include_directories(magda_juce_tests
@@ -450,6 +457,12 @@ add_test(NAME offline_render_device_power_juce
 
 add_test(NAME chord_progression_converter_juce
          COMMAND magda_juce_tests "Chord Progression Converter Tests")
+
+add_test(NAME device_param_schema_juce
+         COMMAND magda_juce_tests "Device Param Schema Freeze")
+
+add_test(NAME device_state_schema_juce
+         COMMAND magda_juce_tests "Device State Schema")
 
 # Both test executables link magda_daw, which links ONNX Runtime. On Windows the
 # loader only searches the exe's directory, the cwd, and PATH, so without a copy

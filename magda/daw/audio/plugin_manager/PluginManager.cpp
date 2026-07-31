@@ -24,6 +24,7 @@
 #include "plugins/MidiReceivePlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
+#include "plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "processors/DeviceProcessor.hpp"
 #include "transport/TransportStateManager.hpp"
 
@@ -443,17 +444,10 @@ void PluginManager::captureAllPluginStates() {
                 stateStr = ext->state.getProperty(te::IDs::state).toString();
                 capturedExt = ext;
             } else {
-                // TE internal plugin (4osc, EQ, Compressor, etc.):
-                // Capture the full ValueTree as XML so non-automatable
-                // CachedValues (wave shapes, filter type, etc.) are preserved.
-                // Strip TE ids recursively so duplicated tracks get fresh
-                // EditItemIDs all the way through nested state trees.
-                sd.plugin->flushPluginStateToValueTree();
-                auto stateCopy = sd.plugin->state.createCopy();
-                stripTracktionIdsRecursive(stateCopy);
-                stripModifierAssignmentsRecursive(stateCopy);
-                if (auto xml = stateCopy.createXml())
-                    stateStr = xml->toString();
+                // Internal device: a MAGDA-owned v2 state document, so the saved
+                // patch carries no engine-shaped tree (see
+                // TracktionDeviceStateBridge.hpp).
+                stateStr = daw::audio::tracktion_adapter::captureInternalDeviceState(*sd.plugin);
             }
 
             // Always overwrite pluginState (even if empty) to avoid stale state.
@@ -489,12 +483,7 @@ void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
         stateStr = ext->state.getProperty(te::IDs::state).toString();
         capturedExt = ext;
     } else {
-        plugin->flushPluginStateToValueTree();
-        auto stateCopy = plugin->state.createCopy();
-        stripTracktionIdsRecursive(stateCopy);
-        stripModifierAssignmentsRecursive(stateCopy);
-        if (auto xml = stateCopy.createXml())
-            stateStr = xml->toString();
+        stateStr = daw::audio::tracktion_adapter::captureInternalDeviceState(*plugin);
     }
 
     auto& trackManager = TrackManager::getInstance();
@@ -591,13 +580,12 @@ void PluginManager::restorePluginState(const ChainNodePath& devicePath, te::Plug
 
     if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
         ext->state.setProperty(te::IDs::state, devInfo->pluginState, nullptr);
-    } else {
-        // Internal plugin: restore from saved XML ValueTree
-        if (auto xml = juce::parseXML(devInfo->pluginState)) {
-            auto savedState = juce::ValueTree::fromXml(*xml);
-            if (savedState.isValid()) {
-                plugin->restorePluginStateFromValueTree(savedState);
-            }
+    } else if (plugin != nullptr) {
+        namespace ta = daw::audio::tracktion_adapter;
+        auto savedState = ta::devicePluginTreeFromState(devInfo->pluginState);
+        if (savedState.isValid()) {
+            plugin->restorePluginStateFromValueTree(savedState);
+            ta::applyDeviceStateParameters(*plugin, devInfo->pluginState);
         }
     }
 }

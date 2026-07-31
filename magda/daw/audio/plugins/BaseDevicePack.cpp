@@ -3,7 +3,6 @@
 #include <array>
 #include <memory>
 
-#include "TracktionHelpers.hpp"
 #include "plugins/ArpeggiatorPlugin.hpp"
 #include "plugins/AudioSidechainMonitorPlugin.hpp"
 #include "plugins/DeviceServices.hpp"
@@ -31,6 +30,7 @@
 #include "plugins/mutable/MutableElementsPlugin.hpp"
 #include "plugins/mutable/MutableRingsPlugin.hpp"
 #include "plugins/tracktion/TracktionDeviceAdapters.hpp"
+#include "plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "processors/DeviceProcessor.hpp"
 #include "processors/internal/MidiDeviceProcessors.hpp"
 #include "processors/internal/NativeDeviceProcessors.hpp"
@@ -116,16 +116,16 @@ te::Plugin::Ptr restoreSavedPlugin(te::Edit& edit, const juce::String& savedPlug
     if (savedPluginState.isEmpty())
         return {};
 
-    if (auto xml = juce::parseXML(savedPluginState)) {
-        auto savedState = juce::ValueTree::fromXml(*xml);
-        if (savedState.isValid()) {
-            stripTracktionIdsRecursive(savedState);
-            return edit.getPluginCache().createNewPlugin(savedState);
-        }
-    } else {
+    auto savedState = tracktion_adapter::devicePluginTreeFromState(savedPluginState);
+    if (!savedState.isValid()) {
         DBG("restoreSavedPlugin: failed to parse saved plugin state");
+        return {};
     }
-    return {};
+
+    auto plugin = edit.getPluginCache().createNewPlugin(savedState);
+    if (plugin != nullptr)
+        tracktion_adapter::applyDeviceStateParameters(*plugin, savedPluginState);
+    return plugin;
 }
 
 DevicePluginPtr createTracktionPlugin(const InternalPluginSpec& spec, DeviceSessionKey sessionKey,
