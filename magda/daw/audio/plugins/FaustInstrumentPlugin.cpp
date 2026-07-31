@@ -203,6 +203,12 @@ juce::String ensureStdfaustImport(const juce::String& source) {
 }  // namespace
 
 FaustInstrumentPlugin::FaustState::~FaustState() {
+    // Every DSP instance has to die before the factory that made it: the
+    // interpreter/wasm factory owns the code and vtables its instances run on,
+    // so deleting it first turns the next ~dsp into a jump through freed
+    // memory. monoVoice is a second instance off the same factory, and as a
+    // member it would otherwise be destroyed after this body — reset it here.
+    monoVoice.reset();
     poly.reset();  // deletes the per-voice DSPs it owns
     if (factory)
         magda::faust::deleteFactory(factory);
