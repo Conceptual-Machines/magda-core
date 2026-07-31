@@ -123,6 +123,40 @@ TEST_CASE("Registered plugin pointers remain stable as packs append devices",
     REQUIRE(registry.getAll().front() == firstPointer);
 }
 
+TEST_CASE("Renamed runtime Faust ids still resolve under their 0.17 spellings",
+          "[internal-plugin-registry][faust]") {
+    // These literals are the persisted contract: they live in project state,
+    // so neither the canonical ids nor the aliases may drift silently.
+    const auto* fx = audio::findInternalPluginSpec("faust-fx");
+    REQUIRE(fx != nullptr);
+    const auto* instrument = audio::findInternalPluginSpec("faust-instrument");
+    REQUIRE(instrument != nullptr);
+    REQUIRE(fx != instrument);
+
+    CHECK(audio::findInternalPluginSpecForLoadType("faust") == fx);
+    CHECK(audio::findInternalPluginSpecForLoadType("faustinstrument") == instrument);
+}
+
+TEST_CASE("Loading under an alias rewrites the state to the canonical id",
+          "[internal-plugin-registry][faust]") {
+    juce::ValueTree state("PLUGIN");
+    state.setProperty("type", "faust", nullptr);
+    REQUIRE(audio::adoptCanonicalPluginType(state));
+    CHECK(state["type"].toString() == "faust-fx");
+
+    juce::ValueTree instrumentState("PLUGIN");
+    instrumentState.setProperty("type", "faustinstrument", nullptr);
+    REQUIRE(audio::adoptCanonicalPluginType(instrumentState));
+    CHECK(instrumentState["type"].toString() == "faust-instrument");
+
+    // Already canonical, and unknown types, are both left alone.
+    CHECK_FALSE(audio::adoptCanonicalPluginType(state));
+    juce::ValueTree unknown("PLUGIN");
+    unknown.setProperty("type", "not-a-registered-device", nullptr);
+    CHECK_FALSE(audio::adoptCanonicalPluginType(unknown));
+    CHECK(unknown["type"].toString() == "not-a-registered-device");
+}
+
 TEST_CASE("Device packs can contribute parameter aliases", "[internal-plugin-registry]") {
     audio::InternalPluginRegistry registry;
 

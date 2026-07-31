@@ -131,6 +131,13 @@ class ParamHostComponent : public juce::Component {
     // layoutContent() has no DeviceInfo of its own, so the widths it needs are
     // recorded here rather than re-derived.
     std::vector<int> cellSpans_;
+    // The fonts layoutContent() last ran with. updateParameterSlots() is what
+    // discovers the spans, and it can run after a layout pass rather than
+    // before it, so it has to be able to re-lay-out on its own - which means
+    // reproducing the caller's fonts without having them passed in.
+    juce::Font lastLabelFont_{juce::FontOptions{}};
+    juce::Font lastValueFont_{juce::FontOptions{}};
+    bool hasLaidOut_ = false;
     // Rows the last assignment actually filled, and an optional pinned row
     // height. Both exist so a caller can give the grid less than the whole
     // body without the cells shrinking to match.

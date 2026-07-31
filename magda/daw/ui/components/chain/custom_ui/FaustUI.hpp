@@ -4,6 +4,7 @@
 
 #include <memory>
 
+#include "audio/plugins/FaustPatchInfo.hpp"
 #include "core/ChainNodePath.hpp"
 
 namespace magda::daw::audio {
@@ -78,10 +79,16 @@ class FaustUI : public juce::Component {
     void showLoadMenu();
     void loadFromFile();
     void saveDspToFile();
-    // User Faust effects dir (dataDir()/FaustEffects), created on demand. Save
-    // target + Load default location, so generated effects build a reusable
-    // library separate from MAGDA .mps presets.
-    static juce::File userEffectsDir();
+    // The kind of the bound device, defaulting to Effect while unbound so the
+    // menu-building helpers have something to answer with.
+    magda::daw::audio::FaustPatchKind patchKind() const;
+    // User Faust patch dir for one device kind (dataDir()/FaustEffects or
+    // .../FaustInstruments), created on demand. Save target + Load default
+    // location, so generated patches build a reusable library separate from
+    // MAGDA .mps presets. Split by kind because an instrument patch is not
+    // loadable into an effect: it synthesises against Faust's reserved
+    // freq/gain/gate voice controls rather than processing an input.
+    static juce::File userPatchDir(magda::daw::audio::FaustPatchKind kind);
     void showCodeEditor();
     // The custom view comes from the source's own `declare magda_view`, so
     // every load path resolves it the same way with nothing to pass in.

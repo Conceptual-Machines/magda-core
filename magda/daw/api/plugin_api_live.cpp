@@ -6,6 +6,8 @@
 
 #include "../audio/AudioBridge.hpp"
 #include "../audio/plugins/DrumGridPlugin.hpp"
+#include "../audio/plugins/FaustInstrumentPlugin.hpp"
+#include "../audio/plugins/FaustPlugin.hpp"
 #include "../audio/plugins/IFaustEditorModel.hpp"
 #include "../audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "../audio/plugins/StepSequencerPlugin.hpp"
@@ -409,8 +411,9 @@ juce::String PluginApiLive::applyFaustSource(const ChainNodePath& path,
                                              const juce::String& displayName,
                                              const juce::String& source, bool verified) {
     auto* device = TrackManager::getInstance().getDeviceInChainByPath(path);
-    if (device == nullptr || (!device->pluginId.equalsIgnoreCase("faust") &&
-                              !device->pluginId.equalsIgnoreCase("faustinstrument")))
+    if (device == nullptr ||
+        (!device->pluginId.equalsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName) &&
+         !device->pluginId.equalsIgnoreCase(daw::audio::FaustInstrumentPlugin::xmlTypeName)))
         return "(target device is not a Faust plugin)";
 
     auto* bridge = getAudioBridge();

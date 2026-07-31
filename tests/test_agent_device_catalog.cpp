@@ -140,13 +140,13 @@ TEST_CASE("Agent device capabilities declare UI and dedicated-agent routing",
     CHECK(poly.soundDesignAgent == SoundDesignAgentKind::PolyStepSequencer);
     CHECK(createSoundDesignAgentFor("polystepsequencer") != nullptr);
 
-    const auto& faust = getInternalPluginCapabilities("faust");
+    const auto& faust = getInternalPluginCapabilities("faust-fx");
     CHECK(faust.coderAgent == CoderAgentKind::Faust);
-    CHECK(createCoderAgentFor("faust") != nullptr);
+    CHECK(createCoderAgentFor("faust-fx") != nullptr);
 
-    const auto& faustInstrument = getInternalPluginCapabilities("faustinstrument");
+    const auto& faustInstrument = getInternalPluginCapabilities("faust-instrument");
     CHECK(faustInstrument.coderAgent == CoderAgentKind::Faust);
-    CHECK(createCoderAgentFor("faustinstrument") != nullptr);
+    CHECK(createCoderAgentFor("faust-instrument") != nullptr);
 
     const auto& drumGrid = getInternalPluginCapabilities("drumgrid");
     CHECK(drumGrid.drumRoleProvider);

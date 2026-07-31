@@ -22,6 +22,11 @@ bool typeMatchesAlias(const juce::String& type, const InternalPluginSpec& spec) 
     return false;
 }
 
+const juce::Identifier& typeProperty() {
+    static const juce::Identifier type("type");
+    return type;
+}
+
 struct RegistryState {
     std::mutex mutex;
     std::vector<DevicePackRegistration> packRegistrations;
@@ -185,19 +190,39 @@ DevicePluginPtr createInternalPluginFromSpec(const InternalPluginSpec& spec,
     return spec.createInSession(spec, sessionKey, savedPluginState);
 }
 
+bool adoptCanonicalPluginType(const juce::ValueTree& state) {
+    if (!state.isValid())
+        return false;
+
+    const auto type = state[typeProperty()].toString();
+    const auto* spec = findInternalPluginSpecForLoadType(type);
+    if (spec == nullptr || spec->pluginId == nullptr || type == spec->pluginId)
+        return false;
+
+    // ValueTree is a refcounted handle, so writing through the copy edits the
+    // same shared data the caller (and the Edit) holds. MAGDA's dirty flag is
+    // driven by explicit markDirty() calls rather than ValueTree listeners, so
+    // this does not make merely opening a project look edited.
+    juce::ValueTree writable = state;
+    writable.setProperty(typeProperty(), spec->pluginId, nullptr);
+    return true;
+}
+
 DevicePluginPtr createRegisteredPlugin(const DevicePluginCreationContext& context) {
-    const auto type = context.state[juce::Identifier("type")].toString();
+    const auto type = context.state[typeProperty()].toString();
     const auto* spec = findInternalPluginSpecForLoadType(type);
     if (spec == nullptr || spec->createPlugin == nullptr)
         return {};
+    adoptCanonicalPluginType(context.state);
     return spec->createPlugin(context);
 }
 
 std::unique_ptr<MagdaDevice> createRegisteredDevice(const DevicePluginCreationContext& context) {
-    const auto type = context.state[juce::Identifier("type")].toString();
+    const auto type = context.state[typeProperty()].toString();
     const auto* spec = findInternalPluginSpecForLoadType(type);
     if (spec == nullptr || spec->createDevice == nullptr)
         return {};
+    adoptCanonicalPluginType(context.state);
     return spec->createDevice(context);
 }
 

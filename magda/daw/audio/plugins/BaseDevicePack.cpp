@@ -197,6 +197,11 @@ constexpr const char* kOscilloscopeAliases[] = {"scope"};
 constexpr const char* kSpectrumAliases[] = {"spectrum", "analyzer"};
 constexpr const char* kLevelsAliases[] = {"loudness", "lufs"};
 constexpr const char* kSidechainAliases[] = {"duck", "pump", "volumeshaper"};
+// 0.17 shipped the runtime Faust devices as "faust" / "faustinstrument". The
+// ids are persisted in project state, so the old spellings stay registered as
+// load aliases: a project saved before the rename still resolves its device.
+constexpr const char* kFaustAliases[] = {"faust"};
+constexpr const char* kFaustInstrumentAliases[] = {"faustinstrument"};
 
 constexpr const char* kTracktionTags[] = {"tracktion-engine"};
 constexpr const char* kCompressorTags[] = {"tracktion-engine", "legacy-te-compressor"};
@@ -516,6 +521,8 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .browserCategory = "Experimental",
                    .description = "Interpreted Faust device for loading and editing user DSP code.",
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
+                   .loadAliases = kFaustAliases,
+                   .loadAliasCount = static_cast<int>(std::size(kFaustAliases)),
                    .matchesPlugin = matches<FaustPlugin>,
                    .createProcessor = makeProcessor<FaustProcessor>,
                    .showInBrowser = true,
@@ -528,6 +535,8 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .browserCategory = "Experimental",
                    .description = "Polyphonic Faust synth instrument driven by MIDI (POC).",
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
+                   .loadAliases = kFaustInstrumentAliases,
+                   .loadAliasCount = static_cast<int>(std::size(kFaustInstrumentAliases)),
                    .matchesPlugin = matches<FaustInstrumentPlugin>,
                    .createProcessor = makeProcessor<FaustInstrumentProcessor>,
                    .showInBrowser = true,

@@ -208,8 +208,16 @@ int FaustInstrumentProcessor::getParameterCount() const {
 
 ParameterInfo FaustInstrumentProcessor::getParameterInfo(int index) const {
     auto* faust = dynamic_cast<daw::audio::FaustInstrumentPlugin*>(plugin_.get());
-    if (faust == nullptr || index < 0 || index >= daw::audio::FaustParamPool::kSize)
+    if (faust == nullptr || index < 0)
         return {};
+    // Voice Mode and Glide sit past the pool: they belong to the host, not to
+    // whatever patch happens to be loaded.
+    if (index >= daw::audio::FaustParamPool::kSize) {
+        const int hostIndex = index - daw::audio::FaustParamPool::kSize;
+        if (hostIndex >= daw::audio::FaustInstrumentPlugin::kHostParamCount)
+            return {};
+        return daw::audio::faustInstrumentHostParamInfo(hostIndex);
+    }
     return daw::audio::paramInfoFromSlot(faust->getPool().slot(index));
 }
 
@@ -234,6 +242,21 @@ void FaustInstrumentProcessor::populateParameters(DeviceInfo& info) const {
             info.parameters.push_back(std::move(paramInfo));
         }
     }
+
+    // Host-owned voice allocation, appended after the patch's own controls so
+    // they read as device settings rather than as part of the patch. Present
+    // for every runtime Faust instrument, whatever the .dsp declares.
+    for (int hostIndex = 0; hostIndex < daw::audio::FaustInstrumentPlugin::kHostParamCount;
+         ++hostIndex) {
+        auto hostInfo = daw::audio::faustInstrumentHostParamInfo(hostIndex);
+        const int paramIndex = daw::audio::FaustParamPool::kSize + hostIndex;
+        if (paramIndex < params.size() && params[paramIndex]) {
+            hostInfo.currentValue =
+                ParameterUtils::normalizedToReal(params[paramIndex]->getCurrentValue(), hostInfo);
+        }
+        info.parameters.push_back(std::move(hostInfo));
+    }
+
     populateFaustMeters(faust->getPool(), info);
 }
 

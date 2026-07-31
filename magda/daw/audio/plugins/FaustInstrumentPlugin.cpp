@@ -16,9 +16,24 @@
 
 namespace magda::daw::audio {
 
-const char* FaustInstrumentPlugin::xmlTypeName = "faustinstrument";
+const char* FaustInstrumentPlugin::xmlTypeName = "faust-instrument";
 
 namespace {
+
+inline float midiNoteToHz(int note) {
+    return 440.0f * std::pow(2.0f, (static_cast<float>(note) - 69.0f) / 12.0f);
+}
+
+// Glide is stepped once per sub-block rather than per sample: the mono voice's
+// freq zone is a plain float the DSP reads at the top of compute(), so the only
+// way to move it mid-block is to break the block up. 32 samples is 0.7 ms at
+// 48 kHz - far finer than the ear resolves on a portamento, and cheap enough
+// that chopping a block into that many compute() calls does not show up.
+constexpr int kGlideChunkSamples = 32;
+
+// Below this the glide is over: a target within a cent of the current pitch is
+// inaudible, and stopping there keeps the ramp from creeping forever.
+constexpr float kGlideDoneRatio = 1.0006f;  // ~1 cent
 
 // Reserved Faust control labels: the polyphonic voice allocator drives these
 // per-voice from MIDI note/velocity/gate, so they are never exposed as
@@ -36,6 +51,11 @@ bool isReservedVoiceControl(const juce::String& cleanLabel) {
 // The user controls are wrapped in vgroup() boxes (Osc / Filter / Env) so the
 // instrument's tabbed UI gets one tab per group. Each group's controls are
 // declared inside the box via `with{}` so Faust composes them under that group.
+//
+// Mirrored by faust_dsp/runtime/instruments/synth/faust_poly_synth.dsp, which
+// is what puts it in the Load menu - keep the two in step. This copy stays
+// compiled in rather than being read from that file, so a device still comes up
+// making sound when nothing is staged (a dev build, a broken install).
 constexpr const char* kDefaultDspSource = R"FAUST(
 import("stdfaust.lib");
 declare name "Faust Poly Synth";
@@ -222,6 +242,14 @@ std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compil
     state->poly->init(sampleRate);
     state->dspIn = state->poly->getNumInputs();
     state->dspOut = state->poly->getNumOutputs();
+
+    // A second, independent instance for Mono/Legato. Built here rather than
+    // lazily on first use: allocating a DSP is not something to do from the
+    // audio thread, and the mode can change between any two blocks.
+    if (auto* monoInstance = factory->createDSPInstance()) {
+        state->monoVoice.reset(monoInstance);
+        state->monoVoice->init(sampleRate);
+    }
     return state;
 }
 
@@ -306,6 +334,42 @@ std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compil
             state->voiceZonesBySlot[static_cast<size_t>(b.slotIndex)] = it->second;
     }
 
+    // Do the same for the mono voice. Harvested separately with the Standard
+    // layout: it is a bare DSP instance, with none of the proxy/voice boxes the
+    // poly wrapper adds, so PolyphonicVoices has nothing to strip. Its labels
+    // are the author's own, which is what lets the same label match the pool
+    // slot the poly voices bound to.
+    if (state->monoVoice) {
+        FaustUIHarvester monoHarvester(FaustUIHarvester::Layout::Standard);
+        state->monoVoice->buildUserInterface(&monoHarvester);
+
+        std::map<juce::String, FAUSTFLOAT*> monoByLabel;
+        for (const auto& c : monoHarvester.controls())
+            monoByLabel.emplace(c.label, c.zone);
+
+        const auto findMono = [&monoByLabel](const char* label) -> FAUSTFLOAT* {
+            auto it = monoByLabel.find(juce::String(label));
+            return it != monoByLabel.end() ? it->second : nullptr;
+        };
+        state->monoFreqZone = findMono("freq");
+        state->monoGainZone = findMono("gain");
+        state->monoGateZone = findMono("gate");
+
+        // Slot zones are matched by label, the same key the poly path groups
+        // its per-voice occurrences under, so the two stay in step by
+        // construction rather than by both happening to walk the UI in order.
+        for (const auto& rep : reps) {
+            auto it = monoByLabel.find(rep.label);
+            if (it == monoByLabel.end())
+                continue;
+            for (const auto& b : state->activeBindings)
+                if (b.zone == rep.zone && b.slotIndex >= 0 && b.slotIndex < FaustParamPool::kSize) {
+                    state->monoZoneBySlot[static_cast<size_t>(b.slotIndex)] = it->second;
+                    break;
+                }
+        }
+    }
+
     initialiseUnsetPoolValues(state->activeBindings, previousSlots);
 
     DBG("[FaustInstrument] pool active=" << pool_.activeCount() << " bindings="
@@ -313,6 +377,90 @@ std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compil
     for (const auto& d : lastDiagnostics_)
         DBG("  diagnostic: " << d);
     return state;
+}
+
+int FaustInstrumentPlugin::readVoiceMode() const {
+    if (!voiceModeParam_)
+        return Poly;
+    // The parameter is normalised 0..1 over three modes.
+    const float real = voiceModeParam_->getCurrentValue() * 2.0f;
+    return juce::jlimit(0, 2, static_cast<int>(std::lround(real)));
+}
+
+void FaustInstrumentPlugin::resetAllVoices(const std::shared_ptr<FaustState>& state) {
+    if (!state)
+        return;
+    if (state->poly)
+        state->poly->ctrlChange(0, 123, 0);  // All Notes Off
+    if (state->monoVoice)
+        state->monoVoice->instanceClear();
+    heldNotes_.clear();
+    if (state->monoGateZone)
+        *state->monoGateZone = 0.0f;
+    // Drop the glide target too, so the next note starts from itself rather
+    // than sliding in from whatever was last played.
+    glideCurrentHz_ = 0.0f;
+    glideTargetHz_ = 0.0f;
+}
+
+void FaustInstrumentPlugin::releasePolyVoicesForPitch(const std::shared_ptr<FaustState>& state,
+                                                      int pitch) {
+    if (!state || !state->poly)
+        return;
+    // compile() always builds this as mydsp_poly.
+    auto* impl = static_cast<mydsp_poly*>(state->poly.get());
+    for (auto* voice : impl->fVoiceTable) {
+        if (voice == nullptr)
+            continue;
+        if (voice->fCurNote == pitch ||
+            (voice->fCurNote == kLegatoVoice && voice->fNextNote == pitch))
+            voice->keyOff(/*hard*/ false);
+    }
+}
+
+bool FaustInstrumentPlugin::handleMonoNoteOn(const std::shared_ptr<FaustState>& state, int note,
+                                             int velocity, int mode) {
+    const float g = static_cast<float>(velocity) / 127.0f;
+    const bool wasEmpty = heldNotes_.empty();
+    heldNotes_.push_back({note, g});
+
+    glideTargetHz_ = midiNoteToHz(note);
+    // From silence there is nothing to glide from, so land on the note. This is
+    // also what keeps the first note of a phrase from swooping in.
+    if (wasEmpty || glideCurrentHz_ <= 0.0f)
+        glideCurrentHz_ = glideTargetHz_;
+
+    if (state->monoGainZone)
+        *state->monoGainZone = g;
+
+    if (wasEmpty) {
+        if (state->monoGateZone)
+            *state->monoGateZone = 1.0f;  // clean attack from silence
+        return false;
+    }
+    if (mode == Mono) {
+        if (state->monoGateZone)
+            *state->monoGateZone = 0.0f;  // caller raises it after one sample
+        return true;
+    }
+    return false;  // Legato: pitch changes, the envelope keeps running
+}
+
+void FaustInstrumentPlugin::handleMonoNoteOff(const std::shared_ptr<FaustState>& state, int note) {
+    // Search from the top so releasing one of a repeated pitch drops the most
+    // recent, leaving any earlier hold of the same note intact.
+    for (auto it = heldNotes_.rbegin(); it != heldNotes_.rend(); ++it)
+        if (it->note == note) {
+            heldNotes_.erase(std::next(it).base());
+            break;
+        }
+
+    if (heldNotes_.empty()) {
+        if (state->monoGateZone)
+            *state->monoGateZone = 0.0f;  // last note up -> envelope release
+    } else {
+        glideTargetHz_ = midiNoteToHz(heldNotes_.back().note);  // legato return
+    }
 }
 
 void FaustInstrumentPlugin::initialiseUnsetPoolValues(
@@ -355,6 +503,17 @@ FaustInstrumentPlugin::FaustInstrumentPlugin(const te::PluginCreationInfo& info)
             poolCached_[static_cast<size_t>(i)]);
     }
 
+    // Host-owned voice allocation, added after the pool so the pool's parameter
+    // indices stay put. Both are normalised 0..1 like every other TE parameter;
+    // faustInstrumentHostParamInfo() carries the real ranges for display.
+    voiceModeCached_.referTo(this->state, juce::Identifier("voiceMode"), um, 0.0f);
+    voiceModeParam_ = addParam("voiceMode", "Voice Mode", normalisedRange);
+    voiceModeParam_->attachToCurrentValue(voiceModeCached_);
+
+    glideCached_.referTo(this->state, juce::Identifier("glide"), um, 0.0f);
+    glideParam_ = addParam("glide", "Glide", normalisedRange);
+    glideParam_->attachToCurrentValue(glideCached_);
+
     const auto savedSource = state.getProperty("dspSource", juce::String()).toString();
     const auto savedName = state.getProperty("dspName", juce::String()).toString();
 
@@ -390,6 +549,10 @@ FaustInstrumentPlugin::~FaustInstrumentPlugin() {
         if (p)
             p->detachFromCurrentValue();
     }
+    if (voiceModeParam_)
+        voiceModeParam_->detachFromCurrentValue();
+    if (glideParam_)
+        glideParam_->detachFromCurrentValue();
     std::atomic_store(&active_, std::shared_ptr<FaustState>{});
     {
         const juce::ScopedLock lk(retiredLock_);
@@ -467,10 +630,11 @@ void FaustInstrumentPlugin::initialise(const te::PluginInitialisationInfo& info)
 void FaustInstrumentPlugin::deinitialise() {}
 
 void FaustInstrumentPlugin::reset() {
-    if (auto state = std::atomic_load(&active_)) {
-        if (state->poly)
-            state->poly->instanceClear();
-    }
+    // Called from the message thread (TE's plugin API, and AudioBridge's
+    // resetSynthsOnTrack after a record pass) while the audio thread may be
+    // inside compute(). Only raise the flag; the flush runs at the top of the
+    // next applyToBuffer.
+    pendingVoiceFlush_.store(true, std::memory_order_release);
 }
 
 void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
@@ -481,8 +645,21 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (!active || !active->poly)
         return;
 
+    // A flush requested from the message thread runs here, on the audio thread,
+    // where nothing else is walking the voice table.
+    if (pendingVoiceFlush_.exchange(false, std::memory_order_acq_rel))
+        resetAllVoices(active);
+
+    // Stopping mid-note delivers no note-offs, so a sounding clip voice would
+    // hang gated on. Flush on the playing -> stopped edge.
+    if (wasPlaying_ && !fc.isPlaying)
+        resetAllVoices(active);
+    wasPlaying_ = fc.isPlaying;
+
     // Apply user parameter values: denormalize once per slot, then fan the
-    // value out to every voice's zone (plain pointer writes — RT-safe).
+    // value out to every voice's zone (plain pointer writes — RT-safe). The
+    // mono voice gets the same value: it is a peer of the poly voices, just one
+    // the allocator does not own.
     for (const auto& b : active->activeBindings) {
         if (b.role != FaustControlRole::User)
             continue;
@@ -496,6 +673,8 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
             if (zone)
                 *zone = static_cast<FAUSTFLOAT>(value);
         }
+        if (auto* monoZone = active->monoZoneBySlot[static_cast<size_t>(b.slotIndex)])
+            *monoZone = static_cast<FAUSTFLOAT>(value);
     }
 
     // Host-supplied controls. Sample the edit tempo once per block, then fan
@@ -516,25 +695,8 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
             if (zone)
                 *zone = static_cast<FAUSTFLOAT>(cachedBpm);
         }
-    }
-
-    // Drive voice allocation from this block's MIDI. Timing offsets within the
-    // block are ignored for the POC (all events applied before compute).
-    if (fc.bufferForMidiMessages != nullptr && !fc.bufferForMidiMessages->isEmpty()) {
-        for (auto& m : *fc.bufferForMidiMessages) {
-            if (m.isNoteOn()) {
-                active->poly->keyOn(m.getChannel(), m.getNoteNumber(), m.getVelocity());
-            } else if (m.isNoteOff()) {
-                active->poly->keyOff(m.getChannel(), m.getNoteNumber(), m.getVelocity());
-            } else if (m.isPitchWheel()) {
-                active->poly->pitchWheel(m.getChannel(), m.getPitchWheelValue());
-            } else if (m.isController()) {
-                // Includes CC 120/123 (all sound/notes off), which the Faust
-                // MIDI handler turns into keyOff across active voices.
-                active->poly->ctrlChange(m.getChannel(), m.getControllerNumber(),
-                                         m.getControllerValue());
-            }
-        }
+        if (auto* monoZone = active->monoZoneBySlot[static_cast<size_t>(b.slotIndex)])
+            *monoZone = static_cast<FAUSTFLOAT>(cachedBpm);
     }
 
     const int hostChannels = fc.destBuffer->getNumChannels();
@@ -545,26 +707,124 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (hostChannels <= 0 || dspOut <= 0 || scratchOut_.getNumSamples() <= 0)
         return;
 
-    // Render the poly synth into scratch (compute() overwrites its outputs),
-    // then ADD into destBuffer so we don't clobber any existing signal.
-    // Chunk to MIX_BUFFER_SIZE — mydsp_poly's internal mix buffers cap there.
+    // Mono and Legato play a voice the allocator knows nothing about, so a mode
+    // change has to silence whichever engine is being left behind - otherwise
+    // its held notes keep sounding under the new one with no way to release
+    // them.
+    const int mode = active->monoVoice ? readVoiceMode() : Poly;
+    if (mode != lastVoiceMode_) {
+        resetAllVoices(active);
+        lastVoiceMode_ = mode;
+    }
+    const bool monophonic = (mode != Poly) && active->monoVoice;
+
+    ::dsp* engine = monophonic ? active->monoVoice.get() : static_cast<::dsp*>(active->poly.get());
+
+    // Glide time as a one-pole time constant, matching what the compiled synths
+    // get from si.smooth(ba.tau2pole(glide)) inside their DSP. Here the host
+    // owns the ramp instead, because a runtime patch reads `freq` directly and
+    // cannot be assumed to smooth anything itself.
+    const float glideMs = glideParam_ ? glideParam_->getCurrentValue() * 2000.0f : 0.0f;
+    const float glideTau = glideMs * 0.001f;
+
     outPtrs_.resize(static_cast<size_t>(dspOut));
+    // mydsp_poly's internal mix buffers cap at MIX_BUFFER_SIZE.
     const int maxChunk = std::min(MIX_BUFFER_SIZE, scratchOut_.getNumSamples());
 
-    for (int offset = 0; offset < n; offset += maxChunk) {
-        const int chunk = std::min(maxChunk, n - offset);
-        for (int ch = 0; ch < dspOut; ++ch)
-            outPtrs_[static_cast<size_t>(ch)] =
-                scratchOut_.getWritePointer(ch % scratchOut_.getNumChannels());
+    // Render [segStart, segStart + segLen) from the active engine and ADD it
+    // into destBuffer (compute() overwrites its outputs, and the buffer may
+    // already carry signal we must not clobber). While a glide is in flight the
+    // segment is further chopped into kGlideChunkSamples so the freq zone can
+    // move within it.
+    const auto renderSegment = [&](int segStart, int segLen) {
+        int done = 0;
+        while (done < segLen) {
+            const bool gliding = monophonic && glideTau > 0.0f && glideTargetHz_ > 0.0f &&
+                                 std::abs(glideCurrentHz_ - glideTargetHz_) >
+                                     glideTargetHz_ * (kGlideDoneRatio - 1.0f);
+            const int limit = gliding ? std::min(maxChunk, kGlideChunkSamples) : maxChunk;
+            const int chunk = std::min(limit, segLen - done);
 
-        active->poly->compute(chunk, nullptr, outPtrs_.data());
+            if (monophonic && active->monoFreqZone) {
+                if (gliding) {
+                    // One-pole step over this chunk's worth of samples.
+                    const float pole =
+                        std::exp(-static_cast<float>(chunk) /
+                                 (glideTau * static_cast<float>(currentSampleRate_)));
+                    glideCurrentHz_ += (1.0f - pole) * (glideTargetHz_ - glideCurrentHz_);
+                } else {
+                    glideCurrentHz_ = glideTargetHz_;
+                }
+                if (glideCurrentHz_ > 0.0f)
+                    *active->monoFreqZone = static_cast<FAUSTFLOAT>(glideCurrentHz_);
+            }
 
-        for (int ch = 0; ch < hostChannels; ++ch) {
-            // One-output ("mono") DSP drives both channels; otherwise channel-map.
-            const int srcCh = (dspOut == 1) ? 0 : (ch % dspOut);
-            fc.destBuffer->addFrom(ch, start + offset, scratchOut_, srcCh, 0, chunk);
+            for (int ch = 0; ch < dspOut; ++ch)
+                outPtrs_[static_cast<size_t>(ch)] =
+                    scratchOut_.getWritePointer(ch % scratchOut_.getNumChannels());
+
+            engine->compute(chunk, nullptr, outPtrs_.data());
+
+            for (int ch = 0; ch < hostChannels; ++ch) {
+                // One-output ("mono") DSP drives both channels; else channel-map.
+                const int srcCh = (dspOut == 1) ? 0 : (ch % dspOut);
+                fc.destBuffer->addFrom(ch, start + segStart + done, scratchOut_, srcCh, 0, chunk);
+            }
+            done += chunk;
+        }
+    };
+
+    // Walk the block, rendering up to each MIDI event before applying it. The
+    // Mono retrigger depends on this: its envelope restarts on a gate edge, and
+    // an edge only exists if samples are rendered either side of it.
+    int cursor = 0;
+    if (fc.bufferForMidiMessages != nullptr && !fc.bufferForMidiMessages->isEmpty()) {
+        for (auto& m : *fc.bufferForMidiMessages) {
+            int evSample = juce::roundToInt(m.getTimeStamp() * currentSampleRate_);
+            evSample = juce::jlimit(cursor, n, evSample);  // clamp + keep monotonic
+            renderSegment(cursor, evSample - cursor);
+            cursor = evSample;
+
+            if (!monophonic) {
+                if (m.isNoteOn()) {
+                    // Release anything still sounding this pitch first, so the
+                    // allocator never accumulates orphans that hang.
+                    releasePolyVoicesForPitch(active, m.getNoteNumber());
+                    active->poly->keyOn(m.getChannel(), m.getNoteNumber(), m.getVelocity());
+                } else if (m.isNoteOff()) {
+                    releasePolyVoicesForPitch(active, m.getNoteNumber());
+                } else if (m.isPitchWheel()) {
+                    active->poly->pitchWheel(m.getChannel(), m.getPitchWheelValue());
+                } else if (m.isController()) {
+                    // Includes CC 120/123 (all sound/notes off), which the Faust
+                    // MIDI handler turns into keyOff across active voices.
+                    active->poly->ctrlChange(m.getChannel(), m.getControllerNumber(),
+                                             m.getControllerValue());
+                }
+            } else {
+                if (m.isNoteOn()) {
+                    if (handleMonoNoteOn(active, m.getNoteNumber(), m.getVelocity(), mode)) {
+                        // One sample of gate-low renders the falling edge;
+                        // raising it again gives the rising edge that
+                        // retriggers the envelope.
+                        const int low = std::min(1, n - cursor);
+                        renderSegment(cursor, low);
+                        cursor += low;
+                        if (active->monoGateZone)
+                            *active->monoGateZone = 1.0f;
+                    }
+                } else if (m.isNoteOff()) {
+                    handleMonoNoteOff(active, m.getNoteNumber());
+                } else if (m.isController() &&
+                           (m.getControllerNumber() == 120 || m.getControllerNumber() == 123)) {
+                    heldNotes_.clear();
+                    if (active->monoGateZone)
+                        *active->monoGateZone = 0.0f;
+                }
+            }
         }
     }
+    renderSegment(cursor, n - cursor);
 }
 
 void FaustInstrumentPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
