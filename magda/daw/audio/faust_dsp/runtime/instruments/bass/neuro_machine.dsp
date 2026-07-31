@@ -1,6 +1,6 @@
 import("stdfaust.lib");
-declare name "Reese Machine";
-declare description "Two or three detuned saws driven through two notch-and-clip chains, over a clean sine sub. The beating between the outer saws is the Reese; the notches carve it hollow and the clippers give it teeth.";
+declare name "Neuro Machine";
+declare description "Two or three detuned saws driven through two notch-and-clip chains, over a clean sine sub. The beating between the outer saws is the Reese it starts from; the notches carve it hollow and the clippers give it teeth.";
 declare author "MAGDA";
 declare license "GPL-3.0";
 declare version "1.0";
@@ -10,7 +10,7 @@ declare version "1.0";
 //
 // `gain` is deliberately absent. Faust's allocator writes MIDI velocity into a
 // control by that name if the patch declares one, and this patch does not want
-// velocity anywhere near its amplitude - a Reese is a held, flat-topped sound,
+// velocity anywhere near its amplitude - a neuro is a held, flat-topped sound,
 // and velocity riding the level would also modulate how hard the clippers are
 // driven from note to note. Leaving it undeclared is safe: dsp_voice collects
 // gain paths into a list that simply comes back empty, and its velocity
@@ -102,7 +102,7 @@ with {
 // Envelope
 // ============================================================================
 
-// Fixed, and not exposed. A Reese holds flat for as long as the note does, so
+// Fixed, and not exposed. A neuro holds flat for as long as the note does, so
 // the only envelope it wants is a click-free way in and out - there is no
 // setting of these four a player would reach for mid-patch, and four knobs of
 // grid space is a poor trade for that.
