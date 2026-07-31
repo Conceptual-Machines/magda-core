@@ -247,6 +247,15 @@ void AutomationClipComponent::mouseDrag(const juce::MouseEvent& e) {
             }
             previewStartBeat_ = newStartBeat;
 
+            if (isDuplicating_) {
+                // The original stays where it is and the lane outlines where
+                // the copy will land, the same way an arrangement clip shows a
+                // ghost instead of dragging itself away.
+                if (auto* lane = getLane())
+                    lane->setClipCopyGhost(previewStartBeat_, previewLengthBeats_);
+                break;
+            }
+
             // Update position visually
             int newX = AutomationLaneComponent::SCALE_LABEL_WIDTH +
                        static_cast<int>(previewStartBeat_ * pixelsPerBeat_);
@@ -309,6 +318,13 @@ void AutomationClipComponent::mouseUp(const juce::MouseEvent& e) {
     const bool moved = previewStartBeat_ != dragStartBeat_;
     const bool resized = previewLengthBeats_ != dragStartLengthBeats_;
 
+    // Unconditionally, before any early-out: a drag that wandered and came back
+    // to its start counts as not moved, but it still put a ghost on the lane.
+    if (duplicating) {
+        if (auto* lane = getLane())
+            lane->clearClipCopyGhost();
+    }
+
     // Every command below ends in notifyClipsChanged, which makes the lane
     // rebuild its clip components - destroying this one. So each is deferred to
     // the next message-thread tick and captures values rather than `this`,
@@ -323,11 +339,6 @@ void AutomationClipComponent::mouseUp(const juce::MouseEvent& e) {
             if (!moved)
                 break;
             if (duplicating) {
-                // The original never moved, so put it back now rather than
-                // leaving it under the cursor until the rebuild repaints it.
-                setBounds(AutomationLaneComponent::SCALE_LABEL_WIDTH +
-                              static_cast<int>(dragStartBeat_ * pixelsPerBeat_),
-                          getY(), getWidth(), getHeight());
                 juce::MessageManager::callAsync([clipId, startBeat]() {
                     auto& undoMgr = UndoManager::getInstance();
                     undoMgr.beginCompoundOperation("Duplicate Automation Clip");
@@ -402,10 +413,31 @@ void AutomationClipComponent::mouseExit(const juce::MouseEvent& e) {
     repaint();
 }
 
+AutomationLaneComponent* AutomationClipComponent::getLane() const {
+    return findParentComponentOfClass<AutomationLaneComponent>();
+}
+
+bool AutomationClipComponent::copyGestureHeld() const {
+    return GestureRouter::getInstance().isDuplicateOnDrag(
+        GestureContext::Arrangement, juce::ModifierKeys::getCurrentModifiers());
+}
+
+void AutomationClipComponent::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
+    juce::ignoreUnused(modifiers);
+    // Pressing or releasing the copy modifier while hovering has to swap the
+    // cursor immediately, not on the next mouse move - otherwise the gesture
+    // gives no sign it is armed until you have already started dragging.
+    if (!isMouseOver() || juce::Component::isMouseButtonDownAnywhere())
+        return;
+    updateCursor(getMouseXYRelative().x);
+}
+
 void AutomationClipComponent::updateCursor(int x) {
     // Resize cursor over the edge handles, hand elsewhere (drag-to-move).
     if (isOnLeftEdge(x) || isOnRightEdge(x))
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    else if (copyGestureHeld())
+        setMouseCursor(juce::MouseCursor::CopyingCursor);
     else
         setMouseCursor(juce::MouseCursor::DraggingHandCursor);
 }

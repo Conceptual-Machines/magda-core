@@ -58,6 +58,17 @@ class AutomationLaneComponent : public juce::Component,
     void setPixelsPerBeat(double ppb);
     void setTempoBPM(double bpm);
 
+    /**
+     * @brief Show a ghost outline where a dragged copy would land.
+     *
+     * Used by a clip's copy-drag: the clip itself stays put, and this marks
+     * the destination. Painted over the clip components rather than behind
+     * them, so the ghost stays visible when it overlaps an existing clip -
+     * which is exactly when the user most needs to see where it is going.
+     */
+    void setClipCopyGhost(double startBeat, double lengthBeats);
+    void clearClipCopyGhost();
+
     // Place the resize handle on the top edge (and invert the drag direction)
     // instead of the bottom. Used by bottom-anchored hosts such as the master
     // automation band, which grows upward, so the grab edge tracks the growth.
@@ -135,6 +146,13 @@ class AutomationLaneComponent : public juce::Component,
     bool isDrawingClip_ = false;
     double drawClipStartBeat_ = 0.0;
     double drawClipEndBeat_ = 0.0;
+
+    // Destination outline for a clip copy-drag, owned here rather than by the
+    // dragged clip because it has to be able to paint outside that clip's
+    // bounds.
+    bool hasCopyGhost_ = false;
+    double copyGhostStartBeat_ = 0.0;
+    double copyGhostLengthBeats_ = 0.0;
 
     // UI components
     std::unique_ptr<AutomationCurveEditor> curveEditor_;

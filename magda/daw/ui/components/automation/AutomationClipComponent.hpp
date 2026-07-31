@@ -77,7 +77,13 @@ class AutomationClipComponent : public juce::Component,
     // Resize edge detection
     static constexpr int RESIZE_EDGE_WIDTH = 6;
 
+    void modifierKeysChanged(const juce::ModifierKeys& modifiers) override;
+
   private:
+    class AutomationLaneComponent* getLane() const;
+    /// True while the copy-on-drag gesture (default Alt) is held.
+    bool copyGestureHeld() const;
+
     AutomationClipId clipId_;
     double pixelsPerBeat_ = 10.0;
 
