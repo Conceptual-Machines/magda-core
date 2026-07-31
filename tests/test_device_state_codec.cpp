@@ -85,6 +85,26 @@ TEST_CASE("device state refuses a newer schema", "[device-state]") {
     CHECK_FALSE(ds::decode(future).has_value());
     CHECK_FALSE(ds::isDeviceStateV2(future));
     CHECK_FALSE(ds::looksLikeLegacyEngineState(future));
+
+    // Refusing to read it is only half the job: capture has to recognise it too,
+    // or the next save replaces the newer document with a v2 one and the
+    // downgrade happens anyway.
+    CHECK(ds::isFutureDeviceState(future));
+    CHECK(ds::schemaVersionOf(future) == 3);
+}
+
+TEST_CASE("only a newer schema counts as future state", "[device-state]") {
+    // Anything capture is allowed to overwrite must NOT be reported as future,
+    // or ordinary saves would stop updating device state.
+    CHECK_FALSE(ds::isFutureDeviceState({}));
+    CHECK_FALSE(ds::isFutureDeviceState("not json at all"));
+    CHECK_FALSE(ds::isFutureDeviceState(ds::encode(makeDoc())));
+    CHECK_FALSE(ds::isFutureDeviceState(
+        R"(<PLUGIN type="magdaSampler" id="1042" samplePath="/tmp/kick.wav"/>)"));
+    CHECK_FALSE(ds::isFutureDeviceState("VVNUM0Jhc2U2NENodW5r"));  // external plugin chunk
+
+    CHECK(ds::schemaVersionOf(ds::encode(makeDoc())) == ds::kSchemaVersion);
+    CHECK_FALSE(ds::schemaVersionOf("not json at all").has_value());
 }
 
 TEST_CASE("device state preserves binary properties", "[device-state]") {

@@ -493,6 +493,19 @@ void RackSyncManager::capturePluginStates(SyncedRack& synced) {
     };
 
     for (auto& [deviceId, plugin] : synced.innerPlugins) {
+        // Resolve the DeviceInfo before capturing: its currently saved state
+        // decides whether an internal device may be overwritten at all.
+        const auto rackPath = ChainNodePath::rack(synced.trackId, synced.rackId);
+        DeviceInfo* devInfo = nullptr;
+        ChainNodePath devicePath;
+        for (auto& chain : rackInfo->chains) {
+            if (findInChains(chain.elements, rackPath.withChain(chain.id), deviceId, devInfo,
+                             devicePath))
+                break;
+        }
+        if (devInfo == nullptr)
+            continue;
+
         juce::String stateStr;
 
         if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
@@ -504,20 +517,12 @@ void RackSyncManager::capturePluginStates(SyncedRack& synced) {
             // adds fresh ones instead of doubling up on the captured ones (which
             // would re-apply the LFO modulation on top of the already-modulated
             // value, sweeping params past their range).
-            stateStr = daw::audio::tracktion_adapter::captureInternalDeviceState(*plugin);
+            stateStr = daw::audio::tracktion_adapter::captureInternalDeviceState(
+                *plugin, devInfo->pluginState);
         }
 
-        const auto rackPath = ChainNodePath::rack(synced.trackId, synced.rackId);
-        for (auto& chain : rackInfo->chains) {
-            DeviceInfo* devInfo = nullptr;
-            ChainNodePath devicePath;
-            if (findInChains(chain.elements, rackPath.withChain(chain.id), deviceId, devInfo,
-                             devicePath)) {
-                devInfo->pluginState = stateStr;
-                pluginManager_.refreshDeviceParameters(devicePath);
-                break;
-            }
-        }
+        devInfo->pluginState = stateStr;
+        pluginManager_.refreshDeviceParameters(devicePath);
     }
 }
 

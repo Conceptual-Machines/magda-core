@@ -94,6 +94,22 @@ bool looksLikeLegacyEngineState(const juce::String& text);
 /// True when `text` parses as a v2 document.
 bool isDeviceStateV2(const juce::String& text);
 
+/// The declared schema version of a MAGDA device state document, whatever this
+/// build's support for it. Nullopt for empty input, legacy engine XML, and
+/// anything that is not a MAGDA document.
+std::optional<int> schemaVersionOf(const juce::String& text);
+
+/**
+ * True when `text` is a MAGDA device state document from a schema NEWER than
+ * this build understands.
+ *
+ * Such a document is refused by `decode`, so the device loads its defaults.
+ * Capture must then leave the saved state alone: replacing it with a freshly
+ * captured v2 document would permanently downgrade a project written by a newer
+ * build, merely because it was opened and saved here.
+ */
+bool isFutureDeviceState(const juce::String& text);
+
 /// Depth-first walk over `root` and all descendants, root first.
 void forEachNode(const Node& root, const std::function<void(const Node&)>& visit);
 

@@ -646,7 +646,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                             } else {
                                 devInfo.pluginState =
                                     daw::audio::tracktion_adapter::captureInternalDeviceState(
-                                        *innerPlugin);
+                                        *innerPlugin, devInfo.pluginState);
                             }
 
                             instrumentRackManager_.unwrap(devId);

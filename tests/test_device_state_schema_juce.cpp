@@ -68,6 +68,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         testRoundTrip(*edit);
         testNestedDeviceSurvives(*edit);
         testBinaryPropertySurvives(*edit);
+        testFutureStateIsNotOverwritten(*edit);
         testLegacyStateStillLoads(*edit);
 
         audio::unregisterDeviceServices(sessionKey);
@@ -82,7 +83,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         if (plugin == nullptr)
             return;
 
-        const auto state = ta::captureInternalDeviceState(*plugin);
+        const auto state = ta::captureInternalDeviceState(*plugin, {});
         expect(state.isNotEmpty());
 
         // The acceptance criterion for #1887.
@@ -123,7 +124,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         if (auto gate = source->getAutomatableParameterByID("gate"))
             gate->setParameterFromHost(0.42f, juce::sendNotificationSync);
 
-        const auto state = ta::captureInternalDeviceState(*source);
+        const auto state = ta::captureInternalDeviceState(*source, {});
         source->deleteFromParent();
 
         auto restoredTree = ta::devicePluginTreeFromState(state);
@@ -172,7 +173,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
             return;
         expect(!sourceChain->plugins.empty(), "pad has no plugin to capture");
 
-        const auto state = ta::captureInternalDeviceState(*source);
+        const auto state = ta::captureInternalDeviceState(*source, {});
         source->deleteFromParent();
 
         const auto doc = ds::decode(state);
@@ -232,7 +233,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         }
         plugin->state.setProperty(te::IDs::irFileData, juce::var(payload), nullptr);
 
-        const auto state = ta::captureInternalDeviceState(*plugin);
+        const auto state = ta::captureInternalDeviceState(*plugin, {});
         plugin->deleteFromParent();
 
         const auto doc = ds::decode(state);
@@ -251,6 +252,37 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         expect(restoredBlock != nullptr, "restored tree lost the binary property");
         if (restoredBlock != nullptr)
             expect(*restoredBlock == payload, "restored binary property does not match");
+    }
+
+    void testFutureStateIsNotOverwritten(te::Edit& edit) {
+        beginTest("Device state from a newer schema is preserved, not downgraded");
+
+        // A project written by a future build. decode refuses it, so the device
+        // loads its defaults; capture must then hand the document straight back
+        // rather than replace it with what those defaults produce. Otherwise
+        // opening and saving here destroys the newer state permanently.
+        const juce::String futureState =
+            juce::String("{\"schema\": 99, \"device\": \"") +
+            audio::ArpeggiatorPlugin::xmlTypeName +
+            "\", \"props\": {\"arpQuantizeSub\": 8}, \"somethingNewer\": true}";
+
+        expect(ds::isFutureDeviceState(futureState));
+        expect(!ds::decode(futureState).has_value(), "a future document must not decode");
+
+        auto plugin = createPlugin(edit, audio::ArpeggiatorPlugin::xmlTypeName);
+        expect(plugin != nullptr);
+        if (plugin == nullptr)
+            return;
+
+        const auto captured = ta::captureInternalDeviceState(*plugin, futureState);
+        expectEquals(captured, futureState, "capture overwrote state it could not read");
+
+        // The guard must be narrow: ordinary saves still have to update state.
+        const auto readable = ta::captureInternalDeviceState(*plugin, {});
+        const auto recaptured = ta::captureInternalDeviceState(*plugin, readable);
+        expect(ds::isDeviceStateV2(recaptured), "capture stopped updating readable state");
+
+        plugin->deleteFromParent();
     }
 
     void testLegacyStateStillLoads(te::Edit& edit) {

@@ -25,7 +25,14 @@ namespace te = tracktion::engine;
 
 /// Capture a live internal device as a v2 document (JSON text). Empty when the
 /// plugin has no usable state.
-juce::String captureInternalDeviceState(te::Plugin& plugin);
+///
+/// `existingState` is what the device currently has saved. When that came from a
+/// schema this build cannot read, it is returned UNCHANGED: `decode` refused it,
+/// so the device is sitting at its defaults, and writing a freshly captured v2
+/// document over it would permanently downgrade a project written by a newer
+/// build just because it was opened here. The parameter is mandatory so a
+/// capture site cannot silently skip that check.
+juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& existingState);
 
 /// Build the engine plugin tree used to construct or restore a device from
 /// saved state. Accepts v2 JSON and legacy (v1) engine XML; returns an invalid

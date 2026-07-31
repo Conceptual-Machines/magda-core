@@ -110,7 +110,13 @@ juce::ValueTree legacyPluginTree(const juce::String& savedState) {
 
 }  // namespace
 
-juce::String captureInternalDeviceState(te::Plugin& plugin) {
+juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& existingState) {
+    // State from a newer schema was refused at load, so the live plugin holds
+    // defaults rather than what the project actually says. Capturing over it
+    // would destroy the newer document; hand it back untouched instead.
+    if (ds::isFutureDeviceState(existingState))
+        return existingState;
+
     plugin.flushPluginStateToValueTree();
 
     if (!plugin.state.isValid())

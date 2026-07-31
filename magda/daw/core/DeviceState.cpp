@@ -203,6 +203,26 @@ bool isDeviceStateV2(const juce::String& text) {
     return decode(text).has_value();
 }
 
+std::optional<int> schemaVersionOf(const juce::String& text) {
+    if (text.isEmpty() || looksLikeLegacyEngineState(text))
+        return std::nullopt;
+
+    juce::var parsed;
+    if (juce::JSON::parse(text, parsed).failed())
+        return std::nullopt;
+
+    auto* obj = parsed.getDynamicObject();
+    if (obj == nullptr || !obj->hasProperty(kKeySchema) || !obj->hasProperty(kKeyDevice))
+        return std::nullopt;
+
+    return static_cast<int>(obj->getProperty(kKeySchema));
+}
+
+bool isFutureDeviceState(const juce::String& text) {
+    const auto version = schemaVersionOf(text);
+    return version.has_value() && *version > kSchemaVersion;
+}
+
 void forEachNode(const Node& root, const std::function<void(const Node&)>& visit) {
     visit(root);
     for (const auto& child : root.children)

@@ -70,7 +70,13 @@ juce::String parameterLine(const juce::String& deviceType, te::Plugin& plugin) {
     for (auto* param : plugin.getAutomatableParameters())
         ids.add(param != nullptr ? param->paramID : juce::String("<null>"));
 
-    return deviceType + " " + juce::String(ids.size()) + " " + ids.joinIntoString(",");
+    // No trailing separator for a device with no parameters: the repo's
+    // trailing-whitespace hook would strip it from the committed file, and every
+    // zero-parameter device would then fail the comparison forever.
+    juce::String line = deviceType + " " + juce::String(ids.size());
+    if (!ids.isEmpty())
+        line << " " << ids.joinIntoString(",");
+    return line;
 }
 
 /// Every device the registries expose that can be instantiated on its own.
