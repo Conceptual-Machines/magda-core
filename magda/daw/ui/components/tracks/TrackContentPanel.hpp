@@ -243,6 +243,13 @@ class TrackContentPanel : public juce::Component,
 
     bool duplicateSelectedArrangementClips(bool includeAutomation, bool asGhost = false);
 
+    // Keyboard clip moves (#1957). Both take -1/+1 and move the whole selection
+    // by one step — one grid unit along the timeline, one track across it —
+    // returning false when nothing moved (no arrangement clips selected, or the
+    // selection is already against the edge it is being pushed towards).
+    bool nudgeSelectedClipsHorizontally(int direction);
+    bool nudgeSelectedClipsToAdjacentTrack(int direction);
+
     // Ghost clip methods (for Alt+drag visual feedback)
     void setClipGhost(ClipId clipId, const juce::Rectangle<int>& bounds,
                       const juce::Colour& colour);

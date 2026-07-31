@@ -50,6 +50,10 @@ enum {
     duplicateClipAsGhost = 0x101C,    // Copy joins the source's link group (mirrors content)
     makeClipUnique = 0x101D,          // Detach selected ghost clips from their link groups
     toggleClipEnabled = 0x101E,       // 0: enable/disable selected clips (disabled = no playback)
+    nudgeClipsEarlier = 0x101F,       // Shift+Left: move selected clips one grid step earlier
+    nudgeClipsLater = 0x1020,         // Shift+Right: move selected clips one grid step later
+    nudgeClipsUp = 0x1021,            // Shift+Up: move selected clips to the track above
+    nudgeClipsDown = 0x1022,          // Shift+Down: move selected clips to the track below
 
     // Transport menu
     play = 0x2000,  // Space: toggles play/stop (perform() already toggles)

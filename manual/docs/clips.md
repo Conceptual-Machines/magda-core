@@ -86,6 +86,7 @@ Follow actions chain session clips together for generative arrangement. Once the
 ## Editing Clips
 
 - **Move** — Drag a clip to reposition it on the timeline or move it to another track
+- **Nudge** — With clips selected, ++shift+arrow-left++ / ++shift+arrow-right++ moves them one grid step along the timeline, and ++shift+arrow-up++ / ++shift+arrow-down++ moves them to the neighbouring track. The whole selection moves together, keeping its spacing, and stops rather than piling up when it reaches the first track, the last track, or the start of the timeline. With snap on, the move lands on the grid; with snap off it steps by one grid unit from wherever the clip sits.
 - **Resize** — Drag the left or right edge of a clip to trim its start or end point
 - **Duplicate** — Hold ++alt++ and drag a clip, or press ++cmd+d++
 - **Duplicate with or without automation** — Right-click a clip and choose **Duplicate With Automation** to copy the clip together with the automation under it, or **Duplicate Without Automation** to copy just the clip. Plain **Duplicate** behaves the same as the menu's default.

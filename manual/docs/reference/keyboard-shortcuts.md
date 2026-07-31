@@ -23,6 +23,8 @@ Everything below is the **default** mapping. You can remap any shortcut from **S
 | ++ctrl+shift+d++ / ++cmd+shift+d++ | Duplicate track (without content) |
 | ++ctrl+a++ / ++cmd+a++ | Select all |
 | ++delete++ / ++backspace++ | Delete selected clips or track |
+| ++shift+arrow-left++ / ++shift+arrow-right++ | Nudge selected clips one grid step earlier / later |
+| ++shift+arrow-up++ / ++shift+arrow-down++ | Move selected clips to the track above / below |
 | ++ctrl+e++ / ++cmd+e++ | Split / trim at cursor or selection |
 | ++ctrl+j++ / ++cmd+j++ | Join clips |
 | ++ctrl+b++ / ++cmd+b++ | Render clip to audio |

@@ -1,6 +1,9 @@
 // TrackContentPanel — Multi-clip drag, time selection clip handling, and clip ghost methods.
 // Split from TrackContentPanel.cpp for file-size compliance.
 
+#include <limits>
+
+#include "../../interaction/ClipNudge.hpp"
 #include "../clips/ClipComponent.hpp"
 #include "TrackContentPanel.hpp"
 #include "core/ClipCommands.hpp"
@@ -391,6 +394,215 @@ void TrackContentPanel::cancelMultiClipDrag() {
     multiClipDuplicateIds_.clear();
     multiClipDragAnchorTrackIndex_ = -1;
     multiClipDragTrackDelta_ = 0;
+}
+
+// ============================================================================
+// Keyboard Clip Nudging (#1957)
+// ============================================================================
+
+namespace {
+
+// Tracks a nudge may move a clip onto. Group and aux tracks are buses with no
+// clip timeline, the master track has no lane, and the chord track is a
+// singleton whose clips are chord progressions — a MIDI clip landing there
+// would change meaning. Multi-out tracks look like ordinary lanes but are
+// owned by a device's output pair: deactivateMultiOutPair() erases the track
+// outright without touching its clips, so anything parked there is orphaned
+// the moment the user switches that output off. Vertical nudging steps over
+// all of them.
+bool canHostNudgedClips(const TrackInfo& track) {
+    return track.type != TrackType::Group && track.type != TrackType::Aux &&
+           track.type != TrackType::Master && track.type != TrackType::Chord &&
+           track.type != TrackType::MultiOut;
+}
+
+// The clips a nudge acts on: the arrangement half of the selection. Session
+// clips live in a scene grid, not on the timeline, and are left alone even
+// when a session view put them in the same selection.
+std::vector<ClipId> selectedArrangementClips() {
+    std::vector<ClipId> clips;
+    auto& clipManager = ClipManager::getInstance();
+    for (ClipId clipId : SelectionManager::getInstance().getSelectedClips()) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (clip != nullptr && clip->view == ClipView::Arrangement)
+            clips.push_back(clipId);
+    }
+    return clips;
+}
+
+// Frozen tracks are rendered to audio, so their clips must not move out from
+// under the render. Clips there stay selectable, and both the mouse drag
+// (ClipComponent::mouseDrag) and the destructive context actions already
+// refuse them; the keyboard has to refuse them too or the shortcut becomes a
+// hole in the freeze invariant.
+bool isOnFrozenTrack(ClipId clipId) {
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr)
+        return false;
+    const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
+    return track != nullptr && track->frozen;
+}
+
+bool anyClipOnFrozenTrack(const std::vector<ClipId>& clips) {
+    return std::any_of(clips.begin(), clips.end(), isOnFrozenTrack);
+}
+
+}  // namespace
+
+bool TrackContentPanel::nudgeSelectedClipsHorizontally(int direction) {
+    if (direction == 0 || timelineController == nullptr)
+        return false;
+
+    const auto clips = selectedArrangementClips();
+    if (clips.empty() || anyClipOnFrozenTrack(clips))
+        return false;
+
+    auto& clipManager = ClipManager::getInstance();
+    double anchorStartBeat = std::numeric_limits<double>::max();
+    for (ClipId clipId : clips) {
+        if (const auto* clip = clipManager.getClip(clipId))
+            anchorStartBeat = std::min(anchorStartBeat, clip->placement.startBeat);
+    }
+
+    // The earliest clip anchors the move so the selection keeps its internal
+    // spacing, the same contract a multi-clip drag has.
+    //
+    // The step comes from whichever grid is actually drawn. In Seconds mode
+    // that is a 1/2/5-based interval in seconds, unrelated to the beat
+    // subdivision getSnapBeatFraction() returns — at 90 BPM and 40 px/beat the
+    // ruler shows 1 s lines while the beat fraction is 2 beats (1.333 s), so
+    // taking beats there would move the clip off every visible line. Resolve
+    // in the displayed domain, then convert the target back to beats.
+    const auto& state = timelineController->getState();
+    interaction::HorizontalNudge nudge;
+    nudge.snapToGrid = state.display.snapEnabled;
+    nudge.direction = direction;
+
+    double deltaBeats = 0.0;
+    if (state.display.timeDisplayMode == TimeDisplayMode::Seconds) {
+        const double anchorSeconds = beatsToSeconds(anchorStartBeat);
+        nudge.anchorPosition = anchorSeconds;
+        nudge.gridStep = state.getSnapInterval();
+
+        const double deltaSeconds = interaction::horizontalDelta(nudge);
+        if (deltaSeconds == 0.0)
+            return false;
+        deltaBeats = secondsToBeats(anchorSeconds + deltaSeconds) - anchorStartBeat;
+    } else {
+        nudge.anchorPosition = anchorStartBeat;
+        nudge.gridStep = state.getSnapBeatFraction();
+        deltaBeats = interaction::horizontalDelta(nudge);
+    }
+
+    if (deltaBeats == 0.0)
+        return false;
+
+    // Apply back-to-front relative to travel. Each MoveClipCommand executes
+    // immediately and ClipManager::moveClipBeats resolves overlaps against
+    // every other clip on the track — including selected ones that have not
+    // moved yet. Nudging two adjacent selected clips rightwards would
+    // otherwise let the leader land on top of its neighbour and trim or delete
+    // it, with the surviving clip decided by unordered_set iteration order.
+    // Moving the far clip first keeps the path clear.
+    std::vector<ClipId> ordered = clips;
+    std::sort(ordered.begin(), ordered.end(), [&](ClipId lhs, ClipId rhs) {
+        const auto* a = clipManager.getClip(lhs);
+        const auto* b = clipManager.getClip(rhs);
+        if (a == nullptr || b == nullptr)
+            return false;
+        return direction > 0 ? a->placement.startBeat > b->placement.startBeat
+                             : a->placement.startBeat < b->placement.startBeat;
+    });
+
+    // Always compound, even for one clip: consecutive MoveClipCommands on the
+    // same clip merge into a single history entry, which would fold a run of
+    // presses into one undo. A press is an action and gets its own step.
+    const double bpm = getTempo();
+    CompoundOperationScope undoScope("Nudge Clips");
+    for (ClipId clipId : ordered) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (clip == nullptr)
+            continue;
+        UndoManager::getInstance().executeCommand(std::make_unique<MoveClipCommand>(
+            clipId, BeatPosition{clip->placement.startBeat + deltaBeats}, bpm));
+    }
+
+    return true;
+}
+
+bool TrackContentPanel::nudgeSelectedClipsToAdjacentTrack(int direction) {
+    if (direction == 0)
+        return false;
+
+    const auto clips = selectedArrangementClips();
+    if (clips.empty() || anyClipOnFrozenTrack(clips))
+        return false;
+
+    // Frozen tracks are excluded as destinations for the same reason they are
+    // refused as sources: dropping a clip into a frozen track's lane would put
+    // the model out of step with its rendered audio. Skipping them (rather
+    // than refusing) keeps a frozen lane from walling off the tracks below it.
+    auto& trackManager = TrackManager::getInstance();
+    std::vector<TrackId> hostTrackIds;
+    for (TrackId trackId : visibleTrackIds_) {
+        const auto* track = trackManager.getTrack(trackId);
+        if (track != nullptr && canHostNudgedClips(*track) && !track->frozen)
+            hostTrackIds.push_back(trackId);
+    }
+    if (hostTrackIds.size() < 2)
+        return false;
+
+    struct ClipTrackIndex {
+        ClipId clipId;
+        int trackIndex;
+    };
+    std::vector<ClipTrackIndex> moves;
+    moves.reserve(clips.size());
+
+    auto& clipManager = ClipManager::getInstance();
+    int minTrackIndex = std::numeric_limits<int>::max();
+    int maxTrackIndex = std::numeric_limits<int>::min();
+    for (ClipId clipId : clips) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (clip == nullptr)
+            continue;
+        auto it = std::find(hostTrackIds.begin(), hostTrackIds.end(), clip->trackId);
+        if (it == hostTrackIds.end())
+            return false;  // e.g. a chord clip: the selection moves whole or not at all
+
+        const int trackIndex = static_cast<int>(std::distance(hostTrackIds.begin(), it));
+        moves.push_back({clipId, trackIndex});
+        minTrackIndex = std::min(minTrackIndex, trackIndex);
+        maxTrackIndex = std::max(maxTrackIndex, trackIndex);
+    }
+    if (moves.empty())
+        return false;
+
+    interaction::VerticalNudge nudge;
+    nudge.minTrackIndex = minTrackIndex;
+    nudge.maxTrackIndex = maxTrackIndex;
+    nudge.trackCount = static_cast<int>(hostTrackIds.size());
+    nudge.direction = direction;
+
+    const int trackDelta = interaction::verticalTrackDelta(nudge);
+    if (trackDelta == 0)
+        return false;
+
+    // Same back-to-front rule as the horizontal path: landing on a track a
+    // still-unmoved selected clip occupies would let overlap resolution trim
+    // or delete that clip. Vacate the far track first.
+    std::sort(moves.begin(), moves.end(), [direction](const auto& lhs, const auto& rhs) {
+        return direction > 0 ? lhs.trackIndex > rhs.trackIndex : lhs.trackIndex < rhs.trackIndex;
+    });
+
+    CompoundOperationScope undoScope("Move Clips to Track");
+    for (const auto& move : moves) {
+        const auto targetIndex = static_cast<size_t>(move.trackIndex + trackDelta);
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<MoveClipToTrackCommand>(move.clipId, hostTrackIds[targetIndex]));
+    }
+
+    return true;
 }
 
 // ============================================================================

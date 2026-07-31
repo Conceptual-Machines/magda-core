@@ -6,6 +6,7 @@
 target_sources(magda_daw PRIVATE
     ArrangementHitTester.cpp
     ArrangementHitTester.hpp
+    ClipNudge.hpp
 )
 
 target_sources(magda_daw_app PRIVATE
