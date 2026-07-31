@@ -87,6 +87,10 @@ class AutomationClipComponent : public juce::Component,
     enum class DragMode { None, Move, ResizeLeft, ResizeRight };
     DragMode dragMode_ = DragMode::None;
     bool isDragging_ = false;
+    // Copy-vs-move, decided once when the drag starts so releasing the modifier
+    // mid-drag cannot change what the gesture turns out to be. Move drags only:
+    // copying while resizing an edge has no meaning.
+    bool isDuplicating_ = false;
 
     juce::Point<int> dragStartPos_;
     double dragStartBeat_ = 0.0;
