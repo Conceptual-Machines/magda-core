@@ -1151,7 +1151,13 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
                             .tracktionLogo = tracktionLogo_.get(),
                             .stepRecording = stepRecording},
                            stripsAnalysisChrome() ? 0 : METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT,
-                           PAGINATION_HEIGHT, faustHeaderHeight());
+                           paginationRowHeight(), faustHeaderHeight());
+}
+
+int DeviceSlotComponent::paginationRowHeight() const {
+    // 0 when the grid fits one page: it reserves no row then, so the painter
+    // has nothing to rule off.
+    return paramGrid_ != nullptr && paramGrid_->paginates() ? PAGINATION_HEIGHT : 0;
 }
 
 int DeviceSlotComponent::faustHeaderHeight() const {

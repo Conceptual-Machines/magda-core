@@ -194,6 +194,7 @@ void ParamHostComponent::updateParamModulation(
 
 void ParamHostComponent::updatePageControls(const magda::DeviceInfo& device, int currentPage,
                                             int totalPages) {
+    const bool wasPaginating = paginates();
     currentPage_ = currentPage;
     totalPages_ = totalPages;
     if (layout_->wantsPageTabs())
@@ -203,6 +204,14 @@ void ParamHostComponent::updatePageControls(const magda::DeviceInfo& device, int
     prevPageButton_->setEnabled(currentPage_ > 0);
     nextPageButton_->setEnabled(currentPage_ < totalPages_ - 1);
     setPaginationVisible(true);
+
+    // Gaining or losing the row changes getChromeHeight(), which the parent
+    // divides the body by. Without this the grid would keep the old geometry
+    // until some unrelated resize.
+    if (paginates() != wasPaginating) {
+        if (auto* parent = getParentComponent())
+            parent->resized();
+    }
 }
 
 void ParamHostComponent::setGridVisible(bool visible) {
@@ -210,8 +219,12 @@ void ParamHostComponent::setGridVisible(bool visible) {
         paramSlots_[i]->setVisible(visible);
 }
 
+bool ParamHostComponent::paginates() const {
+    return layout_->wantsPagination() && totalPages_ > 1;
+}
+
 void ParamHostComponent::setPaginationVisible(bool visible) {
-    const bool effective = visible && layout_->wantsPagination() && totalPages_ > 1;
+    const bool effective = visible && paginates();
     const bool tabs = effective && layout_->wantsPageTabs();
     prevPageButton_->setVisible(effective && !tabs);
     nextPageButton_->setVisible(effective && !tabs);
@@ -256,7 +269,7 @@ void ParamHostComponent::setSlotSelected(int slotIndex, bool selected) {
 }
 
 int ParamHostComponent::getChromeHeight() const {
-    return 2 + (layout_->wantsPagination() ? PAGINATION_HEIGHT + 4 : 0);
+    return 2 + (paginates() ? PAGINATION_HEIGHT + 4 : 0);
 }
 
 void ParamHostComponent::setRowHeight(int rowHeight) {
@@ -273,12 +286,12 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
 
     area.removeFromTop(2);
     juce::Rectangle<int> paginationArea;
-    if (layout_->wantsPagination()) {
+    if (paginates()) {
         paginationArea = area.removeFromTop(PAGINATION_HEIGHT);
         area.removeFromTop(4);
     }
 
-    if (layout_->wantsPagination()) {
+    if (paginates()) {
         if (layout_->wantsPageTabs()) {
             pageTabBar_->setBounds(paginationArea);
         } else {
