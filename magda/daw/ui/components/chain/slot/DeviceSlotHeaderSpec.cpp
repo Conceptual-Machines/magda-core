@@ -142,9 +142,9 @@ std::vector<HeaderControlSpec> buildHeaderControlSpecs(const DeviceSlotTraits& t
 
     // {id, side, component, expandedOrder, collapsedOrder}. The collapsed strip
     // is a single vertical stack under the delete and power buttons, so its
-    // order is independent of the expanded header's left/right split. Delta
-    // leads the stack because it pairs with Power as a signal-path toggle;
-    // the rest follow the expanded reading order.
+    // order is independent of the expanded header's left/right split. Delta and
+    // Sidechain lead the stack, grouped with Power as the signal-path and
+    // routing controls; the rest follow the expanded reading order.
     std::vector<HeaderControlSpec> specs = {
         {HeaderControlId::Macro, HeaderControlSide::Left, controls.macroButton, 10, 20},
         {HeaderControlId::Mod, HeaderControlSide::Left, controls.modButton, 20, 30},
@@ -155,7 +155,7 @@ std::vector<HeaderControlSpec> buildHeaderControlSpecs(const DeviceSlotTraits& t
         {HeaderControlId::Learn, HeaderControlSide::Right, controls.learnButton, 80, 0},
         {HeaderControlId::UI, HeaderControlSide::Right, controls.uiButton, 90, 10},
         {HeaderControlId::MultiOut, HeaderControlSide::Right, controls.multiOutButton, 100, 90},
-        {HeaderControlId::Sidechain, HeaderControlSide::Right, controls.sidechainButton, 110, 100},
+        {HeaderControlId::Sidechain, HeaderControlSide::Right, controls.sidechainButton, 110, 7},
         {HeaderControlId::ExportClip, HeaderControlSide::Right, controls.exportClipButton, 120, 80},
         {HeaderControlId::Delta, HeaderControlSide::Right, controls.deltaButton, 130, 5},
     };
