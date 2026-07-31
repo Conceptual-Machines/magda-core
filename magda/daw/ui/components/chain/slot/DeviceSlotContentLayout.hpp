@@ -20,6 +20,14 @@ struct DeviceSlotContentFrameControls {
     juce::Component* magdaPresetButton = nullptr;
     juce::Component* activeCustomUI = nullptr;
     juce::Component* compiledPanel = nullptr;
+    // Runtime-Faust body components. They live in DeviceSlotContentBodyControls
+    // for layout, but the frame pass needs them here so it can hide them when
+    // the slot collapses or the plugin has not finished loading — otherwise the
+    // FAUST header keeps painting at its last expanded bounds, clipped into the
+    // 40px collapsed strip (issue: Faust device shows a sliver of its UI).
+    juce::Component* faustHeader = nullptr;
+    juce::Component* faustCustomView = nullptr;
+    juce::Component* faustMeterPanel = nullptr;
     juce::Component* modButton = nullptr;
     juce::Component* macroButton = nullptr;
     juce::Component* uiButton = nullptr;

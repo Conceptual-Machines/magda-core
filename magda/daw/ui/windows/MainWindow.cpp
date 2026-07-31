@@ -1585,14 +1585,10 @@ void MainWindow::MainComponent::viewModeChanged(ViewMode mode,
 }
 
 void MainWindow::MainComponent::selectionTypeChanged(SelectionType newType) {
-    // Auto-expand bottom panel when something is selected
-    if (bottomPanelCollapsed && newType != SelectionType::None) {
-        bottomPanelCollapsed = false;
-        bottomPanel->setCollapsed(false);
-        if (footerBar)
-            footerBar->setBottomPanelCollapsed(false);
-        resized();
-    }
+    // Deliberately does NOT expand the bottom panel. Selecting a clip, track or
+    // device is not a request to reopen a panel the user collapsed (issue
+    // #1963); the panel stays collapsed until an explicit gesture — the footer
+    // collapse button, the resizer, a clip double-click — reopens it.
 
     // Update menu state based on selection
     auto& selectionManager = SelectionManager::getInstance();

@@ -1305,18 +1305,19 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     auto& selectionManager = SelectionManager::getInstance();
     bool isAlreadySelected = selectionManager.isClipSelected(clipId_);
 
-    // Helper: ensure editor panel is open for the current clip type
-    auto ensureEditorOpen = [](ClipId id) {
+    // Helper: point the bottom panel at the editor for the current clip type.
+    // It never expands a collapsed panel — selecting a clip is not a request to
+    // reopen a panel the user collapsed (issue #1963); only explicit gestures
+    // such as double-click do that.
+    auto focusEditorTab = [](ClipId id) {
         const auto* c = ClipManager::getInstance().getClip(id);
         if (!c)
             return;
-        auto& pc = daw::ui::PanelController::getInstance();
-        pc.setCollapsed(daw::ui::PanelLocation::Bottom, false);
         // Don't force a specific MIDI editor tab — BottomPanel's clipSelectionChanged
         // handles the PianoRoll vs DrumGrid choice, respecting the user's preference.
         if (c->isAudio()) {
-            pc.setActiveTabByType(daw::ui::PanelLocation::Bottom,
-                                  daw::ui::PanelContentType::WaveformEditor);
+            daw::ui::PanelController::getInstance().setActiveTabByType(
+                daw::ui::PanelLocation::Bottom, daw::ui::PanelContentType::WaveformEditor);
         }
     };
 
@@ -1363,7 +1364,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             selectionManager.selectClip(clipId_);
         }
         isSelected_ = selectionManager.isClipSelected(clipId_);
-        ensureEditorOpen(clipId_);
+        focusEditorTab(clipId_);
         dragMode_ = DragMode::None;
         repaint();
         return;
@@ -1423,7 +1424,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         isSelected_ = selectionManager.isClipSelected(clipId_);
 
         if (isSelected_) {
-            ensureEditorOpen(clipId_);
+            focusEditorTab(clipId_);
         }
 
         dragMode_ = DragMode::None;
@@ -1458,7 +1459,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
                 juce::String(static_cast<int>(selectionManager.getSelectedClipCount())) +
                 " anchorAfter=" + juce::String(static_cast<int>(selectionManager.getAnchorClip())));
             if (isSelected_) {
-                ensureEditorOpen(clipId_);
+                focusEditorTab(clipId_);
             }
             logArrangeRangeSelect(
                 "ClipComponent range branch after editor-open: selectedCount=" +

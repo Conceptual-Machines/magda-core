@@ -103,6 +103,9 @@ void hideBodyControls(DeviceSlotContentFrameControls controls, bool collapsed) {
     setVisibleIfPresent(controls.magdaPresetButton, !collapsed);
     setVisibleIfPresent(controls.activeCustomUI, false);
     setVisibleIfPresent(controls.compiledPanel, false);
+    setVisibleIfPresent(controls.faustHeader, false);
+    setVisibleIfPresent(controls.faustCustomView, false);
+    setVisibleIfPresent(controls.faustMeterPanel, false);
 }
 
 void showExpandedHeaderControls(const DeviceSlotTraits& traits, const magda::DeviceInfo& device,
