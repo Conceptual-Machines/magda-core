@@ -149,4 +149,29 @@ magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot) {
     return info;
 }
 
+magda::MeterInfo meterInfoFromOutput(const FaustOutputSlot& output) {
+    magda::MeterInfo info;
+    info.meterIndex = output.index;
+    info.name = output.label;
+    info.unit = output.unit;
+    info.group = output.group;
+    info.tooltip = output.tooltip;
+    info.minValue = output.minValue;
+    info.maxValue = output.maxValue;
+    info.widthCells = output.widthCells;
+    info.vertical = output.vertical;
+    switch (output.style) {
+        case FaustOutputStyle::Bar:
+            info.style = magda::MeterStyle::Bar;
+            break;
+        case FaustOutputStyle::Numerical:
+            info.style = magda::MeterStyle::Numerical;
+            break;
+        case FaustOutputStyle::Led:
+            info.style = magda::MeterStyle::Led;
+            break;
+    }
+    return info;
+}
+
 }  // namespace magda::daw::audio

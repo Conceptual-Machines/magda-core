@@ -96,6 +96,22 @@ void FourOscProcessor::customiseParameterInfo(int index, ParameterInfo& info) co
 // FaustProcessor
 // =============================================================================
 
+namespace {
+
+// Shared by the effect and the instrument: both pool the same way, and both
+// filter `[hidden:1]` here rather than in meterInfoFromOutput, so "which
+// outputs get a cell" stays a display decision.
+void populateFaustMeters(const daw::audio::FaustParamPool& pool, DeviceInfo& info) {
+    info.meters.clear();
+    for (int i = 0; i < daw::audio::FaustParamPool::kOutputSize; ++i) {
+        const auto& output = pool.output(i);
+        if (output.active && !output.hidden)
+            info.meters.push_back(daw::audio::meterInfoFromOutput(output));
+    }
+}
+
+}  // namespace
+
 FaustProcessor::FaustProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
     : DeviceProcessor(deviceId, std::move(plugin)) {}
 
@@ -150,6 +166,7 @@ void FaustProcessor::populateParameters(DeviceInfo& info) const {
             ++active;
         }
     }
+    populateFaustMeters(faust->getPool(), info);
     DBG("[FaustProcessor] populateParameters: pushed " << active << " active params");
 }
 
@@ -217,6 +234,7 @@ void FaustInstrumentProcessor::populateParameters(DeviceInfo& info) const {
             info.parameters.push_back(std::move(paramInfo));
         }
     }
+    populateFaustMeters(faust->getPool(), info);
 }
 
 void FaustInstrumentProcessor::setParameterByIndex(int paramIndex, float value) {

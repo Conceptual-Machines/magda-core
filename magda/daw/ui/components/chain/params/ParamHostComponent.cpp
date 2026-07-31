@@ -122,9 +122,12 @@ void ParamHostComponent::updateParameterSlots(
     const magda::DeviceInfo& device, int currentPage,
     std::function<void(int paramIndex, double value)> onValueChanged) {
     cellSpans_.assign(static_cast<size_t>(std::max(0, cellCount_)), 1);
+    usedRows_ = 0;
     for (int i = 0; i < cellCount_; ++i) {
         const auto cell = layout_->cellFor(device, i, currentPage);
         cellSpans_[static_cast<size_t>(i)] = std::max(1, cell.span);
+        if (cell.mode != ParamCell::Mode::Hidden && cellsPerRow_ > 0)
+            usedRows_ = std::max(usedRows_, i / cellsPerRow_ + 1);
         switch (cell.mode) {
             case ParamCell::Mode::Filled: {
                 if (cell.paramArrayIndex < 0 ||
@@ -252,6 +255,14 @@ void ParamHostComponent::setSlotSelected(int slotIndex, bool selected) {
     paramSlots_[slotIndex]->setSelected(selected);
 }
 
+int ParamHostComponent::getChromeHeight() const {
+    return 2 + (layout_->wantsPagination() ? PAGINATION_HEIGHT + 4 : 0);
+}
+
+void ParamHostComponent::setRowHeight(int rowHeight) {
+    rowHeight_ = std::max(0, rowHeight);
+}
+
 void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::Font& valueFont) {
     auto area = getLocalBounds();
 
@@ -280,7 +291,9 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
     area = area.reduced(2, 0);
     const int numRows = (cellCount_ + cellsPerRow_ - 1) / cellsPerRow_;
     const int cellWidth = area.getWidth() / cellsPerRow_;
-    const int cellHeight = numRows > 0 ? area.getHeight() / numRows : area.getHeight();
+    const int cellHeight = rowHeight_ > 0 ? rowHeight_
+                           : numRows > 0  ? area.getHeight() / numRows
+                                          : area.getHeight();
 
     for (int i = 0; i < cellCount_; ++i) {
         const int row = i / cellsPerRow_;

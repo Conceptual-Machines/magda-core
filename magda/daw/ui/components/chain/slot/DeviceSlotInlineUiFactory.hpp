@@ -44,6 +44,10 @@ struct DeviceSlotInlineUiCallbacks {
     std::function<void(int)> onShowAutomationLane;
     std::function<magda::ChainNodePath()> getNodePath;
     std::function<tracktion::engine::Plugin::Ptr()> getLivePlugin;
+    /// Hands the parameter grid a way to read the device's meters. Only
+    /// device families that report values back call it; the rest leave the
+    /// grid's supplier null.
+    std::function<void(std::function<float(int meterIndex)>)> setMeterSource;
 };
 
 struct DeviceSlotInlineUiCallbackContext {
@@ -68,7 +72,12 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
                                                 DeviceSlotInlineUiStorage storage,
                                                 DeviceSlotInlineUiCallbacks callbacks);
 
-void bindDeviceSlotFaustInlineUi(const magda::ChainNodePath& nodePath, FaustUI* faustUI);
+/// Re-resolves the live Faust plugin once `nodePath` is known, since
+/// createDeviceSlotInlineUi can run before the slot has a valid path.
+/// `setMeterSource` is re-applied for the same reason.
+void bindDeviceSlotFaustInlineUi(
+    const magda::ChainNodePath& nodePath, FaustUI* faustUI,
+    const std::function<void(std::function<float(int meterIndex)>)>& setMeterSource = {});
 
 void refreshDeviceSlotInlineUiPluginBindings(const magda::ChainNodePath& nodePath,
                                              CompiledDevicePanel* compiledPanel,

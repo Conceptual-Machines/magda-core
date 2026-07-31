@@ -48,6 +48,23 @@ enum class FaustChoiceStyle {
 };
 
 /**
+ * @brief How a bargraph asked to be presented.
+ *
+ * Faust's own architectures honour `[style:led]` and `[style:numerical]` on
+ * bargraphs (see MetaDataUI.h), so MAGDA reads the same two keys rather than
+ * inventing a spelling. Only meaningful on an output widget: a slider
+ * declaring `[style:knob]` still lands on Bar and nothing reads it.
+ */
+enum class FaustOutputStyle {
+    /// Default. A filled bar spanning the cell.
+    Bar,
+    /// `[style:numerical]`: the value as text, no bar.
+    Numerical,
+    /// `[style:led]`: a lamp whose brightness tracks the value.
+    Led,
+};
+
+/**
  * @brief Parsed output of a Faust label like
  *        "Cutoff [unit:Hz] [scale:log] [idx:7]".
  *
@@ -84,6 +101,10 @@ struct ControlMetadata {
     bool isChoiceStyle() const {
         return choiceStyle != FaustChoiceStyle::None;
     }
+
+    /// Presentation asked for by a bargraph via `[style:led]` /
+    /// `[style:numerical]`. Ignored on input controls.
+    FaustOutputStyle outputStyle = FaustOutputStyle::Bar;
 
     /// Cells this control spans in the param grid, from `[width:N]`. 1 is the
     /// default and the historical behaviour. Lets an author give a control with

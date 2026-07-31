@@ -106,10 +106,14 @@ bool applyFaustAnnotation(const juce::String& key, const juce::String& value,
             metadata.choiceStyle =
                 (kind == "radio") ? FaustChoiceStyle::Radio : FaustChoiceStyle::Menu;
             metadata.menuChoices = parseMenuChoices(parts.braceBody);
+        } else if (kind == "led") {
+            metadata.outputStyle = FaustOutputStyle::Led;
+        } else if (kind == "numerical") {
+            metadata.outputStyle = FaustOutputStyle::Numerical;
         }
-        // Other style values (knob / led / numerical) are recognised
-        // and stripped from the clean label, but don't surface a flag —
-        // they're purely visual hints we don't act on.
+        // Remaining style values (knob, …) are recognised and stripped from
+        // the clean label, but don't surface a flag: they're visual hints
+        // for widgets MAGDA renders its own way.
         return true;
     }
     if (key == "width") {
@@ -255,6 +259,8 @@ void mergeFaustMetadata(ControlMetadata& parent, const ControlMetadata& child) {
         parent.choiceStyle = child.choiceStyle;
         parent.menuChoices = child.menuChoices;
     }
+    if (child.outputStyle != FaustOutputStyle::Bar)
+        parent.outputStyle = child.outputStyle;
     if (child.tooltip.isNotEmpty())
         parent.tooltip = child.tooltip;
     if (child.widthCells > 1)

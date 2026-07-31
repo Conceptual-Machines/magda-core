@@ -57,5 +57,34 @@ wetR(l, r) = limited(l, r) : !, _;
 
 channelBlend(dry, wet) = (dry * (1.0 - mix) + wet * mix) * db2lin(outputDb);
 
-process(l, r) = channelBlend(l, wetL(l, r)),
+// ============================================================================
+// Gain reduction readout
+// ============================================================================
+
+// The ballistics belong here, not in the host. MAGDA polls the bargraph's
+// zone about thirty times a second against roughly 1 ms blocks, so it sees
+// one block in thirty; a raw instantaneous value would miss every peak in
+// between and the meter would look broken. Holding and smoothing in the DSP
+// means the host reads a figure that is already true over its whole window.
+grEnvDb(x) = x : abs : an.amp_follower_ud(0.001, 0.05)
+               : max(ma.EPSILON) : ba.linear2db;
+
+// Positive dB of reduction, so the bar fills as the limiter works. The
+// pre-gain is excluded: with Autogain on it is the drive the user asked for,
+// not gain the limiter took away.
+grDb(l, r) = max(grEnvDb(l * preGainLin) - grEnvDb(wetL(l, r)),
+                 grEnvDb(r * preGainLin) - grEnvDb(wetR(l, r)))
+             : max(0.0)
+             : ba.peakholder(ba.sec2samp(0.25));
+
+// vbargraph rather than hbargraph: a limiter's reduction is read as a level,
+// and MAGDA renders a vertical output as a column with the figure below it.
+grMeter(l, r) = grDb(l, r)
+  : vbargraph("GR [unit:dB] [tooltip:Gain reduction the limiter is applying]",
+              0.0, 24.0);
+
+// attach() keeps the meter out of the audio path while still forcing it to be
+// computed, which is the standard Faust idiom for a readout that nothing
+// downstream consumes (see dm.gate_demo).
+process(l, r) = attach(channelBlend(l, wetL(l, r)), grMeter(l, r)),
                 channelBlend(r, wetR(l, r));

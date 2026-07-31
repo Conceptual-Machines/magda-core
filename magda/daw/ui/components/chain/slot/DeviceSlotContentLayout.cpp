@@ -132,6 +132,10 @@ void layoutParamGrid(ParamHostComponent* paramGrid, juce::Rectangle<int> area) {
     paramGrid->layoutContent(labelFont, valueFont);
 }
 
+// Floor for the Faust meter strip when the parameter grid leaves it nothing.
+// Below this a vertical bar stops reading as a level.
+constexpr int kMinFaustMeterHeight = 64;
+
 int boundedBottomPanelHeight(int preferredHeight, int bodyHeight, int minFractionNumerator,
                              int minFractionDenominator) {
     jassert(minFractionNumerator >= 0);
@@ -200,6 +204,50 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
             controls.faustCustomView->setVisible(true);
         }
 
+        // Meters sit under the grid and above any custom view, in a region of
+        // their own: a level needs height, which a cell sized for a knob and
+        // its label cannot give it.
+        //
+        // The strip takes the rows the grid leaves empty rather than a slice
+        // of the body. The grid always fills its bounds with getRowCount()
+        // rows whether or not the page has controls for them, so simply
+        // carving off the bottom would shrink every knob to make room for
+        // space that was already blank. Pinning the row height to what the
+        // grid would have used with the whole body keeps the controls exactly
+        // as they are without a meter.
+        const bool wantsMeters =
+            controls.faustMeterPanel != nullptr && controls.faustMeterPanelPreferredHeight > 0;
+        if (wantsMeters && controls.paramGrid != nullptr) {
+            auto& grid = *controls.paramGrid;
+            const int rows = juce::jmax(1, grid.getRowCount());
+            const int chrome = grid.getChromeHeight();
+            const int rowHeight = juce::jmax(0, contentArea.getHeight() - chrome) / rows;
+            const int usedRows = juce::jlimit(1, rows, grid.getUsedRowCount());
+            const int gridHeight = chrome + usedRows * rowHeight;
+            const int leftForMeters = contentArea.getHeight() - gridHeight;
+
+            if (leftForMeters >= kMinFaustMeterHeight) {
+                grid.setRowHeight(rowHeight);
+                layoutParamGrid(controls.paramGrid, contentArea.removeFromTop(gridHeight));
+                controls.faustMeterPanel->setBounds(contentArea);
+                controls.faustMeterPanel->setVisible(true);
+                return;
+            }
+
+            // A page that fills every row has nothing spare, so the strip
+            // falls back to a fixed height and the grid divides what is left.
+            grid.setRowHeight(0);
+            const int meterHeight =
+                juce::jmin(kMinFaustMeterHeight, juce::jmax(0, contentArea.getHeight()));
+            controls.faustMeterPanel->setBounds(contentArea.removeFromBottom(meterHeight));
+            controls.faustMeterPanel->setVisible(true);
+            layoutParamGrid(controls.paramGrid, contentArea);
+            return;
+        }
+
+        setVisibleIfPresent(controls.faustMeterPanel, false);
+        if (controls.paramGrid != nullptr)
+            controls.paramGrid->setRowHeight(0);
         layoutParamGrid(controls.paramGrid, contentArea);
         return;
     }

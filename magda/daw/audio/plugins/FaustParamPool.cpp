@@ -46,6 +46,28 @@ void fillSlot(FaustParamSlot& slot, int index, const HarvestedControl& h) {
     slot.scaleAnchor = h.metadata.scaleAnchor;
 }
 
+void resetOutput(FaustOutputSlot& output, int index) {
+    output.index = index;
+    output.active = false;
+    output.zones.clear();
+}
+
+void fillOutput(FaustOutputSlot& output, int index, const HarvestedOutput& h) {
+    output.index = index;
+    output.active = true;
+    output.label = h.label;
+    output.unit = h.metadata.unit;
+    output.group = h.group;
+    output.minValue = h.minValue;
+    output.maxValue = h.maxValue;
+    output.style = h.metadata.outputStyle;
+    output.vertical = h.vertical;
+    output.tooltip = h.metadata.tooltip;
+    output.widthCells = h.metadata.widthCells;
+    output.hidden = h.metadata.hidden;
+    output.zones = h.zones;
+}
+
 FaustParamPool::ActiveBindingDescriptor descriptorFor(const FaustParamSlot& slot) {
     FaustParamPool::ActiveBindingDescriptor d;
     d.slotIndex = slot.index;
@@ -79,12 +101,18 @@ FaustParamPool::ActiveBindingDescriptor descriptorFor(const FaustParamSlot& slot
 FaustParamPool::FaustParamPool() {
     for (int i = 0; i < kSize; ++i)
         resetSlot(slots_[static_cast<size_t>(i)], i);
+    for (int i = 0; i < kOutputSize; ++i)
+        resetOutput(outputs_[static_cast<size_t>(i)], i);
 }
 
 void FaustParamPool::clearActive() {
     for (auto& slot : slots_) {
         slot.active = false;
         slot.zone = nullptr;
+    }
+    for (auto& output : outputs_) {
+        output.active = false;
+        output.zones.clear();
     }
 }
 
@@ -96,6 +124,34 @@ int FaustParamPool::activeCount() const {
     return n;
 }
 
+int FaustParamPool::activeOutputCount() const {
+    int n = 0;
+    for (const auto& o : outputs_)
+        if (o.active)
+            ++n;
+    return n;
+}
+
+float FaustParamPool::readOutput(int index) const {
+    if (index < 0 || index >= kOutputSize)
+        return 0.0f;
+    const auto& output = outputs_[static_cast<size_t>(index)];
+    if (!output.active)
+        return output.minValue;
+
+    float highest = output.minValue;
+    bool read = false;
+    for (auto* zone : output.zones) {
+        if (zone == nullptr)
+            continue;
+        const auto value = static_cast<float>(*zone);
+        if (!read || value > highest)
+            highest = value;
+        read = true;
+    }
+    return read ? highest : output.minValue;
+}
+
 FAUSTFLOAT* FaustParamPool::getProjectTempoZone() const {
     for (const auto& s : slots_) {
         if (s.active && s.role == FaustControlRole::ProjectTempo)
@@ -105,8 +161,24 @@ FAUSTFLOAT* FaustParamPool::getProjectTempoZone() const {
 }
 
 FaustParamPool::RebindReport FaustParamPool::rebindFromHarvest(
-    const std::vector<HarvestedControl>& harvested) {
+    const std::vector<HarvestedControl>& harvested, const std::vector<HarvestedOutput>& outputs) {
     RebindReport report;
+
+    // Outputs claim slots in declaration order. There is no [idx:N] pass
+    // because nothing binds to a meter, so nothing needs it to hold still.
+    for (auto& output : outputs_) {
+        output.active = false;
+        output.zones.clear();
+    }
+    for (size_t i = 0; i < outputs.size(); ++i) {
+        if (i >= static_cast<size_t>(kOutputSize)) {
+            report.diagnostics.push_back(juce::String(static_cast<int>(outputs.size() - i)) +
+                                         " bargraph(s) dropped: output pool holds " +
+                                         juce::String(kOutputSize));
+            break;
+        }
+        fillOutput(outputs_[i], static_cast<int>(i), outputs[i]);
+    }
 
     // Start every slot inactive; specific slots get re-flagged active
     // below as they're claimed.

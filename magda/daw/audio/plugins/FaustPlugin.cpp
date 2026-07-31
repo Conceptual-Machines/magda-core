@@ -256,7 +256,7 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compileAndRebind(const juc
                   << " idx=" << h.metadata.slotIndex << " choice=" << (int)h.metadata.choiceStyle);
     }
 
-    auto report = pool_.rebindFromHarvest(harvested);
+    auto report = pool_.rebindFromHarvest(harvested, harvester.outputs());
     state->activeBindings = std::move(report.activeBindings);
     lastDiagnostics_ = std::move(report.diagnostics);
     if (scratchIn_.getNumSamples() > 0 && state->dspIn > scratchIn_.getNumChannels()) {

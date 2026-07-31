@@ -238,3 +238,46 @@ TEST_CASE("paramInfoFromSlot - discrete with empty choices yields fallback", "[f
     REQUIRE(info.choices.size() == 1);
     REQUIRE(info.choices[0] == "(empty)");
 }
+
+// ============================================================================
+// Meters
+// ============================================================================
+
+TEST_CASE("meterInfoFromOutput carries description and style", "[faust][paraminfo]") {
+    FaustOutputSlot output;
+    output.index = 2;
+    output.active = true;
+    output.label = "GR";
+    output.unit = "dB";
+    output.group = "Dynamics";
+    output.tooltip = "Gain reduction";
+    output.minValue = 0.0f;
+    output.maxValue = 24.0f;
+    output.widthCells = 2;
+    output.vertical = true;
+    output.style = FaustOutputStyle::Numerical;
+
+    const auto info = meterInfoFromOutput(output);
+
+    REQUIRE(info.meterIndex == 2);
+    REQUIRE(info.name == "GR");
+    REQUIRE(info.unit == "dB");
+    REQUIRE(info.group == "Dynamics");
+    REQUIRE(info.tooltip == "Gain reduction");
+    REQUIRE(info.minValue == 0.0f);
+    REQUIRE(info.maxValue == 24.0f);
+    REQUIRE(info.widthCells == 2);
+    REQUIRE(info.vertical);
+    REQUIRE(info.style == magda::MeterStyle::Numerical);
+}
+
+TEST_CASE("meterInfoFromOutput maps the remaining styles", "[faust][paraminfo]") {
+    FaustOutputSlot output;
+    output.active = true;
+
+    output.style = FaustOutputStyle::Bar;
+    REQUIRE(meterInfoFromOutput(output).style == magda::MeterStyle::Bar);
+
+    output.style = FaustOutputStyle::Led;
+    REQUIRE(meterInfoFromOutput(output).style == magda::MeterStyle::Led);
+}
