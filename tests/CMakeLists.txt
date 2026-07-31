@@ -322,6 +322,10 @@ target_sources(magda_juce_tests PRIVATE
     test_faust_instrument_voice_modes_juce.cpp
     test_runtime_theme_juce.cpp
     test_user_theme_juce.cpp
+    test_syntax_highlighting_juce.cpp
+    ../magda/daw/ui/code/SyntaxTheme.cpp
+    ../magda/daw/ui/code/DSLTokeniser.cpp
+    ../magda/daw/ui/code/FaustTokeniser.cpp
     test_device_gain_slider.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
     ../magda/daw/ui/dialogs/ParameterConfigDialog.cpp
@@ -388,8 +392,10 @@ target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
 target_include_directories(magda_juce_tests
     PRIVATE
     ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/magda/daw
     ${CMAKE_SOURCE_DIR}/magda/daw/ui
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/themes
+    ${CMAKE_SOURCE_DIR}/magda/daw/ui/code
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/panels
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/panels/state
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/panels/content
@@ -418,6 +424,9 @@ add_test(NAME runtime_theme_juce
 
 add_test(NAME user_theme_juce
          COMMAND magda_juce_tests "User Theme Tests")
+
+add_test(NAME syntax_highlighting_juce
+         COMMAND magda_juce_tests "Syntax Highlighting Tests")
 
 add_test(NAME tempo_map_juce
          COMMAND magda_juce_tests "Tempo Map Tests")

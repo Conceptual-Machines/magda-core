@@ -40,6 +40,7 @@
 #include "../../../core/controllers/ControllerProfileRegistry.hpp"
 #include "../../../core/controllers/ControllerRegistry.hpp"
 #include "../../../project/ProjectManager.hpp"
+#include "../../code/SyntaxTheme.hpp"
 #include "../../components/common/SvgButton.hpp"
 #include "../../dialogs/AISettingsDialog.hpp"
 #include "../../state/TimelineController.hpp"
@@ -978,7 +979,8 @@ AIChatConsoleContent::AIChatConsoleContent() {
     dslOutput_.setReadOnly(true);
     dslOutput_.setFont(FontManager::getInstance().getMonoFont(12.0f));
     dslOutput_.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
-    dslOutput_.setColour(juce::TextEditor::textColourId, juce::Colour(0xff88ff88));
+    dslOutput_.setColour(juce::TextEditor::textColourId,
+                         DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
     dslOutput_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     dslOutput_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
     dslOutput_.setColour(juce::TextEditor::highlightColourId,
@@ -986,16 +988,14 @@ AIChatConsoleContent::AIChatConsoleContent() {
     dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
     dslOutput_.setText("MAGDA DSL Console\nCtrl+Enter to execute.\n\n");
 
-    // DSL code editor
+    // DSL code editor. Surface and token colours both come from the theme's
+    // syntaxColours; the editor keeps the panel-tier background so it reads as
+    // part of the console rather than as a detached editor pane.
     dslEditor_ = std::make_unique<juce::CodeEditorComponent>(dslDocument_, &dslTokeniser_);
     dslEditor_->setFont(FontManager::getInstance().getMonoFont(13.0f));
+    applyCodeEditorTheme(*dslEditor_, dslTokeniser_, CodeEditorSurface::DslConsole);
     dslEditor_->setColour(juce::CodeEditorComponent::backgroundColourId,
                           DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    dslEditor_->setColour(juce::CodeEditorComponent::lineNumberBackgroundId,
-                          juce::Colour(0xff252526));
-    dslEditor_->setColour(juce::CodeEditorComponent::lineNumberTextId, juce::Colour(0xff858585));
-    dslEditor_->setColour(juce::CaretComponent::caretColourId, juce::Colour(0xff88ff88));
-    dslEditor_->setColour(juce::CodeEditorComponent::highlightColourId, juce::Colour(0xff264f78));
     dslEditor_->setLineNumbersShown(true);
     dslEditor_->setTabSize(2, true);
     dslEditor_->setScrollbarThickness(8);
@@ -1003,8 +1003,10 @@ AIChatConsoleContent::AIChatConsoleContent() {
 
     // DSL status bar
     dslStatusLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    dslStatusLabel_.setColour(juce::Label::backgroundColourId, juce::Colour(0xff007acc));
-    dslStatusLabel_.setColour(juce::Label::textColourId, juce::Colours::white);
+    dslStatusLabel_.setColour(juce::Label::backgroundColourId,
+                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_BACKGROUND));
+    dslStatusLabel_.setColour(juce::Label::textColourId,
+                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_TEXT));
 #if JUCE_MAC
     dslStatusLabel_.setText("  MAGDA DSL  |  Cmd+Enter: Run  |  Cmd+L: Clear",
                             juce::dontSendNotification);
@@ -1381,7 +1383,19 @@ void AIChatConsoleContent::lookAndFeelChanged() {
         inputBox_->setColour(juce::CodeEditorComponent::highlightColourId,
                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
         inputBox_->setColour(juce::CaretComponent::caretColourId, DarkTheme::getTextColour());
+        // A CodeEditorComponent caches the scheme it got from its tokeniser at
+        // construction, so the @plugin / /command colours need re-installing.
+        inputBox_->setColourScheme(inputTokeniser_.getDefaultColourScheme());
     }
+    if (dslEditor_ != nullptr) {
+        applyCodeEditorTheme(*dslEditor_, dslTokeniser_, CodeEditorSurface::DslConsole);
+        dslEditor_->setColour(juce::CodeEditorComponent::backgroundColourId,
+                              DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    }
+    dslStatusLabel_.setColour(juce::Label::backgroundColourId,
+                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_BACKGROUND));
+    dslStatusLabel_.setColour(juce::Label::textColourId,
+                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_TEXT));
     contextLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     analysisChip_.setColour(juce::Label::textColourId,
                             DarkTheme::getColour(DarkTheme::ACCENT_INFO));
@@ -1666,7 +1680,8 @@ void AIChatConsoleContent::executeDSL() {
     dslHistoryIndex_ = -1;
 
     // Echo
-    appendDSLOutput("> " + code + "\n", juce::Colour(0xff88ff88));
+    appendDSLOutput("> " + code + "\n",
+                    DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
 
     // Built-in commands
     if (code == "help") {
@@ -1678,7 +1693,7 @@ void AIChatConsoleContent::executeDSL() {
                         "  .notes.add(pitch=C4, beat=0) - Add note\n"
                         "  .notes.add_chord(root=C4, quality=major)\n"
                         "  filter(tracks, ...).delete()  - Bulk operations\n\n",
-                        juce::Colour(0xff569cd6));
+                        DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_INFO));
         dslDocument_.replaceAllContent({});
         return;
     }
@@ -1697,10 +1712,11 @@ void AIChatConsoleContent::executeDSL() {
         auto results = interpreter.getResults();
         if (results.isEmpty())
             results = "OK";
-        appendDSLOutput(results + "\n\n", juce::Colour(0xffd4d4d4));
+        appendDSLOutput(results + "\n\n",
+                        DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_TEXT));
     } else {
         appendDSLOutput("Error: " + juce::String(interpreter.getError()) + "\n\n",
-                        juce::Colour(0xfff48771));
+                        DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_ERROR));
     }
 
     dslDocument_.replaceAllContent({});
@@ -3314,6 +3330,7 @@ void AIChatConsoleContent::ThemeRequestThread::run() {
     juce::String name;
     juce::String base;
     int colourCount = 0;
+    int syntaxCount = 0;
 
     if (success) {
         std::string validationError;
@@ -3323,6 +3340,7 @@ void AIChatConsoleContent::ThemeRequestThread::run() {
             name = juce::String(theme->name);
             base = juce::String(theme->base);
             colourCount = theme->colourCount;
+            syntaxCount = theme->syntaxCount;
         } else {
             success = false;
             jsonOrError = juce::String(validationError);
@@ -3336,11 +3354,11 @@ void AIChatConsoleContent::ThemeRequestThread::run() {
     // Read the anchor on the message thread (inside the callback), after the
     // queued token flushes have run, so it reflects the streamed region.
     juce::MessageManager::callAsync(
-        [safeThis, success, jsonOrError, name, base, colourCount, anchor]() {
+        [safeThis, success, jsonOrError, name, base, colourCount, syntaxCount, anchor]() {
             if (!safeThis)
                 return;
             safeThis->finishThemeGeneration(success, jsonOrError, name, base, colourCount,
-                                            anchor->load());
+                                            syntaxCount, anchor->load());
         });
 }
 
@@ -3363,7 +3381,8 @@ void AIChatConsoleContent::startThemeGeneration(const juce::String& description)
 
 void AIChatConsoleContent::finishThemeGeneration(bool success, const juce::String& jsonOrError,
                                                  juce::String name, juce::String base,
-                                                 int colourCount, int streamAnchor) {
+                                                 int colourCount, int syntaxCount,
+                                                 int streamAnchor) {
     // Collapse the streamed JSON (or, if nothing streamed, the "Designing
     // theme..." placeholder) so only the final summary/error remains.
     if (streamAnchor >= 0) {
@@ -3408,7 +3427,10 @@ void AIChatConsoleContent::finishThemeGeneration(bool success, const juce::Strin
 
     juce::String body = juce::String::charToString(0x25C6) + " " +
                         (name.isEmpty() ? juce::String("Theme") : name) + "\n";
-    body << "  " << juce::String(colourCount) << " colours over the " << base << " base\n";
+    body << "  " << juce::String(colourCount) << " colours";
+    if (syntaxCount > 0)
+        body << " + " << juce::String(syntaxCount) << " syntax colours";
+    body << " over the " << base << " base\n";
     body << "  saved to " << file.getFullPathName() << "\n";
     body << "  applied - edit the file to tweak it live, or switch under "
             "Preferences > Appearance";

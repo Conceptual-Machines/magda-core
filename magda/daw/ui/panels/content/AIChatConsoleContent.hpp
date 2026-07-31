@@ -23,8 +23,8 @@
 #include "../../../core/TrackMeasurementManager.hpp"
 #include "../../../core/ViewModeController.hpp"
 #include "../../../project/ProjectManager.hpp"
-#include "ChatPromptTokeniser.hpp"
-#include "DSLTokeniser.hpp"
+#include "../../code/ChatPromptTokeniser.hpp"
+#include "../../code/DSLTokeniser.hpp"
 #include "PanelContent.hpp"
 #include "SlashCommands.hpp"
 
@@ -286,7 +286,8 @@ class AIChatConsoleContent : public PanelContent,
     // streamAnchor is the text position where the streamed JSON began (or -1 if
     // nothing streamed); the streamed region is collapsed to the summary here.
     void finishThemeGeneration(bool success, const juce::String& jsonOrError, juce::String name,
-                               juce::String base, int colourCount, int streamAnchor);
+                               juce::String base, int colourCount, int syntaxCount,
+                               int streamAnchor);
 
     // Optional category override set by `/design --category=<cat>`. When
     // non-empty, finishPresetGeneration substitutes this value for the

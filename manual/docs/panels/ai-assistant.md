@@ -169,6 +169,8 @@ Available surfaces: `arrangement`, `piano-roll`, `session`, `mixer`, `automation
 
 Type `/theme <description>` to design a MAGDA colour theme from words - for example `warm sunset, dark`, `cold arctic blue`, `retro amber terminal`, or `cyberpunk neon on black`. The assistant produces a full palette, saves it as an editable JSON file in `Documents/MAGDA/Themes`, selects it, and applies it live.
 
+Generated themes also carry a complete `syntaxColours` section, so the code editor and the AI console match the rest of the palette. Any syntax role the assistant does not design is derived from the palette it just produced.
+
 The theme stays selected afterwards. Edit its `.json` on disk to tweak it - changes re-apply instantly - or switch themes at any time under **Preferences > Appearance**. See [Preferences - Theme](../interface/preferences.md#theme) for the theme file format and the manual load/template buttons.
 
 Which model powers `/theme` is set by the **Theme** agent role in **AI Settings > Config** (Advanced mode).

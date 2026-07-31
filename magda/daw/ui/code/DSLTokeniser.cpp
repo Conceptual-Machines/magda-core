@@ -1,7 +1,5 @@
 #include "DSLTokeniser.hpp"
 
-#include "ui/themes/DarkTheme.hpp"
-
 namespace magda::daw::ui {
 
 bool DSLTokeniser::isKeyword(const juce::String& token) {
@@ -65,16 +63,16 @@ int DSLTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
     auto firstChar = source.peekNextChar();
 
     if (firstChar == 0)
-        return tokenType_error;
+        return codeToken_error;
 
     // Comments: //
     if (firstChar == '/') {
         source.skip();
         if (source.peekNextChar() == '/') {
             source.skipToEndOfLine();
-            return tokenType_comment;
+            return codeToken_comment;
         }
-        return tokenType_operator;
+        return codeToken_operator;
     }
 
     // Strings
@@ -87,7 +85,7 @@ int DSLTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
             if (c == '\\')
                 source.skip();  // Skip escaped char
         }
-        return tokenType_string;
+        return codeToken_string;
     }
 
     // Numbers (including negative)
@@ -102,13 +100,13 @@ int DSLTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
             while (juce::CharacterFunctions::isDigit(source.peekNextChar()))
                 source.skip();
         }
-        return tokenType_number;
+        return codeToken_number;
     }
 
     // Brackets
     if (firstChar == '(' || firstChar == ')' || firstChar == '[' || firstChar == ']') {
         source.skip();
-        return tokenType_bracket;
+        return codeToken_bracket;
     }
 
     // Operators
@@ -116,13 +114,13 @@ int DSLTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
         source.skip();
         if (source.peekNextChar() == '=')
             source.skip();
-        return tokenType_operator;
+        return codeToken_operator;
     }
 
     // Punctuation
     if (firstChar == '.' || firstChar == ',' || firstChar == ';') {
         source.skip();
-        return tokenType_punctuation;
+        return codeToken_punctuation;
     }
 
     // Identifiers, keywords, methods, params, note names
@@ -138,37 +136,24 @@ int DSLTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
         }
 
         if (isNoteName(token))
-            return tokenType_noteName;
+            return codeToken_noteName;
         if (isKeyword(token))
-            return tokenType_keyword;
+            return codeToken_keyword;
         if (isMethod(token))
-            return tokenType_method;
+            return codeToken_method;
         if (isParam(token))
-            return tokenType_param;
+            return codeToken_param;
 
-        return tokenType_identifier;
+        return codeToken_identifier;
     }
 
     // Fallback
     source.skip();
-    return tokenType_error;
+    return codeToken_error;
 }
 
 juce::CodeEditorComponent::ColourScheme DSLTokeniser::getDefaultColourScheme() {
-    juce::CodeEditorComponent::ColourScheme cs;
-    cs.set("Error", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_ERROR));
-    cs.set("Comment", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_COMMENT));
-    cs.set("Keyword", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_KEYWORD));
-    cs.set("Method", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_METHOD));
-    cs.set("Param", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_PARAM));
-    cs.set("Operator", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_OPERATOR));
-    cs.set("Identifier", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_IDENTIFIER));
-    cs.set("Number", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_NUMBER));
-    cs.set("String", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_STRING));
-    cs.set("Bracket", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_BRACKET));
-    cs.set("Punctuation", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_PUNCTUATION));
-    cs.set("NoteName", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_NOTE_NAME));
-    return cs;
+    return codeTokenColourScheme();
 }
 
 }  // namespace magda::daw::ui

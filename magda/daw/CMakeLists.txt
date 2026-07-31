@@ -722,6 +722,7 @@ target_include_directories(magda_daw_app
     ${CMAKE_CURRENT_SOURCE_DIR}/audio
     ${CMAKE_CURRENT_SOURCE_DIR}/ui
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/themes
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/code
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/windows
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/dialogs
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/panels

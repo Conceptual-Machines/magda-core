@@ -8,8 +8,6 @@ target_sources(magda_daw_app PRIVATE
     AIChatConsoleContent.cpp
     SlashCommands.cpp
     ScriptingConsoleContent.cpp
-    ChatPromptTokeniser.cpp
-    DSLTokeniser.cpp
     PanelContent.cpp
     TrackChainContent.cpp
     MidiEditorContent.cpp
@@ -29,8 +27,6 @@ target_sources(magda_daw_app PRIVATE
     EmptyContent.hpp
     AIChatConsoleContent.hpp
     ScriptingConsoleContent.hpp
-    ChatPromptTokeniser.hpp
-    DSLTokeniser.hpp
     TrackChainContent.hpp
     PianoRollContent.hpp
     WaveformEditorContent.hpp

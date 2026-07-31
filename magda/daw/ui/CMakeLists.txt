@@ -3,6 +3,7 @@
 # against (timeline + state + interaction, see those subdirs).
 
 add_subdirectory(themes)
+add_subdirectory(code)
 add_subdirectory(interaction)
 add_subdirectory(windows)
 add_subdirectory(dialogs)

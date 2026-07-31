@@ -2,8 +2,12 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
+#include "SyntaxTheme.hpp"
+
 namespace magda::daw::ui {
 
+/** Tokeniser for the MAGDA DSL (`track(name="Drums").clip.new(bar=1)`). Token
+ *  classes and colours come from the shared vocabulary in SyntaxTheme.hpp. */
 class DSLTokeniser : public juce::CodeTokeniser {
   public:
     DSLTokeniser() = default;
@@ -11,21 +15,6 @@ class DSLTokeniser : public juce::CodeTokeniser {
 
     int readNextToken(juce::CodeDocument::Iterator& source) override;
     juce::CodeEditorComponent::ColourScheme getDefaultColourScheme() override;
-
-    enum TokenType {
-        tokenType_error = 0,
-        tokenType_comment,
-        tokenType_keyword,
-        tokenType_method,
-        tokenType_param,
-        tokenType_operator,
-        tokenType_identifier,
-        tokenType_number,
-        tokenType_string,
-        tokenType_bracket,
-        tokenType_punctuation,
-        tokenType_noteName
-    };
 
   private:
     static bool isKeyword(const juce::String& token);

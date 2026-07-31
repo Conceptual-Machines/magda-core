@@ -208,6 +208,70 @@ bool writeThemeTemplate(const juce::File& dest, const std::string& baseId,
     return dest.replaceWithText(juce::JSON::toString(juce::var(root.get())));
 }
 
+DarkTheme::SyntaxPalette deriveSyntaxPalette(const DarkTheme::Palette& palette) {
+    const auto role = [&palette](ColourRole r) {
+        return juce::Colour(palette[static_cast<std::size_t>(r)]);
+    };
+
+    const auto editorBackground = role(ColourRole::E0);
+    const auto textPrimary = role(ColourRole::TEXT_PRIMARY);
+    const auto textSecondary = role(ColourRole::TEXT_SECONDARY);
+    const auto textDim = role(ColourRole::TEXT_DIM);
+    const auto accentPrimary = role(ColourRole::ACCENT_PRIMARY);
+    const auto accentInfo = role(ColourRole::ACCENT_INFO);
+    const auto statusBackground = accentInfo;
+
+    DarkTheme::SyntaxPalette syntax{};
+    const auto set = [&syntax](SyntaxColourRole r, juce::Colour colour) {
+        syntax[static_cast<std::size_t>(r)] = colour.getARGB();
+    };
+
+    // Editor chrome tracks the elevation ramp and the text hierarchy.
+    set(SyntaxColourRole::EDITOR_BACKGROUND, editorBackground);
+    set(SyntaxColourRole::EDITOR_DEFAULT_TEXT, textPrimary);
+    set(SyntaxColourRole::LINE_NUMBER_BACKGROUND, role(ColourRole::E1));
+    set(SyntaxColourRole::LINE_NUMBER_TEXT, textDim);
+    set(SyntaxColourRole::EDITOR_CARET, textPrimary);
+    set(SyntaxColourRole::DSL_CARET, role(ColourRole::ACCENT_POSITIVE));
+
+    // The editor selection is drawn over text, so it keeps an alpha; the DSL
+    // console fills its selection opaquely and gets the accent mixed into the
+    // surface behind it instead.
+    set(SyntaxColourRole::EDITOR_SELECTION, accentPrimary.withAlpha(0.3f));
+    set(SyntaxColourRole::DSL_SELECTION,
+        role(ColourRole::E2).interpolatedWith(accentPrimary, 0.45f).withAlpha(1.0f));
+    set(SyntaxColourRole::DSL_STATUS_BACKGROUND, statusBackground);
+    set(SyntaxColourRole::DSL_STATUS_TEXT, statusBackground.contrasting(1.0f));
+
+    set(SyntaxColourRole::DSL_OUTPUT_PROMPT, role(ColourRole::ACCENT_POSITIVE));
+    set(SyntaxColourRole::DSL_OUTPUT_INFO, accentInfo);
+    set(SyntaxColourRole::DSL_OUTPUT_TEXT, textSecondary);
+    set(SyntaxColourRole::DSL_OUTPUT_ERROR, role(ColourRole::STATUS_DANGER));
+
+    // Token hues spread across the six accent roles so no two token classes
+    // collapse onto the same colour; structural tokens stay on the text ramp.
+    set(SyntaxColourRole::DSL_TOKEN_ERROR, role(ColourRole::STATUS_ERROR));
+    set(SyntaxColourRole::DSL_TOKEN_COMMENT, textDim);
+    set(SyntaxColourRole::DSL_TOKEN_KEYWORD, accentInfo);
+    set(SyntaxColourRole::DSL_TOKEN_METHOD, role(ColourRole::ACCENT_MODULATION));
+    set(SyntaxColourRole::DSL_TOKEN_PARAM, role(ColourRole::ACCENT_PRIMARY_SOFT));
+    set(SyntaxColourRole::DSL_TOKEN_OPERATOR, textSecondary);
+    set(SyntaxColourRole::DSL_TOKEN_IDENTIFIER, textPrimary);
+    set(SyntaxColourRole::DSL_TOKEN_NUMBER, role(ColourRole::ACCENT_POSITIVE));
+    set(SyntaxColourRole::DSL_TOKEN_STRING, role(ColourRole::ACCENT_ATTENTION));
+    set(SyntaxColourRole::DSL_TOKEN_BRACKET, textSecondary);
+    set(SyntaxColourRole::DSL_TOKEN_PUNCTUATION, textSecondary);
+    set(SyntaxColourRole::DSL_TOKEN_NOTE_NAME, accentPrimary);
+
+    set(SyntaxColourRole::CHAT_TOKEN_TEXT, textPrimary);
+    set(SyntaxColourRole::CHAT_TOKEN_PLUGIN_ALIAS, accentInfo);
+    set(SyntaxColourRole::CHAT_TOKEN_PARAM_ALIAS, role(ColourRole::ACCENT_ATTENTION));
+    set(SyntaxColourRole::CHAT_TOKEN_SLASH_COMMAND, role(ColourRole::ACCENT_POSITIVE));
+    set(SyntaxColourRole::CHAT_TOKEN_PUNCTUATION, textSecondary);
+
+    return syntax;
+}
+
 ThemeApplyResult applyThemeById(const std::string& themeId) {
     ThemeApplyResult result;
 
