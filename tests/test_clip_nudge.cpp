@@ -11,10 +11,10 @@ using namespace magda::interaction;
 
 namespace {
 
-HorizontalNudge horizontal(double anchorBeat, int direction, double grid = 1.0, bool snap = true) {
+HorizontalNudge horizontal(double anchorPos, int direction, double grid = 1.0, bool snap = true) {
     HorizontalNudge n;
-    n.anchorStartBeat = anchorBeat;
-    n.gridBeats = grid;
+    n.anchorPosition = anchorPos;
+    n.gridStep = grid;
     n.snapToGrid = snap;
     n.direction = direction;
     return n;
@@ -36,20 +36,20 @@ VerticalNudge vertical(int minIndex, int maxIndex, int trackCount, int direction
 // ============================================================================
 
 TEST_CASE("An on-grid clip moves a full grid step", "[clip_nudge]") {
-    REQUIRE(horizontalDeltaBeats(horizontal(4.0, 1)) == Approx(1.0));
-    REQUIRE(horizontalDeltaBeats(horizontal(4.0, -1)) == Approx(-1.0));
+    REQUIRE(horizontalDelta(horizontal(4.0, 1)) == Approx(1.0));
+    REQUIRE(horizontalDelta(horizontal(4.0, -1)) == Approx(-1.0));
 }
 
 TEST_CASE("The grid step sets the nudge distance", "[clip_nudge]") {
-    REQUIRE(horizontalDeltaBeats(horizontal(4.0, 1, 0.25)) == Approx(0.25));
-    REQUIRE(horizontalDeltaBeats(horizontal(8.0, -1, 4.0)) == Approx(-4.0));
+    REQUIRE(horizontalDelta(horizontal(4.0, 1, 0.25)) == Approx(0.25));
+    REQUIRE(horizontalDelta(horizontal(8.0, -1, 4.0)) == Approx(-4.0));
 }
 
 TEST_CASE("Floating-point residue on a grid line still moves a whole step", "[clip_nudge]") {
     // Repeated snapped moves leave anchors a hair off the line; treating that
     // as off-grid would nudge by an invisible fraction of a beat.
-    REQUIRE(horizontalDeltaBeats(horizontal(4.0 - 1e-12, 1)) == Approx(1.0).margin(1e-9));
-    REQUIRE(horizontalDeltaBeats(horizontal(4.0 + 1e-12, -1)) == Approx(-1.0).margin(1e-9));
+    REQUIRE(horizontalDelta(horizontal(4.0 - 1e-12, 1)) == Approx(1.0).margin(1e-9));
+    REQUIRE(horizontalDelta(horizontal(4.0 + 1e-12, -1)) == Approx(-1.0).margin(1e-9));
 }
 
 // ============================================================================
@@ -57,15 +57,15 @@ TEST_CASE("Floating-point residue on a grid line still moves a whole step", "[cl
 // ============================================================================
 
 TEST_CASE("An off-grid clip lands on the next grid line, not a full step out", "[clip_nudge]") {
-    REQUIRE(horizontalDeltaBeats(horizontal(0.5, 1)) == Approx(0.5));      // 0.5 -> 1.0
-    REQUIRE(horizontalDeltaBeats(horizontal(0.5, -1)) == Approx(-0.5));    // 0.5 -> 0.0
-    REQUIRE(horizontalDeltaBeats(horizontal(4.75, 1)) == Approx(0.25));    // 4.75 -> 5.0
-    REQUIRE(horizontalDeltaBeats(horizontal(4.75, -1)) == Approx(-0.75));  // 4.75 -> 4.0
+    REQUIRE(horizontalDelta(horizontal(0.5, 1)) == Approx(0.5));      // 0.5 -> 1.0
+    REQUIRE(horizontalDelta(horizontal(0.5, -1)) == Approx(-0.5));    // 0.5 -> 0.0
+    REQUIRE(horizontalDelta(horizontal(4.75, 1)) == Approx(0.25));    // 4.75 -> 5.0
+    REQUIRE(horizontalDelta(horizontal(4.75, -1)) == Approx(-0.75));  // 4.75 -> 4.0
 }
 
 TEST_CASE("With snap off, an off-grid clip keeps its offset", "[clip_nudge]") {
-    REQUIRE(horizontalDeltaBeats(horizontal(0.5, 1, 1.0, false)) == Approx(1.0));
-    REQUIRE(horizontalDeltaBeats(horizontal(4.75, -1, 1.0, false)) == Approx(-1.0));
+    REQUIRE(horizontalDelta(horizontal(0.5, 1, 1.0, false)) == Approx(1.0));
+    REQUIRE(horizontalDelta(horizontal(4.75, -1, 1.0, false)) == Approx(-1.0));
 }
 
 // ============================================================================
@@ -73,17 +73,32 @@ TEST_CASE("With snap off, an off-grid clip keeps its offset", "[clip_nudge]") {
 // ============================================================================
 
 TEST_CASE("A clip near the start clamps flush against beat 0", "[clip_nudge]") {
-    REQUIRE(horizontalDeltaBeats(horizontal(0.4, -1, 1.0, false)) == Approx(-0.4));
+    REQUIRE(horizontalDelta(horizontal(0.4, -1, 1.0, false)) == Approx(-0.4));
 }
 
 TEST_CASE("A clip already at beat 0 refuses to move earlier", "[clip_nudge]") {
-    REQUIRE(horizontalDeltaBeats(horizontal(0.0, -1)) == Approx(0.0));
-    REQUIRE(horizontalDeltaBeats(horizontal(0.0, -1, 1.0, false)) == Approx(0.0));
+    REQUIRE(horizontalDelta(horizontal(0.0, -1)) == Approx(0.0));
+    REQUIRE(horizontalDelta(horizontal(0.0, -1, 1.0, false)) == Approx(0.0));
 }
 
 TEST_CASE("A degenerate grid refuses to move", "[clip_nudge]") {
-    REQUIRE(horizontalDeltaBeats(horizontal(4.0, 1, 0.0)) == Approx(0.0));
-    REQUIRE(horizontalDeltaBeats(horizontal(4.0, 0)) == Approx(0.0));
+    REQUIRE(horizontalDelta(horizontal(4.0, 1, 0.0)) == Approx(0.0));
+    REQUIRE(horizontalDelta(horizontal(4.0, 0)) == Approx(0.0));
+}
+
+// ============================================================================
+// Horizontal: the model is unit-agnostic
+// ============================================================================
+
+TEST_CASE("The same rules hold in the seconds domain", "[clip_nudge]") {
+    // Seconds display mode feeds seconds and a second-based interval rather
+    // than beats. At 90 BPM / 40 px per beat the drawn grid is 1 s while the
+    // beat fraction is 2 beats (1.333 s), so the caller must pass the interval
+    // the ruler actually shows — and get a seconds delta straight back.
+    REQUIRE(horizontalDelta(horizontal(2.0, 1, 1.0)) == Approx(1.0));    // 2.0s -> 3.0s
+    REQUIRE(horizontalDelta(horizontal(2.4, 1, 1.0)) == Approx(0.6));    // 2.4s -> 3.0s
+    REQUIRE(horizontalDelta(horizontal(2.4, -1, 1.0)) == Approx(-0.4));  // 2.4s -> 2.0s
+    REQUIRE(horizontalDelta(horizontal(1.0, 1, 0.5)) == Approx(0.5));    // 500 ms grid
 }
 
 // ============================================================================

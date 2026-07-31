@@ -56,17 +56,25 @@ ViewMode getNextCycledViewMode(ViewMode mode, bool forward) {
     return ViewMode::Arrange;
 }
 
-// Keyboard clip moves (#1957) act on the arrangement half of the selection.
-// Disabled when there is none, so the arrow keys fall through to whatever else
-// wants them instead of being swallowed by a no-op command.
-bool hasSelectedArrangementClips() {
+// Keyboard clip moves (#1957) act on the arrangement half of the selection,
+// and refuse outright when any of it sits on a frozen track — the same rule
+// the panel enforces, mirrored here so the commands read as disabled instead
+// of silently doing nothing. Disabled also lets the arrow keys fall through to
+// whatever else wants them rather than being swallowed by a no-op command.
+bool canNudgeSelectedClips() {
     auto& clipManager = ClipManager::getInstance();
+    auto& trackManager = TrackManager::getInstance();
+    bool found = false;
     for (ClipId clipId : SelectionManager::getInstance().getSelectedClips()) {
         const auto* clip = clipManager.getClip(clipId);
-        if (clip != nullptr && clip->view == ClipView::Arrangement)
-            return true;
+        if (clip == nullptr || clip->view != ClipView::Arrangement)
+            continue;
+        const auto* track = trackManager.getTrack(clip->trackId);
+        if (track != nullptr && track->frozen)
+            return false;
+        found = true;
     }
-    return false;
+    return found;
 }
 
 bool containsTimelineTime(const ClipInfo& clip, double timeSeconds, double bpm) {
@@ -334,26 +342,26 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.setInfo("Nudge Clips Earlier", "Move selected clips one grid step earlier",
                            "Edit", 0);
             result.addDefaultKeypress(juce::KeyPress::leftKey, juce::ModifierKeys::shiftModifier);
-            result.setActive(hasSelectedArrangementClips());
+            result.setActive(canNudgeSelectedClips());
             break;
 
         case nudgeClipsLater:
             result.setInfo("Nudge Clips Later", "Move selected clips one grid step later", "Edit",
                            0);
             result.addDefaultKeypress(juce::KeyPress::rightKey, juce::ModifierKeys::shiftModifier);
-            result.setActive(hasSelectedArrangementClips());
+            result.setActive(canNudgeSelectedClips());
             break;
 
         case nudgeClipsUp:
             result.setInfo("Move Clips Up", "Move selected clips to the track above", "Edit", 0);
             result.addDefaultKeypress(juce::KeyPress::upKey, juce::ModifierKeys::shiftModifier);
-            result.setActive(hasSelectedArrangementClips());
+            result.setActive(canNudgeSelectedClips());
             break;
 
         case nudgeClipsDown:
             result.setInfo("Move Clips Down", "Move selected clips to the track below", "Edit", 0);
             result.addDefaultKeypress(juce::KeyPress::downKey, juce::ModifierKeys::shiftModifier);
-            result.setActive(hasSelectedArrangementClips());
+            result.setActive(canNudgeSelectedClips());
             break;
 
         // File menu

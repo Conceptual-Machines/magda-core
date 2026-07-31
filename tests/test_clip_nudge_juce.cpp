@@ -87,6 +87,10 @@ class ClipNudgeJuceTest final : public juce::UnitTest {
     ClipNudgeJuceTest() : juce::UnitTest("Clip Nudge Tests", "magda") {}
 
     void runTest() override {
+        testAdjacentSelectedClipsSurviveANudge();
+        testAdjacentSelectedClipsSurviveAVerticalNudge();
+        testFrozenTracksRefuseNudges();
+        testSecondsModeFollowsTheDisplayedGrid();
         testHorizontalNudgeMovesSelection();
         testHorizontalNudgeKeepsSelectionSpacing();
         testHorizontalNudgeIsOneUndoStepPerPress();
@@ -97,6 +101,126 @@ class ClipNudgeJuceTest final : public juce::UnitTest {
     }
 
   private:
+    // Each MoveClipCommand commits immediately and ClipManager resolves
+    // overlaps against every other clip on the track, selected or not. Without
+    // ordering the moves back-to-front, the leader lands on its still-unmoved
+    // neighbour and deletes it — and which one survived came down to
+    // unordered_set iteration order.
+    void testAdjacentSelectedClipsSurviveANudge() {
+        beginTest("Nudging two touching selected clips does not destroy either");
+
+        magda::test::runWithCleanJuceState([this] {
+            NudgeFixture f;
+            const ClipId first = f.addClip(f.topTrack, 0.0, 4.0);   // 0..4
+            const ClipId second = f.addClip(f.topTrack, 4.0, 4.0);  // 4..8
+            SelectionManager::getInstance().selectClips({first, second});
+
+            expect(f.panel.nudgeSelectedClipsHorizontally(1), "nudge later reported no move");
+            expect(ClipManager::getInstance().getClip(first) != nullptr,
+                   "leading clip was destroyed");
+            expect(ClipManager::getInstance().getClip(second) != nullptr,
+                   "trailing clip was destroyed by the clip moving into it");
+            expectNear(*this, startBeatOf(first), 1.0, "leading clip start");
+            expectNear(*this, startBeatOf(second), 5.0, "trailing clip start");
+
+            // ...and the mirror case travelling the other way.
+            expect(f.panel.nudgeSelectedClipsHorizontally(-1), "nudge earlier reported no move");
+            expect(ClipManager::getInstance().getClip(first) != nullptr,
+                   "leading clip was destroyed moving back");
+            expect(ClipManager::getInstance().getClip(second) != nullptr,
+                   "trailing clip was destroyed moving back");
+            expectNear(*this, startBeatOf(first), 0.0, "leading clip start after moving back");
+            expectNear(*this, startBeatOf(second), 4.0, "trailing clip start after moving back");
+        });
+    }
+
+    void testAdjacentSelectedClipsSurviveAVerticalNudge() {
+        beginTest("Moving a stacked selection across tracks does not destroy either clip");
+
+        magda::test::runWithCleanJuceState([this] {
+            NudgeFixture f;
+            // Same time span on neighbouring tracks: moving the upper one down
+            // lands it exactly on the lower one.
+            const ClipId upper = f.addClip(f.topTrack, 4.0, 4.0);
+            const ClipId lower = f.addClip(f.middleTrack, 4.0, 4.0);
+            SelectionManager::getInstance().selectClips({upper, lower});
+
+            expect(f.panel.nudgeSelectedClipsToAdjacentTrack(1), "nudge down reported no move");
+            expect(ClipManager::getInstance().getClip(upper) != nullptr,
+                   "upper clip was destroyed");
+            expect(ClipManager::getInstance().getClip(lower) != nullptr,
+                   "lower clip was destroyed by the clip moving onto it");
+            expect(trackOf(upper) == f.middleTrack, "upper clip should have moved down one track");
+            expect(trackOf(lower) == f.bottomTrack, "lower clip should have moved down one track");
+        });
+    }
+
+    void testFrozenTracksRefuseNudges() {
+        beginTest("Frozen tracks are refused as nudge sources and destinations");
+
+        magda::test::runWithCleanJuceState([this] {
+            NudgeFixture f;
+            auto& trackManager = TrackManager::getInstance();
+            const ClipId onFrozen = f.addClip(f.topTrack, 4.0);
+            if (auto* track = trackManager.getTrack(f.topTrack))
+                track->frozen = true;
+            SelectionManager::getInstance().selectClips({onFrozen});
+
+            expect(!f.panel.nudgeSelectedClipsHorizontally(1),
+                   "a clip on a frozen track must not move along the timeline");
+            expectNear(*this, startBeatOf(onFrozen), 4.0, "frozen clip start");
+            expect(!f.panel.nudgeSelectedClipsToAdjacentTrack(1),
+                   "a clip on a frozen track must not change track");
+            expect(trackOf(onFrozen) == f.topTrack, "frozen clip track");
+
+            // A frozen track is skipped as a destination too, so the clip below
+            // it steps past rather than into it.
+            if (auto* track = trackManager.getTrack(f.topTrack))
+                track->frozen = false;
+            if (auto* track = trackManager.getTrack(f.middleTrack))
+                track->frozen = true;
+
+            const ClipId mover = f.addClip(f.bottomTrack, 12.0);
+            SelectionManager::getInstance().selectClips({mover});
+            expect(f.panel.nudgeSelectedClipsToAdjacentTrack(-1), "nudge up reported no move");
+            expect(trackOf(mover) == f.topTrack, "clip should skip over the frozen track");
+        });
+    }
+
+    void testSecondsModeFollowsTheDisplayedGrid() {
+        beginTest("Seconds display mode nudges by the second-based grid, not the beat fraction");
+
+        magda::test::runWithCleanJuceState([this] {
+            NudgeFixture f;
+            // The two domains only disagree under auto-grid: a manual 1/4 grid
+            // resolves to the same distance either way, so this must run with
+            // auto-grid on, off 120 BPM, at a pinned zoom.
+            //
+            // 90 BPM, 40 px per beat: the seconds ladder picks the first
+            // interval at least 50 px wide (60t >= 50 -> 1 s = 1.5 beats),
+            // while the beat ladder picks the first power-of-two beat fraction
+            // that fits (40f >= 50 -> 2 beats). 1.5 is a value no beat-fraction
+            // grid can produce, so this only passes if the step came from the
+            // domain the ruler is actually drawing.
+            f.panel.setTempo(90.0);
+            f.controller.dispatch(SetTempoEvent{90.0});
+            f.controller.dispatch(SetZoomEvent{40.0});
+            f.controller.dispatch(SetTimeDisplayModeEvent{TimeDisplayMode::Seconds});
+            f.controller.dispatch(SetGridQuantizeEvent{true, 1, 4});
+
+            const auto& state = f.controller.getState();
+            expectNear(*this, state.getSnapInterval(), 1.0, "seconds grid interval");
+            expectNear(*this, state.getSnapBeatFraction(), 2.0, "beat grid fraction");
+
+            const ClipId clip = f.addClip(f.topTrack, 0.0);
+            SelectionManager::getInstance().selectClips({clip});
+
+            expect(f.panel.nudgeSelectedClipsHorizontally(1), "nudge reported no move");
+            expectNear(*this, startBeatOf(clip), 1.5,
+                       "clip should land on the next second-grid line, not the beat fraction");
+        });
+    }
+
     void testHorizontalNudgeMovesSelection() {
         beginTest("Shift+left/right moves the selected clip one grid step (#1957)");
 

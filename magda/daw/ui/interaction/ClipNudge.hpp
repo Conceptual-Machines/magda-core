@@ -17,48 +17,55 @@ namespace magda::interaction {
 // is headless-testable (tests/test_clip_nudge.cpp).
 // ============================================================================
 
-/** Horizontal nudge input. Beats throughout: the arrangement's native domain. */
+/**
+ * @brief Horizontal nudge input.
+ *
+ * Deliberately domain-agnostic: anchor and step are simply "positions" and a
+ * "step" in the same unit. Bars/Beats mode feeds it beats and a beat fraction;
+ * Seconds mode feeds it seconds and the second-based grid interval, because
+ * that is the grid actually drawn on screen. Whichever goes in comes back out.
+ */
 struct HorizontalNudge {
-    double anchorStartBeat = 0.0;  ///< Earliest selected clip's start.
-    double gridBeats = 1.0;        ///< Current grid step.
-    bool snapToGrid = true;        ///< Timeline snap state.
-    int direction = 1;             ///< -1 = earlier, +1 = later.
+    double anchorPosition = 0.0;  ///< Earliest selected clip's start.
+    double gridStep = 1.0;        ///< Current grid step, same unit as the anchor.
+    bool snapToGrid = true;       ///< Timeline snap state.
+    int direction = 1;            ///< -1 = earlier, +1 = later.
 };
 
 /**
- * @brief Beats to add to every selected clip; 0 means the move is refused.
+ * @brief Offset to add to every selected clip; 0 means the move is refused.
  *
  * With snap on the anchor lands *on* the grid rather than carrying its
- * off-grid offset along forever — one press from beat 0.5 with a 1-beat grid
- * goes to 1.0, not 1.5. With snap off it is a plain step of one grid unit.
- * The timeline starts at beat 0, so a selection near the start clamps flush
- * against it rather than refusing to move.
+ * off-grid offset along forever — one press from 0.5 with a step of 1 goes to
+ * 1.0, not 1.5. With snap off it is a plain step of one grid unit. The
+ * timeline starts at 0, so a selection near the start clamps flush against it
+ * rather than refusing to move.
  */
-inline double horizontalDeltaBeats(const HorizontalNudge& nudge) {
-    if (nudge.direction == 0 || !(nudge.gridBeats > 0.0))
+inline double horizontalDelta(const HorizontalNudge& nudge) {
+    if (nudge.direction == 0 || !(nudge.gridStep > 0.0))
         return 0.0;
 
     const int step = nudge.direction > 0 ? 1 : -1;
-    double targetBeat = nudge.anchorStartBeat + (step * nudge.gridBeats);
+    double target = nudge.anchorPosition + (step * nudge.gridStep);
 
     if (nudge.snapToGrid) {
         // Work in grid units so the "already on the grid?" test is scale-free.
         // Without the tolerance, an anchor a hair below a grid line (the usual
         // residue of earlier snapped moves) reads as off-grid and the nudge
-        // travels an invisible fraction of a beat instead of a whole step.
-        double gridUnits = nudge.anchorStartBeat / nudge.gridBeats;
+        // travels an invisible fraction of a step instead of a whole one.
+        double gridUnits = nudge.anchorPosition / nudge.gridStep;
         const double nearestUnit = std::round(gridUnits);
         if (std::abs(gridUnits - nearestUnit) < 1e-6)
             gridUnits = nearestUnit;
 
         const double targetUnit =
             step > 0 ? std::floor(gridUnits) + 1.0 : std::ceil(gridUnits) - 1.0;
-        targetBeat = targetUnit * nudge.gridBeats;
+        target = targetUnit * nudge.gridStep;
     }
 
-    targetBeat = std::max(targetBeat, 0.0);
+    target = std::max(target, 0.0);
 
-    return targetBeat - nudge.anchorStartBeat;
+    return target - nudge.anchorPosition;
 }
 
 /**
