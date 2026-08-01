@@ -53,6 +53,8 @@ class LevelsTelemetrySource : public magda::DeviceTelemetrySource {
     }
 
     virtual void setActive(bool active) = 0;
+    /// Restart the held figures (integrated loudness, peak hold and PLR).
+    virtual void requestReset() = 0;
     virtual magda::daw::audio::TrackMeasurementSnapshot snapshot() const = 0;
 };
 

@@ -57,8 +57,10 @@ set(TEST_SOURCES
     test_device_parameter_pagination.cpp
     test_device_ui_context.cpp
     test_levels_ui.cpp
-    # LevelsUI builds into magda_daw_app, so magda_tests needs its implementation directly.
+    # LevelsUI builds into magda_daw_app, so magda_tests needs its implementation
+    # directly - along with FontManager, which its themed button LookAndFeel pulls in.
     ../magda/daw/ui/components/chain/custom_ui/LevelsUI.cpp
+    ../magda/daw/ui/themes/FontManager.cpp
     test_momentary_param_button.cpp
     test_delta_solo.cpp
     test_waveform_editor_absolute_mode.cpp
