@@ -114,6 +114,10 @@ Drives the master bus volume. No args.
 
 Drives the master bus pan. No args.
 
+```json
+{ "controlId": "encoder_master_pan", "resolverKind": "master.pan", "args": {} }
+```
+
 ## Multiple profiles per controller
 
 A single piece of hardware doesn't have to be one profile. A Launchkey Mini might be useful in two different ways: knobs driving the focused device's macros, or knobs driving the selected track's volume / pan / sends. Each of those is a different **intent**, and each is its own profile JSON.
