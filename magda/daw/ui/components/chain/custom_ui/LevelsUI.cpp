@@ -4,6 +4,7 @@
 
 #include "audio/analysis/TrackMeasurer.hpp"
 #include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
@@ -38,9 +39,10 @@ LevelsUI::LevelsUI() {
 
     using DT = magda::DarkTheme;
     resetButton_.setTooltip("Restart integrated loudness, peak hold and PLR");
-    resetButton_.setColour(juce::TextButton::buttonColourId,
-                           DT::getColour(DT::BACKGROUND).brighter(0.1f));
+    resetButton_.setColour(juce::TextButton::buttonColourId, DT::getColour(DT::SURFACE));
     resetButton_.setColour(juce::TextButton::textColourOffId, DT::getColour(DT::TEXT_DIM));
+    resetButton_.setColour(juce::ComboBox::outlineColourId, DT::getColour(DT::BORDER));
+    resetButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     resetButton_.onClick = [this] { resetMeasurement(); };
     resetButton_.setEnabled(false);  // until a telemetry source is bound
     addAndMakeVisible(resetButton_);
