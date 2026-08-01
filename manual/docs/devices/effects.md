@@ -92,15 +92,21 @@ The **Sidechain** device is a native MAGDA device (not part of the Faust FX bank
 
 The **Faust** device hosts a [Faust](https://faust.grame.fr) DSP that you compile and load at runtime. Unlike the rest of the MAGDA FX bank, where each device wraps a fixed pre-compiled `.dsp` source, this device accepts any Faust program.
 
-- **Folder icon** - load a `.dsp` file from disk. The source is compiled by the libfaust interpreter and swapped in immediately.
+- **Folder icon** - load a `.dsp` file from disk. The source is compiled and swapped in immediately.
 - **Script icon** - opens an in-app code editor for live editing. Saving recompiles and hot-swaps the DSP.
 - The current script name is shown in the header banner ("Drive" in the example).
 - Arrows in the header step through parameter pages when the DSP exposes more controls than fit on one screen.
 
 Parameters live in a stable pool of slots that persist across recompiles, so macro links, modulator routings, MIDI Learn assignments, and automation lanes survive a code change as long as the slot ordering is preserved. This makes the device practical for iterative DSP development without losing your patch state on every save.
 
-!!! warning "Prototype"
-    This device is still a prototype. The DSP is run through the **libfaust interpreter** rather than ahead-of-time-compiled native code, so CPU usage is significantly higher than the pre-compiled MAGDA FX bank. Use it for sketching and experimentation; for production work, ask for the patch to be promoted into a compiled device.
+### How your code is run
+
+Your DSP is compiled to WebAssembly and then JIT-compiled to native machine code by [wasmtime](https://wasmtime.dev), so it runs as real compiled code rather than being interpreted.
+
+Two things follow from that. It is fast enough to play with rather than merely audition, though it still carries more overhead than the ahead-of-time compiled MAGDA FX bank, which has no sandbox boundary and is optimised by your system compiler. And it is sandboxed: the DSP runs inside the WebAssembly memory model, so a patch that misbehaves cannot take the application down with it. That matters most when you are iterating quickly or loading code an AI wrote.
+
+!!! note "Still evolving"
+    This device is newer than the rest of the FX bank and its surface is still settling. For a patch you rely on in finished work, ask for it to be promoted into a compiled device.
 
 ### Writing Faust with AI help
 
@@ -108,6 +114,6 @@ Parameters live in a stable pool of slots that persist across recompiles, so mac
 
 Enable it from **Settings > AI Settings**, on the **Config** page, by turning on the **Faust DSP** toggle. When Faust validation is used, MAGDA will start the MCP server on-demand via `npx`; no manual install step is needed. `npx` must be available on the system `PATH` (it ships with Node.js).
 
-The Faust compiler runs in-process via WebAssembly inside the MCP server, so no separate Faust installation is required either.
+The MCP server carries its own copy of the Faust compiler, so no separate Faust installation is required either. This is a separate thing from how the device runs your DSP during playback, described above; the server only checks that code compiles before MAGDA loads it.
 
 The server can also be wired into a separate MCP-aware AI assistant (Claude, Cursor, and similar) directly, by adding it to that client's MCP config; see the [project README](https://github.com/Conceptual-Machines/faust-mcp-magda) for details. This is independent of the MAGDA-side toggle.

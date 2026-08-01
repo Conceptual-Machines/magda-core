@@ -519,7 +519,7 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
     add(registry, {.pluginId = FaustPlugin::xmlTypeName,
                    .displayName = "Faust",
                    .browserCategory = "Experimental",
-                   .description = "Interpreted Faust device for loading and editing user DSP code.",
+                   .description = "Faust device for loading and editing user DSP code.",
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
                    .loadAliases = kFaustAliases,
                    .loadAliasCount = static_cast<int>(std::size(kFaustAliases)),

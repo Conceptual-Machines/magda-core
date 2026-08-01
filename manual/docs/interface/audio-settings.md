@@ -16,6 +16,7 @@ Open audio settings from **Settings > Audio Settings**. The dialog is organised 
 
 - **Active output channels** — Choose which output channels to use (stereo pair or multi-channel)
 - **Active input channels** — Choose which input channels are available for recording
+- **Preview** - the toggle beside each output stereo pair picks where browser auditioning is sent (see [Preview](../panels/browsers.md#preview)). Exactly one pair is always the preview destination, so selecting a new pair moves it rather than adding a second. Point it at a cue or headphone output to audition without going through your main monitors
 
 ## MIDI
 
