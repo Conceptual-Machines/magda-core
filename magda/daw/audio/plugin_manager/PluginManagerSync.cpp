@@ -70,8 +70,8 @@ const char* pluginFormatText(PluginFormat format) {
             return "VST3";
         case PluginFormat::AU:
             return "AU";
-        case PluginFormat::VST:
-            return "VST";
+        case PluginFormat::LV2:
+            return "LV2";
         case PluginFormat::Internal:
             return "Internal";
     }
@@ -2019,8 +2019,8 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
                 case PluginFormat::AU:
                     desc.pluginFormatName = "AudioUnit";
                     break;
-                case PluginFormat::VST:
-                    desc.pluginFormatName = "VST";
+                case PluginFormat::LV2:
+                    desc.pluginFormatName = "LV2";
                     break;
                 default:
                     break;
@@ -2208,8 +2208,8 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
                 case PluginFormat::AU:
                     desc.pluginFormatName = "AudioUnit";
                     break;
-                case PluginFormat::VST:
-                    desc.pluginFormatName = "VST";
+                case PluginFormat::LV2:
+                    desc.pluginFormatName = "LV2";
                     break;
                 default:
                     break;

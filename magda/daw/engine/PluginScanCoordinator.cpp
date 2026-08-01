@@ -12,6 +12,19 @@
 
 namespace magda {
 
+namespace {
+
+// Formats the out-of-process scanner will walk. The format manager also
+// registers formats MAGDA does not host as external plugins, so this is an
+// allowlist rather than "everything the manager knows about". Adding a format
+// here without also setting its JUCE_PLUGINHOST_* define scans nothing.
+bool isScannableFormat(const juce::String& formatName) {
+    return formatName.containsIgnoreCase("VST3") || formatName.containsIgnoreCase("AudioUnit") ||
+           formatName.containsIgnoreCase("LV2");
+}
+
+}  // namespace
+
 PluginScanCoordinator::PluginScanCoordinator() {
     loadExclusions();
 }
@@ -221,7 +234,7 @@ std::vector<PluginScanCoordinator::PluginToScan> PluginScanCoordinator::discover
         if (!format)
             continue;
         juce::String formatName = format->getName();
-        if (!formatName.containsIgnoreCase("VST3") && !formatName.containsIgnoreCase("AudioUnit"))
+        if (!isScannableFormat(formatName))
             continue;
 
         auto searchPath = format->getDefaultLocationsToSearch();
@@ -247,7 +260,7 @@ void PluginScanCoordinator::discoverPlugins() {
             continue;
 
         juce::String formatName = format->getName();
-        if (!formatName.containsIgnoreCase("VST3") && !formatName.containsIgnoreCase("AudioUnit"))
+        if (!isScannableFormat(formatName))
             continue;
 
         DBG("[ScanCoordinator] Discovering plugins for format: " << formatName);

@@ -91,8 +91,7 @@ void TracktionEngineWrapper::initializePluginFormats() {
                     splashStatus("Plugins up to date");
                     break;
                 case PluginScanPhase::Scanning:
-                    splashStatus("Scanning: " +
-                                 juce::File(currentPlugin).getFileNameWithoutExtension());
+                    splashStatus("Scanning: " + pluginDisplayName(currentPlugin));
                     break;
             }
         });

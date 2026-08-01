@@ -68,8 +68,8 @@ juce::String pluginFormatName(PluginFormat format) {
             return "vst3";
         case PluginFormat::AU:
             return "au";
-        case PluginFormat::VST:
-            return "vst";
+        case PluginFormat::LV2:
+            return "lv2";
         case PluginFormat::Internal:
             return "internal";
     }

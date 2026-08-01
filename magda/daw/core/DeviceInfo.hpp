@@ -15,17 +15,37 @@ namespace magda {
 
 /**
  * @brief Plugin format enumeration
+ *
+ * Values are serialized as raw ints by TrackSerializer, so they are fixed:
+ * append new formats, never renumber the existing ones.
+ *
+ * Slot 2 previously held VST2, which MAGDA has never hosted
+ * (JUCE_PLUGINHOST_VST is not set on any target), so nothing could be scanned
+ * as one and no saved project can contain a working device with that value.
+ * LV2 reuses it rather than leaving a permanent hole.
  */
-enum class PluginFormat { VST3, AU, VST, Internal };
+enum class PluginFormat {
+    VST3 = 0,
+    AU = 1,
+    LV2 = 2,
+    Internal = 3,
+};
 
 inline std::optional<PluginFormat> maybePluginFormatFromName(const juce::String& pluginFormatName) {
     if (pluginFormatName.containsIgnoreCase("VST3"))
         return PluginFormat::VST3;
     if (pluginFormatName.containsIgnoreCase("AudioUnit") || pluginFormatName.equalsIgnoreCase("AU"))
         return PluginFormat::AU;
-    if (pluginFormatName.containsIgnoreCase("VST"))
-        return PluginFormat::VST;
+    if (pluginFormatName.containsIgnoreCase("LV2"))
+        return PluginFormat::LV2;
     return std::nullopt;
+}
+
+/** True for ints that name a live PluginFormat. Guards the deserializer
+ *  against values a newer build might write. */
+inline bool isKnownPluginFormatValue(int value) {
+    return value >= static_cast<int>(PluginFormat::VST3) &&
+           value <= static_cast<int>(PluginFormat::Internal);
 }
 
 inline PluginFormat pluginFormatFromName(const juce::String& pluginFormatName) {
@@ -291,8 +311,8 @@ struct DeviceInfo {
                 return "VST3";
             case PluginFormat::AU:
                 return "AU";
-            case PluginFormat::VST:
-                return "VST";
+            case PluginFormat::LV2:
+                return "LV2";
             case PluginFormat::Internal:
                 return "Internal";
             default:

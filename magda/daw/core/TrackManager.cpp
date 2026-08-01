@@ -310,8 +310,8 @@ DeviceInfo TrackManager::deviceInfoFromPluginObject(const juce::DynamicObject& p
         device.format = PluginFormat::VST3;
     else if (format == "AU")
         device.format = PluginFormat::AU;
-    else if (format == "VST")
-        device.format = PluginFormat::VST;
+    else if (format == "LV2")
+        device.format = PluginFormat::LV2;
     else if (format == "Internal")
         device.format = PluginFormat::Internal;
 
