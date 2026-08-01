@@ -61,16 +61,23 @@ set(_bench_dsp_root "${MAGDA_ROOT}/magda/daw/audio/faust_dsp/compiled")
 set(_bench_generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${_bench_generated_dir}")
 
-# Representative rather than exhaustive: the two heaviest devices, a recursive
+# Representative rather than exhaustive: both compressor engines, a recursive
 # filter (the shape that vectorizes worst), a feedback reverb and delay, a
-# near-memoryless saturator (the shape that vectorizes best), and a polyphonic
-# instrument.
+# near-memoryless saturator (the shape that vectorizes best), a gate, and a
+# polyphonic instrument.
+#
+# A device must appear here and measure positive on all three platforms before
+# it may be given VECTORIZE in magda/daw/audio/CMakeLists.txt.
+#
+# magda_multiband is deliberately absent: the Multiband device runs
+# hand-written C++, so its .dsp is generated but never compiled and measuring
+# it would describe code that does not ship.
 set(_bench_devices
     "saturator:distortion/magda_saturator"
     "filter_svf:filter/magda_filter_svf"
     "compressor:dynamics/magda_compressor"
+    "compressor_glue:dynamics/magda_compressor_glue"
     "gate_expander:dynamics/magda_gate_expander"
-    "multiband:dynamics/magda_multiband"
     "reverb_hall:reverb/magda_reverb_hall"
     "delay:delay/magda_delay"
     "polysynth:synth/magda_polysynth"
