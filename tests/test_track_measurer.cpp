@@ -148,6 +148,48 @@ TEST_CASE("TrackMeasurer - true peak is enabled-gated and >= sample peak", "[mea
     REQUIRE(s.truePeakDb >= s.samplePeakDb - 0.05f);
 }
 
+TEST_CASE("TrackMeasurer - PLR/PSR are flagged invalid until both terms have signal",
+          "[measurer]") {
+    TrackMeasurer m;
+    m.prepare(kSr, kBlock, false);
+
+    // Silence: no peak and no loudness, so neither ratio is meaningful.
+    feedSine(m, 1000.0, 0.0f, 0.0f, 1.0);
+    auto s = m.read();
+    REQUIRE_FALSE(s.plrValid);
+    REQUIRE_FALSE(s.psrValid);
+    REQUIRE(s.plr == Catch::Approx(0.0f));
+
+    feedSine(m, 1000.0, 0.5f, 0.5f, 4.0);
+    s = m.read();
+    REQUIRE(s.plrValid);
+    REQUIRE(s.psrValid);
+    REQUIRE(s.plr == Catch::Approx(s.samplePeakDb - s.integratedLufs).margin(0.01f));
+    REQUIRE(s.psr == Catch::Approx(s.samplePeakDb - s.shortTermLufs).margin(0.01f));
+}
+
+TEST_CASE("TrackMeasurer - reset drops a held peak back to the current signal", "[measurer]") {
+    TrackMeasurer m;
+    m.prepare(kSr, kBlock, false);
+
+    feedSine(m, 1000.0, 0.9f, 0.9f, 2.0);
+    const float loudPeak = m.read().samplePeakDb;
+    REQUIRE(loudPeak == Catch::Approx(-0.92f).margin(0.2f));
+
+    // A quieter signal cannot pull the peak hold (or the integrated loudness)
+    // down on its own - that is what makes the reset necessary (issue #1967).
+    feedSine(m, 1000.0, 0.1f, 0.1f, 2.0);
+    REQUIRE(m.read().samplePeakDb == Catch::Approx(loudPeak).margin(0.01f));
+    const float heldIntegrated = m.read().integratedLufs;
+
+    m.reset();
+    feedSine(m, 1000.0, 0.1f, 0.1f, 2.0);
+    const auto s = m.read();
+    REQUIRE(s.samplePeakDb == Catch::Approx(-20.0f).margin(0.2f));
+    REQUIRE(s.samplePeakDb < loudPeak - 10.0f);
+    REQUIRE(s.integratedLufs < heldIntegrated - 5.0f);
+}
+
 TEST_CASE("TrackMeasurer - reset clears state", "[measurer]") {
     TrackMeasurer m;
     m.prepare(kSr, kBlock, false);

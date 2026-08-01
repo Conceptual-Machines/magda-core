@@ -35,6 +35,15 @@ juce::Colour peakColour(float dbtp) {
 
 LevelsUI::LevelsUI() {
     setOpaque(false);
+
+    using DT = magda::DarkTheme;
+    resetButton_.setTooltip("Restart integrated loudness, peak hold and PLR");
+    resetButton_.setColour(juce::TextButton::buttonColourId,
+                           DT::getColour(DT::BACKGROUND).brighter(0.1f));
+    resetButton_.setColour(juce::TextButton::textColourOffId, DT::getColour(DT::TEXT_DIM));
+    resetButton_.onClick = [this] { resetMeasurement(); };
+    resetButton_.setEnabled(false);  // until a telemetry source is bound
+    addAndMakeVisible(resetButton_);
 }
 
 LevelsUI::~LevelsUI() {
@@ -50,8 +59,23 @@ void LevelsUI::setTelemetrySource(std::shared_ptr<LevelsTelemetrySource> telemet
     if (telemetry_ != nullptr)
         telemetry_->setActive(false);
     telemetry_ = std::move(telemetry);
+    resetButton_.setEnabled(telemetry_ != nullptr);
     updateActiveState();
     repaint();
+}
+
+void LevelsUI::resetMeasurement() {
+    if (telemetry_ != nullptr)
+        telemetry_->requestReset();
+    // Blank the cached readout straight away rather than showing the stale held
+    // values until the audio thread has applied the reset.
+    snapshot_ = {};
+    repaint();
+}
+
+void LevelsUI::resized() {
+    auto area = getLocalBounds().reduced(10, 8);
+    resetButton_.setBounds(area.removeFromBottom(kResetButtonH).removeFromRight(kResetButtonW));
 }
 
 void LevelsUI::visibilityChanged() {
@@ -89,8 +113,9 @@ void LevelsUI::paint(juce::Graphics& g) {
     const auto dim = DT::getColour(DT::TEXT_DIM);
     const auto primary = DT::getColour(DT::TEXT_PRIMARY);
 
-    // Three columns: loudness | dynamics/peak | stereo.
+    // Three columns: loudness | dynamics/peak | stereo, above the Reset strip.
     auto area = bounds.reduced(8.0f, 6.0f);
+    area.removeFromBottom(static_cast<float>(kResetButtonH));
     const float colW = area.getWidth() / 3.0f;
     auto loudCol = area.removeFromLeft(colW).reduced(4.0f, 0.0f);
     auto dynCol = area.removeFromLeft(colW).reduced(4.0f, 0.0f);
@@ -134,8 +159,12 @@ void LevelsUI::paint(juce::Graphics& g) {
     const float tp = s.truePeakValid ? s.truePeakDb : s.samplePeakDb;
     valueRow(dynCol, s.truePeakValid ? "True peak" : "Sample peak", fmtDb(tp), "dB",
              s.valid ? peakColour(tp) : primary, rowH);
-    valueRow(dynCol, "PLR", fmtLu(s.plr), "LU", primary, rowH * 0.8f);
-    valueRow(dynCol, "PSR", fmtLu(s.psr), "LU", dim.brighter(0.4f), rowH * 0.8f);
+    // PLR/PSR are only meaningful once both their terms are above the floor -
+    // show a dash rather than a misleading 0.0 while one of them is silent.
+    valueRow(dynCol, "PLR", s.plrValid ? fmtLu(s.plr) : juce::String("-"), "LU", primary,
+             rowH * 0.8f);
+    valueRow(dynCol, "PSR", s.psrValid ? fmtLu(s.psr) : juce::String("-"), "LU", dim.brighter(0.4f),
+             rowH * 0.8f);
 
     // Column 3: stereo (correlation bar + width).
     g.setColour(DT::getColour(DT::ACCENT_INFO));

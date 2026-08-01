@@ -139,6 +139,11 @@ class LevelsPluginTelemetrySource final : public LevelsTelemetrySource {
             p->setActive(active);
     }
 
+    void requestReset() override {
+        if (auto* p = plugin())
+            p->requestReset();
+    }
+
     daw::audio::TrackMeasurementSnapshot snapshot() const override {
         auto* p = plugin();
         return p != nullptr ? p->getSnapshot() : daw::audio::TrackMeasurementSnapshot{};
