@@ -147,11 +147,50 @@ if(MAGDA_FAUST_BACKEND STREQUAL "wasm")
     target_compile_definitions(magda_faust_backend INTERFACE MAGDA_FAUST_BACKEND_WASM=1)
 endif()
 
+# Vectorized code generation for the compiled devices (issue #1397).
+#
+# `-vec` emits no SIMD intrinsics. It splits Faust's single sample loop into
+# per-signal sub-loops of MAGDA_FAUST_VECTOR_SIZE samples, a shape the host
+# compiler can auto-vectorize at its own baseline ISA. No -march change and no
+# new instruction-set requirement, so an older CPU cannot fault on the result.
+#
+# Whether that helps is per device and per toolchain, which is why it is opt-in
+# rather than a default. Measured across macOS/clang, Linux/gcc and
+# Windows/MSVC (see tools/faust_vec_bench):
+#
+#   compressor     +35% / +14% / +34%   <- enabled
+#   gate_expander  +29% / +15% / +27%   <- enabled
+#   saturator      +22% / +16%  / +3%   <- enabled
+#   delay           +9%  / -1% / +15%
+#   polysynth      +13%  / -5% / -12%
+#   reverb_hall     -2%  / -3%  / -7%
+#   filter_svf      -4% / +21% / -21%
+#
+# The spread is not noise. These DSPs call libm per sample - parameter
+# smoothing turns cutoff and gain into per-sample signals - so `-vec` isolates
+# each transcendental into its own short loop, and what a toolchain makes of
+# that varies wildly. filter_svf swings 42 points between gcc and MSVC on one
+# `std::tan` per sample. A device therefore earns this flag by measuring
+# positive on all three platforms; it does not get it by default.
+set(MAGDA_FAUST_VECTORIZE ON CACHE BOOL
+    "Master switch for per-device Faust vectorization; devices still opt in individually")
+set(MAGDA_FAUST_VECTOR_SIZE 4 CACHE STRING
+    "Faust -vs vector size used by devices that opt into vectorization")
+
 # Add a build-time Faust DSP-to-C++ step and return the generated source path.
+# Pass VECTORIZE to generate this device as vectorizable sub-loops; do that
+# only with cross-platform benchmark data backing it.
 function(magda_compile_faust_dsp DSP_FILE CLASS_NAME OUT_VAR)
+    cmake_parse_arguments(ARG "VECTORIZE" "" "" ${ARGN})
+
     get_filename_component(DSP_NAME "${DSP_FILE}" NAME_WE)
     set(GENERATED_DIR "${CMAKE_BINARY_DIR}/compiled_dsps")
     set(GENERATED_CPP "${GENERATED_DIR}/${DSP_NAME}.generated.cpp")
+
+    set(_magda_faust_codegen_flags -single)
+    if(ARG_VECTORIZE AND MAGDA_FAUST_VECTORIZE)
+        list(APPEND _magda_faust_codegen_flags -vec -vs ${MAGDA_FAUST_VECTOR_SIZE})
+    endif()
 
     file(MAKE_DIRECTORY "${GENERATED_DIR}")
     add_custom_command(
@@ -160,7 +199,7 @@ function(magda_compile_faust_dsp DSP_FILE CLASS_NAME OUT_VAR)
                 -lang cpp
                 -cn ${CLASS_NAME}
                 -I "${CMAKE_SOURCE_DIR}/third_party/faust/libraries"
-                -single
+                ${_magda_faust_codegen_flags}
                 -o "${GENERATED_CPP}"
                 "${DSP_FILE}"
         DEPENDS "${DSP_FILE}" $<TARGET_FILE:faust>

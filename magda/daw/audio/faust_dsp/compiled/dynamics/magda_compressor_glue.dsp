@@ -31,8 +31,10 @@ makeupDb    = hslider("Makeup [unit:dB] [idx:6]", 0.0, 0.0, 24.0, 0.1)
               : si.smooth(ba.tau2pole(0.02));
 mix         = hslider("Mix [idx:7]", 1.0, 0.0, 1.0, 0.001)
               : si.smooth(ba.tau2pole(0.02));
-outputDb    = hslider("Output [unit:dB] [idx:8]", 0.0, -24.0, 12.0, 0.1)
-              : si.smooth(ba.tau2pole(0.02));
+// Smoothed as a linear gain rather than in dB, so pow() stays at control
+// rate. Makeup is left in dB here for the same reason as the Clean engine:
+// hoisting it there moved the settled output by 4% for one saved call.
+outputDbRaw = hslider("Output [unit:dB] [idx:8]", 0.0, -24.0, 12.0, 0.1);
 detector    = nentry("Detector [idx:9] [style:menu{'Peak':0;'RMS':1}]",
                      0, 0, 1, 1);
 link        = hslider("Link [idx:10]", 1.0, 0.0, 1.0, 0.001);
@@ -59,6 +61,7 @@ prePost = int(style);
 meter = _;
 
 db2lin(db) = pow(10.0, db / 20.0);
+outputGain = db2lin(outputDbRaw) : si.smooth(ba.tau2pole(0.02));
 softLimit(x) = ma.tanh(x * 0.75) / ma.tanh(0.75);
 
 // Both detector topologies run in parallel; the detector slot picks which
@@ -94,7 +97,7 @@ autogainDb = autogain * (-(thresholdDb * strength));
 // fix rationale).
 channelBlend(dry, wet) =
     softLimit((dry * (1.0 - mix) + wet * mix) * db2lin(makeupDb + autogainDb))
-    * db2lin(outputDb);
+    * outputGain;
 
 wetL(l, r) = compress(l, r) : _, !;
 wetR(l, r) = compress(l, r) : !, _;

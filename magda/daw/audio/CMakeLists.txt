@@ -42,6 +42,7 @@ magda_compile_faust_dsp(
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/distortion/magda_saturator.dsp"
     MagdaSaturatorDsp
     MAGDA_SATURATOR_GENERATED_CPP
+    VECTORIZE
 )
 magda_compile_faust_dsp(
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/synth/magda_polysynth.dsp"
@@ -109,11 +110,6 @@ magda_compile_faust_dsp(
     MAGDA_GRIT_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/dynamics/magda_multiband.dsp"
-    MagdaMultibandDsp
-    MAGDA_MULTIBAND_GENERATED_CPP
-)
-magda_compile_faust_dsp(
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/modulation/magda_phaser.dsp"
     MagdaPhaserDsp
     MAGDA_PHASER_GENERATED_CPP
@@ -122,6 +118,7 @@ magda_compile_faust_dsp(
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/dynamics/magda_compressor.dsp"
     MagdaCompressorDsp
     MAGDA_COMPRESSOR_GENERATED_CPP
+    VECTORIZE
 )
 magda_compile_faust_dsp(
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/dynamics/magda_compressor_glue.dsp"
@@ -157,6 +154,7 @@ magda_compile_faust_dsp(
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/dynamics/magda_gate_expander.dsp"
     MagdaGateExpanderDsp
     MAGDA_GATE_EXPANDER_GENERATED_CPP
+    VECTORIZE
 )
 magda_compile_faust_dsp(
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/distortion/magda_clipper.dsp"
@@ -238,7 +236,6 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_DELAY_GENERATED_CPP}"
         "${MAGDA_GRAIN_DELAY_GENERATED_CPP}"
         "${MAGDA_GRIT_GENERATED_CPP}"
-        "${MAGDA_MULTIBAND_GENERATED_CPP}"
         "${MAGDA_PHASER_GENERATED_CPP}"
         "${MAGDA_COMPRESSOR_GENERATED_CPP}"
         "${MAGDA_COMPRESSOR_GLUE_GENERATED_CPP}"
