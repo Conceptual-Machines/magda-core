@@ -26,6 +26,17 @@ jobs:
       contents: read
 
     steps:
+    # First step on purpose: this decides whether the whole job builds warm or
+    # cold, so it belongs where it is visible without scrolling past the apt
+    # output, and a credential problem surfaces before any setup time is spent.
+    # Needs neither the checkout nor any package.
+    - name: Check R2 credentials
+      id: r2-creds
+      continue-on-error: true
+      env:
+        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      run: test -n "$R2_ACCESS_KEY_ID"
+
     - uses: actions/checkout@v7
       with:
         submodules: recursive
@@ -64,15 +75,8 @@ jobs:
     #
     # R2 has no OIDC federation, so this uses a scoped API token instead of an
     # assumed role. Dependabot-triggered runs get no repo secrets, so the
-    # credential check fails and the build just runs cold (see the
+    # first-step credential check fails and the build just runs cold (see the
     # sccache-gated launcher flags in Configure CMake below).
-    - name: Check R2 credentials
-      id: r2-creds
-      continue-on-error: true
-      env:
-        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      run: test -n "$R2_ACCESS_KEY_ID"
-
     - name: Setup sccache
       id: sccache
       if: steps.r2-creds.outcome == 'success'
