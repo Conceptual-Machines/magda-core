@@ -24,6 +24,14 @@ inline float midiNoteToHz(int note) {
     return 440.0f * std::pow(2.0f, (static_cast<float>(note) - 69.0f) / 12.0f);
 }
 
+// 14-bit wheel to -1..+1. 8192 is centre, so the two halves have a different
+// span (8192 below, 8191 above); scaling each side by its own span keeps the
+// extremes at exactly -1 and +1 instead of leaving the top a hair short.
+inline float bendFromWheel(int wheelValue) {
+    const int offset = wheelValue - 8192;
+    return offset < 0 ? static_cast<float>(offset) / 8192.0f : static_cast<float>(offset) / 8191.0f;
+}
+
 // Glide is stepped once per sub-block rather than per sample: the mono voice's
 // freq zone is a plain float the DSP reads at the top of compute(), so the only
 // way to move it mid-block is to break the block up. 32 samples is 0.7 ms at
@@ -52,13 +60,13 @@ bool isReservedVoiceControl(const juce::String& cleanLabel) {
 // instrument's tabbed UI gets one tab per group. Each group's controls are
 // declared inside the box via `with{}` so Faust composes them under that group.
 //
-// Mirrored by faust_dsp/runtime/instruments/synth/faust_poly_synth.dsp, which
+// Mirrored by faust_dsp/runtime/instruments/synth/simple_synth.dsp, which
 // is what puts it in the Load menu - keep the two in step. This copy stays
 // compiled in rather than being read from that file, so a device still comes up
 // making sound when nothing is staged (a dev build, a broken install).
 constexpr const char* kDefaultDspSource = R"FAUST(
 import("stdfaust.lib");
-declare name "Faust Poly Synth";
+declare name "Simple Synth";
 declare description "Detuned saw pair through a resonant lowpass. Replace this with your own DSP.";
 declare author "MAGDA";
 declare license "GPL-3.0";
@@ -249,6 +257,25 @@ std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compil
     state->dspIn = state->poly->getNumInputs();
     state->dspOut = state->poly->getNumOutputs();
 
+    // Resolve each voice's freq zone once, here on the message thread, so pitch
+    // bend can write it later without a by-string lookup. fFreqPath is what the
+    // allocator itself uses on keyOn, so this stays in step with whatever the
+    // patch called its pitch control.
+    {
+        auto* impl = static_cast<mydsp_poly*>(state->poly.get());
+        state->voiceFreqZones.reserve(impl->fVoiceTable.size());
+        for (auto* voice : impl->fVoiceTable) {
+            std::vector<FAUSTFLOAT*> zones;
+            if (voice != nullptr) {
+                for (const auto& path : voice->fFreqPath) {
+                    if (auto* zone = voice->getParamZone(path))
+                        zones.push_back(zone);
+                }
+            }
+            state->voiceFreqZones.push_back(std::move(zones));
+        }
+    }
+
     // A second, independent instance for Mono/Legato. Built here rather than
     // lazily on first use: allocating a DSP is not something to do from the
     // audio thread, and the mode can change between any two blocks.
@@ -407,6 +434,43 @@ void FaustInstrumentPlugin::resetAllVoices(const std::shared_ptr<FaustState>& st
     // than sliding in from whatever was last played.
     glideCurrentHz_ = 0.0f;
     glideTargetHz_ = 0.0f;
+    // Recentre the wheel. A panic has to leave the instrument at concert pitch:
+    // the reset paths are transport stops and mode changes, where no note-off
+    // arrives either, so a wheel left off-centre would silently detune every
+    // note played afterwards with nothing on screen to explain it.
+    bendNormalised_ = 0.0f;
+    lastPolyBendRatio_ = 1.0f;
+}
+
+float FaustInstrumentPlugin::readBendRatio() const {
+    if (bendNormalised_ == 0.0f)
+        return 1.0f;
+    const float semitones =
+        (bendRangeParam_ ? bendRangeParam_->getCurrentValue() : 0.0f) * kMaxBendSemitones;
+    return std::pow(2.0f, bendNormalised_ * semitones / 12.0f);
+}
+
+void FaustInstrumentPlugin::applyBendToPolyVoices(const std::shared_ptr<FaustState>& state,
+                                                  float ratio) {
+    if (!state || !state->poly)
+        return;
+    auto* impl = static_cast<mydsp_poly*>(state->poly.get());
+    const size_t count =
+        std::min(state->voiceFreqZones.size(), static_cast<size_t>(impl->fVoiceTable.size()));
+    for (size_t i = 0; i < count; ++i) {
+        auto* voice = impl->fVoiceTable[i];
+        if (voice == nullptr)
+            continue;
+        // fCurNote is a real pitch only while the voice is sounding; the free
+        // and legato states are negative sentinels. In legato the voice is
+        // already committed to fNextNote, so bend that instead.
+        const int note = voice->fCurNote >= 0 ? voice->fCurNote : voice->fNextNote;
+        if (note < 0)
+            continue;
+        const auto hz = static_cast<FAUSTFLOAT>(midiNoteToHz(note) * ratio);
+        for (auto* zone : state->voiceFreqZones[i])
+            *zone = hz;
+    }
 }
 
 void FaustInstrumentPlugin::releasePolyVoicesForPitch(const std::shared_ptr<FaustState>& state,
@@ -520,6 +584,13 @@ FaustInstrumentPlugin::FaustInstrumentPlugin(const te::PluginCreationInfo& info)
     glideParam_ = addParam("glide", "Glide", normalisedRange);
     glideParam_->attachToCurrentValue(glideCached_);
 
+    // Default 2 semitones, the near-universal synth default, stored normalised
+    // against kMaxBendSemitones like every other parameter here.
+    constexpr float kDefaultBendNorm = 2.0f / kMaxBendSemitones;
+    bendRangeCached_.referTo(this->state, juce::Identifier("bendRange"), um, kDefaultBendNorm);
+    bendRangeParam_ = addParam("bendRange", "Bend Range", normalisedRange);
+    bendRangeParam_->attachToCurrentValue(bendRangeCached_);
+
     const auto savedSource = state.getProperty("dspSource", juce::String()).toString();
     const auto savedName = state.getProperty("dspName", juce::String()).toString();
 
@@ -532,7 +603,7 @@ FaustInstrumentPlugin::FaustInstrumentPlugin(const te::PluginCreationInfo& info)
     }
 
     dspSource_ = savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource);
-    dspName_ = savedName.isNotEmpty() ? savedName : juce::String("Faust Poly Synth");
+    dspName_ = savedName.isNotEmpty() ? savedName : juce::String("Simple Synth");
     // Derived, not restored: the source is the only thing that has to persist.
     viewName_ = readCustomViewName(dspSource_);
 
@@ -624,6 +695,14 @@ void FaustInstrumentPlugin::initialise(const te::PluginInitialisationInfo& info)
     if (auto state = std::atomic_load(&active_)) {
         if (state->poly)
             state->poly->instanceInit(currentSampleRate_);
+        // The mono voice is a separate instance the allocator knows nothing
+        // about, so it needs its own re-init. The constructor compiles at a
+        // provisional 44.1 kHz, and without this Mono and Legato kept those
+        // constants on a device running at anything else: oscillators detuned
+        // by the rate ratio and envelope times off by the same factor, until
+        // something happened to trigger a recompile.
+        if (state->monoVoice)
+            state->monoVoice->instanceInit(currentSampleRate_);
     }
 
     const int dspOut = std::atomic_load(&active_) ? std::atomic_load(&active_)->dspOut : 2;
@@ -761,8 +840,13 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                 } else {
                     glideCurrentHz_ = glideTargetHz_;
                 }
+                // Bend multiplies the ramp's output rather than its state, so
+                // moving the wheel mid-glide does not disturb where the glide
+                // is heading. The block is split at each MIDI event, so this
+                // picks up a wheel move at the sample it arrived on.
                 if (glideCurrentHz_ > 0.0f)
-                    *active->monoFreqZone = static_cast<FAUSTFLOAT>(glideCurrentHz_);
+                    *active->monoFreqZone =
+                        static_cast<FAUSTFLOAT>(glideCurrentHz_ * readBendRatio());
             }
 
             for (int ch = 0; ch < dspOut; ++ch)
@@ -797,10 +881,20 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                     // allocator never accumulates orphans that hang.
                     releasePolyVoicesForPitch(active, m.getNoteNumber());
                     active->poly->keyOn(m.getChannel(), m.getNoteNumber(), m.getVelocity());
+                    // keyOn writes an unbent freq, so a note started while the
+                    // wheel is held would otherwise sound at concert pitch.
+                    if (lastPolyBendRatio_ != 1.0f)
+                        applyBendToPolyVoices(active, lastPolyBendRatio_);
                 } else if (m.isNoteOff()) {
                     releasePolyVoicesForPitch(active, m.getNoteNumber());
                 } else if (m.isPitchWheel()) {
-                    active->poly->pitchWheel(m.getChannel(), m.getPitchWheelValue());
+                    // Not forwarded to the allocator: dsp_poly::pitchWheel
+                    // bottoms out in an empty midi::pitchWheel, so it only ever
+                    // moved controls a patch tagged [midi:pitchwheel] itself.
+                    // Driving freq here makes the wheel work for every patch.
+                    bendNormalised_ = bendFromWheel(m.getPitchWheelValue());
+                    lastPolyBendRatio_ = readBendRatio();
+                    applyBendToPolyVoices(active, lastPolyBendRatio_);
                 } else if (m.isController()) {
                     // Includes CC 120/123 (all sound/notes off), which the Faust
                     // MIDI handler turns into keyOff across active voices.
@@ -821,6 +915,11 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                     }
                 } else if (m.isNoteOff()) {
                     handleMonoNoteOff(active, m.getNoteNumber());
+                } else if (m.isPitchWheel()) {
+                    // The mono branch handled no wheel at all. The glide ramp
+                    // owns monoFreqZone, so bend is folded in where that is
+                    // written rather than poked in here.
+                    bendNormalised_ = bendFromWheel(m.getPitchWheelValue());
                 } else if (m.isController() &&
                            (m.getControllerNumber() == 120 || m.getControllerNumber() == 123)) {
                     heldNotes_.clear();

@@ -107,7 +107,11 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
     // faustInstrumentHostParamInfo().
     static constexpr int kVoiceModeParamIndex = FaustParamPool::kSize;
     static constexpr int kGlideParamIndex = FaustParamPool::kSize + 1;
-    static constexpr int kHostParamCount = 2;
+    static constexpr int kBendRangeParamIndex = FaustParamPool::kSize + 2;
+    static constexpr int kHostParamCount = 3;
+
+    // Widest bend the range parameter can ask for, in semitones either way.
+    static constexpr float kMaxBendSemitones = 24.0f;
 
     // Read access for the processor / parameter-info bridge.
     const FaustParamPool& getPool() const override {
@@ -170,6 +174,13 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
         // there is only ever one mono voice.
         std::array<FAUSTFLOAT*, FaustParamPool::kSize> monoZoneBySlot{};
 
+        // Each poly voice's `freq` zones, parallel to the allocator's
+        // fVoiceTable. Cached at compile time because applying pitch bend has
+        // to rewrite them per block, and MapUI's own setter looks the zone up
+        // by string - a map lookup we cannot afford on the audio thread.
+        // Inner vector because a patch may declare `freq` more than once.
+        std::vector<std::vector<FAUSTFLOAT*>> voiceFreqZones;
+
         ~FaustState();
     };
 
@@ -196,10 +207,18 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
     // kVoiceModeParamIndex / kGlideParamIndex and nothing in the pool moves.
     te::AutomatableParameter::Ptr voiceModeParam_;
     te::AutomatableParameter::Ptr glideParam_;
+    te::AutomatableParameter::Ptr bendRangeParam_;
     juce::CachedValue<float> voiceModeCached_;
     juce::CachedValue<float> glideCached_;
+    juce::CachedValue<float> bendRangeCached_;
 
     int readVoiceMode() const;
+    // Frequency multiplier for the current wheel position, 1.0 when centred.
+    float readBendRatio() const;
+    // Rewrite every sounding poly voice's freq zone for `ratio`. The allocator
+    // writes an unbent freq on keyOn, so this also has to run after a note
+    // starts, not only when the wheel moves.
+    void applyBendToPolyVoices(const std::shared_ptr<FaustState>& state, float ratio);
     // Silence everything: poly voices, the mono voice, and the held-note stack.
     void resetAllVoices(const std::shared_ptr<FaustState>& state);
     // Release EVERY poly voice sounding (or legato-targeting) this pitch.
@@ -227,6 +246,12 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
     // actually holds; it chases `glideTargetHz_`.
     float glideCurrentHz_ = 0.0f;
     float glideTargetHz_ = 0.0f;
+
+    // Wheel position, -1..+1, owned by the audio thread. MIDI arrives in the
+    // render context, so this never crosses a thread boundary.
+    float bendNormalised_ = 0.0f;
+    // Last ratio written to the poly voices, so a centred wheel costs nothing.
+    float lastPolyBendRatio_ = 1.0f;
 
     int lastVoiceMode_ = Poly;
     bool wasPlaying_ = false;

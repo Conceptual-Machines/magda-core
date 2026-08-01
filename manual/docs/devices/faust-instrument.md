@@ -39,12 +39,15 @@ The device plays up to 16 voices at once. When they are all busy, the oldest rel
 
 ## Voice controls
 
-Two host parameters sit on the **Voice** page, alongside whatever your patch declares:
+Three host parameters sit on the **Voice** page, alongside whatever your patch declares:
 
 - **Voice Mode** - **Poly** allocates a fresh voice per note. **Mono** plays one note at a time and retriggers the envelope on each new note. **Legato** also plays one note at a time, but overlapping notes slide to the new pitch without retriggering, so the envelope keeps its shape.
 - **Glide** - portamento time, from instant up to 2 seconds. In **Legato** it gives the classic slide between overlapping notes, and releasing back to a note you are still holding glides back to it.
+- **Bend Range** - how far the pitch wheel moves the note, in semitones each way, up to 24. The default of 2 matches most synths.
 
-Both are ordinary automatable parameters, so they can be automated, linked to macros, and driven by modulators like any other control.
+They are ordinary automatable parameters, so they can be automated, linked to macros, and driven by modulators like any other control.
+
+Pitch bend is applied by MAGDA to the same `freq` your patch already reads, so the wheel works without your DSP doing anything to support it. There is no need to declare a bend control or tag anything with `[midi:pitchwheel]`. Stopping the transport recentres the wheel, so a bend held at the moment you stop does not carry over into what you play next.
 
 ## Parameters across recompiles
 
