@@ -1,5 +1,5 @@
 import("stdfaust.lib");
-declare name "Faust Poly Synth";
+declare name "Simple Synth";
 declare description "Detuned saw pair through a resonant lowpass. Replace this with your own DSP.";
 declare author "MAGDA";
 declare license "GPL-3.0";

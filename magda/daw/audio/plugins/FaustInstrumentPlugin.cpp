@@ -60,13 +60,13 @@ bool isReservedVoiceControl(const juce::String& cleanLabel) {
 // instrument's tabbed UI gets one tab per group. Each group's controls are
 // declared inside the box via `with{}` so Faust composes them under that group.
 //
-// Mirrored by faust_dsp/runtime/instruments/synth/faust_poly_synth.dsp, which
+// Mirrored by faust_dsp/runtime/instruments/synth/simple_synth.dsp, which
 // is what puts it in the Load menu - keep the two in step. This copy stays
 // compiled in rather than being read from that file, so a device still comes up
 // making sound when nothing is staged (a dev build, a broken install).
 constexpr const char* kDefaultDspSource = R"FAUST(
 import("stdfaust.lib");
-declare name "Faust Poly Synth";
+declare name "Simple Synth";
 declare description "Detuned saw pair through a resonant lowpass. Replace this with your own DSP.";
 declare author "MAGDA";
 declare license "GPL-3.0";
@@ -603,7 +603,7 @@ FaustInstrumentPlugin::FaustInstrumentPlugin(const te::PluginCreationInfo& info)
     }
 
     dspSource_ = savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource);
-    dspName_ = savedName.isNotEmpty() ? savedName : juce::String("Faust Poly Synth");
+    dspName_ = savedName.isNotEmpty() ? savedName : juce::String("Simple Synth");
     // Derived, not restored: the source is the only thing that has to persist.
     viewName_ = readCustomViewName(dspSource_);
 
