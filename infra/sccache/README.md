@@ -1,40 +1,96 @@
-# CI sccache S3 cache
+# CI sccache cache
 
 Terraform for the shared compile cache the Linux CI jobs use via
-[sccache](https://github.com/mozilla/sccache) with an S3 backend. This replaces
-the `actions/cache`-backed ccache, which was branch-scoped and capped at the
-10 GB per-repo cache budget, so Linux runs were almost always cold.
+[sccache](https://github.com/mozilla/sccache). This replaces the
+`actions/cache`-backed ccache, which was branch-scoped and capped at the 10 GB
+per-repo cache budget, so Linux runs were almost always cold.
+
+The backend is Cloudflare R2, reached through sccache's S3-compatible client.
+
+## Why R2 and not S3
+
+The cache started on S3 in eu-west-2. Both consuming jobs (`ci.yml`
+`build-and-test-linux` and `juce-tests-linux.yml`) run on `ubuntu-latest`, i.e.
+GitHub-hosted runners outside AWS, so every cache hit was billed egress at
+$0.09/GB. A healthy cache made that worse, not better:
+
+- ~87% hit rate, ~1267 objects pulled per job, ~1.2 GB per job
+- ~356 GB in the first month, trending to ~800 GB/month
+- storage was only $4.34/mo of it; the rest was transfer
+
+Expiring objects sooner does not help, because egress is driven by hits on the
+objects the current tree needs, not by how much history sits in the bucket.
+Deleting those just converts hits into misses. R2 removes the per-GB charge
+instead of rationing the cache: at this volume the reads and writes sit inside
+R2's free operation tiers, so the bill is storage only.
 
 ## What it creates
 
-- An S3 bucket (`magda-ci-sccache-<account-id>`) with public access blocked and
-  a 14-day object-expiry lifecycle rule.
-- An IAM role assumed by GitHub Actions via OIDC, trust-scoped to
-  `repo:Conceptual-Machines/magda-core:*`, with least-privilege
-  `GetObject`/`PutObject`/`ListBucket` on that one bucket.
+- An R2 bucket (`magda-ci-sccache`) with a 14-day object-expiry lifecycle rule.
+- The superseded S3 bucket and GitHub OIDC role, still present but marked
+  pending decommission (see below).
 
-The account-global GitHub OIDC provider already exists and is referenced, not
-managed here.
+## One-time Cloudflare setup
+
+The bucket is Terraform-managed, but the credentials are not: R2 API tokens
+cannot be created through the S3-compatible API, and R2 has no OIDC federation,
+so CI authenticates with a scoped token rather than an assumed role.
+
+1. In the Cloudflare dashboard, note the **account ID** (R2 > Overview).
+2. Create an API token for Terraform with **Workers R2 Storage: Edit**, and
+   export it as `CLOUDFLARE_API_TOKEN`.
+3. Apply (see Usage) to create the bucket.
+4. In **R2 > Manage API Tokens**, create an S3-compatible token scoped to
+   *Object Read & Write* on `magda-ci-sccache` only. This yields an
+   **Access Key ID** and a **Secret Access Key**, shown once.
 
 ## Usage
 
 ```sh
 cd infra/sccache
-terraform init
-terraform plan      # review the trust policy before applying
-terraform apply
+export CLOUDFLARE_API_TOKEN=...
+terraform init          # picks up the cloudflare provider
+terraform plan -var cloudflare_account_id=...
+terraform apply -var cloudflare_account_id=...
 ```
 
 State is local (`terraform.tfstate`, gitignored). The resources are static and
-rarely change; if this grows, migrate to an S3 state backend.
+rarely change; if this grows, migrate to a remote state backend.
 
 ## Wiring into CI
 
-After `apply`, feed the outputs to the Linux workflow jobs:
+Set these repository secrets:
 
-- `SCCACHE_BUCKET` = `bucket_name`
-- `SCCACHE_REGION` = `region`
-- `configure-aws-credentials` `role-to-assume` = `role_arn`
+| Secret                 | Value                                            |
+| ---------------------- | ------------------------------------------------ |
+| `SCCACHE_BUCKET`       | `magda-ci-sccache` (the `r2_bucket_name` output) |
+| `R2_ACCOUNT_ID`        | Cloudflare account ID                            |
+| `R2_ACCESS_KEY_ID`     | from the R2 S3-compatible token                  |
+| `R2_SECRET_ACCESS_KEY` | from the R2 S3-compatible token                  |
 
-The job needs `permissions: id-token: write` for OIDC, and builds with
+The jobs need no `id-token` permission any more. sccache is pointed at R2 with
+`SCCACHE_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com` and
+`SCCACHE_REGION=auto` (R2 has no regions), and builds with
 `-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache`.
+
+Runs without those secrets (Dependabot) skip the setup step and build cold
+rather than failing.
+
+## Verifying the migration
+
+The first Linux run after the secrets are set is the real test; none of this is
+checkable locally. Look at the `Show sccache statistics` step:
+
+- The first run is expected to be nearly all misses, since R2 starts empty.
+- The run after it should show hits climbing back toward ~87%.
+
+Until hits recover, leave the S3 bucket in place.
+
+## Decommissioning S3
+
+Once a Linux run reports hits against R2, remove from `main.tf` the
+`aws_s3_bucket`, `aws_s3_bucket_public_access_block`,
+`aws_s3_bucket_lifecycle_configuration`, the whole OIDC role section and the
+`aws` provider, drop the `legacy_*` outputs, then `terraform apply` to destroy
+them. Delete the now-unused `AWS_SCCACHE_ROLE_ARN` repository secret at the
+same time.

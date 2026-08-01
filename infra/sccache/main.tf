@@ -2,6 +2,9 @@ provider "aws" {
   region = var.region
 }
 
+# Reads CLOUDFLARE_API_TOKEN from the environment, so no credential lands here.
+provider "cloudflare" {}
+
 data "aws_caller_identity" "current" {}
 
 # The GitHub Actions OIDC provider is account-global and already exists in this
@@ -14,7 +17,50 @@ locals {
   bucket_name = "${var.bucket_prefix}-${data.aws_caller_identity.current.account_id}"
 }
 
+# --- Cloudflare R2 bucket holding the sccache compile-cache objects -------------
+#
+# The live cache backend. R2 rather than S3 because the Linux CI jobs run on
+# GitHub-hosted runners, so every cache hit was billed AWS egress at $0.09/GB:
+# ~1.2 GB per job, ~356 GB in the first month and still climbing. R2 charges
+# nothing for egress, so the same workload costs storage only.
+
+resource "cloudflare_r2_bucket" "sccache" {
+  account_id    = var.cloudflare_account_id
+  name          = var.r2_bucket_name
+  location      = var.r2_location
+  storage_class = "Standard"
+}
+
+# Compile-cache objects are disposable; expire them so the bucket self-prunes
+# and does not accumulate cost or stale entries. R2 expresses the age in
+# seconds where S3 used whole days.
+resource "cloudflare_r2_bucket_lifecycle" "sccache" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.sccache.name
+
+  rules = [{
+    id      = "expire-sccache-objects"
+    enabled = true
+
+    conditions = {
+      prefix = "" # whole bucket
+    }
+
+    delete_objects_transition = {
+      condition = {
+        type    = "Age"
+        max_age = var.object_expiry_days * 24 * 60 * 60
+      }
+    }
+  }]
+}
+
 # --- S3 bucket holding the sccache compile-cache objects ------------------------
+#
+# PENDING DECOMMISSION. Superseded by the R2 bucket above; kept only so the
+# cache stays warm while the R2 migration is verified in CI. Once a Linux run
+# reports hits against R2, delete this block, the public-access block, the
+# lifecycle rule, and the whole OIDC role section below, then apply.
 
 resource "aws_s3_bucket" "sccache" {
   bucket = local.bucket_name
