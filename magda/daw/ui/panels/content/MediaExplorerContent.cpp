@@ -1440,13 +1440,22 @@ void MediaExplorerContent::loadFileForPreview(const juce::File& file) {
 
     auto* reader = formatManager_.createReaderFor(file);
     if (reader != nullptr) {
+        // Read the rate off the reader before AudioFormatReaderSource takes ownership.
+        const double fileSampleRate = reader->sampleRate;
+
         readerSource_ =
             std::make_unique<juce::AudioFormatReaderSource>(reader, true);  // owns reader
 
         // Simple direct playback (no buffering)
         // This is fine for preview - most samples are small enough to stream directly
         // For large files, there might be a brief load time, but no crashes
-        transportSource_->setSource(readerSource_.get(), 0, nullptr, 0, 2);
+        //
+        // Issue #1971 - the file's rate has to be passed as sourceSampleRateToCorrectFor,
+        // otherwise JUCE inserts no ResamplingAudioSource and the reader's samples are
+        // consumed at the device rate, so a 44.1 kHz file on a 48 kHz device plays 8.8%
+        // fast and sharp. It also leaves the transport's sourceSampleRate at 0, which
+        // makes getCurrentPosition() drift against the waveform playhead.
+        transportSource_->setSource(readerSource_.get(), 0, nullptr, fileSampleRate, 2);
 
         playButton_->setEnabled(true);
         updateFileInfo(file);
