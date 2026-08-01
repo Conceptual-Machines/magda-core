@@ -80,6 +80,22 @@ te::MidiMessageArray noteOff(int note) {
     return midi;
 }
 
+// 0 is centre; +1 and -1 are the extremes of the wheel's travel.
+te::MidiMessageArray pitchWheel(float normalised) {
+    const int value = normalised < 0.0f
+                          ? 8192 + static_cast<int>(std::lround(normalised * 8192.0f))
+                          : 8192 + static_cast<int>(std::lround(normalised * 8191.0f));
+    te::MidiMessageArray midi;
+    midi.addMidiMessage(juce::MidiMessage::pitchWheel(1, value), 0.0, te::MidiMessageArray::notMPE);
+    return midi;
+}
+
+// The pitch a note bends to, as the DSP's scaled level.
+float expectedLevelForBentNote(int note, float semitones) {
+    const float hz = 440.0f * std::pow(2.0f, (static_cast<float>(note) - 69.0f) / 12.0f);
+    return hz * std::pow(2.0f, semitones / 12.0f) / 20000.0f;
+}
+
 class FaustInstrumentVoiceModeTest final : public juce::UnitTest {
   public:
     FaustInstrumentVoiceModeTest() : juce::UnitTest("Faust Instrument Voice Mode Tests", "magda") {}
@@ -116,8 +132,8 @@ class FaustInstrumentVoiceModeTest final : public juce::UnitTest {
 
         {
             auto params = instrument->getAutomatableParameters();
-            expect(params.size() > glideIdx,
-                   "Instrument should expose two parameters beyond the 64-slot pool");
+            expect(params.size() > audio::FaustInstrumentPlugin::kBendRangeParamIndex,
+                   "Instrument should expose three parameters beyond the 64-slot pool");
         }
 
         beginTest("Poly stacks voices; Mono collapses them to one");
@@ -212,6 +228,87 @@ class FaustInstrumentVoiceModeTest final : public juce::UnitTest {
             te::MidiMessageArray none;
             const float afterSwitch = renderBlock(*instrument, 1.2, none);
             expectWithinAbsoluteError(afterSwitch, 0.0f, 0.001f);
+        }
+
+        beginTest("Pitch bend moves the sounding pitch by the Bend Range");
+        {
+            const int bendIdx = audio::FaustInstrumentPlugin::kBendRangeParamIndex;
+            constexpr float kMax = audio::FaustInstrumentPlugin::kMaxBendSemitones;
+            // Every assertion below is against the DSP's own freq zone, so this
+            // fails if the wheel is forwarded to the allocator (where it lands
+            // in an empty midi::pitchWheel) instead of driving freq directly.
+
+            // --- Poly: wheel up on a sounding note -------------------------
+            setHostParam(*instrument, voiceModeIdx, 0.0f);
+            setHostParam(*instrument, glideIdx, 0.0f);
+            setHostParam(*instrument, bendIdx, 2.0f / kMax);
+            instrument->reset();
+
+            auto held = noteOn(69);
+            const float unbent = renderBlock(*instrument, 1.3, held);
+            expectWithinAbsoluteError(unbent, expectedLevelForNote(69), 0.002f);
+
+            auto up = pitchWheel(1.0f);
+            const float bentUp = renderBlock(*instrument, 1.4, up);
+            expectWithinAbsoluteError(bentUp, expectedLevelForBentNote(69, 2.0f), 0.002f);
+
+            // --- and back down through centre ------------------------------
+            auto down = pitchWheel(-1.0f);
+            const float bentDown = renderBlock(*instrument, 1.5, down);
+            expectWithinAbsoluteError(bentDown, expectedLevelForBentNote(69, -2.0f), 0.002f);
+
+            // --- A note started while the wheel is held is bent too --------
+            // keyOn writes an unbent freq, so this covers the re-apply that
+            // has to follow it rather than the wheel handler alone.
+            auto release = noteOff(69);
+            renderBlock(*instrument, 1.6, release);
+            auto late = noteOn(69);
+            const float startedBent = renderBlock(*instrument, 1.7, late);
+            expectWithinAbsoluteError(startedBent, expectedLevelForBentNote(69, -2.0f), 0.002f);
+
+            // --- Range scales the same wheel position ----------------------
+            setHostParam(*instrument, bendIdx, 12.0f / kMax);
+            auto upAgain = pitchWheel(1.0f);
+            const float octave = renderBlock(*instrument, 1.8, upAgain);
+            expectWithinAbsoluteError(octave, expectedLevelForBentNote(69, 12.0f), 0.004f);
+
+            // --- Range 0 makes the wheel inert -----------------------------
+            setHostParam(*instrument, bendIdx, 0.0f);
+            auto stillUp = pitchWheel(1.0f);
+            const float inert = renderBlock(*instrument, 1.9, stillUp);
+            expectWithinAbsoluteError(inert, expectedLevelForNote(69), 0.002f);
+        }
+
+        beginTest("Pitch bend works in Mono, which ignored the wheel entirely");
+        {
+            const int bendIdx = audio::FaustInstrumentPlugin::kBendRangeParamIndex;
+            constexpr float kMax = audio::FaustInstrumentPlugin::kMaxBendSemitones;
+
+            setHostParam(*instrument, voiceModeIdx, 0.5f);  // Mono
+            setHostParam(*instrument, glideIdx, 0.0f);
+            setHostParam(*instrument, bendIdx, 2.0f / kMax);
+            instrument->reset();
+
+            // The previous block left the wheel up, and reset() deliberately
+            // does not recentre it: where the wheel is sitting is live
+            // controller state, not voice state, so a panic must not silently
+            // unbend a note the player is still bending.
+            auto centre = pitchWheel(0.0f);
+            renderBlock(*instrument, 1.95, centre);
+
+            auto held = noteOn(69);
+            const float unbent = renderBlock(*instrument, 2.0, held);
+            expectWithinAbsoluteError(unbent, expectedLevelForNote(69), 0.002f);
+
+            auto up = pitchWheel(1.0f);
+            const float bent = renderBlock(*instrument, 2.1, up);
+            expectWithinAbsoluteError(bent, expectedLevelForBentNote(69, 2.0f), 0.002f);
+
+            // Bend must ride on top of the glide ramp rather than replacing it:
+            // with the wheel still held, a new note lands bent as well.
+            auto next = noteOn(72);
+            const float movedBent = renderBlock(*instrument, 2.2, next);
+            expectWithinAbsoluteError(movedBent, expectedLevelForBentNote(72, 2.0f), 0.002f);
         }
 
         instrument->baseClassDeinitialise();

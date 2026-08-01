@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "FaustInstrumentPlugin.hpp"
 #include "FaustParamPool.hpp"
 
 namespace magda::daw::audio {
@@ -62,6 +63,22 @@ magda::ParameterInfo glideInfo() {
     info.currentValue = 0.0f;
     // Linear, and starting at 0: 0 has to mean "off" exactly, which a log
     // scale cannot represent.
+    info.scale = magda::ParameterScale::Linear;
+    return info;
+}
+
+magda::ParameterInfo bendRangeInfo() {
+    magda::ParameterInfo info;
+    info.paramIndex = FaustParamPool::kSize + 2;
+    info.name = "Bend Range";
+    info.group = kHostParamGroup;
+    info.unit = "st";
+    info.minValue = 0.0f;
+    info.maxValue = FaustInstrumentPlugin::kMaxBendSemitones;
+    // 2 semitones each way is what almost every synth ships with, and what a
+    // patch author will assume when they reach for the wheel.
+    info.defaultValue = 2.0f;
+    info.currentValue = info.defaultValue;
     info.scale = magda::ParameterScale::Linear;
     return info;
 }
@@ -163,7 +180,14 @@ magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
 }  // namespace
 
 magda::ParameterInfo faustInstrumentHostParamInfo(int hostIndex) {
-    return hostIndex == 0 ? voiceModeInfo() : glideInfo();
+    switch (hostIndex) {
+        case 0:
+            return voiceModeInfo();
+        case 1:
+            return glideInfo();
+        default:
+            return bendRangeInfo();
+    }
 }
 
 magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot) {
