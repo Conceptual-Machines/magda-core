@@ -121,6 +121,7 @@ endif()
 option(MAGDA_BUILD_TESTS "Build tests" ON)
 option(MAGDA_BUILD_EXAMPLES "Build developer example tools (e.g. lua_smoke REPL)" OFF)
 option(MAGDA_BUILD_JUCE_ADAPTER "Build JUCE/Tracktion adapter" OFF)
+option(MAGDA_BUILD_FAUST_VEC_BENCH "Build the Faust scalar-vs-vector codegen benchmark" OFF)
 
 # CLAP semantic-search backend (ONNX Runtime). Forced off on Intel macOS because
 # upstream ORT dropped osx-x86_64 prebuilts in 1.26. The rest of the media DB
@@ -304,6 +305,12 @@ endif()
 if(MAGDA_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+# Faust scalar-vs-vector codegen benchmark (#1397). Dispatch-only; it doubles
+# the Faust generation work, so it stays out of ordinary builds.
+if(MAGDA_BUILD_FAUST_VEC_BENCH)
+    add_subdirectory(tools/faust_vec_bench)
 endif()
 
 

@@ -147,11 +147,34 @@ if(MAGDA_FAUST_BACKEND STREQUAL "wasm")
     target_compile_definitions(magda_faust_backend INTERFACE MAGDA_FAUST_BACKEND_WASM=1)
 endif()
 
+# Vectorized code generation for the compiled devices (issue #1397).
+#
+# `-vec` does not emit SIMD intrinsics. It splits Faust's single sample loop
+# into per-signal sub-loops of MAGDA_FAUST_VECTOR_SIZE samples, which is a
+# shape the host compiler can auto-vectorize at its own baseline ISA. There is
+# no -march change and no new instruction-set requirement, so an older CPU
+# cannot fault on the result.
+#
+# The vector size matters more than the flag. Faust's default of 32 is a net
+# loss here: MAGDA's DSP is dominated by recursive filters whose loops cannot
+# vectorize at all, and the wide intermediate buffers only cost cache. Small
+# sizes keep the buffers hot while still giving the compiler a run of
+# independent samples to work with.
+set(MAGDA_FAUST_VECTORIZE ON CACHE BOOL
+    "Generate vectorizable loop structure for the compiled Faust devices")
+set(MAGDA_FAUST_VECTOR_SIZE 4 CACHE STRING
+    "Faust -vs vector size used when MAGDA_FAUST_VECTORIZE is ON")
+
 # Add a build-time Faust DSP-to-C++ step and return the generated source path.
 function(magda_compile_faust_dsp DSP_FILE CLASS_NAME OUT_VAR)
     get_filename_component(DSP_NAME "${DSP_FILE}" NAME_WE)
     set(GENERATED_DIR "${CMAKE_BINARY_DIR}/compiled_dsps")
     set(GENERATED_CPP "${GENERATED_DIR}/${DSP_NAME}.generated.cpp")
+
+    set(_magda_faust_codegen_flags -single)
+    if(MAGDA_FAUST_VECTORIZE)
+        list(APPEND _magda_faust_codegen_flags -vec -vs ${MAGDA_FAUST_VECTOR_SIZE})
+    endif()
 
     file(MAKE_DIRECTORY "${GENERATED_DIR}")
     add_custom_command(
@@ -160,7 +183,7 @@ function(magda_compile_faust_dsp DSP_FILE CLASS_NAME OUT_VAR)
                 -lang cpp
                 -cn ${CLASS_NAME}
                 -I "${CMAKE_SOURCE_DIR}/third_party/faust/libraries"
-                -single
+                ${_magda_faust_codegen_flags}
                 -o "${GENERATED_CPP}"
                 "${DSP_FILE}"
         DEPENDS "${DSP_FILE}" $<TARGET_FILE:faust>
