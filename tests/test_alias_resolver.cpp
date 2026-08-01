@@ -92,6 +92,10 @@ TEST_CASE("TargetResolver - resolve ResolverRef master.volume", "[aliases][resol
 
     auto result = resolver.resolve(Target{rr});
     REQUIRE(result.ok());
+    // The kind drives which branch ControllerParamWriter::write takes. Leaving
+    // it at the PluginParam default routed master volume into the plugin path,
+    // where a track-level path resolves to no device and the write vanished.
+    REQUIRE(result.target.kind == ControlTarget::Kind::TrackVolume);
     REQUIRE(result.target.paramIndex == 0);
     REQUIRE(result.target.devicePath.isTrackLevel);
     REQUIRE(result.target.devicePath.trackId == MASTER_TRACK_ID);
@@ -112,8 +116,10 @@ TEST_CASE("TargetResolver - resolve ResolverRef master.pan", "[aliases][resolver
 
     auto result = resolver.resolve(Target{rr});
     REQUIRE(result.ok());
+    REQUIRE(result.target.kind == ControlTarget::Kind::TrackPan);
     REQUIRE(result.target.paramIndex == 1);
     REQUIRE(result.target.devicePath.isTrackLevel);
+    REQUIRE(result.target.devicePath.trackId == MASTER_TRACK_ID);
 }
 
 TEST_CASE("TargetResolver - resolve unknown ResolverRef kind fails", "[aliases][resolver]") {
@@ -227,6 +233,7 @@ TEST_CASE("TargetResolver::resolveSigil - @master.volume", "[aliases][resolver]"
 
     auto result = resolver.resolveSigil(*parsed);
     REQUIRE(result.ok());
+    REQUIRE(result.target.kind == ControlTarget::Kind::TrackVolume);
     REQUIRE(result.target.devicePath.trackId == MASTER_TRACK_ID);
     REQUIRE(result.target.paramIndex == 0);
 }
@@ -249,8 +256,53 @@ TEST_CASE("TargetResolver::resolveSigil - @selected.volume with selected track",
 
     auto result = resolver.resolveSigil(*parsed);
     REQUIRE(result.ok());
+    REQUIRE(result.target.kind == ControlTarget::Kind::TrackVolume);
     REQUIRE(result.target.devicePath.trackId == 5);
     REQUIRE(result.target.paramIndex == 0);
+}
+
+TEST_CASE("TargetResolver::resolveSigil - @selected.pan carries TrackPan kind",
+          "[aliases][resolver]") {
+    FixedChainContext ctx;
+    ctx.setSelectedTrack(5);
+
+    auto& reg = AliasRegistry::getInstance();
+    reg.clearLayer(AliasLayer::UserProject);
+    reg.clearLayer(AliasLayer::UserGlobal);
+    reg.clearLayer(AliasLayer::Curated);
+    reg.clearLayer(AliasLayer::AutoGen);
+    auto& resolvers = ResolverRegistry::getInstance();
+    TargetResolver resolver{reg, resolvers, ctx};
+
+    auto parsed = tryParse("@selected.pan");
+    REQUIRE(parsed.has_value());
+
+    auto result = resolver.resolveSigil(*parsed);
+    REQUIRE(result.ok());
+    REQUIRE(result.target.kind == ControlTarget::Kind::TrackPan);
+    REQUIRE(result.target.devicePath.trackId == 5);
+    REQUIRE(result.target.paramIndex == 1);
+}
+
+TEST_CASE("TargetResolver::resolveSigil - @master.pan carries TrackPan kind",
+          "[aliases][resolver]") {
+    FixedChainContext ctx;
+    auto& reg = AliasRegistry::getInstance();
+    reg.clearLayer(AliasLayer::UserProject);
+    reg.clearLayer(AliasLayer::UserGlobal);
+    reg.clearLayer(AliasLayer::Curated);
+    reg.clearLayer(AliasLayer::AutoGen);
+    auto& resolvers = ResolverRegistry::getInstance();
+    TargetResolver resolver{reg, resolvers, ctx};
+
+    auto parsed = tryParse("@master.pan");
+    REQUIRE(parsed.has_value());
+
+    auto result = resolver.resolveSigil(*parsed);
+    REQUIRE(result.ok());
+    REQUIRE(result.target.kind == ControlTarget::Kind::TrackPan);
+    REQUIRE(result.target.devicePath.trackId == MASTER_TRACK_ID);
+    REQUIRE(result.target.paramIndex == 1);
 }
 
 TEST_CASE("TargetResolver::resolveSigil - @selected.volume no track selected fails",

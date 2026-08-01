@@ -141,6 +141,31 @@ TEST_CASE("magda.tracks setters record their writes", "[lua_bindings][tracks]") 
     REQUIRE(mock.tracks_.deleted == std::vector<magda::TrackId>{9});
 }
 
+TEST_CASE("magda.tracks.set_record_armed records its writes", "[lua_bindings][tracks]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    REQUIRE(rt.eval("magda.tracks.set_record_armed(3, true)"));
+    REQUIRE(rt.eval("magda.tracks.set_record_armed(4, false)"));
+
+    REQUIRE(mock.tracks_.recordArmWrites.size() == 2);
+    REQUIRE(mock.tracks_.recordArmWrites[0].id == 3);
+    REQUIRE(mock.tracks_.recordArmWrites[0].value == true);
+    REQUIRE(mock.tracks_.recordArmWrites[1].id == 4);
+    REQUIRE(mock.tracks_.recordArmWrites[1].value == false);
+}
+
+TEST_CASE("magda.tracks.set_record_armed rejects a non-boolean", "[lua_bindings][tracks]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    REQUIRE_FALSE(rt.eval("magda.tracks.set_record_armed(1, 'yes')"));
+    REQUIRE(rt.lastError().contains("boolean expected"));
+    REQUIRE(mock.tracks_.recordArmWrites.empty());
+}
+
 TEST_CASE("magda.tracks.list returns a snapshot table per track", "[lua_bindings][tracks]") {
     MockMagdaApi mock;
     magda::TrackInfo a;
@@ -169,6 +194,38 @@ TEST_CASE("magda.tracks.get returns nil for an unknown id", "[lua_bindings][trac
     LuaRuntime rt;
     registerMagdaApi(rt.state(), mock);
     REQUIRE(rt.evalToString("type(magda.tracks.get(999))") == std::optional<juce::String>{"nil"});
+}
+
+// Master lives apart from the ordinary tracks, so it never shows up in
+// magda.tracks.list(). magda.tracks.master() is the only route a script has to
+// its id, which the volume / pan setters then accept.
+TEST_CASE("magda.tracks.master returns the master track", "[lua_bindings][tracks]") {
+    MockMagdaApi mock;
+    magda::TrackInfo master;
+    master.id = magda::MASTER_TRACK_ID;
+    master.name = "Master";
+    master.type = magda::TrackType::Master;
+    mock.tracks_.tracks.push_back(master);
+
+    magda::TrackInfo ordinary;
+    ordinary.id = 1;
+    ordinary.name = "Drums";
+    ordinary.type = magda::TrackType::Audio;
+    mock.tracks_.tracks.push_back(ordinary);
+
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    REQUIRE(rt.evalToInt("magda.tracks.master().id") ==
+            std::optional<long long>{magda::MASTER_TRACK_ID});
+    REQUIRE(rt.evalToString("magda.tracks.master().name") == std::optional<juce::String>{"Master"});
+}
+
+TEST_CASE("magda.tracks.master returns nil when there is no master", "[lua_bindings][tracks]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+    REQUIRE(rt.evalToString("type(magda.tracks.master())") == std::optional<juce::String>{"nil"});
 }
 
 // ---- selection -------------------------------------------------------------

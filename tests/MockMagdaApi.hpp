@@ -233,6 +233,10 @@ class MockTrackApi : public TrackApi {
         TrackId id;
         bool value;
     };
+    struct RecordArmWrite {
+        TrackId id;
+        bool value;
+    };
     struct NameWrite {
         TrackId id;
         juce::String value;
@@ -265,6 +269,7 @@ class MockTrackApi : public TrackApi {
     std::vector<PanWrite> panWrites;
     std::vector<MuteWrite> muteWrites;
     std::vector<SoloWrite> soloWrites;
+    std::vector<RecordArmWrite> recordArmWrites;
     std::vector<DeviceWrite> deviceWrites;
 
     TrackId nextId = 1;
@@ -330,6 +335,9 @@ class MockTrackApi : public TrackApi {
     }
     void setTrackSoloed(TrackId id, bool v) override {
         soloWrites.push_back({id, v});
+    }
+    void setTrackRecordArmed(TrackId id, bool v) override {
+        recordArmWrites.push_back({id, v});
     }
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device) override {
         deviceWrites.push_back({trackId, device});
