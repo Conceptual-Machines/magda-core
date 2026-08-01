@@ -63,10 +63,15 @@ Set these repository secrets:
 
 | Secret                 | Value                                            |
 | ---------------------- | ------------------------------------------------ |
-| `SCCACHE_BUCKET`       | `magda-ci-sccache` (the `r2_bucket_name` output) |
+| `R2_BUCKET`            | `magda-ci-sccache` (the `r2_bucket_name` output) |
 | `R2_ACCOUNT_ID`        | Cloudflare account ID                            |
 | `R2_ACCESS_KEY_ID`     | from the R2 S3-compatible token                  |
 | `R2_SECRET_ACCESS_KEY` | from the R2 S3-compatible token                  |
+
+`R2_BUCKET` rather than reusing `SCCACHE_BUCKET`: repository secrets are shared
+by every branch, and `SCCACHE_BUCKET` still points at the S3 bucket that CI on
+`dev` and `main` uses until this lands. Repointing it would break their cache
+mid-flight. `SCCACHE_BUCKET` retires with the S3 decommission below.
 
 The jobs need no `id-token` permission any more. sccache is pointed at R2 with
 `SCCACHE_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com` and
@@ -92,5 +97,9 @@ Once a Linux run reports hits against R2, remove from `main.tf` the
 `aws_s3_bucket`, `aws_s3_bucket_public_access_block`,
 `aws_s3_bucket_lifecycle_configuration`, the whole OIDC role section and the
 `aws` provider, drop the `legacy_*` outputs, then `terraform apply` to destroy
-them. Delete the now-unused `AWS_SCCACHE_ROLE_ARN` repository secret at the
-same time.
+them. Delete the now-unused `AWS_SCCACHE_ROLE_ARN` and `SCCACHE_BUCKET`
+repository secrets at the same time.
+
+Note that `cloudflare_r2_bucket_lifecycle` cannot be destroyed through
+Terraform; the provider warns about this on create. Removing the rule means
+deleting it in the dashboard.

@@ -157,7 +157,7 @@ jobs:
       id: sccache
       if: steps.r2-creds.outcome == 'success'
       env:
-        SCCACHE_BUCKET_SECRET: ${{ secrets.SCCACHE_BUCKET }}
+        R2_BUCKET: ${{ secrets.R2_BUCKET }}
         R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
         R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -170,7 +170,7 @@ jobs:
         # region 'auto' (R2 has no regions), credentials via the standard AWS
         # variables. Written to GITHUB_ENV so the compile steps see them too.
         {
-          echo "SCCACHE_BUCKET=${SCCACHE_BUCKET_SECRET}"
+          echo "SCCACHE_BUCKET=${R2_BUCKET}"
           echo "SCCACHE_ENDPOINT=https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           echo "SCCACHE_REGION=auto"
           echo "SCCACHE_S3_KEY_PREFIX=linux"
