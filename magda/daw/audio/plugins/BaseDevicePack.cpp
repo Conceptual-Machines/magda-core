@@ -518,8 +518,8 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .createPlugin = createPlugin<SidechainPlugin>});
     add(registry, {.pluginId = FaustPlugin::xmlTypeName,
                    .displayName = "Faust",
-                   .browserCategory = "Experimental",
-                   .description = "Interpreted Faust device for loading and editing user DSP code.",
+                   .browserCategory = "Custom DSP",
+                   .description = "Faust device for loading and editing user DSP code.",
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
                    .loadAliases = kFaustAliases,
                    .loadAliasCount = static_cast<int>(std::size(kFaustAliases)),
@@ -532,8 +532,8 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .createPlugin = createPlugin<FaustPlugin>});
     add(registry, {.pluginId = FaustInstrumentPlugin::xmlTypeName,
                    .displayName = "Faust Instrument",
-                   .browserCategory = "Experimental",
-                   .description = "Polyphonic Faust synth instrument driven by MIDI (POC).",
+                   .browserCategory = "Custom DSP",
+                   .description = "Polyphonic Faust synth instrument driven by MIDI.",
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
                    .loadAliases = kFaustInstrumentAliases,
                    .loadAliasCount = static_cast<int>(std::size(kFaustInstrumentAliases)),
