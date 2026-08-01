@@ -77,10 +77,11 @@ class PluginSettingsDialog : public juce::Component {
     juce::TextButton scanNewButton_;
     juce::TextButton viewReportButton_;
     juce::ToggleButton scanOnStartupToggle_;
-#if JUCE_MAC
+    // Not macOS-only: a plugin shipping as both VST3 and LV2 is the same
+    // duplicate on every platform. Only the AU entry inside the selector is
+    // macOS-specific.
     juce::Label formatPreferenceLabel_;
     juce::ComboBox formatPreferenceSelector_;
-#endif
     juce::ProgressBar scanProgressBar_;
     double scanProgress_ = -1.0;
     juce::Label scanStatusLabel_;

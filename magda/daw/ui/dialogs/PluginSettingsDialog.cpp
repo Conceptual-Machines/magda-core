@@ -356,8 +356,14 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
     formatPreferenceSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
     formatPreferenceSelector_.setColour(juce::ComboBox::outlineColourId,
                                         DarkTheme::getBorderColour());
-    const auto currentFormatPreference =
+    auto currentFormatPreference =
         PluginPreferences::getInstance().externalPluginFormatPreference();
+#if !JUCE_MAC
+    // A config carried over from macOS can name AU, which has no item here.
+    // Show VST3 rather than leaving the box blank.
+    if (currentFormatPreference == PluginFormat::AU)
+        currentFormatPreference = PluginFormat::VST3;
+#endif
     formatPreferenceSelector_.setSelectedId(static_cast<int>(currentFormatPreference) + 1,
                                             juce::dontSendNotification);
     addAndMakeVisible(formatPreferenceSelector_);
@@ -500,12 +506,10 @@ void PluginSettingsDialog::resized() {
     pluginCountLabel_.setBounds(bounds.removeFromTop(18));
     bounds.removeFromTop(2);
     scanOnStartupToggle_.setBounds(bounds.removeFromTop(22));
-#if JUCE_MAC
     bounds.removeFromTop(4);
     auto formatPreferenceRow = bounds.removeFromTop(buttonHeight);
     formatPreferenceLabel_.setBounds(formatPreferenceRow.removeFromLeft(210));
     formatPreferenceSelector_.setBounds(formatPreferenceRow.removeFromLeft(160));
-#endif
 
     bounds.removeFromTop(spacing);
 
@@ -550,9 +554,7 @@ void PluginSettingsDialog::setScanningUIEnabled(bool enabled) {
     removeSelectedButton_.setEnabled(enabled);
     resetAllButton_.setEnabled(enabled);
     scanOnStartupToggle_.setEnabled(enabled);
-#if JUCE_MAC
     formatPreferenceSelector_.setEnabled(enabled);
-#endif
     okButton_.setEnabled(enabled);
     cancelButton_.setEnabled(enabled);
 }
