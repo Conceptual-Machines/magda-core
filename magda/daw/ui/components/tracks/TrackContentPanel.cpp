@@ -41,6 +41,24 @@ bool isDraggedMidiFile(const juce::String& path) {
     return path.endsWithIgnoreCase(".mid") || path.endsWithIgnoreCase(".midi");
 }
 
+// Point the bottom panel at the right editor for a newly selected clip. It
+// deliberately never touches the panel's collapsed state: selecting a clip is
+// not a request to reopen a panel the user collapsed (issue #1963). Only
+// explicit "open the editor" gestures (clip double-click, session-slot open)
+// may expand it.
+void focusClipEditorTab(ClipId clipId) {
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr)
+        return;
+
+    // MIDI clips are left alone — BottomPanel's clipSelectionChanged handles
+    // the PianoRoll vs DrumGrid choice, respecting the user's preference.
+    if (clip->isAudio()) {
+        daw::ui::PanelController::getInstance().setActiveTabByType(
+            daw::ui::PanelLocation::Bottom, daw::ui::PanelContentType::WaveformEditor);
+    }
+}
+
 void logArrangeRangeSelect(const juce::String& message) {
     const auto line = juce::Time::getCurrentTime().toString(true, true, true, true) +
                       " [ArrangeRangeSelect] " + message;
@@ -1179,18 +1197,8 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
             selectionManager.toggleClipSelection(clipId);
             clipComp->setSelected(selectionManager.isClipSelected(clipId));
 
-            if (selectionManager.isClipSelected(clipId)) {
-                const auto* clip = ClipManager::getInstance().getClip(clipId);
-                if (clip) {
-                    auto& panelController = daw::ui::PanelController::getInstance();
-                    panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
-                    if (clip->isAudio()) {
-                        panelController.setActiveTabByType(
-                            daw::ui::PanelLocation::Bottom,
-                            daw::ui::PanelContentType::WaveformEditor);
-                    }
-                }
-            }
+            if (selectionManager.isClipSelected(clipId))
+                focusClipEditorTab(clipId);
             return;
         }
     }
@@ -2434,25 +2442,13 @@ void TrackContentPanel::rebuildClipComponents() {
 
         clipComp->onClipSelected = [](ClipId id) {
             SelectionManager::getInstance().selectClip(id);
-
-            // Auto-open the appropriate editor when a clip is selected
-            const auto* clip = ClipManager::getInstance().getClip(id);
-            if (!clip)
-                return;
-
-            auto& panelController = daw::ui::PanelController::getInstance();
-
-            // Open bottom panel — BottomPanel's clipSelectionChanged handles
-            // the PianoRoll vs DrumGrid choice, respecting the user's preference.
-            panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
-            if (clip->isAudio()) {
-                panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
-                                                   daw::ui::PanelContentType::WaveformEditor);
-            }
+            focusClipEditorTab(id);
         };
 
         clipComp->onClipDoubleClicked = [](ClipId id) {
-            // Double-click toggles the bottom panel closed (single click already opened it)
+            // Double-click is the explicit "open the clip editor" gesture, so
+            // this is one of the few places allowed to expand the bottom panel.
+            // Double-clicking again closes it.
             const auto* clip = ClipManager::getInstance().getClip(id);
             if (!clip)
                 return;
@@ -2461,14 +2457,9 @@ void TrackContentPanel::rebuildClipComponents() {
             bool isCollapsed =
                 panelController.getPanelState(daw::ui::PanelLocation::Bottom).collapsed;
             if (isCollapsed) {
-                // If somehow collapsed, open it
                 panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
-                if (clip->isAudio()) {
-                    panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
-                                                       daw::ui::PanelContentType::WaveformEditor);
-                }
+                focusClipEditorTab(id);
             } else {
-                // Already open - double-click closes it
                 panelController.setCollapsed(daw::ui::PanelLocation::Bottom, true);
             }
         };
@@ -2667,19 +2658,9 @@ void TrackContentPanel::finishMarqueeSelection(bool addToSelection) {
             SelectionManager::getInstance().selectClips(clipsInRect);
         }
 
-        // Auto-open the appropriate editor panel for the selected clips
-        if (!clipsInRect.empty()) {
-            ClipId firstId = *clipsInRect.begin();
-            const auto* clip = ClipManager::getInstance().getClip(firstId);
-            if (clip) {
-                auto& panelController = daw::ui::PanelController::getInstance();
-                panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
-                if (clip->isAudio()) {
-                    panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
-                                                       daw::ui::PanelContentType::WaveformEditor);
-                }
-            }
-        }
+        // Point the editor at the first clip caught by the marquee
+        if (!clipsInRect.empty())
+            focusClipEditorTab(*clipsInRect.begin());
     }
     // If marquee was tiny and caught nothing, preserve existing selection
 

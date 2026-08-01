@@ -1403,6 +1403,21 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
                 const bool toggle = magda::isToggleSelectClick(e.mods) ||
                                     (e.mods.isCtrlDown() && !e.mods.isShiftDown());
                 const bool range = magda::isRangeSelectClick(e.mods);
+                // The header *background* is the collapse affordance, so a plain
+                // click there is a collapse gesture whether or not the node was
+                // already selected. Flag it across the selection dispatch:
+                // selecting a node normally auto-opens its macro panel, which
+                // on this click reads as "I asked to collapse and got macros".
+                //
+                // eventComponent must be this node. Header controls forward
+                // their events here via addMouseListener so a click on them also
+                // selects the device (the step sequencer's Export button, the
+                // drum pad's name label); those arrive with coordinates relative
+                // to the *child*, so a y of 0..buttonHeight would otherwise
+                // always land inside the header and fold the device away.
+                const bool headerClick = !toggle && !range && e.eventComponent == this &&
+                                         e.getPosition().y < getHeaderHeight();
+                collapseGestureActive_ = headerClick;
                 if (range)
                     rangeSelectFromAnchor();
                 else if (toggle)
@@ -1411,11 +1426,12 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
                     selection.selectChainNode(nodePath_);
                 if (safeThis == nullptr)
                     return;
+                collapseGestureActive_ = false;
 
-                // If was already selected, toggle collapse — but only when collapsed
-                // (to expand) or when the click is on the header bar (to collapse)
-                if (!toggle && !range && wasAlreadySelected &&
-                    (wasCollapsed || e.getPosition().y < getHeaderHeight())) {
+                // Header-bar click collapses/expands outright. Elsewhere on the
+                // node, only a collapsed one expands, and only once selected —
+                // so clicking into a device to work on it never folds it away.
+                if (headerClick || (!toggle && !range && wasAlreadySelected && wasCollapsed)) {
                     setCollapsed(!wasCollapsed);
                 }
             }

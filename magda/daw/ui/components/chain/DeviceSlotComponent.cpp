@@ -1187,6 +1187,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
              .magdaPresetButton = stripsAnalysisChrome() ? nullptr : presetButton_.get(),
              .activeCustomUI = activeCustomUI,
              .compiledPanel = compiledPanelComponent,
+             .faustHeader = faustUI_.get(),
+             .faustCustomView = faustCustomView_.get(),
+             .faustMeterPanel = faustMeterPanel_.get(),
              .modButton = exposesDeviceModulation() ? modButton_.get() : nullptr,
              .macroButton = exposesDeviceModulation() ? macroButton_.get() : nullptr,
              .uiButton = uiButton_.get(),
@@ -1266,9 +1269,14 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
         area, collapsedMeterArea_, traits_, device_, isInternalDevice(),
         {.levelMeter = stripsAnalysisChrome() ? nullptr : &levelMeter_,
          .midiNoteStrip = &midiNoteStrip_,
+         // Learn is expanded-only, but it still has to be handed over so the
+         // collapsed pass hides it — otherwise it lingers at its stale header
+         // bounds over the collapsed strip.
          .headerControls = {.macroButton = exposesDeviceModulation() ? macroButton_.get() : nullptr,
                             .modButton = exposesDeviceModulation() ? modButton_.get() : nullptr,
                             .aiButton = aiButton_.get(),
+                            .learnButton = learnButton_.get(),
+                            .sidechainButton = scButton_.get(),
                             .multiOutButton = multiOutButton_.get(),
                             .uiButton = uiButton_.get(),
                             .deltaButton = deltaButton_.get(),
@@ -1565,7 +1573,11 @@ void DeviceSlotComponent::chainNodeSelectionChanged(const magda::ChainNodePath& 
     const bool wasAlreadySelected = isSelected();
     NodeComponent::chainNodeSelectionChanged(path);
 
-    if (wasAlreadySelected || !nodePath_.isValid() || path != nodePath_) {
+    // Likewise skip it when this selection is part of a header-bar collapse
+    // gesture — opening the macro panel on the click that collapses the device
+    // is the opposite of what the user asked for.
+    if (wasAlreadySelected || isCollapseGestureActive() || !nodePath_.isValid() ||
+        path != nodePath_) {
         return;
     }
 

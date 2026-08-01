@@ -82,6 +82,7 @@ Follow actions chain session clips together for generative arrangement. Once the
 - **Click** a clip to select it
 - ++cmd++ **+ click** (++ctrl++ **+ click** on Windows/Linux) to add or remove clips from the selection
 - ++cmd+a++ (++ctrl+a++ on Windows/Linux) selects all clips in the arrangement, or all notes when a MIDI editor is focused
+- **Double-click** a clip to open the bottom editor panel on it, and double-click again to close it. Selecting a clip switches the panel to the right editor but never reopens a panel you collapsed — the panel stays as you left it until you double-click a clip or use the collapse button in the footer.
 
 ## Editing Clips
 
