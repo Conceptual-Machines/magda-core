@@ -27,3 +27,22 @@ variable "object_expiry_days" {
   type        = number
   default     = 14
 }
+
+# --- Cloudflare R2 ---------------------------------------------------------------
+
+variable "cloudflare_account_id" {
+  description = "Cloudflare account that owns the R2 cache bucket. No default: it is account-specific and must be supplied explicitly."
+  type        = string
+}
+
+variable "r2_bucket_name" {
+  description = "Name of the R2 cache bucket. R2 names are account-scoped, so no account id suffix is needed for uniqueness."
+  type        = string
+  default     = "magda-ci-sccache"
+}
+
+variable "r2_location" {
+  description = "R2 location hint. weur matches where the S3 bucket lived; enam may cut round-trip latency if GitHub-hosted runners are US-based."
+  type        = string
+  default     = "weur"
+}
