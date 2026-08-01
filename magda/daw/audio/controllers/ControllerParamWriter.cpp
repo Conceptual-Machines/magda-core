@@ -37,9 +37,39 @@ void DefaultControllerParamWriter::write(const ResolveResult& resolved, float va
             break;
         case ControlTarget::Kind::TrackVolume:
         case ControlTarget::Kind::TrackPan:
+            writeTrackLevel(resolved.target, clamped);
+            break;
         case ControlTarget::Kind::SendLevel:
         case ControlTarget::Kind::Tempo:
+            // Not reachable from controller bindings yet: no resolver produces
+            // either kind for a control surface. Wire them here alongside
+            // writeTrackLevel when one does.
             break;
+    }
+}
+
+// Track / master volume and pan. Deliberately routed through TrackManager
+// rather than the te::AutomatableParameter: the setters keep MAGDA's TrackInfo
+// cache in sync and notify the inspector, mixer and headers, and
+// setTrackVolume forwards MASTER_TRACK_ID to setMasterVolume, so
+// @master.volume lands on the edit's master volume plugin without special
+// casing here.
+void DefaultControllerParamWriter::writeTrackLevel(const ControlTarget& target, float clamped) {
+    const auto trackId = target.devicePath.trackId;
+    if (trackId == INVALID_TRACK_ID)
+        return;
+
+    // Same normalized -> real conversion the automation engine applies, so a
+    // controller fader and an automation curve resolve to identical values.
+    const ParameterInfo info = getParameterInfoForTarget(target);
+    const float real = ParameterUtils::normalizedToReal(clamped, info);
+
+    auto& trackMgr = TrackManager::getInstance();
+    if (target.kind == ControlTarget::Kind::TrackVolume) {
+        // The fader range is in dB; TrackManager expects linear gain.
+        trackMgr.setTrackVolume(trackId, std::pow(10.0f, real / 20.0f));
+    } else {
+        trackMgr.setTrackPan(trackId, real);
     }
 }
 

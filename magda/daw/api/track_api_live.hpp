@@ -23,6 +23,7 @@ class TrackApiLive : public TrackApi {
     void setTrackPan(TrackId trackId, float pan, bool fromAutomation) override;
     void setTrackMuted(TrackId trackId, bool muted) override;
     void setTrackSoloed(TrackId trackId, bool soloed) override;
+    void setTrackRecordArmed(TrackId trackId, bool armed) override;
 
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device) override;
     DeviceId addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,

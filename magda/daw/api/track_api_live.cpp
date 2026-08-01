@@ -56,6 +56,10 @@ void TrackApiLive::setTrackMuted(TrackId trackId, bool muted) {
     TrackManager::getInstance().setTrackMuted(trackId, muted);
 }
 
+void TrackApiLive::setTrackRecordArmed(TrackId trackId, bool armed) {
+    TrackManager::getInstance().setTrackRecordArmed(trackId, armed);
+}
+
 void TrackApiLive::setTrackSoloed(TrackId trackId, bool soloed) {
     TrackManager::getInstance().setTrackSoloed(trackId, soloed);
 }
