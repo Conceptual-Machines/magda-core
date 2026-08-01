@@ -92,6 +92,8 @@ The **Sidechain** device is a native MAGDA device (not part of the Faust FX bank
 
 The **Faust** device hosts a [Faust](https://faust.grame.fr) DSP that you compile and load at runtime. Unlike the rest of the MAGDA FX bank, where each device wraps a fixed pre-compiled `.dsp` source, this device accepts any Faust program.
 
+Both this and the [Faust Instrument](faust-instrument.md) live under **Custom DSP** in the device browser. Reach for the instrument instead when you want MIDI to play your DSP as a synth rather than process an incoming signal.
+
 - **Folder icon** - load a `.dsp` file from disk. The source is compiled and swapped in immediately.
 - **Script icon** - opens an in-app code editor for live editing. Saving recompiles and hot-swaps the DSP.
 - The current script name is shown in the header banner ("Drive" in the example).

@@ -20,7 +20,7 @@ namespace magda::daw::audio {
 
 namespace te = tracktion::engine;
 
-// POC: a Faust-based polyphonic *instrument*. Sibling of FaustPlugin (the
+// A Faust-based polyphonic *instrument*. Sibling of FaustPlugin (the
 // effect host) — it shares the same runtime-compile + FaustParamPool design,
 // but reports as a synth, wraps the compiled DSP in a polyphonic voice
 // allocator (mydsp_poly), and drives note allocation from the MIDI in the
@@ -29,8 +29,8 @@ namespace te = tracktion::engine;
 // driven per-voice by the allocator and are NOT exposed as user parameters.
 //
 // Shared scaffolding (UIHarvester, pool rebind, atomic state swap, retire
-// timer) is copied from FaustPlugin for the POC; a future refactor can
-// extract a common base. See the plan / docs/FAUST_POOL_REFACTOR.md.
+// timer) is still copied from FaustPlugin rather than shared; a future
+// refactor can extract a common base. See docs/FAUST_POOL_REFACTOR.md.
 class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
   public:
     FaustInstrumentPlugin(const te::PluginCreationInfo& info);

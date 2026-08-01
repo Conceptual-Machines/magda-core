@@ -92,7 +92,7 @@ voice = oscSection * envSection * gain : filterSection;
 process = voice <: _, _;
 )FAUST";
 
-// ---- Helpers copied from FaustPlugin (POC; share a base later) -------------
+// ---- Helpers copied from FaustPlugin (share a base later) ------------------
 
 // Map a normalized 0..1 value back to the real units the live zone expects,
 // using the binding's frozen metadata. Audio-thread hot path — no allocation.
