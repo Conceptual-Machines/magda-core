@@ -334,7 +334,6 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
                                    DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     addAndMakeVisible(scanOnStartupToggle_);
 
-#if JUCE_MAC
     formatPreferenceLabel_.setText(tr("plugin_settings.label.external_format_preference"),
                                    juce::dontSendNotification);
     formatPreferenceLabel_.setColour(juce::Label::textColourId,
@@ -342,8 +341,16 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
     formatPreferenceLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
     addAndMakeVisible(formatPreferenceLabel_);
 
-    formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_vst3"), 1);
-    formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_au"), 2);
+    // Ids are PluginFormat values so the mapping needs no lookup table. AU is
+    // macOS-only; VST3 and LV2 exist everywhere MAGDA runs.
+    formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_vst3"),
+                                      static_cast<int>(PluginFormat::VST3) + 1);
+#if JUCE_MAC
+    formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_au"),
+                                      static_cast<int>(PluginFormat::AU) + 1);
+#endif
+    formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_lv2"),
+                                      static_cast<int>(PluginFormat::LV2) + 1);
     formatPreferenceSelector_.setColour(juce::ComboBox::backgroundColourId,
                                         DarkTheme::getColour(DarkTheme::SURFACE));
     formatPreferenceSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
@@ -351,10 +358,9 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
                                         DarkTheme::getBorderColour());
     const auto currentFormatPreference =
         PluginPreferences::getInstance().externalPluginFormatPreference();
-    formatPreferenceSelector_.setSelectedId(currentFormatPreference == PluginFormat::AU ? 2 : 1,
+    formatPreferenceSelector_.setSelectedId(static_cast<int>(currentFormatPreference) + 1,
                                             juce::dontSendNotification);
     addAndMakeVisible(formatPreferenceSelector_);
-#endif
 
     scanProgressBar_.setPercentageDisplay(true);
     scanProgressBar_.setVisible(false);
@@ -555,10 +561,9 @@ void PluginSettingsDialog::applySettings() {
     Config::getInstance().setCustomPluginPaths(customPaths_);
     Config::getInstance().setScanPluginsOnStartup(scanOnStartupToggle_.getToggleState());
     Config::getInstance().save();
-#if JUCE_MAC
-    PluginPreferences::getInstance().setExternalPluginFormatPreference(
-        formatPreferenceSelector_.getSelectedId() == 2 ? PluginFormat::AU : PluginFormat::VST3);
-#endif
+    if (const int selected = formatPreferenceSelector_.getSelectedId(); selected > 0)
+        PluginPreferences::getInstance().setExternalPluginFormatPreference(
+            static_cast<PluginFormat>(selected - 1));
 
     if (engine_) {
         engine_->setExcludedPlugins(excludedPlugins_);
