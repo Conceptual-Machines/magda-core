@@ -382,6 +382,11 @@ constexpr AliasSpec kAliases[] = {
     {"texture", 3, "Texture"}, {"mix", 4, "Mix"},     {"output", 5, "Output"},
 };
 
+// Tracktion's retired Pitch Shift loads here; see core/LegacyDeviceAliases.hpp.
+// "pitch shift" is the retired device's display name, kept so an instruction
+// that asks for one by that name still lands on this device.
+constexpr const char* kLoadAliases[] = {"pitchShifter", "pitchshift", "pitch shift"};
+
 const CompiledPluginSpec& getMagdaPitchSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaPitchCompiledPlugin::xmlTypeName,
@@ -398,6 +403,8 @@ const CompiledPluginSpec& getMagdaPitchSpec() {
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
+        .loadAliases = kLoadAliases,
+        .loadAliasCount = static_cast<int>(sizeof(kLoadAliases) / sizeof(kLoadAliases[0])),
     };
     return kSpec;
 }

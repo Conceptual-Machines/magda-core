@@ -158,37 +158,13 @@ DevicePluginPtr createLevelMeterPlugin(const InternalPluginSpec&, DeviceSessionK
     return ta::pluginHandle(edit.getPluginCache().createNewPlugin(te::LevelMeterPlugin::create()));
 }
 
-DevicePluginPtr createEqualiserPlugin(const InternalPluginSpec& spec, DeviceSessionKey sessionKey,
-                                      const juce::String& savedPluginState) {
-    auto plugin = createTracktionPlugin(spec, sessionKey, savedPluginState);
-    if (!plugin)
-        return {};
-
-    auto tracktionPlugin = ta::pluginFromHandle(plugin);
-    auto params = tracktionPlugin->getAutomatableParameters();
-    constexpr float defaultFreqs[] = {100.0f, 500.0f, 3000.0f, 10000.0f};
-    for (int band = 0; band < 4; ++band) {
-        const int freqIndex = band * 3;
-        if (freqIndex < params.size() && params[freqIndex])
-            params[freqIndex]->setParameterFromHost(defaultFreqs[band], juce::sendNotificationSync);
-    }
-    return plugin;
-}
-
 void add(InternalPluginRegistry& registry, InternalPluginSpec spec) {
     const bool registered = registry.registerPlugin(std::move(spec));
     jassert(registered);
     juce::ignoreUnused(registered);
 }
 
-constexpr const char* kEqAliases[] = {"eq", "equaliser"};
-constexpr const char* kCompressorAliases[] = {"compressor"};
-constexpr const char* kReverbAliases[] = {"reverb"};
-constexpr const char* kDelayAliases[] = {"delay"};
-constexpr const char* kChorusAliases[] = {"chorus"};
-constexpr const char* kPhaserAliases[] = {"phaser"};
 constexpr const char* kLowpassAliases[] = {"lowpass"};
-constexpr const char* kPitchShiftAliases[] = {"pitchshift"};
 constexpr const char* kImpulseResponseAliases[] = {"impulseresponse"};
 constexpr const char* kFourOscAliases[] = {"4osc", "4OSC Synth"};
 constexpr const char* kToneAliases[] = {"tone", "tonegenerator"};
@@ -204,7 +180,6 @@ constexpr const char* kFaustAliases[] = {"faust"};
 constexpr const char* kFaustInstrumentAliases[] = {"faustinstrument"};
 
 constexpr const char* kTracktionTags[] = {"tracktion-engine"};
-constexpr const char* kCompressorTags[] = {"tracktion-engine", "legacy-te-compressor"};
 constexpr const char* kExternalInsertTags[] = {"tracktion-engine", "external-insert"};
 constexpr const char* kDrumGridTags[] = {"drum-grid"};
 constexpr const char* kChordEngineTags[] = {"chord-engine", "midi-generator"};
@@ -222,109 +197,11 @@ constexpr const char* kMutableElementsTags[] = {"mutable-instrument", "mutable-e
 constexpr const char* kMutableRingsTags[] = {"mutable-instrument", "mutable-rings"};
 constexpr const char* kMutableCloudsTags[] = {"mutable-clouds"};
 
+// The stock Tracktion effects MAGDA still ships. The rest of the set — EQ,
+// Compressor, Delay, Chorus, Phaser, Reverb, Pitch Shift — was retired once the
+// compiled devices replaced them; their type names now resolve to those
+// successors instead of to a registration here (core/LegacyDeviceAliases.hpp).
 void registerTracktionDevices(InternalPluginRegistry& registry) {
-    add(registry,
-        {.pluginId = te::EqualiserPlugin::xmlTypeName,
-         .displayName = "Equaliser",
-         .browserCategory = "EQ",
-         .description = "Four-band equaliser for broad tonal shaping and corrective filtering.",
-         .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .loadAliases = kEqAliases,
-         .loadAliasCount = static_cast<int>(std::size(kEqAliases)),
-         .matchesPlugin = matches<te::EqualiserPlugin>,
-         .createProcessor = makeProcessor<EqualiserProcessor>,
-         .tags = kTracktionTags,
-         .tagCount = static_cast<int>(std::size(kTracktionTags)),
-         .createInSession = createEqualiserPlugin});
-    add(registry,
-        {.pluginId = te::CompressorPlugin::xmlTypeName,
-         .displayName = "Compressor",
-         .browserCategory = "Dynamics",
-         .description = "Track compressor for controlling level, transient shape, and sustain.",
-         .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .loadAliases = kCompressorAliases,
-         .loadAliasCount = static_cast<int>(std::size(kCompressorAliases)),
-         .matchesPlugin = matches<te::CompressorPlugin>,
-         .createProcessor = makeProcessor<CompressorProcessor>,
-         .tags = kCompressorTags,
-         .tagCount = static_cast<int>(std::size(kCompressorTags)),
-         .createInSession = createTracktionPlugin});
-    add(registry,
-        {.pluginId = te::ReverbPlugin::xmlTypeName,
-         .displayName = "Reverb",
-         .browserCategory = "Reverb",
-         .description = "Algorithmic space effect for room, plate, and ambience-style tails.",
-         .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .loadAliases = kReverbAliases,
-         .loadAliasCount = static_cast<int>(std::size(kReverbAliases)),
-         .matchesPlugin = matches<te::ReverbPlugin>,
-         .createProcessor = makeProcessor<ReverbProcessor>,
-         .tags = kTracktionTags,
-         .tagCount = static_cast<int>(std::size(kTracktionTags)),
-         .createInSession = createTracktionPlugin});
-    add(registry, {.pluginId = te::DelayPlugin::xmlTypeName,
-                   .displayName = "Delay",
-                   .browserCategory = "Delay",
-                   .description = "Tempo-capable delay effect for echoes and rhythmic repeats.",
-                   .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-                   .loadAliases = kDelayAliases,
-                   .loadAliasCount = static_cast<int>(std::size(kDelayAliases)),
-                   .matchesPlugin = matches<te::DelayPlugin>,
-                   .createProcessor = makeProcessor<DelayProcessor>,
-                   .tags = kTracktionTags,
-                   .tagCount = static_cast<int>(std::size(kTracktionTags)),
-                   .createInSession = createTracktionPlugin});
-    add(registry, {.pluginId = te::ChorusPlugin::xmlTypeName,
-                   .displayName = "Chorus",
-                   .browserCategory = "Modulation",
-                   .description =
-                       "Modulated delay effect for width, movement, and ensemble-style thickening.",
-                   .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-                   .loadAliases = kChorusAliases,
-                   .loadAliasCount = static_cast<int>(std::size(kChorusAliases)),
-                   .matchesPlugin = matches<te::ChorusPlugin>,
-                   .createProcessor = makeProcessor<ChorusProcessor>,
-                   .tags = kTracktionTags,
-                   .tagCount = static_cast<int>(std::size(kTracktionTags)),
-                   .createInSession = createTracktionPlugin});
-    add(registry,
-        {.pluginId = te::PhaserPlugin::xmlTypeName,
-         .displayName = "Phaser",
-         .browserCategory = "Modulation",
-         .description = "Swept phase-cancellation effect for resonant movement and stereo motion.",
-         .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .loadAliases = kPhaserAliases,
-         .loadAliasCount = static_cast<int>(std::size(kPhaserAliases)),
-         .matchesPlugin = matches<te::PhaserPlugin>,
-         .createProcessor = makeProcessor<PhaserProcessor>,
-         .tags = kTracktionTags,
-         .tagCount = static_cast<int>(std::size(kTracktionTags)),
-         .createInSession = createTracktionPlugin});
-    add(registry, {.pluginId = te::LowPassPlugin::xmlTypeName,
-                   .displayName = "Lowpass",
-                   .browserCategory = "Filter",
-                   .description = "Low-pass filter for removing high-frequency content.",
-                   .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-                   .loadAliases = kLowpassAliases,
-                   .loadAliasCount = static_cast<int>(std::size(kLowpassAliases)),
-                   .matchesPlugin = matches<te::LowPassPlugin>,
-                   .createProcessor = makeProcessor<FilterProcessor>,
-                   .showInBrowser = true,
-                   .tags = kTracktionTags,
-                   .tagCount = static_cast<int>(std::size(kTracktionTags)),
-                   .createInSession = createTracktionPlugin});
-    add(registry, {.pluginId = te::PitchShiftPlugin::xmlTypeName,
-                   .displayName = "Pitch Shift",
-                   .browserCategory = "Pitch",
-                   .description = "Pitch shifting effect for transposition and special effects.",
-                   .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-                   .loadAliases = kPitchShiftAliases,
-                   .loadAliasCount = static_cast<int>(std::size(kPitchShiftAliases)),
-                   .matchesPlugin = matches<te::PitchShiftPlugin>,
-                   .createProcessor = makeProcessor<PitchShiftProcessor>,
-                   .tags = kTracktionTags,
-                   .tagCount = static_cast<int>(std::size(kTracktionTags)),
-                   .createInSession = createTracktionPlugin});
     add(registry, {.pluginId = te::ImpulseResponsePlugin::xmlTypeName,
                    .displayName = "IR Reverb",
                    .browserCategory = "Reverb",

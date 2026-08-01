@@ -780,7 +780,6 @@ void CompiledEqCurveView::showBandTypeMenu(int band) {
 }
 
 const CompiledPresentationSpec& getMagdaEqPresentation() {
-    static const LegacyUiKind kSuppress[] = {LegacyUiKind::Equaliser};
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaEqCompiledPlugin::xmlTypeName,
         // Show the 40 band slots (8 bands × {Enabled, Type, Freq, Gain, Q})
@@ -793,7 +792,6 @@ const CompiledPresentationSpec& getMagdaEqPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledEqCurveView>(pluginId);
         },
-        .suppressLegacyUis = kSuppress,
         // 50/50 split: the 8-band param grid is the dominant control
         // surface, but the curve view earns equal real estate as a readout.
         .visualMinFractionNumerator = 2,

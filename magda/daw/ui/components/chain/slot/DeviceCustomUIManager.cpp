@@ -36,13 +36,8 @@
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "custom_ui/ArpeggiatorUI.hpp"
-#include "custom_ui/ChorusUI.hpp"
-#include "custom_ui/CompressorUI.hpp"
-#include "custom_ui/DelayUI.hpp"
 #include "custom_ui/DrumVoiceUI.hpp"
-#include "custom_ui/EqualiserUI.hpp"
 #include "custom_ui/FMUI.hpp"
-#include "custom_ui/FilterUI.hpp"
 #include "custom_ui/FourOscUI.hpp"
 #include "custom_ui/HaloUI.hpp"
 #include "custom_ui/ImpulseResponseUI.hpp"
@@ -50,12 +45,9 @@
 #include "custom_ui/MateriaUI.hpp"
 #include "custom_ui/NimbusUI.hpp"
 #include "custom_ui/OscilloscopeUI.hpp"
-#include "custom_ui/PhaserUI.hpp"
-#include "custom_ui/PitchShiftUI.hpp"
 #include "custom_ui/PluginTelemetrySources.hpp"
 #include "custom_ui/PolyStepSequencerUI.hpp"
 #include "custom_ui/PolySynthUI.hpp"
-#include "custom_ui/ReverbUI.hpp"
 #include "custom_ui/SamplerUI.hpp"
 #include "custom_ui/SidechainUI.hpp"
 #include "custom_ui/SpectrumAnalyzerUI.hpp"
@@ -250,10 +242,6 @@ RoleAnalysisResult classifyDrumRole(const juce::File& file, double startSeconds,
     } catch (const std::exception& e) {
         return {false, {}, 0.0F, juce::String("Sample role analysis failed: ") + e.what()};
     }
-}
-
-bool isLegacyTeCompressorPluginId(const juce::String& pluginId) {
-    return magda::daw::audio::internalPluginHasTag(pluginId, "legacy-te-compressor");
 }
 
 bool isDrumGridPluginId(const juce::String& pluginId) {
@@ -461,24 +449,8 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return drumVoiceUI_.get();
     if (struckUI_)
         return struckUI_.get();
-    if (eqUI_)
-        return eqUI_.get();
-    if (compressorUI_)
-        return compressorUI_.get();
-    if (reverbUI_)
-        return reverbUI_.get();
-    if (delayUI_)
-        return delayUI_.get();
-    if (chorusUI_)
-        return chorusUI_.get();
-    if (phaserUI_)
-        return phaserUI_.get();
-    if (filterUI_)
-        return filterUI_.get();
     if (sidechainUI_)
         return sidechainUI_.get();
-    if (pitchShiftUI_)
-        return pitchShiftUI_.get();
     if (impulseResponseUI_)
         return impulseResponseUI_.get();
     if (chordEngineUI_)
@@ -501,8 +473,6 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
 }
 
 std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() const {
-    if (eqUI_)
-        return eqUI_->getLinkableSliders();
     if (fourOscUI_)
         return fourOscUI_->getLinkableSliders();
     if (polySynthUI_)
@@ -521,22 +491,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return struckUI_->getLinkableSliders();
     if (toneGeneratorUI_)
         return toneGeneratorUI_->getLinkableSliders();
-    if (compressorUI_)
-        return compressorUI_->getLinkableSliders();
-    if (reverbUI_)
-        return reverbUI_->getLinkableSliders();
-    if (delayUI_)
-        return delayUI_->getLinkableSliders();
-    if (chorusUI_)
-        return chorusUI_->getLinkableSliders();
-    if (phaserUI_)
-        return phaserUI_->getLinkableSliders();
-    if (filterUI_)
-        return filterUI_->getLinkableSliders();
     if (sidechainUI_)
         return sidechainUI_->getLinkableSliders();
-    if (pitchShiftUI_)
-        return pitchShiftUI_->getLinkableSliders();
     if (impulseResponseUI_)
         return impulseResponseUI_->getLinkableSliders();
     if (samplerUI_)
@@ -555,10 +511,9 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 bool DeviceCustomUIManager::hasAnyUI() const {
     return externalInsertUI_ || toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ ||
            polySynthUI_ || fmUI_ || materiaUI_ || haloUI_ || nimbusUI_ || struckUI_ ||
-           drumVoiceUI_ || eqUI_ || compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ ||
-           phaserUI_ || filterUI_ || pitchShiftUI_ || impulseResponseUI_ || sidechainUI_ ||
-           chordEngineUI_ || arpeggiatorUI_ || strumUI_ || stepSequencerUI_ ||
-           polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
+           drumVoiceUI_ || impulseResponseUI_ || sidechainUI_ || chordEngineUI_ || arpeggiatorUI_ ||
+           strumUI_ || stepSequencerUI_ || polyStepSequencerUI_ || oscilloscopeUI_ ||
+           spectrumAnalyzerUI_ || levelsUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
@@ -578,24 +533,8 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return drumVoiceUI_->preferredContentWidth();  // one labelled box per knob
     if (struckUI_)
         return struckUI_->preferredContentWidth();  // body panel + EXCITER | RESONATOR
-    if (eqUI_)
-        return 400;
-    if (compressorUI_)
-        return 350;
-    if (reverbUI_)
-        return 350;
-    if (delayUI_)
-        return 300;
-    if (chorusUI_)
-        return 350;
-    if (phaserUI_)
-        return 300;
-    if (filterUI_)
-        return 250;
     if (sidechainUI_)
         return 500;  // curve editor + depth/sync/mode/atk/rel control row
-    if (pitchShiftUI_)
-        return 200;
     if (impulseResponseUI_)
         return 350;
     if (stepSequencerUI_)
@@ -830,25 +769,8 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         haloUI_->updateFromParameters(device.parameters);
     if (nimbusUI_ && device.pluginId.equalsIgnoreCase("magda_clouds"))
         nimbusUI_->updateFromParameters(device.parameters);
-    if (eqUI_ && device.pluginId.equalsIgnoreCase("eq"))
-        eqUI_->updateFromParameters(device.parameters);
-    if (compressorUI_ && isLegacyTeCompressorPluginId(device.pluginId))
-        compressorUI_->updateFromParameters(device.parameters);
-    if (reverbUI_ && device.pluginId.containsIgnoreCase("reverb") &&
-        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Reverb))
-        reverbUI_->updateFromParameters(device.parameters);
-    if (delayUI_ && device.pluginId.containsIgnoreCase("delay"))
-        delayUI_->updateFromParameters(device.parameters);
-    if (chorusUI_ && device.pluginId.containsIgnoreCase("chorus"))
-        chorusUI_->updateFromParameters(device.parameters);
-    if (phaserUI_ && device.pluginId.containsIgnoreCase("phaser"))
-        phaserUI_->updateFromParameters(device.parameters);
-    if (filterUI_ && device.pluginId.containsIgnoreCase("lowpass"))
-        filterUI_->updateFromParameters(device.parameters);
     if (sidechainUI_ && device.pluginId.equalsIgnoreCase(daw::audio::SidechainPlugin::xmlTypeName))
         sidechainUI_->updateFromParameters(device.parameters);
-    if (pitchShiftUI_ && device.pluginId.containsIgnoreCase("pitchshift"))
-        pitchShiftUI_->updateFromParameters(device.parameters);
     if (impulseResponseUI_ && device.pluginId.containsIgnoreCase("impulseresponse"))
         impulseResponseUI_->updateFromParameters(device.parameters);
     if (fourOscUI_ && device.pluginId.containsIgnoreCase("4osc"))
@@ -1138,80 +1060,6 @@ bool DeviceCustomUIManager::createSimpleEffectUI(const magda::DeviceInfo& device
         // path, so hand through the slot's live path getter.
         sidechainUI_->getNodePath = callbacks.getNodePath;
         parent.addAndMakeVisible(*sidechainUI_);
-        update(device);
-        return true;
-    }
-
-    if (device.pluginId.equalsIgnoreCase("eq")) {
-        eqUI_ = std::make_unique<EqualiserUI>();
-        forwardParameterChanges(*eqUI_, callbacks);
-        eqUI_->getDBGainAtFrequency = [this](float freq) -> float {
-            auto plugin = getLivePlugin();
-            if (auto* eq = dynamic_cast<te::EqualiserPlugin*>(plugin.get()))
-                return eq->getDBGainAtFrequency(freq);
-            return 0.0f;
-        };
-        parent.addAndMakeVisible(*eqUI_);
-        update(device);
-        return true;
-    }
-
-    if (isLegacyTeCompressorPluginId(device.pluginId)) {
-        compressorUI_ = std::make_unique<CompressorUI>();
-        forwardParameterChanges(*compressorUI_, callbacks);
-        parent.addAndMakeVisible(*compressorUI_);
-        update(device);
-        return true;
-    }
-
-    if (device.pluginId.containsIgnoreCase("reverb") &&
-        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Reverb)) {
-        reverbUI_ = std::make_unique<ReverbUI>();
-        forwardParameterChanges(*reverbUI_, callbacks);
-        parent.addAndMakeVisible(*reverbUI_);
-        update(device);
-        return true;
-    }
-
-    if (device.pluginId.containsIgnoreCase("delay") &&
-        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Delay)) {
-        delayUI_ = std::make_unique<DelayUI>();
-        forwardParameterChanges(*delayUI_, callbacks);
-        parent.addAndMakeVisible(*delayUI_);
-        update(device);
-        return true;
-    }
-
-    if (device.pluginId.containsIgnoreCase("chorus") &&
-        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Chorus)) {
-        chorusUI_ = std::make_unique<ChorusUI>();
-        forwardParameterChanges(*chorusUI_, callbacks);
-        parent.addAndMakeVisible(*chorusUI_);
-        update(device);
-        return true;
-    }
-
-    if (device.pluginId.containsIgnoreCase("phaser") &&
-        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Phaser)) {
-        phaserUI_ = std::make_unique<PhaserUI>();
-        forwardParameterChanges(*phaserUI_, callbacks);
-        parent.addAndMakeVisible(*phaserUI_);
-        update(device);
-        return true;
-    }
-
-    if (device.pluginId.containsIgnoreCase("lowpass")) {
-        filterUI_ = std::make_unique<FilterUI>();
-        forwardParameterChanges(*filterUI_, callbacks);
-        parent.addAndMakeVisible(*filterUI_);
-        update(device);
-        return true;
-    }
-
-    if (device.pluginId.containsIgnoreCase("pitchshift")) {
-        pitchShiftUI_ = std::make_unique<PitchShiftUI>();
-        forwardParameterChanges(*pitchShiftUI_, callbacks);
-        parent.addAndMakeVisible(*pitchShiftUI_);
         update(device);
         return true;
     }
@@ -2317,39 +2165,6 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
 
     if (struckUI_ && StruckInstrumentUI::handles(device.pluginId)) {
         struckUI_->updateFromParameters(device.parameters);
-    }
-
-    if (eqUI_ && device.pluginId.equalsIgnoreCase("eq")) {
-        eqUI_->updateFromParameters(device.parameters);
-    }
-
-    if (compressorUI_ && isLegacyTeCompressorPluginId(device.pluginId)) {
-        compressorUI_->updateFromParameters(device.parameters);
-    }
-
-    if (reverbUI_ && device.pluginId.containsIgnoreCase("reverb") &&
-        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Reverb)) {
-        reverbUI_->updateFromParameters(device.parameters);
-    }
-
-    if (delayUI_ && device.pluginId.containsIgnoreCase("delay")) {
-        delayUI_->updateFromParameters(device.parameters);
-    }
-
-    if (chorusUI_ && device.pluginId.containsIgnoreCase("chorus")) {
-        chorusUI_->updateFromParameters(device.parameters);
-    }
-
-    if (phaserUI_ && device.pluginId.containsIgnoreCase("phaser")) {
-        phaserUI_->updateFromParameters(device.parameters);
-    }
-
-    if (filterUI_ && device.pluginId.containsIgnoreCase("lowpass")) {
-        filterUI_->updateFromParameters(device.parameters);
-    }
-
-    if (pitchShiftUI_ && device.pluginId.containsIgnoreCase("pitchshift")) {
-        pitchShiftUI_->updateFromParameters(device.parameters);
     }
 
     if (impulseResponseUI_ && device.pluginId.containsIgnoreCase("impulseresponse")) {

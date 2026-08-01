@@ -4,6 +4,7 @@
 
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../../core/LegacyDeviceAliases.hpp"
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/ViewModeState.hpp"
@@ -271,6 +272,13 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
                     "lost");
             }
         }
+
+        // Retired stock Tracktion effects load as their compiled successors.
+        // Runs on the staged model, so the project is already canonical by the
+        // time anything is committed or re-saved.
+        legacy_devices::migrateRetiredDevicesInProject(outData.tracks, outData.masterTrack.get(),
+                                                       outData.automationLanes,
+                                                       outData.automationClips);
 
         // Parameter aliases (UserProject layer -- opaque pass-through to AliasRegistry)
         if (obj->hasProperty("paramAliases"))
@@ -551,6 +559,11 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
         return false;  // Failed - no state modified
     }
 
+    // Retired stock Tracktion effects load as their compiled successors. The
+    // master track is deserialized separately below and migrated there.
+    legacy_devices::migrateRetiredDevicesInProject(stagedTracks, nullptr, stagedAutomation,
+                                                   stagedAutomationClips);
+
     // Stage 2: All components validated successfully - now commit to managers atomically
     commitStagedData(stagedTracks, stagedClips, stagedAutomation, stagedAutomationClips);
 
@@ -559,6 +572,7 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     if (masterTrackVar.isObject()) {
         TrackInfo masterTrackData;
         if (deserializeTrackInfo(masterTrackVar, masterTrackData)) {
+            legacy_devices::migrateRetiredDevicesInTrack(masterTrackData);
             auto& tm = TrackManager::getInstance();
             auto* masterTrack = tm.getTrack(MASTER_TRACK_ID);
             if (masterTrack) {

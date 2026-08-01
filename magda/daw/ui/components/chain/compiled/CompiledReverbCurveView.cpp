@@ -209,7 +209,6 @@ void CompiledReverbCurveView::paint(juce::Graphics& g) {
 }
 
 const CompiledPresentationSpec& getMagdaReverbPresentation() {
-    static const LegacyUiKind kSuppress[] = {LegacyUiKind::Reverb};
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaReverbCompiledPlugin::xmlTypeName,
         .layoutCellCount = 9,
@@ -217,7 +216,6 @@ const CompiledPresentationSpec& getMagdaReverbPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledReverbCurveView>(pluginId);
         },
-        .suppressLegacyUis = kSuppress,
     };
     return kSpec;
 }

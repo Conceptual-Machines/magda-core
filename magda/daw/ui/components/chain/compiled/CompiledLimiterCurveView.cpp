@@ -299,7 +299,6 @@ const CompiledPresentationSpec& getMagdaLimiterPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledLimiterCurveView>(pluginId);
         },
-        .suppressLegacyUis = {},
     };
     return kSpec;
 }

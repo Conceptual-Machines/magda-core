@@ -240,7 +240,6 @@ void CompiledChorusCurveView::paint(juce::Graphics& g) {
 }
 
 const CompiledPresentationSpec& getMagdaChorusPresentation() {
-    static const LegacyUiKind kSuppress[] = {LegacyUiKind::Chorus};
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaChorusCompiledPlugin::xmlTypeName,
         .layoutCellCount = 8,
@@ -248,7 +247,6 @@ const CompiledPresentationSpec& getMagdaChorusPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledChorusCurveView>(pluginId);
         },
-        .suppressLegacyUis = kSuppress,
     };
     return kSpec;
 }

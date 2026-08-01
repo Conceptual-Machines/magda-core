@@ -399,7 +399,6 @@ const CompiledPresentationSpec& getMagdaUtilityPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledUtilityView>(pluginId);
         },
-        .suppressLegacyUis = {},
         .visualMinFractionNumerator = 1,
         .visualMinFractionDenominator = 1,
         .preferredSlotWidth = 160,

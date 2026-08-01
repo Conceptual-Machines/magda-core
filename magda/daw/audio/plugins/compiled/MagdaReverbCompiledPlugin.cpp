@@ -412,6 +412,9 @@ constexpr AliasSpec kAliases[] = {
     {"high_cut", 6, "High Cut"}, {"width", 7, "Width"},     {"output", 8, "Output"},
 };
 
+// Tracktion's retired Reverb loads here; see core/LegacyDeviceAliases.hpp.
+constexpr const char* kLoadAliases[] = {"reverb"};
+
 const CompiledPluginSpec& getMagdaReverbSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaReverbCompiledPlugin::xmlTypeName,
@@ -427,6 +430,8 @@ const CompiledPluginSpec& getMagdaReverbSpec() {
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
+        .loadAliases = kLoadAliases,
+        .loadAliasCount = static_cast<int>(sizeof(kLoadAliases) / sizeof(kLoadAliases[0])),
     };
     return kSpec;
 }

@@ -225,7 +225,6 @@ const CompiledPresentationSpec& getMagdaSaturatorPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledSaturatorCurveView>(pluginId);
         },
-        .suppressLegacyUis = {},
     };
     return kSpec;
 }

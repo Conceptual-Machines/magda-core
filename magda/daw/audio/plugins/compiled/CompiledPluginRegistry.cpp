@@ -72,6 +72,10 @@ const CompiledPluginSpec* findCompiledPluginSpec(const juce::String& pluginId) {
 
         if (spec->aliasKey != nullptr && pluginId.equalsIgnoreCase(spec->aliasKey))
             return spec;
+
+        for (int i = 0; i < spec->loadAliasCount; ++i)
+            if (spec->loadAliases[i] != nullptr && pluginId.equalsIgnoreCase(spec->loadAliases[i]))
+                return spec;
     }
     return nullptr;
 }

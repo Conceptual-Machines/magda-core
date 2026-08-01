@@ -116,6 +116,7 @@ set(TEST_SOURCES
     test_internal_track_routing.cpp
     test_master_track_serialization.cpp
     test_utility_width_migration.cpp
+    test_legacy_device_aliases.cpp
     test_automation_agent.cpp
     test_mix_analysis_agent.cpp
     test_mix_analysis_audio.cpp

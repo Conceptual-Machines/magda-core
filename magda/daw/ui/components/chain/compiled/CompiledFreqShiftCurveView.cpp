@@ -212,7 +212,6 @@ const CompiledPresentationSpec& getMagdaFreqShiftPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledFreqShiftCurveView>(pluginId);
         },
-        .suppressLegacyUis = {},
     };
     return kSpec;
 }

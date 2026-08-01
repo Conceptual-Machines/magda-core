@@ -277,7 +277,6 @@ const CompiledPresentationSpec& getMagdaFlangerPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledFlangerCurveView>(pluginId);
         },
-        .suppressLegacyUis = {},  // there is no legacy "Flanger" UI
     };
     return kSpec;
 }

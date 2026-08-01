@@ -465,6 +465,9 @@ constexpr AliasSpec kAliases[] = {
     {"output", 40, "Output"},
 };
 
+// Tracktion's retired 4-band EQ loads here; see core/LegacyDeviceAliases.hpp.
+constexpr const char* kLoadAliases[] = {"4bandEq", "eq", "equaliser"};
+
 }  // namespace
 
 const CompiledPluginSpec& getMagdaEqSpec() {
@@ -485,6 +488,8 @@ const CompiledPluginSpec& getMagdaEqSpec() {
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
+        .loadAliases = kLoadAliases,
+        .loadAliasCount = static_cast<int>(sizeof(kLoadAliases) / sizeof(kLoadAliases[0])),
     };
     return kSpec;
 }

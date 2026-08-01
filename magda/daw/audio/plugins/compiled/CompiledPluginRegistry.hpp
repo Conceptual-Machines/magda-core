@@ -43,6 +43,14 @@ struct CompiledPluginSpec {
     const char* aliasKey = nullptr;  // defaults to pluginId when null
     const AliasSpec* aliases = nullptr;
     int aliasCount = 0;
+    // Other names this device answers to: the engine type names and display
+    // names of the stock Tracktion effects it replaced. MAGDA's model is
+    // rewritten onto the canonical id at project load (see
+    // core/LegacyDeviceAliases.hpp); these catch what is not part of that model
+    // — an FX chain nested inside a Drum Grid pad, or an agent instruction
+    // still worded the way the retired device was named.
+    const char* const* loadAliases = nullptr;
+    int loadAliasCount = 0;
     bool isInstrument = false;  // synth/MIDI instrument vs effect (browser + placement)
 };
 
