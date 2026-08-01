@@ -49,7 +49,7 @@ The Media Explorer lets you browse files on your system and preview audio before
 ### Preview
 
 - Click an audio file to preview it through your monitor output
-- Preview plays in sync with the transport tempo when applicable
+- Preview plays the file as it is on disk, at its own tempo and pitch. It is not stretched to match the project tempo, so a 90 BPM loop auditions at 90 BPM whatever the transport is set to. Drag the file onto a track if you want it to follow the project tempo
 - With **Auto** on, ++arrowup++ / ++arrowdown++ step through results and audition each one as it is selected; ++arrowleft++ stops the preview and ++arrowright++ replays it from the start
 
 ### Filters
