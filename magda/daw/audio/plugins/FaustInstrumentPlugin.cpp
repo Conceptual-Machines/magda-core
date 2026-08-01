@@ -695,6 +695,14 @@ void FaustInstrumentPlugin::initialise(const te::PluginInitialisationInfo& info)
     if (auto state = std::atomic_load(&active_)) {
         if (state->poly)
             state->poly->instanceInit(currentSampleRate_);
+        // The mono voice is a separate instance the allocator knows nothing
+        // about, so it needs its own re-init. The constructor compiles at a
+        // provisional 44.1 kHz, and without this Mono and Legato kept those
+        // constants on a device running at anything else: oscillators detuned
+        // by the rate ratio and envelope times off by the same factor, until
+        // something happened to trigger a recompile.
+        if (state->monoVoice)
+            state->monoVoice->instanceInit(currentSampleRate_);
     }
 
     const int dspOut = std::atomic_load(&active_) ? std::atomic_load(&active_)->dspOut : 2;

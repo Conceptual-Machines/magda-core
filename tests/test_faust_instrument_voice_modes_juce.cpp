@@ -322,6 +322,78 @@ class FaustInstrumentVoiceModeTest final : public juce::UnitTest {
     }
 };
 
+// Reports the DSP instance's own initialisation-time sample rate as its output
+// level, which is the only way to see whether a voice was re-initialised for
+// the device rate. fconstant is spelled out rather than taken from ma.SR
+// because the test binary has no faustlibraries dir to import from.
+constexpr const char* kSampleRateDsp = R"FAUST(
+// The literal "stdfaust.lib" in this comment is load-bearing; see kVoiceModeDsp.
+gate = button("gate");
+SR = fconstant(int fSamplingFreq, <math.h>);
+process = (SR / 96000.0) * gate <: _, _;
+)FAUST";
+
+// The instrument compiles at a provisional 44.1 kHz in its constructor, so
+// every voice has to be re-initialised when initialise() learns the real device
+// rate. The poly allocator always was; the Mono/Legato voice is a separate
+// instance the allocator knows nothing about, and was left behind.
+class FaustInstrumentSampleRateTest final : public juce::UnitTest {
+  public:
+    FaustInstrumentSampleRateTest()
+        : juce::UnitTest("Faust Instrument Sample Rate Tests", "magda") {}
+
+    void runTest() override {
+        beginTest("Both engines follow the device sample rate, not the provisional one");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
+        expect(edit != nullptr, "Test edit should be created");
+        if (!edit)
+            return;
+
+        auto plugin = createFaustInstrument(*edit);
+        auto* instrument = dynamic_cast<audio::FaustInstrumentPlugin*>(plugin.get());
+        expect(instrument != nullptr, "Faust instrument should be created");
+        if (instrument == nullptr)
+            return;
+
+        juce::String err;
+        expect(instrument->loadDspSource("SampleRateTest", kSampleRateDsp, err),
+               "Test DSP should compile: " + err);
+
+        // Deliberately not 44100: the provisional rate the constructor compiled
+        // at is 44100, so testing at that rate cannot tell the two apart.
+        constexpr double kDeviceRate = 48000.0;
+        te::PluginInitialisationInfo initInfo;
+        initInfo.startTime = tracktion::TimePosition();
+        initInfo.sampleRate = kDeviceRate;
+        initInfo.blockSizeSamples = kBlockSize;
+        instrument->baseClassInitialise(initInfo);
+
+        const float expected = static_cast<float>(kDeviceRate / 96000.0);
+        const int voiceModeIdx = audio::FaustInstrumentPlugin::kVoiceModeParamIndex;
+
+        {
+            setHostParam(*instrument, voiceModeIdx, 0.0f);  // Poly
+            instrument->reset();
+            auto note = noteOn(69);
+            const float level = renderBlock(*instrument, 0.0, note);
+            expectWithinAbsoluteError(level, expected, 0.002f);
+        }
+
+        {
+            setHostParam(*instrument, voiceModeIdx, 0.5f);  // Mono
+            instrument->reset();
+            auto note = noteOn(69);
+            const float level = renderBlock(*instrument, 0.1, note);
+            expectWithinAbsoluteError(level, expected, 0.002f);
+        }
+
+        instrument->baseClassDeinitialise();
+    }
+};
+
 FaustInstrumentVoiceModeTest faustInstrumentVoiceModeTest;
+FaustInstrumentSampleRateTest faustInstrumentSampleRateTest;
 
 }  // namespace
