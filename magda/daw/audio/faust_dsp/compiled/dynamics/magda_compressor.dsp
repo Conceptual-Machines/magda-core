@@ -15,27 +15,29 @@ thresholdDb = hslider("Threshold [unit:dB] [idx:1]", -18.0, -60.0, 0.0, 0.1)
               : si.smooth(ba.tau2pole(0.02));
 ratio = hslider("Ratio [scale:log] [scaleAnchor:4] [idx:2]", 4.0, 1.0, 50.0, 0.01)
         : si.smooth(ba.tau2pole(0.02));
+// Unsmoothed: both feed ba.tau2pole, i.e. exp(-1/(tau*SR)), inside the
+// detector's one-pole. Those are time constants rather than gains - a
+// block-rate step changes how fast the detector moves, not the level it
+// outputs.
 attackMs = hslider("Attack [unit:ms] [scale:log] [scaleAnchor:10] [idx:3]",
-                   10.0, 0.1, 200.0, 0.1)
-           : si.smooth(ba.tau2pole(0.02));
+                   10.0, 0.1, 200.0, 0.1);
 releaseMs = hslider("Release [unit:ms] [scale:log] [scaleAnchor:100] [idx:4]",
-                    120.0, 5.0, 1000.0, 1.0)
-            : si.smooth(ba.tau2pole(0.02));
+                    120.0, 5.0, 1000.0, 1.0);
 kneeDb = hslider("Knee [unit:dB] [idx:5]", 6.0, 0.0, 24.0, 0.1)
          : si.smooth(ba.tau2pole(0.02));
 makeupDb = hslider("Makeup [unit:dB] [idx:6]", 0.0, 0.0, 24.0, 0.1)
            : si.smooth(ba.tau2pole(0.02));
 mix = hslider("Mix [idx:7]", 1.0, 0.0, 1.0, 0.001)
       : si.smooth(ba.tau2pole(0.02));
-outputDb = hslider("Output [unit:dB] [idx:8]", 0.0, -24.0, 12.0, 0.1)
-           : si.smooth(ba.tau2pole(0.02));
+// Smoothed as a linear gain rather than in dB, so pow() stays at control rate.
+outputDbRaw = hslider("Output [unit:dB] [idx:8]", 0.0, -24.0, 12.0, 0.1);
 detector = nentry("Detector [idx:9] [style:menu{'Peak':0;'RMS':1}]",
                   0, 0, 1, 1);
 link = hslider("Link [idx:10]", 1.0, 0.0, 1.0, 0.001)
        : si.smooth(ba.tau2pole(0.02));
+// Unsmoothed: drives the bilinear tan() in the detector high-pass.
 sidechainHpfHz = hslider("SC HPF [unit:Hz] [scale:log] [scaleAnchor:120] [idx:11]",
-                         20.0, 20.0, 500.0, 1.0)
-                 : si.smooth(ba.tau2pole(0.02));
+                         20.0, 20.0, 500.0, 1.0);
 autogain = nentry("Autogain [idx:14] [style:menu{'Off':0;'On':1}]",
                   0, 0, 1, 1);
 useSidechain = nentry("Use Sidechain [hidden:1] [idx:63]", 0, 0, 1, 1);
@@ -103,13 +105,19 @@ compress(l, r, sc) = internalWetL(l, r) * (1.0 - useSidechain)
 // user's Makeup so the manual knob still works.
 autogainDb = autogain * (-(thresholdDb * (1.0 - (1.0 / max(1.0, ratio)))));
 
+// Output is smoothed as a linear gain so its pow() sits at control rate.
+// Makeup is deliberately left alone: the same treatment there moved the
+// settled output by 4%, which is far past rounding and was not explained, so
+// it is not worth the one call it would save.
+outputGain = db2lin(outputDbRaw) : si.smooth(ba.tau2pole(0.02));
+
 // Soft-limit acts as a safety ceiling on the compressed + makeup signal;
 // Output gain is applied AFTER so the user-facing Output knob isn't
 // gated by the limiter (pre-fix, +12 dB Output only achieved ~+4 dB
 // actual because the tanh-style softLimit clamped everything).
 channelBlend(dry, wet) =
     softLimit((dry * (1.0 - mix) + wet * mix) * db2lin(makeupDb + autogainDb))
-    * db2lin(outputDb);
+    * outputGain;
 
 wetL(l, r, sc) = compress(l, r, sc) : _, !;
 wetR(l, r, sc) = compress(l, r, sc) : !, _;
