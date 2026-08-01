@@ -277,6 +277,18 @@ class FaustInstrumentVoiceModeTest final : public juce::UnitTest {
             auto stillUp = pitchWheel(1.0f);
             const float inert = renderBlock(*instrument, 1.9, stillUp);
             expectWithinAbsoluteError(inert, expectedLevelForNote(69), 0.002f);
+
+            // --- reset() recentres the wheel -------------------------------
+            // Otherwise a transport stop or mode change, neither of which
+            // delivers a note-off or a wheel message, would leave everything
+            // played afterwards silently detuned.
+            setHostParam(*instrument, bendIdx, 2.0f / kMax);
+            auto bendUp = pitchWheel(1.0f);
+            renderBlock(*instrument, 1.91, bendUp);
+            instrument->reset();
+            auto afterReset = noteOn(69);
+            const float unbentAgain = renderBlock(*instrument, 1.92, afterReset);
+            expectWithinAbsoluteError(unbentAgain, expectedLevelForNote(69), 0.002f);
         }
 
         beginTest("Pitch bend works in Mono, which ignored the wheel entirely");
@@ -289,13 +301,8 @@ class FaustInstrumentVoiceModeTest final : public juce::UnitTest {
             setHostParam(*instrument, bendIdx, 2.0f / kMax);
             instrument->reset();
 
-            // The previous block left the wheel up, and reset() deliberately
-            // does not recentre it: where the wheel is sitting is live
-            // controller state, not voice state, so a panic must not silently
-            // unbend a note the player is still bending.
-            auto centre = pitchWheel(0.0f);
-            renderBlock(*instrument, 1.95, centre);
-
+            // The previous block left the wheel up; reset() recentres it, so
+            // this note starts at concert pitch without a wheel message.
             auto held = noteOn(69);
             const float unbent = renderBlock(*instrument, 2.0, held);
             expectWithinAbsoluteError(unbent, expectedLevelForNote(69), 0.002f);

@@ -434,6 +434,12 @@ void FaustInstrumentPlugin::resetAllVoices(const std::shared_ptr<FaustState>& st
     // than sliding in from whatever was last played.
     glideCurrentHz_ = 0.0f;
     glideTargetHz_ = 0.0f;
+    // Recentre the wheel. A panic has to leave the instrument at concert pitch:
+    // the reset paths are transport stops and mode changes, where no note-off
+    // arrives either, so a wheel left off-centre would silently detune every
+    // note played afterwards with nothing on screen to explain it.
+    bendNormalised_ = 0.0f;
+    lastPolyBendRatio_ = 1.0f;
 }
 
 float FaustInstrumentPlugin::readBendRatio() const {
