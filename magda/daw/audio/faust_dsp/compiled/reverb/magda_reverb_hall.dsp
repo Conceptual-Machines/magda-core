@@ -11,8 +11,10 @@ re = library("reverbs.lib");
 // User controls - [idx:N] mirrors the host wrapper's slot layout.
 // ============================================================================
 
-mix         = hslider("Mix [idx:1]", 0.3, 0.0, 1.0, 0.001)
-            : si.smooth(ba.tau2pole(0.02));
+// Mix is smoothed as the two crossfade gains rather than as the control, so
+// the constant-power cos() pair stays at control rate. A gain is the thing
+// that must not step, and it still does not.
+mix         = hslider("Mix [idx:1]", 0.3, 0.0, 1.0, 0.001);
 predelayMs  = hslider("Predelay [unit:ms] [idx:2]", 20.0, 0.0, 250.0, 0.1)
             : si.smooth(ba.tau2pole(0.05));
 // Decay and damping are deliberately NOT smoothed. Both feed zita's
@@ -30,12 +32,14 @@ predelayMs  = hslider("Predelay [unit:ms] [idx:2]", 20.0, 0.0, 250.0, 0.1)
 // i.e. boundaries are quieter than ordinary sample-to-sample motion.
 decay       = hslider("Decay [idx:3]", 50.0, 0.0, 100.0, 0.1);
 damping     = hslider("Damping [idx:4]", 30.0, 0.0, 100.0, 0.1);
+// Unsmoothed for the same reason as decay: each drives a bilinear-transform
+// tan() inside tf2s, and everything downstream of it is plain arithmetic.
+// Smoothed, that is one tan() per filter per sample; raw, it is one per
+// block.
 lowCutHz    = hslider("Low Cut [unit:Hz] [scale:log] [scaleAnchor:80] [idx:5]",
-                      40.0, 20.0, 500.0, 1.0)
-            : si.smooth(ba.tau2pole(0.05));
+                      40.0, 20.0, 500.0, 1.0);
 highCutHz   = hslider("High Cut [unit:Hz] [scale:log] [scaleAnchor:8000] [idx:6]",
-                      12000.0, 1000.0, 18000.0, 1.0)
-            : si.smooth(ba.tau2pole(0.05));
+                      12000.0, 1000.0, 18000.0, 1.0);
 width       = hslider("Width [idx:7]", 100.0, 0.0, 200.0, 0.1) / 100.0
             : si.smooth(ba.tau2pole(0.05));
 // Smoothed as a linear gain rather than in dB, so pow() stays at control
@@ -84,5 +88,18 @@ sendChain = par(i, 2, preFilter : preDelay) : reverbCore : applyWidth;
 db2lin(db) = pow(10.0, db / 20.0);
 outputGain = db2lin(outputDb) : si.smooth(ba.tau2pole(0.02));
 
-process = ef.dryWetMixerConstantPower(mix, sendChain)
-        : par(i, 2, *(outputGain));
+// ef.dryWetMixerConstantPower's crossfade, with the cos() pair evaluated once
+// per block and the resulting gains smoothed instead.
+//
+// The 1/sqrt(2) is not cosmetic and does not cancel: that mixer weights each
+// side by it, so a fully dry setting passes 0.707 rather than 1.0 and
+// dry^2 + wet^2 holds at 0.5 across the range. Verified against the library
+// by probing its gains directly at nine mix values; dropping the factor would
+// quietly add 3 dB to every existing project's dry path.
+dryWetScale = 0.70710678;
+dryGain = cos(mix * ma.PI * 0.5) * dryWetScale : si.smooth(ba.tau2pole(0.02));
+wetGain = sin(mix * ma.PI * 0.5) * dryWetScale : si.smooth(ba.tau2pole(0.02));
+
+process = _, _ <: (si.bus(2), sendChain)
+        : (par(i, 2, *(dryGain)), par(i, 2, *(wetGain)))
+       :> par(i, 2, *(outputGain));
