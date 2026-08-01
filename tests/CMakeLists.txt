@@ -152,6 +152,8 @@ set(TEST_SOURCES
     test_alias_registry.cpp
     # Parameter alias system tests (PR 3)
     test_alias_resolver.cpp
+    # Track / master level writes driven by control surfaces
+    test_track_level_control_writes.cpp
     # Parameter alias system tests (PR 4 -- AutoAliasGenerator)
     test_alias_auto_gen.cpp
     # Parameter alias system tests (PR 5 -- CuratedAliasLoader)
@@ -307,6 +309,7 @@ target_sources(magda_juce_tests PRIVATE
     test_arranger_launcher_switching_juce.cpp
     test_session_slot_recording_juce.cpp
     test_input_monitor_track_routing_juce.cpp
+    test_controller_track_level_write_juce.cpp
     test_track_midi_recording_preview_juce.cpp
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp

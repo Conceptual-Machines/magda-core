@@ -383,6 +383,32 @@ int lua_tracks_set_soloed(lua_State* L) {
     return 0;
 }
 
+// magda.tracks.set_record_armed(trackId, bool) — the write side of the
+// `record_armed` field already exposed on the track table. Tracks that take no
+// external input (Aux, Group) silently ignore this, matching the UI.
+int lua_tracks_set_record_armed(lua_State* L) {
+    auto* api = getApi(L);
+    auto id = static_cast<TrackId>(luaL_checkinteger(L, 1));
+    luaL_checktype(L, 2, LUA_TBOOLEAN);
+    api->tracks().setTrackRecordArmed(id, lua_toboolean(L, 2) != 0);
+    return 0;
+}
+
+// magda.tracks.master() — the master track table. Master is stored apart from
+// the ordinary tracks, so it never appears in magda.tracks.list(); this is the
+// only way a script can reach its id. The usual setters accept that id:
+// set_volume / set_pan route it to the master channel internally.
+int lua_tracks_master(lua_State* L) {
+    auto* api = getApi(L);
+    const TrackInfo* t = api->tracks().getTrack(MASTER_TRACK_ID);
+    if (t == nullptr) {
+        lua_pushnil(L);
+        return 1;
+    }
+    pushTrackTable(L, *t);
+    return 1;
+}
+
 // ---- clips -----------------------------------------------------------------
 
 void pushClipTable(lua_State* L, const ClipInfo& c) {
@@ -951,6 +977,8 @@ const FnReg kTrackFns[] = {
     {"set_pan", lua_tracks_set_pan},
     {"set_muted", lua_tracks_set_muted},
     {"set_soloed", lua_tracks_set_soloed},
+    {"set_record_armed", lua_tracks_set_record_armed},
+    {"master", lua_tracks_master},
     {nullptr, nullptr},
 };
 

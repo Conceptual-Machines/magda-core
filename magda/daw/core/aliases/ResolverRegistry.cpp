@@ -79,6 +79,7 @@ std::optional<ControlTarget> SelectedTrackVolumeResolver::resolve(
 
     // Track volume is represented as a track-level path with paramIndex 0
     ControlTarget t;
+    t.kind = ControlTarget::Kind::TrackVolume;
     t.devicePath = ChainNodePath::trackLevel(trackId);
     t.paramIndex = 0;  // volume
     return t;
@@ -95,6 +96,7 @@ std::optional<ControlTarget> SelectedTrackPanResolver::resolve(
         return std::nullopt;
 
     ControlTarget t;
+    t.kind = ControlTarget::Kind::TrackPan;
     t.devicePath = ChainNodePath::trackLevel(trackId);
     t.paramIndex = 1;  // pan
     return t;
@@ -107,6 +109,7 @@ std::optional<ControlTarget> SelectedTrackPanResolver::resolve(
 std::optional<ControlTarget> MasterVolumeResolver::resolve(const juce::StringPairArray& /*args*/,
                                                            const ChainContext& /*ctx*/) const {
     ControlTarget t;
+    t.kind = ControlTarget::Kind::TrackVolume;
     t.devicePath = ChainNodePath::trackLevel(MASTER_TRACK_ID);
     t.paramIndex = 0;  // volume
     return t;
@@ -119,6 +122,7 @@ std::optional<ControlTarget> MasterVolumeResolver::resolve(const juce::StringPai
 std::optional<ControlTarget> MasterPanResolver::resolve(const juce::StringPairArray& /*args*/,
                                                         const ChainContext& /*ctx*/) const {
     ControlTarget t;
+    t.kind = ControlTarget::Kind::TrackPan;
     t.devicePath = ChainNodePath::trackLevel(MASTER_TRACK_ID);
     t.paramIndex = 1;  // pan
     return t;

@@ -35,6 +35,7 @@ class TrackApi {
     virtual void setTrackPan(TrackId trackId, float pan, bool fromAutomation = false) = 0;
     virtual void setTrackMuted(TrackId trackId, bool muted) = 0;
     virtual void setTrackSoloed(TrackId trackId, bool soloed) = 0;
+    virtual void setTrackRecordArmed(TrackId trackId, bool armed) = 0;
 
     virtual DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device) = 0;
     virtual DeviceId addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,

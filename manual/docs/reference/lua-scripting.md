@@ -107,13 +107,29 @@ Every function below lives under the global `magda` table. All are message-threa
 | `magda.tracks.create(name [, type])` | integer | Track id; `type` is `"audio"` (default), `"group"`, `"aux"`, `"master"`, or `"multi_out"` |
 | `magda.tracks.delete(id)` | — | |
 | `magda.tracks.count()` | integer | |
-| `magda.tracks.list()` | array of tables | Each table: `{ id, name, type, volume, pan, muted, soloed, record_armed, frozen }` |
+| `magda.tracks.list()` | array of tables | Each table: `{ id, name, type, volume, pan, muted, soloed, record_armed, frozen }`. Does not include the master track |
 | `magda.tracks.get(id)` | table or nil | Same shape as the list entries |
+| `magda.tracks.master()` | table or nil | The master track, which never appears in `list()` |
 | `magda.tracks.set_name(id, name)` | — | |
 | `magda.tracks.set_volume(id, value)` | — | Linear gain 0..1 |
 | `magda.tracks.set_pan(id, value)` | — | -1..1 |
 | `magda.tracks.set_muted(id, bool)` | — | |
 | `magda.tracks.set_soloed(id, bool)` | — | |
+| `magda.tracks.set_record_armed(id, bool)` | — | Ignored on tracks that take no external input (Aux, Group) |
+
+#### Reaching the master track
+
+The master is stored apart from the ordinary tracks, so it is deliberately absent
+from `magda.tracks.list()` and list positions stay aligned with what a control
+surface shows. Use `magda.tracks.master()` to get its id, then pass that id to
+the ordinary setters:
+
+```lua
+local master = magda.tracks.master()
+if master then
+  magda.tracks.set_volume(master.id, e.value / 127.0)
+end
+```
 
 ### `magda.clips`
 
