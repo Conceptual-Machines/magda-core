@@ -849,8 +849,8 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                     device.format = magda::PluginFormat::VST3;
                 } else if (plugin.format == "AU" || plugin.format == "AudioUnit") {
                     device.format = magda::PluginFormat::AU;
-                } else if (plugin.format == "VST") {
-                    device.format = magda::PluginFormat::VST;
+                } else if (plugin.format == "LV2") {
+                    device.format = magda::PluginFormat::LV2;
                 } else if (plugin.format == "Internal") {
                     device.format = magda::PluginFormat::Internal;
                 }

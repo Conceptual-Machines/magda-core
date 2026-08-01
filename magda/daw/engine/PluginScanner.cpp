@@ -57,8 +57,10 @@ void PluginScanner::run() {
 
         juce::String formatName = format->getName();
 
-        // Only scan VST3 and AudioUnit
-        if (!formatName.containsIgnoreCase("VST3") && !formatName.containsIgnoreCase("AudioUnit")) {
+        // Only the formats MAGDA hosts. Keep in step with isScannableFormat in
+        // PluginScanCoordinator.cpp, which gates the out-of-process scan.
+        if (!formatName.containsIgnoreCase("VST3") && !formatName.containsIgnoreCase("AudioUnit") &&
+            !formatName.containsIgnoreCase("LV2")) {
             continue;
         }
 

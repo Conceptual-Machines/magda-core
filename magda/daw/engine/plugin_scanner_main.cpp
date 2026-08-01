@@ -68,6 +68,11 @@ class PluginScannerWorker : public juce::ChildProcessWorker {
         formatManager_.addFormat(std::make_unique<juce::AudioUnitPluginFormat>());
         log("[Scanner] Registered AudioUnit format");
 #endif
+#if JUCE_PLUGINHOST_LV2
+        log("[Scanner] About to register LV2 format...");
+        formatManager_.addFormat(std::make_unique<juce::LV2PluginFormat>());
+        log("[Scanner] Registered LV2 format");
+#endif
         log("[Scanner] PluginScannerWorker constructor complete");
     }
 

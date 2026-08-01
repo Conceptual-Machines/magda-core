@@ -70,10 +70,7 @@ void PluginSettingsDialog::ExcludedTableModel::paintCell(juce::Graphics& g, int 
     juce::String text;
     switch (columnId) {
         case 1: {
-            juce::File f(entry.path);
-            text = f.getFileName();
-            if (text.isEmpty())
-                text = entry.path;
+            text = pluginDisplayName(entry.path);
             break;
         }
         case 2:
@@ -187,9 +184,8 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
                 if (safeThis == nullptr)
                     return;
                 safeThis->scanProgress_ = static_cast<double>(progress);
-                juce::File f(pluginName);
                 safeThis->scanStatusLabel_.setText(tr("plugin_settings.status.scanning") + " " +
-                                                       f.getFileName(),
+                                                       pluginDisplayName(pluginName),
                                                    juce::dontSendNotification);
             });
         });
@@ -273,7 +269,7 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
                         case Phase::Scanning:
                             safeThis->scanStatusLabel_.setText(
                                 tr("plugin_settings.status.scanning") + " " +
-                                    juce::File(currentPlugin).getFileName(),
+                                    pluginDisplayName(currentPlugin),
                                 juce::dontSendNotification);
                             break;
                     }

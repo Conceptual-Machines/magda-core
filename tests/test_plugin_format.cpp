@@ -30,9 +30,9 @@ TEST_CASE("DeviceInfo format enum handles all plugin formats", "[plugin][format]
         REQUIRE(device.getFormatString() == "AU");
     }
 
-    SECTION("VST format") {
-        device.format = magda::PluginFormat::VST;
-        REQUIRE(device.getFormatString() == "VST");
+    SECTION("LV2 format") {
+        device.format = magda::PluginFormat::LV2;
+        REQUIRE(device.getFormatString() == "LV2");
     }
 
     SECTION("Internal format") {
@@ -50,8 +50,8 @@ TEST_CASE("Format string parsing sets correct DeviceInfo format enum", "[plugin]
             device.format = magda::PluginFormat::VST3;
         } else if (format == "AU") {
             device.format = magda::PluginFormat::AU;
-        } else if (format == "VST") {
-            device.format = magda::PluginFormat::VST;
+        } else if (format == "LV2") {
+            device.format = magda::PluginFormat::LV2;
         } else if (format == "Internal") {
             device.format = magda::PluginFormat::Internal;
         }
@@ -64,26 +64,26 @@ TEST_CASE("Format string parsing sets correct DeviceInfo format enum", "[plugin]
             device.format = magda::PluginFormat::VST3;
         } else if (format == "AU") {
             device.format = magda::PluginFormat::AU;
-        } else if (format == "VST") {
-            device.format = magda::PluginFormat::VST;
+        } else if (format == "LV2") {
+            device.format = magda::PluginFormat::LV2;
         } else if (format == "Internal") {
             device.format = magda::PluginFormat::Internal;
         }
         REQUIRE(device.format == magda::PluginFormat::AU);
     }
 
-    SECTION("VST string") {
-        juce::String format = "VST";
+    SECTION("LV2 string") {
+        juce::String format = "LV2";
         if (format == "VST3") {
             device.format = magda::PluginFormat::VST3;
         } else if (format == "AU") {
             device.format = magda::PluginFormat::AU;
-        } else if (format == "VST") {
-            device.format = magda::PluginFormat::VST;
+        } else if (format == "LV2") {
+            device.format = magda::PluginFormat::LV2;
         } else if (format == "Internal") {
             device.format = magda::PluginFormat::Internal;
         }
-        REQUIRE(device.format == magda::PluginFormat::VST);
+        REQUIRE(device.format == magda::PluginFormat::LV2);
     }
 
     SECTION("Internal string") {
@@ -92,8 +92,8 @@ TEST_CASE("Format string parsing sets correct DeviceInfo format enum", "[plugin]
             device.format = magda::PluginFormat::VST3;
         } else if (format == "AU") {
             device.format = magda::PluginFormat::AU;
-        } else if (format == "VST") {
-            device.format = magda::PluginFormat::VST;
+        } else if (format == "LV2") {
+            device.format = magda::PluginFormat::LV2;
         } else if (format == "Internal") {
             device.format = magda::PluginFormat::Internal;
         }
@@ -107,8 +107,8 @@ TEST_CASE("Format string parsing sets correct DeviceInfo format enum", "[plugin]
             device.format = magda::PluginFormat::VST3;
         } else if (format == "AU") {
             device.format = magda::PluginFormat::AU;
-        } else if (format == "VST") {
-            device.format = magda::PluginFormat::VST;
+        } else if (format == "LV2") {
+            device.format = magda::PluginFormat::LV2;
         } else if (format == "Internal") {
             device.format = magda::PluginFormat::Internal;
         }
@@ -137,8 +137,8 @@ TEST_CASE("Internal plugin drag-drop simulation (Test Tone)", "[plugin][format]"
         device.format = magda::PluginFormat::VST3;
     } else if (format == "AU") {
         device.format = magda::PluginFormat::AU;
-    } else if (format == "VST") {
-        device.format = magda::PluginFormat::VST;
+    } else if (format == "LV2") {
+        device.format = magda::PluginFormat::LV2;
     } else if (format == "Internal") {
         device.format = magda::PluginFormat::Internal;
     }
@@ -164,8 +164,8 @@ TEST_CASE("Internal instrument drag-drop simulation (4OSC Synth)", "[plugin][for
         device.format = magda::PluginFormat::VST3;
     } else if (format == "AU") {
         device.format = magda::PluginFormat::AU;
-    } else if (format == "VST") {
-        device.format = magda::PluginFormat::VST;
+    } else if (format == "LV2") {
+        device.format = magda::PluginFormat::LV2;
     } else if (format == "Internal") {
         device.format = magda::PluginFormat::Internal;
     }
@@ -189,8 +189,8 @@ TEST_CASE("Bug regression: Internal format was defaulting to VST3",
         device.format = magda::PluginFormat::VST3;
     } else if (format == "AU") {
         device.format = magda::PluginFormat::AU;
-    } else if (format == "VST") {
-        device.format = magda::PluginFormat::VST;
+    } else if (format == "LV2") {
+        device.format = magda::PluginFormat::LV2;
     }
     // Missing: else if (format == "Internal") { device.format = PluginFormat::Internal; }
 
@@ -202,8 +202,8 @@ TEST_CASE("Bug regression: Internal format was defaulting to VST3",
         device.format = magda::PluginFormat::VST3;
     } else if (format == "AU") {
         device.format = magda::PluginFormat::AU;
-    } else if (format == "VST") {
-        device.format = magda::PluginFormat::VST;
+    } else if (format == "LV2") {
+        device.format = magda::PluginFormat::LV2;
     } else if (format == "Internal") {
         device.format = magda::PluginFormat::Internal;
         hasInternalCheck = true;

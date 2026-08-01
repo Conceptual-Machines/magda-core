@@ -101,25 +101,25 @@ TEST_CASE("DSL external plugin format hints use normalized exact formats",
     vst3.pluginId = "vst3.shared";
     vst3.format = PluginFormat::VST3;
 
-    DeviceInfo vst = vst3;
-    vst.pluginId = "vst.shared";
-    vst.format = PluginFormat::VST;
+    DeviceInfo lv2 = vst3;
+    lv2.pluginId = "lv2.shared";
+    lv2.format = PluginFormat::LV2;
 
     DeviceInfo au;
     au.name = "Test AU";
     au.pluginId = "au.test";
     au.format = PluginFormat::AU;
 
-    api.plugins_.all = {vst3, vst, au};
+    api.plugins_.all = {vst3, lv2, au};
     dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute("track(id=1).fx.add(name=\"Test AU\", format=\"AudioUnit\")"));
     REQUIRE(api.tracks_.deviceWrites.size() == 1);
     CHECK(api.tracks_.deviceWrites.back().device.format == PluginFormat::AU);
 
-    REQUIRE(interp.execute("track(id=1).fx.add(name=\"Shared Plugin\", format=\"VST\")"));
+    REQUIRE(interp.execute("track(id=1).fx.add(name=\"Shared Plugin\", format=\"LV2\")"));
     REQUIRE(api.tracks_.deviceWrites.size() == 2);
-    CHECK(api.tracks_.deviceWrites.back().device.format == PluginFormat::VST);
+    CHECK(api.tracks_.deviceWrites.back().device.format == PluginFormat::LV2);
 }
 
 TEST_CASE("DSL groups explicit track ids and chains colour onto the group",

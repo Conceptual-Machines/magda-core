@@ -303,8 +303,12 @@ PluginFormat resolveDeviceFormat(const DeviceInfo& device) {
         return PluginFormat::AU;
     if (device.uniqueId.startsWith("VST3"))
         return PluginFormat::VST3;
-    if (device.uniqueId.startsWith("VST"))
-        return PluginFormat::VST;  // VST2
+    if (device.uniqueId.startsWith("LV2"))
+        return PluginFormat::LV2;
+    // A bare "VST" prefix is VST2, which MAGDA cannot host. There is no format
+    // to map it to, so it keeps whatever the device already carried and lands
+    // as a failed slot on load, exactly as it did when VST2 had its own enum
+    // value.
     return device.format;
 }
 
