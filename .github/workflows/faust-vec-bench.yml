@@ -12,6 +12,16 @@ name: Faust Vector Codegen Benchmark
 # than MAGDA, so it runs on hosted runners and leaves the self-hosted ones free.
 
 on:
+  # Re-measure whenever the thing being measured moves: the DSP sources, the
+  # codegen flags, or the benchmark itself. Also the only way to run this
+  # before the workflow reaches main, since workflow_dispatch is refused for a
+  # workflow that is not yet on the default branch.
+  push:
+    paths:
+      - 'tools/faust_vec_bench/**'
+      - '.github/workflows/faust-vec-bench.yml'
+      - 'magda/daw/audio/faust_dsp/compiled/**'
+      - 'magda/daw/audio/DevicesDependencies.cmake'
   workflow_dispatch:
     inputs:
       vector-size:
@@ -72,7 +82,7 @@ jobs:
         run: |
           cmake -S tools/faust_vec_bench -B build-bench -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DMAGDA_FAUST_VECTOR_SIZE=${{ inputs.vector-size }}
+            -DMAGDA_FAUST_VECTOR_SIZE=${{ inputs.vector-size || '4' }}
 
       - name: Build
         run: cmake --build build-bench --target magda_faust_vec_bench
@@ -88,7 +98,7 @@ jobs:
             exit 1
           fi
 
-          "$binary" --block ${{ inputs.block-size }} --reps ${{ inputs.reps }} \
+          "$binary" --block ${{ inputs.block-size || '128' }} --reps ${{ inputs.reps || '7' }} \
             | tee result.txt
 
           {
