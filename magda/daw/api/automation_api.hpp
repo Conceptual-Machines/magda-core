@@ -23,9 +23,47 @@ class AutomationApi {
     virtual AutomationLaneInfo* getLane(AutomationLaneId laneId) = 0;
     virtual const AutomationLaneInfo* getLane(AutomationLaneId laneId) const = 0;
 
+    // ------------------------------------------------------------------
+    // Enumeration
+    // ------------------------------------------------------------------
+    // What automation exists, and what it targets. Every lane carries an
+    // AutomationTarget (a ControlTarget), so a caller can discover both the
+    // lanes and the parameters they drive without reaching into the registry.
+
+    /** Every lane in the project, in stable order. */
+    virtual const std::vector<AutomationLaneInfo>& getLanes() const = 0;
+
+    /** Lanes whose target resolves to `trackId`. */
+    virtual std::vector<AutomationLaneId> getLanesForTrack(TrackId trackId) const = 0;
+
+    /**
+     * @brief Lanes with no owning track or device — currently tempo.
+     *
+     * These are edit-scoped: their target has no `devicePath`, so they are not
+     * reachable through `getLanesForTrack` and would otherwise be invisible.
+     */
+    virtual std::vector<AutomationLaneId> getEditScopedLanes() const = 0;
+
+    /** Every automation clip in the project. */
+    virtual const std::vector<AutomationClipInfo>& getClips() const = 0;
+
     virtual AutomationPointId addPoint(AutomationLaneId laneId, double beatPosition, double value,
                                        AutomationCurveType curveType) = 0;
     virtual void clearLanePoints(AutomationLaneId laneId) = 0;
+
+    /**
+     * @brief Replace every point on an absolute lane as one undoable step.
+     *
+     * Writing a curve through repeated `addPoint` calls produces one undo entry
+     * per point, so undoing a generated curve means one Undo per sample. This
+     * is the bulk form. Returns false for an unknown or clip-based lane —
+     * clip-based lanes keep their points on clips, which `setClipPoints`
+     * covers.
+     */
+    virtual bool setLanePoints(AutomationLaneId laneId, std::vector<AutomationPoint> points) = 0;
+
+    /** Remove a lane and its clips. Undoable as one step. */
+    virtual bool deleteLane(AutomationLaneId laneId) = 0;
 
     // Clip-based automation lanes. Retyping is intentionally restricted to
     // empty lanes so an agent cannot silently discard an existing curve.

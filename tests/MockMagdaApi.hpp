@@ -71,6 +71,24 @@ class StubAutomationApi : public AutomationApi {
     void clearLanePoints(AutomationLaneId) override {
         std::abort();
     }
+    const std::vector<AutomationLaneInfo>& getLanes() const override {
+        std::abort();
+    }
+    std::vector<AutomationLaneId> getLanesForTrack(TrackId) const override {
+        std::abort();
+    }
+    std::vector<AutomationLaneId> getEditScopedLanes() const override {
+        std::abort();
+    }
+    const std::vector<AutomationClipInfo>& getClips() const override {
+        std::abort();
+    }
+    bool setLanePoints(AutomationLaneId, std::vector<AutomationPoint>) override {
+        std::abort();
+    }
+    bool deleteLane(AutomationLaneId) override {
+        std::abort();
+    }
     bool retypeEmptyLane(AutomationLaneId, AutomationLaneType) override {
         std::abort();
     }

@@ -190,6 +190,7 @@ set(TEST_SOURCES
     test_magda_api_lua_bindings.cpp
     test_remote_api_contract.cpp
     test_device_api.cpp
+    test_automation_api_surface.cpp
     # Lua controller tests (issue #592 — MIDI dispatch)
     test_lua_controller.cpp
     # Focused device API tests
