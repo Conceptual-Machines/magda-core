@@ -321,9 +321,16 @@ bool deserializeStoredAlias(const juce::var& v, StoredAlias& out) {
     out.path = std::nullopt;
 
     if (obj->hasProperty("path")) {
-        ChainNodePath path;
-        if (fromVar(obj->getProperty("path"), path))
+        const auto pathVar = obj->getProperty("path");
+        // An absent path means a user-global alias. A path that is present but
+        // unreadable is corrupt, and must not quietly widen the alias to global
+        // scope — that retargets it just as surely as a wrong path would.
+        if (!pathVar.isVoid()) {
+            ChainNodePath path;
+            if (!fromVar(pathVar, path))
+                return false;
             out.path = path;
+        }
     }
 
     return out.isValid();

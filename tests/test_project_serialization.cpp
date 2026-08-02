@@ -2423,3 +2423,40 @@ TEST_CASE("Delta solo state roundtrips and defaults off for older projects",
     REQUIRE(ProjectSerializer::deserializeRackInfo(rackJson, legacyRack));
     CHECK_FALSE(legacyRack.deltaSolo);
 }
+
+TEST_CASE("Saved automation targets keep the flag that makes a track path valid",
+          "[serialization][automation]") {
+    // The project writer previously omitted isTrackLevel, so every saved
+    // TrackVolume/TrackPan/SendLevel target reloaded as a path carrying a track
+    // id but addressing no node.
+    auto& tracks = TrackManager::getInstance();
+    auto& automation = AutomationManager::getInstance();
+    automation.clearAll();
+    tracks.clearAllTracks();
+
+    const auto trackId = tracks.createTrack("Bass", TrackType::Audio);
+
+    AutomationTarget target;
+    target.kind = ControlTarget::Kind::TrackVolume;
+    target.devicePath = ChainNodePath::trackLevel(trackId);
+    REQUIRE(automation.createLane(target, AutomationLaneType::Absolute) !=
+            INVALID_AUTOMATION_LANE_ID);
+
+    const auto json = ProjectSerializer::serializeAutomation();
+    const auto* lanes = json["lanes"].getArray();
+    REQUIRE(lanes != nullptr);
+    REQUIRE(lanes->size() == 1);
+
+    const auto devicePath = lanes->getReference(0)["target"]["devicePath"];
+    REQUIRE(devicePath.isObject());
+    CHECK(static_cast<bool>(devicePath["isTrackLevel"]));
+
+    // What was written must parse back to the path that was saved.
+    ChainNodePath reloaded;
+    REQUIRE(fromVar(devicePath, reloaded));
+    CHECK(reloaded == ChainNodePath::trackLevel(trackId));
+    CHECK(reloaded.isValid());
+
+    automation.clearAll();
+    tracks.clearAllTracks();
+}

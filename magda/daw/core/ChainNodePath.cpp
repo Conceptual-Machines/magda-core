@@ -33,28 +33,56 @@ bool fromVar(const juce::var& v, ChainNodePath& out) {
 
     if (obj->hasProperty("topLevelDeviceId"))
         path.topLevelDeviceId = static_cast<int>(obj->getProperty("topLevelDeviceId"));
-    if (obj->hasProperty("isTrackLevel"))
-        path.isTrackLevel = static_cast<bool>(obj->getProperty("isTrackLevel"));
 
+    // Parsing fails closed. Skipping an unreadable step would shorten the
+    // address rather than reject it, and a shorter path still resolves — just
+    // to a different device. Dropping a leading Segment step in particular
+    // re-points a post-fx path at the main FX chain, because isPostFx() tests
+    // steps.front().
     auto stepsVar = obj->getProperty("steps");
     if (stepsVar.isArray()) {
-        for (const auto& stepVar : *stepsVar.getArray()) {
+        const auto& steps = *stepsVar.getArray();
+        for (int i = 0; i < steps.size(); ++i) {
+            const auto& stepVar = steps.getReference(i);
             if (!stepVar.isObject())
-                continue;
+                return false;
             auto* stepObj = stepVar.getDynamicObject();
             if (stepObj == nullptr)
-                continue;
+                return false;
 
             const auto rawType = static_cast<int>(stepObj->getProperty("type"));
             if (rawType < static_cast<int>(ChainStepType::Rack) ||
                 rawType > static_cast<int>(ChainStepType::Segment))
-                continue;
+                return false;
 
             ChainPathStep step;
             step.type = static_cast<ChainStepType>(rawType);
             step.id = static_cast<int>(stepObj->getProperty("id"));
+
+            // A Segment step names one of the track's flat sections. It is only
+            // ever leading, and its id must be a real ChainSegment.
+            if (step.type == ChainStepType::Segment) {
+                if (i != 0)
+                    return false;
+                if (step.id < static_cast<int>(ChainSegment::Fx) ||
+                    step.id > static_cast<int>(ChainSegment::MixerAnalysis))
+                    return false;
+            }
+
             path.steps.push_back(step);
         }
+    }
+
+    if (obj->hasProperty("isTrackLevel")) {
+        path.isTrackLevel = static_cast<bool>(obj->getProperty("isTrackLevel"));
+    } else if (path.trackId != INVALID_TRACK_ID && path.steps.empty() &&
+               path.topLevelDeviceId == INVALID_DEVICE_ID) {
+        // Legacy producers omitted the flag entirely. A path naming a track but
+        // no steps and no device addresses nothing, and a track-level path is
+        // the only thing that serializes to that shape, so recover it rather
+        // than hand back an unusable address. Scoped to the absent-property
+        // case: an explicit `false` is left alone.
+        path.isTrackLevel = true;
     }
 
     out = path;

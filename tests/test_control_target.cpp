@@ -181,25 +181,104 @@ TEST_CASE("ChainNodePath - the three per-section device spaces stay distinct",
     REQUIRE(roundTrip(fx) != roundTrip(analysis));
 }
 
-TEST_CASE("ChainNodePath - malformed input is rejected or ignored",
-          "[control_target][serialization]") {
+namespace {
+
+// Build a path object with a raw step list, bypassing the factories.
+juce::var rawPath(int trackId, std::initializer_list<std::pair<int, int>> steps) {
+    juce::Array<juce::var> stepArray;
+    for (const auto& [type, id] : steps) {
+        auto* stepObj = new juce::DynamicObject();
+        stepObj->setProperty("type", type);
+        stepObj->setProperty("id", id);
+        stepArray.add(juce::var(stepObj));
+    }
+    auto* pathObj = new juce::DynamicObject();
+    pathObj->setProperty("trackId", trackId);
+    pathObj->setProperty("steps", juce::var(stepArray));
+    return juce::var(pathObj);
+}
+
+constexpr int RACK_STEP = static_cast<int>(ChainStepType::Rack);
+constexpr int CHAIN_STEP = static_cast<int>(ChainStepType::Chain);
+constexpr int DEVICE_STEP = static_cast<int>(ChainStepType::Device);
+constexpr int SEGMENT_STEP = static_cast<int>(ChainStepType::Segment);
+constexpr int POST_FX = static_cast<int>(ChainSegment::PostFx);
+
+}  // namespace
+
+TEST_CASE("ChainNodePath - malformed input fails closed", "[control_target][serialization]") {
     ChainNodePath out;
     REQUIRE_FALSE(fromVar(juce::var(), out));
     REQUIRE_FALSE(fromVar(juce::var(42), out));
 
-    // An out-of-range step type is dropped rather than cast into a bogus enum.
-    auto* stepObj = new juce::DynamicObject();
-    stepObj->setProperty("type", 99);
-    stepObj->setProperty("id", 1);
-    juce::Array<juce::var> steps;
-    steps.add(juce::var(stepObj));
+    SECTION("an unknown step type is rejected, not skipped") {
+        // Skipping would shorten this to [Device 3], which still resolves — to
+        // a different device than the one addressed.
+        REQUIRE_FALSE(fromVar(rawPath(1, {{99, 5}, {DEVICE_STEP, 3}}), out));
+    }
 
-    auto* pathObj = new juce::DynamicObject();
-    pathObj->setProperty("trackId", 1);
-    pathObj->setProperty("steps", juce::var(steps));
+    SECTION("a non-object step is rejected") {
+        juce::Array<juce::var> steps;
+        steps.add(juce::var("nonsense"));
+        auto* pathObj = new juce::DynamicObject();
+        pathObj->setProperty("trackId", 1);
+        pathObj->setProperty("steps", juce::var(steps));
+        REQUIRE_FALSE(fromVar(juce::var(pathObj), out));
+    }
 
-    REQUIRE(fromVar(juce::var(pathObj), out));
-    REQUIRE(out.steps.empty());
+    SECTION("an out-of-range segment id is rejected") {
+        // Would otherwise fall through makeDevicePathDto's switch and silently
+        // read as the default "fx" section.
+        REQUIRE_FALSE(fromVar(rawPath(1, {{SEGMENT_STEP, 99}, {DEVICE_STEP, 3}}), out));
+    }
+
+    SECTION("a non-leading segment is rejected") {
+        // isPostFx() only ever inspects steps.front(), so a segment deeper in
+        // the path would be silently ignored.
+        REQUIRE_FALSE(
+            fromVar(rawPath(1, {{RACK_STEP, 2}, {SEGMENT_STEP, POST_FX}, {DEVICE_STEP, 3}}), out));
+    }
+
+    SECTION("well-formed paths still parse") {
+        REQUIRE(fromVar(rawPath(1, {{SEGMENT_STEP, POST_FX}, {DEVICE_STEP, 3}}), out));
+        REQUIRE(out == ChainNodePath::postFxDevice(1, 3));
+        REQUIRE(fromVar(rawPath(1, {{RACK_STEP, 2}, {CHAIN_STEP, 4}, {DEVICE_STEP, 6}}), out));
+        REQUIRE(out == ChainNodePath::chainDevice(1, 2, 4, 6));
+    }
+}
+
+TEST_CASE("ChainNodePath - legacy paths without isTrackLevel are recovered",
+          "[control_target][serialization]") {
+    // Project files written before this flag was persisted stored track-level
+    // targets as a bare trackId, which reloads as an unusable path.
+    ChainNodePath out;
+    auto* legacy = new juce::DynamicObject();
+    legacy->setProperty("trackId", 5);
+    legacy->setProperty("topLevelDeviceId", INVALID_DEVICE_ID);
+    legacy->setProperty("steps", juce::var(juce::Array<juce::var>{}));
+
+    REQUIRE(fromVar(juce::var(legacy), out));
+    REQUIRE(out == ChainNodePath::trackLevel(5));
+    REQUIRE(out.isValid());
+
+    SECTION("an explicit false is honoured, not overridden") {
+        auto* explicitFalse = new juce::DynamicObject();
+        explicitFalse->setProperty("trackId", 5);
+        explicitFalse->setProperty("isTrackLevel", false);
+        explicitFalse->setProperty("steps", juce::var(juce::Array<juce::var>{}));
+
+        ChainNodePath parsed;
+        REQUIRE(fromVar(juce::var(explicitFalse), parsed));
+        REQUIRE_FALSE(parsed.isTrackLevel);
+        REQUIRE_FALSE(parsed.isValid());
+    }
+
+    SECTION("the inference does not fire when the path already addresses something") {
+        ChainNodePath parsed;
+        REQUIRE(fromVar(rawPath(5, {{RACK_STEP, 2}}), parsed));
+        REQUIRE_FALSE(parsed.isTrackLevel);
+        REQUIRE(parsed == ChainNodePath::rack(5, 2));
+    }
 }
 
 TEST_CASE("ControlTarget - JSON round-trip preserves every kind",

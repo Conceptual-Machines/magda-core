@@ -346,49 +346,19 @@ bool ProjectSerializer::deserializeBezierHandle(const juce::var& json, BezierHan
     return true;
 }
 
+// Project persistence shares the canonical ChainNodePath serializer rather than
+// keeping its own copy. The previous local writer omitted isTrackLevel, so every
+// saved TrackVolume/TrackPan/SendLevel target reloaded as an invalid path with
+// only a track id; fromVar recovers those legacy files.
 juce::var ProjectSerializer::serializeChainNodePath(const ChainNodePath& path) {
-    auto* obj = new juce::DynamicObject();
-
-    obj->setProperty("trackId", path.trackId);
-    obj->setProperty("topLevelDeviceId", path.topLevelDeviceId);
-
-    juce::Array<juce::var> stepsArray;
-    for (const auto& step : path.steps) {
-        auto* stepObj = new juce::DynamicObject();
-        stepObj->setProperty("type", static_cast<int>(step.type));
-        stepObj->setProperty("id", step.id);
-        stepsArray.add(juce::var(stepObj));
-    }
-    obj->setProperty("steps", juce::var(stepsArray));
-
-    return juce::var(obj);
+    return toVar(path);
 }
 
 bool ProjectSerializer::deserializeChainNodePath(const juce::var& json, ChainNodePath& outPath) {
-    if (!json.isObject()) {
-        lastError_ = "Chain node path is not an object";
+    if (!fromVar(json, outPath)) {
+        lastError_ = "Chain node path is malformed";
         return false;
     }
-
-    auto* obj = json.getDynamicObject();
-
-    outPath.trackId = obj->getProperty("trackId");
-    outPath.topLevelDeviceId = obj->getProperty("topLevelDeviceId");
-
-    auto stepsVar = obj->getProperty("steps");
-    if (stepsVar.isArray()) {
-        auto* arr = stepsVar.getArray();
-        for (const auto& stepVar : *arr) {
-            if (!stepVar.isObject())
-                continue;
-            auto* stepObj = stepVar.getDynamicObject();
-            ChainPathStep step;
-            step.type = static_cast<ChainStepType>(static_cast<int>(stepObj->getProperty("type")));
-            step.id = stepObj->getProperty("id");
-            outPath.steps.push_back(step);
-        }
-    }
-
     return true;
 }
 
