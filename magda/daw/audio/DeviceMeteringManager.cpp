@@ -14,10 +14,14 @@ namespace magda {
 
 namespace {
 
+// Applies the device's metering gain, and owns the tap handle that keeps the
+// manager entry alive. The LevelMeasuringNode wrapped around this one holds a
+// bare reference to the same entry's measurer, and this node is its input, so
+// pinning the entry here covers both for the whole subtree's lifetime.
 class DeviceGainNode final : public te::graph::Node {
   public:
-    DeviceGainNode(std::unique_ptr<te::graph::Node> inputNode, std::atomic<float>& gainAtomic)
-        : input_(std::move(inputNode)), gain_(gainAtomic) {
+    DeviceGainNode(std::unique_ptr<te::graph::Node> inputNode, DeviceMeteringManager::GraphTap tap)
+        : input_(std::move(inputNode)), tap_(std::move(tap)), gain_(*tap_.gain) {
         setOptimisations({te::graph::ClearBuffers::no, te::graph::AllocateAudioBuffer::yes});
     }
 
@@ -55,6 +59,7 @@ class DeviceGainNode final : public te::graph::Node {
 
   private:
     std::unique_ptr<te::graph::Node> input_;
+    DeviceMeteringManager::GraphTap tap_;
     std::atomic<float>& gain_;
 };
 
@@ -68,9 +73,12 @@ std::unique_ptr<te::graph::Node> addDeviceMeteringTap(te::Plugin& plugin,
     if (!devicePath.isValid())
         return node;
 
-    auto& measurer = manager->getOrCreateMeasurer(devicePath);
-    if (auto* gain = manager->getGainAtomic(devicePath))
-        node = std::make_unique<DeviceGainNode>(std::move(node), *gain);
+    auto tap = manager->acquireGraphTap(devicePath);
+    if (!tap.isValid())
+        return node;
+
+    auto& measurer = *tap.measurer;
+    node = std::make_unique<DeviceGainNode>(std::move(node), std::move(tap));
 
     return std::make_unique<te::LevelMeasuringNode>(std::move(node), measurer);
 }
@@ -92,12 +100,17 @@ ChainNodePath DeviceMeteringManager::legacyPathForDeviceId(DeviceId deviceId) {
     return path;
 }
 
-DeviceMeteringManager::Entry& DeviceMeteringManager::ensureEntryLocked(
+const std::shared_ptr<DeviceMeteringManager::Entry>& DeviceMeteringManager::ensureEntrySharedLocked(
     const ChainNodePath& devicePath) {
     auto& entry = entries_[devicePath];
     if (!entry)
-        entry = std::make_unique<Entry>();
-    return *entry;
+        entry = std::make_shared<Entry>();
+    return entry;
+}
+
+DeviceMeteringManager::Entry& DeviceMeteringManager::ensureEntryLocked(
+    const ChainNodePath& devicePath) {
+    return *ensureEntrySharedLocked(devicePath);
 }
 
 te::LevelMeasurer& DeviceMeteringManager::getOrCreateMeasurer(const ChainNodePath& devicePath) {
@@ -198,16 +211,15 @@ void DeviceMeteringManager::setGain(DeviceId deviceId, float gain) {
     setGain(legacyPathForDeviceId(deviceId), gain);
 }
 
-std::atomic<float>* DeviceMeteringManager::getGainAtomic(const ChainNodePath& devicePath) {
+DeviceMeteringManager::GraphTap DeviceMeteringManager::acquireGraphTap(
+    const ChainNodePath& devicePath) {
     juce::ScopedLock sl(lock_);
-    auto it = entries_.find(devicePath);
-    if (it != entries_.end())
-        return &it->second->gainLinear;
-    return nullptr;
-}
-
-std::atomic<float>* DeviceMeteringManager::getGainAtomic(DeviceId deviceId) {
-    return getGainAtomic(legacyPathForDeviceId(deviceId));
+    const auto& entry = ensureEntrySharedLocked(devicePath);
+    if (!entry->clientRegistered) {
+        entry->measurer.addClient(entry->client);
+        entry->clientRegistered = true;
+    }
+    return {entry, &entry->measurer, &entry->gainLinear};
 }
 
 void DeviceMeteringManager::setDirectLevels(const ChainNodePath& devicePath, float peakL,
@@ -284,6 +296,9 @@ void DeviceMeteringManager::clear() {
         if (entry->clientRegistered)
             entry->measurer.removeClient(entry->client);
     }
+    // Entries a live graph tap still holds outlive this call and die with the
+    // node; the audio thread keeps writing into a measurer that simply has no
+    // clients left. See GraphTap for why that matters at shutdown.
     entries_.clear();
     rackEntries_.clear();
 }

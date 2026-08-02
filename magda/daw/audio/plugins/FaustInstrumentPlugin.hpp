@@ -295,6 +295,10 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
     // output buffers, so we render into scratch and then add into destBuffer
     // (synth semantics — the buffer may already carry signal we must not clobber).
     juce::AudioBuffer<float> scratchOut_;
+    // applyToBuffer resize()s this every block. Reserving on the message thread
+    // whenever a DSP is installed means that resize can never grow capacity,
+    // and so never allocates on the audio thread.
+    void reservePointerScratch(const std::shared_ptr<FaustState>& state);
     std::vector<float*> outPtrs_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FaustInstrumentPlugin)

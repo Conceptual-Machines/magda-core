@@ -561,6 +561,10 @@ void FaustInstrumentPlugin::initialiseUnsetPoolValues(
 
 FaustInstrumentPlugin::FaustInstrumentPlugin(const te::PluginCreationInfo& info)
     : te::Plugin(info) {
+    // Mono/legato note-ons push onto this from applyToBuffer. MIDI cannot hold
+    // more than 128 notes down at once, so reserving here means the audio
+    // thread never grows it.
+    heldNotes_.reserve(128);
     poolParams_.resize(FaustParamPool::kSize);
     auto* um = getUndoManager();
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
@@ -607,6 +611,7 @@ FaustInstrumentPlugin::FaustInstrumentPlugin(const te::PluginCreationInfo& info)
     // Derived, not restored: the source is the only thing that has to persist.
     viewName_ = readCustomViewName(dspSource_);
 
+    reservePointerScratch(compiled);
     std::atomic_store(&active_, compiled);
 
     state.setProperty("dspSource", dspSource_, nullptr);
@@ -661,6 +666,7 @@ bool FaustInstrumentPlugin::loadDspSource(const juce::String& name, const juce::
         return false;
 
     auto previous = std::atomic_load(&active_);
+    reservePointerScratch(compiled);
     std::atomic_store(&active_, compiled);
 
     if (previous) {
@@ -720,6 +726,12 @@ void FaustInstrumentPlugin::reset() {
     // inside compute(). Only raise the flag; the flush runs at the top of the
     // next applyToBuffer.
     pendingVoiceFlush_.store(true, std::memory_order_release);
+}
+
+void FaustInstrumentPlugin::reservePointerScratch(const std::shared_ptr<FaustState>& state) {
+    if (!state)
+        return;
+    outPtrs_.reserve(static_cast<size_t>(std::max(0, state->dspOut)));
 }
 
 void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {

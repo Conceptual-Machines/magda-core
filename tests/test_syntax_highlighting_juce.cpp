@@ -135,6 +135,30 @@ class SyntaxHighlightingTest final : public juce::UnitTest {
             expect(typeOf(tokens, "// comment") == codeToken_comment);
         }
 
+        beginTest("A negative DSL number is one number token, not an error plus a digit");
+        {
+            DSLTokeniser tokeniser;
+            const auto tokens = tokenise(tokeniser, "notes.transpose(semitones=-2)\n");
+            expect(typeOf(tokens, "-2") == codeToken_number,
+                   "the sign belongs to the number it introduces");
+            for (const auto& token : tokens)
+                expect(token.type != codeToken_error, "nothing here should tokenise as an error");
+        }
+
+        beginTest("A negative DSL float keeps its fractional part");
+        {
+            DSLTokeniser tokeniser;
+            const auto tokens = tokenise(tokeniser, "clip.set(gain=-3.5)\n");
+            expect(typeOf(tokens, "-3.5") == codeToken_number);
+        }
+
+        beginTest("A lone DSL minus is an operator rather than an error");
+        {
+            DSLTokeniser tokeniser;
+            const auto tokens = tokenise(tokeniser, "a - b\n");
+            expect(typeOf(tokens, "-") == codeToken_operator);
+        }
+
         beginTest("The colour scheme covers every token class and follows the theme");
         {
             const auto scheme = codeTokenColourScheme();

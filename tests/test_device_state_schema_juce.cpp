@@ -67,6 +67,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
 
         testCaptureShape(*edit);
         testRoundTrip(*edit);
+        testParametersReseatByIdWhenIndexMoves(*edit);
         testNestedDeviceSurvives(*edit);
         testBinaryPropertySurvives(*edit);
         testFutureStateIsNotOverwritten(*edit);
@@ -152,6 +153,57 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
             expect(false, "restored plugin lost its 'gate' parameter");
 
         restored->deleteFromParent();
+    }
+
+    // The frozen index is authoritative, and the stable id is what re-seats a
+    // value if a device ever renumbers its parameters. Round-trip tests always
+    // have the two agree, so drive them apart deliberately here.
+    void testParametersReseatByIdWhenIndexMoves(te::Edit& edit) {
+        beginTest("A saved parameter follows its id when the index no longer matches");
+
+        auto plugin = createPlugin(edit, audio::ArpeggiatorPlugin::xmlTypeName);
+        expect(plugin != nullptr);
+        if (plugin == nullptr)
+            return;
+
+        const auto& params = plugin->getAutomatableParameters();
+        expect(params.size() >= 2, "need two parameters to swap between");
+        if (params.size() < 2) {
+            plugin->deleteFromParent();
+            return;
+        }
+
+        auto gatePtr = plugin->getAutomatableParameterByID("gate");
+        expect(gatePtr != nullptr, "arpeggiator lost its 'gate' parameter");
+        if (gatePtr == nullptr) {
+            plugin->deleteFromParent();
+            return;
+        }
+        auto* gate = gatePtr.get();
+
+        const int gateIndex = params.indexOf(gate);
+        expect(gateIndex >= 0);
+        // Any in-range index that is not gate's own, so the id has to override.
+        const int wrongIndex = gateIndex == 0 ? 1 : 0;
+
+        ds::Doc doc;
+        doc.deviceType = audio::ArpeggiatorPlugin::xmlTypeName;
+        doc.params.push_back({wrongIndex, "gate", 0.31f});
+        // Also prove an out-of-range index (a parameter removed since the save)
+        // still re-seats rather than being dropped or misapplied.
+        doc.params.push_back({params.size() + 5, "gate", 0.77f});
+
+        ta::applyDeviceStateParameters(*plugin, ds::encode(doc));
+
+        expectWithinAbsoluteError(gate->getCurrentBaseValue(), 0.77f, 0.001f);
+
+        auto* other = params[wrongIndex];
+        expect(other != nullptr);
+        if (other != nullptr && other != gate)
+            expect(std::abs(other->getCurrentBaseValue() - 0.31f) > 0.001f,
+                   "the value landed on the parameter the stale index pointed at");
+
+        plugin->deleteFromParent();
     }
 
     void testNestedDeviceSurvives(te::Edit& edit) {

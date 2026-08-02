@@ -189,6 +189,12 @@ constexpr const char* kStepSequencerTags[] = {"step-sequencer", "midi-generator"
 constexpr const char* kPolyStepSequencerTags[] = {"poly-step-sequencer", "midi-generator"};
 constexpr const char* kSidechainTags[] = {"sidechain"};
 constexpr const char* kConvolutionTags[] = {"convolution", "impulse-response"};
+
+// Tracktion's retired IR Reverb loads here; see core/LegacyDeviceAliases.hpp.
+// The other eight retired devices declare theirs on their compiled specs.
+// One spelling only: lookup is case-insensitive, and registerPlugin rejects a
+// spec whose own aliases collide that way.
+constexpr const char* kConvolutionLoadAliases[] = {"impulseResponse"};
 constexpr const char* kFaustTags[] = {"faust"};
 constexpr const char* kFaustInstrumentTags[] = {"faust-instrument"};
 constexpr const char* kOscilloscopeTags[] = {"analysis", "analyzer-popout", "post-fx-analysis-0"};
@@ -388,6 +394,8 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
              "Convolution reverb: loads an impulse response of a room, a plate or a resonant "
              "body and plays the signal through it, with cutoff filters and a dry/wet mix.",
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
+         .loadAliases = kConvolutionLoadAliases,
+         .loadAliasCount = static_cast<int>(std::size(kConvolutionLoadAliases)),
          .matchesPlugin = matches<MagdaConvolutionPlugin>,
          .createProcessor = makeProcessor<MagdaConvolutionProcessor>,
          .showInBrowser = true,

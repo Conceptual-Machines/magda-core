@@ -228,6 +228,10 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     // aliasing inputs/outputs unless the .dsp is compiled with -inpl, so
     // we copy the incoming audio into a separate scratch before calling.
     juce::AudioBuffer<float> scratchIn_;
+    // applyToBuffer resize()s these every block. Reserving on the message
+    // thread whenever a DSP is installed means that resize can never grow
+    // capacity, and so never allocates on the audio thread.
+    void reservePointerScratch(const std::shared_ptr<FaustState>& state);
     std::vector<float*> inPtrs_;
     std::vector<float*> outPtrs_;
 

@@ -132,7 +132,9 @@ float pitchSemitones(float semitones, float) {
 }
 
 float filterCutoff(float hz, float) {
-    return juce::jlimit(5.0f, 20000.0f, hz);
+    // Matches the destination magda_filter Cutoff slot range; clamping below it
+    // would land outside the slot and normalise to its floor anyway.
+    return juce::jlimit(20.0f, 20000.0f, hz);
 }
 
 float filterMode(float highpass, float) {

@@ -564,7 +564,12 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     outDevice.name = obj->getProperty("name").toString();
     outDevice.pluginId = obj->getProperty("pluginId").toString();
     outDevice.manufacturer = obj->getProperty("manufacturer").toString();
-    outDevice.format = static_cast<PluginFormat>(static_cast<int>(obj->getProperty("format")));
+    // A newer build may have written a format this one does not know; fall back
+    // rather than casting an out-of-range int into the enum.
+    const int savedFormat = obj->getProperty("format");
+    outDevice.format = isKnownPluginFormatValue(savedFormat)
+                           ? static_cast<PluginFormat>(savedFormat)
+                           : PluginFormat::VST3;
     outDevice.isInstrument = obj->getProperty("isInstrument");
     if (obj->hasProperty("deviceType"))
         outDevice.deviceType =
