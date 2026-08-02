@@ -283,11 +283,66 @@ TEST_CASE("ChainNodePath - malformed input fails closed", "[control_target][seri
         REQUIRE_FALSE(fromVar(juce::var(pathObj), out));
     }
 
+    SECTION("an out-of-range integer is rejected, not narrowed") {
+        // 2^32 + 1 truncates to 1, which is a perfectly good track id.
+        const auto wrapped = static_cast<juce::int64>(1) + (static_cast<juce::int64>(1) << 32);
+
+        auto* pathObj = new juce::DynamicObject();
+        pathObj->setProperty("trackId", juce::var(wrapped));
+        REQUIRE_FALSE(fromVar(juce::var(pathObj), out));
+
+        auto* stepObj = new juce::DynamicObject();
+        stepObj->setProperty("type", static_cast<int>(ChainStepType::Device));
+        stepObj->setProperty("id", juce::var(wrapped));
+        juce::Array<juce::var> steps;
+        steps.add(juce::var(stepObj));
+
+        auto* stepPath = new juce::DynamicObject();
+        stepPath->setProperty("trackId", 1);
+        stepPath->setProperty("steps", juce::var(steps));
+        REQUIRE_FALSE(fromVar(juce::var(stepPath), out));
+    }
+
     SECTION("well-formed paths still parse") {
         REQUIRE(fromVar(rawPath(1, {{SEGMENT_STEP, POST_FX}, {DEVICE_STEP, 3}}), out));
         REQUIRE(out == ChainNodePath::postFxDevice(1, 3));
         REQUIRE(fromVar(rawPath(1, {{RACK_STEP, 2}, {CHAIN_STEP, 4}, {DEVICE_STEP, 6}}), out));
         REQUIRE(out == ChainNodePath::chainDevice(1, 2, 4, 6));
+    }
+}
+
+TEST_CASE("ChainNodePath - the three representations are mutually exclusive",
+          "[control_target][serialization]") {
+    // getType() picks between these by precedence, so a path carrying more than
+    // one passes isValid() while its accessors disagree about where it points.
+    ChainNodePath out;
+
+    SECTION("a top-level device cannot also carry steps") {
+        auto path = toVar(ChainNodePath::postFxDevice(1, 3));
+        path.getDynamicObject()->setProperty("topLevelDeviceId", 5);
+        REQUIRE_FALSE(fromVar(path, out));
+    }
+
+    SECTION("a track-level path cannot also carry steps") {
+        auto path = toVar(ChainNodePath::chainDevice(1, 2, 4, 6));
+        path.getDynamicObject()->setProperty("isTrackLevel", true);
+        REQUIRE_FALSE(fromVar(path, out));
+    }
+
+    SECTION("a track-level path cannot also name a top-level device") {
+        auto path = toVar(ChainNodePath::trackLevel(1));
+        path.getDynamicObject()->setProperty("topLevelDeviceId", 5);
+        REQUIRE_FALSE(fromVar(path, out));
+    }
+
+    SECTION("each representation alone still parses") {
+        REQUIRE(fromVar(toVar(ChainNodePath::trackLevel(1)), out));
+        REQUIRE(fromVar(toVar(ChainNodePath::topLevelDevice(1, 5)), out));
+        REQUIRE(fromVar(toVar(ChainNodePath::chainDevice(1, 2, 4, 6)), out));
+        // A default path names nothing and stays parseable — edit-scoped
+        // targets serialize one, and callers check isValid().
+        REQUIRE(fromVar(toVar(ChainNodePath{}), out));
+        REQUIRE_FALSE(out.isValid());
     }
 }
 

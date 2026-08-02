@@ -42,46 +42,16 @@ std::optional<ControlTarget::Kind> kindFromJsonString(const juce::String& s) {
     return std::nullopt;
 }
 
+// Shares the canonical ChainNodePath serializer. The wire shape is unchanged —
+// this was a byte-identical copy of it — but the canonical decoder validates
+// types and ranges and fails closed, where this one skipped unreadable steps
+// and so could shorten an address into a different device.
 void encodePath(juce::DynamicObject* obj, const ChainNodePath& path) {
-    auto* pathObj = new juce::DynamicObject();
-    pathObj->setProperty("trackId", path.trackId);
-    pathObj->setProperty("topLevelDeviceId", path.topLevelDeviceId);
-    pathObj->setProperty("isTrackLevel", path.isTrackLevel);
-
-    juce::Array<juce::var> stepsArray;
-    for (const auto& step : path.steps) {
-        auto* stepObj = new juce::DynamicObject();
-        stepObj->setProperty("type", static_cast<int>(step.type));
-        stepObj->setProperty("id", step.id);
-        stepsArray.add(juce::var(stepObj));
-    }
-    pathObj->setProperty("steps", juce::var(stepsArray));
-    obj->setProperty("path", juce::var(pathObj));
+    obj->setProperty("path", toVar(path));
 }
 
 bool decodePath(juce::DynamicObject* obj, ChainNodePath& out) {
-    auto pathVar = obj->getProperty("path");
-    if (!pathVar.isObject())
-        return false;
-    auto* pathObj = pathVar.getDynamicObject();
-    out.trackId = static_cast<int>(pathObj->getProperty("trackId"));
-    out.topLevelDeviceId = static_cast<int>(pathObj->getProperty("topLevelDeviceId"));
-    if (pathObj->hasProperty("isTrackLevel"))
-        out.isTrackLevel = static_cast<bool>(pathObj->getProperty("isTrackLevel"));
-
-    auto stepsVar = pathObj->getProperty("steps");
-    if (stepsVar.isArray()) {
-        for (const auto& stepVar : *stepsVar.getArray()) {
-            if (!stepVar.isObject())
-                continue;
-            auto* stepObj = stepVar.getDynamicObject();
-            ChainPathStep step;
-            step.type = static_cast<ChainStepType>(static_cast<int>(stepObj->getProperty("type")));
-            step.id = static_cast<int>(stepObj->getProperty("id"));
-            out.steps.push_back(step);
-        }
-    }
-    return true;
+    return fromVar(obj->getProperty("path"), out);
 }
 
 }  // namespace

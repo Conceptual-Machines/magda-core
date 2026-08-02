@@ -1,5 +1,7 @@
 #include "ChainNodePath.hpp"
 
+#include <limits>
+
 namespace magda {
 
 namespace {
@@ -7,13 +9,22 @@ namespace {
 // A missing property reads back as a void var, which converts to 0. Silently
 // accepting that turns an empty object into a valid address, so every numeric
 // field a path depends on must be present and actually numeric.
+//
+// The range check matters as much as the type check: narrowing an out-of-range
+// int64 wraps it into a different valid id, so 4294967297 would address track 1.
 bool readRequiredInt(const juce::DynamicObject& obj, const char* name, int& out) {
     if (!obj.hasProperty(name))
         return false;
     const auto value = obj.getProperty(name);
     if (!value.isInt() && !value.isInt64())
         return false;
-    out = static_cast<int>(value);
+
+    const auto wide = static_cast<juce::int64>(value);
+    if (wide < static_cast<juce::int64>(std::numeric_limits<int>::lowest()) ||
+        wide > static_cast<juce::int64>(std::numeric_limits<int>::max()))
+        return false;
+
+    out = static_cast<int>(wide);
     return true;
 }
 
@@ -113,6 +124,19 @@ bool fromVar(const juce::var& v, ChainNodePath& out) {
         // case: an explicit `false` is left alone.
         path.isTrackLevel = true;
     }
+
+    // Track-level, legacy top-level-device, and stepped routes are three
+    // different ways to say where a path points, and getType() picks between
+    // them by precedence. A path carrying more than one passes isValid() while
+    // its accessors disagree — getDeviceId() prefers topLevelDeviceId, but
+    // isPostFx() reads steps.front() — so the same path resolves to different
+    // devices depending on which accessor the caller reaches for. No factory
+    // builds that combination; only corrupt data does.
+    const int representations = (path.isTrackLevel ? 1 : 0) +
+                                (path.topLevelDeviceId != INVALID_DEVICE_ID ? 1 : 0) +
+                                (path.steps.empty() ? 0 : 1);
+    if (representations > 1)
+        return false;
 
     out = path;
     return true;
