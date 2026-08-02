@@ -208,25 +208,55 @@ const juce::var& clipSchema() {
     return value;
 }
 
-const juce::var& deviceSchema() {
+const juce::var& devicePathSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
         "properties":{
-            "id":{"type":"integer","minimum":0},
-            "trackId":{"type":"integer","minimum":0},
-            "rackId":{"type":["integer","null"]},
-            "chainId":{"type":["integer","null"]},
-            "name":{"type":"string"},
-            "type":{"type":"string","enum":["instrument","effect","midi","analysis"]},
-            "format":{"type":"string","enum":["vst3","au","vst","internal"]},
-            "instrument":{"type":"boolean"},
-            "bypassed":{"type":"boolean"},
-            "gainDb":{"type":"number"}
+            "trackId":{"anyOf":[{"type":"integer","const":-2},
+                                {"type":"integer","minimum":0}]},
+            "section":{"type":"string","enum":["fx","post_fx","mixer_analysis"]},
+            "trackLevel":{"type":"boolean"},
+            "topLevelDeviceId":{"type":["integer","null"],"minimum":0},
+            "steps":{"type":"array","items":{
+                "type":"object",
+                "properties":{
+                    "type":{"type":"string","enum":["rack","chain","device"]},
+                    "id":{"type":"integer","minimum":0}
+                },
+                "required":["type","id"],
+                "additionalProperties":false
+            }}
         },
-        "required":["id","trackId","rackId","chainId","name","type","format","instrument",
-                    "bypassed","gainDb"],
+        "required":["trackId","section","trackLevel","topLevelDeviceId","steps"],
         "additionalProperties":false
     })json");
+    return value;
+}
+
+const juce::var& deviceSchema() {
+    static auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "id":{"type":"integer","minimum":0},
+                "trackId":{"type":"integer","minimum":0},
+                "rackId":{"type":["integer","null"]},
+                "chainId":{"type":["integer","null"]},
+                "devicePath":{},
+                "name":{"type":"string"},
+                "type":{"type":"string","enum":["instrument","effect","midi","analysis"]},
+                "format":{"type":"string","enum":["vst3","au","vst","internal"]},
+                "instrument":{"type":"boolean"},
+                "bypassed":{"type":"boolean"},
+                "gainDb":{"type":"number"}
+            },
+            "required":["id","trackId","rackId","chainId","devicePath","name","type","format",
+                        "instrument","bypassed","gainDb"],
+            "additionalProperties":false
+        })json");
+        schema["properties"].getDynamicObject()->setProperty("devicePath", devicePathSchema());
+        return schema;
+    }();
     return value;
 }
 
@@ -354,31 +384,6 @@ const juce::var& sessionSchema() {
         schema["properties"]["slots"].getDynamicObject()->setProperty("items", sessionSlotSchema());
         return schema;
     }();
-    return value;
-}
-
-const juce::var& devicePathSchema() {
-    static const auto value = parseSchema(R"json({
-        "type":"object",
-        "properties":{
-            "trackId":{"anyOf":[{"type":"integer","const":-2},
-                                {"type":"integer","minimum":0}]},
-            "section":{"type":"string","enum":["fx","post_fx","mixer_analysis"]},
-            "trackLevel":{"type":"boolean"},
-            "topLevelDeviceId":{"type":["integer","null"],"minimum":0},
-            "steps":{"type":"array","items":{
-                "type":"object",
-                "properties":{
-                    "type":{"type":"string","enum":["rack","chain","device"]},
-                    "id":{"type":"integer","minimum":0}
-                },
-                "required":["type","id"],
-                "additionalProperties":false
-            }}
-        },
-        "required":["trackId","section","trackLevel","topLevelDeviceId","steps"],
-        "additionalProperties":false
-    })json");
     return value;
 }
 
@@ -622,6 +627,22 @@ std::optional<Id> readNullableId(const juce::var& object, const char* property) 
     return decodeBoundedInt<Id>(value);
 }
 
+// Shared by device listings and automation targets: both address a device the
+// same way, and must not drift apart.
+DevicePathDto devicePathFromJson(const juce::var& json) {
+    DevicePathDto dto;
+    dto.trackId = readInt(json, "trackId");
+    dto.section = json["section"].toString();
+    dto.trackLevel = static_cast<bool>(json["trackLevel"]);
+    dto.topLevelDeviceId = readNullableId<DeviceId>(json, "topLevelDeviceId");
+    if (auto* steps = json["steps"].getArray()) {
+        dto.steps.reserve(static_cast<size_t>(steps->size()));
+        for (const auto& item : *steps)
+            dto.steps.push_back({item["type"].toString(), readInt(item, "id")});
+    }
+    return dto;
+}
+
 template <typename Integer>
 juce::Array<juce::var> integerArray(const std::vector<Integer>& values) {
     juce::Array<juce::var> result;
@@ -795,6 +816,7 @@ juce::var toJson(const DeviceDto& dto) {
     object->setProperty("trackId", dto.trackId);
     object->setProperty("rackId", nullableId(dto.rackId));
     object->setProperty("chainId", nullableId(dto.chainId));
+    object->setProperty("devicePath", toJson(dto.devicePath));
     object->setProperty("name", dto.name);
     object->setProperty("type", dto.type);
     object->setProperty("format", dto.format);
@@ -1028,6 +1050,7 @@ std::optional<DeviceDto> deviceFromJson(const juce::var& json, Error& error) {
     dto.trackId = readInt(json, "trackId");
     dto.rackId = readNullableId<RackId>(json, "rackId");
     dto.chainId = readNullableId<ChainId>(json, "chainId");
+    dto.devicePath = devicePathFromJson(json["devicePath"]);
     dto.name = json["name"].toString();
     dto.type = json["type"].toString();
     dto.format = json["format"].toString();
@@ -1142,18 +1165,8 @@ std::optional<AutomationLaneDto> automationLaneFromJson(const juce::var& json, E
     dto.name = json["name"].toString();
     const auto target = json["target"];
     dto.target.kind = target["kind"].toString();
-    if (const auto path = target["devicePath"]; path.isObject()) {
-        DevicePathDto pathDto;
-        pathDto.trackId = readInt(path, "trackId");
-        pathDto.section = path["section"].toString();
-        pathDto.trackLevel = static_cast<bool>(path["trackLevel"]);
-        pathDto.topLevelDeviceId = readNullableId<DeviceId>(path, "topLevelDeviceId");
-        if (auto* steps = path["steps"].getArray()) {
-            for (const auto& item : *steps)
-                pathDto.steps.push_back({item["type"].toString(), readInt(item, "id")});
-        }
-        dto.target.devicePath = std::move(pathDto);
-    }
+    if (const auto path = target["devicePath"]; path.isObject())
+        dto.target.devicePath = devicePathFromJson(path);
     dto.target.parameterIndex = readInt(target, "parameterIndex");
     dto.target.modId = readInt(target, "modId");
     dto.target.modParameterIndex = readInt(target, "modParameterIndex");

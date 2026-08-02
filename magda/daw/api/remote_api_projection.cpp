@@ -155,12 +155,13 @@ juce::String safeRoutingId(const juce::String& id) {
 }
 
 DeviceDto makeDeviceDto(const DeviceInfo& device, TrackId trackId, std::optional<RackId> rackId,
-                        std::optional<ChainId> chainId) {
+                        std::optional<ChainId> chainId, const ChainNodePath& devicePath) {
     DeviceDto dto;
     dto.id = device.id;
     dto.trackId = trackId;
     dto.rackId = rackId;
     dto.chainId = chainId;
+    dto.devicePath = makeDevicePathDto(devicePath);
     dto.name = device.name;
     dto.type = deviceTypeName(device.deviceType);
     dto.format = pluginFormatName(device.format);
@@ -170,8 +171,11 @@ DeviceDto makeDeviceDto(const DeviceInfo& device, TrackId trackId, std::optional
     return dto;
 }
 
+// `rackPath` addresses this rack; each chain and device extends it, so nesting
+// depth is carried exactly rather than flattened to an immediate parent.
 void appendRack(const RackInfo& rack, TrackId trackId, std::optional<RackId> parentRackId,
-                std::optional<ChainId> parentChainId, DeviceGraphDto& graph) {
+                std::optional<ChainId> parentChainId, const ChainNodePath& rackPath,
+                DeviceGraphDto& graph) {
     RackDto rackDto;
     rackDto.id = rack.id;
     rackDto.trackId = trackId;
@@ -197,15 +201,18 @@ void appendRack(const RackInfo& rack, TrackId trackId, std::optional<RackId> par
         chainDto.volumeDb = chain.volume;
         chainDto.pan = chain.pan;
 
+        const auto chainPath = rackPath.withChain(chain.id);
         for (const auto& element : chain.elements) {
             if (isDevice(element)) {
                 const auto& device = getDevice(element);
                 chainDto.deviceIds.push_back(device.id);
-                graph.devices.push_back(makeDeviceDto(device, trackId, rack.id, chain.id));
+                graph.devices.push_back(makeDeviceDto(device, trackId, rack.id, chain.id,
+                                                      chainPath.withDevice(device.id)));
             } else {
                 const auto& nested = getRack(element);
                 chainDto.nestedRackIds.push_back(nested.id);
-                appendRack(nested, trackId, rack.id, chain.id, graph);
+                appendRack(nested, trackId, rack.id, chain.id, chainPath.withRack(nested.id),
+                           graph);
             }
         }
         graph.chains.push_back(std::move(chainDto));
@@ -296,15 +303,22 @@ DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks) {
     for (const auto& track : tracks) {
         for (const auto& element : track.chain.fxChainElements) {
             if (isDevice(element)) {
+                const auto& device = getDevice(element);
                 graph.devices.push_back(
-                    makeDeviceDto(getDevice(element), track.id, std::nullopt, std::nullopt));
+                    makeDeviceDto(device, track.id, std::nullopt, std::nullopt,
+                                  ChainNodePath::topLevelDevice(track.id, device.id)));
             } else {
-                appendRack(getRack(element), track.id, std::nullopt, std::nullopt, graph);
+                const auto& rack = getRack(element);
+                appendRack(rack, track.id, std::nullopt, std::nullopt,
+                           ChainNodePath::rack(track.id, rack.id), graph);
             }
         }
+        // Post-fx devices allocate ids from their own counter, so they collide
+        // with fx-chain ids; only the path tells the two apart.
         for (const auto& element : track.chain.postFxChainElements)
             graph.devices.push_back(
-                makeDeviceDto(element.device, track.id, std::nullopt, std::nullopt));
+                makeDeviceDto(element.device, track.id, std::nullopt, std::nullopt,
+                              ChainNodePath::postFxDevice(track.id, element.device.id)));
         // mixerAnalysisElements are session-only UI state and are deliberately excluded.
     }
     return graph;

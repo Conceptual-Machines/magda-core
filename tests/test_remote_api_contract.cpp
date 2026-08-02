@@ -105,8 +105,17 @@ TEST_CASE("Remote API input validation returns structured issues",
     }
 
     SECTION("nullable ids reject negative int64 wrap-around") {
-        const DeviceDto device{10,           3,          5,    std::nullopt, "Synth",
-                               "instrument", "internal", true, false,        -3.0};
+        const DeviceDto device{10,
+                               3,
+                               5,
+                               std::nullopt,
+                               makeDevicePathDto(ChainNodePath::chainDevice(3, 5, 7, 10)),
+                               "Synth",
+                               "instrument",
+                               "internal",
+                               true,
+                               false,
+                               -3.0};
         auto json = toJson(device);
         // 5 - 2^32 decodes back to rack 5 if the id is truncated to 32 bits.
         json.getDynamicObject()->setProperty(
@@ -252,7 +261,8 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
     requireRoundTrip(clip, clipFromJson);
 
     const DeviceGraphDto graph{
-        {{10, 3, 20, 30, "Synth", "instrument", "internal", true, false, -3.0}},
+        {{10, 3, 20, 30, makeDevicePathDto(ChainNodePath::chainDevice(3, 20, 30, 10)), "Synth",
+          "instrument", "internal", true, false, -3.0}},
         {{20, 3, std::nullopt, std::nullopt, "Parallel", false, 0.0, 0.0, {30}}},
         {{30, 20, "Main", 0, false, false, false, 0.0, 0.0, {10}, {}}}};
     requireRoundTrip(graph, deviceGraphFromJson);
@@ -394,6 +404,81 @@ TEST_CASE("Remote projections expose only allow-listed state",
     api.transport_.playing = true;
     api.transport_.positionBeats = 6.0;
     REQUIRE(makeTransportDto(api) == TransportDto{true, false, false, 6.0});
+}
+
+TEST_CASE("devices.list addresses colliding fx and post-fx device ids",
+          "[remote-api][contract][device-path]") {
+    // Post-fx devices allocate from nextPostFxDeviceId_, the fx chain from
+    // nextFxDeviceId_, so id 3 legitimately exists in both on one track. Both
+    // project with rackId and chainId null, so before devicePath the two rows
+    // were identical addresses.
+    TrackInfo track;
+    track.id = 1;
+
+    DeviceInfo fxDevice;
+    fxDevice.id = 3;
+    fxDevice.name = "Chorus";
+    track.chain.fxChainElements.push_back(makeDeviceElement(fxDevice));
+
+    DeviceInfo postFxDevice;
+    postFxDevice.id = 3;
+    postFxDevice.name = "Limiter";
+    track.chain.postFxChainElements.push_back({postFxDevice});
+
+    const auto graph = makeDeviceGraphDto({track});
+    REQUIRE(graph.devices.size() == 2);
+    REQUIRE(graph.devices[0].id == graph.devices[1].id);
+    REQUIRE(graph.devices[0].rackId == graph.devices[1].rackId);
+    REQUIRE(graph.devices[0].chainId == graph.devices[1].chainId);
+
+    // The path is what tells them apart.
+    REQUIRE(graph.devices[0].devicePath.section == "fx");
+    REQUIRE(graph.devices[1].devicePath.section == "post_fx");
+    REQUIRE_FALSE(graph.devices[0].devicePath == graph.devices[1].devicePath);
+
+    REQUIRE(toChainNodePath(graph.devices[0].devicePath) == ChainNodePath::topLevelDevice(1, 3));
+    REQUIRE(toChainNodePath(graph.devices[1].devicePath) == ChainNodePath::postFxDevice(1, 3));
+
+    requireRoundTrip(graph, deviceGraphFromJson);
+}
+
+TEST_CASE("devices.list carries full depth for nested racks",
+          "[remote-api][contract][device-path]") {
+    // rackId/chainId name the immediate parent only; a device two racks deep
+    // needs the whole route to be addressable.
+    TrackInfo track;
+    track.id = 1;
+
+    DeviceInfo leaf;
+    leaf.id = 9;
+    leaf.name = "Filter";
+
+    RackInfo inner;
+    inner.id = 7;
+    ChainInfo innerChain;
+    innerChain.id = 8;
+    innerChain.elements.push_back(makeDeviceElement(leaf));
+    inner.chains.push_back(std::move(innerChain));
+
+    RackInfo outer;
+    outer.id = 2;
+    ChainInfo outerChain;
+    outerChain.id = 4;
+    outerChain.elements.push_back(makeRackElement(std::move(inner)));
+    outer.chains.push_back(std::move(outerChain));
+
+    track.chain.fxChainElements.push_back(makeRackElement(std::move(outer)));
+
+    const auto graph = makeDeviceGraphDto({track});
+    REQUIRE(graph.devices.size() == 1);
+
+    const auto& device = graph.devices.front();
+    REQUIRE(device.rackId == 7);
+    REQUIRE(device.chainId == 8);
+    REQUIRE(toChainNodePath(device.devicePath) ==
+            ChainNodePath::chain(1, 2, 4).withRack(7).withChain(8).withDevice(9));
+
+    requireRoundTrip(graph, deviceGraphFromJson);
 }
 
 TEST_CASE("Device paths distinguish the three per-section DeviceId spaces",

@@ -120,11 +120,46 @@ struct ClipDto {
     bool operator==(const ClipDto&) const = default;
 };
 
+/**
+ * @brief Public projection of a `ChainNodePath`.
+ *
+ * A device id alone does not identify a device: the main FX chain, the
+ * post-fader list, and the mixer-analysis section each carry their own
+ * `DeviceId` counter, so id 3 can exist in all three at once on one track.
+ * `section` carries that discriminator and `steps` carries the route through
+ * nested racks and chains, so this round-trips to exactly one device.
+ *
+ * Step types are strings rather than enum ordinals: this is a public wire
+ * contract consumed by scripts and MCP clients, and it must not be coupled to
+ * the internal `ChainStepType` ordering.
+ */
+struct DevicePathStepDto {
+    juce::String type;  // "rack" | "chain" | "device"
+    int id = -1;
+
+    bool operator==(const DevicePathStepDto&) const = default;
+};
+
+struct DevicePathDto {
+    TrackId trackId = INVALID_TRACK_ID;
+    juce::String section{"fx"};  // "fx" | "post_fx" | "mixer_analysis"
+    bool trackLevel = false;
+    std::optional<DeviceId> topLevelDeviceId;
+    std::vector<DevicePathStepDto> steps;
+
+    bool operator==(const DevicePathDto&) const = default;
+};
+
 struct DeviceDto {
     DeviceId id = INVALID_DEVICE_ID;
     TrackId trackId = INVALID_TRACK_ID;
+    // Immediate parents, for rendering the graph. `rackId`/`chainId` locate a
+    // device one level up but cannot address it: `id` is unique only within a
+    // section, and nesting can be arbitrarily deep. Use `devicePath` as the
+    // address.
     std::optional<RackId> rackId;
     std::optional<ChainId> chainId;
+    DevicePathDto devicePath;
     juce::String name;
     juce::String type;
     juce::String format;
@@ -216,36 +251,6 @@ struct AutomationPointDto {
     juce::String curve;
 
     bool operator==(const AutomationPointDto&) const = default;
-};
-
-/**
- * @brief Public projection of a `ChainNodePath`.
- *
- * A device id alone does not identify a device: the main FX chain, the
- * post-fader list, and the mixer-analysis section each carry their own
- * `DeviceId` counter, so id 3 can exist in all three at once on one track.
- * `section` carries that discriminator and `steps` carries the route through
- * nested racks and chains, so this round-trips to exactly one device.
- *
- * Step types are strings rather than enum ordinals: this is a public wire
- * contract consumed by scripts and MCP clients, and it must not be coupled to
- * the internal `ChainStepType` ordering.
- */
-struct DevicePathStepDto {
-    juce::String type;  // "rack" | "chain" | "device"
-    int id = -1;
-
-    bool operator==(const DevicePathStepDto&) const = default;
-};
-
-struct DevicePathDto {
-    TrackId trackId = INVALID_TRACK_ID;
-    juce::String section{"fx"};  // "fx" | "post_fx" | "mixer_analysis"
-    bool trackLevel = false;
-    std::optional<DeviceId> topLevelDeviceId;
-    std::vector<DevicePathStepDto> steps;
-
-    bool operator==(const DevicePathDto&) const = default;
 };
 
 struct AutomationTargetDto {
