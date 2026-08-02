@@ -23,10 +23,20 @@ jobs:
   juce-tests-linux:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write  # assume the sccache S3 role via OIDC
       contents: read
 
     steps:
+    # First step on purpose: this decides whether the whole job builds warm or
+    # cold, so it belongs where it is visible without scrolling past the apt
+    # output, and a credential problem surfaces before any setup time is spent.
+    # Needs neither the checkout nor any package.
+    - name: Check R2 credentials
+      id: r2-creds
+      continue-on-error: true
+      env:
+        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      run: test -n "$R2_ACCESS_KEY_ID"
+
     - uses: actions/checkout@v7
       with:
         submodules: recursive
@@ -58,36 +68,38 @@ jobs:
           mesa-common-dev \
           xvfb
 
-    # Compile cache: sccache backed by S3 (see infra/sccache), sharing the
-    # linux key prefix with the main CI job so common translation units hit.
+    # Compile cache: sccache backed by Cloudflare R2 (see infra/sccache),
+    # sharing the linux key prefix with the main CI job so common translation
+    # units hit. R2 rather than S3 because these runners are GitHub-hosted, so
+    # every cache hit left AWS as billed egress; R2 charges nothing for it.
     #
-    # Dependabot-triggered runs get no repo secrets and no OIDC id-token, so this
-    # step fails there. Treat it as non-fatal: without credentials the build just
-    # runs cold (see the sccache-gated launcher flags in Configure CMake below).
-    - name: Configure AWS credentials (sccache S3, OIDC)
-      id: aws-creds
-      continue-on-error: true
-      uses: aws-actions/configure-aws-credentials@v6
-      with:
-        role-to-assume: ${{ secrets.AWS_SCCACHE_ROLE_ARN }}
-        aws-region: eu-west-2
-        retry-max-attempts: 3
-        action-timeout-s: 90
-
+    # R2 has no OIDC federation, so this uses a scoped API token instead of an
+    # assumed role. Dependabot-triggered runs get no repo secrets, so the
+    # first-step credential check fails and the build just runs cold (see the
+    # sccache-gated launcher flags in Configure CMake below).
     - name: Setup sccache
       id: sccache
-      if: steps.aws-creds.outcome == 'success'
+      if: steps.r2-creds.outcome == 'success'
       env:
-        SCCACHE_BUCKET_SECRET: ${{ secrets.SCCACHE_BUCKET }}
+        R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
         SCCACHE_VERSION=v0.8.1
         curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar xz
         sudo mv sccache-*/sccache /usr/local/bin/sccache
         sccache --version
+        # sccache reads R2 through its S3 backend: bucket + custom endpoint,
+        # region 'auto' (R2 has no regions), credentials via the standard AWS
+        # variables. Written to GITHUB_ENV so the compile steps see them too.
         {
-          echo "SCCACHE_BUCKET=${SCCACHE_BUCKET_SECRET}"
-          echo "SCCACHE_REGION=eu-west-2"
+          echo "SCCACHE_BUCKET=${R2_BUCKET}"
+          echo "SCCACHE_ENDPOINT=https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          echo "SCCACHE_REGION=auto"
           echo "SCCACHE_S3_KEY_PREFIX=linux"
+          echo "AWS_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}"
+          echo "AWS_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}"
         } >> "$GITHUB_ENV"
 
     # Faust/Mutable prebuilt artifacts (#1669): magda_juce_tests links magda_daw
