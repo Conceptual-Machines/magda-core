@@ -5,7 +5,11 @@
 
 #include "TracktionHelpers.hpp"
 #include "core/DeviceState.hpp"
+#include "core/LegacyDeviceAliases.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
+#include "plugins/compiled/CompiledFaustInterface.hpp"
+#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 
 namespace magda::daw::audio::tracktion_adapter {
 
@@ -186,6 +190,44 @@ void applyDeviceStateParameters(te::Plugin& plugin, const juce::String& savedSta
         if (param != nullptr)
             param->setParameterFromHost(saved.value, juce::sendNotificationSync);
     }
+}
+
+std::vector<magda::legacy_devices::RetiredSlotValue> adoptRetiredNestedPluginTree(
+    const juce::ValueTree& state) {
+    if (!state.isValid())
+        return {};
+
+    const auto retiredType = state[te::IDs::type].toString();
+    const auto successor = magda::legacy_devices::retiredDeviceSuccessor(retiredType);
+    if (successor.isEmpty())
+        return {};
+
+    auto converted = magda::legacy_devices::convertRetiredDeviceState(
+        retiredType, [&state](const char* property) { return state[juce::Identifier(property)]; });
+
+    juce::ValueTree writable = state;
+    for (const auto* property : magda::legacy_devices::retiredDeviceProperties(retiredType))
+        writable.removeProperty(juce::Identifier(property), nullptr);
+    writable.setProperty(te::IDs::type, successor, nullptr);
+
+    return converted;
+}
+
+void applyRetiredSlotValues(te::Plugin& plugin,
+                            const std::vector<magda::legacy_devices::RetiredSlotValue>& values) {
+    if (values.empty())
+        return;
+
+    auto* compiled = deviceFromPlugin<compiled::ICompiledFaustPlugin>(&plugin);
+    if (compiled == nullptr)
+        return;
+
+    // Values arrive in the successor's real units; the device owns the
+    // conversion into the normalized value its parameter actually stores.
+    for (const auto& slot : values)
+        if (auto* param = compiled::tracktionParameterForSlot(&plugin, slot.slot))
+            param->setParameterFromHost(compiled->displayToNormalized(slot.slot, slot.value),
+                                        juce::sendNotificationSync);
 }
 
 }  // namespace magda::daw::audio::tracktion_adapter

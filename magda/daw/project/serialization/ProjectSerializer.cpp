@@ -559,39 +559,41 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
         return false;  // Failed - no state modified
     }
 
-    // Retired stock Tracktion effects load as their compiled successors. The
-    // master track is deserialized separately below and migrated there.
-    legacy_devices::migrateRetiredDevicesInProject(stagedTracks, nullptr, stagedAutomation,
-                                                   stagedAutomationClips);
+    // The master track is staged here rather than after the commit below, so
+    // the migration pass sees it: a lane targeting a retired effect on the
+    // master has to be pruned in the same pass that rewrites the device, or it
+    // survives holding a paramIndex into a parameter list that no longer exists.
+    auto masterTrackVar = obj->getProperty("masterTrack");
+    TrackInfo stagedMasterTrack;
+    const bool hasMasterTrack =
+        masterTrackVar.isObject() && deserializeTrackInfo(masterTrackVar, stagedMasterTrack);
+
+    // Retired stock Tracktion effects load as their compiled successors.
+    legacy_devices::migrateRetiredDevicesInProject(stagedTracks,
+                                                   hasMasterTrack ? &stagedMasterTrack : nullptr,
+                                                   stagedAutomation, stagedAutomationClips);
 
     // Stage 2: All components validated successfully - now commit to managers atomically
     commitStagedData(stagedTracks, stagedClips, stagedAutomation, stagedAutomationClips);
 
     // Restore master track chain elements (plugins on the master bus)
-    auto masterTrackVar = obj->getProperty("masterTrack");
-    if (masterTrackVar.isObject()) {
-        TrackInfo masterTrackData;
-        if (deserializeTrackInfo(masterTrackVar, masterTrackData)) {
-            legacy_devices::migrateRetiredDevicesInTrack(masterTrackData);
-            auto& tm = TrackManager::getInstance();
-            auto* masterTrack = tm.getTrack(MASTER_TRACK_ID);
-            if (masterTrack) {
-                masterTrack->chain.fxChainElements =
-                    std::move(masterTrackData.chain.fxChainElements);
-                masterTrack->chain.postFxChainElements =
-                    std::move(masterTrackData.chain.postFxChainElements);
-                masterTrack->chain.mixerAnalysisElements =
-                    std::move(masterTrackData.chain.mixerAnalysisElements);
-                for (const auto& element : masterTrack->chain.fxChainElements) {
-                    if (isDevice(element))
-                        tm.ensureDeviceIdAbove(getDevice(element).id);
-                }
-                for (const auto& element : masterTrack->chain.postFxChainElements)
-                    tm.ensurePostFxDeviceIdAbove(element.device.id);
-                for (const auto& element : masterTrack->chain.mixerAnalysisElements)
-                    tm.ensureMixerAnalysisDeviceIdAbove(element.device.id);
-                tm.notifyTrackDevicesChanged(MASTER_TRACK_ID);
+    if (hasMasterTrack) {
+        auto& tm = TrackManager::getInstance();
+        if (auto* masterTrack = tm.getTrack(MASTER_TRACK_ID)) {
+            masterTrack->chain.fxChainElements = std::move(stagedMasterTrack.chain.fxChainElements);
+            masterTrack->chain.postFxChainElements =
+                std::move(stagedMasterTrack.chain.postFxChainElements);
+            masterTrack->chain.mixerAnalysisElements =
+                std::move(stagedMasterTrack.chain.mixerAnalysisElements);
+            for (const auto& element : masterTrack->chain.fxChainElements) {
+                if (isDevice(element))
+                    tm.ensureDeviceIdAbove(getDevice(element).id);
             }
+            for (const auto& element : masterTrack->chain.postFxChainElements)
+                tm.ensurePostFxDeviceIdAbove(element.device.id);
+            for (const auto& element : masterTrack->chain.mixerAnalysisElements)
+                tm.ensureMixerAnalysisDeviceIdAbove(element.device.id);
+            tm.notifyTrackDevicesChanged(MASTER_TRACK_ID);
         }
     }
 

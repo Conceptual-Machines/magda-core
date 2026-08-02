@@ -4,6 +4,7 @@
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../audio/plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "../audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
 #include "../project/ProjectManager.hpp"
 

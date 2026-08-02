@@ -2,6 +2,8 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <map>
+#include <utility>
 
 #include "magda/daw/core/AutomationInfo.hpp"
 #include "magda/daw/core/LegacyDeviceAliases.hpp"
@@ -39,19 +41,26 @@ std::optional<float> slot(const DeviceInfo& device, int paramIndex) {
 
 }  // namespace
 
-TEST_CASE("Retired Tracktion devices are recognised by every stored spelling",
+TEST_CASE("Retired Tracktion devices resolve to their successor by every stored spelling",
           "[devices][legacy][aliases]") {
-    for (const auto* id : {"4bandEq", "eq", "equaliser", "compressor", "delay", "chorus", "phaser",
-                           "reverb", "pitchShifter", "pitchshift", "lowpass"}) {
+    const std::pair<const char*, const char*> retired[] = {
+        {"4bandEq", "magda_eq"},         {"eq", "magda_eq"},
+        {"equaliser", "magda_eq"},       {"compressor", "magda_compressor"},
+        {"delay", "magda_delay"},        {"chorus", "magda_chorus"},
+        {"phaser", "magda_phaser"},      {"reverb", "magda_reverb"},
+        {"pitchShifter", "magda_pitch"}, {"pitchshift", "magda_pitch"},
+        {"lowpass", "magda_filter"},
+    };
+    for (const auto& [id, successor] : retired) {
         INFO("retired id: " << id);
-        CHECK(legacy_devices::isRetiredDeviceId(id));
+        CHECK(legacy_devices::retiredDeviceSuccessor(id) == successor);
     }
 
-    // Devices MAGDA still ships, and the successors themselves, are not.
+    // Devices MAGDA still ships, and the successors themselves, have none.
     for (const auto* id : {"toneGenerator", "impulseresponse", "4osc", "volume", "magda_eq",
                            "magda_delay", "magda_filter", ""}) {
         INFO("live id: " << id);
-        CHECK_FALSE(legacy_devices::isRetiredDeviceId(id));
+        CHECK(legacy_devices::retiredDeviceSuccessor(id).isEmpty());
     }
 }
 
@@ -221,6 +230,74 @@ TEST_CASE("Chorus and Phaser anchor their defaults on the retired device's",
     CHECK(slot(phaser, 1).value() == Approx(1.0f));  // default sweep -> default depth
     CHECK(slot(phaser, 2).value() == Approx(0.7f));
     CHECK(slot(phaser, 3).value() == Approx(1.0f));  // four all-pass stages
+}
+
+TEST_CASE("A nested engine tree converts from its saved property names",
+          "[devices][legacy][aliases][nested]") {
+    // What a Drum Grid pad's FX chain holds: the engine's own plugin tree, with
+    // values as named properties rather than a DeviceInfo parameter array.
+    const std::map<juce::String, juce::var> delayTree{
+        {"feedback", -6.0f}, {"mix", 0.4f}, {"length", 375}};
+
+    const auto converted = legacy_devices::convertRetiredDeviceState(
+        "delay", [&delayTree](const char* property) -> juce::var {
+            const auto found = delayTree.find(property);
+            return found != delayTree.end() ? found->second : juce::var();
+        });
+
+    std::map<int, float> bySlot;
+    for (const auto& slot : converted)
+        bySlot[slot.slot] = slot.value;
+
+    CHECK(bySlot.at(0) == Approx(375.0f));      // Time
+    CHECK(bySlot.at(3) == Approx(0.5011872f));  // Feedback, dB -> linear
+    CHECK(bySlot.at(4) == Approx(0.4f));        // Mix
+    CHECK(bySlot.at(2) == Approx(0.0f));        // Sync off
+
+    // Same values as the DeviceInfo path produces, reached from the other shape.
+    auto device = retiredDevice("delay", {param(0, -6.0f), param(1, 0.4f), param(2, 375.0f)});
+    REQUIRE(legacy_devices::migrateRetiredDevice(device));
+    for (const auto& [slotIndex, value] : bySlot)
+        CHECK(slot(device, slotIndex).value() == Approx(value));
+}
+
+TEST_CASE("A nested Lowpass reads its mode from the saved text",
+          "[devices][legacy][aliases][nested]") {
+    const auto read = [](const char* mode) {
+        return [mode](const char* property) -> juce::var {
+            if (juce::String(property) == "frequency")
+                return 800.0f;
+            if (juce::String(property) == "mode")
+                return mode;
+            return {};
+        };
+    };
+
+    const auto highpass = legacy_devices::convertRetiredDeviceState("lowpass", read("highpass"));
+    const auto lowpass = legacy_devices::convertRetiredDeviceState("lowpass", read("lowpass"));
+
+    const auto modeOf = [](const std::vector<legacy_devices::RetiredSlotValue>& slots) {
+        for (const auto& s : slots)
+            if (s.slot == 4)
+                return s.value;
+        return -1.0f;
+    };
+    CHECK(modeOf(highpass) == Approx(2.0f));  // HP
+    CHECK(modeOf(lowpass) == Approx(0.0f));   // LP
+}
+
+TEST_CASE("A nested tree that saved nothing leaves the successor's defaults",
+          "[devices][legacy][aliases][nested]") {
+    const auto converted = legacy_devices::convertRetiredDeviceState(
+        "reverb", [](const char*) { return juce::var(); });
+
+    // Only the fixed slots -- the ones re-creating baked-in behaviour -- remain.
+    for (const auto& s : converted)
+        CHECK((s.slot == 0 || s.slot == 2));
+
+    CHECK(legacy_devices::convertRetiredDeviceState("magda_reverb", [](const char*) {
+              return juce::var(1.0f);
+          }).empty());
 }
 
 TEST_CASE("Migrating a track drops the links that addressed a retired device",

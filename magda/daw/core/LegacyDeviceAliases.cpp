@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <optional>
 #include <set>
 #include <span>
@@ -111,6 +112,13 @@ float reverbMix(float wet, float dry) {
     const float wetGain = 3.0f * wet;
     const float dryGain = 2.0f * dry;
     const float total = wetGain + dryGain;
+    // Both at zero is a device turned all the way down, which the compiled
+    // reverb has no Mix position for — its 0 is dry-through, not silence. The
+    // balance is genuinely undefined here, so this resolves to dry rather than
+    // pretending to preserve a level. A reverb saved silent is far more likely
+    // to be a mis-set device than an intended one, and dry-through is the
+    // recoverable outcome; the alternative buries the successor at its minimum
+    // output where the user would have to find it.
     if (total <= 0.0f)
         return 0.0f;
     return juce::jlimit(0.0f, 1.0f, wetGain / total);
@@ -170,12 +178,25 @@ constexpr SlotMapping merged(int slot, const char* name, int source, int source2
             .convert = convert};
 }
 
+/// A property on the retired device's own saved plugin tree, and the parameter
+/// index it held. MAGDA's model addresses these devices by index, but a device
+/// embedded in another one (a Drum Grid pad chain) was saved as the engine's
+/// plugin tree, where the same value is a named property instead.
+struct RetiredProperty {
+    int legacyIndex;
+    const char* name;
+    /// Set for a property saved as text rather than a number: the value reads
+    /// as 1 when it equals this string, 0 otherwise.
+    const char* trueString = nullptr;
+};
+
 struct RetiredDevice {
     const char* targetPluginId;
     const char* targetDisplayName;
     std::span<const char* const> retiredTypes;  // engine type + MAGDA load aliases
     std::span<const char* const> retiredNames;  // display names replaced on migration
     std::span<const SlotMapping> slots;
+    std::span<const RetiredProperty> properties;
 };
 
 // --- 4-band EQ ("4bandEq") -> magda_eq -------------------------------------
@@ -212,6 +233,13 @@ constexpr SlotMapping kEqSlots[] = {
     mapped(18, "Band 4 Gain", 10, eqGain),
     mapped(19, "Band 4 Q", 11, eqQ),
 };
+
+// Tracktion's own property names for the same values, in parameter order.
+constexpr RetiredProperty kEqProperties[] = {
+    {0, "loFreq"},  {1, "loGain"},   {2, "loQ"},          {3, "midFreq1"}, {4, "midGain1"},
+    {5, "midQ1"},   {6, "midFreq2"}, {7, "midGain2"},     {8, "midQ2"},    {9, "hiFreq"},
+    {10, "hiGain"}, {11, "hiQ"},     {12, "phaseInvert"},
+};
 // Dropped: phase invert (index 12) — the compiled EQ has no polarity switch.
 
 // --- Compressor ("compressor") -> magda_compressor -------------------------
@@ -228,6 +256,11 @@ constexpr SlotMapping kCompressorSlots[] = {
     fixed(5, "Knee", 0.0f),  // Tracktion's detector is hard-knee
     mapped(8, "Output", 4, outputDb),
 };
+
+constexpr RetiredProperty kCompressorProperties[] = {
+    {0, "threshold"}, {1, "ratio"},   {2, "attack"},           {3, "release"},
+    {4, "outputDb"},  {5, "inputDb"}, {6, "sidechainTrigger"},
+};
 // Dropped: sidechain gain (5) and the sidechain trigger toggle (6) — the
 // compiled compressor keys its sidechain from MAGDA's routing, not a parameter.
 
@@ -241,6 +274,12 @@ constexpr SlotMapping kDelaySlots[] = {
     fixed(2, "Sync", 0.0f),  // Tracktion's delay is free-running milliseconds
     mapped(3, "Feedback", 0, delayFeedback),
     mapped(4, "Mix", 1, unitInterval),
+};
+
+constexpr RetiredProperty kDelayProperties[] = {
+    {0, "feedback"},
+    {1, "mix"},
+    {2, "length"},
 };
 
 // --- Chorus ("chorus") -> magda_chorus -------------------------------------
@@ -258,6 +297,13 @@ constexpr SlotMapping kChorusSlots[] = {
     mapped(7, "Width", 2, unitInterval),
 };
 
+constexpr RetiredProperty kChorusProperties[] = {
+    {0, "depthMs"},
+    {1, "speedHz"},
+    {2, "width"},
+    {3, "mixProportion"},
+};
+
 // --- Phaser ("phaser") -> magda_phaser -------------------------------------
 // Wrapper-virtual depth (octaves swept), rate (Hz) and feedback.
 constexpr const char* kPhaserTypes[] = {"phaser"};
@@ -268,6 +314,12 @@ constexpr SlotMapping kPhaserSlots[] = {
     mapped(2, "Feedback", 2, phaserFeedback),
     fixed(3, "Stages", 1.0f),  // Tracktion runs four all-pass stages
     fixed(6, "Mix", 0.5f),     // and sums the wet stage with the dry input
+};
+
+constexpr RetiredProperty kPhaserProperties[] = {
+    {0, "depth"},
+    {1, "rate"},
+    {2, "feedback"},
 };
 
 // --- Reverb ("reverb") -> magda_reverb -------------------------------------
@@ -282,6 +334,10 @@ constexpr SlotMapping kReverbSlots[] = {
     mapped(4, "Damping", 1, unitToPercent),
     mapped(7, "Width", 4, unitToWidthPercent),
 };
+
+constexpr RetiredProperty kReverbProperties[] = {
+    {0, "roomSize"}, {1, "damp"}, {2, "wet"}, {3, "dry"}, {4, "width"}, {5, "mode"},
+};
 // Dropped: freeze (5) — the compiled reverb has no infinite-hold mode.
 
 // --- Pitch Shift ("pitchShifter") -> magda_pitch ----------------------------
@@ -291,6 +347,10 @@ constexpr SlotMapping kPitchSlots[] = {
     fixed(0, "Engine", 0.0f),  // Shifter
     mapped(1, "Pitch", 0, pitchSemitones),
     fixed(4, "Mix", 1.0f),  // Tracktion's pitch shifter is fully wet
+};
+
+constexpr RetiredProperty kPitchProperties[] = {
+    {0, "semitonesUp"},
 };
 
 // --- Lowpass ("lowpass") -> magda_filter -----------------------------------
@@ -305,15 +365,22 @@ constexpr SlotMapping kFilterSlots[] = {
     mapped(4, "Mode", 1, filterMode),
 };
 
+// Tracktion saves the Lowpass mode as the text "lowpass" / "highpass".
+constexpr RetiredProperty kFilterProperties[] = {
+    {0, "frequency"},
+    {1, "mode", "highpass"},
+};
+
 constexpr RetiredDevice kRetiredDevices[] = {
-    {"magda_eq", "EQ", kEqTypes, kEqNames, kEqSlots},
-    {"magda_compressor", "Compressor", kCompressorTypes, kCompressorNames, kCompressorSlots},
-    {"magda_delay", "Delay", kDelayTypes, kDelayNames, kDelaySlots},
-    {"magda_chorus", "Chorus", kChorusTypes, kChorusNames, kChorusSlots},
-    {"magda_phaser", "Phaser", kPhaserTypes, kPhaserNames, kPhaserSlots},
-    {"magda_reverb", "Reverb", kReverbTypes, kReverbNames, kReverbSlots},
-    {"magda_pitch", "Pitch", kPitchTypes, kPitchNames, kPitchSlots},
-    {"magda_filter", "Filter", kFilterTypes, kFilterNames, kFilterSlots},
+    {"magda_eq", "EQ", kEqTypes, kEqNames, kEqSlots, kEqProperties},
+    {"magda_compressor", "Compressor", kCompressorTypes, kCompressorNames, kCompressorSlots,
+     kCompressorProperties},
+    {"magda_delay", "Delay", kDelayTypes, kDelayNames, kDelaySlots, kDelayProperties},
+    {"magda_chorus", "Chorus", kChorusTypes, kChorusNames, kChorusSlots, kChorusProperties},
+    {"magda_phaser", "Phaser", kPhaserTypes, kPhaserNames, kPhaserSlots, kPhaserProperties},
+    {"magda_reverb", "Reverb", kReverbTypes, kReverbNames, kReverbSlots, kReverbProperties},
+    {"magda_pitch", "Pitch", kPitchTypes, kPitchNames, kPitchSlots, kPitchProperties},
+    {"magda_filter", "Filter", kFilterTypes, kFilterNames, kFilterSlots, kFilterProperties},
 };
 
 const RetiredDevice* findRetiredDevice(const juce::String& pluginId) {
@@ -346,6 +413,34 @@ std::optional<float> retiredValue(const DeviceInfo& device, int index) {
     }
 
     return std::nullopt;
+}
+
+/// Run a retired device's values through its mapping table. `read` answers with
+/// the retired device's value for a parameter index, or nullopt when the saved
+/// state never carried it — in which case the slot is skipped and the successor
+/// keeps its own default.
+std::vector<RetiredSlotValue> convertSlots(
+    const RetiredDevice& retired,
+    const std::function<std::optional<float>(int legacyIndex)>& read) {
+    std::vector<RetiredSlotValue> out;
+    out.reserve(retired.slots.size());
+
+    for (const auto& slot : retired.slots) {
+        float value = slot.constant;
+
+        if (slot.sourceIndex >= 0) {
+            const auto source = read(slot.sourceIndex);
+            if (!source)
+                continue;
+
+            const auto source2 = slot.sourceIndex2 >= 0 ? read(slot.sourceIndex2) : std::nullopt;
+            value = slot.convert(*source, source2.value_or(slot.source2Default));
+        }
+
+        out.push_back({slot.targetSlot, slot.targetName, value});
+    }
+
+    return out;
 }
 
 /// Drop the links that addressed a device we just rewrote. Their `paramIndex`
@@ -457,8 +552,47 @@ std::set<DeviceId> migrateFragment(std::vector<ChainElement>& elements) {
 
 }  // namespace
 
-bool isRetiredDeviceId(const juce::String& pluginId) {
-    return findRetiredDevice(pluginId) != nullptr;
+juce::String retiredDeviceSuccessor(const juce::String& pluginId) {
+    if (const auto* retired = findRetiredDevice(pluginId))
+        return retired->targetPluginId;
+    return {};
+}
+
+std::vector<RetiredSlotValue> convertRetiredDeviceState(const juce::String& retiredType,
+                                                        const PropertyReader& readProperty) {
+    const auto* retired = findRetiredDevice(retiredType);
+    if (retired == nullptr)
+        return {};
+
+    // The engine's tree names its values; the mapping table indexes them.
+    std::map<int, float> byIndex;
+    for (const auto& property : retired->properties) {
+        const auto value = readProperty(property.name);
+        if (value.isVoid())
+            continue;
+
+        byIndex[property.legacyIndex] =
+            property.trueString != nullptr
+                ? (value.toString().equalsIgnoreCase(property.trueString) ? 1.0f : 0.0f)
+                : static_cast<float>(value);
+    }
+
+    return convertSlots(*retired, [&byIndex](int legacyIndex) -> std::optional<float> {
+        const auto found = byIndex.find(legacyIndex);
+        return found != byIndex.end() ? std::optional<float>(found->second) : std::nullopt;
+    });
+}
+
+std::vector<const char*> retiredDeviceProperties(const juce::String& retiredType) {
+    const auto* retired = findRetiredDevice(retiredType);
+    if (retired == nullptr)
+        return {};
+
+    std::vector<const char*> out;
+    out.reserve(retired->properties.size());
+    for (const auto& property : retired->properties)
+        out.push_back(property.name);
+    return out;
 }
 
 bool migrateRetiredDevice(DeviceInfo& device) {
@@ -466,25 +600,16 @@ bool migrateRetiredDevice(DeviceInfo& device) {
     if (retired == nullptr)
         return false;
 
+    const auto converted = convertSlots(
+        *retired, [&device](int legacyIndex) { return retiredValue(device, legacyIndex); });
+
     std::vector<ParameterInfo> migrated;
-    migrated.reserve(retired->slots.size());
-
-    for (const auto& slot : retired->slots) {
-        float value = slot.constant;
-
-        if (slot.sourceIndex >= 0) {
-            const auto source = retiredValue(device, slot.sourceIndex);
-            if (!source)
-                continue;  // never saved — leave the successor's default alone
-
-            const auto source2 = retiredValue(device, slot.sourceIndex2);
-            value = slot.convert(*source, source2.value_or(slot.source2Default));
-        }
-
+    migrated.reserve(converted.size());
+    for (const auto& slot : converted) {
         ParameterInfo info;
-        info.paramIndex = slot.targetSlot;
-        info.name = slot.targetName;
-        info.currentValue = value;
+        info.paramIndex = slot.slot;
+        info.name = slot.name;
+        info.currentValue = slot.value;
         migrated.push_back(std::move(info));
     }
 

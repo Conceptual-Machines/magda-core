@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <functional>
 #include <vector>
 
 #include "ChainNodePath.hpp"
@@ -39,8 +40,37 @@ struct AutomationClipInfo;
  */
 namespace legacy_devices {
 
-/// True when `pluginId` names one of the retired stock Tracktion effects.
-bool isRetiredDeviceId(const juce::String& pluginId);
+/// The compiled device that replaced `pluginId`, or an empty string when
+/// `pluginId` does not name a retired stock Tracktion effect.
+juce::String retiredDeviceSuccessor(const juce::String& pluginId);
+
+/// One converted value, in the successor's real units, for the slot it belongs
+/// to. `name` is the successor's name for that slot.
+struct RetiredSlotValue {
+    int slot = -1;
+    const char* name = nullptr;
+    float value = 0.0f;
+};
+
+/// Answers with a retired device's saved value for one of its engine property
+/// names, or a void var when the state does not carry it.
+using PropertyReader = std::function<juce::var(const char* property)>;
+
+/**
+ * @brief Convert a retired device saved as the engine's own plugin tree.
+ *
+ * `migrateRetiredDevice` handles anything MAGDA models as a `DeviceInfo`. A
+ * device embedded inside another one — an FX chain on a Drum Grid pad — was
+ * never a `DeviceInfo`: it is a nested plugin tree the owning device restores
+ * itself, where values are named properties rather than parameter indices.
+ * This reads that shape and produces the same converted slot values.
+ */
+std::vector<RetiredSlotValue> convertRetiredDeviceState(const juce::String& retiredType,
+                                                        const PropertyReader& readProperty);
+
+/// The engine property names a retired device saved, so a caller that has just
+/// converted a tree can clear what it consumed.
+std::vector<const char*> retiredDeviceProperties(const juce::String& retiredType);
 
 /**
  * @brief Rewrite `device` onto its compiled successor if it names a retired
