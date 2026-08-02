@@ -61,6 +61,9 @@ set(TEST_SOURCES
     # directly - along with FontManager, which its themed button LookAndFeel pulls in.
     ../magda/daw/ui/components/chain/custom_ui/LevelsUI.cpp
     ../magda/daw/ui/themes/FontManager.cpp
+    test_chain_node_path_drag.cpp
+    # ChainNodePathDrag builds into magda_daw_app, so magda_tests needs it directly.
+    ../magda/daw/ui/components/chain/ChainNodePathDrag.cpp
     test_momentary_param_button.cpp
     test_delta_solo.cpp
     test_waveform_editor_absolute_mode.cpp
