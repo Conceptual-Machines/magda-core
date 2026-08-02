@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/devices/effects/">
       
       
-        <link rel="prev" href="../sampler/">
+        <link rel="prev" href="../faust-instrument/">
       
       
         <link rel="next" href="../analysis/">
@@ -1566,6 +1566,28 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../faust-instrument/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Faust Instrument
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1701,6 +1723,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ir-reverb" class="md-nav__link">
+    <span class="md-ellipsis">
+      IR Reverb
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sidechain" class="md-nav__link">
     <span class="md-ellipsis">
       Sidechain
@@ -1718,6 +1749,15 @@
   
     <nav class="md-nav" aria-label="Faust (Custom DSP)">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-your-code-is-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      How your code is run
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#writing-faust-with-ai-help" class="md-nav__link">
@@ -2249,6 +2289,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ir-reverb" class="md-nav__link">
+    <span class="md-ellipsis">
+      IR Reverb
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sidechain" class="md-nav__link">
     <span class="md-ellipsis">
       Sidechain
@@ -2266,6 +2315,15 @@
   
     <nav class="md-nav" aria-label="Faust (Custom DSP)">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-your-code-is-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      How your code is run
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#writing-faust-with-ai-help" class="md-nav__link">
@@ -2368,6 +2426,10 @@
 <tr>
 <td><strong>Dimension</strong></td>
 <td>Stereo widener with three engines. <strong>Dimension</strong>: Roland Dimension D-style anti-phase modulated delays. <strong>Haas</strong>: short fixed delay on one channel. <strong>M/S</strong>: pure side-channel gain, no time smear.</td>
+</tr>
+<tr>
+<td><strong>IR Reverb</strong></td>
+<td>Convolution reverb that plays the signal through an impulse response you load. See <a href="#ir-reverb">IR Reverb</a> below.</td>
 </tr>
 </tbody>
 </table>
@@ -2482,6 +2544,46 @@
 <p class="admonition-title">Note</p>
 <p>Devices that bundle multiple engines (Compressor, Reverb, Dimension, Filter, Pitch) expose an engine selector at the top of the editor and switch DSP in place. Macros and modulator links survive the switch.</p>
 </div>
+<h2 id="ir-reverb">IR Reverb<a class="headerlink" href="#ir-reverb" title="Permanent link">&para;</a></h2>
+<p>The <strong>IR Reverb</strong> is a native MAGDA device (not part of the Faust FX bank) that sits under <strong>Reverb</strong> in the Plugin Browser. Where the Reverb device synthesises a space from an algorithm, this one convolves your signal with a recording of a real one: an impulse response captured in a hall, a stairwell, a plate, a spring tank, a guitar cabinet, or any object you have measured. Anything an impulse response can describe, it will reproduce, which also makes it the device to reach for when you want a specific room rather than a plausible one.</p>
+<p>No impulse responses ship with MAGDA, so the device starts empty and passes the signal through until you load one.</p>
+<p><strong>Loading an impulse response.</strong> Either click the <strong>folder button</strong> at the top right of the faceplate and pick a file, or drag an audio file straight onto the device. WAV, AIFF, FLAC and Ogg are all accepted, mono or stereo. The loaded file's name replaces the <em>No IR loaded</em> label in the header.</p>
+<p>The impulse response is stored inside the device, not referenced from disk, so a project stays self-contained: it opens with its reverb intact on a machine that has never seen the original file. Long impulse responses make for large project files.</p>
+<p><strong>Controls:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>LOW CUT</strong></td>
+<td>High-pass on the reverb, 10 Hz to 20 kHz. Clears mud out of the tail.</td>
+</tr>
+<tr>
+<td><strong>HIGH CUT</strong></td>
+<td>Low-pass on the reverb, 10 Hz to 20 kHz. Darkens the tail so it sits behind the dry signal.</td>
+</tr>
+<tr>
+<td><strong>Q</strong></td>
+<td>Resonance of both cutoff filters, 0.1 to 14, shared between them.</td>
+</tr>
+<tr>
+<td><strong>GAIN</strong></td>
+<td>Output trim, -12 to +6 dB.</td>
+</tr>
+<tr>
+<td><strong>MIX</strong></td>
+<td>Dry/wet balance, 0 to 100%. At 0% the device is a straight passthrough.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The device reports no latency, so it needs no delay compensation and can be used freely on a live-monitored track. A long impulse response is still expensive to convolve, though: if the CPU meter climbs, a shorter one costs less.</p>
+</div>
 <h2 id="sidechain">Sidechain<a class="headerlink" href="#sidechain" title="Permanent link">&para;</a></h2>
 <p>The <strong>Sidechain</strong> device is a native MAGDA device (not part of the Faust FX bank) that sits under <strong>Dynamics</strong> in the Plugin Browser. It is a MIDI-triggered volume shaper: the device holds its own gain at unity and a retriggerable curve ducks it toward silence, keyed from the notes of another track. This is the classic "sidechain pump" effect without a compressor — the curve <em>is</em> the gain envelope, so you draw exactly the ducking shape you want.</p>
 <p><strong>Choosing the trigger source.</strong> The device faceplate has no source picker; pick the source from the <strong>sidechain button in the device header</strong> (tooltip <em>Sidechain source</em>). It turns orange once a source is routed. Clicking it opens a menu with <strong>None</strong>, an <strong>Audio Sidechain</strong> section, and a <strong>MIDI Source</strong> section listing the other tracks; the Sidechain device keys off a track chosen under <strong>MIDI Source</strong>.</p>
@@ -2530,21 +2632,25 @@
 </div>
 <h2 id="faust-custom-dsp">Faust (Custom DSP)<a class="headerlink" href="#faust-custom-dsp" title="Permanent link">&para;</a></h2>
 <p>The <strong>Faust</strong> device hosts a <a href="https://faust.grame.fr">Faust</a> DSP that you compile and load at runtime. Unlike the rest of the MAGDA FX bank, where each device wraps a fixed pre-compiled <code>.dsp</code> source, this device accepts any Faust program.</p>
+<p>Both this and the <a href="../faust-instrument/">Faust Instrument</a> live under <strong>Custom DSP</strong> in the device browser. Reach for the instrument instead when you want MIDI to play your DSP as a synth rather than process an incoming signal.</p>
 <ul>
-<li><strong>Folder icon</strong> - load a <code>.dsp</code> file from disk. The source is compiled by the libfaust interpreter and swapped in immediately.</li>
+<li><strong>Folder icon</strong> - load a <code>.dsp</code> file from disk. The source is compiled and swapped in immediately.</li>
 <li><strong>Script icon</strong> - opens an in-app code editor for live editing. Saving recompiles and hot-swaps the DSP.</li>
 <li>The current script name is shown in the header banner ("Drive" in the example).</li>
 <li>Arrows in the header step through parameter pages when the DSP exposes more controls than fit on one screen.</li>
 </ul>
 <p>Parameters live in a stable pool of slots that persist across recompiles, so macro links, modulator routings, MIDI Learn assignments, and automation lanes survive a code change as long as the slot ordering is preserved. This makes the device practical for iterative DSP development without losing your patch state on every save.</p>
-<div class="admonition warning">
-<p class="admonition-title">Prototype</p>
-<p>This device is still a prototype. The DSP is run through the <strong>libfaust interpreter</strong> rather than ahead-of-time-compiled native code, so CPU usage is significantly higher than the pre-compiled MAGDA FX bank. Use it for sketching and experimentation; for production work, ask for the patch to be promoted into a compiled device.</p>
+<h3 id="how-your-code-is-run">How your code is run<a class="headerlink" href="#how-your-code-is-run" title="Permanent link">&para;</a></h3>
+<p>Your DSP is compiled to WebAssembly and then JIT-compiled to native machine code by <a href="https://wasmtime.dev">wasmtime</a>, so it runs as real compiled code rather than being interpreted.</p>
+<p>Two things follow from that. It is fast enough to play with rather than merely audition, though it still carries more overhead than the ahead-of-time compiled MAGDA FX bank, which has no sandbox boundary and is optimised by your system compiler. And it is sandboxed: the DSP runs inside the WebAssembly memory model, so a patch that misbehaves cannot take the application down with it. That matters most when you are iterating quickly or loading code an AI wrote.</p>
+<div class="admonition note">
+<p class="admonition-title">Still evolving</p>
+<p>This device is newer than the rest of the FX bank and its surface is still settling. For a patch you rely on in finished work, ask for it to be promoted into a compiled device.</p>
 </div>
 <h3 id="writing-faust-with-ai-help">Writing Faust with AI help<a class="headerlink" href="#writing-faust-with-ai-help" title="Permanent link">&para;</a></h3>
 <p><a href="https://github.com/Conceptual-Machines/faust-mcp-magda"><code>faust-mcp-magda</code></a> is an optional companion tool that exposes the Faust compiler and standard library to AI assistants. MAGDA uses it to validate AI-generated Faust code before loading it into this device, so syntax errors and bad library references get caught up front instead of failing at compile time.</p>
 <p>Enable it from <strong>Settings &gt; AI Settings</strong>, on the <strong>Config</strong> page, by turning on the <strong>Faust DSP</strong> toggle. When Faust validation is used, MAGDA will start the MCP server on-demand via <code>npx</code>; no manual install step is needed. <code>npx</code> must be available on the system <code>PATH</code> (it ships with Node.js).</p>
-<p>The Faust compiler runs in-process via WebAssembly inside the MCP server, so no separate Faust installation is required either.</p>
+<p>The MCP server carries its own copy of the Faust compiler, so no separate Faust installation is required either. This is a separate thing from how the device runs your DSP during playback, described above; the server only checks that code compiles before MAGDA loads it.</p>
 <p>The server can also be wired into a separate MCP-aware AI assistant (Claude, Cursor, and similar) directly, by adding it to that client's MCP config; see the <a href="https://github.com/Conceptual-Machines/faust-mcp-magda">project README</a> for details. This is independent of the MAGDA-side toggle.</p>
 
 

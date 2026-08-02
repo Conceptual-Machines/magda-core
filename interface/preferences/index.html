@@ -1778,6 +1778,28 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/faust-instrument/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Faust Instrument
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2493,7 +2515,7 @@
 <li><strong><code>name</code></strong> - the display name shown in the dropdown.</li>
 <li><strong><code>base</code></strong> - either <code>dark</code> or <code>light</code>. Any colour role you do not override is inherited from that base, so you only need to list what you want to change.</li>
 <li><strong><code>colours</code></strong> - a map of colour role to hex value. Roles include a six-step accent ramp (<code>accent1</code> is the primary selection/active colour, through <code>accent6</code>) plus surface and text roles.</li>
-<li><strong><code>syntaxColours</code></strong> - optional; themes the code/console text.</li>
+<li><strong><code>syntaxColours</code></strong> - optional; themes every code surface in MAGDA - the DSL console, the AI prompt box, and the Faust source editor - covering editor background, line numbers, caret, selection, and the syntax token colours. Roles you leave out inherit from the base, exactly like <code>colours</code>. AI-generated themes always write this section out in full.</li>
 </ul>
 <p>The filename (without <code>.json</code>) is the theme's id. Unknown keys and invalid colours are skipped, so a partial file is safe to load.</p>
 <p>MAGDA watches the selected theme file while it is active: edit its JSON on disk and the change re-applies instantly, which makes hand-tuning a palette quick.</p>
