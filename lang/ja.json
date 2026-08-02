@@ -86,6 +86,7 @@
     "help.about": "MAGDAについて"
   },
   "transport": {
+    "count_in.header": "カウントイン",
     "count_in.off": "Off",
     "count_in.1_beat": "1拍",
     "count_in.2_beats": "2拍",
@@ -186,12 +187,10 @@
     "error.export_failed": "プロジェクトをエクスポートできませんでした：",
     "error.export_no_edit": "エクスポートできません: プロジェクトが読み込まれていません",
     "updates.title": "更新の確認",
-    "updates.up_to_date": "最新バージョンのMAGDAを使用しています。",
-    "updates.available_body_prefix": "MAGDAの新しいバージョンが利用できます.",
-    "updates.available_body_suffix": "",
-    "updates.current_label": "現在：",
+    "updates.up_to_date": "最新バージョンのMAGDA（{0}）を使用しています。",
+    "updates.available_body": "MAGDAの新しいバージョン{0}が利用できます（現在：{1}）。",
     "updates.view_release": "リリースの詳細を表示",
-    "updates.error_prefix": "更新を確認できませんでした："
+    "updates.error": "更新を確認できませんでした：{0}"
   },
   "about": {
     "version_prefix": "バージョン　"
@@ -263,9 +262,10 @@
     "button.remove_selected": "選択した項目を削除",
     "button.reset_all": "全てをリセット",
     "toggle.scan_on_startup": "起動時に新しいプラグインをスキャンする",
-    "label.external_format_preference": "VST3とAUの両方がある場合：",
+    "label.external_format_preference": "複数の規格のプラグインがある場合：",
     "option.prefer_vst3": "VST3を優先",
     "option.prefer_au": "AUを優先",
+    "option.prefer_lv2": "LV2を優先する",
     "dialog.select_directory": "プラグインのパスを選択",
     "column.plugin": "プラグイン",
     "column.reason": "備考",

@@ -86,6 +86,7 @@
     "help.about": "关于 MAGDA"
   },
   "transport": {
+    "count_in.header": "预备拍",
     "count_in.off": "关",
     "count_in.1_beat": "1 拍",
     "count_in.2_beats": "2 拍",
@@ -186,12 +187,10 @@
     "error.export_failed": "导出工程失败：",
     "error.export_no_edit": "无法导出：未读取到编辑",
     "updates.title": "检查更新",
-    "updates.up_to_date": "您正在运行最新版本的MAGDA。",
-    "updates.available_body_prefix": "有新版本的MAGDA可用：",
-    "updates.available_body_suffix": "",
-    "updates.current_label": "当前：",
+    "updates.up_to_date": "您正在运行最新版本的MAGDA（{0}）。",
+    "updates.available_body": "有新版本的MAGDA可用：{0}（当前：{1}）。",
     "updates.view_release": "查看版本发布",
-    "updates.error_prefix": "无法检查更新："
+    "updates.error": "无法检查更新：{0}"
   },
   "about": {
     "version_prefix": "版本 "
@@ -266,6 +265,7 @@
     "label.external_format_preference": "当 VST3 与 AU 同时存在时：",
     "option.prefer_vst3": "优先 VST3",
     "option.prefer_au": "优先 AU",
+    "option.prefer_lv2": "优先 LV2",
     "dialog.select_directory": "选择插件目录",
     "column.plugin": "插件",
     "column.reason": "原因",
