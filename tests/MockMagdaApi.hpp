@@ -22,6 +22,7 @@
 #include "magda/daw/api/alias_api.hpp"
 #include "magda/daw/api/automation_api.hpp"
 #include "magda/daw/api/clip_api.hpp"
+#include "magda/daw/api/device_api.hpp"
 #include "magda/daw/api/focused_api.hpp"
 #include "magda/daw/api/groove_api.hpp"
 #include "magda/daw/api/magda_api.hpp"
@@ -741,6 +742,42 @@ class MockPluginApi : public PluginApi {
     }
 };
 
+class MockDeviceApi : public DeviceApi {
+  public:
+    std::vector<DeviceCatalogEntry> catalog;
+    // Live devices, keyed by the path that addresses them.
+    std::map<ChainNodePath, DeviceInfo> devices;
+
+    std::vector<DeviceCatalogEntry> getCatalog() const override {
+        return catalog;
+    }
+    std::optional<DeviceCatalogEntry> findCatalogEntry(
+        const juce::String& catalogId) const override {
+        for (const auto& entry : catalog) {
+            if (entry.catalogId == catalogId)
+                return entry;
+        }
+        return std::nullopt;
+    }
+    const DeviceInfo* getDevice(const ChainNodePath& devicePath) const override {
+        const auto it = devices.find(devicePath);
+        return it != devices.end() ? &it->second : nullptr;
+    }
+    std::vector<DeviceParameter> getDeviceParameters(
+        const ChainNodePath& devicePath) const override {
+        const auto* device = getDevice(devicePath);
+        if (device == nullptr)
+            return {};
+        std::vector<DeviceParameter> parameters;
+        for (const auto& info : device->parameters) {
+            parameters.push_back({info.paramIndex, info.stableId, info.name, info.unit,
+                                  info.minValue, info.maxValue, info.defaultValue,
+                                  info.currentValue});
+        }
+        return parameters;
+    }
+};
+
 class MockGrooveApi : public GrooveApi {
   public:
     juce::StringArray names;
@@ -770,6 +807,7 @@ class MockMagdaApi : public MagdaApi {
     MockTransportApi transport_;
     MockFocusedApi focused_;
     MockPluginApi plugins_;
+    MockDeviceApi devices_;
     MockGrooveApi grooves_;
 
     SelectionApi& selection() override {
@@ -807,6 +845,9 @@ class MockMagdaApi : public MagdaApi {
     }
     PluginApi& plugins() override {
         return plugins_;
+    }
+    DeviceApi& devices() override {
+        return devices_;
     }
     GrooveApi& grooves() override {
         return grooves_;

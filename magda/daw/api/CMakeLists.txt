@@ -13,6 +13,7 @@ target_sources(magda_daw PRIVATE
     transport_api_live.cpp
     focused_api_live.cpp
     plugin_api_live.cpp
+    device_api_live.cpp
     groove_api_live.cpp
     remote_api.cpp
     remote_api_projection.cpp
