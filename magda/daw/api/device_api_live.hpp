@@ -14,6 +14,13 @@ class DeviceApiLive : public DeviceApi {
     const DeviceInfo* getDevice(const ChainNodePath& devicePath) const override;
     std::vector<DeviceParameter> getDeviceParameters(
         const ChainNodePath& devicePath) const override;
+
+    DeviceId addDevice(const ChainNodePath& parentPath, const juce::String& catalogId,
+                       int index) override;
+    bool removeDevice(const ChainNodePath& devicePath) override;
+    bool moveDevice(const ChainNodePath& devicePath, int toIndex) override;
+    bool setDeviceBypassed(const ChainNodePath& devicePath, bool bypassed) override;
+    bool setDeviceParameter(const ChainNodePath& devicePath, int paramIndex, float value) override;
 };
 
 }  // namespace magda

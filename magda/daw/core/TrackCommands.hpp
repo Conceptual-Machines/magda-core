@@ -310,4 +310,69 @@ class CreateTrackWithDeviceCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/**
+ * @brief Add a device anywhere in the chain tree, addressed by path.
+ *
+ * The track-level `AddDeviceToTrackCommand` above cannot reach into a rack, and
+ * a `(trackId, rackId, chainId)` triple stops at one level of nesting. This
+ * takes the parent path — track-level for the main FX chain, or a chain path at
+ * any depth — so anything the model can express is reachable.
+ */
+class AddDeviceByPathCommand : public UndoableCommand {
+  public:
+    AddDeviceByPathCommand(const ChainNodePath& parentPath, const DeviceInfo& device,
+                           int insertIndex = -1);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Add Device";
+    }
+
+    DeviceId getCreatedDeviceId() const {
+        return createdDeviceId_;
+    }
+
+    /** Path of the device this command created, invalid until it has run. */
+    const ChainNodePath& getCreatedDevicePath() const {
+        return createdDevicePath_;
+    }
+
+  private:
+    ChainNodePath parentPath_;
+    DeviceInfo device_;
+    int insertIndex_ = -1;
+    DeviceId createdDeviceId_ = INVALID_DEVICE_ID;
+    ChainNodePath createdDevicePath_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Remove a device addressed by path, restoring it in place on undo.
+ *
+ * Captures the plugin's live state before removal so undo restores the device
+ * as it sounded, not as it was first added.
+ */
+class RemoveDeviceByPathCommand : public UndoableCommand {
+  public:
+    explicit RemoveDeviceByPathCommand(const ChainNodePath& devicePath);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Remove Device";
+    }
+
+    bool didRemove() const {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath devicePath_;
+    ChainNodePath parentPath_;
+    DeviceInfo savedDevice_;
+    int savedIndex_ = -1;
+    bool executed_ = false;
+};
+
 }  // namespace magda

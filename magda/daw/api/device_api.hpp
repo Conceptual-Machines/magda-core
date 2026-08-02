@@ -64,10 +64,9 @@ struct DeviceParameter {
  * counter. A path also reaches arbitrarily deep into nested racks, which the
  * `(trackId, rackId, chainId)` triples on `TrackApi` cannot express.
  *
- * Read surface only for now. The mutation half — add by catalogue id, remove,
- * move, bypass, and parameter writes — needs path-based undoable commands that
- * do not exist yet (`TrackCommands` has add/remove at track level only), and
- * lands separately so that work gets reviewed on its own terms.
+ * Callers never construct a `DeviceInfo`: `addDevice` takes a catalogue id and
+ * a placement, so plugin internals and file paths stay private to the host.
+ * Every mutation is one undo step.
  */
 class DeviceApi {
   public:
@@ -86,6 +85,35 @@ class DeviceApi {
     /** Empty if the path does not resolve, or the device has no parameters. */
     virtual std::vector<DeviceParameter> getDeviceParameters(
         const ChainNodePath& devicePath) const = 0;
+
+    /**
+     * @brief Add a device to a track's FX chain or to a rack chain.
+     *
+     * `parentPath` is a track-level path for the main FX chain, or a chain path
+     * at any nesting depth. `index` inserts at that position; negative appends.
+     * Returns INVALID_DEVICE_ID if the path or the catalogue id does not
+     * resolve.
+     */
+    virtual DeviceId addDevice(const ChainNodePath& parentPath, const juce::String& catalogId,
+                               int index) = 0;
+
+    /** Remove the device at `devicePath`. */
+    virtual bool removeDevice(const ChainNodePath& devicePath) = 0;
+
+    /** Move a device within the chain it already lives in. */
+    virtual bool moveDevice(const ChainNodePath& devicePath, int toIndex) = 0;
+
+    virtual bool setDeviceBypassed(const ChainNodePath& devicePath, bool bypassed) = 0;
+
+    /**
+     * @brief Write one parameter, in real parameter units.
+     *
+     * Values outside the parameter's range are rejected rather than clamped: a
+     * silently clamped write reports success while doing something the caller
+     * did not ask for.
+     */
+    virtual bool setDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
+                                    float value) = 0;
 };
 
 }  // namespace magda

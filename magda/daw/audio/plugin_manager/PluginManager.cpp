@@ -70,16 +70,7 @@ te::AutomatableParameter* resolveSameScopeModParam(
 }
 
 ChainNodePath parentContainerForMoveSource(const ChainNodePath& sourceElementPath) {
-    ChainNodePath parent;
-    parent.trackId = sourceElementPath.trackId;
-
-    if (sourceElementPath.topLevelDeviceId != INVALID_DEVICE_ID)
-        return parent;
-
-    parent.steps = sourceElementPath.steps;
-    if (!parent.steps.empty())
-        parent.steps.pop_back();
-    return parent;
+    return sourceElementPath.parentChain();
 }
 
 void collectDevicePathsForMove(const RackInfo& rack, const ChainNodePath& rackPath,

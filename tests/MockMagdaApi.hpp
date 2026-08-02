@@ -776,6 +776,59 @@ class MockDeviceApi : public DeviceApi {
         }
         return parameters;
     }
+
+    // Recorded mutations, for asserting what a caller invoked.
+    struct AddRecord {
+        ChainNodePath parentPath;
+        juce::String catalogId;
+        int index = -1;
+    };
+    std::vector<AddRecord> added;
+    std::vector<ChainNodePath> removed;
+    std::vector<std::pair<ChainNodePath, int>> moved;
+    std::vector<std::pair<ChainNodePath, bool>> bypassed;
+    std::vector<std::tuple<ChainNodePath, int, float>> parameterWrites;
+    DeviceId nextDeviceId = 1;
+
+    DeviceId addDevice(const ChainNodePath& parentPath, const juce::String& catalogId,
+                       int index) override {
+        if (!findCatalogEntry(catalogId).has_value())
+            return INVALID_DEVICE_ID;
+        added.push_back({parentPath, catalogId, index});
+        return nextDeviceId++;
+    }
+    bool removeDevice(const ChainNodePath& devicePath) override {
+        if (getDevice(devicePath) == nullptr)
+            return false;
+        removed.push_back(devicePath);
+        return true;
+    }
+    bool moveDevice(const ChainNodePath& devicePath, int toIndex) override {
+        if (toIndex < 0 || getDevice(devicePath) == nullptr)
+            return false;
+        moved.emplace_back(devicePath, toIndex);
+        return true;
+    }
+    bool setDeviceBypassed(const ChainNodePath& devicePath, bool value) override {
+        if (getDevice(devicePath) == nullptr)
+            return false;
+        bypassed.emplace_back(devicePath, value);
+        return true;
+    }
+    bool setDeviceParameter(const ChainNodePath& devicePath, int paramIndex, float value) override {
+        const auto* device = getDevice(devicePath);
+        if (device == nullptr)
+            return false;
+        for (const auto& info : device->parameters) {
+            if (info.paramIndex != paramIndex)
+                continue;
+            if (value < info.minValue || value > info.maxValue)
+                return false;
+            parameterWrites.emplace_back(devicePath, paramIndex, value);
+            return true;
+        }
+        return false;
+    }
 };
 
 class MockGrooveApi : public GrooveApi {

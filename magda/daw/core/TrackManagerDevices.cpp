@@ -482,15 +482,7 @@ static std::vector<ChainElement>* getElementContainerForChainPath(TrackManager& 
 }
 
 static ChainNodePath getParentChainPathForElementPath(const ChainNodePath& elementPath) {
-    ChainNodePath parent;
-    parent.trackId = elementPath.trackId;
-    if (elementPath.topLevelDeviceId != INVALID_DEVICE_ID)
-        return parent;
-
-    parent.steps = elementPath.steps;
-    if (!parent.steps.empty())
-        parent.steps.pop_back();
-    return parent;
+    return elementPath.parentChain();
 }
 
 using DevicePathMap = std::map<DeviceId, ChainNodePath>;

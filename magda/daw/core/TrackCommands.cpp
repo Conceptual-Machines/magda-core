@@ -11,16 +11,8 @@
 namespace magda {
 
 namespace {
-ChainNodePath getChainElementParentPath(const ChainNodePath& path) {
-    ChainNodePath parent;
-    parent.trackId = path.trackId;
-    if (path.topLevelDeviceId != INVALID_DEVICE_ID)
-        return parent;
-
-    parent.steps = path.steps;
-    if (!parent.steps.empty())
-        parent.steps.pop_back();
-    return parent;
+ChainNodePath parentChainOf(const ChainNodePath& path) {
+    return path.parentChain();
 }
 
 std::vector<ChainElement> deepCopyChainElements(const std::vector<ChainElement>& elements) {
@@ -353,7 +345,14 @@ void RemoveDeviceFromTrackCommand::undo() {
     DBG("UNDO: Restoring device " << savedDevice_.name << " (id=" << deviceId_
                                   << "), pluginState length=" << savedDevice_.pluginState.length());
     auto& tm = TrackManager::getInstance();
-    tm.addDeviceToTrack(trackId_, savedDevice_, savedIndex_);
+    // Re-insert with ids preserved. addDeviceToTrack runs the device through
+    // prepareNewDevice, which stamps a fresh DeviceId, so undo would restore it
+    // under a different id and orphan every automation lane, macro link, and
+    // alias that targeted it. ChainElement is move-only, hence the push_back.
+    std::vector<ChainElement> elements;
+    elements.push_back(makeDeviceElement(savedDevice_));
+    tm.insertChainElementsByPath(ChainNodePath::topLevelDevice(trackId_, deviceId_).parentChain(),
+                                 std::move(elements), savedIndex_, /*reassignIds=*/false);
     DBG("UNDO: Restored device " << savedDevice_.name << " (id=" << deviceId_ << ") to track "
                                  << trackId_ << " at index " << savedIndex_);
 }
@@ -443,7 +442,7 @@ void MoveChainElementsCommand::execute() {
         if (!describeChainElementPath(path, type, id))
             continue;
 
-        const auto parentPath = getChainElementParentPath(path);
+        const auto parentPath = parentChainOf(path);
         const int index = tm.getChainElementIndex(path);
         if (index < 0)
             continue;
@@ -508,7 +507,7 @@ void MoveChainElementsCommand::undo() {
             return;
 
         int insertIndex = record.originalIndex;
-        const auto currentParentPath = getChainElementParentPath(currentPath);
+        const auto currentParentPath = parentChainOf(currentPath);
         const int currentIndex = tm.getChainElementIndex(currentPath);
         if (currentParentPath == record.originalParentPath) {
             if (currentIndex == record.originalIndex)
@@ -534,8 +533,7 @@ void MoveChainElementsCommand::undo() {
 
         for (auto it = begin; it != end; ++it) {
             const auto currentPath = findChainElementPath(tm, it->type, it->id);
-            if (!currentPath.isValid() ||
-                getChainElementParentPath(currentPath) != it->originalParentPath) {
+            if (!currentPath.isValid() || parentChainOf(currentPath) != it->originalParentPath) {
                 allStillInOriginalContainer = false;
                 break;
             }
@@ -633,10 +631,10 @@ void WrapChainElementsInRackCommand::execute() {
         return;
     }
 
-    sourceChainPath_ = getChainElementParentPath(sourceElementPaths_.front());
+    sourceChainPath_ = parentChainOf(sourceElementPaths_.front());
     sourceIndex_ = std::numeric_limits<int>::max();
     for (const auto& path : sourceElementPaths_) {
-        if (getChainElementParentPath(path) != sourceChainPath_) {
+        if (parentChainOf(path) != sourceChainPath_) {
             executed_ = false;
             return;
         }
@@ -796,6 +794,102 @@ void CreateTrackWithDeviceCommand::undo() {
 
     TrackManager::getInstance().deleteTrack(createdTrackId_);
     DBG("UNDO: Undid create track with device " << createdTrackId_);
+}
+
+// ============================================================================
+// Path-based device commands
+// ============================================================================
+
+namespace {
+
+void capturePluginStateAt(const ChainNodePath& devicePath) {
+    auto& tm = TrackManager::getInstance();
+    if (auto* engine = tm.getAudioEngine()) {
+        if (auto* bridge = engine->getAudioBridge())
+            bridge->getPluginManager().capturePluginState(devicePath);
+    }
+}
+
+}  // namespace
+
+AddDeviceByPathCommand::AddDeviceByPathCommand(const ChainNodePath& parentPath,
+                                               const DeviceInfo& device, int insertIndex)
+    : parentPath_(parentPath), device_(device), insertIndex_(insertIndex) {}
+
+void AddDeviceByPathCommand::execute() {
+    auto& tm = TrackManager::getInstance();
+
+    if (parentPath_.getType() == ChainNodeType::Track) {
+        createdDeviceId_ = insertIndex_ >= 0
+                               ? tm.addDeviceToTrack(parentPath_.trackId, device_, insertIndex_)
+                               : tm.addDeviceToTrack(parentPath_.trackId, device_);
+        if (createdDeviceId_ != INVALID_DEVICE_ID)
+            createdDevicePath_ =
+                ChainNodePath::topLevelDevice(parentPath_.trackId, createdDeviceId_);
+    } else {
+        createdDeviceId_ = insertIndex_ >= 0
+                               ? tm.addDeviceToChainByPath(parentPath_, device_, insertIndex_)
+                               : tm.addDeviceToChainByPath(parentPath_, device_);
+        if (createdDeviceId_ != INVALID_DEVICE_ID)
+            createdDevicePath_ = parentPath_.withDevice(createdDeviceId_);
+    }
+
+    executed_ = createdDeviceId_ != INVALID_DEVICE_ID;
+    DBG("UNDO: Added device by path " << parentPath_.toString() << " (deviceId=" << createdDeviceId_
+                                      << ")");
+}
+
+void AddDeviceByPathCommand::undo() {
+    if (!executed_ || !createdDevicePath_.isValid())
+        return;
+    TrackManager::getInstance().removeDeviceFromChainByPath(createdDevicePath_);
+    DBG("UNDO: Removed added device " << createdDeviceId_);
+}
+
+RemoveDeviceByPathCommand::RemoveDeviceByPathCommand(const ChainNodePath& devicePath)
+    : devicePath_(devicePath), parentPath_(devicePath.parentChain()) {}
+
+void RemoveDeviceByPathCommand::execute() {
+    auto& tm = TrackManager::getInstance();
+
+    const auto* device = tm.getDeviceInChainByPath(devicePath_);
+    if (device == nullptr)
+        return;
+
+    // Flush live plugin state into DeviceInfo so undo restores how it sounded.
+    capturePluginStateAt(devicePath_);
+
+    device = tm.getDeviceInChainByPath(devicePath_);
+    if (device == nullptr)
+        return;
+
+    savedDevice_ = *device;
+    savedIndex_ = tm.getChainElementIndex(devicePath_);
+    if (savedIndex_ < 0)
+        return;
+
+    tm.removeDeviceFromChainByPath(devicePath_);
+    executed_ = true;
+    DBG("UNDO: Removed device " << savedDevice_.name << " at index " << savedIndex_);
+}
+
+void RemoveDeviceByPathCommand::undo() {
+    if (!executed_)
+        return;
+
+    // Re-insert with ids preserved. The ordinary add path runs the device
+    // through prepareNewDevice, which stamps a fresh DeviceId — undo would then
+    // restore the device under a different id, leaving every automation lane,
+    // macro link, and alias that targeted it pointing at nothing.
+    // ChainElement holds a unique_ptr, so build the vector by move rather than
+    // from an initializer list.
+    std::vector<ChainElement> elements;
+    elements.push_back(makeDeviceElement(savedDevice_));
+    TrackManager::getInstance().insertChainElementsByPath(parentPath_, std::move(elements),
+                                                          savedIndex_, /*reassignIds=*/false);
+
+    DBG("UNDO: Restored device " << savedDevice_.name << " (id=" << savedDevice_.id << ") at index "
+                                 << savedIndex_);
 }
 
 }  // namespace magda

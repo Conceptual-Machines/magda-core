@@ -262,6 +262,27 @@ struct ChainNodePath {
         return p;
     }
 
+    /**
+     * @brief The chain this element lives in.
+     *
+     * Differs from `parent()` for a legacy top-level device, whose id lives
+     * outside `steps` — `parent()` returns that path unchanged and so still
+     * addresses the device rather than its container. The result is a chain
+     * path with no steps for the track's main FX chain, which is what the
+     * element-container lookups expect.
+     */
+    ChainNodePath parentChain() const {
+        ChainNodePath p;
+        p.trackId = trackId;
+        if (topLevelDeviceId != INVALID_DEVICE_ID)
+            return p;
+
+        p.steps = steps;
+        if (!p.steps.empty())
+            p.steps.pop_back();
+        return p;
+    }
+
     // Build a human-readable path string (for debugging/display)
     juce::String toString() const {
         juce::String result = "Track[" + juce::String(trackId) + "]";
