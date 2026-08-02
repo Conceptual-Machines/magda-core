@@ -5,6 +5,22 @@
 
 using namespace magda;
 
+namespace {
+
+ControlTarget roundTrip(const ControlTarget& target) {
+    ControlTarget out;
+    REQUIRE(fromVar(toVar(target), out));
+    return out;
+}
+
+ChainNodePath roundTrip(const ChainNodePath& path) {
+    ChainNodePath out;
+    REQUIRE(fromVar(toVar(path), out));
+    return out;
+}
+
+}  // namespace
+
 // ============================================================================
 // ControlTarget — equality and validity per kind
 // ============================================================================
@@ -130,4 +146,96 @@ TEST_CASE("ControlTarget - deviceId() accessor", "[control_target]") {
 
     auto trackTarget = ControlTarget::trackVolume(1);
     REQUIRE(trackTarget.deviceId() == INVALID_DEVICE_ID);
+}
+
+// ============================================================================
+// Canonical serialization
+// ============================================================================
+
+TEST_CASE("ChainNodePath - JSON round-trip preserves every representation",
+          "[control_target][serialization]") {
+    REQUIRE(roundTrip(ChainNodePath::trackLevel(3)) == ChainNodePath::trackLevel(3));
+    REQUIRE(roundTrip(ChainNodePath::topLevelDevice(1, 5)) == ChainNodePath::topLevelDevice(1, 5));
+    REQUIRE(roundTrip(ChainNodePath::rack(1, 2)) == ChainNodePath::rack(1, 2));
+    REQUIRE(roundTrip(ChainNodePath::chain(1, 2, 4)) == ChainNodePath::chain(1, 2, 4));
+    REQUIRE(roundTrip(ChainNodePath::chainDevice(1, 2, 4, 6)) ==
+            ChainNodePath::chainDevice(1, 2, 4, 6));
+    REQUIRE(roundTrip(ChainNodePath::postFxDevice(1, 6)) == ChainNodePath::postFxDevice(1, 6));
+    REQUIRE(roundTrip(ChainNodePath::mixerAnalysisDevice(1, 6)) ==
+            ChainNodePath::mixerAnalysisDevice(1, 6));
+
+    const auto nested = ChainNodePath::chain(1, 2, 4).withRack(7).withChain(8).withDevice(9);
+    REQUIRE(roundTrip(nested) == nested);
+}
+
+TEST_CASE("ChainNodePath - the three per-section device spaces stay distinct",
+          "[control_target][serialization]") {
+    // Same DeviceId, three different devices — the section discriminator lives
+    // in the leading Segment step and must survive serialization.
+    const auto fx = ChainNodePath::topLevelDevice(1, 3);
+    const auto postFx = ChainNodePath::postFxDevice(1, 3);
+    const auto analysis = ChainNodePath::mixerAnalysisDevice(1, 3);
+
+    REQUIRE(roundTrip(fx) != roundTrip(postFx));
+    REQUIRE(roundTrip(postFx) != roundTrip(analysis));
+    REQUIRE(roundTrip(fx) != roundTrip(analysis));
+}
+
+TEST_CASE("ChainNodePath - malformed input is rejected or ignored",
+          "[control_target][serialization]") {
+    ChainNodePath out;
+    REQUIRE_FALSE(fromVar(juce::var(), out));
+    REQUIRE_FALSE(fromVar(juce::var(42), out));
+
+    // An out-of-range step type is dropped rather than cast into a bogus enum.
+    auto* stepObj = new juce::DynamicObject();
+    stepObj->setProperty("type", 99);
+    stepObj->setProperty("id", 1);
+    juce::Array<juce::var> steps;
+    steps.add(juce::var(stepObj));
+
+    auto* pathObj = new juce::DynamicObject();
+    pathObj->setProperty("trackId", 1);
+    pathObj->setProperty("steps", juce::var(steps));
+
+    REQUIRE(fromVar(juce::var(pathObj), out));
+    REQUIRE(out.steps.empty());
+}
+
+TEST_CASE("ControlTarget - JSON round-trip preserves every kind",
+          "[control_target][serialization]") {
+    const auto path = ChainNodePath::chainDevice(1, 2, 4, 6);
+
+    REQUIRE(roundTrip(ControlTarget::pluginParam(path, 3)) == ControlTarget::pluginParam(path, 3));
+    REQUIRE(roundTrip(ControlTarget::deviceMacro(path, 2)) == ControlTarget::deviceMacro(path, 2));
+    REQUIRE(roundTrip(ControlTarget::modParam(path, 7, 0)) == ControlTarget::modParam(path, 7, 0));
+    REQUIRE(roundTrip(ControlTarget::trackVolume(1)) == ControlTarget::trackVolume(1));
+    REQUIRE(roundTrip(ControlTarget::trackPan(1)) == ControlTarget::trackPan(1));
+    REQUIRE(roundTrip(ControlTarget::sendLevel(1, 2)) == ControlTarget::sendLevel(1, 2));
+    REQUIRE(roundTrip(ControlTarget::tempo()) == ControlTarget::tempo());
+}
+
+TEST_CASE("ControlTarget - tempo serializes without a device path",
+          "[control_target][serialization]") {
+    const auto json = toVar(ControlTarget::tempo());
+    REQUIRE(json.getDynamicObject() != nullptr);
+    REQUIRE(json["kind"].toString() == "tempo");
+    // Emitting a placeholder path would round-trip into a bogus Track[-1].
+    REQUIRE_FALSE(json.getDynamicObject()->hasProperty("devicePath"));
+
+    const auto restored = roundTrip(ControlTarget::tempo());
+    REQUIRE(restored.isEditScoped());
+    REQUIRE(restored.isValid());
+}
+
+TEST_CASE("ControlTarget - kind is a stable string, not an enum ordinal",
+          "[control_target][serialization]") {
+    REQUIRE(toVar(ControlTarget::sendLevel(1, 2))["kind"].toString() == "send_level");
+    REQUIRE(parseControlTargetKind("send_level") == ControlTarget::Kind::SendLevel);
+    REQUIRE_FALSE(parseControlTargetKind("nonsense").has_value());
+
+    ControlTarget out;
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("kind", "nonsense");
+    REQUIRE_FALSE(fromVar(juce::var(obj), out));
 }

@@ -357,24 +357,57 @@ const juce::var& sessionSchema() {
     return value;
 }
 
-const juce::var& automationTargetSchema() {
+const juce::var& devicePathSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
         "properties":{
-            "kind":{"type":"string","enum":["plugin_param","device_macro","mod_param",
-                "track_volume","track_pan","send_level","tempo"]},
-            "trackId":{"anyOf":[{"type":"null"},{"type":"integer","const":-2},
+            "trackId":{"anyOf":[{"type":"integer","const":-2},
                                 {"type":"integer","minimum":0}]},
-            "deviceId":{"type":["integer","null"],"minimum":0},
-            "parameterIndex":{"type":"integer","minimum":-1},
-            "modId":{"type":"integer","minimum":-1},
-            "modParameterIndex":{"type":"integer","minimum":-1},
-            "sendBusIndex":{"type":"integer","minimum":-1}
+            "section":{"type":"string","enum":["fx","post_fx","mixer_analysis"]},
+            "trackLevel":{"type":"boolean"},
+            "topLevelDeviceId":{"type":["integer","null"],"minimum":0},
+            "steps":{"type":"array","items":{
+                "type":"object",
+                "properties":{
+                    "type":{"type":"string","enum":["rack","chain","device"]},
+                    "id":{"type":"integer","minimum":0}
+                },
+                "required":["type","id"],
+                "additionalProperties":false
+            }}
         },
-        "required":["kind","trackId","deviceId","parameterIndex","modId","modParameterIndex",
-                    "sendBusIndex"],
+        "required":["trackId","section","trackLevel","topLevelDeviceId","steps"],
         "additionalProperties":false
     })json");
+    return value;
+}
+
+const juce::var& automationTargetSchema() {
+    static auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "kind":{"type":"string","enum":["plugin_param","device_macro","mod_param",
+                    "track_volume","track_pan","send_level","tempo"]},
+                "devicePath":{},
+                "parameterIndex":{"type":"integer","minimum":-1},
+                "modId":{"type":"integer","minimum":-1},
+                "modParameterIndex":{"type":"integer","minimum":-1},
+                "sendBusIndex":{"type":"integer","minimum":-1}
+            },
+            "required":["kind","devicePath","parameterIndex","modId","modParameterIndex",
+                        "sendBusIndex"],
+            "additionalProperties":false
+        })json");
+        // Edit-scoped targets (tempo) carry no path, so null is permitted.
+        auto* nullable = new juce::DynamicObject();
+        juce::Array<juce::var> alternatives;
+        alternatives.add(parseSchema(R"json({"type":"null"})json"));
+        alternatives.add(devicePathSchema());
+        nullable->setProperty("anyOf", juce::var(alternatives));
+        schema["properties"].getDynamicObject()->setProperty("devicePath", juce::var(nullable));
+        return schema;
+    }();
     return value;
 }
 
@@ -866,11 +899,29 @@ juce::var toJson(const AutomationPointDto& dto) {
     return object;
 }
 
+juce::var toJson(const DevicePathDto& dto) {
+    auto object = new juce::DynamicObject();
+    object->setProperty("trackId", dto.trackId);
+    object->setProperty("section", dto.section);
+    object->setProperty("trackLevel", dto.trackLevel);
+    object->setProperty("topLevelDeviceId", nullableId(dto.topLevelDeviceId));
+
+    juce::Array<juce::var> steps;
+    for (const auto& step : dto.steps) {
+        auto* stepObject = new juce::DynamicObject();
+        stepObject->setProperty("type", step.type);
+        stepObject->setProperty("id", step.id);
+        steps.add(juce::var(stepObject));
+    }
+    object->setProperty("steps", juce::var(steps));
+    return object;
+}
+
 juce::var toJson(const AutomationTargetDto& dto) {
     auto object = new juce::DynamicObject();
     object->setProperty("kind", dto.kind);
-    object->setProperty("trackId", nullableId(dto.trackId));
-    object->setProperty("deviceId", nullableId(dto.deviceId));
+    object->setProperty("devicePath",
+                        dto.devicePath.has_value() ? toJson(*dto.devicePath) : juce::var());
     object->setProperty("parameterIndex", dto.parameterIndex);
     object->setProperty("modId", dto.modId);
     object->setProperty("modParameterIndex", dto.modParameterIndex);
@@ -1091,8 +1142,18 @@ std::optional<AutomationLaneDto> automationLaneFromJson(const juce::var& json, E
     dto.name = json["name"].toString();
     const auto target = json["target"];
     dto.target.kind = target["kind"].toString();
-    dto.target.trackId = readNullableId<TrackId>(target, "trackId");
-    dto.target.deviceId = readNullableId<DeviceId>(target, "deviceId");
+    if (const auto path = target["devicePath"]; path.isObject()) {
+        DevicePathDto pathDto;
+        pathDto.trackId = readInt(path, "trackId");
+        pathDto.section = path["section"].toString();
+        pathDto.trackLevel = static_cast<bool>(path["trackLevel"]);
+        pathDto.topLevelDeviceId = readNullableId<DeviceId>(path, "topLevelDeviceId");
+        if (auto* steps = path["steps"].getArray()) {
+            for (const auto& item : *steps)
+                pathDto.steps.push_back({item["type"].toString(), readInt(item, "id")});
+        }
+        dto.target.devicePath = std::move(pathDto);
+    }
     dto.target.parameterIndex = readInt(target, "parameterIndex");
     dto.target.modId = readInt(target, "modId");
     dto.target.modParameterIndex = readInt(target, "modParameterIndex");

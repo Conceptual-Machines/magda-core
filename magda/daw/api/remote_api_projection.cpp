@@ -367,10 +367,8 @@ AutomationLaneDto makeAutomationLaneDto(const AutomationLaneInfo& lane) {
     dto.type = lane.type == AutomationLaneType::Absolute ? "absolute" : "clip_based";
     dto.name = lane.getDisplayName();
     dto.target.kind = juce::String(toString(lane.target.kind));
-    if (!lane.target.isEditScoped() && lane.target.devicePath.trackId != INVALID_TRACK_ID)
-        dto.target.trackId = lane.target.devicePath.trackId;
-    if (lane.target.deviceId() != INVALID_DEVICE_ID)
-        dto.target.deviceId = lane.target.deviceId();
+    if (!lane.target.isEditScoped() && lane.target.devicePath.isValid())
+        dto.target.devicePath = makeDevicePathDto(lane.target.devicePath);
     dto.target.parameterIndex = lane.target.paramIndex;
     dto.target.modId = lane.target.modId;
     dto.target.modParameterIndex = lane.target.modParamIndex;
@@ -381,6 +379,86 @@ AutomationLaneDto makeAutomationLaneDto(const AutomationLaneInfo& lane) {
     }
     dto.clipIds = lane.clipIds;
     return dto;
+}
+
+// ============================================================================
+// ChainNodePath <-> DevicePathDto
+// ============================================================================
+
+DevicePathDto makeDevicePathDto(const ChainNodePath& path) {
+    DevicePathDto dto;
+    dto.trackId = path.trackId;
+    dto.trackLevel = path.isTrackLevel;
+    if (path.topLevelDeviceId != INVALID_DEVICE_ID)
+        dto.topLevelDeviceId = path.topLevelDeviceId;
+
+    // A Segment step is only ever leading (post-fx and mixer-analysis are flat
+    // by construction), so lifting it out leaves a pure rack/chain/device route.
+    size_t first = 0;
+    if (!path.steps.empty() && path.steps.front().type == ChainStepType::Segment) {
+        switch (static_cast<ChainSegment>(path.steps.front().id)) {
+            case ChainSegment::PostFx:
+                dto.section = "post_fx";
+                break;
+            case ChainSegment::MixerAnalysis:
+                dto.section = "mixer_analysis";
+                break;
+            case ChainSegment::Fx:
+                dto.section = "fx";
+                break;
+        }
+        first = 1;
+    }
+
+    for (size_t i = first; i < path.steps.size(); ++i) {
+        const auto& step = path.steps[i];
+        switch (step.type) {
+            case ChainStepType::Rack:
+                dto.steps.push_back({"rack", step.id});
+                break;
+            case ChainStepType::Chain:
+                dto.steps.push_back({"chain", step.id});
+                break;
+            case ChainStepType::Device:
+                dto.steps.push_back({"device", step.id});
+                break;
+            case ChainStepType::Segment:
+                // Non-leading segments are not produced by any factory; drop
+                // rather than emit a step type the public contract lacks.
+                break;
+        }
+    }
+
+    return dto;
+}
+
+std::optional<ChainNodePath> toChainNodePath(const DevicePathDto& dto) {
+    ChainNodePath path;
+    path.trackId = dto.trackId;
+    path.isTrackLevel = dto.trackLevel;
+    path.topLevelDeviceId = dto.topLevelDeviceId.value_or(INVALID_DEVICE_ID);
+
+    if (dto.section == "post_fx") {
+        path.steps.push_back({ChainStepType::Segment, static_cast<int>(ChainSegment::PostFx)});
+    } else if (dto.section == "mixer_analysis") {
+        path.steps.push_back(
+            {ChainStepType::Segment, static_cast<int>(ChainSegment::MixerAnalysis)});
+    } else if (dto.section != "fx") {
+        return std::nullopt;
+    }
+
+    for (const auto& step : dto.steps) {
+        if (step.type == "rack")
+            path.steps.push_back({ChainStepType::Rack, step.id});
+        else if (step.type == "chain")
+            path.steps.push_back({ChainStepType::Chain, step.id});
+        else if (step.type == "device")
+            path.steps.push_back({ChainStepType::Device, step.id});
+        else
+            return std::nullopt;
+    }
+
+    return path;
 }
 
 }  // namespace magda::remote

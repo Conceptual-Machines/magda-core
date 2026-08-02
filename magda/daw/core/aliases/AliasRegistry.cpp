@@ -301,24 +301,8 @@ juce::var serializeStoredAlias(const StoredAlias& alias) {
     obj->setProperty("paramIndex", alias.paramIndex);
     obj->setProperty("paramNameAtSetTime", alias.paramNameAtSetTime);
 
-    if (alias.path.has_value()) {
-        // Inline ChainNodePath serialization
-        const auto& path = *alias.path;
-        auto* pathObj = new juce::DynamicObject();
-        pathObj->setProperty("trackId", path.trackId);
-        pathObj->setProperty("topLevelDeviceId", path.topLevelDeviceId);
-        pathObj->setProperty("isTrackLevel", path.isTrackLevel);
-
-        juce::Array<juce::var> stepsArray;
-        for (const auto& step : path.steps) {
-            auto* stepObj = new juce::DynamicObject();
-            stepObj->setProperty("type", static_cast<int>(step.type));
-            stepObj->setProperty("id", step.id);
-            stepsArray.add(juce::var(stepObj));
-        }
-        pathObj->setProperty("steps", juce::var(stepsArray));
-        obj->setProperty("path", juce::var(pathObj));
-    }
+    if (alias.path.has_value())
+        obj->setProperty("path", toVar(*alias.path));
 
     return juce::var(obj);
 }
@@ -337,30 +321,9 @@ bool deserializeStoredAlias(const juce::var& v, StoredAlias& out) {
     out.path = std::nullopt;
 
     if (obj->hasProperty("path")) {
-        auto pathVar = obj->getProperty("path");
-        if (pathVar.isObject()) {
-            auto* pathObj = pathVar.getDynamicObject();
-            ChainNodePath path;
-            path.trackId = static_cast<int>(pathObj->getProperty("trackId"));
-            path.topLevelDeviceId = static_cast<int>(pathObj->getProperty("topLevelDeviceId"));
-            if (pathObj->hasProperty("isTrackLevel"))
-                path.isTrackLevel = static_cast<bool>(pathObj->getProperty("isTrackLevel"));
-
-            auto stepsVar = pathObj->getProperty("steps");
-            if (stepsVar.isArray()) {
-                for (const auto& stepVar : *stepsVar.getArray()) {
-                    if (!stepVar.isObject())
-                        continue;
-                    auto* stepObj = stepVar.getDynamicObject();
-                    ChainPathStep step;
-                    step.type =
-                        static_cast<ChainStepType>(static_cast<int>(stepObj->getProperty("type")));
-                    step.id = static_cast<int>(stepObj->getProperty("id"));
-                    path.steps.push_back(step);
-                }
-            }
+        ChainNodePath path;
+        if (fromVar(obj->getProperty("path"), path))
             out.path = path;
-        }
     }
 
     return out.isValid();

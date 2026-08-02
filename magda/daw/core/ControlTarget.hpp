@@ -2,6 +2,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include <optional>
+
 #include "ChainNodePath.hpp"
 #include "TypeIds.hpp"
 
@@ -164,6 +166,34 @@ struct ControlTarget {
         return devicePath.getDeviceId();
     }
 };
+
+// ============================================================================
+// Canonical serialization
+// ============================================================================
+
+/**
+ * @brief Serialize a target to its canonical persisted JSON form.
+ *
+ * Shape: `{kind, devicePath?, paramIndex, modId, modParamIndex, sendBusIndex}`.
+ * `kind` is the stable string from `toString`, not an enum ordinal.
+ * `devicePath` is omitted for edit-scoped kinds (see `isEditScoped`).
+ *
+ * Every consumer that persists a target — macro/mod links, automation lanes,
+ * MIDI/OSC bindings, alias resolvers — should route through this rather than
+ * hand-rolling a copy.
+ */
+juce::var toVar(const ControlTarget& target);
+
+/**
+ * @brief Parse a target from its canonical persisted JSON form.
+ *
+ * Returns false if `v` is not an object or carries an unrecognised `kind`.
+ * A parsed target is not guaranteed meaningful — check `isValid()`.
+ */
+bool fromVar(const juce::var& v, ControlTarget& out);
+
+/** @brief Parse a `toString` kind back to its enum value. */
+std::optional<ControlTarget::Kind> parseControlTargetKind(juce::StringRef kind);
 
 inline const char* toString(ControlTarget::Kind kind) {
     switch (kind) {
