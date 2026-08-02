@@ -272,7 +272,6 @@ void CompiledGrainDelayCurveView::paint(juce::Graphics& g) {
 }
 
 const CompiledPresentationSpec& getMagdaGrainDelayPresentation() {
-    static const LegacyUiKind kSuppress[] = {LegacyUiKind::Delay};
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaGrainDelayCompiledPlugin::xmlTypeName,
         .layoutCellCount = 8,
@@ -280,7 +279,6 @@ const CompiledPresentationSpec& getMagdaGrainDelayPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledGrainDelayCurveView>(pluginId);
         },
-        .suppressLegacyUis = kSuppress,
     };
     return kSpec;
 }

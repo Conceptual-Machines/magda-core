@@ -188,7 +188,6 @@ const CompiledPresentationSpec& getMagdaGritPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledGritCurveView>(pluginId);
         },
-        .suppressLegacyUis = {},
         .isParameterEnabled =
             [](const magda::DeviceInfo& device, int slotIndex) {
                 using Grit = magda::daw::audio::compiled::MagdaGritCompiledPlugin;

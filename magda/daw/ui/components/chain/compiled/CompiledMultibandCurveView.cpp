@@ -925,7 +925,6 @@ const CompiledPresentationSpec& getMagdaMultibandPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledMultibandCurveView>(pluginId);
         },
-        .suppressLegacyUis = {},
         .visualMinFractionNumerator = 3,
         .visualMinFractionDenominator = 4,
     };

@@ -6,6 +6,7 @@
 #include "../media_db/PresetDbIndexer.hpp"
 #include "../project/serialization/ProjectSerializer.hpp"
 #include "AppPaths.hpp"
+#include "LegacyDeviceAliases.hpp"
 #include "version.hpp"
 
 namespace magda {
@@ -260,6 +261,7 @@ bool PresetManager::loadChainPreset(const juce::String& presetName,
         }
         outChainElements.push_back(std::move(element));
     }
+    legacy_devices::migrateRetiredDevicesInChain(outChainElements);
     return true;
 }
 
@@ -347,6 +349,7 @@ bool PresetManager::loadRackPreset(const juce::String& presetName, RackInfo& out
         lastError_ = "Failed to deserialize rack: " + ProjectSerializer::getLastError();
         return false;
     }
+    legacy_devices::migrateRetiredDevicesInRack(outRack);
     return true;
 }
 
@@ -401,6 +404,7 @@ bool PresetManager::loadDevicePreset(const juce::String& pluginFolder,
         lastError_ = "Failed to deserialize device: " + ProjectSerializer::getLastError();
         return false;
     }
+    legacy_devices::migrateRetiredDevice(outDevice);
     return true;
 }
 

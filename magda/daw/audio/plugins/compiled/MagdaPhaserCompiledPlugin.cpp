@@ -371,6 +371,9 @@ constexpr AliasSpec kAliases[] = {
     {"mix", 6, "Mix"},
 };
 
+// Tracktion's retired Phaser loads here; see core/LegacyDeviceAliases.hpp.
+constexpr const char* kLoadAliases[] = {"phaser"};
+
 const CompiledPluginSpec& getMagdaPhaserSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaPhaserCompiledPlugin::xmlTypeName,
@@ -388,6 +391,8 @@ const CompiledPluginSpec& getMagdaPhaserSpec() {
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
+        .loadAliases = kLoadAliases,
+        .loadAliasCount = static_cast<int>(sizeof(kLoadAliases) / sizeof(kLoadAliases[0])),
     };
     return kSpec;
 }

@@ -470,6 +470,9 @@ constexpr AliasSpec kAliases[] = {
     {"cross", 6, "Cross"},
 };
 
+// Tracktion's retired Delay loads here; see core/LegacyDeviceAliases.hpp.
+constexpr const char* kLoadAliases[] = {"delay"};
+
 const CompiledPluginSpec& getMagdaDelaySpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaDelayCompiledPlugin::xmlTypeName,
@@ -486,6 +489,8 @@ const CompiledPluginSpec& getMagdaDelaySpec() {
         .aliasKey = "magda_delay_compiled",
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
+        .loadAliases = kLoadAliases,
+        .loadAliasCount = static_cast<int>(sizeof(kLoadAliases) / sizeof(kLoadAliases[0])),
     };
     return kSpec;
 }

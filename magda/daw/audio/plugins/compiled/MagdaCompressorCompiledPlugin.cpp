@@ -530,6 +530,9 @@ constexpr AliasSpec kAliases[] = {
     {"autogain", 14, "Autogain"},
 };
 
+// Tracktion's retired Compressor loads here; see core/LegacyDeviceAliases.hpp.
+constexpr const char* kLoadAliases[] = {"compressor"};
+
 const CompiledPluginSpec& getMagdaCompressorSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaCompressorCompiledPlugin::xmlTypeName,
@@ -547,6 +550,8 @@ const CompiledPluginSpec& getMagdaCompressorSpec() {
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
+        .loadAliases = kLoadAliases,
+        .loadAliasCount = static_cast<int>(sizeof(kLoadAliases) / sizeof(kLoadAliases[0])),
     };
     return kSpec;
 }

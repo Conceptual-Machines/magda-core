@@ -120,7 +120,9 @@ TEST_CASE("Master track chain elements survive save/load", "[project][serializat
 
     auto& element = master->chain.fxChainElements[0];
     REQUIRE(isDevice(element));
-    REQUIRE(getDevice(element).pluginId == "eq");
+    // "eq" is a retired Tracktion type: it loads back as its compiled
+    // successor, which is also what the project holds from here on.
+    REQUIRE(getDevice(element).pluginId == "magda_eq");
 }
 
 TEST_CASE("Master track chain with multiple devices roundtrips",
@@ -155,6 +157,6 @@ TEST_CASE("Master track chain with multiple devices roundtrips",
 
     master = tm.getTrack(MASTER_TRACK_ID);
     REQUIRE(master->chain.fxChainElements.size() == 2);
-    REQUIRE(getDevice(master->chain.fxChainElements[0]).pluginId == "eq");
-    REQUIRE(getDevice(master->chain.fxChainElements[1]).pluginId == "compressor");
+    REQUIRE(getDevice(master->chain.fxChainElements[0]).pluginId == "magda_eq");
+    REQUIRE(getDevice(master->chain.fxChainElements[1]).pluginId == "magda_compressor");
 }

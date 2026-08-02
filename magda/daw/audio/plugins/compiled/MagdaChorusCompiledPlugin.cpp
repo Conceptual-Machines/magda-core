@@ -465,6 +465,9 @@ constexpr AliasSpec kAliases[] = {
     {"mix", 6, "Mix"},       {"width", 7, "Width"},
 };
 
+// Tracktion's retired Chorus loads here; see core/LegacyDeviceAliases.hpp.
+constexpr const char* kLoadAliases[] = {"chorus"};
+
 const CompiledPluginSpec& getMagdaChorusSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaChorusCompiledPlugin::xmlTypeName,
@@ -481,6 +484,8 @@ const CompiledPluginSpec& getMagdaChorusSpec() {
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
+        .loadAliases = kLoadAliases,
+        .loadAliasCount = static_cast<int>(sizeof(kLoadAliases) / sizeof(kLoadAliases[0])),
     };
     return kSpec;
 }

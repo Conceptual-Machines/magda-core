@@ -83,6 +83,7 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
             [this] { testProjectFileReloadRestoresCompiledDrumPads(); });
         magda::test::runWithCleanJuceState(
             [this] { testTrackMoveKeepsSamplerPadsThroughProjectReload(); });
+        magda::test::runWithCleanJuceState([this] { testRetiredPadFxRestoresAsSuccessor(); });
     }
 
   private:
@@ -113,6 +114,75 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
 
         restored->restorePluginStateFromValueTree(savedState);
         return restoredPlugin;
+    }
+
+    // A pad FX saved before its device was retired names the old Tracktion type
+    // and stores its values as that plugin's own properties. Tracktion still
+    // registers those types as built-ins and checks them ahead of MAGDA's load
+    // aliases, so the tree has to be rewritten before the engine sees it or the
+    // pad quietly comes back as the retired Tracktion plugin.
+    void testRetiredPadFxRestoresAsSuccessor() {
+        beginTest("A retired Tracktion pad FX restores as its compiled successor");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
+        expect(edit != nullptr, "Test edit must be created");
+        if (!edit)
+            return;
+
+        auto plugin = createCustomPlugin(*edit, DrumGridPlugin::xmlTypeName);
+        auto* drumGrid = dynamic_cast<DrumGridPlugin*>(plugin.get());
+        expect(drumGrid != nullptr, "DrumGrid plugin must be created");
+        if (drumGrid == nullptr)
+            return;
+
+        // Hand-build the pre-0.18 shape: a CHAIN holding a Tracktion delay.
+        juce::ValueTree savedState(te::IDs::PLUGIN);
+        savedState.setProperty(te::IDs::type, DrumGridPlugin::xmlTypeName, nullptr);
+
+        // Names spelled out rather than taken from the class, so the test pins
+        // the shape that is actually on disk in old projects.
+        juce::ValueTree chainTree(juce::Identifier("CHAIN"));
+        chainTree.setProperty(juce::Identifier("index"), 0, nullptr);
+        chainTree.setProperty(juce::Identifier("lowNote"), DrumGridPlugin::baseNote, nullptr);
+        chainTree.setProperty(juce::Identifier("highNote"), DrumGridPlugin::baseNote, nullptr);
+        chainTree.setProperty(juce::Identifier("rootNote"), DrumGridPlugin::baseNote, nullptr);
+
+        juce::ValueTree delayTree(te::IDs::PLUGIN);
+        delayTree.setProperty(te::IDs::type, "delay", nullptr);
+        delayTree.setProperty(juce::Identifier("feedback"), -6.0f, nullptr);
+        delayTree.setProperty(juce::Identifier("mix"), 0.4f, nullptr);
+        delayTree.setProperty(juce::Identifier("length"), 375, nullptr);
+        chainTree.appendChild(delayTree, nullptr);
+        savedState.appendChild(chainTree, nullptr);
+
+        drumGrid->restorePluginStateFromValueTree(savedState);
+
+        auto* chain = drumGrid->getChainForNote(DrumGridPlugin::baseNote);
+        expect(chain != nullptr, "Restored pad chain must exist");
+        if (chain == nullptr || chain->plugins.empty() || chain->plugins[0] == nullptr) {
+            expect(false, "Restored pad chain must hold its FX");
+            return;
+        }
+
+        auto restored = chain->plugins[0];
+        expectEquals(restored->getPluginType(), juce::String("magda_delay"),
+                     "Retired pad FX must restore as the compiled successor");
+
+        // Values carried across, not defaults: 375 ms over 1..2000, -6 dB as a
+        // linear 0.5012 over 0..0.95, and mix straight through.
+        const auto normalized = [&restored](const char* id) {
+            auto* param = restored->getAutomatableParameterByID(id).get();
+            return param != nullptr ? param->getCurrentValue() : -1.0f;
+        };
+        expectWithinAbsoluteError(normalized("magda_delay_time"), 0.18709f, 0.002f,
+                                  "Delay length must survive as Time");
+        expectWithinAbsoluteError(normalized("magda_delay_feedback"), 0.52757f, 0.002f,
+                                  "Delay feedback must convert from dB");
+        expectWithinAbsoluteError(normalized("magda_delay_mix"), 0.4f, 0.002f,
+                                  "Delay mix must survive");
+        expectWithinAbsoluteError(normalized("magda_delay_sync"), 0.0f, 0.002f,
+                                  "Tracktion's delay was free-running, not synced");
     }
 
     void testCompiledDrumVoiceRoundTrip() {

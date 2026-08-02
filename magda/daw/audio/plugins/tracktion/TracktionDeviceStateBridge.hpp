@@ -2,6 +2,10 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <vector>
+
+#include "core/LegacyDeviceAliases.hpp"
+
 namespace magda::daw::audio::tracktion_adapter {
 
 namespace te = tracktion::engine;
@@ -43,5 +47,34 @@ juce::ValueTree devicePluginTreeFromState(const juce::String& savedState);
 /// constructed plugin. No-op for legacy state, which carries no separate
 /// parameter record.
 void applyDeviceStateParameters(te::Plugin& plugin, const juce::String& savedState);
+
+/**
+ * @brief Rewrite a nested retired-device plugin tree onto its compiled
+ *        successor, before the engine is asked to build it.
+ *
+ * Anything MAGDA models as a `DeviceInfo` is converted on the model at project
+ * load (`core/LegacyDeviceAliases.hpp`). A device nested inside another one — an
+ * FX chain on a Drum Grid pad — has no `DeviceInfo`: the owning device restores
+ * it straight from the saved plugin tree, with its values still in the engine's
+ * own property vocabulary.
+ *
+ * This has to run BEFORE construction. Tracktion registers every one of the
+ * retired effects as a built-in type and checks that list ahead of
+ * `EngineBehaviour::createCustomPlugin`, so a nested tree still naming one would
+ * otherwise be built as the Tracktion plugin it always was, and MAGDA's load
+ * aliases would never be consulted.
+ *
+ * The tree's `type` adopts the successor's id and the converted properties are
+ * consumed, so the nested tree stops being legacy the next time its owner is
+ * saved. Returns the converted values for `applyRetiredSlotValues` to seat once
+ * the plugin exists; empty (and the tree untouched) for any live device.
+ */
+std::vector<magda::legacy_devices::RetiredSlotValue> adoptRetiredNestedPluginTree(
+    const juce::ValueTree& state);
+
+/// Seat the values returned by `adoptRetiredNestedPluginTree` on the plugin
+/// built from that tree. No-op for an empty list or a non-compiled plugin.
+void applyRetiredSlotValues(te::Plugin& plugin,
+                            const std::vector<magda::legacy_devices::RetiredSlotValue>& values);
 
 }  // namespace magda::daw::audio::tracktion_adapter

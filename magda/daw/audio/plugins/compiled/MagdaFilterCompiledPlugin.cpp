@@ -547,6 +547,9 @@ constexpr AliasSpec kAliases[] = {
     {"engine", 3, "Engine"}, {"mode", 4, "Mode"},           {"limit", 5, "Limit"},
 };
 
+// Tracktion's retired Lowpass loads here; see core/LegacyDeviceAliases.hpp.
+constexpr const char* kLoadAliases[] = {"lowpass"};
+
 const CompiledPluginSpec& getMagdaFilterSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaFilterCompiledPlugin::xmlTypeName,
@@ -569,6 +572,8 @@ const CompiledPluginSpec& getMagdaFilterSpec() {
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
+        .loadAliases = kLoadAliases,
+        .loadAliasCount = static_cast<int>(sizeof(kLoadAliases) / sizeof(kLoadAliases[0])),
     };
     return kSpec;
 }
