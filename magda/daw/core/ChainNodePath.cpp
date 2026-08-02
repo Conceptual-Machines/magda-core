@@ -2,6 +2,23 @@
 
 namespace magda {
 
+namespace {
+
+// A missing property reads back as a void var, which converts to 0. Silently
+// accepting that turns an empty object into a valid address, so every numeric
+// field a path depends on must be present and actually numeric.
+bool readRequiredInt(const juce::DynamicObject& obj, const char* name, int& out) {
+    if (!obj.hasProperty(name))
+        return false;
+    const auto value = obj.getProperty(name);
+    if (!value.isInt() && !value.isInt64())
+        return false;
+    out = static_cast<int>(value);
+    return true;
+}
+
+}  // namespace
+
 juce::var toVar(const ChainNodePath& path) {
     auto* obj = new juce::DynamicObject();
     obj->setProperty("trackId", path.trackId);
@@ -29,18 +46,24 @@ bool fromVar(const juce::var& v, ChainNodePath& out) {
         return false;
 
     ChainNodePath path;
-    path.trackId = static_cast<int>(obj->getProperty("trackId"));
+    // Required: without it an empty object would parse as a path to track 0.
+    if (!readRequiredInt(*obj, "trackId", path.trackId))
+        return false;
 
-    if (obj->hasProperty("topLevelDeviceId"))
-        path.topLevelDeviceId = static_cast<int>(obj->getProperty("topLevelDeviceId"));
+    if (obj->hasProperty("topLevelDeviceId") &&
+        !readRequiredInt(*obj, "topLevelDeviceId", path.topLevelDeviceId))
+        return false;
 
     // Parsing fails closed. Skipping an unreadable step would shorten the
     // address rather than reject it, and a shorter path still resolves — just
     // to a different device. Dropping a leading Segment step in particular
     // re-points a post-fx path at the main FX chain, because isPostFx() tests
     // steps.front().
-    auto stepsVar = obj->getProperty("steps");
-    if (stepsVar.isArray()) {
+    if (obj->hasProperty("steps")) {
+        const auto stepsVar = obj->getProperty("steps");
+        if (!stepsVar.isArray())
+            return false;
+
         const auto& steps = *stepsVar.getArray();
         for (int i = 0; i < steps.size(); ++i) {
             const auto& stepVar = steps.getReference(i);
@@ -50,14 +73,17 @@ bool fromVar(const juce::var& v, ChainNodePath& out) {
             if (stepObj == nullptr)
                 return false;
 
-            const auto rawType = static_cast<int>(stepObj->getProperty("type"));
+            int rawType = 0;
+            if (!readRequiredInt(*stepObj, "type", rawType))
+                return false;
             if (rawType < static_cast<int>(ChainStepType::Rack) ||
                 rawType > static_cast<int>(ChainStepType::Segment))
                 return false;
 
             ChainPathStep step;
             step.type = static_cast<ChainStepType>(rawType);
-            step.id = static_cast<int>(stepObj->getProperty("id"));
+            if (!readRequiredInt(*stepObj, "id", step.id))
+                return false;
 
             // A Segment step names one of the track's flat sections. It is only
             // ever leading, and its id must be a real ChainSegment.
@@ -74,7 +100,10 @@ bool fromVar(const juce::var& v, ChainNodePath& out) {
     }
 
     if (obj->hasProperty("isTrackLevel")) {
-        path.isTrackLevel = static_cast<bool>(obj->getProperty("isTrackLevel"));
+        const auto flag = obj->getProperty("isTrackLevel");
+        if (!flag.isBool())
+            return false;
+        path.isTrackLevel = static_cast<bool>(flag);
     } else if (path.trackId != INVALID_TRACK_ID && path.steps.empty() &&
                path.topLevelDeviceId == INVALID_DEVICE_ID) {
         // Legacy producers omitted the flag entirely. A path naming a track but

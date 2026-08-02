@@ -239,6 +239,50 @@ TEST_CASE("ChainNodePath - malformed input fails closed", "[control_target][seri
             fromVar(rawPath(1, {{RACK_STEP, 2}, {SEGMENT_STEP, POST_FX}, {DEVICE_STEP, 3}}), out));
     }
 
+    SECTION("an empty object is not an address") {
+        // A missing property reads back as void, which converts to 0, so this
+        // would otherwise parse as a track-level path to track 0.
+        REQUIRE_FALSE(fromVar(juce::var(new juce::DynamicObject()), out));
+    }
+
+    SECTION("trackId must be present and numeric") {
+        auto* noTrack = new juce::DynamicObject();
+        noTrack->setProperty("steps", juce::var(juce::Array<juce::var>{}));
+        REQUIRE_FALSE(fromVar(juce::var(noTrack), out));
+
+        auto* textTrack = new juce::DynamicObject();
+        textTrack->setProperty("trackId", "one");
+        REQUIRE_FALSE(fromVar(juce::var(textTrack), out));
+    }
+
+    SECTION("a present steps value that is not an array is rejected") {
+        auto* pathObj = new juce::DynamicObject();
+        pathObj->setProperty("trackId", 1);
+        pathObj->setProperty("steps", "nonsense");
+        REQUIRE_FALSE(fromVar(juce::var(pathObj), out));
+    }
+
+    SECTION("a step missing type or id is rejected") {
+        for (const char* present : {"type", "id"}) {
+            auto* stepObj = new juce::DynamicObject();
+            stepObj->setProperty(present, 0);  // the other half is absent
+            juce::Array<juce::var> steps;
+            steps.add(juce::var(stepObj));
+
+            auto* pathObj = new juce::DynamicObject();
+            pathObj->setProperty("trackId", 1);
+            pathObj->setProperty("steps", juce::var(steps));
+            REQUIRE_FALSE(fromVar(juce::var(pathObj), out));
+        }
+    }
+
+    SECTION("a non-boolean isTrackLevel is rejected") {
+        auto* pathObj = new juce::DynamicObject();
+        pathObj->setProperty("trackId", 1);
+        pathObj->setProperty("isTrackLevel", "yes");
+        REQUIRE_FALSE(fromVar(juce::var(pathObj), out));
+    }
+
     SECTION("well-formed paths still parse") {
         REQUIRE(fromVar(rawPath(1, {{SEGMENT_STEP, POST_FX}, {DEVICE_STEP, 3}}), out));
         REQUIRE(out == ChainNodePath::postFxDevice(1, 3));

@@ -320,17 +320,15 @@ bool deserializeStoredAlias(const juce::var& v, StoredAlias& out) {
     out.paramNameAtSetTime = obj->getProperty("paramNameAtSetTime").toString();
     out.path = std::nullopt;
 
+    // An absent path means a user-global alias. A path that is present but
+    // unreadable is corrupt, and must not quietly widen the alias to global
+    // scope — that retargets it just as surely as a wrong path would. JSON null
+    // parses to a void var, so it is caught here too rather than read as absent.
     if (obj->hasProperty("path")) {
-        const auto pathVar = obj->getProperty("path");
-        // An absent path means a user-global alias. A path that is present but
-        // unreadable is corrupt, and must not quietly widen the alias to global
-        // scope — that retargets it just as surely as a wrong path would.
-        if (!pathVar.isVoid()) {
-            ChainNodePath path;
-            if (!fromVar(pathVar, path))
-                return false;
-            out.path = path;
-        }
+        ChainNodePath path;
+        if (!fromVar(obj->getProperty("path"), path))
+            return false;
+        out.path = path;
     }
 
     return out.isValid();
