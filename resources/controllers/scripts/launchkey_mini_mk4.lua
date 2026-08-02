@@ -239,17 +239,18 @@ end
 
 -- Pads currently held, keyed by raw pad note. Drives LED feedback and makes
 -- sure every injected note-on gets a matching note-off.
+--
+-- The value records where the note-on actually went. Re-reading the selection
+-- at note-off time is wrong: the pads can change track under a held finger
+-- (track buttons, or a click in the app), and a note-off sent to the new track
+-- leaves the old one sustaining forever.
 local held_pads = {}
 
 -- Defined up here rather than beside the other mode helpers so on_unload can
 -- reach it: Lua locals are only visible to functions compiled after them.
 local function release_held_notes()
-  local track = magda.selection.track()
-  for padNote in pairs(held_pads) do
-    local note = pad_to_note(padNote)
-    if track and note then
-      magda.midi.inject_note_off(track, 1, note, 0)
-    end
+  for _, held in pairs(held_pads) do
+    magda.midi.inject_note_off(held.track, held.channel, held.note, 0)
   end
   held_pads = {}
 end
@@ -561,12 +562,6 @@ local function handle_note_pad(e)
   local note = pad_to_note(e.number)
   if not note then return end
 
-  local track = magda.selection.track()
-  if not track then
-    magda.log.warn("[launchkey] note mode: no track selected")
-    return
-  end
-
   local isOn = (e.type == 'note_on' and e.value > 0)
 
   -- Log the raw pad note next to the injected one. If you hear two notes per
@@ -577,11 +572,20 @@ local function handle_note_pad(e)
     e.number, note, isOn and "on" or "off"))
 
   if isOn then
-    held_pads[e.number] = true
+    local track = magda.selection.track()
+    if not track then
+      magda.log.warn("[launchkey] note mode: no track selected")
+      return
+    end
+    held_pads[e.number] = { track = track, channel = e.channel, note = note }
     magda.midi.inject_note_on(track, e.channel, note, e.value)
   else
+    -- No record means the note-off already went out (a mode switch or unload
+    -- released it), so there is nothing left to close.
+    local held = held_pads[e.number]
+    if not held then return end
     held_pads[e.number] = nil
-    magda.midi.inject_note_off(track, e.channel, note, 0)
+    magda.midi.inject_note_off(held.track, held.channel, held.note, 0)
   end
 end
 
