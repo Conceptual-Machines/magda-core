@@ -25,6 +25,7 @@ The MAGDA FX bank is a set of native effects compiled from Faust DSP and shipped
 |--------|-------------|
 | **Reverb** | Three engines. **Plate**: Dattorro diffusion network. **Hall**: Zita 8-tap FDN. **Room**: Freeverb Schroeder/Moorer network. |
 | **Dimension** | Stereo widener with three engines. **Dimension**: Roland Dimension D-style anti-phase modulated delays. **Haas**: short fixed delay on one channel. **M/S**: pure side-channel gain, no time smear. |
+| **IR Reverb** | Convolution reverb that plays the signal through an impulse response you load. See [IR Reverb](#ir-reverb) below. |
 
 ## Delay
 
@@ -66,6 +67,29 @@ The MAGDA FX bank is a set of native effects compiled from Faust DSP and shipped
 
 !!! note
     Devices that bundle multiple engines (Compressor, Reverb, Dimension, Filter, Pitch) expose an engine selector at the top of the editor and switch DSP in place. Macros and modulator links survive the switch.
+
+## IR Reverb
+
+The **IR Reverb** is a native MAGDA device (not part of the Faust FX bank) that sits under **Reverb** in the Plugin Browser. Where the Reverb device synthesises a space from an algorithm, this one convolves your signal with a recording of a real one: an impulse response captured in a hall, a stairwell, a plate, a spring tank, a guitar cabinet, or any object you have measured. Anything an impulse response can describe, it will reproduce, which also makes it the device to reach for when you want a specific room rather than a plausible one.
+
+No impulse responses ship with MAGDA, so the device starts empty and passes the signal through until you load one.
+
+**Loading an impulse response.** Either click the **folder button** at the top right of the faceplate and pick a file, or drag an audio file straight onto the device. WAV, AIFF, FLAC and Ogg are all accepted, mono or stereo. The loaded file's name replaces the *No IR loaded* label in the header.
+
+The impulse response is stored inside the device, not referenced from disk, so a project stays self-contained: it opens with its reverb intact on a machine that has never seen the original file. Long impulse responses make for large project files.
+
+**Controls:**
+
+| Control | Description |
+|---|---|
+| **LOW CUT** | High-pass on the reverb, 10 Hz to 20 kHz. Clears mud out of the tail. |
+| **HIGH CUT** | Low-pass on the reverb, 10 Hz to 20 kHz. Darkens the tail so it sits behind the dry signal. |
+| **Q** | Resonance of both cutoff filters, 0.1 to 14, shared between them. |
+| **GAIN** | Output trim, -12 to +6 dB. |
+| **MIX** | Dry/wet balance, 0 to 100%. At 0% the device is a straight passthrough. |
+
+!!! note
+    The device reports no latency, so it needs no delay compensation and can be used freely on a live-monitored track. A long impulse response is still expensive to convolve, though: if the CPU meter climbs, a shorter one costs less.
 
 ## Sidechain
 
