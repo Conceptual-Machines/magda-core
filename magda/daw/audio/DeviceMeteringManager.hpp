@@ -104,12 +104,34 @@ class DeviceMeteringManager : public daw::audio::DeviceMeteringContext {
     void setGain(DeviceId deviceId, float gainLinear);
 
     /**
-     * @brief Get pointer to gain atomic for a device (for DeviceGainNode in the graph)
-     * @param devicePath The MAGDA device path
-     * @return Pointer to the atomic, or nullptr if device not found
+     * @brief Lifetime-safe metering endpoints for an audio-graph tap node.
+     *
+     * The graph outlives this manager's bookkeeping: clear() runs when
+     * AudioBridge is destroyed, which happens before freePlaybackContext()
+     * tears the graph down and well before the audio device is closed. A tap
+     * node holding raw pointers into an entry would therefore read freed
+     * memory on the audio thread during a normal shutdown.
+     *
+     * Holding `keepAlive` pins the entry, so `measurer` and `gain` stay valid
+     * for as long as the node that acquired them exists.
      */
-    std::atomic<float>* getGainAtomic(const ChainNodePath& devicePath);
-    std::atomic<float>* getGainAtomic(DeviceId deviceId);
+    struct GraphTap {
+        std::shared_ptr<void> keepAlive;
+        te::LevelMeasurer* measurer = nullptr;
+        std::atomic<float>* gain = nullptr;
+
+        bool isValid() const {
+            return keepAlive != nullptr && measurer != nullptr && gain != nullptr;
+        }
+    };
+
+    /**
+     * @brief Acquire metering endpoints that survive clear()/removeMeasurer().
+     *
+     * Registers the level-measurer client the same way getOrCreateMeasurer()
+     * does, so a tap node needs this call alone.
+     */
+    GraphTap acquireGraphTap(const ChainNodePath& devicePath);
 
     /**
      * @brief Directly set peak levels for a device (bypasses LevelMeasurer)
@@ -183,8 +205,11 @@ class DeviceMeteringManager : public daw::audio::DeviceMeteringContext {
 
     static ChainNodePath legacyPathForDeviceId(DeviceId deviceId);
     Entry& ensureEntryLocked(const ChainNodePath& devicePath);
+    const std::shared_ptr<Entry>& ensureEntrySharedLocked(const ChainNodePath& devicePath);
 
-    std::map<ChainNodePath, std::unique_ptr<Entry>> entries_;
+    // Shared rather than unique so an audio-graph tap can pin an entry past
+    // clear(); see GraphTap.
+    std::map<ChainNodePath, std::shared_ptr<Entry>> entries_;
     std::map<RackId, std::unique_ptr<SimpleEntry>> rackEntries_;
     juce::CriticalSection lock_;
     PluginManager* pluginManager_ = nullptr;

@@ -58,6 +58,18 @@ bool DSLTokeniser::isNoteName(const juce::String& token) {
     return true;
 }
 
+// Consumes the digits of a number, plus a fractional part if one follows.
+// Assumes any sign has already been consumed.
+static void readNumberBody(juce::CodeDocument::Iterator& source) {
+    while (juce::CharacterFunctions::isDigit(source.peekNextChar()))
+        source.skip();
+    if (source.peekNextChar() == '.') {
+        source.skip();
+        while (juce::CharacterFunctions::isDigit(source.peekNextChar()))
+            source.skip();
+    }
+}
+
 int DSLTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
     source.skipWhitespace();
     auto firstChar = source.peekNextChar();
@@ -88,18 +100,19 @@ int DSLTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
         return codeToken_string;
     }
 
-    // Numbers (including negative)
-    if (juce::CharacterFunctions::isDigit(firstChar) ||
-        (firstChar == '-' && juce::CharacterFunctions::isDigit(source.peekNextChar()))) {
-        if (firstChar == '-')
-            source.skip();
-        while (juce::CharacterFunctions::isDigit(source.peekNextChar()))
-            source.skip();
-        if (source.peekNextChar() == '.') {
-            source.skip();
-            while (juce::CharacterFunctions::isDigit(source.peekNextChar()))
-                source.skip();
-        }
+    // Numbers, including a leading minus. peekNextChar() always reports the
+    // character at the current position, so the digit behind a '-' only becomes
+    // visible once the '-' itself has been consumed.
+    if (firstChar == '-') {
+        source.skip();
+        if (!juce::CharacterFunctions::isDigit(source.peekNextChar()))
+            return codeToken_operator;
+        readNumberBody(source);
+        return codeToken_number;
+    }
+
+    if (juce::CharacterFunctions::isDigit(firstChar)) {
+        readNumberBody(source);
         return codeToken_number;
     }
 

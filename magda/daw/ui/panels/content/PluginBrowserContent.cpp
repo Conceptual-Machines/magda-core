@@ -894,11 +894,17 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                     toggleFavorite(plugin);
                     break;
                 case 6: {
+                    // LV2 identifies a plugin by URI, not by path, and juce::File
+                    // asserts on anything that is not an absolute path.
+                    if (!juce::File::isAbsolutePath(plugin.fileOrIdentifier)) {
+                        DBG("Cannot reveal plugin - not a file path: " + plugin.fileOrIdentifier);
+                        break;
+                    }
                     juce::File pluginFile(plugin.fileOrIdentifier);
                     if (pluginFile.exists()) {
                         pluginFile.revealToUser();
                     } else {
-                        DBG("Cannot reveal plugin - not a file path: " + plugin.fileOrIdentifier);
+                        DBG("Cannot reveal plugin - file missing: " + plugin.fileOrIdentifier);
                     }
                     break;
                 }

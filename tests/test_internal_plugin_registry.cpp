@@ -2,6 +2,7 @@
 
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "magda/daw/core/DeviceCatalogMetadata.hpp"
+#include "magda/daw/core/LegacyDeviceAliases.hpp"
 
 namespace audio = magda::daw::audio;
 
@@ -135,6 +136,59 @@ TEST_CASE("Renamed runtime Faust ids still resolve under their 0.17 spellings",
 
     CHECK(audio::findInternalPluginSpecForLoadType("faust") == fx);
     CHECK(audio::findInternalPluginSpecForLoadType("faustinstrument") == instrument);
+}
+
+TEST_CASE("Every retired Tracktion device names a successor",
+          "[internal-plugin-registry][legacy]") {
+    // The retired spellings are the persisted contract: a project saved before
+    // the stock TE effects were retired stores these as the plugin type, so
+    // each one has to name the device that replaced it or the device is lost on
+    // load. This is the table migrateRetiredDevice() resolves through.
+    struct RetiredDevice {
+        const char* retiredType;
+        const char* successorId;
+    };
+
+    static constexpr RetiredDevice kRetired[] = {
+        {"4bandEq", "magda_eq"},
+        {"eq", "magda_eq"},
+        {"equaliser", "magda_eq"},
+        {"compressor", "magda_compressor"},
+        {"delay", "magda_delay"},
+        {"chorus", "magda_chorus"},
+        {"phaser", "magda_phaser"},
+        {"reverb", "magda_reverb"},
+        {"pitchShifter", "magda_pitch"},
+        {"pitchshift", "magda_pitch"},
+        {"lowpass", "magda_filter"},
+        {"impulseResponse", "magda_convolution"},
+        {"impulseresponse", "magda_convolution"},
+    };
+
+    for (const auto& retired : kRetired) {
+        CAPTURE(retired.retiredType);
+        CHECK(magda::legacy_devices::retiredDeviceSuccessor(retired.retiredType) ==
+              juce::String(retired.successorId));
+    }
+}
+
+TEST_CASE("The retired IR Reverb resolves through the internal registry like its siblings",
+          "[internal-plugin-registry][legacy]") {
+    // magda_convolution is the one successor that lives in the internal
+    // registry rather than the compiled one, so it needs its own load alias to
+    // be reachable by the retired spelling at all.
+    const auto* convolution = audio::findInternalPluginSpec("magda_convolution");
+    REQUIRE(convolution != nullptr);
+
+    CHECK(audio::findInternalPluginSpecForLoadType("impulseResponse") == convolution);
+    // Alias lookup is case-insensitive, so the lowercase spelling that also
+    // appears in LegacyDeviceAliases resolves without its own entry.
+    CHECK(audio::findInternalPluginSpecForLoadType("impulseresponse") == convolution);
+
+    juce::ValueTree state("PLUGIN");
+    state.setProperty("type", "impulseResponse", nullptr);
+    REQUIRE(audio::adoptCanonicalPluginType(state));
+    CHECK(state["type"].toString() == "magda_convolution");
 }
 
 TEST_CASE("Loading under an alias rewrites the state to the canonical id",

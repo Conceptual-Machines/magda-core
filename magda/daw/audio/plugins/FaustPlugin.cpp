@@ -336,6 +336,7 @@ FaustPlugin::FaustPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) 
     // Derived, not restored: the source is the only thing that has to persist.
     viewName_ = readCustomViewName(dspSource_);
 
+    reservePointerScratch(compiled);
     std::atomic_store(&active_, compiled);
 
     state.setProperty("dspSource", dspSource_, nullptr);
@@ -389,6 +390,7 @@ bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& so
         return false;
 
     auto previous = std::atomic_load(&active_);
+    reservePointerScratch(compiled);
     std::atomic_store(&active_, compiled);
     activeDspMatchesSource_ = true;
 
@@ -486,6 +488,13 @@ void FaustPlugin::reset() {
         if (state->dsp)
             state->dsp->instanceClear();
     }
+}
+
+void FaustPlugin::reservePointerScratch(const std::shared_ptr<FaustState>& state) {
+    if (!state)
+        return;
+    inPtrs_.reserve(static_cast<size_t>(std::max(0, state->dspIn)));
+    outPtrs_.reserve(static_cast<size_t>(std::max(0, state->dspOut)));
 }
 
 void FaustPlugin::applyToBuffer(const te::PluginRenderContext& fc) {

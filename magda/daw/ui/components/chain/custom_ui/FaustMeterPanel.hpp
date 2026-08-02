@@ -46,6 +46,11 @@ class MeterWidget final : public juce::Component,
     void visibilityChanged() override;
     void parentHierarchyChanged() override;
 
+    /// Re-evaluates whether polling should run. Needed because JUCE only sends
+    /// visibilityChanged() to the component whose own flag moved, so hiding an
+    /// ancestor never reaches this widget on its own.
+    void refreshActiveState();
+
   private:
     void timerCallback() override;
     void updateActiveState();
@@ -108,8 +113,12 @@ class FaustMeterPanel final : public juce::Component {
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void visibilityChanged() override;
+    void parentHierarchyChanged() override;
 
   private:
+    /// Pushes the showing state down to the widgets, which JUCE will not do.
+    void refreshMeterActiveStates();
     void bindSources();
 
     struct Entry {

@@ -75,6 +75,10 @@ void applyLeftResizePreview(ClipInfo& target, const ClipInfo& preview, double bp
     target.offset = preview.offset;
     target.loopStart = preview.loopStart;
     target.midiOffset = preview.midiOffset;
+    // resizeContainerFromLeft accumulates the start move here, and the piano
+    // roll positions notes through it. Leaving it behind makes the notes drift
+    // against the clip body for the length of the drag.
+    target.midiTrimOffset = preview.midiTrimOffset;
 }
 
 // Undo the fields applyLeftResizePreview touched (plus midiTrimOffset, which
@@ -1678,6 +1682,38 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             // Capture original state of other selected clips so the drag can
             // preview them resizing together (the commit path already does)
             captureMultiResizeSnapshots();
+
+            // Mirror of the ResizeRight clamp below: the gesture applies one
+            // delta to every selected clip, so it has to stop at whichever
+            // clip meets a non-selected neighbour first. Without this the
+            // preview runs straight through clips the user cannot see, and
+            // resolveOverlaps silently trims or deletes them on mouse up.
+            multiResizeMaxLeftDelta_ = std::numeric_limits<double>::max();
+            const auto& selectedLeft = SelectionManager::getInstance().getSelectedClips();
+            if (selectedLeft.size() > 1 && selectedLeft.count(clipId_)) {
+                auto& cm = ClipManager::getInstance();
+                const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+                for (auto cid : selectedLeft) {
+                    const auto* c = cm.getClip(cid);
+                    if (!c)
+                        continue;
+
+                    const double cStart = timelineStartSeconds(*c, tempo);
+                    // Bar 0 is a hard wall even with no neighbour in the way.
+                    multiResizeMaxLeftDelta_ = juce::jmin(multiResizeMaxLeftDelta_, cStart);
+
+                    for (auto otherId : cm.getClipsOnTrack(c->trackId)) {
+                        if (selectedLeft.count(otherId))
+                            continue;
+                        const auto* other = cm.getClip(otherId);
+                        if (other && timelineStartSeconds(*other, tempo) < cStart) {
+                            const double gap = cStart - timelineEndSeconds(*other, tempo);
+                            multiResizeMaxLeftDelta_ = juce::jmin(multiResizeMaxLeftDelta_, gap);
+                        }
+                    }
+                }
+                multiResizeMaxLeftDelta_ = juce::jmax(0.0, multiResizeMaxLeftDelta_);
+            }
         }
     } else if (isOnRightEdge(e.x)) {
         if (e.mods.isShiftDown() &&
@@ -1933,6 +1969,18 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             // Clamp to file duration for non-looped audio clips
             if (dragStartFileDuration_ > 0.0 && !clip->loopEnabled) {
                 double maxLength = dragStartLength_ + dragStartAudioOffset_ * dragStartSpeedRatio_;
+                if (finalLength > maxLength) {
+                    finalLength = maxLength;
+                    finalStartTime = (dragStartTime_ + dragStartLength_) - finalLength;
+                    finalStartBeats = finalStartTime * tempoBPM / 60.0;
+                    finalLenBeats = finalLength * tempoBPM / 60.0;
+                }
+            }
+
+            // Clamp so no clip in the selection overruns a preceding
+            // non-selected clip (or bar 0).
+            if (!dragStartSelectedLengths_.empty()) {
+                const double maxLength = dragStartLength_ + multiResizeMaxLeftDelta_;
                 if (finalLength > maxLength) {
                     finalLength = maxLength;
                     finalStartTime = (dragStartTime_ + dragStartLength_) - finalLength;

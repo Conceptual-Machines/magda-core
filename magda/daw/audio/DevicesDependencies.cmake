@@ -29,14 +29,33 @@ if(MAGDA_FAUST_BACKEND STREQUAL "wasm")
         set(WASMTIME_ASSET x86_64-macos-c-api.tar.xz)
         set(WASMTIME_HASH SHA256=5910124fafa760b8dc3444aae034ba224a7454fe1bb7855d1bed5fc118941588)
     elseif(UNIX AND NOT APPLE)
-        set(WASMTIME_ASSET x86_64-linux-c-api.tar.xz)
-        set(WASMTIME_HASH SHA256=35f70f64eb5f9ca72018f3279218a137112c7876b026710315af9ef272a4e91c)
+        # Only x86-64 Linux is a shipping target, but a source build on ARM has
+        # to pick the matching asset rather than silently taking the x86-64 one
+        # and failing at link time.
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
+            set(WASMTIME_ASSET aarch64-linux-c-api.tar.xz)
+            set(WASMTIME_HASH SHA256=8b82df54e4911d2c6bd70804ceb654eed011a24a23c16194f40ba60cc1307d7b)
+        elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+            set(WASMTIME_ASSET x86_64-linux-c-api.tar.xz)
+            set(WASMTIME_HASH SHA256=35f70f64eb5f9ca72018f3279218a137112c7876b026710315af9ef272a4e91c)
+        endif()
     elseif(WIN32)
-        set(WASMTIME_ASSET x86_64-windows-c-api.zip)
-        set(WASMTIME_HASH SHA256=80ed88b37de47bbc439f2690aea5f695b85b8bf2c7919556a93803c4f09ffd92)
-    else()
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|aarch64|arm64)$")
+            set(WASMTIME_ASSET aarch64-windows-c-api.zip)
+            set(WASMTIME_HASH SHA256=76668bf6bb45e7940d9f4a844a6f16d26ad3f071f2910f1d3fb5e9d3766e0951)
+        elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+            set(WASMTIME_ASSET x86_64-windows-c-api.zip)
+            set(WASMTIME_HASH SHA256=80ed88b37de47bbc439f2690aea5f695b85b8bf2c7919556a93803c4f09ffd92)
+        endif()
+    endif()
+
+    # Catches an unsupported architecture as well as an unsupported OS. The
+    # per-OS branches above leave the asset unset rather than guessing, so a
+    # riscv64 or armv7 Linux build lands here with a usable message instead of
+    # an incompatible archive.
+    if(NOT WASMTIME_ASSET)
         message(FATAL_ERROR
-            "wasmtime: no prebuilt C API for this platform "
+            "wasmtime: no prebuilt C API pinned for ${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR} "
             "(set MAGDA_FAUST_BACKEND=interp to skip)")
     endif()
 

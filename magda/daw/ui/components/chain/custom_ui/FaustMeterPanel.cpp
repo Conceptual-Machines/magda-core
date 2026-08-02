@@ -72,6 +72,10 @@ void MeterWidget::parentHierarchyChanged() {
     updateActiveState();
 }
 
+void MeterWidget::refreshActiveState() {
+    updateActiveState();
+}
+
 void MeterWidget::updateActiveState() {
     const bool wanted = source_ != nullptr && isShowing();
     if (wanted == isTimerRunning())
@@ -237,6 +241,24 @@ void FaustMeterPanel::paint(juce::Graphics& g) {
     // draws between its header and credit strip, so the body reads as bands.
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawHorizontalLine(0, 0.0f, static_cast<float>(getWidth()));
+}
+
+void FaustMeterPanel::visibilityChanged() {
+    refreshMeterActiveStates();
+}
+
+void FaustMeterPanel::parentHierarchyChanged() {
+    refreshMeterActiveStates();
+}
+
+// Collapsing a device slot hides this panel, not the widgets inside it, and
+// JUCE only delivers visibilityChanged() to the component whose own flag moved.
+// Without this hand-off the meters would keep polling at 30 Hz behind a
+// collapsed slot for as long as the device stayed loaded.
+void FaustMeterPanel::refreshMeterActiveStates() {
+    for (auto& entry : entries_)
+        if (entry.widget)
+            entry.widget->refreshActiveState();
 }
 
 void FaustMeterPanel::resized() {

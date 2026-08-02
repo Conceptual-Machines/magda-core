@@ -166,7 +166,9 @@ class ClipComponent : public juce::Component,
     std::unordered_map<ClipId, ClipInfo>
         dragStartSelectedClipSnapshots_;  // Original full state for multi-resize preview restore
     double multiResizeMaxDelta_ =
-        std::numeric_limits<double>::max();  // Max length increase before collision
+        std::numeric_limits<double>::max();  // Max length increase before collision (right edge)
+    double multiResizeMaxLeftDelta_ =
+        std::numeric_limits<double>::max();  // Same, for the left edge moving back
     DragThrottle stretchThrottle_{50};
     DragThrottle resizeThrottle_{50};
 
