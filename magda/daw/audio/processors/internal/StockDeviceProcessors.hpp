@@ -11,12 +11,12 @@ namespace te = tracktion;
 /**
  * Processors for the stock Tracktion devices MAGDA still ships.
  *
- * What is left here is the tail of the Tracktion device set: two devices that
- * are still offered in the browser (IR Reverb, Test Tone) and the hidden
- * Volume/Pan kept for old project loads. The rest — EQ, Compressor, Delay,
- * Chorus, Phaser, Reverb, Pitch Shift, Lowpass — are gone, and load as their
- * compiled successors instead (see core/LegacyDeviceAliases.hpp). 4OSC keeps
- * its own processor in NativeDeviceProcessors because its custom UI reads
+ * What is left here is the tail of the Tracktion device set: one device still
+ * offered in the browser (Test Tone) and the hidden Volume/Pan kept for old
+ * project loads. The rest (EQ, Compressor, Delay, Chorus, Phaser, Reverb,
+ * Pitch Shift, Lowpass, IR Reverb) are gone, and load as their MAGDA
+ * successors instead (see core/LegacyDeviceAliases.hpp). 4OSC keeps its own
+ * processor in NativeDeviceProcessors because its custom UI reads
  * non-automatable state.
  *
  * Each of these is waiting on a MAGDA-native replacement; when one lands, its
@@ -69,11 +69,6 @@ class ToneGeneratorProcessor : public DeviceProcessor {
   private:
     te::ToneGeneratorPlugin* getTonePlugin() const;
     bool initialized_ = false;
-};
-
-class ImpulseResponseProcessor : public AutomatablePluginProcessor {
-  public:
-    ImpulseResponseProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 };
 
 /**

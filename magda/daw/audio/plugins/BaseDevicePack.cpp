@@ -14,6 +14,7 @@
 #include "plugins/InstrumentMeterTapPlugin.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/LevelsPlugin.hpp"
+#include "plugins/MagdaConvolutionPlugin.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/MidiReceivePlugin.hpp"
@@ -165,7 +166,6 @@ void add(InternalPluginRegistry& registry, InternalPluginSpec spec) {
 }
 
 constexpr const char* kLowpassAliases[] = {"lowpass"};
-constexpr const char* kImpulseResponseAliases[] = {"impulseresponse"};
 constexpr const char* kFourOscAliases[] = {"4osc", "4OSC Synth"};
 constexpr const char* kToneAliases[] = {"tone", "tonegenerator"};
 constexpr const char* kMeterAliases[] = {"meter", "levelmeter"};
@@ -188,6 +188,7 @@ constexpr const char* kStrumTags[] = {"strum"};
 constexpr const char* kStepSequencerTags[] = {"step-sequencer", "midi-generator"};
 constexpr const char* kPolyStepSequencerTags[] = {"poly-step-sequencer", "midi-generator"};
 constexpr const char* kSidechainTags[] = {"sidechain"};
+constexpr const char* kConvolutionTags[] = {"convolution", "impulse-response"};
 constexpr const char* kFaustTags[] = {"faust"};
 constexpr const char* kFaustInstrumentTags[] = {"faust-instrument"};
 constexpr const char* kOscilloscopeTags[] = {"analysis", "analyzer-popout", "post-fx-analysis-0"};
@@ -197,26 +198,12 @@ constexpr const char* kMutableElementsTags[] = {"mutable-instrument", "mutable-e
 constexpr const char* kMutableRingsTags[] = {"mutable-instrument", "mutable-rings"};
 constexpr const char* kMutableCloudsTags[] = {"mutable-clouds"};
 
-// The stock Tracktion effects MAGDA still ships. The rest of the set — EQ,
-// Compressor, Delay, Chorus, Phaser, Reverb, Pitch Shift — was retired once the
-// compiled devices replaced them; their type names now resolve to those
-// successors instead of to a registration here (core/LegacyDeviceAliases.hpp).
+// The stock Tracktion devices MAGDA still ships. The rest of the set (EQ,
+// Compressor, Delay, Chorus, Phaser, Reverb, Pitch Shift, Lowpass, IR Reverb)
+// was retired once MAGDA's own devices replaced them; their type names now
+// resolve to those successors instead of to a registration here
+// (core/LegacyDeviceAliases.hpp).
 void registerTracktionDevices(InternalPluginRegistry& registry) {
-    add(registry, {.pluginId = te::ImpulseResponsePlugin::xmlTypeName,
-                   .displayName = "IR Reverb",
-                   .browserCategory = "Reverb",
-                   .description =
-                       "Convolution-style response loader for captured spaces and resonant bodies.",
-                   .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-                   .loadAliases = kImpulseResponseAliases,
-                   .loadAliasCount = static_cast<int>(std::size(kImpulseResponseAliases)),
-                   .matchesPlugin = matches<te::ImpulseResponsePlugin>,
-                   .createProcessor = makeProcessor<ImpulseResponseProcessor>,
-                   .showInBrowser = true,
-                   .tags = kTracktionTags,
-                   .tagCount = static_cast<int>(std::size(kTracktionTags)),
-                   .createInSession = createTracktionPlugin,
-                   .createPlugin = createPlugin<te::ImpulseResponsePlugin>});
     add(registry,
         {.pluginId = te::VolumeAndPanPlugin::xmlTypeName,
          .displayName = "Legacy Volume/Pan",
@@ -393,6 +380,23 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .defaultModulationParamIndex = SidechainPlugin::kGainParamIndex,
                    .createInSession = createValueTreePlugin,
                    .createPlugin = createPlugin<SidechainPlugin>});
+    add(registry,
+        {.pluginId = MagdaConvolutionPlugin::xmlTypeName,
+         .displayName = "IR Reverb",
+         .browserCategory = "Reverb",
+         .description =
+             "Convolution reverb: loads an impulse response of a room, a plate or a resonant "
+             "body and plays the signal through it, with cutoff filters and a dry/wet mix.",
+         .createMode = InternalPluginCreateMode::SavedStateOrFresh,
+         .matchesPlugin = matches<MagdaConvolutionPlugin>,
+         .createProcessor = makeProcessor<MagdaConvolutionProcessor>,
+         .showInBrowser = true,
+         .tags = kConvolutionTags,
+         .tagCount = static_cast<int>(std::size(kConvolutionTags)),
+         // The impulse response lives in the device state, so a restore has to
+         // rebuild the plugin from it rather than from a fresh tree.
+         .createInSession = createValueTreePlugin,
+         .createPlugin = createPlugin<MagdaConvolutionPlugin>});
     add(registry, {.pluginId = FaustPlugin::xmlTypeName,
                    .displayName = "Faust",
                    .browserCategory = "Custom DSP",

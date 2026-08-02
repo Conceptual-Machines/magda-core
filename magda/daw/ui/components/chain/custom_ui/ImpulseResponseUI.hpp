@@ -11,7 +11,7 @@
 namespace magda::daw::ui {
 
 /**
- * @brief Custom UI for the Tracktion Engine Impulse Response plugin
+ * @brief Custom UI for the native convolution device (IR Reverb)
  *
  * Layout:
  *   Top: [IR name label] [LOAD button]

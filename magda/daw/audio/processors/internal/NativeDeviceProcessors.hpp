@@ -67,6 +67,19 @@ class MutableCloudsProcessor : public AutomatablePluginProcessor {
 };
 
 /**
+ * @brief Processor for the native convolution device (IR Reverb).
+ *
+ * Parameters are addressed by index off the plugin's automatable parameters:
+ * gain, low cut, high cut, mix, filter Q. The impulse response itself is not a
+ * parameter - it lives in the device's state and is loaded through the
+ * `impulseResponseLoadFile` device command.
+ */
+class MagdaConvolutionProcessor : public AutomatablePluginProcessor {
+  public:
+    MagdaConvolutionProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+};
+
+/**
  * @brief Processor for the Sidechain volume-shaper insert.
  *
  * Parameters (gain / attack / release) are addressed by index off the
