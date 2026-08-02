@@ -22,10 +22,11 @@ MAGDA ships with its own native MIDI devices, instruments, and effects. All buil
 | **4OSC Synth** | Four-oscillator subtractive synthesizer with internal mod matrix. See [4OSC Synth](4osc.md). |
 | **Drum Grid** | Chain-based drum machine with per-pad FX. See [Drum Grid](drum-grid.md). |
 | **Sampler** | 8-voice sample player with ADSR and pitch controls. See [Sampler](sampler.md). |
+| **Faust Instrument** | 16-voice synth that plays a Faust DSP you write and compile at runtime. See [Faust Instrument](faust-instrument.md). |
 
 ## Effects
 
-The MAGDA FX bank is a set of native effects compiled from Faust DSP and shipped with every MAGDA installation. See [Effects](effects.md) for the full list, grouped by category. The bank is joined by the native **[Sidechain](effects.md#sidechain)** device, a MIDI-triggered volume shaper keyed from another track.
+The MAGDA FX bank is a set of native effects compiled from Faust DSP and shipped with every MAGDA installation. See [Effects](effects.md) for the full list, grouped by category. The bank is joined by two native devices that are not compiled from Faust: **[IR Reverb](effects.md#ir-reverb)**, a convolution reverb that plays the signal through an impulse response you load, and **[Sidechain](effects.md#sidechain)**, a MIDI-triggered volume shaper keyed from another track.
 
 ## Analysis
 

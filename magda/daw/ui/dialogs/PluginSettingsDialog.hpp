@@ -9,7 +9,7 @@
 
 namespace magda {
 
-class TracktionEngineWrapper;
+class AudioEngine;
 
 /**
  * Plugin Settings dialog for managing custom plugin directories
@@ -17,13 +17,13 @@ class TracktionEngineWrapper;
  */
 class PluginSettingsDialog : public juce::Component {
   public:
-    PluginSettingsDialog(TracktionEngineWrapper* engine);
+    PluginSettingsDialog(AudioEngine* engine);
     ~PluginSettingsDialog() override;
 
     void resized() override;
     void paint(juce::Graphics& g) override;
 
-    static void showDialog(TracktionEngineWrapper* engine, juce::Component* parent);
+    static void showDialog(AudioEngine* engine, juce::Component* parent);
 
     /** Returns true if a plugin scan is currently in progress. */
     bool isScanRunning() const;
@@ -77,10 +77,11 @@ class PluginSettingsDialog : public juce::Component {
     juce::TextButton scanNewButton_;
     juce::TextButton viewReportButton_;
     juce::ToggleButton scanOnStartupToggle_;
-#if JUCE_MAC
+    // Not macOS-only: a plugin shipping as both VST3 and LV2 is the same
+    // duplicate on every platform. Only the AU entry inside the selector is
+    // macOS-specific.
     juce::Label formatPreferenceLabel_;
     juce::ComboBox formatPreferenceSelector_;
-#endif
     juce::ProgressBar scanProgressBar_;
     double scanProgress_ = -1.0;
     juce::Label scanStatusLabel_;
@@ -97,7 +98,7 @@ class PluginSettingsDialog : public juce::Component {
     juce::TextButton okButton_;
     juce::TextButton cancelButton_;
 
-    TracktionEngineWrapper* engine_;
+    AudioEngine* engine_;
 
     void updatePluginCountLabel();
     void setupSectionHeader(juce::Label& header, const juce::String& text);

@@ -49,6 +49,7 @@ juce::File drumkitsDir();            // presetsDir() / "Drumkits"
 juce::File themesDir();              // userDocuments / "MAGDA" / "Themes"
 
 juce::File configFile();                                      // alwaysOSDefault() / "config.json"
+juce::File pluginMetadataFile();                              // dataDir() / "plugin_metadata.db"
 juce::File pluginListFile();                                  // dataDir() / "PluginList.xml"
 juce::File pluginCacheFile();                                 // dataDir() / "PluginCache.json"
 juce::File pluginExclusionsFile();                            // dataDir() / "plugin_exclusions.txt"

@@ -424,7 +424,6 @@ const CompiledPresentationSpec& getMagdaFilterPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledFilterCurveView>(pluginId);
         },
-        .suppressLegacyUis = {},
     };
     return kSpec;
 }

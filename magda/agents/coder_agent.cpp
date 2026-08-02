@@ -4,10 +4,8 @@
 
 #include <memory>
 
-#include "../daw/audio/AudioBridge.hpp"
-#include "../daw/audio/plugins/IFaustEditorModel.hpp"
-#include "../daw/core/TrackManager.hpp"
-#include "../daw/engine/AudioEngine.hpp"
+#include "../daw/api/magda_api.hpp"
+#include "../daw/api/plugin_api.hpp"
 #include "faust_agent.hpp"
 #include "internal_plugins.hpp"
 #include "mcp/MCPServerManager.hpp"
@@ -21,7 +19,8 @@ namespace {
 // applies it via FaustPlugin::loadDspSource on the message thread.
 class FaustCoderAgent : public CoderAgent {
   public:
-    explicit FaustCoderAgent(FaustAgent::Target target) : agent_(target) {}
+    FaustCoderAgent(FaustAgent::Target target, PluginApi* plugins)
+        : agent_(target), plugins_(plugins) {}
 
     juce::String getUserCaveat() const override {
         return "note: generated code is a starting point - review and refine in the editor.";
@@ -30,6 +29,9 @@ class FaustCoderAgent : public CoderAgent {
     juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
                                   llm::Conversation& conversation,
                                   TokenCallback onToken = {}) override {
+        if (plugins_ == nullptr)
+            return "(MagdaApi plugin operations are unavailable)";
+
         agent_.resetCancel();
         if (shouldStop_.load())
             return "cancelled";
@@ -51,43 +53,10 @@ class FaustCoderAgent : public CoderAgent {
             return juce::String("error: ") + juce::String(result.error);
 
         auto& mm = *juce::MessageManager::getInstance();
-        auto applyOnce = [name = result.name, source = result.source, path,
+        auto applyOnce = [plugins = plugins_, name = result.name, source = result.source, path,
                           verified = result.mcpVerified]() -> juce::String {
-            auto& tm = TrackManager::getInstance();
-            auto* device = tm.getDeviceInChainByPath(path);
-            if (device == nullptr || (!device->pluginId.equalsIgnoreCase("faust") &&
-                                      !device->pluginId.equalsIgnoreCase("faustinstrument")))
-                return "(target device is not a Faust plugin)";
-            auto* engine = tm.getAudioEngine();
-            auto* bridge = engine ? engine->getAudioBridge() : nullptr;
-            auto plugin = bridge ? bridge->getPlugin(path) : nullptr;
-            auto* faust = dynamic_cast<daw::audio::IFaustEditorModel*>(plugin.get());
-            if (faust == nullptr)
-                return "(could not resolve live Faust plugin)";
             const auto displayName = name.empty() ? juce::String("AI DSP") : juce::String(name);
-
-            // Unverified (MCP off): stage the code into the editor for the user
-            // to compile manually, rather than load it live.
-            if (!verified) {
-                faust->stageSourceForEditing(displayName, juce::String(source));
-                return juce::String("generated \"") + displayName +
-                       "\" - open the editor to compile (Faust MCP disabled)";
-            }
-
-            juce::String err;
-            if (!faust->loadDspSource(displayName, juce::String(source), err,
-                                      daw::audio::FaustCustomViewKind::None))
-                return juce::String("compile error: ") + err;
-
-            // Faust's parameter set changes at runtime, so the DeviceInfo the
-            // chain UI rebuilds from has to be nudged to the now-active pool
-            // layout, then the live plugin state captured. Without this the
-            // slot rebuild reads stale (empty) params and the device shows no
-            // controls until the user opens the editor and recompiles. Mirrors
-            // FaustUI::tryLoad's refresh after a manual load.
-            bridge->getPluginManager().refreshDeviceParameters(path);
-            bridge->getPluginManager().capturePluginState(path);
-            return juce::String("applied \"") + displayName + "\"";
+            return plugins->applyFaustSource(path, displayName, juce::String(source), verified);
         };
 
         if (mm.isThisTheMessageThread())
@@ -121,16 +90,18 @@ class FaustCoderAgent : public CoderAgent {
 
   private:
     FaustAgent agent_;
+    PluginApi* plugins_ = nullptr;
 };
 
 }  // namespace
 
-std::unique_ptr<CoderAgent> createCoderAgentFor(const juce::String& pluginId) {
+std::unique_ptr<CoderAgent> createCoderAgentFor(const juce::String& pluginId, MagdaApi* api) {
     switch (getInternalPluginCapabilities(pluginId).coderAgent) {
         case CoderAgentKind::Faust:
-            return std::make_unique<FaustCoderAgent>(pluginId.equalsIgnoreCase("faustinstrument")
+            return std::make_unique<FaustCoderAgent>(pluginId.equalsIgnoreCase("faust-instrument")
                                                          ? FaustAgent::Target::Instrument
-                                                         : FaustAgent::Target::Effect);
+                                                         : FaustAgent::Target::Effect,
+                                                     api != nullptr ? &api->plugins() : nullptr);
         default:
             return nullptr;
     }
@@ -140,18 +111,18 @@ bool isCoderSupported(const juce::String& pluginId) {
     return getInternalPluginCapabilities(pluginId).supportsCoder();
 }
 
-std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const juce::String& pluginId) {
-    if (auto sd = createSoundDesignAgentFor(pluginId))
+std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const juce::String& pluginId, MagdaApi* api) {
+    if (auto sd = createSoundDesignAgentFor(pluginId, api))
         return sd;
-    if (auto cd = createCoderAgentFor(pluginId))
+    if (auto cd = createCoderAgentFor(pluginId, api))
         return cd;
     return nullptr;
 }
 
-std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const DeviceInfo& device) {
-    if (auto sd = createSoundDesignAgentFor(device))
+std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const DeviceInfo& device, MagdaApi* api) {
+    if (auto sd = createSoundDesignAgentFor(device, api))
         return sd;
-    if (auto cd = createCoderAgentFor(device.pluginId))
+    if (auto cd = createCoderAgentFor(device.pluginId, api))
         return cd;
     return nullptr;
 }

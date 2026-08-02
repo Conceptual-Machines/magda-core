@@ -61,14 +61,4 @@ const CompiledPresentationSpec* findCompiledPresentation(const juce::String& plu
     return nullptr;
 }
 
-bool shouldSuppressLegacyUi(const juce::String& pluginId, LegacyUiKind kind) {
-    const auto* spec = findCompiledPresentation(pluginId);
-    if (spec == nullptr)
-        return false;
-    for (LegacyUiKind k : spec->suppressLegacyUis)
-        if (k == kind)
-            return true;
-    return false;
-}
-
 }  // namespace magda::daw::ui

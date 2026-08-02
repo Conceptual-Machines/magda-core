@@ -54,7 +54,7 @@ bool findExternalInstrument(te::Engine& engine, juce::PluginDescription& out) {
         if (!d.isInstrument)
             continue;
         if (d.pluginFormatName != "VST3" && d.pluginFormatName != "AudioUnit" &&
-            d.pluginFormatName != "VST")
+            d.pluginFormatName != "LV2")
             continue;
         if (d.name.containsIgnoreCase("Dexed")) {
             out = d;
@@ -71,8 +71,8 @@ bool findExternalInstrument(te::Engine& engine, juce::PluginDescription& out) {
 magda::PluginFormat formatFor(const juce::PluginDescription& d) {
     if (d.pluginFormatName == "AudioUnit")
         return magda::PluginFormat::AU;
-    if (d.pluginFormatName == "VST")
-        return magda::PluginFormat::VST;
+    if (d.pluginFormatName == "LV2")
+        return magda::PluginFormat::LV2;
     return magda::PluginFormat::VST3;
 }
 

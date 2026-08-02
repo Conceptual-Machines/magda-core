@@ -1,46 +1,15 @@
 #include "CompiledPluginRegistry.hpp"
 
-#include "MagdaBellCompiledPlugin.hpp"
-#include "MagdaBitcrusherCompiledPlugin.hpp"
-#include "MagdaChorusCompiledPlugin.hpp"
-#include "MagdaClapCompiledPlugin.hpp"
-#include "MagdaClipperCompiledPlugin.hpp"
-#include "MagdaCompressorCompiledPlugin.hpp"
-#include "MagdaDelayCompiledPlugin.hpp"
-#include "MagdaDimensionCompiledPlugin.hpp"
-#include "MagdaDjembeCompiledPlugin.hpp"
-#include "MagdaEqCompiledPlugin.hpp"
-#include "MagdaFilterCompiledPlugin.hpp"
-#include "MagdaFlangerCompiledPlugin.hpp"
-#include "MagdaFreqShiftCompiledPlugin.hpp"
-#include "MagdaGateExpanderCompiledPlugin.hpp"
-#include "MagdaGrainDelayCompiledPlugin.hpp"
-#include "MagdaGritCompiledPlugin.hpp"
-#include "MagdaHatCompiledPlugin.hpp"
-#include "MagdaKickCompiledPlugin.hpp"
-#include "MagdaLimiterCompiledPlugin.hpp"
-#include "MagdaMarimbaCompiledPlugin.hpp"
-#include "MagdaModCompiledPlugin.hpp"
-#include "MagdaMultibandCompiledPlugin.hpp"
-#include "MagdaPhaserCompiledPlugin.hpp"
-#include "MagdaPitchCompiledPlugin.hpp"
-#include "MagdaPolySynthCompiledPlugin.hpp"
-#include "MagdaReverbCompiledPlugin.hpp"
-#include "MagdaRingModCompiledPlugin.hpp"
-#include "MagdaSaturatorCompiledPlugin.hpp"
-#include "MagdaSnareCompiledPlugin.hpp"
-#include "MagdaTomCompiledPlugin.hpp"
-#include "MagdaUtilityCompiledPlugin.hpp"
-#include "plugins/compiled/CompiledFaustInterface.hpp"
-#include "processors/CompiledFaustProcessor.hpp"
+#include <iterator>
 
 namespace magda::daw::audio::compiled {
 
 // Per-device specs are defined alongside each plugin's wrapper (in its own
 // .cpp). The accessors below are the single point of contact between this
-// registry and the plugin TUs — no static self-registration, no link-order
-// magic. To add a new compiled plugin: write its spec accessor next to the
-// wrapper and add a line below.
+// host catalog and the plugin TUs — no static self-registration, no link-order
+// magic. This aggregation intentionally lives in the Tracktion compatibility
+// target until every listed device is neutral. To add a new compiled plugin:
+// write its spec accessor next to the wrapper and add a line below.
 const CompiledPluginSpec& getMagdaFilterSpec();
 const CompiledPluginSpec& getMagdaSaturatorSpec();
 const CompiledPluginSpec& getMagdaDelaySpec();
@@ -103,18 +72,12 @@ const CompiledPluginSpec* findCompiledPluginSpec(const juce::String& pluginId) {
 
         if (spec->aliasKey != nullptr && pluginId.equalsIgnoreCase(spec->aliasKey))
             return spec;
+
+        for (int i = 0; i < spec->loadAliasCount; ++i)
+            if (spec->loadAliases[i] != nullptr && pluginId.equalsIgnoreCase(spec->loadAliases[i]))
+                return spec;
     }
     return nullptr;
-}
-
-std::unique_ptr<magda::DeviceProcessor> createCompiledPluginProcessor(
-    const CompiledPluginSpec& spec, DeviceId deviceId, te::Plugin::Ptr plugin) {
-    juce::ignoreUnused(spec);
-
-    if (dynamic_cast<ICompiledFaustPlugin*>(plugin.get()) == nullptr)
-        return nullptr;
-
-    return std::make_unique<magda::CompiledFaustProcessor>(deviceId, plugin);
 }
 
 }  // namespace magda::daw::audio::compiled

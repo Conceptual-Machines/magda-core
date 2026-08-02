@@ -5,6 +5,7 @@
 
 #include "core/ParameterUtils.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -275,8 +276,9 @@ const CompiledPluginSpec& getMagdaUtilitySpec() {
             "Low Mono sums only the bass below the Low Mono Freq cutoff, "
             "tightening sub content while preserving stereo highs. "
             "Flip L / Flip R invert per-channel polarity for phase tweaks.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaUtilityCompiledPlugin(info);
+        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
+            return tracktion_adapter::pluginHandle(
+                new MagdaUtilityCompiledPlugin(tracktion_adapter::creationInfo(context)));
         },
         .aliasKey = "utility",
         .aliases = kUtilAliases,

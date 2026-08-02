@@ -86,6 +86,7 @@
     "help.about": "О приложении MAGDA"
   },
   "transport": {
+    "count_in.header": "Отсчёт",
     "count_in.off": "Выкл.",
     "count_in.1_beat": "1 доля",
     "count_in.2_beats": "2 доли",
@@ -186,12 +187,10 @@
     "error.export_failed": "Не удалось экспортировать проект:",
     "error.export_no_edit": "Невозможно экспортировать: проект не загружен",
     "updates.title": "Проверить наличие обновлений",
-    "updates.up_to_date": "Вы используете последнюю версию MAGDA.",
-    "updates.available_body_prefix": "Доступна новая версия MAGDA:",
-    "updates.available_body_suffix": "",
-    "updates.current_label": "Текущая:",
+    "updates.up_to_date": "Вы используете последнюю версию MAGDA ({0}).",
+    "updates.available_body": "Доступна новая версия MAGDA: {0} (текущая: {1}).",
     "updates.view_release": "Релиз",
-    "updates.error_prefix": "Не удалось проверить наличие обновлений:"
+    "updates.error": "Не удалось проверить наличие обновлений: {0}"
   },
   "about": {
     "version_prefix": "Версия"
@@ -266,6 +265,7 @@
     "label.external_format_preference": "Когда есть и VST3, и AU:",
     "option.prefer_vst3": "Предпочитать VST3",
     "option.prefer_au": "Предпочитать AU",
+    "option.prefer_lv2": "Предпочитать LV2",
     "dialog.select_directory": "Выберите папку плагинов",
     "column.plugin": "Плагин",
     "column.reason": "Причина",

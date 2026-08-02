@@ -2,6 +2,9 @@
 
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
+#include "plugins/tracktion/TracktionInternalPluginAdapter.hpp"
 #include "processors/DeviceProcessor.hpp"
 #include "processors/external/ExternalPluginProcessor.hpp"
 
@@ -21,10 +24,11 @@ std::unique_ptr<DeviceProcessor> createDeviceProcessorForPlugin(
     }
 
     if (auto* compiledSpec = daw::audio::compiled::findCompiledPluginSpec(pluginId))
-        return daw::audio::compiled::createCompiledPluginProcessor(*compiledSpec, deviceId, plugin);
+        return daw::audio::compiled::createTracktionProcessor(*compiledSpec, deviceId, plugin);
 
     if (auto* internalSpec = daw::audio::findInternalPluginSpec(pluginId))
-        return daw::audio::createInternalPluginProcessor(*internalSpec, deviceId, plugin);
+        return daw::audio::tracktion_adapter::createInternalPluginProcessor(
+            *internalSpec, deviceId, daw::audio::tracktion_adapter::pluginHandle(plugin));
 
     return nullptr;
 }

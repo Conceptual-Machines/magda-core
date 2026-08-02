@@ -1,5 +1,6 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cmath>
 #include <set>
 
 #include "magda/daw/ui/themes/ThemePrompt.hpp"
@@ -166,6 +167,89 @@ class UserThemeTest final : public juce::UnitTest {
             expect(enumArray->size() == static_cast<int>(ColourRole::count),
                    "every colour role is a valid enum value");
             expect(enumArray->contains(juce::var("accent1")));
+
+            // The syntax vocabulary is a second array with its own role enum.
+            auto syntaxItems = schemaObj->getProperty("properties")["syntaxColours"]["items"];
+            auto* syntaxEnum = syntaxItems["properties"]["role"]["enum"].getArray();
+            expect(syntaxEnum != nullptr);
+            expect(syntaxEnum->size() == static_cast<int>(SyntaxColourRole::count));
+            expect(syntaxEnum->contains(juce::var("dslTokenKeyword")));
+            expect(!syntaxEnum->contains(juce::var("accent1")), "vocabularies stay separate");
+        }
+
+        beginTest("Derived syntax palette follows the palette it came from");
+        {
+            auto palette = ThemeManager::builtInPalette("dark");
+            palette[idx(ColourRole::E0)] = 0xFF1A1114;
+            palette[idx(ColourRole::TEXT_PRIMARY)] = 0xFFF4E3DA;
+            palette[idx(ColourRole::TEXT_DIM)] = 0xFF9A7D74;
+            palette[idx(ColourRole::ACCENT_PRIMARY)] = 0xFFE8743B;
+
+            const auto syntax = deriveSyntaxPalette(palette);
+            expect(syntax[idx(SyntaxColourRole::EDITOR_BACKGROUND)] == 0xFF1A1114);
+            expect(syntax[idx(SyntaxColourRole::EDITOR_DEFAULT_TEXT)] == 0xFFF4E3DA);
+            expect(syntax[idx(SyntaxColourRole::DSL_TOKEN_COMMENT)] == 0xFF9A7D74);
+            expect(syntax[idx(SyntaxColourRole::DSL_TOKEN_NOTE_NAME)] == 0xFFE8743B);
+            // The editor selection is drawn over text, so it stays translucent.
+            expect(juce::Colour(syntax[idx(SyntaxColourRole::EDITOR_SELECTION)]).getAlpha() < 255);
+            expect(juce::Colour(syntax[idx(SyntaxColourRole::DSL_SELECTION)]).getAlpha() == 255);
+            // Status text has to read against whatever the status fill became.
+            const juce::Colour statusBg(syntax[idx(SyntaxColourRole::DSL_STATUS_BACKGROUND)]);
+            const juce::Colour statusText(syntax[idx(SyntaxColourRole::DSL_STATUS_TEXT)]);
+            expect(std::abs(statusBg.getPerceivedBrightness() -
+                            statusText.getPerceivedBrightness()) > 0.4f);
+        }
+
+        beginTest("Generated themes always carry a complete syntaxColours section");
+        {
+            std::string err;
+            const auto theme = validateGeneratedTheme(
+                R"({"name":"Ember","base":"dark",)"
+                R"("colours":[{"role":"accent1","value":"#FF6B35"},)"
+                R"({"role":"e0","value":"#120C0A"}],)"
+                R"("syntaxColours":[{"role":"dslTokenKeyword","value":"#FFAA55"},)"
+                R"({"role":"bogusSyntaxRole","value":"#123456"},)"        // dropped
+                R"({"role":"dslTokenString","value":"not-a-colour"}]})",  // dropped
+                err);
+            expect(theme.has_value());
+            expect(theme->syntaxCount == 1, "one recognized syntax override");
+
+            auto parsed = juce::JSON::parse(juce::String(theme->json));
+            auto* syntax = parsed["syntaxColours"].getDynamicObject();
+            expect(syntax != nullptr);
+            expect(syntax->getProperties().size() == static_cast<int>(SyntaxColourRole::count),
+                   "every syntax role is written out");
+            expect(syntax->getProperty("dslTokenKeyword").toString() == "#FFAA55",
+                   "the model's choice wins");
+            expect(syntax->getProperty("editorBackground").toString() == "#120C0A",
+                   "an omitted role derives from the generated palette");
+            expect(!syntax->hasProperty("bogusSyntaxRole"));
+
+            // The file round-trips: loading it back reproduces both palettes.
+            auto file = juce::File::createTempFile(".json");
+            file.replaceWithText(juce::String(theme->json));
+            const auto loaded = loadThemeFile(file);
+            file.deleteFile();
+            expect(loaded.has_value());
+            expect(loaded->warnings.empty());
+            expect(loaded->syntaxPalette[idx(SyntaxColourRole::DSL_TOKEN_KEYWORD)] == 0xFFFFAA55);
+            expect(loaded->syntaxPalette[idx(SyntaxColourRole::EDITOR_BACKGROUND)] == 0xFF120C0A);
+        }
+
+        beginTest("A model that skips syntaxColours still gets a derived section");
+        {
+            std::string err;
+            const auto theme = validateGeneratedTheme(
+                R"({"name":"Plain","base":"light","colours":{"accent1":"#00AA55"}})", err);
+            expect(theme.has_value());
+            expect(theme->syntaxCount == 0);
+
+            auto parsed = juce::JSON::parse(juce::String(theme->json));
+            auto* syntax = parsed["syntaxColours"].getDynamicObject();
+            expect(syntax != nullptr);
+            expect(syntax->getProperties().size() == static_cast<int>(SyntaxColourRole::count));
+            // Derived from the light base + the one override.
+            expect(syntax->getProperty("dslTokenNoteName").toString() == "#00AA55");
         }
 
         beginTest("Structured [{role,value}] output folds into the file colour map");

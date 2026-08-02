@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../core/DeviceInfo.hpp"
 #include "../../core/ParameterInfo.hpp"
 #include "FaustParamSlot.hpp"
 
@@ -28,5 +29,29 @@ namespace magda::daw::audio {
  * stays addressable for automation lane lookups).
  */
 magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot);
+
+/**
+ * @brief The runtime Faust instrument's two host-owned parameters.
+ *
+ * Voice Mode and Glide belong to the device rather than to any patch: they
+ * drive voice allocation, which is the host's job, so every runtime Faust
+ * instrument has them whether or not its .dsp knows anything about them.
+ *
+ * They deliberately sit past the end of the `[idx:N]` pool rather than in
+ * reserved slots inside it. A patch is free to use all 64 slots, and a host
+ * control squatting on two of them would silently shadow an author's controls.
+ *
+ * @param hostIndex 0 for Voice Mode, 1 for Glide.
+ */
+magda::ParameterInfo faustInstrumentHostParamInfo(int hostIndex);
+
+/**
+ * @brief Build a `magda::MeterInfo` from a populated `FaustOutputSlot`.
+ *
+ * The output counterpart to paramInfoFromSlot. Carries the description only,
+ * the reading is polled from the pool by the cell, because a value copied into
+ * a snapshot is stale by the time it is drawn.
+ */
+magda::MeterInfo meterInfoFromOutput(const FaustOutputSlot& output);
 
 }  // namespace magda::daw::audio

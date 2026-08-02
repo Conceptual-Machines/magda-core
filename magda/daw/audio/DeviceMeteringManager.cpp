@@ -1,8 +1,95 @@
 #include "DeviceMeteringManager.hpp"
 
+#include <tracktion_graph/tracktion_graph.h>
+
+// TE's internal node headers require the graph module definitions first.
+#include <tracktion_engine/playback/graph/tracktion_EditNodeBuilder.h>
+#include <tracktion_engine/playback/graph/tracktion_LevelMeasuringNode.h>
+
+#include <mutex>
+
 #include "plugin_manager/PluginManager.hpp"
 
 namespace magda {
+
+namespace {
+
+// Applies the device's metering gain, and owns the tap handle that keeps the
+// manager entry alive. The LevelMeasuringNode wrapped around this one holds a
+// bare reference to the same entry's measurer, and this node is its input, so
+// pinning the entry here covers both for the whole subtree's lifetime.
+class DeviceGainNode final : public te::graph::Node {
+  public:
+    DeviceGainNode(std::unique_ptr<te::graph::Node> inputNode, DeviceMeteringManager::GraphTap tap)
+        : input_(std::move(inputNode)), tap_(std::move(tap)), gain_(*tap_.gain) {
+        setOptimisations({te::graph::ClearBuffers::no, te::graph::AllocateAudioBuffer::yes});
+    }
+
+    te::graph::NodeProperties getNodeProperties() override {
+        auto props = input_->getNodeProperties();
+        if (props.nodeID != 0)
+            tracktion::hash_combine(props.nodeID, static_cast<size_t>(7364928150483726199));
+        return props;
+    }
+
+    std::vector<te::graph::Node*> getDirectInputNodes() override {
+        return {input_.get()};
+    }
+
+    bool isReadyToProcess() override {
+        return input_->hasProcessed();
+    }
+
+    void process(te::graph::Node::ProcessContext& pc) override {
+        auto sourceBuffers = input_->getProcessedOutput();
+        auto destAudio = pc.buffers.audio;
+        jassert(sourceBuffers.audio.getSize() == destAudio.getSize());
+
+        te::graph::copyIfNotAliased(destAudio, sourceBuffers.audio);
+
+        if (input_->numOutputNodes == 1)
+            pc.buffers.midi.swapWith(sourceBuffers.midi);
+        else
+            pc.buffers.midi.copyFrom(sourceBuffers.midi);
+
+        const auto gain = gain_.load(std::memory_order_relaxed);
+        if (gain != 1.0f)
+            te::graph::toAudioBuffer(destAudio).applyGain(gain);
+    }
+
+  private:
+    std::unique_ptr<te::graph::Node> input_;
+    DeviceMeteringManager::GraphTap tap_;
+    std::atomic<float>& gain_;
+};
+
+std::unique_ptr<te::graph::Node> addDeviceMeteringTap(te::Plugin& plugin,
+                                                      std::unique_ptr<te::graph::Node> node) {
+    auto* manager = DeviceMeteringManager::getInstanceForEdit(plugin.edit);
+    if (!manager)
+        return node;
+
+    const auto devicePath = manager->getDevicePathForPlugin(&plugin);
+    if (!devicePath.isValid())
+        return node;
+
+    auto tap = manager->acquireGraphTap(devicePath);
+    if (!tap.isValid())
+        return node;
+
+    auto& measurer = *tap.measurer;
+    node = std::make_unique<DeviceGainNode>(std::move(node), std::move(tap));
+
+    return std::make_unique<te::LevelMeasuringNode>(std::move(node), measurer);
+}
+
+void installDeviceMeteringTap() {
+    static std::once_flag flag;
+    std::call_once(flag,
+                   [] { te::EditNodeBuilder::insertOptionalPluginTapNode = addDeviceMeteringTap; });
+}
+
+}  // namespace
 
 std::map<te::Edit*, DeviceMeteringManager*> DeviceMeteringManager::editMap_;
 juce::CriticalSection DeviceMeteringManager::editMapLock_;
@@ -13,12 +100,17 @@ ChainNodePath DeviceMeteringManager::legacyPathForDeviceId(DeviceId deviceId) {
     return path;
 }
 
-DeviceMeteringManager::Entry& DeviceMeteringManager::ensureEntryLocked(
+const std::shared_ptr<DeviceMeteringManager::Entry>& DeviceMeteringManager::ensureEntrySharedLocked(
     const ChainNodePath& devicePath) {
     auto& entry = entries_[devicePath];
     if (!entry)
-        entry = std::make_unique<Entry>();
-    return *entry;
+        entry = std::make_shared<Entry>();
+    return entry;
+}
+
+DeviceMeteringManager::Entry& DeviceMeteringManager::ensureEntryLocked(
+    const ChainNodePath& devicePath) {
+    return *ensureEntrySharedLocked(devicePath);
 }
 
 te::LevelMeasurer& DeviceMeteringManager::getOrCreateMeasurer(const ChainNodePath& devicePath) {
@@ -119,16 +211,15 @@ void DeviceMeteringManager::setGain(DeviceId deviceId, float gain) {
     setGain(legacyPathForDeviceId(deviceId), gain);
 }
 
-std::atomic<float>* DeviceMeteringManager::getGainAtomic(const ChainNodePath& devicePath) {
+DeviceMeteringManager::GraphTap DeviceMeteringManager::acquireGraphTap(
+    const ChainNodePath& devicePath) {
     juce::ScopedLock sl(lock_);
-    auto it = entries_.find(devicePath);
-    if (it != entries_.end())
-        return &it->second->gainLinear;
-    return nullptr;
-}
-
-std::atomic<float>* DeviceMeteringManager::getGainAtomic(DeviceId deviceId) {
-    return getGainAtomic(legacyPathForDeviceId(deviceId));
+    const auto& entry = ensureEntrySharedLocked(devicePath);
+    if (!entry->clientRegistered) {
+        entry->measurer.addClient(entry->client);
+        entry->clientRegistered = true;
+    }
+    return {entry, &entry->measurer, &entry->gainLinear};
 }
 
 void DeviceMeteringManager::setDirectLevels(const ChainNodePath& devicePath, float peakL,
@@ -205,6 +296,9 @@ void DeviceMeteringManager::clear() {
         if (entry->clientRegistered)
             entry->measurer.removeClient(entry->client);
     }
+    // Entries a live graph tap still holds outlive this call and die with the
+    // node; the audio thread keeps writing into a measurer that simply has no
+    // clients left. See GraphTap for why that matters at shutdown.
     entries_.clear();
     rackEntries_.clear();
 }
@@ -216,6 +310,7 @@ DeviceMeteringManager* DeviceMeteringManager::getInstanceForEdit(te::Edit& edit)
 }
 
 void DeviceMeteringManager::registerForEdit(te::Edit& edit, DeviceMeteringManager* manager) {
+    installDeviceMeteringTap();
     juce::ScopedLock lock(editMapLock_);
     editMap_[&edit] = manager;
 }

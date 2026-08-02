@@ -9,48 +9,58 @@ namespace magda::daw::audio {
  * @brief Oscilloscope analysis device. Transparent passthrough that taps the
  *        signal into an AudioTapBuffer; OscilloscopeUI renders the waveform.
  */
-class OscilloscopePlugin : public AnalysisTapPlugin {
+class OscilloscopePlugin : public AnalysisTapPlugin, public DeviceTelemetry {
   public:
-    OscilloscopePlugin(const te::PluginCreationInfo& info,
-                       const DevicePluginDefaults::Oscilloscope& defaults)
-        : AnalysisTapPlugin(info, 262144) {  // ~5.4 s at 48k
-        timebaseMsValue.referTo(state, juce::Identifier("timebaseMs"), getUndoManager(),
-                                defaults.timebaseMs);
-    }
+    explicit OscilloscopePlugin(const DevicePluginDefaults::Oscilloscope& defaults)
+        : AnalysisTapPlugin(262144), timebaseMs_(defaults.timebaseMs) {}  // ~5.4 s at 48k
 
     static const char* getPluginName() {
         return "Oscilloscope";
     }
     static const char* xmlTypeName;
+    static constexpr std::string_view telemetryKeyValue = "oscilloscope";
 
     // Display setting (message thread): visible window length in milliseconds.
     float getTimebaseMs() const {
-        return timebaseMsValue.get();
+        return timebaseMs_.load(std::memory_order_relaxed);
     }
     void setTimebaseMs(float ms) {
-        timebaseMsValue = juce::jlimit(1.0f, 5000.0f, ms);
+        timebaseMs_.store(juce::jlimit(1.0f, 5000.0f, ms), std::memory_order_relaxed);
     }
 
-    void restorePluginStateFromValueTree(const juce::ValueTree& v) override {
-        AnalysisTapPlugin::restorePluginStateFromValueTree(v);  // trace colour
-        tracktion::copyPropertiesToCachedValues(v, timebaseMsValue);
+    void flushState(juce::ValueTree& state) override {
+        AnalysisTapPlugin::flushState(state);
+        state.setProperty("timebaseMs", getTimebaseMs(), nullptr);
     }
 
-    juce::String getName() const override {
-        return getPluginName();
+    void restoreState(const juce::ValueTree& state) override {
+        AnalysisTapPlugin::restoreState(state);
+        if (state.hasProperty("timebaseMs"))
+            setTimebaseMs(state["timebaseMs"]);
     }
-    juce::String getPluginType() override {
-        return xmlTypeName;
+
+    DeviceProperties properties() const override {
+        return {
+            .pluginId = xmlTypeName,
+            .name = getPluginName(),
+            .shortName = "Scope",
+        };
     }
-    juce::String getShortName(int) override {
-        return "Scope";
+
+    std::string_view telemetryKey() const override {
+        return telemetryKeyValue;
     }
-    juce::String getSelectableDescription() override {
-        return getName();
+
+    DeviceTelemetry* telemetry(std::string_view key) override {
+        return key == telemetryKeyValue ? this : nullptr;
+    }
+
+    const DeviceTelemetry* telemetry(std::string_view key) const override {
+        return key == telemetryKeyValue ? this : nullptr;
     }
 
   private:
-    juce::CachedValue<float> timebaseMsValue;
+    std::atomic<float> timebaseMs_{10.0f};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscilloscopePlugin)
 };

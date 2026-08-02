@@ -4,7 +4,9 @@
 #include "../audio/AudioBridge.hpp"
 #include "../audio/TracktionHelpers.hpp"
 #include "../audio/plugin_manager/ExternalPluginStateUtil.hpp"
+#include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "DeviceState.hpp"
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
 #include "TrackManager.hpp"
@@ -98,8 +100,11 @@ void remapPresetLinks(MacroArray& macros, ModArray& mods, const PresetIdRemap& r
     }
 }
 
+// v2 device state is captured already stripped of engine ids and modifier
+// assignments (see TracktionDeviceStateBridge.hpp), so only legacy engine XML
+// needs cleaning here.
 juce::String stripPresetRuntimePluginState(const juce::String& pluginState) {
-    if (pluginState.isEmpty())
+    if (pluginState.isEmpty() || !device_state::looksLikeLegacyEngineState(pluginState))
         return pluginState;
 
     auto xml = juce::parseXML(pluginState);
@@ -1465,10 +1470,13 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
                         if (auto* proc = bridge->getDeviceProcessor(devicePath))
                             proc->populateParameters(*live);
                     }
-                } else if (auto xml = juce::parseXML(live->pluginState)) {
-                    auto savedState = juce::ValueTree::fromXml(*xml);
-                    if (savedState.isValid())
+                } else {
+                    namespace ta = daw::audio::tracktion_adapter;
+                    auto savedState = ta::devicePluginTreeFromState(live->pluginState);
+                    if (savedState.isValid()) {
                         plugin->restorePluginStateFromValueTree(savedState);
+                        ta::applyDeviceStateParameters(*plugin, live->pluginState);
+                    }
                 }
             }
         }

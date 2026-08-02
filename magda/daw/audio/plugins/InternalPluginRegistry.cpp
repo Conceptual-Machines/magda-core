@@ -4,7 +4,7 @@
 #include <mutex>
 #include <vector>
 
-#include "processors/base/DeviceProcessor.hpp"
+#include "plugins/MagdaDevice.hpp"
 
 namespace magda::daw::audio {
 
@@ -20,6 +20,11 @@ bool typeMatchesAlias(const juce::String& type, const InternalPluginSpec& spec) 
             return true;
 
     return false;
+}
+
+const juce::Identifier& typeProperty() {
+    static const juce::Identifier type("type");
+    return type;
 }
 
 struct RegistryState {
@@ -177,31 +182,48 @@ int internalPostFxAnalysisOrder(const juce::String& pluginId) {
     return -1;
 }
 
-te::Plugin::Ptr createInternalPluginFromSpec(const InternalPluginSpec& spec, te::Edit& edit,
+DevicePluginPtr createInternalPluginFromSpec(const InternalPluginSpec& spec,
+                                             DeviceSessionKey sessionKey,
                                              const juce::String& savedPluginState) {
-    if (spec.createInEdit == nullptr)
-        return nullptr;
-    return spec.createInEdit(spec, edit, savedPluginState);
-}
-
-te::Plugin::Ptr createRegisteredCustomPlugin(const te::PluginCreationInfo& info) {
-    const auto type = info.state[te::IDs::type].toString();
-    const auto* spec = findInternalPluginSpecForLoadType(type);
-    if (spec == nullptr || spec->createCustomPlugin == nullptr)
+    if (spec.createInSession == nullptr)
         return {};
-    return spec->createCustomPlugin(info);
+    return spec.createInSession(spec, sessionKey, savedPluginState);
 }
 
-std::unique_ptr<DeviceProcessor> createInternalPluginProcessor(const InternalPluginSpec& spec,
-                                                               DeviceId deviceId,
-                                                               te::Plugin::Ptr plugin) {
-    if (!plugin || spec.createProcessor == nullptr)
-        return nullptr;
+bool adoptCanonicalPluginType(const juce::ValueTree& state) {
+    if (!state.isValid())
+        return false;
 
-    if (spec.matchesPlugin != nullptr && !spec.matchesPlugin(plugin.get()))
-        return nullptr;
+    const auto type = state[typeProperty()].toString();
+    const auto* spec = findInternalPluginSpecForLoadType(type);
+    if (spec == nullptr || spec->pluginId == nullptr || type == spec->pluginId)
+        return false;
 
-    return spec.createProcessor(deviceId, plugin);
+    // ValueTree is a refcounted handle, so writing through the copy edits the
+    // same shared data the caller (and the Edit) holds. MAGDA's dirty flag is
+    // driven by explicit markDirty() calls rather than ValueTree listeners, so
+    // this does not make merely opening a project look edited.
+    juce::ValueTree writable = state;
+    writable.setProperty(typeProperty(), spec->pluginId, nullptr);
+    return true;
+}
+
+DevicePluginPtr createRegisteredPlugin(const DevicePluginCreationContext& context) {
+    const auto type = context.state[typeProperty()].toString();
+    const auto* spec = findInternalPluginSpecForLoadType(type);
+    if (spec == nullptr || spec->createPlugin == nullptr)
+        return {};
+    adoptCanonicalPluginType(context.state);
+    return spec->createPlugin(context);
+}
+
+std::unique_ptr<MagdaDevice> createRegisteredDevice(const DevicePluginCreationContext& context) {
+    const auto type = context.state[typeProperty()].toString();
+    const auto* spec = findInternalPluginSpecForLoadType(type);
+    if (spec == nullptr || spec->createDevice == nullptr)
+        return {};
+    adoptCanonicalPluginType(context.state);
+    return spec->createDevice(context);
 }
 
 }  // namespace magda::daw::audio

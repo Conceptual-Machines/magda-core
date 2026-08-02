@@ -1,8 +1,6 @@
 #pragma once
 
-// clang-format off
-#include <tracktion_engine/tracktion_engine.h>
-// clang-format on
+#include <juce_core/juce_core.h>
 
 #include <atomic>
 #include <functional>
@@ -38,9 +36,7 @@ class MediaCollector {
         juce::File source;
         juce::File dest;  // assigned in scan(), created in copy()
         std::vector<ClipId> clipRefs;
-        // Hold Plugin::Ptr (not raw) so the sampler stays alive between scan and
-        // apply even if the edit is mutated in between.
-        std::vector<tracktion::Plugin::Ptr> samplerRefs;
+        std::vector<std::function<void(const juce::File&)>> samplerRefs;
         bool copied = false;
     };
 

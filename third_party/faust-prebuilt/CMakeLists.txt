@@ -26,6 +26,20 @@ endif()
 add_library(faust::libfaust STATIC IMPORTED GLOBAL)
 set_target_properties(faust::libfaust PROPERTIES IMPORTED_LOCATION "${_faust_lib}")
 
+# An artifact built with the wasm backend leaves wasmtime_* undefined, and the
+# cached artifact carries only Faust's own bin/ and lib/. Without this the
+# first (uncached) run links fine and every later cache hit fails at the final
+# link. WASMTIME_LIB and the wasmtime target come from DevicesDependencies.cmake.
+if(MAGDA_FAUST_BACKEND STREQUAL "wasm")
+    if(NOT TARGET wasmtime)
+        message(FATAL_ERROR
+            "MAGDA_FAUST_BACKEND=wasm but the wasmtime target is missing; "
+            "the prebuilt Faust artifact cannot be linked")
+    endif()
+    set_property(TARGET faust::libfaust APPEND PROPERTY
+        INTERFACE_LINK_LIBRARIES "${WASMTIME_LIB}" wasmtime)
+endif()
+
 add_executable(faust IMPORTED GLOBAL)
 set_target_properties(faust PROPERTIES IMPORTED_LOCATION "${_faust_exe}")
 

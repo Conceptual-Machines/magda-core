@@ -289,7 +289,6 @@ const CompiledPresentationSpec& getMagdaRingModPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledRingModCurveView>(pluginId);
         },
-        .suppressLegacyUis = {},
     };
     return kSpec;
 }

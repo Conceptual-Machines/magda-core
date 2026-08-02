@@ -23,8 +23,10 @@
 #include "magda/daw/api/automation_api.hpp"
 #include "magda/daw/api/clip_api.hpp"
 #include "magda/daw/api/focused_api.hpp"
+#include "magda/daw/api/groove_api.hpp"
 #include "magda/daw/api/magda_api.hpp"
 #include "magda/daw/api/midi_api.hpp"
+#include "magda/daw/api/plugin_api.hpp"
 #include "magda/daw/api/project_api.hpp"
 #include "magda/daw/api/selection_api.hpp"
 #include "magda/daw/api/session_api.hpp"
@@ -231,6 +233,10 @@ class MockTrackApi : public TrackApi {
         TrackId id;
         bool value;
     };
+    struct RecordArmWrite {
+        TrackId id;
+        bool value;
+    };
     struct NameWrite {
         TrackId id;
         juce::String value;
@@ -248,6 +254,10 @@ class MockTrackApi : public TrackApi {
         TrackId id;
         int position;
     };
+    struct DeviceWrite {
+        TrackId trackId;
+        DeviceInfo device;
+    };
 
     std::vector<TrackInfo> created;
     std::vector<TrackId> deleted;
@@ -259,8 +269,11 @@ class MockTrackApi : public TrackApi {
     std::vector<PanWrite> panWrites;
     std::vector<MuteWrite> muteWrites;
     std::vector<SoloWrite> soloWrites;
+    std::vector<RecordArmWrite> recordArmWrites;
+    std::vector<DeviceWrite> deviceWrites;
 
     TrackId nextId = 1;
+    DeviceId nextDeviceId = 1;
 
     TrackId createTrack(const juce::String& name, TrackType type) override {
         TrackInfo t;
@@ -323,8 +336,12 @@ class MockTrackApi : public TrackApi {
     void setTrackSoloed(TrackId id, bool v) override {
         soloWrites.push_back({id, v});
     }
-    DeviceId addDeviceToTrack(TrackId, const DeviceInfo&) override {
-        return INVALID_DEVICE_ID;
+    void setTrackRecordArmed(TrackId id, bool v) override {
+        recordArmWrites.push_back({id, v});
+    }
+    DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device) override {
+        deviceWrites.push_back({trackId, device});
+        return nextDeviceId++;
     }
     DeviceId addDeviceToChain(TrackId, RackId, ChainId, const DeviceInfo&) override {
         return INVALID_DEVICE_ID;
@@ -353,9 +370,6 @@ class MockTrackApi : public TrackApi {
     void setChainPan(TrackId, RackId, ChainId, float) override {}
     void setChainName(TrackId, RackId, ChainId, const juce::String&) override {}
     const DeviceInfo* getPrimaryInstrument(TrackId) const override {
-        return nullptr;
-    }
-    AudioEngine* getAudioEngine() const override {
         return nullptr;
     }
 };
@@ -691,6 +705,55 @@ class MockMidiApi : public MidiApi {
     }
 };
 
+class MockPluginApi : public PluginApi {
+  public:
+    std::vector<DeviceInfo> preferred;
+    std::vector<DeviceInfo> all;
+
+    std::vector<DeviceInfo> getExternalPlugins() const override {
+        return preferred;
+    }
+    std::vector<DeviceInfo> getAllExternalPlugins() const override {
+        return all.empty() ? preferred : all;
+    }
+    std::optional<SequencerRuntimeContext> getStepSequencerContext(
+        const ChainNodePath&) const override {
+        return std::nullopt;
+    }
+    std::optional<SequencerRuntimeContext> getPolySequencerContext(
+        const ChainNodePath&) const override {
+        return std::nullopt;
+    }
+    juce::String applyStepSequencerPattern(const ChainNodePath&,
+                                           const StepSequencerPattern&) override {
+        return {};
+    }
+    juce::String applyPolySequencerPattern(const ChainNodePath&,
+                                           const PolySequencerPattern&) override {
+        return {};
+    }
+    juce::String applyFourOscUpdate(const ChainNodePath&, const FourOscUpdate&) override {
+        return {};
+    }
+    juce::String applyFaustSource(const ChainNodePath&, const juce::String&, const juce::String&,
+                                  bool) override {
+        return {};
+    }
+};
+
+class MockGrooveApi : public GrooveApi {
+  public:
+    juce::StringArray names;
+
+    bool upsertTemplate(const juce::String& name, int, bool, const std::vector<float>&) override {
+        names.addIfNotAlreadyThere(name);
+        return true;
+    }
+    juce::StringArray getTemplateNames() const override {
+        return names;
+    }
+};
+
 // ---- composite -------------------------------------------------------
 
 class MockMagdaApi : public MagdaApi {
@@ -706,6 +769,8 @@ class MockMagdaApi : public MagdaApi {
     MockMidiApi midi_;
     MockTransportApi transport_;
     MockFocusedApi focused_;
+    MockPluginApi plugins_;
+    MockGrooveApi grooves_;
 
     SelectionApi& selection() override {
         return selection_;
@@ -739,6 +804,12 @@ class MockMagdaApi : public MagdaApi {
     }
     FocusedApi& focused() override {
         return focused_;
+    }
+    PluginApi& plugins() override {
+        return plugins_;
+    }
+    GrooveApi& grooves() override {
+        return grooves_;
     }
 };
 

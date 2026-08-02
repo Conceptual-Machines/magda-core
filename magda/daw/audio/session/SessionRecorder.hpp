@@ -35,7 +35,7 @@ class SessionRecorder : public ClipManagerListener {
         return armed_;
     }
 
-    /** Set the recording previews map (owned by TracktionEngineWrapper). */
+    /** Set the recording previews map (owned by the audio engine). */
     void setRecordingPreviews(std::unordered_map<TrackId, RecordingPreview>* previews) {
         recordingPreviews_ = previews;
     }

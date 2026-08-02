@@ -55,11 +55,13 @@ class ScopedDeviceServicesRegistration {
   public:
     ScopedDeviceServicesRegistration(te::Edit& edit, magda::daw::audio::DeviceServices services)
         : edit_(edit) {
-        magda::daw::audio::registerDeviceServices(edit_, services);
+        magda::daw::audio::registerDeviceServices(
+            magda::daw::audio::DeviceSessionKey::fromAddress(&edit_), services);
     }
 
     ~ScopedDeviceServicesRegistration() {
-        magda::daw::audio::unregisterDeviceServices(edit_);
+        magda::daw::audio::unregisterDeviceServices(
+            magda::daw::audio::DeviceSessionKey::fromAddress(&edit_));
     }
 
   private:

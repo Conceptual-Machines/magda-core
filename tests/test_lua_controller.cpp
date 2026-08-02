@@ -428,6 +428,59 @@ TEST_CASE("Launchpad MK2 factory script uses MK2 grid, native faders, and User m
     }));
 }
 
+TEST_CASE("Launchkey note mode closes a held pad on the track that started it",
+          "[lua_controller][launchkey]") {
+    // A pad can be held across a track change, from the device's own track
+    // buttons or a click in the app. Re-reading the selection at note-off time
+    // sends the off to the new track and strands a sustaining note on the old
+    // one, so the origin has to travel with the held pad.
+    MockMagdaApi mock;
+    seedLaunchpadTracks(mock);
+    mock.midi_.defaultOutputPort = "Launchkey Mini MK4";
+
+    LuaController controller(mock);
+    REQUIRE(controller.loadScript(bundledControllerScript("launchkey_mini_mk4.lua")));
+
+    constexpr int kUserModeCc = 0x6C;
+    constexpr int kBottomLeftPad = 0x70;  // maps to note 36
+
+    SECTION("a note-off after switching tracks") {
+        controller.dispatchEventForTest("Launchkey Mini MK4",
+                                        juce::MidiMessage::controllerEvent(16, kUserModeCc, 127));
+        controller.dispatchEventForTest(
+            "Launchkey Mini MK4", juce::MidiMessage::noteOn(1, kBottomLeftPad, juce::uint8(100)));
+
+        REQUIRE(mock.midi_.injections.size() == 1);
+        REQUIRE(mock.midi_.injections[0].trackId == 10);
+        REQUIRE(mock.midi_.injections[0].msg.isNoteOn());
+
+        mock.selection_.selectedTrack = 20;
+        controller.dispatchEventForTest("Launchkey Mini MK4",
+                                        juce::MidiMessage::noteOff(1, kBottomLeftPad));
+
+        REQUIRE(mock.midi_.injections.size() == 2);
+        REQUIRE(mock.midi_.injections[1].msg.isNoteOff());
+        REQUIRE(mock.midi_.injections[1].trackId == 10);
+        REQUIRE(mock.midi_.injections[1].msg.getNoteNumber() ==
+                mock.midi_.injections[0].msg.getNoteNumber());
+    }
+
+    SECTION("leaving note mode while a pad is still down") {
+        controller.dispatchEventForTest("Launchkey Mini MK4",
+                                        juce::MidiMessage::controllerEvent(16, kUserModeCc, 127));
+        controller.dispatchEventForTest(
+            "Launchkey Mini MK4", juce::MidiMessage::noteOn(1, kBottomLeftPad, juce::uint8(100)));
+
+        mock.selection_.selectedTrack = 20;
+        controller.dispatchEventForTest("Launchkey Mini MK4",
+                                        juce::MidiMessage::controllerEvent(16, kUserModeCc, 127));
+
+        REQUIRE(mock.midi_.injections.size() == 2);
+        REQUIRE(mock.midi_.injections[1].msg.isNoteOff());
+        REQUIRE(mock.midi_.injections[1].trackId == 10);
+    }
+}
+
 TEST_CASE("LuaController loadScript with a syntax error reports it", "[lua_controller]") {
     auto script = writeTempScript("function on_midi(e if then", "test_lua_controller_syntax.lua");
 

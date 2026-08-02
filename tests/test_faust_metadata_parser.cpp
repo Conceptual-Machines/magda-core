@@ -29,8 +29,10 @@ TEST_CASE("parseFaustLabel - strips known annotations", "[faust][metadata]") {
 }
 
 TEST_CASE("parseFaustLabel - keeps unknown annotations intact", "[faust][metadata]") {
-    auto p = parseFaustLabel("Cutoff [tooltip:nice] [unit:Hz]");
-    REQUIRE(p.cleanLabel == "Cutoff [tooltip:nice]");
+    // `colour` is deliberately not a key MAGDA claims, so it must survive in
+    // the visible label rather than being silently swallowed.
+    auto p = parseFaustLabel("Cutoff [colour:red] [unit:Hz]");
+    REQUIRE(p.cleanLabel == "Cutoff [colour:red]");
     REQUIRE(p.metadata.unit == "Hz");
 }
 
@@ -91,7 +93,7 @@ TEST_CASE("parseFaustLabel - scale exp does not set log", "[faust][metadata]") {
 TEST_CASE("parseFaustLabel - style menu populates choices", "[faust][metadata]") {
     auto p = parseFaustLabel("Mode [style:menu{'Off':0;'Low':1;'High':2}]");
     REQUIRE(p.cleanLabel == "Mode");
-    REQUIRE(p.metadata.isMenuStyle);
+    REQUIRE(p.metadata.choiceStyle == FaustChoiceStyle::Menu);
     REQUIRE(p.metadata.menuChoices.size() == 3);
     REQUIRE(p.metadata.menuChoices[0].first == 0.0f);
     REQUIRE(p.metadata.menuChoices[0].second == "Off");
@@ -103,15 +105,45 @@ TEST_CASE("parseFaustLabel - style menu populates choices", "[faust][metadata]")
 
 TEST_CASE("parseFaustLabel - style radio populates choices", "[faust][metadata]") {
     auto p = parseFaustLabel("Voice [style:radio{'Mono':0;'Poly':1}]");
-    REQUIRE(p.metadata.isMenuStyle);
+    REQUIRE(p.metadata.choiceStyle == FaustChoiceStyle::Radio);
     REQUIRE(p.metadata.menuChoices.size() == 2);
     REQUIRE(p.metadata.menuChoices[1].second == "Poly");
+}
+
+TEST_CASE("parseFaustLabel - radio and menu stay distinguishable", "[faust][metadata]") {
+    // The whole point of the discriminator: both are choice controls with the
+    // same payload, and only the requested presentation differs.
+    auto menu = parseFaustLabel("Mode [style:menu{'A':0;'B':1}]");
+    auto radio = parseFaustLabel("Mode [style:radio{'A':0;'B':1}]");
+    REQUIRE(menu.metadata.menuChoices == radio.metadata.menuChoices);
+    REQUIRE(menu.metadata.choiceStyle != radio.metadata.choiceStyle);
 }
 
 TEST_CASE("parseFaustLabel - style knob recognised but no menu", "[faust][metadata]") {
     auto p = parseFaustLabel("Cutoff [style:knob]");
     REQUIRE(p.cleanLabel == "Cutoff");
-    REQUIRE_FALSE(p.metadata.isMenuStyle);
+    REQUIRE_FALSE(p.metadata.isChoiceStyle());
+}
+
+// ============================================================================
+// parseFaustLabel — tooltip
+// ============================================================================
+
+TEST_CASE("parseFaustLabel - tooltip is captured and stripped", "[faust][metadata]") {
+    auto p = parseFaustLabel("Cutoff [idx:0] [tooltip:Filter corner frequency]");
+    REQUIRE(p.cleanLabel == "Cutoff");
+    REQUIRE(p.metadata.tooltip == "Filter corner frequency");
+    REQUIRE(p.metadata.slotIndex == 0);
+}
+
+TEST_CASE("parseFaustLabel - tooltip drops surrounding quotes", "[faust][metadata]") {
+    auto p = parseFaustLabel("Drive [tooltip:\"How hard the stage clips\"]");
+    REQUIRE(p.metadata.tooltip == "How hard the stage clips");
+}
+
+TEST_CASE("parseFaustLabel - absent tooltip stays empty", "[faust][metadata]") {
+    auto p = parseFaustLabel("Cutoff [unit:Hz]");
+    REQUIRE(p.metadata.tooltip.isEmpty());
 }
 
 TEST_CASE("parseFaustLabel - menu accepts double quotes too", "[faust][metadata]") {
@@ -128,7 +160,7 @@ TEST_CASE("parseFaustLabel - menu skips malformed entries", "[faust][metadata]")
 
 TEST_CASE("parseFaustLabel - empty menu body yields empty choices", "[faust][metadata]") {
     auto p = parseFaustLabel("Mode [style:menu{}]");
-    REQUIRE(p.metadata.isMenuStyle);
+    REQUIRE(p.metadata.isChoiceStyle());
     REQUIRE(p.metadata.menuChoices.empty());
 }
 
@@ -138,7 +170,7 @@ TEST_CASE("parseFaustLabel - empty menu body yields empty choices", "[faust][met
 
 TEST_CASE("applyFaustAnnotation - rejects unknown key", "[faust][metadata]") {
     ControlMetadata m;
-    REQUIRE_FALSE(applyFaustAnnotation("tooltip", "hi", m));
+    REQUIRE_FALSE(applyFaustAnnotation("colour", "red", m));
     REQUIRE(m.unit.isEmpty());
 }
 
@@ -191,16 +223,48 @@ TEST_CASE("mergeFaustMetadata - control idx overrides group idx", "[faust][metad
 
 TEST_CASE("mergeFaustMetadata - control menu replaces group menu", "[faust][metadata]") {
     ControlMetadata group;
-    group.isMenuStyle = true;
+    group.choiceStyle = FaustChoiceStyle::Menu;
     group.menuChoices = {{0.0f, "GroupA"}, {1.0f, "GroupB"}};
 
     ControlMetadata control;
-    control.isMenuStyle = true;
+    control.choiceStyle = FaustChoiceStyle::Menu;
     control.menuChoices = {{0.0f, "CtrlA"}};
 
     mergeFaustMetadata(group, control);
     REQUIRE(group.menuChoices.size() == 1);
     REQUIRE(group.menuChoices[0].second == "CtrlA");
+}
+
+TEST_CASE("mergeFaustMetadata - control choice style wins over group", "[faust][metadata]") {
+    ControlMetadata group;
+    group.choiceStyle = FaustChoiceStyle::Menu;
+    group.menuChoices = {{0.0f, "GroupA"}};
+
+    ControlMetadata control;
+    control.choiceStyle = FaustChoiceStyle::Radio;
+    control.menuChoices = {{0.0f, "CtrlA"}};
+
+    mergeFaustMetadata(group, control);
+    REQUIRE(group.choiceStyle == FaustChoiceStyle::Radio);
+}
+
+TEST_CASE("mergeFaustMetadata - control tooltip overrides group", "[faust][metadata]") {
+    ControlMetadata group;
+    group.tooltip = "group help";
+
+    ControlMetadata control;
+    control.tooltip = "control help";
+
+    mergeFaustMetadata(group, control);
+    REQUIRE(group.tooltip == "control help");
+}
+
+TEST_CASE("mergeFaustMetadata - group tooltip survives a silent control", "[faust][metadata]") {
+    ControlMetadata group;
+    group.tooltip = "group help";
+
+    mergeFaustMetadata(group, ControlMetadata{});
+    REQUIRE(group.tooltip == "group help");
 }
 
 // ============================================================================

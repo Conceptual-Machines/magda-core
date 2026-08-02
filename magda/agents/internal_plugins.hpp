@@ -116,7 +116,7 @@ inline InternalPluginVendor vendorFor(const daw::audio::InternalPluginSpec& spec
 inline InternalPlugin deviceAiIdFor(const juce::String& pluginId) {
     if (pluginId.equalsIgnoreCase("4osc"))
         return InternalPlugin::FourOsc;
-    if (pluginId.equalsIgnoreCase("faust"))
+    if (pluginId.equalsIgnoreCase("faust-fx"))
         return InternalPlugin::Faust;
     if (pluginId.equalsIgnoreCase("stepsequencer"))
         return InternalPlugin::StepSequencer;
@@ -150,7 +150,7 @@ inline InternalPluginCapabilities capabilitiesFor(const juce::String& pluginId) 
         capabilities.soundDesignAgent = SoundDesignAgentKind::StepSequencer;
     else if (pluginId.equalsIgnoreCase("polystepsequencer"))
         capabilities.soundDesignAgent = SoundDesignAgentKind::PolyStepSequencer;
-    else if (pluginId.equalsIgnoreCase("faust") || pluginId.equalsIgnoreCase("faustinstrument"))
+    else if (pluginId.equalsIgnoreCase("faust-fx") || pluginId.equalsIgnoreCase("faust-instrument"))
         capabilities.coderAgent = CoderAgentKind::Faust;
     else if (isGenericSoundGeneratorId(pluginId))
         capabilities.soundDesignAgent = SoundDesignAgentKind::Generic;
@@ -244,9 +244,6 @@ inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
     static const std::vector<InternalPluginInfo> kPlugins = [] {
         std::vector<InternalPluginInfo> entries;
 
-        // The browser-visible compiled devices are preferred for duplicate
-        // display names (EQ, Reverb, Delay, ...). Legacy TE variants remain
-        // addressable below through generated tracktion_* canonical aliases.
         for (const auto* spec : daw::audio::compiled::getAllCompiledPluginSpecs()) {
             if (spec == nullptr || spec->pluginId == nullptr || spec->displayName == nullptr)
                 continue;
@@ -257,6 +254,11 @@ inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
                                   InternalPluginVendor::Magda, true);
             if (spec->aliasKey != nullptr)
                 detail::addAlias(entry, spec->aliasKey);
+            // A compiled device that took over a retired Tracktion one answers
+            // to the retired device's names too, so wording an instruction the
+            // way an older project or an older prompt did still resolves.
+            for (int i = 0; i < spec->loadAliasCount; ++i)
+                detail::addAlias(entry, spec->loadAliases[i]);
             const auto parameterAliasKey = spec->aliasKey != nullptr ? juce::String(spec->aliasKey)
                                                                      : juce::String(spec->pluginId);
             for (int i = 0; i < spec->aliasCount; ++i) {

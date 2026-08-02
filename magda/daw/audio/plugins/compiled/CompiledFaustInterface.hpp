@@ -1,16 +1,16 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
+#include <atomic>
+#include <cmath>
 #include <limits>
 #include <string>
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
+#include "plugins/DeviceParameterHandle.hpp"
+#include "plugins/MagdaDevice.hpp"
 
 namespace magda::daw::audio::compiled {
-
-namespace te = tracktion::engine;
 
 /**
  * @brief Cross-plugin slot description. Shared between every compiled-Faust
@@ -55,7 +55,10 @@ class ICompiledFaustPlugin {
 
     virtual int hostSlotCount() const = 0;
     virtual const CompiledHostSlotInfo& hostSlotInfo(int slotIndex) const = 0;
-    virtual te::AutomatableParameter* hostSlotParameter(int slotIndex) const = 0;
+    virtual DeviceParameterHandle hostSlotParameter(int slotIndex) const = 0;
+    virtual juce::String hostSlotId(int) const {
+        return {};
+    }
     virtual float displayToNormalized(int slotIndex, float displayValue) const = 0;
     virtual float normalizedToDisplay(int slotIndex, float normalizedValue) const = 0;
 
@@ -72,6 +75,91 @@ class ICompiledFaustPlugin {
     }
     virtual bool isSlotHiddenForActiveEngine(int) const {
         return false;
+    }
+};
+
+/**
+ * Normalized parameter storage owned by a neutral compiled-Faust device.
+ */
+class CompiledParameterValue {
+  public:
+    CompiledParameterValue() = default;
+    explicit CompiledParameterValue(float value) : value_(value) {}
+
+    CompiledParameterValue(const CompiledParameterValue& other) : value_(other.getCurrentValue()) {}
+
+    CompiledParameterValue& operator=(const CompiledParameterValue& other) {
+        setCurrentValue(other.getCurrentValue());
+        return *this;
+    }
+
+    float getCurrentValue() const {
+        return value_.load(std::memory_order_relaxed);
+    }
+
+    void setCurrentValue(float value) {
+        value_.store(juce::jlimit(0.0f, 1.0f, value), std::memory_order_relaxed);
+    }
+
+    DeviceParameterHandle handle() {
+        return {
+            this,
+            [](const void* native) {
+                return static_cast<const CompiledParameterValue*>(native)->getCurrentValue();
+            },
+            [](const void* native) {
+                return static_cast<const CompiledParameterValue*>(native)->getCurrentValue();
+            },
+            [](void* native, float value) {
+                static_cast<CompiledParameterValue*>(native)->setCurrentValue(value);
+            },
+        };
+    }
+
+    DeviceParameterHandle handle() const {
+        return const_cast<CompiledParameterValue*>(this)->handle();
+    }
+
+  private:
+    std::atomic<float> value_{0.0f};
+};
+
+/**
+ * Shared neutral parameter implementation for compiled-Faust devices.
+ */
+class CompiledFaustDevice : public MagdaDevice, public ICompiledFaustPlugin {
+  public:
+    int parameterCount() const override {
+        return hostSlotCount();
+    }
+
+    ParameterInfo parameterInfo(int slotIndex) const override {
+        if (slotIndex < 0 || slotIndex >= hostSlotCount())
+            return {};
+
+        const auto& slot = hostSlotInfo(slotIndex);
+        ParameterInfo info;
+        info.paramIndex = slotIndex;
+        info.stableId = hostSlotId(slotIndex);
+        info.name = slot.name;
+        info.unit = slot.unit;
+        info.scale = slot.scale;
+        info.minValue = slot.minValue;
+        info.maxValue = slot.maxValue;
+        info.defaultValue = slot.defaultValue;
+        info.scaleAnchor = std::isfinite(slot.scaleAnchor) ? slot.scaleAnchor : 0.0f;
+        info.choices = slot.choices;
+        info.gateSlotIndex = slot.gateSlotIndex;
+        info.gateNegated = slot.gateNegated;
+        return info;
+    }
+
+    float parameterValue(int slotIndex) const override {
+        return hostSlotParameter(slotIndex).currentValue();
+    }
+
+    void setParameterValue(int slotIndex, float value) override {
+        hostSlotParameter(slotIndex).setValueFromHost(value);
     }
 };
 

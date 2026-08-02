@@ -73,6 +73,14 @@ std::vector<ThemeFileEntry> scanUserThemes();
 bool writeThemeTemplate(const juce::File& dest, const std::string& baseId,
                         const std::string& displayName);
 
+// Builds a syntax palette that belongs to an application palette: editor
+// surfaces come off the elevation ramp, token hues off the six accent roles,
+// and everything else off the text roles. Syntax roles stay a separate
+// vocabulary (a code editor needs its own contrast hierarchy), but this gives
+// any palette a coherent starting point - used to complete a generated theme
+// so it never ships an editor that clashes with its own colours.
+DarkTheme::SyntaxPalette deriveSyntaxPalette(const DarkTheme::Palette& palette);
+
 struct ThemeApplyResult {
     bool ok = false;           // a palette was installed (built-in or user)
     bool isUserTheme = false;  // resolved to a user JSON file (vs a built-in)

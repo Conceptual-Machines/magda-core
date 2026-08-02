@@ -121,6 +121,7 @@ endif()
 option(MAGDA_BUILD_TESTS "Build tests" ON)
 option(MAGDA_BUILD_EXAMPLES "Build developer example tools (e.g. lua_smoke REPL)" OFF)
 option(MAGDA_BUILD_JUCE_ADAPTER "Build JUCE/Tracktion adapter" OFF)
+option(MAGDA_BUILD_FAUST_VEC_BENCH "Build the Faust scalar-vs-vector codegen benchmark" OFF)
 
 # CLAP semantic-search backend (ONNX Runtime). Forced off on Intel macOS because
 # upstream ORT dropped osx-x86_64 prebuilts in 1.26. The rest of the media DB
@@ -174,6 +175,11 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+
+# JUCE is a first-class dependency of this repo, not something we inherit from
+# Tracktion Engine. It must be added before the engine so the engine binds to
+# this copy; the engine's own nested modules/juce stays dormant.
+add_subdirectory(third_party/JUCE)
 
 # Tracktion Engine for DAW functionality (using local submodule)
 add_subdirectory(third_party/tracktion_engine)
@@ -299,6 +305,12 @@ endif()
 if(MAGDA_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+# Faust scalar-vs-vector codegen benchmark (#1397). Dispatch-only; it doubles
+# the Faust generation work, so it stays out of ordinary builds.
+if(MAGDA_BUILD_FAUST_VEC_BENCH)
+    add_subdirectory(tools/faust_vec_bench)
 endif()
 
 

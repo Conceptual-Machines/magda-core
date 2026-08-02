@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cmath>
 
+#include "FaustInstrumentPlugin.hpp"
+#include "FaustParamPool.hpp"
+
 namespace magda::daw::audio {
 
 namespace {
@@ -16,6 +19,67 @@ magda::ParameterInfo placeholderForInactive(const FaustParamSlot& slot) {
     info.defaultValue = 0.0f;
     info.scale = magda::ParameterScale::Linear;
     info.modulatable = false;
+    return info;
+}
+
+// Both host params share a page, named for what they do. Left ungrouped they
+// landed on the generic "Params" page, which says nothing next to a tab
+// carrying the patch's own name.
+constexpr const char* kHostParamGroup = "Voice";
+
+magda::ParameterInfo voiceModeInfo() {
+    magda::ParameterInfo info;
+    info.paramIndex = FaustParamPool::kSize;
+    info.name = "Voice Mode";
+    info.group = kHostParamGroup;
+    info.minValue = 0.0f;
+    info.maxValue = 2.0f;
+    info.defaultValue = 0.0f;
+    info.currentValue = 0.0f;
+    info.scale = magda::ParameterScale::Discrete;
+    info.choices = {"Poly", "Mono", "Legato"};
+    // Segmented buttons rather than a dropdown: the mode is worth reading at a
+    // glance without opening anything.
+    info.radioChoices = true;
+    // Three segments sharing one cell truncates them to "Pol / Mo / Leg", which
+    // is worse than useless - "Mo" could be Mono or Modulation. Three cells is
+    // what "Legato" needs to survive at the grid's narrower sizes.
+    info.widthCells = 3;
+    // Voice allocation is a structural choice, not a sound-design one. Letting
+    // an LFO flip it every cycle would just retrigger the flush path.
+    info.modulatable = false;
+    return info;
+}
+
+magda::ParameterInfo glideInfo() {
+    magda::ParameterInfo info;
+    info.paramIndex = FaustParamPool::kSize + 1;
+    info.name = "Glide";
+    info.group = kHostParamGroup;
+    info.unit = "ms";
+    info.minValue = 0.0f;
+    info.maxValue = 2000.0f;
+    info.defaultValue = 0.0f;
+    info.currentValue = 0.0f;
+    // Linear, and starting at 0: 0 has to mean "off" exactly, which a log
+    // scale cannot represent.
+    info.scale = magda::ParameterScale::Linear;
+    return info;
+}
+
+magda::ParameterInfo bendRangeInfo() {
+    magda::ParameterInfo info;
+    info.paramIndex = FaustParamPool::kSize + 2;
+    info.name = "Bend Range";
+    info.group = kHostParamGroup;
+    info.unit = "st";
+    info.minValue = 0.0f;
+    info.maxValue = FaustInstrumentPlugin::kMaxBendSemitones;
+    // 2 semitones each way is what almost every synth ships with, and what a
+    // patch author will assume when they reach for the wheel.
+    info.defaultValue = 2.0f;
+    info.currentValue = info.defaultValue;
+    info.scale = magda::ParameterScale::Linear;
     return info;
 }
 
@@ -68,6 +132,10 @@ magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
     info.unit = slot.unit;
     info.scale = magda::ParameterScale::Discrete;
     info.modulatable = false;  // matches ParameterPresets::discrete
+    // `[style:radio{…}]` asks for visible buttons, `[style:menu{…}]` for a
+    // dropdown. Both are the same parameter; only the widget differs, and the
+    // UI is free to ignore the request when the list is too long for a cell.
+    info.radioChoices = (slot.choiceStyle == FaustChoiceStyle::Radio);
 
     // Sort choices by underlying value, then expose just the labels in
     // that order. ParameterInfo::Discrete indexes choices by
@@ -111,26 +179,74 @@ magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
 
 }  // namespace
 
+magda::ParameterInfo faustInstrumentHostParamInfo(int hostIndex) {
+    switch (hostIndex) {
+        case 0:
+            return voiceModeInfo();
+        case 1:
+            return glideInfo();
+        default:
+            return bendRangeInfo();
+    }
+}
+
 magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot) {
     // Hidden slots are part of the live binding (the host writes to
     // their zones — e.g. ProjectTempo) but should not appear in the
     // inspector. Funnel them through the inactive-placeholder path so
     // the slot index stays addressable for automation lookups while
     // the param grid filters them out by empty name.
-    if (!slot.active || slot.hidden)
-        return placeholderForInactive(slot);
-
+    magda::ParameterInfo info;
+    if (!slot.active || slot.hidden) {
+        info = placeholderForInactive(slot);
+        info.group = slot.group;
+        info.tooltip = slot.tooltip;
+        info.widthCells = slot.widthCells;
+        return info;
+    }
     switch (slot.kind) {
         case FaustParamSlot::Kind::Continuous:
-            return continuousInfo(slot);
+            info = continuousInfo(slot);
+            break;
         case FaustParamSlot::Kind::Boolean:
-            return booleanInfo(slot);
+            info = booleanInfo(slot);
+            break;
         case FaustParamSlot::Kind::Trigger:
-            return triggerInfo(slot);
+            info = triggerInfo(slot);
+            break;
         case FaustParamSlot::Kind::Discrete:
-            return discreteInfo(slot);
+            info = discreteInfo(slot);
+            break;
     }
-    return placeholderForInactive(slot);
+    info.group = slot.group;
+    info.tooltip = slot.tooltip;
+    info.widthCells = slot.widthCells;
+    return info;
+}
+
+magda::MeterInfo meterInfoFromOutput(const FaustOutputSlot& output) {
+    magda::MeterInfo info;
+    info.meterIndex = output.index;
+    info.name = output.label;
+    info.unit = output.unit;
+    info.group = output.group;
+    info.tooltip = output.tooltip;
+    info.minValue = output.minValue;
+    info.maxValue = output.maxValue;
+    info.widthCells = output.widthCells;
+    info.vertical = output.vertical;
+    switch (output.style) {
+        case FaustOutputStyle::Bar:
+            info.style = magda::MeterStyle::Bar;
+            break;
+        case FaustOutputStyle::Numerical:
+            info.style = magda::MeterStyle::Numerical;
+            break;
+        case FaustOutputStyle::Led:
+            info.style = magda::MeterStyle::Led;
+            break;
+    }
+    return info;
 }
 
 }  // namespace magda::daw::audio

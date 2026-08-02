@@ -4,17 +4,29 @@
 
 #include <vector>
 
-#include "plugins/FaustCustomViewKind.hpp"
+#include "plugins/FaustPatchInfo.hpp"
 
 namespace magda::daw::audio {
 
 struct StarterDsp {
-    juce::String name;      // Display name shown in the loader UI.
-    juce::String filename;  // For matching against juce::BinaryData.
+    juce::String name;      // From the file's `declare name`, else its filename.
+    juce::String filename;  // File name as found on disk.
     juce::String source;    // The .dsp file contents.
-    FaustCustomViewKind viewKind =
-        FaustCustomViewKind::None;  // Bound bespoke FaustUI view, if any.
+    juce::String category;  // Containing folder, e.g. "texture".
 };
+
+/**
+ * @brief The custom view a patch asks for via `declare magda_view "Name";`.
+ *
+ * Empty when the patch declares none, which is the common case. The name is a
+ * key into the UI layer's view registry, so the catalogue of visuals stays
+ * hardcoded C++ while the choice of one is data in the .dsp.
+ *
+ * Read from source on every load rather than passed in by the caller: that way
+ * a file-picker load, an editor recompile and a bundled starter all resolve the
+ * same way, and no call site can forget to supply it.
+ */
+juce::String readCustomViewName(const juce::String& source);
 
 // Path to the Faust standard libraries directory bundled alongside the app.
 // Returned File may not exist when running outside an installed bundle (e.g.
@@ -22,8 +34,20 @@ struct StarterDsp {
 // case so the plugin always loads.
 juce::File getFaustLibrariesPath();
 
-// Returns the bundled starter .dsp files (compiled into MagdaAssets via
-// juce_add_binary_data).
-std::vector<StarterDsp> getBundledStarterDsps();
+// Root of the runtime .dsp library staged alongside the app. Like
+// getFaustLibrariesPath(), the returned File may not exist outside an
+// installed bundle.
+juce::File getFaustRuntimeDspPath();
+
+// The staged root for one device kind: `<root>/effects` or
+// `<root>/instruments`. Splitting at the top level rather than filtering one
+// shared tree means a new instrument category needs no FX-side exclusion.
+juce::File getFaustRuntimeDspPath(FaustPatchKind kind);
+
+// Every .dsp discovered under getFaustRuntimeDspPath(kind), recursively.
+// Nothing is hardcoded: dropping a file into that kind's staged folder is
+// enough for it to appear, and each file describes itself via `declare name` /
+// `declare magda_view`. Returns empty when the folder is missing.
+std::vector<StarterDsp> getBundledStarterDsps(FaustPatchKind kind);
 
 }  // namespace magda::daw::audio

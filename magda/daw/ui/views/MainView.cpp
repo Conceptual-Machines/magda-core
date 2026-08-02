@@ -35,7 +35,6 @@
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
 
 namespace magda {
@@ -672,11 +671,7 @@ void MainView::timerCallback() {
     if (!audioEngine_ || !masterHeaderPanel)
         return;
 
-    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(audioEngine_);
-    if (!teWrapper)
-        return;
-
-    auto* bridge = teWrapper->getAudioBridge();
+    auto* bridge = audioEngine_->getAudioBridge();
     if (!bridge)
         return;
 

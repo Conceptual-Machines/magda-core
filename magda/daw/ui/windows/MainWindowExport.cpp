@@ -10,8 +10,7 @@
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
 #include "core/TrackManager.hpp"
-#include "engine/OfflineRenderHelper.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
+#include "engine/AudioEngine.hpp"
 #include "project/ProjectManager.hpp"
 
 namespace magda {
@@ -31,19 +30,19 @@ double timelineEndBeats(const ClipInfo& clip, double bpm) {
 }
 
 /**
- * Progress window for audio export that runs Tracktion Renderer in background thread
+ * Progress window for audio export that runs the engine-neutral render task in
+ * a background thread.
  */
 class ExportProgressWindow : public juce::ThreadWithProgressWindow {
   public:
-    ExportProgressWindow(const tracktion::Renderer::Parameters& params,
-                         const juce::File& outputFile,
-                         tracktion::engine::TransportControl& transport,
+    ExportProgressWindow(std::unique_ptr<OfflineRenderSession> renderSession,
+                         const OfflineRenderRequest& request, const juce::File& outputFile,
                          std::function<void()> onComplete, double prerollSeconds = 0.0,
                          double leadInSilence = 0.0)
         : ThreadWithProgressWindow(trEllipsis("export.progress.exporting_audio"), true, true),
-          params_(params),
+          renderSession_(std::move(renderSession)),
+          renderTask_(renderSession_ ? renderSession_->createTask(request) : nullptr),
           outputFile_(outputFile),
-          reallocationInhibitor_(transport),
           onComplete_(std::move(onComplete)),
           prerollSeconds_(prerollSeconds),
           leadInSilence_(leadInSilence),
@@ -62,55 +61,38 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
     }
 
     void run() override {
-        std::atomic<float> progress{0.0f};
-        renderTask_ = std::make_unique<tracktion::Renderer::RenderTask>("Export", params_,
-                                                                        &progress, nullptr);
-
         setStatusMessage(strRendering_ + " " + outputFile_.getFileName());
-
-        while (!threadShouldExit()) {
-            auto status = renderTask_->runJob();
-
-            // Update progress bar (0.0 to 1.0)
-            setProgress(progress.load());
-
-            if (status == juce::ThreadPoolJob::jobHasFinished) {
-                // Verify the file was actually created
-                if (outputFile_.existsAsFile()) {
-                    if (prerollSeconds_ > 0.0) {
-                        setStatusMessage(strTrimming_);
-                        if (!trimPreroll()) {
-                            success_ = false;
-                            errorMessage_ = errTrimFailed_;
-                            break;
-                        }
-                    }
-                    success_ = true;
-                    setStatusMessage(strComplete_);
-                    setProgress(1.0);
-                } else {
-                    success_ = false;
-                    errorMessage_ = errFileNotCreated_;
-                    setStatusMessage(strFailed_);
-                }
-                break;
-            }
-
-            if (status == juce::ThreadPoolJob::jobNeedsRunningAgain) {
-                // Brief yield to avoid busy-waiting while keeping render fast
-                juce::Thread::sleep(1);
-                continue;
-            }
-
-            // Error occurred
+        if (!renderTask_) {
             errorMessage_ = errRenderFailed_;
-            setStatusMessage(strFailed_);
-            break;
+            return;
         }
 
-        if (threadShouldExit() && !success_) {
-            errorMessage_ = errCancelled_;
+        auto result = renderTask_->run([this]() { return threadShouldExit(); },
+                                       [this](float progress) { setProgress(progress); });
+        if (!result.success) {
+            errorMessage_ = threadShouldExit() ? errCancelled_ : result.error;
+            if (errorMessage_.isEmpty())
+                errorMessage_ = errRenderFailed_;
+            setStatusMessage(strFailed_);
+            return;
         }
+
+        if (!outputFile_.existsAsFile()) {
+            errorMessage_ = errFileNotCreated_;
+            setStatusMessage(strFailed_);
+            return;
+        }
+        if (prerollSeconds_ > 0.0) {
+            setStatusMessage(strTrimming_);
+            if (!trimPreroll()) {
+                errorMessage_ = errTrimFailed_;
+                setStatusMessage(strFailed_);
+                return;
+            }
+        }
+        success_ = true;
+        setStatusMessage(strComplete_);
+        setProgress(1.0);
     }
 
     void threadComplete(bool userPressedCancel) override {
@@ -202,11 +184,10 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
         return tempFile.moveFileTo(outputFile_);
     }
 
-    tracktion::Renderer::Parameters params_;
+    std::unique_ptr<OfflineRenderSession> renderSession_;
+    std::unique_ptr<OfflineRenderTask> renderTask_;
     juce::File outputFile_;
-    tracktion::engine::TransportControl::ReallocationInhibitor reallocationInhibitor_;
     std::function<void()> onComplete_;
-    std::unique_ptr<tracktion::Renderer::RenderTask> renderTask_;
     double prerollSeconds_ = 0.0;
     double leadInSilence_ = 0.0;
     bool success_ = false;
@@ -261,11 +242,8 @@ class InsertCaptureProgressBox : private juce::Timer {
 
 }  // namespace
 
-void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
-                               TracktionEngineWrapper* engine) {
-    namespace te = tracktion;
-
-    if (!engine || !engine->getEdit()) {
+void MainWindow::performExport(const ExportAudioDialog::Settings& settings, AudioEngine* engine) {
+    if (!engine || !engine->hasActiveEdit()) {
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                tr("dialogs.export_audio"),
                                                tr("dialogs.error.export_no_edit"));
@@ -276,11 +254,7 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
 }
 
 void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
-                                   TracktionEngineWrapper* engine) {
-    namespace te = tracktion;
-
-    auto* edit = engine->getEdit();
-
+                                   AudioEngine* engine) {
     // Determine file extension
     juce::String extension = getFileExtensionForFormat(settings.format);
 
@@ -320,7 +294,7 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                  juce::FileBrowserComponent::warnAboutOverwriting;
 
     fileChooser_->launchAsync(
-        flags, [this, settings, engine, edit, extension](const juce::FileChooser& chooser) {
+        flags, [this, settings, engine, extension](const juce::FileChooser& chooser) {
             auto file = chooser.getResult();
             if (file == juce::File()) {
                 fileChooser_.reset();
@@ -332,71 +306,59 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                 file = file.withFileExtension(extension);
             }
 
-            // Export range — also the capture window for external inserts.
-            te::TimeRange requestedRange;
+            // Export range stays musical until the renderer/capture boundary.
+            BeatRange requestedRange{{0.0}, {engine->getEditLengthBeats().value}};
             using ExportRange = ExportAudioDialog::ExportRange;
             switch (settings.exportRange) {
                 case ExportRange::TimeSelection:
                     // TODO: Get actual time selection from SelectionManager when implemented
-                    requestedRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
-                                                   te::TimePosition() + edit->getLength());
                     break;
 
-                case ExportRange::LoopRegion:
-                    requestedRange = edit->getTransport().getLoopRange();
+                case ExportRange::LoopRegion: {
+                    const auto loop = engine->getLoopRegionBeats();
+                    if (loop.isValid())
+                        requestedRange = loop;
                     break;
+                }
 
                 case ExportRange::EntireSong:
                 default:
-                    requestedRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
-                                                   te::TimePosition() + edit->getLength());
                     break;
             }
 
+            const auto* tempoMap = engine->tempoMap();
+            if (tempoMap == nullptr) {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       tr("dialogs.export_audio"),
+                                                       tr("export.error.render_failed"));
+                fileChooser_.reset();
+                return;
+            }
+            const double requestedStart = tempoMap->beatToTime(requestedRange.start.value);
+            const double requestedEnd = tempoMap->beatToTime(requestedRange.end.value);
+            const bool resumePlaybackAfterRender = engine->isPlaying();
+
             // The offline render itself, launched directly or after the capture
             // pass below has recorded the external inserts' returns.
-            auto launchRender = [this, settings, engine, edit, file, requestedRange]() {
-                auto& transport = edit->getTransport();
-                te::TransportControl::ReallocationInhibitor setupInhibitor(transport);
-                prepareEditForOfflineRender(*edit);
-
-                auto& formatManager = engine->getEngine()->getAudioFileFormatManager();
-                juce::AudioFormat* audioFormat = formatManager.getWavFormat();
-                if (settings.format.startsWith("WAV")) {
-                    audioFormat = formatManager.getWavFormat();
-                } else if (settings.format == "FLAC") {
-                    audioFormat = formatManager.getFlacFormat();
-                }
-
-                auto params = makeOfflineRenderParameters(
-                    *edit, {.destFile = file,
-                            .audioFormat = audioFormat,
-                            .bitDepth = getBitDepthForFormat(settings.format),
-                            .sampleRate = settings.sampleRate,
-                            .blockSize = 512,
-                            .shouldNormalise = settings.normalize,
-                            .normaliseToLevelDb = 0.0f,
-                            .useMasterPlugins = true,
-                            .usePlugins = true,
-                            .checkNodesForAudio = false,
-                            .realTimeRender = settings.realTimeRender});
+            auto launchRender = [this, settings, engine, file, requestedStart, requestedEnd,
+                                 resumePlaybackAfterRender]() {
+                OfflineRenderRequest request;
+                request.destination = file;
+                request.format = settings.format == "FLAC" ? OfflineRenderFormat::Flac
+                                                           : OfflineRenderFormat::Wav;
+                request.bitDepth = getBitDepthForFormat(settings.format);
+                request.sampleRate = settings.sampleRate;
+                request.shouldNormalise = settings.normalize;
+                request.useMasterPlugins = true;
+                request.usePlugins = true;
+                request.realTimeRender = settings.realTimeRender;
+                request.range = {{requestedStart}, {requestedEnd}, {}};
 
                 // The chord track is monitor-only: exclude it from the bounce so its
-                // notes never reach the master render. tracksToDo lists every track
-                // index to render (empty = all), so we set all but the chord track.
+                // notes never reach the master render.
                 if (auto chordId = magda::TrackManager::getInstance().getChordTrackId();
-                    chordId != magda::INVALID_TRACK_ID) {
-                    if (auto* bridge = engine->getAudioBridge()) {
-                        if (auto* chordTe = bridge->getAudioTrack(chordId)) {
-                            auto allTracks = te::getAllTracks(*edit);
-                            juce::BigInteger tracksToDo;
-                            for (int i = 0; i < allTracks.size(); ++i)
-                                if (allTracks[i] != chordTe)
-                                    tracksToDo.setBit(i);
-                            params.tracksToDo = tracksToDo;
-                        }
-                    }
-                }
+                    chordId != magda::INVALID_TRACK_ID)
+                    request.excludedTrackIds = {chordId};
 
                 // Add preroll for offline renders to let plugins settle.
                 // Even with the default 512 block size, some plugins need extra
@@ -405,29 +367,15 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                 double actualPreroll = 0.0;
                 if (!settings.realTimeRender) {
                     actualPreroll = prerollSeconds;
-                    params.time = te::TimeRange(requestedRange.getStart() -
-                                                    te::TimeDuration::fromSeconds(actualPreroll),
-                                                requestedRange.getEnd());
-                } else {
-                    params.time = requestedRange;
+                    request.range.start.seconds -= actualPreroll;
                 }
-
-                // Enable MIDI-triggered LFO modulation for offline rendering.
-                // During live playback, the message-thread timer gates these LFOs
-                // based on held notes, but it can't keep up with non-real-time rendering.
-                auto* audioBridge = engine->getAudioBridge();
-                preparePluginsForOfflineRender(*engine);
 
                 // Launch progress window with background rendering (non-blocking)
                 // The window will delete itself via threadComplete() callback.
-                // ExportProgressWindow holds a ReallocationInhibitor to prevent
-                // edit.restartPlayback() from recreating the playback context during render.
                 auto* captureService = engine->getInsertRenderCaptureService();
                 auto* progressWindow = new ExportProgressWindow(
-                    params, file, transport,
-                    [audioBridge, captureService]() {
-                        if (audioBridge)
-                            audioBridge->getPluginManager().restoreAfterRendering();
+                    engine->createOfflineRenderSession(resumePlaybackAfterRender), request, file,
+                    [captureService]() {
                         // Remove the hidden capture taps + temp files (no-op when
                         // no capture pass ran).
                         if (captureService)
@@ -447,8 +395,8 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                 using PassError = InsertRenderCaptureService::PassError;
                 auto* progressBox = new InsertCaptureProgressBox(*captureService);
                 const bool started = captureService->startCapturePass(
-                    requestedRange.getStart().inSeconds(), requestedRange.getEnd().inSeconds(),
-                    settings.sampleRate, [launchRender, progressBox, captureService](bool success) {
+                    requestedStart, requestedEnd, settings.sampleRate,
+                    [launchRender, progressBox, captureService](bool success) {
                         juce::MessageManager::callAsync([progressBox]() { delete progressBox; });
                         if (success) {
                             launchRender();
@@ -547,12 +495,11 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
     }
 
     if (settings.exportRange == ExportMidiDialog::ExportRange::LoopRegion) {
-        auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
-        if (engine && engine->getEdit()) {
-            auto loopRange = engine->getEdit()->getTransport().getLoopRange();
-            // Tracktion exposes loop range as seconds; convert once at this boundary.
-            rangeStartBeats = loopRange.getStart().inSeconds() * projectTempo / 60.0;
-            rangeEndBeats = loopRange.getEnd().inSeconds() * projectTempo / 60.0;
+        auto* engine = mainComponent->getAudioEngine();
+        if (engine && engine->hasActiveEdit()) {
+            const auto loopRange = engine->getLoopRegionBeats();
+            rangeStartBeats = loopRange.start.value;
+            rangeEndBeats = loopRange.end.value;
         }
     }
 

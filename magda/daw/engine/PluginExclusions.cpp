@@ -49,15 +49,4 @@ std::vector<ExcludedPlugin> loadExclusionList(const juce::File& file) {
     return entries;
 }
 
-void saveExclusionList(const juce::File& file, const std::vector<ExcludedPlugin>& entries) {
-    (void)file.getParentDirectory().createDirectory();
-
-    juce::String content;
-    for (const auto& entry : entries) {
-        content += entry.path + "\t" + entry.reason + "\t" + entry.timestamp + "\n";
-    }
-
-    (void)file.replaceWithText(content);
-}
-
 }  // namespace magda

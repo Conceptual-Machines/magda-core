@@ -48,6 +48,9 @@ struct TrackMeasurementSnapshot {
     float plr = 0.0f;  ///< peak-to-loudness ratio: peak - integrated (LU)
     float psr = 0.0f;  ///< peak-to-short-term ratio: peak - short-term (LU)
 
+    bool plrValid = false;  ///< false while either peak or integrated is at the floor
+    bool psrValid = false;  ///< false while either peak or short-term is at the floor
+
     bool truePeakValid = false;  ///< false when oversampled true-peak is disabled
     bool valid = false;          ///< true once any signal has been processed
 };
@@ -215,9 +218,11 @@ class TrackMeasurer {
         // Dynamics: peak (true-peak if available, else sample peak) above loudness.
         const float peak =
             s.truePeakValid && s.truePeakDb > kSilenceDb ? s.truePeakDb : s.samplePeakDb;
-        if (peak > kSilenceDb && s.integratedLufs > kSilenceLufs)
+        s.plrValid = peak > kSilenceDb && s.integratedLufs > kSilenceLufs;
+        s.psrValid = peak > kSilenceDb && s.shortTermLufs > kSilenceLufs;
+        if (s.plrValid)
             s.plr = peak - s.integratedLufs;
-        if (peak > kSilenceDb && s.shortTermLufs > kSilenceLufs)
+        if (s.psrValid)
             s.psr = peak - s.shortTermLufs;
         return s;
     }

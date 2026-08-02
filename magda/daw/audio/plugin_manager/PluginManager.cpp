@@ -24,6 +24,7 @@
 #include "plugins/MidiReceivePlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
+#include "plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "processors/DeviceProcessor.hpp"
 #include "transport/TransportStateManager.hpp"
 
@@ -434,6 +435,13 @@ void PluginManager::captureAllPluginStates() {
             if (!sd.plugin)
                 continue;
 
+            // Resolved before capture: an internal device's currently saved state
+            // decides whether it may be overwritten at all.
+            auto& trackManager = TrackManager::getInstance();
+            auto* devInfo = trackManager.getDeviceInChainByPath(devicePath);
+            if (devInfo == nullptr)
+                continue;
+
             juce::String stateStr;
 
             te::ExternalPlugin* capturedExt = nullptr;
@@ -443,28 +451,18 @@ void PluginManager::captureAllPluginStates() {
                 stateStr = ext->state.getProperty(te::IDs::state).toString();
                 capturedExt = ext;
             } else {
-                // TE internal plugin (4osc, EQ, Compressor, etc.):
-                // Capture the full ValueTree as XML so non-automatable
-                // CachedValues (wave shapes, filter type, etc.) are preserved.
-                // Strip TE ids recursively so duplicated tracks get fresh
-                // EditItemIDs all the way through nested state trees.
-                sd.plugin->flushPluginStateToValueTree();
-                auto stateCopy = sd.plugin->state.createCopy();
-                stripTracktionIdsRecursive(stateCopy);
-                stripModifierAssignmentsRecursive(stateCopy);
-                if (auto xml = stateCopy.createXml())
-                    stateStr = xml->toString();
+                // Internal device: a MAGDA-owned v2 state document, so the saved
+                // patch carries no engine-shaped tree (see
+                // TracktionDeviceStateBridge.hpp).
+                stateStr = daw::audio::tracktion_adapter::captureInternalDeviceState(
+                    *sd.plugin, devInfo->pluginState);
             }
 
             // Always overwrite pluginState (even if empty) to avoid stale state.
-            auto& trackManager = TrackManager::getInstance();
-            auto* devInfo = trackManager.getDeviceInChainByPath(devicePath);
-            if (devInfo) {
-                devInfo->pluginState = stateStr;
-                captureVst3Info(*devInfo, capturedExt);
-                if (sd.processor != nullptr)
-                    sd.processor->populateParameters(*devInfo);
-            }
+            devInfo->pluginState = stateStr;
+            captureVst3Info(*devInfo, capturedExt);
+            if (sd.processor != nullptr)
+                sd.processor->populateParameters(*devInfo);
         }
     }
 
@@ -480,6 +478,11 @@ void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
         return;
     }
 
+    auto& trackManager = TrackManager::getInstance();
+    auto* devInfo = trackManager.getDeviceInChainByPath(devicePath);
+    if (devInfo == nullptr)
+        return;
+
     auto* plugin = it->second.plugin.get();
     juce::String stateStr;
 
@@ -489,21 +492,14 @@ void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
         stateStr = ext->state.getProperty(te::IDs::state).toString();
         capturedExt = ext;
     } else {
-        plugin->flushPluginStateToValueTree();
-        auto stateCopy = plugin->state.createCopy();
-        stripTracktionIdsRecursive(stateCopy);
-        stripModifierAssignmentsRecursive(stateCopy);
-        if (auto xml = stateCopy.createXml())
-            stateStr = xml->toString();
+        stateStr = daw::audio::tracktion_adapter::captureInternalDeviceState(*plugin,
+                                                                             devInfo->pluginState);
     }
 
-    auto& trackManager = TrackManager::getInstance();
-    if (auto* devInfo = trackManager.getDeviceInChainByPath(devicePath)) {
-        devInfo->pluginState = stateStr;
-        captureVst3Info(*devInfo, capturedExt);
-        if (it->second.processor)
-            it->second.processor->populateParameters(*devInfo);
-    }
+    devInfo->pluginState = stateStr;
+    captureVst3Info(*devInfo, capturedExt);
+    if (it->second.processor)
+        it->second.processor->populateParameters(*devInfo);
 }
 
 void PluginManager::removeDrumGridPadDevicesLocked(const ChainNodePath& drumGridPath) {
@@ -591,13 +587,12 @@ void PluginManager::restorePluginState(const ChainNodePath& devicePath, te::Plug
 
     if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
         ext->state.setProperty(te::IDs::state, devInfo->pluginState, nullptr);
-    } else {
-        // Internal plugin: restore from saved XML ValueTree
-        if (auto xml = juce::parseXML(devInfo->pluginState)) {
-            auto savedState = juce::ValueTree::fromXml(*xml);
-            if (savedState.isValid()) {
-                plugin->restorePluginStateFromValueTree(savedState);
-            }
+    } else if (plugin != nullptr) {
+        namespace ta = daw::audio::tracktion_adapter;
+        auto savedState = ta::devicePluginTreeFromState(devInfo->pluginState);
+        if (savedState.isValid()) {
+            plugin->restorePluginStateFromValueTree(savedState);
+            ta::applyDeviceStateParameters(*plugin, devInfo->pluginState);
         }
     }
 }

@@ -90,6 +90,7 @@ nav:
           - 4OSC Synth: devices/4osc.md
           - Drum Grid: devices/drum-grid.md
           - Sampler: devices/sampler.md
+          - Faust Instrument: devices/faust-instrument.md
       - Effects: devices/effects.md
       - Analysis: devices/analysis.md
   - Modulation:

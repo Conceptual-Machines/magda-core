@@ -10,6 +10,7 @@
 #include "../../themes/FontManager.hpp"
 #include "core/Config.hpp"
 #include "core/TrackManager.hpp"
+#include "engine/AudioEngine.hpp"
 
 namespace magda::daw::ui {
 
@@ -74,6 +75,24 @@ class AIPanelComponent::GenerateThread : public juce::Thread {
     llm::Conversation conversation_;
 };
 
+// Selection colours have to be set explicitly: JUCE defaults
+// highlightedTextColourId to black, which is unreadable against a dark
+// background, so dragging over the transcript blacked the text out. Same
+// treatment AIChatConsoleContent gives its own editors.
+void AIPanelComponent::applySelectionColours(juce::TextEditor& editor) {
+    editor.setColour(juce::TextEditor::highlightColourId,
+                     DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    editor.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
+}
+
+void AIPanelComponent::setThemedIcon(juce::DrawableButton& button, const void* svgData,
+                                     std::size_t svgDataSize) {
+    auto icon = juce::Drawable::createFromImageData(svgData, svgDataSize);
+    if (icon)
+        DarkTheme::applyToSvgIcon(*icon);
+    button.setImages(icon.get());
+}
+
 AIPanelComponent::AIPanelComponent() {
     output_.setMultiLine(true, true);
     output_.setReadOnly(true);
@@ -85,6 +104,7 @@ AIPanelComponent::AIPanelComponent() {
     output_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
     output_.setColour(juce::TextEditor::textColourId,
                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    applySelectionColours(output_);
     output_.setFont(FontManager::getInstance().getUIFont(11.0f));
     addAndMakeVisible(output_);
 
@@ -95,6 +115,7 @@ AIPanelComponent::AIPanelComponent() {
     input_.setColour(juce::TextEditor::backgroundColourId,
                      DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
     input_.setColour(juce::TextEditor::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    applySelectionColours(input_);
     input_.setFont(FontManager::getInstance().getUIFont(11.0f));
     input_.onReturnKey = [this]() { submitPrompt(); };
     addAndMakeVisible(input_);
@@ -109,11 +130,24 @@ AIPanelComponent::AIPanelComponent() {
     modelLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(modelLabel_);
 
-    auto deleteSvg =
-        juce::Drawable::createFromImageData(BinaryData::delete_svg, BinaryData::delete_svgSize);
-    if (deleteSvg)
-        DarkTheme::applyToSvgIcon(*deleteSvg);
-    clearButton_.setImages(deleteSvg.get());
+    // Stop button, left of clear. Hidden until a generation is in flight, so
+    // the footer reads the same as before when idle. server_stop.svg is the
+    // bare 16x16 square glyph; transport/stop.svg bakes in its own rounded
+    // background and border, which would read as a framed box at this size.
+    setThemedIcon(stopButton_, BinaryData::server_stop_svg, BinaryData::server_stop_svgSize);
+    stopButton_.setEdgeIndent(3);
+    stopButton_.setColour(juce::DrawableButton::backgroundColourId,
+                          juce::Colours::transparentBlack);
+    stopButton_.setColour(juce::DrawableButton::backgroundOnColourId,
+                          juce::Colours::transparentBlack);
+    stopButton_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    stopButton_.setTooltip("Stop generating");
+    stopButton_.setAlpha(0.5f);
+    stopButton_.setVisible(false);
+    stopButton_.onClick = [this]() { cancelGeneration(); };
+    addChildComponent(stopButton_);
+
+    setThemedIcon(clearButton_, BinaryData::delete_svg, BinaryData::delete_svgSize);
     clearButton_.setEdgeIndent(2);
     clearButton_.setColour(juce::DrawableButton::backgroundColourId,
                            juce::Colours::transparentBlack);
@@ -283,11 +317,17 @@ void AIPanelComponent::resized() {
         mcpStripBounds_ = {};
     }
 
-    // Footer strip at the very bottom: model label + clear-chat button.
+    // Footer strip at the very bottom: model label + stop + clear-chat button.
     auto footerArea = bounds.removeFromBottom(16);
     constexpr int footerButtonSize = 16;
     clearButton_.setBounds(footerArea.removeFromRight(footerButtonSize));
     footerArea.removeFromRight(2);
+    // Stop only claims footer space while generating, so the model label keeps
+    // the full width when idle.
+    if (busy_) {
+        stopButton_.setBounds(footerArea.removeFromRight(footerButtonSize));
+        footerArea.removeFromRight(2);
+    }
     modelLabel_.setBounds(footerArea);
 
     bounds.removeFromBottom(2);
@@ -303,6 +343,36 @@ void AIPanelComponent::resized() {
     input_.setBounds(inputArea);
 
     refreshModelLabel();
+}
+
+void AIPanelComponent::lookAndFeelChanged() {
+    // Only the palette-resolved colours the editors cached at construction.
+    // output_'s textColourId is deliberately re-set here too: it is used as the
+    // "colour for the next inserted section", so restoring the themed default
+    // keeps subsequent appends in the new palette. Already-inserted sections
+    // keep whatever colour they were written with, which is the intent for the
+    // yellow / green status lines.
+    output_.setColour(juce::TextEditor::backgroundColourId,
+                      DarkTheme::getColour(DarkTheme::BACKGROUND));
+    output_.setColour(juce::TextEditor::textColourId,
+                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    applySelectionColours(output_);
+
+    input_.setColour(juce::TextEditor::backgroundColourId,
+                     DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    input_.setColour(juce::TextEditor::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    input_.setTextToShowWhenEmpty("describe the sound...",
+                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.4f));
+    applySelectionColours(input_);
+
+    modelLabel_.setColour(juce::Label::textColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.5f));
+
+    // Both footer icons hold a recoloured copy of their SVG, so a palette
+    // switch needs them rebuilt rather than just repainted.
+    setThemedIcon(stopButton_, BinaryData::server_stop_svg, BinaryData::server_stop_svgSize);
+    setThemedIcon(clearButton_, BinaryData::delete_svg, BinaryData::delete_svgSize);
+    repaint();
 }
 
 void AIPanelComponent::paint(juce::Graphics& g) {
@@ -393,8 +463,10 @@ void AIPanelComponent::submitPrompt() {
     appendOutput(juce::String::charToString(0x25CF) + " " + prompt);
     input_.clear();
 
-    auto agent =
-        device != nullptr ? createDeviceAIAgentFor(*device) : createDeviceAIAgentFor(pluginId_);
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* api = engine != nullptr ? &engine->getMagdaApi() : nullptr;
+    auto agent = device != nullptr ? createDeviceAIAgentFor(*device, api)
+                                   : createDeviceAIAgentFor(pluginId_, api);
     if (!agent) {
         appendOutput("no agent for " + pluginId_);
         return;
@@ -428,7 +500,37 @@ void AIPanelComponent::submitPrompt() {
     thread_->startThread();
 }
 
+void AIPanelComponent::cancelGeneration() {
+    if (thread_ == nullptr)
+        return;
+
+    // cancel() asks the agent to abort its in-flight request and signals the
+    // thread; stopThread waits for run() to unwind. Briefly blocks the message
+    // thread, the same way the supersede path in submitPrompt already does.
+    thread_->cancel();
+    thread_->stopThread(2000);
+    thread_.reset();
+
+    // The worker returns without posting a result once it sees the exit flag,
+    // so onGenerationFinished never runs for a cancelled generation and this
+    // is the only place the transcript and busy state get closed out.
+    streamingStart_ = -1;
+    setBusy(false);
+    appendOutput(juce::String(juce::CharPointer_UTF8("\xe2\x86\x92 cancelled")));
+
+    // The generation may already have spawned faust-mcp via getServer() before
+    // it was stopped, so refresh the strip like the finish path does.
+    updateMcpStatus();
+}
+
 void AIPanelComponent::appendStreamingToken(const juce::String& token) {
+    // Tokens already queued to the message thread can land after the user hit
+    // stop: the worker checks threadShouldExit() before posting, but a token
+    // can already be in flight. Dropping them keeps stray output from
+    // appearing below the "cancelled" line.
+    if (!busy_)
+        return;
+
     // Strip JSON curly brackets so the streamed payload reads as content
     // rather than raw envelope syntax. Everything else (keys, values,
     // commas, quotes) flows through unchanged.
@@ -539,6 +641,8 @@ void AIPanelComponent::onGenerationFinished(juce::String status, juce::String co
 void AIPanelComponent::setBusy(bool busy) {
     busy_ = busy;
     input_.setEnabled(!busy);
+    // Set before resized() below so the footer slot is laid out in the same pass.
+    stopButton_.setVisible(busy);
     if (busy) {
         busySpinnerPhase_ = 0.0f;
         startTimerHz(30);

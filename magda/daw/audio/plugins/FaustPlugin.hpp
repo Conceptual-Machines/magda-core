@@ -7,14 +7,13 @@
 #include <memory>
 #include <vector>
 
-#include "FaustCustomViewKind.hpp"
 #include "FaustParamPool.hpp"
 #include "IFaustEditorModel.hpp"
 
 // libfaust types are forward-declared here so consumers don't need the Faust
 // runtime headers on their include path. Implementation pulls them in.
 class dsp;
-class interpreter_dsp_factory;
+class dsp_factory;
 
 namespace magda::daw::audio {
 
@@ -72,6 +71,8 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     bool producesAudioWhenNoAudioInput() override {
         return false;
     }
+    bool canSidechain() override;
+    void getChannelNames(juce::StringArray* inputs, juce::StringArray* outputs) override;
     double getTailLength() const override {
         return 0.0;
     }
@@ -84,8 +85,8 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     // previously-loaded DSP (if any) is left in place. Safe to call from
     // the message thread while the audio thread is processing — the
     // FaustState swap is atomic.
-    bool loadDspSource(const juce::String& name, const juce::String& source, juce::String& errorOut,
-                       FaustCustomViewKind viewKind = FaustCustomViewKind::None) override;
+    bool loadDspSource(const juce::String& name, const juce::String& source,
+                       juce::String& errorOut) override;
 
     // Stage source into the editable state WITHOUT compiling or swapping the
     // live DSP. The code editor reads `dspSource` from state, so this puts
@@ -94,6 +95,10 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     // Message thread only.
     void stageSourceForEditing(const juce::String& name, const juce::String& source) override;
 
+    FaustPatchKind getPatchKind() const override {
+        return FaustPatchKind::Effect;
+    }
+
     // Read access for the UI / parameter-info bridge (Phase 4b). The
     // pool's slot table is mutated only by `loadDspSource` on the
     // message thread.
@@ -101,9 +106,16 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
         return pool_;
     }
 
+    // False when a saved source failed to compile and the live DSP is only
+    // the fallback. Used during project load to preserve routing that may be
+    // valid again once the missing library/source problem is repaired.
+    bool activeDspMatchesSource() const {
+        return activeDspMatchesSource_;
+    }
+
     // Per-DSP display name (caller-supplied to `loadDspSource`). Used
     // for the inspector label only — the FaustUI custom-view registry
-    // keys on `getCustomViewKind()` instead.
+    // keys on `getCustomViewName()` instead.
     juce::String getDspName() const override {
         return dspName_;
     }
@@ -113,13 +125,19 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
         return dspSource_;
     }
 
-    // Identifier for the bespoke FaustUI view registered against this
-    // DSP, or `None` if there isn't one. Set on `loadDspSource`;
-    // defaults to `None` for the constructor's passthrough DSP and
-    // for user-loaded files (file picker / code editor). Stable
-    // across the plugin's lifetime within one loaded DSP.
-    FaustCustomViewKind getCustomViewKind() const override {
-        return viewKind_;
+    // Scanned from the live source on demand rather than cached, so it can
+    // never go stale against a recompile. Called when the UI binds or
+    // refreshes, not per frame, so the handful of regexes is cheap enough.
+    FaustPatchInfo getPatchInfo() const override {
+        return readPatchInfo(dspSource_);
+    }
+
+    // Name of the bespoke FaustUI view this DSP asked for, or empty if
+    // it asked for none. Derived from the source's `declare magda_view`
+    // on every load, so a bundled starter, a file-picker load and an
+    // editor recompile all resolve identically.
+    juce::String getCustomViewName() const override {
+        return viewName_;
     }
 
     // Diagnostics from the most recent rebind (overflow / duplicate idx
@@ -136,7 +154,7 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     // the snapshot's lifetime.
     struct FaustState {
         std::unique_ptr<::dsp> dsp;
-        interpreter_dsp_factory* factory = nullptr;
+        dsp_factory* factory = nullptr;
         int dspIn = 0;
         int dspOut = 0;
         // Audio-thread view of the active slots: which pool slot →
@@ -197,8 +215,10 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
 
     juce::String dspName_;
     juce::String dspSource_;
-    FaustCustomViewKind viewKind_ = FaustCustomViewKind::None;
+    // Read from the loaded source's `declare magda_view`; empty for most patches.
+    juce::String viewName_;
     std::vector<juce::String> lastDiagnostics_;
+    bool activeDspMatchesSource_ = false;
 
     // Sample rate captured from initialise(); used when recompiling at
     // runtime (constructor uses 44100 as a provisional value).
@@ -208,6 +228,10 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     // aliasing inputs/outputs unless the .dsp is compiled with -inpl, so
     // we copy the incoming audio into a separate scratch before calling.
     juce::AudioBuffer<float> scratchIn_;
+    // applyToBuffer resize()s these every block. Reserving on the message
+    // thread whenever a DSP is installed means that resize can never grow
+    // capacity, and so never allocates on the audio thread.
+    void reservePointerScratch(const std::shared_ptr<FaustState>& state);
     std::vector<float*> inPtrs_;
     std::vector<float*> outPtrs_;
 

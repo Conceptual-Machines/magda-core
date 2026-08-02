@@ -25,6 +25,7 @@ The MAGDA FX bank is a set of native effects compiled from Faust DSP and shipped
 |--------|-------------|
 | **Reverb** | Three engines. **Plate**: Dattorro diffusion network. **Hall**: Zita 8-tap FDN. **Room**: Freeverb Schroeder/Moorer network. |
 | **Dimension** | Stereo widener with three engines. **Dimension**: Roland Dimension D-style anti-phase modulated delays. **Haas**: short fixed delay on one channel. **M/S**: pure side-channel gain, no time smear. |
+| **IR Reverb** | Convolution reverb that plays the signal through an impulse response you load. See [IR Reverb](#ir-reverb) below. |
 
 ## Delay
 
@@ -67,6 +68,29 @@ The MAGDA FX bank is a set of native effects compiled from Faust DSP and shipped
 !!! note
     Devices that bundle multiple engines (Compressor, Reverb, Dimension, Filter, Pitch) expose an engine selector at the top of the editor and switch DSP in place. Macros and modulator links survive the switch.
 
+## IR Reverb
+
+The **IR Reverb** is a native MAGDA device (not part of the Faust FX bank) that sits under **Reverb** in the Plugin Browser. Where the Reverb device synthesises a space from an algorithm, this one convolves your signal with a recording of a real one: an impulse response captured in a hall, a stairwell, a plate, a spring tank, a guitar cabinet, or any object you have measured. Anything an impulse response can describe, it will reproduce, which also makes it the device to reach for when you want a specific room rather than a plausible one.
+
+No impulse responses ship with MAGDA, so the device starts empty and passes the signal through until you load one.
+
+**Loading an impulse response.** Either click the **folder button** at the top right of the faceplate and pick a file, or drag an audio file straight onto the device. WAV, AIFF, FLAC and Ogg are all accepted, mono or stereo. The loaded file's name replaces the *No IR loaded* label in the header.
+
+The impulse response is stored inside the device, not referenced from disk, so a project stays self-contained: it opens with its reverb intact on a machine that has never seen the original file. Long impulse responses make for large project files.
+
+**Controls:**
+
+| Control | Description |
+|---|---|
+| **LOW CUT** | High-pass on the reverb, 10 Hz to 20 kHz. Clears mud out of the tail. |
+| **HIGH CUT** | Low-pass on the reverb, 10 Hz to 20 kHz. Darkens the tail so it sits behind the dry signal. |
+| **Q** | Resonance of both cutoff filters, 0.1 to 14, shared between them. |
+| **GAIN** | Output trim, -12 to +6 dB. |
+| **MIX** | Dry/wet balance, 0 to 100%. At 0% the device is a straight passthrough. |
+
+!!! note
+    The device reports no latency, so it needs no delay compensation and can be used freely on a live-monitored track. A long impulse response is still expensive to convolve, though: if the CPU meter climbs, a shorter one costs less.
+
 ## Sidechain
 
 The **Sidechain** device is a native MAGDA device (not part of the Faust FX bank) that sits under **Dynamics** in the Plugin Browser. It is a MIDI-triggered volume shaper: the device holds its own gain at unity and a retriggerable curve ducks it toward silence, keyed from the notes of another track. This is the classic "sidechain pump" effect without a compressor — the curve *is* the gain envelope, so you draw exactly the ducking shape you want.
@@ -92,15 +116,23 @@ The **Sidechain** device is a native MAGDA device (not part of the Faust FX bank
 
 The **Faust** device hosts a [Faust](https://faust.grame.fr) DSP that you compile and load at runtime. Unlike the rest of the MAGDA FX bank, where each device wraps a fixed pre-compiled `.dsp` source, this device accepts any Faust program.
 
-- **Folder icon** - load a `.dsp` file from disk. The source is compiled by the libfaust interpreter and swapped in immediately.
+Both this and the [Faust Instrument](faust-instrument.md) live under **Custom DSP** in the device browser. Reach for the instrument instead when you want MIDI to play your DSP as a synth rather than process an incoming signal.
+
+- **Folder icon** - load a `.dsp` file from disk. The source is compiled and swapped in immediately.
 - **Script icon** - opens an in-app code editor for live editing. Saving recompiles and hot-swaps the DSP.
 - The current script name is shown in the header banner ("Drive" in the example).
 - Arrows in the header step through parameter pages when the DSP exposes more controls than fit on one screen.
 
 Parameters live in a stable pool of slots that persist across recompiles, so macro links, modulator routings, MIDI Learn assignments, and automation lanes survive a code change as long as the slot ordering is preserved. This makes the device practical for iterative DSP development without losing your patch state on every save.
 
-!!! warning "Prototype"
-    This device is still a prototype. The DSP is run through the **libfaust interpreter** rather than ahead-of-time-compiled native code, so CPU usage is significantly higher than the pre-compiled MAGDA FX bank. Use it for sketching and experimentation; for production work, ask for the patch to be promoted into a compiled device.
+### How your code is run
+
+Your DSP is compiled to WebAssembly and then JIT-compiled to native machine code by [wasmtime](https://wasmtime.dev), so it runs as real compiled code rather than being interpreted.
+
+Two things follow from that. It is fast enough to play with rather than merely audition, though it still carries more overhead than the ahead-of-time compiled MAGDA FX bank, which has no sandbox boundary and is optimised by your system compiler. And it is sandboxed: the DSP runs inside the WebAssembly memory model, so a patch that misbehaves cannot take the application down with it. That matters most when you are iterating quickly or loading code an AI wrote.
+
+!!! note "Still evolving"
+    This device is newer than the rest of the FX bank and its surface is still settling. For a patch you rely on in finished work, ask for it to be promoted into a compiled device.
 
 ### Writing Faust with AI help
 
@@ -108,6 +140,6 @@ Parameters live in a stable pool of slots that persist across recompiles, so mac
 
 Enable it from **Settings > AI Settings**, on the **Config** page, by turning on the **Faust DSP** toggle. When Faust validation is used, MAGDA will start the MCP server on-demand via `npx`; no manual install step is needed. `npx` must be available on the system `PATH` (it ships with Node.js).
 
-The Faust compiler runs in-process via WebAssembly inside the MCP server, so no separate Faust installation is required either.
+The MCP server carries its own copy of the Faust compiler, so no separate Faust installation is required either. This is a separate thing from how the device runs your DSP during playback, described above; the server only checks that code compiles before MAGDA loads it.
 
 The server can also be wired into a separate MCP-aware AI assistant (Claude, Cursor, and similar) directly, by adding it to that client's MCP config; see the [project README](https://github.com/Conceptual-Machines/faust-mcp-magda) for details. This is independent of the MAGDA-side toggle.

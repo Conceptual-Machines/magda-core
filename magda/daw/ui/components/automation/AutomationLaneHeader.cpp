@@ -434,6 +434,12 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
                      "50L"});
                 gridValues.push_back(
                     {static_cast<double>(ParameterUtils::realToNormalized(-1.0f, paramInfo)), "L"});
+            } else if (paramInfo.scale == ParameterScale::Boolean) {
+                // A switch has exactly two meaningful positions. Without
+                // this it falls through to the 10% grid at the bottom of
+                // the chain and reads as a continuous percentage.
+                gridValues.push_back({1.0, "On"});
+                gridValues.push_back({0.0, "Off"});
             } else if (paramInfo.isBipolar()) {
                 // Bipolar params (EQ gain, pitch, etc): symmetric labels
                 // around zero so the 0 line lands mid-lane. Use the larger

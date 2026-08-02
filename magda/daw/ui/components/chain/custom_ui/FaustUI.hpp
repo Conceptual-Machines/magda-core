@@ -4,7 +4,7 @@
 
 #include <memory>
 
-#include "audio/plugins/FaustCustomViewKind.hpp"
+#include "audio/plugins/FaustPatchInfo.hpp"
 #include "core/ChainNodePath.hpp"
 
 namespace magda::daw::audio {
@@ -20,10 +20,13 @@ namespace magda::daw::ui {
 class FaustCustomView;
 
 /**
- * @brief Bespoke header strip for FaustPlugin.
+ * @brief Bespoke header strip shared by runtime Faust effects and instruments.
  *
- * This component renders the Faust-specific header — logo, DSP name
- * box, Load DSP icon, Edit code icon — and *only* that strip. The
+ * Three bands separated by single vertical rules:
+ *
+ *     FAUST logo | patch name over its metadata | Save / Load / Edit
+ *
+ * This component renders that strip and *only* that strip. The
  * device's parameter widgets are rendered by the standard
  * DeviceSlotComponent::paramGrid_, driven by the ParameterInfo that
  * FaustProcessor produces from the FaustPlugin pool. Sharing the
@@ -43,6 +46,18 @@ class FaustUI : public juce::Component {
   public:
     static constexpr int kHeaderHeight = 36;
 
+    /// Second text row in the identity band, carrying `author | version |
+    /// license` under the patch name. Present only for patches that declare
+    /// that metadata.
+    static constexpr int kMetaRowHeight = 12;
+
+    /// Total height the host should carve for this component. Collapses to
+    /// `kHeaderHeight` for patches that declare no metadata, so an
+    /// unannotated .dsp gives up no grid space.
+    int getDesiredHeight() const {
+        return kHeaderHeight + (showMetaRow_ ? kMetaRowHeight : 0);
+    }
+
     FaustUI();
     ~FaustUI() override;
 
@@ -56,18 +71,29 @@ class FaustUI : public juce::Component {
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    // Label colours are cached by setColour, so they need re-applying when the
+    // palette changes; paint-time roles look themselves up and self-heal.
+    void lookAndFeelChanged() override;
 
   private:
     void showLoadMenu();
     void loadFromFile();
     void saveDspToFile();
-    // User Faust effects dir (dataDir()/FaustEffects), created on demand. Save
-    // target + Load default location, so generated effects build a reusable
-    // library separate from MAGDA .mps presets.
-    static juce::File userEffectsDir();
+    // The kind of the bound device, defaulting to Effect while unbound so the
+    // menu-building helpers have something to answer with.
+    magda::daw::audio::FaustPatchKind patchKind() const;
+    // User Faust patch dir for one device kind (dataDir()/FaustEffects or
+    // .../FaustInstruments), created on demand. Save target + Load default
+    // location, so generated patches build a reusable library separate from
+    // MAGDA .mps presets. Split by kind because an instrument patch is not
+    // loadable into an effect: it synthesises against Faust's reserved
+    // freq/gain/gate voice controls rather than processing an input.
+    static juce::File userPatchDir(magda::daw::audio::FaustPatchKind kind);
     void showCodeEditor();
-    bool tryLoad(const juce::String& name, const juce::String& source,
-                 magda::daw::audio::FaustCustomViewKind viewKind);
+    // The custom view comes from the source's own `declare magda_view`, so
+    // every load path resolves it the same way with nothing to pass in.
+    bool tryLoad(const juce::String& name, const juce::String& source);
+
     void refreshNameLabel();
 
     magda::daw::audio::IFaustEditorModel* plugin_ = nullptr;
@@ -75,8 +101,20 @@ class FaustUI : public juce::Component {
 
     std::unique_ptr<juce::Drawable> logo_;
     juce::Rectangle<float> logoBounds_;
-    juce::Rectangle<float> nameBorderBounds_;
+
+    // Band geometry, recomputed in resized(). The rules are painted at these
+    // x positions so the icons and the text block share their grid.
+    int logoRuleX_ = 0;
+    int actionRuleX_ = 0;
+
     juce::Label nameLabel_;
+    juce::Rectangle<int> metaBounds_;
+
+    // Identity state, refreshed whenever the loaded DSP changes. `metaText_`
+    // is the one-line credit under the name; the full description goes to the
+    // name tooltip, since it is prose and does not fit a 12px row.
+    bool showMetaRow_ = false;
+    juce::String metaText_;
     juce::Label errorLabel_;
     std::unique_ptr<magda::SvgButton> saveButton_;
     std::unique_ptr<magda::SvgButton> loadButton_;

@@ -28,7 +28,7 @@ struct ServiceEntry {
 };
 
 std::mutex servicesMutex;
-std::map<tracktion::engine::Edit*, ServiceEntry> servicesByEdit;
+std::map<DeviceSessionKey, ServiceEntry, DeviceSessionKeyLess> servicesBySession;
 
 DeviceServices resolve(ServiceEntry& entry) {
     auto services = entry.services;
@@ -39,19 +39,19 @@ DeviceServices resolve(ServiceEntry& entry) {
 
 }  // namespace
 
-void registerDeviceServices(tracktion::engine::Edit& edit, DeviceServices services) {
+void registerDeviceServices(DeviceSessionKey sessionKey, DeviceServices services) {
     std::scoped_lock lock(servicesMutex);
-    servicesByEdit[&edit].services = services;
+    servicesBySession[sessionKey].services = services;
 }
 
-void unregisterDeviceServices(tracktion::engine::Edit& edit) {
+void unregisterDeviceServices(DeviceSessionKey sessionKey) {
     std::scoped_lock lock(servicesMutex);
-    servicesByEdit.erase(&edit);
+    servicesBySession.erase(sessionKey);
 }
 
-DeviceServices getDeviceServices(tracktion::engine::Edit& edit) {
+DeviceServices getDeviceServices(DeviceSessionKey sessionKey) {
     std::scoped_lock lock(servicesMutex);
-    if (const auto found = servicesByEdit.find(&edit); found != servicesByEdit.end())
+    if (const auto found = servicesBySession.find(sessionKey); found != servicesBySession.end())
         return resolve(found->second);
 
     static ServiceEntry fallback;

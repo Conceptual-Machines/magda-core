@@ -21,8 +21,7 @@
 #include "audio/AudioBridge.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/ViewModeController.hpp"
-#include "engine/TempoSequenceRippleCommand.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
+#include "engine/AudioEngine.hpp"
 #include "project/ProjectManager.hpp"
 
 namespace magda {
@@ -57,6 +56,27 @@ ViewMode getNextCycledViewMode(ViewMode mode, bool forward) {
     return ViewMode::Arrange;
 }
 
+// Keyboard clip moves (#1957) act on the arrangement half of the selection,
+// and refuse outright when any of it sits on a frozen track — the same rule
+// the panel enforces, mirrored here so the commands read as disabled instead
+// of silently doing nothing. Disabled also lets the arrow keys fall through to
+// whatever else wants them rather than being swallowed by a no-op command.
+bool canNudgeSelectedClips() {
+    auto& clipManager = ClipManager::getInstance();
+    auto& trackManager = TrackManager::getInstance();
+    bool found = false;
+    for (ClipId clipId : SelectionManager::getInstance().getSelectedClips()) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (clip == nullptr || clip->view != ClipView::Arrangement)
+            continue;
+        const auto* track = trackManager.getTrack(clip->trackId);
+        if (track != nullptr && track->frozen)
+            return false;
+        found = true;
+    }
+    return found;
+}
+
 bool containsTimelineTime(const ClipInfo& clip, double timeSeconds, double bpm) {
     return timeSeconds > timelineStartSeconds(clip, bpm) &&
            timeSeconds < timelineEndSeconds(clip, bpm);
@@ -72,12 +92,12 @@ bool overlapsTimelineRange(const ClipInfo& clip, double startSeconds, double end
 // edit. These are edit-wide, so callers gate this to all-tracks (global) ops.
 // Must be enqueued AFTER the clip-shifting commands in the compound op so the
 // remapper snapshot sees clips at their final beats.
-void rippleTempoSequence(AudioEngine* audioEngine, TempoSequenceRippleCommand::Mode mode,
-                         double startBeat, double endBeat) {
-    if (auto* eng = dynamic_cast<TracktionEngineWrapper*>(audioEngine))
-        if (auto* ed = eng->getEdit())
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<TempoSequenceRippleCommand>(*ed, mode, startBeat, endBeat));
+void rippleTempoSequence(AudioEngine* audioEngine, TempoSequenceRippleMode mode, double startBeat,
+                         double endBeat) {
+    if (audioEngine)
+        if (auto command = audioEngine->createTempoSequenceRippleCommand(
+                mode, BeatPosition{startBeat}, BeatPosition{endBeat}))
+            UndoManager::getInstance().executeCommand(std::move(command));
 }
 
 }  // namespace
@@ -99,7 +119,8 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         splitOrTrim, joinClips, renderClip, renderTimeSelection, setLoopFromClip, toggleClipLoop,
         toggleClipEnabled, escapeAction, insertTime, duplicateTimeRange, duplicateLoopRange,
         splitAllTracksAtCursor, copyTimeRange, cutTimeRange, deleteTimeRange, copyLoopRange,
-        cutLoopRange, deleteLoopRange, pasteRipple,
+        cutLoopRange, deleteLoopRange, pasteRipple, nudgeClipsEarlier, nudgeClipsLater,
+        nudgeClipsUp, nudgeClipsDown,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio, closeProject,
         projectSettings, collectFiles, exportMidi, importDawProject, exportDawProject,
@@ -310,6 +331,37 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case escapeAction:
             result.setInfo("Exit Mode", "Exit link mode and clear the edit cursor", "Edit", 0);
             result.addDefaultKeypress(juce::KeyPress::escapeKey, 0);
+            break;
+
+        // Shift+arrows, as in Waveform. NOT Alt+arrows (Bitwig, Fender Studio):
+        // Alt on a clip body already means duplicate here — Alt+drag copies,
+        // Alt+Shift+drag ghost-copies — so Alt+arrow would have one modifier
+        // meaning copy under the mouse and move under the keyboard. That also
+        // leaves Alt+arrow open for a copy-nudge that matches Alt+drag.
+        case nudgeClipsEarlier:
+            result.setInfo("Nudge Clips Earlier", "Move selected clips one grid step earlier",
+                           "Edit", 0);
+            result.addDefaultKeypress(juce::KeyPress::leftKey, juce::ModifierKeys::shiftModifier);
+            result.setActive(canNudgeSelectedClips());
+            break;
+
+        case nudgeClipsLater:
+            result.setInfo("Nudge Clips Later", "Move selected clips one grid step later", "Edit",
+                           0);
+            result.addDefaultKeypress(juce::KeyPress::rightKey, juce::ModifierKeys::shiftModifier);
+            result.setActive(canNudgeSelectedClips());
+            break;
+
+        case nudgeClipsUp:
+            result.setInfo("Move Clips Up", "Move selected clips to the track above", "Edit", 0);
+            result.addDefaultKeypress(juce::KeyPress::upKey, juce::ModifierKeys::shiftModifier);
+            result.setActive(canNudgeSelectedClips());
+            break;
+
+        case nudgeClipsDown:
+            result.setInfo("Move Clips Down", "Move selected clips to the track below", "Edit", 0);
+            result.addDefaultKeypress(juce::KeyPress::downKey, juce::ModifierKeys::shiftModifier);
+            result.setActive(canNudgeSelectedClips());
             break;
 
         // File menu
@@ -764,6 +816,28 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         }
 
         case duplicate: {
+            // Selected automation clip: duplicate it, the same thing its context
+            // menu's Duplicate entry does (#1949). Checked ahead of the time
+            // selection because an automation clip is an explicit, deliberate
+            // selection, and because Delete already resolves it in that order.
+            if (selectionManager.getSelectionType() == SelectionType::AutomationClip) {
+                const auto autoClipSel = selectionManager.getAutomationClipSelection();
+                if (autoClipSel.isValid()) {
+                    auto cmd = std::make_unique<DuplicateAutomationClipCommand>(autoClipSel.clipId);
+                    auto* cmdPtr = cmd.get();
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                    // Follow the copy, so holding the shortcut walks along the
+                    // lane rather than stacking every duplicate on the original.
+                    // duplicateClip() places it at the source's end beat and
+                    // leaves it on the same lane, so the selection's lane id
+                    // still applies.
+                    const auto newClipId = cmdPtr->getCreatedClipId();
+                    if (newClipId != INVALID_AUTOMATION_CLIP_ID)
+                        selectionManager.selectAutomationClip(newClipId, autoClipSel.laneId);
+                    return true;
+                }
+            }
             // Time selection duplicate: copy time range, paste at endTime
             if (hasActiveTimeSelection()) {
                 const auto& state = mainView->getTimelineController().getState();
@@ -1106,8 +1180,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (!sel.automationOnly && sel.isAllTracks()) {
                 UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                     RippleMarkersCommand::Mode::Insert, startBeat, sel.endBeats));
-                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Insert,
-                                    startBeat, sel.endBeats);
+                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Insert, startBeat,
+                                    sel.endBeats);
             }
             UndoManager::getInstance().endCompoundOperation();
             return true;
@@ -1164,8 +1238,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (!sel.automationOnly && sel.isAllTracks()) {
                 UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                     RippleMarkersCommand::Mode::Duplicate, startBeat, endBeat));
-                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Duplicate,
-                                    startBeat, endBeat);
+                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Duplicate, startBeat,
+                                    endBeat);
             }
             UndoManager::getInstance().endCompoundOperation();
 
@@ -1228,8 +1302,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             // Loop ops are global, so markers and tempo/pitch always ripple.
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Duplicate, startBeat, endBeat));
-            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Duplicate,
-                                startBeat, endBeat);
+            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Duplicate, startBeat,
+                                endBeat);
 
             UndoManager::getInstance().endCompoundOperation();
 
@@ -1286,8 +1360,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (rippleMarkers) {
                 UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                     RippleMarkersCommand::Mode::Delete, startBeat, endBeat));
-                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Delete,
-                                    startBeat, endBeat);
+                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Delete, startBeat,
+                                    endBeat);
                 UndoManager::getInstance().endCompoundOperation();
             }
             // Collapse the selection to the deletion point.
@@ -1328,8 +1402,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 std::make_unique<RippleDeleteRangeCommand>(startBeat, endBeat, allTracks, bpm));
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Delete, startBeat, endBeat));
-            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Delete,
-                                startBeat, endBeat);
+            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Delete, startBeat,
+                                endBeat);
             UndoManager::getInstance().endCompoundOperation();
             return true;
         }
@@ -1366,8 +1440,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             // Paste ripples all tracks, so markers and tempo/pitch shift too.
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Insert, targetBeat, targetBeat + span));
-            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Insert,
-                                targetBeat, targetBeat + span);
+            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Insert, targetBeat,
+                                targetBeat + span);
             UndoManager::getInstance().endCompoundOperation();
             return true;
         }
@@ -1562,7 +1636,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             return true;
 
         case renderClip: {
-            auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
+            auto* engine = getAudioEngine();
             if (!engine || selectedClips.empty())
                 return true;
 
@@ -1598,7 +1672,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         }
 
         case renderTimeSelection: {
-            auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
+            auto* engine = getAudioEngine();
             if (!engine || !mainView)
                 return true;
 
@@ -1690,6 +1764,26 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 UndoManager::getInstance().endCompoundOperation();
             }
             return true;
+        }
+
+        case nudgeClipsEarlier:
+        case nudgeClipsLater:
+        case nudgeClipsUp:
+        case nudgeClipsDown: {
+            auto* clipPanel = mainView ? mainView->getTrackContentPanel() : nullptr;
+            if (clipPanel == nullptr)
+                return false;
+
+            const bool acrossTracks =
+                info.commandID == nudgeClipsUp || info.commandID == nudgeClipsDown;
+            const int direction =
+                (info.commandID == nudgeClipsEarlier || info.commandID == nudgeClipsUp) ? -1 : 1;
+
+            // Returning the panel's verdict rather than a blanket true leaves
+            // the key press unconsumed when the selection is already against
+            // the edge it is being pushed towards.
+            return acrossTracks ? clipPanel->nudgeSelectedClipsToAdjacentTrack(direction)
+                                : clipPanel->nudgeSelectedClipsHorizontally(direction);
         }
 
         case play:

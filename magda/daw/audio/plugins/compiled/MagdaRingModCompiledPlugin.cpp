@@ -13,6 +13,7 @@
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -85,7 +86,7 @@ class RingModHarvester : public ::UI {
 
         RingModHarvest::Control c;
         c.idx = merged.slotIndex;
-        c.kind = merged.isMenuStyle ? FaustParamSlot::Kind::Discrete : kind;
+        c.kind = merged.isChoiceStyle() ? FaustParamSlot::Kind::Discrete : kind;
         c.zone = zone;
         c.choices = merged.menuChoices;
         c.gateSlotIndex = merged.gateSlotIndex;
@@ -472,8 +473,9 @@ const CompiledPluginSpec& getMagdaRingModSpec() {
             "<b>Square</b>: rich odd-harmonic spectrum, aggressive sideband stack.\n"
             "Rate runs free in Hz or locks to tempo Division. "
             "Width offsets the carrier phase per channel; Mix blends wet against dry.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaRingModCompiledPlugin(info);
+        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
+            return tracktion_adapter::pluginHandle(
+                new MagdaRingModCompiledPlugin(tracktion_adapter::creationInfo(context)));
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),

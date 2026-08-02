@@ -14,7 +14,7 @@ namespace magda {
  * v1 surface is action-only: scripts can trigger clips and stop tracks,
  * but state queries (play state, playhead position) are not exposed yet.
  * Adding those requires routing through SessionClipScheduler, which is
- * owned by TracktionEngineWrapperInit (not a singleton) and is null in
+ * owned by the live audio engine (not a singleton) and is null in
  * headless test mode. The v1 actions go through ClipManager, which is a
  * singleton and works in headless.
  *

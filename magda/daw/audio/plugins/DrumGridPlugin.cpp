@@ -6,6 +6,7 @@
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceStateBridge.hpp"
 
 namespace magda::daw::audio {
 
@@ -1173,8 +1174,15 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
             auto pluginState = chainCopy.getChild(p);
             if (!pluginState.hasType(te::IDs::PLUGIN))
                 continue;
+            // A pad FX saved before its device was retired still names the old
+            // Tracktion type. Rewrite the tree onto the compiled successor
+            // first: the engine registers the retired types as built-ins and
+            // checks those ahead of MAGDA's aliases, so left alone it would
+            // rebuild the retired plugin instead.
+            const auto retiredValues = tracktion_adapter::adoptRetiredNestedPluginTree(pluginState);
             auto plugin = edit.getPluginCache().getOrCreatePluginFor(pluginState);
             if (plugin) {
+                tracktion_adapter::applyRetiredSlotValues(*plugin, retiredValues);
                 // Ensure a stable DeviceId exists for macro/mod linking
                 if (!pluginState.hasProperty(pluginDeviceIdProp)) {
                     pluginState.setProperty(pluginDeviceIdProp,

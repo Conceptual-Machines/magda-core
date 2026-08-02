@@ -11,6 +11,7 @@
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 // All three engine DSPs are #included into THIS translation unit only —
 // each generated `.cpp` defines a self-contained class, so co-locating
@@ -93,7 +94,7 @@ class EngineHarvester : public ::UI {
 
         EngineHarvest::Control c;
         c.idx = merged.slotIndex;
-        c.kind = merged.isMenuStyle ? FaustParamSlot::Kind::Discrete : kind;
+        c.kind = merged.isChoiceStyle() ? FaustParamSlot::Kind::Discrete : kind;
         c.zone = zone;
         harvest.controls.push_back(std::move(c));
     }
@@ -411,6 +412,9 @@ constexpr AliasSpec kAliases[] = {
     {"high_cut", 6, "High Cut"}, {"width", 7, "Width"},     {"output", 8, "Output"},
 };
 
+// Tracktion's retired Reverb loads here; see core/LegacyDeviceAliases.hpp.
+constexpr const char* kLoadAliases[] = {"reverb"};
+
 const CompiledPluginSpec& getMagdaReverbSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaReverbCompiledPlugin::xmlTypeName,
@@ -420,11 +424,14 @@ const CompiledPluginSpec& getMagdaReverbSpec() {
                        "<b>Plate</b>: Dattorro diffusion network for studio-plate ambience.\n"
                        "<b>Hall</b>: Zita 8-tap FDN for smooth large-space tails.\n"
                        "<b>Room</b>: Freeverb Schroeder/Moorer network for small-space ambience.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaReverbCompiledPlugin(info);
+        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
+            return tracktion_adapter::pluginHandle(
+                new MagdaReverbCompiledPlugin(tracktion_adapter::creationInfo(context)));
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
+        .loadAliases = kLoadAliases,
+        .loadAliasCount = static_cast<int>(sizeof(kLoadAliases) / sizeof(kLoadAliases[0])),
     };
     return kSpec;
 }

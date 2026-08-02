@@ -4,8 +4,8 @@
 
 #include <array>
 
-#include "CompiledFaustInterface.hpp"
 #include "core/ParameterInfo.hpp"
+#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -110,8 +110,8 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     const CompiledHostSlotInfo& hostSlotInfo(int slotIndex) const override {
         return getSlotInfo(slotIndex);
     }
-    te::AutomatableParameter* hostSlotParameter(int slotIndex) const override {
-        return getSlotParameter(slotIndex);
+    DeviceParameterHandle hostSlotParameter(int slotIndex) const override {
+        return tracktion_adapter::parameterHandle(getSlotParameter(slotIndex));
     }
     float displayToNormalized(int slotIndex, float displayValue) const override {
         return displayValueToNativeValue(slotIndex, displayValue);

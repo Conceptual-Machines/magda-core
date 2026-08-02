@@ -39,25 +39,55 @@ local function publish_session_view(sceneOffset, sceneCount)
   end
 end
 
+local function is_launchkey_port(port)
+  return port:lower():find("launchkey") ~= nil
+end
+
 local function is_daw_port(port)
-  return port:lower():find("launchkey") and port:lower():find("daw")
+  local p = port:lower()
+  return p:find("launchkey") ~= nil and p:find("daw") ~= nil
 end
 
 -- Output port name for sends (DAW Out). Resolved on first send.
+--
+-- macOS and Windows put "DAW" in the name of the second interface. Linux
+-- (ALSA) numbers the ports instead, so there is nothing to match on and the
+-- name check alone would silently return nil, taking the handshake, the pad
+-- LEDs and the display down with it. Fall back to the last Launchkey port,
+-- which is the DAW one on the SKUs I have seen.
+--
+-- Either way, setting the ports explicitly on the script's row in the
+-- Controllers dialog wins outright and skips all the guessing.
 local daw_out = nil
 local function find_daw_out()
   if daw_out then return daw_out end
+
   local configured = magda.midi.default_output()
   if configured and configured ~= "" then
     daw_out = configured
     return configured
   end
-  for _, name in ipairs(magda.midi.outputs()) do
+
+  local ports = magda.midi.outputs()
+  for _, name in ipairs(ports) do
     if is_daw_port(name) then
       daw_out = name
+      magda.log.info("[launchkey] DAW Out matched by name: "..name)
       return name
     end
   end
+
+  local fallback = nil
+  for _, name in ipairs(ports) do
+    if is_launchkey_port(name) then fallback = name end
+  end
+  if fallback then
+    daw_out = fallback
+    magda.log.warn("[launchkey] no port name contains 'DAW'; falling back to '"..fallback..
+                   "'. Set the script's ports explicitly if this is the wrong one.")
+    return fallback
+  end
+
   return nil
 end
 
@@ -170,6 +200,62 @@ local function pad_to_track_and_scene(note)
 end
 
 ----------------------------------------------------------------
+-- Pad modes: session (default) and note
+----------------------------------------------------------------
+-- Note mode is the Launchkey equivalent of the Launchpad MK1 script's
+-- User 1 / User 2 modes: the 16 pads stop launching clips and instead play
+-- the selected track's instrument.
+--
+-- This is purely script-side state. MAGDA has no concept of controller
+-- "modes" and neither does the device; the only thing that changes is what
+-- this script does with a pad press.
+local mode = "session"
+
+-- Button that toggles note mode. Every DAW-mode button reports as a CC on
+-- the DAW port, and DEBUG_LOG_EVENTS (near the bottom) prints all of them.
+-- If this default doesn't match a button on your unit, press the one you
+-- want and set this to the number the log prints.
+local USER_MODE_CC = 0x6C
+
+-- Lowest pad note, played by the bottom-left pad. 36 = C2.
+local NOTE_BASE = 36
+
+-- Raw pad note -> played note. Pitch rises left-to-right, bottom row first,
+-- so the lowest note sits at the bottom-left corner.
+--
+-- Worth knowing while testing: the device's own DAW-layout pad notes run the
+-- other way round, top row 96..103 and bottom row 112..119. So the raw notes
+-- put the LOW numbers at the TOP, which is exactly the inversion reported for
+-- the Launchpad MK1 in discussion #1944. If you ever hear this layout upside
+-- down, you are hearing the raw pad notes, not these.
+local function pad_to_note(padNote)
+  if padNote >= 0x70 and padNote <= 0x77 then
+    return NOTE_BASE + (padNote - 0x70)          -- bottom row: 36..43
+  elseif padNote >= 0x60 and padNote <= 0x67 then
+    return NOTE_BASE + 8 + (padNote - 0x60)      -- top row:    44..51
+  end
+  return nil
+end
+
+-- Pads currently held, keyed by raw pad note. Drives LED feedback and makes
+-- sure every injected note-on gets a matching note-off.
+--
+-- The value records where the note-on actually went. Re-reading the selection
+-- at note-off time is wrong: the pads can change track under a held finger
+-- (track buttons, or a click in the app), and a note-off sent to the new track
+-- leaves the old one sustaining forever.
+local held_pads = {}
+
+-- Defined up here rather than beside the other mode helpers so on_unload can
+-- reach it: Lua locals are only visible to functions compiled after them.
+local function release_held_notes()
+  for _, held in pairs(held_pads) do
+    magda.midi.inject_note_off(held.track, held.channel, held.note, 0)
+  end
+  held_pads = {}
+end
+
+----------------------------------------------------------------
 -- Transport row (DAW-port CCs on Channel 16)
 ----------------------------------------------------------------
 -- Mini's transport area in DAW mode (reference fig. 3 p. 9):
@@ -227,6 +313,8 @@ end
 
 function on_unload()
   magda.log.info("[launchkey] unloading")
+  -- Anything still held in note mode would sustain forever otherwise.
+  release_held_notes()
   -- Drop the automap sentinel bindings so the green dot disappears
   -- when the script is gone.
   magda.focused.clear_auto_map()
@@ -321,6 +409,41 @@ local function refresh_leds()
   end
 end
 
+-- Note mode: held pads light bright, the rest show a dim two-tone split so
+-- the pitch direction (bottom row low, top row high) is readable at a glance.
+local function refresh_note_leds()
+  local out = find_daw_out()
+  if not out then return end
+
+  for row = 0, 1 do
+    for col = 0, 7 do
+      local note = PAD_NOTES[row][col + 1]
+      if held_pads[note] then
+        send_palette(out, note, 1, 21)              -- held: bright green
+      elseif row == 1 then
+        send_palette(out, note, 1, 37)              -- bottom row (lower notes)
+      else
+        send_palette(out, note, 1, 41)              -- top row (higher notes)
+      end
+    end
+  end
+end
+
+local function set_mode(next_mode)
+  if mode == next_mode then return end
+  -- Drop anything still held before the pads change meaning, otherwise the
+  -- note-offs never arrive and the instrument sustains forever.
+  release_held_notes()
+  mode = next_mode
+  last_led = {}                     -- force a full repaint on the next tick
+  if mode == "session" then
+    publish_session_view(scene_offset, 2)
+  else
+    publish_session_view(0, 0)      -- clear the session highlight
+  end
+  magda.log.info("[launchkey] pad mode -> "..mode)
+end
+
 ----------------------------------------------------------------
 -- Encoder name display (small LCD shows macro names on knob touch)
 ----------------------------------------------------------------
@@ -409,7 +532,11 @@ local function refresh_transport_leds()
 end
 
 function on_tick(dt)
-  refresh_leds()
+  if mode == "session" then
+    refresh_leds()
+  else
+    refresh_note_leds()
+  end
   refresh_encoder_names()
   refresh_transport_leds()
 end
@@ -428,6 +555,37 @@ local function handle_pad_press(e)
     e.number, track, scene, tostring(clip)))
   if clip then
     magda.session.launch_clip(clip)
+  end
+end
+
+local function handle_note_pad(e)
+  local note = pad_to_note(e.number)
+  if not note then return end
+
+  local isOn = (e.type == 'note_on' and e.value > 0)
+
+  -- Log the raw pad note next to the injected one. If you hear two notes per
+  -- pad, the device's raw note is reaching the track as well as this injected
+  -- one, which means the DAW port is not set as this script's Port In.
+  magda.log.info(string.format(
+    "[launchkey] note mode  raw=%d -> inject=%d %s",
+    e.number, note, isOn and "on" or "off"))
+
+  if isOn then
+    local track = magda.selection.track()
+    if not track then
+      magda.log.warn("[launchkey] note mode: no track selected")
+      return
+    end
+    held_pads[e.number] = { track = track, channel = e.channel, note = note }
+    magda.midi.inject_note_on(track, e.channel, note, e.value)
+  else
+    -- No record means the note-off already went out (a mode switch or unload
+    -- released it), so there is nothing left to close.
+    local held = held_pads[e.number]
+    if not held then return end
+    held_pads[e.number] = nil
+    magda.midi.inject_note_off(held.track, held.channel, held.note, 0)
   end
 end
 
@@ -500,14 +658,22 @@ function on_midi(e)
       e.type, e.channel, e.number, e.value))
   end
 
-  if e.type == 'note_on' and e.value > 0 then
-    handle_pad_press(e)
+  if e.type == 'note_on' or e.type == 'note_off' then
+    if mode == "note" then
+      handle_note_pad(e)
+    elseif e.type == 'note_on' and e.value > 0 then
+      handle_pad_press(e)
+    end
   elseif e.type == 'cc' then
     -- Encoders in DAW + Plugin mode: CCs 21..28 (0x15..0x1C) drive
     -- macros 0..7 of the focused device. Bypasses the JSON profile,
     -- which can't see DAW-port CCs once the script enters DAW mode.
     if e.number >= 0x15 and e.number <= 0x1C then
       magda.focused.set_macro(e.number - 0x15, e.value / 127.0)
+    elseif e.number == USER_MODE_CC then
+      if e.value > 0 then
+        set_mode(mode == "note" and "session" or "note")
+      end
     else
       handle_transport_cc(e)
     end

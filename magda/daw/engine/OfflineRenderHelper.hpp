@@ -1,37 +1,28 @@
 #pragma once
 
-#include <juce_audio_formats/juce_audio_formats.h>
+#include <functional>
+#include <optional>
 
 // clang-format off
 #include <tracktion_engine/tracktion_engine.h>
 // clang-format on
 
-#include <optional>
+#include "AudioEngine.hpp"
 
 namespace magda {
 
-class TracktionEngineWrapper;
-
-struct OfflineRenderParametersOptions {
-    juce::File destFile;
-    juce::AudioFormat* audioFormat = nullptr;
-    int bitDepth = 24;
-    double sampleRate = 44100.0;
-    int blockSize = 512;
-    bool shouldNormalise = false;
-    float normaliseToLevelDb = 0.0f;
-    bool useMasterPlugins = true;
-    bool usePlugins = true;
-    bool checkNodesForAudio = false;
-    bool realTimeRender = false;
-    std::optional<tracktion::TimeRange> time;
-};
-
+/** Engine-internal preparation hook retained for focused render-state tests. */
 void prepareEditForOfflineRender(tracktion::Edit& edit);
-void preparePluginsForOfflineRender(TracktionEngineWrapper& engine);
-void restorePluginsAfterOfflineRender(TracktionEngineWrapper& engine);
 
-tracktion::Renderer::Parameters makeOfflineRenderParameters(
-    tracktion::Edit& edit, const OfflineRenderParametersOptions& options);
+/**
+ * Resolve model track IDs to Tracktion's renderer bitset.
+ *
+ * nullopt means an explicit filter could not be represented safely. In
+ * particular, Tracktion interprets a zero bitset as "all tracks", so an
+ * explicit filter that resolves to zero must fail rather than broaden.
+ */
+std::optional<juce::BigInteger> resolveOfflineRenderTrackFilter(
+    const OfflineRenderRequest& request, int numTracks,
+    const std::function<int(TrackId)>& indexForTrack);
 
 }  // namespace magda

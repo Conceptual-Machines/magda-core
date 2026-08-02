@@ -126,15 +126,8 @@ inline float midiNoteToHz(int note) {
 
 // ===========================================================================
 
-MagdaCompiledPolyInstrument::MagdaCompiledPolyInstrument(const te::PluginCreationInfo& info)
-    : te::Plugin(info) {}
-
-MagdaCompiledPolyInstrument::~MagdaCompiledPolyInstrument() {
-    notifyListenersOfDeletion();
-    for (auto& p : hostParams_)
-        if (p)
-            p->detachFromCurrentValue();
-}
+MagdaCompiledPolyInstrument::MagdaCompiledPolyInstrument() = default;
+MagdaCompiledPolyInstrument::~MagdaCompiledPolyInstrument() = default;
 
 void MagdaCompiledPolyInstrument::initInstrument() {
     voiceSlotInfos_ = voiceSlotInfos();
@@ -202,8 +195,7 @@ magda::ParameterInfo MagdaCompiledPolyInstrument::infoForSlot(int slotIndex) con
 }
 
 float MagdaCompiledPolyInstrument::slotRealValue(int slotIndex) const {
-    if (slotIndex < 0 || slotIndex >= hostSlotCountValue() ||
-        !hostParams_[static_cast<size_t>(slotIndex)])
+    if (slotIndex < 0 || slotIndex >= hostSlotCountValue())
         return 0.0f;
     const float norm = hostParams_[static_cast<size_t>(slotIndex)]->getCurrentValue();
     return magda::ParameterUtils::normalizedToReal(norm, infoForSlot(slotIndex));
@@ -230,49 +222,24 @@ void MagdaCompiledPolyInstrument::buildHostParameters() {
             .defaultValue = 0.0f,
             .choices = {"Poly", "Mono", "Legato"}};
 
-    juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
-    auto* undoManager = getUndoManager();
-
-    hostParams_.assign(static_cast<size_t>(hostSlotCountValue()), nullptr);
-    hostCached_.clear();
-    hostCached_.resize(static_cast<size_t>(hostSlotCountValue()));
-
-    const juce::String prefix = slotIdPrefix();
+    hostParams_.clear();
+    hostParams_.reserve(static_cast<size_t>(hostSlotCountValue()));
     for (int i = 0; i < hostSlotCountValue(); ++i) {
         const auto& slot = hostSlotInfo_[static_cast<size_t>(i)];
-        const juce::String id = prefix + slot.name.toLowerCase().replace(" ", "_");
-        const juce::Identifier identifier(id);
         const auto info = infoForSlot(i);
-        const float defaultNormalized =
-            magda::ParameterUtils::realToNormalized(slot.defaultValue, info);
-        hostCached_[static_cast<size_t>(i)].referTo(state, identifier, undoManager,
-                                                    defaultNormalized);
-
-        auto param = addParam(
-            id, slot.name, normalisedRange,
-            [info](float normalized) {
-                const float real = magda::ParameterUtils::normalizedToReal(normalized, info);
-                return magda::ParameterUtils::formatValue(real, info);
-            },
-            [info](const juce::String& text) {
-                auto parsed = magda::ParameterUtils::parseValue(text, info);
-                if (parsed)
-                    return magda::ParameterUtils::realToNormalized(*parsed, info);
-                return 0.0f;
-            });
-        param->attachToCurrentValue(hostCached_[static_cast<size_t>(i)]);
-        hostParams_[static_cast<size_t>(i)] = param;
+        hostParams_.push_back(std::make_unique<CompiledParameterValue>(
+            magda::ParameterUtils::realToNormalized(slot.defaultValue, info)));
     }
 }
 
-void MagdaCompiledPolyInstrument::initialise(const te::PluginInitialisationInfo& info) {
-    rebuildEngineState(static_cast<int>(info.sampleRate));
-    scratchOut_.setSize(std::max(numOutputs_, 2), info.blockSizeSamples, false, true, true);
+void MagdaCompiledPolyInstrument::prepare(const DevicePrepareContext& context) {
+    rebuildEngineState(static_cast<int>(context.sampleRate));
+    scratchOut_.setSize(std::max(numOutputs_, 2), context.maximumBlockSize, false, true, true);
     outPtrs_.assign(static_cast<size_t>(std::max(numOutputs_, 2)), nullptr);
     limEnv_ = 0.0f;
 }
 
-void MagdaCompiledPolyInstrument::deinitialise() {
+void MagdaCompiledPolyInstrument::release() {
     scratchOut_.setSize(0, 0);
     outPtrs_.clear();
 }
@@ -352,8 +319,8 @@ void MagdaCompiledPolyInstrument::reset() {
     pendingVoiceFlush_.store(true, std::memory_order_release);
 }
 
-void MagdaCompiledPolyInstrument::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (!poly_ || !fc.destBuffer || fc.bufferNumSamples <= 0)
+void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
+    if (!poly_ || context.audio == nullptr || context.numSamples <= 0)
         return;
 
     if (pendingVoiceFlush_.exchange(false, std::memory_order_acq_rel))
@@ -361,9 +328,9 @@ void MagdaCompiledPolyInstrument::applyToBuffer(const te::PluginRenderContext& f
 
     // Stop mid-note doesn't deliver note-offs, so a sounding clip voice would
     // hang gated-on. Flush every voice on the playing->stopped edge.
-    if (wasPlaying_ && !fc.isPlaying)
+    if (wasPlaying_ && !context.isPlaying)
         resetAllVoices();
-    wasPlaying_ = fc.isPlaying;
+    wasPlaying_ = context.isPlaying;
 
     // Fan each voice macro out to every poly voice (Glide forced to 0 so reused
     // voices never portamento) and to the mono voice (real value, incl. Glide).
@@ -377,9 +344,9 @@ void MagdaCompiledPolyInstrument::applyToBuffer(const te::PluginRenderContext& f
             *monoZonesBySlot_[static_cast<size_t>(slot)] = real;
     }
 
-    const int n = fc.bufferNumSamples;
-    const int start = fc.bufferStartSample;
-    const int hostChannels = fc.destBuffer->getNumChannels();
+    const int n = context.numSamples;
+    const int start = context.startSample;
+    const int hostChannels = context.audio->getNumChannels();
     if (hostChannels <= 0 || numOutputs_ <= 0 || scratchOut_.getNumSamples() <= 0)
         return;
 
@@ -426,7 +393,7 @@ void MagdaCompiledPolyInstrument::applyToBuffer(const te::PluginRenderContext& f
 
             for (int ch = 0; ch < hostChannels; ++ch) {
                 const int srcCh = (numOutputs_ == 1) ? 0 : (ch % numOutputs_);
-                fc.destBuffer->addFrom(ch, start + segStart + done, scratchOut_, srcCh, 0, chunk);
+                context.audio->addFrom(ch, start + segStart + done, scratchOut_, srcCh, 0, chunk);
             }
             done += chunk;
         }
@@ -435,8 +402,9 @@ void MagdaCompiledPolyInstrument::applyToBuffer(const te::PluginRenderContext& f
     // Walk MIDI in time order, rendering audio between events so note timing (and
     // the Mono retrigger gate edge) is sample-accurate within the block.
     int cursor = 0;
-    if (fc.bufferForMidiMessages != nullptr) {
-        for (auto& m : *fc.bufferForMidiMessages) {
+    if (context.midi != nullptr) {
+        for (int eventIndex = 0; eventIndex < context.midi->size(); ++eventIndex) {
+            const auto& m = context.midi->message(eventIndex);
             int evSample = juce::roundToInt(m.getTimeStamp() * sampleRate_);
             evSample = juce::jlimit(cursor, n, evSample);  // clamp + keep monotonic
             renderSegment(cursor, evSample - cursor);
@@ -487,10 +455,10 @@ void MagdaCompiledPolyInstrument::applyToBuffer(const te::PluginRenderContext& f
     renderSegment(cursor, n - cursor);
 }
 
-te::AutomatableParameter* MagdaCompiledPolyInstrument::getSlotParameter(int slotIndex) const {
+DeviceParameterHandle MagdaCompiledPolyInstrument::getSlotParameter(int slotIndex) const {
     if (slotIndex < 0 || slotIndex >= hostSlotCountValue())
-        return nullptr;
-    return hostParams_[static_cast<size_t>(slotIndex)].get();
+        return {};
+    return hostParams_[static_cast<size_t>(slotIndex)]->handle();
 }
 
 const MagdaCompiledPolyInstrument::HostSlotInfo& MagdaCompiledPolyInstrument::getSlotInfo(

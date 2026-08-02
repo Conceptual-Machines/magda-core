@@ -18,7 +18,7 @@
 
 // Forward declaration
 namespace magda {
-class TracktionEngineWrapper;
+class AudioEngine;
 }
 
 // Version is generated from the CMake project version
@@ -36,7 +36,7 @@ bool magda_initialize();
 void magda_shutdown();
 
 /**
- * @brief Get access to the global Tracktion Engine instance
- * @return Pointer to the engine wrapper, or nullptr if not initialized
+ * @brief Get access to the global audio engine instance
+ * @return Pointer to the engine interface, or nullptr if not initialized
  */
-magda::TracktionEngineWrapper* magda_get_engine();
+magda::AudioEngine* magda_get_engine();

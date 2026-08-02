@@ -83,8 +83,11 @@ bool getCollapsedVisibility(HeaderControlId id, const HeaderControlVisibility& v
             return visibility.exportClip;
         case HeaderControlId::Delta:
             return visibility.delta;
-        case HeaderControlId::Learn:
         case HeaderControlId::Sidechain:
+            return visibility.sidechain;
+        case HeaderControlId::Learn:
+            // MIDI Learn stays expanded-only: it drives a mapping session the
+            // user has to see the parameter grid for.
             return false;
     }
 
@@ -137,6 +140,11 @@ std::vector<HeaderControlSpec> buildHeaderControlSpecs(const DeviceSlotTraits& t
                                                        HeaderControlComponents controls) {
     const auto visibility = getHeaderControlVisibility(traits, device, isInternalDevice);
 
+    // {id, side, component, expandedOrder, collapsedOrder}. The collapsed strip
+    // is a single vertical stack under the delete and power buttons, so its
+    // order is independent of the expanded header's left/right split. It runs
+    // signal path and routing first (Delta, Sidechain, MultiOut, then UI and
+    // ExportClip), then the modulation and sequencer controls.
     std::vector<HeaderControlSpec> specs = {
         {HeaderControlId::Macro, HeaderControlSide::Left, controls.macroButton, 10, 20},
         {HeaderControlId::Mod, HeaderControlSide::Left, controls.modButton, 20, 30},
@@ -146,10 +154,10 @@ std::vector<HeaderControlSpec> buildHeaderControlSpecs(const DeviceSlotTraits& t
         {HeaderControlId::MidiThru, HeaderControlSide::Left, controls.midiThruButton, 60, 70},
         {HeaderControlId::Learn, HeaderControlSide::Right, controls.learnButton, 80, 0},
         {HeaderControlId::UI, HeaderControlSide::Right, controls.uiButton, 90, 10},
-        {HeaderControlId::MultiOut, HeaderControlSide::Right, controls.multiOutButton, 100, 90},
-        {HeaderControlId::Sidechain, HeaderControlSide::Right, controls.sidechainButton, 110, 0},
-        {HeaderControlId::ExportClip, HeaderControlSide::Right, controls.exportClipButton, 120, 80},
-        {HeaderControlId::Delta, HeaderControlSide::Right, controls.deltaButton, 130, 100},
+        {HeaderControlId::MultiOut, HeaderControlSide::Right, controls.multiOutButton, 100, 8},
+        {HeaderControlId::Sidechain, HeaderControlSide::Right, controls.sidechainButton, 110, 7},
+        {HeaderControlId::ExportClip, HeaderControlSide::Right, controls.exportClipButton, 120, 12},
+        {HeaderControlId::Delta, HeaderControlSide::Right, controls.deltaButton, 130, 5},
     };
 
     for (auto& spec : specs) {

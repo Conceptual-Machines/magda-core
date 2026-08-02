@@ -87,7 +87,38 @@ void AutomationLaneComponent::paint(juce::Graphics& g) {
     }
 }
 
+void AutomationLaneComponent::setClipCopyGhost(double startBeat, double lengthBeats) {
+    hasCopyGhost_ = true;
+    copyGhostStartBeat_ = startBeat;
+    copyGhostLengthBeats_ = lengthBeats;
+    repaint();
+}
+
+void AutomationLaneComponent::clearClipCopyGhost() {
+    if (!hasCopyGhost_)
+        return;
+    hasCopyGhost_ = false;
+    repaint();
+}
+
 void AutomationLaneComponent::paintOverChildren(juce::Graphics& g) {
+    // Copy-drag destination. Drawn here, over the clip components, so it stays
+    // readable where it overlaps one. Same visual language as the Alt-pencil
+    // preview: an outline, clearly not yet a clip.
+    if (hasCopyGhost_) {
+        const int contentY = headerTop() + HEADER_HEIGHT;
+        const int contentHeight =
+            getHeight() - contentY - (resizeHandleAtTop_ ? 0 : RESIZE_HANDLE_HEIGHT);
+        const int x0 = SCALE_LABEL_WIDTH + static_cast<int>(copyGhostStartBeat_ * pixelsPerBeat_);
+        const int width = static_cast<int>(copyGhostLengthBeats_ * pixelsPerBeat_);
+        const auto rect =
+            juce::Rectangle<int>(x0, contentY, juce::jmax(2, width), juce::jmax(1, contentHeight));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.15f));
+        g.fillRoundedRectangle(rect.toFloat(), 3.0f);
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.5f));
+        g.drawRoundedRectangle(rect.toFloat().reduced(0.5f), 3.0f, 1.0f);
+    }
+
     // Scale labels in the left padding area - painted AFTER children so they appear on top
     auto scaleBounds = getLocalBounds();
     scaleBounds.removeFromTop(headerTop() + HEADER_HEIGHT);
@@ -702,6 +733,11 @@ void AutomationLaneComponent::paintScaleLabelsFor(juce::Graphics& g, juce::Recta
         drawLabelAtRealValue(1.0, "R");
         drawLabelAtRealValue(0.0, "C");
         drawLabelAtRealValue(-1.0, "L");
+    } else if (paramInfo.scale == ParameterScale::Boolean) {
+        // Same reasoning as AutomationLaneHeader: a switch has two
+        // positions, not a continuous range to sample.
+        drawLabelAtRealValue(1.0, "On");
+        drawLabelAtRealValue(0.0, "Off");
     } else if (paramInfo.scale == ParameterScale::Discrete && !paramInfo.choices.empty()) {
         if (!paramInfo.labelTicks.empty()) {
             // Curated subset — use the parameter's hand-picked tick set so a

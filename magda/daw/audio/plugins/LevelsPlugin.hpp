@@ -57,6 +57,13 @@ class LevelsPlugin : public te::Plugin {
             active_.store(shouldMeasure, std::memory_order_release);
     }
 
+    /// Message thread. Clears the gating history and the peak holds, so the held
+    /// figures (integrated LUFS, true peak and the derived PLR) start again from
+    /// the current signal. Applied at the top of the next processed block.
+    void requestReset() noexcept {
+        pendingReset_.store(true, std::memory_order_release);
+    }
+
     /// Message thread. Latest measurements (lock-free).
     TrackMeasurementSnapshot getSnapshot() const noexcept {
         return measurer_.read();
@@ -73,12 +80,26 @@ class LevelsPlugin : public te::Plugin {
 
     void applyToBuffer(const te::PluginRenderContext& fc) override {
         // Transparent: read only, never modify the buffer or MIDI.
+        //
+        // Integrated LUFS, true peak and the derived PLR are hold figures by
+        // definition - they accumulate and never fall back on their own. Restart
+        // them whenever the transport rolls, the way hardware loudness meters do,
+        // so each pass reads the material just played rather than the whole
+        // session (issue #1967). Tracked ahead of the active_ gate so a meter
+        // shown mid-session still restarts on the next roll.
+        const bool playStarted = fc.isPlaying && !wasPlaying_;
+        wasPlaying_ = fc.isPlaying;
+        if (playStarted)
+            pendingReset_.store(true, std::memory_order_release);
+
         if (!active_.load(std::memory_order_acquire))
-            return;  // not showing: single branch, no measurement cost
+            return;  // not showing: no measurement cost beyond the transport edge
         if (!fc.destBuffer || fc.bufferNumSamples <= 0)
             return;
+        // Fresh integration window each time the meter opens, the transport rolls
+        // or the user hits Reset.
         if (pendingReset_.exchange(false, std::memory_order_acq_rel))
-            measurer_.reset();  // fresh integration window each time the meter opens
+            measurer_.reset();
 
         const int numCh = juce::jmin(fc.destBuffer->getNumChannels(), 2);
         if (numCh <= 0)
@@ -109,7 +130,8 @@ class LevelsPlugin : public te::Plugin {
   private:
     TrackMeasurer measurer_;
     std::atomic<bool> active_{false};        // measure only while the UI is showing
-    std::atomic<bool> pendingReset_{false};  // clear gating history on (re)open
+    std::atomic<bool> pendingReset_{false};  // clear gating history on (re)open / roll / Reset
+    bool wasPlaying_ = false;                // audio thread only: transport edge detection
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LevelsPlugin)
 };

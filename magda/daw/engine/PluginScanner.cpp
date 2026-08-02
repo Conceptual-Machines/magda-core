@@ -1,6 +1,7 @@
 #include "PluginScanner.hpp"
 
 #include "../core/AppPaths.hpp"
+#include "PluginMetadataStore.hpp"
 
 namespace magda {
 
@@ -56,8 +57,10 @@ void PluginScanner::run() {
 
         juce::String formatName = format->getName();
 
-        // Only scan VST3 and AudioUnit
-        if (!formatName.containsIgnoreCase("VST3") && !formatName.containsIgnoreCase("AudioUnit")) {
+        // Only the formats MAGDA hosts. Keep in step with isScannableFormat in
+        // PluginScanCoordinator.cpp, which gates the out-of-process scan.
+        if (!formatName.containsIgnoreCase("VST3") && !formatName.containsIgnoreCase("AudioUnit") &&
+            !formatName.containsIgnoreCase("LV2")) {
             continue;
         }
 
@@ -180,17 +183,27 @@ void PluginScanner::excludePlugin(const juce::String& pluginPath, const juce::St
     saveExclusions();
 }
 
-juce::File PluginScanner::getExclusionFile() const {
-    return magda::paths::pluginExclusionsFile();
-}
-
 void PluginScanner::loadExclusions() {
-    excludedPlugins_ = loadExclusionList(getExclusionFile());
+    exclusionsLoaded_ = false;
+    try {
+        excludedPlugins_ = PluginMetadataStore::defaultForCurrentThread().loadExclusions();
+        exclusionsLoaded_ = true;
+    } catch (const std::exception& e) {
+        DBG("Failed to load plugin exclusions: " << e.what());
+    }
     DBG("Loaded " << excludedPlugins_.size() << " excluded plugins");
 }
 
 void PluginScanner::saveExclusions() {
-    saveExclusionList(getExclusionFile(), excludedPlugins_);
+    if (!exclusionsLoaded_) {
+        DBG("Skipping plugin exclusion save because the last load failed");
+        return;
+    }
+    try {
+        PluginMetadataStore::defaultForCurrentThread().saveExclusions(excludedPlugins_);
+    } catch (const std::exception& e) {
+        DBG("Failed to save plugin exclusions: " << e.what());
+    }
 }
 
 }  // namespace magda

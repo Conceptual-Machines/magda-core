@@ -15,17 +15,37 @@ namespace magda {
 
 /**
  * @brief Plugin format enumeration
+ *
+ * Values are serialized as raw ints by TrackSerializer, so they are fixed:
+ * append new formats, never renumber the existing ones.
+ *
+ * Slot 2 previously held VST2, which MAGDA has never hosted
+ * (JUCE_PLUGINHOST_VST is not set on any target), so nothing could be scanned
+ * as one and no saved project can contain a working device with that value.
+ * LV2 reuses it rather than leaving a permanent hole.
  */
-enum class PluginFormat { VST3, AU, VST, Internal };
+enum class PluginFormat {
+    VST3 = 0,
+    AU = 1,
+    LV2 = 2,
+    Internal = 3,
+};
 
 inline std::optional<PluginFormat> maybePluginFormatFromName(const juce::String& pluginFormatName) {
     if (pluginFormatName.containsIgnoreCase("VST3"))
         return PluginFormat::VST3;
     if (pluginFormatName.containsIgnoreCase("AudioUnit") || pluginFormatName.equalsIgnoreCase("AU"))
         return PluginFormat::AU;
-    if (pluginFormatName.containsIgnoreCase("VST"))
-        return PluginFormat::VST;
+    if (pluginFormatName.containsIgnoreCase("LV2"))
+        return PluginFormat::LV2;
     return std::nullopt;
+}
+
+/** True for ints that name a live PluginFormat. Guards the deserializer
+ *  against values a newer build might write. */
+inline bool isKnownPluginFormatValue(int value) {
+    return value >= static_cast<int>(PluginFormat::VST3) &&
+           value <= static_cast<int>(PluginFormat::Internal);
 }
 
 inline PluginFormat pluginFormatFromName(const juce::String& pluginFormatName) {
@@ -85,6 +105,43 @@ struct SidechainConfig {
  * @brief Loading state for a device's underlying plugin
  */
 enum class DeviceLoadState { Loaded, Loading, Failed };
+
+/**
+ * @brief How a read-only meter asks to be drawn in a grid cell.
+ */
+enum class MeterStyle {
+    Bar,        // filled bar across the cell
+    Numerical,  // value as text, no bar
+    Led,        // lamp whose brightness tracks the value
+};
+
+/**
+ * @brief A read-only value a device reports back to the host.
+ *
+ * Deliberately not a ParameterInfo. A meter is written by the device and read
+ * by the UI, so it can never be automated, modulated, macro-linked or MIDI
+ * learned, and keeping it out of `DeviceInfo::parameters` is what guarantees
+ * that, since every binding surface walks that list. This struct describes the
+ * meter; the live reading is polled by the cell, not carried here.
+ *
+ * Runtime Faust devices populate this from `hbargraph` / `vbargraph`.
+ */
+struct MeterInfo {
+    /// Index into the device's own output pool, passed back to the device
+    /// when the cell polls for a reading.
+    int meterIndex = -1;
+    juce::String name;
+    juce::String unit;
+    juce::String group;    // page/tab name, same rule as ParameterInfo::group
+    juce::String tooltip;  // hover help
+    float minValue = 0.0f;
+    float maxValue = 1.0f;
+    int widthCells = 1;
+    MeterStyle style = MeterStyle::Bar;
+    /// Declared as a vertical bargraph. A run of these in one group can be
+    /// banked side by side rather than each taking a cell of its own.
+    bool vertical = false;
+};
 
 /**
  * @brief Device/plugin information stored on a track
@@ -152,6 +209,11 @@ struct DeviceInfo {
     // parameter grid. `paramIndex` still addresses the underlying TE slot so
     // host writes, automation and aliases work the same as for plugin params.
     std::vector<ParameterInfo> wrapperParameters;
+
+    // Read-only values the device reports back (Faust bargraphs). Kept out of
+    // `parameters` on purpose; see MeterInfo. The grid gives each one a cell
+    // and polls the device for its reading.
+    std::vector<MeterInfo> meters;
 
     // User-selected visible parameters (indices into plugin parameter list)
     // If empty, show first N parameters; otherwise show these specific indices
@@ -249,8 +311,8 @@ struct DeviceInfo {
                 return "VST3";
             case PluginFormat::AU:
                 return "AU";
-            case PluginFormat::VST:
-                return "VST";
+            case PluginFormat::LV2:
+                return "LV2";
             case PluginFormat::Internal:
                 return "Internal";
             default:

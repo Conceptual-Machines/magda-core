@@ -76,6 +76,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/drum_grid.svg
     ../../assets/icons/general/faust-text-logo.svg
     ../../assets/icons/general/script.svg
+    ../../assets/icons/general/code_blocks.svg
     ../../assets/icons/general/speaker.svg
     ../../assets/icons/general/speaker_simple.svg
     ../../assets/icons/general/master_on.svg
@@ -245,18 +246,6 @@ juce_add_binary_data(MagdaAssets
     # themes and the user's own files (see UserTheme.cpp).
     ../../assets/themes/concrete_warehouse.json
     ../../assets/themes/neon_cyberpunk.json
-    # Bundled Faust starter DSPs — embedded so users always have something
-    # in the loader picker even on a fresh install.
-    audio/faust_dsp/magda_drive.dsp
-    audio/faust_dsp/magda_tremolo.dsp
-    audio/faust_dsp/magda_delay.dsp
-    audio/faust_dsp/magda_granular_delay.dsp
-    audio/faust_dsp/magda_filter_svf.dsp
-    audio/faust_dsp/magda_filter_ladder.dsp
-    audio/faust_dsp/magda_filter_korg35.dsp
-    audio/faust_dsp/magda_filter_oberheim.dsp
-    audio/faust_dsp/magda_filter_sk.dsp
-    audio/faust_dsp/magda_filter_diode.dsp
 )
 
 # =============================================================================
@@ -272,6 +261,7 @@ juce_add_binary_data(MagdaAssets
 # include-boundary guard) lands with the device-library carve (#1834).
 add_library(magda_types STATIC
     core/ParameterUtils.cpp
+    core/DeviceState.cpp
     # value-type headers (listed to document the leaf's surface)
     core/TypeIds.hpp
     core/TechnicalText.hpp
@@ -280,6 +270,7 @@ add_library(magda_types STATIC
     core/ParameterInfo.hpp
     core/ParameterUtils.hpp
     core/DeviceInfo.hpp
+    core/DeviceState.hpp
     core/KitRow.hpp
     core/MacroInfo.hpp
     core/ModInfo.hpp
@@ -309,9 +300,10 @@ add_library(magda_devices STATIC)
 add_library(magda::devices ALIAS magda_devices)
 add_library(magda_base_devices STATIC)
 add_library(magda::base_devices ALIAS magda_base_devices)
+add_library(magda_tracktion_compat_devices STATIC)
 set_target_properties(magda_devices PROPERTIES
     PUBLIC_HEADER
-    "audio/plugins/DeviceServices.hpp;audio/plugins/FaustCustomViewKind.hpp;audio/plugins/IFaustEditorModel.hpp;audio/plugins/InternalPluginRegistry.hpp;audio/processors/base/DeviceProcessor.hpp;audio/processors/DeviceProcessorFactory.hpp"
+    "audio/plugins/DeviceParameterHandle.hpp;audio/plugins/DevicePluginHandle.hpp;audio/plugins/DeviceServices.hpp;audio/plugins/DeviceSessionKey.hpp;audio/plugins/IFaustEditorModel.hpp;audio/plugins/InternalPluginRegistry.hpp;audio/plugins/MagdaDevice.hpp"
 )
 
 # JUCE GUI app — sources contributed below via add_subdirectory().
@@ -514,14 +506,16 @@ set(MAGDA_DEVICE_JUCE_STACK
     juce::juce_audio_formats
     juce::juce_audio_processors
     juce::juce_dsp
-    tracktion::tracktion_engine
 )
 target_link_libraries(magda_daw
     PUBLIC
     magda_types  # leaf value-type library (#1831); its types appear in magda_daw's public headers
     magda_music  # leaf music-theory library (#1833)
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_devices>"  # SDK runtime
-    "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_base_devices>"  # self-registering external-style pack
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_base_devices>"  # engine-neutral base pack
+    # Host-owned legacy devices retain registration anchors while their DSP
+    # implementations migrate to MagdaDevice.
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_tracktion_compat_devices>"
     MagdaAssets
     PRIVATE
     ${MAGDA_JUCE_STACK}
@@ -551,14 +545,6 @@ foreach(_magda_device_module IN LISTS MAGDA_DEVICE_JUCE_STACK)
     target_compile_definitions(magda_device_sdk INTERFACE
         $<TARGET_PROPERTY:${_magda_device_module},INTERFACE_COMPILE_DEFINITIONS>)
 endforeach()
-target_compile_definitions(magda_device_sdk INTERFACE
-    JUCE_PLUGINHOST_VST3=1
-    JUCE_PLUGINHOST_AU=1
-    JUCE_MODAL_LOOPS_PERMITTED=1
-    TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
-    TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
-    $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
-)
 target_link_libraries(magda_device_sdk
     INTERFACE
     magda_types
@@ -591,9 +577,30 @@ target_link_libraries(magda_base_devices
     PRIVATE
     magda_device_sdk
     MagdaAssets
+    faust::libfaust
+)
+target_compile_features(magda_tracktion_compat_devices PRIVATE cxx_std_20)
+target_include_directories(magda_tracktion_compat_devices PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/third_party/faust/architecture
+    $<TARGET_PROPERTY:tracktion::tracktion_engine,INTERFACE_INCLUDE_DIRECTORIES>
+)
+target_compile_definitions(magda_tracktion_compat_devices PRIVATE
+    $<TARGET_PROPERTY:tracktion::tracktion_engine,INTERFACE_COMPILE_DEFINITIONS>
+)
+target_link_libraries(magda_tracktion_compat_devices
+    PRIVATE
+    magda_device_sdk
+    MagdaAssets
     magda::mutable
     faust::libfaust
 )
+
+# magda_faust_backend carries which libfaust factory this build actually
+# contains, so FaustBackend.hpp resolves to the backend that is really linked.
+target_link_libraries(magda_devices PRIVATE magda_faust_backend)
+target_link_libraries(magda_base_devices PRIVATE magda_faust_backend)
+target_link_libraries(magda_tracktion_compat_devices PRIVATE magda_faust_backend)
 
 if(MAGDA_PRO_DEVICES)
     if(NOT EXISTS "${MAGDA_PRO_DEVICES_DIR}/CMakeLists.txt")
@@ -642,6 +649,7 @@ target_compile_definitions(magda_daw
     PUBLIC
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
+    JUCE_PLUGINHOST_LV2=1
     JUCE_MODAL_LOOPS_PERMITTED=1
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
     TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
@@ -674,6 +682,7 @@ target_compile_definitions(magda_daw_app
     PRIVATE
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
+    JUCE_PLUGINHOST_LV2=1
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
     TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
@@ -717,6 +726,7 @@ target_include_directories(magda_daw_app
     ${CMAKE_CURRENT_SOURCE_DIR}/audio
     ${CMAKE_CURRENT_SOURCE_DIR}/ui
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/themes
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/code
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/windows
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/dialogs
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/panels
@@ -751,6 +761,7 @@ target_compile_definitions(magda_plugin_scanner
     PRIVATE
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
+    JUCE_PLUGINHOST_LV2=1
     JUCE_WEB_BROWSER=0
 )
 
@@ -786,6 +797,7 @@ target_compile_definitions(magda_cli
     PRIVATE
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
+    JUCE_PLUGINHOST_LV2=1
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
     TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
     JUCE_WEB_BROWSER=0
@@ -922,6 +934,8 @@ endif()
 # Runtime-compiled devices need the Faust standard library beside every host.
 magda_stage_faust_libraries(magda_daw_app)
 magda_stage_faust_libraries(magda_cli)
+magda_stage_faust_runtime_dsp(magda_daw_app)
+magda_stage_faust_runtime_dsp(magda_cli)
 
 # Copy third_party/dawproject/ (vendored Project.xsd + MetaData.xsd) into the
 # app so DawProjectValidator can validate import/export against the schemas at

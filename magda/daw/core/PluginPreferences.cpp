@@ -12,6 +12,7 @@ constexpr const char* kInstrumentRackWrapperId = "rack";
 constexpr const char* kMidiFxCategoryOverride = "MIDI FX";
 constexpr const char* kFormatVST3 = "VST3";
 constexpr const char* kFormatAU = "AU";
+constexpr const char* kFormatLV2 = "LV2";
 
 // Plugins whose per-instance kit should NOT be mirrored to a user-global
 // default. Internal DrumGrid is the canonical case: its kit is built
@@ -22,11 +23,27 @@ bool hasGlobalKitDefault(const juce::String& pluginIdentifier) {
 }
 
 juce::String formatPreferenceToString(PluginFormat preference) {
-    return preference == PluginFormat::AU ? kFormatAU : kFormatVST3;
+    switch (preference) {
+        case PluginFormat::AU:
+            return kFormatAU;
+        case PluginFormat::LV2:
+            return kFormatLV2;
+        default:
+            return kFormatVST3;
+    }
 }
 
 PluginFormat formatPreferenceFromString(const juce::String& value) {
-    return pluginFormatFromName(value) == PluginFormat::AU ? PluginFormat::AU : PluginFormat::VST3;
+    // Only the external formats are valid preferences; anything else (including
+    // Internal, and any stored value from a future build) falls back to VST3.
+    switch (pluginFormatFromName(value)) {
+        case PluginFormat::AU:
+            return PluginFormat::AU;
+        case PluginFormat::LV2:
+            return PluginFormat::LV2;
+        default:
+            return PluginFormat::VST3;
+    }
 }
 
 juce::String duplicateGroupKey(const juce::PluginDescription& desc) {
@@ -158,46 +175,35 @@ void PluginPreferences::setExternalPluginFormatPreference(PluginFormat preferenc
 
 juce::Array<juce::PluginDescription> PluginPreferences::preferredExternalPlugins(
     const juce::Array<juce::PluginDescription>& plugins) const {
-#if JUCE_MAC
     const auto preferred = externalPluginFormatPreference();
-    struct FormatPresence {
-        bool hasVST3 = false;
-        bool hasAU = false;
-    };
-    std::unordered_map<juce::String, FormatPresence> formatPresenceByPlugin;
+
+    // Which plugins ship in the preferred format at all. A plugin only gets
+    // filtered when the user's choice is actually available for it, so a
+    // duplicate set that lacks the preferred format is left intact rather than
+    // disappearing from the browser.
+    std::unordered_map<juce::String, bool> hasPreferredFormat;
     for (const auto& desc : plugins) {
         const auto format = maybePluginFormatFromName(desc.pluginFormatName);
-        auto& presence = formatPresenceByPlugin[duplicateGroupKey(desc)];
-        presence.hasVST3 = presence.hasVST3 || format == PluginFormat::VST3;
-        presence.hasAU = presence.hasAU || format == PluginFormat::AU;
+        auto& present = hasPreferredFormat[duplicateGroupKey(desc)];
+        present = present || format == preferred;
     }
 
     juce::Array<juce::PluginDescription> result;
 
     for (const auto& desc : plugins) {
         const auto format = maybePluginFormatFromName(desc.pluginFormatName);
-        const bool isVST3 = format == PluginFormat::VST3;
-        const bool isAU = format == PluginFormat::AU;
-        const auto key = duplicateGroupKey(desc);
-        const auto presence = formatPresenceByPlugin[key];
-        if (!isVST3 && !isAU) {
-            result.add(desc);
-            continue;
-        }
-        if (!presence.hasVST3 || !presence.hasAU) {
+
+        // Unrecognised formats are never deduplicated against anything.
+        if (!format.has_value()) {
             result.add(desc);
             continue;
         }
 
-        const bool descMatchesPreference = preferred == PluginFormat::AU ? isAU : isVST3;
-        if (descMatchesPreference)
+        if (!hasPreferredFormat[duplicateGroupKey(desc)] || *format == preferred)
             result.add(desc);
     }
 
     return result;
-#else
-    return plugins;
-#endif
 }
 
 juce::String PluginPreferences::identifierForDevice(const DeviceInfo& device) {

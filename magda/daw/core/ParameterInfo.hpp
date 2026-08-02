@@ -64,9 +64,19 @@ enum class WrapperRole {
  * and real parameter values (Hz, ms, dB, etc.), as well as display formatting.
  */
 struct ParameterInfo {
-    int paramIndex = -1;  // Index within device
-    juce::String name;    // "Cutoff", "Resonance", etc.
-    juce::String unit;    // "Hz", "ms", "%", "dB", ""
+    int paramIndex = -1;    // Index within device
+    juce::String stableId;  // Persistent host/state identifier; empty lets the adapter derive one
+    juce::String name;      // "Cutoff", "Resonance", etc.
+    juce::String unit;      // "Hz", "ms", "%", "dB", ""
+    // Optional UI-only page/group name. Runtime Faust devices populate this
+    // from the outermost author vgroup/hgroup/tgroup.
+    juce::String group;
+    // How many grid cells this parameter asks to occupy. 1 is the default.
+    // Advisory: the layout clamps it to what a row can hold.
+    int widthCells = 1;
+    // Optional UI-only hover help. Runtime Faust devices populate this from
+    // `[tooltip:…]`. Never affects value handling.
+    juce::String tooltip;
 
     // Value range — ALL stored in REAL parameter units (Hz, dB, %, …).
     // Consumers never see normalized values here; the normalized↔real
@@ -106,6 +116,13 @@ struct ParameterInfo {
 
     // Discrete values (if scale == Discrete)
     std::vector<juce::String> choices;  // e.g., {"Off", "Low", "High"}
+
+    // Request from the parameter's author that `choices` be shown as a row of
+    // mutually exclusive buttons rather than a dropdown, so a small choice set
+    // is readable without opening a popup. Advisory only: the UI falls back to
+    // a dropdown when the list is too long to fit a cell. Set by Faust
+    // `[style:radio{…}]`; `[style:menu{…}]` leaves it false.
+    bool radioChoices = false;
 
     // Curated tick labels for the automation lane axis. When non-empty (and
     // scale==Discrete), the lane uses these (realValue, label) pairs for tick

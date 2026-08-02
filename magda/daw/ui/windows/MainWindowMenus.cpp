@@ -25,7 +25,6 @@
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "core/ViewModeController.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
 #include "project/MediaCollector.hpp"
 #include "project/ProjectManager.hpp"
 
@@ -381,8 +380,8 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onCollectFiles = [this]() {
-        auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
-        if (!engine || !engine->getEdit()) {
+        auto* engine = mainComponent->getAudioEngine();
+        if (!engine || !engine->hasActiveEdit()) {
             juce::AlertWindow::showMessageBoxAsync(
                 juce::AlertWindow::WarningIcon, tr("collect.title"), tr("collect.alert.no_edit"));
             return;
@@ -407,8 +406,8 @@ void MainWindow::setupMenuCallbacks() {
             return;  // Export already in progress
         }
 
-        auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
-        if (!engine || !engine->getEdit()) {
+        auto* engine = mainComponent->getAudioEngine();
+        if (!engine || !engine->hasActiveEdit()) {
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                    tr("dialogs.export_audio"),
                                                    tr("dialogs.error.export_no_edit"));
@@ -434,7 +433,7 @@ void MainWindow::setupMenuCallbacks() {
         if (fileChooser_ != nullptr)
             return;
 
-        auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
+        auto* engine = mainComponent->getAudioEngine();
         bool hasLoopRegion = engine && engine->isLooping();
 
         ExportMidiDialog::showDialog(
@@ -654,15 +653,7 @@ void MainWindow::setupMenuCallbacks() {
         }
         DBG("deviceManager valid - showing dialog");
 
-        // Pass TE DeviceManager so channel preferences operate at the TE level
-        tracktion::DeviceManager* teDeviceManager = nullptr;
-        if (auto* teEngine =
-                dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine())) {
-            if (auto* tracktionEngine = teEngine->getEngine()) {
-                teDeviceManager = &tracktionEngine->getDeviceManager();
-            }
-        }
-        AudioSettingsDialog::showDialog(this, deviceManager, teDeviceManager);
+        AudioSettingsDialog::showDialog(this, engine);
     };
 
     // View menu callbacks
@@ -954,16 +945,16 @@ void MainWindow::setupMenuCallbacks() {
             if (!r.success) {
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::WarningIcon, tr("dialogs.updates.title"),
-                    tr("dialogs.updates.error_prefix") + " " + r.errorMessage);
+                    tr("dialogs.updates.error").replace("{0}", r.errorMessage));
                 return;
             }
             UpdateChecker::markChecked();
             if (r.updateAvailable) {
                 juce::AlertWindow::showOkCancelBox(
                     juce::AlertWindow::InfoIcon, tr("dialogs.updates.title"),
-                    tr("dialogs.updates.available_body_prefix") + " " + r.latestVersion + " " +
-                        tr("dialogs.updates.available_body_suffix") + " (" +
-                        tr("dialogs.updates.current_label") + " " + r.currentVersion + ").",
+                    tr("dialogs.updates.available_body")
+                        .replace("{0}", r.latestVersion)
+                        .replace("{1}", r.currentVersion),
                     tr("dialogs.updates.view_release"), tr("dialogs.cancel"), nullptr,
                     juce::ModalCallbackFunction::create([url = r.releaseUrl](int result) {
                         if (result == 1 && url.isNotEmpty())
@@ -972,7 +963,7 @@ void MainWindow::setupMenuCallbacks() {
             } else {
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::InfoIcon, tr("dialogs.updates.title"),
-                    tr("dialogs.updates.up_to_date") + " (MAGDA " + r.currentVersion + ")");
+                    tr("dialogs.updates.up_to_date").replace("{0}", r.currentVersion));
             }
         });
     };
@@ -985,7 +976,7 @@ void MainWindow::setupMenuCallbacks() {
     callbacks.onPluginSettings = [this]() {
         if (!mainComponent)
             return;
-        auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
+        auto* engine = mainComponent->getAudioEngine();
         if (!engine)
             return;
         PluginSettingsDialog::showDialog(engine, this);

@@ -21,11 +21,11 @@
 #include "custom_ui/AnalyzerWindow.hpp"
 #include "custom_ui/ArpeggiatorUI.hpp"
 #include "custom_ui/FaustCustomUIRegistry.hpp"
+#include "custom_ui/FaustMeterPanel.hpp"
 #include "custom_ui/FaustUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 #include "engine/AudioEngine.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
 #include "layout/DeviceSlotHeaderLayout.hpp"
 #include "layout/NodeHeaderStyles.hpp"
 #include "modulation/DeviceLinkCallbacks.hpp"
@@ -495,6 +495,12 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     paramGrid_ = std::make_unique<ParamHostComponent>(createDeviceSlotParamLayout(traits_));
     paramGrid_->onPrevPage = [this]() { goToPrevPage(); };
     paramGrid_->onNextPage = [this]() { goToNextPage(); };
+    paramGrid_->onPageSelected = [this](int pageIndex) {
+        goToDeviceSlotParameterPage(device_, *paramGrid_, pageIndex,
+                                    {.reloadParameterSlots = [this]() { updateParameterSlots(); },
+                                     .updateParamModulation = [this]() { updateParamModulation(); },
+                                     .repaint = [this]() { repaint(); }});
+    };
     addAndMakeVisible(*paramGrid_);
 
     // Wire up mod/macro linking callbacks on each slot
@@ -790,7 +796,14 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     }
     // Same story for FaustUI: createCustomUI ran before nodePath_ was
     // valid, so resolve the live plugin again once the path is known.
-    bindDeviceSlotFaustInlineUi(nodePath_, faustUI_.get());
+    bindDeviceSlotFaustInlineUi(nodePath_, faustUI_.get(),
+                                [this](std::function<float(int)> source) {
+                                    if (faustMeterPanel_ == nullptr) {
+                                        faustMeterPanel_ = std::make_unique<FaustMeterPanel>();
+                                        addChildComponent(*faustMeterPanel_);
+                                    }
+                                    faustMeterPanel_->setMeterSource(std::move(source));
+                                });
 
     // Initial compute for the controller indicator dots — listeners only fire
     // on change, so a slot built after the binding was added wouldn't otherwise
@@ -1138,7 +1151,20 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
                             .tracktionLogo = tracktionLogo_.get(),
                             .stepRecording = stepRecording},
                            stripsAnalysisChrome() ? 0 : METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT,
-                           PAGINATION_HEIGHT, FaustUI::kHeaderHeight);
+                           paginationRowHeight(), faustHeaderHeight());
+}
+
+int DeviceSlotComponent::paginationRowHeight() const {
+    // 0 when the grid fits one page: it reserves no row then, so the painter
+    // has nothing to rule off.
+    return paramGrid_ != nullptr && paramGrid_->paginates() ? PAGINATION_HEIGHT : 0;
+}
+
+int DeviceSlotComponent::faustHeaderHeight() const {
+    // FaustUI grows a credit strip for patches that declare metadata, so the
+    // carve is not a constant. Falls back to the bare header when there is no
+    // Faust UI (the painter runs for non-Faust devices too).
+    return faustUI_ != nullptr ? faustUI_->getDesiredHeight() : FaustUI::kHeaderHeight;
 }
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
@@ -1161,6 +1187,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
              .magdaPresetButton = stripsAnalysisChrome() ? nullptr : presetButton_.get(),
              .activeCustomUI = activeCustomUI,
              .compiledPanel = compiledPanelComponent,
+             .faustHeader = faustUI_.get(),
+             .faustCustomView = faustCustomView_.get(),
+             .faustMeterPanel = faustMeterPanel_.get(),
              .modButton = exposesDeviceModulation() ? modButton_.get() : nullptr,
              .macroButton = exposesDeviceModulation() ? macroButton_.get() : nullptr,
              .uiButton = uiButton_.get(),
@@ -1180,6 +1209,11 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
          .faustCustomView = faustCustomView_.get(),
          .faustCustomViewPreferredHeight =
              faustCustomView_ != nullptr ? faustCustomView_->getPreferredHeight() : 0,
+         .faustMeterPanel = faustMeterPanel_.get(),
+         .faustMeterPanelPreferredHeight =
+             (faustMeterPanel_ != nullptr && !faustMeterPanel_->isEmpty())
+                 ? FaustMeterPanel::kPreferredHeight
+                 : 0,
          .compiledPanel = compiledBodyPanel,
          .compiledPanelPreferredHeight =
              compiledPanel_ != nullptr ? compiledPanel_->preferredHeight() : 0,
@@ -1195,7 +1229,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
          .drumGridUI = customUI_.getDrumGridUI(),
          .activeCustomUI = activeCustomUI,
          .paramGrid = paramGrid_.get()},
-        FaustUI::kHeaderHeight);
+        faustHeaderHeight());
 }
 
 void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
@@ -1235,9 +1269,14 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
         area, collapsedMeterArea_, traits_, device_, isInternalDevice(),
         {.levelMeter = stripsAnalysisChrome() ? nullptr : &levelMeter_,
          .midiNoteStrip = &midiNoteStrip_,
+         // Learn is expanded-only, but it still has to be handed over so the
+         // collapsed pass hides it — otherwise it lingers at its stale header
+         // bounds over the collapsed strip.
          .headerControls = {.macroButton = exposesDeviceModulation() ? macroButton_.get() : nullptr,
                             .modButton = exposesDeviceModulation() ? modButton_.get() : nullptr,
                             .aiButton = aiButton_.get(),
+                            .learnButton = learnButton_.get(),
+                            .sidechainButton = scButton_.get(),
                             .multiOutButton = multiOutButton_.get(),
                             .uiButton = uiButton_.get(),
                             .deltaButton = deltaButton_.get(),
@@ -1474,6 +1513,26 @@ void DeviceSlotComponent::updateParameterSlots() {
         device_, nodePath_, *paramGrid_, compiledPanel_.get(), traits_,
         {.reloadParameterSlots = [this]() { updateParameterSlots(); },
          .updateParamModulation = [this]() { updateParamModulation(); }});
+    refreshFaustMeterPanel();
+}
+
+void DeviceSlotComponent::refreshFaustMeterPanel() {
+    if (device_.meters.empty()) {
+        // A patch that declares no bargraph gets no strip, and the grid keeps
+        // the whole body. Recompiling one away therefore gives the space back.
+        if (faustMeterPanel_ != nullptr) {
+            faustMeterPanel_->setMeters({});
+            faustMeterPanel_->setVisible(false);
+        }
+        return;
+    }
+
+    if (faustMeterPanel_ == nullptr) {
+        faustMeterPanel_ = std::make_unique<FaustMeterPanel>();
+        addAndMakeVisible(*faustMeterPanel_);
+    }
+    faustMeterPanel_->setMeters(device_.meters);
+    resized();
 }
 
 void DeviceSlotComponent::updateParameterValues() {
@@ -1514,7 +1573,11 @@ void DeviceSlotComponent::chainNodeSelectionChanged(const magda::ChainNodePath& 
     const bool wasAlreadySelected = isSelected();
     NodeComponent::chainNodeSelectionChanged(path);
 
-    if (wasAlreadySelected || !nodePath_.isValid() || path != nodePath_) {
+    // Likewise skip it when this selection is part of a header-bar collapse
+    // gesture — opening the macro panel on the click that collapses the device
+    // is the opposite of what the user asked for.
+    if (wasAlreadySelected || isCollapseGestureActive() || !nodePath_.isValid() ||
+        path != nodePath_) {
         return;
     }
 
@@ -1641,6 +1704,16 @@ void DeviceSlotComponent::createCustomUI() {
             },
         .onShowAutomationLane = [this](int paramIndex) { showAutomationLaneForParam(paramIndex); },
     });
+    callbacks.setMeterSource = [this](std::function<float(int)> source) {
+        if (faustMeterPanel_ == nullptr) {
+            // The supplier can resolve before the device snapshot has told us
+            // there are any meters, so hold it on a panel built empty rather
+            // than dropping it and waiting for another refresh.
+            faustMeterPanel_ = std::make_unique<FaustMeterPanel>();
+            addChildComponent(*faustMeterPanel_);
+        }
+        faustMeterPanel_->setMeterSource(std::move(source));
+    };
 
     const auto createdKind = createDeviceSlotInlineUi(device_, traits_, nodePath_, *this,
                                                       {.compiledPanel = compiledPanel_,
@@ -1663,6 +1736,10 @@ void DeviceSlotComponent::detachInlineUiFromLivePlugin() {
         compiledPanel_->bindPlugin(nullptr);
     if (faustUI_ != nullptr)
         faustUI_->setPlugin(nullptr);
+    // The meter supplier holds a reference to the plugin so its pool cannot
+    // vanish mid-poll; dropping it here is what lets the plugin go.
+    if (faustMeterPanel_ != nullptr)
+        faustMeterPanel_->setMeterSource(nullptr);
     customUI_.detachFromLivePlugin();
 }
 

@@ -631,8 +631,11 @@ void RackComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) 
 }
 
 void RackComponent::openMacroPanelForSelectionIfNeeded() {
+    // isCollapseGestureActive(): the selection came from a header-bar click,
+    // which is a collapse gesture — opening the macro panel on that click is
+    // the opposite of what the user asked for.
     if (!magda::Config::getInstance().getOpenMacrosOnSelect() || paramPanelVisible_ ||
-        !macroButton_ || !rackPath_.isValid()) {
+        isCollapseGestureActive() || !macroButton_ || !rackPath_.isValid()) {
         return;
     }
 

@@ -13,9 +13,9 @@ DeviceSlotTraits makeDeviceSlotTraits(const juce::String& pluginId) {
     traits.isStrum = audio::internalPluginHasTag(pluginId, "strum");
     traits.isStepSequencer = audio::internalPluginHasTag(pluginId, "step-sequencer");
     traits.isPolyStepSequencer = audio::internalPluginHasTag(pluginId, "poly-step-sequencer");
-    // The interpreter Faust EFFECT uses the header+grid body layout (isFaust).
-    // The Faust INSTRUMENT has its own tabbed custom UI (isFaustInstrument) but
-    // shares the Faust chrome-suppression (no standard content header / presets).
+    // Runtime Faust effects and instruments share the header, parameter-grid
+    // renderer, and author-group page layout. The flags remain distinct for
+    // device-specific behavior outside rendering.
     traits.isFaust = audio::internalPluginHasTag(pluginId, "faust");
     traits.isFaustInstrument = audio::internalPluginHasTag(pluginId, "faust-instrument");
     traits.isAnalysis = audio::isInternalAnalysisPlugin(pluginId);

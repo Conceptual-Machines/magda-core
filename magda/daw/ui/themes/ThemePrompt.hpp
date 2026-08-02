@@ -32,6 +32,7 @@ struct GeneratedTheme {
     std::string base;     // "dark" | "light"
     std::string json;     // cleaned, ready-to-write theme JSON
     int colourCount = 0;  // number of recognized colour-role overrides
+    int syntaxCount = 0;  // syntax roles the model designed (the rest derive)
 };
 
 // Validates the model's output into a writable theme: strips markdown fences,

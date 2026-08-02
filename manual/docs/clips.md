@@ -82,10 +82,12 @@ Follow actions chain session clips together for generative arrangement. Once the
 - **Click** a clip to select it
 - ++cmd++ **+ click** (++ctrl++ **+ click** on Windows/Linux) to add or remove clips from the selection
 - ++cmd+a++ (++ctrl+a++ on Windows/Linux) selects all clips in the arrangement, or all notes when a MIDI editor is focused
+- **Double-click** a clip to open the bottom editor panel on it, and double-click again to close it. Selecting a clip switches the panel to the right editor but never reopens a panel you collapsed — the panel stays as you left it until you double-click a clip or use the collapse button in the footer.
 
 ## Editing Clips
 
 - **Move** — Drag a clip to reposition it on the timeline or move it to another track
+- **Nudge** — With clips selected, ++shift+arrow-left++ / ++shift+arrow-right++ moves them one grid step along the timeline, and ++shift+arrow-up++ / ++shift+arrow-down++ moves them to the neighbouring track. The whole selection moves together, keeping its spacing, and stops rather than piling up when it reaches the first track, the last track, or the start of the timeline. With snap on, the move lands on the grid; with snap off it steps by one grid unit from wherever the clip sits.
 - **Resize** — Drag the left or right edge of a clip to trim its start or end point
 - **Duplicate** — Hold ++alt++ and drag a clip, or press ++cmd+d++
 - **Duplicate with or without automation** — Right-click a clip and choose **Duplicate With Automation** to copy the clip together with the automation under it, or **Duplicate Without Automation** to copy just the clip. Plain **Duplicate** behaves the same as the menu's default.

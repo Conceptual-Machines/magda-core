@@ -11,22 +11,8 @@ namespace magda::daw::audio::compiled {
 
 const char* MagdaKickCompiledPlugin::xmlTypeName = "magda_kick";
 
-MagdaKickCompiledPlugin::MagdaKickCompiledPlugin(const te::PluginCreationInfo& info)
-    : MagdaCompiledPolyInstrument(info) {
+MagdaKickCompiledPlugin::MagdaKickCompiledPlugin() {
     initInstrument();
-}
-
-juce::String MagdaKickCompiledPlugin::getName() const {
-    return "Kick";
-}
-juce::String MagdaKickCompiledPlugin::getPluginType() {
-    return xmlTypeName;
-}
-juce::String MagdaKickCompiledPlugin::getShortName(int) {
-    return "Kick";
-}
-juce::String MagdaKickCompiledPlugin::getSelectableDescription() {
-    return "Kick";
 }
 
 ::dsp* MagdaKickCompiledPlugin::createVoiceDsp() const {
@@ -126,8 +112,8 @@ const CompiledPluginSpec& getMagdaKickSpec() {
             "(low pitch-snap sine into a saturator) that auto-ducks under the transient, "
             "and a noise Click. Knob-tuned, MIDI-gated - drop it on a DrumGrid pad or "
             "play it standalone.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaKickCompiledPlugin(info);
+        .createDevice = [](const DevicePluginCreationContext&) -> std::unique_ptr<MagdaDevice> {
+            return std::make_unique<MagdaKickCompiledPlugin>();
         },
         .isInstrument = true,
     };

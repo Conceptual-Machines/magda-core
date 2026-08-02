@@ -16,7 +16,4 @@ struct ExcludedPlugin {
 /// Supports tab-delimited `path\treason\ttimestamp`, legacy pipe-delimited, and plain-path formats.
 std::vector<ExcludedPlugin> loadExclusionList(const juce::File& file);
 
-/// Save exclusion entries to a file in tab-delimited format (one per line).
-void saveExclusionList(const juce::File& file, const std::vector<ExcludedPlugin>& entries);
-
 }  // namespace magda

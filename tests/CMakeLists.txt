@@ -1,5 +1,8 @@
 # Test sources
 set(TEST_SOURCES
+    # Must be in both test targets: a debug-CRT dialog blocks a headless run
+    # until the CI job times out, hiding the diagnostic that caused it.
+    windows_no_dialogs.cpp
     test_audio_bridge.cpp
     test_vst3_preset.cpp
     test_audiobridge_track_limit_bug.cpp
@@ -9,6 +12,7 @@ set(TEST_SOURCES
     test_clip_bpm_invariant.cpp
     test_audio_source_length.cpp
     test_audio_export.cpp
+    test_offline_render_contract.cpp
     test_audio_to_midi.cpp
     test_command.cpp
     test_command_model.cpp
@@ -37,19 +41,26 @@ set(TEST_SOURCES
     test_plugin_loading.cpp
     test_plugin_format.cpp
     test_internal_plugin_registry.cpp
+    # Engine-neutral internal device state schema v2 (issue #1887)
+    test_device_state_codec.cpp
+    test_device_sdk_handles.cpp
     test_external_insert_registry.cpp
     test_external_insert_enablement.cpp
     test_insert_capture.cpp
     test_plugin_window_manager.cpp
     test_plugin_capabilities.cpp
     test_plugin_preferences.cpp
+    test_plugin_browser_metadata_merge.cpp
+    test_plugin_metadata_store.cpp
     test_prune_missing_plugins.cpp
     test_known_plugin_list_duplicates.cpp
     test_device_parameter_pagination.cpp
     test_device_ui_context.cpp
     test_levels_ui.cpp
-    # LevelsUI builds into magda_daw_app, so magda_tests needs its implementation directly.
+    # LevelsUI builds into magda_daw_app, so magda_tests needs its implementation
+    # directly - along with FontManager, which its themed button LookAndFeel pulls in.
     ../magda/daw/ui/components/chain/custom_ui/LevelsUI.cpp
+    ../magda/daw/ui/themes/FontManager.cpp
     test_momentary_param_button.cpp
     test_delta_solo.cpp
     test_waveform_editor_absolute_mode.cpp
@@ -97,12 +108,15 @@ set(TEST_SOURCES
     test_string_table.cpp
     # Arrangement pointer hit tester (#1719)
     test_arrangement_hit_tester.cpp
+    # Keyboard clip nudging (#1957)
+    test_clip_nudge.cpp
     test_mono_note_processor.cpp
     test_sends_and_track_deletion.cpp
     # Internal track-to-track routing (issue #1690)
     test_internal_track_routing.cpp
     test_master_track_serialization.cpp
     test_utility_width_migration.cpp
+    test_legacy_device_aliases.cpp
     test_automation_agent.cpp
     test_mix_analysis_agent.cpp
     test_mix_analysis_audio.cpp
@@ -114,12 +128,24 @@ set(TEST_SOURCES
     test_llama_model_manager.cpp
     test_track_reorder.cpp
     test_automation_modes.cpp
+    test_automation_stepped_targets.cpp
     test_automation_singleton.cpp
     test_instruction_executor_context.cpp
     # Faust pool refactor (Phase 1: metadata parser)
     test_faust_metadata_parser.cpp
+    test_faust_ui_harvester.cpp
+    test_faust_device_layout.cpp
+    # Device layouts build into magda_daw_app, so layout tests need their implementations directly.
+    ../magda/daw/ui/components/chain/layout/StandardDeviceLayout.cpp
+    ../magda/daw/ui/components/chain/layout/FaustDeviceLayout.cpp
+    ../magda/daw/ui/components/chain/layout/CompiledFaustDeviceLayout.cpp
+    ../magda/daw/ui/components/chain/slot/DeviceSlotParamLayoutFactory.cpp
     test_faust_param_pool.cpp
     test_faust_param_info.cpp
+    test_faust_patch_info.cpp
+    test_faust_custom_view.cpp
+    # Runtime execution backend (interp / wasm+wasmtime), issue #1382
+    test_faust_backend.cpp
     # Parameter alias system tests (PR 1)
     test_param_name_normalize.cpp
     test_alias_parser.cpp
@@ -127,6 +153,8 @@ set(TEST_SOURCES
     test_alias_registry.cpp
     # Parameter alias system tests (PR 3)
     test_alias_resolver.cpp
+    # Track / master level writes driven by control surfaces
+    test_track_level_control_writes.cpp
     # Parameter alias system tests (PR 4 -- AutoAliasGenerator)
     test_alias_auto_gen.cpp
     # Parameter alias system tests (PR 5 -- CuratedAliasLoader)
@@ -209,6 +237,9 @@ target_link_libraries(magda_tests
     magda_agents
     magda_scripting
     Catch2::Catch2WithMain
+    # Faust runtime headers + the backend selection, so test_faust_backend.cpp
+    # resolves to the same factory the app was built with.
+    magda_faust_backend
     # JUCE (core + gui_basics) comes transitively from magda_daw, compiled once
     # there; direct links would recompile the JUCE stack into this target.
 )
@@ -267,6 +298,7 @@ juce_add_console_app(magda_juce_tests
 # Add JUCE test sources
 target_sources(magda_juce_tests PRIVATE
     juce_tests_main.cpp
+    windows_no_dialogs.cpp
     test_zoom_simple.cpp
     test_export_transport_stop_juce.cpp
     test_offline_render_device_power_juce.cpp
@@ -278,23 +310,36 @@ target_sources(magda_juce_tests PRIVATE
     test_arranger_launcher_switching_juce.cpp
     test_session_slot_recording_juce.cpp
     test_input_monitor_track_routing_juce.cpp
+    test_controller_track_level_write_juce.cpp
     test_track_midi_recording_preview_juce.cpp
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp
     test_drum_grid_serialization_juce.cpp
     test_device_services_juce.cpp
+    test_device_param_schema_juce.cpp
+    test_device_state_schema_juce.cpp
+    test_convolution_device_juce.cpp
     test_master_sidechain_juce.cpp
     test_midi_bridge_note_events_juce.cpp
     test_section_scoped_device_ids_juce.cpp
     test_clip_inspector_juce.cpp
+    test_multi_clip_resize_preview_juce.cpp
+    test_clip_nudge_juce.cpp
     test_multiband_curve_view_juce.cpp
     test_timeline_extreme_zoom_paint_juce.cpp
     test_arrange_beat_native_juce.cpp
     test_tempo_map_juce.cpp
     test_tempo_lane_bridge_juce.cpp
     test_tempo_lane_sync_juce.cpp
+    test_faust_sidechain_juce.cpp
+    test_faust_instrument_tempo_juce.cpp
+    test_faust_instrument_voice_modes_juce.cpp
     test_runtime_theme_juce.cpp
     test_user_theme_juce.cpp
+    test_syntax_highlighting_juce.cpp
+    ../magda/daw/ui/code/SyntaxTheme.cpp
+    ../magda/daw/ui/code/DSLTokeniser.cpp
+    ../magda/daw/ui/code/FaustTokeniser.cpp
     test_device_gain_slider.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
     ../magda/daw/ui/dialogs/ParameterConfigDialog.cpp
@@ -307,6 +352,21 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/panels/content/inspector/clip/sections/ChordProgressionSection.cpp
     ../magda/daw/ui/panels/content/inspector/clip/sections/ClipFadesSection.cpp
     ../magda/daw/ui/panels/content/inspector/clip/sections/ClipTakesSection.cpp
+    ../magda/daw/ui/components/clips/ClipComponent.cpp
+    ../magda/daw/ui/components/tracks/TrackContentPanel.cpp
+    ../magda/daw/ui/components/tracks/TrackContentPanelClipDrag.cpp
+    ../magda/daw/ui/components/automation/AutomationLaneComponent.cpp
+    ../magda/daw/ui/components/automation/AutomationCurveEditor.cpp
+    ../magda/daw/ui/components/common/curve/CurveEditorBase.cpp
+    ../magda/daw/ui/components/common/curve/CurvePointComponent.cpp
+    ../magda/daw/ui/components/common/curve/CurveBezierHandle.cpp
+    ../magda/daw/ui/components/common/curve/CurveTensionHandle.cpp
+    ../magda/daw/ui/components/automation/AutomationClipComponent.cpp
+    ../magda/daw/ui/components/waveform/ClipWaveformPainter.cpp
+    ../magda/daw/ui/components/common/Toast.cpp
+    ../magda/daw/ui/dialogs/AISettingsDialog.cpp
+    ../magda/daw/ui/interaction/ArrangementCursorMap.cpp
+    ../magda/daw/ui/panels/state/PanelController.cpp
     ../magda/daw/ui/components/common/BarsBeatsTicksLabel.cpp
     ../magda/daw/ui/components/common/ValueLabelControl.cpp
     ../magda/daw/ui/components/common/DraggableValueLabel.cpp
@@ -326,6 +386,9 @@ target_sources(magda_juce_tests PRIVATE
 target_link_libraries(magda_juce_tests
     PRIVATE
     magda_daw
+    # ClipComponent's context menu reaches the AI settings dialog, which lives
+    # on the agents library.
+    magda_agents
     # JUCE (core/events/gui_basics) comes transitively from magda_daw, compiled
     # once there; direct links would recompile the JUCE stack into this target.
     # Linux: juce_gui_extra is pulled in transitively via magda_daw's
@@ -337,14 +400,19 @@ target_link_libraries(magda_juce_tests
 )
 
 target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
-    MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1)
+    MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1
+    # Frozen device parameter order (#1887) lives in the source tree so an
+    # intentional change shows up as a reviewable diff.
+    MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt")
 
 # Include directories for JUCE tests
 target_include_directories(magda_juce_tests
     PRIVATE
     ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/magda/daw
     ${CMAKE_SOURCE_DIR}/magda/daw/ui
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/themes
+    ${CMAKE_SOURCE_DIR}/magda/daw/ui/code
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/panels
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/panels/state
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/panels/content
@@ -374,6 +442,9 @@ add_test(NAME runtime_theme_juce
 add_test(NAME user_theme_juce
          COMMAND magda_juce_tests "User Theme Tests")
 
+add_test(NAME syntax_highlighting_juce
+         COMMAND magda_juce_tests "Syntax Highlighting Tests")
+
 add_test(NAME tempo_map_juce
          COMMAND magda_juce_tests "Tempo Map Tests")
 
@@ -396,6 +467,15 @@ add_test(NAME offline_render_device_power_juce
 
 add_test(NAME chord_progression_converter_juce
          COMMAND magda_juce_tests "Chord Progression Converter Tests")
+
+add_test(NAME device_param_schema_juce
+         COMMAND magda_juce_tests "Device Param Schema Freeze")
+
+add_test(NAME device_state_schema_juce
+         COMMAND magda_juce_tests "Device State Schema")
+
+add_test(NAME convolution_device_juce
+         COMMAND magda_juce_tests "Convolution Device")
 
 # Both test executables link magda_daw, which links ONNX Runtime. On Windows the
 # loader only searches the exe's directory, the cwd, and PATH, so without a copy

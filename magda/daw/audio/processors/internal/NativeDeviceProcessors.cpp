@@ -27,6 +27,9 @@ MutableRingsProcessor::MutableRingsProcessor(DeviceId deviceId, te::Plugin::Ptr 
 MutableCloudsProcessor::MutableCloudsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
     : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
 
+MagdaConvolutionProcessor::MagdaConvolutionProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
+
 SidechainProcessor::SidechainProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
     : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
 
@@ -96,6 +99,22 @@ void FourOscProcessor::customiseParameterInfo(int index, ParameterInfo& info) co
 // FaustProcessor
 // =============================================================================
 
+namespace {
+
+// Shared by the effect and the instrument: both pool the same way, and both
+// filter `[hidden:1]` here rather than in meterInfoFromOutput, so "which
+// outputs get a cell" stays a display decision.
+void populateFaustMeters(const daw::audio::FaustParamPool& pool, DeviceInfo& info) {
+    info.meters.clear();
+    for (int i = 0; i < daw::audio::FaustParamPool::kOutputSize; ++i) {
+        const auto& output = pool.output(i);
+        if (output.active && !output.hidden)
+            info.meters.push_back(daw::audio::meterInfoFromOutput(output));
+    }
+}
+
+}  // namespace
+
 FaustProcessor::FaustProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
     : DeviceProcessor(deviceId, std::move(plugin)) {}
 
@@ -124,15 +143,21 @@ void FaustProcessor::populateParameters(DeviceInfo& info) const {
         DBG("[FaustProcessor] populateParameters: plugin cast NULL");
         return;
     }
-    // Only push active slots so the standard ParamGridComponent shows
-    // populated cells only. Each ParameterInfo carries its real slot
+    info.canSidechain = faust->canSidechain();
+    // Only push active, non-hidden slots so the standard ParamGridComponent
+    // shows populated cells only. Each ParameterInfo carries its real slot
     // index in `paramIndex`, so links / automation / MIDI Learn still
     // bind to the stable pool slot; display order is not slot identity.
+    //
+    // `[hidden:1]` slots are active - the host still writes their zone every
+    // block (that is the whole point of [role:projecttempo]) - they just get
+    // no cell. Filtering here rather than in paramInfoFromSlot keeps "which
+    // params are displayed" a display decision.
     int active = 0;
     auto params = plugin_->getAutomatableParameters();
     for (int i = 0; i < daw::audio::FaustParamPool::kSize; ++i) {
         const auto& slot = faust->getPool().slot(i);
-        if (slot.active) {
+        if (slot.active && !slot.hidden) {
             auto paramInfo = daw::audio::paramInfoFromSlot(slot);
             if (i >= 0 && i < params.size() && params[i]) {
                 paramInfo.currentValue =
@@ -144,6 +169,7 @@ void FaustProcessor::populateParameters(DeviceInfo& info) const {
             ++active;
         }
     }
+    populateFaustMeters(faust->getPool(), info);
     DBG("[FaustProcessor] populateParameters: pushed " << active << " active params");
 }
 
@@ -185,8 +211,16 @@ int FaustInstrumentProcessor::getParameterCount() const {
 
 ParameterInfo FaustInstrumentProcessor::getParameterInfo(int index) const {
     auto* faust = dynamic_cast<daw::audio::FaustInstrumentPlugin*>(plugin_.get());
-    if (faust == nullptr || index < 0 || index >= daw::audio::FaustParamPool::kSize)
+    if (faust == nullptr || index < 0)
         return {};
+    // Voice Mode and Glide sit past the pool: they belong to the host, not to
+    // whatever patch happens to be loaded.
+    if (index >= daw::audio::FaustParamPool::kSize) {
+        const int hostIndex = index - daw::audio::FaustParamPool::kSize;
+        if (hostIndex >= daw::audio::FaustInstrumentPlugin::kHostParamCount)
+            return {};
+        return daw::audio::faustInstrumentHostParamInfo(hostIndex);
+    }
     return daw::audio::paramInfoFromSlot(faust->getPool().slot(index));
 }
 
@@ -195,12 +229,14 @@ void FaustInstrumentProcessor::populateParameters(DeviceInfo& info) const {
     auto* faust = dynamic_cast<daw::audio::FaustInstrumentPlugin*>(plugin_.get());
     if (faust == nullptr)
         return;
-    // Only push active slots; each ParameterInfo carries its real slot index in
-    // `paramIndex` so links / automation / MIDI Learn bind to the stable slot.
+    // Only push active, non-hidden slots; each ParameterInfo carries its real
+    // slot index in `paramIndex` so links / automation / MIDI Learn bind to
+    // the stable slot. See the effect processor above for why `[hidden:1]`
+    // is filtered here rather than in paramInfoFromSlot.
     auto params = plugin_->getAutomatableParameters();
     for (int i = 0; i < daw::audio::FaustParamPool::kSize; ++i) {
         const auto& slot = faust->getPool().slot(i);
-        if (slot.active) {
+        if (slot.active && !slot.hidden) {
             auto paramInfo = daw::audio::paramInfoFromSlot(slot);
             if (i >= 0 && i < params.size() && params[i]) {
                 paramInfo.currentValue =
@@ -209,6 +245,22 @@ void FaustInstrumentProcessor::populateParameters(DeviceInfo& info) const {
             info.parameters.push_back(std::move(paramInfo));
         }
     }
+
+    // Host-owned voice allocation, appended after the patch's own controls so
+    // they read as device settings rather than as part of the patch. Present
+    // for every runtime Faust instrument, whatever the .dsp declares.
+    for (int hostIndex = 0; hostIndex < daw::audio::FaustInstrumentPlugin::kHostParamCount;
+         ++hostIndex) {
+        auto hostInfo = daw::audio::faustInstrumentHostParamInfo(hostIndex);
+        const int paramIndex = daw::audio::FaustParamPool::kSize + hostIndex;
+        if (paramIndex < params.size() && params[paramIndex]) {
+            hostInfo.currentValue =
+                ParameterUtils::normalizedToReal(params[paramIndex]->getCurrentValue(), hostInfo);
+        }
+        info.parameters.push_back(std::move(hostInfo));
+    }
+
+    populateFaustMeters(faust->getPool(), info);
 }
 
 void FaustInstrumentProcessor::setParameterByIndex(int paramIndex, float value) {

@@ -28,7 +28,8 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
 
     void paint(juce::Graphics& g) override;
     // Draws the W/T/L mode glyph on top of the (now letterless) automation
-    // button. Runs after children paint, so the glyph sits above the SVG.
+    // button, and the count-in length inside the count-in ring. Runs after
+    // children paint, so the glyphs sit above the SVGs.
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
     // Re-pulls every child's themed text colour from the active palette on a
@@ -117,6 +118,7 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
 
   private:
     void showCountInMenu();
+    static juce::String countInModeLabel(int mode);
 
     // Transport controls (left section)
     std::unique_ptr<SvgButton> playButton;
@@ -183,6 +185,10 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
 
     // Metronome, snap, time signature
     std::unique_ptr<SvgButton> metronomeButton;
+    // Count-in gets its own icon above the metronome rather than living behind
+    // a right-click on it. The menu sets when recording starts, not how the
+    // metronome clicks, and hiding it on the metronome invited that reading.
+    std::unique_ptr<SvgButton> countInButton;
     std::unique_ptr<juce::TextButton> snapButton;
     std::unique_ptr<DraggableValueLabel> timeSigNumeratorLabel;
     std::unique_ptr<DraggableValueLabel> timeSigDenominatorLabel;

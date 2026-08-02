@@ -80,6 +80,18 @@ Each row carries an integrity badge:
 - **dirty** - the file changed (modified time or size) since it was indexed. Re-scan to refresh it.
 - **missing** - the file is no longer at its indexed path. Use **Recover missing file...** to point the row at its new location.
 
+## Previewing results
+
+Library rows audition through the same preview transport as the [Media Explorer](browsers.md#preview), using the same **Play**, **Stop**, **Volume**, and **Auto** controls below the waveform. Clicking a row loads it, and with **Auto** on it plays immediately.
+
+Keyboard auditioning works on the results table as well:
+
+- ++arrowup++ / ++arrowdown++ move through rows, loading each one as it is selected
+- ++arrowleft++ stops the preview
+- ++arrowright++ replays the current row from the start
+
+As in Disk mode, preview plays each file at its own tempo and pitch. A row's indexed **BPM** describes the file; it does not stretch the preview to your project tempo.
+
 ## Editing entries
 
 Right-click a row (or a multi-row selection) for per-row actions:

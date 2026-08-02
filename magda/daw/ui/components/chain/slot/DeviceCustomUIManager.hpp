@@ -26,22 +26,14 @@ namespace magda::daw::ui {
 
 class ArpeggiatorUI;
 class ChordPanelContent;
-class ChorusUI;
-class CompressorUI;
-class DelayUI;
 class DrumGridUI;
-class EqualiserUI;
 class ExternalInsertUI;
-class FaustUI;
-class FaustInstrumentTabbedUI;
-class FilterUI;
 class FourOscUI;
 class ImpulseResponseUI;
 class LevelsUI;
 class LinkableTextSlider;
 class OscilloscopeUI;
 class OscilloscopeTelemetrySource;
-class PhaserUI;
 class PolyStepSequencerUI;
 class PolySynthUI;
 class FMUI;
@@ -52,8 +44,6 @@ class DrumVoiceUI;
 class StruckInstrumentUI;
 class SpectrumAnalyzerUI;
 class SpectrumTelemetrySource;
-class PitchShiftUI;
-class ReverbUI;
 class SamplerUI;
 class SidechainUI;
 class StepSequencerUI;
@@ -237,9 +227,6 @@ class DeviceCustomUIManager {
     FourOscUI* getFourOscUI() const {
         return fourOscUI_.get();
     }
-    FaustInstrumentTabbedUI* getFaustInstrumentUI() const {
-        return faustInstrumentUI_.get();
-    }
     ChordPanelContent* getChordEngineUI() const {
         return chordEngineUI_.get();
     }
@@ -303,7 +290,6 @@ class DeviceCustomUIManager {
     std::unique_ptr<SamplerUI> samplerUI_;
     std::unique_ptr<DrumGridUI> drumGridUI_;
     std::unique_ptr<FourOscUI> fourOscUI_;
-    std::unique_ptr<FaustInstrumentTabbedUI> faustInstrumentUI_;
     std::unique_ptr<PolySynthUI> polySynthUI_;
     std::unique_ptr<FMUI> fmUI_;
     std::unique_ptr<MateriaUI> materiaUI_;
@@ -311,17 +297,8 @@ class DeviceCustomUIManager {
     std::unique_ptr<NimbusUI> nimbusUI_;
     std::unique_ptr<DrumVoiceUI> drumVoiceUI_;
     std::unique_ptr<StruckInstrumentUI> struckUI_;
-    std::unique_ptr<EqualiserUI> eqUI_;
-    std::unique_ptr<CompressorUI> compressorUI_;
-    std::unique_ptr<ReverbUI> reverbUI_;
-    std::unique_ptr<DelayUI> delayUI_;
-    std::unique_ptr<ChorusUI> chorusUI_;
-    std::unique_ptr<PhaserUI> phaserUI_;
-    std::unique_ptr<FilterUI> filterUI_;
     std::unique_ptr<SidechainUI> sidechainUI_;
-    std::unique_ptr<PitchShiftUI> pitchShiftUI_;
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
-    std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
     std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
     std::unique_ptr<StrumUI> strumUI_;

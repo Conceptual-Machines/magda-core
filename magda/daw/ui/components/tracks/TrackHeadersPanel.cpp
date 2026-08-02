@@ -20,7 +20,7 @@
 #include "../../../core/TrackCommands.hpp"
 #include "../../../core/TrackPropertyCommands.hpp"
 #include "../../../core/UndoManager.hpp"
-#include "../../../engine/TracktionEngineWrapper.hpp"
+#include "../../../engine/AudioEngine.hpp"
 #include "../../layout/LayoutConfig.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -531,11 +531,7 @@ void TrackHeadersPanel::timerCallback() {
     if (!audioEngine_)
         return;
 
-    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(audioEngine_);
-    if (!teWrapper)
-        return;
-
-    auto* bridge = teWrapper->getAudioBridge();
+    auto* bridge = audioEngine_->getAudioBridge();
     if (!bridge)
         return;
 

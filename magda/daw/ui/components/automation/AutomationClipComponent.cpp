@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "../../../core/AutomationCommands.hpp"
+#include "../../../core/GestureRouter.hpp"
 #include "../../../core/UndoManager.hpp"
 #include "AutomationLaneComponent.hpp"
 #include "BinaryData.h"
@@ -213,6 +214,14 @@ void AutomationClipComponent::mouseDown(const juce::MouseEvent& e) {
             dragMode_ = DragMode::Move;
         }
 
+        // Copy-on-drag, through the same customisable gesture arrangement clips
+        // use (default Alt) rather than a hardcoded modifier, so rebinding it
+        // moves both. Alt over a clip body is free: the lane's Alt-pencil asks
+        // canDrawClipAt(), which excludes the area clip components own.
+        isDuplicating_ =
+            dragMode_ == DragMode::Move &&
+            GestureRouter::getInstance().isDuplicateOnDrag(GestureContext::Arrangement, e.mods);
+
         isDragging_ = true;
         dragStartPos_ = e.getEventRelativeTo(getParentComponent()).getPosition();
         dragStartBeat_ = clip->startBeats;
@@ -237,6 +246,15 @@ void AutomationClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 newStartBeat = snapBeatToGrid(newStartBeat);
             }
             previewStartBeat_ = newStartBeat;
+
+            if (isDuplicating_) {
+                // The original stays where it is and the lane outlines where
+                // the copy will land, the same way an arrangement clip shows a
+                // ghost instead of dragging itself away.
+                if (auto* lane = getLane())
+                    lane->setClipCopyGhost(previewStartBeat_, previewLengthBeats_);
+                break;
+            }
 
             // Update position visually
             int newX = AutomationLaneComponent::SCALE_LABEL_WIDTH +
@@ -288,41 +306,93 @@ void AutomationClipComponent::mouseDrag(const juce::MouseEvent& e) {
 void AutomationClipComponent::mouseUp(const juce::MouseEvent& e) {
     juce::ignoreUnused(e);
 
-    if (isDragging_) {
-        isDragging_ = false;
-        auto& undoMgr = UndoManager::getInstance();
-        const bool moved = previewStartBeat_ != dragStartBeat_;
-        const bool resized = previewLengthBeats_ != dragStartLengthBeats_;
+    if (!isDragging_)
+        return;
 
-        switch (dragMode_) {
-            case DragMode::Move:
-                if (moved)
-                    undoMgr.executeCommand(
-                        std::make_unique<MoveAutomationClipCommand>(clipId_, previewStartBeat_));
+    const auto mode = dragMode_;
+    const bool duplicating = isDuplicating_;
+    isDragging_ = false;
+    dragMode_ = DragMode::None;
+    isDuplicating_ = false;
+
+    const bool moved = previewStartBeat_ != dragStartBeat_;
+    const bool resized = previewLengthBeats_ != dragStartLengthBeats_;
+
+    // Unconditionally, before any early-out: a drag that wandered and came back
+    // to its start counts as not moved, but it still put a ghost on the lane.
+    if (duplicating) {
+        if (auto* lane = getLane())
+            lane->clearClipCopyGhost();
+    }
+
+    // Every command below ends in notifyClipsChanged, which makes the lane
+    // rebuild its clip components - destroying this one. So each is deferred to
+    // the next message-thread tick and captures values rather than `this`,
+    // exactly as the context menu already does. Running them inline returned
+    // into freed memory.
+    const auto clipId = clipId_;
+    const double startBeat = previewStartBeat_;
+    const double lengthBeats = previewLengthBeats_;
+
+    switch (mode) {
+        case DragMode::Move:
+            if (!moved)
                 break;
+            if (duplicating) {
+                juce::MessageManager::callAsync([clipId, startBeat]() {
+                    auto& undoMgr = UndoManager::getInstance();
+                    undoMgr.beginCompoundOperation("Duplicate Automation Clip");
+                    auto dup = std::make_unique<DuplicateAutomationClipCommand>(clipId);
+                    auto* dupPtr = dup.get();
+                    undoMgr.executeCommand(std::move(dup));
+                    // duplicateClip() drops the copy at the source's end beat;
+                    // the move puts it where the drag actually finished. Both
+                    // inside one compound, so it undoes as a single action.
+                    const auto newClipId = dupPtr->getCreatedClipId();
+                    if (newClipId != INVALID_AUTOMATION_CLIP_ID)
+                        undoMgr.executeCommand(
+                            std::make_unique<MoveAutomationClipCommand>(newClipId, startBeat));
+                    undoMgr.endCompoundOperation();
 
-            case DragMode::ResizeLeft:
-                if (moved || resized) {
+                    // Select the copy, matching what dragging off a copy of an
+                    // arrangement clip leaves selected.
+                    if (const auto* created = AutomationManager::getInstance().getClip(newClipId))
+                        SelectionManager::getInstance().selectAutomationClip(newClipId,
+                                                                             created->laneId);
+                });
+            } else {
+                juce::MessageManager::callAsync([clipId, startBeat]() {
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<MoveAutomationClipCommand>(clipId, startBeat));
+                });
+            }
+            break;
+
+        case DragMode::ResizeLeft:
+            if (moved || resized) {
+                juce::MessageManager::callAsync([clipId, startBeat, lengthBeats]() {
+                    auto& undoMgr = UndoManager::getInstance();
                     undoMgr.beginCompoundOperation("Resize Automation Clip");
                     undoMgr.executeCommand(
-                        std::make_unique<MoveAutomationClipCommand>(clipId_, previewStartBeat_));
-                    undoMgr.executeCommand(std::make_unique<ResizeAutomationClipCommand>(
-                        clipId_, previewLengthBeats_, false));
+                        std::make_unique<MoveAutomationClipCommand>(clipId, startBeat));
+                    undoMgr.executeCommand(
+                        std::make_unique<ResizeAutomationClipCommand>(clipId, lengthBeats, false));
                     undoMgr.endCompoundOperation();
-                }
-                break;
+                });
+            }
+            break;
 
-            case DragMode::ResizeRight:
-                if (resized)
-                    undoMgr.executeCommand(std::make_unique<ResizeAutomationClipCommand>(
-                        clipId_, previewLengthBeats_, false));
-                break;
+        case DragMode::ResizeRight:
+            if (resized) {
+                juce::MessageManager::callAsync([clipId, lengthBeats]() {
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<ResizeAutomationClipCommand>(clipId, lengthBeats, false));
+                });
+            }
+            break;
 
-            default:
-                break;
-        }
-
-        dragMode_ = DragMode::None;
+        default:
+            break;
     }
 }
 
@@ -343,10 +413,31 @@ void AutomationClipComponent::mouseExit(const juce::MouseEvent& e) {
     repaint();
 }
 
+AutomationLaneComponent* AutomationClipComponent::getLane() const {
+    return findParentComponentOfClass<AutomationLaneComponent>();
+}
+
+bool AutomationClipComponent::copyGestureHeld() const {
+    return GestureRouter::getInstance().isDuplicateOnDrag(
+        GestureContext::Arrangement, juce::ModifierKeys::getCurrentModifiers());
+}
+
+void AutomationClipComponent::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
+    juce::ignoreUnused(modifiers);
+    // Pressing or releasing the copy modifier while hovering has to swap the
+    // cursor immediately, not on the next mouse move - otherwise the gesture
+    // gives no sign it is armed until you have already started dragging.
+    if (!isMouseOver() || juce::Component::isMouseButtonDownAnywhere())
+        return;
+    updateCursor(getMouseXYRelative().x);
+}
+
 void AutomationClipComponent::updateCursor(int x) {
     // Resize cursor over the edge handles, hand elsewhere (drag-to-move).
     if (isOnLeftEdge(x) || isOnRightEdge(x))
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    else if (copyGestureHeld())
+        setMouseCursor(juce::MouseCursor::CopyingCursor);
     else
         setMouseCursor(juce::MouseCursor::DraggingHandCursor);
 }

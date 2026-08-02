@@ -6,6 +6,7 @@
 
 #include "../daw/api/clip_api.hpp"
 #include "../daw/api/magda_api.hpp"
+#include "../daw/api/plugin_api.hpp"
 #include "../daw/api/project_api.hpp"
 #include "../daw/api/selection_api.hpp"
 #include "../daw/api/track_api.hpp"
@@ -17,8 +18,6 @@
 #include "../daw/core/TrackCommands.hpp"
 #include "../daw/core/TrackPropertyCommands.hpp"
 #include "../daw/core/TrackTypes.hpp"
-#include "../daw/engine/AudioEngine.hpp"
-#include "../daw/engine/TracktionEngineWrapper.hpp"
 #include "internal_plugins.hpp"
 #include "music_helpers.hpp"
 
@@ -76,18 +75,16 @@ int InstructionExecutor::resolveTrackRef(const TrackRef& ref) {
 }
 
 double InstructionExecutor::barsToTime(double bar) const {
-    double bpm = 120.0;
-    auto* engine = api_.tracks().getAudioEngine();
-    if (engine)
-        bpm = engine->getTempo();
+    double bpm = api_.project().getCurrentProjectInfo().tempo;
+    if (!isValidBpm(bpm))
+        bpm = 120.0;
     return (bar - 1.0) * barsToBeats(1.0) * 60.0 / bpm;
 }
 
 double InstructionExecutor::barsToLength(double bars) const {
-    double bpm = 120.0;
-    auto* engine = api_.tracks().getAudioEngine();
-    if (engine)
-        bpm = engine->getTempo();
+    double bpm = api_.project().getCurrentProjectInfo().tempo;
+    if (!isValidBpm(bpm))
+        bpm = 120.0;
     return bars * barsToBeats(1.0) * 60.0 / bpm;
 }
 
@@ -400,8 +397,6 @@ bool InstructionExecutor::autoCreateClip() {
 // ============================================================================
 
 bool InstructionExecutor::executeTrack(const TrackOp& op) {
-    auto& tm = api_.tracks();
-
     // TRACK FX <alias> — resolve plugin, name track after it, add plugin
     if (op.fxAlias.isNotEmpty()) {
         FxOp fxOp;
@@ -409,19 +404,12 @@ bool InstructionExecutor::executeTrack(const TrackOp& op) {
 
         juce::String trackName = op.fxAlias;  // fallback to alias
 
-        auto* engine = tm.getAudioEngine();
-        if (engine) {
-            auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(engine);
-            if (teWrapper) {
-                const auto pluginTypes = teWrapper->getPreferredPluginTypes();
-                for (const auto& desc : pluginTypes) {
-                    auto alias = pluginNameToAlias(desc.name);
-                    if (desc.name.equalsIgnoreCase(op.fxAlias) ||
-                        alias.equalsIgnoreCase(op.fxAlias)) {
-                        trackName = desc.name;
-                        break;
-                    }
-                }
+        const auto pluginTypes = api_.plugins().getExternalPlugins();
+        for (const auto& plugin : pluginTypes) {
+            auto alias = pluginNameToAlias(plugin.name);
+            if (plugin.name.equalsIgnoreCase(op.fxAlias) || alias.equalsIgnoreCase(op.fxAlias)) {
+                trackName = plugin.name;
+                break;
             }
         }
 
@@ -689,21 +677,8 @@ bool InstructionExecutor::addFxToTrack(int trackId, const juce::String& fxName) 
         return true;
     }
 
-    // External plugin lookup via alias matching
-    auto* engine = api_.tracks().getAudioEngine();
-    if (!engine) {
-        error_ = "Audio engine not available";
-        return false;
-    }
-
-    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(engine);
-    if (!teWrapper) {
-        error_ = "Plugin scanning not available";
-        return false;
-    }
-
-    const auto pluginTypes = teWrapper->getPreferredPluginTypes();
-    const juce::PluginDescription* bestMatch = nullptr;
+    const auto pluginTypes = api_.plugins().getExternalPlugins();
+    const DeviceInfo* bestMatch = nullptr;
 
     for (const auto& desc : pluginTypes) {
         auto alias = pluginNameToAlias(desc.name);
@@ -718,26 +693,8 @@ bool InstructionExecutor::addFxToTrack(int trackId, const juce::String& fxName) 
         return false;
     }
 
-    DeviceInfo device;
-    device.name = bestMatch->name;
-    device.pluginId = bestMatch->createIdentifierString();
-    device.manufacturer = bestMatch->manufacturerName;
-    device.uniqueId = bestMatch->createIdentifierString();
-    device.fileOrIdentifier = bestMatch->fileOrIdentifier;
-    device.isInstrument = bestMatch->isInstrument;
-
-    juce::String matchedFormat = bestMatch->pluginFormatName;
+    DeviceInfo device = *bestMatch;
     juce::String matchedName = bestMatch->name;
-    bestMatch = nullptr;
-
-    if (matchedFormat == "VST3")
-        device.format = PluginFormat::VST3;
-    else if (matchedFormat == "AudioUnit" || matchedFormat == "AU")
-        device.format = PluginFormat::AU;
-    else if (matchedFormat == "VST")
-        device.format = PluginFormat::VST;
-    else
-        device.format = PluginFormat::VST3;
 
     auto cmd = std::make_unique<AddDeviceToTrackCommand>(trackId, device);
     auto* cmdPtr = cmd.get();

@@ -19,12 +19,12 @@ target_sources(magda_daw PRIVATE
 
 ### 2. Integrate Audio Thread Profiling
 
-In `magda/daw/engine/TracktionEngineWrapper.cpp`:
+In the concrete engine backend's audio callback:
 
 ```cpp
 #include "../profiling/PerformanceProfiler.hpp"
 
-void TracktionEngineWrapper::audioCallback(
+void ConcreteAudioEngine::audioCallback(
     const juce::AudioSourceChannelInfo& bufferToFill) {
 
     MAGDA_MONITOR_SCOPE("AudioCallback");

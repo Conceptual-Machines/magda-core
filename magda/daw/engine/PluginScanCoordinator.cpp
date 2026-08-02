@@ -1,5 +1,6 @@
 #include "PluginScanCoordinator.hpp"
 
+#include "PluginMetadataStore.hpp"
 #include "core/AppPaths.hpp"
 #include "core/Config.hpp"
 
@@ -10,6 +11,19 @@
 #endif
 
 namespace magda {
+
+namespace {
+
+// Formats the out-of-process scanner will walk. The format manager also
+// registers formats MAGDA does not host as external plugins, so this is an
+// allowlist rather than "everything the manager knows about". Adding a format
+// here without also setting its JUCE_PLUGINHOST_* define scans nothing.
+bool isScannableFormat(const juce::String& formatName) {
+    return formatName.containsIgnoreCase("VST3") || formatName.containsIgnoreCase("AudioUnit") ||
+           formatName.containsIgnoreCase("LV2");
+}
+
+}  // namespace
 
 PluginScanCoordinator::PluginScanCoordinator() {
     loadExclusions();
@@ -220,7 +234,7 @@ std::vector<PluginScanCoordinator::PluginToScan> PluginScanCoordinator::discover
         if (!format)
             continue;
         juce::String formatName = format->getName();
-        if (!formatName.containsIgnoreCase("VST3") && !formatName.containsIgnoreCase("AudioUnit"))
+        if (!isScannableFormat(formatName))
             continue;
 
         auto searchPath = format->getDefaultLocationsToSearch();
@@ -246,7 +260,7 @@ void PluginScanCoordinator::discoverPlugins() {
             continue;
 
         juce::String formatName = format->getName();
-        if (!formatName.containsIgnoreCase("VST3") && !formatName.containsIgnoreCase("AudioUnit"))
+        if (!isScannableFormat(formatName))
             continue;
 
         DBG("[ScanCoordinator] Discovering plugins for format: " << formatName);
@@ -462,10 +476,6 @@ void PluginScanCoordinator::killOrphanScannerProcesses() {
 }
 
 // Exclusion management
-juce::File PluginScanCoordinator::getExclusionFile() const {
-    return magda::paths::pluginExclusionsFile();
-}
-
 const std::vector<ExcludedPlugin>& PluginScanCoordinator::getExcludedPlugins() const {
     return excludedPlugins_;
 }
@@ -491,12 +501,26 @@ void PluginScanCoordinator::excludePlugin(const juce::String& pluginPath,
 }
 
 void PluginScanCoordinator::loadExclusions() {
-    excludedPlugins_ = loadExclusionList(getExclusionFile());
+    exclusionsLoaded_ = false;
+    try {
+        excludedPlugins_ = PluginMetadataStore::defaultForCurrentThread().loadExclusions();
+        exclusionsLoaded_ = true;
+    } catch (const std::exception& e) {
+        DBG("[ScanCoordinator] Failed to load exclusions: " << e.what());
+    }
     DBG("[ScanCoordinator] Loaded " << excludedPlugins_.size() << " excluded plugins");
 }
 
 void PluginScanCoordinator::saveExclusions() {
-    saveExclusionList(getExclusionFile(), excludedPlugins_);
+    if (!exclusionsLoaded_) {
+        DBG("[ScanCoordinator] Skipping exclusion save because the last load failed");
+        return;
+    }
+    try {
+        PluginMetadataStore::defaultForCurrentThread().saveExclusions(excludedPlugins_);
+    } catch (const std::exception& e) {
+        DBG("[ScanCoordinator] Failed to save exclusions: " << e.what());
+    }
 }
 
 juce::File PluginScanCoordinator::getScanReportFile() const {

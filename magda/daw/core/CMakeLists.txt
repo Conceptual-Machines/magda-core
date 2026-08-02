@@ -42,6 +42,7 @@ target_sources(magda_daw PRIVATE
     PresetManager.cpp
     DrumkitManager.cpp
     DeviceCatalogMetadata.cpp
+    LegacyDeviceAliases.cpp
     PluginPreferences.cpp
     PluginCapabilities.cpp
     PluginPresetScanner.cpp
@@ -113,6 +114,7 @@ target_sources(magda_daw PRIVATE
     PresetManager.hpp
     DrumkitManager.hpp
     DeviceCatalogMetadata.hpp
+    LegacyDeviceAliases.hpp
     PluginPreferences.hpp
     PluginCapabilities.hpp
     PluginPresetScanner.hpp

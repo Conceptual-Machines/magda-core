@@ -7,6 +7,8 @@
 
 namespace magda {
 
+class PluginApi;
+
 /**
  * @brief Apply a parsed PolyStepSequencer preset to a specific device path.
  *
@@ -22,7 +24,8 @@ namespace magda {
  * an error string starting with "()" if the path doesn't resolve to a
  * PolyStepSequencerPlugin.
  */
-juce::String applyPolyStepSequencerPresetToPath(const PolyStepSequencerAgent::Preset& preset,
+juce::String applyPolyStepSequencerPresetToPath(PluginApi& plugins,
+                                                const PolyStepSequencerAgent::Preset& preset,
                                                 const ChainNodePath& path);
 
 }  // namespace magda

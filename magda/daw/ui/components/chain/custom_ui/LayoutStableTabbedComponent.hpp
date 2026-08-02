@@ -13,7 +13,7 @@ namespace magda::daw::ui {
  * userTabIndex_) from layout-triggered ones (guarded by inLayout_) and
  * restores the user's tab after a `setBoundsStable()`.
  *
- * Shared by the synth custom UIs (FourOscUI, FaustInstrumentTabbedUI).
+ * Used by synth custom UIs that own full per-tab component pages.
  */
 class LayoutStableTabbedComponent : public juce::TabbedComponent {
   public:

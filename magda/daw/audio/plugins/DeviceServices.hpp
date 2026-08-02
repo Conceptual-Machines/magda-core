@@ -5,12 +5,7 @@
 
 #include "core/ChainNodePath.hpp"
 #include "core/TypeIds.hpp"
-
-namespace tracktion {
-inline namespace engine {
-class Edit;
-}
-}  // namespace tracktion
+#include "plugins/DeviceSessionKey.hpp"
 
 namespace magda::daw::audio {
 
@@ -112,8 +107,8 @@ struct DeviceServices {
     DevicePluginDefaults defaults;
 };
 
-void registerDeviceServices(tracktion::engine::Edit& edit, DeviceServices services);
-void unregisterDeviceServices(tracktion::engine::Edit& edit);
-DeviceServices getDeviceServices(tracktion::engine::Edit& edit);
+void registerDeviceServices(DeviceSessionKey sessionKey, DeviceServices services);
+void unregisterDeviceServices(DeviceSessionKey sessionKey);
+DeviceServices getDeviceServices(DeviceSessionKey sessionKey);
 
 }  // namespace magda::daw::audio

@@ -1,27 +1,15 @@
 #include "MediaCollector.hpp"
 
 #include "../audio/AudioThumbnailManager.hpp"
-#include "../audio/plugins/DrumGridPlugin.hpp"
-#include "../audio/plugins/MagdaSamplerPlugin.hpp"
 #include "../core/ClipInfo.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/TrackManager.hpp"
-#include "../engine/TracktionEngineWrapper.hpp"
+#include "../engine/AudioEngine.hpp"
 #include "ProjectManager.hpp"
 
 namespace magda {
 
-namespace te = tracktion;
-
 namespace {
-
-// Resolve the running edit, or nullptr if the engine isn't a TracktionEngineWrapper.
-te::Edit* getEdit() {
-    if (auto* wrapper =
-            dynamic_cast<TracktionEngineWrapper*>(TrackManager::getInstance().getAudioEngine()))
-        return wrapper->getEdit();
-    return nullptr;
-}
 
 // Bundled resources roots a factory sample could live under. Mirrors
 // DrumkitManager's bundled-dir probe but stops at the resources parent so any
@@ -132,27 +120,12 @@ MediaCollector::Plan MediaCollector::scan() {
     }
 
     // 2 + 3. Samplers (standalone, incl. inside instrument racks) and drum pads.
-    if (auto* edit = getEdit()) {
-        auto attachSampler = [&](te::Plugin* plugin) {
-            auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin);
-            if (sampler == nullptr)
-                return;
-            const auto idx = resolve(sampler->getSampleFile().getFullPathName());
+    if (auto* engine = TrackManager::getInstance().getAudioEngine()) {
+        for (auto& reference : engine->getSamplerMediaReferences()) {
+            const auto idx = resolve(reference.source.getFullPathName());
             if (idx >= 0)
                 plan.items[static_cast<size_t>(idx)].samplerRefs.push_back(
-                    te::Plugin::Ptr(sampler));
-        };
-
-        for (auto plugin : te::getAllPlugins(*edit, true)) {
-            attachSampler(plugin);
-
-            // Drum-pad samplers live inside the DrumGridPlugin's own chains, not
-            // in the rack list, so reach them explicitly.
-            if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin)) {
-                for (const auto& chain : drumGrid->getChains())
-                    for (auto& nested : chain->plugins)
-                        attachSampler(nested.get());
-            }
+                    std::move(reference.replace));
         }
     }
 
@@ -201,10 +174,8 @@ MediaCollector::Summary MediaCollector::apply(const Plan& plan) {
             }
         }
 
-        for (auto& samplerRef : item.samplerRefs) {
-            if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(samplerRef.get()))
-                sampler->loadSample(item.dest);
-        }
+        for (const auto& replace : item.samplerRefs)
+            replace(item.dest);
 
         summary.collected += 1;
     }

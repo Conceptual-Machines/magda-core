@@ -5,6 +5,7 @@
 
 #include "audio/AudioBridge.hpp"
 #include "audio/plugins/compiled/CompiledFaustInterface.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
@@ -12,32 +13,6 @@
 #include "params/ParamSlotComponent.hpp"
 
 namespace magda::daw::ui {
-
-namespace {
-
-int visibleIndexForParameter(const magda::DeviceInfo& device, int paramIndex) {
-    if (device.visibleParameters.empty()) {
-        auto it = std::find_if(device.parameters.begin(), device.parameters.end(),
-                               [paramIndex](const magda::ParameterInfo& param) {
-                                   return param.paramIndex == paramIndex;
-                               });
-        if (it == device.parameters.end())
-            return -1;
-        return static_cast<int>(std::distance(device.parameters.begin(), it));
-    }
-
-    for (int i = 0; i < static_cast<int>(device.visibleParameters.size()); ++i) {
-        const int paramArrayIndex = device.visibleParameters[static_cast<size_t>(i)];
-        if (paramArrayIndex < 0 || paramArrayIndex >= static_cast<int>(device.parameters.size()))
-            continue;
-        if (device.parameters[static_cast<size_t>(paramArrayIndex)].paramIndex == paramIndex)
-            return i;
-    }
-
-    return -1;
-}
-
-}  // namespace
 
 void ParameterLearnHighlightState::reset() {
     lockedParamIndex = -1;
@@ -59,8 +34,8 @@ bool refreshEngineAwareCompiledSlots(magda::DeviceInfo& device,
     if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
         if (auto* bridge = audioEngine->getAudioBridge()) {
             auto plugin = bridge->getPlugin(devicePath);
-            daw::audio::compiled::ICompiledFaustPlugin* compiled = nullptr;
-            compiled = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin.get());
+            auto* compiled = daw::audio::tracktion_adapter::deviceFromPlugin<
+                daw::audio::compiled::ICompiledFaustPlugin>(plugin.get());
             if (compiled != nullptr)
                 modeSlot = compiled->engineAwareModeSlot();
 
@@ -126,24 +101,29 @@ void applyLearnModeParameterHighlight(magda::DeviceInfo& device, ParamHostCompon
     state.lockedParamIndex = paramIndex;
     state.lockTimeMs = nowMs;
 
-    const int visibleIndex = visibleIndexForParameter(device, paramIndex);
-    if (visibleIndex < 0)
-        return;
-
     const int cellsPerPage = paramGrid.getSlotCount();
     if (cellsPerPage <= 0)
         return;
 
-    const int targetPage = visibleIndex / cellsPerPage;
+    const auto& layout = paramGrid.getLayout();
+    const int targetPage = layout.pageForParameter(device, paramIndex);
+    if (targetPage < 0)
+        return;
     if (targetPage != paramGrid.getCurrentPage()) {
-        const int totalPages = juce::jmax(1, paramGrid.getLayout().totalPages(device));
+        const int totalPages = juce::jmax(1, layout.totalPages(device));
         device.currentParameterPage = targetPage;
-        paramGrid.updatePageControls(targetPage, totalPages);
+        paramGrid.updatePageControls(device, targetPage, totalPages);
         if (onPageChanged)
             onPageChanged();
     }
 
-    paramGrid.highlightSlot(visibleIndex % cellsPerPage);
+    for (int cellIndex = 0; cellIndex < cellsPerPage; ++cellIndex) {
+        const auto cell = layout.cellFor(device, cellIndex, targetPage);
+        if (cell.mode == ParamCell::Mode::Filled && cell.targetParamIndex == paramIndex) {
+            paramGrid.highlightSlot(cellIndex);
+            break;
+        }
+    }
 }
 
 void updateCurrentPageParameterSlotValue(const magda::DeviceInfo& device,

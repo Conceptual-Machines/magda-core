@@ -15,6 +15,31 @@
 
 namespace magda {
 
+/**
+ * @brief Short display label for whatever identifies a plugin.
+ *
+ * VST3 and AudioUnit identify a plugin by absolute path, so the file name is
+ * the useful part. LV2 identifies one by URI, e.g.
+ * "http://gareus.org/oss/lv2/midifilter#cctonote". That is not a path, so
+ * passing it to juce::File trips the "Illegal absolute path" assertion; take
+ * the fragment or last segment instead.
+ */
+inline juce::String pluginDisplayName(const juce::String& identifier) {
+    if (identifier.isEmpty())
+        return identifier;
+
+    if (juce::File::isAbsolutePath(identifier)) {
+        const auto name = juce::File(identifier).getFileName();
+        return name.isNotEmpty() ? name : identifier;
+    }
+
+    if (identifier.contains("#"))
+        return identifier.fromLastOccurrenceOf("#", false, false);
+    if (identifier.contains("/"))
+        return identifier.fromLastOccurrenceOf("/", false, false);
+    return identifier;
+}
+
 struct PluginScanResult {
     juce::String pluginPath;
     juce::String formatName;
@@ -109,9 +134,9 @@ class PluginScanCoordinator : private juce::Timer {
     void killOrphanScannerProcesses();
 
     // Exclusion management
-    juce::File getExclusionFile() const;
     void loadExclusions();
     void saveExclusions();
+    bool exclusionsLoaded_ = false;
 
     // State
     std::atomic<bool> isScanning_{false};

@@ -27,7 +27,7 @@
 #include "core/TrackCommands.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
+#include "engine/AudioEngine.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/NodeComponent.hpp"
 #include "ui/components/chain/RackComponent.hpp"
@@ -598,8 +598,8 @@ class TrackChainContent::ChainContainer : public juce::Component,
                 device.format = magda::PluginFormat::VST3;
             } else if (format == "AU") {
                 device.format = magda::PluginFormat::AU;
-            } else if (format == "VST") {
-                device.format = magda::PluginFormat::VST;
+            } else if (format == "LV2") {
+                device.format = magda::PluginFormat::LV2;
             } else if (format == "Internal") {
                 device.format = magda::PluginFormat::Internal;
             }
@@ -2935,8 +2935,7 @@ void TrackChainContent::onAddDeviceClicked() {
     menu.addSubMenu("Internal", internalMenu);
 
     juce::Array<juce::PluginDescription> externalPlugins;
-    if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
-            magda::TrackManager::getInstance().getAudioEngine())) {
+    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
         externalPlugins = engine->getPreferredPluginTypes();
     }
 
@@ -2992,8 +2991,8 @@ void TrackChainContent::onAddDeviceClicked() {
                 device.format = magda::PluginFormat::VST3;
             else if (desc.pluginFormatName == "AU" || desc.pluginFormatName == "AudioUnit")
                 device.format = magda::PluginFormat::AU;
-            else if (desc.pluginFormatName == "VST")
-                device.format = magda::PluginFormat::VST;
+            else if (desc.pluginFormatName == "LV2")
+                device.format = magda::PluginFormat::LV2;
             else
                 device.format = magda::PluginFormat::Internal;
         } else {

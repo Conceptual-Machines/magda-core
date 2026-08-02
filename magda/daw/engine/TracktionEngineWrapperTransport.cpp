@@ -227,6 +227,19 @@ double TracktionEngineWrapper::getCurrentPosition() const {
     return 0.0;
 }
 
+BeatDuration TracktionEngineWrapper::getEditLengthBeats() const {
+    if (!currentEdit_)
+        return {};
+    return {
+        currentEdit_->tempoSequence
+            .toBeats(tracktion::TimePosition::fromSeconds(currentEdit_->getLength().inSeconds()))
+            .inBeats()};
+}
+
+juce::File TracktionEngineWrapper::getEditFile() const {
+    return currentEdit_ != nullptr ? currentEdit_->editFileRetriever() : juce::File{};
+}
+
 void TracktionEngineWrapper::getCurrentMusicalPosition(int& bar, int& beat, int& tick) const {
     if (currentEdit_) {
         auto position = tracktion::TimePosition::fromSeconds(getCurrentPosition());
@@ -313,6 +326,24 @@ void TracktionEngineWrapper::setLooping(bool enabled) {
     if (currentEdit_) {
         currentEdit_->getTransport().looping = enabled;
     }
+}
+
+void TracktionEngineWrapper::setLoopRegionBeats(BeatRange range) {
+    if (!currentEdit_)
+        return;
+    const auto start =
+        currentEdit_->tempoSequence.toTime(tracktion::BeatPosition::fromBeats(range.start.value));
+    const auto end =
+        currentEdit_->tempoSequence.toTime(tracktion::BeatPosition::fromBeats(range.end.value));
+    currentEdit_->getTransport().setLoopRange(tracktion::TimeRange(start, end));
+}
+
+BeatRange TracktionEngineWrapper::getLoopRegionBeats() const {
+    if (!currentEdit_)
+        return {};
+    const auto range = currentEdit_->getTransport().getLoopRange();
+    return {{currentEdit_->tempoSequence.toBeats(range.getStart()).inBeats()},
+            {currentEdit_->tempoSequence.toBeats(range.getEnd()).inBeats()}};
 }
 
 void TracktionEngineWrapper::setLoopRegion(double start_seconds, double end_seconds) {

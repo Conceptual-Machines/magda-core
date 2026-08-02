@@ -11,22 +11,8 @@ namespace magda::daw::audio::compiled {
 
 const char* MagdaSnareCompiledPlugin::xmlTypeName = "magda_snare";
 
-MagdaSnareCompiledPlugin::MagdaSnareCompiledPlugin(const te::PluginCreationInfo& info)
-    : MagdaCompiledPolyInstrument(info) {
+MagdaSnareCompiledPlugin::MagdaSnareCompiledPlugin() {
     initInstrument();
-}
-
-juce::String MagdaSnareCompiledPlugin::getName() const {
-    return "Snare";
-}
-juce::String MagdaSnareCompiledPlugin::getPluginType() {
-    return xmlTypeName;
-}
-juce::String MagdaSnareCompiledPlugin::getShortName(int) {
-    return "Snare";
-}
-juce::String MagdaSnareCompiledPlugin::getSelectableDescription() {
-    return "Snare";
 }
 
 ::dsp* MagdaSnareCompiledPlugin::createVoiceDsp() const {
@@ -152,8 +138,8 @@ const CompiledPluginSpec& getMagdaSnareSpec() {
                        "pitch-snap Body that auto-ducks under the transient, and a "
                        "resonant-high-passed noise Rattle/tail with drive. Knob-tuned, MIDI-gated "
                        "- drop it on a DrumGrid pad or play it standalone.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaSnareCompiledPlugin(info);
+        .createDevice = [](const DevicePluginCreationContext&) -> std::unique_ptr<MagdaDevice> {
+            return std::make_unique<MagdaSnareCompiledPlugin>();
         },
         .isInstrument = true,
     };

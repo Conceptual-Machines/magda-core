@@ -5,6 +5,7 @@
 
 #include "core/ParameterUtils.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -464,6 +465,9 @@ constexpr AliasSpec kAliases[] = {
     {"output", 40, "Output"},
 };
 
+// Tracktion's retired 4-band EQ loads here; see core/LegacyDeviceAliases.hpp.
+constexpr const char* kLoadAliases[] = {"4bandEq", "eq", "equaliser"};
+
 }  // namespace
 
 const CompiledPluginSpec& getMagdaEqSpec() {
@@ -478,11 +482,14 @@ const CompiledPluginSpec& getMagdaEqSpec() {
                        "MAGDA-owned RBJ biquads drive audio and share coefficient math with "
                        "the curve view. "
                        "Each band exposes Freq, Gain, Q; Output trims the final sum.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaEqCompiledPlugin(info);
+        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
+            return tracktion_adapter::pluginHandle(
+                new MagdaEqCompiledPlugin(tracktion_adapter::creationInfo(context)));
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
+        .loadAliases = kLoadAliases,
+        .loadAliasCount = static_cast<int>(sizeof(kLoadAliases) / sizeof(kLoadAliases[0])),
     };
     return kSpec;
 }

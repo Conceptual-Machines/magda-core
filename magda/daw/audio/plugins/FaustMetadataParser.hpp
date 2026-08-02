@@ -29,6 +29,42 @@ enum class FaustControlRole {
 };
 
 /**
+ * @brief How a choice control asked to be presented.
+ *
+ * Faust distinguishes `[style:menu{…}]` from `[style:radio{…}]`. Both
+ * describe the same underlying discrete parameter, so they share
+ * `menuChoices` and both map to `FaustParamSlot::Kind::Discrete`; only
+ * the presentation differs. The UI layer decides whether it can honour
+ * Radio (a long choice list is better served by a dropdown regardless of
+ * what the author asked for).
+ */
+enum class FaustChoiceStyle {
+    /// Not a choice control.
+    None,
+    /// `[style:menu{…}]` — dropdown.
+    Menu,
+    /// `[style:radio{…}]` — mutually exclusive buttons, all visible.
+    Radio,
+};
+
+/**
+ * @brief How a bargraph asked to be presented.
+ *
+ * Faust's own architectures honour `[style:led]` and `[style:numerical]` on
+ * bargraphs (see MetaDataUI.h), so MAGDA reads the same two keys rather than
+ * inventing a spelling. Only meaningful on an output widget: a slider
+ * declaring `[style:knob]` still lands on Bar and nothing reads it.
+ */
+enum class FaustOutputStyle {
+    /// Default. A filled bar spanning the cell.
+    Bar,
+    /// `[style:numerical]`: the value as text, no bar.
+    Numerical,
+    /// `[style:led]`: a lamp whose brightness tracks the value.
+    Led,
+};
+
+/**
  * @brief Parsed output of a Faust label like
  *        "Cutoff [unit:Hz] [scale:log] [idx:7]".
  *
@@ -56,10 +92,31 @@ struct ControlMetadata {
     /// was a menu or radio.
     std::vector<std::pair<float, juce::String>> menuChoices;
 
-    /// Whether the menu/radio style was set (distinguishes "no menu
-    /// declared" from "empty menu" — defensive; Faust shouldn't emit
-    /// the latter).
-    bool isMenuStyle = false;
+    /// Which choice style was declared, if any. None also distinguishes
+    /// "no choice style declared" from "declared but empty choice list"
+    /// (defensive; Faust shouldn't emit the latter).
+    FaustChoiceStyle choiceStyle = FaustChoiceStyle::None;
+
+    /// True iff a menu or radio style was declared, whatever the flavour.
+    bool isChoiceStyle() const {
+        return choiceStyle != FaustChoiceStyle::None;
+    }
+
+    /// Presentation asked for by a bargraph via `[style:led]` /
+    /// `[style:numerical]`. Ignored on input controls.
+    FaustOutputStyle outputStyle = FaustOutputStyle::Bar;
+
+    /// Cells this control spans in the param grid, from `[width:N]`. 1 is the
+    /// default and the historical behaviour. Lets an author give a control with
+    /// several visible choices, or a long value readout, the room it needs
+    /// instead of being squeezed into one eighth of a row. Clamped to a row's
+    /// worth of cells by the layout; a control never wraps mid-widget.
+    int widthCells = 1;
+
+    /// Free-text help from `[tooltip:…]`, Faust's own convention for
+    /// documenting a control. Empty if absent. Purely presentational:
+    /// it never affects the kind, range, or automation of a parameter.
+    juce::String tooltip;
 
     /// MAGDA role tag from `[role:<value>]`. Defaults to User.
     FaustControlRole role = FaustControlRole::User;

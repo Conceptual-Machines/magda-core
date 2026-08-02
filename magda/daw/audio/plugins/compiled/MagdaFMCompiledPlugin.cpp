@@ -11,22 +11,8 @@ namespace magda::daw::audio::compiled {
 
 const char* MagdaFMCompiledPlugin::xmlTypeName = "magda_fm";
 
-MagdaFMCompiledPlugin::MagdaFMCompiledPlugin(const te::PluginCreationInfo& info)
-    : MagdaCompiledPolyInstrument(info) {
+MagdaFMCompiledPlugin::MagdaFMCompiledPlugin() {
     initInstrument();
-}
-
-juce::String MagdaFMCompiledPlugin::getName() const {
-    return "FM0";
-}
-juce::String MagdaFMCompiledPlugin::getPluginType() {
-    return xmlTypeName;
-}
-juce::String MagdaFMCompiledPlugin::getShortName(int) {
-    return "FM0";
-}
-juce::String MagdaFMCompiledPlugin::getSelectableDescription() {
-    return "FM0";
 }
 
 ::dsp* MagdaFMCompiledPlugin::createVoiceDsp() const {
@@ -142,8 +128,8 @@ const CompiledPluginSpec& getMagdaFMSpec() {
         .description = "Four-operator FM synth with a full 4x4 modulation matrix: every operator "
                        "(Sine/Tri/Saw/Square/Noise) can phase-modulate any operator, the diagonal "
                        "is self-feedback. Per-op ratio/level + amp ADSR. 16-voice, MIDI-driven.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaFMCompiledPlugin(info);
+        .createDevice = [](const DevicePluginCreationContext&) -> std::unique_ptr<MagdaDevice> {
+            return std::make_unique<MagdaFMCompiledPlugin>();
         },
         .isInstrument = true,
     };

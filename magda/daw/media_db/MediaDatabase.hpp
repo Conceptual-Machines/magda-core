@@ -8,10 +8,9 @@
 #pragma once
 
 #include <filesystem>
-#include <stdexcept>
 #include <string>
 
-struct sqlite3;
+#include "core/SqliteUtils.hpp"
 
 namespace magda::media {
 
@@ -26,10 +25,7 @@ namespace magda::media {
 // the kind CHECK via a table rebuild).
 inline constexpr int kSchemaVersion = 9;
 
-class MediaDatabaseError : public std::runtime_error {
-  public:
-    using std::runtime_error::runtime_error;
-};
+using MediaDatabaseError = sqlite::Error;
 
 // Run the version-gated migration ladder against an open connection,
 // upgrading from `fromVersion` to kSchemaVersion and stamping user_version.
@@ -52,7 +48,7 @@ class MediaDatabase {
 
     // Underlying SQLite handle for prepared statements in caller code.
     [[nodiscard]] sqlite3* handle() const noexcept {
-        return db_;
+        return db_.get();
     }
 
     // The path this connection was opened against (literally `:memory:` for
@@ -84,12 +80,11 @@ class MediaDatabase {
         void commit();
 
       private:
-        MediaDatabase* db_;
-        bool finished_ = false;
+        sqlite::Transaction transaction_;
     };
 
   private:
-    sqlite3* db_ = nullptr;
+    sqlite::Connection db_;
     std::filesystem::path path_;
 };
 

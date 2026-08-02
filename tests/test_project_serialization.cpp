@@ -68,6 +68,18 @@ class ProjectBoundaryResetEngine : public AudioEngine {
 
     void shutdown() override {}
 
+    bool hasActiveEdit() const override {
+        return true;
+    }
+
+    BeatDuration getEditLengthBeats() const override {
+        return {};
+    }
+
+    juce::File getEditFile() const override {
+        return {};
+    }
+
     void play() override {
         playing = true;
     }
@@ -141,9 +153,18 @@ class ProjectBoundaryResetEngine : public AudioEngine {
         return tempo;
     }
 
+    const TempoMap* tempoMap() const override {
+        return nullptr;
+    }
+
     void setTimeSignature(int numerator, int denominator) override {
         timeSigNumerator = numerator;
         timeSigDenominator = denominator;
+    }
+
+    void getTimeSignature(int& numerator, int& denominator) const override {
+        numerator = timeSigNumerator;
+        denominator = timeSigDenominator;
     }
 
     void setLooping(bool enabled) override {
@@ -151,13 +172,17 @@ class ProjectBoundaryResetEngine : public AudioEngine {
         looping = enabled;
     }
 
-    void setLoopRegion(double startSeconds, double endSeconds) override {
-        loopStart = startSeconds;
-        loopEnd = endSeconds;
+    void setLoopRegionBeats(BeatRange range) override {
+        loopStart = range.start.value;
+        loopEnd = range.end.value;
     }
 
     bool isLooping() const override {
         return looping;
+    }
+
+    BeatRange getLoopRegionBeats() const override {
+        return {{loopStart}, {loopEnd}};
     }
 
     void setMetronomeEnabled(bool enabled) override {
@@ -183,6 +208,19 @@ class ProjectBoundaryResetEngine : public AudioEngine {
         return nullptr;
     }
 
+    juce::BigInteger getEnabledWaveChannels(bool) const override {
+        return {};
+    }
+
+    void setEnabledWaveChannels(bool, const juce::BigInteger&) override {}
+    void rescanWaveDevices(bool, bool) override {}
+
+    bool isDevicesLoading() const override {
+        return false;
+    }
+
+    void setDevicesLoadingCallback(std::function<void(bool, const juce::String&)>) override {}
+
     AudioBridge* getAudioBridge() override {
         return nullptr;
     }
@@ -196,6 +234,85 @@ class ProjectBoundaryResetEngine : public AudioEngine {
     }
 
     const MidiBridge* getMidiBridge() const override {
+        return nullptr;
+    }
+
+    MagdaApi& getMagdaApi() override {
+        std::abort();
+    }
+
+    PluginWindowManager* getPluginWindowManager() override {
+        return nullptr;
+    }
+
+    const PluginWindowManager* getPluginWindowManager() const override {
+        return nullptr;
+    }
+
+    InsertRenderCaptureService* getInsertRenderCaptureService() override {
+        return nullptr;
+    }
+
+    juce::Array<juce::PluginDescription> getKnownPluginTypes() const override {
+        return {};
+    }
+
+    juce::Array<juce::PluginDescription> getPreferredPluginTypes() const override {
+        return {};
+    }
+
+    void addPluginListChangeListener(juce::ChangeListener*) override {}
+    void removePluginListChangeListener(juce::ChangeListener*) override {}
+    void startPluginScan(std::function<void(float, const juce::String&)>) override {}
+    void abortPluginScan() override {}
+
+    void detectNewPlugins(std::function<void(PluginScanPhase, const juce::String&)>,
+                          std::function<void(bool, int, int, const juce::StringArray&)>) override {}
+
+    void setPluginScanCompletionCallback(
+        std::function<void(bool, int, const juce::StringArray&)>) override {}
+
+    bool isPluginScanRunning() const override {
+        return false;
+    }
+
+    std::vector<ExcludedPlugin> getExcludedPlugins() const override {
+        return {};
+    }
+
+    void setExcludedPlugins(const std::vector<ExcludedPlugin>&) override {}
+
+    juce::File getPluginScanReportFile() const override {
+        return {};
+    }
+
+    std::vector<std::string> getSystemPluginSearchPaths() const override {
+        return {};
+    }
+
+    std::vector<ScannedPluginParameter> scanPluginParameters(const juce::String&, bool) override {
+        return {};
+    }
+
+    bool upsertGrooveTemplate(const GrooveTemplateData&) override {
+        return false;
+    }
+
+    juce::StringArray getGrooveTemplateNames() const override {
+        return {};
+    }
+
+    std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(bool) override {
+        return nullptr;
+    }
+
+    std::vector<SamplerMediaReference> getSamplerMediaReferences() override {
+        return {};
+    }
+
+    std::unique_ptr<UndoableCommand> createTempoSequenceRippleCommand(TempoSequenceRippleMode,
+                                                                      BeatPosition,
+                                                                      BeatPosition) override {
         return nullptr;
     }
 
@@ -237,7 +354,8 @@ class ProjectBoundaryResetEngine : public AudioEngine {
     }
 
     void onLoopRegionChanged(double startTime, double endTime, bool enabled) override {
-        setLoopRegion(startTime, endTime);
+        loopStart = startTime;
+        loopEnd = endTime;
         setLooping(enabled);
     }
 

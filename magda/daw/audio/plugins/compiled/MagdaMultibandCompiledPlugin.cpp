@@ -5,6 +5,7 @@
 
 #include "core/ParameterUtils.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -557,8 +558,9 @@ const CompiledPluginSpec& getMagdaMultibandSpec() {
             "Native 3-band dynamics processor with independent lower and upper threshold "
             "regions per band. Ratios above 1:1 compress toward the active threshold; "
             "ratios below 1:1 expand away from it.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaMultibandCompiledPlugin(info);
+        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
+            return tracktion_adapter::pluginHandle(
+                new MagdaMultibandCompiledPlugin(tracktion_adapter::creationInfo(context)));
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),

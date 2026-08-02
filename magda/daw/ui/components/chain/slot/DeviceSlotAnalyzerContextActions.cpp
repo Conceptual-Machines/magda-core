@@ -3,6 +3,7 @@
 #include "audio/AudioBridge.hpp"
 #include "audio/plugins/OscilloscopePlugin.hpp"
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
@@ -39,11 +40,13 @@ void toggleDeviceSlotAnalyzerWindow(std::unique_ptr<AnalyzerWindow>& analyzerWin
 
     auto plugin = bridge->getPlugin(nodePath);
     std::unique_ptr<juce::Component> content;
-    if (dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get()) != nullptr) {
+    if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::OscilloscopePlugin>(
+            plugin.get()) != nullptr) {
         auto ui = std::make_unique<OscilloscopeUI>();
         ui->setTelemetrySource(std::make_shared<OscilloscopePluginTelemetrySource>(plugin));
         content = std::move(ui);
-    } else if (dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get()) != nullptr) {
+    } else if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::SpectrumAnalyzerPlugin>(
+                   plugin.get()) != nullptr) {
         auto ui = std::make_unique<SpectrumAnalyzerUI>();
         ui->setTelemetrySource(std::make_shared<SpectrumPluginTelemetrySource>(plugin));
         ui->setTrackId(nodePath.trackId);  // enables the masking overlay in the external window

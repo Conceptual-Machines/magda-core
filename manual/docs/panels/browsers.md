@@ -49,8 +49,16 @@ The Media Explorer lets you browse files on your system and preview audio before
 ### Preview
 
 - Click an audio file to preview it through your monitor output
-- Preview plays in sync with the transport tempo when applicable
+- Preview plays the file as it is on disk, at its own tempo and pitch. It is not stretched to match the project tempo, so a 90 BPM loop auditions at 90 BPM whatever the transport is set to. Drag the file onto a track if you want it to follow the project tempo
 - With **Auto** on, ++arrowup++ / ++arrowdown++ step through results and audition each one as it is selected; ++arrowleft++ stops the preview and ++arrowright++ replays it from the start
+
+The controls under the waveform drive the preview:
+
+- **Play** / **Stop** - start the selected file from the beginning, or stop it. Play is greyed out until a file is selected
+- **Volume** - preview level only. It is independent of the project's mixer and is not recorded into anything
+- **Auto** - audition each file as soon as it is selected, instead of waiting for **Play**
+
+Preview runs outside the project's mixer and goes straight to the output pair you nominate, so it keeps working while the transport is stopped. Choose that pair with the **Preview** toggle in [Audio Settings](../interface/audio-settings.md#channel-configuration).
 
 ### Filters
 

@@ -15,17 +15,6 @@ namespace te = tracktion::engine;
 
 struct ParamLinkContext;
 
-/// Tagged kind for the legacy *UI components a compiled plugin should
-/// suppress (so the wrong UI doesn't claim the slot via `containsIgnoreCase`).
-/// Grow this enum if a new legacy UI needs to be suppressed.
-enum class LegacyUiKind {
-    Delay,
-    Chorus,
-    Phaser,
-    Reverb,
-    Equaliser,
-};
-
 /**
  * @brief Adapter over a compiled-Faust device's inline curve view.
  *
@@ -77,7 +66,6 @@ struct CompiledPresentationSpec {
     int layoutCellsPerRow;
     /// nullptr = no custom curve view; the slot falls back to the param-grid only.
     std::unique_ptr<CompiledDevicePanel> (*createPanel)(juce::String pluginId);
-    std::span<const LegacyUiKind> suppressLegacyUis;
     /// Minimum fraction of the device slot body that the curve panel must
     /// occupy, expressed as `numerator / denominator`. Defaults to 3/4 to
     /// keep the existing curve-dominant layout for plugins like Reverb /
@@ -108,9 +96,5 @@ std::span<const CompiledPresentationSpec* const> getAllCompiledPresentations();
 
 /// Returns null if `pluginId` isn't a compiled plugin we recognise.
 const CompiledPresentationSpec* findCompiledPresentation(const juce::String& pluginId);
-
-/// Convenience for legacy-UI gating: true if `pluginId` is a compiled
-/// plugin that wants the named legacy UI suppressed.
-bool shouldSuppressLegacyUi(const juce::String& pluginId, LegacyUiKind kind);
 
 }  // namespace magda::daw::ui

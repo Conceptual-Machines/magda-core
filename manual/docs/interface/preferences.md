@@ -53,7 +53,7 @@ Themes are plain JSON files in `Documents/MAGDA/Themes`. Each file declares:
 - **`name`** - the display name shown in the dropdown.
 - **`base`** - either `dark` or `light`. Any colour role you do not override is inherited from that base, so you only need to list what you want to change.
 - **`colours`** - a map of colour role to hex value. Roles include a six-step accent ramp (`accent1` is the primary selection/active colour, through `accent6`) plus surface and text roles.
-- **`syntaxColours`** - optional; themes the code/console text.
+- **`syntaxColours`** - optional; themes every code surface in MAGDA - the DSL console, the AI prompt box, and the Faust source editor - covering editor background, line numbers, caret, selection, and the syntax token colours. Roles you leave out inherit from the base, exactly like `colours`. AI-generated themes always write this section out in full.
 
 The filename (without `.json`) is the theme's id. Unknown keys and invalid colours are skipped, so a partial file is safe to load.
 

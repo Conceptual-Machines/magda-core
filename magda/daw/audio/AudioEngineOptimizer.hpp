@@ -12,7 +12,7 @@ namespace magda {
  *
  * This class listens for view mode changes and applies the corresponding
  * audio engine optimization profile. Currently a stub for future
- * TracktionEngineWrapper integration.
+ * AudioEngine integration.
  */
 class AudioEngineOptimizer final : public ViewModeListener {
   public:

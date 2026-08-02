@@ -27,6 +27,7 @@ namespace magda::daw::ui {
 class AnalyzerWindow;
 struct DeviceSlotModMacroCommandCallbacks;
 class FaustCustomView;
+class FaustMeterPanel;
 class FaustUI;
 
 /**
@@ -256,8 +257,18 @@ class DeviceSlotComponent : public NodeComponent,
     // param that reports a meaningful change and refuse to switch for a short
     // window so the highlight stays on what the user actually touched.
     ParameterLearnHighlightState learnHighlight_;
+    // Height to carve for faustUI_: the bare header, plus its credit strip
+    // when the loaded patch declares metadata.
+    int faustHeaderHeight() const;
+    int paginationRowHeight() const;
+
     std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<FaustCustomView> faustCustomView_;
+    // Readout strip for a runtime Faust patch's bargraphs. Built lazily: a
+    // patch declaring none never costs the body any height.
+    std::unique_ptr<FaustMeterPanel> faustMeterPanel_;
+    // Rebuilds the strip from device_.meters and rebinds its reading supplier.
+    void refreshFaustMeterPanel();
     std::unique_ptr<CompiledDevicePanel> compiledPanel_;
     std::unique_ptr<AnalyzerWindow> analyzerWindow_;  // popped-out oscilloscope/spectrum
     void toggleAnalyzerWindow();                      // open / hide the analyzer popout

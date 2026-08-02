@@ -193,25 +193,31 @@ TEST_CASE("CuratedAliasLoader - internal plugin aliases load from code without J
 
     auto noopResolver = [](const juce::String&) -> juce::String { return {}; };
 
-    // Empty index, empty resolver — yet eq/compressor must be present because
-    // they ship in InternalPluginAliases.cpp, not as JSON.
+    // Empty index, empty resolver — yet the internal devices' aliases must be
+    // present, because they are declared next to each device in code and
+    // collected by InternalPluginAliases.cpp, not read from JSON.
     CuratedAliasLoader::loadFromString(R"({"version":1,"plugins":[]})", noopResolver);
 
-    auto eqLow = reg.lookupStored("eq.low_shelf_freq");
-    REQUIRE(eqLow.has_value());
-    REQUIRE(eqLow->pluginTypeKey == "eq");
-    REQUIRE(eqLow->paramIndex == 0);
+    auto eqBandFreq = reg.lookupStored("magda_eq.band1_freq");
+    REQUIRE(eqBandFreq.has_value());
+    REQUIRE(eqBandFreq->pluginTypeKey == "magda_eq");
+    REQUIRE(eqBandFreq->paramIndex == 2);
 
-    auto compThreshold = reg.lookupStored("compressor.threshold");
+    auto compThreshold = reg.lookupStored("magda_compressor.threshold");
     REQUIRE(compThreshold.has_value());
-    REQUIRE(compThreshold->pluginTypeKey == "compressor");
-    REQUIRE(compThreshold->paramIndex == 0);
+    REQUIRE(compThreshold->pluginTypeKey == "magda_compressor");
+    REQUIRE(compThreshold->paramIndex == 1);
 
-    // Plugins added in the InternalPluginAliases expansion are also present.
-    REQUIRE(reg.lookupStored("reverb.room_size").has_value());
-    REQUIRE(reg.lookupStored("delay.feedback").has_value());
+    REQUIRE(reg.lookupStored("magda_reverb.decay").has_value());
+    // A device with an explicit aliasKey is keyed by it, not by its plugin id.
+    REQUIRE(reg.lookupStored("magda_delay_compiled.time").has_value());
     REQUIRE(reg.lookupStored("utility.gain").has_value());
     REQUIRE_FALSE(reg.lookupStored("utility.volume").has_value());
+
+    // The retired Tracktion effects had hand-written entries here; they are
+    // gone along with the devices.
+    REQUIRE_FALSE(reg.lookupStored("eq.low_shelf_freq").has_value());
+    REQUIRE_FALSE(reg.lookupStored("compressor.threshold").has_value());
 
     reg.clearLayer(AliasLayer::Curated);
 }

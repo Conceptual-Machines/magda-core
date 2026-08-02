@@ -31,6 +31,8 @@
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceStateBridge.hpp"
+#include "plugins/tracktion/TracktionInternalPluginAdapter.hpp"
 #include "processors/DeviceProcessor.hpp"
 #include "processors/DeviceProcessorFactory.hpp"
 #include "transport/TransportStateManager.hpp"
@@ -68,8 +70,8 @@ const char* pluginFormatText(PluginFormat format) {
             return "VST3";
         case PluginFormat::AU:
             return "AU";
-        case PluginFormat::VST:
-            return "VST";
+        case PluginFormat::LV2:
+            return "LV2";
         case PluginFormat::Internal:
             return "Internal";
     }
@@ -128,6 +130,21 @@ void updateDeviceCapabilityFlags(DeviceInfo& device, te::Plugin& plugin) {
     if (snapshot.hasMidiInput && !device.isInstrument)
         device.canReceiveMidi = true;
     device.producesMidi = snapshot.hasMidiOutput;
+}
+
+// Faust's processor owns a dynamic canSidechain flag, while the generic
+// capability updater only ever promotes flags to true. Keep the type guard so
+// a stale serialized flag on another plugin cannot erase valid routing.
+// Return the id instead of changing TrackManager inline: its notification path
+// must run after callers are finished with their borrowed DeviceInfo pointer.
+DeviceId clearStaleFaustAudioSidechain(const DeviceInfo& device, te::Plugin* plugin) {
+    auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin);
+    if (faust == nullptr || !faust->activeDspMatchesSource() || device.canSidechain ||
+        !device.sidechain.isActive() || device.sidechain.type != SidechainConfig::Type::Audio)
+        return INVALID_DEVICE_ID;
+
+    plugin->setSidechainSourceID({});
+    return device.id;
 }
 
 void removeSourceFromModifierParams(const std::map<ModId, te::Modifier::Ptr>& modifiers,
@@ -255,6 +272,13 @@ bool savedPluginStateMatchesRequestedType(const juce::ValueTree& savedState,
 // leaving just the baseline.
 void restoreDeviceStateWithChunkOverlay(DeviceProcessor& processor, const te::Plugin::Ptr& plugin,
                                         const DeviceInfo& device) {
+    // Internal devices: seat the v2 document's frozen parameter values first, so
+    // a device state that arrived without a matching DeviceInfo::parameters array
+    // (a preset, an imported chain) still restores. syncFromDeviceInfo then has
+    // the last word, keeping the model the authority for anything it does carry.
+    if (plugin != nullptr && device.format == PluginFormat::Internal)
+        daw::audio::tracktion_adapter::applyDeviceStateParameters(*plugin, device.pluginState);
+
     processor.syncFromDeviceInfo(device);
     // DAWproject-imported VST3s carry their state as a .vstpreset (vst3Preset)
     // rather than MAGDA's TE chunk; apply it as the authoritative overlay too.
@@ -620,11 +644,9 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                                 devInfo.pluginState =
                                     ext->state.getProperty(te::IDs::state).toString();
                             } else {
-                                innerPlugin->flushPluginStateToValueTree();
-                                auto stateCopy = innerPlugin->state.createCopy();
-                                stateCopy.removeProperty(te::IDs::id, nullptr);
-                                if (auto xml = stateCopy.createXml())
-                                    devInfo.pluginState = xml->toString();
+                                devInfo.pluginState =
+                                    daw::audio::tracktion_adapter::captureInternalDeviceState(
+                                        *innerPlugin, devInfo.pluginState);
                             }
 
                             instrumentRackManager_.unwrap(devId);
@@ -1156,7 +1178,7 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
             track->pluginList.insertPlugin(plugin, -1, nullptr);
     } else if (auto* spec = daw::audio::findInternalPluginSpecForLoadType(type)) {
         if (spec->canCreateOnTrack) {
-            plugin = daw::audio::createInternalPluginFromSpec(*spec, edit_);
+            plugin = daw::audio::tracktion_adapter::createInternalPlugin(*spec, edit_);
             if (plugin)
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
         }
@@ -1968,17 +1990,17 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
             plugin = createInternalPlugin(compiledSpec->pluginId, ps);
         } else if (auto* internalSpec = daw::audio::findInternalPluginSpec(device.pluginId)) {
             if (internalSpec->canCreateDetached)
-                plugin = daw::audio::createInternalPluginFromSpec(*internalSpec, edit_, ps);
+                plugin =
+                    daw::audio::tracktion_adapter::createInternalPlugin(*internalSpec, edit_, ps);
 
-            // DrumGrid stores its inner chain state in pluginState as XML;
-            // rehydrate it for detached/rack creation so pad assignments survive.
+            // DrumGrid stores its inner chain state in pluginState; rehydrate it
+            // for detached/rack creation so pad assignments survive.
             if (plugin && daw::audio::internalPluginHasTag(*internalSpec, "drum-grid") &&
                 device.pluginState.isNotEmpty()) {
-                if (auto xml = juce::XmlDocument::parse(device.pluginState)) {
-                    auto savedState = juce::ValueTree::fromXml(*xml);
-                    if (savedState.isValid())
-                        plugin->restorePluginStateFromValueTree(savedState);
-                }
+                auto savedState =
+                    daw::audio::tracktion_adapter::devicePluginTreeFromState(device.pluginState);
+                if (savedState.isValid())
+                    plugin->restorePluginStateFromValueTree(savedState);
             }
         }
     } else {
@@ -1997,8 +2019,8 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
                 case PluginFormat::AU:
                     desc.pluginFormatName = "AudioUnit";
                     break;
-                case PluginFormat::VST:
-                    desc.pluginFormatName = "VST";
+                case PluginFormat::LV2:
+                    desc.pluginFormatName = "LV2";
                     break;
                 default:
                     break;
@@ -2108,6 +2130,7 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
 
 void PluginManager::refreshDeviceParameters(const ChainNodePath& devicePath) {
     DeviceProcessor* processor = nullptr;
+    te::Plugin::Ptr plugin;
     {
         juce::ScopedLock lock(pluginLock_);
         auto it = findSyncedDevice(devicePath);
@@ -2118,11 +2141,17 @@ void PluginManager::refreshDeviceParameters(const ChainNodePath& devicePath) {
             return;
         }
         processor = it->second.processor.get();
+        plugin = it->second.plugin;
     }
 
+    DeviceId sidechainToClear = INVALID_DEVICE_ID;
     if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath)) {
         processor->populateParameters(*devInfo);
+        sidechainToClear = clearStaleFaustAudioSidechain(*devInfo, plugin.get());
     }
+    if (sidechainToClear != INVALID_DEVICE_ID)
+        TrackManager::getInstance().clearSidechain(sidechainToClear);
+
     AutoAliasGenerator::regenerateForDevice(devicePath);
 }
 
@@ -2147,8 +2176,8 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
                 track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
         } else if (auto* internalSpec = daw::audio::findInternalPluginSpec(device.pluginId)) {
             if (internalSpec->canCreateOnTrack) {
-                plugin = daw::audio::createInternalPluginFromSpec(*internalSpec, edit_,
-                                                                  device.pluginState);
+                plugin = daw::audio::tracktion_adapter::createInternalPlugin(*internalSpec, edit_,
+                                                                             device.pluginState);
                 if (plugin)
                     track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
             }
@@ -2179,8 +2208,8 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
                 case PluginFormat::AU:
                     desc.pluginFormatName = "AudioUnit";
                     break;
-                case PluginFormat::VST:
-                    desc.pluginFormatName = "VST";
+                case PluginFormat::LV2:
+                    desc.pluginFormatName = "LV2";
                     break;
                 default:
                     break;
@@ -2332,12 +2361,17 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
 
             // Populate processor-owned fields directly into the canonical
             // DeviceInfo (see comment in registerRackPluginProcessor).
+            DeviceId sidechainToClear = INVALID_DEVICE_ID;
             if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath)) {
                 processor->populateParameters(*devInfo);
+                sidechainToClear = clearStaleFaustAudioSidechain(*devInfo, plugin.get());
             }
-            AutoAliasGenerator::regenerateForDevice(devicePath);
 
             syncedDevices_[devicePath].processor = std::move(processor);
+            if (sidechainToClear != INVALID_DEVICE_ID)
+                TrackManager::getInstance().clearSidechain(sidechainToClear);
+
+            AutoAliasGenerator::regenerateForDevice(devicePath);
         }
 
         // Apply device state (device flag gated by the track chain power)
@@ -2466,26 +2500,14 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
 
                 // Deferred restore: restore DrumGrid chain state AFTER wrapping,
                 // so nested PLUGIN children don't confuse TE's rack graph builder.
-                if (device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName) &&
+                if ((device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName) ||
+                     device.pluginId.containsIgnoreCase(
+                         daw::audio::MagdaSamplerPlugin::xmlTypeName)) &&
                     device.pluginState.isNotEmpty()) {
-                    if (auto xml = juce::XmlDocument::parse(device.pluginState)) {
-                        auto savedState = juce::ValueTree::fromXml(*xml);
-                        if (savedState.isValid()) {
-                            plugin->restorePluginStateFromValueTree(savedState);
-                        }
-                    }
-                }
-
-                // Also restore standalone sampler state after wrapping
-                if (device.pluginId.containsIgnoreCase(
-                        daw::audio::MagdaSamplerPlugin::xmlTypeName) &&
-                    device.pluginState.isNotEmpty()) {
-                    if (auto xml = juce::XmlDocument::parse(device.pluginState)) {
-                        auto savedState = juce::ValueTree::fromXml(*xml);
-                        if (savedState.isValid()) {
-                            plugin->restorePluginStateFromValueTree(savedState);
-                        }
-                    }
+                    auto savedState = daw::audio::tracktion_adapter::devicePluginTreeFromState(
+                        device.pluginState);
+                    if (savedState.isValid())
+                        plugin->restorePluginStateFromValueTree(savedState);
                 }
 
                 // Create a TE FolderTrack (submix) for DrumGrid so the parent and
@@ -2519,22 +2541,17 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
 te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeName,
                                                     const juce::String& savedPluginState) {
     if (const auto* spec = daw::audio::findInternalPluginSpecForLoadType(xmlTypeName))
-        return daw::audio::createInternalPluginFromSpec(*spec, edit_, savedPluginState);
+        return daw::audio::tracktion_adapter::createInternalPlugin(*spec, edit_, savedPluginState);
 
     if (savedPluginState.isNotEmpty()) {
-        if (auto xml = juce::parseXML(savedPluginState)) {
-            auto savedState = juce::ValueTree::fromXml(*xml);
-            if (savedState.isValid()) {
-                const auto savedType = savedState.getProperty(te::IDs::type).toString();
-                if (savedPluginStateMatchesRequestedType(savedState, xmlTypeName)) {
-                    stripTracktionIdsRecursive(savedState);
-                    auto plugin = edit_.getPluginCache().createNewPlugin(savedState);
-                    if (plugin)
-                        return plugin;
-                } else {
-                }
+        auto savedState =
+            daw::audio::tracktion_adapter::devicePluginTreeFromState(savedPluginState);
+        if (savedState.isValid() && savedPluginStateMatchesRequestedType(savedState, xmlTypeName)) {
+            if (auto plugin = edit_.getPluginCache().createNewPlugin(savedState)) {
+                daw::audio::tracktion_adapter::applyDeviceStateParameters(*plugin,
+                                                                          savedPluginState);
+                return plugin;
             }
-        } else {
         }
     }
 

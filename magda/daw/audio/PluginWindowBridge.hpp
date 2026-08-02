@@ -30,7 +30,7 @@ class PluginWindowBridge {
 
     /**
      * @brief Set the plugin window manager (for delegation)
-     * @param manager Pointer to PluginWindowManager (owned by TracktionEngineWrapper)
+     * @param manager Pointer to PluginWindowManager (owned by the audio engine)
      */
     void setPluginWindowManager(PluginWindowManager* manager) {
         windowManager_ = manager;
@@ -72,7 +72,7 @@ class PluginWindowBridge {
     void closeWindowsForDevice(DeviceId deviceId);
 
   private:
-    // Plugin window manager (owned by TracktionEngineWrapper, destroyed before us)
+    // Plugin window manager (owned by the audio engine, destroyed before us)
     PluginWindowManager* windowManager_ = nullptr;
 };
 

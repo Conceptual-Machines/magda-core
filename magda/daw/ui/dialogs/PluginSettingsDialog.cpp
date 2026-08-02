@@ -7,8 +7,8 @@
 #include "../themes/FontManager.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
+#include "engine/AudioEngine.hpp"
 #include "engine/PluginScanCoordinator.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda {
 
@@ -70,10 +70,7 @@ void PluginSettingsDialog::ExcludedTableModel::paintCell(juce::Graphics& g, int 
     juce::String text;
     switch (columnId) {
         case 1: {
-            juce::File f(entry.path);
-            text = f.getFileName();
-            if (text.isEmpty())
-                text = entry.path;
+            text = pluginDisplayName(entry.path);
             break;
         }
         case 2:
@@ -96,37 +93,19 @@ juce::Component* PluginSettingsDialog::ExcludedTableModel::refreshComponentForCe
 // PluginSettingsDialog
 // =============================================================================
 
-PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
+PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
     : scanProgressBar_(scanProgress_), engine_(engine) {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
     // Load current data
     customPaths_ = Config::getInstance().getCustomPluginPaths();
 
     if (engine_) {
-        auto* coordinator = engine_->getPluginScanCoordinator();
-        if (coordinator)
-            excludedPlugins_ = coordinator->getExcludedPlugins();
+        excludedPlugins_ = engine_->getExcludedPlugins();
     }
 
     // Populate system plugin directories from format manager
-    if (engine_ && engine_->getEngine()) {
-        auto& formatManager = engine_->getEngine()->getPluginManager().pluginFormatManager;
-        for (int i = 0; i < formatManager.getNumFormats(); ++i) {
-            auto* format = formatManager.getFormat(i);
-            if (!format)
-                continue;
-            juce::String formatName = format->getName();
-            if (!formatName.containsIgnoreCase("VST3") &&
-                !formatName.containsIgnoreCase("AudioUnit"))
-                continue;
-            auto searchPaths = format->getDefaultLocationsToSearch();
-            for (int j = 0; j < searchPaths.getNumPaths(); ++j) {
-                auto path = searchPaths[j].getFullPathName().toStdString();
-                if (std::find(systemPaths_.begin(), systemPaths_.end(), path) == systemPaths_.end())
-                    systemPaths_.push_back(path);
-            }
-        }
-    }
+    if (engine_)
+        systemPaths_ = engine_->getSystemPluginSearchPaths();
 
     // Wire up models
     systemDirListModel_.paths = &systemPaths_;
@@ -205,53 +184,50 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
                 if (safeThis == nullptr)
                     return;
                 safeThis->scanProgress_ = static_cast<double>(progress);
-                juce::File f(pluginName);
                 safeThis->scanStatusLabel_.setText(tr("plugin_settings.status.scanning") + " " +
-                                                       f.getFileName(),
+                                                       pluginDisplayName(pluginName),
                                                    juce::dontSendNotification);
             });
         });
 
-        engine_->onPluginScanComplete = [safeThis](bool success, int numPlugins,
-                                                   const juce::StringArray& failedPlugins) {
-            juce::MessageManager::callAsync([safeThis, success, numPlugins, failedPlugins]() {
-                if (safeThis == nullptr)
-                    return;
-                safeThis->setScanningUIEnabled(true);
-                safeThis->scanProgress_ = -1.0;
-                safeThis->scanProgressBar_.setVisible(false);
-                if (!success) {
-                    juce::String message = tr("plugin_settings.status.failed");
-                    if (numPlugins > 0)
-                        message += " (" + juce::String(numPlugins) + " " +
-                                   tr("plugin_settings.status.found_before_error") + ")";
-                    if (failedPlugins.size() > 0)
-                        message += ", " + juce::String(failedPlugins.size()) + " " +
-                                   tr("plugin_settings.status.plugins_failed");
-                    safeThis->scanStatusLabel_.setText(message, juce::dontSendNotification);
-                } else {
-                    safeThis->scanStatusLabel_.setText(
-                        tr("plugin_settings.status.found") + " " + juce::String(numPlugins) + " " +
-                            tr("plugin_settings.status.plugins") +
-                            (failedPlugins.size() > 0
-                                 ? ", " + juce::String(failedPlugins.size()) + " " +
-                                       tr("plugin_settings.status.failed_short")
-                                 : ""),
-                        juce::dontSendNotification);
-                }
+        engine_->setPluginScanCompletionCallback(
+            [safeThis](bool success, int numPlugins, const juce::StringArray& failedPlugins) {
+                juce::MessageManager::callAsync([safeThis, success, numPlugins, failedPlugins]() {
+                    if (safeThis == nullptr)
+                        return;
+                    safeThis->setScanningUIEnabled(true);
+                    safeThis->scanProgress_ = -1.0;
+                    safeThis->scanProgressBar_.setVisible(false);
+                    if (!success) {
+                        juce::String message = tr("plugin_settings.status.failed");
+                        if (numPlugins > 0)
+                            message += " (" + juce::String(numPlugins) + " " +
+                                       tr("plugin_settings.status.found_before_error") + ")";
+                        if (failedPlugins.size() > 0)
+                            message += ", " + juce::String(failedPlugins.size()) + " " +
+                                       tr("plugin_settings.status.plugins_failed");
+                        safeThis->scanStatusLabel_.setText(message, juce::dontSendNotification);
+                    } else {
+                        safeThis->scanStatusLabel_.setText(
+                            tr("plugin_settings.status.found") + " " + juce::String(numPlugins) +
+                                " " + tr("plugin_settings.status.plugins") +
+                                (failedPlugins.size() > 0
+                                     ? ", " + juce::String(failedPlugins.size()) + " " +
+                                           tr("plugin_settings.status.failed_short")
+                                     : ""),
+                            juce::dontSendNotification);
+                    }
 
-                safeThis->updatePluginCountLabel();
+                    safeThis->updatePluginCountLabel();
 
-                // Refresh excluded plugins list
-                if (safeThis->engine_) {
-                    auto* coordinator = safeThis->engine_->getPluginScanCoordinator();
-                    if (coordinator)
-                        safeThis->excludedPlugins_ = coordinator->getExcludedPlugins();
-                    safeThis->excludedTable_.updateContent();
-                    safeThis->excludedTable_.repaint();
-                }
+                    // Refresh excluded plugins list
+                    if (safeThis->engine_) {
+                        safeThis->excludedPlugins_ = safeThis->engine_->getExcludedPlugins();
+                        safeThis->excludedTable_.updateContent();
+                        safeThis->excludedTable_.repaint();
+                    }
+                });
             });
-        };
     };
     addAndMakeVisible(scanButton_);
 
@@ -271,12 +247,11 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
         auto safeThis = juce::Component::SafePointer<PluginSettingsDialog>(this);
 
         engine_->detectNewPlugins(
-            [safeThis](TracktionEngineWrapper::IncrementalScanPhase phase,
-                       const juce::String& currentPlugin) {
+            [safeThis](PluginScanPhase phase, const juce::String& currentPlugin) {
                 juce::MessageManager::callAsync([safeThis, phase, currentPlugin]() {
                     if (safeThis == nullptr)
                         return;
-                    using Phase = TracktionEngineWrapper::IncrementalScanPhase;
+                    using Phase = PluginScanPhase;
                     switch (phase) {
                         case Phase::Discovering:
                             safeThis->scanStatusLabel_.setText(
@@ -294,7 +269,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
                         case Phase::Scanning:
                             safeThis->scanStatusLabel_.setText(
                                 tr("plugin_settings.status.scanning") + " " +
-                                    juce::File(currentPlugin).getFileName(),
+                                    pluginDisplayName(currentPlugin),
                                 juce::dontSendNotification);
                             break;
                     }
@@ -333,9 +308,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
                     safeThis->updatePluginCountLabel();
 
                     if (safeThis->engine_) {
-                        auto* coordinator = safeThis->engine_->getPluginScanCoordinator();
-                        if (coordinator)
-                            safeThis->excludedPlugins_ = coordinator->getExcludedPlugins();
+                        safeThis->excludedPlugins_ = safeThis->engine_->getExcludedPlugins();
                         safeThis->excludedTable_.updateContent();
                         safeThis->excludedTable_.repaint();
                     }
@@ -347,12 +320,9 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     viewReportButton_.setButtonText(tr("plugin_settings.button.view_report"));
     viewReportButton_.onClick = [this]() {
         if (engine_) {
-            auto* coordinator = engine_->getPluginScanCoordinator();
-            if (coordinator) {
-                auto reportFile = coordinator->getScanReportFile();
-                if (reportFile.existsAsFile())
-                    reportFile.startAsProcess();
-            }
+            auto reportFile = engine_->getPluginScanReportFile();
+            if (reportFile.existsAsFile())
+                reportFile.startAsProcess();
         }
     };
     addAndMakeVisible(viewReportButton_);
@@ -364,7 +334,6 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
                                    DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     addAndMakeVisible(scanOnStartupToggle_);
 
-#if JUCE_MAC
     formatPreferenceLabel_.setText(tr("plugin_settings.label.external_format_preference"),
                                    juce::dontSendNotification);
     formatPreferenceLabel_.setColour(juce::Label::textColourId,
@@ -372,19 +341,32 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     formatPreferenceLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
     addAndMakeVisible(formatPreferenceLabel_);
 
-    formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_vst3"), 1);
-    formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_au"), 2);
+    // Ids are PluginFormat values so the mapping needs no lookup table. AU is
+    // macOS-only; VST3 and LV2 exist everywhere MAGDA runs.
+    formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_vst3"),
+                                      static_cast<int>(PluginFormat::VST3) + 1);
+#if JUCE_MAC
+    formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_au"),
+                                      static_cast<int>(PluginFormat::AU) + 1);
+#endif
+    formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_lv2"),
+                                      static_cast<int>(PluginFormat::LV2) + 1);
     formatPreferenceSelector_.setColour(juce::ComboBox::backgroundColourId,
                                         DarkTheme::getColour(DarkTheme::SURFACE));
     formatPreferenceSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
     formatPreferenceSelector_.setColour(juce::ComboBox::outlineColourId,
                                         DarkTheme::getBorderColour());
-    const auto currentFormatPreference =
+    auto currentFormatPreference =
         PluginPreferences::getInstance().externalPluginFormatPreference();
-    formatPreferenceSelector_.setSelectedId(currentFormatPreference == PluginFormat::AU ? 2 : 1,
+#if !JUCE_MAC
+    // A config carried over from macOS can name AU, which has no item here.
+    // Show VST3 rather than leaving the box blank.
+    if (currentFormatPreference == PluginFormat::AU)
+        currentFormatPreference = PluginFormat::VST3;
+#endif
+    formatPreferenceSelector_.setSelectedId(static_cast<int>(currentFormatPreference) + 1,
                                             juce::dontSendNotification);
     addAndMakeVisible(formatPreferenceSelector_);
-#endif
 
     scanProgressBar_.setPercentageDisplay(true);
     scanProgressBar_.setVisible(false);
@@ -524,12 +506,10 @@ void PluginSettingsDialog::resized() {
     pluginCountLabel_.setBounds(bounds.removeFromTop(18));
     bounds.removeFromTop(2);
     scanOnStartupToggle_.setBounds(bounds.removeFromTop(22));
-#if JUCE_MAC
     bounds.removeFromTop(4);
     auto formatPreferenceRow = bounds.removeFromTop(buttonHeight);
     formatPreferenceLabel_.setBounds(formatPreferenceRow.removeFromLeft(210));
     formatPreferenceSelector_.setBounds(formatPreferenceRow.removeFromLeft(160));
-#endif
 
     bounds.removeFromTop(spacing);
 
@@ -574,9 +554,7 @@ void PluginSettingsDialog::setScanningUIEnabled(bool enabled) {
     removeSelectedButton_.setEnabled(enabled);
     resetAllButton_.setEnabled(enabled);
     scanOnStartupToggle_.setEnabled(enabled);
-#if JUCE_MAC
     formatPreferenceSelector_.setEnabled(enabled);
-#endif
     okButton_.setEnabled(enabled);
     cancelButton_.setEnabled(enabled);
 }
@@ -585,26 +563,17 @@ void PluginSettingsDialog::applySettings() {
     Config::getInstance().setCustomPluginPaths(customPaths_);
     Config::getInstance().setScanPluginsOnStartup(scanOnStartupToggle_.getToggleState());
     Config::getInstance().save();
-#if JUCE_MAC
-    PluginPreferences::getInstance().setExternalPluginFormatPreference(
-        formatPreferenceSelector_.getSelectedId() == 2 ? PluginFormat::AU : PluginFormat::VST3);
-#endif
+    if (const int selected = formatPreferenceSelector_.getSelectedId(); selected > 0)
+        PluginPreferences::getInstance().setExternalPluginFormatPreference(
+            static_cast<PluginFormat>(selected - 1));
 
     if (engine_) {
-        auto* coordinator = engine_->getPluginScanCoordinator();
-        if (coordinator) {
-            coordinator->clearExclusions();
-            for (const auto& entry : excludedPlugins_)
-                coordinator->excludePlugin(entry.path, entry.reason);
-        }
+        engine_->setExcludedPlugins(excludedPlugins_);
     }
 }
 
 bool PluginSettingsDialog::isScanRunning() const {
-    if (!engine_)
-        return false;
-    auto* coordinator = engine_->getPluginScanCoordinator();
-    return coordinator && coordinator->isScanning();
+    return engine_ && engine_->isPluginScanRunning();
 }
 
 // DialogWindow subclass that prevents closing while a scan is in progress
@@ -624,7 +593,7 @@ class PluginSettingsDialogWindow : public juce::DialogWindow {
     PluginSettingsDialog* content_;
 };
 
-void PluginSettingsDialog::showDialog(TracktionEngineWrapper* engine, juce::Component* /*parent*/) {
+void PluginSettingsDialog::showDialog(AudioEngine* engine, juce::Component* /*parent*/) {
     auto* dialog = new PluginSettingsDialog(engine);
     auto bg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
 

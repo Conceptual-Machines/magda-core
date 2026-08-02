@@ -10,19 +10,8 @@ namespace magda::media {
 
 namespace {
 
-[[nodiscard]] std::string lastError(sqlite3* db) {
-    const char* msg = db ? sqlite3_errmsg(db) : "(no connection)";
-    return msg ? msg : "(unknown error)";
-}
-
 void execOrThrow(sqlite3* db, const char* sql, const char* context) {
-    char* errMsg = nullptr;
-    int rc = sqlite3_exec(db, sql, nullptr, nullptr, &errMsg);
-    if (rc != SQLITE_OK) {
-        std::string err = errMsg ? errMsg : lastError(db);
-        sqlite3_free(errMsg);
-        throw MediaDatabaseError(std::string(context) + ": " + err);
-    }
+    sqlite::exec(db, sql, context);
 }
 
 // True if `table` has a column named `column`. Used by the migration step
@@ -83,7 +72,7 @@ bool tableExists(sqlite3* db, const char* table) {
 void foreignKeyCheckOrThrow(sqlite3* db) {
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, "PRAGMA foreign_key_check", -1, &stmt, nullptr) != SQLITE_OK) {
-        throw MediaDatabaseError(std::string("foreign_key_check: ") + lastError(db));
+        throw MediaDatabaseError(std::string("foreign_key_check: ") + sqlite::lastError(db));
     }
     const bool violation = sqlite3_step(stmt) == SQLITE_ROW;
     sqlite3_finalize(stmt);
@@ -240,15 +229,9 @@ void migrateMediaDatabase(sqlite3* db, int fromVersion) {
     setUserVersion(db, kSchemaVersion);
 }
 
-MediaDatabase::MediaDatabase(const std::filesystem::path& dbPath) : path_(dbPath) {
-    int rc = sqlite3_open(dbPath.string().c_str(), &db_);
-    if (rc != SQLITE_OK) {
-        std::string err = lastError(db_);
-        sqlite3_close(db_);
-        db_ = nullptr;
-        throw MediaDatabaseError("sqlite3_open(" + dbPath.string() + "): " + err);
-    }
-    sqlite3_busy_timeout(db_, 60000);
+MediaDatabase::MediaDatabase(const std::filesystem::path& dbPath)
+    : db_(dbPath.string(), "sqlite3_open(" + dbPath.string() + ")"), path_(dbPath) {
+    sqlite3_busy_timeout(db_.get(), 60000);
 
     // Apply the schema, then bring the file up to the current version. The
     // version read and the fresh-DB probe happen before kSchemaSql so the
@@ -258,51 +241,33 @@ MediaDatabase::MediaDatabase(const std::filesystem::path& dbPath) : path_(dbPath
     // migration ladder (a DB predating version tracking reads as 0 and runs
     // every step, each of which is idempotent or a no-op when not needed).
     try {
-        const int existingVersion = readUserVersion(db_);
-        const bool freshDb = !tableExists(db_, "media_file");
-        execOrThrow(db_, kSchemaSql, "schema init");
+        const int existingVersion = readUserVersion(db_.get());
+        const bool freshDb = !tableExists(db_.get(), "media_file");
+        execOrThrow(db_.get(), kSchemaSql, "schema init");
         if (freshDb) {
-            setUserVersion(db_, kSchemaVersion);
+            setUserVersion(db_.get(), kSchemaVersion);
         } else {
-            migrateMediaDatabase(db_, existingVersion);
+            migrateMediaDatabase(db_.get(), existingVersion);
         }
     } catch (...) {
-        sqlite3_close(db_);
-        db_ = nullptr;
+        db_.close();
         throw;
     }
 }
 
-MediaDatabase::~MediaDatabase() {
-    if (db_) {
-        sqlite3_close(db_);
-    }
-}
+MediaDatabase::~MediaDatabase() = default;
 
-MediaDatabase::MediaDatabase(MediaDatabase&& other) noexcept
-    : db_(other.db_), path_(std::move(other.path_)) {
-    other.db_ = nullptr;
-}
+MediaDatabase::MediaDatabase(MediaDatabase&& other) noexcept = default;
 
-MediaDatabase& MediaDatabase::operator=(MediaDatabase&& other) noexcept {
-    if (this != &other) {
-        if (db_) {
-            sqlite3_close(db_);
-        }
-        db_ = other.db_;
-        path_ = std::move(other.path_);
-        other.db_ = nullptr;
-    }
-    return *this;
-}
+MediaDatabase& MediaDatabase::operator=(MediaDatabase&& other) noexcept = default;
 
 void MediaDatabase::execute(const std::string& sql) {
-    execOrThrow(db_, sql.c_str(), "execute");
+    execOrThrow(db_.get(), sql.c_str(), "execute");
 }
 
 int MediaDatabase::schemaVersion() const {
     sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, "PRAGMA user_version", -1, &stmt, nullptr) != SQLITE_OK) {
+    if (sqlite3_prepare_v2(db_.get(), "PRAGMA user_version", -1, &stmt, nullptr) != SQLITE_OK) {
         return -1;
     }
     int version = -1;
@@ -313,25 +278,12 @@ int MediaDatabase::schemaVersion() const {
     return version;
 }
 
-MediaDatabase::Transaction::Transaction(MediaDatabase& db) : db_(&db) {
-    execOrThrow(db_->db_, "BEGIN", "BEGIN");
-}
+MediaDatabase::Transaction::Transaction(MediaDatabase& db) : transaction_(db.handle()) {}
 
-MediaDatabase::Transaction::~Transaction() {
-    if (!finished_ && db_) {
-        // Best-effort rollback on scope exit when commit() wasn't called
-        // (typically because an exception is unwinding). Swallow errors —
-        // throwing from a destructor is worse than the rollback failing.
-        sqlite3_exec(db_->db_, "ROLLBACK", nullptr, nullptr, nullptr);
-    }
-}
+MediaDatabase::Transaction::~Transaction() = default;
 
 void MediaDatabase::Transaction::commit() {
-    if (finished_) {
-        return;
-    }
-    execOrThrow(db_->db_, "COMMIT", "COMMIT");
-    finished_ = true;
+    transaction_.commit();
 }
 
 }  // namespace magda::media

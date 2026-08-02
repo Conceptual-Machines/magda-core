@@ -20,6 +20,14 @@ struct DeviceSlotContentFrameControls {
     juce::Component* magdaPresetButton = nullptr;
     juce::Component* activeCustomUI = nullptr;
     juce::Component* compiledPanel = nullptr;
+    // Runtime-Faust body components. They live in DeviceSlotContentBodyControls
+    // for layout, but the frame pass needs them here so it can hide them when
+    // the slot collapses or the plugin has not finished loading — otherwise the
+    // FAUST header keeps painting at its last expanded bounds, clipped into the
+    // 40px collapsed strip (issue: Faust device shows a sliver of its UI).
+    juce::Component* faustHeader = nullptr;
+    juce::Component* faustCustomView = nullptr;
+    juce::Component* faustMeterPanel = nullptr;
     juce::Component* modButton = nullptr;
     juce::Component* macroButton = nullptr;
     juce::Component* uiButton = nullptr;
@@ -33,6 +41,11 @@ struct DeviceSlotContentBodyControls {
     juce::Component* faustHeader = nullptr;
     juce::Component* faustCustomView = nullptr;
     int faustCustomViewPreferredHeight = 0;
+    // Strip of read-only readouts a runtime Faust patch declares via
+    // bargraphs. Null (or zero height) when the patch declares none, in which
+    // case the parameter grid keeps the whole body.
+    juce::Component* faustMeterPanel = nullptr;
+    int faustMeterPanelPreferredHeight = 0;
     juce::Component* compiledPanel = nullptr;
     int compiledPanelPreferredHeight = 0;
     // Minimum fraction of the slot body the curve panel must occupy.

@@ -43,9 +43,8 @@ struct FaustParamSlot {
     bool active = false;  // false slots are reserved but unmapped
     juce::String label;   // cleaned label (no `[…]` annotations)
     juce::String unit;    // from `[unit:Hz]` / `[unit:dB]` / …
-    // Top-level Faust group label (vgroup/hgroup/tgroup) the control sits in.
-    // UI-only: the Faust instrument's tabbed UI uses it as the tab name. Empty
-    // = ungrouped (single "Params" tab). Unused by the Faust effect.
+    // Top-level author group label (vgroup/hgroup/tgroup) the control sits in.
+    // Empty means ungrouped. Shared by effect and instrument layout code.
     juce::String group;
     Kind kind = Kind::Continuous;
 
@@ -63,6 +62,17 @@ struct FaustParamSlot {
     // `[style:menu{'Off':0;'Low':1;'High':2}]` or the equivalent
     // `[style:radio{…}]`. Empty for non-discrete slots.
     std::vector<std::pair<float, juce::String>> choices;
+
+    // Which presentation the author asked for. Menu and Radio are the same
+    // parameter either way; only the widget differs. None for non-discrete
+    // slots. UI-only: the audio path never reads it.
+    FaustChoiceStyle choiceStyle = FaustChoiceStyle::None;
+
+    // Free text from `[tooltip:…]`, shown on hover. UI-only.
+    juce::String tooltip;
+
+    // Cells this control spans in the param grid, from `[width:N]`. UI-only.
+    int widthCells = 1;
 
     // Pointer into the live DSP's zone. Only valid while the matching
     // FaustState is alive. The audio thread must NOT read this directly
@@ -94,6 +104,49 @@ struct FaustParamSlot {
     // slider's drag math gets a useful skew (without it, even
     // `[scale:log]` controls drag linearly across their real range).
     float scaleAnchor = std::numeric_limits<float>::quiet_NaN();
+};
+
+/**
+ * @brief One slot in the FaustPlugin's output pool: a harvested bargraph.
+ *
+ * Bargraphs run the opposite way to every other Faust widget: the DSP writes
+ * the zone and the host reads it. They therefore live in their own pool
+ * rather than alongside FaustParamSlot, so a meter can never appear as a
+ * modulation / macro / automation / MIDI Learn target. Nothing binds to an
+ * output, so unlike a param slot its identity is its declaration order and
+ * `[idx:N]` is not consulted.
+ *
+ * `zones` holds one pointer per DSP instance backing the control: exactly one
+ * for an effect, one per voice for a polyphonic instrument. Like
+ * FaustParamSlot::zone they are owned by the live DSP and are only valid
+ * while the matching FaustState is alive. Reads happen on the message thread
+ * (the UI poll) and rebinds happen on the message thread too, so a pointer
+ * here can go stale but never dangle mid-read.
+ */
+struct FaustOutputSlot {
+    int index = -1;
+    bool active = false;
+    juce::String label;
+    juce::String unit;   // from `[unit:dB]` / …
+    juce::String group;  // top-level author group, same rule as params
+
+    // Range the bargraph declared. The UI maps a reading onto this span.
+    float minValue = 0.0f;
+    float maxValue = 1.0f;
+
+    // Presentation the author asked for via `[style:led|numerical]`.
+    FaustOutputStyle style = FaustOutputStyle::Bar;
+
+    // True for a vbargraph. UI-only: a lone vertical bar renders like a
+    // horizontal one, but a run of adjacent vertical outputs in the same
+    // group can be banked side by side.
+    bool vertical = false;
+
+    juce::String tooltip;  // from `[tooltip:…]`, shown on hover
+    int widthCells = 1;    // from `[width:N]`
+    bool hidden = false;   // `[hidden:1]`: harvested but given no cell
+
+    std::vector<FAUSTFLOAT*> zones;
 };
 
 }  // namespace magda::daw::audio

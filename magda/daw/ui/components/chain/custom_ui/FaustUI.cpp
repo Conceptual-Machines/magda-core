@@ -42,9 +42,9 @@ FaustUI::FaustUI() {
     if (logo_)
         DarkTheme::applyToSvgIcon(*logo_);
 
-    nameLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    nameLabel_.setJustificationType(juce::Justification::centred);
+    nameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(nameLabel_);
 
     errorLabel_.setFont(FontManager::getInstance().getMonoFont(9.0f));
@@ -55,21 +55,21 @@ FaustUI::FaustUI() {
     loadButton_ = std::make_unique<magda::SvgButton>("Load DSP", BinaryData::folderopen_svg,
                                                      BinaryData::folderopen_svgSize);
     loadButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    loadButton_->setIconPadding(2.0f);
+    loadButton_->setIconPadding(1.5f);
     loadButton_->onClick = [this] { showLoadMenu(); };
     addAndMakeVisible(*loadButton_);
 
     saveButton_ = std::make_unique<magda::SvgButton>("Save DSP", BinaryData::save_svg,
                                                      BinaryData::save_svgSize);
     saveButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    saveButton_->setIconPadding(4.0f);  // floppy glyph is denser; pad more to match Load/Edit
+    saveButton_->setIconPadding(3.0f);  // floppy glyph is denser; pad more to match Load/Edit
     saveButton_->onClick = [this] { saveDspToFile(); };
     addAndMakeVisible(*saveButton_);
 
-    editButton_ = std::make_unique<magda::SvgButton>("Edit DSP", BinaryData::script_svg,
-                                                     BinaryData::script_svgSize);
-    editButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    editButton_->setIconPadding(2.0f);
+    editButton_ = std::make_unique<magda::SvgButton>("Edit DSP", BinaryData::code_blocks_svg,
+                                                     BinaryData::code_blocks_svgSize);
+    editButton_->setOriginalColor(juce::Colour(0xFFE3E3E3));
+    editButton_->setIconPadding(1.5f);
     editButton_->onClick = [this] { showCodeEditor(); };
     addAndMakeVisible(*editButton_);
 }
@@ -89,24 +89,83 @@ void FaustUI::setPlugin(magda::daw::audio::IFaustEditorModel* plugin) {
     refreshNameLabel();
 }
 
-void FaustUI::refreshNameLabel() {
-    if (plugin_ == nullptr) {
-        nameLabel_.setText({}, juce::dontSendNotification);
-        return;
+namespace {
+
+// Compose the patch's declared metadata into the name box's tooltip.
+// Returns the bare name when the patch declares none of it, so a patch
+// without metadata reads exactly as it did before.
+juce::String describePatch(const juce::String& name,
+                           const magda::daw::audio::FaustPatchInfo& info) {
+    juce::String title = name;
+    if (info.version.isNotEmpty())
+        title << " " << info.version;
+    if (info.isEmpty())
+        return title;
+
+    juce::StringArray lines;
+    lines.add(title);
+    if (info.author.isNotEmpty())
+        lines.add("by " + info.author);
+    if (info.license.isNotEmpty())
+        lines.add(info.license);
+    if (info.description.isNotEmpty()) {
+        lines.add({});
+        lines.add(info.description);
     }
-    nameLabel_.setText(plugin_->getDspName(), juce::dontSendNotification);
+    return lines.joinIntoString("\n");
 }
 
-bool FaustUI::tryLoad(const juce::String& name, const juce::String& source,
-                      magda::daw::audio::FaustCustomViewKind viewKind) {
-    DBG("[FaustUI] tryLoad name='" << name << "' src.len=" << source.length()
-                                   << " viewKind=" << static_cast<int>(viewKind));
+// One-line credit for the meta row. Description is deliberately left out
+// It is prose and belongs in the tooltip, not a 12px row.
+juce::String creditLine(const magda::daw::audio::FaustPatchInfo& info) {
+    juce::StringArray parts;
+    if (info.author.isNotEmpty())
+        parts.add(info.author);
+    if (info.version.isNotEmpty())
+        parts.add("v" + info.version);
+    if (info.license.isNotEmpty())
+        parts.add(info.license);
+    return parts.joinIntoString("  |  ");
+}
+
+}  // namespace
+
+void FaustUI::refreshNameLabel() {
+    const bool wasShowingMetaRow = showMetaRow_;
+
+    if (plugin_ == nullptr) {
+        nameLabel_.setText({}, juce::dontSendNotification);
+        nameLabel_.setTooltip({});
+        showMetaRow_ = false;
+        metaText_ = {};
+    } else {
+        const auto name = plugin_->getDspName();
+        const auto info = plugin_->getPatchInfo();
+        nameLabel_.setText(name, juce::dontSendNotification);
+        nameLabel_.setTooltip(describePatch(name, info));
+        metaText_ = creditLine(info);
+        showMetaRow_ = !info.isEmpty();
+    }
+
+    // The meta row changes this component's desired height, so the parent has
+    // to re-carve. Without this the row would only appear after some
+    // unrelated resize.
+    if (showMetaRow_ != wasShowingMetaRow) {
+        if (auto* parent = getParentComponent())
+            parent->resized();
+    }
+    resized();
+    repaint();
+}
+
+bool FaustUI::tryLoad(const juce::String& name, const juce::String& source) {
+    DBG("[FaustUI] tryLoad name='" << name << "' src.len=" << source.length());
     if (plugin_ == nullptr) {
         DBG("[FaustUI] tryLoad: plugin_ is NULL — bailing");
         return false;
     }
     juce::String err;
-    if (!plugin_->loadDspSource(name, source, err, viewKind)) {
+    if (!plugin_->loadDspSource(name, source, err)) {
         DBG("[FaustUI] tryLoad: loadDspSource FAILED: " << err);
         errorLabel_.setText(err, juce::dontSendNotification);
         return false;
@@ -165,14 +224,42 @@ void FaustUI::showLoadMenu() {
         return;
 
     juce::PopupMenu menu;
-    auto starters = magda::daw::audio::getBundledStarterDsps();
+    // Only this device kind's patches: an instrument cannot host an FX patch,
+    // and vice versa. Grouped by the folder each .dsp was discovered in.
+    // getBundledStarterDsps sorts by category, so each run of equal categories
+    // is one submenu, and the ids stay in step with the vector index the
+    // callback resolves.
+    const auto kind = patchKind();
+    auto starters = magda::daw::audio::getBundledStarterDsps(kind);
     int id = 1;
-    for (const auto& s : starters)
-        menu.addItem(id++, s.name);
+    juce::String currentCategory;
+    juce::PopupMenu categoryMenu;
+    auto flushCategory = [&menu, &categoryMenu, &currentCategory] {
+        if (currentCategory.isNotEmpty()) {
+            menu.addSubMenu(currentCategory.substring(0, 1).toUpperCase() +
+                                currentCategory.substring(1),
+                            categoryMenu);
+            categoryMenu = juce::PopupMenu();
+        }
+    };
+    for (const auto& s : starters) {
+        // A .dsp sitting at the root of the staged folder has no category and
+        // is listed at the top level rather than under a submenu.
+        const auto& category = s.category;
+        if (category != currentCategory) {
+            flushCategory();
+            currentCategory = category;
+        }
+        if (category.isEmpty())
+            menu.addItem(id++, s.name);
+        else
+            categoryMenu.addItem(id++, s.name);
+    }
+    flushCategory();
 
-    // User-saved effects from the FaustEffects library (written by the save
+    // User-saved patches from this kind's library (written by the save
     // button). Grouped in a submenu so the bundled starters stay tidy.
-    auto savedFiles = userEffectsDir().findChildFiles(juce::File::findFiles, false, "*.dsp");
+    auto savedFiles = userPatchDir(kind).findChildFiles(juce::File::findFiles, false, "*.dsp");
     savedFiles.sort();
     const int savedBaseId = id;
     if (!savedFiles.isEmpty()) {
@@ -180,7 +267,9 @@ void FaustUI::showLoadMenu() {
         for (const auto& f : savedFiles)
             savedMenu.addItem(id++, f.getFileNameWithoutExtension());
         menu.addSeparator();
-        menu.addSubMenu("My Effects", savedMenu);
+        menu.addSubMenu(kind == magda::daw::audio::FaustPatchKind::Instrument ? "My Instruments"
+                                                                              : "My Effects",
+                        savedMenu);
     }
 
     menu.addSeparator();
@@ -199,7 +288,7 @@ void FaustUI::showLoadMenu() {
                                const int idx = result - 1;
                                if (idx >= 0 && idx < static_cast<int>(starters.size())) {
                                    const auto& s = starters[static_cast<size_t>(idx)];
-                                   tryLoad(s.name, s.source, s.viewKind);
+                                   tryLoad(s.name, s.source);
                                }
                                return;
                            }
@@ -208,28 +297,35 @@ void FaustUI::showLoadMenu() {
                                const auto file = savedFiles[idx];
                                if (file.existsAsFile())
                                    tryLoad(file.getFileNameWithoutExtension(),
-                                           file.loadFileAsString(),
-                                           magda::daw::audio::FaustCustomViewKind::None);
+                                           file.loadFileAsString());
                            }
                        });
 }
 
 void FaustUI::loadFromFile() {
     fileChooser_ = std::make_unique<juce::FileChooser>("Choose a .dsp file",
-                                                       FaustUI::userEffectsDir(), "*.dsp");
+                                                       userPatchDir(patchKind()), "*.dsp");
     fileChooser_->launchAsync(
         juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [this](const juce::FileChooser& fc) {
             auto file = fc.getResult();
             if (!file.existsAsFile() || plugin_ == nullptr)
                 return;
-            tryLoad(file.getFileNameWithoutExtension(), file.loadFileAsString(),
-                    magda::daw::audio::FaustCustomViewKind::None);
+            tryLoad(file.getFileNameWithoutExtension(), file.loadFileAsString());
         });
 }
 
-juce::File FaustUI::userEffectsDir() {
-    auto dir = magda::paths::dataDir().getChildFile("FaustEffects");
+magda::daw::audio::FaustPatchKind FaustUI::patchKind() const {
+    return plugin_ != nullptr ? plugin_->getPatchKind() : magda::daw::audio::FaustPatchKind::Effect;
+}
+
+juce::File FaustUI::userPatchDir(magda::daw::audio::FaustPatchKind kind) {
+    // Patches saved before the split all live in FaustEffects, instruments
+    // included. They stay listed under FX rather than being moved: the folder
+    // is the user's, and nothing about an unmoved file breaks.
+    auto dir = magda::paths::dataDir().getChildFile(
+        kind == magda::daw::audio::FaustPatchKind::Instrument ? "FaustInstruments"
+                                                              : "FaustEffects");
     dir.createDirectory();
     return dir;
 }
@@ -240,12 +336,13 @@ void FaustUI::saveDspToFile() {
     const auto source = plugin_->getDspSource();
     if (source.isEmpty())
         return;
+    const auto kind = patchKind();
     auto name = plugin_->getDspName();
     if (name.isEmpty())
-        name = "effect";
+        name = kind == magda::daw::audio::FaustPatchKind::Instrument ? "instrument" : "effect";
 
     fileChooser_ = std::make_unique<juce::FileChooser>(
-        "Save Faust DSP", userEffectsDir().getChildFile(name + ".dsp"), "*.dsp");
+        "Save Faust DSP", userPatchDir(kind).getChildFile(name + ".dsp"), "*.dsp");
     fileChooser_->launchAsync(juce::FileBrowserComponent::saveMode |
                                   juce::FileBrowserComponent::canSelectFiles |
                                   juce::FileBrowserComponent::warnAboutOverwriting,
@@ -276,12 +373,10 @@ void FaustUI::showCodeEditor() {
             auto editedName = plugin_->getDspName();
             if (editedName.isEmpty())
                 editedName = "Custom";
-            // Preserve the existing custom-view kind across in-place
-            // edits — a user tweaking the bundled MagdaDrive source
-            // shouldn't lose its bespoke view because the code editor
-            // re-saved the same DSP.
-            const auto preservedKind = plugin_->getCustomViewKind();
-            if (!plugin_->loadDspSource(editedName, src, err, preservedKind))
+            // No need to preserve the view across an in-place edit: it is read
+            // back out of the edited source, so it survives as long as the
+            // `declare magda_view` line does.
+            if (!plugin_->loadDspSource(editedName, src, err))
                 return false;
             errorLabel_.setText({}, juce::dontSendNotification);
             refreshNameLabel();
@@ -307,57 +402,94 @@ void FaustUI::showCodeEditor() {
 }
 
 void FaustUI::paint(juce::Graphics& g) {
+    const auto bounds = getLocalBounds();
+
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
-    g.fillRect(getLocalBounds());
+    g.fillRect(bounds);
 
     if (logo_) {
         logo_->drawWithin(g, logoBounds_,
                           juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yMid, 0.7f);
     }
 
-    if (!nameBorderBounds_.isEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawRoundedRectangle(nameBorderBounds_, 3.0f, 1.0f);
+    // Single vertical rules between the three bands. Full height, so the
+    // strip reads as columns rather than a boxed name with loose icons.
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawVerticalLine(logoRuleX_, static_cast<float>(bounds.getY()),
+                       static_cast<float>(bounds.getBottom()));
+    g.drawVerticalLine(actionRuleX_, static_cast<float>(bounds.getY()),
+                       static_cast<float>(bounds.getBottom()));
+
+    // Second identity row: the credit line under the patch name it describes.
+    if (showMetaRow_ && metaText_.isNotEmpty() && !metaBounds_.isEmpty()) {
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(9.0f));
+        g.drawText(metaText_, metaBounds_, juce::Justification::centredLeft, true);
     }
 
+    // Re-set the colour: the meta row above leaves the text colour behind.
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    const auto bounds = getLocalBounds();
     g.drawHorizontalLine(bounds.getBottom() - 1, static_cast<float>(bounds.getX()),
                          static_cast<float>(bounds.getRight()));
 }
 
 void FaustUI::resized() {
-    auto area = getLocalBounds().reduced(6, 4);
+    constexpr int kBandPadding = 8;
+    constexpr int kLogoBandWidth = 84;
+    constexpr int kIconSize = 16;
+    constexpr int kIconGap = 6;
+    constexpr int kActionBandWidth = 2 * kBandPadding + 3 * kIconSize + 2 * kIconGap;
+    constexpr int kNameRowHeight = 16;
 
-    // Logo on the left.
-    logoBounds_ = area.removeFromLeft(72).toFloat();
-    area.removeFromLeft(6);
+    auto bounds = getLocalBounds();
 
-    // Save / Load / Edit icons on the right (ordered left-to-right Save,
-    // Load, Edit so removeFromRight in reverse order). Save sits next to the
-    // Load folder.
-    constexpr int iconSize = 22;
-    editButton_->setBounds(
-        area.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-    area.removeFromRight(4);
-    loadButton_->setBounds(
-        area.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-    area.removeFromRight(4);
-    saveButton_->setBounds(
-        area.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-    area.removeFromRight(6);
+    // Band 1: logo. Vertically centred over the whole strip, so it stays put
+    // when the meta row appears.
+    auto logoBand = bounds.removeFromLeft(kLogoBandWidth);
+    logoBounds_ = logoBand.reduced(kBandPadding, 8).toFloat();
 
-    // Optional error / diagnostic text right of the name; takes a
-    // chunk of width when present.
+    logoRuleX_ = bounds.getX();
+    bounds.removeFromLeft(1);
+
+    // Band 3: Save / Load / Edit, left to right, on a fixed cell grid so the
+    // icons line up with the rule instead of floating on button metrics.
+    auto actionBand = bounds.removeFromRight(kActionBandWidth);
+    actionRuleX_ = actionBand.getX();
+    bounds.removeFromRight(1);
+
+    auto iconRow = actionBand.reduced(kBandPadding, 0);
+    auto placeIcon = [&iconRow](magda::SvgButton& button) {
+        button.setBounds(
+            iconRow.removeFromLeft(kIconSize).withSizeKeepingCentre(kIconSize, kIconSize));
+        iconRow.removeFromLeft(kIconGap);
+    };
+    placeIcon(*saveButton_);
+    placeIcon(*loadButton_);
+    placeIcon(*editButton_);
+
+    // Band 2: patch name over its metadata. The two rows are centred as one
+    // block, so a patch without metadata centres its name instead of leaving
+    // a gap where the second row would have been.
+    auto identityBand = bounds.reduced(kBandPadding, 4);
+
     if (errorLabel_.getText().isNotEmpty()) {
-        const int errWidth = juce::jmin(area.getWidth() / 2, 200);
-        errorLabel_.setBounds(area.removeFromRight(errWidth));
-        area.removeFromRight(4);
+        const int errWidth = juce::jmin(identityBand.getWidth() / 2, 200);
+        errorLabel_.setBounds(identityBand.removeFromRight(errWidth));
+        identityBand.removeFromRight(4);
     }
 
-    // Name box fills the middle.
-    nameBorderBounds_ = area.toFloat().reduced(0.0f, 1.0f);
-    nameLabel_.setBounds(area.reduced(8, 2));
+    const int blockHeight = kNameRowHeight + (showMetaRow_ ? kMetaRowHeight : 0);
+    auto textBlock = identityBand.withSizeKeepingCentre(identityBand.getWidth(), blockHeight);
+    nameLabel_.setBounds(textBlock.removeFromTop(kNameRowHeight));
+    metaBounds_ = showMetaRow_ ? textBlock : juce::Rectangle<int>{};
+}
+
+void FaustUI::lookAndFeelChanged() {
+    if (logo_) {
+        logo_->replaceColour(juce::Colour(0xFFD9D9D9), DarkTheme::getSecondaryTextColour());
+        DarkTheme::applyToSvgIcon(*logo_);
+    }
+    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
 }
 
 }  // namespace magda::daw::ui

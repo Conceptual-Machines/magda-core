@@ -7,7 +7,6 @@
 #include <memory>
 #include <unordered_map>
 
-#include "audio/plugins/FaustCustomViewKind.hpp"
 
 namespace magda::daw::audio {
 class IFaustEditorModel;
@@ -15,7 +14,6 @@ class IFaustEditorModel;
 
 namespace magda::daw::ui {
 
-using magda::daw::audio::FaustCustomViewKind;
 
 /**
  * @brief Base class for per-DSP custom views inside FaustUI.
@@ -47,14 +45,17 @@ class FaustCustomView : public juce::Component {
 };
 
 /**
- * @brief Registry mapping a `FaustCustomViewKind` to a factory that
- *        produces the matching custom view.
+ * @brief Registry mapping a view name to a factory that produces the
+ *        matching custom view.
  *
- * In-house DSPs register a factory at process startup; FaustUI looks
- * up by the plugin's current `FaustCustomViewKind` (set when the DSP
- * was loaded). `Kind::None` is reserved for user-loaded .dsp files
- * with no associated view — FaustUI falls back to the standard
- * grid-only layout in that case.
+ * The catalogue of views is hardcoded C++ registered at process startup; which
+ * one a patch gets is data, read from its `declare magda_view "Name";`. Any
+ * .dsp can therefore opt into a built-in visual without a line of C++, and a
+ * patch naming a view that does not exist falls back to the standard grid
+ * rather than failing to load.
+ *
+ * An empty name means the patch asked for no view at all, which is the common
+ * case.
  *
  * Thread-safety: register on the main thread before any FaustUI
  * lookup. `create()` must be called on the message thread.
@@ -66,19 +67,19 @@ class FaustCustomUIRegistry {
 
     static FaustCustomUIRegistry& getInstance();
 
-    /// Register a factory for the given kind. Replacing an existing
-    /// registration is allowed (last write wins) — useful in tests; in
-    /// production the registrations are one-shot at startup.
-    void registerView(FaustCustomViewKind kind, Factory factory);
+    /// Register a factory under `name`, the string a .dsp uses in its
+    /// `declare magda_view`. Replacing an existing registration is allowed
+    /// (last write wins) — useful in tests; in production the registrations
+    /// are one-shot at startup.
+    void registerView(const juce::String& name, Factory factory);
 
-    /// Returns nullptr if `kind` is `None` or no factory is registered
-    /// for it.
-    std::unique_ptr<FaustCustomView> create(FaustCustomViewKind kind,
+    /// Returns nullptr when `name` is empty or names no registered view.
+    std::unique_ptr<FaustCustomView> create(const juce::String& name,
                                             magda::daw::audio::IFaustEditorModel& plugin) const;
 
   private:
     FaustCustomUIRegistry() = default;
-    std::unordered_map<FaustCustomViewKind, Factory> factories_;
+    std::unordered_map<juce::String, Factory> factories_;
 };
 
 }  // namespace magda::daw::ui

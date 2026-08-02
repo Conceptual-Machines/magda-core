@@ -40,6 +40,7 @@
 #include "../../../core/controllers/ControllerProfileRegistry.hpp"
 #include "../../../core/controllers/ControllerRegistry.hpp"
 #include "../../../project/ProjectManager.hpp"
+#include "../../code/SyntaxTheme.hpp"
 #include "../../components/common/SvgButton.hpp"
 #include "../../dialogs/AISettingsDialog.hpp"
 #include "../../state/TimelineController.hpp"
@@ -54,7 +55,7 @@
 #include "audio/plugins/DrumGridRoles.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "engine/AudioEngine.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
+#include "engine/PluginMetadataStore.hpp"
 
 namespace magda::daw::ui {
 
@@ -978,7 +979,8 @@ AIChatConsoleContent::AIChatConsoleContent() {
     dslOutput_.setReadOnly(true);
     dslOutput_.setFont(FontManager::getInstance().getMonoFont(12.0f));
     dslOutput_.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
-    dslOutput_.setColour(juce::TextEditor::textColourId, juce::Colour(0xff88ff88));
+    dslOutput_.setColour(juce::TextEditor::textColourId,
+                         DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
     dslOutput_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     dslOutput_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
     dslOutput_.setColour(juce::TextEditor::highlightColourId,
@@ -986,16 +988,14 @@ AIChatConsoleContent::AIChatConsoleContent() {
     dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
     dslOutput_.setText("MAGDA DSL Console\nCtrl+Enter to execute.\n\n");
 
-    // DSL code editor
+    // DSL code editor. Surface and token colours both come from the theme's
+    // syntaxColours; the editor keeps the panel-tier background so it reads as
+    // part of the console rather than as a detached editor pane.
     dslEditor_ = std::make_unique<juce::CodeEditorComponent>(dslDocument_, &dslTokeniser_);
     dslEditor_->setFont(FontManager::getInstance().getMonoFont(13.0f));
+    applyCodeEditorTheme(*dslEditor_, dslTokeniser_, CodeEditorSurface::DslConsole);
     dslEditor_->setColour(juce::CodeEditorComponent::backgroundColourId,
                           DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    dslEditor_->setColour(juce::CodeEditorComponent::lineNumberBackgroundId,
-                          juce::Colour(0xff252526));
-    dslEditor_->setColour(juce::CodeEditorComponent::lineNumberTextId, juce::Colour(0xff858585));
-    dslEditor_->setColour(juce::CaretComponent::caretColourId, juce::Colour(0xff88ff88));
-    dslEditor_->setColour(juce::CodeEditorComponent::highlightColourId, juce::Colour(0xff264f78));
     dslEditor_->setLineNumbersShown(true);
     dslEditor_->setTabSize(2, true);
     dslEditor_->setScrollbarThickness(8);
@@ -1003,8 +1003,10 @@ AIChatConsoleContent::AIChatConsoleContent() {
 
     // DSL status bar
     dslStatusLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    dslStatusLabel_.setColour(juce::Label::backgroundColourId, juce::Colour(0xff007acc));
-    dslStatusLabel_.setColour(juce::Label::textColourId, juce::Colours::white);
+    dslStatusLabel_.setColour(juce::Label::backgroundColourId,
+                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_BACKGROUND));
+    dslStatusLabel_.setColour(juce::Label::textColourId,
+                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_TEXT));
 #if JUCE_MAC
     dslStatusLabel_.setText("  MAGDA DSL  |  Cmd+Enter: Run  |  Cmd+L: Clear",
                             juce::dontSendNotification);
@@ -1104,8 +1106,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     // to owning one if the engine is unreachable so magdaApi_ is never
     // null — every dereference site below ( *safeThis->magdaApi_ etc. )
     // assumes a live api.
-    if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
-            magda::TrackManager::getInstance().getAudioEngine())) {
+    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
         magdaApi_ = &engine->getMagdaApi();
     } else {
         ownedApi_ = std::make_unique<magda::MagdaApiLive>();
@@ -1382,7 +1383,19 @@ void AIChatConsoleContent::lookAndFeelChanged() {
         inputBox_->setColour(juce::CodeEditorComponent::highlightColourId,
                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
         inputBox_->setColour(juce::CaretComponent::caretColourId, DarkTheme::getTextColour());
+        // A CodeEditorComponent caches the scheme it got from its tokeniser at
+        // construction, so the @plugin / /command colours need re-installing.
+        inputBox_->setColourScheme(inputTokeniser_.getDefaultColourScheme());
     }
+    if (dslEditor_ != nullptr) {
+        applyCodeEditorTheme(*dslEditor_, dslTokeniser_, CodeEditorSurface::DslConsole);
+        dslEditor_->setColour(juce::CodeEditorComponent::backgroundColourId,
+                              DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    }
+    dslStatusLabel_.setColour(juce::Label::backgroundColourId,
+                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_BACKGROUND));
+    dslStatusLabel_.setColour(juce::Label::textColourId,
+                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_TEXT));
     contextLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     analysisChip_.setColour(juce::Label::textColourId,
                             DarkTheme::getColour(DarkTheme::ACCENT_INFO));
@@ -1667,7 +1680,8 @@ void AIChatConsoleContent::executeDSL() {
     dslHistoryIndex_ = -1;
 
     // Echo
-    appendDSLOutput("> " + code + "\n", juce::Colour(0xff88ff88));
+    appendDSLOutput("> " + code + "\n",
+                    DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
 
     // Built-in commands
     if (code == "help") {
@@ -1679,7 +1693,7 @@ void AIChatConsoleContent::executeDSL() {
                         "  .notes.add(pitch=C4, beat=0) - Add note\n"
                         "  .notes.add_chord(root=C4, quality=major)\n"
                         "  filter(tracks, ...).delete()  - Bulk operations\n\n",
-                        juce::Colour(0xff569cd6));
+                        DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_INFO));
         dslDocument_.replaceAllContent({});
         return;
     }
@@ -1698,10 +1712,11 @@ void AIChatConsoleContent::executeDSL() {
         auto results = interpreter.getResults();
         if (results.isEmpty())
             results = "OK";
-        appendDSLOutput(results + "\n\n", juce::Colour(0xffd4d4d4));
+        appendDSLOutput(results + "\n\n",
+                        DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_TEXT));
     } else {
         appendDSLOutput("Error: " + juce::String(interpreter.getError()) + "\n\n",
-                        juce::Colour(0xfff48771));
+                        DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_ERROR));
     }
 
     dslDocument_.replaceAllContent({});
@@ -2331,47 +2346,33 @@ void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {
 
 void AIChatConsoleContent::buildAliasList() {
     allAliases_.clear();
+    std::map<juce::String, std::size_t> aliasIndex;
 
     // Internal plugins — single source of truth in internal_plugins.hpp,
     // shared with the DSL interpreter and InstructionExecutor so the autocomplete
     // dropdown lists exactly the aliases the agent layer accepts.
     for (const auto& entry : magda::getInternalPlugins()) {
+        aliasIndex[entry.pluginId] = allAliases_.size();
         allAliases_.push_back({entry.primaryAlias, entry.displayName});
     }
 
-    // External plugins from KnownPluginList
-    if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
-            magda::TrackManager::getInstance().getAudioEngine())) {
-        auto types = engine->getPreferredPluginTypes();
-        DBG("AIChatConsole: buildAliasList - KnownPluginList has " << types.size() << " plugins");
-        for (const auto& desc : types) {
-            auto alias = PluginBrowserInfo::generateAlias(desc.name);
-            allAliases_.push_back({alias, desc.name});
-        }
-    } else {
-        DBG("AIChatConsole: buildAliasList - engine not available via TrackManager");
+    // External plugins come through the same MagdaApi boundary used by agents.
+    const auto plugins = magdaApi_->plugins().getExternalPlugins();
+    DBG("AIChatConsole: buildAliasList - plugin catalog has " << plugins.size() << " plugins");
+    for (const auto& plugin : plugins) {
+        auto alias = PluginBrowserInfo::generateAlias(plugin.name);
+        aliasIndex[plugin.uniqueId] = allAliases_.size();
+        allAliases_.push_back({alias, plugin.name});
     }
 
-    // Load custom alias overrides
-    auto aliasFile = magda::paths::pluginAliasesFile();
-
-    if (aliasFile.existsAsFile()) {
-        if (auto xml = juce::parseXML(aliasFile)) {
-            for (auto* elem : xml->getChildIterator()) {
-                auto key = elem->getStringAttribute("key");
-                auto alias = elem->getStringAttribute("alias");
-                // Find and update the matching entry
-                for (auto& entry : allAliases_) {
-                    // Match by uniqueId or by plugin name
-                    if (entry.pluginName == key ||
-                        PluginBrowserInfo::generateAlias(entry.pluginName) ==
-                            PluginBrowserInfo::generateAlias(key)) {
-                        entry.alias = alias;
-                        break;
-                    }
-                }
-            }
+    try {
+        for (const auto& [key, alias] :
+             magda::PluginMetadataStore::defaultForCurrentThread().aliases()) {
+            if (const auto it = aliasIndex.find(key); it != aliasIndex.end())
+                allAliases_[it->second].alias = alias;
         }
+    } catch (const std::exception& e) {
+        DBG("AIChatConsole: failed to load plugin aliases: " << e.what());
     }
 
     // Sort by alias
@@ -3329,6 +3330,7 @@ void AIChatConsoleContent::ThemeRequestThread::run() {
     juce::String name;
     juce::String base;
     int colourCount = 0;
+    int syntaxCount = 0;
 
     if (success) {
         std::string validationError;
@@ -3338,6 +3340,7 @@ void AIChatConsoleContent::ThemeRequestThread::run() {
             name = juce::String(theme->name);
             base = juce::String(theme->base);
             colourCount = theme->colourCount;
+            syntaxCount = theme->syntaxCount;
         } else {
             success = false;
             jsonOrError = juce::String(validationError);
@@ -3351,11 +3354,11 @@ void AIChatConsoleContent::ThemeRequestThread::run() {
     // Read the anchor on the message thread (inside the callback), after the
     // queued token flushes have run, so it reflects the streamed region.
     juce::MessageManager::callAsync(
-        [safeThis, success, jsonOrError, name, base, colourCount, anchor]() {
+        [safeThis, success, jsonOrError, name, base, colourCount, syntaxCount, anchor]() {
             if (!safeThis)
                 return;
             safeThis->finishThemeGeneration(success, jsonOrError, name, base, colourCount,
-                                            anchor->load());
+                                            syntaxCount, anchor->load());
         });
 }
 
@@ -3378,7 +3381,8 @@ void AIChatConsoleContent::startThemeGeneration(const juce::String& description)
 
 void AIChatConsoleContent::finishThemeGeneration(bool success, const juce::String& jsonOrError,
                                                  juce::String name, juce::String base,
-                                                 int colourCount, int streamAnchor) {
+                                                 int colourCount, int syntaxCount,
+                                                 int streamAnchor) {
     // Collapse the streamed JSON (or, if nothing streamed, the "Designing
     // theme..." placeholder) so only the final summary/error remains.
     if (streamAnchor >= 0) {
@@ -3423,7 +3427,10 @@ void AIChatConsoleContent::finishThemeGeneration(bool success, const juce::Strin
 
     juce::String body = juce::String::charToString(0x25C6) + " " +
                         (name.isEmpty() ? juce::String("Theme") : name) + "\n";
-    body << "  " << juce::String(colourCount) << " colours over the " << base << " base\n";
+    body << "  " << juce::String(colourCount) << " colours";
+    if (syntaxCount > 0)
+        body << " + " << juce::String(syntaxCount) << " syntax colours";
+    body << " over the " << base << " base\n";
     body << "  saved to " << file.getFullPathName() << "\n";
     body << "  applied - edit the file to tweak it live, or switch under "
             "Preferences > Appearance";
@@ -3611,7 +3618,8 @@ static juce::String prettyPrintPreset(const magda::FourOscAgent::Preset& preset)
 // instance and apply there — wasting the LLM's output to "no device
 // focused" was just bad UX. Returns a one-line status string for the
 // chat. Delegates the actual write to magda::applyFourOscPresetToPath.
-static juce::String applyFourOscPresetToFocusedDevice(const magda::FourOscAgent::Preset& preset) {
+static juce::String applyFourOscPresetToFocusedDevice(magda::MagdaApi& api,
+                                                      const magda::FourOscAgent::Preset& preset) {
     auto& sel = magda::SelectionManager::getInstance();
     auto& tm = magda::TrackManager::getInstance();
 
@@ -3656,7 +3664,7 @@ static juce::String applyFourOscPresetToFocusedDevice(const magda::FourOscAgent:
         preamble = "created 4OSC on '" + trackName + "', ";
     }
 
-    return preamble + magda::applyFourOscPresetToPath(preset, path);
+    return preamble + magda::applyFourOscPresetToPath(api.plugins(), preset, path);
 }
 
 void AIChatConsoleContent::finishPresetGeneration(bool success, const juce::String& errorOrPretty,
@@ -3720,7 +3728,7 @@ void AIChatConsoleContent::finishPresetGeneration(bool success, const juce::Stri
     auto header = presetName.isEmpty() ? juce::String("Preset") : presetName;
     juce::String body = juce::String::charToString(0x25C6) + " " + header + "\n";
     body << prettyPrintPreset(preset);
-    body << "\n  " << applyFourOscPresetToFocusedDevice(preset);
+    body << "\n  " << applyFourOscPresetToFocusedDevice(*magdaApi_, preset);
     body << "\n  starting point - tweak by ear, then save from the device header";
     appendToChat(body);
 }

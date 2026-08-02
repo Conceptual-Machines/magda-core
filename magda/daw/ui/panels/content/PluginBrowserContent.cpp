@@ -7,6 +7,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
+#include "PluginBrowserMetadataMerge.hpp"
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
@@ -22,7 +23,8 @@
 #include "core/PluginAlias.hpp"
 #include "core/PluginPreferences.hpp"
 #include "core/TrackManager.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
+#include "engine/AudioEngine.hpp"
+#include "engine/PluginMetadataStore.hpp"
 
 namespace magda::daw::ui {
 
@@ -30,13 +32,6 @@ namespace {
 
 juce::String preferenceIdentifierForPlugin(const PluginBrowserInfo& plugin) {
     return plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
-}
-
-juce::StringArray visiblePluginKeys(const std::vector<PluginBrowserInfo>& plugins) {
-    juce::StringArray keys;
-    for (const auto& plugin : plugins)
-        keys.addIfNotAlreadyThere(preferenceIdentifierForPlugin(plugin));
-    return keys;
 }
 
 juce::String effectiveCategoryForPlugin(const PluginBrowserInfo& plugin) {
@@ -502,8 +497,7 @@ void PluginBrowserContent::resized() {
 void PluginBrowserContent::onActivated() {
     // Get engine from TrackManager if not already set
     if (!engine_) {
-        if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
-                TrackManager::getInstance().getAudioEngine())) {
+        if (auto* engine = TrackManager::getInstance().getAudioEngine()) {
             setEngine(engine);
         }
     }
@@ -558,26 +552,36 @@ void PluginBrowserContent::loadExternalPlugins() {
         return;
     }
 
-    auto pluginTypes = engine_->getPreferredPluginTypes();
-
-    for (const auto& desc : pluginTypes) {
-        plugins_.push_back(PluginBrowserInfo::fromPluginDescription(desc));
+    const auto pluginTypes = engine_->getPreferredPluginTypes();
+    try {
+        const auto records = magda::PluginMetadataStore::defaultForCurrentThread().query();
+        auto mergedPlugins = mergeExternalPluginMetadata(pluginTypes, records);
+        for (auto& plugin : mergedPlugins)
+            plugins_.push_back(std::move(plugin));
+        DBG("Merged " << records.size() << " plugin metadata records across " << pluginTypes.size()
+                      << " preferred plugins");
+        return;
+    } catch (const std::exception& e) {
+        DBG("Failed to query plugin metadata for browser: " << e.what()
+                                                            << "; using KnownPluginList");
     }
 
-    DBG("Loaded " << pluginTypes.size() << " external plugins from KnownPluginList");
+    for (const auto& description : pluginTypes)
+        plugins_.push_back(PluginBrowserInfo::fromPluginDescription(description));
+    DBG("Loaded " << pluginTypes.size() << " external plugins from KnownPluginList fallback");
 }
 
-void PluginBrowserContent::setEngine(magda::TracktionEngineWrapper* engine) {
+void PluginBrowserContent::setEngine(magda::AudioEngine* engine) {
     // Unregister from old engine's KnownPluginList
     if (engine_) {
-        engine_->getKnownPluginList().removeChangeListener(this);
+        engine_->removePluginListChangeListener(this);
     }
 
     engine_ = engine;
 
     // Register as change listener so we auto-refresh after plugin scans
     if (engine_) {
-        engine_->getKnownPluginList().addChangeListener(this);
+        engine_->addPluginListChangeListener(this);
     }
 
     refreshPluginList();
@@ -586,7 +590,7 @@ void PluginBrowserContent::setEngine(magda::TracktionEngineWrapper* engine) {
 PluginBrowserContent::~PluginBrowserContent() {
     magda::PluginPreferences::getInstance().removeListener(this);
     if (engine_) {
-        engine_->getKnownPluginList().removeChangeListener(this);
+        engine_->removePluginListChangeListener(this);
     }
     // Clear root item before TreeView destructor runs
     pluginTree_.setRootItem(nullptr);
@@ -845,8 +849,8 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                     device.format = magda::PluginFormat::VST3;
                 } else if (plugin.format == "AU" || plugin.format == "AudioUnit") {
                     device.format = magda::PluginFormat::AU;
-                } else if (plugin.format == "VST") {
-                    device.format = magda::PluginFormat::VST;
+                } else if (plugin.format == "LV2") {
+                    device.format = magda::PluginFormat::LV2;
                 } else if (plugin.format == "Internal") {
                     device.format = magda::PluginFormat::Internal;
                 }
@@ -890,11 +894,17 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                     toggleFavorite(plugin);
                     break;
                 case 6: {
+                    // LV2 identifies a plugin by URI, not by path, and juce::File
+                    // asserts on anything that is not an absolute path.
+                    if (!juce::File::isAbsolutePath(plugin.fileOrIdentifier)) {
+                        DBG("Cannot reveal plugin - not a file path: " + plugin.fileOrIdentifier);
+                        break;
+                    }
                     juce::File pluginFile(plugin.fileOrIdentifier);
                     if (pluginFile.exists()) {
                         pluginFile.revealToUser();
                     } else {
-                        DBG("Cannot reveal plugin - not a file path: " + plugin.fileOrIdentifier);
+                        DBG("Cannot reveal plugin - file missing: " + plugin.fileOrIdentifier);
                     }
                     break;
                 }
@@ -972,115 +982,71 @@ void PluginBrowserContent::toggleFavorite(const PluginBrowserInfo& plugin) {
     rebuildTree();
 }
 
-juce::File PluginBrowserContent::getFavoritesFile() const {
-    return magda::paths::pluginFavoritesFile();
-}
-
 void PluginBrowserContent::saveFavorites() {
-    juce::XmlElement root("PluginFavorites");
-    const auto visibleKeys = visiblePluginKeys(plugins_);
-
-    if (auto existing = juce::parseXML(getFavoritesFile())) {
-        for (auto* elem : existing->getChildIterator()) {
-            const auto key = elem->getStringAttribute("key");
-            if (key.isNotEmpty() && !visibleKeys.contains(key))
-                root.addChildElement(new juce::XmlElement(*elem));
-        }
+    if (!favoritesLoaded_) {
+        DBG("Skipping plugin favorite save because the last load failed");
+        return;
     }
-
-    for (const auto& p : plugins_) {
-        if (p.isFavorite) {
-            auto* elem = root.createNewChildElement("Plugin");
-            elem->setAttribute("key", p.uniqueId.isNotEmpty() ? p.uniqueId : p.name);
-            elem->setAttribute("name", p.name);
+    try {
+        auto& store = magda::PluginMetadataStore::defaultForCurrentThread();
+        std::vector<magda::PluginFavoriteUpdate> updates;
+        updates.reserve(plugins_.size());
+        for (const auto& plugin : plugins_) {
+            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            updates.push_back({key, plugin.name, plugin.isFavorite});
         }
+        store.saveFavorites(updates);
+    } catch (const std::exception& e) {
+        DBG("Failed to save plugin favorites: " << e.what());
     }
-
-    auto file = getFavoritesFile();
-    file.getParentDirectory().createDirectory();
-    root.writeTo(file);
 }
 
 void PluginBrowserContent::loadFavorites() {
-    auto file = getFavoritesFile();
-    if (!file.existsAsFile())
-        return;
-
-    auto xml = juce::parseXML(file);
-    if (!xml)
-        return;
-
-    // Collect favorite keys
-    juce::StringArray favoriteKeys;
-    for (auto* elem : xml->getChildIterator()) {
-        favoriteKeys.add(elem->getStringAttribute("key"));
+    favoritesLoaded_ = false;
+    try {
+        const auto favoriteKeys =
+            magda::PluginMetadataStore::defaultForCurrentThread().favoriteKeys();
+        for (auto& plugin : plugins_) {
+            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            plugin.isFavorite = favoriteKeys.contains(key);
+        }
+        favoritesLoaded_ = true;
+    } catch (const std::exception& e) {
+        DBG("Failed to load plugin favorites: " << e.what());
     }
-
-    // Apply to plugins
-    for (auto& p : plugins_) {
-        juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
-        p.isFavorite = favoriteKeys.contains(key);
-    }
-}
-
-juce::File PluginBrowserContent::getAliasesFile() const {
-    return magda::paths::pluginAliasesFile();
 }
 
 void PluginBrowserContent::saveAliases() {
-    juce::XmlElement root("PluginAliases");
-    const auto visibleKeys = visiblePluginKeys(plugins_);
-
-    if (auto existing = juce::parseXML(getAliasesFile())) {
-        for (auto* elem : existing->getChildIterator()) {
-            const auto key = elem->getStringAttribute("key");
-            if (key.isNotEmpty() && !visibleKeys.contains(key))
-                root.addChildElement(new juce::XmlElement(*elem));
+    if (!aliasesLoaded_) {
+        DBG("Skipping plugin alias save because the last load failed");
+        return;
+    }
+    try {
+        auto& store = magda::PluginMetadataStore::defaultForCurrentThread();
+        std::map<juce::String, juce::String> aliases;
+        for (const auto& plugin : plugins_) {
+            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            const auto defaultAlias = PluginBrowserInfo::generateAlias(plugin.name);
+            aliases[key] = plugin.alias == defaultAlias ? juce::String() : plugin.alias;
         }
+        store.saveAliases(aliases);
+    } catch (const std::exception& e) {
+        DBG("Failed to save plugin aliases: " << e.what());
     }
-
-    for (const auto& p : plugins_) {
-        if (p.alias.isEmpty())
-            continue;
-
-        // Only save if alias differs from auto-generated default
-        auto defaultAlias = PluginBrowserInfo::generateAlias(p.name);
-        if (p.alias == defaultAlias)
-            continue;
-
-        auto* elem = root.createNewChildElement("Alias");
-        juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
-        elem->setAttribute("key", key);
-        elem->setAttribute("alias", p.alias);
-    }
-
-    auto file = getAliasesFile();
-    file.getParentDirectory().createDirectory();
-    root.writeTo(file);
 }
 
 void PluginBrowserContent::loadAliases() {
-    auto file = getAliasesFile();
-    if (!file.existsAsFile())
-        return;
-
-    auto xml = juce::parseXML(file);
-    if (!xml)
-        return;
-
-    // Build a map of key -> alias
-    std::map<juce::String, juce::String> aliasMap;
-    for (auto* elem : xml->getChildIterator()) {
-        aliasMap[elem->getStringAttribute("key")] = elem->getStringAttribute("alias");
-    }
-
-    // Apply custom aliases over auto-generated ones
-    for (auto& p : plugins_) {
-        juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
-        auto it = aliasMap.find(key);
-        if (it != aliasMap.end()) {
-            p.alias = it->second;
+    aliasesLoaded_ = false;
+    try {
+        const auto aliasMap = magda::PluginMetadataStore::defaultForCurrentThread().aliases();
+        for (auto& plugin : plugins_) {
+            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            if (const auto it = aliasMap.find(key); it != aliasMap.end())
+                plugin.alias = it->second;
         }
+        aliasesLoaded_ = true;
+    } catch (const std::exception& e) {
+        DBG("Failed to load plugin aliases: " << e.what());
     }
 }
 

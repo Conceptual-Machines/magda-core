@@ -39,7 +39,6 @@ namespace magda {
 namespace te = tracktion;
 class PluginWindowManager;
 class SessionMonitorPlugin;
-class TracktionEngineWrapper;
 
 /**
  * @brief Bridges TrackManager and ClipManager (UI models) to Tracktion Engine (audio processing)
@@ -493,7 +492,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // =========================================================================
 
     /**
-     * @brief Update transport state from UI thread (called by TracktionEngineWrapper)
+     * @brief Update transport state from the engine's UI-thread timer.
      * @param isPlaying Current transport playing state
      * @param justStarted True if transport just started this frame
      * @param justLooped True if transport just looped this frame
@@ -667,7 +666,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @brief Get a bitmask of user-enabled input channels from TE WaveInputDevices
      *
      * JUCE device->getActiveInputChannels() always returns all channels (because
-     * TracktionEngineWrapper enables all at JUCE level). User preferences are applied
+     * the engine enables all at JUCE level). User preferences are applied
      * at the TE WaveInputDevice level. This method reads those TE-level enabled states.
      *
      * @return BigInteger with bits set for each enabled input channel
@@ -771,7 +770,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     /**
      * @brief Called when MIDI input devices become available
      *
-     * This is called by TracktionEngineWrapper when the DeviceManager
+     * This is called by the engine when the DeviceManager
      * creates MIDI input device wrappers (which happens asynchronously).
      * Any pending MIDI routes will be applied.
      */
@@ -796,18 +795,10 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
 
     /**
      * @brief Set the plugin window manager (for delegation)
-     * @param manager Pointer to PluginWindowManager (owned by TracktionEngineWrapper)
+     * @param manager Pointer to the engine-owned PluginWindowManager
      */
     void setPluginWindowManager(PluginWindowManager* manager) {
         pluginWindowBridge_.setPluginWindowManager(manager);
-    }
-
-    /**
-     * @brief Set the engine wrapper (for accessing ClipInterface methods)
-     * @param wrapper Pointer to TracktionEngineWrapper (owns this AudioBridge)
-     */
-    void setEngineWrapper(TracktionEngineWrapper* wrapper) {
-        engineWrapper_ = wrapper;
     }
 
     // =========================================================================
@@ -907,9 +898,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     void resyncAllInputMonitors();
 
     void applyPendingMidiRoutes();
-
-    // Engine wrapper (owns this AudioBridge, used for ClipInterface access)
-    TracktionEngineWrapper* engineWrapper_ = nullptr;
 
     // Shutdown flag to prevent operations during cleanup
     std::atomic<bool> isShuttingDown_{false};
