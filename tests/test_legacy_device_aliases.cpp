@@ -1,4 +1,5 @@
 #include <juce_core/juce_core.h>
+#include <juce_data_structures/juce_data_structures.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -6,6 +7,7 @@
 #include <utility>
 
 #include "magda/daw/core/AutomationInfo.hpp"
+#include "magda/daw/core/DeviceState.hpp"
 #include "magda/daw/core/LegacyDeviceAliases.hpp"
 #include "magda/daw/core/TrackInfo.hpp"
 
@@ -44,12 +46,19 @@ std::optional<float> slot(const DeviceInfo& device, int paramIndex) {
 TEST_CASE("Retired Tracktion devices resolve to their successor by every stored spelling",
           "[devices][legacy][aliases]") {
     const std::pair<const char*, const char*> retired[] = {
-        {"4bandEq", "magda_eq"},         {"eq", "magda_eq"},
-        {"equaliser", "magda_eq"},       {"compressor", "magda_compressor"},
-        {"delay", "magda_delay"},        {"chorus", "magda_chorus"},
-        {"phaser", "magda_phaser"},      {"reverb", "magda_reverb"},
-        {"pitchShifter", "magda_pitch"}, {"pitchshift", "magda_pitch"},
+        {"4bandEq", "magda_eq"},
+        {"eq", "magda_eq"},
+        {"equaliser", "magda_eq"},
+        {"compressor", "magda_compressor"},
+        {"delay", "magda_delay"},
+        {"chorus", "magda_chorus"},
+        {"phaser", "magda_phaser"},
+        {"reverb", "magda_reverb"},
+        {"pitchShifter", "magda_pitch"},
+        {"pitchshift", "magda_pitch"},
         {"lowpass", "magda_filter"},
+        {"impulseResponse", "magda_convolution"},
+        {"impulseresponse", "magda_convolution"},
     };
     for (const auto& [id, successor] : retired) {
         INFO("retired id: " << id);
@@ -57,8 +66,8 @@ TEST_CASE("Retired Tracktion devices resolve to their successor by every stored 
     }
 
     // Devices MAGDA still ships, and the successors themselves, have none.
-    for (const auto* id : {"toneGenerator", "impulseresponse", "4osc", "volume", "magda_eq",
-                           "magda_delay", "magda_filter", ""}) {
+    for (const auto* id : {"toneGenerator", "4osc", "volume", "magda_eq", "magda_delay",
+                           "magda_filter", "magda_convolution", ""}) {
         INFO("live id: " << id);
         CHECK(legacy_devices::retiredDeviceSuccessor(id).isEmpty());
     }
@@ -365,4 +374,146 @@ TEST_CASE("A project pass drops automation lanes on retired devices",
     REQUIRE(lanes.size() == 1);
     CHECK(lanes[0].id == 11);
     CHECK(clips.empty());
+}
+
+TEST_CASE("IR Reverb cutoffs convert from MIDI note numbers to Hz",
+          "[devices][legacy][aliases][convolution]") {
+    // Note 45 is 110 Hz, note 129 is 14080 Hz; the retired device stored the
+    // note and only displayed the frequency.
+    auto device =
+        retiredDevice("impulseResponse", {param(0, -3.0f), param(1, 45.0f), param(2, 129.0f),
+                                          param(3, 0.4f), param(4, 2.5f)});
+    REQUIRE(legacy_devices::migrateRetiredDevice(device));
+
+    CHECK(device.pluginId == "magda_convolution");
+    CHECK(device.uniqueId == "magda_convolution");
+    CHECK(slot(device, 0).value() == Approx(-3.0f));
+    CHECK(slot(device, 1).value() == Approx(110.0f));
+    CHECK(slot(device, 2).value() == Approx(14080.0f));
+    CHECK(slot(device, 3).value() == Approx(0.4f));
+    CHECK(slot(device, 4).value() == Approx(2.5f));
+
+    // The retired device's own range ends clamp to the successor's.
+    auto ends = retiredDevice("impulseResponse", {param(1, 0.0f), param(2, 140.0f)});
+    REQUIRE(legacy_devices::migrateRetiredDevice(ends));
+    CHECK(slot(ends, 1).value() == Approx(10.0f));
+    CHECK(slot(ends, 2).value() == Approx(20000.0f));
+}
+
+TEST_CASE("Migrating the IR Reverb carries its impulse response across",
+          "[devices][legacy][aliases][convolution]") {
+    juce::MemoryBlock payload;
+    for (int i = 0; i < 256; ++i) {
+        const auto byte = static_cast<char>(i & 0xff);
+        payload.append(&byte, 1);
+    }
+
+    device_state::Doc saved;
+    saved.deviceType = "impulseResponse";
+    saved.params.push_back({0, "gain", -3.0f});
+    saved.root.props.set("irFileData", juce::var(payload));
+    saved.root.props.set("name", "Concert Hall");
+    saved.root.props.set("normalise", false);
+    saved.root.props.set("trimSilence", true);
+    // A parameter's mirror in the state. It belongs to the retired device's
+    // units, so it must not survive alongside the converted parameter.
+    saved.root.props.set("highPassFrequency", 45.0f);
+
+    auto device = retiredDevice("impulseResponse", {param(0, -3.0f), param(1, 45.0f)});
+    device.pluginState = device_state::encode(saved);
+
+    REQUIRE(legacy_devices::migrateRetiredDevice(device));
+
+    const auto migrated = device_state::decode(device.pluginState);
+    REQUIRE(migrated.has_value());
+    CHECK(migrated->deviceType == "magda_convolution");
+    // Parameters live in DeviceInfo after the migration, converted; carrying
+    // the retired document's copies would re-seat the old units.
+    CHECK(migrated->params.empty());
+
+    const auto* carried = migrated->root.props["irFileData"].getBinaryData();
+    REQUIRE(carried != nullptr);
+    CHECK(*carried == payload);
+    CHECK(migrated->root.props["name"].toString() == "Concert Hall");
+    CHECK_FALSE(static_cast<bool>(migrated->root.props["normalise"]));
+    CHECK(static_cast<bool>(migrated->root.props["trimSilence"]));
+    CHECK_FALSE(migrated->root.props.contains("highPassFrequency"));
+}
+
+TEST_CASE("An IR saved as pre-v2 engine XML comes forward as a v2 document",
+          "[devices][legacy][aliases][convolution]") {
+    juce::MemoryBlock payload;
+    payload.append("impulse", 7);
+
+    juce::ValueTree tree("PLUGIN");
+    tree.setProperty("type", "impulseResponse", nullptr);
+    tree.setProperty("id", 1042, nullptr);
+    tree.setProperty("irFileData", juce::var(payload), nullptr);
+    tree.setProperty("name", "Plate", nullptr);
+
+    auto device = retiredDevice("impulseResponse", {param(3, 0.25f)});
+    device.pluginState = tree.toXmlString();
+
+    REQUIRE(legacy_devices::migrateRetiredDevice(device));
+
+    const auto migrated = device_state::decode(device.pluginState);
+    REQUIRE(migrated.has_value());
+    CHECK(migrated->version == device_state::kSchemaVersion);
+
+    const auto* carried = migrated->root.props["irFileData"].getBinaryData();
+    REQUIRE(carried != nullptr);
+    CHECK(*carried == payload);
+    CHECK(migrated->root.props["name"].toString() == "Plate");
+    // The engine's own object id has no place in a MAGDA document.
+    CHECK_FALSE(migrated->root.props.contains("id"));
+}
+
+TEST_CASE("A device with no IR loaded migrates without inventing state",
+          "[devices][legacy][aliases][convolution]") {
+    auto device = retiredDevice("impulseResponse", {param(3, 1.0f)});
+    REQUIRE(legacy_devices::migrateRetiredDevice(device));
+    CHECK(device.pluginState.isEmpty());
+}
+
+TEST_CASE("Migrating the IR Reverb keeps the links and lanes that addressed it",
+          "[devices][legacy][aliases][convolution]") {
+    // Its five parameters keep their indices and their normalised curves, so
+    // unlike the compiled-Faust successors nothing that addressed them is stale.
+    CHECK(legacy_devices::retiredDeviceKeepsParameterIdentity("impulseResponse"));
+    CHECK_FALSE(legacy_devices::retiredDeviceKeepsParameterIdentity("reverb"));
+
+    std::vector<TrackInfo> tracks(1);
+    tracks[0].id = 5;
+
+    DeviceInfo device = retiredDevice("impulseResponse", {param(3, 0.5f)});
+    device.id = 9;
+    device.visibleParameters = {0, 3};
+    device.macros[0].links.push_back(
+        {.target = {.devicePath = ChainNodePath::topLevelDevice(5, 9), .paramIndex = 3}});
+    tracks[0].chain.fxChainElements.push_back(std::move(device));
+
+    const auto target = ChainNodePath::topLevelDevice(5, 9);
+    tracks[0].macros[0].links.push_back({.target = {.devicePath = target, .paramIndex = 0}});
+
+    AutomationLaneInfo lane;
+    lane.id = 30;
+    lane.target.devicePath = target;
+    lane.target.paramIndex = 3;
+    std::vector<AutomationLaneInfo> lanes{lane};
+
+    AutomationClipInfo clip;
+    clip.id = 31;
+    clip.laneId = 30;
+    std::vector<AutomationClipInfo> clips{clip};
+
+    legacy_devices::migrateRetiredDevicesInProject(tracks, nullptr, lanes, clips);
+
+    auto& migrated = getDevice(tracks[0].chain.fxChainElements[0]);
+    CHECK(migrated.pluginId == "magda_convolution");
+    CHECK(migrated.visibleParameters == std::vector<int>{0, 3});
+    REQUIRE(migrated.macros[0].links.size() == 1);
+    CHECK(migrated.macros[0].links[0].target.paramIndex == 3);
+    REQUIRE(tracks[0].macros[0].links.size() == 1);
+    CHECK(lanes.size() == 1);
+    CHECK(clips.size() == 1);
 }

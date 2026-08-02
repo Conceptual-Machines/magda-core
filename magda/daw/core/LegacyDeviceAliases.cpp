@@ -1,5 +1,7 @@
 #include "LegacyDeviceAliases.hpp"
 
+#include <juce_data_structures/juce_data_structures.h>
+
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -9,6 +11,7 @@
 
 #include "AutomationInfo.hpp"
 #include "DeviceInfo.hpp"
+#include "DeviceState.hpp"
 #include "TrackInfo.hpp"
 
 namespace magda::legacy_devices {
@@ -138,6 +141,20 @@ float filterMode(float highpass, float) {
     return highpass >= 0.5f ? 2.0f : 0.0f;
 }
 
+float midiNoteToFrequency(float note, float) {
+    // The IR Reverb stored both cutoffs as MIDI note numbers and only displayed
+    // Hz. The native convolution device stores the Hz.
+    return juce::jlimit(10.0f, 20000.0f, 440.0f * std::pow(2.0f, (note - 69.0f) / 12.0f));
+}
+
+float convolutionGain(float db, float) {
+    return juce::jlimit(-12.0f, 6.0f, db);
+}
+
+float convolutionQ(float q, float) {
+    return juce::jlimit(0.1f, 14.0f, q);
+}
+
 // ============================================================================
 // Mapping table
 // ============================================================================
@@ -197,6 +214,12 @@ struct RetiredDevice {
     std::span<const char* const> retiredNames;  // display names replaced on migration
     std::span<const SlotMapping> slots;
     std::span<const RetiredProperty> properties;
+    /// State properties the successor reads under the same names, so they move
+    /// across unchanged instead of being dropped with the rest of the state.
+    std::span<const char* const> carriedProperties;
+    /// True when the successor's parameter indices mean what the retired
+    /// device's did, so saved links and automation survive the rewrite.
+    bool keepsParameterIdentity = false;
 };
 
 // --- 4-band EQ ("4bandEq") -> magda_eq -------------------------------------
@@ -371,6 +394,35 @@ constexpr RetiredProperty kFilterProperties[] = {
     {1, "mode", "highpass"},
 };
 
+// --- IR Reverb ("impulseResponse") -> magda_convolution --------------------
+// The only retired device whose successor is native rather than compiled Faust
+// (#1980): a user-loadable impulse response cannot be a compile-time Faust
+// kernel. It is also the only one that keeps parameter identity (five
+// parameters, same order, same normalised curves), so its automation, macros
+// and mods carry over. The two cutoffs change unit only: the retired device
+// stored a MIDI note number over 10 Hz - 20 kHz and displayed Hz, the successor
+// stores the Hz over the same span with the same log mapping.
+constexpr const char* kConvolutionTypes[] = {"impulseResponse", "impulseresponse"};
+constexpr const char* kConvolutionNames[] = {"Impulse Response", "IR Reverb"};
+constexpr SlotMapping kConvolutionSlots[] = {
+    mapped(0, "Gain", 0, convolutionGain),
+    mapped(1, "Low Cut", 1, midiNoteToFrequency),   // the high pass
+    mapped(2, "High Cut", 2, midiNoteToFrequency),  // the low pass
+    mapped(3, "Mix", 3, unitInterval),
+    mapped(4, "Filter Q", 4, convolutionQ),
+};
+
+// Tracktion named the two cutoff properties after the filters rather than after
+// what they hold: `highPassFrequency` is the LOW cut, and both are MIDI note
+// numbers. `filterSlope` holds the shared Q.
+constexpr RetiredProperty kConvolutionProperties[] = {
+    {0, "gain"}, {1, "highPassFrequency"}, {2, "lowPassFrequency"}, {3, "mix"}, {4, "filterSlope"},
+};
+
+// The impulse response itself, plus the flags that decide how it is loaded and
+// the name the UI shows for it. The successor reads all four under these names.
+constexpr const char* kConvolutionCarried[] = {"irFileData", "name", "normalise", "trimSilence"};
+
 constexpr RetiredDevice kRetiredDevices[] = {
     {"magda_eq", "EQ", kEqTypes, kEqNames, kEqSlots, kEqProperties},
     {"magda_compressor", "Compressor", kCompressorTypes, kCompressorNames, kCompressorSlots,
@@ -381,6 +433,8 @@ constexpr RetiredDevice kRetiredDevices[] = {
     {"magda_reverb", "Reverb", kReverbTypes, kReverbNames, kReverbSlots, kReverbProperties},
     {"magda_pitch", "Pitch", kPitchTypes, kPitchNames, kPitchSlots, kPitchProperties},
     {"magda_filter", "Filter", kFilterTypes, kFilterNames, kFilterSlots, kFilterProperties},
+    {"magda_convolution", "IR Reverb", kConvolutionTypes, kConvolutionNames, kConvolutionSlots,
+     kConvolutionProperties, kConvolutionCarried, true},
 };
 
 const RetiredDevice* findRetiredDevice(const juce::String& pluginId) {
@@ -443,6 +497,112 @@ std::vector<RetiredSlotValue> convertSlots(
     return out;
 }
 
+/**
+ * @brief Rebuild the successor's saved state from the retired device's.
+ *
+ * Only the named properties move; everything else described the retired
+ * plugin's parameter list, which the successor does not share. Reads both
+ * shapes a project can hold: a v2 device-state document, and pre-v2 engine XML
+ * where a binary property is a `base64:`-prefixed attribute that
+ * `ValueTree::fromXml` decodes back to binary. It always writes v2, so an old
+ * project's impulse response comes forward into the current format.
+ *
+ * @return the successor's state document, or an empty string when there is
+ *         nothing to carry.
+ */
+juce::String carryDeviceState(const juce::String& savedState, const RetiredDevice& retired) {
+    if (retired.carriedProperties.empty() || savedState.isEmpty())
+        return {};
+
+    device_state::Node root;
+
+    const auto carry = [&root, &retired](const auto& readProperty) {
+        for (const auto* name : retired.carriedProperties) {
+            const juce::Identifier id(name);
+            const auto value = readProperty(id);
+            if (!value.isVoid())
+                root.props.set(id, value);
+        }
+    };
+
+    if (device_state::looksLikeLegacyEngineState(savedState)) {
+        const auto tree = juce::ValueTree::fromXml(savedState);
+        if (!tree.isValid())
+            return {};
+        carry([&tree](const juce::Identifier& id) { return tree.getProperty(id); });
+    } else {
+        const auto doc = device_state::decode(savedState);
+        if (!doc)
+            return {};
+        carry([&doc](const juce::Identifier& id) { return doc->root.props[id]; });
+    }
+
+    if (root.isEmpty())
+        return {};
+
+    device_state::Doc out;
+    out.deviceType = retired.targetPluginId;
+    out.root = std::move(root);
+    return device_state::encode(out);
+}
+
+/// What a migration did to a device, and specifically whether it invalidated
+/// the links and automation that addressed the device's parameters.
+enum class MigrationResult { NotRetired, MigratedKeepingLinks, MigratedDroppingLinks };
+
+MigrationResult migrateDevice(DeviceInfo& device) {
+    const auto* retired = findRetiredDevice(device.pluginId);
+    if (retired == nullptr)
+        return MigrationResult::NotRetired;
+
+    const auto converted = convertSlots(
+        *retired, [&device](int legacyIndex) { return retiredValue(device, legacyIndex); });
+
+    std::vector<ParameterInfo> migrated;
+    migrated.reserve(converted.size());
+    for (const auto& slot : converted) {
+        ParameterInfo info;
+        info.paramIndex = slot.slot;
+        info.name = slot.name;
+        info.currentValue = slot.value;
+        migrated.push_back(std::move(info));
+    }
+
+    for (const auto* name : retired->retiredNames)
+        if (device.name.isEmpty() || device.name.equalsIgnoreCase(name)) {
+            device.name = retired->targetDisplayName;
+            break;
+        }
+
+    device.pluginId = retired->targetPluginId;
+    device.uniqueId = retired->targetPluginId;
+    device.parameters = std::move(migrated);
+    device.pluginState = carryDeviceState(device.pluginState, *retired);
+
+    if (retired->keepsParameterIdentity)
+        return MigrationResult::MigratedKeepingLinks;
+
+    // Everything below described the retired plugin's parameter list, which the
+    // successor does not share. The live device repopulates all of it from the
+    // successor's own slots as soon as it is created.
+    device.wrapperParameters.clear();
+    device.meters.clear();
+    device.visibleParameters.clear();
+    device.miniMixerParameters.clear();
+    device.aiSoundDesignerParameters.clear();
+
+    for (auto& macro : device.macros)
+        std::erase_if(macro.links, [](const MacroLink& link) {
+            return link.target.kind == ControlTarget::Kind::PluginParam;
+        });
+    for (auto& mod : device.mods)
+        std::erase_if(mod.links, [](const ModLink& link) {
+            return link.target.kind == ControlTarget::Kind::PluginParam;
+        });
+
+    return MigrationResult::MigratedDroppingLinks;
+}
+
 /// Drop the links that addressed a device we just rewrote. Their `paramIndex`
 /// is an index into a parameter list that no longer exists, so re-pointing them
 /// would be guesswork; the retired devices were hidden long before macros and
@@ -487,7 +647,7 @@ void collectChainElements(std::vector<ChainElement>& elements, const ChainNodePa
     for (auto& element : elements) {
         if (isDevice(element)) {
             auto& device = getDevice(element);
-            if (!migrateRetiredDevice(device))
+            if (migrateDevice(device) != MigrationResult::MigratedDroppingLinks)
                 continue;
 
             // A top-level device on a track keeps the legacy flat path shape,
@@ -540,7 +700,7 @@ std::set<DeviceId> migrateFragment(std::vector<ChainElement>& elements) {
     for (auto& element : elements) {
         if (isDevice(element)) {
             auto& device = getDevice(element);
-            if (migrateRetiredDevice(device))
+            if (migrateDevice(device) == MigrationResult::MigratedDroppingLinks)
                 migratedIds.insert(device.id);
         } else if (isRack(element)) {
             auto ids = migrateFragmentRack(getRack(element));
@@ -595,54 +755,13 @@ std::vector<const char*> retiredDeviceProperties(const juce::String& retiredType
     return out;
 }
 
+bool retiredDeviceKeepsParameterIdentity(const juce::String& pluginId) {
+    const auto* retired = findRetiredDevice(pluginId);
+    return retired != nullptr && retired->keepsParameterIdentity;
+}
+
 bool migrateRetiredDevice(DeviceInfo& device) {
-    const auto* retired = findRetiredDevice(device.pluginId);
-    if (retired == nullptr)
-        return false;
-
-    const auto converted = convertSlots(
-        *retired, [&device](int legacyIndex) { return retiredValue(device, legacyIndex); });
-
-    std::vector<ParameterInfo> migrated;
-    migrated.reserve(converted.size());
-    for (const auto& slot : converted) {
-        ParameterInfo info;
-        info.paramIndex = slot.slot;
-        info.name = slot.name;
-        info.currentValue = slot.value;
-        migrated.push_back(std::move(info));
-    }
-
-    for (const auto* name : retired->retiredNames)
-        if (device.name.isEmpty() || device.name.equalsIgnoreCase(name)) {
-            device.name = retired->targetDisplayName;
-            break;
-        }
-
-    device.pluginId = retired->targetPluginId;
-    device.uniqueId = retired->targetPluginId;
-    device.parameters = std::move(migrated);
-
-    // Everything below described the retired plugin's parameter list, which the
-    // successor does not share. The live device repopulates all of it from the
-    // compiled slots as soon as it is created.
-    device.pluginState.clear();
-    device.wrapperParameters.clear();
-    device.meters.clear();
-    device.visibleParameters.clear();
-    device.miniMixerParameters.clear();
-    device.aiSoundDesignerParameters.clear();
-
-    for (auto& macro : device.macros)
-        std::erase_if(macro.links, [](const MacroLink& link) {
-            return link.target.kind == ControlTarget::Kind::PluginParam;
-        });
-    for (auto& mod : device.mods)
-        std::erase_if(mod.links, [](const ModLink& link) {
-            return link.target.kind == ControlTarget::Kind::PluginParam;
-        });
-
-    return true;
+    return migrateDevice(device) != MigrationResult::NotRetired;
 }
 
 std::vector<ChainNodePath> migrateRetiredDevicesInTrack(TrackInfo& track) {
@@ -652,11 +771,11 @@ std::vector<ChainNodePath> migrateRetiredDevicesInTrack(TrackInfo& track) {
                          migratedPaths);
 
     for (auto& element : track.chain.postFxChainElements)
-        if (migrateRetiredDevice(element.device))
+        if (migrateDevice(element.device) == MigrationResult::MigratedDroppingLinks)
             migratedPaths.insert(ChainNodePath::postFxDevice(track.id, element.device.id));
 
     for (auto& element : track.chain.mixerAnalysisElements)
-        if (migrateRetiredDevice(element.device))
+        if (migrateDevice(element.device) == MigrationResult::MigratedDroppingLinks)
             migratedPaths.insert(ChainNodePath::mixerAnalysisDevice(track.id, element.device.id));
 
     pruneLinks(track.macros, track.mods, migratedPaths);

@@ -318,6 +318,7 @@ target_sources(magda_juce_tests PRIVATE
     test_device_services_juce.cpp
     test_device_param_schema_juce.cpp
     test_device_state_schema_juce.cpp
+    test_convolution_device_juce.cpp
     test_master_sidechain_juce.cpp
     test_midi_bridge_note_events_juce.cpp
     test_section_scoped_device_ids_juce.cpp
@@ -472,6 +473,9 @@ add_test(NAME device_param_schema_juce
 
 add_test(NAME device_state_schema_juce
          COMMAND magda_juce_tests "Device State Schema")
+
+add_test(NAME convolution_device_juce
+         COMMAND magda_juce_tests "Convolution Device")
 
 # Both test executables link magda_daw, which links ONNX Runtime. On Windows the
 # loader only searches the exe's directory, the cwd, and PATH, so without a copy

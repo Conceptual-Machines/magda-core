@@ -73,7 +73,8 @@ std::vector<magda::legacy_devices::RetiredSlotValue> adoptRetiredNestedPluginTre
     const juce::ValueTree& state);
 
 /// Seat the values returned by `adoptRetiredNestedPluginTree` on the plugin
-/// built from that tree. No-op for an empty list or a non-compiled plugin.
+/// built from that tree, whether the successor is a compiled Faust device or a
+/// native one. No-op for an empty list.
 void applyRetiredSlotValues(te::Plugin& plugin,
                             const std::vector<magda::legacy_devices::RetiredSlotValue>& values);
 

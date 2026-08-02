@@ -240,13 +240,6 @@ void ToneGeneratorProcessor::applyGain() {
 }
 
 // =============================================================================
-// ImpulseResponseProcessor
-// =============================================================================
-
-ImpulseResponseProcessor::ImpulseResponseProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
-
-// =============================================================================
 // UtilityProcessor
 // =============================================================================
 

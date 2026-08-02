@@ -15,19 +15,19 @@ struct AutomationLaneInfo;
 struct AutomationClipInfo;
 
 /**
- * Load-time aliases from the retired stock Tracktion effects onto MAGDA's
- * compiled-Faust successors.
+ * Load-time aliases from the retired stock Tracktion effects onto their MAGDA
+ * successors.
  *
- * Eight Tracktion devices (4-band EQ, Compressor, Delay, Chorus, Phaser,
- * Reverb, Pitch Shift, Lowpass) have compiled-Faust successors, and stayed
- * registered only so older projects would still open. Keeping them addressable
- * meant keeping a Tracktion plugin wrapper per device, so instead each retired
- * type is now an alias: a project naming one loads the compiled device, with
- * its saved parameter values converted into the successor's units.
+ * Nine Tracktion devices (4-band EQ, Compressor, Delay, Chorus, Phaser, Reverb,
+ * Pitch Shift, Lowpass, IR Reverb) have MAGDA successors, and stayed registered
+ * only so older projects would still open. Keeping them addressable meant
+ * keeping a Tracktion plugin wrapper per device, so instead each retired type is
+ * now an alias: a project naming one loads the successor, with its saved
+ * parameter values converted into that device's units.
  *
  * The alias is also the migration. The device is rewritten in place at load, so
  * the retired id leaves the project the next time it is saved and every
- * downstream comparison sees the canonical compiled id.
+ * downstream comparison sees the canonical successor id.
  *
  * Conversions work in REAL units (Hz, dB, ms, ratio), because that is the only
  * space the two sides share — Tracktion's compressor threshold is a linear gain
@@ -37,12 +37,37 @@ struct AutomationClipInfo;
  * are dropped rather than approximated, and controls the retired device had
  * baked in (its filter topology, its stage count) become fixed slot values so
  * the successor starts where its predecessor left off.
+ *
+ * One of them, the IR Reverb, needs more than a parameter table, in two ways.
+ *
+ * It carries STATE: its impulse response is a binary blob in the
+ * saved device state, not a parameter, and the native convolution device reads
+ * it back under the same property name. A retired device may therefore name
+ * state properties its successor keeps verbatim, which is what makes a migrated
+ * project come back with its IR still loaded.
+ *
+ * It also keeps PARAMETER IDENTITY: same five parameters, same order, same
+ * normalised curves, so saved automation, macro links and mod links still
+ * address what they addressed before and survive the rewrite. For the other
+ * eight the successor's parameter list is a different shape, so their links are
+ * dropped rather than re-pointed onto indices that no longer mean the same
+ * thing.
  */
 namespace legacy_devices {
 
-/// The compiled device that replaced `pluginId`, or an empty string when
+/// The MAGDA device that replaced `pluginId`, or an empty string when
 /// `pluginId` does not name a retired stock Tracktion effect.
 juce::String retiredDeviceSuccessor(const juce::String& pluginId);
+
+/**
+ * @brief True when the successor's parameter indices mean exactly what the
+ *        retired device's did.
+ *
+ * Only the IR Reverb qualifies. Callers holding saved links or automation use
+ * this to decide whether a migration invalidates them: false means the indices
+ * were renumbered and anything addressing them has to go.
+ */
+bool retiredDeviceKeepsParameterIdentity(const juce::String& pluginId);
 
 /// One converted value, in the successor's real units, for the slot it belongs
 /// to. `name` is the successor's name for that slot.
@@ -73,14 +98,15 @@ std::vector<RetiredSlotValue> convertRetiredDeviceState(const juce::String& reti
 std::vector<const char*> retiredDeviceProperties(const juce::String& retiredType);
 
 /**
- * @brief Rewrite `device` onto its compiled successor if it names a retired
- *        stock Tracktion type.
+ * @brief Rewrite `device` onto its MAGDA successor if it names a retired stock
+ *        Tracktion type.
  *
- * Replaces `pluginId`, `parameters` and the display name, and drops the state
- * saved for the retired device: it describes a plugin that no longer exists,
- * and every value worth keeping has already been converted into `parameters`.
- * Device-scoped macro and mod links are cleared with it — they address
- * parameter indices that no longer mean the same thing.
+ * Replaces `pluginId`, `parameters` and the display name. The state saved for
+ * the retired device is reduced to the properties the successor keeps verbatim
+ * (the IR Reverb's impulse response) and otherwise dropped: it describes a
+ * plugin that no longer exists, and every value worth keeping has already been
+ * converted into `parameters`. Device-scoped macro and mod links go with it,
+ * unless the successor kept parameter identity.
  *
  * Idempotent, and a no-op for the overwhelmingly common non-retired device.
  *

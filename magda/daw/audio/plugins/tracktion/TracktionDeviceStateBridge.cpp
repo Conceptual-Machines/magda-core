@@ -218,16 +218,23 @@ void applyRetiredSlotValues(te::Plugin& plugin,
     if (values.empty())
         return;
 
-    auto* compiled = deviceFromPlugin<compiled::ICompiledFaustPlugin>(&plugin);
-    if (compiled == nullptr)
+    // Values arrive in the successor's real units. A compiled Faust device owns
+    // the conversion into the normalized value its parameter actually stores; a
+    // native successor's parameters already hold real units, so the value is
+    // seated straight onto the parameter at that index.
+    if (auto* compiled = deviceFromPlugin<compiled::ICompiledFaustPlugin>(&plugin)) {
+        for (const auto& slot : values)
+            if (auto* param = compiled::tracktionParameterForSlot(&plugin, slot.slot))
+                param->setParameterFromHost(compiled->displayToNormalized(slot.slot, slot.value),
+                                            juce::sendNotificationSync);
         return;
+    }
 
-    // Values arrive in the successor's real units; the device owns the
-    // conversion into the normalized value its parameter actually stores.
+    const auto& params = plugin.getAutomatableParameters();
     for (const auto& slot : values)
-        if (auto* param = compiled::tracktionParameterForSlot(&plugin, slot.slot))
-            param->setParameterFromHost(compiled->displayToNormalized(slot.slot, slot.value),
-                                        juce::sendNotificationSync);
+        if (juce::isPositiveAndBelow(slot.slot, params.size()))
+            if (auto* param = params[slot.slot])
+                param->setParameterFromHost(slot.value, juce::sendNotificationSync);
 }
 
 }  // namespace magda::daw::audio::tracktion_adapter

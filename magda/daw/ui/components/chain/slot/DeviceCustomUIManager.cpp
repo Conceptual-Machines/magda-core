@@ -16,6 +16,7 @@
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/DrumGridRoles.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
+#include "audio/plugins/MagdaConvolutionPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/MidiStrumPlugin.hpp"
@@ -771,7 +772,7 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         nimbusUI_->updateFromParameters(device.parameters);
     if (sidechainUI_ && device.pluginId.equalsIgnoreCase(daw::audio::SidechainPlugin::xmlTypeName))
         sidechainUI_->updateFromParameters(device.parameters);
-    if (impulseResponseUI_ && device.pluginId.containsIgnoreCase("impulseresponse"))
+    if (impulseResponseUI_ && device.pluginId == daw::audio::MagdaConvolutionPlugin::xmlTypeName)
         impulseResponseUI_->updateFromParameters(device.parameters);
     if (fourOscUI_ && device.pluginId.containsIgnoreCase("4osc"))
         fourOscUI_->updateFromParameters(device.parameters);
@@ -1070,7 +1071,7 @@ bool DeviceCustomUIManager::createSimpleEffectUI(const magda::DeviceInfo& device
 bool DeviceCustomUIManager::createImpulseResponseUI(const magda::DeviceInfo& device,
                                                     juce::Component& parent,
                                                     const Callbacks& callbacks) {
-    if (!device.pluginId.containsIgnoreCase("impulseresponse"))
+    if (device.pluginId != daw::audio::MagdaConvolutionPlugin::xmlTypeName)
         return false;
 
     impulseResponseUI_ = std::make_unique<ImpulseResponseUI>();
@@ -1718,9 +1719,9 @@ bool DeviceCustomUIManager::executeImpulseResponseLoadCommand(const juce::var& a
         DBG("IR load: no plugin found for device " << devicePath_.getDeviceId());
         return false;
     }
-    auto* ir = dynamic_cast<te::ImpulseResponsePlugin*>(plugin.get());
+    auto* ir = dynamic_cast<daw::audio::MagdaConvolutionPlugin*>(plugin.get());
     if (ir == nullptr) {
-        DBG("IR load: plugin is not ImpulseResponsePlugin, type: " << plugin->getName());
+        DBG("IR load: plugin is not a convolution device, type: " << plugin->getName());
         return false;
     }
     if (!ir->loadImpulseResponse(file)) {
@@ -1728,7 +1729,7 @@ bool DeviceCustomUIManager::executeImpulseResponseLoadCommand(const juce::var& a
         return false;
     }
 
-    ir->name = file.getFileNameWithoutExtension();
+    ir->irName = file.getFileNameWithoutExtension();
     if (impulseResponseUI_ != nullptr)
         impulseResponseUI_->setIRName(file.getFileNameWithoutExtension());
 
@@ -2167,12 +2168,12 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         struckUI_->updateFromParameters(device.parameters);
     }
 
-    if (impulseResponseUI_ && device.pluginId.containsIgnoreCase("impulseresponse")) {
+    if (impulseResponseUI_ && device.pluginId == daw::audio::MagdaConvolutionPlugin::xmlTypeName) {
         impulseResponseUI_->updateFromParameters(device.parameters);
 
         auto plugin = getLivePlugin();
-        if (auto* ir = dynamic_cast<te::ImpulseResponsePlugin*>(plugin.get()))
-            impulseResponseUI_->setIRName(ir->name.get());
+        if (auto* ir = dynamic_cast<daw::audio::MagdaConvolutionPlugin*>(plugin.get()))
+            impulseResponseUI_->setIRName(ir->irName.get());
     }
 }
 

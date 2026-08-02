@@ -6,6 +6,7 @@
 #include "magda/daw/audio/plugins/DeviceServices.hpp"
 #include "magda/daw/audio/plugins/DrumGridPlugin.hpp"
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
+#include "magda/daw/audio/plugins/MagdaConvolutionPlugin.hpp"
 #include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "magda/daw/core/DeviceState.hpp"
@@ -221,7 +222,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         // The IR device keeps its audio in a binary property. JUCE's JSON writer
         // has no binary case, so an untagged encode emits unquoted base64 and the
         // document stops parsing entirely - the device would lose all its state.
-        auto plugin = createPlugin(edit, te::ImpulseResponsePlugin::xmlTypeName);
+        auto plugin = createPlugin(edit, audio::MagdaConvolutionPlugin::xmlTypeName);
         expect(plugin != nullptr);
         if (plugin == nullptr)
             return;
