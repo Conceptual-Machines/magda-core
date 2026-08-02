@@ -945,16 +945,16 @@ void MainWindow::setupMenuCallbacks() {
             if (!r.success) {
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::WarningIcon, tr("dialogs.updates.title"),
-                    tr("dialogs.updates.error_prefix") + " " + r.errorMessage);
+                    tr("dialogs.updates.error").replace("{0}", r.errorMessage));
                 return;
             }
             UpdateChecker::markChecked();
             if (r.updateAvailable) {
                 juce::AlertWindow::showOkCancelBox(
                     juce::AlertWindow::InfoIcon, tr("dialogs.updates.title"),
-                    tr("dialogs.updates.available_body_prefix") + " " + r.latestVersion + " " +
-                        tr("dialogs.updates.available_body_suffix") + " (" +
-                        tr("dialogs.updates.current_label") + " " + r.currentVersion + ").",
+                    tr("dialogs.updates.available_body")
+                        .replace("{0}", r.latestVersion)
+                        .replace("{1}", r.currentVersion),
                     tr("dialogs.updates.view_release"), tr("dialogs.cancel"), nullptr,
                     juce::ModalCallbackFunction::create([url = r.releaseUrl](int result) {
                         if (result == 1 && url.isNotEmpty())
@@ -963,7 +963,7 @@ void MainWindow::setupMenuCallbacks() {
             } else {
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::InfoIcon, tr("dialogs.updates.title"),
-                    tr("dialogs.updates.up_to_date") + " (MAGDA " + r.currentVersion + ")");
+                    tr("dialogs.updates.up_to_date").replace("{0}", r.currentVersion));
             }
         });
     };
