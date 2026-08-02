@@ -105,8 +105,17 @@ TEST_CASE("Remote API input validation returns structured issues",
     }
 
     SECTION("nullable ids reject negative int64 wrap-around") {
-        const DeviceDto device{10,           3,          5,    std::nullopt, "Synth",
-                               "instrument", "internal", true, false,        -3.0};
+        const DeviceDto device{10,
+                               3,
+                               5,
+                               std::nullopt,
+                               makeDevicePathDto(ChainNodePath::chainDevice(3, 5, 7, 10)),
+                               "Synth",
+                               "instrument",
+                               "internal",
+                               true,
+                               false,
+                               -3.0};
         auto json = toJson(device);
         // 5 - 2^32 decodes back to rack 5 if the id is truncated to 32 bits.
         json.getDynamicObject()->setProperty(
@@ -252,7 +261,8 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
     requireRoundTrip(clip, clipFromJson);
 
     const DeviceGraphDto graph{
-        {{10, 3, 20, 30, "Synth", "instrument", "internal", true, false, -3.0}},
+        {{10, 3, 20, 30, makeDevicePathDto(ChainNodePath::chainDevice(3, 20, 30, 10)), "Synth",
+          "instrument", "internal", true, false, -3.0}},
         {{20, 3, std::nullopt, std::nullopt, "Parallel", false, 0.0, 0.0, {30}}},
         {{30, 20, "Main", 0, false, false, false, 0.0, 0.0, {10}, {}}}};
     requireRoundTrip(graph, deviceGraphFromJson);
@@ -266,12 +276,13 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
     const SessionDto session{{{3, 2, 9, "playing"}, {4, 2, 12, "queued"}}};
     requireRoundTrip(session, sessionFromJson);
 
-    const AutomationLaneDto lane{5,
-                                 "absolute",
-                                 "Volume",
-                                 {"track_volume", 3, std::nullopt, -1, -1, -1, -1},
-                                 {{7, 0.0, 0.5, "linear"}, {8, 4.0, 0.75, "bezier"}},
-                                 {}};
+    const AutomationLaneDto lane{
+        5,
+        "absolute",
+        "Volume",
+        {"track_volume", DevicePathDto{3, "fx", true, std::nullopt, {}}, -1, -1, -1, -1},
+        {{7, 0.0, 0.5, "linear"}, {8, 4.0, 0.75, "bezier"}},
+        {}};
     requireRoundTrip(lane, automationLaneFromJson);
 }
 
@@ -300,7 +311,7 @@ TEST_CASE("Dense response payloads round-trip and validate against the published
     lane.id = 5;
     lane.type = "absolute";
     lane.name = "Volume";
-    lane.target = {"track_volume", 3, std::nullopt, -1, -1, -1, -1};
+    lane.target = {"track_volume", DevicePathDto{3, "fx", true, std::nullopt, {}}, -1, -1, -1, -1};
     lane.points.reserve(5000);
     for (int index = 0; index < 5000; ++index)
         lane.points.push_back({index, index * 0.25, 0.5, "linear"});
@@ -395,6 +406,180 @@ TEST_CASE("Remote projections expose only allow-listed state",
     REQUIRE(makeTransportDto(api) == TransportDto{true, false, false, 6.0});
 }
 
+TEST_CASE("devices.list addresses colliding fx and post-fx device ids",
+          "[remote-api][contract][device-path]") {
+    // Post-fx devices allocate from nextPostFxDeviceId_, the fx chain from
+    // nextFxDeviceId_, so id 3 legitimately exists in both on one track. Both
+    // project with rackId and chainId null, so before devicePath the two rows
+    // were identical addresses.
+    TrackInfo track;
+    track.id = 1;
+
+    DeviceInfo fxDevice;
+    fxDevice.id = 3;
+    fxDevice.name = "Chorus";
+    track.chain.fxChainElements.push_back(makeDeviceElement(fxDevice));
+
+    DeviceInfo postFxDevice;
+    postFxDevice.id = 3;
+    postFxDevice.name = "Limiter";
+    track.chain.postFxChainElements.push_back({postFxDevice});
+
+    const auto graph = makeDeviceGraphDto({track});
+    REQUIRE(graph.devices.size() == 2);
+    REQUIRE(graph.devices[0].id == graph.devices[1].id);
+    REQUIRE(graph.devices[0].rackId == graph.devices[1].rackId);
+    REQUIRE(graph.devices[0].chainId == graph.devices[1].chainId);
+
+    // The path is what tells them apart.
+    REQUIRE(graph.devices[0].devicePath.section == "fx");
+    REQUIRE(graph.devices[1].devicePath.section == "post_fx");
+    REQUIRE_FALSE(graph.devices[0].devicePath == graph.devices[1].devicePath);
+
+    REQUIRE(toChainNodePath(graph.devices[0].devicePath) == ChainNodePath::topLevelDevice(1, 3));
+    REQUIRE(toChainNodePath(graph.devices[1].devicePath) == ChainNodePath::postFxDevice(1, 3));
+
+    requireRoundTrip(graph, deviceGraphFromJson);
+}
+
+TEST_CASE("devices.list carries full depth for nested racks",
+          "[remote-api][contract][device-path]") {
+    // rackId/chainId name the immediate parent only; a device two racks deep
+    // needs the whole route to be addressable.
+    TrackInfo track;
+    track.id = 1;
+
+    DeviceInfo leaf;
+    leaf.id = 9;
+    leaf.name = "Filter";
+
+    RackInfo inner;
+    inner.id = 7;
+    ChainInfo innerChain;
+    innerChain.id = 8;
+    innerChain.elements.push_back(makeDeviceElement(leaf));
+    inner.chains.push_back(std::move(innerChain));
+
+    RackInfo outer;
+    outer.id = 2;
+    ChainInfo outerChain;
+    outerChain.id = 4;
+    outerChain.elements.push_back(makeRackElement(std::move(inner)));
+    outer.chains.push_back(std::move(outerChain));
+
+    track.chain.fxChainElements.push_back(makeRackElement(std::move(outer)));
+
+    const auto graph = makeDeviceGraphDto({track});
+    REQUIRE(graph.devices.size() == 1);
+
+    const auto& device = graph.devices.front();
+    REQUIRE(device.rackId == 7);
+    REQUIRE(device.chainId == 8);
+    REQUIRE(toChainNodePath(device.devicePath) ==
+            ChainNodePath::chain(1, 2, 4).withRack(7).withChain(8).withDevice(9));
+
+    requireRoundTrip(graph, deviceGraphFromJson);
+}
+
+TEST_CASE("Device paths distinguish the three per-section DeviceId spaces",
+          "[remote-api][contract][device-path]") {
+    // The main FX chain, the post-fader list, and the mixer-analysis section
+    // each allocate DeviceIds from their own counter, so the same id exists in
+    // all three at once. A projection that carried only trackId + deviceId
+    // collapsed them into one address.
+    const auto fx = ChainNodePath::topLevelDevice(1, 3);
+    const auto postFx = ChainNodePath::postFxDevice(1, 3);
+    const auto analysis = ChainNodePath::mixerAnalysisDevice(1, 3);
+
+    const auto fxDto = makeDevicePathDto(fx);
+    const auto postFxDto = makeDevicePathDto(postFx);
+    const auto analysisDto = makeDevicePathDto(analysis);
+
+    REQUIRE(fxDto.section == "fx");
+    REQUIRE(postFxDto.section == "post_fx");
+    REQUIRE(analysisDto.section == "mixer_analysis");
+
+    REQUIRE_FALSE(fxDto == postFxDto);
+    REQUIRE_FALSE(postFxDto == analysisDto);
+    REQUIRE_FALSE(fxDto == analysisDto);
+
+    // ...and each survives the trip back to an internal path.
+    REQUIRE(toChainNodePath(fxDto) == fx);
+    REQUIRE(toChainNodePath(postFxDto) == postFx);
+    REQUIRE(toChainNodePath(analysisDto) == analysis);
+}
+
+TEST_CASE("Device paths round-trip through nested racks and chains",
+          "[remote-api][contract][device-path]") {
+    SECTION("track level") {
+        const auto path = ChainNodePath::trackLevel(2);
+        const auto dto = makeDevicePathDto(path);
+        REQUIRE(dto.trackLevel);
+        REQUIRE(toChainNodePath(dto) == path);
+    }
+
+    SECTION("device inside a rack chain") {
+        const auto path = ChainNodePath::chainDevice(2, 4, 5, 6);
+        const auto dto = makeDevicePathDto(path);
+        REQUIRE(dto.steps.size() == 3);
+        REQUIRE(toChainNodePath(dto) == path);
+    }
+
+    SECTION("arbitrarily nested racks") {
+        const auto path = ChainNodePath::chain(2, 4, 5).withRack(7).withChain(8).withDevice(9);
+        const auto dto = makeDevicePathDto(path);
+        REQUIRE(toChainNodePath(dto) == path);
+    }
+
+    SECTION("unknown section and step types are rejected, not guessed") {
+        auto dto = makeDevicePathDto(ChainNodePath::chainDevice(2, 4, 5, 6));
+        dto.section = "not_a_section";
+        REQUIRE_FALSE(toChainNodePath(dto).has_value());
+
+        auto stepDto = makeDevicePathDto(ChainNodePath::chainDevice(2, 4, 5, 6));
+        stepDto.steps[0].type = "not_a_step";
+        REQUIRE_FALSE(toChainNodePath(stepDto).has_value());
+    }
+}
+
+TEST_CASE("Automation targets carry a full device path through JSON",
+          "[remote-api][contract][device-path]") {
+    AutomationLaneDto lane;
+    lane.id = 5;
+    lane.type = "absolute";
+    lane.name = "Cutoff";
+    lane.target.kind = "plugin_param";
+    lane.target.devicePath = makeDevicePathDto(ChainNodePath::postFxDevice(1, 3));
+    lane.target.parameterIndex = 2;
+
+    requireRoundTrip(lane, automationLaneFromJson);
+
+    const auto* getLane = OperationRegistry::instance().find("automation.getLane");
+    REQUIRE(getLane != nullptr);
+    REQUIRE(validateJson(toJson(lane), getLane->outputSchema).empty());
+
+    // The same parameter index on the fx-chain device is a different target.
+    AutomationLaneDto fxLane = lane;
+    fxLane.target.devicePath = makeDevicePathDto(ChainNodePath::topLevelDevice(1, 3));
+    REQUIRE_FALSE(toJson(lane).toString() == toJson(fxLane).toString());
+}
+
+TEST_CASE("Edit-scoped automation targets carry no device path",
+          "[remote-api][contract][device-path]") {
+    AutomationLaneDto lane;
+    lane.id = 6;
+    lane.type = "absolute";
+    lane.name = "Tempo";
+    lane.target.kind = "tempo";
+    lane.target.devicePath = std::nullopt;
+
+    requireRoundTrip(lane, automationLaneFromJson);
+
+    const auto* getLane = OperationRegistry::instance().find("automation.getLane");
+    REQUIRE(getLane != nullptr);
+    REQUIRE(validateJson(toJson(lane), getLane->outputSchema).empty());
+}
+
 TEST_CASE("Remote session and automation projections use MagdaApi values",
           "[remote-api][contract][projection]") {
     const ScopedMessageThreadAssertionDisabler threadAssertionGuard;
@@ -434,13 +619,15 @@ TEST_CASE("Remote session and automation projections use MagdaApi values",
     const auto dto = makeAutomationLaneDto(lane);
     REQUIRE(dto.id == 60);
     REQUIRE(dto.target.kind == "track_pan");
-    REQUIRE(dto.target.trackId == 1);
+    REQUIRE(dto.target.devicePath.has_value());
+    REQUIRE(dto.target.devicePath->trackId == 1);
     REQUIRE(dto.points.size() == 2);
     REQUIRE(dto.points[1].curve == "step");
 
     lane.target = AutomationTarget::trackVolume(MASTER_TRACK_ID);
     const auto masterDto = makeAutomationLaneDto(lane);
-    REQUIRE(masterDto.target.trackId == MASTER_TRACK_ID);
+    REQUIRE(masterDto.target.devicePath.has_value());
+    REQUIRE(masterDto.target.devicePath->trackId == MASTER_TRACK_ID);
     const auto* operation = OperationRegistry::instance().find("automation.getLane");
     REQUIRE(operation != nullptr);
     REQUIRE(validateJson(toJson(masterDto), operation->outputSchema).empty());

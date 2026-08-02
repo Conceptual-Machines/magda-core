@@ -292,4 +292,32 @@ struct ChainNodePath {
     }
 };
 
+// ============================================================================
+// Canonical serialization
+// ============================================================================
+
+/**
+ * @brief Serialize a path to its canonical persisted JSON form.
+ *
+ * Shape: `{trackId, topLevelDeviceId, isTrackLevel, steps:[{type,id}]}`, where
+ * `type` is the integer value of `ChainStepType`. This is the on-disk format
+ * already used by stored parameter aliases, so it must stay
+ * backward-compatible — see the note on `ChainStepType` about keeping the
+ * enum's integer values stable.
+ *
+ * This is the *persistence* form. The remote API publishes a separate
+ * string-typed projection so external clients never depend on enum ordering.
+ */
+juce::var toVar(const ChainNodePath& path);
+
+/**
+ * @brief Parse a path from its canonical persisted JSON form.
+ *
+ * Tolerant of absent optional fields so older saved data keeps loading.
+ * Returns false and leaves `out` untouched if `v` is not an object; an
+ * unparseable path yields an invalid `ChainNodePath`, which callers should
+ * check with `isValid()`.
+ */
+bool fromVar(const juce::var& v, ChainNodePath& out);
+
 }  // namespace magda

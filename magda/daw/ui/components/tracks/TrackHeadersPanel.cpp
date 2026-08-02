@@ -28,6 +28,7 @@
 #include "../../utils/SelectionPolicy.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../automation/AutomationMenu.hpp"
+#include "../chain/ChainNodePathDrag.hpp"
 #include "../common/MasterSpeakerButton.hpp"
 #include "../mixer/LevelMeter.hpp"
 #include "../mixer/LevelMeterScale.hpp"
@@ -41,28 +42,11 @@ namespace {
 
 bool dragObjectToChainNodePathAt(const juce::DynamicObject& obj, int index, ChainNodePath& path) {
     path = {};
-    const auto suffix = juce::String(index);
-    path.trackId = static_cast<TrackId>(static_cast<int>(obj.getProperty("trackId" + suffix)));
-    path.topLevelDeviceId =
-        static_cast<DeviceId>(static_cast<int>(obj.getProperty("topLevelDeviceId" + suffix)));
-    path.isTrackLevel = static_cast<bool>(obj.getProperty("isTrackLevel" + suffix));
-
-    auto stepTypes =
-        juce::StringArray::fromTokens(obj.getProperty("stepTypes" + suffix).toString(), ",", "");
-    auto stepIds =
-        juce::StringArray::fromTokens(obj.getProperty("stepIds" + suffix).toString(), ",", "");
-    if (stepTypes.size() != stepIds.size())
+    const auto decoded = daw::ui::readChainNodePathFromDragInfo(obj, index);
+    if (!decoded)
         return false;
-
-    for (int i = 0; i < stepTypes.size(); ++i) {
-        const int typeValue = stepTypes[i].getIntValue();
-        if (typeValue < static_cast<int>(ChainStepType::Rack) ||
-            typeValue > static_cast<int>(ChainStepType::Device))
-            return false;
-        path.steps.push_back({static_cast<ChainStepType>(typeValue), stepIds[i].getIntValue()});
-    }
-
-    return path.isValid();
+    path = *decoded;
+    return true;
 }
 
 std::vector<ChainNodePath> dragObjectToChainNodePaths(const juce::DynamicObject& obj) {

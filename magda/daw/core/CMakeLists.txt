@@ -5,6 +5,8 @@
 target_sources(magda_daw PRIVATE
     Config.cpp
     AppPaths.cpp
+    ChainNodePath.cpp
+    ControlTarget.cpp
     UIScale.cpp
     UpdateChecker.cpp
     ViewModeController.cpp

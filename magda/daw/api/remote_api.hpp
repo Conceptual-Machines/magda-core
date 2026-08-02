@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include "../core/ChainNodePath.hpp"
 #include "../core/ClipTypes.hpp"
 #include "../core/TypeIds.hpp"
 
@@ -119,11 +120,46 @@ struct ClipDto {
     bool operator==(const ClipDto&) const = default;
 };
 
+/**
+ * @brief Public projection of a `ChainNodePath`.
+ *
+ * A device id alone does not identify a device: the main FX chain, the
+ * post-fader list, and the mixer-analysis section each carry their own
+ * `DeviceId` counter, so id 3 can exist in all three at once on one track.
+ * `section` carries that discriminator and `steps` carries the route through
+ * nested racks and chains, so this round-trips to exactly one device.
+ *
+ * Step types are strings rather than enum ordinals: this is a public wire
+ * contract consumed by scripts and MCP clients, and it must not be coupled to
+ * the internal `ChainStepType` ordering.
+ */
+struct DevicePathStepDto {
+    juce::String type;  // "rack" | "chain" | "device"
+    int id = -1;
+
+    bool operator==(const DevicePathStepDto&) const = default;
+};
+
+struct DevicePathDto {
+    TrackId trackId = INVALID_TRACK_ID;
+    juce::String section{"fx"};  // "fx" | "post_fx" | "mixer_analysis"
+    bool trackLevel = false;
+    std::optional<DeviceId> topLevelDeviceId;
+    std::vector<DevicePathStepDto> steps;
+
+    bool operator==(const DevicePathDto&) const = default;
+};
+
 struct DeviceDto {
     DeviceId id = INVALID_DEVICE_ID;
     TrackId trackId = INVALID_TRACK_ID;
+    // Immediate parents, for rendering the graph. `rackId`/`chainId` locate a
+    // device one level up but cannot address it: `id` is unique only within a
+    // section, and nesting can be arbitrarily deep. Use `devicePath` as the
+    // address.
     std::optional<RackId> rackId;
     std::optional<ChainId> chainId;
+    DevicePathDto devicePath;
     juce::String name;
     juce::String type;
     juce::String format;
@@ -219,8 +255,8 @@ struct AutomationPointDto {
 
 struct AutomationTargetDto {
     juce::String kind;
-    std::optional<TrackId> trackId;
-    std::optional<DeviceId> deviceId;
+    // Absent for edit-scoped kinds (`tempo`), which address a global value.
+    std::optional<DevicePathDto> devicePath;
     int parameterIndex = -1;
     int modId = -1;
     int modParameterIndex = -1;
@@ -287,6 +323,7 @@ juce::var toJson(const TransportDto& dto);
 juce::var toJson(const SessionSlotDto& dto);
 juce::var toJson(const SessionDto& dto);
 juce::var toJson(const AutomationPointDto& dto);
+juce::var toJson(const DevicePathDto& dto);
 juce::var toJson(const AutomationTargetDto& dto);
 juce::var toJson(const AutomationLaneDto& dto);
 
@@ -311,6 +348,25 @@ SelectionDto makeSelectionDto(MagdaApi& api);
 TransportDto makeTransportDto(MagdaApi& api);
 SessionDto makeSessionDto(MagdaApi& api);
 AutomationLaneDto makeAutomationLaneDto(const AutomationLaneInfo& lane);
+
+/**
+ * @brief Project an internal path to its public form.
+ *
+ * Lifts a leading `Segment` step out into `section` so the remaining steps are
+ * a uniform rack/chain/device route, and maps step types to strings.
+ */
+DevicePathDto makeDevicePathDto(const ChainNodePath& path);
+
+/**
+ * @brief Rebuild an internal path from its public form.
+ *
+ * Returns nullopt on an unrecognised `section` or step `type`. Round-trips
+ * with `makeDevicePathDto` for every path the `ChainNodePath` factories
+ * produce — including which of the three per-section `DeviceId` spaces the
+ * leaf belongs to. An explicit leading `Segment(Fx)` step normalizes to the
+ * implicit form, which is the same path by every accessor.
+ */
+std::optional<ChainNodePath> toChainNodePath(const DevicePathDto& dto);
 
 // makeSelectionDto, makeTransportDto, and makeSessionDto read MagdaApi live
 // state and assert the JUCE message thread. Tests drive them from the Catch2
