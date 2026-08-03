@@ -40,23 +40,42 @@ bool consumesMidi(const DeviceInfo& device) {
     return device.isInstrument || device.canReceiveMidi || device.deviceType == DeviceType::MIDI;
 }
 
+/// True when a chain inside a rack will be compiled at all. Aux-routed chains
+/// are not wired yet, and bypassed ones contribute nothing.
+bool chainIsActive(const ChainInfo& chain) {
+    return !chain.bypassed && chain.outputIndex == 0;
+}
+
+/// Whether anything the compiler will actually emit consumes MIDI. Walks only
+/// the live elements, so a bypassed instrument does not keep the track's MIDI
+/// source ops in the plan with nothing to read them.
 bool elementsConsumeMidi(const std::vector<ChainElement>& elements) {
     return std::ranges::any_of(elements, [](const ChainElement& element) {
-        if (isDevice(element))
-            return consumesMidi(getDevice(element));
-        if (isRack(element))
-            return std::ranges::any_of(getRack(element).chains, [](const ChainInfo& chain) {
-                return elementsConsumeMidi(chain.elements);
+        if (isDevice(element)) {
+            const auto& device = getDevice(element);
+            return !device.bypassed && consumesMidi(device);
+        }
+        if (isRack(element)) {
+            const auto& rack = getRack(element);
+            return !rack.bypassed && std::ranges::any_of(rack.chains, [](const ChainInfo& chain) {
+                return chainIsActive(chain) && elementsConsumeMidi(chain.elements);
             });
+        }
         return false;
     });
 }
 
+bool sectionConsumesMidi(const std::vector<PostFxChainElement>& section) {
+    return std::ranges::any_of(section, [](const PostFxChainElement& element) {
+        return !element.device.bypassed && consumesMidi(element.device);
+    });
+}
+
 bool chainConsumesMidi(const TrackInfo& track) {
-    return elementsConsumeMidi(track.chain.fxChainElements) ||
-           std::ranges::any_of(
-               track.chain.postFxChainElements,
-               [](const PostFxChainElement& element) { return consumesMidi(element.device); });
+    // Chain power gates the insert chain; the flat sections sit outside it.
+    return (track.chain.enabled && elementsConsumeMidi(track.chain.fxChainElements)) ||
+           sectionConsumesMidi(track.chain.postFxChainElements) ||
+           sectionConsumesMidi(track.chain.mixerAnalysisElements);
 }
 
 /// Tracks whose signal a device in `elements` reads as a sidechain input.
@@ -82,23 +101,31 @@ void collectSidechainSources(const std::vector<ChainElement>& elements,
             if (rack.bypassed)
                 continue;
             for (const auto& chain : rack.chains)
-                if (!chain.bypassed && chain.outputIndex == 0)
+                if (chainIsActive(chain))
                     collectSidechainSources(chain.elements, type, out);
         }
     }
 }
 
-void collectSidechainSources(const TrackInfo& track, std::optional<SidechainConfig::Type> type,
-                             std::set<TrackId>& out) {
-    // Chain power gates the insert chain; post-FX sits outside it. This mirrors
-    // the emission rules exactly, which is the point.
-    if (track.chain.enabled)
-        collectSidechainSources(track.chain.fxChainElements, type, out);
-
-    for (const auto& element : track.chain.postFxChainElements)
+void collectSidechainSources(const std::vector<PostFxChainElement>& section,
+                             std::optional<SidechainConfig::Type> type, std::set<TrackId>& out) {
+    for (const auto& element : section)
         if (!element.device.bypassed && element.device.sidechain.isActive() &&
             (!type.has_value() || element.device.sidechain.type == *type))
             out.insert(element.device.sidechain.sourceTrackId);
+}
+
+void collectSidechainSources(const TrackInfo& track, std::optional<SidechainConfig::Type> type,
+                             std::set<TrackId>& out) {
+    // Chain power gates the insert chain; the flat sections sit outside it.
+    // This walks exactly what emitTrack emits, which is the point: emission
+    // resolves a sidechain on any device in any section, so collection has to
+    // reach every section too or the two can silently drift apart.
+    if (track.chain.enabled)
+        collectSidechainSources(track.chain.fxChainElements, type, out);
+
+    collectSidechainSources(track.chain.postFxChainElements, type, out);
+    collectSidechainSources(track.chain.mixerAnalysisElements, type, out);
 }
 
 /// What a routing field resolves to. Malformed is deliberately distinct from
@@ -667,6 +694,16 @@ void Compiler::emitTrack(const TrackInfo& track) {
                          ": no destination track for aux bus " + std::to_string(send.busIndex));
                 continue;
             }
+            // A stored destTrackId is taken on trust by resolveSendDestination.
+            // If the track is gone, the tap would queue against a track that is
+            // never compiled and the end-of-run sweep would report it as a
+            // connection lost to a routing cycle, which is not what happened.
+            if (findTrack(destination) == nullptr) {
+                diagnose("track " + std::to_string(track.id) + " send " + std::to_string(slot) +
+                         ": destination track " + std::to_string(destination) +
+                         " does not exist, send not connected");
+                continue;
+            }
 
             const OpKey key{track.id,          INVALID_RACK_ID, INVALID_CHAIN_ID,
                             INVALID_DEVICE_ID, OpRole::SendTap, static_cast<int>(slot)};
@@ -699,6 +736,17 @@ void Compiler::emitTrack(const TrackInfo& track) {
         const OpKey outputKey{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
                               INVALID_DEVICE_ID, OpRole::HardwareOutput, 0};
         plan_.outputOps.push_back(addOp(OpKind::Output, outputKey, {out}, {}));
+        return;
+    }
+
+    // A malformed output routing is reported for the same reason a malformed
+    // input routing is: the master fallback is a sane default for ordering, but
+    // silently applying it here would hide a broken route.
+    if (parseTrackRoute(track.audioOutputDevice).kind == RouteKind::Malformed) {
+        diagnose("track " + std::to_string(track.id) + ": output routing '" +
+                 track.audioOutputDevice.toStdString() +
+                 "' does not name a track, summed into the master instead");
+        pendingInputs_[master_.id].push_back(out);
         return;
     }
 

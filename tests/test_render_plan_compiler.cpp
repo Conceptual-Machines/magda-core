@@ -842,3 +842,134 @@ TEST_CASE("A rack-level sidechain is reported as unsupported", "[engine][plan][c
     CHECK(plan.diagnostics.front().find("rack 4") != std::string::npos);
     CHECK(plan.diagnostics.front().find("modulation") != std::string::npos);
 }
+
+TEST_CASE("A malformed output routing is reported", "[engine][plan][compiler]") {
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].audioOutputDevice = "track:";
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    // The master fallback is the right behaviour; applying it silently is not.
+    REQUIRE(plan.diagnostics.size() == 1);
+    CHECK(plan.diagnostics.front().find("output routing") != std::string::npos);
+
+    magda::engine::OpId masterInput = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackAudioInput))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == MASTER_TRACK_ID)
+            masterInput = op;
+    REQUIRE(masterInput != magda::engine::INVALID_OP_ID);
+    CHECK(plan.ops[static_cast<std::size_t>(masterInput)].inputs.size() == 1);
+}
+
+TEST_CASE("A send to a track that no longer exists is reported as such",
+          "[engine][plan][compiler]") {
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].sends.push_back(SendInfo{0, 1.0f, false, 99});
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    // Emitting the tap anyway would leave it queued against a track that is
+    // never compiled, and the end-of-run sweep would blame a routing cycle.
+    CHECK(countRole(plan, OpRole::SendTap) == 0);
+    REQUIRE(plan.diagnostics.size() == 1);
+    CHECK(plan.diagnostics.front().find("does not exist") != std::string::npos);
+    CHECK(plan.diagnostics.front().find("cycle") == std::string::npos);
+}
+
+TEST_CASE("Only MIDI consumers the compiler emits pull in a MIDI source",
+          "[engine][plan][compiler]") {
+    SECTION("a bypassed instrument does not") {
+        auto instrument = makeInstrument(3);
+        instrument.bypassed = true;
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(instrument));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(countRole(plan, OpRole::ClipMidi) == 0);
+        CHECK(countRole(plan, OpRole::TrackMidiInput) == 0);
+    }
+
+    SECTION("an instrument behind chain power off does not") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.enabled = false;
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(3)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(countRole(plan, OpRole::ClipMidi) == 0);
+    }
+
+    SECTION("an instrument in a bypassed rack does not") {
+        RackInfo rack;
+        rack.id = 4;
+        rack.bypassed = true;
+        ChainInfo chain;
+        chain.id = 10;
+        chain.elements.push_back(makeDeviceElement(makeInstrument(3)));
+        rack.chains.push_back(std::move(chain));
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(countRole(plan, OpRole::ClipMidi) == 0);
+    }
+
+    SECTION("but a MIDI sidechain reader still does, whatever the chain holds") {
+        auto gate = makeEffect(7);
+        gate.canReceiveMidi = true;
+        gate.sidechain.type = SidechainConfig::Type::MIDI;
+        gate.sidechain.sourceTrackId = 2;
+
+        auto bypassed = makeInstrument(3);
+        bypassed.bypassed = true;
+
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(gate));
+        tracks[1].chain.fxChainElements.push_back(makeDeviceElement(bypassed));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(plan.diagnostics.empty());
+
+        // Track 2's own instrument is bypassed, but track 1 reads its MIDI, so
+        // its clips are compiled anyway. Track 1 has a MIDI consumer of its own
+        // and gets a source for the ordinary reason.
+        std::vector<magda::TrackId> clipMidiTracks;
+        for (const auto op : opsWithRole(plan, OpRole::ClipMidi))
+            clipMidiTracks.push_back(plan.ops[static_cast<std::size_t>(op)].key.trackId);
+        CHECK(clipMidiTracks == std::vector<magda::TrackId>{2, 1});
+    }
+}
+
+TEST_CASE("Sidechain discovery reaches every section emission does", "[engine][plan][compiler]") {
+    // Mixer-analysis devices are rail-managed and none sets canSidechain today,
+    // but emitDevice resolves a sidechain wherever it finds one, so collection
+    // has to walk the same sections or ordering silently depends on luck.
+    auto analysisWithSidechain = makeEffect(9);
+    analysisWithSidechain.deviceType = DeviceType::Analysis;
+    analysisWithSidechain.canSidechain = true;
+    analysisWithSidechain.sidechain.type = SidechainConfig::Type::Audio;
+    analysisWithSidechain.sidechain.sourceTrackId = 2;
+
+    // Declared before its source, so only the ordering edge can resolve it.
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[0].chain.mixerAnalysisElements.push_back(PostFxChainElement{analysisWithSidechain});
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+
+    const auto device = opsWithRole(plan, OpRole::DeviceProcess).front();
+    magda::engine::OpId sourceMeter = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackMeter))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 2)
+            sourceMeter = op;
+    REQUIRE(sourceMeter != magda::engine::INVALID_OP_ID);
+    CHECK(inputOp(plan, device, 2) == sourceMeter);
+}
