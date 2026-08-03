@@ -60,6 +60,10 @@ class SelectionApi {
     virtual void selectTracks(const std::unordered_set<TrackId>& trackIds) = 0;
     virtual void selectClip(ClipId clipId) = 0;
     virtual void selectClips(const std::unordered_set<ClipId>& clipIds) = 0;
+    /// Select a lane with no clip. Distinct from `selectAutomationClip`, which
+    /// cannot express a lane-only selection — the shape `makeSelectionDto`
+    /// already reports when a lane is selected on its own.
+    virtual void selectAutomationLane(AutomationLaneId laneId) = 0;
     virtual void selectAutomationClip(AutomationClipId clipId, AutomationLaneId laneId) = 0;
     virtual void selectNotes(ClipId clipId, const std::vector<size_t>& noteIndices) = 0;
     virtual void clearNoteSelection() = 0;

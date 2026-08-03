@@ -186,6 +186,10 @@ class RemoteApiService {
     struct ExecutionState {
         std::mutex mutex;
         RemoteApiService* service = nullptr;
+        /// The revision at the moment this state was retired. Work that arrives
+        /// afterwards reports it rather than zero, so a cancellation never moves
+        /// a client's cursor backwards.
+        Revision revisionAtRetirement = INITIAL_REVISION;
     };
 
     Response execute(const OperationDescriptor& operation, const juce::var& input,

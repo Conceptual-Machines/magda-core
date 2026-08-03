@@ -193,7 +193,6 @@ set(TEST_SOURCES
     test_magda_api_lua_bindings.cpp
     test_remote_api_contract.cpp
     test_remote_service.cpp
-    test_remote_service_live.cpp
     test_remote_changes.cpp
     test_remote_model_bridge.cpp
     test_device_api.cpp
@@ -334,6 +333,7 @@ target_sources(magda_juce_tests PRIVATE
     test_master_sidechain_juce.cpp
     test_midi_bridge_note_events_juce.cpp
     test_section_scoped_device_ids_juce.cpp
+    test_remote_service_live_juce.cpp
     test_clip_inspector_juce.cpp
     test_multi_clip_resize_preview_juce.cpp
     test_clip_paint_juce.cpp
@@ -490,6 +490,13 @@ add_test(NAME device_state_schema_juce
 
 add_test(NAME convolution_device_juce
          COMMAND magda_juce_tests "Convolution Device")
+
+# Remote API against the live facade. Runs here rather than in magda_tests
+# because executing an undoable command constructs ProjectManager through
+# UndoableMutationScope, and its constructor starts a JUCE timer — which needs
+# an initialised message system to be valid.
+add_test(NAME remote_service_live_juce
+         COMMAND magda_juce_tests "Remote Service Live")
 
 # Both test executables link magda_daw, which links ONNX Runtime. On Windows the
 # loader only searches the exe's directory, the cwd, and PATH, so without a copy

@@ -178,7 +178,23 @@ std::optional<AutomationTarget> toAutomationTarget(const juce::var& json) {
     target.modId = readInt(json, "modId", -1);
     target.modParamIndex = readInt(json, "modParameterIndex", -1);
     target.sendBusIndex = readInt(json, "sendBusIndex", -1);
+
+    // Syntactic path validity is not enough. `isValid` enforces the fields each
+    // kind actually needs — a PluginParam with paramIndex left at -1, a ModParam
+    // with no mod id — which `createLane` would otherwise accept and seed with
+    // fallback values.
+    if (!target.isValid())
+        return std::nullopt;
     return target;
+}
+
+/// Whether the track a target addresses still exists. Edit-scoped targets
+/// (tempo) name no track and are always resolvable.
+bool targetResolves(MagdaApi& api, const AutomationTarget& target) {
+    if (target.isEditScoped())
+        return true;
+    const auto trackId = target.devicePath.trackId;
+    return trackId != INVALID_TRACK_ID && api.tracks().getTrack(trackId) != nullptr;
 }
 
 }  // namespace
@@ -258,22 +274,47 @@ HandlerResult tracksUpdate(MagdaApi& api, const juce::var& input, const RequestC
     // so an absent field must leave the current value alone rather than reset
     // it to a default. Each field is its own command; the dispatcher's compound
     // collapses them into the single undo step the request represents.
-    if (has(input, "name"))
+    //
+    // A field already holding the requested value is skipped. The schema
+    // requires only trackId, so `{trackId}` alone — or a patch that restates
+    // the current state — enqueues nothing, and reporting that as a committed
+    // write would advance the revision for a request that changed nothing.
+    const auto* current = tracks.getTrack(trackId);
+    if (current == nullptr)
+        return notFound("track", trackId);
+
+    bool mutated = false;
+    const auto applyIfChanged = [&](const char* field, auto currentValue, auto requested,
+                                    auto&& apply) {
+        if (!has(input, field) || currentValue == requested)
+            return;
+        apply();
+        mutated = true;
+    };
+
+    applyIfChanged("name", current->name, input["name"].toString(), [&] {
         runCommand<SetTrackNameCommand>(api, trackId, input["name"].toString());
-    if (has(input, "volume"))
+    });
+    applyIfChanged("volume", current->volume, static_cast<float>(readDouble(input, "volume")), [&] {
         runCommand<SetTrackVolumeCommand>(api, trackId,
                                           static_cast<float>(readDouble(input, "volume")));
-    if (has(input, "pan"))
+    });
+    applyIfChanged("pan", current->pan, static_cast<float>(readDouble(input, "pan")), [&] {
         runCommand<SetTrackPanCommand>(api, trackId, static_cast<float>(readDouble(input, "pan")));
-    if (has(input, "muted"))
+    });
+    applyIfChanged("muted", current->muted, readBool(input, "muted"), [&] {
         runCommand<SetTrackMuteCommand>(api, trackId, readBool(input, "muted"));
-    if (has(input, "soloed"))
+    });
+    applyIfChanged("soloed", current->soloed, readBool(input, "soloed"), [&] {
         runCommand<SetTrackSoloCommand>(api, trackId, readBool(input, "soloed"));
+    });
 
     const auto* updated = tracks.getTrack(trackId);
     if (updated == nullptr)
         return notFound("track", trackId);
-    return HandlerResult::ok(toJson(makeTrackDto(*updated)));
+    auto payload = toJson(makeTrackDto(*updated));
+    return mutated ? HandlerResult::ok(std::move(payload))
+                   : HandlerResult::unchanged(std::move(payload));
 }
 
 HandlerResult tracksDelete(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -504,8 +545,13 @@ HandlerResult selectionSet(MagdaApi& api, const juce::var& input, const RequestC
     else if (dto->clipId)
         selection.selectClip(*dto->clipId);
 
+    // A lane can be selected without a clip — `makeSelectionDto` reports that
+    // shape, so `selection.get` -> `selection.set` has to round-trip it rather
+    // than succeed while restoring nothing.
     if (dto->automationClipId && dto->automationLaneId)
         selection.selectAutomationClip(*dto->automationClipId, *dto->automationLaneId);
+    else if (dto->automationLaneId)
+        selection.selectAutomationLane(*dto->automationLaneId);
 
     if (dto->noteClipId && !dto->noteIndices.empty()) {
         std::vector<size_t> indices;
@@ -617,6 +663,10 @@ HandlerResult automationCreateLane(MagdaApi& api, const juce::var& input, const 
     if (!target)
         return HandlerResult::fail(ErrorCode::ValidationFailed,
                                    "target does not resolve to an addressable parameter");
+    // Shape is valid; the thing it names must also still exist, or the lane
+    // would be created against a track that was deleted.
+    if (!targetResolves(api, *target))
+        return notFound("track", target->devicePath.trackId);
 
     // A lane already exists for this target: creating a second one would leave
     // two curves fighting over one parameter, so this is a conflict rather than

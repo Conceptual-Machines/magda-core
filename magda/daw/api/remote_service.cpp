@@ -146,6 +146,7 @@ void RemoteApiService::retireState() {
     // while a job is inside execute(), so once this returns no job is running
     // and none can start.
     const std::lock_guard<std::mutex> lock(retiring->mutex);
+    retiring->revisionAtRetirement = currentRevision();
     retiring->service = nullptr;
 }
 
@@ -203,17 +204,28 @@ void RemoteApiService::dispatch(const juce::String& operationName, const juce::v
     auto fallback = onComplete;
 
     auto job = [state, operation, input, context, onComplete = std::move(onComplete)]() mutable {
-        // The shared state, never a bare `this`, is what makes this safe. The
-        // lock is held across the whole call, so the service cannot be retired
-        // out from under a running handler, and two handlers cannot run at
-        // once even when the caller's thread executes them inline.
-        const std::lock_guard<std::mutex> lock(state->mutex);
-        if (state->service == nullptr) {
-            onComplete(Response::failure(ErrorCode::Cancelled, "request cancelled before execution",
-                                         INITIAL_REVISION));
-            return;
+        Response response;
+        {
+            // The shared state, never a bare `this`, is what makes this safe.
+            // The lock is held across the handler, so the service cannot be
+            // retired out from under it, and two handlers cannot run at once
+            // even when the caller's thread executes them inline.
+            const std::lock_guard<std::mutex> lock(state->mutex);
+            if (state->service == nullptr) {
+                // The revision the service had when it was retired, not zero:
+                // a client's cursor must never be moved backwards by a failure.
+                response =
+                    Response::failure(ErrorCode::Cancelled, "request cancelled before execution",
+                                      state->revisionAtRetirement);
+            } else {
+                response = state->service->execute(*operation, input, context);
+            }
         }
-        onComplete(state->service->execute(*operation, input, context));
+        // Deliberately outside the lock. A callback is free to shut the service
+        // down, replace the project, or dispatch the next request — all of
+        // which take this same non-recursive mutex, and would deadlock if it
+        // were still held.
+        onComplete(std::move(response));
     };
 
     // Already on the message thread, or there is no message thread to hop to.
@@ -279,7 +291,10 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
     if (deadlinePassed(context))
         return Response::failure(ErrorCode::Timeout, "deadline passed before execution", revision);
 
-    if (context.expectedRevision && *context.expectedRevision != revision) {
+    // Writes only. A read is safe at any revision, so a client that carries its
+    // cursor on every request would otherwise get Conflict on `project.get`
+    // after any intervening edit — precisely when it most needs to re-read.
+    if (isWrite && context.expectedRevision && *context.expectedRevision != revision) {
         return Response::failure(
             ErrorCode::Conflict,
             "expected revision " +
@@ -322,7 +337,12 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
     }
 
     auto response = Response::success(result.value, revision);
-    if (committed && key.isNotEmpty())
+    // Every successful write is cached, including one that resolved to a no-op.
+    // `mutated` governs the revision and change publication, not idempotency:
+    // clearing an already-empty lane succeeds without changing anything, and if
+    // that request id were forgotten, a retry after points were added would
+    // delete them instead of replaying the original response.
+    if (isWrite && key.isNotEmpty())
         cacheResponse(key, response);
     return response;
 }
@@ -366,9 +386,12 @@ void RemoteApiService::projectReplaced() {
 
     // Every outstanding expectedRevision refers to the old project, so move the
     // counter to guarantee those writes are rejected as stale rather than
-    // silently applied to different state.
-    revision_.fetch_add(1, std::memory_order_acq_rel);
+    // silently applied to different state. Pending changes describe the
+    // outgoing project, so they are dropped rather than delivered — but the
+    // swap itself is published, at the new revision, so subscribers resync.
+    const auto revision = revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
     changes_.discardPending();
+    changes_.markChanged(Topic::Project, revision);
 
     {
         const std::lock_guard<std::mutex> lock(cacheMutex_);

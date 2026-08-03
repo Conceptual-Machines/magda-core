@@ -187,6 +187,7 @@ class MockSelectionApi : public SelectionApi {
     ClipId selectedClip = INVALID_CLIP_ID;
     std::unordered_set<ClipId> selectedClips;
     ChainNodePath selectedChainNode;
+    AutomationLaneId selectedAutomationLane = INVALID_AUTOMATION_LANE_ID;
     bool noteSelectionPresent = false;
     ClipId noteSelectionClipId = INVALID_CLIP_ID;
     std::vector<size_t> noteSelectionIndices;
@@ -212,7 +213,7 @@ class MockSelectionApi : public SelectionApi {
         return selectedChainNode;
     }
     AutomationLaneId getSelectedAutomationLaneId() const override {
-        return INVALID_AUTOMATION_LANE_ID;
+        return selectedAutomationLane;
     }
     AutomationClipId getSelectedAutomationClipId() const override {
         return INVALID_AUTOMATION_CLIP_ID;
@@ -246,6 +247,12 @@ class MockSelectionApi : public SelectionApi {
     }
     void clearNoteSelection() override {
         ++clearNoteCalls;
+    }
+    std::vector<AutomationLaneId> automationLaneSelections;
+
+    void selectAutomationLane(AutomationLaneId laneId) override {
+        automationLaneSelections.push_back(laneId);
+        selectedAutomationLane = laneId;
     }
     void clearSelection() override {
         ++clearSelectionCalls;

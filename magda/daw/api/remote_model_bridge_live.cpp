@@ -177,13 +177,13 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
     void projectOpened(const ProjectInfo&) override {
         // Everything queued against the outgoing project is now addressed at
         // state that no longer exists. This is the trigger the service's
-        // cancellation path exists for.
+        // cancellation path exists for, and it already bumps the revision and
+        // publishes Topic::Project — bumping again here would advance it twice
+        // for one swap.
         service_.projectReplaced();
-        service_.noteModelChanged(Topic::Project);
     }
     void projectClosed() override {
         service_.projectReplaced();
-        service_.noteModelChanged(Topic::Project);
     }
     void projectSaved(const ProjectInfo&) override {
         service_.noteModelChanged(Topic::Project);
