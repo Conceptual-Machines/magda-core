@@ -255,14 +255,18 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
             auto startBeatPos =
                 tempoSeq.toBeats(te::TimePosition::fromSeconds(rec.arrangementStartTime));
             auto endBeatPos = tempoSeq.toBeats(te::TimePosition::fromSeconds(stopTime));
-            newClip->startBeats = startBeatPos.inBeats();
-            newClip->lengthBeats = endBeatPos.inBeats() - startBeatPos.inBeats();
+            // Through setPlacementBeats, not the mirror fields: the copy above
+            // brought the session event's slot geometry with it, and only this
+            // re-spans the event over the arrangement clip.
+            newClip->setPlacementBeats(startBeatPos.inBeats(),
+                                       endBeatPos.inBeats() - startBeatPos.inBeats());
             newEvent->autoTempo = true;
         } else {
             double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
             if (bpm <= 0.0)
                 bpm = 120.0;
-            newClip->lengthBeats = sessionClip->getLengthInBeats(bpm);
+            newClip->setPlacementBeats(newClip->placement.startBeat,
+                                       sessionClip->getLengthInBeats(bpm));
         }
 
         // For looping audio: enable loop if duration exceeds one pass

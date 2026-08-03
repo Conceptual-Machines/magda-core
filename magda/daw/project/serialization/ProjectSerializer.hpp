@@ -36,8 +36,13 @@ struct StagedProjectData {
  * 1 (written as no key at all): a clip carried one audio source and one set of
  *   playback fields.
  * 2: the clip hosts a list of events referencing pooled sources (#1901). Read
- *   support for 1 is permanent; nothing writes it any more, so a v2 file does
- *   not open in an older build.
+ *   support for 1 is permanent.
+ *
+ * There is no version gate on the way in. Already-shipped builds validate only
+ * that magdaVersion is a non-empty string and ignore keys they do not know, so
+ * a v2 file opens in an older build with every audio clip silently stripped of
+ * its source, and saving from there writes that loss back. Nothing this writer
+ * can emit changes that, so treat it as a one-way upgrade rather than a gate.
  */
 constexpr int kProjectSchemaVersion = 2;
 

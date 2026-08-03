@@ -271,9 +271,13 @@ static void seedInterpretationFromLoopInfo(ClipInfo& clip, double numBeats, doub
 
     event->seedInterpretation(numBeats, bpm);
 
+    // A Source is shared by every clip on the file, so this estimate is only
+    // ever a stand-in for facts we could not read: an unresolved source with no
+    // duration at all. Once the file opens, probe() owns both numbers, and one
+    // event's odd interpBpm must not restate them for unrelated clips.
     if (auto* source = SourcePool::getInstance().getMutable(event->sourceId);
-        source != nullptr && source->durationSeconds <= 0.0 && event->interpTotalBeats > 0.0 &&
-        event->interpBpm > 0.0) {
+        source != nullptr && !source->isResolved() && source->durationSeconds <= 0.0 &&
+        event->interpTotalBeats > 0.0 && event->interpBpm > 0.0) {
         source->durationSeconds = event->interpTotalBeats * 60.0 / event->interpBpm;
     }
 }
