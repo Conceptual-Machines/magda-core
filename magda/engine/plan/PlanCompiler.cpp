@@ -101,28 +101,35 @@ void collectSidechainSources(const TrackInfo& track, std::optional<SidechainConf
             out.insert(element.device.sidechain.sourceTrackId);
 }
 
-/// The track id in a "track:<id>" routing string, or nullopt for a hardware
-/// device name, the default "master", or an empty field.
-std::optional<TrackId> parseTrackReference(const juce::String& routing) {
+/// What a routing field resolves to. Malformed is deliberately distinct from
+/// External: a broken "track:..." value is a broken internal route, and
+/// collapsing the two would quietly reinterpret it as a hardware device or as
+/// the default master routing instead of reporting it. None means the track
+/// does not read that input at all, so there is nothing to route or report.
+enum class RouteKind { None, External, Track, Malformed };
+
+struct TrackRoute {
+    RouteKind kind = RouteKind::External;
+    TrackId trackId = INVALID_TRACK_ID;
+
+    bool namesTrack() const {
+        return kind == RouteKind::Track;
+    }
+};
+
+/// Parses a routing field: "track:<id>" for an internal route, anything else
+/// (a hardware device name, the default "master", an empty field) is external.
+TrackRoute parseTrackRoute(const juce::String& routing) {
     if (!routing.startsWith("track:"))
-        return std::nullopt;
+        return {RouteKind::External, INVALID_TRACK_ID};
 
     const auto id = routing.substring(6).trim();
-    if (id.isEmpty() || !id.containsOnly("-0123456789"))
-        return std::nullopt;
-    // Rejects "1-2" and bare "-": getIntValue would silently take the leading
-    // digits and route the signal at a track that was never selected.
-    if (juce::String(id.getIntValue()) != id)
-        return std::nullopt;
+    // Rejects "1-2" and a bare "-": getIntValue would take the leading digits
+    // and point the signal at a track that was never selected.
+    if (id.isEmpty() || !id.containsOnly("-0123456789") || juce::String(id.getIntValue()) != id)
+        return {RouteKind::Malformed, INVALID_TRACK_ID};
 
-    return id.getIntValue();
-}
-
-/// The track a track's audio output feeds. "track:<id>" routes into a group;
-/// everything else (including the default "master" and an empty string) goes
-/// straight to the master track.
-TrackId resolveAudioDestination(const TrackInfo& track) {
-    return parseTrackReference(track.audioOutputDevice).value_or(MASTER_TRACK_ID);
+    return {RouteKind::Track, id.getIntValue()};
 }
 
 class Compiler {
@@ -141,6 +148,21 @@ class Compiler {
     const TrackInfo* findTrack(TrackId id) const;
     TrackId resolveSendDestination(const SendInfo& send) const;
     std::vector<const TrackInfo*> computeTrackOrder();
+
+    /// Whether the track has clips and inputs of its own. Aux, Group, MultiOut
+    /// and Master tracks only pass on what reaches them from elsewhere.
+    bool carriesClips(const TrackInfo& track) const;
+
+    /// The routing each input field resolves to, already gated on whether the
+    /// track will actually read it. Ordering discovery and emission both go
+    /// through these, so a route can never be a dependency without also being
+    /// a connection: an ungated edge can invent a cycle, and breaking that
+    /// cycle costs a real connection elsewhere.
+    TrackRoute activeAudioInputRoute(const TrackInfo& track) const;
+    TrackRoute activeMidiInputRoute(const TrackInfo& track) const;
+
+    /// The track this track's audio output feeds; the master by default.
+    TrackId resolveAudioDestination(const TrackInfo& track) const;
 
     void emitTrack(const TrackInfo& track);
     ChainSignal emitElements(const std::vector<ChainElement>& elements, const ChainSite& site,
@@ -213,6 +235,29 @@ const TrackInfo* Compiler::findTrack(TrackId id) const {
     return found == tracks_.end() ? nullptr : &*found;
 }
 
+bool Compiler::carriesClips(const TrackInfo& track) const {
+    return track.id != master_.id && track.type != TrackType::Aux &&
+           track.type != TrackType::Group && track.type != TrackType::MultiOut;
+}
+
+TrackRoute Compiler::activeAudioInputRoute(const TrackInfo& track) const {
+    const auto monitorsInput = track.recordArmed || track.inputMonitor != InputMonitorMode::Off;
+    if (!carriesClips(track) || !monitorsInput || track.audioInputDevice.isEmpty())
+        return {RouteKind::None, INVALID_TRACK_ID};
+    return parseTrackRoute(track.audioInputDevice);
+}
+
+TrackRoute Compiler::activeMidiInputRoute(const TrackInfo& track) const {
+    if (!carriesClips(track) || !track.receivesLiveMidiInput() || track.midiInputDevice.isEmpty())
+        return {RouteKind::None, INVALID_TRACK_ID};
+    return parseTrackRoute(track.midiInputDevice);
+}
+
+TrackId Compiler::resolveAudioDestination(const TrackInfo& track) const {
+    const auto route = parseTrackRoute(track.audioOutputDevice);
+    return route.namesTrack() ? route.trackId : MASTER_TRACK_ID;
+}
+
 TrackId Compiler::resolveSendDestination(const SendInfo& send) const {
     if (send.destTrackId != INVALID_TRACK_ID)
         return send.destTrackId;
@@ -261,16 +306,16 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
             if (const auto destination = indexOf(resolveSendDestination(send)); destination >= 0)
                 addEdge(i, static_cast<std::size_t>(destination));
 
-        // Sidechains, internal input routes and multi-out all read another
-        // track, so that track comes first.
+        // Sidechains and internal input routes read another track, so that
+        // track comes first. Every edge here has to correspond to a connection
+        // emission will actually make; multi-out is not compiled at all, so it
+        // contributes no edge either.
         std::set<TrackId> upstream;
         collectSidechainSources(track, std::nullopt, upstream);
-        if (const auto source = parseTrackReference(track.audioInputDevice))
-            upstream.insert(*source);
-        if (const auto source = parseTrackReference(track.midiInputDevice))
-            upstream.insert(*source);
-        if (track.multiOutLink)
-            upstream.insert(track.multiOutLink->sourceTrackId);
+        if (const auto route = activeAudioInputRoute(track); route.namesTrack())
+            upstream.insert(route.trackId);
+        if (const auto route = activeMidiInputRoute(track); route.namesTrack())
+            upstream.insert(route.trackId);
 
         for (const auto sourceId : upstream)
             if (const auto source = indexOf(sourceId); source >= 0)
@@ -396,13 +441,31 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     if (rack.bypassed)
         return signal;
 
-    // A rack with no chains is transparent, not a hole. Compiling it to a
-    // zero-input mix would silence the track; the current engine passes audio
-    // and MIDI straight through. (A rack whose chains all route to aux outputs
-    // does render silence on the main output, and that is the engine's
-    // behaviour too, so only the empty case is special.)
-    if (rack.chains.empty())
-        return signal;
+    // A rack-level sidechain drives the rack's own followers and LFOs, so it is
+    // a modulation source rather than a signal edge, and modulation is not
+    // topology. Reported rather than passed over in silence: the dependency on
+    // the source track is real and lands with the modulation slice.
+    if (rack.sidechain.isActive())
+        diagnose("rack " + std::to_string(rack.id) + ": " +
+                 (rack.sidechain.type == SidechainConfig::Type::MIDI ? "MIDI" : "audio") +
+                 " sidechain from track " + std::to_string(rack.sidechain.sourceTrackId) +
+                 " feeds rack modulation, which the plan does not carry yet");
+
+    // A rack with no chains passes signal rather than silence: compiling it to
+    // a zero-input mix would silence the track. It is not fully transparent
+    // though, because rack volume and pan land on the instance's output gains,
+    // which the current engine applies on the wet path whether or not there are
+    // chains. So the mix is skipped and the rack fader still applies, which
+    // also keeps the fader's identity stable when the first chain is added.
+    // (Bypass is the genuinely transparent case, handled above: it routes the
+    // dry path, which skips those gains entirely. A rack whose chains all go to
+    // aux outputs does render silence on the main output, in the engine too.)
+    if (rack.chains.empty()) {
+        const OpKey faderKey{site.trackId,      rack.id,           INVALID_CHAIN_ID,
+                             INVALID_DEVICE_ID, OpRole::RackFader, 0};
+        return {PortRef{addOp(OpKind::Fader, faderKey, {signal.audio}, {SignalKind::Audio}), 0},
+                signal.midi};
+    }
 
     std::vector<PortRef> chainAudio;
     std::vector<PortRef> chainMidi;
@@ -475,11 +538,6 @@ void Compiler::emitTrack(const TrackInfo& track) {
 
     // --- chain head ---
 
-    // Aux, Group, MultiOut and Master tracks carry no clips: everything they
-    // render arrives from elsewhere.
-    const auto carriesClips = !isMaster && track.type != TrackType::Aux &&
-                              track.type != TrackType::Group && track.type != TrackType::MultiOut;
-
     if (track.multiOutLink)
         diagnose("track " + std::to_string(track.id) + ": multi-out pair " +
                  std::to_string(track.multiOutLink->outputPairIndex) + " of device " +
@@ -487,7 +545,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
                  " is not routed yet, the track renders silence");
 
     std::vector<PortRef> audioSources;
-    if (carriesClips) {
+    if (carriesClips(track)) {
         const OpKey key{track.id,          INVALID_RACK_ID,   INVALID_CHAIN_ID,
                         INVALID_DEVICE_ID, OpRole::ClipAudio, 0};
         audioSources.push_back(PortRef{addOp(OpKind::ClipAudio, key, {}, {SignalKind::Audio}), 0});
@@ -495,26 +553,36 @@ void Compiler::emitTrack(const TrackInfo& track) {
 
     // Input reaches a track only while it is monitoring or armed, whether it
     // comes from hardware or from another track. Both forms go through the
-    // input path in the current engine, so both are gated the same way.
-    const auto monitorsInput = track.recordArmed || track.inputMonitor != InputMonitorMode::Off;
-    if (carriesClips && monitorsInput && track.audioInputDevice.isNotEmpty()) {
-        if (const auto sourceId = parseTrackReference(track.audioInputDevice)) {
+    // input path in the current engine, so both are gated the same way, and
+    // the gate lives in activeAudioInputRoute so ordering agrees with this.
+    switch (const auto route = activeAudioInputRoute(track); route.kind) {
+        case RouteKind::Track: {
             // An internal route carries the source track's post-mute output.
             // Nothing about it is live, so liveness is left to propagate from
             // the source rather than asserted here.
-            if (const auto source = trackRoutedOutput_.find(*sourceId);
+            if (const auto source = trackRoutedOutput_.find(route.trackId);
                 source != trackRoutedOutput_.end())
                 audioSources.push_back(source->second);
             else
                 diagnose("track " + std::to_string(track.id) + ": audio input track " +
-                         std::to_string(*sourceId) + " is not compiled, input not connected");
-        } else {
+                         std::to_string(route.trackId) + " is not compiled, input not connected");
+            break;
+        }
+        case RouteKind::Malformed:
+            diagnose("track " + std::to_string(track.id) + ": audio input routing '" +
+                     track.audioInputDevice.toStdString() +
+                     "' does not name a track, input not connected");
+            break;
+        case RouteKind::External: {
             const OpKey key{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
                             INVALID_DEVICE_ID, OpRole::LiveAudioInput, 0};
             const auto op = addOp(OpKind::AudioInput, key, {}, {SignalKind::Audio});
             plan_.ops[static_cast<std::size_t>(op)].liveness = LivenessDomain::Live;
             audioSources.push_back(PortRef{op, 0});
+            break;
         }
+        case RouteKind::None:
+            break;
     }
 
     if (const auto pending = pendingInputs_.find(track.id); pending != pendingInputs_.end()) {
@@ -528,28 +596,38 @@ void Compiler::emitTrack(const TrackInfo& track) {
     signal.audio = emitMix(inputKey, audioSources);
 
     std::vector<PortRef> midiSources;
-    if (carriesClips && (chainConsumesMidi(track) || midiSourceTracks_.contains(track.id))) {
+    if (carriesClips(track) && (chainConsumesMidi(track) || midiSourceTracks_.contains(track.id))) {
         const OpKey key{track.id,          INVALID_RACK_ID,  INVALID_CHAIN_ID,
                         INVALID_DEVICE_ID, OpRole::ClipMidi, 0};
         midiSources.push_back(PortRef{addOp(OpKind::ClipMidi, key, {}, {SignalKind::Midi}), 0});
     }
-    if (carriesClips && track.receivesLiveMidiInput() && track.midiInputDevice.isNotEmpty()) {
-        if (const auto sourceId = parseTrackReference(track.midiInputDevice)) {
+    switch (const auto route = activeMidiInputRoute(track); route.kind) {
+        case RouteKind::Track: {
             // An internal MIDI route delivers the source track's incoming MIDI,
             // not what its own chain made of it.
-            if (const auto source = trackMidiInput_.find(*sourceId);
+            if (const auto source = trackMidiInput_.find(route.trackId);
                 source != trackMidiInput_.end())
                 midiSources.push_back(source->second);
             else
                 diagnose("track " + std::to_string(track.id) + ": MIDI input track " +
-                         std::to_string(*sourceId) + " produces no MIDI, input not connected");
-        } else {
+                         std::to_string(route.trackId) + " produces no MIDI, input not connected");
+            break;
+        }
+        case RouteKind::Malformed:
+            diagnose("track " + std::to_string(track.id) + ": MIDI input routing '" +
+                     track.midiInputDevice.toStdString() +
+                     "' does not name a track, input not connected");
+            break;
+        case RouteKind::External: {
             const OpKey key{track.id,          INVALID_RACK_ID,       INVALID_CHAIN_ID,
                             INVALID_DEVICE_ID, OpRole::LiveMidiInput, 0};
             const auto op = addOp(OpKind::MidiInput, key, {}, {SignalKind::Midi});
             plan_.ops[static_cast<std::size_t>(op)].liveness = LivenessDomain::Live;
             midiSources.push_back(PortRef{op, 0});
+            break;
         }
+        case RouteKind::None:
+            break;
     }
     if (!midiSources.empty()) {
         const OpKey key{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
@@ -639,8 +717,11 @@ RenderPlan Compiler::run() {
     // nothing in its own chain consumes it, so this is collected up front.
     for (const auto& track : tracks_) {
         collectSidechainSources(track, SidechainConfig::Type::MIDI, midiSourceTracks_);
-        if (const auto source = parseTrackReference(track.midiInputDevice))
-            midiSourceTracks_.insert(*source);
+        // Gated the same way the route itself is: an unmonitored route reads
+        // nothing, so making its source compile MIDI ops would leave ops in the
+        // plan that no one reads.
+        if (const auto route = activeMidiInputRoute(track); route.namesTrack())
+            midiSourceTracks_.insert(route.trackId);
     }
     collectSidechainSources(master_, SidechainConfig::Type::MIDI, midiSourceTracks_);
 

@@ -487,7 +487,7 @@ TEST_CASE("Scheduling constants match the compiled dependencies", "[engine][plan
     CHECK(std::ranges::all_of(countdown, [](auto count) { return count == 0; }));
 }
 
-TEST_CASE("An empty rack is transparent", "[engine][plan][compiler]") {
+TEST_CASE("An empty rack passes signal through its fader", "[engine][plan][compiler]") {
     RackInfo rack;
     rack.id = 4;
 
@@ -497,12 +497,17 @@ TEST_CASE("An empty rack is transparent", "[engine][plan][compiler]") {
     const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
     requireWellFormed(plan);
 
-    // Compiling an empty rack to a zero-input mix would silence the track.
+    // Compiling an empty rack to a zero-input mix would silence the track, and
+    // there is nothing to sum. Rack volume and pan still apply though: the
+    // current engine writes them to the instance output gains regardless of
+    // chains, and they sit on the wet path.
     CHECK(countRole(plan, OpRole::RackMix) == 0);
-    CHECK(countRole(plan, OpRole::RackFader) == 0);
+    REQUIRE(countRole(plan, OpRole::RackFader) == 1);
 
     const auto trackInput = opsWithRole(plan, OpRole::TrackAudioInput).front();
-    CHECK(inputOp(plan, opsWithRole(plan, OpRole::TrackFader).front(), 0) == trackInput);
+    const auto rackFader = opsWithRole(plan, OpRole::RackFader).front();
+    CHECK(inputOp(plan, rackFader, 0) == trackInput);
+    CHECK(inputOp(plan, opsWithRole(plan, OpRole::TrackFader).front(), 0) == rackFader);
 }
 
 TEST_CASE("A bypassed rack is transparent", "[engine][plan][compiler]") {
@@ -739,4 +744,101 @@ TEST_CASE("Chain power gates sidechain dependencies too", "[engine][plan][compil
     requireWellFormed(plan);
     CHECK(plan.diagnostics.empty());
     CHECK(countRole(plan, OpRole::SendTap) == 1);
+}
+
+TEST_CASE("A malformed track route is reported, not reinterpreted", "[engine][plan][compiler]") {
+    SECTION("as an audio input") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].audioInputDevice = "track:1-2";
+        tracks[0].recordArmed = true;
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        // Falling back to a hardware input would put a live op in the plan for
+        // a route the user never asked for.
+        CHECK(countRole(plan, OpRole::LiveAudioInput) == 0);
+        REQUIRE(plan.diagnostics.size() == 1);
+        CHECK(plan.diagnostics.front().find("track:1-2") != std::string::npos);
+    }
+
+    SECTION("as a MIDI input") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].midiInputDevice = "track:";
+        tracks[0].inputMonitor = InputMonitorMode::In;
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        CHECK(countRole(plan, OpRole::LiveMidiInput) == 0);
+        REQUIRE(plan.diagnostics.size() == 1);
+        CHECK(plan.diagnostics.front().find("MIDI input routing") != std::string::npos);
+    }
+}
+
+TEST_CASE("An inactive internal route is not an ordering dependency", "[engine][plan][compiler]") {
+    // Track 2 has an input from track 1 but is neither armed nor monitoring, so
+    // it reads nothing. Track 1 sidechains from track 2. Counting the dead
+    // route as a dependency would close a cycle and cost the live sidechain.
+    auto compressor = makeEffect(7);
+    compressor.canSidechain = true;
+    compressor.sidechain.type = SidechainConfig::Type::Audio;
+    compressor.sidechain.sourceTrackId = 2;
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+    tracks[1].audioInputDevice = "track:1";
+    tracks[1].recordArmed = false;
+    tracks[1].inputMonitor = InputMonitorMode::Off;
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+
+    // Track 2 is compiled first and its output reaches the sidechain slot.
+    const auto device = opsWithRole(plan, OpRole::DeviceProcess).front();
+    magda::engine::OpId sourceMeter = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackMeter))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 2)
+            sourceMeter = op;
+    REQUIRE(sourceMeter != magda::engine::INVALID_OP_ID);
+    CHECK(inputOp(plan, device, 2) == sourceMeter);
+}
+
+TEST_CASE("An unmonitored MIDI route does not make its source compile MIDI",
+          "[engine][plan][compiler]") {
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[1].midiInputDevice = "track:1";
+    tracks[1].inputMonitor = InputMonitorMode::Off;
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    // Track 1 has no MIDI consumer of its own and nothing reads its MIDI, so
+    // compiling clip MIDI for it would leave ops no one consumes.
+    CHECK(countRole(plan, OpRole::ClipMidi) == 0);
+    CHECK(countRole(plan, OpRole::TrackMidiInput) == 0);
+}
+
+TEST_CASE("A rack-level sidechain is reported as unsupported", "[engine][plan][compiler]") {
+    RackInfo rack;
+    rack.id = 4;
+    rack.sidechain.type = SidechainConfig::Type::MIDI;
+    rack.sidechain.sourceTrackId = 2;
+    ChainInfo chain;
+    chain.id = 10;
+    chain.elements.push_back(makeDeviceElement(makeEffect(7)));
+    rack.chains.push_back(std::move(chain));
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[0].chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    // It drives rack modulation rather than signal, so the plan carries no edge
+    // for it. That is a gap the contract says to name rather than pass over.
+    REQUIRE(plan.diagnostics.size() == 1);
+    CHECK(plan.diagnostics.front().find("rack 4") != std::string::npos);
+    CHECK(plan.diagnostics.front().find("modulation") != std::string::npos);
 }
