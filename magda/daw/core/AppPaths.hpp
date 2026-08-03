@@ -37,6 +37,25 @@ juce::File renderDir();
  *  is anchored here so the override can be read from it. */
 juce::File alwaysOSDefault();
 
+/** Directory holding the running executable, for resources the build stages
+ *  next to the binary (lang/, faustlibraries/, faust_dsp/, drumkits/,
+ *  controllers/, dawproject/, models/).
+ *
+ *  Use this rather than currentApplicationFile().getParentDirectory(): under a
+ *  Linux AppImage, JUCE's currentApplicationFile resolves via argv[0]/dladdr to
+ *  the OUTER .AppImage launcher, so resources are looked for beside the
+ *  downloaded launcher instead of inside the mount and silently come up empty.
+ *  /proc/self/exe always resolves to the real binary inside the mount. That is
+ *  why a bug reproduces from the .AppImage but not from an extracted
+ *  squashfs-root/usr/bin/ run, where the two paths happen to agree.
+ *
+ *  On macOS this is Contents/MacOS inside the bundle — callers wanting
+ *  Contents/Resources should keep their own bundle-relative branch.
+ *
+ *  Linux-only /proc use: BSD would need /proc/curproc/file and procfs is not
+ *  guaranteed to be mounted there. */
+juce::File executableDir();
+
 // ---------------------------------------------------------------------------
 // Computed subpaths under dataDir()
 // ---------------------------------------------------------------------------

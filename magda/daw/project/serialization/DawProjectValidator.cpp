@@ -7,6 +7,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include "core/AppPaths.hpp"
+
 namespace magda {
 namespace {
 
@@ -15,11 +17,15 @@ juce::File schemaDirectory() {
     // macOS, exe-adjacent elsewhere) via CMake's POST_BUILD copy + install rules.
     // Fall back to the build-tree source dir for dev runs and unit tests, where
     // nothing is staged alongside the executable.
-    auto exe = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
 #if JUCE_MAC
-    auto bundled = exe.getChildFile("Contents/Resources/dawproject");
+    auto bundled = juce::File::getSpecialLocation(juce::File::currentApplicationFile)
+                       .getChildFile("Contents/Resources/dawproject");
 #else
-    auto bundled = exe.getParentDirectory().getChildFile("dawproject");
+    // paths::executableDir(), not currentApplicationFile: under a Linux
+    // AppImage the latter points at the outer launcher, so the staged XSDs
+    // would be missed and validation would silently fall through to the
+    // build-tree path below, which does not exist on a user's machine.
+    auto bundled = magda::paths::executableDir().getChildFile("dawproject");
 #endif
     if (bundled.isDirectory())
         return bundled;
