@@ -35,7 +35,10 @@ namespace magda::daw::ui {
  * Note: loopEnabled is non-automatable state controlled via onLoopEnabledChanged
  * and does not have a parameter index.
  */
-class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, private juce::Timer {
+class SamplerUI : public juce::Component,
+                  public juce::FileDragAndDropTarget,
+                  public juce::DragAndDropTarget,
+                  private juce::Timer {
   public:
     SamplerUI();
     ~SamplerUI() override;
@@ -96,9 +99,18 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     void paint(juce::Graphics& g) override;
     void resized() override;
 
-    // FileDragAndDropTarget
+    // FileDragAndDropTarget — samples dropped from the OS file manager.
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
+
+    // DragAndDropTarget — samples dragged from MAGDA's own browser arrive as an
+    // internal {type:"files"} payload; these forward it to the handlers above.
+    // See InternalFileDrag.hpp.
+    bool isInterestedInDragSource(const SourceDetails& details) override;
+    void itemDragEnter(const SourceDetails& details) override;
+    void itemDragMove(const SourceDetails& details) override;
+    void itemDragExit(const SourceDetails& details) override;
+    void itemDropped(const SourceDetails& details) override;
 
     // Mouse interaction on waveform
     void mouseDown(const juce::MouseEvent& e) override;

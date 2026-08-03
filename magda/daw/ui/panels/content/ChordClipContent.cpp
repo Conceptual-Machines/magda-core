@@ -15,6 +15,7 @@
 #include "core/UndoManager.hpp"
 #include "music/ChordEngine.hpp"
 #include "music/ChordEnums.hpp"
+#include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/InspectorComboBoxLookAndFeel.hpp"
 
@@ -774,6 +775,29 @@ void ChordClipContent::filesDropped(const juce::StringArray& files, int x, int y
         if (insertChordAtBeat(chordRowBeatForX(x), pitches))
             return;  // one chord per drop
     }
+}
+
+// Chord blocks dragged from the chord panel arrive as an internal
+// {type:"files"} drag on Linux, so route them back into the handlers above.
+// See InternalFileDrag.hpp.
+bool ChordClipContent::isInterestedInDragSource(const SourceDetails& details) {
+    return magda::dnd::acceptsFilesDrag(*this, details);
+}
+
+void ChordClipContent::itemDragEnter(const SourceDetails& details) {
+    magda::dnd::forwardFilesDragEnter(*this, details);
+}
+
+void ChordClipContent::itemDragMove(const SourceDetails& details) {
+    magda::dnd::forwardFilesDragMove(*this, details);
+}
+
+void ChordClipContent::itemDragExit(const SourceDetails& details) {
+    magda::dnd::forwardFilesDragExit(*this, details);
+}
+
+void ChordClipContent::itemDropped(const SourceDetails& details) {
+    magda::dnd::forwardFilesDrop(*this, details);
 }
 
 }  // namespace magda::daw::ui

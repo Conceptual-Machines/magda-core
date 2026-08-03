@@ -7,6 +7,7 @@
 
 #include "../../../../agents/gain_staging_agent.hpp"
 #include "../../components/chain/ChainNodePathDrag.hpp"
+#include "../../components/common/InternalFileDrag.hpp"
 #include "../../components/common/MasterSpeakerButton.hpp"
 #include "../../components/mixer/LevelMeterScale.hpp"
 #include "../../debug/DebugSettings.hpp"
@@ -433,7 +434,7 @@ class TrackChainContent::ChainContainer : public juce::Component,
             // Linux: the media browser drags rows as {type:"files",paths:[...]}.
             // macOS/Windows route the same drop through FileDragAndDropTarget.
             if (type == "files") {
-                return anyDroppablePreset(filePathsFromDescription(details.description));
+                return anyDroppablePreset(magda::dnd::filesDragPaths(details.description));
             }
         }
         return false;
@@ -469,7 +470,7 @@ class TrackChainContent::ChainContainer : public juce::Component,
             // Linux: media-browser preset rows arrive as a {type:"files"} payload.
             if (type == "files") {
                 clearDropFeedback();
-                applyDroppedPresets(filePathsFromDescription(details.description), insertIndex,
+                applyDroppedPresets(magda::dnd::filesDragPaths(details.description), insertIndex,
                                     shouldScrollToEnd);
                 return;
             }
@@ -620,20 +621,6 @@ class TrackChainContent::ChainContainer : public juce::Component,
         owner_.stopTimer();
         owner_.resized();
         repaint();
-    }
-
-    static juce::StringArray filePathsFromDescription(const juce::var& description) {
-        juce::StringArray paths;
-        if (auto* obj = description.getDynamicObject()) {
-            if (obj->getProperty("type").toString() == "files") {
-                if (auto* arr = obj->getProperty("paths").getArray()) {
-                    for (const auto& v : *arr) {
-                        paths.add(v.toString());
-                    }
-                }
-            }
-        }
-        return paths;
     }
 
     // Phase 1 accepts chain and device presets; rack presets are a follow-up.
