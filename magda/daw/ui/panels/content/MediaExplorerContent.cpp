@@ -5,6 +5,7 @@
 
 #include "../../../core/Config.hpp"
 #include "../../../project/ProjectManager.hpp"
+#include "../../components/common/InternalFileDrag.hpp"
 #include "../../components/common/SvgButton.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FileBrowserLookAndFeel.hpp"
@@ -2317,26 +2318,9 @@ void MediaExplorerContent::mouseDrag(const juce::MouseEvent& e) {
         paths.add(fileForDrag_.getFullPathName());
 
     if (!paths.isEmpty()) {
-#if JUCE_LINUX
-        // JUCE has no Wayland DnD, and even on X11 external DnD is unreliable
-        // from the same app to itself, so drops into the arrangement silently
-        // fail. Use JUCE-internal DnD instead — TrackContentPanel::itemDropped
-        // recognises the {type:"files",paths} payload and runs the same import
-        // logic as the OS file-drop path. Tradeoff: dragging out of MAGDA into
-        // another app is not possible via this route.
-        juce::Array<juce::var> pathArray;
-        for (const auto& p : paths)
-            pathArray.add(p);
-
-        auto* obj = new juce::DynamicObject();
-        obj->setProperty("type", juce::var("files"));
-        obj->setProperty("paths", juce::var(pathArray));
-        // Wrap immediately so the DynamicObject is owned via ref-counting and
-        // cleans up if findParentDragContainerFor returns null below.
-        juce::var description(obj);
-
         // Build a compact drag image showing the file names instead of
-        // letting JUCE auto-snapshot the entire browser panel.
+        // letting JUCE auto-snapshot the entire browser panel. Only the
+        // internal (Linux) route uses it; the OS route draws its own.
         const int rowH = 18;
         const int maxRows = juce::jmin(paths.size(), 5);
         const int hasMore = (paths.size() > maxRows) ? 1 : 0;
@@ -2361,15 +2345,17 @@ void MediaExplorerContent::mouseDrag(const juce::MouseEvent& e) {
             }
         }
 
-        if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this))
-            container->startDragging(description, this, juce::ScaledImage(dragImg));
+        // Internal drag on Linux, OS drag elsewhere — see InternalFileDrag.hpp.
+        magda::dnd::startFilesDrag(this, paths, juce::ScaledImage(dragImg));
 
-        // startDragging is non-blocking, so reset state immediately — the drag
-        // runs under JUCE's modal drag-image controller and the original
-        // component will not receive mouseUp.
+#if JUCE_LINUX
+        // The internal route is non-blocking, so reset state immediately — the
+        // drag runs under JUCE's drag-image controller and the original
+        // component will not receive mouseUp. On the OS route the drag has
+        // fully finished by now and mouseUp still arrives, so leave it alone
+        // there: clearing early would let a second drag start from the same
+        // gesture.
         isDraggingFile_ = false;
-#else
-        juce::DragAndDropContainer::performExternalDragDropOfFiles(paths, false, this);
 #endif
 
         if (stickyRowSelection_.size() >= 2 && listComp != nullptr)
