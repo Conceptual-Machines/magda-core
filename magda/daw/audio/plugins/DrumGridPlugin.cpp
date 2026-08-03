@@ -358,10 +358,10 @@ void DrumGridPlugin::processChain(const AudioChainEntry& entry,
     float panValue = (padIdx >= 0 && panParams_[static_cast<size_t>(padIdx)] != nullptr)
                          ? panParams_[static_cast<size_t>(padIdx)]->getCurrentValue()
                          : chain.pan.get();
-    float leftGain =
-        levelLinear * std::cos((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
-    float rightGain =
-        levelLinear * std::sin((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
+    // See DrumGridPlugin::computePadGains for the pan law and why it is linear.
+    float leftGain = 0.0f;
+    float rightGain = 0.0f;
+    computePadGains(levelLinear, panValue, leftGain, rightGain);
 
     // Route to assigned bus output (stereo pair)
     int busIdx = juce::jlimit(0, maxBusOutputs - 1, chain.busOutput.get());

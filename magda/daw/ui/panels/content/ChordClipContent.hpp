@@ -14,7 +14,9 @@ namespace magda::daw::ui {
  * unchanged from PianoRollContent; this class only flips the two chord-focus
  * extension points and reports its own content type.
  */
-class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTarget {
+class ChordClipContent : public PianoRollContent,
+                         public juce::FileDragAndDropTarget,
+                         public juce::DragAndDropTarget {
   public:
     ChordClipContent() {
         setWantsKeyboardFocus(true);
@@ -27,6 +29,16 @@ class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTa
     // the chord lane.
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
+
+    // The chord panel drags that temp MIDI file as an internal {type:"files"}
+    // payload on Linux, which lands on DragAndDropTarget rather than
+    // FileDragAndDropTarget; these forward it to the two handlers above.
+    // See InternalFileDrag.hpp.
+    bool isInterestedInDragSource(const SourceDetails& details) override;
+    void itemDragEnter(const SourceDetails& details) override;
+    void itemDragMove(const SourceDetails& details) override;
+    void itemDragExit(const SourceDetails& details) override;
+    void itemDropped(const SourceDetails& details) override;
 
     PanelContentType getContentType() const override {
         return PanelContentType::ChordClipView;

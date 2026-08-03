@@ -418,7 +418,9 @@ void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
             slot->setParamName(param->getParameterName());
             slot->setParamValue(param->getCurrentNormalisedValue());
             slot->onValueChanged = [param](double value) {
-                param->setParameter(static_cast<float>(value), juce::sendNotificationSync);
+                // setParameterFromHost, not setParameter: the latter is silently
+                // dropped once a macro or mod is attached to the parameter.
+                param->setParameterFromHost(static_cast<float>(value), juce::sendNotificationSync);
             };
             slot->setVisible(true);
         } else {

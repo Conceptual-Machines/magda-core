@@ -11,6 +11,7 @@
 #include "../../audio/AudioBridge.hpp"
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../engine/AudioEngine.hpp"
+#include "../components/common/InternalFileDrag.hpp"
 #include "../components/common/MasterSpeakerButton.hpp"
 #include "../components/common/MonitorControl.hpp"
 #include "../components/common/SvgButton.hpp"
@@ -4066,82 +4067,25 @@ bool SessionView::isAudioFile(const juce::String& filename) const {
 // DragAndDropTarget implementation (internal JUCE drags: plugins, clip slots)
 // ============================================================================
 
-#if JUCE_LINUX
-namespace {
-bool isInternalFilesDrag(const juce::DragAndDropTarget::SourceDetails& details) {
-    if (auto* obj = details.description.getDynamicObject())
-        return obj->getProperty("type").toString() == "files";
-    return false;
-}
-
-juce::StringArray extractFilePathsFromDescription(const juce::var& description) {
-    juce::StringArray paths;
-    if (auto* obj = description.getDynamicObject()) {
-        if (auto* arr = obj->getProperty("paths").getArray()) {
-            for (const auto& v : *arr)
-                paths.add(v.toString());
-        }
-    }
-    return paths;
-}
-}  // namespace
-#endif
-
-// See SessionView.hpp for why this bridge exists and why it is Linux-only.
+// See SessionView.hpp for why this bridge exists.
 bool SessionView::acceptsInternalFilesDrag(const SourceDetails& details) {
-#if JUCE_LINUX
-    if (isInternalFilesDrag(details))
-        return isInterestedInFileDrag(extractFilePathsFromDescription(details.description));
-#endif
-    juce::ignoreUnused(details);
-    return false;
+    return magda::dnd::acceptsFilesDrag(*this, details);
 }
 
 bool SessionView::handleInternalFilesDragEnter(const SourceDetails& details) {
-#if JUCE_LINUX
-    if (isInternalFilesDrag(details)) {
-        fileDragEnter(extractFilePathsFromDescription(details.description),
-                      details.localPosition.getX(), details.localPosition.getY());
-        return true;
-    }
-#endif
-    juce::ignoreUnused(details);
-    return false;
+    return magda::dnd::forwardFilesDragEnter(*this, details);
 }
 
 bool SessionView::handleInternalFilesDragMove(const SourceDetails& details) {
-#if JUCE_LINUX
-    if (isInternalFilesDrag(details)) {
-        fileDragMove(extractFilePathsFromDescription(details.description),
-                     details.localPosition.getX(), details.localPosition.getY());
-        return true;
-    }
-#endif
-    juce::ignoreUnused(details);
-    return false;
+    return magda::dnd::forwardFilesDragMove(*this, details);
 }
 
 bool SessionView::handleInternalFilesDragExit(const SourceDetails& details) {
-#if JUCE_LINUX
-    if (isInternalFilesDrag(details)) {
-        fileDragExit({});
-        return true;
-    }
-#endif
-    juce::ignoreUnused(details);
-    return false;
+    return magda::dnd::forwardFilesDragExit(*this, details);
 }
 
 bool SessionView::handleInternalFilesDrop(const SourceDetails& details) {
-#if JUCE_LINUX
-    if (isInternalFilesDrag(details)) {
-        filesDropped(extractFilePathsFromDescription(details.description),
-                     details.localPosition.getX(), details.localPosition.getY());
-        return true;
-    }
-#endif
-    juce::ignoreUnused(details);
-    return false;
+    return magda::dnd::forwardFilesDrop(*this, details);
 }
 
 bool SessionView::isInterestedInDragSource(const SourceDetails& details) {
