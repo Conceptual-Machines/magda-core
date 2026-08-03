@@ -15,6 +15,7 @@ class TransportApi;
 class FocusedApi;
 class GrooveApi;
 class PluginApi;
+class DeviceApi;
 
 /**
  * Programmatic facade for MAGDA's DAW state.
@@ -44,6 +45,7 @@ class MagdaApi {
     virtual TransportApi& transport() = 0;
     virtual FocusedApi& focused() = 0;
     virtual PluginApi& plugins() = 0;
+    virtual DeviceApi& devices() = 0;
     virtual GrooveApi& grooves() = 0;
 };
 

@@ -784,4 +784,49 @@ void InsertTimeAutomationCommand::undo() {
     shiftedPoints_.clear();
 }
 
+// ============================================================================
+// SetAutomationLanePointsCommand
+// ============================================================================
+
+SetAutomationLanePointsCommand::SetAutomationLanePointsCommand(AutomationLaneId laneId,
+                                                               std::vector<AutomationPoint> points)
+    : laneId_(laneId), points_(std::move(points)) {
+    auto& mgr = AutomationManager::getInstance();
+    const auto* lane = mgr.getLane(laneId_);
+    if (lane == nullptr || !lane->isAbsolute())
+        return;
+
+    storedLane_ = *lane;
+    for (auto clipId : lane->clipIds) {
+        if (const auto* clip = mgr.getClip(clipId))
+            storedClips_.push_back(*clip);
+    }
+    captured_ = true;
+}
+
+void SetAutomationLanePointsCommand::execute() {
+    if (!captured_)
+        return;
+
+    auto& mgr = AutomationManager::getInstance();
+    auto* lane = mgr.getLane(laneId_);
+    if (lane == nullptr)
+        return;
+
+    // One batch so listeners see the replacement as a single change rather than
+    // a clear followed by N inserts.
+    AutomationManager::BatchScope batch;
+    mgr.clearLanePoints(laneId_);
+    for (const auto& point : points_)
+        mgr.addPoint(laneId_, point.beatPosition, point.value, point.curveType);
+
+    applied_ = true;
+}
+
+void SetAutomationLanePointsCommand::undo() {
+    if (!applied_)
+        return;
+    AutomationManager::getInstance().restoreLaneState(storedLane_, storedClips_);
+}
+
 }  // namespace magda

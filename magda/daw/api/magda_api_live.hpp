@@ -3,6 +3,7 @@
 #include "alias_api_live.hpp"
 #include "automation_api_live.hpp"
 #include "clip_api_live.hpp"
+#include "device_api_live.hpp"
 #include "focused_api_live.hpp"
 #include "groove_api_live.hpp"
 #include "magda_api.hpp"
@@ -57,6 +58,9 @@ class MagdaApiLive : public MagdaApi {
     }
     PluginApi& plugins() override {
         return plugins_;
+    }
+    DeviceApi& devices() override {
+        return devices_;
     }
     GrooveApi& grooves() override {
         return grooves_;
@@ -113,6 +117,7 @@ class MagdaApiLive : public MagdaApi {
     TransportApiLive transport_;
     FocusedApiLive focused_;
     PluginApiLive plugins_;
+    DeviceApiLive devices_;
     GrooveApiLive grooves_;
 };
 

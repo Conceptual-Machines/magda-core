@@ -22,6 +22,7 @@
 #include "magda/daw/api/alias_api.hpp"
 #include "magda/daw/api/automation_api.hpp"
 #include "magda/daw/api/clip_api.hpp"
+#include "magda/daw/api/device_api.hpp"
 #include "magda/daw/api/focused_api.hpp"
 #include "magda/daw/api/groove_api.hpp"
 #include "magda/daw/api/magda_api.hpp"
@@ -68,6 +69,24 @@ class StubAutomationApi : public AutomationApi {
         std::abort();
     }
     void clearLanePoints(AutomationLaneId) override {
+        std::abort();
+    }
+    const std::vector<AutomationLaneInfo>& getLanes() const override {
+        std::abort();
+    }
+    std::vector<AutomationLaneId> getLanesForTrack(TrackId) const override {
+        std::abort();
+    }
+    std::vector<AutomationLaneId> getEditScopedLanes() const override {
+        std::abort();
+    }
+    const std::vector<AutomationClipInfo>& getClips() const override {
+        std::abort();
+    }
+    bool setLanePoints(AutomationLaneId, std::vector<AutomationPoint>) override {
+        std::abort();
+    }
+    bool deleteLane(AutomationLaneId) override {
         std::abort();
     }
     bool retypeEmptyLane(AutomationLaneId, AutomationLaneType) override {
@@ -741,6 +760,95 @@ class MockPluginApi : public PluginApi {
     }
 };
 
+class MockDeviceApi : public DeviceApi {
+  public:
+    std::vector<DeviceCatalogEntry> catalog;
+    // Live devices, keyed by the path that addresses them.
+    std::map<ChainNodePath, DeviceInfo> devices;
+
+    std::vector<DeviceCatalogEntry> getCatalog() const override {
+        return catalog;
+    }
+    std::optional<DeviceCatalogEntry> findCatalogEntry(
+        const juce::String& catalogId) const override {
+        for (const auto& entry : catalog) {
+            if (entry.catalogId == catalogId)
+                return entry;
+        }
+        return std::nullopt;
+    }
+    const DeviceInfo* getDevice(const ChainNodePath& devicePath) const override {
+        const auto it = devices.find(devicePath);
+        return it != devices.end() ? &it->second : nullptr;
+    }
+    std::vector<DeviceParameter> getDeviceParameters(
+        const ChainNodePath& devicePath) const override {
+        const auto* device = getDevice(devicePath);
+        if (device == nullptr)
+            return {};
+        std::vector<DeviceParameter> parameters;
+        for (const auto& info : device->parameters) {
+            parameters.push_back({info.paramIndex, info.stableId, info.name, info.unit,
+                                  info.minValue, info.maxValue, info.defaultValue,
+                                  info.currentValue});
+        }
+        return parameters;
+    }
+
+    // Recorded mutations, for asserting what a caller invoked.
+    struct AddRecord {
+        ChainNodePath parentPath;
+        juce::String catalogId;
+        int index = -1;
+    };
+    std::vector<AddRecord> added;
+    std::vector<ChainNodePath> removed;
+    std::vector<std::pair<ChainNodePath, int>> moved;
+    std::vector<std::pair<ChainNodePath, bool>> bypassed;
+    std::vector<std::tuple<ChainNodePath, int, float>> parameterWrites;
+    DeviceId nextDeviceId = 1;
+
+    DeviceId addDevice(const ChainNodePath& parentPath, const juce::String& catalogId,
+                       int index) override {
+        if (!findCatalogEntry(catalogId).has_value())
+            return INVALID_DEVICE_ID;
+        added.push_back({parentPath, catalogId, index});
+        return nextDeviceId++;
+    }
+    bool removeDevice(const ChainNodePath& devicePath) override {
+        if (getDevice(devicePath) == nullptr)
+            return false;
+        removed.push_back(devicePath);
+        return true;
+    }
+    bool moveDevice(const ChainNodePath& devicePath, int toIndex) override {
+        if (toIndex < 0 || getDevice(devicePath) == nullptr)
+            return false;
+        moved.emplace_back(devicePath, toIndex);
+        return true;
+    }
+    bool setDeviceBypassed(const ChainNodePath& devicePath, bool value) override {
+        if (getDevice(devicePath) == nullptr)
+            return false;
+        bypassed.emplace_back(devicePath, value);
+        return true;
+    }
+    bool setDeviceParameter(const ChainNodePath& devicePath, int paramIndex, float value) override {
+        const auto* device = getDevice(devicePath);
+        if (device == nullptr)
+            return false;
+        for (const auto& info : device->parameters) {
+            if (info.paramIndex != paramIndex)
+                continue;
+            if (value < info.minValue || value > info.maxValue)
+                return false;
+            parameterWrites.emplace_back(devicePath, paramIndex, value);
+            return true;
+        }
+        return false;
+    }
+};
+
 class MockGrooveApi : public GrooveApi {
   public:
     juce::StringArray names;
@@ -770,6 +878,7 @@ class MockMagdaApi : public MagdaApi {
     MockTransportApi transport_;
     MockFocusedApi focused_;
     MockPluginApi plugins_;
+    MockDeviceApi devices_;
     MockGrooveApi grooves_;
 
     SelectionApi& selection() override {
@@ -807,6 +916,9 @@ class MockMagdaApi : public MagdaApi {
     }
     PluginApi& plugins() override {
         return plugins_;
+    }
+    DeviceApi& devices() override {
+        return devices_;
     }
     GrooveApi& grooves() override {
         return grooves_;

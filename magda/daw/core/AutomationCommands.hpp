@@ -692,4 +692,38 @@ class InsertTimeAutomationCommand : public UndoableCommand {
     std::vector<ShiftedPoint> shiftedPoints_;
 };
 
+/**
+ * @brief Replace every point on an absolute lane as one undoable step.
+ *
+ * Writing a curve point by point through AddAutomationPointCommand produces one
+ * undo entry per point, so undoing a generated curve means pressing Undo once
+ * per sample. This captures the lane's full state up front and restores it
+ * verbatim — point ids preserved — so the whole write is one step.
+ *
+ * Absolute lanes only: a clip-based lane keeps its points on its clips, and
+ * `setClipPoints` already covers that.
+ */
+class SetAutomationLanePointsCommand : public UndoableCommand {
+  public:
+    SetAutomationLanePointsCommand(AutomationLaneId laneId, std::vector<AutomationPoint> points);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Set Automation Points";
+    }
+
+    bool didApply() const {
+        return applied_;
+    }
+
+  private:
+    AutomationLaneId laneId_;
+    std::vector<AutomationPoint> points_;
+    AutomationLaneInfo storedLane_;
+    std::vector<AutomationClipInfo> storedClips_;
+    bool captured_ = false;
+    bool applied_ = false;
+};
+
 }  // namespace magda

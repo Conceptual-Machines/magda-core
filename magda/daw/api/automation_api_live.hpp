@@ -16,6 +16,13 @@ class AutomationApiLive : public AutomationApi {
     AutomationPointId addPoint(AutomationLaneId laneId, double beatPosition, double value,
                                AutomationCurveType curveType) override;
     void clearLanePoints(AutomationLaneId laneId) override;
+
+    const std::vector<AutomationLaneInfo>& getLanes() const override;
+    std::vector<AutomationLaneId> getLanesForTrack(TrackId trackId) const override;
+    std::vector<AutomationLaneId> getEditScopedLanes() const override;
+    const std::vector<AutomationClipInfo>& getClips() const override;
+    bool setLanePoints(AutomationLaneId laneId, std::vector<AutomationPoint> points) override;
+    bool deleteLane(AutomationLaneId laneId) override;
     bool retypeEmptyLane(AutomationLaneId laneId, AutomationLaneType type) override;
     AutomationClipId createClip(AutomationLaneId laneId, double startBeats,
                                 double lengthBeats) override;
