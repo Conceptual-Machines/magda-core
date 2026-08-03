@@ -25,8 +25,16 @@ void startFilesDrag(juce::Component* sourceComponent, const juce::StringArray& p
         return;
 
 #if JUCE_LINUX
-    if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(sourceComponent))
+    if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(sourceComponent)) {
+        // The internal route returns immediately, so a caller sitting in
+        // mouseDrag would start a fresh drag on every subsequent drag event.
+        // The OS route could not do this: it blocks on a modal native loop
+        // until the drop finishes.
+        if (container->isDragAndDropActive())
+            return;
+
         container->startDragging(makeFilesDragDescription(paths), sourceComponent, dragImage);
+    }
 #else
     juce::ignoreUnused(dragImage);
     juce::DragAndDropContainer::performExternalDragDropOfFiles(paths, /*canMoveFiles=*/false,

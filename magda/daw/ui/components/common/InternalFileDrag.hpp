@@ -40,7 +40,9 @@ juce::var makeFilesDragDescription(const juce::StringArray& paths);
  *
  * On Linux this is a JUCE-internal drag carrying makeFilesDragDescription();
  * everywhere else it is an OS drag, so the files can also be dropped outside
- * MAGDA. Does nothing if paths is empty. Must be called from a mouseDown or
+ * MAGDA. Does nothing if paths is empty, or if a drag is already in flight —
+ * callers in mouseDrag would otherwise start a fresh drag on every drag event,
+ * since the internal route does not block. Must be called from a mouseDown or
  * mouseDrag callback.
  *
  * Note the two routes differ in blocking behaviour: the OS drag runs a modal
