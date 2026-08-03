@@ -222,7 +222,7 @@ void StemSeparationService::splitClipIntoStems(ClipId sourceClipId, Engine engin
 
     // Snapshot everything we need off the clip now (message thread); the clip
     // pointer must not be touched on the worker.
-    const juce::String filePath = clip->audio().source.filePath;
+    const juce::String filePath = audioEventRef(*clip).sourceFilePath();
     if (!juce::File(filePath).existsAsFile()) {
         report(INVALID_TRACK_ID, "Audio file not found");
         return;
@@ -403,7 +403,8 @@ void StemSeparationService::splitClipIntoStems(ClipId sourceClipId, Engine engin
                                 if (auto* c = manager.getClip(id)) {
                                     c->name = stemName;
                                     auto& a = c->audio();
-                                    a.source.filePath = path;
+                                    if (auto* event = a.primaryEvent())
+                                        event->sourceId = SourcePool::getInstance().acquire(path);
                                     a.takes.clear();
                                     a.currentTakeIndex = 0;
                                     a.comp.clear();

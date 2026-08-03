@@ -87,17 +87,17 @@ TEST_CASE("SetClipPropertyCommand restores setter side effects", "[undo][clip][p
     auto* clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip != nullptr);
 
-    clip->warpEnabled = false;
-    clip->analogPitch = true;
+    primaryEventOf(clip)->warpEnabled = false;
+    primaryEventOf(clip)->analogPitch = true;
 
     undo.executeCommand(std::make_unique<SetClipPropertyCommand>(
         clipId, "Set Clip Warp",
         [](ClipManager& manager, ClipId id) { manager.setClipWarpEnabled(id, true); }));
 
-    REQUIRE(clip->warpEnabled);
-    REQUIRE_FALSE(clip->analogPitch);
+    REQUIRE(primaryEventOf(clip)->warpEnabled);
+    REQUIRE_FALSE(primaryEventOf(clip)->analogPitch);
 
     REQUIRE(undo.undo());
-    REQUIRE_FALSE(clip->warpEnabled);
-    REQUIRE(clip->analogPitch);
+    REQUIRE_FALSE(primaryEventOf(clip)->warpEnabled);
+    REQUIRE(primaryEventOf(clip)->analogPitch);
 }

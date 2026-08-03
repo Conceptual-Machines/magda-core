@@ -712,19 +712,18 @@ void AudioBridge::captureAllPluginStates() {
 void AudioBridge::captureWarpMarkerStates() {
     auto& cm = ClipManager::getInstance();
     for (auto& clip : cm.getArrangementClips()) {
-        if (clip.isAudio() && clip.warpEnabled) {
+        if (clip.isAudio() && audioEventRef(clip).warpEnabled) {
             auto markers = clipSynchronizer_.getWarpMarkers(clip.id);
-            DBG("captureWarpMarkerStates: clip " << clip.id
-                                                 << " warpEnabled=" << (int)clip.warpEnabled
-                                                 << " markers=" << (int)markers.size());
-            auto* mutableClip = cm.getClip(clip.id);
-            if (mutableClip) {
-                mutableClip->warpMarkers.clear();
+            DBG("captureWarpMarkerStates: clip "
+                << clip.id << " warpEnabled=" << (int)audioEventRef(clip).warpEnabled
+                << " markers=" << (int)markers.size());
+            if (auto* event = primaryEventOf(cm.getClip(clip.id))) {
+                event->warpMarkers.clear();
                 for (const auto& m : markers) {
-                    mutableClip->warpMarkers.push_back({m.sourceTime, m.warpTime});
+                    event->warpMarkers.push_back({m.sourceTime, m.warpTime});
                 }
-                DBG("captureWarpMarkerStates: stored " << mutableClip->warpMarkers.size()
-                                                       << " markers into ClipInfo");
+                DBG("captureWarpMarkerStates: stored " << event->warpMarkers.size()
+                                                       << " markers into the audio event");
             }
         }
     }

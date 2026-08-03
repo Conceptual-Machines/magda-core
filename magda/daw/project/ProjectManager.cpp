@@ -4,6 +4,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <algorithm>
+#include <unordered_set>
 
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipManager.hpp"
@@ -108,9 +109,12 @@ bool ProjectManager::newProject() {
 
     resetTransportForProjectBoundary();
 
-    // Clear all project content from singleton managers
+    // Clear all project content from singleton managers. Source ids are
+    // project-scoped like clip ids, so the pool empties here rather than in
+    // clearAllClips, which the project LOAD path also calls after staging.
     TrackManager::getInstance().clearAllTracks();
     ClipManager::getInstance().clearAllClips();
+    SourcePool::getInstance().clear();
     AutomationManager::getInstance().clearAll();
 
     // Reset project state
@@ -498,9 +502,12 @@ bool ProjectManager::closeProject() {
 
     resetTransportForProjectBoundary();
 
-    // Clear all project content from singleton managers
+    // Clear all project content from singleton managers. Source ids are
+    // project-scoped like clip ids, so the pool empties here rather than in
+    // clearAllClips, which the project LOAD path also calls after staging.
     TrackManager::getInstance().clearAllTracks();
     ClipManager::getInstance().clearAllClips();
+    SourcePool::getInstance().clear();
     AutomationManager::getInstance().clearAll();
 
     // Reset state
@@ -747,11 +754,17 @@ void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::Fil
     // Update clip audio paths that reference the old media directory
     auto& clipManager = ClipManager::getInstance();
     auto updateClipPaths = [&](const std::vector<ClipInfo>& clips) {
+        // Sources are pooled per file, so a moved file is relinked once even
+        // when several clips reference it; the clip loop only decides which
+        // clips need re-notifying.
+        auto& pool = SourcePool::getInstance();
+        std::unordered_set<SourceId> relinked;
         for (const auto& clipInfo : clips) {
-            if (!clipInfo.isAudio())
+            const auto* event = clipInfo.primaryEvent();
+            if (event == nullptr)
                 continue;
-            const bool sourceMoved = clipInfo.audio().source.filePath.isNotEmpty() &&
-                                     clipInfo.audio().source.filePath.startsWith(oldPath);
+            const auto sourcePath = event->sourceFilePath();
+            const bool sourceMoved = sourcePath.isNotEmpty() && sourcePath.startsWith(oldPath);
             bool anyTakeMoved = false;
             for (const auto& take : clipInfo.audio().takes) {
                 if (take.filePath.startsWith(oldPath)) {
@@ -763,9 +776,13 @@ void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::Fil
                 continue;
             auto* clip = clipManager.getClip(clipInfo.id);
             if (clip) {
-                if (sourceMoved)
-                    clip->audio().source.filePath =
-                        clip->audio().source.filePath.replace(oldPath, newPath, false);
+                if (sourceMoved && relinked.insert(event->sourceId).second) {
+                    const auto moved = event->sourceId;
+                    const auto owner =
+                        pool.relink(moved, sourcePath.replace(oldPath, newPath, false));
+                    if (owner != INVALID_SOURCE_ID && owner != moved)
+                        clipManager.repointEventsToSource(moved, owner);
+                }
                 for (auto& take : clip->audio().takes)
                     if (take.filePath.startsWith(oldPath))
                         take.filePath = take.filePath.replace(oldPath, newPath, false);

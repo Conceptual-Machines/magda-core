@@ -417,7 +417,7 @@ class ClipManager {
     [[nodiscard]] bool canSaveClipToLibrary(ClipId clipId) const;
 
     [[nodiscard]] bool saveClipToLibrary(
-        ClipId clipId, std::optional<std::vector<ClipInfo::WarpMarker>> warpMarkers = std::nullopt);
+        ClipId clipId, std::optional<std::vector<WarpMarker>> warpMarkers = std::nullopt);
 
     /** @brief Refresh the seconds-domain cache (length, startTime, offset,
      *         loopStart, loopLength) on a beat-authoritative clip from its
@@ -454,7 +454,8 @@ class ClipManager {
     void setClipGainDB(ClipId clipId, float dB);
     void setClipPan(ClipId clipId, float pan);
 
-    // Fades
+    // Fades. Seconds, as before #1901 — the fade moved onto the audio event,
+    // its units did not.
     void setFadeIn(ClipId clipId, double seconds);
     void setFadeOut(ClipId clipId, double seconds);
     void setFadeInType(ClipId clipId, int type);
@@ -870,9 +871,25 @@ class ClipManager {
     /// Reset a looped clip's length to its base loop length and disable looping
     void resetLoopedClipLength(ClipInfo& clip);
 
+    /// Move every event off @p from and onto @p to. Used when a relink target
+    /// turns out to be pooled already, so one file keeps one source.
+    void repointEventsToSource(SourceId from, SourceId to);
+
+    /// Record the file behind every clipboard event, so a paste after a
+    /// project switch resolves by path rather than by a renumbered id.
+    void stashClipboardSourcePaths();
+
+    /// Path a clipboard event should paste from.
+    juce::String clipboardSourcePathFor(const AudioEvent& event) const;
+
   private:
-    ClipManager() = default;
+    ClipManager();
     ~ClipManager() = default;
+
+    /// Rescale every event on @p sourceId whose source-domain positions were
+    /// expressed at @p oldRate. Installed on SourcePool as its rate-change
+    /// handler, so resolving or relinking a file cannot move clip positions.
+    void rescaleEventsForSourceRate(SourceId sourceId, double oldRate, double newRate);
 
     double findNonOverlappingStartBeats(TrackId trackId, double desiredStartBeats,
                                         double lengthBeats, ClipView view) const;
@@ -907,6 +924,13 @@ class ClipManager {
 
     // Clipboard storage
     std::vector<ClipInfo> clipboard_;
+    /// File path per source id referenced by the clipboard, captured at copy
+    /// time. The clipboard deliberately survives project switches, but an
+    /// event carries only a SourceId and loading a project clears and
+    /// renumbers the pool, so a stored id would resolve against the new
+    /// project's table: a collision pastes the wrong file, a miss pastes
+    /// nothing. Paths do not collide.
+    std::unordered_map<SourceId, juce::String> clipboardSourcePaths_;
     double clipboardReferenceBeat_ = 0.0;  // Beats; anchor for maintaining relative paste positions
 
     // Note clipboard storage

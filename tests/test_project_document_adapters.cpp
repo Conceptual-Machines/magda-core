@@ -5,6 +5,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "AudioClipTestHelpers.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
@@ -512,13 +513,13 @@ TEST_CASE("DawProjectArchive embeds and extracts referenced audio files",
     clip.name = "Loop";
     clip.setAudioContent();
     clip.setPlacementBeats(0.0, 4.0);
-    clip.audio().source.filePath = source.getFullPathName();
+    magda::test::giveAudioEvent(clip, source.getFullPathName());
     // Looped region + read offset (exact binary fractions so they round-trip
     // bit-for-bit through the double->string->double path).
-    clip.offset = 0.25;
+    magda::test::audioEvent(clip).setAnchorSeconds(0.25);
     clip.loopEnabled = true;
-    clip.loopStart = 0.5;
-    clip.loopLength = 0.25;
+    magda::test::audioEvent(clip).setLoopStartSeconds(0.5);
+    magda::test::audioEvent(clip).setLoopLengthSeconds(0.25);
     document.clips.push_back(clip);
 
     auto archive = createTempDawProjectFile();
@@ -551,7 +552,7 @@ TEST_CASE("DawProjectArchive embeds and extracts referenced audio files",
     REQUIRE(DawProjectArchive::readFromFile(archive, imported, error, extractionDir));
     REQUIRE(imported.clips.size() == 1);
     REQUIRE(imported.clips[0].isAudio());
-    const juce::File extracted(imported.clips[0].audio().source.filePath);
+    const juce::File extracted(magda::audioEventRef(imported.clips[0]).sourceFilePath());
     REQUIRE(extracted.existsAsFile());
     REQUIRE(extracted.getSize() == source.getSize());
 
@@ -563,10 +564,11 @@ TEST_CASE("DawProjectArchive embeds and extracts referenced audio files",
     REQUIRE(static_cast<int>(reader->numChannels) == kChannels);
 
     // Loop region and read offset survive the round-trip.
-    REQUIRE(imported.clips[0].offset == 0.25);
+    const auto& importedEvent = magda::audioEventRef(imported.clips[0]);
+    REQUIRE(importedEvent.anchorSeconds() == Catch::Approx(0.25));
     REQUIRE(imported.clips[0].loopEnabled);
-    REQUIRE(imported.clips[0].loopStart == 0.5);
-    REQUIRE(imported.clips[0].loopLength == 0.25);
+    REQUIRE(importedEvent.loopStartSeconds() == Catch::Approx(0.5));
+    REQUIRE(importedEvent.loopLengthSeconds() == Catch::Approx(0.25));
 
     source.deleteFile();
     archive.deleteFile();
@@ -590,14 +592,17 @@ TEST_CASE("DawProjectXmlAdapter warps beat-locked (autoTempo) audio clips",
     clip.trackId = track.id;
     clip.name = "Warped";
     clip.setAudioContent();
-    clip.setPlacementBeats(0.0, 16.0);                       // a 4-beat loop across 16 beats
-    clip.audio().source.filePath = "/nonexistent/beat.wav";  // not embedded; XML-level test
-    clip.audio().source.durationSeconds = 2.0;
-    clip.audio().interpretation.totalBeats = 4.0;  // source is 4 beats long -> 120 bpm
-    clip.autoTempo = true;
+    clip.setPlacementBeats(0.0, 16.0);                           // a 4-beat loop across 16 beats
+    magda::test::giveAudioEvent(clip, "/nonexistent/beat.wav");  // not embedded; XML-level test
+    magda::test::setSourceDuration(clip, 2.0);
+    magda::test::audioEvent(clip).interpTotalBeats = 4.0;  // source is 4 beats long ...
+    magda::test::audioEvent(clip).interpBpm = 120.0;       // ... at 120 bpm.
+    // The BPM is what makes the source loop expressible in beats at all: the
+    // region is stored in source samples and beats are a view on it (#1901).
+    magda::test::audioEvent(clip).autoTempo = true;
     clip.loopEnabled = true;
-    clip.loopStartBeats = 0.0;
-    clip.loopLengthBeats = 4.0;
+    magda::test::audioEvent(clip).setLoopStartBeats(0.0);
+    magda::test::audioEvent(clip).setLoopLengthBeats(4.0);
     document.clips.push_back(clip);
 
     auto xml = DawProjectXmlAdapter::toProjectXml(document);
@@ -619,12 +624,12 @@ TEST_CASE("DawProjectXmlAdapter warps beat-locked (autoTempo) audio clips",
     REQUIRE(imported.clips.size() == 1);
     const auto& ic = imported.clips[0];
     REQUIRE(ic.isAudio());
-    REQUIRE(ic.autoTempo);
+    REQUIRE(magda::audioEventRef(ic).autoTempo);
     REQUIRE(ic.loopEnabled);
-    REQUIRE(ic.loopStartBeats == 0.0);
-    REQUIRE(ic.loopLengthBeats == 4.0);
-    REQUIRE(ic.audio().interpretation.totalBeats == 4.0);
-    REQUIRE(ic.audio().source.durationSeconds == 2.0);
+    REQUIRE(magda::audioEventRef(ic).loopStartBeats() == 0.0);
+    REQUIRE(magda::audioEventRef(ic).loopLengthBeats() == 4.0);
+    REQUIRE(magda::audioEventRef(ic).interpTotalBeats == 4.0);
+    REQUIRE(magda::audioEventRef(ic).sourceDurationSeconds() == 2.0);
 }
 
 TEST_CASE("DawProjectArchive embeds and restores VST3 device state",

@@ -38,25 +38,26 @@ inline AudioClipSourceDisplay computeAudioClipSourceDisplay(const ClipInfo& clip
                                                             double fileDurationSeconds,
                                                             double cachedSourceBpm) {
     AudioClipSourceDisplay d;
-    d.sourceFieldsActive = clip.autoTempo;
-    d.speedActive = !clip.autoTempo;
+    const auto& event = audioEventRef(clip);
+    d.sourceFieldsActive = event.autoTempo;
+    d.speedActive = !event.autoTempo;
 
     if (!clip.isAudio())
         return d;
 
-    const double storedBpm = clip.audio().interpretation.bpm;
+    const double storedBpm = event.interpBpm;
     const bool storedBpmLooksDefaulted =
-        storedBpm <= 0.0 || (!clip.autoTempo && std::abs(storedBpm - projectBpm) < 0.1);
+        storedBpm <= 0.0 || (!event.autoTempo && std::abs(storedBpm - projectBpm) < 0.1);
 
     d.bpm = storedBpm;
     if (storedBpmLooksDefaulted && cachedSourceBpm > 0.0)
         d.bpm = cachedSourceBpm;
 
     if (d.bpm > 0.0 && fileDurationSeconds > 0.0 &&
-        (storedBpmLooksDefaulted || clip.audio().interpretation.totalBeats <= 0.0))
+        (storedBpmLooksDefaulted || event.interpTotalBeats <= 0.0))
         d.totalBeats = fileDurationSeconds * d.bpm / 60.0;
     else
-        d.totalBeats = clip.audio().interpretation.totalBeats;
+        d.totalBeats = event.interpTotalBeats;
 
     return d;
 }

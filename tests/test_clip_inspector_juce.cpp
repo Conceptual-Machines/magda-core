@@ -6,6 +6,7 @@
 #include "magda/daw/core/ClipManager.hpp"
 
 #define private public
+#include "AudioClipTestHelpers.hpp"
 #include "magda/daw/ui/panels/content/inspector/ClipInspector.hpp"
 #undef private
 
@@ -25,20 +26,20 @@ ClipInfo makeInspectorAudioClip(ClipId id = 9001) {
     clip.setAudioContent();
     clip.view = ClipView::Session;
     clip.name = "InspectorTest";
-    clip.autoTempo = true;
+    magda::test::audioEvent(clip).autoTempo = true;
     clip.loopEnabled = true;
-    clip.speedRatio = 1.0;
-    clip.audio().source.durationSeconds = sourceDuration;
-    clip.audio().interpretation.bpm = sourceBPM;
-    clip.audio().interpretation.totalBeats = sourceBeats;
+    magda::test::audioEvent(clip).speedRatio = 1.0;
+    magda::test::setSourceDuration(clip, sourceDuration);
+    magda::test::audioEvent(clip).interpBpm = sourceBPM;
+    magda::test::audioEvent(clip).interpTotalBeats = sourceBeats;
     clip.setPlacementBeats(0.0, sourceBeats);
     clip.length = sourceBeats * 60.0 / projectBPM;
-    clip.loopStart = 0.0;
-    clip.loopStartBeats = 0.0;
-    clip.loopLength = sourceDuration;
-    clip.loopLengthBeats = sourceBeats;
-    clip.offset = 0.0;
-    clip.offsetBeats = 0.0;
+    magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
+    magda::test::audioEvent(clip).setLoopStartBeats(0.0);
+    magda::test::audioEvent(clip).setLoopLengthSeconds(sourceDuration);
+    magda::test::audioEvent(clip).setLoopLengthBeats(sourceBeats);
+    magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+    magda::test::audioEvent(clip).setAnchorBeats(0.0);
     return clip;
 }
 
@@ -162,8 +163,8 @@ class ClipInspectorJuceTest final : public juce::UnitTest {
         auto seed = makeInspectorAudioClip();
         seed.setPlacementBeats(0.0, 96.0);
         seed.length = 96.0 * 60.0 / projectBPM;
-        seed.loopLengthBeats = 12.0;
-        seed.loopLength = 12.0 * 60.0 / sourceBPM;
+        magda::test::audioEvent(seed).setLoopLengthBeats(12.0);
+        magda::test::audioEvent(seed).setLoopLengthSeconds(12.0 * 60.0 / sourceBPM);
         ClipManager::getInstance().restoreClip(seed);
 
         ClipInspector inspector;

@@ -83,21 +83,18 @@ double facadeTimelineLength(const magda::ClipInfo& c, double bpm) {
 }
 
 double effectiveLoopLengthSeconds(const magda::ClipInfo& clip, double bpm) {
-    if (clip.loopLength > 0.0)
-        return clip.loopLength;
-
-    if (clip.loopLengthBeats > 0.0 && isValidBpm(bpm))
-        return clip.loopLengthBeats * 60.0 / bpm;
+    // Timeline beats for either content type, then into timeline seconds.
+    if (const double loopBeats = clip.loopLengthInBeats(bpm); loopBeats > 0.0 && isValidBpm(bpm)) {
+        return loopBeats * 60.0 / bpm;
+    }
 
     return facadeTimelineLength(clip, bpm);
 }
 
 double effectiveLoopStartSeconds(const magda::ClipInfo& clip, double bpm) {
-    if (clip.loopStart > 0.0)
-        return clip.loopStart;
-
-    if (clip.loopStartBeats > 0.0 && isValidBpm(bpm))
-        return clip.loopStartBeats * 60.0 / bpm;
+    const double startBeats = clip.loopStartInBeats(bpm);
+    if (startBeats > 0.0 && isValidBpm(bpm))
+        return startBeats * 60.0 / bpm;
 
     return 0.0;
 }
@@ -378,7 +375,7 @@ MidiEditorContent::MidiEditorContent() {
         double phaseBeats = phaseSeconds * bpm / 60.0;
 
         // Wrap within loop length
-        double loopLengthBeats = clip->loopLength * bpm / 60.0;
+        double loopLengthBeats = clip->loopLengthBeats;
         if (loopLengthBeats > 0.0) {
             phaseBeats = std::fmod(phaseBeats, loopLengthBeats);
             if (phaseBeats < 0.0)
@@ -673,7 +670,11 @@ void MidiEditorContent::updateTimeRuler() {
 
     // Set loop region markers and phase marker
     if (clip) {
-        timeRuler_->setLoopRegion(clip->loopStart, clip->loopLength, clip->loopEnabled);
+        // A MIDI clip's loop is clip beats, so it converts to the ruler's
+        // seconds through the project tempo rather than a source rate.
+        const double secondsPerBeat = 60.0 / tempo;
+        timeRuler_->setLoopRegion(clip->loopStartBeats * secondsPerBeat,
+                                  clip->loopLengthBeats * secondsPerBeat, clip->loopEnabled);
         // Show yellow phase marker when looped
         if (clip->loopEnabled) {
             double phaseSeconds = clip->midiOffset * 60.0 / tempo;

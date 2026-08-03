@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <unordered_set>
 
+#include "AudioClipTestHelpers.hpp"
 #include "magda/daw/core/ClipCommands.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipPropertyCommands.hpp"
@@ -398,14 +399,17 @@ TEST_CASE(
     auto& cm = ClipManager::getInstance();
     auto* source = cm.getClip(sourceId);
     REQUIRE(source != nullptr);
-    source->autoTempo = true;
+    primaryEventOf(source)->autoTempo = true;
     source->loopEnabled = true;
-    source->audio().interpretation.bpm = 172.0;
-    source->audio().interpretation.totalBeats = 16.0;
-    source->audio().source.durationSeconds = 16.0 * 60.0 / 172.0;
-    source->loopStartBeats = 0.0;
-    source->loopLengthBeats = 16.0;
-    source->offsetBeats = 0.0;
+    primaryEventOf(source)->interpBpm = 172.0;
+    primaryEventOf(source)->interpTotalBeats = 16.0;
+    magda::SourcePool::getInstance().seedFactsForTesting(primaryEventOf(source)->sourceFilePath(),
+                                                         16.0 * 60.0 / 172.0,
+                                                         magda::test::kTestSourceSampleRate);
+    magda::SourcePool::getInstance().resolveFacts(primaryEventOf(source)->sourceId);
+    primaryEventOf(source)->setLoopStartBeats(0.0);
+    primaryEventOf(source)->setLoopLengthBeats(16.0);
+    primaryEventOf(source)->setAnchorBeats(0.0);
     source->setPlacementBeats(2.0, 4.0);  // actual timeline: 1s..3s at 120 BPM
     source->startTime = 99.0;             // stale transitional cache
     source->length = 99.0;
@@ -424,7 +428,7 @@ TEST_CASE(
     REQUIRE(pasted->length == Catch::Approx(0.5));
     REQUIRE(pasted->placement.startBeat == Catch::Approx(6.0));
     REQUIRE(pasted->placement.lengthBeats == Catch::Approx(1.0));
-    REQUIRE(pasted->offsetBeats == Catch::Approx(1.0));
+    REQUIRE(primaryEventOf(pasted)->anchorBeats() == Catch::Approx(1.0));
 
     proj.setTempo(originalTempo);
 }
@@ -442,17 +446,21 @@ TEST_CASE("copyTimeRangeToClipboard + paste - exact beat slice keeps waveform id
     auto& cm = ClipManager::getInstance();
     auto* source = cm.getClip(sourceId);
     REQUIRE(source != nullptr);
-    source->autoTempo = true;
+    primaryEventOf(source)->autoTempo = true;
     source->loopEnabled = true;
-    source->audio().interpretation.bpm = 172.0;
-    source->audio().interpretation.totalBeats = 16.0;
-    source->audio().source.durationSeconds = 16.0 * 60.0 / 172.0;
-    source->loopStartBeats = 0.0;
-    source->loopLengthBeats = 16.0;
-    source->offsetBeats = 3.0;
-    source->offset = source->offsetBeats * 60.0 / source->audio().interpretation.bpm;
-    source->loopStart = 0.0;
-    source->loopLength = source->audio().source.durationSeconds;
+    primaryEventOf(source)->interpBpm = 172.0;
+    primaryEventOf(source)->interpTotalBeats = 16.0;
+    magda::SourcePool::getInstance().seedFactsForTesting(primaryEventOf(source)->sourceFilePath(),
+                                                         16.0 * 60.0 / 172.0,
+                                                         magda::test::kTestSourceSampleRate);
+    magda::SourcePool::getInstance().resolveFacts(primaryEventOf(source)->sourceId);
+    primaryEventOf(source)->setLoopStartBeats(0.0);
+    primaryEventOf(source)->setLoopLengthBeats(16.0);
+    primaryEventOf(source)->setAnchorBeats(3.0);
+    primaryEventOf(source)->setAnchorSeconds(primaryEventOf(source)->anchorBeats() * 60.0 /
+                                             primaryEventOf(source)->interpBpm);
+    primaryEventOf(source)->setLoopStartSeconds(0.0);
+    primaryEventOf(source)->setLoopLengthSeconds(primaryEventOf(source)->sourceDurationSeconds());
     source->setPlacementBeats(1.0, 1.0);
     source->deriveTimesFromBeats(120.0);
 
@@ -469,19 +477,24 @@ TEST_CASE("copyTimeRangeToClipboard + paste - exact beat slice keeps waveform id
     REQUIRE(pasted != nullptr);
 
     // A copied slice should present the same waveform source identity as A.
-    REQUIRE(pasted->audio().source.filePath == source->audio().source.filePath);
-    REQUIRE(pasted->autoTempo == source->autoTempo);
+    REQUIRE(primaryEventOf(pasted)->sourceFilePath() == primaryEventOf(source)->sourceFilePath());
+    REQUIRE(primaryEventOf(pasted)->autoTempo == primaryEventOf(source)->autoTempo);
     REQUIRE(pasted->loopEnabled == source->loopEnabled);
-    REQUIRE(pasted->offsetBeats == Catch::Approx(source->offsetBeats));
-    REQUIRE(pasted->offset == Catch::Approx(source->offset));
-    REQUIRE(pasted->loopStartBeats == Catch::Approx(source->loopStartBeats));
-    REQUIRE(pasted->loopLengthBeats == Catch::Approx(source->loopLengthBeats));
-    REQUIRE(pasted->loopStart == Catch::Approx(source->loopStart));
-    REQUIRE(pasted->loopLength == Catch::Approx(source->loopLength));
-    REQUIRE(pasted->audio().interpretation.bpm ==
-            Catch::Approx(source->audio().interpretation.bpm));
-    REQUIRE(pasted->audio().interpretation.totalBeats ==
-            Catch::Approx(source->audio().interpretation.totalBeats));
+    REQUIRE(primaryEventOf(pasted)->anchorBeats() ==
+            Catch::Approx(primaryEventOf(source)->anchorBeats()));
+    REQUIRE(primaryEventOf(pasted)->anchorSeconds() ==
+            Catch::Approx(primaryEventOf(source)->anchorSeconds()));
+    REQUIRE(primaryEventOf(pasted)->loopStartBeats() ==
+            Catch::Approx(primaryEventOf(source)->loopStartBeats()));
+    REQUIRE(primaryEventOf(pasted)->loopLengthBeats() ==
+            Catch::Approx(primaryEventOf(source)->loopLengthBeats()));
+    REQUIRE(primaryEventOf(pasted)->loopStartSeconds() ==
+            Catch::Approx(primaryEventOf(source)->loopStartSeconds()));
+    REQUIRE(primaryEventOf(pasted)->loopLengthSeconds() ==
+            Catch::Approx(primaryEventOf(source)->loopLengthSeconds()));
+    REQUIRE(primaryEventOf(pasted)->interpBpm == Catch::Approx(primaryEventOf(source)->interpBpm));
+    REQUIRE(primaryEventOf(pasted)->interpTotalBeats ==
+            Catch::Approx(primaryEventOf(source)->interpTotalBeats));
     REQUIRE(pasted->placement.lengthBeats == Catch::Approx(source->placement.lengthBeats));
 
     REQUIRE(pasted->placement.startBeat != Catch::Approx(source->placement.startBeat));
@@ -532,7 +545,6 @@ TEST_CASE("JoinClipsCommand - basic MIDI join", "[clip][command][join]") {
         REQUIRE(leftClip != nullptr);
         leftClip->loopEnabled = true;
         leftClip->loopLengthBeats = leftClip->placement.lengthBeats;
-        leftClip->loopLength = leftClip->getTimelineLength(120.0);
 
         JoinClipsCommand cmd(left, right);
         REQUIRE(cmd.canExecute());
@@ -543,7 +555,6 @@ TEST_CASE("JoinClipsCommand - basic MIDI join", "[clip][command][join]") {
         REQUIRE(joined->lengthBeats == Catch::Approx(8.0));
         REQUIRE_FALSE(joined->loopEnabled);
         REQUIRE(joined->loopLengthBeats == Catch::Approx(0.0));
-        REQUIRE(joined->loopLength == Catch::Approx(0.0));
         REQUIRE(joined->midiOffset == Catch::Approx(0.0));
         REQUIRE(joined->midiTrimOffset == Catch::Approx(0.0));
         REQUIRE(joined->midiNotes.size() == 2);
@@ -619,7 +630,6 @@ TEST_CASE("FlattenMidiClipCommand - renders a looped MIDI clip across its full l
     // including controller data and pitch bends.
     clip->loopEnabled = true;
     clip->loopLengthBeats = 2.0;
-    clip->loopLength = 1.0;
     clip->midiOffset = 1.0;
     clip->midiTrimOffset = 1.25;
     MidiCCData cc;
@@ -638,7 +648,6 @@ TEST_CASE("FlattenMidiClipCommand - renders a looped MIDI clip across its full l
 
     REQUIRE_FALSE(clip->loopEnabled);
     REQUIRE(clip->loopLengthBeats == Catch::Approx(0.0));
-    REQUIRE(clip->loopLength == Catch::Approx(0.0));
     REQUIRE(clip->midiOffset == Catch::Approx(0.0));
     REQUIRE(clip->midiTrimOffset == Catch::Approx(0.0));
     REQUIRE(clip->midiNotes.size() == 10);
@@ -856,11 +865,11 @@ TEST_CASE("SplitClipCommand - time-based audio ignores detected BPM for source o
     auto& cm = ClipManager::getInstance();
     auto* source = cm.getClip(original);
     REQUIRE(source != nullptr);
-    source->autoTempo = false;
-    source->warpEnabled = false;
-    source->audio().interpretation.bpm = 180.0;
-    source->speedRatio = 1.25;
-    source->offset = 0.4;
+    primaryEventOf(source)->autoTempo = false;
+    primaryEventOf(source)->warpEnabled = false;
+    primaryEventOf(source)->interpBpm = 180.0;
+    primaryEventOf(source)->speedRatio = 1.25;
+    primaryEventOf(source)->setAnchorSeconds(0.4);
 
     SplitClipCommand cmd(original, secondsToBeatPosition(2.0), 120.0);
     REQUIRE(cmd.canExecute());
@@ -870,7 +879,7 @@ TEST_CASE("SplitClipCommand - time-based audio ignores detected BPM for source o
     REQUIRE(right != nullptr);
     // Detected source BPM is metadata when tempo-follow and warp are disabled.
     // The right side must continue at timeline delta * speed ratio.
-    REQUIRE(right->offset == Catch::Approx(0.4 + 2.0 * 1.25));
+    REQUIRE(magda::audioEventRef(*right).anchorSeconds() == Catch::Approx(0.4 + 2.0 * 1.25));
 }
 
 TEST_CASE("SplitClipCommand - undo notifies restored left clip property",
@@ -1168,20 +1177,17 @@ TEST_CASE("MIDI loop start command stores beats without seconds reinterpretation
     auto* clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip != nullptr);
     clip->loopStartBeats = 3.0;
-    clip->loopStart = 2.0;  // 3 beats at 90 BPM
 
     SetMidiClipLoopStartBeatsCommand cmd(clipId, 6.0, bpm);
     cmd.execute();
 
     clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip->loopStartBeats == Catch::Approx(6.0));
-    REQUIRE(clip->loopStart == Catch::Approx(4.0));  // derived cache only
 
     cmd.undo();
 
     clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip->loopStartBeats == Catch::Approx(3.0));
-    REQUIRE(clip->loopStart == Catch::Approx(2.0));
 }
 
 TEST_CASE("MIDI loop length command stores beats without seconds reinterpretation",
@@ -1194,23 +1200,20 @@ TEST_CASE("MIDI loop length command stores beats without seconds reinterpretatio
     auto* clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip != nullptr);
     clip->loopLengthBeats = 3.0;
-    clip->loopLength = 2.0;  // 3 beats at 90 BPM
 
     SetMidiClipLoopLengthBeatsCommand cmd(clipId, 6.0, bpm);
     cmd.execute();
 
     clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip->loopLengthBeats == Catch::Approx(6.0));
-    REQUIRE(clip->loopLength == Catch::Approx(4.0));  // derived cache only
 
     cmd.undo();
 
     clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip->loopLengthBeats == Catch::Approx(3.0));
-    REQUIRE(clip->loopLength == Catch::Approx(2.0));
 }
 
-TEST_CASE("Legacy MIDI loop start seconds setter keeps beat mirror synced",
+TEST_CASE("MIDI loop start setter takes seconds and stores clip beats",
           "[clip][midi][loop][beats]") {
     resetState();
     constexpr double bpm = 90.0;
@@ -1221,7 +1224,6 @@ TEST_CASE("Legacy MIDI loop start seconds setter keeps beat mirror synced",
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip != nullptr);
-    REQUIRE(clip->loopStart == Catch::Approx(4.0));
     REQUIRE(clip->loopStartBeats == Catch::Approx(6.0));
 }
 
@@ -1260,7 +1262,7 @@ TEST_CASE("DeleteTimeSelectionCommand - looped trim keeps beat placement in sync
     auto* before = ClipManager::getInstance().getClip(clipId);
     REQUIRE(before != nullptr);
     before->loopEnabled = true;
-    before->loopLength = 4.0;
+    magda::primaryEventOf(before)->setLoopLengthSeconds(4.0);
 
     DeleteTimeSelectionCommand cmd(0.0, 3.0, {track}, 120.0);
     cmd.execute();
@@ -1347,7 +1349,7 @@ TEST_CASE("InsertTimeCommand - looped clip spanning insert beat grows",
     auto* before = ClipManager::getInstance().getClip(clipId);
     REQUIRE(before != nullptr);
     before->loopEnabled = true;
-    before->loopLength = 2.0;
+    magda::primaryEventOf(before)->setLoopLengthSeconds(2.0);
 
     // Looped clip spanning the insert beat grows by the inserted duration
     // instead of splitting.

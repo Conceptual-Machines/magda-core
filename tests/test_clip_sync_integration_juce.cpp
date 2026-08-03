@@ -6,6 +6,7 @@
 #include <unordered_set>
 
 // TE internal test utilities (not exposed via module public headers)
+#include "AudioClipTestHelpers.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioThumbnailManager.hpp"
 #include "magda/daw/audio/TrackController.hpp"
@@ -154,6 +155,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testCreateMidiClipPreservesExistingNeighbour();
         testMidiSyncClipsNotesToVisibleRangeAfterResize();
         testMidiSyncSkipsAllRestPitchBendButKeepsRealCurves();
+        testLoopedMidiClipReachesEngineWithItsLoopRange();
         testMoveClipNoOverlapDoesNotMutateNeighbours();
         testMoveClipToTrackResolvesOverlapOnDestination();
     }
@@ -264,16 +266,17 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
     static void configureBeatModeLoop(ClipInfo& clip, double projectBpm, double sourceBpm,
                                       double sourceDurationSeconds, double loopStartBeats,
                                       double loopLengthBeats, double placementLengthBeats) {
-        clip.autoTempo = true;
+        magda::test::audioEvent(clip).autoTempo = true;
         clip.loopEnabled = true;
-        clip.audio().interpretation.bpm = sourceBpm;
-        clip.audio().interpretation.totalBeats = sourceDurationSeconds * sourceBpm / 60.0;
-        clip.loopStartBeats = loopStartBeats;
-        clip.loopLengthBeats = loopLengthBeats;
-        clip.offsetBeats = loopStartBeats;
-        clip.loopStart = loopStartBeats * 60.0 / sourceBpm;
-        clip.loopLength = loopLengthBeats * 60.0 / sourceBpm;
-        clip.offset = clip.offsetBeats * 60.0 / sourceBpm;
+        magda::test::audioEvent(clip).interpBpm = sourceBpm;
+        magda::test::audioEvent(clip).interpTotalBeats = sourceDurationSeconds * sourceBpm / 60.0;
+        magda::test::audioEvent(clip).setLoopStartBeats(loopStartBeats);
+        magda::test::audioEvent(clip).setLoopLengthBeats(loopLengthBeats);
+        magda::test::audioEvent(clip).setAnchorBeats(loopStartBeats);
+        magda::test::audioEvent(clip).setLoopStartSeconds(loopStartBeats * 60.0 / sourceBpm);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(loopLengthBeats * 60.0 / sourceBpm);
+        magda::test::audioEvent(clip).setAnchorSeconds(magda::test::audioEvent(clip).anchorBeats() *
+                                                       60.0 / sourceBpm);
         clip.setPlacementBeats(0.0, placementLengthBeats);
         clip.deriveTimesFromBeats(projectBpm);
     }
@@ -355,11 +358,12 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (clip == nullptr)
             return;
         expect(clip->view == ClipView::Session, "Clip should be a session clip");
-        expect(clip->autoTempo, "Session audio clips should default to beat mode");
-        expectWithinAbsoluteError(clip->audio().interpretation.bpm, detectedBpm, 0.01);
-        expectWithinAbsoluteError(clip->audio().interpretation.totalBeats, expectedSourceBeats,
+        expect(primaryEventOf(clip)->autoTempo, "Session audio clips should default to beat mode");
+        expectWithinAbsoluteError(primaryEventOf(clip)->interpBpm, detectedBpm, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(clip)->interpTotalBeats, expectedSourceBeats,
                                   0.01);
-        expectWithinAbsoluteError(clip->loopLengthBeats, expectedSourceBeats, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(clip)->loopLengthBeats(), expectedSourceBeats,
+                                  0.01);
 
         thumbs.clearCache();
     }
@@ -386,10 +390,11 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expect(clip != nullptr, "Session clip should still exist after sync");
         if (clip == nullptr)
             return;
-        expectWithinAbsoluteError(clip->audio().interpretation.bpm, detectedBpm, 0.01);
-        expectWithinAbsoluteError(clip->audio().interpretation.totalBeats, expectedSourceBeats,
+        expectWithinAbsoluteError(primaryEventOf(clip)->interpBpm, detectedBpm, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(clip)->interpTotalBeats, expectedSourceBeats,
                                   0.01);
-        expectWithinAbsoluteError(clip->loopLengthBeats, expectedSourceBeats, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(clip)->loopLengthBeats(), expectedSourceBeats,
+                                  0.01);
 
         auto* teClip = dynamic_cast<te::WaveAudioClip*>(f.clipSync->getSessionTeClip(clipId));
         expect(teClip != nullptr, "Tracktion session clip should exist");
@@ -459,11 +464,12 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             return;
 
         constexpr double sourceBpm = 172.0;
-        const double sourceBeats = clip->audio().source.durationSeconds * sourceBpm / 60.0;
-        clip->autoTempo = true;
-        clip->audio().interpretation.bpm = sourceBpm;
-        clip->audio().interpretation.totalBeats = sourceBeats;
-        clip->timeStretchMode = static_cast<int>(te::TimeStretcher::soundtouchNormal);
+        const double sourceBeats = primaryEventOf(clip)->sourceDurationSeconds() * sourceBpm / 60.0;
+        primaryEventOf(clip)->autoTempo = true;
+        primaryEventOf(clip)->interpBpm = sourceBpm;
+        primaryEventOf(clip)->interpTotalBeats = sourceBeats;
+        primaryEventOf(clip)->timeStretchMode =
+            static_cast<int>(te::TimeStretcher::soundtouchNormal);
         clip->setPlacementBeats(0.0, sourceBeats);
         clip->deriveTimesFromBeats(120.0);
 
@@ -480,7 +486,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         const bool canObserveReallocation = f.edit->getCurrentPlaybackContext() != nullptr;
         f.clipSync->onGraphReallocated = [&reallocations] { ++reallocations; };
 
-        clip->timeStretchMode = static_cast<int>(te::TimeStretcher::signalsmith);
+        primaryEventOf(clip)->timeStretchMode = static_cast<int>(te::TimeStretcher::signalsmith);
         f.clipSync->syncClipToEngine(clipId);
         expectEquals(static_cast<int>(teClip->getTimeStretchMode()),
                      static_cast<int>(te::TimeStretcher::signalsmith));
@@ -488,7 +494,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             expectEquals(reallocations, 1,
                          "Signalsmith selection should rebuild the playback graph");
 
-        clip->timeStretchMode = static_cast<int>(te::TimeStretcher::soundtouchBetter);
+        primaryEventOf(clip)->timeStretchMode =
+            static_cast<int>(te::TimeStretcher::soundtouchBetter);
         f.clipSync->syncClipToEngine(clipId);
         expectEquals(static_cast<int>(teClip->getTimeStretchMode()),
                      static_cast<int>(te::TimeStretcher::soundtouchBetter));
@@ -503,10 +510,11 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (!sessionClip)
             return;
 
-        sessionClip->autoTempo = true;
-        sessionClip->audio().interpretation.bpm = sourceBpm;
-        sessionClip->audio().interpretation.totalBeats = sourceBeats;
-        sessionClip->timeStretchMode = static_cast<int>(te::TimeStretcher::soundtouchNormal);
+        primaryEventOf(sessionClip)->autoTempo = true;
+        primaryEventOf(sessionClip)->interpBpm = sourceBpm;
+        primaryEventOf(sessionClip)->interpTotalBeats = sourceBeats;
+        primaryEventOf(sessionClip)->timeStretchMode =
+            static_cast<int>(te::TimeStretcher::soundtouchNormal);
         cm.setClipSceneIndex(sessionClipId, 0);
         if (f.clipSync->getSessionTeClip(sessionClipId) == nullptr)
             f.clipSync->syncSessionClipToSlot(sessionClipId);
@@ -581,13 +589,13 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (source == nullptr)
             return;
 
-        source->warpEnabled = true;
-        source->timeStretchMode = static_cast<int>(te::TimeStretcher::signalsmith);
+        primaryEventOf(source)->warpEnabled = true;
+        primaryEventOf(source)->timeStretchMode = static_cast<int>(te::TimeStretcher::signalsmith);
         f.clipSync->syncClipToEngine(sourceId);
 
         const int insertedIndex = f.clipSync->addWarpMarker(sourceId, 1.0, 1.25);
         expect(insertedIndex >= 0, "User warp marker should be inserted");
-        expectEquals(static_cast<int>(source->warpMarkers.size()), 3,
+        expectEquals(static_cast<int>(primaryEventOf(source)->warpMarkers.size()), 3,
                      "Live TE marker edits should be mirrored into ClipInfo");
 
         cm.copyToClipboard({sourceId});
@@ -602,9 +610,10 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (pasted == nullptr)
             return;
 
-        expect(pasted->warpEnabled, "Pasted session clip should remain warped");
-        expectEquals(pasted->timeStretchMode, static_cast<int>(te::TimeStretcher::signalsmith));
-        expectEquals(static_cast<int>(pasted->warpMarkers.size()), 3,
+        expect(primaryEventOf(pasted)->warpEnabled, "Pasted session clip should remain warped");
+        expectEquals(primaryEventOf(pasted)->timeStretchMode,
+                     static_cast<int>(te::TimeStretcher::signalsmith));
+        expectEquals(static_cast<int>(primaryEventOf(pasted)->warpMarkers.size()), 3,
                      "Pasted ClipInfo should contain the source marker map");
 
         if (f.clipSync->getSessionTeClip(pastedId) == nullptr)
@@ -664,15 +673,16 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (arrangement == nullptr)
             return;
 
-        arrangement->warpEnabled = true;
+        magda::primaryEventOf(arrangement)->warpEnabled = true;
         f.clipSync->syncClipToEngine(arrangementId);
         f.clipSync->enableWarp(arrangementId);
 
         auto* arrangementTeClip = f.getTeAudioClip(arrangementId);
         expect(arrangementTeClip != nullptr, "Arrangement TE clip should exist");
-        expectEquals(static_cast<int>(arrangement->warpMarkers.size()), 2,
+        expectEquals(static_cast<int>(magda::primaryEventOf(arrangement)->warpMarkers.size()), 2,
                      "Enabling warp without user markers should store only the boundaries");
-        if (arrangementTeClip == nullptr || arrangement->warpMarkers.size() != 2)
+        if (arrangementTeClip == nullptr ||
+            magda::primaryEventOf(arrangement)->warpMarkers.size() != 2)
             return;
 
         auto& arrangementWarpManager = arrangementTeClip->getWarpTimeManager();
@@ -697,11 +707,11 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (session == nullptr || sessionTeClip == nullptr)
             return;
 
-        session->warpEnabled = true;
+        primaryEventOf(session)->warpEnabled = true;
         f.clipSync->enableWarp(sessionId);
-        expectEquals(static_cast<int>(session->warpMarkers.size()), 2,
+        expectEquals(static_cast<int>(primaryEventOf(session)->warpMarkers.size()), 2,
                      "Session warp enable should store its boundary map");
-        if (session->warpMarkers.size() != 2)
+        if (primaryEventOf(session)->warpMarkers.size() != 2)
             return;
 
         // Settle other lazily-created session properties before observing graph
@@ -716,7 +726,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         // Serialized doubles can differ by sub-microsecond rounding. This must
         // still compare equal rather than restarting playback on a gain change.
-        session->warpMarkers.front().warpTime += 5.0e-7;
+        primaryEventOf(session)->warpMarkers.front().warpTime += 5.0e-7;
 
         WarpStateMutationCounter sessionMutations(sessionWarpManager.state);
         int reallocationCount = 0;
@@ -746,8 +756,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (clip == nullptr)
             return;
 
-        clip->warpEnabled = true;
-        clip->warpMarkers = {{0.0, 0.0}};
+        primaryEventOf(clip)->warpEnabled = true;
+        primaryEventOf(clip)->warpMarkers = {{0.0, 0.0}};
         f.clipSync->syncClipToEngine(clipId);
 
         auto* teClip = f.getTeAudioClip(clipId);
@@ -799,10 +809,10 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (!clip)
             return;
 
-        clip->offset = 1.0;
-        clip->loopStart = 1.0;
+        primaryEventOf(clip)->setAnchorSeconds(1.0);
+        primaryEventOf(clip)->setLoopStartSeconds(1.0);
         f.clipSync->removeClipFromEngine(clipId);
-        clip->isReversed = true;
+        primaryEventOf(clip)->reversed = true;
         cm.forceNotifyMultipleClipPropertiesChanged({clipId, clipId});
 
         auto* teClip = f.getTeAudioClip(clipId);
@@ -812,7 +822,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             return;
 
         expect(teClip->getIsReversed(), "Reversed state should sync before returning");
-        expectWithinAbsoluteError(clip->offset, 1.0, 0.01,
+        expectWithinAbsoluteError(primaryEventOf(clip)->anchorSeconds(), 1.0, 0.01,
                                   "Recreation must preserve the canonical selected offset");
         expectWithinAbsoluteError(
             teClip->getPosition().getOffset().inSeconds(), 3.0, 0.01,
@@ -837,8 +847,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             return;
 
         // The audible selection is source [1, 2]. Its whole-file mirror [3, 4] is silent.
-        clip->offset = 1.0;
-        clip->loopStart = 1.0;
+        primaryEventOf(clip)->setAnchorSeconds(1.0);
+        primaryEventOf(clip)->setLoopStartSeconds(1.0);
         f.clipSync->syncClipToEngine(clipId);
 
         auto* teClip = f.getTeAudioClip(clipId);
@@ -847,10 +857,10 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             return;
         expectWithinAbsoluteError(teClip->getPosition().getOffset().inSeconds(), 1.0, 0.01);
 
-        clip->isReversed = true;
+        primaryEventOf(clip)->reversed = true;
         f.clipSync->syncClipToEngine(clipId);
 
-        expectWithinAbsoluteError(clip->offset, 1.0, 0.01,
+        expectWithinAbsoluteError(primaryEventOf(clip)->anchorSeconds(), 1.0, 0.01,
                                   "The model must retain the original selected source offset");
 
         if (auto* engine = magda::test::getSharedEngine().getEngine())
@@ -867,7 +877,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         // A later property sync must not write the canonical offset directly into the proxy.
         clip->gainDB = -1.0f;
         f.clipSync->syncClipToEngine(clipId);
-        expectWithinAbsoluteError(clip->offset, 1.0, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(clip)->anchorSeconds(), 1.0, 0.01);
         expectWithinAbsoluteError(teClip->getPosition().getOffset().inSeconds(), 3.0, 0.01);
 
         auto result = f.renderToSeconds(1.0);
@@ -1162,8 +1172,9 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(pos.getEnd().inSeconds(), 4.0, 0.01);
 
         // Offset should have increased by 1.0 * speedRatio (1.0) = 1.0
-        expectWithinAbsoluteError(pos.getOffset().inSeconds(), clip->getTeOffset(clip->loopEnabled),
-                                  0.01);
+        expectWithinAbsoluteError(
+            pos.getOffset().inSeconds(),
+            magda::audioEventRef(*clip).engineOffsetSeconds(clip->loopEnabled), 0.01);
     }
 
     void testTrimAudioFromLeft() {
@@ -1175,7 +1186,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         f.clipSync->syncClipToEngine(clipId);
 
         auto* clip = ClipManager::getInstance().getClip(clipId);
-        double originalOffset = clip->offset;
+        double originalOffset = primaryEventOf(clip)->anchorSeconds();
 
         // Trim 1.0s from left
         ClipOperations::trimAudioFromLeft(*clip, 1.0, 0.0, 60.0);
@@ -1185,12 +1196,14 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expect(teClip != nullptr);
 
         // Offset should have increased
-        expect(clip->offset > originalOffset, "Offset should increase after left trim");
+        expect(primaryEventOf(clip)->anchorSeconds() > originalOffset,
+               "Offset should increase after left trim");
 
         // TE offset should match model's getTeOffset
         auto pos = teClip->getPosition();
-        expectWithinAbsoluteError(pos.getOffset().inSeconds(), clip->getTeOffset(clip->loopEnabled),
-                                  0.01);
+        expectWithinAbsoluteError(
+            pos.getOffset().inSeconds(),
+            magda::audioEventRef(*clip).engineOffsetSeconds(clip->loopEnabled), 0.01);
 
         // Start should have moved right by ~1.0
         expectWithinAbsoluteError(pos.getStart().inSeconds(), 1.0, 0.01);
@@ -1228,7 +1241,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         // The actual invariant lives in MAGDA's model:
         //  - In time-based mode, ClipSynchronizer writes the model's speedRatio
         //    to TE; getSpeedRatio() reflects it.
-        //  - In autoTempo, MAGDA's clip->speedRatio is pinned to 1.0 (TE's
+        //  - In autoTempo, MAGDA's primaryEventOf(clip)->speedRatio is pinned to 1.0 (TE's
         //    autoTempo path requires it). TE's stored speedRatio may keep its
         //    pre-autoTempo value because AudioClipBase::setSpeedRatio is a
         //    no-op when autoTempo is on; TE doesn't use it for playback in
@@ -1252,7 +1265,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(teClip->getSpeedRatio(), 2.0, 0.01);
 
         // 2) Flip on autoTempo via the proper API. ClipOperations::setAutoTempo
-        //    pins clip->speedRatio to 1.0 (TE's autoTempo path requires it).
+        //    pins primaryEventOf(clip)->speedRatio to 1.0 (TE's autoTempo path requires it).
         //    TE's getSpeedRatio() is undefined in this mode — TE silently
         //    rejects setSpeedRatio when autoTempo is on — so we don't assert
         //    TE's stored value here.
@@ -1260,8 +1273,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             auto* clip = cm.getClip(clipId);
             if (clip == nullptr)
                 return;
-            clip->audio().interpretation.bpm = 60.0;
-            clip->audio().interpretation.totalBeats = 2.0;
+            primaryEventOf(clip)->interpBpm = 60.0;
+            primaryEventOf(clip)->interpTotalBeats = 2.0;
         }
         cm.setAutoTempo(clipId, true, 60.0);
         f.clipSync->syncClipToEngine(clipId);
@@ -1270,7 +1283,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             if (clip == nullptr)
                 return;
             expect(teClip->getAutoTempo(), "TE clip should be in autoTempo mode");
-            expectWithinAbsoluteError(clip->speedRatio, 1.0, 0.01);
+            expectWithinAbsoluteError(primaryEventOf(clip)->speedRatio, 1.0, 0.01);
         }
 
         // 3) Disable autoTempo, then change model speedRatio to 0.5 → TE
@@ -1294,14 +1307,16 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         // Auto-tempo + beat-domain loop region (clips are beat-authoritative).
         auto* clip = ClipManager::getInstance().getClip(clipId);
-        clip->autoTempo = true;
-        clip->audio().interpretation.bpm = 60.0;
-        clip->audio().interpretation.totalBeats = 5.0;  // 5s sine WAV at 60 BPM
+        primaryEventOf(clip)->autoTempo = true;
+        primaryEventOf(clip)->interpBpm = 60.0;
+        primaryEventOf(clip)->interpTotalBeats = 5.0;  // 5s sine WAV at 60 BPM
         clip->loopEnabled = true;
-        clip->loopStartBeats = 0.0;
-        clip->loopLengthBeats = 2.0;
-        clip->loopStart = clip->loopStartBeats * 60.0 / clip->audio().interpretation.bpm;
-        clip->loopLength = clip->loopLengthBeats * 60.0 / clip->audio().interpretation.bpm;
+        primaryEventOf(clip)->setLoopStartBeats(0.0);
+        primaryEventOf(clip)->setLoopLengthBeats(2.0);
+        primaryEventOf(clip)->setLoopStartSeconds(primaryEventOf(clip)->loopStartBeats() * 60.0 /
+                                                  primaryEventOf(clip)->interpBpm);
+        primaryEventOf(clip)->setLoopLengthSeconds(primaryEventOf(clip)->loopLengthBeats() * 60.0 /
+                                                   primaryEventOf(clip)->interpBpm);
         f.clipSync->syncClipToEngine(clipId);
 
         expect(teClip->isLooping(), "TE clip should be looping");
@@ -1341,7 +1356,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expect(trimmed != nullptr, "Trimmed clip should survive disabling beat mode");
         if (trimmed == nullptr)
             return;
-        expect(!trimmed->autoTempo, "Trimmed clip should be time-based after disabling beat mode");
+        expect(!magda::audioEventRef(*trimmed).autoTempo,
+               "Trimmed clip should be time-based after disabling beat mode");
         expectWithinAbsoluteError(trimmed->placement.lengthBeats, trimmedBeats, 0.001);
 
         ClipManager::getInstance().setAutoTempo(trimmedId, true, projectBpm);
@@ -1349,7 +1365,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expect(trimmed != nullptr, "Trimmed clip should survive re-enabling beat mode");
         if (trimmed == nullptr)
             return;
-        expect(trimmed->autoTempo, "Trimmed clip should be beat-based after re-enabling beat mode");
+        expect(magda::audioEventRef(*trimmed).autoTempo,
+               "Trimmed clip should be beat-based after re-enabling beat mode");
         expectWithinAbsoluteError(trimmed->placement.lengthBeats, trimmedBeats, 0.001);
         expectWithinAbsoluteError(trimmed->length, trimmedBeats * 60.0 / projectBpm, 0.001);
 
@@ -1360,8 +1377,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (full == nullptr)
             return;
 
-        full->audio().interpretation.bpm = sourceBpm;
-        full->audio().interpretation.totalBeats = sourceBeats;
+        magda::primaryEventOf(full)->interpBpm = sourceBpm;
+        magda::primaryEventOf(full)->interpTotalBeats = sourceBeats;
         ClipManager::getInstance().setAutoTempo(fullId, true, projectBpm);
         full = ClipManager::getInstance().getClip(fullId);
         expect(full != nullptr, "Full source clip should survive enabling beat mode");
@@ -1396,19 +1413,19 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         // Auto-tempo + beat-domain loop region. Container extends to 3 beats
         // (1.5× the loop region) via setPlacementBeats; deriveTimesFromBeats
         // refreshes the seconds cache so the renderer agrees with TE.
-        clip->autoTempo = true;
-        clip->audio().interpretation.bpm = 60.0;
-        clip->audio().interpretation.totalBeats = 5.0;
+        primaryEventOf(clip)->autoTempo = true;
+        primaryEventOf(clip)->interpBpm = 60.0;
+        primaryEventOf(clip)->interpTotalBeats = 5.0;
         clip->loopEnabled = true;
-        clip->loopStartBeats = 0.0;
-        clip->loopLengthBeats = 2.0;
-        clip->loopStart = 0.0;
-        clip->loopLength = 2.0;
+        primaryEventOf(clip)->setLoopStartBeats(0.0);
+        primaryEventOf(clip)->setLoopLengthBeats(2.0);
+        primaryEventOf(clip)->setLoopStartSeconds(0.0);
+        primaryEventOf(clip)->setLoopLengthSeconds(2.0);
         clip->setPlacementBeats(0.0, 3.0);
         clip->deriveTimesFromBeats(60.0);
 
         expect(clip->loopEnabled, "Model: loopEnabled should be true");
-        expectWithinAbsoluteError(clip->loopLengthBeats, 2.0, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(clip)->loopLengthBeats(), 2.0, 0.01);
         expectWithinAbsoluteError(clip->length, 3.0, 0.01);
 
         f.clipSync->syncClipToEngine(clipId);
@@ -1495,16 +1512,16 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         ClipOperations::resizeContainerFromRight(*clip, 3.0, 60.0);
 
         // Enable warp (this routes sync through the auto-tempo/warp code path)
-        clip->warpEnabled = true;
+        primaryEventOf(clip)->warpEnabled = true;
         // Set the current default time-stretch mode.
-        clip->timeStretchMode = static_cast<int>(te::TimeStretcher::defaultMode);
+        primaryEventOf(clip)->timeStretchMode = static_cast<int>(te::TimeStretcher::defaultMode);
 
         // Verify model state
         expect(clip->loopEnabled, "Model: loopEnabled should be true");
-        expect(clip->warpEnabled, "Model: warpEnabled should be true");
-        expect(!clip->autoTempo, "Model: autoTempo should be false");
-        expectWithinAbsoluteError(clip->loopStart, 0.0, 0.01);
-        expectWithinAbsoluteError(clip->loopLength, 2.0, 0.01);
+        expect(primaryEventOf(clip)->warpEnabled, "Model: warpEnabled should be true");
+        expect(!primaryEventOf(clip)->autoTempo, "Model: autoTempo should be false");
+        expectWithinAbsoluteError(primaryEventOf(clip)->loopStartSeconds(), 0.0, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(clip)->loopLengthSeconds(), 2.0, 0.01);
         expectWithinAbsoluteError(clip->length, 3.0, 0.01);
 
         f.clipSync->syncClipToEngine(clipId);
@@ -1595,9 +1612,11 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         // Right clip should have increased offset (by 2.0 * speedRatio)
         auto* rightClip = ClipManager::getInstance().getClip(rightClipId);
         expect(rightClip != nullptr);
-        expectWithinAbsoluteError(rightPos.getOffset().inSeconds(),
-                                  rightClip->getTeOffset(rightClip->loopEnabled), 0.01);
-        expect(rightClip->offset > 0.0, "Right clip offset should be > 0 after split");
+        expectWithinAbsoluteError(
+            rightPos.getOffset().inSeconds(),
+            magda::audioEventRef(*rightClip).engineOffsetSeconds(rightClip->loopEnabled), 0.01);
+        expect(primaryEventOf(rightClip)->anchorSeconds() > 0.0,
+               "Right clip offset should be > 0 after split");
     }
 
     void testSplitDrivesLeftClipUpdateThroughListener() {
@@ -1694,15 +1713,15 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (clip == nullptr)
             return;
 
-        clip->autoTempo = true;
+        primaryEventOf(clip)->autoTempo = true;
         clip->loopEnabled = true;
-        clip->audio().interpretation.bpm = 172.0;
-        clip->audio().interpretation.totalBeats = 5.0 * 172.0 / 60.0;
-        clip->loopStartBeats = 0.0;
-        clip->loopLengthBeats = clip->audio().interpretation.totalBeats;
-        clip->loopStart = 0.0;
-        clip->loopLength = 5.0;
-        clip->setPlacementBeats(0.0, clip->audio().interpretation.totalBeats);
+        primaryEventOf(clip)->interpBpm = 172.0;
+        primaryEventOf(clip)->interpTotalBeats = 5.0 * 172.0 / 60.0;
+        primaryEventOf(clip)->setLoopStartBeats(0.0);
+        primaryEventOf(clip)->setLoopLengthBeats(primaryEventOf(clip)->interpTotalBeats);
+        primaryEventOf(clip)->setLoopStartSeconds(0.0);
+        primaryEventOf(clip)->setLoopLengthSeconds(5.0);
+        clip->setPlacementBeats(0.0, primaryEventOf(clip)->interpTotalBeats);
         clip->deriveTimesFromBeats(60.0);
 
         f.clipSync->syncClipToEngine(clipId);
@@ -1760,9 +1779,9 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (rightClip == nullptr)
             return;
 
-        expectWithinAbsoluteError(rightClip->loopStartBeats, 0.0, 0.01);
-        expectWithinAbsoluteError(rightClip->loopLengthBeats, 4.0, 0.01);
-        expectWithinAbsoluteError(rightClip->offsetBeats, 4.0, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(rightClip)->loopStartBeats(), 0.0, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(rightClip)->loopLengthBeats(), 4.0, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(rightClip)->anchorBeats(), 4.0, 0.01);
 
         f.clipSync->syncClipToEngine(clipId);
         f.clipSync->syncClipToEngine(rightClipId);
@@ -1798,9 +1817,9 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         configureBeatModeLoop(*clip, 60.0, 172.0, 5.0, 0.0, 5.0 * 172.0 / 60.0, 5.0 * 172.0 / 60.0);
         f.clipSync->syncClipToEngine(clipId);
 
-        const double originalOffsetBeats = clip->offsetBeats;
-        const double originalLoopStartBeats = clip->loopStartBeats;
-        const double originalLoopLengthBeats = clip->loopLengthBeats;
+        const double originalOffsetBeats = primaryEventOf(clip)->anchorBeats();
+        const double originalLoopStartBeats = primaryEventOf(clip)->loopStartBeats();
+        const double originalLoopLengthBeats = primaryEventOf(clip)->loopLengthBeats();
 
         const double duplicateStart = clip->getTimelineEnd(60.0);
         auto duplicateId = cm.duplicateClipAt(clipId, duplicateStart, f.trackId, 60.0);
@@ -1812,13 +1831,17 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         // Source-domain phase is preserved verbatim — duplicating must not
         // change which audio plays. Compare in the source domain only.
-        expectWithinAbsoluteError(duplicate->offsetBeats, originalOffsetBeats, 0.01);
-        expectWithinAbsoluteError(duplicate->loopStartBeats, originalLoopStartBeats, 0.01);
-        expectWithinAbsoluteError(duplicate->loopLengthBeats, originalLoopLengthBeats, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(duplicate)->anchorBeats(), originalOffsetBeats,
+                                  0.01);
+        expectWithinAbsoluteError(primaryEventOf(duplicate)->loopStartBeats(),
+                                  originalLoopStartBeats, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(duplicate)->loopLengthBeats(),
+                                  originalLoopLengthBeats, 0.01);
         // Loop phase modulo the loop length: another way to express "same audio plays".
         expectWithinAbsoluteError(
-            wrapPhase(duplicate->offsetBeats - duplicate->loopStartBeats,
-                      duplicate->loopLengthBeats),
+            wrapPhase(primaryEventOf(duplicate)->anchorBeats() -
+                          primaryEventOf(duplicate)->loopStartBeats(),
+                      primaryEventOf(duplicate)->loopLengthBeats()),
             wrapPhase(originalOffsetBeats - originalLoopStartBeats, originalLoopLengthBeats), 0.01);
 
         // Timeline placement moved to duplicateStart (separate domain — independent of phase).
@@ -1852,9 +1875,9 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (rightClip == nullptr)
             return;
 
-        const double srcOffsetBeats = rightClip->offsetBeats;
-        const double srcLoopStartBeats = rightClip->loopStartBeats;
-        const double srcLoopLengthBeats = rightClip->loopLengthBeats;
+        const double srcOffsetBeats = primaryEventOf(rightClip)->anchorBeats();
+        const double srcLoopStartBeats = primaryEventOf(rightClip)->loopStartBeats();
+        const double srcLoopLengthBeats = primaryEventOf(rightClip)->loopLengthBeats();
 
         std::unordered_set<ClipId> copiedIds{rightClipId};
         cm.copyToClipboard(copiedIds);
@@ -1872,12 +1895,15 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         // Source-domain phase carries over verbatim — paste must not change which
         // audio plays.
-        expectWithinAbsoluteError(pastedClip->offsetBeats, srcOffsetBeats, 0.01);
-        expectWithinAbsoluteError(pastedClip->loopStartBeats, srcLoopStartBeats, 0.01);
-        expectWithinAbsoluteError(pastedClip->loopLengthBeats, srcLoopLengthBeats, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(pastedClip)->anchorBeats(), srcOffsetBeats, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(pastedClip)->loopStartBeats(), srcLoopStartBeats,
+                                  0.01);
+        expectWithinAbsoluteError(primaryEventOf(pastedClip)->loopLengthBeats(), srcLoopLengthBeats,
+                                  0.01);
         // Phase within loop — same modulo invariant.
-        expectWithinAbsoluteError(wrapPhase(pastedClip->offsetBeats - pastedClip->loopStartBeats,
-                                            pastedClip->loopLengthBeats),
+        expectWithinAbsoluteError(wrapPhase(primaryEventOf(pastedClip)->anchorBeats() -
+                                                primaryEventOf(pastedClip)->loopStartBeats(),
+                                            primaryEventOf(pastedClip)->loopLengthBeats()),
                                   wrapPhase(srcOffsetBeats - srcLoopStartBeats, srcLoopLengthBeats),
                                   0.01);
 
@@ -1889,7 +1915,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (pastedTeClip != nullptr) {
             // TE's getOffset is clip-relative seconds derived from
             // (offsetBeats - loopStartBeats) × 60 / projectBpm.
-            const double expectedTeOffset = pastedClip->getTeOffset(true, 60.0);
+            const double expectedTeOffset =
+                magda::audioEventRef(*pastedClip).engineOffsetSeconds(true, 60.0);
             expectWithinAbsoluteError(pastedTeClip->getPosition().getOffset().inSeconds(),
                                       expectedTeOffset, 0.01);
             // Sanity: TE clip's edit start matches the paste timeline position.
@@ -1915,12 +1942,12 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             return;
 
         // Source: 120 BPM, loop region beats [2, 6) of source (loopStart=2,
-        // loopLength=4). Placement: 0..12 beats at projectBpm=60. clip.offsetBeats
-        // = loopStartBeats = 2 (configureBeatModeLoop).
+        // loopLength=4). Placement: 0..12 beats at projectBpm=60.
+        // magda::test::audioEvent(clip).anchorBeats() = loopStartBeats = 2 (configureBeatModeLoop).
         configureBeatModeLoop(*clip, 60.0, 120.0, 5.0, 2.0, 4.0, 12.0);
-        const double clipLoopStartBeats = clip->loopStartBeats;
-        const double clipLoopLengthBeats = clip->loopLengthBeats;
-        const double clipOffsetBeats = clip->offsetBeats;
+        const double clipLoopStartBeats = primaryEventOf(clip)->loopStartBeats();
+        const double clipLoopLengthBeats = primaryEventOf(clip)->loopLengthBeats();
+        const double clipOffsetBeats = primaryEventOf(clip)->anchorBeats();
 
         // Time-range copy: trim from 5.5s..7.5s within the original timeline.
         // copyTimeRangeToClipboard moves trimmed.offsetBeats forward by
@@ -1942,23 +1969,28 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             return;
 
         // Loop region in source-domain unchanged by trimming or pasting.
-        expectWithinAbsoluteError(pastedClip->loopStartBeats, clipLoopStartBeats, 0.01);
-        expectWithinAbsoluteError(pastedClip->loopLengthBeats, clipLoopLengthBeats, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(pastedClip)->loopStartBeats(), clipLoopStartBeats,
+                                  0.01);
+        expectWithinAbsoluteError(primaryEventOf(pastedClip)->loopLengthBeats(),
+                                  clipLoopLengthBeats, 0.01);
 
         // offsetBeats advanced by the trim distance, then preserved verbatim
         // by paste. (The paste's timeline position is irrelevant to source phase.)
         const double expectedOffsetBeats = clipOffsetBeats + (kRangeStart - 0.0);  // = 7.5
-        expectWithinAbsoluteError(pastedClip->offsetBeats, expectedOffsetBeats, 0.01);
+        expectWithinAbsoluteError(primaryEventOf(pastedClip)->anchorBeats(), expectedOffsetBeats,
+                                  0.01);
 
         // TE offset is clip-relative seconds: (offsetBeats - loopStartBeats) × 60 / projectBpm.
         const double expectedTeOffset =
             (expectedOffsetBeats - clipLoopStartBeats) * 60.0 / 60.0;  // = 5.5
-        expectWithinAbsoluteError(pastedClip->getTeOffset(true, 60.0), expectedTeOffset, 0.01);
+        expectWithinAbsoluteError(magda::audioEventRef(*pastedClip).engineOffsetSeconds(true, 60.0),
+                                  expectedTeOffset, 0.01);
 
         // Phase modulo loop length is what determines audible content alignment.
         expectWithinAbsoluteError(
-            wrapPhase(pastedClip->offsetBeats - pastedClip->loopStartBeats,
-                      pastedClip->loopLengthBeats),
+            wrapPhase(primaryEventOf(pastedClip)->anchorBeats() -
+                          primaryEventOf(pastedClip)->loopStartBeats(),
+                      primaryEventOf(pastedClip)->loopLengthBeats()),
             wrapPhase(expectedOffsetBeats - clipLoopStartBeats, clipLoopLengthBeats), 0.01);
 
         f.clipSync->syncClipToEngine(pastedId);
@@ -2299,6 +2331,43 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(s->placement.lengthBeats, 8.0, 0.01);
         expectWithinAbsoluteError(i->placement.startBeat, 8.0, 0.01);
         expectWithinAbsoluteError(i->placement.lengthBeats, 8.0, 0.01);
+    }
+
+    void testLoopedMidiClipReachesEngineWithItsLoopRange() {
+        beginTest("A looped MIDI clip reaches the engine with its loop range");
+
+        // The loop of a MIDI clip is clip beats on the container. When the
+        // audio source region moved onto AudioEvent (#1901), this read moved
+        // with it, and a MIDI clip has no event: the length came back zero,
+        // the branch never ran and TE was told to loop nothing. Playback of
+        // every looped MIDI clip stopped after one pass, with nothing in the
+        // model to show for it.
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        const auto clipId = cm.createMidiClipBeats(f.trackId, 0.0, 16.0, ClipView::Arrangement);
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr, "MIDI clip should exist");
+        if (clip == nullptr)
+            return;
+
+        expect(cm.addMidiNote(clipId, {60, 100, 0.0, 1.0}), "Note should be added");
+        cm.setClipLoopEnabled(clipId, true);
+        cm.setMidiLoopLengthBeats(clipId, 4.0);
+        f.clipSync->syncClipToEngine(clipId);
+
+        auto* teMidiClip = f.getTeMidiClip(clipId);
+        expect(teMidiClip != nullptr, "Tracktion MIDI clip should exist after sync");
+        if (teMidiClip == nullptr)
+            return;
+
+        expect(teMidiClip->isLooping(), "A looped MIDI clip must loop in the engine");
+        expectWithinAbsoluteError(teMidiClip->getLoopLengthBeats().inBeats(), 4.0, 0.01);
+
+        // And the toggle still turns it off.
+        cm.setClipLoopEnabled(clipId, false);
+        f.clipSync->syncClipToEngine(clipId);
+        expect(!teMidiClip->isLooping(), "Unlooping a MIDI clip must reach the engine too");
     }
 
     void testMidiSyncClipsNotesToVisibleRangeAfterResize() {

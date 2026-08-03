@@ -1343,11 +1343,11 @@ void PianoRollContent::updateGridSize() {
         if (auto* controller = magda::TimelineController::getCurrent()) {
             tempo = controller->getState().tempo.bpm;
         }
-        double beatsPerSecond = tempo / 60.0;
-        double loopOffsetBeats = clip->loopStart * beatsPerSecond;
-        // MIDI clips use loopLengthBeats directly; audio clips derive from loopLength (seconds)
-        double sourceLengthBeats =
-            clip->loopLengthBeats > 0.0 ? clip->loopLengthBeats : clip->loopLength * beatsPerSecond;
+        // Both values are timeline beats, which is what the grid draws in. A
+        // MIDI clip keeps them on the container; an audio clip's loop is a
+        // source region that has to come back through the project tempo.
+        const double loopOffsetBeats = clip->loopStartInBeats(tempo);
+        const double sourceLengthBeats = clip->loopLengthInBeats(tempo);
         gridComponent_->setLoopRegion(loopOffsetBeats, sourceLengthBeats, clip->loopEnabled);
     } else {
         gridComponent_->setLoopRegion(0.0, 0.0, false);

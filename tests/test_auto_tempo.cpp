@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "AudioClipTestHelpers.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipOperations.hpp"
 
@@ -33,13 +34,13 @@ static constexpr double PROJECT_BPM = 69.0;
 static ClipInfo makeAmenClip(double startTime = 0.0) {
     ClipInfo clip;
     clip.setAudioContent();
-    clip.audio().source.filePath = "amen_break.wav";
+    magda::test::giveAudioEvent(clip, "amen_break.wav");
     clip.startTime = startTime;
     clip.length = AMEN_DURATION;  // original duration before stretching
-    clip.offset = 0.0;
-    clip.speedRatio = 1.0;
-    clip.audio().interpretation.bpm = AMEN_ORIGINAL_BPM;
-    clip.audio().interpretation.totalBeats = AMEN_SOURCE_BEATS;
+    magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+    magda::test::audioEvent(clip).speedRatio = 1.0;
+    magda::test::audioEvent(clip).interpBpm = AMEN_ORIGINAL_BPM;
+    magda::test::audioEvent(clip).interpTotalBeats = AMEN_SOURCE_BEATS;
     return clip;
 }
 
@@ -47,49 +48,51 @@ static ClipInfo makeAmenClip(double startTime = 0.0) {
 static ClipInfo makeCalibratedClip(double projectBPM = 120.0) {
     ClipInfo clip;
     clip.setAudioContent();
-    clip.audio().source.filePath = "sample.wav";
+    magda::test::giveAudioEvent(clip, "sample.wav");
     clip.startTime = 0.0;
     clip.length = 2.0;
-    clip.offset = 0.0;
-    clip.speedRatio = 1.0;
-    clip.audio().interpretation.bpm = projectBPM;  // matches project → calibration applies
-    clip.audio().interpretation.totalBeats = 4.0;
+    magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+    magda::test::audioEvent(clip).speedRatio = 1.0;
+    magda::test::audioEvent(clip).interpBpm = projectBPM;  // matches project → calibration applies
+    magda::test::audioEvent(clip).interpTotalBeats = 4.0;
     return clip;
 }
 
 // ─────────────────────────────────────────────────────────────
-// ClipInfo::setSourceMetadata
+// AudioEvent::seedInterpretation
 // ─────────────────────────────────────────────────────────────
 
-TEST_CASE("ClipInfo::setSourceMetadata - populates unset fields", "[clip][auto-tempo][metadata]") {
+TEST_CASE("AudioEvent::seedInterpretation - populates unset fields",
+          "[clip][auto-tempo][metadata]") {
     ClipInfo clip;
-    clip.setAudioContent();
+    magda::test::giveAudioEvent(clip, "seed.wav");
 
     SECTION("Sets both fields when unset") {
-        clip.setSourceMetadata(4.0, 120.0);
-        REQUIRE(clip.audio().interpretation.totalBeats == 4.0);
-        REQUIRE(clip.audio().interpretation.bpm == 120.0);
+        magda::test::audioEvent(clip).seedInterpretation(4.0, 120.0);
+        REQUIRE(magda::test::audioEvent(clip).interpTotalBeats == 4.0);
+        REQUIRE(magda::test::audioEvent(clip).interpBpm == 120.0);
     }
 
     SECTION("Does not overwrite existing values") {
-        clip.audio().interpretation.totalBeats = 8.0;
-        clip.audio().interpretation.bpm = 140.0;
-        clip.setSourceMetadata(4.0, 120.0);
-        REQUIRE(clip.audio().interpretation.totalBeats == 8.0);
-        REQUIRE(clip.audio().interpretation.bpm == 140.0);
+        magda::test::audioEvent(clip).interpTotalBeats = 8.0;
+        magda::test::audioEvent(clip).interpBpm = 140.0;
+        magda::test::audioEvent(clip).seedInterpretation(4.0, 120.0);
+        REQUIRE(magda::test::audioEvent(clip).interpTotalBeats == 8.0);
+        REQUIRE(magda::test::audioEvent(clip).interpBpm == 140.0);
     }
 
     SECTION("Ignores zero/negative input") {
-        clip.setSourceMetadata(0.0, -5.0);
-        REQUIRE(clip.audio().interpretation.totalBeats == 0.0);
-        REQUIRE(clip.audio().interpretation.bpm == 0.0);
+        magda::test::audioEvent(clip).seedInterpretation(0.0, -5.0);
+        REQUIRE(magda::test::audioEvent(clip).interpTotalBeats == 0.0);
+        REQUIRE(magda::test::audioEvent(clip).interpBpm == 0.0);
     }
 
     SECTION("Sets one field independently of the other") {
-        clip.audio().interpretation.bpm = 140.0;  // already set
-        clip.setSourceMetadata(4.0, 120.0);
-        REQUIRE(clip.audio().interpretation.totalBeats == 4.0);  // was unset, gets populated
-        REQUIRE(clip.audio().interpretation.bpm == 140.0);       // was set, not overwritten
+        magda::test::audioEvent(clip).interpBpm = 140.0;  // already set
+        magda::test::audioEvent(clip).seedInterpretation(4.0, 120.0);
+        REQUIRE(magda::test::audioEvent(clip).interpTotalBeats ==
+                4.0);                                               // was unset, gets populated
+        REQUIRE(magda::test::audioEvent(clip).interpBpm == 140.0);  // was set, not overwritten
     }
 }
 
@@ -110,12 +113,12 @@ TEST_CASE("setAutoTempo - preserves real detected BPM", "[clip][auto-tempo]") {
 
     SECTION("source interpretation BPM preserved when it differs from project BPM") {
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
-        REQUIRE(clip.audio().interpretation.bpm == Approx(AMEN_ORIGINAL_BPM));
+        REQUIRE(magda::test::audioEvent(clip).interpBpm == Approx(AMEN_ORIGINAL_BPM));
     }
 
     SECTION("source interpretation total beats preserved when BPM differs from project BPM") {
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
-        REQUIRE(clip.audio().interpretation.totalBeats == Approx(AMEN_SOURCE_BEATS));
+        REQUIRE(magda::test::audioEvent(clip).interpTotalBeats == Approx(AMEN_SOURCE_BEATS));
     }
 
     SECTION("lengthBeats preserves timeline length in project beats") {
@@ -128,7 +131,8 @@ TEST_CASE("setAutoTempo - preserves real detected BPM", "[clip][auto-tempo]") {
         // Slight tolerance because AMEN_DURATION (1.513s) doesn't exactly
         // round-trip through AMEN_ORIGINAL_BPM (158.6) to give 4.0 source
         // beats — within a thousandth.
-        REQUIRE(clip.lengthBeats == Approx(clip.loopLengthBeats).margin(0.01));
+        REQUIRE(clip.lengthBeats ==
+                Approx(magda::test::audioEvent(clip).loopLengthBeats()).margin(0.01));
     }
 
     SECTION("startBeats is in project beats") {
@@ -139,9 +143,9 @@ TEST_CASE("setAutoTempo - preserves real detected BPM", "[clip][auto-tempo]") {
     }
 
     SECTION("speedRatio forced to 1.0") {
-        clip.speedRatio = 2.0;
+        magda::test::audioEvent(clip).speedRatio = 2.0;
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
-        REQUIRE(clip.speedRatio == 1.0);
+        REQUIRE(magda::test::audioEvent(clip).speedRatio == 1.0);
     }
 
     SECTION("looping gets enabled if not already") {
@@ -161,21 +165,21 @@ TEST_CASE("setAutoTempo - calibrates when source interpretation BPM matches proj
     SECTION("source interpretation BPM stays at project BPM when they match") {
         auto clip = makeCalibratedClip(120.0);
         ClipOperations::setAutoTempo(clip, true, 120.0);
-        REQUIRE(clip.audio().interpretation.bpm == Approx(120.0));
+        REQUIRE(magda::test::audioEvent(clip).interpBpm == Approx(120.0));
     }
 
     SECTION("source interpretation BPM equals project BPM / speedRatio when appropriate") {
         auto clip = makeCalibratedClip(120.0);
-        clip.speedRatio = 2.0;
+        magda::test::audioEvent(clip).speedRatio = 2.0;
         // effectiveBPM = 120/2 = 60, but interpretation BPM = 120, so no calibration
         // Actually this is the "differs" case so calibration is skipped
         ClipOperations::setAutoTempo(clip, true, 120.0);
-        REQUIRE(clip.audio().interpretation.bpm == Approx(120.0));  // preserved
+        REQUIRE(magda::test::audioEvent(clip).interpBpm == Approx(120.0));  // preserved
     }
 
     SECTION("Calibration when source interpretation BPM was unknown (zero)") {
         auto clip = makeAmenClip();
-        clip.audio().interpretation.bpm = 0.0;
+        magda::test::audioEvent(clip).interpBpm = 0.0;
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
         // Unknown interpretation BPM stays unknown; the fallback compute path is used.
     }
@@ -190,8 +194,9 @@ TEST_CASE("getAutoTempoBeatRange - source beat range", "[clip][auto-tempo][te-sy
         auto clip = makeAmenClip();
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
-        auto [startBeats, lengthBeats] = ClipOperations::getAutoTempoBeatRange(clip, PROJECT_BPM);
-        REQUIRE(lengthBeats == Approx(clip.loopLengthBeats));
+        auto [startBeats, lengthBeats] =
+            ClipOperations::getAutoTempoBeatRange(magda::test::audioEvent(clip));
+        REQUIRE(lengthBeats == Approx(magda::test::audioEvent(clip).loopLengthBeats()));
     }
 
     SECTION("Beat range maps to file's natural beat count") {
@@ -202,14 +207,16 @@ TEST_CASE("getAutoTempoBeatRange - source beat range", "[clip][auto-tempo][te-sy
         auto clip = makeAmenClip();
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
-        auto [startBeats, lengthBeats] = ClipOperations::getAutoTempoBeatRange(clip, PROJECT_BPM);
+        auto [startBeats, lengthBeats] =
+            ClipOperations::getAutoTempoBeatRange(magda::test::audioEvent(clip));
 
         REQUIRE(lengthBeats == Approx(AMEN_SOURCE_BEATS).margin(0.01));
     }
 
     SECTION("Returns {0,0} when autoTempo is off") {
         auto clip = makeAmenClip();
-        auto [startBeats, lengthBeats] = ClipOperations::getAutoTempoBeatRange(clip, PROJECT_BPM);
+        auto [startBeats, lengthBeats] =
+            ClipOperations::getAutoTempoBeatRange(magda::test::audioEvent(clip));
 
         REQUIRE(startBeats == 0.0);
         REQUIRE(lengthBeats == 0.0);
@@ -236,17 +243,18 @@ TEST_CASE("getEndBeats - consistent in auto-tempo mode", "[clip][auto-tempo]") {
 
 TEST_CASE("setAutoTempo - with offset preserves loop start", "[clip][auto-tempo][offset]") {
     auto clip = makeAmenClip();
-    clip.offset = 0.5;
+    magda::test::audioEvent(clip).setAnchorSeconds(0.5);
 
     SECTION("loopStart set to offset when loop was not enabled") {
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
-        REQUIRE(clip.loopStart == Approx(0.5));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() == Approx(0.5));
     }
 
     SECTION("Clamping shifts start when loop exceeds file with offset") {
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
-        auto [startBeats, lengthBeats] = ClipOperations::getAutoTempoBeatRange(clip, PROJECT_BPM);
+        auto [startBeats, lengthBeats] =
+            ClipOperations::getAutoTempoBeatRange(magda::test::audioEvent(clip));
 
         // Beat range must be non-negative
         REQUIRE(startBeats >= 0.0);
@@ -261,14 +269,14 @@ TEST_CASE("setAutoTempo - with offset preserves loop start", "[clip][auto-tempo]
 TEST_CASE("setAutoTempo - respects existing loop region", "[clip][auto-tempo][loop]") {
     auto clip = makeAmenClip();
     clip.loopEnabled = true;
-    clip.loopStart = 0.3;
-    clip.loopLength = 0.8;
+    magda::test::audioEvent(clip).setLoopStartSeconds(0.3);
+    magda::test::audioEvent(clip).setLoopLengthSeconds(0.8);
 
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
     SECTION("Does not overwrite existing loopStart/loopLength") {
-        REQUIRE(clip.loopStart == Approx(0.3));
-        REQUIRE(clip.loopLength == Approx(0.8));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() == Approx(0.3));
+        REQUIRE(magda::test::audioEvent(clip).loopLengthSeconds() == Approx(0.8));
     }
 
     SECTION("loopLengthBeats is in source beats") {
@@ -277,7 +285,7 @@ TEST_CASE("setAutoTempo - respects existing loop region", "[clip][auto-tempo][lo
         // a 0.8-second loop in a file interpreted at 158.6 BPM, that's
         // 0.8 × 158.6 / 60 ≈ 2.115 beats.
         double expectedLoopBeats = 0.8 * AMEN_ORIGINAL_BPM / 60.0;
-        REQUIRE(clip.loopLengthBeats == Approx(expectedLoopBeats));
+        REQUIRE(magda::test::audioEvent(clip).loopLengthBeats() == Approx(expectedLoopBeats));
     }
 }
 
@@ -288,43 +296,50 @@ TEST_CASE("setAutoTempo - respects existing loop region", "[clip][auto-tempo][lo
 TEST_CASE("setAutoTempo - disable preserves source seconds", "[clip][auto-tempo]") {
     auto clip = makeAmenClip();
     clip.loopEnabled = true;
-    clip.loopStart = 0.25;
-    clip.loopLength = 0.75;
-    clip.offset = 0.5;
+    magda::test::audioEvent(clip).setLoopStartSeconds(0.25);
+    magda::test::audioEvent(clip).setLoopLengthSeconds(0.75);
+    magda::test::audioEvent(clip).setAnchorSeconds(0.5);
 
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
     // Verify beat values were set and are authoritative in auto-tempo mode.
     REQUIRE(clip.lengthBeats > 0.0);
-    REQUIRE(clip.loopLengthBeats > 0.0);
+    REQUIRE(magda::test::audioEvent(clip).loopLengthBeats() > 0.0);
     REQUIRE(clip.startBeats >= 0.0);
 
-    const double expectedOffset = clip.getSourceOffset();
-    const double expectedLoopStart = clip.getSourceLoopStart();
-    const double expectedLoopLength = clip.getSourceLoopLength();
+    const double expectedOffset = magda::test::audioEvent(clip).anchorSeconds();
+    const double expectedLoopStart = magda::test::audioEvent(clip).loopStartSeconds();
+    const double expectedLoopLength = magda::test::audioEvent(clip).loopLengthSeconds();
     const double expectedPhase = wrapPhase(expectedOffset - expectedLoopStart, expectedLoopLength);
 
     ClipOperations::setAutoTempo(clip, false, PROJECT_BPM);
 
     SECTION("Source seconds are preserved") {
-        REQUIRE(clip.offset == Approx(expectedLoopStart + expectedPhase));
-        REQUIRE(clip.loopStart == Approx(expectedLoopStart));
-        REQUIRE(clip.loopLength == Approx(expectedLoopLength));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() ==
+                Approx(expectedLoopStart + expectedPhase));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() == Approx(expectedLoopStart));
+        REQUIRE(magda::test::audioEvent(clip).loopLengthSeconds() == Approx(expectedLoopLength));
     }
 
-    SECTION("Source beat-loop values are cleared") {
-        REQUIRE(clip.loopStartBeats == 0.0);
-        REQUIRE(clip.loopLengthBeats == 0.0);
+    SECTION("The source region's beat view follows the preserved seconds") {
+        // Beats are a view on the source region, which the section above
+        // asserts is preserved, so leaving beat mode cannot zero them. v1
+        // cleared separate beat fields here purely because it kept two
+        // representations of the same region.
+        REQUIRE(magda::test::audioEvent(clip).loopStartBeats() ==
+                Approx(expectedLoopStart * magda::test::audioEvent(clip).interpBpm / 60.0));
+        REQUIRE(magda::test::audioEvent(clip).loopLengthBeats() ==
+                Approx(expectedLoopLength * magda::test::audioEvent(clip).interpBpm / 60.0));
     }
 
     SECTION("autoTempo is false") {
-        REQUIRE_FALSE(clip.autoTempo);
+        REQUIRE_FALSE(magda::test::audioEvent(clip).autoTempo);
     }
 }
 
 TEST_CASE("setAutoTempo - re-enable preserves trimmed placement length", "[clip][auto-tempo]") {
     auto clip = makeAmenClip();
-    clip.audio().source.durationSeconds = AMEN_DURATION;
+    magda::test::setSourceDuration(clip, AMEN_DURATION);
     clip.loopEnabled = true;
 
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
@@ -335,11 +350,11 @@ TEST_CASE("setAutoTempo - re-enable preserves trimmed placement length", "[clip]
     clip.deriveTimesFromBeats(PROJECT_BPM);
 
     ClipOperations::setAutoTempo(clip, false, PROJECT_BPM);
-    REQUIRE_FALSE(clip.autoTempo);
+    REQUIRE_FALSE(magda::test::audioEvent(clip).autoTempo);
     REQUIRE(clip.placement.lengthBeats == Approx(trimmedLengthBeats));
 
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
-    REQUIRE(clip.autoTempo);
+    REQUIRE(magda::test::audioEvent(clip).autoTempo);
     REQUIRE(clip.placement.lengthBeats == Approx(trimmedLengthBeats));
     REQUIRE(clip.length == Approx(trimmedLengthBeats * 60.0 / PROJECT_BPM));
 }
@@ -351,19 +366,19 @@ TEST_CASE("setAutoTempo - no-op when already in target state", "[clip][auto-temp
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
         double savedLength = clip.length;
         double savedLengthBeats = clip.lengthBeats;
-        double savedLoopLengthBeats = clip.loopLengthBeats;
+        double savedLoopLengthBeats = magda::test::audioEvent(clip).loopLengthBeats();
 
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
         REQUIRE(clip.length == Approx(savedLength));
         REQUIRE(clip.lengthBeats == Approx(savedLengthBeats));
-        REQUIRE(clip.loopLengthBeats == Approx(savedLoopLengthBeats));
+        REQUIRE(magda::test::audioEvent(clip).loopLengthBeats() == Approx(savedLoopLengthBeats));
     }
 
     SECTION("Disable when already disabled is no-op") {
-        REQUIRE_FALSE(clip.autoTempo);
+        REQUIRE_FALSE(magda::test::audioEvent(clip).autoTempo);
         ClipOperations::setAutoTempo(clip, false, PROJECT_BPM);
-        REQUIRE_FALSE(clip.autoTempo);
+        REQUIRE_FALSE(magda::test::audioEvent(clip).autoTempo);
     }
 }
 
@@ -378,10 +393,10 @@ TEST_CASE("setAutoTempo - calibration with matching source interpretation BPM",
         auto clip = makeCalibratedClip(120.0);
         ClipOperations::setAutoTempo(clip, true, 120.0);
 
-        REQUIRE(clip.audio().interpretation.bpm == Approx(120.0));
+        REQUIRE(magda::test::audioEvent(clip).interpBpm == Approx(120.0));
         REQUIRE(clip.length == Approx(2.0));
         REQUIRE(clip.lengthBeats == Approx(4.0));
-        REQUIRE(clip.loopLengthBeats == Approx(4.0));
+        REQUIRE(magda::test::audioEvent(clip).loopLengthBeats() == Approx(4.0));
     }
 
     SECTION("At 60 BPM with matching source interpretation BPM, calibrates to 60") {
@@ -390,15 +405,15 @@ TEST_CASE("setAutoTempo - calibration with matching source interpretation BPM",
 
         ClipOperations::setAutoTempo(clip, true, 60.0);
 
-        REQUIRE(clip.audio().interpretation.bpm == Approx(60.0));
-        REQUIRE(60.0 / clip.audio().interpretation.bpm == Approx(1.0));
+        REQUIRE(magda::test::audioEvent(clip).interpBpm == Approx(60.0));
+        REQUIRE(60.0 / magda::test::audioEvent(clip).interpBpm == Approx(1.0));
     }
 
     SECTION("Real detected BPM (158.6) preserved at any project tempo") {
         auto clip = makeAmenClip();
         ClipOperations::setAutoTempo(clip, true, 200.0);
 
-        REQUIRE(clip.audio().interpretation.bpm == Approx(AMEN_ORIGINAL_BPM));
+        REQUIRE(magda::test::audioEvent(clip).interpBpm == Approx(AMEN_ORIGINAL_BPM));
     }
 }
 
@@ -414,16 +429,17 @@ TEST_CASE("Regression: loop wrapping past file end", "[clip][auto-tempo][regress
 
     ClipInfo clip;
     clip.setAudioContent();
-    clip.audio().source.filePath = "long_loop.wav";
+    magda::test::giveAudioEvent(clip, "long_loop.wav");
     clip.length = FILE_DURATION;
-    clip.offset = 5.0;  // near end of file
-    clip.speedRatio = 1.0;
-    clip.audio().interpretation.bpm = FILE_BPM;
-    clip.audio().interpretation.totalBeats = FILE_BEATS;
+    magda::test::audioEvent(clip).setAnchorSeconds(5.0);  // near end of file
+    magda::test::audioEvent(clip).speedRatio = 1.0;
+    magda::test::audioEvent(clip).interpBpm = FILE_BPM;
+    magda::test::audioEvent(clip).interpTotalBeats = FILE_BEATS;
 
     ClipOperations::setAutoTempo(clip, true, 69.0);
 
-    auto [startBeats, lengthBeats] = ClipOperations::getAutoTempoBeatRange(clip, 69.0);
+    auto [startBeats, lengthBeats] =
+        ClipOperations::getAutoTempoBeatRange(magda::test::audioEvent(clip));
 
     // Beat range must be non-negative
     REQUIRE(startBeats >= 0.0);
@@ -439,21 +455,23 @@ TEST_CASE("setAutoTempoPlacementLengthBeats - extends placement without rewritin
     auto clip = makeAmenClip();
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
-    double originalSourceInterpretationBpm = clip.audio().interpretation.bpm;
-    double originalSourceBeats = clip.audio().interpretation.totalBeats;
-    double originalLoopLengthBeats = clip.loopLengthBeats;
+    double originalSourceInterpretationBpm = magda::test::audioEvent(clip).interpBpm;
+    double originalSourceBeats = magda::test::audioEvent(clip).interpTotalBeats;
+    double originalLoopLengthBeats = magda::test::audioEvent(clip).loopLengthBeats();
 
     ClipOperations::setAutoTempoPlacementLengthBeats(clip, originalLoopLengthBeats * 2.0,
                                                      PROJECT_BPM);
 
     SECTION("source interpretation is unchanged") {
-        REQUIRE(clip.audio().interpretation.bpm ==
+        REQUIRE(magda::test::audioEvent(clip).interpBpm ==
                 Approx(originalSourceInterpretationBpm).margin(0.1));
-        REQUIRE(clip.audio().interpretation.totalBeats == Approx(originalSourceBeats).margin(0.01));
+        REQUIRE(magda::test::audioEvent(clip).interpTotalBeats ==
+                Approx(originalSourceBeats).margin(0.01));
     }
 
     SECTION("loop region stays in source beats") {
-        REQUIRE(clip.loopLengthBeats == Approx(originalLoopLengthBeats).margin(0.01));
+        REQUIRE(magda::test::audioEvent(clip).loopLengthBeats() ==
+                Approx(originalLoopLengthBeats).margin(0.01));
     }
 
     SECTION("placement length doubles") {

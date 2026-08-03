@@ -60,8 +60,9 @@ void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
             updateLoopValueDisplays(*clip, projectBPM, beatsPerBar);
 
             // PitchChange affects effective mode.
-            stretchModeCombo_.setSelectedId(clip->getEffectiveTimeStretchMode() + 1,
-                                            juce::dontSendNotification);
+            stretchModeCombo_.setSelectedId(
+                magda::audioEventRef(*clip).getEffectiveTimeStretchMode() + 1,
+                juce::dontSendNotification);
         }
         return;
     }

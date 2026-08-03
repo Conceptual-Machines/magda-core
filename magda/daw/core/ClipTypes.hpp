@@ -9,6 +9,24 @@ using ClipId = int;
 constexpr ClipId INVALID_CLIP_ID = -1;
 
 /**
+ * @brief Unique identifier for a pooled media source (#1901).
+ *
+ * Type-agnostic on purpose: audio sources use it today, a MIDI equivalent
+ * reuses the same scheme later. Unique within a project, stable across saves.
+ */
+using SourceId = int;
+constexpr SourceId INVALID_SOURCE_ID = -1;
+
+/**
+ * @brief Identifier for an event inside its owning clip (#1901).
+ *
+ * Unique within the clip only, NOT project-wide: an event is addressed as
+ * (ClipId, EventId). Copying a clip copies its event ids verbatim.
+ */
+using EventId = int;
+constexpr EventId INVALID_EVENT_ID = -1;
+
+/**
  * @brief Clip types
  */
 enum class ClipType {

@@ -1030,9 +1030,7 @@ void JoinClipsCommand::performAction() {
         }
 
         left->loopEnabled = false;
-        left->loopStart = 0.0;
         left->loopStartBeats = 0.0;
-        left->loopLength = 0.0;
         left->loopLengthBeats = 0.0;
         left->midiOffset = 0.0;
         left->midiTrimOffset = 0.0;
@@ -1229,7 +1227,7 @@ void RenderClipCommand::execute() {
     }
 
     // Determine output file path — always use the project's renders directory
-    juce::File sourceFile(clip->audio().source.filePath);
+    juce::File sourceFile(magda::audioEventRef(*clip).sourceFilePath());
     auto rendersDir = ProjectManager::getInstance().getRendersDirectory();
     if (rendersDir == juce::File())
         rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
@@ -1384,7 +1382,7 @@ void RenderTimeSelectionCommand::execute() {
 
         // Determine output file path from first overlapping clip's source
         auto* firstClip = clipManager.getClip(overlappingIds[0]);
-        juce::File sourceFile(firstClip->audio().source.filePath);
+        juce::File sourceFile(magda::audioEventRef(*firstClip).sourceFilePath());
         auto rendersDir = ProjectManager::getInstance().getRendersDirectory();
         if (rendersDir == juce::File())
             rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
@@ -2535,13 +2533,14 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
     // markers define a non-linear mapping.  With warp off the linear formula
     // is correct, so we convert marker sourceTime values to the linear
     // timeline domain.
-    clip->warpEnabled = false;
+    if (auto* warpEvent = clip->primaryEvent())
+        warpEvent->warpEnabled = false;
     bridge->disableWarp(clipId);
 
     const double bpm = resolveTimelineBpm(tempo);
     double clipStart = clip->getTimelineStart(bpm);
     double clipEnd = clip->getTimelineEnd(bpm);
-    double clipOffset = clip->getSourceOffset();
+    double clipOffset = magda::audioEventRef(*clip).anchorSeconds();
 
     std::vector<double> splitTimes;
     splitTimes.reserve(markers.size());
@@ -2552,10 +2551,10 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
     for (size_t i = 1; i + 1 < markers.size(); ++i) {
         double sourceDelta = markers[i].sourceTime - clipOffset;
         double splitTime;
-        if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0) {
-            splitTime = clipStart + sourceDelta * clip->audio().interpretation.bpm / bpm;
+        if (magda::audioEventRef(*clip).autoTempo && magda::audioEventRef(*clip).interpBpm > 0.0) {
+            splitTime = clipStart + sourceDelta * magda::audioEventRef(*clip).interpBpm / bpm;
         } else {
-            splitTime = clipStart + sourceDelta / clip->speedRatio;
+            splitTime = clipStart + sourceDelta / magda::audioEventRef(*clip).speedRatio;
         }
         if (splitTime > clipStart && splitTime < clipEnd) {
             splitTimes.push_back(splitTime);
@@ -2577,8 +2576,8 @@ void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo, AudioBrid
         return;
 
     // Disable warp before splitting if enabled
-    if (clip->warpEnabled) {
-        clip->warpEnabled = false;
+    if (auto* warpEvent = clip->primaryEvent(); warpEvent != nullptr && warpEvent->warpEnabled) {
+        warpEvent->warpEnabled = false;
         if (bridge)
             bridge->disableWarp(clipId);
     }
@@ -2837,21 +2836,21 @@ void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || !clip->isAudio() || clip->audio().source.filePath.isEmpty())
+    if (!clip || !clip->isAudio() || magda::audioEventRef(*clip).sourceFilePath().isEmpty())
         return;
 
     auto markers = bridge->getWarpMarkers(clipId);
     if (markers.size() <= 2)
         return;
 
-    juce::File audioFile(clip->audio().source.filePath);
+    juce::File audioFile(magda::audioEventRef(*clip).sourceFilePath());
     if (!audioFile.existsAsFile())
         return;
 
     const double bpm = resolveTimelineBpm(tempo);
     double clipStart = clip->getTimelineStart(bpm);
     double clipEnd = clip->getTimelineEnd(bpm);
-    double clipOffset = clip->getSourceOffset();
+    double clipOffset = magda::audioEventRef(*clip).anchorSeconds();
 
     // Build sorted interior marker source times
     std::vector<double> interiorSourceTimes;
@@ -2875,10 +2874,10 @@ void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge
 
     auto sourceToTimeline = [&](double sourceTime) -> double {
         double sourceDelta = sourceTime - clipOffset;
-        if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0)
-            return clipStart + sourceDelta * clip->audio().interpretation.bpm / bpm;
+        if (magda::audioEventRef(*clip).autoTempo && magda::audioEventRef(*clip).interpBpm > 0.0)
+            return clipStart + sourceDelta * magda::audioEventRef(*clip).interpBpm / bpm;
         else
-            return clipStart + sourceDelta / clip->speedRatio;
+            return clipStart + sourceDelta / magda::audioEventRef(*clip).speedRatio;
     };
 
     std::vector<SliceRegion> slices;
@@ -2900,25 +2899,25 @@ void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, Aud
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || !clip->isAudio() || clip->audio().source.filePath.isEmpty())
+    if (!clip || !clip->isAudio() || magda::audioEventRef(*clip).sourceFilePath().isEmpty())
         return;
 
-    juce::File audioFile(clip->audio().source.filePath);
+    juce::File audioFile(magda::audioEventRef(*clip).sourceFilePath());
     if (!audioFile.existsAsFile())
         return;
 
     const double bpm = resolveTimelineBpm(tempo);
     double clipStart = clip->getTimelineStart(bpm);
     double clipEnd = clip->getTimelineEnd(bpm);
-    double clipOffset = clip->getSourceOffset();
+    double clipOffset = magda::audioEventRef(*clip).anchorSeconds();
 
     // Convert timeline grid lines to source-file boundaries
     auto timelineToSource = [&](double timelinePos) -> double {
         double delta = timelinePos - clipStart;
-        if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0)
-            return clipOffset + delta * bpm / clip->audio().interpretation.bpm;
+        if (magda::audioEventRef(*clip).autoTempo && magda::audioEventRef(*clip).interpBpm > 0.0)
+            return clipOffset + delta * bpm / magda::audioEventRef(*clip).interpBpm;
         else
-            return clipOffset + delta * clip->speedRatio;
+            return clipOffset + delta * magda::audioEventRef(*clip).speedRatio;
     };
 
     // Build timeline grid positions within the clip

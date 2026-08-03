@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "AudioClipTestHelpers.hpp"
 #include "magda/daw/core/ClipDisplayInfo.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
@@ -280,32 +281,32 @@ TEST_CASE("ClipOperations - audio sanitizing preserves sample start",
           "[clip][audio][offset][regression]") {
     ClipInfo clip;
     clip.setAudioContent();
-    clip.audio().source.filePath = "/tmp/magda_offset_regression.wav";
+    magda::test::giveAudioEvent(clip, "/tmp/magda_offset_regression.wav");
     clip.loopEnabled = false;
-    clip.autoTempo = false;
+    magda::test::audioEvent(clip).autoTempo = false;
     clip.length = 4.0;
-    clip.speedRatio = 1.0;
-    clip.loopStart = 0.25;
-    clip.offset = 0.75;
+    magda::test::audioEvent(clip).speedRatio = 1.0;
+    magda::test::audioEvent(clip).setLoopStartSeconds(0.25);
+    magda::test::audioEvent(clip).setAnchorSeconds(0.75);
 
     ClipOperations::sanitizeAudioToSourceDuration(clip, 8.0);
 
-    REQUIRE(clip.offset == Catch::Approx(0.75));
-    REQUIRE(clip.loopStart == Catch::Approx(0.25));
+    REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(0.75));
+    REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() == Catch::Approx(0.25));
 }
 
 TEST_CASE("ClipOperations - audio sanitizing clamps length through beat placement",
           "[clip][audio][offset][beats][regression]") {
     ClipInfo clip;
     clip.setAudioContent();
-    clip.audio().source.filePath = "/tmp/magda_source_sanitize_beats.wav";
+    magda::test::giveAudioEvent(clip, "/tmp/magda_source_sanitize_beats.wav");
     clip.loopEnabled = false;
-    clip.autoTempo = false;
+    magda::test::audioEvent(clip).autoTempo = false;
     clip.startTime = 2.0;
     clip.length = 10.0;
     clip.setPlacementBeats(4.0, 20.0);
-    clip.speedRatio = 1.0;
-    clip.offset = 3.0;
+    magda::test::audioEvent(clip).speedRatio = 1.0;
+    magda::test::audioEvent(clip).setAnchorSeconds(3.0);
 
     ClipOperations::sanitizeAudioToSourceDuration(clip, 8.0, 120.0);
 
@@ -319,20 +320,20 @@ TEST_CASE("ClipOperations - non-loop offset drag preserves sample start and clam
           "[clip][audio][offset][regression]") {
     ClipInfo clip;
     clip.setAudioContent();
-    clip.audio().source.filePath = "/tmp/magda_offset_drag_regression.wav";
+    magda::test::giveAudioEvent(clip, "/tmp/magda_offset_drag_regression.wav");
     clip.loopEnabled = false;
-    clip.autoTempo = false;
+    magda::test::audioEvent(clip).autoTempo = false;
     clip.startTime = 4.0;
     clip.length = 7.75;
     clip.setPlacementBeats(8.0, 15.5);
-    clip.speedRatio = 1.0;
-    clip.loopStart = 0.25;
-    clip.offset = 0.25;
+    magda::test::audioEvent(clip).speedRatio = 1.0;
+    magda::test::audioEvent(clip).setLoopStartSeconds(0.25);
+    magda::test::audioEvent(clip).setAnchorSeconds(0.25);
 
     ClipOperations::setAudioOffsetPreservingSourceRegion(clip, 0.75, 8.0, 120.0);
 
-    REQUIRE(clip.offset == Catch::Approx(0.75));
-    REQUIRE(clip.loopStart == Catch::Approx(0.25));
+    REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(0.75));
+    REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() == Catch::Approx(0.25));
     REQUIRE(clip.startTime == Catch::Approx(4.0));
     REQUIRE(clip.length == Catch::Approx(7.25));
     REQUIRE(clip.lengthBeats == Catch::Approx(14.5));
@@ -342,13 +343,13 @@ TEST_CASE("ClipDisplayInfo - non-loop source end stays fixed when offset clamps 
           "[clip][audio][offset][display][regression]") {
     ClipInfo clip;
     clip.setAudioContent();
-    clip.audio().source.filePath = "/tmp/magda_offset_display_regression.wav";
+    magda::test::giveAudioEvent(clip, "/tmp/magda_offset_display_regression.wav");
     clip.loopEnabled = false;
-    clip.autoTempo = false;
+    magda::test::audioEvent(clip).autoTempo = false;
     clip.startTime = 0.0;
     clip.length = 8.0;
-    clip.speedRatio = 1.0;
-    clip.offset = 0.0;
+    magda::test::audioEvent(clip).speedRatio = 1.0;
+    magda::test::audioEvent(clip).setAnchorSeconds(0.0);
 
     ClipOperations::setAudioOffsetPreservingSourceRegion(clip, 1.0, 8.0, 120.0);
 
@@ -363,15 +364,15 @@ TEST_CASE("ClipOperations - non-loop right resize changes clip length only",
           "[clip][audio][resize][regression]") {
     ClipInfo clip;
     clip.setAudioContent();
-    clip.audio().source.filePath = "/tmp/magda_right_resize_regression.wav";
+    magda::test::giveAudioEvent(clip, "/tmp/magda_right_resize_regression.wav");
     clip.loopEnabled = false;
-    clip.autoTempo = false;
+    magda::test::audioEvent(clip).autoTempo = false;
     clip.startTime = 0.0;
     clip.length = 2.0;
     clip.setPlacementBeats(0.0, 4.0);
-    clip.speedRatio = 1.0;
-    clip.loopStart = 0.25;
-    clip.offset = 0.5;
+    magda::test::audioEvent(clip).speedRatio = 1.0;
+    magda::test::audioEvent(clip).setLoopStartSeconds(0.25);
+    magda::test::audioEvent(clip).setAnchorSeconds(0.5);
 
     ClipOperations::resizeContainerFromRight(clip, 3.0, 120.0);
 
@@ -379,8 +380,8 @@ TEST_CASE("ClipOperations - non-loop right resize changes clip length only",
 
     REQUIRE(clip.length == Catch::Approx(3.0));
     REQUIRE(clip.lengthBeats == Catch::Approx(6.0));
-    REQUIRE(clip.offset == Catch::Approx(0.5));
-    REQUIRE(clip.loopStart == Catch::Approx(0.25));
+    REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(0.5));
+    REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() == Catch::Approx(0.25));
     REQUIRE(displayInfo.offsetPositionSeconds + clip.getTimelineLength(120.0) ==
             Catch::Approx(3.5));
     REQUIRE(displayInfo.fileExtentTimeline() == Catch::Approx(8.0));
@@ -390,15 +391,17 @@ TEST_CASE("ClipOperations - phase drag clamps audio offset at zero",
           "[clip][audio][phase][regression]") {
     ClipInfo clip;
     clip.setAudioContent();
-    clip.audio().source.filePath = "/tmp/magda_phase_drag_regression.wav";
+    magda::test::giveAudioEvent(clip, "/tmp/magda_phase_drag_regression.wav");
     clip.loopEnabled = true;
-    clip.autoTempo = false;
-    clip.loopStart = -0.25;
-    clip.offset = 0.0;
+    magda::test::audioEvent(clip).autoTempo = false;
+    magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
+    magda::test::audioEvent(clip).setAnchorSeconds(0.0);
 
-    ClipOperations::setAudioLoopPhaseClamped(clip, 0.1);
+    // Dragging the phase before the loop start would put the read position
+    // ahead of the file.
+    ClipOperations::setAudioLoopPhaseClamped(clip, -0.1);
 
-    REQUIRE(clip.offset == Catch::Approx(0.0));
+    REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(0.0));
 }
 
 TEST_CASE("SetClipOffsetCommand - non-loop offset clamp restores length on undo",
@@ -412,23 +415,25 @@ TEST_CASE("SetClipOffsetCommand - non-loop offset clamp restores length on undo"
     REQUIRE(clip != nullptr);
 
     clip->loopEnabled = false;
-    clip->autoTempo = false;
-    clip->audio().source.durationSeconds = 8.0;
-    clip->offset = 0.0;
+    primaryEventOf(clip)->autoTempo = false;
+    magda::SourcePool::getInstance().seedFactsForTesting(primaryEventOf(clip)->sourceFilePath(),
+                                                         8.0, magda::test::kTestSourceSampleRate);
+    magda::SourcePool::getInstance().resolveFacts(primaryEventOf(clip)->sourceId);
+    primaryEventOf(clip)->setAnchorSeconds(0.0);
     clip->length = 8.0;
     clip->setPlacementBeats(0.0, 16.0);
 
     SetClipOffsetCommand cmd(clipId, 1.0);
     cmd.execute();
 
-    REQUIRE(clip->offset == Catch::Approx(1.0));
+    REQUIRE(primaryEventOf(clip)->anchorSeconds() == Catch::Approx(1.0));
     REQUIRE(clip->length == Catch::Approx(7.0));
 
     cmd.undo();
 
     clip = clipManager.getClip(clipId);
     REQUIRE(clip != nullptr);
-    REQUIRE(clip->offset == Catch::Approx(0.0));
+    REQUIRE(primaryEventOf(clip)->anchorSeconds() == Catch::Approx(0.0));
     REQUIRE(clip->length == Catch::Approx(8.0));
     REQUIRE(clip->lengthBeats == Catch::Approx(16.0));
 }

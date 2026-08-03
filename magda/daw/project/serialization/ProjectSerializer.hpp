@@ -4,6 +4,7 @@
 
 #include "../../core/AutomationInfo.hpp"
 #include "../../core/ClipInfo.hpp"
+#include "../../core/Source.hpp"
 #include "../../core/TrackInfo.hpp"
 #include "ProjectInfo.hpp"
 
@@ -17,12 +18,37 @@ namespace magda {
  */
 struct StagedProjectData {
     ProjectInfo info;
+    /// Pooled sources, parsed but not yet installed. Staging must not touch the
+    /// live pool: loadAndStage runs on a background thread and can still fail
+    /// after this point, and the open project's clips are reading the pool on
+    /// every paint. commitStaged installs them on the message thread.
+    std::vector<Source> sources;
+    /// Sources a v1 clip needs, collected during migration under provisional
+    /// negative ids. They are acquired for real at install time: staging runs
+    /// on a background thread and may still fail, so it must not pool them.
+    std::vector<Source> legacySources;
     std::vector<TrackInfo> tracks;
     std::unique_ptr<TrackInfo> masterTrack;  // Master track (id=MASTER_TRACK_ID)
     std::vector<ClipInfo> clips;
     std::vector<AutomationLaneInfo> automationLanes;
     std::vector<AutomationClipInfo> automationClips;
 };
+
+/**
+ * @brief Project file schema version.
+ *
+ * 1 (written as no key at all): a clip carried one audio source and one set of
+ *   playback fields.
+ * 2: the clip hosts a list of events referencing pooled sources (#1901). Read
+ *   support for 1 is permanent.
+ *
+ * There is no version gate on the way in. Already-shipped builds validate only
+ * that magdaVersion is a non-empty string and ignore keys they do not know, so
+ * a v2 file opens in an older build with every audio clip silently stripped of
+ * its source, and saving from there writes that loss back. Nothing this writer
+ * can emit changes that, so treat it as a one-way upgrade rather than a gate.
+ */
+constexpr int kProjectSchemaVersion = 2;
 
 /**
  * @brief Main serialization class for Magda projects
@@ -111,6 +137,55 @@ class ProjectSerializer {
      */
     static juce::var serializeTracks();
 
+    // ========================================================================
+    // Clip serialization
+    //
+    // Public so the schema-migration tests can drive a single clip directly.
+    // Feeding a hand-built v1 clip through the whole project path would need
+    // the track and clip managers standing up around it, which buys nothing.
+    // ========================================================================
+
+    static juce::var serializeClipInfo(const ClipInfo& clip);
+
+    /// Provisional id for a v1 source staged rather than pooled. Negative so
+    /// it can never be mistaken for a real pooled id or for INVALID_SOURCE_ID.
+    static SourceId stageLegacySource(std::vector<Source>& legacySources,
+                                      const juce::String& filePath, double fallbackDuration);
+
+    /// @param legacySources when non-null, a v1 clip's source is staged into it
+    ///        under a provisional id instead of being pooled. Project loading
+    ///        passes one; the migration tests drive a single clip and do not.
+    static bool deserializeClipInfo(const juce::var& json, ClipInfo& outClip,
+                                    double projectTempo = 120.0,
+                                    std::vector<Source>* legacySources = nullptr);
+
+    /**
+     * @brief Serialize the pooled media sources to a JSON array (#1901).
+     *
+     * Garbage-collects the pool first: only sources a clip still references are
+     * written.
+     */
+    static juce::var serializeSources();
+
+    /**
+     * @brief Restore pooled media sources. Must run before clips, whose events
+     * reference sources by id.
+     */
+    /// Parse the sources array into @p out without touching the live pool.
+    static void deserializeSourcesToStaging(const juce::var& json, std::vector<Source>& out);
+
+    /// Replace the pool with @p sources, carrying across any entry that
+    /// @p stagedClips still reference. Message thread, commit phase only.
+    /// Resolution is deliberately deferred to resolveStagedSources, which must
+    /// run after the clips are in place so the rescale can reach their events.
+    static void installStagedSources(const std::vector<Source>& sources,
+                                     const std::vector<Source>& legacySources,
+                                     std::vector<ClipInfo>& stagedClips);
+
+    /// Re-probe sources that were saved unresolved, rescaling the anchors of
+    /// every event pointing at them.
+    static void resolveStagedSources(const std::vector<Source>& sources);
+
     /**
      * @brief Serialize all clips to JSON array
      */
@@ -170,7 +245,8 @@ class ProjectSerializer {
      * @return true on success (all clips valid), false on error (no state modified)
      */
     static bool deserializeClipsToStaging(const juce::var& json, std::vector<ClipInfo>& outClips,
-                                          double projectTempo = 120.0);
+                                          double projectTempo = 120.0,
+                                          std::vector<Source>* legacySources = nullptr);
 
     /**
      * @brief Deserialize automation lanes from JSON array to staging vector (validation phase)
@@ -211,10 +287,6 @@ class ProjectSerializer {
     // ========================================================================
     // Clip serialization helpers
     // ========================================================================
-
-    static juce::var serializeClipInfo(const ClipInfo& clip);
-    static bool deserializeClipInfo(const juce::var& json, ClipInfo& outClip,
-                                    double projectTempo = 120.0);
 
     static juce::var serializeMidiNote(const MidiNote& data);
     static bool deserializeMidiNote(const juce::var& json, MidiNote& data);
