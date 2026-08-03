@@ -804,7 +804,8 @@ SourceId adoptImportedSource(const juce::String& path, double declaredDuration) 
     return sourceId;
 }
 
-ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipId clipId) {
+ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipId clipId,
+                     double projectTempo) {
     ClipInfo clip;
     clip.id = clipId;
     clip.trackId = trackId;
@@ -864,11 +865,11 @@ ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipI
         // The beat setters below all convert through interpBpm, so without one
         // they are silent no-ops: the anchor and region would stay at zero
         // while loopEnabled was set, and the clip would loop the whole source
-        // instead of the region the file states. The importer knows no better
-        // tempo than the project's, which is what the old beat-field import
+        // instead of the region the file states. The imported project's own
+        // tempo is the best stand-in, and is what the old beat-field import
         // effectively played at.
         if (!isValidBpm(event.interpBpm) && maxBeats > 0.0)
-            event.interpBpm = DEFAULT_BPM;
+            event.interpBpm = isValidBpm(projectTempo) ? projectTempo : DEFAULT_BPM;
 
         const bool regionApplicable = isValidBpm(event.interpBpm);
 
@@ -1333,8 +1334,8 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
 
                 if (auto* clips = trackLanes->getChildByName("Clips")) {
                     for (auto* clipElement : clips->getChildWithTagNameIterator("Clip"))
-                        document.clips.push_back(
-                            clipFromXml(*clipElement, trackIt->second, nextClipId++));
+                        document.clips.push_back(clipFromXml(*clipElement, trackIt->second,
+                                                             nextClipId++, document.info.tempo));
                 }
 
                 for (auto* pointsElement : trackLanes->getChildWithTagNameIterator("Points")) {
@@ -1398,7 +1399,8 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                             return;
 
                         if (auto* clipElement = timeline->getChildByName("Clip")) {
-                            auto clip = clipFromXml(*clipElement, trackIt->second, nextClipId++);
+                            auto clip = clipFromXml(*clipElement, trackIt->second, nextClipId++,
+                                                    document.info.tempo);
                             clip.view = ClipView::Session;
                             clip.sceneIndex = sceneIndex;
                             clip.setPlacementBeats(0.0, clip.placement.lengthBeats);

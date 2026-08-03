@@ -387,3 +387,63 @@ TEST_CASE("Loop length in beats is a timeline view, not a source view", "[clip][
         REQUIRE(midiClip.loopStartInBeats(kProjectBpm) == Approx(1.0));
     }
 }
+
+TEST_CASE("A warped loop reports its warped timeline span", "[clip][event][loop][warp]") {
+    // warpEnabled is independent of autoTempo: setClipWarpEnabled does not
+    // turn beat mode on, and the engine treats either as source-beat
+    // processing. Falling through to the linear speedRatio conversion ignored
+    // warpMarkers entirely, so a nonlinearly warped loop reported a start and
+    // length that disagreed with where it actually plays.
+    EventModelFixture fixture;
+    constexpr double kProjectBpm = 120.0;
+
+    ClipInfo clip;
+    clip.setAudioContent();
+    auto& event = magda::test::giveAudioEvent(clip, "/tmp/warped.wav", 8.0);
+    event.interpBpm = 120.0;
+    event.speedRatio = 1.0;
+    event.autoTempo = false;
+    event.warpEnabled = true;
+    clip.loopEnabled = true;
+
+    // The first source second is stretched to two; the second is compressed
+    // back into one. A linear reading cannot tell these apart.
+    event.warpMarkers = {{0.0, 0.0}, {1.0, 2.0}, {2.0, 3.0}};
+
+    SECTION("The mapping is piecewise linear between markers") {
+        REQUIRE(event.warpedSourceSeconds(0.5) == Approx(1.0));
+        REQUIRE(event.warpedSourceSeconds(1.0) == Approx(2.0));
+        REQUIRE(event.warpedSourceSeconds(1.5) == Approx(2.5));
+    }
+
+    SECTION("Outside the marker range the source carries on at its own rate") {
+        REQUIRE(event.warpedSourceSeconds(3.0) == Approx(4.0));
+        REQUIRE(event.warpedSourceSeconds(-1.0) == Approx(-1.0));
+    }
+
+    SECTION("Loop boundaries map through the warp, not around it") {
+        event.setLoopStartSeconds(0.5);
+        event.setLoopLengthSeconds(1.0);  // source 0.5 -> 1.5
+
+        // Warped: 1.0 -> 2.5, so half a beat in and one and a half beats long
+        // at 120. The linear reading would have said 1.0 and 2.0.
+        REQUIRE(clip.loopStartInBeats(kProjectBpm) == Approx(2.0));
+        REQUIRE(clip.loopLengthInBeats(kProjectBpm) == Approx(3.0));
+    }
+
+    SECTION("Turning warp off returns the linear reading") {
+        event.warpEnabled = false;
+        event.setLoopStartSeconds(0.5);
+        event.setLoopLengthSeconds(1.0);
+        REQUIRE(clip.loopStartInBeats(kProjectBpm) == Approx(1.0));
+        REQUIRE(clip.loopLengthInBeats(kProjectBpm) == Approx(2.0));
+    }
+
+    SECTION("No markers is the identity, so warp-on alone changes nothing") {
+        event.warpMarkers.clear();
+        event.setLoopStartSeconds(0.5);
+        event.setLoopLengthSeconds(1.0);
+        REQUIRE(clip.loopStartInBeats(kProjectBpm) == Approx(1.0));
+        REQUIRE(clip.loopLengthInBeats(kProjectBpm) == Approx(2.0));
+    }
+}

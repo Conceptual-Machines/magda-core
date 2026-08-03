@@ -187,6 +187,60 @@ struct AudioEvent {
     int64_t loopStartSamples = 0;
     int64_t loopLengthSamples = 0;  // 0 = derive from the event's own length
 
+    /// Source seconds mapped through the warp markers.
+    ///
+    /// Markers are (sourceTime, warpTime) pairs in source seconds, and the map
+    /// between them is piecewise linear. Outside the marker range the source
+    /// plays at its own rate, so the nearest marker's offset carries on at
+    /// slope 1. Identity when warp is off or no markers exist, which makes
+    /// every caller below warp-agnostic.
+    double warpedSourceSeconds(double sourceSeconds) const {
+        if (!warpEnabled || warpMarkers.empty())
+            return sourceSeconds;
+
+        // Storage order is not guaranteed (the renderer sorts by warpTime for
+        // its own purposes), so bracket by value rather than by index.
+        const WarpMarker* below = nullptr;
+        const WarpMarker* above = nullptr;
+        for (const auto& marker : warpMarkers) {
+            if (marker.sourceTime <= sourceSeconds &&
+                (below == nullptr || marker.sourceTime > below->sourceTime)) {
+                below = &marker;
+            }
+            if (marker.sourceTime >= sourceSeconds &&
+                (above == nullptr || marker.sourceTime < above->sourceTime)) {
+                above = &marker;
+            }
+        }
+
+        if (below == nullptr)
+            return sourceSeconds + (above->warpTime - above->sourceTime);
+        if (above == nullptr)
+            return sourceSeconds + (below->warpTime - below->sourceTime);
+
+        const double span = above->sourceTime - below->sourceTime;
+        if (span <= 0.0)
+            return below->warpTime;
+
+        const double t = (sourceSeconds - below->sourceTime) / span;
+        return below->warpTime + t * (above->warpTime - below->warpTime);
+    }
+
+    /// A source-domain instant expressed in TIMELINE beats.
+    ///
+    /// Beat mode and warp both hand the engine source-beat processing, so in
+    /// either the warped position scales by the event's own interpretation.
+    /// Otherwise the region plays at its recorded rate and the timeline span
+    /// comes from seconds and the project tempo.
+    double sourceInstantToTimelineBeats(double sourceSeconds, double projectBpm) const {
+        const double warped = warpedSourceSeconds(sourceSeconds);
+
+        if ((autoTempo || warpEnabled) && interpBpm > 0.0)
+            return warped * interpBpm / 60.0;
+
+        return isValidBpm(projectBpm) ? sourceToTimeline(warped) * projectBpm / 60.0 : 0.0;
+    }
+
     /// Re-express the source-domain positions at a different sample rate.
     ///
     /// They are counts at the source's own rate, so whenever that rate changes
@@ -705,13 +759,7 @@ struct ClipInfo {
         if (event == nullptr)
             return loopStartBeats;
 
-        if (event->autoTempo)
-            return event->loopStartBeats();
-
-        if (!isValidBpm(projectBpm))
-            return 0.0;
-
-        return event->sourceToTimeline(event->loopStartSeconds()) * projectBpm / 60.0;
+        return event->sourceInstantToTimelineBeats(event->loopStartSeconds(), projectBpm);
     }
 
     /// Loop length in TIMELINE beats for whichever content the clip holds.
@@ -727,13 +775,12 @@ struct ClipInfo {
         if (event == nullptr)
             return loopLengthBeats;
 
-        if (event->autoTempo)
-            return event->loopLengthBeats();
-
-        if (!isValidBpm(projectBpm))
-            return 0.0;
-
-        return event->sourceToTimeline(event->loopLengthSeconds()) * projectBpm / 60.0;
+        // The difference of the two mapped boundaries, not a scaled length: a
+        // warped region does not stretch uniformly, so scaling its duration
+        // would disagree with where its end actually lands.
+        const double start = event->loopStartSeconds();
+        return event->sourceInstantToTimelineBeats(start + event->loopLengthSeconds(), projectBpm) -
+               event->sourceInstantToTimelineBeats(start, projectBpm);
     }
 
     // =========================================================================
