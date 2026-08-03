@@ -158,8 +158,15 @@ class StubUndoApi : public UndoApi {
     std::vector<juce::String> compoundDescriptions;
     int maxCompoundDepth = 0;
 
-    void executeCommand(std::unique_ptr<UndoableCommand>) override {
+    /// Retained, not dropped: callers read ids off the raw pointer after this
+    /// returns, so destroying the command here would dangle them. Deliberately
+    /// not executed — commands act on the real singletons, which a mock-facade
+    /// test is not driving.
+    std::vector<std::unique_ptr<UndoableCommand>> commands;
+
+    void executeCommand(std::unique_ptr<UndoableCommand> command) override {
         ++executeCalls;
+        commands.push_back(std::move(command));
     }
     void beginCompound(const juce::String& description) override {
         ++compoundDepth;

@@ -142,13 +142,16 @@ TEST_CASE("A failed write does not advance the revision", "[remote][service]") {
     REQUIRE(response.revision == INITIAL_REVISION);
 }
 
-TEST_CASE("One mutating request is one named undo step", "[remote][service][undo]") {
+TEST_CASE("One mutating request opens one named undo step", "[remote][service][undo]") {
     const MessageThreadRelaxation relaxation;
     MockMagdaApi api;
     RemoteApiService service(api);
 
-    const auto response =
-        run(service, "tracks.create", object({{"name", "Bass"}, {"type", "audio"}}));
+    // Uses a write with no command behind it, so this stays a test of the
+    // dispatcher's compound bracketing. That a command-backed write is actually
+    // undoable is asserted against the real UndoManager in the live tests — a
+    // stub cannot answer that question, since it does not run commands.
+    const auto response = run(service, "project.setTempo", object({{"tempo", 90.0}}));
 
     REQUIRE(response.ok);
     REQUIRE(api.undo_.compoundDescriptions.size() == 1);
