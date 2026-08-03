@@ -218,6 +218,29 @@ ClipManager::ClipManager() {
         });
 }
 
+void ClipManager::stashClipboardSourcePaths() {
+    clipboardSourcePaths_.clear();
+    for (const auto& clip : clipboard_) {
+        if (!clip.isAudio())
+            continue;
+        for (const auto& event : clip.audio().events) {
+            if (event.sourceId == INVALID_SOURCE_ID)
+                continue;
+            const auto path = sourcePathOf(event.sourceId);
+            if (path.isNotEmpty())
+                clipboardSourcePaths_[event.sourceId] = path;
+        }
+    }
+}
+
+juce::String ClipManager::clipboardSourcePathFor(const AudioEvent& event) const {
+    if (const auto it = clipboardSourcePaths_.find(event.sourceId);
+        it != clipboardSourcePaths_.end()) {
+        return it->second;
+    }
+    return event.sourceFilePath();
+}
+
 void ClipManager::repointEventsToSource(SourceId from, SourceId to) {
     if (from == to || from == INVALID_SOURCE_ID || to == INVALID_SOURCE_ID)
         return;
@@ -416,9 +439,13 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
                     // the real beat count, so snap both the timeline placement
                     // and the loop region to the beat count and let autoTempo
                     // stretch the audio to fit.
+                    // The region follows the placement unconditionally. The
+                    // event was seeded with a file-duration region above, so a
+                    // "not set yet" guard here never fires and the saved beat
+                    // count would be ignored for every arrangement drop.
                     const double beats = savedEvent->interpTotalBeats;
                     savedClip.setPlacementBeats(startBeats, beats);
-                    if (savedEvent->loopLengthSamples <= 0 && savedEvent->interpBpm > 0.0)
+                    if (savedEvent->interpBpm > 0.0)
                         savedEvent->setLoopLengthSeconds(beats * 60.0 / savedEvent->interpBpm);
                 }
                 savedClip.deriveTimesFromBeats(bpm);
@@ -711,8 +738,13 @@ void ClipManager::setAudioClipCurrentTake(ClipId clipId, int takeIndex) {
     a.comp.clear();
     a.currentTakeIndex = takeIndex;
     if (auto* event = a.primaryEvent()) {
+        // Same discipline as repointEventsToSource: the positions are sample
+        // counts at the old take's rate, and an imported or comp-rendered take
+        // need not share it.
+        const double oldRate = sourceRateOf(event->sourceId);
         event->sourceId =
             SourcePool::getInstance().acquire(a.takes[static_cast<size_t>(takeIndex)].filePath);
+        event->rescaleSourcePositions(oldRate, sourceRateOf(event->sourceId));
     }
     forceNotifyClipPropertyChanged(clipId);
     pushClipStateSnapshot("Select Take", before);
@@ -864,8 +896,10 @@ void ClipManager::deleteClipTake(ClipId clipId, int takeIndex) {
         } else {
             if (newCurrent < newSize) {
                 if (auto* event = a.primaryEvent()) {
+                    const double oldRate = sourceRateOf(event->sourceId);
                     event->sourceId = SourcePool::getInstance().acquire(
                         a.takes[static_cast<size_t>(newCurrent)].filePath);
+                    event->rescaleSourcePositions(oldRate, sourceRateOf(event->sourceId));
                 }
             }
             forceNotifyClipPropertyChanged(clipId);
@@ -3278,6 +3312,7 @@ void ClipManager::copyToClipboard(const std::unordered_set<ClipId>& clipIds) {
         }
     }
 
+    stashClipboardSourcePaths();
     DBG("CLIPBOARD: Copied " << clipboard_.size() << " clip(s)");
 }
 
@@ -3354,6 +3389,8 @@ void ClipManager::copyBeatRangeToClipboard(double startBeat, double endBeat,
 
         clipboard_.push_back(trimmed);
     }
+
+    stashClipboardSourcePaths();
 }
 
 void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
@@ -3399,10 +3436,11 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
         // Create new clip based on type, using targetView instead of clipData.view
         ClipId newClipId = INVALID_CLIP_ID;
         if (const auto* pastedEvent = clipData.primaryEvent()) {
-            if (pastedEvent->sourceFilePath().isNotEmpty()) {
-                newClipId = createAudioClipBeats(newTrackId, newStartBeat, clipLengthBeats,
-                                                 pastedEvent->sourceFilePath(), targetView, 0.0,
-                                                 ClipOverlapPolicy::ResolveOverlaps);
+            const auto pastedPath = clipboardSourcePathFor(*pastedEvent);
+            if (pastedPath.isNotEmpty()) {
+                newClipId =
+                    createAudioClipBeats(newTrackId, newStartBeat, clipLengthBeats, pastedPath,
+                                         targetView, 0.0, ClipOverlapPolicy::ResolveOverlaps);
             }
         } else if (clipData.isMidi()) {
             // For MIDI clips, create empty then copy notes
@@ -3538,7 +3576,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
                         // Reset extended loops to base loop length for
                         // session→session pastes
                         const double bpm = currentProjectTempoOrDefault();
-                        const double loopBeats = clipData.loopLengthInBeats();
+                        const double loopBeats = clipData.loopLengthInBeats(bpm);
                         const auto* srcLoopEvent = clipData.primaryEvent();
                         if (loopBeats > 0.0 && clipData.lengthBeats > loopBeats) {
                             ClipOperations::setTimelinePlacement(*newClip,
@@ -3668,6 +3706,7 @@ void ClipManager::setMidiClipClipboard(std::vector<MidiNote> notes, juce::String
     clip.deriveTimesFromBeats(currentProjectTempoOrDefault());
 
     clipboard_.push_back(std::move(clip));
+    stashClipboardSourcePaths();
 }
 
 // ============================================================================

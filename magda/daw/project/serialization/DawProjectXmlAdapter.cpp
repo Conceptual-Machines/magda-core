@@ -861,8 +861,20 @@ ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipI
         if (maxSeconds > 0.0)
             event.interpBpm = maxBeats * 60.0 / maxSeconds;
 
+        // The beat setters below all convert through interpBpm, so without one
+        // they are silent no-ops: the anchor and region would stay at zero
+        // while loopEnabled was set, and the clip would loop the whole source
+        // instead of the region the file states. The importer knows no better
+        // tempo than the project's, which is what the old beat-field import
+        // effectively played at.
+        if (!isValidBpm(event.interpBpm) && maxBeats > 0.0)
+            event.interpBpm = DEFAULT_BPM;
+
+        const bool regionApplicable = isValidBpm(event.interpBpm);
+
         event.setAnchorBeats(clipElement.getDoubleAttribute("playStart", 0.0));
-        if (clipElement.hasAttribute("loopStart") && clipElement.hasAttribute("loopEnd")) {
+        if (regionApplicable && clipElement.hasAttribute("loopStart") &&
+            clipElement.hasAttribute("loopEnd")) {
             clip.loopEnabled = true;
             const double loopStartBeats = clipElement.getDoubleAttribute("loopStart", 0.0);
             event.setLoopStartBeats(loopStartBeats);

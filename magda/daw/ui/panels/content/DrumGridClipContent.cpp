@@ -2839,13 +2839,11 @@ void DrumGridClipContent::updateGridSize() {
 
     // Pass loop region data to grid
     if (clip) {
-        double beatsPerSecond = tempo / 60.0;
-        // The loop is read through the content-aware accessors: a MIDI clip's
-        // loop lives in clip beats, an audio event's in its source domain.
-        juce::ignoreUnused(beatsPerSecond);
-        const double loopOffsetBeats =
-            clip->isMidi() ? clip->loopStartBeats : magda::audioEventRef(*clip).loopStartBeats();
-        const double sourceLengthBeats = clip->loopLengthInBeats();
+        // Both values are timeline beats, which is what the grid draws in. A
+        // MIDI clip keeps them on the container; an audio clip's loop is a
+        // source region that has to come back through the project tempo.
+        const double loopOffsetBeats = clip->loopStartInBeats(tempo);
+        const double sourceLengthBeats = clip->loopLengthInBeats(tempo);
         gridComponent_->setLoopRegion(loopOffsetBeats, sourceLengthBeats, clip->loopEnabled);
     } else {
         gridComponent_->setLoopRegion(0.0, 0.0, false);

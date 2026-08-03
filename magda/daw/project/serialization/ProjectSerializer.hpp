@@ -23,6 +23,10 @@ struct StagedProjectData {
     /// after this point, and the open project's clips are reading the pool on
     /// every paint. commitStaged installs them on the message thread.
     std::vector<Source> sources;
+    /// Sources a v1 clip needs, collected during migration under provisional
+    /// negative ids. They are acquired for real at install time: staging runs
+    /// on a background thread and may still fail, so it must not pool them.
+    std::vector<Source> legacySources;
     std::vector<TrackInfo> tracks;
     std::unique_ptr<TrackInfo> masterTrack;  // Master track (id=MASTER_TRACK_ID)
     std::vector<ClipInfo> clips;
@@ -142,8 +146,18 @@ class ProjectSerializer {
     // ========================================================================
 
     static juce::var serializeClipInfo(const ClipInfo& clip);
+
+    /// Provisional id for a v1 source staged rather than pooled. Negative so
+    /// it can never be mistaken for a real pooled id or for INVALID_SOURCE_ID.
+    static SourceId stageLegacySource(std::vector<Source>& legacySources,
+                                      const juce::String& filePath, double fallbackDuration);
+
+    /// @param legacySources when non-null, a v1 clip's source is staged into it
+    ///        under a provisional id instead of being pooled. Project loading
+    ///        passes one; the migration tests drive a single clip and do not.
     static bool deserializeClipInfo(const juce::var& json, ClipInfo& outClip,
-                                    double projectTempo = 120.0);
+                                    double projectTempo = 120.0,
+                                    std::vector<Source>* legacySources = nullptr);
 
     /**
      * @brief Serialize the pooled media sources to a JSON array (#1901).
@@ -165,7 +179,8 @@ class ProjectSerializer {
     /// Resolution is deliberately deferred to resolveStagedSources, which must
     /// run after the clips are in place so the rescale can reach their events.
     static void installStagedSources(const std::vector<Source>& sources,
-                                     const std::vector<ClipInfo>& stagedClips);
+                                     const std::vector<Source>& legacySources,
+                                     std::vector<ClipInfo>& stagedClips);
 
     /// Re-probe sources that were saved unresolved, rescaling the anchors of
     /// every event pointing at them.
@@ -230,7 +245,8 @@ class ProjectSerializer {
      * @return true on success (all clips valid), false on error (no state modified)
      */
     static bool deserializeClipsToStaging(const juce::var& json, std::vector<ClipInfo>& outClips,
-                                          double projectTempo = 120.0);
+                                          double projectTempo = 120.0,
+                                          std::vector<Source>* legacySources = nullptr);
 
     /**
      * @brief Deserialize automation lanes from JSON array to staging vector (validation phase)

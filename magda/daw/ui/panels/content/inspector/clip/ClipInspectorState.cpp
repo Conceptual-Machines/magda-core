@@ -105,7 +105,7 @@ void ClipInspector::updateLoopValueDisplays(const magda::ClipInfo& clip, double 
         clip.isMidi() ? clip.loopStartBeats : audioEventRef(clip).loopStartBeats();
     clipLoopStartValue_->setValue(loopStartBeats, juce::dontSendNotification);
 
-    double loopLengthDisplayBeats = clip.loopLengthInBeats();
+    double loopLengthDisplayBeats = clip.loopLengthInBeats(loopBpm);
     if (loopLengthDisplayBeats <= 0.0)
         loopLengthDisplayBeats = clip.getLengthInBeats(loopBpm);
     clipLoopEndValue_->setValue(loopStartBeats + loopLengthDisplayBeats,

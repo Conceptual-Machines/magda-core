@@ -258,8 +258,8 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         // still-open project's clips are reading the live pool meanwhile.
         deserializeSourcesToStaging(obj->getProperty("sources"), outData.sources);
 
-        if (!deserializeClipsToStaging(obj->getProperty("clips"), outData.clips,
-                                       outData.info.tempo)) {
+        if (!deserializeClipsToStaging(obj->getProperty("clips"), outData.clips, outData.info.tempo,
+                                       &outData.legacySources)) {
             return false;
         }
 
@@ -308,7 +308,7 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
 
 void ProjectSerializer::commitStaged(StagedProjectData& data) {
     // Before the clips, which reference these by id.
-    installStagedSources(data.sources, data.clips);
+    installStagedSources(data.sources, data.legacySources, data.clips);
 
     commitStagedData(data.tracks, data.clips, data.automationLanes, data.automationClips);
 
@@ -569,7 +569,9 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     std::vector<Source> stagedSources;
     deserializeSourcesToStaging(obj->getProperty("sources"), stagedSources);
 
-    if (!deserializeClipsToStaging(obj->getProperty("clips"), stagedClips, outInfo.tempo)) {
+    std::vector<Source> stagedLegacySources;
+    if (!deserializeClipsToStaging(obj->getProperty("clips"), stagedClips, outInfo.tempo,
+                                   &stagedLegacySources)) {
         return false;  // Failed - no state modified
     }
 
@@ -593,7 +595,7 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
                                                    stagedAutomation, stagedAutomationClips);
 
     // Stage 2: All components validated successfully - now commit to managers atomically
-    installStagedSources(stagedSources, stagedClips);
+    installStagedSources(stagedSources, stagedLegacySources, stagedClips);
     commitStagedData(stagedTracks, stagedClips, stagedAutomation, stagedAutomationClips);
     resolveStagedSources(stagedSources);
 
@@ -785,34 +787,84 @@ void ProjectSerializer::deserializeSourcesToStaging(const juce::var& json,
     }
 }
 
-void ProjectSerializer::installStagedSources(const std::vector<Source>& sources,
-                                             const std::vector<ClipInfo>& stagedClips) {
-    auto& pool = SourcePool::getInstance();
-
-    // A v1 clip has no entry in the table: it acquires from the pool as it
-    // migrates, so its id only exists in the live pool. Carry those across the
-    // swap or they dangle. A file can hold both shapes at once.
-    std::unordered_set<SourceId> known;
-    for (const auto& source : sources)
-        known.insert(source.id);
-
-    std::vector<Source> carried;
-    for (const auto& clip : stagedClips) {
-        if (!clip.isAudio())
-            continue;
-        for (const auto& event : clip.audio().events) {
-            if (event.sourceId == INVALID_SOURCE_ID || !known.insert(event.sourceId).second)
-                continue;
-            if (const auto* live = pool.get(event.sourceId))
-                carried.push_back(*live);
+SourceId ProjectSerializer::stageLegacySource(std::vector<Source>& legacySources,
+                                              const juce::String& filePath,
+                                              double fallbackDuration) {
+    for (auto& staged : legacySources) {
+        if (staged.filePath == filePath) {
+            // Several v1 clips can name one file with different recorded
+            // durations. Keep the longest: a short one would clamp the other
+            // clips' anchors and cap their right-extension.
+            staged.durationSeconds = juce::jmax(staged.durationSeconds, fallbackDuration);
+            return staged.id;
         }
     }
 
+    Source staged;
+    staged.id = -2 - static_cast<SourceId>(legacySources.size());  // never -1
+    staged.filePath = filePath;
+    staged.durationSeconds = fallbackDuration;
+    legacySources.push_back(std::move(staged));
+    return legacySources.back().id;
+}
+
+void ProjectSerializer::installStagedSources(const std::vector<Source>& sources,
+                                             const std::vector<Source>& legacySources,
+                                             std::vector<ClipInfo>& stagedClips) {
+    auto& pool = SourcePool::getInstance();
     pool.clear();
+
+    // insert() dedups by canonical path and returns the winner, so two entries
+    // for one file (a v2 table entry plus a v1-migrated acquire of the same
+    // path, or two saved paths differing only in case) collapse to one id. The
+    // loser's events have to follow it or they dangle and lose their audio.
+    struct Remap {
+        SourceId owner;
+        double loserRate;
+    };
+    std::unordered_map<SourceId, Remap> remapped;
+
+    const auto installOne = [&](const Source& source) {
+        const auto owner = pool.insert(source);
+        if (owner != INVALID_SOURCE_ID && owner != source.id)
+            remapped[source.id] = {owner, source.effectiveSampleRate()};
+    };
+
     for (const auto& source : sources)
-        pool.insert(source);
-    for (const auto& source : carried)
-        pool.insert(source);
+        installOne(source);
+
+    // v1 sources were staged under provisional ids; this is where they become
+    // real. Acquiring probes the file, so the rate can differ from the nominal
+    // one the migration computed its anchors at.
+    for (const auto& staged : legacySources) {
+        const auto owner = pool.acquire(staged.filePath);
+        if (owner == INVALID_SOURCE_ID)
+            continue;
+
+        if (auto* pooled = pool.getMutable(owner);
+            pooled != nullptr && pooled->durationSeconds <= 0.0 && staged.durationSeconds > 0.0) {
+            pooled->durationSeconds = staged.durationSeconds;
+        }
+        remapped[staged.id] = {owner, staged.effectiveSampleRate()};
+    }
+
+    if (remapped.empty())
+        return;
+
+    for (auto& clip : stagedClips) {
+        if (!clip.isAudio())
+            continue;
+        for (auto& event : clip.audio().events) {
+            const auto it = remapped.find(event.sourceId);
+            if (it == remapped.end())
+                continue;
+
+            // The two entries name the same file but may have been probed at
+            // different rates, so the sample counts move with the id.
+            event.rescaleSourcePositions(it->second.loserRate, sourceRateOf(it->second.owner));
+            event.sourceId = it->second.owner;
+        }
+    }
 }
 
 void ProjectSerializer::resolveStagedSources(const std::vector<Source>& sources) {
@@ -887,7 +939,8 @@ bool ProjectSerializer::deserializeTracksToStaging(const juce::var& json,
 
 bool ProjectSerializer::deserializeClipsToStaging(const juce::var& json,
                                                   std::vector<ClipInfo>& outClips,
-                                                  double projectTempo) {
+                                                  double projectTempo,
+                                                  std::vector<Source>* legacySources) {
     if (!json.isArray()) {
         lastError_ = "Clips data is not an array";
         return false;
@@ -900,7 +953,7 @@ bool ProjectSerializer::deserializeClipsToStaging(const juce::var& json,
     // Deserialize all clips into staging vector (validation phase)
     for (const auto& clipVar : *arr) {
         ClipInfo clip;
-        if (!deserializeClipInfo(clipVar, clip, projectTempo)) {
+        if (!deserializeClipInfo(clipVar, clip, projectTempo, legacySources)) {
             return false;  // Failed - staging vector discarded
         }
         outClips.push_back(std::move(clip));

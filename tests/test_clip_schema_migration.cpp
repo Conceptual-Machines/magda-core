@@ -443,3 +443,53 @@ TEST_CASE("A v2 clip round-trips several events", "[clip][serialization]") {
         REQUIRE(restored.audio().nextEventId > restored.events()[1].id);
     }
 }
+
+TEST_CASE("v1 migration stages its source instead of pooling it",
+          "[clip][serialization][migration][staging]") {
+    // Staging runs on a background thread and can still fail afterwards, so it
+    // must not write the message-thread pool the open project is reading.
+    // Before this, a v1 clip acquired as it migrated: a failed load left its
+    // sources behind and raced every paint-time sourceRateOf.
+    MigrationFixture fixture;
+    auto& pool = SourcePool::getInstance();
+
+    auto v1 = makeV1Clip("/tmp/legacy-staged.wav", 4.0);
+
+    std::vector<Source> legacySources;
+    ClipInfo clip;
+    REQUIRE(ProjectSerializer::deserializeClipInfo(v1, clip, kProjectTempo, &legacySources));
+
+    SECTION("Nothing reached the live pool") {
+        REQUIRE(pool.snapshot().empty());
+        REQUIRE(pool.findByPath("/tmp/legacy-staged.wav") == INVALID_SOURCE_ID);
+    }
+
+    SECTION("The event holds a provisional id backed by the staged entry") {
+        const auto* event = clip.primaryEvent();
+        REQUIRE(event != nullptr);
+        REQUIRE(event->sourceId < INVALID_SOURCE_ID);  // negative, never -1
+        REQUIRE(legacySources.size() == 1);
+        REQUIRE(legacySources.front().id == event->sourceId);
+        REQUIRE(legacySources.front().filePath == "/tmp/legacy-staged.wav");
+        REQUIRE(legacySources.front().durationSeconds == Approx(4.0));
+    }
+
+    SECTION("Two clips on one file share one staged entry, keeping the longest duration") {
+        // A short recorded duration would otherwise clamp the other clip's
+        // anchors and cap its right-extension.
+        auto shorter = makeV1Clip("/tmp/legacy-staged.wav", 1.0);
+        ClipInfo second;
+        REQUIRE(
+            ProjectSerializer::deserializeClipInfo(shorter, second, kProjectTempo, &legacySources));
+
+        REQUIRE(legacySources.size() == 1);
+        REQUIRE(legacySources.front().durationSeconds == Approx(4.0));
+        REQUIRE(second.primaryEvent()->sourceId == clip.primaryEvent()->sourceId);
+    }
+
+    SECTION("Without a sink the live pool is still used, for the single-clip callers") {
+        ClipInfo direct;
+        REQUIRE(ProjectSerializer::deserializeClipInfo(v1, direct, kProjectTempo));
+        REQUIRE(pool.findByPath("/tmp/legacy-staged.wav") != INVALID_SOURCE_ID);
+    }
+}

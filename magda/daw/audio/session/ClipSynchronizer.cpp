@@ -71,8 +71,8 @@ double followActionBaseLengthBeats(const ClipInfo& clip, double bpm) {
                 return loopLengthBeats;
         }
 
-        if (clip.loopLengthInBeats() > 0.0)
-            return clip.loopLengthInBeats();
+        if (clip.loopLengthInBeats(bpm) > 0.0)
+            return clip.loopLengthInBeats(bpm);
 
         const double sourceLength =
             audioEventRef(clip).sourceLengthSeconds(clip.getTimelineLength(bpm));
@@ -1087,10 +1087,17 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         }
         syncFollowActionToTracktionClip(*midiClipPtr, *clip, bpm);
 
-        // Set LaunchHandle looping state at creation time
+        // Set LaunchHandle looping state at creation time. Same whole-clip
+        // fallback as the loop range above: a legacy clip carrying the 0
+        // sentinel would otherwise get a loop range but a one-shot handle,
+        // and stop after a single pass.
         if (auto lh = midiClipPtr->getLaunchHandle()) {
-            if (clip->loopEnabled && loopLengthBeats > 0.0)
-                lh->setLooping(te::BeatDuration::fromBeats(loopLengthBeats));
+            if (clip->loopEnabled) {
+                const double handleBeats =
+                    loopLengthBeats > 0.0 ? loopLengthBeats : clip->getLengthInBeats(bpm);
+                if (handleBeats > 0.0)
+                    lh->setLooping(te::BeatDuration::fromBeats(handleBeats));
+            }
         }
 
         return true;
@@ -1141,9 +1148,13 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
                     (srcLength / audioEventRef(*clip).speedRatio) * (bpm / 60.0);
                 launchHandle->setLooping(te::BeatDuration::fromBeats(loopDurationBeats));
             } else if (clip->isMidi()) {
-                // Already clip beats.
-                if (clip->loopLengthBeats > 0.0)
-                    launchHandle->setLooping(te::BeatDuration::fromBeats(clip->loopLengthBeats));
+                // Already clip beats, with the whole-clip fallback for the 0
+                // sentinel a legacy project can still carry.
+                const double handleBeats = clip->loopLengthBeats > 0.0
+                                               ? clip->loopLengthBeats
+                                               : clip->getLengthInBeats(bpm);
+                if (handleBeats > 0.0)
+                    launchHandle->setLooping(te::BeatDuration::fromBeats(handleBeats));
             }
         } else {
             launchHandle->setLooping(std::nullopt);

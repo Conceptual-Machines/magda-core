@@ -59,18 +59,23 @@ juce::var serializeAudioEvent(const AudioEvent& event) {
     obj->setProperty("speedRatio", event.speedRatio);
     if (event.timeStretchMode != 0)
         obj->setProperty("timeStretchMode", event.timeStretchMode);
-    if (event.warpEnabled) {
+    if (event.warpEnabled)
         obj->setProperty("warpEnabled", true);
-        if (!event.warpMarkers.empty()) {
-            juce::Array<juce::var> warpArray;
-            for (const auto& wm : event.warpMarkers) {
-                auto* wmObj = new juce::DynamicObject();
-                wmObj->setProperty("sourceTime", wm.sourceTime);
-                wmObj->setProperty("warpTime", wm.warpTime);
-                warpArray.add(juce::var(wmObj));
-            }
-            obj->setProperty("warpMarkers", warpArray);
+
+    // Markers persist whether or not warp is on. The model treats the two as
+    // independent everywhere else: turning warp off keeps the map, paste
+    // preserves it, and ghosts share it as its own field. Writing it only when
+    // the toggle is on meant re-enabling warp restored the map in-session but
+    // lost it across a save.
+    if (!event.warpMarkers.empty()) {
+        juce::Array<juce::var> warpArray;
+        for (const auto& wm : event.warpMarkers) {
+            auto* wmObj = new juce::DynamicObject();
+            wmObj->setProperty("sourceTime", wm.sourceTime);
+            wmObj->setProperty("warpTime", wm.warpTime);
+            warpArray.add(juce::var(wmObj));
         }
+        obj->setProperty("warpMarkers", warpArray);
     }
 
     obj->setProperty("autoPitch", event.autoPitch);
@@ -229,17 +234,26 @@ void readLegacyWarpMarkers(const juce::var& warpMarkersVar, std::vector<WarpMark
 /// pool reports a nominal rate and rescales the anchors on the first successful
 /// open, so an offline project still round-trips.
 void migrateLegacyAudioClip(const LegacyAudioSource& v1, const LegacyAudioFields& legacy,
-                            ClipInfo& outClip) {
-    AudioEvent event;
-    event.sourceId = SourcePool::getInstance().acquire(v1.filePath);
-
+                            ClipInfo& outClip, std::vector<Source>* legacySources,
+                            double projectTempo) {
     // Duration recorded in the project is a fallback for a file we cannot read.
-    if (auto* source = SourcePool::getInstance().getMutable(event.sourceId);
-        source != nullptr && source->durationSeconds <= 0.0) {
-        double duration = v1.durationSeconds;
-        if (duration <= 0.0 && v1.interpTotalBeats > 0.0 && v1.interpBpm > 0.0)
-            duration = v1.interpTotalBeats * 60.0 / v1.interpBpm;
-        source->durationSeconds = juce::jmax(0.0, duration);
+    double fallbackDuration = v1.durationSeconds;
+    if (fallbackDuration <= 0.0 && v1.interpTotalBeats > 0.0 && v1.interpBpm > 0.0)
+        fallbackDuration = v1.interpTotalBeats * 60.0 / v1.interpBpm;
+    fallbackDuration = juce::jmax(0.0, fallbackDuration);
+
+    AudioEvent event;
+    if (legacySources != nullptr) {
+        // Staging: no pool writes. The anchors below are computed at the
+        // nominal rate and rescaled when install acquires the real file.
+        event.sourceId =
+            ProjectSerializer::stageLegacySource(*legacySources, v1.filePath, fallbackDuration);
+    } else {
+        event.sourceId = SourcePool::getInstance().acquire(v1.filePath);
+        if (auto* source = SourcePool::getInstance().getMutable(event.sourceId);
+            source != nullptr && source->durationSeconds <= 0.0) {
+            source->durationSeconds = fallbackDuration;
+        }
     }
 
     event.interpBpm = v1.interpBpm;
@@ -254,8 +268,15 @@ void migrateLegacyAudioClip(const LegacyAudioSource& v1, const LegacyAudioFields
 
     // v1 kept beats authoritative under autoTempo and seconds otherwise. Both
     // resolve to the same source seconds, which is what becomes the anchor.
-    const bool beatsAuthoritative = legacy.autoTempo && v1.interpBpm > 0.0;
-    const double secondsPerBeat = beatsAuthoritative ? 60.0 / v1.interpBpm : 0.0;
+    //
+    // A v1 clip could be saved with autoTempo on and interpBpm still 0, with
+    // detection pending: its seconds mirrors were deliberately stale and v1
+    // playback read the beat fields through the project tempo. Migrating off
+    // those mirrors would land the clip somewhere it never played, so fall
+    // back to the same tempo v1 did.
+    const double interpretationBpm = v1.interpBpm > 0.0 ? v1.interpBpm : projectTempo;
+    const bool beatsAuthoritative = legacy.autoTempo && isValidBpm(interpretationBpm);
+    const double secondsPerBeat = beatsAuthoritative ? 60.0 / interpretationBpm : 0.0;
     event.setAnchorSeconds(beatsAuthoritative ? v1.offsetBeats * secondsPerBeat : v1.offsetSeconds);
 
     event.setLoopStartSeconds(beatsAuthoritative ? v1.loopStartBeats * secondsPerBeat
@@ -512,7 +533,8 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
 }
 
 bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& outClip,
-                                            double projectTempo) {
+                                            double projectTempo,
+                                            std::vector<Source>* legacySources) {
     if (!json.isObject()) {
         lastError_ = "Clip data is not an object";
         return false;
@@ -769,7 +791,7 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         v1.timeStretchMode = audioObj->getProperty("timeStretchMode");
         readLegacyWarpMarkers(audioObj->getProperty("warpMarkers"), v1.warpMarkers);
 
-        migrateLegacyAudioClip(v1, legacy, outClip);
+        migrateLegacyAudioClip(v1, legacy, outClip, legacySources, projectTempo);
         readAudioTakesAndComp(*audioObj, outClip);
     } else if (outClip.isAudio() && legacyAudioSourceObj != nullptr) {
         LegacyAudioSource v1;
@@ -788,7 +810,7 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         v1.timeStretchMode = legacyAudioSourceObj->getProperty("timeStretchMode");
         readLegacyWarpMarkers(legacyAudioSourceObj->getProperty("warpMarkers"), v1.warpMarkers);
 
-        migrateLegacyAudioClip(v1, legacy, outClip);
+        migrateLegacyAudioClip(v1, legacy, outClip, legacySources, projectTempo);
     } else if (outClip.isAudio() && obj->hasProperty("audioFilePath")) {
         LegacyAudioSource v1;
         v1.filePath = obj->getProperty("audioFilePath").toString();
@@ -802,7 +824,7 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         v1.interpTotalBeats = obj->getProperty("sourceNumBeats");
         v1.interpBpm = obj->getProperty("sourceBPM");
 
-        migrateLegacyAudioClip(v1, legacy, outClip);
+        migrateLegacyAudioClip(v1, legacy, outClip, legacySources, projectTempo);
     }
 
     // MIDI notes

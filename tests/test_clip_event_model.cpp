@@ -338,3 +338,52 @@ TEST_CASE("New events inherit the source's detected facts", "[clip][event][inter
         REQUIRE(event.keyRoot == "C");
     }
 }
+
+TEST_CASE("Loop length in beats is a timeline view, not a source view", "[clip][event][loop]") {
+    // The two domains only coincide under beat mode. Returning the event's own
+    // beat count off beat mode hands source beats to callers that schedule in
+    // timeline beats, which is how a 174 BPM loop in a 120 BPM project ended
+    // up firing its follow action about 45% late.
+    EventModelFixture fixture;
+    constexpr double kProjectBpm = 120.0;
+
+    ClipInfo clip;
+    clip.setAudioContent();
+    auto& event = magda::test::giveAudioEvent(clip, "/tmp/loop-174.wav", 8.0);
+    event.interpBpm = 174.0;
+    event.speedRatio = 1.0;
+    event.setLoopLengthSeconds(2.0);
+    event.setLoopStartSeconds(1.0);
+    clip.loopEnabled = true;
+
+    SECTION("Off beat mode it comes from seconds and the project tempo") {
+        event.autoTempo = false;
+        // Two seconds of audio at its recorded rate spans four beats at 120.
+        REQUIRE(clip.loopLengthInBeats(kProjectBpm) == Approx(4.0));
+        REQUIRE(clip.loopStartInBeats(kProjectBpm) == Approx(2.0));
+        // The source-beat view is a different number, and not the one to use.
+        REQUIRE(event.loopLengthBeats() == Approx(5.8));
+    }
+
+    SECTION("A speed change moves the timeline span, not the source one") {
+        event.autoTempo = false;
+        event.speedRatio = 2.0;  // plays twice as fast
+        REQUIRE(clip.loopLengthInBeats(kProjectBpm) == Approx(2.0));
+        REQUIRE(event.loopLengthSeconds() == Approx(2.0));
+    }
+
+    SECTION("Under beat mode the source is stretched onto the grid") {
+        event.autoTempo = true;
+        REQUIRE(clip.loopLengthInBeats(kProjectBpm) == Approx(5.8));
+    }
+
+    SECTION("A MIDI clip reports its own field for either accessor") {
+        ClipInfo midiClip;
+        midiClip.setMidiContent();
+        midiClip.loopEnabled = true;
+        midiClip.loopStartBeats = 1.0;
+        midiClip.loopLengthBeats = 4.0;
+        REQUIRE(midiClip.loopLengthInBeats(kProjectBpm) == Approx(4.0));
+        REQUIRE(midiClip.loopStartInBeats(kProjectBpm) == Approx(1.0));
+    }
+}

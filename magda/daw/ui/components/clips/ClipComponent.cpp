@@ -560,7 +560,8 @@ size_t ClipComponent::computeWaveformHash(const ClipInfo& clip) {
     combine(std::hash<bool>{}(clip.loopEnabled));
     combine(std::hash<double>{}(audioEventRef(clip).loopStartSeconds()));
     combine(std::hash<double>{}(audioEventRef(clip).loopLengthSeconds()));
-    combine(std::hash<double>{}(clip.loopLengthInBeats()));
+    combine(std::hash<double>{}(clip.loopLengthBeats));
+    combine(std::hash<long long>{}(audioEventRef(clip).loopLengthSamples));
     combine(std::hash<double>{}(audioEventRef(clip).interpTotalBeats));
     combine(std::hash<bool>{}(audioEventRef(clip).warpEnabled));
     combine(std::hash<bool>{}(audioEventRef(clip).autoTempo));
@@ -3754,8 +3755,7 @@ void ClipComponent::showContextMenu() {
 
             case 28: {  // Flatten MIDI Loop (#1737)
                 const auto* clip = clipManager.getClip(clipId_);
-                if (clip && clip->isMidi() && clip->loopEnabled &&
-                    clip->loopLengthInBeats() > 0.0) {
+                if (clip && clip->isMidi() && clip->loopEnabled && clip->loopLengthBeats > 0.0) {
                     UndoManager::getInstance().executeCommand(
                         std::make_unique<FlattenMidiClipCommand>(clipId_));
                 }

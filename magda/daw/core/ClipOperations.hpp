@@ -219,9 +219,15 @@ class ClipOperations {
                 event->setAnchorSeconds(event->anchorSeconds() + sourceDelta);
                 event->loopStartSamples = event->sourceAnchorSamples;
             } else {
-                const double sourceLength = event->loopLengthSamples > 0
-                                                ? event->loopLengthSeconds()
-                                                : clipLength * event->speedRatio;
+                // With no region set, beat mode has no period to wrap in:
+                // clipLength is timeline seconds at project tempo and
+                // speedRatio is pinned to 1, so using it as a source period
+                // would wrap by the wrong amount. Leave the phase alone, as
+                // the beat-domain path did before the event split.
+                const double sourceLength =
+                    event->loopLengthSamples > 0
+                        ? event->loopLengthSeconds()
+                        : (isAutoTempo ? 0.0 : clipLength * event->speedRatio);
                 if (sourceLength > 0.0) {
                     event->setAnchorSeconds(
                         event->loopStartSeconds() +

@@ -698,15 +698,42 @@ struct ClipInfo {
     double loopStartBeats = 0.0;
     double loopLengthBeats = 0.0;
 
-    /// Loop length in beats for whichever content the clip holds.
-    ///
-    /// A MIDI clip keeps it in the field above. An audio clip's loop is a
-    /// source region in samples, so its beat length is a view derived through
-    /// the event's interpretation. Reading only one of the two silently
-    /// returns zero for the other, which reads as "not looping".
-    double loopLengthInBeats() const {
+    /// Loop start in TIMELINE beats for whichever content the clip holds.
+    /// Same domain rules as loopLengthInBeats below.
+    double loopStartInBeats(double projectBpm) const {
         const auto* event = primaryEvent();
-        return event != nullptr ? event->loopLengthBeats() : loopLengthBeats;
+        if (event == nullptr)
+            return loopStartBeats;
+
+        if (event->autoTempo)
+            return event->loopStartBeats();
+
+        if (!isValidBpm(projectBpm))
+            return 0.0;
+
+        return event->sourceToTimeline(event->loopStartSeconds()) * projectBpm / 60.0;
+    }
+
+    /// Loop length in TIMELINE beats for whichever content the clip holds.
+    ///
+    /// A MIDI clip keeps it in the field above, already in timeline beats. An
+    /// audio clip's loop is a source region, and the two domains only coincide
+    /// under beat mode, where the source is stretched onto the project grid.
+    /// Off beat mode the region plays at its own rate, so its timeline span
+    /// comes from seconds and the project tempo. AudioEvent::loopLengthBeats()
+    /// is the SOURCE-beat view and is not interchangeable with this.
+    double loopLengthInBeats(double projectBpm) const {
+        const auto* event = primaryEvent();
+        if (event == nullptr)
+            return loopLengthBeats;
+
+        if (event->autoTempo)
+            return event->loopLengthBeats();
+
+        if (!isValidBpm(projectBpm))
+            return 0.0;
+
+        return event->sourceToTimeline(event->loopLengthSeconds()) * projectBpm / 60.0;
     }
 
     // =========================================================================
@@ -868,12 +895,23 @@ struct ClipInfo {
                 copySharedEventFieldsFrom(events()[i], src.events()[i]);
             auto& dstAudio = audio();
             const auto& srcAudio = src.audio();
-            dstAudio.nextEventId = srcAudio.nextEventId;
+            // Ids stay per-instance, so the allocator must never step back
+            // behind one already handed out here. Equal today because every
+            // live flow keeps link-group members at one event; once slicing
+            // lets their histories diverge, taking the source's counter
+            // verbatim could mint a duplicate on the next addEvent.
+            dstAudio.nextEventId = juce::jmax(dstAudio.nextEventId, srcAudio.nextEventId);
             dstAudio.takes = srcAudio.takes;
             dstAudio.currentTakeIndex = srcAudio.currentTakeIndex;
             dstAudio.comp = srcAudio.comp;
             dstAudio.compActive = srcAudio.compActive;
         } else {
+            // Wholesale: this replaces every per-instance event field (anchor,
+            // region, speedRatio, fades, channels, gain, geometry) and adopts
+            // the source's event ids. Only reachable when the event structure
+            // itself differs, which no Phase A flow produces. Slicing will:
+            // it needs a prefix match here, not a swap.
+            jassert(!isAudio() || !src.isAudio() || events().size() == src.events().size());
             content = src.content;
         }
 

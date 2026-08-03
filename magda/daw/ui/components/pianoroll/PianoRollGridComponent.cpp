@@ -39,18 +39,16 @@ double timelineEndBeats(const ClipInfo& clip, double bpm) {
     return clip.getEndBeats(bpm);
 }
 
-// The piano roll only ever edits MIDI, so both of these read the clip's own
-// loop in clip beats. The audio event's loop is a region of a source file and
-// has nothing to say about a note grid.
-double effectiveLoopStartBeats(const ClipInfo& clip, double) {
-    return clip.loopStartBeats > 0.0 ? clip.loopStartBeats : 0.0;
+// Audio clips reach this grid too (PianoRollContent and DrumGridClipContent
+// both route them here), so the loop has to come back in timeline beats for
+// either content type rather than off one domain's field.
+double effectiveLoopStartBeats(const ClipInfo& clip, double bpm) {
+    return juce::jmax(0.0, clip.loopStartInBeats(bpm));
 }
 
 double effectiveLoopLengthBeats(const ClipInfo& clip, double bpm) {
-    if (clip.loopLengthBeats > 0.0)
-        return clip.loopLengthBeats;
-
-    return timelineLengthBeats(clip, bpm);
+    const double loopBeats = clip.loopLengthInBeats(bpm);
+    return loopBeats > 0.0 ? loopBeats : timelineLengthBeats(clip, bpm);
 }
 
 // Grid clicks use the same relative-loop contract as the ruler: display beat is

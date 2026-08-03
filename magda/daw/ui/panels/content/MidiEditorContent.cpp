@@ -83,9 +83,8 @@ double facadeTimelineLength(const magda::ClipInfo& c, double bpm) {
 }
 
 double effectiveLoopLengthSeconds(const magda::ClipInfo& clip, double bpm) {
-    // This editor's clips are MIDI, whose loop is clip beats. Reading it off
-    // an audio event would always miss, since a MIDI clip has none.
-    if (const double loopBeats = clip.loopLengthBeats; loopBeats > 0.0 && isValidBpm(bpm)) {
+    // Timeline beats for either content type, then into timeline seconds.
+    if (const double loopBeats = clip.loopLengthInBeats(bpm); loopBeats > 0.0 && isValidBpm(bpm)) {
         return loopBeats * 60.0 / bpm;
     }
 
@@ -93,8 +92,7 @@ double effectiveLoopLengthSeconds(const magda::ClipInfo& clip, double bpm) {
 }
 
 double effectiveLoopStartSeconds(const magda::ClipInfo& clip, double bpm) {
-    const double startBeats =
-        clip.isMidi() ? clip.loopStartBeats : audioEventRef(clip).loopStartBeats();
+    const double startBeats = clip.loopStartInBeats(bpm);
     if (startBeats > 0.0 && isValidBpm(bpm))
         return startBeats * 60.0 / bpm;
 
