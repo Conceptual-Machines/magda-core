@@ -1,6 +1,7 @@
 #include "plan/RenderPlan.hpp"
 
 #include <algorithm>
+#include <map>
 #include <tuple>
 
 namespace magda::engine {
@@ -186,10 +187,20 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
     std::vector<std::string> problems;
     const auto numOps = static_cast<OpId>(plan.ops.size());
 
+    // The differ hash-joins old and new plans on OpKey, so a duplicate key does
+    // not fail loudly: it carries one op's state into another. Identity bugs
+    // are the concentrated risk of this design, so uniqueness is an invariant
+    // here rather than a convention the compiler happens to keep.
+    std::map<OpKey, OpId> keyOwners;
+
     for (OpId i = 0; i < numOps; ++i) {
         const auto& op = plan.ops[static_cast<std::size_t>(i)];
         const auto label =
             "op " + std::to_string(i) + " (" + toString(op.kind) + " " + toString(op.key) + "): ";
+
+        if (const auto [owner, inserted] = keyOwners.emplace(op.key, i); !inserted)
+            problems.push_back(label + "has the same key as op " + std::to_string(owner->second) +
+                               ", so the differ cannot tell them apart");
 
         // Output is the plan's only sink; everything else must produce.
         if (op.outputs.empty() != (op.kind == OpKind::Output))
@@ -232,19 +243,25 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
                                    toString(actual) + ", expected " + toString(expected));
         }
 
-        if (op.liveness == LivenessDomain::Deterministic) {
-            // Out-of-range inputs are already reported above; skip them here so
-            // a malformed plan cannot walk off the op vector.
-            const auto liveInput =
-                std::ranges::find_if(op.inputs, [&plan, i](const PortRef& input) {
-                    return input.valid() && input.op >= 0 && input.op < i &&
-                           plan.ops[static_cast<std::size_t>(input.op)].liveness ==
-                               LivenessDomain::Live;
-                });
-            if (liveInput != op.inputs.end())
-                problems.push_back(label + "is deterministic but reads live op " +
-                                   std::to_string(liveInput->op));
-        }
+        // Out-of-range inputs are already reported above; skip them here so a
+        // malformed plan cannot walk off the op vector.
+        const auto liveInput = std::ranges::find_if(op.inputs, [&plan, i](const PortRef& input) {
+            return input.valid() && input.op >= 0 && input.op < i &&
+                   plan.ops[static_cast<std::size_t>(input.op)].liveness == LivenessDomain::Live;
+        });
+        const auto readsLive = liveInput != op.inputs.end();
+
+        if (op.liveness == LivenessDomain::Deterministic && readsLive)
+            problems.push_back(label + "is deterministic but reads live op " +
+                               std::to_string(liveInput->op));
+
+        // The converse matters just as much and is harder to notice, because
+        // over-tagging is semantically harmless: it only shrinks what the
+        // anticipative executor is allowed to precompute. Liveness has to come
+        // from somewhere, and only the input sources originate it.
+        const auto isLiveSource = op.kind == OpKind::AudioInput || op.kind == OpKind::MidiInput;
+        if (op.liveness == LivenessDomain::Live && !isLiveSource && !readsLive)
+            problems.push_back(label + "is live but reads nothing live and is not an input source");
     }
 
     for (const auto outputOp : plan.outputOps) {

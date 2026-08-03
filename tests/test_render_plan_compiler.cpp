@@ -1027,3 +1027,73 @@ TEST_CASE("A frozen track is reported as not compiled", "[engine][plan][compiler
     REQUIRE(plan.diagnostics.size() == 1);
     CHECK(plan.diagnostics.front().find("freeze") != std::string::npos);
 }
+
+TEST_CASE("validatePlan enforces the differ's identity precondition", "[engine][plan][validate]") {
+    using magda::engine::LivenessDomain;
+    using magda::engine::PlanOp;
+    using magda::engine::PortRef;
+    using magda::engine::SignalKind;
+
+    RenderPlan plan;
+
+    PlanOp source;
+    source.kind = OpKind::ClipAudio;
+    source.key = {1, INVALID_RACK_ID, INVALID_CHAIN_ID, INVALID_DEVICE_ID, OpRole::ClipAudio, 0};
+    source.outputs = {SignalKind::Audio};
+    plan.ops.push_back(source);
+
+    // Same key, different op. The differ joins on the key, so this does not
+    // fail loudly at swap time: it carries one op's state into the other.
+    PlanOp collision;
+    collision.kind = OpKind::Gain;
+    collision.key = source.key;
+    collision.inputs = {PortRef{0, 0}};
+    collision.outputs = {SignalKind::Audio};
+    plan.ops.push_back(collision);
+
+    const auto problems = magda::engine::validatePlan(plan);
+    REQUIRE(problems.size() == 1);
+    CHECK(problems.front().find("same key as op 0") != std::string::npos);
+}
+
+TEST_CASE("validatePlan enforces liveness provenance", "[engine][plan][validate]") {
+    using magda::engine::LivenessDomain;
+    using magda::engine::PlanOp;
+    using magda::engine::PortRef;
+    using magda::engine::SignalKind;
+
+    RenderPlan plan;
+
+    PlanOp source;
+    source.kind = OpKind::ClipAudio;
+    source.key = {1, INVALID_RACK_ID, INVALID_CHAIN_ID, INVALID_DEVICE_ID, OpRole::ClipAudio, 0};
+    source.outputs = {SignalKind::Audio};
+    plan.ops.push_back(source);
+
+    SECTION("a live op with no live input and no live source is rejected") {
+        PlanOp overTagged;
+        overTagged.kind = OpKind::Gain;
+        overTagged.key = {
+            1, INVALID_RACK_ID, INVALID_CHAIN_ID, INVALID_DEVICE_ID, OpRole::TrackFader, 0};
+        overTagged.liveness = LivenessDomain::Live;
+        overTagged.inputs = {PortRef{0, 0}};
+        overTagged.outputs = {SignalKind::Audio};
+        plan.ops.push_back(overTagged);
+
+        const auto problems = magda::engine::validatePlan(plan);
+        REQUIRE(problems.size() == 1);
+        CHECK(problems.front().find("is live but reads nothing live") != std::string::npos);
+    }
+
+    SECTION("an input source may be live on its own") {
+        PlanOp input;
+        input.kind = OpKind::AudioInput;
+        input.key = {
+            1, INVALID_RACK_ID, INVALID_CHAIN_ID, INVALID_DEVICE_ID, OpRole::LiveAudioInput, 0};
+        input.liveness = LivenessDomain::Live;
+        input.outputs = {SignalKind::Audio};
+        plan.ops.push_back(input);
+
+        CHECK(magda::engine::validatePlan(plan).empty());
+    }
+}

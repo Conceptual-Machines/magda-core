@@ -207,6 +207,13 @@ void bakeScheduling(RenderPlan& plan);
  * Returns one message per violation, empty when the plan is well formed.
  * Checks dependency ordering, input arity, port existence and signal-kind
  * agreement between producer and consumer.
+ *
+ * It also enforces the differ's two preconditions, which are cheap here and
+ * expensive anywhere else: OpKey uniqueness, because the differ hash-joins on
+ * the key and a collision carries one op's state into another rather than
+ * failing; and liveness provenance in both directions, because an over-tagged
+ * Live op is silently correct while quietly shrinking what the anticipative
+ * executor may precompute.
  */
 std::vector<std::string> validatePlan(const RenderPlan& plan);
 
