@@ -4,6 +4,7 @@
 
 #include "../../core/AutomationInfo.hpp"
 #include "../../core/ClipInfo.hpp"
+#include "../../core/Source.hpp"
 #include "../../core/TrackInfo.hpp"
 #include "ProjectInfo.hpp"
 
@@ -17,6 +18,11 @@ namespace magda {
  */
 struct StagedProjectData {
     ProjectInfo info;
+    /// Pooled sources, parsed but not yet installed. Staging must not touch the
+    /// live pool: loadAndStage runs on a background thread and can still fail
+    /// after this point, and the open project's clips are reading the pool on
+    /// every paint. commitStaged installs them on the message thread.
+    std::vector<Source> sources;
     std::vector<TrackInfo> tracks;
     std::unique_ptr<TrackInfo> masterTrack;  // Master track (id=MASTER_TRACK_ID)
     std::vector<ClipInfo> clips;
@@ -146,7 +152,19 @@ class ProjectSerializer {
      * @brief Restore pooled media sources. Must run before clips, whose events
      * reference sources by id.
      */
-    static void deserializeSources(const juce::var& json);
+    /// Parse the sources array into @p out without touching the live pool.
+    static void deserializeSourcesToStaging(const juce::var& json, std::vector<Source>& out);
+
+    /// Replace the pool with @p sources, carrying across any entry that
+    /// @p stagedClips still reference. Message thread, commit phase only.
+    /// Resolution is deliberately deferred to resolveStagedSources, which must
+    /// run after the clips are in place so the rescale can reach their events.
+    static void installStagedSources(const std::vector<Source>& sources,
+                                     const std::vector<ClipInfo>& stagedClips);
+
+    /// Re-probe sources that were saved unresolved, rescaling the anchors of
+    /// every event pointing at them.
+    static void resolveStagedSources(const std::vector<Source>& sources);
 
     /**
      * @brief Serialize all clips to JSON array

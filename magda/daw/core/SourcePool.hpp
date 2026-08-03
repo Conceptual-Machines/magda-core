@@ -17,10 +17,12 @@ namespace magda {
  * analysis are stored once and the media database has a single join point per
  * file. Message thread only, like ClipManager.
  *
- * Lifetime: additive within a session. Sources are never removed by an edit
- * (which is why the pool needs no undo support of its own: an undone clip
- * deletion finds its source still there), only by retainOnly() during save and
- * by clear() on project load.
+ * Lifetime: additive within a session, cleared only on project load. Nothing
+ * removes a source once pooled, which is why the pool needs no undo support of
+ * its own: an undone clip deletion, or a paste from a clipboard filled before
+ * the delete, finds its source still there. Saving filters what it writes to
+ * the referenced set rather than pruning the pool, so autosave cannot strand a
+ * source that undo is about to need.
  */
 class SourcePool {
   public:
@@ -60,9 +62,6 @@ class SourcePool {
 
     /// Every source, ordered by id. Used by serialization and the media collector.
     std::vector<Source> snapshot() const;
-
-    /// Drop every source whose id is not in @p live. Called when saving.
-    void retainOnly(const std::unordered_set<SourceId>& live);
 
     void clear();
 

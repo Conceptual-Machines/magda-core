@@ -253,12 +253,10 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
             return false;
         }
 
-        // Sources must be pooled before the clips that reference them by id,
-        // and after the outgoing project's pool is dropped. This cannot live in
-        // ClipManager::clearAllClips: the commit phase calls that AFTER the
-        // sources are staged, which would strand every event's source id.
-        SourcePool::getInstance().clear();
-        deserializeSources(obj->getProperty("sources"));
+        // Parsed only. Installing them is a commit-phase job: this runs on a
+        // background thread, the staging steps below can still fail, and the
+        // still-open project's clips are reading the live pool meanwhile.
+        deserializeSourcesToStaging(obj->getProperty("sources"), outData.sources);
 
         if (!deserializeClipsToStaging(obj->getProperty("clips"), outData.clips,
                                        outData.info.tempo)) {
@@ -309,7 +307,13 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
 }
 
 void ProjectSerializer::commitStaged(StagedProjectData& data) {
+    // Before the clips, which reference these by id.
+    installStagedSources(data.sources, data.clips);
+
     commitStagedData(data.tracks, data.clips, data.automationLanes, data.automationClips);
+
+    // After, so re-probing a source can rescale the events that point at it.
+    resolveStagedSources(data.sources);
 
     // Restore master track chain elements (plugins on the master bus)
     if (data.masterTrack) {
@@ -562,8 +566,8 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
         return false;  // Failed - no state modified
     }
 
-    SourcePool::getInstance().clear();
-    deserializeSources(obj->getProperty("sources"));
+    std::vector<Source> stagedSources;
+    deserializeSourcesToStaging(obj->getProperty("sources"), stagedSources);
 
     if (!deserializeClipsToStaging(obj->getProperty("clips"), stagedClips, outInfo.tempo)) {
         return false;  // Failed - no state modified
@@ -589,7 +593,9 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
                                                    stagedAutomation, stagedAutomationClips);
 
     // Stage 2: All components validated successfully - now commit to managers atomically
+    installStagedSources(stagedSources, stagedClips);
     commitStagedData(stagedTracks, stagedClips, stagedAutomation, stagedAutomationClips);
+    resolveStagedSources(stagedSources);
 
     // Restore master track chain elements (plugins on the master bus)
     if (hasMasterTrack) {
@@ -723,9 +729,11 @@ juce::var ProjectSerializer::serializeTracks() {
 }
 
 juce::var ProjectSerializer::serializeSources() {
-    // Only sources some clip still references are written: the pool is additive
-    // within a session so an undone delete can find its source again, and save
-    // is where that garbage is collected.
+    // Only sources some clip still references are written. This filters the
+    // emitted snapshot and deliberately does NOT prune the live pool: the pool
+    // is additive within a session precisely so an undone delete, or a paste
+    // from the clipboard, still finds its source. Autosave runs this on a
+    // timer, so pruning here would quietly break both between saves.
     std::unordered_set<SourceId> live;
     for (const auto& clip : ClipManager::getInstance().getClips()) {
         if (!clip.isAudio())
@@ -733,10 +741,12 @@ juce::var ProjectSerializer::serializeSources() {
         for (const auto& event : clip.audio().events)
             live.insert(event.sourceId);
     }
-    SourcePool::getInstance().retainOnly(live);
 
     juce::Array<juce::var> sourcesArray;
     for (const auto& source : SourcePool::getInstance().snapshot()) {
+        if (live.count(source.id) == 0)
+            continue;
+
         auto* sourceObj = new juce::DynamicObject();
         sourceObj->setProperty("id", source.id);
         sourceObj->setProperty("filePath", source.filePath);
@@ -753,10 +763,11 @@ juce::var ProjectSerializer::serializeSources() {
     return juce::var(sourcesArray);
 }
 
-void ProjectSerializer::deserializeSources(const juce::var& json) {
+void ProjectSerializer::deserializeSourcesToStaging(const juce::var& json,
+                                                    std::vector<Source>& out) {
     if (!json.isArray())
         return;
-    auto& pool = SourcePool::getInstance();
+
     for (const auto& entry : *json.getArray()) {
         auto* sourceObj = entry.getDynamicObject();
         if (sourceObj == nullptr)
@@ -770,13 +781,49 @@ void ProjectSerializer::deserializeSources(const juce::var& json) {
         source.detectedKeyRoot = sourceObj->getProperty("detectedKeyRoot").toString().toStdString();
         source.detectedKeyScale =
             sourceObj->getProperty("detectedKeyScale").toString().toStdString();
-        const auto id = pool.insert(source);
+        out.push_back(std::move(source));
+    }
+}
 
+void ProjectSerializer::installStagedSources(const std::vector<Source>& sources,
+                                             const std::vector<ClipInfo>& stagedClips) {
+    auto& pool = SourcePool::getInstance();
+
+    // A v1 clip has no entry in the table: it acquires from the pool as it
+    // migrates, so its id only exists in the live pool. Carry those across the
+    // swap or they dangle. A file can hold both shapes at once.
+    std::unordered_set<SourceId> known;
+    for (const auto& source : sources)
+        known.insert(source.id);
+
+    std::vector<Source> carried;
+    for (const auto& clip : stagedClips) {
+        if (!clip.isAudio())
+            continue;
+        for (const auto& event : clip.audio().events) {
+            if (event.sourceId == INVALID_SOURCE_ID || !known.insert(event.sourceId).second)
+                continue;
+            if (const auto* live = pool.get(event.sourceId))
+                carried.push_back(*live);
+        }
+    }
+
+    pool.clear();
+    for (const auto& source : sources)
+        pool.insert(source);
+    for (const auto& source : carried)
+        pool.insert(source);
+}
+
+void ProjectSerializer::resolveStagedSources(const std::vector<Source>& sources) {
+    auto& pool = SourcePool::getInstance();
+    for (const auto& source : sources) {
         // A project saved while the file was missing carries sampleRate 0, so
         // its events' anchors were computed at the nominal rate. Re-probing now
-        // resolves the source and rescales them.
-        if (id != INVALID_SOURCE_ID && !source.isResolved())
-            pool.resolveFacts(id);
+        // resolves the source, and the pool's rate-change handler rescales
+        // them: this runs after the clips are committed so those events exist.
+        if (!source.isResolved())
+            pool.resolveFacts(source.id);
     }
 }
 

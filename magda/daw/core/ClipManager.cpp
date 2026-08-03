@@ -226,7 +226,6 @@ void ClipManager::repointEventsToSource(SourceId from, SourceId to) {
     // different rates, so the sample counts have to move with the events.
     const double fromRate = sourceRateOf(from);
     const double toRate = sourceRateOf(to);
-    const double ratio = (fromRate > 0.0 && toRate > 0.0) ? toRate / fromRate : 1.0;
 
     for (auto& [clipId, clip] : clips_) {
         if (!clip.isAudio())
@@ -237,14 +236,7 @@ void ClipManager::repointEventsToSource(SourceId from, SourceId to) {
             if (event.sourceId != from)
                 continue;
 
-            if (std::abs(ratio - 1.0) > 1.0e-9) {
-                const auto rescale = [ratio](int64_t samples) {
-                    return static_cast<int64_t>(std::llround(static_cast<double>(samples) * ratio));
-                };
-                event.sourceAnchorSamples = rescale(event.sourceAnchorSamples);
-                event.loopStartSamples = rescale(event.loopStartSamples);
-                event.loopLengthSamples = rescale(event.loopLengthSamples);
-            }
+            event.rescaleSourcePositions(fromRate, toRate);
             event.sourceId = to;
             touched = true;
         }
@@ -258,11 +250,6 @@ void ClipManager::rescaleEventsForSourceRate(SourceId sourceId, double oldRate, 
     if (sourceId == INVALID_SOURCE_ID || oldRate <= 0.0 || newRate <= 0.0)
         return;
 
-    const double ratio = newRate / oldRate;
-    const auto rescale = [ratio](int64_t samples) {
-        return static_cast<int64_t>(std::llround(static_cast<double>(samples) * ratio));
-    };
-
     for (auto& [clipId, clip] : clips_) {
         if (!clip.isAudio())
             continue;
@@ -272,9 +259,7 @@ void ClipManager::rescaleEventsForSourceRate(SourceId sourceId, double oldRate, 
             if (event.sourceId != sourceId)
                 continue;
 
-            event.sourceAnchorSamples = rescale(event.sourceAnchorSamples);
-            event.loopStartSamples = rescale(event.loopStartSamples);
-            event.loopLengthSamples = rescale(event.loopLengthSamples);
+            event.rescaleSourcePositions(oldRate, newRate);
             touched = true;
         }
 

@@ -187,6 +187,25 @@ struct AudioEvent {
     int64_t loopStartSamples = 0;
     int64_t loopLengthSamples = 0;  // 0 = derive from the event's own length
 
+    /// Re-express the source-domain positions at a different sample rate.
+    ///
+    /// They are counts at the source's own rate, so whenever that rate changes
+    /// under them (an unresolved source being probed, a relink onto a file at
+    /// another rate, a swap onto a different source for the same audio) the
+    /// same counts would otherwise mean a different instant in the file.
+    void rescaleSourcePositions(double oldRate, double newRate) {
+        if (oldRate <= 0.0 || newRate <= 0.0 || std::abs(newRate - oldRate) < 1.0e-9)
+            return;
+
+        const double ratio = newRate / oldRate;
+        const auto scale = [ratio](int64_t samples) {
+            return static_cast<int64_t>(std::llround(static_cast<double>(samples) * ratio));
+        };
+        sourceAnchorSamples = scale(sourceAnchorSamples);
+        loopStartSamples = scale(loopStartSamples);
+        loopLengthSamples = scale(loopLengthSamples);
+    }
+
     // ---- Interpretation (seeded from the Source, then owned by the user) ---
 
     double interpBpm = 0.0;

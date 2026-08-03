@@ -125,28 +125,6 @@ TEST_CASE("SourcePool insert preserves ids from a project file", "[source][pool]
     }
 }
 
-TEST_CASE("SourcePool garbage collects unreferenced sources", "[source][pool]") {
-    PoolFixture fixture;
-    auto& pool = SourcePool::getInstance();
-
-    const auto kept = pool.acquire("/tmp/kept.wav");
-    const auto dropped = pool.acquire("/tmp/dropped.wav");
-
-    pool.retainOnly({kept});
-
-    REQUIRE(pool.get(kept) != nullptr);
-    REQUIRE(pool.get(dropped) == nullptr);
-    REQUIRE(pool.snapshot().size() == 1);
-
-    SECTION("A dropped path can be re-acquired afterwards") {
-        // The path index has to be cleaned up with the entry, or the file
-        // becomes permanently unreachable.
-        const auto reacquired = pool.acquire("/tmp/dropped.wav");
-        REQUIRE(reacquired != INVALID_SOURCE_ID);
-        REQUIRE(pool.get(reacquired) != nullptr);
-    }
-}
-
 TEST_CASE("SourcePool relink repoints every clip sharing the file", "[source][pool]") {
     PoolFixture fixture;
     auto& pool = SourcePool::getInstance();

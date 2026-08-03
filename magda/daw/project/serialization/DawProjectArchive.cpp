@@ -169,8 +169,14 @@ bool DawProjectArchive::readFromFile(const juce::File& file, ProjectDocument& ou
 
         mediaDir.createDirectory();
         if (zip.uncompressEntry(entryIndex, mediaDir, true).wasOk()) {
+            // The anchors were computed against the archive entry, which is not
+            // a file anyone can open, so they are expressed at the nominal rate.
+            // The extracted file has a real one: move them with it, or a
+            // non-48k embedded source imports off by the ratio between them.
+            const double stagedRate = sourceRateOf(event->sourceId);
             event->sourceId = SourcePool::getInstance().acquire(
                 mediaDir.getChildFile(entryName).getFullPathName());
+            event->rescaleSourcePositions(stagedRate, sourceRateOf(event->sourceId));
         }
     }
 

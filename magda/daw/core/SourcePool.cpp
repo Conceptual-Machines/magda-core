@@ -127,17 +127,6 @@ std::vector<Source> SourcePool::snapshot() const {
     return out;
 }
 
-void SourcePool::retainOnly(const std::unordered_set<SourceId>& live) {
-    for (auto it = sources_.begin(); it != sources_.end();) {
-        if (live.count(it->first) > 0) {
-            ++it;
-            continue;
-        }
-        idByPathKey_.erase(canonicalKey(it->second.filePath));
-        it = sources_.erase(it);
-    }
-}
-
 void SourcePool::clear() {
     sources_.clear();
     idByPathKey_.clear();
