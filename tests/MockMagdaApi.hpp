@@ -11,6 +11,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstdlib>
@@ -151,11 +152,19 @@ class StubUndoApi : public UndoApi {
     int executeCalls = 0;
     int compoundDepth = 0;
 
+    /// Descriptions of every compound opened, in order, and the depth reached.
+    /// The remote dispatcher promises one named undo step per mutating request,
+    /// which is only assertable if the names and the nesting are both visible.
+    std::vector<juce::String> compoundDescriptions;
+    int maxCompoundDepth = 0;
+
     void executeCommand(std::unique_ptr<UndoableCommand>) override {
         ++executeCalls;
     }
-    void beginCompound(const juce::String&) override {
+    void beginCompound(const juce::String& description) override {
         ++compoundDepth;
+        maxCompoundDepth = std::max(maxCompoundDepth, compoundDepth);
+        compoundDescriptions.push_back(description);
     }
     void endCompound() override {
         --compoundDepth;

@@ -4,6 +4,8 @@
 #include <cmath>
 #include <limits>
 
+#include "remote_handlers.hpp"
+
 namespace magda::remote {
 namespace {
 
@@ -627,22 +629,6 @@ std::optional<Id> readNullableId(const juce::var& object, const char* property) 
     return decodeBoundedInt<Id>(value);
 }
 
-// Shared by device listings and automation targets: both address a device the
-// same way, and must not drift apart.
-DevicePathDto devicePathFromJson(const juce::var& json) {
-    DevicePathDto dto;
-    dto.trackId = readInt(json, "trackId");
-    dto.section = json["section"].toString();
-    dto.trackLevel = static_cast<bool>(json["trackLevel"]);
-    dto.topLevelDeviceId = readNullableId<DeviceId>(json, "topLevelDeviceId");
-    if (auto* steps = json["steps"].getArray()) {
-        dto.steps.reserve(static_cast<size_t>(steps->size()));
-        for (const auto& item : *steps)
-            dto.steps.push_back({item["type"].toString(), readInt(item, "id")});
-    }
-    return dto;
-}
-
 template <typename Integer>
 juce::Array<juce::var> integerArray(const std::vector<Integer>& values) {
     juce::Array<juce::var> result;
@@ -676,6 +662,25 @@ juce::var operationInputSchema(const char* json) {
 
 }  // namespace
 
+// Shared by device listings, automation targets, and operation handlers: all
+// three address a device the same way, and must not drift apart. Defined
+// outside the anonymous namespace above so handlers in another translation
+// unit reuse this decoder rather than growing a second one — the helpers it
+// calls stay internal, which is why it lives here rather than with them.
+DevicePathDto devicePathFromJson(const juce::var& json) {
+    DevicePathDto dto;
+    dto.trackId = readInt(json, "trackId");
+    dto.section = json["section"].toString();
+    dto.trackLevel = static_cast<bool>(json["trackLevel"]);
+    dto.topLevelDeviceId = readNullableId<DeviceId>(json, "topLevelDeviceId");
+    if (auto* steps = json["steps"].getArray()) {
+        dto.steps.reserve(static_cast<size_t>(steps->size()));
+        for (const auto& item : *steps)
+            dto.steps.push_back({item["type"].toString(), readInt(item, "id")});
+    }
+    return dto;
+}
+
 juce::String toString(ErrorCode code) {
     switch (code) {
         case ErrorCode::InvalidRequest:
@@ -688,6 +693,10 @@ juce::String toString(ErrorCode code) {
             return "not_found";
         case ErrorCode::Conflict:
             return "conflict";
+        case ErrorCode::Timeout:
+            return "timeout";
+        case ErrorCode::Cancelled:
+            return "cancelled";
         case ErrorCode::InternalError:
             return "internal_error";
     }
@@ -1194,18 +1203,18 @@ OperationRegistry::OperationRegistry() {
     })json");
 
     auto add = [this](const char* name, const char* summary, OperationAccess access,
-                      juce::var input, juce::var output) {
+                      OperationHandler handler, juce::var input, juce::var output) {
         // DTO schemas are shared between input and output roles, so cap a deep
         // copy: the request-only DoS limits must never leak into a response
         // schema, which has to stay valid for anything the model can hold.
         input = input.clone();
         applyRequestLimits(input);
         operations_.push_back({juce::String(name), juce::String(summary), access, std::move(input),
-                               std::move(output)});
+                               std::move(output), handler});
     };
 
     add("system.describe", "List the API version and every available operation",
-        OperationAccess::Read, emptyObjectSchema(), parseSchema(R"json({
+        OperationAccess::Read, &handlers::systemDescribe, emptyObjectSchema(), parseSchema(R"json({
             "type":"object",
             "properties":{
                 "apiVersion":{"type":"string"},
@@ -1215,16 +1224,16 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"));
 
-    add("project.get", "Get safe project metadata", OperationAccess::Read, emptyObjectSchema(),
-        projectSchema());
+    add("project.get", "Get safe project metadata", OperationAccess::Read, &handlers::projectGet,
+        emptyObjectSchema(), projectSchema());
     add("project.setTempo", "Set the project tempo", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::projectSetTempo, operationInputSchema(R"json({
             "type":"object","properties":{"tempo":{"type":"number","minimum":20,"maximum":400}},
             "required":["tempo"],"additionalProperties":false
         })json"),
         projectSchema());
     add("project.setTimeSignature", "Set the project time signature", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::projectSetTimeSignature, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "numerator":{"type":"integer","minimum":1,"maximum":32},
@@ -1234,15 +1243,17 @@ OperationRegistry::OperationRegistry() {
         })json"),
         projectSchema());
 
-    add("tracks.list", "List tracks", OperationAccess::Read, emptyObjectSchema(),
-        arraySchema(trackSchema()));
-    add("tracks.get", "Get one track", OperationAccess::Read, operationInputSchema(R"json({
+    add("tracks.list", "List tracks", OperationAccess::Read, &handlers::tracksList,
+        emptyObjectSchema(), arraySchema(trackSchema()));
+    add("tracks.get", "Get one track", OperationAccess::Read, &handlers::tracksGet,
+        operationInputSchema(R"json({
             "type":"object","properties":{"trackId":{"anyOf":[
                 {"type":"integer","const":-2},{"type":"integer","minimum":0}]}},
             "required":["trackId"],"additionalProperties":false
         })json"),
         trackSchema());
-    add("tracks.create", "Create a track", OperationAccess::Write, operationInputSchema(R"json({
+    add("tracks.create", "Create a track", OperationAccess::Write, &handlers::tracksCreate,
+        operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "name":{"type":"string"},
@@ -1252,7 +1263,7 @@ OperationRegistry::OperationRegistry() {
         })json"),
         idResult);
     add("tracks.update", "Update track mixer or display fields", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::tracksUpdate, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "trackId":{"type":"integer","minimum":0},
@@ -1265,14 +1276,15 @@ OperationRegistry::OperationRegistry() {
             "required":["trackId"],"additionalProperties":false
         })json"),
         trackSchema());
-    add("tracks.delete", "Delete a track", OperationAccess::Write, operationInputSchema(R"json({
+    add("tracks.delete", "Delete a track", OperationAccess::Write, &handlers::tracksDelete,
+        operationInputSchema(R"json({
             "type":"object","properties":{"trackId":{"type":"integer","minimum":0}},
             "required":["trackId"],"additionalProperties":false
         })json"),
         okResult);
 
     add("clips.list", "List clips with optional track and view filters", OperationAccess::Read,
-        operationInputSchema(R"json({
+        &handlers::clipsList, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "trackId":{"type":"integer","minimum":0},
@@ -1281,13 +1293,14 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"),
         arraySchema(clipSchema()));
-    add("clips.get", "Get one clip", OperationAccess::Read, operationInputSchema(R"json({
+    add("clips.get", "Get one clip", OperationAccess::Read, &handlers::clipsGet,
+        operationInputSchema(R"json({
             "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
             "required":["clipId"],"additionalProperties":false
         })json"),
         clipSchema());
     add("clips.createMidi", "Create a MIDI clip", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::clipsCreateMidi, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "trackId":{"type":"integer","minimum":0},
@@ -1300,7 +1313,7 @@ OperationRegistry::OperationRegistry() {
         })json"),
         idResult);
     add("clips.addMidiNote", "Add a note to a MIDI clip", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::clipsAddMidiNote, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "clipId":{"type":"integer","minimum":0},
@@ -1313,26 +1326,27 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"),
         clipSchema());
-    add("clips.delete", "Delete a clip", OperationAccess::Write, operationInputSchema(R"json({
+    add("clips.delete", "Delete a clip", OperationAccess::Write, &handlers::clipsDelete,
+        operationInputSchema(R"json({
             "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
             "required":["clipId"],"additionalProperties":false
         })json"),
         okResult);
 
     add("devices.list", "List safe device and rack graph metadata", OperationAccess::Read,
-        operationInputSchema(R"json({
+        &handlers::devicesList, operationInputSchema(R"json({
             "type":"object","properties":{"trackId":{"type":"integer","minimum":0}},
             "additionalProperties":false
         })json"),
         deviceGraphSchema());
-    add("racks.create", "Create a top-level rack", OperationAccess::Write,
+    add("racks.create", "Create a top-level rack", OperationAccess::Write, &handlers::racksCreate,
         operationInputSchema(R"json({
             "type":"object",
             "properties":{"trackId":{"type":"integer","minimum":0},"name":{"type":"string"}},
             "required":["trackId","name"],"additionalProperties":false
         })json"),
         idResult);
-    add("racks.remove", "Remove a top-level rack", OperationAccess::Write,
+    add("racks.remove", "Remove a top-level rack", OperationAccess::Write, &handlers::racksRemove,
         operationInputSchema(R"json({
             "type":"object",
             "properties":{
@@ -1342,7 +1356,7 @@ OperationRegistry::OperationRegistry() {
             "required":["trackId","rackId"],"additionalProperties":false
         })json"),
         okResult);
-    add("racks.setBypassed", "Set rack bypass", OperationAccess::Write,
+    add("racks.setBypassed", "Set rack bypass", OperationAccess::Write, &handlers::racksSetBypassed,
         operationInputSchema(R"json({
             "type":"object",
             "properties":{
@@ -1354,73 +1368,73 @@ OperationRegistry::OperationRegistry() {
         })json"),
         rackSchema());
 
-    add("selection.get", "Get the current selection", OperationAccess::Read, emptyObjectSchema(),
-        selectionSchema());
+    add("selection.get", "Get the current selection", OperationAccess::Read,
+        &handlers::selectionGet, emptyObjectSchema(), selectionSchema());
     add("selection.set", "Replace the current track, clip, or note selection",
-        OperationAccess::Write, selectionSchema(), selectionSchema());
+        OperationAccess::Write, &handlers::selectionSet, selectionSchema(), selectionSchema());
 
-    add("transport.get", "Get transport state", OperationAccess::Read, emptyObjectSchema(),
-        transportSchema());
-    add("transport.play", "Start playback", OperationAccess::Write, emptyObjectSchema(),
-        transportSchema());
-    add("transport.stop", "Stop playback", OperationAccess::Write, emptyObjectSchema(),
-        transportSchema());
+    add("transport.get", "Get transport state", OperationAccess::Read, &handlers::transportGet,
+        emptyObjectSchema(), transportSchema());
+    add("transport.play", "Start playback", OperationAccess::Write, &handlers::transportPlay,
+        emptyObjectSchema(), transportSchema());
+    add("transport.stop", "Stop playback", OperationAccess::Write, &handlers::transportStop,
+        emptyObjectSchema(), transportSchema());
     add("transport.setRecording", "Set recording state", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::transportSetRecording, operationInputSchema(R"json({
             "type":"object","properties":{"recording":{"type":"boolean"}},
             "required":["recording"],"additionalProperties":false
         })json"),
         transportSchema());
     add("transport.setLoopEnabled", "Set transport loop state", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::transportSetLoopEnabled, operationInputSchema(R"json({
             "type":"object","properties":{"enabled":{"type":"boolean"}},
             "required":["enabled"],"additionalProperties":false
         })json"),
         transportSchema());
     add("transport.seek", "Seek the transport in beats", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::transportSeek, operationInputSchema(R"json({
             "type":"object","properties":{"positionBeats":{"type":"number","minimum":0}},
             "required":["positionBeats"],"additionalProperties":false
         })json"),
         transportSchema());
 
     add("session.get", "Get occupied session slots and play states", OperationAccess::Read,
-        emptyObjectSchema(), sessionSchema());
+        &handlers::sessionGet, emptyObjectSchema(), sessionSchema());
     add("session.launchClip", "Launch a session clip", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::sessionLaunchClip, operationInputSchema(R"json({
             "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
             "required":["clipId"],"additionalProperties":false
         })json"),
         sessionSchema());
     add("session.stopClip", "Stop a session clip", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::sessionStopClip, operationInputSchema(R"json({
             "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
             "required":["clipId"],"additionalProperties":false
         })json"),
         sessionSchema());
     add("session.stopTrack", "Stop the active session clip on a track", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::sessionStopTrack, operationInputSchema(R"json({
             "type":"object","properties":{"trackId":{"type":"integer","minimum":0}},
             "required":["trackId"],"additionalProperties":false
         })json"),
         sessionSchema());
-    add("session.stopAll", "Stop all session clips", OperationAccess::Write, emptyObjectSchema(),
-        sessionSchema());
+    add("session.stopAll", "Stop all session clips", OperationAccess::Write,
+        &handlers::sessionStopAll, emptyObjectSchema(), sessionSchema());
     add("session.launchScene", "Launch a session scene", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::sessionLaunchScene, operationInputSchema(R"json({
             "type":"object","properties":{"sceneIndex":{"type":"integer","minimum":0}},
             "required":["sceneIndex"],"additionalProperties":false
         })json"),
         sessionSchema());
 
     add("automation.getLane", "Get an automation lane", OperationAccess::Read,
-        operationInputSchema(R"json({
+        &handlers::automationGetLane, operationInputSchema(R"json({
             "type":"object","properties":{"laneId":{"type":"integer","minimum":0}},
             "required":["laneId"],"additionalProperties":false
         })json"),
         automationLaneSchema());
     add("automation.createLane", "Create an automation lane", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::automationCreateLane, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "target":{},
@@ -1432,7 +1446,7 @@ OperationRegistry::OperationRegistry() {
     operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
         "target", automationTargetSchema());
     add("automation.addPoint", "Add a point to an automation lane", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::automationAddPoint, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "laneId":{"type":"integer","minimum":0},
@@ -1445,11 +1459,21 @@ OperationRegistry::OperationRegistry() {
         })json"),
         automationLaneSchema());
     add("automation.clearLane", "Remove all points from an automation lane", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::automationClearLane, operationInputSchema(R"json({
             "type":"object","properties":{"laneId":{"type":"integer","minimum":0}},
             "required":["laneId"],"additionalProperties":false
         })json"),
         automationLaneSchema());
+
+    // A declared operation with no implementation is a startup failure, not a
+    // runtime surprise. Before handlers lived on the descriptor there was
+    // nothing to catch it, and the registry advertised 36 operations that
+    // `system.describe` would happily list and no transport could execute.
+    for (const auto& operation : operations_) {
+        jassert(operation.handler != nullptr);
+        if (operation.handler == nullptr)
+            juce::Logger::writeToLog("Remote API operation has no handler: " + operation.name);
+    }
 }
 
 const OperationRegistry& OperationRegistry::instance() {
