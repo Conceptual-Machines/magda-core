@@ -5,6 +5,7 @@
 #include <unordered_set>
 
 #include "AudioClipTestHelpers.hpp"
+#include "core/ClipManager.hpp"
 #include "core/SourcePool.hpp"
 
 using namespace magda;
@@ -223,4 +224,112 @@ TEST_CASE("Source converts between its own samples and seconds", "[source][pool]
         REQUIRE(unresolved.secondsToSamples(1.0) ==
                 static_cast<int64_t>(kUnresolvedSourceSampleRate));
     }
+}
+
+TEST_CASE("Resolving a source rescales the anchors computed at the nominal rate",
+          "[source][pool][rescale]") {
+    // Anchors are sample counts at the source's own rate. While the file is
+    // missing the pool reports kUnresolvedSourceSampleRate, so everything
+    // computed then is expressed at 48 kHz. Resolving a 44.1 kHz file without
+    // rescaling would reinterpret every one of those counts and shift the clip
+    // by about 9%.
+    PoolFixture fixture;
+    auto& pool = SourcePool::getInstance();
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+
+    constexpr double kRealRate = 44100.0;
+    const auto file = writeTempWav("rescale", kRealRate, 44100);
+    REQUIRE(file.existsAsFile());
+
+    // A source that is not resolved yet: insert() does not probe.
+    Source offline;
+    offline.id = 1;
+    offline.filePath = file.getFullPathName();
+    REQUIRE(pool.insert(offline) == 1);
+    REQUIRE_FALSE(pool.get(1)->isResolved());
+
+    const auto clipId = cm.createMidiClipBeats(1, 0.0, 4.0, ClipView::Arrangement);
+    auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+    clip->setAudioContent();
+    AudioEvent seed;
+    seed.sourceId = 1;
+    auto& event = clip->audio().addEvent(std::move(seed));
+
+    // Half a second in, at the only rate anyone can know about yet.
+    event.setAnchorSeconds(0.5);
+    event.setLoopStartSeconds(0.25);
+    event.setLoopLengthSeconds(0.5);
+    REQUIRE(event.sourceAnchorSamples == 24000);
+
+    REQUIRE(pool.resolveFacts(1));
+    REQUIRE(pool.get(1)->sampleRate == Approx(kRealRate));
+
+    // Same instant in the file, expressed at the rate it actually runs at.
+    auto* rescaled = cm.getClip(clipId)->primaryEvent();
+    REQUIRE(rescaled != nullptr);
+    REQUIRE(rescaled->sourceAnchorSamples == 22050);
+    REQUIRE(rescaled->loopStartSamples == 11025);
+    REQUIRE(rescaled->loopLengthSamples == 22050);
+    REQUIRE(rescaled->anchorSeconds() == Approx(0.5));
+    REQUIRE(rescaled->loopStartSeconds() == Approx(0.25));
+    REQUIRE(rescaled->loopLengthSeconds() == Approx(0.5));
+
+    cm.clearAllClips();
+    file.deleteFile();
+}
+
+TEST_CASE("Relinking to a file at another rate keeps positions in time",
+          "[source][pool][rescale]") {
+    // The 0 -> real transition is not the only rate change: a resolved source
+    // relinked onto a file at a different rate moves just as far.
+    PoolFixture fixture;
+    auto& pool = SourcePool::getInstance();
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+
+    const auto at48k = writeTempWav("relink_48k", 48000.0, 48000);
+    const auto at44k = writeTempWav("relink_44k", 44100.0, 44100);
+    REQUIRE(at48k.existsAsFile());
+    REQUIRE(at44k.existsAsFile());
+
+    const auto id = pool.acquire(at48k.getFullPathName());
+    REQUIRE(pool.get(id)->sampleRate == Approx(48000.0));
+
+    const auto clipId = cm.createMidiClipBeats(1, 0.0, 4.0, ClipView::Arrangement);
+    auto* clip = cm.getClip(clipId);
+    clip->setAudioContent();
+    AudioEvent seed;
+    seed.sourceId = id;
+    auto& event = clip->audio().addEvent(std::move(seed));
+    event.setAnchorSeconds(0.5);
+    REQUIRE(event.sourceAnchorSamples == 24000);
+
+    REQUIRE(pool.relink(id, at44k.getFullPathName()) == id);
+
+    auto* rescaled = cm.getClip(clipId)->primaryEvent();
+    REQUIRE(rescaled->sourceAnchorSamples == 22050);
+    REQUIRE(rescaled->anchorSeconds() == Approx(0.5));
+
+    cm.clearAllClips();
+    at48k.deleteFile();
+    at44k.deleteFile();
+}
+
+TEST_CASE("Relinking onto an already pooled file does not steal its key", "[source][pool]") {
+    // insert() guards this case; relink() has to as well, or two sources end
+    // up claiming one file with only one of them reachable by path.
+    PoolFixture fixture;
+    auto& pool = SourcePool::getInstance();
+
+    const auto first = pool.acquire("/tmp/one.wav");
+    const auto second = pool.acquire("/tmp/two.wav");
+    REQUIRE(first != second);
+
+    // The existing owner comes back, and nothing moved.
+    REQUIRE(pool.relink(second, "/tmp/one.wav") == first);
+    REQUIRE(pool.findByPath("/tmp/one.wav") == first);
+    REQUIRE(pool.get(second)->filePath == "/tmp/two.wav");
+    REQUIRE(pool.findByPath("/tmp/two.wav") == second);
 }

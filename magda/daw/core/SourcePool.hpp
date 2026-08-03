@@ -67,22 +67,43 @@ class SourcePool {
     void clear();
 
     /**
+     * @brief Notified whenever a source's effective sample rate changes.
+     *
+     * Events store their source-domain positions in samples at the source's own
+     * rate, so a rate change silently moves every one of them. The pool cannot
+     * reach the clips itself, so ClipManager installs a handler that rescales
+     * them; firing from inside the pool means no caller of resolveFacts() or
+     * relink() can forget to do it.
+     */
+    using RateChangeHandler = std::function<void(SourceId, double oldRate, double newRate)>;
+    void setRateChangeHandler(RateChangeHandler handler);
+
+    /**
      * @brief Open the file and fill in durationSeconds / sampleRate.
      *
+     * Anchors computed while the source was unresolved were expressed at
+     * kUnresolvedSourceSampleRate; if the file turns out to run at a different
+     * rate, the rate-change handler rescales them before this returns.
+     *
      * @return true when the source became resolved during this call (sampleRate
-     *         went 0 -> real). That transition is the signal to rescale the
-     *         source-domain anchors of every event pointing at it, which were
-     *         computed at kUnresolvedSourceSampleRate.
+     *         went 0 -> real).
      */
     bool resolveFacts(SourceId id);
 
     /**
      * @brief Point a source at a different file and re-probe it.
      *
-     * @return true when the relink resolved a previously unresolved source
-     *         (same anchor-rescale meaning as resolveFacts).
+     * Rescales anchors through the rate-change handler when the new file runs
+     * at a different rate.
+     *
+     * @return the source id that owns @p newFilePath afterwards. That is @p id
+     *         in the normal case, but when the path is already pooled under a
+     *         different source the existing one wins and its id comes back:
+     *         callers must repoint their events at it, or two sources would
+     *         claim one file and break the per-file dedup invariant.
+     *         INVALID_SOURCE_ID when @p id is unknown or the path is empty.
      */
-    bool relink(SourceId id, const juce::String& newFilePath);
+    SourceId relink(SourceId id, const juce::String& newFilePath);
 
     /// Id the next created source will take. Serialization restores this.
     int getNextId() const {
@@ -110,6 +131,12 @@ class SourcePool {
     /// Read duration and sample rate off the file (or the test seed).
     /// Leaves both at 0 when the file cannot be opened.
     void probe(Source& source) const;
+
+    RateChangeHandler rateChangeHandler_;
+
+    /// Re-probe @p source and fire the rate-change handler if the rate moved
+    /// away from @p oldRate (captured by the caller before any reset).
+    void reprobeAndNotify(Source& source, double oldRate);
 
     std::unordered_map<SourceId, Source> sources_;
     std::map<juce::String, SourceId> idByPathKey_;

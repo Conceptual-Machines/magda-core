@@ -871,9 +871,18 @@ class ClipManager {
     /// Reset a looped clip's length to its base loop length and disable looping
     void resetLoopedClipLength(ClipInfo& clip);
 
+    /// Move every event off @p from and onto @p to. Used when a relink target
+    /// turns out to be pooled already, so one file keeps one source.
+    void repointEventsToSource(SourceId from, SourceId to);
+
   private:
-    ClipManager() = default;
+    ClipManager();
     ~ClipManager() = default;
+
+    /// Rescale every event on @p sourceId whose source-domain positions were
+    /// expressed at @p oldRate. Installed on SourcePool as its rate-change
+    /// handler, so resolving or relinking a file cannot move clip positions.
+    void rescaleEventsForSourceRate(SourceId sourceId, double oldRate, double newRate);
 
     double findNonOverlappingStartBeats(TrackId trackId, double desiredStartBeats,
                                         double lengthBeats, ClipView view) const;

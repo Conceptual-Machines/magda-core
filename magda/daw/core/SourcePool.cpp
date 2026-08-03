@@ -3,6 +3,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 
 namespace magda {
@@ -11,16 +12,6 @@ namespace {
 
 /// Shared reader factory. Registering the basic formats is not cheap, and a
 /// project load probes every referenced file, so keep one manager alive.
-juce::AudioFormatManager& probeFormatManager() {
-    static juce::AudioFormatManager manager;
-    static bool registered = [] {
-        manager.registerBasicFormats();
-        return true;
-    }();
-    juce::ignoreUnused(registered);
-    return manager;
-}
-
 }  // namespace
 
 SourcePool& SourcePool::getInstance() {
@@ -64,7 +55,13 @@ void SourcePool::probe(Source& source) const {
     if (!file.existsAsFile())
         return;
 
-    std::unique_ptr<juce::AudioFormatReader> reader(probeFormatManager().createReaderFor(file));
+    // Built per probe rather than kept in a static: the registered format
+    // objects would outlive JUCE's leak counters and trip the detector at
+    // shutdown. Probing happens once per file, so this costs nothing next to
+    // opening the file and reading its header.
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
     if (reader == nullptr || reader->sampleRate <= 0.0)
         return;
 
@@ -147,31 +144,59 @@ void SourcePool::clear() {
     nextId_ = 1;
 }
 
+void SourcePool::setRateChangeHandler(RateChangeHandler handler) {
+    rateChangeHandler_ = std::move(handler);
+}
+
+void SourcePool::reprobeAndNotify(Source& source, double oldRate) {
+    probe(source);
+    const double newRate = source.effectiveSampleRate();
+
+    // Positions are sample counts at the source's rate. If the rate moved, the
+    // same counts now mean a different time, so they have to be rescaled before
+    // anything reads them back.
+    if (rateChangeHandler_ && oldRate > 0.0 && newRate > 0.0 &&
+        std::abs(newRate - oldRate) > 1.0e-6) {
+        rateChangeHandler_(source.id, oldRate, newRate);
+    }
+}
+
 bool SourcePool::resolveFacts(SourceId id) {
     auto* source = getMutable(id);
     if (source == nullptr)
         return false;
 
     const bool wasResolved = source->isResolved();
-    probe(*source);
+    reprobeAndNotify(*source, source->effectiveSampleRate());
     return !wasResolved && source->isResolved();
 }
 
-bool SourcePool::relink(SourceId id, const juce::String& newFilePath) {
+SourceId SourcePool::relink(SourceId id, const juce::String& newFilePath) {
     auto* source = getMutable(id);
     if (source == nullptr || newFilePath.isEmpty())
-        return false;
+        return INVALID_SOURCE_ID;
 
-    const bool wasResolved = source->isResolved();
+    const auto newKey = canonicalKey(newFilePath);
+
+    // The file may already have a source. Stealing its key would leave two
+    // entries claiming one file, with only one of them reachable by path.
+    if (const auto existing = idByPathKey_.find(newKey);
+        existing != idByPathKey_.end() && existing->second != id) {
+        return existing->second;
+    }
+
+    // Captured before the reset below, so a resolved -> resolved relink onto a
+    // file at a different rate still rescales.
+    const double oldRate = source->effectiveSampleRate();
 
     idByPathKey_.erase(canonicalKey(source->filePath));
     source->filePath = newFilePath;
     source->sampleRate = 0.0;
     source->durationSeconds = 0.0;
-    probe(*source);
-    idByPathKey_[canonicalKey(newFilePath)] = id;
+    reprobeAndNotify(*source, oldRate);
+    idByPathKey_[newKey] = id;
 
-    return !wasResolved && source->isResolved();
+    return id;
 }
 
 void SourcePool::setNextId(int nextId) {

@@ -36,6 +36,11 @@ class MediaCollector {
         juce::File source;
         juce::File dest;  // assigned in scan(), created in copy()
         std::vector<ClipId> clipRefs;
+        // The pooled sources pointing at this file. Relinking is a per-source
+        // operation, so the work list has to name sources: a clip can hold
+        // several events on different files, and relinking its primary event
+        // would move the wrong one.
+        std::vector<SourceId> sourceRefs;
         std::vector<std::function<void(const juce::File&)>> samplerRefs;
         bool copied = false;
     };

@@ -776,8 +776,13 @@ void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::Fil
                 continue;
             auto* clip = clipManager.getClip(clipInfo.id);
             if (clip) {
-                if (sourceMoved && relinked.insert(event->sourceId).second)
-                    pool.relink(event->sourceId, sourcePath.replace(oldPath, newPath, false));
+                if (sourceMoved && relinked.insert(event->sourceId).second) {
+                    const auto moved = event->sourceId;
+                    const auto owner =
+                        pool.relink(moved, sourcePath.replace(oldPath, newPath, false));
+                    if (owner != INVALID_SOURCE_ID && owner != moved)
+                        clipManager.repointEventsToSource(moved, owner);
+                }
                 for (auto& take : clip->audio().takes)
                     if (take.filePath.startsWith(oldPath))
                         take.filePath = take.filePath.replace(oldPath, newPath, false);

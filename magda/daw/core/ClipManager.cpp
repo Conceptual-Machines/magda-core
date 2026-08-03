@@ -208,6 +208,81 @@ ClipManager& ClipManager::getInstance() {
     return instance;
 }
 
+ClipManager::ClipManager() {
+    // A source's positions are sample counts at its own rate. Until the file is
+    // probed that rate is only the nominal guess, so resolving it (or relinking
+    // to a file at another rate) has to move the counts to keep the same time.
+    SourcePool::getInstance().setRateChangeHandler(
+        [this](SourceId sourceId, double oldRate, double newRate) {
+            rescaleEventsForSourceRate(sourceId, oldRate, newRate);
+        });
+}
+
+void ClipManager::repointEventsToSource(SourceId from, SourceId to) {
+    if (from == to || from == INVALID_SOURCE_ID || to == INVALID_SOURCE_ID)
+        return;
+
+    // The two sources describe the same file but may have been probed at
+    // different rates, so the sample counts have to move with the events.
+    const double fromRate = sourceRateOf(from);
+    const double toRate = sourceRateOf(to);
+    const double ratio = (fromRate > 0.0 && toRate > 0.0) ? toRate / fromRate : 1.0;
+
+    for (auto& [clipId, clip] : clips_) {
+        if (!clip.isAudio())
+            continue;
+
+        bool touched = false;
+        for (auto& event : clip.audio().events) {
+            if (event.sourceId != from)
+                continue;
+
+            if (std::abs(ratio - 1.0) > 1.0e-9) {
+                const auto rescale = [ratio](int64_t samples) {
+                    return static_cast<int64_t>(std::llround(static_cast<double>(samples) * ratio));
+                };
+                event.sourceAnchorSamples = rescale(event.sourceAnchorSamples);
+                event.loopStartSamples = rescale(event.loopStartSamples);
+                event.loopLengthSamples = rescale(event.loopLengthSamples);
+            }
+            event.sourceId = to;
+            touched = true;
+        }
+
+        if (touched)
+            notifyClipPropertyChanged(clipId);
+    }
+}
+
+void ClipManager::rescaleEventsForSourceRate(SourceId sourceId, double oldRate, double newRate) {
+    if (sourceId == INVALID_SOURCE_ID || oldRate <= 0.0 || newRate <= 0.0)
+        return;
+
+    const double ratio = newRate / oldRate;
+    const auto rescale = [ratio](int64_t samples) {
+        return static_cast<int64_t>(std::llround(static_cast<double>(samples) * ratio));
+    };
+
+    for (auto& [clipId, clip] : clips_) {
+        if (!clip.isAudio())
+            continue;
+
+        bool touched = false;
+        for (auto& event : clip.audio().events) {
+            if (event.sourceId != sourceId)
+                continue;
+
+            event.sourceAnchorSamples = rescale(event.sourceAnchorSamples);
+            event.loopStartSamples = rescale(event.loopStartSamples);
+            event.loopLengthSamples = rescale(event.loopLengthSamples);
+            touched = true;
+        }
+
+        if (touched)
+            notifyClipPropertyChanged(clipId);
+    }
+}
+
 // ============================================================================
 // Clip Creation
 // ============================================================================
