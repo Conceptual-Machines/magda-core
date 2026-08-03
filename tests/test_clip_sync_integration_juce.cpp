@@ -148,16 +148,17 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testPitchChange();
         testRenderVerification();
         testCreateAudioClipPreservesExistingNeighbour();
-        testMoveAudioClipTrimsNeighbourFromRight();
-        testMoveAudioClipTrimsNeighbourFromLeft();
-        testDuplicateAudioClipResolvesOverlap();
-        testPasteAudioClipResolvesOverlap();
+        testMoveAudioClipCoversNeighbourFromRight();
+        testMoveAudioClipCoversNeighbourFromLeft();
+        testDuplicateAudioClipCoversExisting();
+        testPasteAudioClipCoversExisting();
         testCreateMidiClipPreservesExistingNeighbour();
+        testMidiNotesUnderACoveringClipDoNotPlay();
         testMidiSyncClipsNotesToVisibleRangeAfterResize();
         testMidiSyncSkipsAllRestPitchBendButKeepsRealCurves();
         testLoopedMidiClipReachesEngineWithItsLoopRange();
         testMoveClipNoOverlapDoesNotMutateNeighbours();
-        testMoveClipToTrackResolvesOverlapOnDestination();
+        testMoveClipToTrackCoversClipOnDestination();
     }
 
   private:
@@ -2180,8 +2181,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(incomingClip->placement.lengthBeats, 12.0, 0.01);
     }
 
-    void testMoveAudioClipTrimsNeighbourFromRight() {
-        beginTest("moveClip trims neighbour's right edge when overlapping from the left");
+    void testMoveAudioClipCoversNeighbourFromRight() {
+        beginTest("moveClip covers a neighbour's tail without cutting it");
 
         Fixture f;
         auto& cm = ClipManager::getInstance();
@@ -2203,22 +2204,23 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (!s || !m)
             return;
 
-        // Stationary's right edge should be trimmed back to mover's start beat.
+        // Stationary is not cut: it keeps its full span and just stops being
+        // heard where the mover sits on top of it (#2003).
         expectWithinAbsoluteError(s->placement.startBeat, 0.0, 0.01);
-        expectWithinAbsoluteError(s->placement.lengthBeats, 4.0, 0.01);
+        expectWithinAbsoluteError(s->placement.lengthBeats, 8.0, 0.01);
         expectWithinAbsoluteError(m->placement.startBeat, 4.0, 0.01);
         expectWithinAbsoluteError(m->placement.lengthBeats, 4.0, 0.01);
     }
 
-    void testMoveAudioClipTrimsNeighbourFromLeft() {
-        beginTest("moveClip trims neighbour's left edge when overlapping from the right");
+    void testMoveAudioClipCoversNeighbourFromLeft() {
+        beginTest("moveClip covers a neighbour's head without cutting it");
 
         Fixture f;
         auto& cm = ClipManager::getInstance();
 
         // stationary: beats 8-16. mover: 0-8 length 8, then move startTime=4
         // → mover spans beats 4-12, covering stationary's left half (beats
-        // 8-12). resolveOverlaps should trim stationary's left edge to 12.
+        // 8-12). Stationary keeps all 8 beats; only what it plays changes.
         auto stationary =
             cm.createAudioClip(f.trackId, 8.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
         auto mover =
@@ -2240,12 +2242,12 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         expectWithinAbsoluteError(m->placement.startBeat, 4.0, 0.01);
         expectWithinAbsoluteError(m->placement.lengthBeats, 8.0, 0.01);
-        expectWithinAbsoluteError(s->placement.startBeat, 12.0, 0.01);
-        expectWithinAbsoluteError(s->placement.lengthBeats, 4.0, 0.01);
+        expectWithinAbsoluteError(s->placement.startBeat, 8.0, 0.01);
+        expectWithinAbsoluteError(s->placement.lengthBeats, 8.0, 0.01);
     }
 
-    void testDuplicateAudioClipResolvesOverlap() {
-        beginTest("duplicateClipAt resolves overlap with existing clip on same track");
+    void testDuplicateAudioClipCoversExisting() {
+        beginTest("duplicateClipAt stacks on an existing clip without cutting it");
 
         Fixture f;
         auto& cm = ClipManager::getInstance();
@@ -2257,10 +2259,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         auto victim =
             cm.createAudioClip(f.trackId, 8.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
 
-        // New audio clips default to auto-crossfade, which the duplicate would
-        // inherit and use to KEEP this partial overlap as a crossfade (#1499).
-        // Pin the source off (the copy inherits the flag) to exercise the trim
-        // path this test covers.
+        // Auto-crossfade off on both sides: this is about placement, not about
+        // the fade the flags would add over the overlap (#1499).
         cm.setAutoCrossfade(source, false);
         cm.setAutoCrossfade(victim, false);
 
@@ -2273,15 +2273,15 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (!v || !c)
             return;
 
-        // Victim should now start at beat 10 and be 2 beats long.
+        // Both keep their placements — the copy stacks on top (#2003).
         expectWithinAbsoluteError(c->placement.startBeat, 6.0, 0.01);
         expectWithinAbsoluteError(c->placement.lengthBeats, 4.0, 0.01);
-        expectWithinAbsoluteError(v->placement.startBeat, 10.0, 0.01);
-        expectWithinAbsoluteError(v->placement.lengthBeats, 2.0, 0.01);
+        expectWithinAbsoluteError(v->placement.startBeat, 8.0, 0.01);
+        expectWithinAbsoluteError(v->placement.lengthBeats, 4.0, 0.01);
     }
 
-    void testPasteAudioClipResolvesOverlap() {
-        beginTest("pasteFromClipboard resolves overlap with existing clip");
+    void testPasteAudioClipCoversExisting() {
+        beginTest("pasteFromClipboard stacks on an existing clip without cutting it");
 
         Fixture f;
         auto& cm = ClipManager::getInstance();
@@ -2305,10 +2305,10 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         expectWithinAbsoluteError(p->placement.startBeat, 8.0, 0.01);
         expectWithinAbsoluteError(p->placement.lengthBeats, 4.0, 0.01);
-        // Victim originally 6-12. Paste lands 8-12 → fully covers victim's right half,
-        // so victim's right edge trims back to beat 8.
+        // The clip already there spans 6-12 and stays that way: the paste lands
+        // on top of its right half instead of cutting it.
         expectWithinAbsoluteError(v->placement.startBeat, 6.0, 0.01);
-        expectWithinAbsoluteError(v->placement.lengthBeats, 2.0, 0.01);
+        expectWithinAbsoluteError(v->placement.lengthBeats, 6.0, 0.01);
     }
 
     void testCreateMidiClipPreservesExistingNeighbour() {
@@ -2368,6 +2368,43 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         cm.setClipLoopEnabled(clipId, false);
         f.clipSync->syncClipToEngine(clipId);
         expect(!teMidiClip->isLooping(), "Unlooping a MIDI clip must reach the engine too");
+    }
+
+    void testMidiNotesUnderACoveringClipDoNotPlay() {
+        beginTest("MIDI notes under a covering clip do not reach the engine, and come back");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        // 16 beats at 60 BPM, with a note before, under and after the drop.
+        auto partId = cm.createMidiClipBeats(f.trackId, 0.0, 16.0, ClipView::Arrangement);
+        expect(partId != INVALID_CLIP_ID);
+        expect(cm.addMidiNote(partId, {60, 100, 2.0, 1.0}));
+        expect(cm.addMidiNote(partId, {62, 100, 8.0, 1.0}));
+        expect(cm.addMidiNote(partId, {64, 100, 14.0, 1.0}));
+
+        auto droppedId = cm.createMidiClipBeats(f.trackId, 6.0, 4.0, ClipView::Arrangement,
+                                                ClipOverlapPolicy::ResolveOverlaps);
+        expect(droppedId != INVALID_CLIP_ID);
+
+        // The part is not split and keeps all three notes.
+        expectEquals(static_cast<int>(cm.getClipsOnTrack(f.trackId).size()), 2);
+        const auto* part = cm.getClip(partId);
+        expect(part != nullptr);
+        if (part == nullptr)
+            return;
+        expectEquals(static_cast<int>(part->midiNotes.size()), 3);
+
+        auto teNoteCount = [&](ClipId id) {
+            auto* teMidiClip = f.getTeMidiClip(id);
+            return teMidiClip != nullptr ? teMidiClip->getSequence().getNumNotes() : -1;
+        };
+
+        // The note under the drop is the one the engine does not get.
+        expectEquals(teNoteCount(partId), 2, "Notes under the covering clip must not play");
+
+        cm.moveClipBeats(droppedId, 40.0, 60.0);
+        expectEquals(teNoteCount(partId), 3, "Moving the cover away must give the note back");
     }
 
     void testMidiSyncClipsNotesToVisibleRangeAfterResize() {
@@ -2521,8 +2558,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(bClip->placement.lengthBeats, 4.0, 0.01);
     }
 
-    void testMoveClipToTrackResolvesOverlapOnDestination() {
-        beginTest("moveClipToTrack resolves overlap on the destination track");
+    void testMoveClipToTrackCoversClipOnDestination() {
+        beginTest("moveClipToTrack silences a fully covered clip and gives it back");
 
         Fixture f;
         auto& cm = ClipManager::getInstance();
@@ -2538,9 +2575,19 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         cm.moveClipToTrack(mover, secondTrackId);
 
-        // Mover ends up on track 2 fully covering sitter → sitter deleted.
-        expect(cm.getClip(sitter) == nullptr,
-               "Fully-covered clip on destination track should be deleted");
+        // Mover ends up on track 2 fully covering sitter → sitter goes silent in
+        // the engine but is untouched in the model, so pulling the mover off
+        // gives it back with no restore step (#2003).
+        const auto* sit = cm.getClip(sitter);
+        expect(sit != nullptr, "Fully-covered clip must survive");
+        if (sit) {
+            expect(sit->enabled, "Covering a clip must not disable it");
+            expectWithinAbsoluteError(sit->placement.startBeat, 0.0, 0.01);
+            expectWithinAbsoluteError(sit->placement.lengthBeats, 8.0, 0.01);
+        }
+        if (auto* teSitter = f.clipSync->getArrangementTeClip(sitter))
+            expect(teSitter->disabled.get(), "A covered clip must not play");
+
         const auto* m = cm.getClip(mover);
         expect(m != nullptr);
         if (m) {
@@ -2548,6 +2595,11 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             expectWithinAbsoluteError(m->placement.startBeat, 0.0, 0.01);
             expectWithinAbsoluteError(m->placement.lengthBeats, 8.0, 0.01);
         }
+
+        // Take the mover away again: the clip underneath comes back on its own.
+        cm.moveClipToTrack(mover, f.trackId);
+        if (auto* teSitter = f.clipSync->getArrangementTeClip(sitter))
+            expect(!teSitter->disabled.get(), "Uncovering must give the clip back");
     }
 };
 

@@ -645,6 +645,16 @@ struct ClipInfo {
     // not silence its siblings.
     bool enabled = true;
 
+    // Stacking order within a track (#2003). Higher sits on top: it draws over
+    // the clips below it and owns the span it covers, which silences the part
+    // of a lower clip underneath it without touching that clip's placement or
+    // content. Bumped whenever the user places or moves a clip, so "on top"
+    // means "put there last" — geometry cannot tell a big clip dropped onto a
+    // small one from a small clip dropped onto a big one. 0 on clips saved
+    // before this existed; ties fall back to clip id, which preserves the
+    // creation order those projects had.
+    int stackOrder = 0;
+
     ClipType getType() const {
         return std::holds_alternative<AudioClipModel>(content) ? ClipType::Audio : ClipType::MIDI;
     }

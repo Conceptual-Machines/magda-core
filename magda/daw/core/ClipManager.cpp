@@ -617,6 +617,11 @@ void ClipManager::restoreClip(const ClipInfo& clipInfo) {
     if (clipInfo.id >= nextClipId_) {
         nextClipId_ = clipInfo.id + 1;
     }
+    // Same for the stacking counter, so a clip placed after a project loads
+    // lands on top of everything the project already had.
+    if (clipInfo.stackOrder >= nextStackOrder_) {
+        nextStackOrder_ = clipInfo.stackOrder + 1;
+    }
     // Same for link groups (project load and delete-undo both land here).
     if (clipInfo.linkGroupId >= nextLinkGroupId_) {
         nextLinkGroupId_ = clipInfo.linkGroupId + 1;
@@ -2961,10 +2966,14 @@ void ClipManager::createTestClips() {
 // ============================================================================
 
 void ClipManager::resolveOverlaps(ClipId dominantClipId) {
-    const auto* dominant = getClip(dominantClipId);
+    auto* dominant = getClip(dominantClipId);
     if (!dominant || dominant->view != ClipView::Arrangement) {
         return;
     }
+
+    // Every path that places or moves an arrangement clip lands here, so this
+    // is where "the clip you touched last is on top" gets decided (#2003).
+    bringToFrontOfStack(*dominant);
 
     const double dStartB = dominant->placement.startBeat;
     const double dEndB = dStartB + dominant->placement.lengthBeats;
@@ -2973,25 +2982,28 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
     const TrackId trackId = dominant->trackId;
     const double bpm = currentProjectTempoOrDefault();
 
-    // An auto-crossfade audio dominant keeps partial overlaps with other audio
-    // clips as crossfades instead of trimming them (#1499). Capture the flags
-    // up front — the dominant pointer is not safe to use once clips_ mutates.
+    // An auto-crossfade audio dominant turns partial overlaps with other audio
+    // clips into crossfade joints (#1499). Capture the flag up front — the
+    // dominant pointer is not safe to use once clips_ mutates.
     const bool dominantWantsCrossfade = dominant->isAudio() && dominant->autoCrossfade;
 
-    // Collect IDs to delete and clips to resize (avoid iterator invalidation)
-    std::vector<ClipId> toDelete;
+    // Covered clips are no longer trimmed or deleted (#2003). A clip keeps its
+    // placement and its content whatever lands on top of it, and computeAudibleSpans
+    // decides what it plays, so pulling the covering clip away brings the
+    // covered part back on its own.
+    //
+    // The exception is an AUDIO clip the dominant lands inside. That leaves the
+    // lower clip with a head and a tail, which is two spans, and the engine
+    // mirror holds one clip per clip — so that case still splits, into three
+    // pieces rather than two: the slice under the dominant is kept as a clip of
+    // its own so no material is lost, and occlusion silences it for exactly as
+    // long as the dominant sits on top.
+    //
+    // MIDI clips are never split. Their notes are written to the engine one by
+    // one, so a hole costs nothing but leaving out the notes inside it — the
+    // part stays a single clip with every note still on it and still editable
+    // in the piano roll, which splitting into three took away.
     std::vector<ClipId> toCrossfade;
-
-    struct ResizeOp {
-        ClipId id;
-        double newLengthBeats;
-        bool fromLeft;  // true = trim left edge (move start forward)
-    };
-    std::vector<ResizeOp> toResize;
-
-    // C fully contains D: C must be split into a surviving left part
-    // [cStart,dStart] and right part [dEnd,cEnd], with only the middle slice
-    // under D removed.
     std::vector<ClipId> toSplitAround;
 
     for (const auto& [cid, clip] : clips_) {
@@ -3003,37 +3015,31 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
         const double cStartB = clip.placement.startBeat;
         const double cEndB = cStartB + clip.placement.lengthBeats;
 
-        // Check for overlap (beat-domain — the seconds mirrors can be stale after
-        // BPM changes or beat-mode edits, so never use them here).
+        // Beat-domain — the seconds mirrors can be stale after BPM changes or
+        // beat-mode edits, so never use them here.
         if (cStartB >= dEndB || cEndB <= dStartB) {
             continue;
         }
 
-        if (cStartB >= dStartB && cEndB <= dEndB) {
-            // C fully covered by D → delete
-            toDelete.push_back(clip.id);
-        } else if (cStartB < dStartB && cEndB <= dEndB) {
-            // C overlaps from left → keep as crossfade, or trim right edge to
-            // dStartB. Strict cEndB < dEndB: an edge-aligned tail is
-            // containment-like, not a partial overlap to crossfade.
-            if (dominantWantsCrossfade && clip.isAudio() && cEndB < dEndB) {
+        if (cStartB < dStartB && cEndB > dEndB) {
+            // Audio has to split — samples cannot be left out of a rendered
+            // span. A LOOPED MIDI clip splits too, because there the split is
+            // pure windowing: both halves keep every note and only the loop
+            // phase differs, and a hole in a repeating pattern cannot be
+            // expressed in the single note list the engine gets. A plain MIDI
+            // clip does neither: it keeps its notes and plays around the hole.
+            const bool splitIsLossless =
+                clip.isAudio() || (clip.loopEnabled && clip.loopLengthBeats > 0.0);
+            if (splitIsLossless)
+                toSplitAround.push_back(clip.id);
+        } else if (dominantWantsCrossfade && clip.isAudio() && !clip.autoCrossfade) {
+            // Partial overlaps between audio clips play as crossfades, and TE
+            // only fades both sides when both carry the flag. Containment is
+            // not a joint: it is a cover, and occlusion handles it.
+            const bool partialFromLeft = cStartB < dStartB && cEndB < dEndB;
+            const bool partialFromRight = cStartB > dStartB && cEndB > dEndB;
+            if (partialFromLeft || partialFromRight)
                 toCrossfade.push_back(clip.id);
-            } else {
-                toResize.push_back({clip.id, dStartB - cStartB, false});
-            }
-        } else if (cStartB >= dStartB && cEndB > dEndB) {
-            // C overlaps from right → keep as crossfade, or trim left edge to dEndB
-            if (dominantWantsCrossfade && clip.isAudio() && cStartB > dStartB) {
-                toCrossfade.push_back(clip.id);
-            } else {
-                toResize.push_back({clip.id, cEndB - dEndB, true});
-            }
-        } else if (cStartB < dStartB && cEndB > dEndB) {
-            // C fully contains D → split into left + right, keeping both ends.
-            // Previously this only kept the left portion and silently dropped
-            // everything right of D's start, so duplicating a selection on top
-            // of a long sample made the remaining sample disappear (#1447).
-            toSplitAround.push_back(clip.id);
         }
     }
 
@@ -3047,42 +3053,30 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
         const ClipId rightId = splitClipAtBeat(id, dStartB, bpm);
         if (rightId == INVALID_CLIP_ID)
             continue;
-        // Split the remainder at D's end: rightId keeps [dStart,dEnd] (fully
-        // under D), tailId = the surviving [dEnd,cEnd]. This split can only fail
-        // when dEnd >= cEnd (the tail is zero-length within float tolerance),
-        // since rightId spans exactly [dStart,cEnd] and the branch guarantees
-        // dEnd < cEnd. So a failed split means rightId IS the whole covered
-        // remainder with no real tail to keep — deleting it drops nothing.
+        // Split the remainder at D's end: rightId keeps [dStart,dEnd] (the slice
+        // under D), tailId = [dEnd,cEnd]. This split can only fail when
+        // dEnd >= cEnd (the tail is zero-length within float tolerance), since
+        // rightId spans exactly [dStart,cEnd] and the branch guarantees
+        // dEnd < cEnd; a failed split just means rightId IS the whole covered
+        // remainder.
+        //
+        // The covered slice is kept, not deleted. Deleting it took the notes in
+        // that span with it — splitClipAtBeat partitions notes between the
+        // halves — and left a gap in the waveform that no amount of dragging an
+        // edge could undo, which is the hole this whole issue is about (#2003).
+        // Kept, it is simply a covered clip: occlusion silences it while D is on
+        // top of it, and moving D away gives the material back.
         const ClipId tailId = splitClipAtBeat(rightId, dEndB, bpm);
-        deleteClip(rightId);
 
         // splitClipAtBeat appends " L"/" R" suffixes; restore the original name
-        // on the surviving halves so the carve-out is invisible.
+        // on all three pieces so the seams do not rename the material.
         if (auto* left = getClip(id))
             left->name = originalName;
+        if (auto* covered = getClip(rightId))
+            covered->name = originalName;
         if (tailId != INVALID_CLIP_ID)
             if (auto* tail = getClip(tailId))
                 tail->name = originalName;
-    }
-
-    for (auto id : toDelete) {
-        deleteClip(id);
-    }
-
-    for (const auto& op : toResize) {
-        if (auto* clip = getClip(op.id)) {
-            // ClipOperations::resizeContainerFromLeft/Right take seconds + bpm
-            // and re-derive the beat placement internally. Convert from the
-            // beat-domain target length here so the seconds boundary stays
-            // confined to the resize helpers.
-            const double newLengthSeconds = op.newLengthBeats * 60.0 / bpm;
-            if (op.fromLeft) {
-                ClipOperations::resizeContainerFromLeft(*clip, newLengthSeconds, bpm);
-            } else {
-                ClipOperations::resizeContainerFromRight(*clip, newLengthSeconds, bpm);
-            }
-            notifyClipPropertyChanged(op.id);
-        }
     }
 
     // Kept overlaps become crossfades: the neighbour needs the flag too so TE
@@ -3100,6 +3094,12 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
 // ============================================================================
 // Private Helpers
 // ============================================================================
+
+void ClipManager::bringToFrontOfStack(ClipInfo& clip) {
+    if (clip.view != ClipView::Arrangement)
+        return;
+    clip.stackOrder = nextStackOrder_++;
+}
 
 void ClipManager::notifyClipsChanged() {
     // Structural changes may have assigned whole ClipInfo structs outside the

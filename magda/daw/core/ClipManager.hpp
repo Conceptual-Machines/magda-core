@@ -860,10 +860,20 @@ class ClipManager {
     void createTestClips();
 
     /**
-     * @brief Resolve overlaps after placing/moving a dominant clip
+     * @brief Settle a lane after placing/moving a dominant clip
      *
-     * Trims or deletes any arrangement clips on the same track that overlap with
-     * the dominant clip. "Last write wins" semantics.
+     * The dominant goes to the top of its lane's stack and owns the span it
+     * covers, but nothing underneath is cut for it (#2003): covered clips keep
+     * their placement and content, and computeAudibleSpans decides what each of
+     * them plays, so moving the dominant away fills the gap by itself.
+     *
+     * Two cases still change the model. A dominant landing INSIDE a longer clip
+     * splits that clip in two, because a head and a tail cannot be expressed as
+     * one audible span and the engine mirror holds one clip per clip; both sides
+     * can be dragged back out over the covered span. And a partial overlap
+     * between auto-crossfade audio clips is a crossfade joint rather than a
+     * cover, so the neighbour is given the flag TE needs to fade its side
+     * (#1499).
      * Called internally by move methods and explicit opt-in creation paths.
      */
     void resolveOverlaps(ClipId dominantClipId);
@@ -945,8 +955,15 @@ class ClipManager {
 
     int nextClipId_ = 1;
     int nextLinkGroupId_ = 1;
+    int nextStackOrder_ = 1;
     ClipId selectedClipId_ = INVALID_CLIP_ID;
     ClipId lastTriggeredSessionClipId_ = INVALID_CLIP_ID;
+
+    /// Put an arrangement clip on top of its lane (#2003). Every path that
+    /// places or moves a clip goes through here, so "on top" is whatever the
+    /// user touched last — and the clip they just dropped is the one that owns
+    /// the span it landed on.
+    void bringToFrontOfStack(ClipInfo& clip);
 
     /// Assign a fresh link group to the clip if it has none. Returns the group id.
     int ensureLinkGroup(ClipInfo& clip);

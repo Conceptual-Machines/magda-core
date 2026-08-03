@@ -4,6 +4,7 @@
 #include "AudioClipTestHelpers.hpp"
 #include "magda/daw/core/ClipCommands.hpp"
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/ClipOcclusion.hpp"
 #include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
@@ -64,6 +65,22 @@ ClipId createAudioBeats(TrackId trackId, double startBeat, double lengthBeats,
         primaryEventOf(clip)->setLoopStartSeconds(10.0);
     }
     return id;
+}
+
+/// What a clip plays once the clips stacked over it are taken into account.
+/// The model keeps every clip whole, so this is the only place the effect of a
+/// cover shows up (#2003).
+AudibleSpan audibleSpanFor(ClipId clipId) {
+    auto& cm = ClipManager::getInstance();
+    const auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+
+    std::vector<ClipInfo> lane;
+    for (ClipId other : cm.getClipsOnTrack(clip->trackId, ClipView::Arrangement)) {
+        if (const auto* c = cm.getClip(other))
+            lane.push_back(*c);
+    }
+    return computeAudibleSpans(lane).at(clipId);
 }
 
 }  // namespace
@@ -232,12 +249,12 @@ TEST_CASE("moving an auto-crossfade clip onto a neighbour keeps the overlap", "[
     CHECK(xf->endBeat == Catch::Approx(8.0));
 }
 
-TEST_CASE("moving a clip without auto-crossfade still trims the neighbour", "[crossfade]") {
+TEST_CASE("moving a clip without auto-crossfade covers the neighbour's tail", "[crossfade]") {
     resetState();
     auto& cm = ClipManager::getInstance();
     const auto trackId = createTrack();
 
-    // New audio clips default to AUTO-XFADE; pin it off to test the trim path
+    // New audio clips default to AUTO-XFADE; pin it off so this is a cover
     const ClipId a = createAudioBeats(trackId, 0.0, 8.0);
     const ClipId b = createAudioBeats(trackId, 10.0, 8.0);
     cm.setAutoCrossfade(a, false);
@@ -245,12 +262,17 @@ TEST_CASE("moving a clip without auto-crossfade still trims the neighbour", "[cr
 
     cm.moveClipBeats(b, 6.0);
 
-    // Existing behaviour: the covered tail of A is trimmed away
-    CHECK(cm.getClip(a)->placement.endBeat() == Catch::Approx(6.0));
+    // A is not cut: it keeps its placement and simply stops being heard where
+    // B sits on top of it, so moving B away gives the tail back (#2003).
+    CHECK(cm.getClip(a)->placement.endBeat() == Catch::Approx(8.0));
+    CHECK(audibleSpanFor(a).endBeat() == Catch::Approx(6.0));
     CHECK_FALSE(cm.getCrossfadeAtStart(b).has_value());
+
+    cm.moveClipBeats(b, 20.0);
+    CHECK(audibleSpanFor(a).endBeat() == Catch::Approx(8.0));
 }
 
-TEST_CASE("auto-crossfade never keeps overlaps with MIDI clips", "[crossfade]") {
+TEST_CASE("auto-crossfade never applies to MIDI clips", "[crossfade]") {
     resetState();
     auto& cm = ClipManager::getInstance();
     const auto trackId = createTrack();
@@ -261,11 +283,14 @@ TEST_CASE("auto-crossfade never keeps overlaps with MIDI clips", "[crossfade]") 
 
     cm.moveClipBeats(b, 6.0);
 
-    CHECK(cm.getClip(midi)->placement.endBeat() == Catch::Approx(6.0));
+    // No fade to protect, so the audio clip covers the MIDI clip's tail — but
+    // the MIDI clip itself is left alone.
+    CHECK(cm.getClip(midi)->placement.endBeat() == Catch::Approx(8.0));
+    CHECK(audibleSpanFor(midi).endBeat() == Catch::Approx(6.0));
     CHECK_FALSE(cm.getCrossfadeAtStart(b).has_value());
 }
 
-TEST_CASE("full containment still deletes even with auto-crossfade", "[crossfade]") {
+TEST_CASE("a clip covered end to end goes silent and stays put", "[crossfade]") {
     resetState();
     auto& cm = ClipManager::getInstance();
     const auto trackId = createTrack();
@@ -276,7 +301,20 @@ TEST_CASE("full containment still deletes even with auto-crossfade", "[crossfade
 
     cm.moveClipBeats(b, 0.0);
 
-    CHECK(cm.getClip(a) == nullptr);
+    // Not deleted, not disabled, not moved — just covered.
+    const auto* covered = cm.getClip(a);
+    REQUIRE(covered != nullptr);
+    CHECK(covered->enabled);
+    CHECK(covered->placement.startBeat == Catch::Approx(2.0));
+    CHECK(covered->placement.lengthBeats == Catch::Approx(2.0));
+    CHECK_FALSE(audibleSpanFor(a).audible);
+
+    // Pull B off it and it plays again, with no restore step.
+    cm.moveClipBeats(b, 20.0);
+    const auto uncovered = audibleSpanFor(a);
+    CHECK(uncovered.audible);
+    CHECK(uncovered.startBeat == Catch::Approx(2.0));
+    CHECK(uncovered.lengthBeats == Catch::Approx(2.0));
 }
 
 TEST_CASE("an existing crossfade survives edits to other clips on the track", "[crossfade]") {

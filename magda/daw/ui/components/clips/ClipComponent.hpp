@@ -8,6 +8,7 @@
 #include "../../interaction/ArrangementHitTester.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
+#include "core/ClipOcclusion.hpp"
 #include "core/ClipTypes.hpp"
 #include "utils/DragThrottle.hpp"
 
@@ -70,6 +71,11 @@ class ClipComponent : public juce::Component,
     }
     void setSelected(bool selected);
 
+    // Stretches of this clip that stand on a clip below it in the lane, in
+    // timeline beats (#2003). Pushed by the panel because it takes the whole
+    // lane to work out, and drawn so a stack does not read as a single clip.
+    void setCoveringRanges(std::vector<BeatRange> ranges);
+
     // Marquee highlight state (visual hint during marquee drag)
     bool isMarqueeHighlighted() const {
         return isMarqueeHighlighted_;
@@ -120,6 +126,7 @@ class ClipComponent : public juce::Component,
     ClipId clipId_;
     TrackContentPanel* parentPanel_;
     bool isSelected_ = false;
+    std::vector<BeatRange> coveringRanges_;
     bool isMarqueeHighlighted_ = false;
 
     // Interaction state

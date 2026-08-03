@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "../../core/ClipManager.hpp"
+#include "../../core/ClipOcclusion.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/TypeIds.hpp"
 #include "ClipEngineIdMap.hpp"
@@ -297,6 +298,27 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     bool syncArrangementClipToEngine(ClipId clipId);
 
     /**
+     * @brief Sync one arrangement clip, narrowed to the span it actually plays
+     *
+     * The engine mirrors what a clip sounds like, not what the model holds: a
+     * clip stacked under another plays only the part left uncovered (#2003), and
+     * one covered end to end plays nothing. The model keeps every clip whole, so
+     * this is where occlusion is applied and nowhere else.
+     */
+    bool syncArrangementClipWithSpan(ClipId clipId, const ClipInfo& clip, const AudibleSpan& span);
+
+    /**
+     * @brief Re-sync every arrangement clip whose audible span changed
+     *
+     * Occlusion belongs to the lane, not to one clip: moving or deleting a clip
+     * changes what the clips under it play, and nothing else would notify them.
+     * Spans are recomputed from placements each time and compared against what
+     * was last pushed to the engine, so a clip is only touched when its own
+     * audible span moved.
+     */
+    bool syncOcclusionChanges();
+
+    /**
      * @brief Sync MIDI clip properties to Tracktion Engine
      * @param clipId The MAGDA clip ID
      * @param clip The ClipInfo from ClipManager
@@ -361,6 +383,10 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
 
     // Reverse proxy state (for deferred reallocation)
     ClipId pendingReverseClipId_{INVALID_CLIP_ID};
+
+    // What each arrangement clip was last told to play, so an occlusion pass
+    // only re-syncs the clips whose audible span actually moved (#2003).
+    std::unordered_map<ClipId, AudibleSpan> lastSyncedSpans_;
 
     // Precise quantized launch times per track (seconds), written by launchSessionClip()
     std::unordered_map<TrackId, double> lastLaunchTimeByTrack_;

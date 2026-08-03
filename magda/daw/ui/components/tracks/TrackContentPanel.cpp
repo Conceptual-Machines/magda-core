@@ -2381,12 +2381,19 @@ void TrackContentPanel::rebuildClipComponents() {
     // Remove all existing clip components
     clipComponents_.clear();
 
-    // Get only arrangement clips (timeline-based). Sort by start beat so the
-    // child z-order is deterministic: a later clip sits on top of the one it
-    // crossfades into (#1499) instead of following hash-map iteration order.
+    // Get only arrangement clips (timeline-based). Child z-order follows the
+    // lane's stacking order, so what you see matches what you hear: the clip on
+    // top is the one that owns the span it covers (#2003), and it is the clip
+    // drawn over the one underneath. Start beat breaks ties within a stack
+    // level, which keeps a later clip above the one it crossfades into (#1499)
+    // instead of following hash-map iteration order.
     auto clips = ClipManager::getInstance().getArrangementClips();
     std::sort(clips.begin(), clips.end(), [](const ClipInfo& a, const ClipInfo& b) {
-        return a.placement.startBeat < b.placement.startBeat;
+        if (a.stackOrder != b.stackOrder)
+            return a.stackOrder < b.stackOrder;
+        if (a.placement.startBeat != b.placement.startBeat)
+            return a.placement.startBeat < b.placement.startBeat;
+        return a.id < b.id;
     });
 
     // Create a component for each clip that belongs to a visible track
@@ -2557,11 +2564,25 @@ void TrackContentPanel::updateClipComponentPositions() {
         visibleRight = visibleLeft + viewport->getViewWidth();
     }
 
+    // Which stretch of each clip stands on a clip below it (#2003). It takes a
+    // whole lane to work out, so it is resolved here once per track rather than
+    // per clip at paint time, and only for lanes that actually hold more than
+    // one clip.
+    std::unordered_map<TrackId, std::vector<ClipInfo>> laneClips;
+    for (auto& clipComp : clipComponents_) {
+        if (const auto* clip = ClipManager::getInstance().getClip(clipComp->getClipId()))
+            laneClips[clip->trackId].push_back(*clip);
+    }
+
     for (auto& clipComp : clipComponents_) {
         const auto* clip = ClipManager::getInstance().getClip(clipComp->getClipId());
         if (!clip) {
             continue;
         }
+
+        const auto& lane = laneClips[clip->trackId];
+        clipComp->setCoveringRanges(lane.size() > 1 ? computeCoveringRanges(lane, clip->id)
+                                                    : std::vector<BeatRange>{});
 
         // Skip clips that are being dragged - they manage their own position
         if (clipComp->isCurrentlyDragging()) {
