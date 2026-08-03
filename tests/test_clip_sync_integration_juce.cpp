@@ -155,6 +155,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testCreateMidiClipPreservesExistingNeighbour();
         testMidiSyncClipsNotesToVisibleRangeAfterResize();
         testMidiSyncSkipsAllRestPitchBendButKeepsRealCurves();
+        testLoopedMidiClipReachesEngineWithItsLoopRange();
         testMoveClipNoOverlapDoesNotMutateNeighbours();
         testMoveClipToTrackResolvesOverlapOnDestination();
     }
@@ -2330,6 +2331,43 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(s->placement.lengthBeats, 8.0, 0.01);
         expectWithinAbsoluteError(i->placement.startBeat, 8.0, 0.01);
         expectWithinAbsoluteError(i->placement.lengthBeats, 8.0, 0.01);
+    }
+
+    void testLoopedMidiClipReachesEngineWithItsLoopRange() {
+        beginTest("A looped MIDI clip reaches the engine with its loop range");
+
+        // The loop of a MIDI clip is clip beats on the container. When the
+        // audio source region moved onto AudioEvent (#1901), this read moved
+        // with it, and a MIDI clip has no event: the length came back zero,
+        // the branch never ran and TE was told to loop nothing. Playback of
+        // every looped MIDI clip stopped after one pass, with nothing in the
+        // model to show for it.
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        const auto clipId = cm.createMidiClipBeats(f.trackId, 0.0, 16.0, ClipView::Arrangement);
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr, "MIDI clip should exist");
+        if (clip == nullptr)
+            return;
+
+        expect(cm.addMidiNote(clipId, {60, 100, 0.0, 1.0}), "Note should be added");
+        cm.setClipLoopEnabled(clipId, true);
+        cm.setMidiLoopLengthBeats(clipId, 4.0);
+        f.clipSync->syncClipToEngine(clipId);
+
+        auto* teMidiClip = f.getTeMidiClip(clipId);
+        expect(teMidiClip != nullptr, "Tracktion MIDI clip should exist after sync");
+        if (teMidiClip == nullptr)
+            return;
+
+        expect(teMidiClip->isLooping(), "A looped MIDI clip must loop in the engine");
+        expectWithinAbsoluteError(teMidiClip->getLoopLengthBeats().inBeats(), 4.0, 0.01);
+
+        // And the toggle still turns it off.
+        cm.setClipLoopEnabled(clipId, false);
+        f.clipSync->syncClipToEngine(clipId);
+        expect(!teMidiClip->isLooping(), "Unlooping a MIDI clip must reach the engine too");
     }
 
     void testMidiSyncClipsNotesToVisibleRangeAfterResize() {
