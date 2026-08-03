@@ -235,6 +235,13 @@ set(TEST_SOURCES
     test_spleeter_separator.cpp
 )
 
+# Native audio engine (epic #1882). The engine is a dark target with no TE and
+# no UI, but its compiler is exercised here: the model fixtures it compiles are
+# plain value types, so the plan tests are ordinary model-level Catch2 tests.
+if(MAGDA_BUILD_NATIVE_ENGINE)
+    list(APPEND TEST_SOURCES test_render_plan_compiler.cpp)
+endif()
+
 # Create test executable
 add_executable(magda_tests ${TEST_SOURCES})
 
@@ -251,6 +258,10 @@ target_link_libraries(magda_tests
     # JUCE (core + gui_basics) comes transitively from magda_daw, compiled once
     # there; direct links would recompile the JUCE stack into this target.
 )
+
+if(MAGDA_BUILD_NATIVE_ENGINE)
+    target_link_libraries(magda_tests PRIVATE magda_engine)
+endif()
 
 # Include directories
 target_include_directories(magda_tests
