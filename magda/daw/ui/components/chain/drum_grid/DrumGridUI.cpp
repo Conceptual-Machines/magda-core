@@ -8,6 +8,7 @@
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "ui/components/chain/layout/DeviceSlotHeaderLayout.hpp"
+#include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -845,10 +846,15 @@ void DrumGridUI::resized() {
 // =============================================================================
 
 // =============================================================================
-// DragAndDropTarget (plugin drops)
+// DragAndDropTarget (plugin drops, pad-to-pad moves, and samples dragged from
+// MAGDA's own browser — those arrive as an internal {type:"files"} payload
+// rather than an OS file drag, see InternalFileDrag.hpp)
 // =============================================================================
 
 bool DrumGridUI::isInterestedInDragSource(const SourceDetails& details) {
+    if (magda::dnd::acceptsFilesDrag(*this, details))
+        return true;
+
     if (auto* obj = details.description.getDynamicObject()) {
         auto type = obj->getProperty("type").toString();
         bool interested = type == "plugin" || type == "pad";
@@ -859,6 +865,9 @@ bool DrumGridUI::isInterestedInDragSource(const SourceDetails& details) {
 }
 
 void DrumGridUI::itemDragEnter(const SourceDetails& details) {
+    if (magda::dnd::forwardFilesDragEnter(*this, details))
+        return;
+
     int btnIdx = padButtonIndexAtPoint(details.localPosition);
     if (btnIdx >= 0)
         dropHighlightPad_ = currentPage_ * kPadsPerPage + btnIdx;
@@ -868,6 +877,9 @@ void DrumGridUI::itemDragEnter(const SourceDetails& details) {
 }
 
 void DrumGridUI::itemDragMove(const SourceDetails& details) {
+    if (magda::dnd::forwardFilesDragMove(*this, details))
+        return;
+
     int btnIdx = padButtonIndexAtPoint(details.localPosition);
     int newHighlight = btnIdx >= 0 ? currentPage_ * kPadsPerPage + btnIdx : -1;
     if (newHighlight != dropHighlightPad_) {
@@ -876,12 +888,18 @@ void DrumGridUI::itemDragMove(const SourceDetails& details) {
     }
 }
 
-void DrumGridUI::itemDragExit(const SourceDetails&) {
+void DrumGridUI::itemDragExit(const SourceDetails& details) {
+    if (magda::dnd::forwardFilesDragExit(*this, details))
+        return;
+
     dropHighlightPad_ = -1;
     repaint();
 }
 
 void DrumGridUI::itemDropped(const SourceDetails& details) {
+    if (magda::dnd::forwardFilesDrop(*this, details))
+        return;
+
     dropHighlightPad_ = -1;
 
     int btnIdx = padButtonIndexAtPoint(details.localPosition);

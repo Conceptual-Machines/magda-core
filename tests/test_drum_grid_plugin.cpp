@@ -51,46 +51,62 @@ TEST_CASE("DrumGridPlugin pad-to-note mapping is invertible", "[drumgrid][mappin
 }
 
 // ============================================================================
-// Pan Law Tests (equal-power)
+// Pan Law Tests (linear, matching Tracktion's PanLawLinear)
 // ============================================================================
 
-TEST_CASE("DrumGridPlugin pan law produces equal-power stereo", "[drumgrid][pan]") {
-    // Mirrors the gain computation in applyToBuffer
-    auto computeGains = [](float panValue) -> std::pair<float, float> {
-        float levelLinear = 1.0f;  // 0 dB
-        float leftGain =
-            levelLinear * std::cos((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
-        float rightGain =
-            levelLinear * std::sin((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
+TEST_CASE("DrumGridPlugin pan law is linear with unity at centre", "[drumgrid][pan]") {
+    // Calls the production gain calculation directly — the audio path in
+    // processChain uses this same function, so the two cannot drift apart.
+    auto computeGains = [](float panValue, float levelLinear = 1.0f) -> std::pair<float, float> {
+        float leftGain = 0.0f;
+        float rightGain = 0.0f;
+        DrumGridPlugin::computePadGains(levelLinear, panValue, leftGain, rightGain);
         return {leftGain, rightGain};
     };
 
-    SECTION("Center pan (0.0) gives equal left and right") {
+    SECTION("Centre pan (0.0) is unity on both channels") {
         auto [left, right] = computeGains(0.0f);
         REQUIRE(left == Catch::Approx(right).margin(0.001f));
-        // Equal-power center: each channel ~ 0.707
-        REQUIRE(left == Catch::Approx(0.7071f).margin(0.01f));
-    }
-
-    SECTION("Hard left (-1.0) gives full left, zero right") {
-        auto [left, right] = computeGains(-1.0f);
+        // Unity, NOT the 0.707 of an equal-power law: a pad at centre must be
+        // as loud as the same device sitting directly on a track. Regression
+        // guard for pads playing back 3 dB quiet.
         REQUIRE(left == Catch::Approx(1.0f).margin(0.001f));
-        REQUIRE(right == Catch::Approx(0.0f).margin(0.001f));
     }
 
-    SECTION("Hard right (1.0) gives zero left, full right") {
+    SECTION("Centre pan scales with level") {
+        auto [left, right] = computeGains(0.0f, 0.5f);
+        REQUIRE(left == Catch::Approx(0.5f).margin(0.001f));
+        REQUIRE(right == Catch::Approx(0.5f).margin(0.001f));
+    }
+
+    SECTION("Hard left (-1.0) silences the right channel") {
+        auto [left, right] = computeGains(-1.0f);
+        REQUIRE(right == Catch::Approx(0.0f).margin(0.001f));
+        // Pan law, not balance: the favoured channel reaches 2x, matching
+        // Tracktion's PanLawLinear so a hard-panned pad and a hard-panned
+        // track agree.
+        REQUIRE(left == Catch::Approx(2.0f).margin(0.001f));
+    }
+
+    SECTION("Hard right (1.0) silences the left channel") {
         auto [left, right] = computeGains(1.0f);
         REQUIRE(left == Catch::Approx(0.0f).margin(0.001f));
-        REQUIRE(right == Catch::Approx(1.0f).margin(0.001f));
+        REQUIRE(right == Catch::Approx(2.0f).margin(0.001f));
     }
 
-    SECTION("Power is constant across pan positions") {
-        // Equal-power pan law: L^2 + R^2 should be constant
+    SECTION("Sum of both channels is constant across pan positions") {
+        // Linear pan law: L + R is invariant (equal-power would hold L^2 + R^2).
         for (float pan = -1.0f; pan <= 1.0f; pan += 0.1f) {
             auto [left, right] = computeGains(pan);
-            float power = left * left + right * right;
-            REQUIRE(power == Catch::Approx(1.0f).margin(0.01f));
+            REQUIRE(left + right == Catch::Approx(2.0f).margin(0.001f));
         }
+    }
+
+    SECTION("Pan is clamped to the parameter range") {
+        auto [farLeft, farLeftR] = computeGains(-4.0f);
+        auto [hardLeft, hardLeftR] = computeGains(-1.0f);
+        REQUIRE(farLeft == Catch::Approx(hardLeft).margin(0.001f));
+        REQUIRE(farLeftR == Catch::Approx(hardLeftR).margin(0.001f));
     }
 }
 

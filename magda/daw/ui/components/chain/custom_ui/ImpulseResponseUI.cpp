@@ -3,6 +3,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include "BinaryData.h"
+#include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -194,6 +195,29 @@ void ImpulseResponseUI::filesDropped(const juce::StringArray& files, int /*x*/, 
             return;
         }
     }
+}
+
+// IRs dragged from MAGDA's own browser come through as an internal
+// {type:"files"} drag rather than an OS file drag, so route them back into the
+// FileDragAndDropTarget handlers above. See InternalFileDrag.hpp.
+bool ImpulseResponseUI::isInterestedInDragSource(const SourceDetails& details) {
+    return magda::dnd::acceptsFilesDrag(*this, details);
+}
+
+void ImpulseResponseUI::itemDragEnter(const SourceDetails& details) {
+    magda::dnd::forwardFilesDragEnter(*this, details);
+}
+
+void ImpulseResponseUI::itemDragMove(const SourceDetails& details) {
+    magda::dnd::forwardFilesDragMove(*this, details);
+}
+
+void ImpulseResponseUI::itemDragExit(const SourceDetails& details) {
+    magda::dnd::forwardFilesDragExit(*this, details);
+}
+
+void ImpulseResponseUI::itemDropped(const SourceDetails& details) {
+    magda::dnd::forwardFilesDrop(*this, details);
 }
 
 std::vector<LinkableTextSlider*> ImpulseResponseUI::getLinkableSliders() {

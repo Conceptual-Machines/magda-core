@@ -278,12 +278,14 @@ class SessionView : public juce::Component,
     void clearDragGhost();
     bool isAudioFile(const juce::String& filename) const;
 
-    // Linux-only bridge: the media browser delivers sample drags as an internal
-    // {type:"files"} payload rather than an OS file-drag (JUCE has no Wayland
-    // DnD and same-app X11 drags are unreliable). These forward such a payload
-    // to the FileDragAndDropTarget handlers, returning true when they consume
-    // the event. On macOS/Windows samples arrive via the OS file-drag
-    // (filesDropped) directly, so every one of these is a no-op returning false.
+    // The media browser delivers sample drags as an internal {type:"files"}
+    // payload rather than an OS file-drag on Linux, where JUCE has no Wayland
+    // DnD and same-app X11 drags are unreliable. These forward such a payload to
+    // the FileDragAndDropTarget handlers, returning true when they consume the
+    // event. On macOS/Windows samples arrive via the OS file-drag (filesDropped)
+    // directly, so these return false there unless the drag was one of the
+    // internal ones the DB browser starts on every platform (preset rows).
+    // See InternalFileDrag.hpp.
     bool acceptsInternalFilesDrag(const SourceDetails& details);
     bool handleInternalFilesDragEnter(const SourceDetails& details);
     bool handleInternalFilesDragMove(const SourceDetails& details);

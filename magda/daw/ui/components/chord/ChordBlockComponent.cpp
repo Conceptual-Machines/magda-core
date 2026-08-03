@@ -3,6 +3,7 @@
 #include "core/MidiFileWriter.hpp"
 #include "music/NotationSettings.hpp"
 #include "project/ProjectManager.hpp"
+#include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -90,8 +91,7 @@ void ChordBlockComponent::mouseDrag(const juce::MouseEvent& e) {
                                                              chord_.getDisplayName(), markers);
         if (tempFile.existsAsFile()) {
             setAlpha(0.4f);
-            juce::DragAndDropContainer::performExternalDragDropOfFiles(
-                juce::StringArray{tempFile.getFullPathName()}, false, this);
+            magda::dnd::startFilesDrag(this, juce::StringArray{tempFile.getFullPathName()});
             setAlpha(1.0f);
         }
     }

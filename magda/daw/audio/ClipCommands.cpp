@@ -2778,9 +2778,12 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
             if (sampler) {
                 auto startSec = static_cast<float>(slice.sourceStart);
                 auto endSec = static_cast<float>(slice.sourceEnd);
-                sampler->sampleStartParam->setParameter(startSec, juce::dontSendNotification);
+                // setParameterFromHost, not setParameter: the latter is silently
+                // dropped once a macro or mod is attached to the parameter.
+                sampler->sampleStartParam->setParameterFromHost(startSec,
+                                                                juce::dontSendNotification);
                 sampler->sampleStartValue = startSec;
-                sampler->sampleEndParam->setParameter(endSec, juce::dontSendNotification);
+                sampler->sampleEndParam->setParameterFromHost(endSec, juce::dontSendNotification);
                 sampler->sampleEndValue = endSec;
             }
         }

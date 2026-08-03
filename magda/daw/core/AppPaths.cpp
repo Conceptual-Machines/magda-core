@@ -117,6 +117,19 @@ juce::File alwaysOSDefault() {
         .getChildFile("MAGDA");
 }
 
+juce::File executableDir() {
+#if JUCE_LINUX
+    // Prefer the real binary: JUCE's currentApplicationFile goes through dladdr,
+    // which on glibc yields argv[0] for the main program, and an AppImage's
+    // type-2 runtime keeps argv[0] pointing at the outer .AppImage. Resources
+    // staged inside the mount would otherwise be looked for next to the user's
+    // downloaded launcher. See the header for the full rationale.
+    if (auto real = juce::File("/proc/self/exe").getLinkedTarget(); real.exists())
+        return real.getParentDirectory();
+#endif
+    return juce::File::getSpecialLocation(juce::File::currentApplicationFile).getParentDirectory();
+}
+
 // ---------------------------------------------------------------------------
 // Computed subpaths
 // ---------------------------------------------------------------------------
