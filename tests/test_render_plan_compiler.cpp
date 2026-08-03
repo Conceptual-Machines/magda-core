@@ -973,3 +973,57 @@ TEST_CASE("Sidechain discovery reaches every section emission does", "[engine][p
     REQUIRE(sourceMeter != magda::engine::INVALID_OP_ID);
     CHECK(inputOp(plan, device, 2) == sourceMeter);
 }
+
+TEST_CASE("Auto input monitoring only counts while the track is armed",
+          "[engine][plan][compiler]") {
+    // Auto maps to TE's automatic monitor mode, which passes input only while
+    // armed. Emitting a live op for an unarmed Auto track would both add a op
+    // the engine keeps silent and mark the whole chain downstream Live.
+    SECTION("unarmed Auto emits no live input") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].inputMonitor = InputMonitorMode::Auto;
+        tracks[0].audioInputDevice = "Input 1";
+        tracks[0].midiInputDevice = "Keyboard";
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        CHECK(countRole(plan, OpRole::LiveAudioInput) == 0);
+        CHECK(countRole(plan, OpRole::LiveMidiInput) == 0);
+        for (const auto& op : plan.ops)
+            CHECK(op.liveness == magda::engine::LivenessDomain::Deterministic);
+    }
+
+    SECTION("armed Auto emits it") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].inputMonitor = InputMonitorMode::Auto;
+        tracks[0].recordArmed = true;
+        tracks[0].audioInputDevice = "Input 1";
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(countRole(plan, OpRole::LiveAudioInput) == 1);
+    }
+
+    SECTION("In emits it without arming") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].inputMonitor = InputMonitorMode::In;
+        tracks[0].audioInputDevice = "Input 1";
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(countRole(plan, OpRole::LiveAudioInput) == 1);
+    }
+}
+
+TEST_CASE("A frozen track is reported as not compiled", "[engine][plan][compiler]") {
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].frozen = true;
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    REQUIRE(plan.diagnostics.size() == 1);
+    CHECK(plan.diagnostics.front().find("freeze") != std::string::npos);
+}

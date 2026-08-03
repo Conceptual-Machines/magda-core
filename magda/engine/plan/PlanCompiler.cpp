@@ -144,6 +144,19 @@ struct TrackRoute {
     }
 };
 
+/// Whether input reaches the track at all, for either audio or MIDI.
+///
+/// Auto is deliberately not enough on its own: it maps to TE's automatic
+/// monitor mode, which passes input only while the track is armed. Including it
+/// unarmed would emit a live input op the current engine keeps silent, and
+/// would mark the whole downstream chain Live, pessimising the anticipative
+/// executor for a track that cannot sound. This is why the compiler does not
+/// use TrackInfo::receivesLiveMidiInput, which answers a broader question for
+/// the UI's input-activity light.
+bool monitorsInput(const TrackInfo& track) {
+    return track.recordArmed || track.inputMonitor == InputMonitorMode::In;
+}
+
 /// Parses a routing field: "track:<id>" for an internal route, anything else
 /// (a hardware device name, the default "master", an empty field) is external.
 TrackRoute parseTrackRoute(const juce::String& routing) {
@@ -268,14 +281,13 @@ bool Compiler::carriesClips(const TrackInfo& track) const {
 }
 
 TrackRoute Compiler::activeAudioInputRoute(const TrackInfo& track) const {
-    const auto monitorsInput = track.recordArmed || track.inputMonitor != InputMonitorMode::Off;
-    if (!carriesClips(track) || !monitorsInput || track.audioInputDevice.isEmpty())
+    if (!carriesClips(track) || !monitorsInput(track) || track.audioInputDevice.isEmpty())
         return {RouteKind::None, INVALID_TRACK_ID};
     return parseTrackRoute(track.audioInputDevice);
 }
 
 TrackRoute Compiler::activeMidiInputRoute(const TrackInfo& track) const {
-    if (!carriesClips(track) || !track.receivesLiveMidiInput() || track.midiInputDevice.isEmpty())
+    if (!carriesClips(track) || !monitorsInput(track) || track.midiInputDevice.isEmpty())
         return {RouteKind::None, INVALID_TRACK_ID};
     return parseTrackRoute(track.midiInputDevice);
 }
@@ -570,6 +582,17 @@ void Compiler::emitTrack(const TrackInfo& track) {
                  std::to_string(track.multiOutLink->outputPairIndex) + " of device " +
                  std::to_string(track.multiOutLink->sourceDeviceId) +
                  " is not routed yet, the track renders silence");
+
+    // Freeze is structural: the current engine renders the track, disables its
+    // plugins and plays the render back. Compiling the live chain both diverges
+    // from that output and throws away the CPU saving that is the whole point.
+    // Named rather than half-implemented, because the real shape (a source op
+    // reading the freeze file, device ops skipped) needs its op key decided
+    // first so unfreezing carries state sanely.
+    if (track.frozen)
+        diagnose("track " + std::to_string(track.id) +
+                 ": freeze is not compiled yet, the live chain is planned instead of the "
+                 "rendered freeze file");
 
     std::vector<PortRef> audioSources;
     if (carriesClips(track)) {
