@@ -2,6 +2,8 @@
 
 #include <juce_data_structures/juce_data_structures.h>
 
+#include <unordered_set>
+
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/LegacyDeviceAliases.hpp"
@@ -251,6 +253,13 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
             return false;
         }
 
+        // Sources must be pooled before the clips that reference them by id,
+        // and after the outgoing project's pool is dropped. This cannot live in
+        // ClipManager::clearAllClips: the commit phase calls that AFTER the
+        // sources are staged, which would strand every event's source id.
+        SourcePool::getInstance().clear();
+        deserializeSources(obj->getProperty("sources"));
+
         if (!deserializeClipsToStaging(obj->getProperty("clips"), outData.clips,
                                        outData.info.tempo)) {
             return false;
@@ -336,6 +345,7 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
 
     // Version and metadata
     obj->setProperty("magdaVersion", info.version);
+    obj->setProperty("schemaVersion", kProjectSchemaVersion);
     obj->setProperty("lastModified", info.lastModified.toISO8601(true));
 
     // Project settings
@@ -399,8 +409,10 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
 
     obj->setProperty("project", juce::var(projectObj));
 
-    // Serialize tracks, clips, and automation
+    // Serialize tracks, clips, and automation. Sources go before clips: a clip's
+    // events reference them by id (#1901).
     obj->setProperty("tracks", serializeTracks());
+    obj->setProperty("sources", serializeSources());
     obj->setProperty("clips", serializeClips());
     obj->setProperty("automation", serializeAutomation());
 
@@ -549,6 +561,9 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     if (!deserializeTracksToStaging(obj->getProperty("tracks"), stagedTracks)) {
         return false;  // Failed - no state modified
     }
+
+    SourcePool::getInstance().clear();
+    deserializeSources(obj->getProperty("sources"));
 
     if (!deserializeClipsToStaging(obj->getProperty("clips"), stagedClips, outInfo.tempo)) {
         return false;  // Failed - no state modified
@@ -705,6 +720,64 @@ juce::var ProjectSerializer::serializeTracks() {
     }
 
     return juce::var(tracksArray);
+}
+
+juce::var ProjectSerializer::serializeSources() {
+    // Only sources some clip still references are written: the pool is additive
+    // within a session so an undone delete can find its source again, and save
+    // is where that garbage is collected.
+    std::unordered_set<SourceId> live;
+    for (const auto& clip : ClipManager::getInstance().getClips()) {
+        if (!clip.isAudio())
+            continue;
+        for (const auto& event : clip.audio().events)
+            live.insert(event.sourceId);
+    }
+    SourcePool::getInstance().retainOnly(live);
+
+    juce::Array<juce::var> sourcesArray;
+    for (const auto& source : SourcePool::getInstance().snapshot()) {
+        auto* sourceObj = new juce::DynamicObject();
+        sourceObj->setProperty("id", source.id);
+        sourceObj->setProperty("filePath", source.filePath);
+        sourceObj->setProperty("durationSeconds", source.durationSeconds);
+        sourceObj->setProperty("sampleRate", source.sampleRate);
+        if (source.detectedBpm > 0.0)
+            sourceObj->setProperty("detectedBpm", source.detectedBpm);
+        if (!source.detectedKeyRoot.empty())
+            sourceObj->setProperty("detectedKeyRoot", juce::String(source.detectedKeyRoot));
+        if (!source.detectedKeyScale.empty())
+            sourceObj->setProperty("detectedKeyScale", juce::String(source.detectedKeyScale));
+        sourcesArray.add(juce::var(sourceObj));
+    }
+    return juce::var(sourcesArray);
+}
+
+void ProjectSerializer::deserializeSources(const juce::var& json) {
+    if (!json.isArray())
+        return;
+    auto& pool = SourcePool::getInstance();
+    for (const auto& entry : *json.getArray()) {
+        auto* sourceObj = entry.getDynamicObject();
+        if (sourceObj == nullptr)
+            continue;
+        Source source;
+        source.id = sourceObj->getProperty("id");
+        source.filePath = sourceObj->getProperty("filePath").toString();
+        source.durationSeconds = sourceObj->getProperty("durationSeconds");
+        source.sampleRate = sourceObj->getProperty("sampleRate");
+        source.detectedBpm = sourceObj->getProperty("detectedBpm");
+        source.detectedKeyRoot = sourceObj->getProperty("detectedKeyRoot").toString().toStdString();
+        source.detectedKeyScale =
+            sourceObj->getProperty("detectedKeyScale").toString().toStdString();
+        const auto id = pool.insert(source);
+
+        // A project saved while the file was missing carries sampleRate 0, so
+        // its events' anchors were computed at the nominal rate. Re-probing now
+        // resolves the source and rescales them.
+        if (id != INVALID_SOURCE_ID && !source.isResolved())
+            pool.resolveFacts(id);
+    }
 }
 
 juce::var ProjectSerializer::serializeClips() {

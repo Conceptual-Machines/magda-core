@@ -2877,7 +2877,8 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
     }
 
     // Get cached transients via the api
-    const auto* transients = api_.clips().getCachedTransients(clip->audio().source.filePath);
+    const auto* transients =
+        api_.clips().getCachedTransients(audioEventRef(*clip).sourceFilePath());
     if (!transients || transients->isEmpty()) {
         ctx_.setError("groove.extract: no transients detected for this clip. "
                       "Enable warp or detect transients first.");
@@ -2885,10 +2886,10 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
     }
 
     // Determine clip parameters
-    double clipBPM =
-        clip->audio().interpretation.bpm > 0.0 ? clip->audio().interpretation.bpm : 120.0;
-    double beatDuration = 60.0 / clipBPM;  // seconds per beat
-    double clipStartSec = clip->offset;    // source offset
+    const auto& event = audioEventRef(*clip);
+    double clipBPM = event.interpBpm > 0.0 ? event.interpBpm : 120.0;
+    double beatDuration = 60.0 / clipBPM;         // seconds per beat
+    double clipStartSec = event.anchorSeconds();  // source read position
 
     // notesPerBeat: 2 for 8th notes, 4 for 16th notes
     int notesPerBeat = (resolution >= 16) ? 4 : 2;

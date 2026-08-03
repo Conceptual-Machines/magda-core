@@ -15,15 +15,15 @@ namespace magda::daw::ui {
 namespace {
 
 double getAudioFileDurationForInspector(const magda::ClipInfo& clip) {
-    if (!clip.isAudio() || clip.audio().source.filePath.isEmpty())
+    if (!clip.isAudio() || audioEventRef(clip).sourceFilePath().isEmpty())
         return 0.0;
 
     if (auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
-            clip.audio().source.filePath)) {
+            audioEventRef(clip).sourceFilePath())) {
         return thumbnail->getTotalLength();
     }
 
-    return clip.audio().source.durationSeconds;
+    return audioEventRef(clip).sourceDurationSeconds();
 }
 
 double timelineStartSeconds(const magda::ClipInfo& clip, double bpm) {
@@ -48,8 +48,8 @@ void ClipInspector::updateAudioSourceValueDisplays(const magda::ClipInfo& clip) 
     // Shared with the audio-editor inspector so the two can't drift.
     const double projectBPM =
         timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
-    const double cachedBpm =
-        magda::AudioThumbnailManager::getInstance().getCachedBPM(clip.audio().source.filePath);
+    const double cachedBpm = magda::AudioThumbnailManager::getInstance().getCachedBPM(
+        audioEventRef(clip).sourceFilePath());
     const auto display = magda::computeAudioClipSourceDisplay(
         clip, projectBPM, getAudioFileDurationForInspector(clip), cachedBpm);
 
@@ -59,7 +59,8 @@ void ClipInspector::updateAudioSourceValueDisplays(const magda::ClipInfo& clip) 
         clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"), juce::dontSendNotification);
     }
 
-    if (clip.autoTempo && clipBeatsLengthValue_ && !clipBeatsLengthValue_->isDragging()) {
+    if (audioEventRef(clip).autoTempo && clipBeatsLengthValue_ &&
+        !clipBeatsLengthValue_->isDragging()) {
         clipBeatsLengthValue_->setValue(display.totalBeats > 0.0 ? display.totalBeats : 4.0,
                                         juce::dontSendNotification);
     }
@@ -79,8 +80,8 @@ void ClipInspector::updateLoopValueDisplays(const magda::ClipInfo& clip, double 
     if (clip.isAudio()) {
         const auto info =
             magda::ClipDisplayInfo::from(clip, loopBpm, getAudioFileDurationForInspector(clip));
-        const bool loopOn =
-            clip.view == magda::ClipView::Session || clip.loopEnabled || clip.autoTempo;
+        const bool loopOn = clip.view == magda::ClipView::Session || clip.loopEnabled ||
+                            audioEventRef(clip).autoTempo;
 
         clipLoopStartValue_->setValue(
             magda::TimelineUtils::secondsToBeats(info.loopStartPositionSeconds, loopBpm),
@@ -99,22 +100,25 @@ void ClipInspector::updateLoopValueDisplays(const magda::ClipInfo& clip, double 
         return;
     }
 
-    const double loopStartBeats = clip.loopStartBeats;
+    const double loopStartBeats = audioEventRef(clip).loopStartBeats();
     clipLoopStartValue_->setValue(loopStartBeats, juce::dontSendNotification);
 
-    double loopLengthDisplayBeats = clip.loopLengthBeats;
+    double loopLengthDisplayBeats = audioEventRef(clip).loopLengthBeats();
     if (loopLengthDisplayBeats <= 0.0)
         loopLengthDisplayBeats = clip.getLengthInBeats(loopBpm);
     clipLoopEndValue_->setValue(loopStartBeats + loopLengthDisplayBeats,
                                 juce::dontSendNotification);
 
-    const bool loopOn = clip.view == magda::ClipView::Session || clip.loopEnabled || clip.autoTempo;
+    const bool loopOn =
+        clip.view == magda::ClipView::Session || clip.loopEnabled || audioEventRef(clip).autoTempo;
     clipLoopPhaseLabel_.setText(loopOn ? "phase" : "offset", juce::dontSendNotification);
 
     if (clip.isMidi()) {
         clipLoopPhaseValue_->setValue(clip.midiOffset, juce::dontSendNotification);
     } else {
-        const double sourcePositionSeconds = loopOn ? clip.offset - clip.loopStart : clip.offset;
+        const double sourcePositionSeconds =
+            loopOn ? audioEventRef(clip).anchorSeconds() - audioEventRef(clip).loopStartSeconds()
+                   : audioEventRef(clip).anchorSeconds();
         const double sourcePositionBeats =
             magda::TimelineUtils::secondsToBeats(juce::jmax(0.0, sourcePositionSeconds), loopBpm);
         clipLoopPhaseValue_->setValue(sourcePositionBeats, juce::dontSendNotification);
@@ -149,15 +153,15 @@ void ClipInspector::updateFromSelectedClip() {
     if (!isMulti) {
         auto* mutableClip = magda::ClipManager::getInstance().getClip(pid);
         if (mutableClip && mutableClip->isAudio() &&
-            !mutableClip->audio().source.filePath.isEmpty()) {
+            !magda::audioEventRef(*mutableClip).sourceFilePath().isEmpty()) {
             auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                mutableClip->audio().source.filePath);
+                magda::audioEventRef(*mutableClip).sourceFilePath());
             if (thumbnail) {
                 const double fileDur = thumbnail->getTotalLength();
                 if (fileDur > 0.0) {
-                    double newOffset = mutableClip->offset;
-                    double newLoopStart = mutableClip->loopStart;
-                    double newLoopLength = mutableClip->loopLength;
+                    double newOffset = magda::audioEventRef(*mutableClip).anchorSeconds();
+                    double newLoopStart = magda::audioEventRef(*mutableClip).loopStartSeconds();
+                    double newLoopLength = magda::audioEventRef(*mutableClip).loopLengthSeconds();
 
                     bool fixed = false;
 
@@ -180,15 +184,16 @@ void ClipInspector::updateFromSelectedClip() {
                     if (fixed) {
                         auto& clipManager = magda::ClipManager::getInstance();
 
-                        if (newOffset != mutableClip->offset) {
+                        if (newOffset != magda::audioEventRef(*mutableClip).anchorSeconds()) {
                             clipManager.setOffset(pid, newOffset);
                         }
 
-                        if (newLoopStart != mutableClip->loopStart) {
+                        if (newLoopStart != magda::audioEventRef(*mutableClip).loopStartSeconds()) {
                             clipManager.setLoopStart(pid, newLoopStart);
                         }
 
-                        if (newLoopLength != mutableClip->loopLength) {
+                        if (newLoopLength !=
+                            magda::audioEventRef(*mutableClip).loopLengthSeconds()) {
                             clipManager.setLoopLength(pid, newLoopLength);
                         }
 
@@ -216,7 +221,7 @@ void ClipInspector::updateFromSelectedClip() {
         // For loop-record takes/comps the raw render filename is meaningless, so
         // show a take/comp label instead.
         if (!isMulti && clip->view != magda::ClipView::Session && clip->isAudio() &&
-            clip->audio().source.filePath.isNotEmpty()) {
+            magda::audioEventRef(*clip).sourceFilePath().isNotEmpty()) {
             const auto& audio = clip->audio();
             juce::String label;
             if (audio.compActive)
@@ -225,9 +230,9 @@ void ClipInspector::updateFromSelectedClip() {
                 label = "Take " + juce::String(audio.currentTakeIndex + 1) + " / " +
                         juce::String(static_cast<int>(audio.takes.size()));
             else
-                label = juce::File(audio.source.filePath).getFileName();
+                label = juce::File(magda::audioEventRef(*clip).sourceFilePath()).getFileName();
             clipFilePathLabel_.setText(label, juce::dontSendNotification);
-            clipFilePathLabel_.setTooltip(audio.source.filePath);
+            clipFilePathLabel_.setTooltip(magda::audioEventRef(*clip).sourceFilePath());
         } else if (!isMulti && clip->view != magda::ClipView::Session && clip->isMidi() &&
                    clip->midi().sourceFilePath.isNotEmpty()) {
             juce::File sourceFile(clip->midi().sourceFilePath);
@@ -307,15 +312,15 @@ void ClipInspector::updateFromSelectedClip() {
         // Show BPM for audio clips (at bottom with WARP)
         // Prefer clip's source interpretation BPM (may be user-edited), fall back to detected BPM
         if (showAudioProps && !isMulti) {
-            double displayBPM = clip->audio().interpretation.bpm;
+            double displayBPM = magda::audioEventRef(*clip).interpBpm;
             double projectBPM =
                 timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
-            if (displayBPM <= 0.0 ||
-                (!clip->autoTempo && std::abs(displayBPM - projectBPM) < 0.1)) {
+            if (displayBPM <= 0.0 || (!magda::audioEventRef(*clip).autoTempo &&
+                                      std::abs(displayBPM - projectBPM) < 0.1)) {
                 // Source interpretation BPM is unset/defaulted. Read cached metadata only;
                 // do not launch DSP BPM analysis from display code.
                 auto& thumbs = magda::AudioThumbnailManager::getInstance();
-                displayBPM = thumbs.getCachedBPM(clip->audio().source.filePath);
+                displayBPM = thumbs.getCachedBPM(magda::audioEventRef(*clip).sourceFilePath());
             }
             clipBpmValue_.setVisible(true);
             clipBpmUnitLabel_.setVisible(true);
@@ -323,7 +328,7 @@ void ClipInspector::updateFromSelectedClip() {
             // time-based mode the engine uses speedRatio and never reads it, so
             // grey it out — the mirror of how the speed control is disabled in
             // beat mode.
-            const bool sourceBpmActive = clip->autoTempo;
+            const bool sourceBpmActive = magda::audioEventRef(*clip).autoTempo;
             clipBpmValue_.setEnabled(sourceBpmActive);
             clipBpmValue_.setAlpha(sourceBpmActive ? 1.0f : 0.4f);
             clipBpmUnitLabel_.setAlpha(sourceBpmActive ? 1.0f : 0.4f);
@@ -335,7 +340,7 @@ void ClipInspector::updateFromSelectedClip() {
 
         // Show source interpretation total beats for audio clips with auto-tempo enabled.
         // Clip placement length is already represented by start/end and by the clip body itself.
-        if (showAudioProps && clip->autoTempo && !isMulti) {
+        if (showAudioProps && magda::audioEventRef(*clip).autoTempo && !isMulti) {
             clipBeatsLengthValue_->setVisible(true);
             clipBeatsUnitLabel_.setVisible(true);
             clipBeatsLengthValue_->setEnabled(true);
@@ -349,7 +354,7 @@ void ClipInspector::updateFromSelectedClip() {
         // Show key controls for audio clips. Mirror the clip's source
         // interpretation root into the combo; empty = "--" (unknown).
         if (showAudioProps && !isMulti) {
-            const auto& root = clip->audio().interpretation.keyRoot;
+            const auto& root = magda::audioEventRef(*clip).keyRoot;
             int rootId = 1;
             static constexpr const char* kRoots[] = {"C",  "C#", "D",  "D#", "E",  "F",
                                                      "F#", "G",  "G#", "A",  "A#", "B"};
@@ -426,13 +431,13 @@ void ClipInspector::updateFromSelectedClip() {
             clipLengthValue_->setValue(clip->getLengthInBeats(bpm), juce::dontSendNotification);
         }
 
-        clipLoopToggle_->setActive(clip->loopEnabled || clip->autoTempo);
+        clipLoopToggle_->setActive(clip->loopEnabled || magda::audioEventRef(*clip).autoTempo);
         // Beat mode forces loop on, but the button should still read as active rather than
         // disabled. Click handling ignores attempts to toggle it while auto-tempo owns looping.
         clipLoopToggle_->setEnabled(true);
 
         // Loop state determines source-row labels/interactivity.
-        bool loopOn = isSessionClip || clip->loopEnabled || clip->autoTempo;
+        bool loopOn = isSessionClip || clip->loopEnabled || magda::audioEventRef(*clip).autoTempo;
         updateLoopValueDisplays(*clip, bpm, beatsPerBar);
 
         if (loopOn) {
@@ -478,32 +483,36 @@ void ClipInspector::updateFromSelectedClip() {
         // Warp toggle (visible when audio props expanded)
         clipWarpToggle_.setVisible(showAudioProps);
         if (isAudioClip) {
-            clipWarpToggle_.setToggleState(clip->warpEnabled, juce::dontSendNotification);
+            clipWarpToggle_.setToggleState(magda::audioEventRef(*clip).warpEnabled,
+                                           juce::dontSendNotification);
         }
 
         // Auto-tempo toggle
         clipAutoTempoToggle_.setVisible(showAudioProps);
         if (isAudioClip) {
-            clipAutoTempoToggle_.setToggleState(clip->autoTempo, juce::dontSendNotification);
+            clipAutoTempoToggle_.setToggleState(magda::audioEventRef(*clip).autoTempo,
+                                                juce::dontSendNotification);
             // Disable stretch control when auto-tempo is enabled (speedRatio must be 1.0)
-            if (clip->autoTempo && clipStretchValue_) {
+            if (magda::audioEventRef(*clip).autoTempo && clipStretchValue_) {
                 clipStretchValue_->setEnabled(false);
                 clipStretchValue_->setAlpha(0.4f);
             }
         }
 
-        clipStretchValue_->setVisible(showAudioProps && !clip->autoTempo);
+        clipStretchValue_->setVisible(showAudioProps && !magda::audioEventRef(*clip).autoTempo);
         stretchModeCombo_.setVisible(showAudioProps);
         if (isAudioClip) {
-            clipStretchValue_->setValue(clip->speedRatio, juce::dontSendNotification);
+            clipStretchValue_->setValue(magda::audioEventRef(*clip).speedRatio,
+                                        juce::dontSendNotification);
             // Show the effective stretch mode (auto-upgraded when beat mode / warp
             // / speed / pitch silently engages TE's SoundTouch) so this matches
             // the audio editor's readout.
-            stretchModeCombo_.setSelectedId(clip->getEffectiveTimeStretchMode() + 1,
-                                            juce::dontSendNotification);
+            stretchModeCombo_.setSelectedId(
+                magda::audioEventRef(*clip).getEffectiveTimeStretchMode() + 1,
+                juce::dontSendNotification);
 
             // Enable/disable stretch controls based on auto-tempo mode
-            if (!clip->autoTempo && clipStretchValue_) {
+            if (!magda::audioEventRef(*clip).autoTempo && clipStretchValue_) {
                 clipStretchValue_->setEnabled(true);
                 clipStretchValue_->setAlpha(1.0f);
             }
@@ -551,23 +560,28 @@ void ClipInspector::updateFromSelectedClip() {
         midiTransposeLabel_.setVisible(isMidiClip);
 
         // Analog pitch toggle: visible for audio clips when not in autoTempo/warp mode
-        bool canAnalog = showAudioProps && !clip->autoTempo && !clip->warpEnabled;
+        bool canAnalog = showAudioProps && !magda::audioEventRef(*clip).autoTempo &&
+                         !magda::audioEventRef(*clip).warpEnabled;
         analogPitchToggle_.setVisible(canAnalog);
         if (canAnalog) {
-            analogPitchToggle_.setToggleState(clip->analogPitch, juce::dontSendNotification);
+            analogPitchToggle_.setToggleState(magda::audioEventRef(*clip).analogPitch,
+                                              juce::dontSendNotification);
         }
 
         if (isAudioClip) {
-            autoPitchToggle_.setToggleState(clip->autoPitch, juce::dontSendNotification);
-            autoPitchModeCombo_.setSelectedId(clip->autoPitchMode + 1, juce::dontSendNotification);
-            pitchChangeValue_->setValue(clip->pitchChange, juce::dontSendNotification);
+            autoPitchToggle_.setToggleState(magda::audioEventRef(*clip).autoPitch,
+                                            juce::dontSendNotification);
+            autoPitchModeCombo_.setSelectedId(magda::audioEventRef(*clip).autoPitchMode + 1,
+                                              juce::dontSendNotification);
+            pitchChangeValue_->setValue(magda::audioEventRef(*clip).pitchChange,
+                                        juce::dontSendNotification);
 
             // autoPitchMode only meaningful when autoPitch is on
-            autoPitchModeCombo_.setEnabled(clip->autoPitch);
-            autoPitchModeCombo_.setAlpha(clip->autoPitch ? 1.0f : 0.4f);
+            autoPitchModeCombo_.setEnabled(magda::audioEventRef(*clip).autoPitch);
+            autoPitchModeCombo_.setAlpha(magda::audioEventRef(*clip).autoPitch ? 1.0f : 0.4f);
 
             // When analogPitch is active: disable/dim speedRatio control
-            bool analogActive = clip->isAnalogPitchActive();
+            bool analogActive = magda::audioEventRef(*clip).isAnalogPitchActive();
 
             // When analog pitch is active, dim the speed ratio control
             if (analogActive && clipStretchValue_) {
@@ -608,7 +622,8 @@ void ClipInspector::updateFromSelectedClip() {
             clipVolumeValue_->setValue(clip->volumeDB, juce::dontSendNotification);
             clipPanValue_->setValue(clip->pan, juce::dontSendNotification);
             clipGainValue_->setValue(clip->gainDB, juce::dontSendNotification);
-            reverseToggle_.setToggleState(clip->isReversed, juce::dontSendNotification);
+            reverseToggle_.setToggleState(magda::audioEventRef(*clip).reversed,
+                                          juce::dontSendNotification);
         }
 
         // Playback / Beat Detection section — hidden (all controls moved or unused)
@@ -794,35 +809,44 @@ void ClipInspector::computeClipRange() {
 
         if (first) {
             clipRange_.valid = true;
-            clipRange_.minPitchChange = clipRange_.maxPitchChange = c->pitchChange;
+            clipRange_.minPitchChange = clipRange_.maxPitchChange =
+                magda::audioEventRef(*c).pitchChange;
             clipRange_.minVolumeDB = clipRange_.maxVolumeDB = c->volumeDB;
             clipRange_.minPan = clipRange_.maxPan = c->pan;
             clipRange_.minGainDB = clipRange_.maxGainDB = c->gainDB;
-            clipRange_.minSpeedRatio = clipRange_.maxSpeedRatio = c->speedRatio;
+            clipRange_.minSpeedRatio = clipRange_.maxSpeedRatio =
+                magda::audioEventRef(*c).speedRatio;
             clipRange_.minStartSeconds = clipRange_.maxStartSeconds = timelineStartSeconds(*c, bpm);
             clipRange_.minLengthSeconds = clipRange_.maxLengthSeconds =
                 timelineLengthSeconds(*c, bpm);
-            clipRange_.minOffsetSeconds = clipRange_.maxOffsetSeconds = c->offset;
+            clipRange_.minOffsetSeconds = clipRange_.maxOffsetSeconds =
+                magda::audioEventRef(*c).anchorSeconds();
             first = false;
         } else {
-            clipRange_.minPitchChange = juce::jmin(clipRange_.minPitchChange, c->pitchChange);
-            clipRange_.maxPitchChange = juce::jmax(clipRange_.maxPitchChange, c->pitchChange);
+            clipRange_.minPitchChange =
+                juce::jmin(clipRange_.minPitchChange, magda::audioEventRef(*c).pitchChange);
+            clipRange_.maxPitchChange =
+                juce::jmax(clipRange_.maxPitchChange, magda::audioEventRef(*c).pitchChange);
             clipRange_.minVolumeDB = juce::jmin(clipRange_.minVolumeDB, c->volumeDB);
             clipRange_.maxVolumeDB = juce::jmax(clipRange_.maxVolumeDB, c->volumeDB);
             clipRange_.minPan = juce::jmin(clipRange_.minPan, c->pan);
             clipRange_.maxPan = juce::jmax(clipRange_.maxPan, c->pan);
             clipRange_.minGainDB = juce::jmin(clipRange_.minGainDB, c->gainDB);
             clipRange_.maxGainDB = juce::jmax(clipRange_.maxGainDB, c->gainDB);
-            clipRange_.minSpeedRatio = juce::jmin(clipRange_.minSpeedRatio, c->speedRatio);
-            clipRange_.maxSpeedRatio = juce::jmax(clipRange_.maxSpeedRatio, c->speedRatio);
+            clipRange_.minSpeedRatio =
+                juce::jmin(clipRange_.minSpeedRatio, magda::audioEventRef(*c).speedRatio);
+            clipRange_.maxSpeedRatio =
+                juce::jmax(clipRange_.maxSpeedRatio, magda::audioEventRef(*c).speedRatio);
             const double startSeconds = timelineStartSeconds(*c, bpm);
             const double lengthSeconds = timelineLengthSeconds(*c, bpm);
             clipRange_.minStartSeconds = juce::jmin(clipRange_.minStartSeconds, startSeconds);
             clipRange_.maxStartSeconds = juce::jmax(clipRange_.maxStartSeconds, startSeconds);
             clipRange_.minLengthSeconds = juce::jmin(clipRange_.minLengthSeconds, lengthSeconds);
             clipRange_.maxLengthSeconds = juce::jmax(clipRange_.maxLengthSeconds, lengthSeconds);
-            clipRange_.minOffsetSeconds = juce::jmin(clipRange_.minOffsetSeconds, c->offset);
-            clipRange_.maxOffsetSeconds = juce::jmax(clipRange_.maxOffsetSeconds, c->offset);
+            clipRange_.minOffsetSeconds =
+                juce::jmin(clipRange_.minOffsetSeconds, magda::audioEventRef(*c).anchorSeconds());
+            clipRange_.maxOffsetSeconds =
+                juce::jmax(clipRange_.maxOffsetSeconds, magda::audioEventRef(*c).anchorSeconds());
         }
     }
 }

@@ -54,7 +54,7 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
         return rect.getWidth() > 0;
     };
 
-    if (clip.isReversed) {
+    if (audioEventRef(clip).reversed) {
         g.saveState();
         g.addTransform(juce::AffineTransform::scale(-1.0f, 1.0f, waveformArea.getCentreX(),
                                                     waveformArea.getCentreY()));
@@ -63,7 +63,7 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
     const double tempo = spec.tempo;
 
     double fileDuration = 0.0;
-    auto* thumbnail = thumbnailManager.getThumbnail(clip.audio().source.filePath);
+    auto* thumbnail = thumbnailManager.getThumbnail(audioEventRef(clip).sourceFilePath());
     if (thumbnail)
         fileDuration = thumbnail->getTotalLength();
 
@@ -74,7 +74,7 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
     // potentially extending past the file.
     auto di = ClipDisplayInfo::from(clip, tempo, fileDuration);
 
-    const double displayOffset = spec.previewOffset.value_or(clip.offset);
+    const double displayOffset = spec.previewOffset.value_or(audioEventRef(clip).anchorSeconds());
 
     const bool thick = spec.thick;
     const auto waveColour = spec.colour;
@@ -82,7 +82,7 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
 
     bool useWarpedDraw = false;
     std::vector<WarpMarkerInfo> warpMarkers;
-    if (clip.warpEnabled) {
+    if (audioEventRef(clip).warpEnabled) {
         auto* audioEngine = TrackManager::getInstance().getAudioEngine();
         if (audioEngine) {
             auto* bridge = audioEngine->getAudioBridge();
@@ -125,10 +125,10 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
         wspec.thick = thick;
         wspec.looped = di.isLooped();
         wspec.cycleWarp = maxWarp - minWarp;
-        daw::ui::drawWarpedWaveform(g, thumbnailManager, clip.audio().source.filePath, warpMarkers,
-                                    wspec);
+        daw::ui::drawWarpedWaveform(g, thumbnailManager, audioEventRef(clip).sourceFilePath(),
+                                    warpMarkers, wspec);
     } else if (di.isLooped()) {
-        double sourceDurationForBeats = clip.audio().source.durationSeconds;
+        double sourceDurationForBeats = audioEventRef(clip).sourceDurationSeconds();
         if (sourceDurationForBeats <= 0.0 && fileDuration > 0.0)
             sourceDurationForBeats = fileDuration;
         if (sourceDurationForBeats <= 0.0)
@@ -136,28 +136,27 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
         const double projectBpm = isValidBpm(tempo) ? tempo : DEFAULT_BPM;
 
         auto timelineDeltaToPreviewSource = [&](double timelineDelta) {
-            if (clip.autoTempo && clip.audio().interpretation.totalBeats > 0.0 &&
+            if (audioEventRef(clip).autoTempo && audioEventRef(clip).interpTotalBeats > 0.0 &&
                 sourceDurationForBeats > 0.0) {
                 double projectBeats = timelineDelta * projectBpm / 60.0;
-                return projectBeats * sourceDurationForBeats /
-                       clip.audio().interpretation.totalBeats;
+                return projectBeats * sourceDurationForBeats / audioEventRef(clip).interpTotalBeats;
             }
             return di.timelineToSource(timelineDelta);
         };
 
         auto sourceDeltaToPreviewTimeline = [&](double sourceDelta) {
-            if (clip.autoTempo && clip.audio().interpretation.totalBeats > 0.0 &&
+            if (audioEventRef(clip).autoTempo && audioEventRef(clip).interpTotalBeats > 0.0 &&
                 sourceDurationForBeats > 0.0) {
                 double sourceBeats =
-                    sourceDelta * clip.audio().interpretation.totalBeats / sourceDurationForBeats;
+                    sourceDelta * audioEventRef(clip).interpTotalBeats / sourceDurationForBeats;
                 return sourceBeats * 60.0 / projectBpm;
             }
             return di.sourceToTimeline(sourceDelta);
         };
 
         double loopCycle = di.loopLengthSeconds;
-        if (clip.autoTempo && clip.loopLengthBeats > 0.0)
-            loopCycle = clip.loopLengthBeats * 60.0 / projectBpm;
+        if (audioEventRef(clip).autoTempo && audioEventRef(clip).loopLengthBeats() > 0.0)
+            loopCycle = audioEventRef(clip).loopLengthBeats() * 60.0 / projectBpm;
         // These were named "fileStart/End" but actually hold the loop
         // region's bounds (in source-time). Renamed to match what they
         // really are; per-tile rendering reads from this loop subset, not
@@ -223,9 +222,9 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
                     segmentSourceStart + timelineDeltaToPreviewSource(segmentDuration);
                 segmentSourceEnd = juce::jmin(segmentSourceEnd, loopRegionEnd);
                 if (clipToVisible(segmentRect, segmentSourceStart, segmentSourceEnd))
-                    thumbnailManager.drawWaveform(g, segmentRect, clip.audio().source.filePath,
-                                                  segmentSourceStart, segmentSourceEnd, waveColour,
-                                                  gainLinear, true, thick);
+                    thumbnailManager.drawWaveform(
+                        g, segmentRect, audioEventRef(clip).sourceFilePath(), segmentSourceStart,
+                        segmentSourceEnd, waveColour, gainLinear, true, thick);
 
                 segmentTime = segmentEnd;
                 remainingTileDuration -= segmentDuration;
@@ -247,11 +246,11 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
         auto drawRect = juce::Rectangle<int>(waveformArea.getX(), waveformArea.getY(), drawWidth,
                                              waveformArea.getHeight());
         if (clipToVisible(drawRect, fileStart, fileEnd))
-            thumbnailManager.drawWaveform(g, drawRect, clip.audio().source.filePath, fileStart,
-                                          fileEnd, waveColour, gainLinear, true, thick);
+            thumbnailManager.drawWaveform(g, drawRect, audioEventRef(clip).sourceFilePath(),
+                                          fileStart, fileEnd, waveColour, gainLinear, true, thick);
     }
 
-    if (clip.isReversed)
+    if (audioEventRef(clip).reversed)
         g.restoreState();
 }
 

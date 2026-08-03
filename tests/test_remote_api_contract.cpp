@@ -3,6 +3,7 @@
 #include <limits>
 #include <set>
 
+#include "AudioClipTestHelpers.hpp"
 #include "MockMagdaApi.hpp"
 #include "magda/daw/api/remote_api.hpp"
 #include "magda/daw/core/AutomationInfo.hpp"
@@ -371,7 +372,7 @@ TEST_CASE("Remote projections expose only allow-listed state",
     clip.trackId = 1;
     clip.name = "Audio";
     clip.setAudioContent();
-    clip.audio().source.filePath = "/Users/private/source.wav";
+    magda::test::giveAudioEvent(clip, "/Users/private/source.wav");
     clip.setPlacementBeats(2.0, 8.0);
     api.clips_.clips.emplace(clip.id, clip);
     api.clips_.clipsOnTrack[1] = {clip.id};

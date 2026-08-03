@@ -10,6 +10,9 @@ set(TEST_SOURCES
     test_auto_tempo.cpp
     test_audio_clip_stretch.cpp
     test_clip_bpm_invariant.cpp
+    test_source_pool.cpp
+    test_clip_event_model.cpp
+    test_clip_schema_migration.cpp
     test_audio_source_length.cpp
     test_audio_export.cpp
     test_offline_render_contract.cpp
@@ -327,6 +330,7 @@ target_sources(magda_juce_tests PRIVATE
     test_section_scoped_device_ids_juce.cpp
     test_clip_inspector_juce.cpp
     test_multi_clip_resize_preview_juce.cpp
+    test_clip_paint_juce.cpp
     test_clip_nudge_juce.cpp
     test_multiband_curve_view_juce.cpp
     test_timeline_extreme_zoom_paint_juce.cpp

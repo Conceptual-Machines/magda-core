@@ -187,7 +187,7 @@ std::optional<magda::ClipId> findOpenClipForPath(const std::filesystem::path& pa
     for (const auto& clip : magda::ClipManager::getInstance().getClips()) {
         juce::String sourcePath;
         if (clip.isAudio()) {
-            sourcePath = clip.audio().source.filePath;
+            sourcePath = audioEventRef(clip).sourceFilePath();
         } else if (clip.isMidi()) {
             sourcePath = clip.midi().sourceFilePath;
         }
@@ -201,14 +201,13 @@ std::optional<magda::ClipId> findOpenClipForPath(const std::filesystem::path& pa
     return std::nullopt;
 }
 
-std::optional<std::vector<magda::ClipInfo::WarpMarker>> currentWarpMarkersForClip(
-    magda::ClipId clipId) {
+std::optional<std::vector<magda::WarpMarker>> currentWarpMarkersForClip(magda::ClipId clipId) {
     auto* clip = magda::ClipManager::getInstance().getClip(clipId);
-    if (clip == nullptr || !clip->isAudio() || !clip->warpEnabled) {
+    if (clip == nullptr || !clip->isAudio() || !magda::audioEventRef(*clip).warpEnabled) {
         return std::nullopt;
     }
 
-    std::vector<magda::ClipInfo::WarpMarker> markers;
+    std::vector<magda::WarpMarker> markers;
     if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
         if (auto* bridge = engine->getAudioBridge()) {
             const auto liveMarkers = bridge->getWarpMarkers(clipId);
@@ -219,7 +218,7 @@ std::optional<std::vector<magda::ClipInfo::WarpMarker>> currentWarpMarkersForCli
         }
     }
     if (markers.empty()) {
-        markers = clip->warpMarkers;
+        markers = magda::audioEventRef(*clip).warpMarkers;
     }
     return markers;
 }

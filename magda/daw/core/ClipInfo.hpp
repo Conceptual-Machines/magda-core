@@ -4,12 +4,14 @@
 #include <juce_graphics/juce_graphics.h>
 
 #include <cmath>
+#include <cstdint>
 #include <map>
 #include <string>
 #include <variant>
 #include <vector>
 
 #include "ClipTypes.hpp"
+#include "SourcePool.hpp"
 #include "TempoMap.hpp"
 #include "TempoUtils.hpp"
 #include "TimeStretchModes.hpp"
@@ -134,25 +136,265 @@ struct ClipPlacement {
     }
 };
 
-struct AudioSourceFacts {
-    juce::String filePath;
-    double durationSeconds = 0.0;
+/**
+ * @brief One warp marker: a point in the source pinned to a warped position.
+ *
+ * Both sides are seconds, unchanged from before the event split (#1901): the
+ * marker moved onto the event, its units did not. Re-expressing the warp side
+ * in beats would change where markers land under a tempo change, and the
+ * container/content split is meant to be behaviour-neutral.
+ */
+struct WarpMarker {
+    double sourceTime = 0.0;
+    double warpTime = 0.0;
 
-    bool operator==(const AudioSourceFacts&) const = default;
+    bool operator==(const WarpMarker&) const = default;
 };
 
-struct AudioSourceInterpretation {
-    double bpm = 0.0;
-    double totalBeats = 0.0;
-    bool totalBeatsLocked = false;
-    // Musical key the source is interpreted in. Optional — empty = unknown.
-    // Inspector/editor edits live on the clip until the user explicitly saves
-    // them to the media library. keyScale is "major" / "minor" / "" when
-    // unknown; keyRoot is "C" / "C#" / ... / "B" or empty.
+/**
+ * @brief Placement of a source inside a clip (#1901).
+ *
+ * Level 2 of the clip model. An event says which Source is heard, which part of
+ * it, where inside the clip, and how the audio is interpreted. It does NOT know
+ * about the timeline: its geometry is relative to the owning clip's start, and
+ * the clip's bounds are a window that crops it.
+ *
+ * Coordinate rule: everything geometric is beats; the only source-domain values
+ * are the anchor and the loop region, which are samples at the source's own
+ * rate. Storing those in samples (rather than seconds or beats) is what makes a
+ * source-BPM reinterpretation leave the audible region untouched and simply
+ * re-read its musical length.
+ */
+struct AudioEvent {
+    EventId id = INVALID_EVENT_ID;
+    SourceId sourceId = INVALID_SOURCE_ID;
+
+    // ---- Clip-relative geometry (beats) ------------------------------------
+
+    /// Start relative to the owning clip's start. May be negative (the head is
+    /// cropped by the clip window).
+    double startBeat = 0.0;
+    double lengthBeats = 0.0;
+
+    // ---- Source domain (samples at the source's own rate) ------------------
+
+    /// Where reading begins in the source, mapped through the warp map.
+    int64_t sourceAnchorSamples = 0;
+
+    /// Source region that repeats to fill the event: how ONE event tiles its
+    /// own file. Whether it loops at all is ClipInfo::loopEnabled, which both
+    /// content types share and which did not move.
+    int64_t loopStartSamples = 0;
+    int64_t loopLengthSamples = 0;  // 0 = derive from the event's own length
+
+    // ---- Interpretation (seeded from the Source, then owned by the user) ---
+
+    double interpBpm = 0.0;
+    double interpTotalBeats = 0.0;
+    bool interpTotalBeatsLocked = false;
+
+    /// Musical key this event is interpreted in. Empty = unknown. keyRoot is
+    /// "C" / "C#" / ... / "B"; keyScale is "major" / "minor". Inspector edits
+    /// live here until the user explicitly saves them to the media library.
     std::string keyRoot;
     std::string keyScale;
 
-    bool operator==(const AudioSourceInterpretation&) const = default;
+    bool autoTempo = false;
+    double speedRatio = 1.0;
+    int timeStretchMode = 0;
+    bool warpEnabled = false;
+    std::vector<WarpMarker> warpMarkers;
+
+    bool autoPitch = false;
+    bool analogPitch = false;
+    int autoPitchMode = 0;     // 0=pitchTrack, 1=chordTrackMono, 2=chordTrackPoly
+    float pitchChange = 0.0f;  // -48 to +48 semitones
+    int transpose = 0;         // -24 to +24 semitones (only when !autoPitch)
+
+    bool reversed = false;
+    bool autoDetectBeats = false;
+    float beatSensitivity = 0.5f;
+
+    bool leftChannelActive = true;
+    bool rightChannelActive = true;
+
+    // ---- Per-event mix -----------------------------------------------------
+
+    /// Trim for this event alone. The clip's own gain sits above it.
+    float gainDB = 0.0f;
+
+    // Seconds, as before the event split. Fades are per-event now, but making
+    // them tempo-relative is a behaviour change and does not belong in a
+    // structural refactor.
+    double fadeInSeconds = 0.0;
+    double fadeOutSeconds = 0.0;
+    int fadeInType = 1;  // FadeCurve
+    int fadeOutType = 1;
+    int fadeInBehaviour = 0;  // 0=gainFade, 1=speedRamp
+    int fadeOutBehaviour = 0;
+
+    bool operator==(const AudioEvent&) const = default;
+
+    double endBeat() const {
+        return startBeat + lengthBeats;
+    }
+
+    // ---- Source resolution -------------------------------------------------
+
+    const Source* source() const {
+        return SourcePool::getInstance().get(sourceId);
+    }
+    double sourceSampleRate() const {
+        return sourceRateOf(sourceId);
+    }
+    juce::String sourceFilePath() const {
+        return sourcePathOf(sourceId);
+    }
+    double sourceDurationSeconds() const {
+        return sourceDurationOf(sourceId);
+    }
+
+    // ---- Source-domain conversions ----------------------------------------
+    //
+    // Samples are authoritative. Seconds and beats are views onto them, so a
+    // change to interpBpm moves the beat view and leaves the audio alone.
+
+    double anchorSeconds() const {
+        return static_cast<double>(sourceAnchorSamples) / sourceSampleRate();
+    }
+    double anchorBeats() const {
+        return interpBpm > 0.0 ? anchorSeconds() * interpBpm / 60.0 : 0.0;
+    }
+    void setAnchorSeconds(double seconds) {
+        sourceAnchorSamples =
+            static_cast<int64_t>(std::llround(juce::jmax(0.0, seconds) * sourceSampleRate()));
+    }
+    void setAnchorBeats(double beats) {
+        if (interpBpm > 0.0)
+            setAnchorSeconds(juce::jmax(0.0, beats) * 60.0 / interpBpm);
+    }
+
+    double loopStartSeconds() const {
+        return static_cast<double>(loopStartSamples) / sourceSampleRate();
+    }
+    double loopLengthSeconds() const {
+        return static_cast<double>(loopLengthSamples) / sourceSampleRate();
+    }
+    double loopStartBeats() const {
+        return interpBpm > 0.0 ? loopStartSeconds() * interpBpm / 60.0 : 0.0;
+    }
+    double loopLengthBeats() const {
+        return interpBpm > 0.0 ? loopLengthSeconds() * interpBpm / 60.0 : 0.0;
+    }
+    void setLoopStartSeconds(double seconds) {
+        loopStartSamples =
+            static_cast<int64_t>(std::llround(juce::jmax(0.0, seconds) * sourceSampleRate()));
+    }
+    void setLoopLengthSeconds(double seconds) {
+        loopLengthSamples =
+            static_cast<int64_t>(std::llround(juce::jmax(0.0, seconds) * sourceSampleRate()));
+    }
+    void setLoopStartBeats(double beats) {
+        if (interpBpm > 0.0)
+            setLoopStartSeconds(juce::jmax(0.0, beats) * 60.0 / interpBpm);
+    }
+    void setLoopLengthBeats(double beats) {
+        if (interpBpm > 0.0)
+            setLoopLengthSeconds(juce::jmax(0.0, beats) * 60.0 / interpBpm);
+    }
+
+    /// Phase of the read position within the loop region (source seconds).
+    double loopPhaseSeconds() const {
+        return static_cast<double>(sourceAnchorSamples - loopStartSamples) / sourceSampleRate();
+    }
+
+    // ---- Playback interpretation -------------------------------------------
+
+    /// Analog pitch resamples instead of stretching, so it is only in force
+    /// when nothing else has already forced a stretcher on.
+    bool isAnalogPitchActive() const {
+        return analogPitch && !autoTempo && !warpEnabled;
+    }
+
+    /// The stretch mode actually applied at playback. Leaving the mode at "Off"
+    /// while the event is in beat mode, warped, sped up or pitch-shifted still
+    /// stretches, using the default quality engine. UI readouts must show this,
+    /// not the raw field, so the inspector and the audio editor agree.
+    int getEffectiveTimeStretchMode() const {
+        if (timeStretchMode == 0 && !isAnalogPitchActive() &&
+            (autoTempo || warpEnabled || std::abs(speedRatio - 1.0) > 0.001 ||
+             std::abs(pitchChange) > 0.001f)) {
+            return time_stretch_mode::kSignalsmith;
+        }
+        return timeStretchMode;
+    }
+
+    /// Source seconds -> timeline seconds (speed FACTOR: faster = shorter).
+    double sourceToTimeline(double sourceTime) const {
+        return sourceTime / speedRatio;
+    }
+    /// Timeline seconds -> source seconds.
+    double timelineToSource(double timelineTime) const {
+        return timelineTime * speedRatio;
+    }
+
+    /// Source seconds consumed by the event: the loop region if one is set,
+    /// otherwise whatever the event's own timeline extent asks for.
+    double sourceLengthSeconds(double eventTimelineSeconds) const {
+        return loopLengthSamples > 0 ? loopLengthSeconds() : timelineToSource(eventTimelineSeconds);
+    }
+
+    /// Offset handed to the engine, in timeline seconds. Looped: the phase
+    /// within the loop region. Non-looped: the raw trim point in the source.
+    ///
+    /// In beat mode speedRatio is pinned to 1 and the real stretch is
+    /// projectBpm / interpBpm, so the source distance has to travel through the
+    /// beat domain to come out as timeline seconds.
+    double engineOffsetSeconds(bool looped, double projectBpm = 0.0) const {
+        if (autoTempo && isValidBpm(projectBpm)) {
+            const double beats = looped ? (anchorBeats() - loopStartBeats()) : anchorBeats();
+            return beats * 60.0 / projectBpm;
+        }
+        return sourceToTimeline(looped ? loopPhaseSeconds() : anchorSeconds());
+    }
+    double engineLoopStartSeconds() const {
+        return sourceToTimeline(loopStartSeconds());
+    }
+    double engineLoopEndSeconds(double eventTimelineSeconds) const {
+        return sourceToTimeline(loopStartSeconds() + sourceLengthSeconds(eventTimelineSeconds));
+    }
+
+    /// Seed the interpretation from an external analysis (Tracktion loopInfo,
+    /// a detection pass). Only fills gaps, so re-analysing a file can never
+    /// rewrite what the user set.
+    ///
+    /// numBeats is only taken when a BPM is known too: a beat count without an
+    /// anchoring tempo claims musical content the file does not carry, and it
+    /// renders as a plausible-looking integer that never gets corrected once a
+    /// real BPM arrives.
+    void seedInterpretation(double numBeats, double bpm) {
+        if (bpm > 0.0 && interpBpm <= 0.0)
+            interpBpm = bpm;
+        if (numBeats > 0.0 && bpm > 0.0 && interpTotalBeats <= 0.0)
+            interpTotalBeats = numBeats;
+    }
+
+    /// Seed interpretation from the pooled source. Only fills gaps: a value the
+    /// user (or a previous seed) already set is never overwritten, so
+    /// re-analysing a file cannot rewrite an interpretation.
+    void seedInterpretationFromSource() {
+        const auto* src = source();
+        if (src == nullptr)
+            return;
+        if (interpBpm <= 0.0 && src->detectedBpm > 0.0)
+            interpBpm = src->detectedBpm;
+        if (interpTotalBeats <= 0.0 && interpBpm > 0.0 && src->durationSeconds > 0.0)
+            interpTotalBeats = src->durationSeconds * interpBpm / 60.0;
+        if (keyRoot.empty())
+            keyRoot = src->detectedKeyRoot;
+        if (keyScale.empty())
+            keyScale = src->detectedKeyScale;
+    }
 };
 
 /**
@@ -191,22 +433,62 @@ struct CompSection {
 };
 
 struct AudioClipModel {
-    AudioSourceFacts source;
-    AudioSourceInterpretation interpretation;
+    // Ordered list of audio events (#1901). The clip hosts them; it knows
+    // nothing about files directly. Kept sorted by startBeat.
+    //
+    // Today nothing in the app produces more than one event: slicing, comping
+    // and consolidation-without-render are the event-level features that switch
+    // on later. The model, serialization and engine bridge all handle N.
+    std::vector<AudioEvent> events;
+    int nextEventId = 1;
 
     // Loop-record takes, one per pass. Empty for ordinary single-source clips.
-    // When non-empty, source.filePath mirrors takes[currentTakeIndex].filePath
-    // (the active take that plays back).
+    // When non-empty, the primary event's source mirrors
+    // takes[currentTakeIndex].filePath (the active take that plays back).
     std::vector<AudioTake> takes;
     int currentTakeIndex = 0;
 
     // Comping. When compActive is true the clip plays a rendered composite
-    // (source.filePath points at the comp render) assembled from `comp`, which
-    // assigns a take to each region of the comp timeline. Empty comp = no comp.
+    // (the primary event's source is the comp render) assembled from `comp`,
+    // which assigns a take to each region of the comp timeline. Empty = no comp.
+    //
+    // Comping keeps its render-based shape for now; turning takes into event
+    // lanes and dropping the render is the follow-up to #1901, not part of the
+    // schema split.
     std::vector<CompSection> comp;
     bool compActive = false;
 
     bool operator==(const AudioClipModel&) const = default;
+
+    AudioEvent* primaryEvent() {
+        return events.empty() ? nullptr : &events.front();
+    }
+    const AudioEvent* primaryEvent() const {
+        return events.empty() ? nullptr : &events.front();
+    }
+
+    AudioEvent* findEvent(EventId eventId) {
+        for (auto& event : events)
+            if (event.id == eventId)
+                return &event;
+        return nullptr;
+    }
+    const AudioEvent* findEvent(EventId eventId) const {
+        for (const auto& event : events)
+            if (event.id == eventId)
+                return &event;
+        return nullptr;
+    }
+
+    /// Append an event with a freshly allocated id and return it.
+    ///
+    /// The reference is into `events`, so a later addEvent invalidates it.
+    /// Hold the id, not the reference, across calls.
+    AudioEvent& addEvent(AudioEvent event) {
+        event.id = nextEventId++;
+        events.push_back(std::move(event));
+        return events.back();
+    }
 };
 
 /**
@@ -247,7 +529,7 @@ struct MidiClipModel {
     // When non-empty, the active take's events are mirrored into the clip's
     // authoritative ClipInfo::midiNotes / midiCCData / midiPitchBendData (the
     // rendered, engine-synced content) — mirroring how AudioClipModel fronts
-    // takes[currentTakeIndex] into source.filePath.
+    // takes[currentTakeIndex] into the primary event's source.
     std::vector<MidiTake> takes;
     int currentTakeIndex = 0;
 
@@ -357,145 +639,65 @@ struct ClipInfo {
     // removes direct field access.
     double startBeats = 0.0;
 
-    /// Populate source metadata from engine (only sets if not already populated).
-    /// This is source-domain data only; it must never edit clip placement or
-    /// source loop region state.
-    ///
-    /// numBeats is only seeded when bpm is also known. A beat count without an
-    /// anchoring BPM is meaningless — it claims musical content the file
-    /// doesn't actually carry. Without this guard the source-domain
-    /// interpretation gets a bpm=0 / totalBeats=projectBpm×duration seed,
-    /// which renders as "—" in the BPM column but a wrong integer in the
-    /// beats column, and stays that way after the user later sets the real
-    /// BPM unless the BPM-edit path also rewrites totalBeats.
-    void setSourceMetadata(double numBeats, double bpm) {
-        if (!isAudio())
-            return;
+    // =========================================================================
+    // Event access (audio clips)
+    //
+    // Phase A of #1901 never builds a clip with more than one event, so
+    // primaryEvent() is the whole story for existing call sites. It becomes
+    // "the event the user is editing" once the UI gains event selection; it is
+    // not a permanent stand-in for iterating events.
+    // =========================================================================
 
-        auto& source = audio();
-        if (bpm > 0.0 && source.interpretation.bpm <= 0.0)
-            source.interpretation.bpm = bpm;
-        if (numBeats > 0.0 && bpm > 0.0 && source.interpretation.totalBeats <= 0.0)
-            source.interpretation.totalBeats = numBeats;
-        if (source.source.durationSeconds <= 0.0 && source.interpretation.totalBeats > 0.0 &&
-            source.interpretation.bpm > 0.0) {
-            source.source.durationSeconds =
-                source.interpretation.totalBeats * 60.0 / source.interpretation.bpm;
-        }
+    AudioEvent* primaryEvent() {
+        return isAudio() ? audio().primaryEvent() : nullptr;
+    }
+    const AudioEvent* primaryEvent() const {
+        return isAudio() ? audio().primaryEvent() : nullptr;
+    }
+
+    /// Every audio event, empty for MIDI clips.
+    std::vector<AudioEvent>& events() {
+        return audio().events;
+    }
+    const std::vector<AudioEvent>& events() const {
+        return audio().events;
     }
 
     // =========================================================================
-    // Audio playback parameters (TE-aligned terminology)
+    // Looping
+    //
+    // Unchanged by #1901. The toggle is shared by both content types, and
+    // loopStartBeats / loopLengthBeats are the MIDI loop in clip beats. Only
+    // an audio clip's source REGION moved, onto its event, because that is a
+    // position in a file rather than on the timeline.
     // =========================================================================
 
-    // Source offset - where to start reading from source file
-    // TE: Clip::offset (but TE stores in stretched time, we use source time)
-    double offset = 0.0;  // Start position in source file (source-time seconds)
-
-    // Beat-based offset (authoritative for autoTempo clips)
-    // Source beats from file start. offset (seconds) is derived: offsetBeats * 60/source
-    // interpretation BPM
-    double offsetBeats = 0.0;
-
-    // Looping - defines the region that loops
-    // TE: AudioClipBase::loopStart, loopLength, isLooping()
-    bool loopEnabled = false;  // Whether to loop the source region
-    double loopStart = 0.0;    // Where loop region starts in source file (source-time seconds)
-    double loopLength = 0.0;   // Length of loop region (source-time seconds, 0 = use clip length)
-
-    // Time stretch
-    // TE: Clip::speedRatio
-    // speedRatio is a SPEED FACTOR (NOT stretch factor!)
-    // Formula: timeline_seconds = source_seconds / speedRatio
-    // speedRatio = 1.0: normal playback
-    // speedRatio = 2.0: 2x faster (half timeline duration)
-    // speedRatio = 0.5: 2x slower (double timeline duration)
-    double speedRatio = 1.0;  // Playback speed ratio (1.0 = original, 2.0 = 2x speed/half duration)
-
-    bool warpEnabled = false;  // Whether warp markers are active on this clip
-    int timeStretchMode = 0;   // TimeStretcher::Mode (0 = default/auto)
-
-    // Warp marker positions (only populated when warpEnabled == true)
-    struct WarpMarker {
-        double sourceTime;
-        double warpTime;
-
-        bool operator==(const WarpMarker&) const = default;
-    };
-    std::vector<WarpMarker> warpMarkers;
+    bool loopEnabled = false;
+    double loopStartBeats = 0.0;
+    double loopLengthBeats = 0.0;
 
     // =========================================================================
-    // Auto-tempo / Musical mode
+    // Clip-level placement and mix
+    //
+    // How the audio is read and interpreted lives on the events. What stays
+    // here belongs to the container: where it sits, whether it plays, how it is
+    // launched, and its own gain.
     // =========================================================================
-    // When autoTempo=true:
-    // - Beat values are authoritative, time values are derived from BPM
-    // - TE's autoTempo is enabled, clips maintain fixed musical length
-    // - speedRatio must be 1.0 (TE requirement)
-    // When autoTempo=false:
-    // - Timeline placement is still beat-domain
-    // - Source playback uses offset/loop/source seconds without implying timeline position
-    bool autoTempo = false;  // Enable beat-based length (musical mode)
 
-    // Beat-based loop properties (only used when autoTempo = true)
-    // TE: AudioClipBase::loopStartBeats, loopLengthBeats
-    double loopStartBeats = 0.0;   // Loop start in beats (relative to file start)
-    double loopLengthBeats = 0.0;  // Loop length in beats (0 = derive from clip length)
-    double lengthBeats = 4.0;      // Transitional mirror of placement.lengthBeats
-
-    // Pitch
-    bool autoPitch = false;
-    bool analogPitch = false;  // Analog pitch: resample instead of time-stretch
-    bool isAnalogPitchActive() const {
-        return analogPitch && !autoTempo && !warpEnabled;
-    }
-
-    // The time-stretch mode that is actually applied at playback. When the mode
-    // is left at "Off" (0) but the clip is in beat mode, warped, sped up, or
-    // pitch-shifted (without analog pitch), TE silently stretches using its
-    // default quality engine. UI readouts must show this effective mode,
-    // not the raw field, so the inspector and the audio editor agree — e.g.
-    // after a session drop auto-enables beat mode.
-    int getEffectiveTimeStretchMode() const {
-        if (timeStretchMode == 0 && !isAnalogPitchActive() &&
-            (autoTempo || warpEnabled || std::abs(speedRatio - 1.0) > 0.001 ||
-             std::abs(pitchChange) > 0.001f)) {
-            return time_stretch_mode::kSignalsmith;
-        }
-        return timeStretchMode;
-    }
-
-    int autoPitchMode = 0;     // 0=pitchTrack, 1=chordTrackMono, 2=chordTrackPoly
-    float pitchChange = 0.0f;  // -48 to +48 semitones
-    int transpose = 0;         // -24 to +24 semitones (only when !autoPitch)
-
-    // Beat Detection
-    bool autoDetectBeats = false;
-    float beatSensitivity = 0.5f;
-
-    // Playback
-    bool isReversed = false;
+    double lengthBeats = 4.0;  // Transitional mirror of placement.lengthBeats
 
     // Per-Clip Mix
     float volumeDB = 0.0f;  // Volume: -inf to 0 dB (clip handle)
     float gainDB = 0.0f;    // Gain: 0 to +24 dB (inspector only)
     float pan = 0.0f;       // -1.0 to 1.0
 
-    // Fades
-    double fadeIn = 0.0;
-    double fadeOut = 0.0;
-    int fadeInType = 1;  // AudioFadeCurve::Type
-    int fadeOutType = 1;
-    int fadeInBehaviour = 0;  // 0=gainFade, 1=speedRamp
-    int fadeOutBehaviour = 0;
+    // Crossfade with the neighbouring clip on the same track. Crossfades
+    // BETWEEN events inside one clip are an event-level concern.
     bool autoCrossfade = false;
 
     // launchFadeSamples: ramp on the stopped→playing transition. Default 256
     // matches TE's prior hard-coded behaviour; 0 preserves the leading transient.
     int launchFadeSamples = 256;
-
-    // Channels
-    bool leftChannelActive = true;
-    bool rightChannelActive = true;
 
     // MIDI-specific properties
     std::vector<MidiNote> midiNotes;
@@ -555,6 +757,63 @@ struct ClipInfo {
         placement.lengthBeats = juce::jmax(0.0, beatLength);
         startBeats = placement.startBeat;
         lengthBeats = placement.lengthBeats;
+        syncSingleEventToClipBounds();
+    }
+
+    /// Keep a single-event clip's content coextensive with its container.
+    ///
+    /// Phase A of #1901 splits the schema without changing behaviour, so a clip
+    /// and the one event inside it stay the same extent and every existing
+    /// resize/trim path keeps working unchanged. Clips holding several events
+    /// are already representable, and for those the clip bounds are a window
+    /// that crops rather than resizes, so this deliberately does nothing.
+    void syncSingleEventToClipBounds() {
+        if (!isAudio())
+            return;
+        auto& list = audio().events;
+        if (list.size() != 1)
+            return;
+        list.front().startBeat = 0.0;
+        list.front().lengthBeats = placement.lengthBeats;
+    }
+
+    /// Event fields a ghost sibling mirrors: what the source IS and how it is
+    /// interpreted. The placement-coupled fields (anchor, loop region,
+    /// speedRatio, fades, channels, gain, and the event's own geometry) stay
+    /// per-instance, so one ghost's resize or trim cannot corrupt its siblings.
+    /// Kept in lockstep with sharedEventFieldsEqual below.
+    static void copySharedEventFieldsFrom(AudioEvent& dst, const AudioEvent& src) {
+        dst.sourceId = src.sourceId;
+        dst.interpBpm = src.interpBpm;
+        dst.interpTotalBeats = src.interpTotalBeats;
+        dst.interpTotalBeatsLocked = src.interpTotalBeatsLocked;
+        dst.keyRoot = src.keyRoot;
+        dst.keyScale = src.keyScale;
+        dst.autoTempo = src.autoTempo;
+        dst.timeStretchMode = src.timeStretchMode;
+        dst.warpEnabled = src.warpEnabled;
+        dst.warpMarkers = src.warpMarkers;
+        dst.autoPitch = src.autoPitch;
+        dst.analogPitch = src.analogPitch;
+        dst.autoPitchMode = src.autoPitchMode;
+        dst.pitchChange = src.pitchChange;
+        dst.transpose = src.transpose;
+        dst.reversed = src.reversed;
+        dst.autoDetectBeats = src.autoDetectBeats;
+        dst.beatSensitivity = src.beatSensitivity;
+    }
+
+    static bool sharedEventFieldsEqual(const AudioEvent& a, const AudioEvent& b) {
+        return a.sourceId == b.sourceId && a.interpBpm == b.interpBpm &&
+               a.interpTotalBeats == b.interpTotalBeats &&
+               a.interpTotalBeatsLocked == b.interpTotalBeatsLocked && a.keyRoot == b.keyRoot &&
+               a.keyScale == b.keyScale && a.autoTempo == b.autoTempo &&
+               a.timeStretchMode == b.timeStretchMode && a.warpEnabled == b.warpEnabled &&
+               a.warpMarkers == b.warpMarkers && a.autoPitch == b.autoPitch &&
+               a.analogPitch == b.analogPitch && a.autoPitchMode == b.autoPitchMode &&
+               a.pitchChange == b.pitchChange && a.transpose == b.transpose &&
+               a.reversed == b.reversed && a.autoDetectBeats == b.autoDetectBeats &&
+               a.beatSensitivity == b.beatSensitivity;
     }
 
     /// Copy the content-defining fields from a link-group sibling (ghost-clip
@@ -562,32 +821,34 @@ struct ClipInfo {
     /// source is interpreted is shared — including the name (the UI appends a
     /// per-instance #index for display); everything that says WHERE it sits
     /// and how it mixes stays per-instance: id, trackId, colour, view,
-    /// placement (+ derived mirrors), offsets (placement-coupled: left-resize
-    /// trims only that instance), volume/gain/pan, fades, channels, launch and
-    /// grid settings. Loop fields and speedRatio are per-instance too: for
-    /// non-looped audio, resize keeps loopStart/loopLength mirroring
-    /// offset/length, and stretch-resize writes speedRatio — sharing either
-    /// would let one ghost's resize corrupt its siblings.
+    /// placement (+ derived mirrors), volume/gain/pan, launch and grid
+    /// settings, plus the per-instance event fields listed above.
+    ///
+    /// When the two clips disagree on how many events they hold, the sibling's
+    /// event list is taken wholesale: the structure itself changed, and there
+    /// is no per-instance state on an event that does not exist yet.
     void copySharedContentFrom(const ClipInfo& src) {
         name = src.name;
-        content = src.content;
+
+        if (isAudio() && src.isAudio() && events().size() == src.events().size()) {
+            for (size_t i = 0; i < events().size(); ++i)
+                copySharedEventFieldsFrom(events()[i], src.events()[i]);
+            auto& dstAudio = audio();
+            const auto& srcAudio = src.audio();
+            dstAudio.nextEventId = srcAudio.nextEventId;
+            dstAudio.takes = srcAudio.takes;
+            dstAudio.currentTakeIndex = srcAudio.currentTakeIndex;
+            dstAudio.comp = srcAudio.comp;
+            dstAudio.compActive = srcAudio.compActive;
+        } else {
+            content = src.content;
+        }
+
         midiNotes = src.midiNotes;
         midiCCData = src.midiCCData;
         midiPitchBendData = src.midiPitchBendData;
         chordAnnotations = src.chordAnnotations;
         nextChordGroupId = src.nextChordGroupId;
-        warpEnabled = src.warpEnabled;
-        timeStretchMode = src.timeStretchMode;
-        warpMarkers = src.warpMarkers;
-        autoTempo = src.autoTempo;
-        autoPitch = src.autoPitch;
-        analogPitch = src.analogPitch;
-        autoPitchMode = src.autoPitchMode;
-        pitchChange = src.pitchChange;
-        transpose = src.transpose;
-        autoDetectBeats = src.autoDetectBeats;
-        beatSensitivity = src.beatSensitivity;
-        isReversed = src.isReversed;
         grooveTemplate = src.grooveTemplate;
         grooveStrength = src.grooveStrength;
     }
@@ -597,17 +858,27 @@ struct ClipInfo {
     /// ghost-clip propagation skip the deep sibling copies (and the sibling
     /// notifications) when an edit only touched per-instance state.
     bool sharedContentEquals(const ClipInfo& src) const {
-        return name == src.name && content == src.content && midiNotes == src.midiNotes &&
-               midiCCData == src.midiCCData && midiPitchBendData == src.midiPitchBendData &&
-               chordAnnotations == src.chordAnnotations &&
-               nextChordGroupId == src.nextChordGroupId && warpEnabled == src.warpEnabled &&
-               timeStretchMode == src.timeStretchMode && warpMarkers == src.warpMarkers &&
-               autoTempo == src.autoTempo && autoPitch == src.autoPitch &&
-               analogPitch == src.analogPitch && autoPitchMode == src.autoPitchMode &&
-               pitchChange == src.pitchChange && transpose == src.transpose &&
-               autoDetectBeats == src.autoDetectBeats && beatSensitivity == src.beatSensitivity &&
-               isReversed == src.isReversed && grooveTemplate == src.grooveTemplate &&
-               grooveStrength == src.grooveStrength;
+        if (name != src.name || midiNotes != src.midiNotes || midiCCData != src.midiCCData ||
+            midiPitchBendData != src.midiPitchBendData ||
+            chordAnnotations != src.chordAnnotations || nextChordGroupId != src.nextChordGroupId ||
+            grooveTemplate != src.grooveTemplate || grooveStrength != src.grooveStrength) {
+            return false;
+        }
+
+        if (!isAudio() || !src.isAudio())
+            return content == src.content;
+
+        const auto& a = audio();
+        const auto& b = src.audio();
+        if (a.events.size() != b.events.size() || a.nextEventId != b.nextEventId ||
+            a.takes != b.takes || a.currentTakeIndex != b.currentTakeIndex || a.comp != b.comp ||
+            a.compActive != b.compActive) {
+            return false;
+        }
+        for (size_t i = 0; i < a.events.size(); ++i)
+            if (!sharedEventFieldsEqual(a.events[i], b.events[i]))
+                return false;
+        return true;
     }
 
     /// Derive startTime/length from placement beats using the given BPM.
@@ -622,135 +893,9 @@ struct ClipInfo {
         }
     }
 
-    // =========================================================================
-    // Beats-first source-domain setters (audio clips)
-    //
-    // The ONLY supported paths for writing offset / loopStart / loopLength.
-    // They take BEATS and derive the seconds mirror via the source's
-    // interpretation BPM (during the transitional period while the seconds
-    // fields still exist). When all readers are migrated off the seconds
-    // fields, those fields go away and the derive step goes with them.
-    //
-    // Deliberately no `setXxxSeconds` counterpart: a parallel seconds API
-    // would just keep call sites writing seconds and quietly recompute beats,
-    // which is the leak we're trying to close. Callers that have seconds
-    // convert at the call site: beats = seconds × interpBpm / 60.
-    // =========================================================================
-
-    void setSourceOffsetBeats(double beats, double interpBpm) {
-        offsetBeats = juce::jmax(0.0, beats);
-        if (interpBpm > 0.0)
-            offset = offsetBeats * 60.0 / interpBpm;
-    }
-
-    void setLoopStartBeats(double beats, double interpBpm) {
-        loopStartBeats = juce::jmax(0.0, beats);
-        if (interpBpm > 0.0)
-            loopStart = loopStartBeats * 60.0 / interpBpm;
-    }
-
-    void setLoopLengthBeats(double beats, double interpBpm) {
-        loopLengthBeats = juce::jmax(0.0, beats);
-        if (interpBpm > 0.0)
-            loopLength = loopLengthBeats * 60.0 / interpBpm;
-    }
-
     /// Get end position in beats without BPM conversion (beats are always valid for MIDI)
     double getEndBeatsRaw() const {
         return placement.endBeat();
-    }
-
-    /// Convert source-time to timeline-time (speed-factor semantics: timeline = source /
-    /// speedRatio)
-    double sourceToTimeline(double sourceTime) const {
-        return sourceTime / speedRatio;  // Faster = shorter timeline
-    }
-
-    /// Convert timeline-time to source-time (speed-factor semantics: source = timeline *
-    /// speedRatio)
-    double timelineToSource(double timelineTime) const {
-        return timelineTime * speedRatio;  // Timeline × speed = source distance
-    }
-
-    /// Effective source length: loopLength if set, otherwise derived from timeline placement.
-    double getSourceLength(double projectBPM) const {
-        return loopLength > 0.0 ? loopLength : timelineToSource(getTimelineLength(projectBPM));
-    }
-
-    /// Compatibility fallback for callers that still do not have project BPM nearby.
-    double getSourceLength() const {
-        return loopLength > 0.0 ? loopLength : timelineToSource(length);
-    }
-
-    /// Source length expressed in timeline seconds
-    double getSourceLengthOnTimeline(double projectBPM) const {
-        return sourceToTimeline(getSourceLength(projectBPM));
-    }
-
-    /// Compatibility fallback for callers that still do not have project BPM nearby.
-    double getSourceLengthOnTimeline() const {
-        return sourceToTimeline(getSourceLength());
-    }
-
-    /// Loop phase: offset relative to loopStart (meaningful in loop mode)
-    double getLoopPhase() const {
-        return offset - loopStart;
-    }
-
-    /// TE offset in timeline seconds (source / speedRatio).
-    /// TE expects offset in the same time domain as clip start (timeline seconds).
-    /// Looped: phase within the loop region (offset - loopStart).
-    /// Non-looped: raw trim point in the source file.
-    /// For autoTempo clips, offsetBeats is authoritative and converted to
-    /// timeline seconds via projectBPM at the TE boundary.
-    double getTeOffset(bool looped, double projectBPM = 0.0) const {
-        if (autoTempo && isValidBpm(projectBPM)) {
-            // Convert source beats to timeline seconds for TE
-            if (looped)
-                return (offsetBeats - loopStartBeats) * 60.0 / projectBPM;
-            return offsetBeats * 60.0 / projectBPM;
-        }
-        if (looped)
-            return sourceToTimeline(offset - loopStart);
-        return sourceToTimeline(offset);
-    }
-
-    /// TE loop start in timeline seconds (source / speedRatio)
-    double getTeLoopStart() const {
-        return sourceToTimeline(loopStart);
-    }
-
-    /// TE loop end in timeline seconds (source / speedRatio)
-    double getTeLoopEnd(double projectBPM) const {
-        return sourceToTimeline(loopStart + getSourceLength(projectBPM));
-    }
-
-    /// Compatibility fallback for callers that still do not have project BPM nearby.
-    double getTeLoopEnd() const {
-        return sourceToTimeline(loopStart + getSourceLength());
-    }
-
-    /// Sync loopStart to match offset (keeps loop region anchored to playback start)
-    void syncLoopStartToOffset() {
-        loopStart = offset;
-    }
-
-    /// Set loopLength from a timeline-time extent (converts to source-time)
-    void setLoopLengthFromTimeline(double timelineLength) {
-        loopLength = timelineToSource(timelineLength);
-    }
-
-    // =========================================================================
-    // Auto-tempo helpers
-    // =========================================================================
-
-    /// Get effective loop length for display/operations
-    /// Returns beat length when autoTempo=true, time length otherwise
-    double getEffectiveLoopLength() const {
-        if (autoTempo) {
-            return loopLengthBeats;
-        }
-        return loopLength;
     }
 
     /// Convert clip length to beats (using current tempo)
@@ -841,37 +986,39 @@ struct ClipInfo {
     /// placement.lengthBeats; use this (not getTimelineLength) for the slot
     /// progress overlay so the bar and the playhead stay consistent.
     double getTimelineLoopLength(double projectBPM) const {
-        if (loopEnabled && loopLengthBeats > 0.0 && isValidBpm(projectBPM)) {
-            return loopLengthBeats * 60.0 / projectBPM;
+        if (loopEnabled && isValidBpm(projectBPM)) {
+            // MIDI keeps its loop length in clip beats; an audio clip's is the
+            // beat view of its event's source region.
+            const auto* event = primaryEvent();
+            const double beats = event != nullptr ? event->loopLengthBeats() : loopLengthBeats;
+            if (beats > 0.0)
+                return beats * 60.0 / projectBPM;
         }
         return getTimelineLength(projectBPM);
     }
-
-    /// Source-domain seconds for the loop start. For autoTempo clips, computed
-    /// live from loopStartBeats × 60 / source interpretation BPM. For non-autoTempo clips,
-    /// returns the stored field.
-    double getSourceLoopStart() const {
-        if (autoTempo && audio().interpretation.bpm > 0.0) {
-            return loopStartBeats * 60.0 / audio().interpretation.bpm;
-        }
-        return loopStart;
-    }
-
-    /// Source-domain seconds for the loop length.
-    double getSourceLoopLength() const {
-        if (autoTempo && audio().interpretation.bpm > 0.0 && loopLengthBeats > 0.0) {
-            return loopLengthBeats * 60.0 / audio().interpretation.bpm;
-        }
-        return loopLength;
-    }
-
-    /// Source-domain seconds for the read-position offset.
-    double getSourceOffset() const {
-        if (autoTempo && audio().interpretation.bpm > 0.0) {
-            return offsetBeats * 60.0 / audio().interpretation.bpm;
-        }
-        return offset;
-    }
 };
+
+/// Primary audio event of a clip, null-safe on both the clip pointer and the
+/// clip's content type. Most call sites hold a `ClipInfo*` from a lookup that
+/// can miss, and MIDI clips have no events at all.
+inline AudioEvent* primaryEventOf(ClipInfo* clip) {
+    return clip != nullptr ? clip->primaryEvent() : nullptr;
+}
+inline const AudioEvent* primaryEventOf(const ClipInfo* clip) {
+    return clip != nullptr ? clip->primaryEvent() : nullptr;
+}
+
+/// Read-only view of a clip's audio event for code that only ever reads.
+///
+/// Phase A of #1901 gives every audio clip exactly one event spanning it, so
+/// readers that used to reach for a clip-level audio field can reach for this
+/// instead. A MIDI clip yields a default event, which keeps those readers total
+/// without a null branch. Anything that needs to handle several events per clip
+/// iterates ClipInfo::events() rather than calling this.
+inline const AudioEvent& audioEventRef(const ClipInfo& clip) {
+    static const AudioEvent kNoEvent{};
+    const auto* event = clip.primaryEvent();
+    return event != nullptr ? *event : kNoEvent;
+}
 
 }  // namespace magda

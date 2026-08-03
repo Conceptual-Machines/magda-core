@@ -58,7 +58,7 @@ void ClipFadesSection::initControls() {
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->isAudio() && c->view != magda::ClipView::Session) {
-                double newVal = juce::jmax(0.0, c->fadeIn + delta);
+                double newVal = juce::jmax(0.0, magda::audioEventRef(*c).fadeInSeconds + delta);
                 batch.execute(std::make_unique<magda::SetClipFadeInCommand>(cid, newVal));
             }
         }
@@ -82,7 +82,7 @@ void ClipFadesSection::initControls() {
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->isAudio() && c->view != magda::ClipView::Session) {
-                double newVal = juce::jmax(0.0, c->fadeOut + delta);
+                double newVal = juce::jmax(0.0, magda::audioEventRef(*c).fadeOutSeconds + delta);
                 batch.execute(std::make_unique<magda::SetClipFadeOutCommand>(cid, newVal));
             }
         }
@@ -377,17 +377,19 @@ void ClipFadesSection::update() {
         bool isMulti = selectedClipIds_.size() > 1;
         if (isMulti) {
             // Show midpoint, set drag starts
-            double minIn = clip->fadeIn, maxIn = clip->fadeIn;
-            double minOut = clip->fadeOut, maxOut = clip->fadeOut;
+            double minIn = magda::audioEventRef(*clip).fadeInSeconds,
+                   maxIn = magda::audioEventRef(*clip).fadeInSeconds;
+            double minOut = magda::audioEventRef(*clip).fadeOutSeconds,
+                   maxOut = magda::audioEventRef(*clip).fadeOutSeconds;
             for (auto cid : selectedClipIds_) {
                 if (cid == pid)
                     continue;
                 const auto* c = magda::ClipManager::getInstance().getClip(cid);
                 if (c && c->isAudio()) {
-                    minIn = juce::jmin(minIn, (double)c->fadeIn);
-                    maxIn = juce::jmax(maxIn, (double)c->fadeIn);
-                    minOut = juce::jmin(minOut, (double)c->fadeOut);
-                    maxOut = juce::jmax(maxOut, (double)c->fadeOut);
+                    minIn = juce::jmin(minIn, (double)magda::audioEventRef(*c).fadeInSeconds);
+                    maxIn = juce::jmax(maxIn, (double)magda::audioEventRef(*c).fadeInSeconds);
+                    minOut = juce::jmin(minOut, (double)magda::audioEventRef(*c).fadeOutSeconds);
+                    maxOut = juce::jmax(maxOut, (double)magda::audioEventRef(*c).fadeOutSeconds);
                 }
             }
             double midIn = (minIn + maxIn) / 2.0;
@@ -408,19 +410,23 @@ void ClipFadesSection::update() {
             // so reflect that state — otherwise multi-select clicks look inert.
             autoCrossfadeToggle_.setToggleState(clip->autoCrossfade, juce::dontSendNotification);
         } else {
-            fadeInValue_->setValue(clip->fadeIn, juce::dontSendNotification);
-            fadeOutValue_->setValue(clip->fadeOut, juce::dontSendNotification);
+            fadeInValue_->setValue(magda::audioEventRef(*clip).fadeInSeconds,
+                                   juce::dontSendNotification);
+            fadeOutValue_->setValue(magda::audioEventRef(*clip).fadeOutSeconds,
+                                    juce::dontSendNotification);
             fadeInValue_->clearTextOverride();
             fadeOutValue_->clearTextOverride();
-            multiFadeInDragStart_ = clip->fadeIn;
-            multiFadeOutDragStart_ = clip->fadeOut;
+            multiFadeInDragStart_ = magda::audioEventRef(*clip).fadeInSeconds;
+            multiFadeOutDragStart_ = magda::audioEventRef(*clip).fadeOutSeconds;
             for (int i = 0; i < 4; ++i) {
-                fadeInTypeButtons_[i]->setActive(i == clip->fadeInType - 1);
-                fadeOutTypeButtons_[i]->setActive(i == clip->fadeOutType - 1);
+                fadeInTypeButtons_[i]->setActive(i == magda::audioEventRef(*clip).fadeInType - 1);
+                fadeOutTypeButtons_[i]->setActive(i == magda::audioEventRef(*clip).fadeOutType - 1);
             }
             for (int i = 0; i < 2; ++i) {
-                fadeInBehaviourButtons_[i]->setActive(i == clip->fadeInBehaviour);
-                fadeOutBehaviourButtons_[i]->setActive(i == clip->fadeOutBehaviour);
+                fadeInBehaviourButtons_[i]->setActive(i ==
+                                                      magda::audioEventRef(*clip).fadeInBehaviour);
+                fadeOutBehaviourButtons_[i]->setActive(
+                    i == magda::audioEventRef(*clip).fadeOutBehaviour);
             }
             autoCrossfadeToggle_.setToggleState(clip->autoCrossfade, juce::dontSendNotification);
         }

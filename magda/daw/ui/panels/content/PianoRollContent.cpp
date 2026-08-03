@@ -1344,10 +1344,12 @@ void PianoRollContent::updateGridSize() {
             tempo = controller->getState().tempo.bpm;
         }
         double beatsPerSecond = tempo / 60.0;
-        double loopOffsetBeats = clip->loopStart * beatsPerSecond;
-        // MIDI clips use loopLengthBeats directly; audio clips derive from loopLength (seconds)
-        double sourceLengthBeats =
-            clip->loopLengthBeats > 0.0 ? clip->loopLengthBeats : clip->loopLength * beatsPerSecond;
+        // The loop is read through the content-aware accessors: a MIDI clip's
+        // loop lives in clip beats, an audio event's in its source domain.
+        juce::ignoreUnused(beatsPerSecond);
+        const double loopOffsetBeats =
+            clip->isMidi() ? clip->loopStartBeats : magda::audioEventRef(*clip).loopStartBeats();
+        const double sourceLengthBeats = clip->loopLengthBeats;
         gridComponent_->setLoopRegion(loopOffsetBeats, sourceLengthBeats, clip->loopEnabled);
     } else {
         gridComponent_->setLoopRegion(0.0, 0.0, false);

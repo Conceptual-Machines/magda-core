@@ -25,6 +25,17 @@ struct StagedProjectData {
 };
 
 /**
+ * @brief Project file schema version.
+ *
+ * 1 (written as no key at all): a clip carried one audio source and one set of
+ *   playback fields.
+ * 2: the clip hosts a list of events referencing pooled sources (#1901). Read
+ *   support for 1 is permanent; nothing writes it any more, so a v2 file does
+ *   not open in an older build.
+ */
+constexpr int kProjectSchemaVersion = 2;
+
+/**
  * @brief Main serialization class for Magda projects
  *
  * Handles serialization/deserialization of complete project state to/from JSON format.
@@ -110,6 +121,32 @@ class ProjectSerializer {
      * @brief Serialize all tracks to JSON array
      */
     static juce::var serializeTracks();
+
+    // ========================================================================
+    // Clip serialization
+    //
+    // Public so the schema-migration tests can drive a single clip directly.
+    // Feeding a hand-built v1 clip through the whole project path would need
+    // the track and clip managers standing up around it, which buys nothing.
+    // ========================================================================
+
+    static juce::var serializeClipInfo(const ClipInfo& clip);
+    static bool deserializeClipInfo(const juce::var& json, ClipInfo& outClip,
+                                    double projectTempo = 120.0);
+
+    /**
+     * @brief Serialize the pooled media sources to a JSON array (#1901).
+     *
+     * Garbage-collects the pool first: only sources a clip still references are
+     * written.
+     */
+    static juce::var serializeSources();
+
+    /**
+     * @brief Restore pooled media sources. Must run before clips, whose events
+     * reference sources by id.
+     */
+    static void deserializeSources(const juce::var& json);
 
     /**
      * @brief Serialize all clips to JSON array
@@ -211,10 +248,6 @@ class ProjectSerializer {
     // ========================================================================
     // Clip serialization helpers
     // ========================================================================
-
-    static juce::var serializeClipInfo(const ClipInfo& clip);
-    static bool deserializeClipInfo(const juce::var& json, ClipInfo& outClip,
-                                    double projectTempo = 120.0);
 
     static juce::var serializeMidiNote(const MidiNote& data);
     static bool deserializeMidiNote(const juce::var& json, MidiNote& data);

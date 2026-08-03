@@ -417,7 +417,7 @@ class ClipManager {
     [[nodiscard]] bool canSaveClipToLibrary(ClipId clipId) const;
 
     [[nodiscard]] bool saveClipToLibrary(
-        ClipId clipId, std::optional<std::vector<ClipInfo::WarpMarker>> warpMarkers = std::nullopt);
+        ClipId clipId, std::optional<std::vector<WarpMarker>> warpMarkers = std::nullopt);
 
     /** @brief Refresh the seconds-domain cache (length, startTime, offset,
      *         loopStart, loopLength) on a beat-authoritative clip from its
@@ -454,7 +454,8 @@ class ClipManager {
     void setClipGainDB(ClipId clipId, float dB);
     void setClipPan(ClipId clipId, float pan);
 
-    // Fades
+    // Fades. Seconds, as before #1901 — the fade moved onto the audio event,
+    // its units did not.
     void setFadeIn(ClipId clipId, double seconds);
     void setFadeOut(ClipId clipId, double seconds);
     void setFadeInType(ClipId clipId, int type);

@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <filesystem>
 
+#include "AudioClipTestHelpers.hpp"
 #include "magda/daw/core/AppPaths.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
@@ -554,7 +555,8 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         REQUIRE(ProjectSerializer::loadAndStage(actualFile, staged));
         REQUIRE(staged.clips.size() == 1);
         REQUIRE(staged.clips[0].isAudio());
-        REQUIRE(staged.clips[0].audio().source.filePath == expectedFile.getFullPathName());
+        REQUIRE(magda::audioEventRef(staged.clips[0]).sourceFilePath() ==
+                expectedFile.getFullPathName());
         REQUIRE(expectedFile.existsAsFile());
     }
 
@@ -600,16 +602,16 @@ TEST_CASE("Audio clip serialization separates source facts from interpretation",
     clip.name = "Loop";
     clip.setAudioContent();
     clip.setPlacementBeats(4.0, 16.0);
-    clip.audio().source.filePath = "/tmp/loop.wav";
-    clip.audio().source.durationSeconds = 2.7907;
-    clip.audio().interpretation.bpm = 172.0;
-    clip.audio().interpretation.totalBeats = 8.0;
-    clip.audio().interpretation.totalBeatsLocked = true;
-    clip.autoTempo = true;
+    magda::test::giveAudioEvent(clip, "/tmp/loop.wav");
+    magda::test::setSourceDuration(clip, 2.7907);
+    magda::test::audioEvent(clip).interpBpm = 172.0;
+    magda::test::audioEvent(clip).interpTotalBeats = 8.0;
+    magda::test::audioEvent(clip).interpTotalBeatsLocked = true;
+    magda::test::audioEvent(clip).autoTempo = true;
     clip.loopEnabled = true;
-    clip.loopStartBeats = 0.0;
-    clip.loopLengthBeats = 8.0;
-    clip.loopLength = 8.0 * 60.0 / 172.0;
+    magda::test::audioEvent(clip).setLoopStartBeats(0.0);
+    magda::test::audioEvent(clip).setLoopLengthBeats(8.0);
+    magda::test::audioEvent(clip).setLoopLengthSeconds(8.0 * 60.0 / 172.0);
     ClipManager::getInstance().restoreClip(clip);
 
     ProjectInfo info;
@@ -628,20 +630,42 @@ TEST_CASE("Audio clip serialization separates source facts from interpretation",
     REQUIRE(clipObj != nullptr);
     REQUIRE(clipObj->getProperty("audioSource").isVoid());
 
+    // Schema v2 (#1901): the clip holds events, the sources live once per
+    // project, and the clip no longer carries source/interpretation/playback.
+    REQUIRE(static_cast<int>(rootObj->getProperty("schemaVersion")) == kProjectSchemaVersion);
+
+    auto* sources = rootObj->getProperty("sources").getArray();
+    REQUIRE(sources != nullptr);
+    REQUIRE(sources->size() == 1);
+    auto* sourceObj = sources->getReference(0).getDynamicObject();
+    REQUIRE(sourceObj != nullptr);
+    REQUIRE(sourceObj->getProperty("filePath").toString() == "/tmp/loop.wav");
+    REQUIRE(static_cast<double>(sourceObj->getProperty("durationSeconds")) == Approx(2.7907));
+
     auto* audioObj = clipObj->getProperty("audio").getDynamicObject();
     REQUIRE(audioObj != nullptr);
-    auto* sourceObj = audioObj->getProperty("source").getDynamicObject();
-    auto* interpretationObj = audioObj->getProperty("interpretation").getDynamicObject();
-    auto* playbackObj = audioObj->getProperty("playback").getDynamicObject();
-    REQUIRE(sourceObj != nullptr);
-    REQUIRE(interpretationObj != nullptr);
-    REQUIRE(playbackObj != nullptr);
+    REQUIRE(audioObj->getProperty("source").isVoid());
+    REQUIRE(audioObj->getProperty("interpretation").isVoid());
+    REQUIRE(audioObj->getProperty("playback").isVoid());
+
+    auto* events = audioObj->getProperty("events").getArray();
+    REQUIRE(events != nullptr);
+    REQUIRE(events->size() == 1);
+    auto* eventObj = events->getReference(0).getDynamicObject();
+    REQUIRE(eventObj != nullptr);
+    REQUIRE(static_cast<int>(eventObj->getProperty("sourceId")) ==
+            static_cast<int>(sourceObj->getProperty("id")));
+    REQUIRE(static_cast<double>(eventObj->getProperty("interpTotalBeats")) == Approx(8.0));
+    REQUIRE(static_cast<bool>(eventObj->getProperty("interpTotalBeatsLocked")));
+    // The loop toggle is a clip property and did not move onto the event.
+    REQUIRE(static_cast<bool>(clipObj->getProperty("loopEnabled")));
+
+    // The event spans its clip: container and content are the same extent.
+    REQUIRE(static_cast<double>(eventObj->getProperty("startBeat")) == Approx(0.0));
+    REQUIRE(static_cast<double>(eventObj->getProperty("lengthBeats")) == Approx(16.0));
+
     auto* placementObj = clipObj->getProperty("placement").getDynamicObject();
     REQUIRE(placementObj != nullptr);
-    REQUIRE(static_cast<double>(sourceObj->getProperty("durationSeconds")) == Approx(2.7907));
-    REQUIRE(static_cast<double>(interpretationObj->getProperty("totalBeats")) == Approx(8.0));
-    REQUIRE(static_cast<bool>(interpretationObj->getProperty("totalBeatsLocked")));
-    REQUIRE(static_cast<double>(playbackObj->getProperty("loopLengthBeats")) == Approx(8.0));
     REQUIRE(static_cast<double>(placementObj->getProperty("lengthBeats")) == Approx(16.0));
 
     ProjectInfo loaded;
@@ -650,10 +674,10 @@ TEST_CASE("Audio clip serialization separates source facts from interpretation",
     REQUIRE(restored != nullptr);
     REQUIRE(restored->isAudio());
     REQUIRE(restored->placement.lengthBeats == Approx(16.0));
-    REQUIRE(restored->audio().source.durationSeconds == Approx(2.7907));
-    REQUIRE(restored->audio().interpretation.totalBeats == Approx(8.0));
-    REQUIRE(restored->audio().interpretation.totalBeatsLocked);
-    REQUIRE(restored->loopLengthBeats == Approx(8.0));
+    REQUIRE(primaryEventOf(restored)->sourceDurationSeconds() == Approx(2.7907));
+    REQUIRE(primaryEventOf(restored)->interpTotalBeats == Approx(8.0));
+    REQUIRE(primaryEventOf(restored)->interpTotalBeatsLocked);
+    REQUIRE(primaryEventOf(restored)->loopLengthBeats() == Approx(8.0));
 }
 
 TEST_CASE("Session clip follow action settings roundtrip", "[project][serialization][session]") {
@@ -766,7 +790,6 @@ TEST_CASE("Looped MIDI clip serialization preserves loop region separate from pl
     clip.loopEnabled = true;
     clip.setPlacementBeats(0.0, 68.0);  // 17 bars at 4/4
     clip.loopLengthBeats = 8.0;         // 2 bars at 4/4
-    clip.loopLength = 4.0;              // 8 beats at 120 BPM
     clip.midiOffset = 1.0;
 
     MidiNote note;
@@ -806,7 +829,6 @@ TEST_CASE("Looped MIDI clip serialization preserves loop region separate from pl
     REQUIRE(restored->loopEnabled);
     REQUIRE(restored->placement.lengthBeats == Approx(68.0));
     REQUIRE(restored->loopLengthBeats == Approx(8.0));
-    REQUIRE(restored->loopLength == Approx(4.0));
     REQUIRE(restored->midiOffset == Approx(1.0));
     REQUIRE(restored->midi().sourceFilePath == "/tmp/imported-loop.mid");
 }
@@ -875,12 +897,12 @@ TEST_CASE("Saved audio library warp markers survive BPM mismatch re-import",
     REQUIRE(clip != nullptr);
     REQUIRE(clip->isAudio());
 
-    clip->autoTempo = true;
-    clip->audio().interpretation.bpm = 140.0;
-    clip->audio().interpretation.totalBeats = 9.3333333333;
-    clip->audio().interpretation.totalBeatsLocked = true;
-    clip->warpEnabled = true;
-    clip->warpMarkers = {{0.0, 0.0}, {1.234, 1.75}, {3.5, 4.0}};
+    primaryEventOf(clip)->autoTempo = true;
+    primaryEventOf(clip)->interpBpm = 140.0;
+    primaryEventOf(clip)->interpTotalBeats = 9.3333333333;
+    primaryEventOf(clip)->interpTotalBeatsLocked = true;
+    primaryEventOf(clip)->warpEnabled = true;
+    primaryEventOf(clip)->warpMarkers = {{0.0, 0.0}, {1.234, 1.75}, {3.5, 4.0}};
 
     REQUIRE(ClipManager::getInstance().saveClipToLibrary(clipId));
 
@@ -892,14 +914,14 @@ TEST_CASE("Saved audio library warp markers survive BPM mismatch re-import",
     auto* reimported = ClipManager::getInstance().getClip(reimportedId);
     REQUIRE(reimported != nullptr);
     REQUIRE(reimported->isAudio());
-    REQUIRE(reimported->warpEnabled);
-    REQUIRE(reimported->audio().interpretation.bpm == Approx(140.0));
-    REQUIRE(reimported->audio().interpretation.totalBeats == Approx(9.3333333333));
-    REQUIRE(reimported->warpMarkers.size() == 3);
-    REQUIRE(reimported->warpMarkers[1].sourceTime == Approx(1.234));
-    REQUIRE(reimported->warpMarkers[1].warpTime == Approx(1.75));
-    REQUIRE(reimported->warpMarkers[2].sourceTime == Approx(3.5));
-    REQUIRE(reimported->warpMarkers[2].warpTime == Approx(4.0));
+    REQUIRE(primaryEventOf(reimported)->warpEnabled);
+    REQUIRE(primaryEventOf(reimported)->interpBpm == Approx(140.0));
+    REQUIRE(primaryEventOf(reimported)->interpTotalBeats == Approx(9.3333333333));
+    REQUIRE(primaryEventOf(reimported)->warpMarkers.size() == 3);
+    REQUIRE(primaryEventOf(reimported)->warpMarkers[1].sourceTime == Approx(1.234));
+    REQUIRE(primaryEventOf(reimported)->warpMarkers[1].warpTime == Approx(1.75));
+    REQUIRE(primaryEventOf(reimported)->warpMarkers[2].sourceTime == Approx(3.5));
+    REQUIRE(primaryEventOf(reimported)->warpMarkers[2].warpTime == Approx(4.0));
 }
 
 TEST_CASE("MidiFileWriter writes MIDI clip data to a stable destination",
@@ -975,14 +997,14 @@ TEST_CASE("Clip serialization validates type and audio schema", "[project][seria
     clip.name = "Schema";
     clip.setAudioContent();
     clip.setPlacementBeats(0.0, 16.0);
-    clip.audio().source.filePath = "/tmp/schema.wav";
-    clip.audio().source.durationSeconds = 4.0;
-    clip.audio().interpretation.bpm = 120.0;
-    clip.audio().interpretation.totalBeats = 8.0;
-    clip.autoTempo = true;
+    magda::test::giveAudioEvent(clip, "/tmp/schema.wav");
+    magda::test::setSourceDuration(clip, 4.0);
+    magda::test::audioEvent(clip).interpBpm = 120.0;
+    magda::test::audioEvent(clip).interpTotalBeats = 8.0;
+    magda::test::audioEvent(clip).autoTempo = true;
     clip.loopEnabled = true;
-    clip.loopLengthBeats = 8.0;
-    clip.loopLength = 4.0;
+    magda::test::audioEvent(clip).setLoopLengthBeats(8.0);
+    magda::test::audioEvent(clip).setLoopLengthSeconds(4.0);
     ClipManager::getInstance().restoreClip(clip);
 
     ProjectInfo info;
@@ -1062,21 +1084,21 @@ TEST_CASE("Clip serialization validates type and audio schema", "[project][seria
         auto* restored = ClipManager::getInstance().getClip(clip.id);
         REQUIRE(restored != nullptr);
         REQUIRE(restored->isAudio());
-        REQUIRE(restored->audio().source.filePath == "/tmp/legacy.wav");
-        REQUIRE(restored->audio().source.durationSeconds == Approx(4.0));
-        REQUIRE(restored->audio().interpretation.totalBeats == Approx(8.0));
-        REQUIRE(restored->audio().interpretation.bpm == Approx(120.0));
-        REQUIRE(restored->offset == Approx(0.5));
-        REQUIRE(restored->offsetBeats == Approx(1.0));
-        REQUIRE(restored->loopStart == Approx(0.25));
-        REQUIRE(restored->loopLength == Approx(4.0));
-        REQUIRE(restored->loopStartBeats == Approx(0.5));
-        REQUIRE(restored->loopLengthBeats == Approx(8.0));
-        REQUIRE(restored->speedRatio == Approx(1.25));
-        REQUIRE(restored->warpEnabled);
-        REQUIRE(restored->warpMarkers.size() == 1);
-        REQUIRE(restored->warpMarkers.front().sourceTime == Approx(1.0));
-        REQUIRE(restored->warpMarkers.front().warpTime == Approx(1.25));
+        REQUIRE(primaryEventOf(restored)->sourceFilePath() == "/tmp/legacy.wav");
+        REQUIRE(primaryEventOf(restored)->sourceDurationSeconds() == Approx(4.0));
+        REQUIRE(primaryEventOf(restored)->interpTotalBeats == Approx(8.0));
+        REQUIRE(primaryEventOf(restored)->interpBpm == Approx(120.0));
+        REQUIRE(primaryEventOf(restored)->anchorSeconds() == Approx(0.5));
+        REQUIRE(primaryEventOf(restored)->anchorBeats() == Approx(1.0));
+        REQUIRE(primaryEventOf(restored)->loopStartSeconds() == Approx(0.25));
+        REQUIRE(primaryEventOf(restored)->loopLengthSeconds() == Approx(4.0));
+        REQUIRE(primaryEventOf(restored)->loopStartBeats() == Approx(0.5));
+        REQUIRE(primaryEventOf(restored)->loopLengthBeats() == Approx(8.0));
+        REQUIRE(primaryEventOf(restored)->speedRatio == Approx(1.25));
+        REQUIRE(primaryEventOf(restored)->warpEnabled);
+        REQUIRE(primaryEventOf(restored)->warpMarkers.size() == 1);
+        REQUIRE(primaryEventOf(restored)->warpMarkers.front().sourceTime == Approx(1.0));
+        REQUIRE(primaryEventOf(restored)->warpMarkers.front().warpTime == Approx(1.25));
     }
 
     SECTION("Legacy flat audio clip payload migrates placement and audio model") {
@@ -1115,17 +1137,17 @@ TEST_CASE("Clip serialization validates type and audio schema", "[project][seria
         REQUIRE(restored->placement.startBeat == Approx(4.0));
         REQUIRE(restored->placement.lengthBeats == Approx(12.0));
         REQUIRE(restored->length == Approx(6.0));
-        REQUIRE(restored->audio().source.filePath == "/tmp/flat-legacy.wav");
-        REQUIRE(restored->audio().source.durationSeconds == Approx(6.0));
-        REQUIRE(restored->audio().interpretation.totalBeats == Approx(12.0));
-        REQUIRE(restored->audio().interpretation.bpm == Approx(120.0));
-        REQUIRE(restored->offset == Approx(0.25));
-        REQUIRE(restored->offsetBeats == Approx(0.5));
-        REQUIRE(restored->loopStart == Approx(0.125));
-        REQUIRE(restored->loopLength == Approx(6.0));
-        REQUIRE(restored->loopStartBeats == Approx(0.25));
-        REQUIRE(restored->loopLengthBeats == Approx(12.0));
-        REQUIRE(restored->speedRatio == Approx(1.5));
+        REQUIRE(primaryEventOf(restored)->sourceFilePath() == "/tmp/flat-legacy.wav");
+        REQUIRE(primaryEventOf(restored)->sourceDurationSeconds() == Approx(6.0));
+        REQUIRE(primaryEventOf(restored)->interpTotalBeats == Approx(12.0));
+        REQUIRE(primaryEventOf(restored)->interpBpm == Approx(120.0));
+        REQUIRE(primaryEventOf(restored)->anchorSeconds() == Approx(0.25));
+        REQUIRE(primaryEventOf(restored)->anchorBeats() == Approx(0.5));
+        REQUIRE(primaryEventOf(restored)->loopStartSeconds() == Approx(0.125));
+        REQUIRE(primaryEventOf(restored)->loopLengthSeconds() == Approx(6.0));
+        REQUIRE(primaryEventOf(restored)->loopStartBeats() == Approx(0.25));
+        REQUIRE(primaryEventOf(restored)->loopLengthBeats() == Approx(12.0));
+        REQUIRE(primaryEventOf(restored)->speedRatio == Approx(1.5));
     }
 }
 

@@ -89,7 +89,9 @@ class SetClipOffsetCommand : public UndoableCommand {
         if (clip) {
             oldClip_ = *clip;
             hasOldClip_ = true;
-            oldOffset_ = (clip->isMidi()) ? clip->midiOffset : clip->getSourceOffset();
+            const auto* ev = clip->primaryEvent();
+            oldOffset_ =
+                clip->isMidi() ? clip->midiOffset : (ev != nullptr ? ev->anchorSeconds() : 0.0);
         }
     }
 
@@ -133,9 +135,11 @@ class SetClipLoopPhaseCommand : public UndoableCommand {
   public:
     SetClipLoopPhaseCommand(ClipId clipId, double newPhase) : clipId_(clipId), newPhase_(newPhase) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
-        if (clip)
-            oldPhase_ = (clip->isMidi()) ? clip->midiOffset
-                                         : clip->getSourceOffset() - clip->getSourceLoopStart();
+        if (clip != nullptr) {
+            const auto* ev = clip->primaryEvent();
+            oldPhase_ =
+                clip->isMidi() ? clip->midiOffset : (ev != nullptr ? ev->loopPhaseSeconds() : 0.0);
+        }
     }
 
     void execute() override {
@@ -186,7 +190,8 @@ class SetClipLoopStartCommand : public UndoableCommand {
     SetClipLoopStartCommand(ClipId clipId, double newLoopStart, double bpm = 120.0)
         : clipId_(clipId), newLoopStart_(newLoopStart), bpm_(bpm) {
         if (auto* clip = ClipManager::getInstance().getClip(clipId))
-            oldLoopStart_ = clip->getSourceLoopStart();
+            if (const auto* ev = clip->primaryEvent())
+                oldLoopStart_ = ev->loopStartSeconds();
     }
 
     void execute() override {
@@ -224,7 +229,8 @@ class SetClipLoopLengthCommand : public UndoableCommand {
     SetClipLoopLengthCommand(ClipId clipId, double newLoopLength, double bpm = 120.0)
         : clipId_(clipId), newLoopLength_(newLoopLength), bpm_(bpm) {
         if (auto* clip = ClipManager::getInstance().getClip(clipId))
-            oldLoopLength_ = clip->getSourceLoopLength();
+            if (const auto* ev = clip->primaryEvent())
+                oldLoopLength_ = ev->loopLengthSeconds();
     }
 
     void execute() override {
@@ -259,7 +265,8 @@ class SetMidiClipLoopStartBeatsCommand : public UndoableCommand {
     SetMidiClipLoopStartBeatsCommand(ClipId clipId, double newLoopStartBeats, double bpm = 120.0)
         : clipId_(clipId), newLoopStartBeats_(newLoopStartBeats), bpm_(bpm) {
         if (auto* clip = ClipManager::getInstance().getClip(clipId))
-            oldLoopStartBeats_ = clip->loopStartBeats;
+            if (clip->isMidi())
+                oldLoopStartBeats_ = clip->loopStartBeats;
     }
 
     void execute() override {
@@ -294,7 +301,8 @@ class SetMidiClipLoopLengthBeatsCommand : public UndoableCommand {
     SetMidiClipLoopLengthBeatsCommand(ClipId clipId, double newLoopLengthBeats, double bpm = 120.0)
         : clipId_(clipId), newLoopLengthBeats_(newLoopLengthBeats), bpm_(bpm) {
         if (auto* clip = ClipManager::getInstance().getClip(clipId))
-            oldLoopLengthBeats_ = clip->loopLengthBeats;
+            if (clip->isMidi())
+                oldLoopLengthBeats_ = clip->loopLengthBeats;
     }
 
     void execute() override {
@@ -337,9 +345,13 @@ class SetClipLoopRangeCommand : public UndoableCommand {
                             double bpm = 120.0)
         : clipId_(clipId), newLoopStart_(newLoopStart), newLoopLength_(newLoopLength), bpm_(bpm) {
         if (auto* clip = ClipManager::getInstance().getClip(clipId)) {
-            oldLoopStart_ = clip->loopStart;
-            oldLoopLength_ = clip->loopLength;
-            oldOffset_ = (clip->isMidi()) ? clip->midiOffset : clip->offset;
+            const auto* ev = clip->primaryEvent();
+            if (ev != nullptr) {
+                oldLoopStart_ = ev->loopStartSeconds();
+                oldLoopLength_ = ev->loopLengthSeconds();
+            }
+            oldOffset_ =
+                clip->isMidi() ? clip->midiOffset : (ev != nullptr ? ev->anchorSeconds() : 0.0);
         }
     }
 
@@ -385,7 +397,8 @@ class SetClipPitchCommand : public UndoableCommand {
     SetClipPitchCommand(ClipId clipId, float newPitch) : clipId_(clipId), newPitch_(newPitch) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
-            oldPitch_ = clip->pitchChange;
+            if (const auto* ev = clip->primaryEvent())
+                oldPitch_ = ev->pitchChange;
     }
 
     void execute() override {
@@ -421,7 +434,8 @@ class SetClipSpeedRatioCommand : public UndoableCommand {
         : clipId_(clipId), newRatio_(newRatio) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
-            oldRatio_ = clip->speedRatio;
+            if (const auto* ev = clip->primaryEvent())
+                oldRatio_ = ev->speedRatio;
     }
 
     void execute() override {
@@ -456,7 +470,8 @@ class SetClipStretchModeCommand : public UndoableCommand {
     SetClipStretchModeCommand(ClipId clipId, int newMode) : clipId_(clipId), newMode_(newMode) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
-            oldMode_ = clip->timeStretchMode;
+            if (const auto* ev = clip->primaryEvent())
+                oldMode_ = ev->timeStretchMode;
     }
 
     void execute() override {
@@ -588,7 +603,8 @@ class SetClipReversedCommand : public UndoableCommand {
         : clipId_(clipId), newReversed_(newReversed) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
-            oldReversed_ = clip->isReversed;
+            if (const auto* ev = clip->primaryEvent())
+                oldReversed_ = ev->reversed;
     }
 
     void execute() override {
@@ -614,7 +630,8 @@ class SetClipFadeInCommand : public UndoableCommand {
     SetClipFadeInCommand(ClipId clipId, double newFadeIn) : clipId_(clipId), newFadeIn_(newFadeIn) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
-            oldFadeIn_ = clip->fadeIn;
+            if (const auto* ev = clip->primaryEvent())
+                oldFadeIn_ = ev->fadeInSeconds;
     }
 
     void execute() override {
@@ -650,7 +667,8 @@ class SetClipFadeOutCommand : public UndoableCommand {
         : clipId_(clipId), newFadeOut_(newFadeOut) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
-            oldFadeOut_ = clip->fadeOut;
+            if (const auto* ev = clip->primaryEvent())
+                oldFadeOut_ = ev->fadeOutSeconds;
     }
 
     void execute() override {
@@ -760,7 +778,8 @@ class SetClipFadeInTypeCommand : public UndoableCommand {
     SetClipFadeInTypeCommand(ClipId clipId, int newType) : clipId_(clipId), newType_(newType) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
-            oldType_ = clip->fadeInType;
+            if (const auto* ev = clip->primaryEvent())
+                oldType_ = ev->fadeInType;
     }
 
     void execute() override {
@@ -786,7 +805,8 @@ class SetClipFadeOutTypeCommand : public UndoableCommand {
     SetClipFadeOutTypeCommand(ClipId clipId, int newType) : clipId_(clipId), newType_(newType) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
-            oldType_ = clip->fadeOutType;
+            if (const auto* ev = clip->primaryEvent())
+                oldType_ = ev->fadeOutType;
     }
 
     void execute() override {
@@ -813,7 +833,8 @@ class SetClipFadeInBehaviourCommand : public UndoableCommand {
         : clipId_(clipId), newBehaviour_(newBehaviour) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
-            oldBehaviour_ = clip->fadeInBehaviour;
+            if (const auto* ev = clip->primaryEvent())
+                oldBehaviour_ = ev->fadeInBehaviour;
     }
 
     void execute() override {
@@ -840,7 +861,8 @@ class SetClipFadeOutBehaviourCommand : public UndoableCommand {
         : clipId_(clipId), newBehaviour_(newBehaviour) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
-            oldBehaviour_ = clip->fadeOutBehaviour;
+            if (const auto* ev = clip->primaryEvent())
+                oldBehaviour_ = ev->fadeOutBehaviour;
     }
 
     void execute() override {

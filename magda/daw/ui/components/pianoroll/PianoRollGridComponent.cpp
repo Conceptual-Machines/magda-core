@@ -40,21 +40,21 @@ double timelineEndBeats(const ClipInfo& clip, double bpm) {
 }
 
 double effectiveLoopStartBeats(const ClipInfo& clip, double bpm) {
-    if (clip.loopStartBeats > 0.0)
-        return clip.loopStartBeats;
+    if (audioEventRef(clip).loopStartBeats() > 0.0)
+        return audioEventRef(clip).loopStartBeats();
 
-    if (clip.loopStart > 0.0 && bpm > 0.0)
-        return clip.loopStart * bpm / 60.0;
+    if (audioEventRef(clip).loopStartSeconds() > 0.0 && bpm > 0.0)
+        return audioEventRef(clip).loopStartSeconds() * bpm / 60.0;
 
     return 0.0;
 }
 
 double effectiveLoopLengthBeats(const ClipInfo& clip, double bpm) {
-    if (clip.loopLengthBeats > 0.0)
-        return clip.loopLengthBeats;
+    if (audioEventRef(clip).loopLengthBeats() > 0.0)
+        return audioEventRef(clip).loopLengthBeats();
 
-    if (clip.loopLength > 0.0 && bpm > 0.0)
-        return clip.loopLength * bpm / 60.0;
+    if (audioEventRef(clip).loopLengthSeconds() > 0.0 && bpm > 0.0)
+        return audioEventRef(clip).loopLengthSeconds() * bpm / 60.0;
 
     return timelineLengthBeats(clip, bpm);
 }

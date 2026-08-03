@@ -157,9 +157,10 @@ bool DawProjectArchive::readFromFile(const juce::File& file, ProjectDocument& ou
                                     .getChildFile("magda_dawproject_import")
                                     .getChildFile(file.getFileNameWithoutExtension());
     for (auto& clip : outDocument.clips) {
-        if (!clip.isAudio())
+        auto* event = clip.primaryEvent();
+        if (event == nullptr)
             continue;
-        const auto entryName = clip.audio().source.filePath;
+        const auto entryName = event->sourceFilePath();
         if (entryName.isEmpty())
             continue;
         const int entryIndex = zip.getIndexOfFileName(entryName, false);
@@ -167,8 +168,10 @@ bool DawProjectArchive::readFromFile(const juce::File& file, ProjectDocument& ou
             continue;  // external/absolute reference, nothing to extract
 
         mediaDir.createDirectory();
-        if (zip.uncompressEntry(entryIndex, mediaDir, true).wasOk())
-            clip.audio().source.filePath = mediaDir.getChildFile(entryName).getFullPathName();
+        if (zip.uncompressEntry(entryIndex, mediaDir, true).wasOk()) {
+            event->sourceId = SourcePool::getInstance().acquire(
+                mediaDir.getChildFile(entryName).getFullPathName());
+        }
     }
 
     // Pull embedded device state back into the model. fromProjectXml left the

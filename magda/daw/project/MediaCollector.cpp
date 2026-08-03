@@ -112,11 +112,11 @@ MediaCollector::Plan MediaCollector::scan() {
 
     // 1. Audio clip sources.
     for (const auto& clip : ClipManager::getInstance().getClips()) {
-        if (!clip.isAudio())
-            continue;
-        const auto idx = resolve(clip.audio().source.filePath);
-        if (idx >= 0)
-            plan.items[static_cast<size_t>(idx)].clipRefs.push_back(clip.id);
+        for (const auto& event : clip.isAudio() ? clip.audio().events : std::vector<AudioEvent>{}) {
+            const auto idx = resolve(event.sourceFilePath());
+            if (idx >= 0)
+                plan.items[static_cast<size_t>(idx)].clipRefs.push_back(clip.id);
+        }
     }
 
     // 2 + 3. Samplers (standalone, incl. inside instrument racks) and drum pads.
@@ -165,13 +165,17 @@ MediaCollector::Summary MediaCollector::apply(const Plan& plan) {
         const auto newPath = item.dest.getFullPathName();
 
         for (auto clipId : item.clipRefs) {
-            if (auto* clip = clipManager.getClip(clipId); clip != nullptr && clip->isAudio()) {
-                const auto oldPath = clip->audio().source.filePath;
-                clip->audio().source.filePath = newPath;
-                thumbs.invalidateFile(oldPath);
-                thumbs.invalidateFile(newPath);
-                clipManager.forceNotifyClipPropertyChanged(clipId);
-            }
+            auto* clip = clipManager.getClip(clipId);
+            auto* event = primaryEventOf(clip);
+            if (event == nullptr)
+                continue;
+            const auto oldPath = event->sourceFilePath();
+            // Repoint the pooled source, not the clip: every clip sharing this
+            // file follows automatically.
+            SourcePool::getInstance().relink(event->sourceId, newPath);
+            thumbs.invalidateFile(oldPath);
+            thumbs.invalidateFile(newPath);
+            clipManager.forceNotifyClipPropertyChanged(clipId);
         }
 
         for (const auto& replace : item.samplerRefs)

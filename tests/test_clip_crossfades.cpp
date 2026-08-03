@@ -1,11 +1,26 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "AudioClipTestHelpers.hpp"
 #include "magda/daw/core/ClipCommands.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
+
+namespace {
+/// Source duration is a pooled file fact, so a test that wants one seeds the
+/// pool rather than writing it onto the clip.
+void seedSourceDuration(magda::ClipInfo* clip, double durationSeconds) {
+    auto* event = magda::primaryEventOf(clip);
+    if (event == nullptr)
+        return;
+    auto& pool = magda::SourcePool::getInstance();
+    pool.seedFactsForTesting(event->sourceFilePath(), durationSeconds,
+                             magda::test::kTestSourceSampleRate);
+    pool.resolveFacts(event->sourceId);
+}
+}  // namespace
 
 /**
  * Tests for explicit audio clip crossfades (#1499).
@@ -34,14 +49,19 @@ TrackId createTrack() {
 // Creates an audio clip with source headroom on both sides (offset 10 s into a
 // 100 s file), so crossfade edge extensions aren't clamped by material limits.
 // Extension clamping itself is covered by its own test case below.
-ClipId createAudioBeats(TrackId trackId, double startBeat, double lengthBeats) {
+// Sources are pooled per file (#1901), so a test that wants two clips with
+// DIFFERENT source durations has to give them different files.
+ClipId createAudioBeats(TrackId trackId, double startBeat, double lengthBeats,
+                        const juce::String& filePath = "test.wav") {
     auto& cm = ClipManager::getInstance();
     const ClipId id =
-        cm.createAudioClipBeats(trackId, startBeat, lengthBeats, "test.wav", ClipView::Arrangement);
+        cm.createAudioClipBeats(trackId, startBeat, lengthBeats, filePath, ClipView::Arrangement);
     if (auto* clip = cm.getClip(id)) {
-        clip->audio().source.durationSeconds = 100.0;
-        clip->offset = 10.0;
-        clip->loopStart = 10.0;
+        magda::SourcePool::getInstance().seedFactsForTesting(
+            primaryEventOf(clip)->sourceFilePath(), 100.0, magda::test::kTestSourceSampleRate);
+        magda::SourcePool::getInstance().resolveFacts(primaryEventOf(clip)->sourceId);
+        primaryEventOf(clip)->setAnchorSeconds(10.0);
+        primaryEventOf(clip)->setLoopStartSeconds(10.0);
     }
     return id;
 }
@@ -158,12 +178,12 @@ TEST_CASE("setCrossfadeRegionBeats respects source material bounds", "[crossfade
     // 4 beats = 2 s at 120 BPM. Give both clips exactly 2 s of source with no
     // spare material: the left clip cannot extend right, the right clip cannot
     // extend left (offset 0), so no overlap can be created.
-    const ClipId a = createAudioBeats(trackId, 0.0, 4.0);
-    const ClipId b = createAudioBeats(trackId, 4.0, 4.0);
-    cm.getClip(a)->audio().source.durationSeconds = 2.0;
-    cm.getClip(b)->audio().source.durationSeconds = 2.0;
-    cm.getClip(a)->offset = 0.0;
-    cm.getClip(b)->offset = 0.0;
+    const ClipId a = createAudioBeats(trackId, 0.0, 4.0, "xfade_a.wav");
+    const ClipId b = createAudioBeats(trackId, 4.0, 4.0, "xfade_b.wav");
+    seedSourceDuration(cm.getClip(a), 2.0);
+    seedSourceDuration(cm.getClip(b), 2.0);
+    magda::primaryEventOf(cm.getClip(a))->setAnchorSeconds(0.0);
+    magda::primaryEventOf(cm.getClip(b))->setAnchorSeconds(0.0);
 
     REQUIRE(cm.setCrossfadeBeats(a, b, 2.0));
 
@@ -173,8 +193,8 @@ TEST_CASE("setCrossfadeRegionBeats respects source material bounds", "[crossfade
 
     // Give the right clip 1 s of pre-roll material (offset 1 s): its edge can
     // now extend up to 2 beats left, the left clip still cannot move.
-    cm.getClip(b)->audio().source.durationSeconds = 3.0;
-    cm.getClip(b)->offset = 1.0;
+    seedSourceDuration(cm.getClip(b), 3.0);
+    magda::primaryEventOf(cm.getClip(b))->setAnchorSeconds(1.0);
 
     REQUIRE(cm.setCrossfadeBeats(a, b, 4.0));
     CHECK(cm.getClip(a)->placement.endBeat() == Catch::Approx(4.0));
@@ -295,7 +315,7 @@ TEST_CASE("SetCrossfadeCommand undo restores both clips exactly", "[crossfade]")
     cm.setAutoCrossfade(b, false);
     const double aEndBefore = cm.getClip(a)->placement.endBeat();
     const double bStartBefore = cm.getClip(b)->placement.startBeat;
-    const double bOffsetBefore = cm.getClip(b)->offset;
+    const double bOffsetBefore = magda::audioEventRef(*cm.getClip(b)).anchorSeconds();
 
     um.executeCommand(std::make_unique<SetCrossfadeCommand>(a, b, 7.0, 9.0, 120.0));
 
@@ -304,7 +324,7 @@ TEST_CASE("SetCrossfadeCommand undo restores both clips exactly", "[crossfade]")
     um.undo();
     CHECK(cm.getClip(a)->placement.endBeat() == Catch::Approx(aEndBefore));
     CHECK(cm.getClip(b)->placement.startBeat == Catch::Approx(bStartBefore));
-    CHECK(cm.getClip(b)->offset == Catch::Approx(bOffsetBefore));
+    CHECK(magda::audioEventRef(*cm.getClip(b)).anchorSeconds() == Catch::Approx(bOffsetBefore));
     CHECK_FALSE(cm.getClip(a)->autoCrossfade);
     CHECK_FALSE(cm.getClip(b)->autoCrossfade);
     CHECK_FALSE(cm.getCrossfadeAtStart(b).has_value());

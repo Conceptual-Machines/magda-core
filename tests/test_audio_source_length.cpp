@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "AudioClipTestHelpers.hpp"
 #include "magda/daw/core/ClipDisplayInfo.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
@@ -43,8 +44,8 @@ TEST_CASE("ClipDisplayInfo - file extent always covers the full source file",
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.offset = 1.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(1.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
 
         syncPlacement(clip);
@@ -63,11 +64,11 @@ TEST_CASE("ClipDisplayInfo - file extent always covers the full source file",
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopStart = 1.0;
-        clip.loopLength = 3.0;
+        magda::test::audioEvent(clip).setLoopStartSeconds(1.0);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(3.0);
 
         syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
@@ -82,11 +83,11 @@ TEST_CASE("ClipDisplayInfo - file extent always covers the full source file",
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 16.0;
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopStart = 0.0;
-        clip.loopLength = 5.0;
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(5.0);
 
         syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/8.0);
@@ -106,8 +107,8 @@ TEST_CASE("ClipDisplayInfo - file extent always covers the full source file",
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
 
         syncPlacement(clip);
@@ -131,8 +132,8 @@ TEST_CASE("ClipDisplayInfo - srcToTimelineRatio drives both directions",
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
 
         syncPlacement(clip);
@@ -148,8 +149,8 @@ TEST_CASE("ClipDisplayInfo - srcToTimelineRatio drives both directions",
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.offset = 0.0;
-        clip.speedRatio = 2.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 2.0;
         clip.loopEnabled = false;
 
         syncPlacement(clip);
@@ -166,7 +167,8 @@ TEST_CASE("ClipDisplayInfo - srcToTimelineRatio drives both directions",
 // Loop region — independent of file extent
 // ============================================================================
 
-TEST_CASE("ClipDisplayInfo - loop region tracks clip.loopStart / loopLength",
+TEST_CASE("ClipDisplayInfo - loop region tracks magda::test::audioEvent(clip).loopStartSeconds() / "
+          "loopLength",
           "[clip][display][loop]") {
     using namespace magda;
 
@@ -180,11 +182,11 @@ TEST_CASE("ClipDisplayInfo - loop region tracks clip.loopStart / loopLength",
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopStart = 1.0;
-        clip.loopLength = 0.0;  // sentinel
+        magda::test::audioEvent(clip).setLoopStartSeconds(1.0);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(0.0);  // sentinel
 
         syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
@@ -199,10 +201,11 @@ TEST_CASE("ClipDisplayInfo - loop region tracks clip.loopStart / loopLength",
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
-        clip.loopLength = 4.0;  // present but ignored when disabled
+        magda::test::audioEvent(clip).setLoopLengthSeconds(
+            4.0);  // present but ignored when disabled
 
         syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
@@ -217,11 +220,11 @@ TEST_CASE("ClipDisplayInfo - loop region tracks clip.loopStart / loopLength",
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 16.0;
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopStart = 1.0;
-        clip.loopLength = 3.0;
+        magda::test::audioEvent(clip).setLoopStartSeconds(1.0);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(3.0);
 
         syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
@@ -238,11 +241,12 @@ TEST_CASE("ClipDisplayInfo - loop region tracks clip.loopStart / loopLength",
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 16.0;
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopStart = 3.0;
-        clip.loopLength = 5.0;  // would extend to 8s, file only 4s
+        magda::test::audioEvent(clip).setLoopStartSeconds(3.0);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(
+            5.0);  // would extend to 8s, file only 4s
 
         syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
@@ -267,12 +271,12 @@ TEST_CASE("ClipManager - setClipLoopEnabled preserves loopLength", "[audio][clip
         auto* clip = ClipManager::getInstance().getClip(clipId);
         REQUIRE(clip != nullptr);
 
-        clip->speedRatio = 1.0;
-        REQUIRE(clip->loopLength == Catch::Approx(4.0));
+        primaryEventOf(clip)->speedRatio = 1.0;
+        REQUIRE(primaryEventOf(clip)->loopLengthSeconds() == Catch::Approx(4.0));
 
         ClipManager::getInstance().setClipLoopEnabled(clipId, true, 120.0);
 
-        REQUIRE(clip->loopLength == Catch::Approx(4.0));
+        REQUIRE(primaryEventOf(clip)->loopLengthSeconds() == Catch::Approx(4.0));
         REQUIRE(clip->loopEnabled == true);
     }
 
@@ -287,18 +291,22 @@ TEST_CASE("ClipManager - setClipLoopEnabled preserves loopLength", "[audio][clip
         // Source is 8s of audio; clip is currently looping a 2s region from
         // offset 1s. Disabling loop should expand the clip back to the
         // remaining 7s of source, in both seconds and beat domains.
-        clip->audio().source.durationSeconds = FILE_DURATION;
-        clip->speedRatio = 1.0;
-        clip->offset = 1.0;
+        magda::SourcePool::getInstance().seedFactsForTesting(primaryEventOf(clip)->sourceFilePath(),
+                                                             FILE_DURATION,
+                                                             magda::test::kTestSourceSampleRate);
+        magda::SourcePool::getInstance().resolveFacts(primaryEventOf(clip)->sourceId);
+        primaryEventOf(clip)->speedRatio = 1.0;
+        primaryEventOf(clip)->setAnchorSeconds(1.0);
         clip->loopEnabled = true;
-        clip->loopStart = 1.0;
-        clip->loopLength = 2.0;
+        primaryEventOf(clip)->setLoopStartSeconds(1.0);
+        primaryEventOf(clip)->setLoopLengthSeconds(2.0);
         clip->length = 2.0;
         clip->setPlacementBeats(0.0, 2.0 * BPM / 60.0);
 
         ClipManager::getInstance().setClipLoopEnabled(clipId, false, BPM);
 
-        const double expectedLength = FILE_DURATION - clip->offset;  // speedRatio = 1
+        const double expectedLength =
+            FILE_DURATION - primaryEventOf(clip)->anchorSeconds();  // speedRatio = 1
         REQUIRE(clip->loopEnabled == false);
         REQUIRE(clip->length == Catch::Approx(expectedLength));
         REQUIRE(clip->placement.lengthBeats == Catch::Approx(expectedLength * BPM / 60.0));
@@ -313,12 +321,15 @@ TEST_CASE("ClipManager - setClipLoopEnabled preserves loopLength", "[audio][clip
         auto* clip = ClipManager::getInstance().getClip(clipId);
         REQUIRE(clip != nullptr);
 
-        clip->audio().source.durationSeconds = FILE_DURATION;
-        clip->speedRatio = SPEED;
-        clip->offset = 0.0;
+        magda::SourcePool::getInstance().seedFactsForTesting(primaryEventOf(clip)->sourceFilePath(),
+                                                             FILE_DURATION,
+                                                             magda::test::kTestSourceSampleRate);
+        magda::SourcePool::getInstance().resolveFacts(primaryEventOf(clip)->sourceId);
+        primaryEventOf(clip)->speedRatio = SPEED;
+        primaryEventOf(clip)->setAnchorSeconds(0.0);
         clip->loopEnabled = true;
-        clip->loopStart = 0.0;
-        clip->loopLength = 1.0;
+        primaryEventOf(clip)->setLoopStartSeconds(0.0);
+        primaryEventOf(clip)->setLoopLengthSeconds(1.0);
         clip->length = 1.0;
         clip->setPlacementBeats(0.0, 1.0 * BPM / 60.0);
 

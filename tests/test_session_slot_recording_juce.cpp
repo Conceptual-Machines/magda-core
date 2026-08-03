@@ -307,15 +307,17 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
         expectEquals(clip->sceneIndex, fixture.sceneIndex);
         expect(clip->isAudio(), "Mirrored clip must be audio");
         expect(clip->loopEnabled, "Recorded session clip should loop");
-        expect(clip->autoTempo, "Recorded session audio should follow the project tempo");
-        expectEquals(clip->audio().source.filePath, audioFile->getFile().getFullPathName());
+        expect(primaryEventOf(clip)->autoTempo,
+               "Recorded session audio should follow the project tempo");
+        expectEquals(primaryEventOf(clip)->sourceFilePath(),
+                     audioFile->getFile().getFullPathName());
         expectWithinAbsoluteError(clip->placement.lengthBeats, 4.0, 0.0001,
                                   "Clip length should snap to a full 4/4 bar");
-        expectWithinAbsoluteError(clip->loopLengthBeats, 4.0, 0.0001,
+        expectWithinAbsoluteError(primaryEventOf(clip)->loopLengthBeats(), 4.0, 0.0001,
                                   "Loop length should match snapped clip length");
-        expectWithinAbsoluteError(clip->audio().interpretation.bpm, 120.0, 0.0001,
+        expectWithinAbsoluteError(primaryEventOf(clip)->interpBpm, 120.0, 0.0001,
                                   "Recorded source BPM should match the project");
-        expectWithinAbsoluteError(clip->audio().interpretation.totalBeats, 4.0, 0.0001,
+        expectWithinAbsoluteError(primaryEventOf(clip)->interpTotalBeats, 4.0, 0.0001,
                                   "Recorded source beats should match the snapped bar length");
 
         auto* teClip = slot->getClip();

@@ -513,7 +513,7 @@ void BottomPanel::setupHeaderControls() {
         if (clipId == INVALID_CLIP_ID)
             return;
         const auto* clip = ClipManager::getInstance().getClip(clipId);
-        if (clip == nullptr || clip->autoTempo)
+        if (clip == nullptr || magda::audioEventRef(*clip).autoTempo)
             return;  // beat mode owns looping; can't toggle here
 
         const bool newState = !loopButton_->isActive();
@@ -1387,7 +1387,8 @@ void BottomPanel::syncLoopButtonState() {
     const auto* clip =
         (clipId != INVALID_CLIP_ID) ? ClipManager::getInstance().getClip(clipId) : nullptr;
     // autoTempo forces looping on; reflect that even though it can't be toggled.
-    loopButton_->setActive(clip != nullptr && (clip->loopEnabled || clip->autoTempo));
+    loopButton_->setActive(clip != nullptr &&
+                           (clip->loopEnabled || magda::audioEventRef(*clip).autoTempo));
 }
 
 void BottomPanel::syncClipEnabledButtonState() {
