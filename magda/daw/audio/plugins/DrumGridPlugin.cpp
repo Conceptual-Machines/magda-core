@@ -358,10 +358,15 @@ void DrumGridPlugin::processChain(const AudioChainEntry& entry,
     float panValue = (padIdx >= 0 && panParams_[static_cast<size_t>(padIdx)] != nullptr)
                          ? panParams_[static_cast<size_t>(padIdx)]->getCurrentValue()
                          : chain.pan.get();
-    float leftGain =
-        levelLinear * std::cos((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
-    float rightGain =
-        levelLinear * std::sin((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
+    // Linear pan law, matching Tracktion's default (PanLawLinear) so a pad at
+    // centre is unity — the same as a device on a track. A constant-power law
+    // was used here previously, which cost every pad 3 dB (cos(pi/4) = 0.707)
+    // at the default centre pan and made Drum Grid devices quieter than the
+    // identical device loaded standalone.
+    panValue = juce::jlimit(-1.0f, 1.0f, panValue);
+    const float panGain = panValue * levelLinear;
+    float leftGain = levelLinear - panGain;
+    float rightGain = levelLinear + panGain;
 
     // Route to assigned bus output (stereo pair)
     int busIdx = juce::jlimit(0, maxBusOutputs - 1, chain.busOutput.get());
