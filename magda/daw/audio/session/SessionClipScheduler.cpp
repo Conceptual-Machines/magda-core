@@ -458,6 +458,7 @@ void SessionClipScheduler::updateLaunchTimings(ClipId clipId, const ClipInfo* cl
         data.clipLengthBeats = durationSeconds * bpm / 60.0;
         data.loopLengthBeats = data.clipLengthBeats;
     } else {
+        // MIDI: the launch cycle is the clip length.
         data.clipLengthBeats = clip->getLengthInBeats(bpm);
         data.loopLengthBeats = data.clipLengthBeats;
     }

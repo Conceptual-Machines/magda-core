@@ -560,7 +560,7 @@ size_t ClipComponent::computeWaveformHash(const ClipInfo& clip) {
     combine(std::hash<bool>{}(clip.loopEnabled));
     combine(std::hash<double>{}(audioEventRef(clip).loopStartSeconds()));
     combine(std::hash<double>{}(audioEventRef(clip).loopLengthSeconds()));
-    combine(std::hash<double>{}(audioEventRef(clip).loopLengthBeats()));
+    combine(std::hash<double>{}(clip.loopLengthInBeats()));
     combine(std::hash<double>{}(audioEventRef(clip).interpTotalBeats));
     combine(std::hash<bool>{}(audioEventRef(clip).warpEnabled));
     combine(std::hash<bool>{}(audioEventRef(clip).autoTempo));
@@ -711,13 +711,9 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
         (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip.getTimelineLength(tempo);
     double clipLengthInBeats = displayLength * beatsPerSecond;
 
-    double midiSrcLength = audioEventRef(clip).loopLengthSeconds() > 0.0
-                               ? audioEventRef(clip).loopLengthSeconds()
-                               : displayLength * audioEventRef(clip).speedRatio;
-    double loopLengthBeats =
-        audioEventRef(clip).loopLengthBeats() > 0.0
-            ? audioEventRef(clip).loopLengthBeats()
-            : (midiSrcLength > 0.0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats);
+    // MIDI loops in clip beats on the container. There is no audio event here
+    // and no source region to consult.
+    double loopLengthBeats = clip.loopLengthBeats > 0.0 ? clip.loopLengthBeats : clipLengthInBeats;
 
     double midiOffset;
     if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
@@ -727,7 +723,7 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
         midiOffset = clip.loopEnabled ? clip.midiOffset : clip.midiTrimOffset;
     }
 
-    double loopStart = audioEventRef(clip).loopStartSeconds() * beatsPerSecond;
+    double loopStart = clip.loopStartBeats;
     double loopEnd = loopStart + loopLengthBeats;
 
     auto noteCanDisplay = [&](const MidiNote& note) {
@@ -895,13 +891,9 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
 
         // A looped clip tiles its source chords across the timeline, the same way
         // paintMidiNotes repeats notes.
-        const double srcLength = audioEventRef(clip).loopLengthSeconds() > 0.0
-                                     ? audioEventRef(clip).loopLengthSeconds()
-                                     : displayLength * audioEventRef(clip).speedRatio;
+        // Chords annotate MIDI, so the loop is clip beats on the container.
         const double loopLengthBeats =
-            audioEventRef(clip).loopLengthBeats() > 0.0
-                ? audioEventRef(clip).loopLengthBeats()
-                : (srcLength > 0.0 ? srcLength * beatsPerSecond : beatRange);
+            clip.loopLengthBeats > 0.0 ? clip.loopLengthBeats : beatRange;
 
         if (clip.loopEnabled && loopLengthBeats > 0.5) {
             const int reps = static_cast<int>(std::ceil(beatRange / loopLengthBeats));
@@ -3765,7 +3757,7 @@ void ClipComponent::showContextMenu() {
             case 28: {  // Flatten MIDI Loop (#1737)
                 const auto* clip = clipManager.getClip(clipId_);
                 if (clip && clip->isMidi() && clip->loopEnabled &&
-                    magda::audioEventRef(*clip).loopLengthBeats() > 0.0) {
+                    clip->loopLengthInBeats() > 0.0) {
                     UndoManager::getInstance().executeCommand(
                         std::make_unique<FlattenMidiClipCommand>(clipId_));
                 }

@@ -39,22 +39,16 @@ double timelineEndBeats(const ClipInfo& clip, double bpm) {
     return clip.getEndBeats(bpm);
 }
 
-double effectiveLoopStartBeats(const ClipInfo& clip, double bpm) {
-    if (audioEventRef(clip).loopStartBeats() > 0.0)
-        return audioEventRef(clip).loopStartBeats();
-
-    if (audioEventRef(clip).loopStartSeconds() > 0.0 && bpm > 0.0)
-        return audioEventRef(clip).loopStartSeconds() * bpm / 60.0;
-
-    return 0.0;
+// The piano roll only ever edits MIDI, so both of these read the clip's own
+// loop in clip beats. The audio event's loop is a region of a source file and
+// has nothing to say about a note grid.
+double effectiveLoopStartBeats(const ClipInfo& clip, double) {
+    return clip.loopStartBeats > 0.0 ? clip.loopStartBeats : 0.0;
 }
 
 double effectiveLoopLengthBeats(const ClipInfo& clip, double bpm) {
-    if (audioEventRef(clip).loopLengthBeats() > 0.0)
-        return audioEventRef(clip).loopLengthBeats();
-
-    if (audioEventRef(clip).loopLengthSeconds() > 0.0 && bpm > 0.0)
-        return audioEventRef(clip).loopLengthSeconds() * bpm / 60.0;
+    if (clip.loopLengthBeats > 0.0)
+        return clip.loopLengthBeats;
 
     return timelineLengthBeats(clip, bpm);
 }

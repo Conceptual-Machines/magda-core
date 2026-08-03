@@ -100,10 +100,12 @@ void ClipInspector::updateLoopValueDisplays(const magda::ClipInfo& clip, double 
         return;
     }
 
-    const double loopStartBeats = audioEventRef(clip).loopStartBeats();
+    // Audio loops a region of its source; MIDI loops clip beats on the clip.
+    const double loopStartBeats =
+        clip.isMidi() ? clip.loopStartBeats : audioEventRef(clip).loopStartBeats();
     clipLoopStartValue_->setValue(loopStartBeats, juce::dontSendNotification);
 
-    double loopLengthDisplayBeats = audioEventRef(clip).loopLengthBeats();
+    double loopLengthDisplayBeats = clip.loopLengthInBeats();
     if (loopLengthDisplayBeats <= 0.0)
         loopLengthDisplayBeats = clip.getLengthInBeats(loopBpm);
     clipLoopEndValue_->setValue(loopStartBeats + loopLengthDisplayBeats,

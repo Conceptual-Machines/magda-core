@@ -71,8 +71,8 @@ double followActionBaseLengthBeats(const ClipInfo& clip, double bpm) {
                 return loopLengthBeats;
         }
 
-        if (audioEventRef(clip).loopLengthBeats() > 0.0)
-            return audioEventRef(clip).loopLengthBeats();
+        if (clip.loopLengthInBeats() > 0.0)
+            return clip.loopLengthInBeats();
 
         const double sourceLength =
             audioEventRef(clip).sourceLengthSeconds(clip.getTimelineLength(bpm));
@@ -1639,9 +1639,10 @@ bool ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     }
 
     // Set up internal looping on the TE clip
-    if (clip->loopEnabled && audioEventRef(*clip).loopLengthBeats() > 0.0) {
-        // Use the stored loop region length, not the clip container length
-        double loopBeats = audioEventRef(*clip).loopLengthBeats();
+    if (clip->loopEnabled && clip->loopLengthBeats > 0.0) {
+        // Use the stored loop region length, not the clip container length.
+        // This is a MIDI clip: its loop is clip beats on the clip itself.
+        double loopBeats = clip->loopLengthBeats;
         auto& tempoSeq = edit_.tempoSequence;
         auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(0.0));
         auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopBeats));

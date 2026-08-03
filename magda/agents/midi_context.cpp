@@ -111,7 +111,7 @@ juce::String buildMidiContext(MagdaApi& api, const std::vector<ClipId>& clipIds,
             << " length=" << number(clip.placement.lengthBeats)
             << " enabled=" << (clip.enabled ? "true" : "false")
             << " notes=" << static_cast<int>(clip.midiNotes.size());
-        if (clip.isMidi() && clip.loopEnabled) {
+        if (clip.loopEnabled) {
             out << " loop_start=" << number(clip.loopStartBeats)
                 << " loop_length=" << number(clip.loopLengthBeats);
         }

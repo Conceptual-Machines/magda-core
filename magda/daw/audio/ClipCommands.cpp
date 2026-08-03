@@ -1521,9 +1521,8 @@ static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, doubl
         // Adjust midiOffset (phase) for the trimmed portion
         if (clip.isMidi()) {
             double trimBeats = trimAmount * bpm / 60.0;
-            double loopLengthBeats = audioEventRef(clip).loopLengthBeats() > 0.0
-                                         ? audioEventRef(clip).loopLengthBeats()
-                                         : clip.placement.lengthBeats;
+            double loopLengthBeats =
+                clip.loopLengthBeats > 0.0 ? clip.loopLengthBeats : clip.placement.lengthBeats;
             if (loopLengthBeats > 0.0) {
                 double newPhase = std::fmod(clip.midiOffset + trimBeats, loopLengthBeats);
                 if (newPhase < 0.0)
@@ -1913,8 +1912,8 @@ void RippleDeleteRangeCommand::execute() {
                 ClipOperations::setBeatPlacement(*live, startBeat_, clipEnd - endBeat_, bpm);
                 if (clip.isMidi()) {
                     const double trimBeats = endBeat_ - clipStart;
-                    const double loopLenBeats = audioEventRef(clip).loopLengthBeats() > 0.0
-                                                    ? audioEventRef(clip).loopLengthBeats()
+                    const double loopLenBeats = clip.loopLengthBeats > 0.0
+                                                    ? clip.loopLengthBeats
                                                     : clip.placement.lengthBeats;
                     if (loopLenBeats > 0.0) {
                         double phase = std::fmod(clip.midiOffset + trimBeats, loopLenBeats);

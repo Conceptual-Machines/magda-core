@@ -676,6 +676,17 @@ struct ClipInfo {
     double loopStartBeats = 0.0;
     double loopLengthBeats = 0.0;
 
+    /// Loop length in beats for whichever content the clip holds.
+    ///
+    /// A MIDI clip keeps it in the field above. An audio clip's loop is a
+    /// source region in samples, so its beat length is a view derived through
+    /// the event's interpretation. Reading only one of the two silently
+    /// returns zero for the other, which reads as "not looping".
+    double loopLengthInBeats() const {
+        const auto* event = primaryEvent();
+        return event != nullptr ? event->loopLengthBeats() : loopLengthBeats;
+    }
+
     // =========================================================================
     // Clip-level placement and mix
     //
