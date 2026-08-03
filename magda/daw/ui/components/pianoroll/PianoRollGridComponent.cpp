@@ -23,6 +23,7 @@
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "ui/components/common/InternalFileDrag.hpp"
 
 namespace magda {
 
@@ -2619,11 +2620,18 @@ void PianoRollGridComponent::setEditCursorPosition(double positionSeconds, bool 
 
 bool PianoRollGridComponent::isInterestedInDragSource(const SourceDetails& details) {
     if (auto* obj = details.description.getDynamicObject())
-        return obj->getProperty("type").toString() == "chordBlock";
-    return false;
+        if (obj->getProperty("type").toString() == "chordBlock")
+            return true;
+
+    // .mid files dragged from inside MAGDA arrive as an internal {type:"files"}
+    // payload rather than an OS file drag. See InternalFileDrag.hpp.
+    return magda::dnd::acceptsFilesDrag(*this, details);
 }
 
 void PianoRollGridComponent::itemDragEnter(const SourceDetails& details) {
+    if (magda::dnd::forwardFilesDragEnter(*this, details))
+        return;
+
     double beat = pixelToBeat(details.localPosition.x);
     if (snapEnabled_)
         beat = snapBeatToGrid(beat);
@@ -2633,6 +2641,9 @@ void PianoRollGridComponent::itemDragEnter(const SourceDetails& details) {
 }
 
 void PianoRollGridComponent::itemDragMove(const SourceDetails& details) {
+    if (magda::dnd::forwardFilesDragMove(*this, details))
+        return;
+
     double beat = pixelToBeat(details.localPosition.x);
     if (snapEnabled_)
         beat = snapBeatToGrid(beat);
@@ -2640,12 +2651,18 @@ void PianoRollGridComponent::itemDragMove(const SourceDetails& details) {
     repaint();
 }
 
-void PianoRollGridComponent::itemDragExit(const SourceDetails& /*details*/) {
+void PianoRollGridComponent::itemDragExit(const SourceDetails& details) {
+    if (magda::dnd::forwardFilesDragExit(*this, details))
+        return;
+
     chordDropActive_ = false;
     repaint();
 }
 
 void PianoRollGridComponent::itemDropped(const SourceDetails& details) {
+    if (magda::dnd::forwardFilesDrop(*this, details))
+        return;
+
     chordDropActive_ = false;
 
     auto* obj = details.description.getDynamicObject();

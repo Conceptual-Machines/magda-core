@@ -13,6 +13,7 @@
 #include "project/ProjectManager.hpp"
 #include "ui/components/chord/ChordBlockComponent.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
+#include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -1139,8 +1140,7 @@ void ChordPanelContent::startProgressionDrag(int progressionIndex) {
         }
     }
 
-    juce::DragAndDropContainer::performExternalDragDropOfFiles(
-        juce::StringArray{tempFile.getFullPathName()}, false, this);
+    magda::dnd::startFilesDrag(this, juce::StringArray{tempFile.getFullPathName()});
 
     for (auto* block : draggedBlocks)
         block->setAlpha(1.0f);

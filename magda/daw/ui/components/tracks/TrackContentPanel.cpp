@@ -15,6 +15,7 @@
 #include "../../utils/TimelineUtils.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../clips/ClipComponent.hpp"
+#include "../common/InternalFileDrag.hpp"
 #include "Config.hpp"
 #include "core/AppPaths.hpp"
 #include "core/AutomationCommands.hpp"
@@ -3296,16 +3297,7 @@ void TrackContentPanel::endFilesDropFeedback() {
 }
 
 juce::StringArray TrackContentPanel::extractFilePathsFromDescription(const juce::var& description) {
-    juce::StringArray paths;
-    if (auto* obj = description.getDynamicObject()) {
-        if (obj->getProperty("type").toString() == "files") {
-            if (auto* arr = obj->getProperty("paths").getArray()) {
-                for (const auto& v : *arr)
-                    paths.add(v.toString());
-            }
-        }
-    }
-    return paths;
+    return magda::dnd::filesDragPaths(description);
 }
 
 void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, int x, int y) {

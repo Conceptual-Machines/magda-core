@@ -10,6 +10,7 @@
 #include "core/ClipManager.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "project/ProjectManager.hpp"
+#include "ui/components/common/InternalFileDrag.hpp"
 
 namespace magda::daw::ui {
 
@@ -145,8 +146,7 @@ bool handleStepSequencerPatternExternalDrag(daw::audio::StepSequencerPlugin* plu
     auto tempFile = writeStepSequencerPatternToTempMidiFile(*plugin);
     if (tempFile.existsAsFile()) {
         exportButton->setAlpha(0.4f);
-        juce::DragAndDropContainer::performExternalDragDropOfFiles(
-            juce::StringArray{tempFile.getFullPathName()}, false, dragOwner);
+        magda::dnd::startFilesDrag(dragOwner, juce::StringArray{tempFile.getFullPathName()});
         exportButton->setAlpha(1.0f);
     }
 
@@ -185,8 +185,7 @@ bool handlePolyStepSequencerPatternExternalDrag(daw::audio::PolyStepSequencerPlu
     auto tempFile = writePolyStepSequencerPatternToTempMidiFile(*plugin);
     if (tempFile.existsAsFile()) {
         exportButton->setAlpha(0.4f);
-        juce::DragAndDropContainer::performExternalDragDropOfFiles(
-            juce::StringArray{tempFile.getFullPathName()}, false, dragOwner);
+        magda::dnd::startFilesDrag(dragOwner, juce::StringArray{tempFile.getFullPathName()});
         exportButton->setAlpha(1.0f);
     }
     return true;

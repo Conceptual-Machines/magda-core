@@ -19,6 +19,7 @@
 #include "../../../media_db/MediaDbMetadata.hpp"
 #include "../../../media_db/SampleTaggerDownloader.hpp"
 #include "../../components/chain/layout/DeviceSlotHeaderLayout.hpp"
+#include "../../components/common/InternalFileDrag.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FileBrowserLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
@@ -794,27 +795,15 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         // dragged out to Finder, so the OS file-drag route isn't needed here.
         // This also avoids macOS showing the generic blank-document .mps icon.
         if (allPresets) {
-            juce::Array<juce::var> pathArray;
-            for (const auto& p : paths)
-                pathArray.add(p);
-            auto* obj = new juce::DynamicObject();
-            obj->setProperty("type", juce::var("files"));
-            obj->setProperty("paths", juce::var(pathArray));
-            juce::var description(obj);
             if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(&owner_)) {
-                container->startDragging(description, &owner_,
+                container->startDragging(magda::dnd::makeFilesDragDescription(paths), &owner_,
                                          juce::ScaledImage(makePresetDragImage(presetNames)));
             }
             return {};  // we started the drag ourselves; suppress ListBox's default
         }
 #if JUCE_LINUX
-        juce::Array<juce::var> pathArray;
-        for (const auto& p : paths)
-            pathArray.add(p);
-        auto* obj = new juce::DynamicObject();
-        obj->setProperty("type", juce::var("files"));
-        obj->setProperty("paths", juce::var(pathArray));
-        return juce::var(obj);  // ListBox will run startDragging with this payload
+        // ListBox will run startDragging with this payload.
+        return magda::dnd::makeFilesDragDescription(paths);
 #else
         owner_.dragInProgress_ = true;
         const juce::Component::SafePointer<MediaDbBrowserContent> src(&owner_);
@@ -964,11 +953,10 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     // kind selector when library mode is active, so we don't duplicate them
     // here.
 
-    // Results table — drag-out is wired via
-    // ResultsTableModel::getDragSourceDescription (encodes the row paths
-    // in the drag var) + MediaDbBrowserContent::shouldDropFilesWhenDraggedExternally
-    // (decodes them and asks the OS to drop them as files when the drag
-    // leaves the app window).
+    // Results table — dragging rows out is wired via
+    // ResultsTableModel::getDragSourceDescription, which starts an OS file drag
+    // on macOS/Windows and an internal {type:"files"} drag on Linux.
+    // See InternalFileDrag.hpp.
     auto tableHeader = std::make_unique<MediaDbTableHeader>();
     tableHeader->onRemoveDuplicateRows = [this]() { removeDuplicateFilePathsWithConfirmation(); };
     resultsTable_.setHeader(std::move(tableHeader));

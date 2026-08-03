@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "core/GestureRouter.hpp"
+#include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/themes/CursorManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -568,6 +569,29 @@ void SamplerUI::filesDropped(const juce::StringArray& files, int /*x*/, int /*y*
             break;
         }
     }
+}
+
+// Samples dragged from MAGDA's own browser come through as an internal
+// {type:"files"} drag rather than an OS file drag, so route them back into the
+// FileDragAndDropTarget handlers above. See InternalFileDrag.hpp.
+bool SamplerUI::isInterestedInDragSource(const SourceDetails& details) {
+    return magda::dnd::acceptsFilesDrag(*this, details);
+}
+
+void SamplerUI::itemDragEnter(const SourceDetails& details) {
+    magda::dnd::forwardFilesDragEnter(*this, details);
+}
+
+void SamplerUI::itemDragMove(const SourceDetails& details) {
+    magda::dnd::forwardFilesDragMove(*this, details);
+}
+
+void SamplerUI::itemDragExit(const SourceDetails& details) {
+    magda::dnd::forwardFilesDragExit(*this, details);
+}
+
+void SamplerUI::itemDropped(const SourceDetails& details) {
+    magda::dnd::forwardFilesDrop(*this, details);
 }
 
 // =============================================================================
