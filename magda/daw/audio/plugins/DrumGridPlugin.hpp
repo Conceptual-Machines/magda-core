@@ -36,6 +36,30 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     static constexpr int baseNote = 24;       // Pad 0 = MIDI note 24 (C0)
     static constexpr int maxBusOutputs = 32;  // TE RackType max is 64 audio pins = 32 stereo pairs
 
+    /**
+     * @brief Per-pad output gains for a given level and pan position.
+     *
+     * Linear pan law, matching Tracktion's default (PanLawLinear, see
+     * getGainsFromVolumeFaderPositionAndPan) so a pad at centre pan is unity —
+     * the same as a device sitting directly on a track. An equal-power law was
+     * used here previously, which cost every pad 3 dB (cos(pi/4) = 0.707) at the
+     * default centre pan and made Drum Grid devices quieter than the identical
+     * device loaded standalone.
+     *
+     * Like Tracktion's, this is a pan rather than a balance law: at hard pan the
+     * favoured channel reaches 2x. That is deliberate — a hard-panned pad and a
+     * hard-panned track must agree.
+     *
+     * Defined here so the audio path and its tests share one definition.
+     */
+    static void computePadGains(float levelLinear, float panValue, float& leftGain,
+                                float& rightGain) noexcept {
+        const float pan = juce::jlimit(-1.0f, 1.0f, panValue);
+        const float panGain = pan * levelLinear;
+        leftGain = levelLinear - panGain;
+        rightGain = levelLinear + panGain;
+    }
+
     juce::String getName() const override {
         return getPluginName();
     }
