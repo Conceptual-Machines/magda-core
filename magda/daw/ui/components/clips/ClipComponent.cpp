@@ -3590,9 +3590,7 @@ void ClipComponent::showContextMenu() {
             auto* c = clipManager.getClip(clipId_);
             if (c && c->isAudio() && takeIndex >= 0 &&
                 takeIndex < static_cast<int>(c->audio().takes.size())) {
-                c->audio().currentTakeIndex = takeIndex;
-                magda::audioEventRef(*c).sourceFilePath() = c->audio().takes[takeIndex].filePath;
-                clipManager.forceNotifyClipPropertyChanged(clipId_);
+                clipManager.setAudioClipCurrentTake(clipId_, takeIndex);
             }
             return;
         }

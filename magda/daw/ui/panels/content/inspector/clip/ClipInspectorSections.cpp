@@ -1108,8 +1108,7 @@ void ClipInspector::initClipPropertiesSection() {
         double newLoopStartBeats = clipLoopStartValue_->getValue();
         if (clip->isMidi()) {
             const double newOffsetBeats =
-                juce::jmax(0.0, newLoopStartBeats + clip->midiOffset -
-                                    magda::audioEventRef(*clip).loopStartBeats());
+                juce::jmax(0.0, newLoopStartBeats + clip->midiOffset - clip->loopStartBeats);
             magda::UndoManager::getInstance().beginCompoundOperation("Set Clip Loop Start");
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetMidiClipLoopStartBeatsCommand>(primaryClipId(),
@@ -1169,7 +1168,7 @@ void ClipInspector::initClipPropertiesSection() {
             newLoopLengthSeconds =
                 juce::jmax(0.0, newLoopEndSeconds - magda::audioEventRef(*clip).loopStartSeconds());
         } else {
-            double loopStartBeats = magda::audioEventRef(*clip).loopStartBeats();
+            double loopStartBeats = clip->loopStartBeats;
             double newLoopLengthBeats = newLoopEndBeats - loopStartBeats;
             if (newLoopLengthBeats < 0.25)
                 newLoopLengthBeats = 0.25;

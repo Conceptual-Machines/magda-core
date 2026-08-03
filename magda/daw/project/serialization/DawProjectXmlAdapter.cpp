@@ -752,7 +752,6 @@ juce::XmlElement& addClipElement(juce::XmlElement& parent, const ClipInfo& clip,
 
     // Playback offset + loop region, in the clip's content time unit.
     if (clip.isMidi()) {
-        const auto& midi = clip.midi();
         clipElement->setAttribute("playStart", clip.midiOffset);
         if (clip.loopEnabled && clip.loopLengthBeats > 0.0) {
             clipElement->setAttribute("loopStart", clip.loopStartBeats);

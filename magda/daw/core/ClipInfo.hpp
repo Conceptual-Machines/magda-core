@@ -655,7 +655,10 @@ struct ClipInfo {
         return isAudio() ? audio().primaryEvent() : nullptr;
     }
 
-    /// Every audio event, empty for MIDI clips.
+    /// Every audio event. Audio clips only: this is a checked variant access
+    /// and throws for MIDI, deliberately, so a caller that has not established
+    /// the content type fails loudly instead of writing into a discarded list.
+    /// Use primaryEvent(), which returns nullptr for MIDI, when unsure.
     std::vector<AudioEvent>& events() {
         return audio().events;
     }

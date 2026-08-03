@@ -3478,7 +3478,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
                         // Reset extended loops to base loop length for
                         // session→session pastes
                         const double bpm = currentProjectTempoOrDefault();
-                        const double loopBeats = clipData.loopLengthBeats;
+                        const double loopBeats = clipData.loopLengthInBeats();
                         const auto* srcLoopEvent = clipData.primaryEvent();
                         if (loopBeats > 0.0 && clipData.lengthBeats > loopBeats) {
                             ClipOperations::setTimelinePlacement(*newClip,

@@ -2845,7 +2845,7 @@ void DrumGridClipContent::updateGridSize() {
         juce::ignoreUnused(beatsPerSecond);
         const double loopOffsetBeats =
             clip->isMidi() ? clip->loopStartBeats : magda::audioEventRef(*clip).loopStartBeats();
-        const double sourceLengthBeats = clip->loopLengthBeats;
+        const double sourceLengthBeats = clip->loopLengthInBeats();
         gridComponent_->setLoopRegion(loopOffsetBeats, sourceLengthBeats, clip->loopEnabled);
     } else {
         gridComponent_->setLoopRegion(0.0, 0.0, false);
