@@ -26,6 +26,7 @@ class SelectionApiLive : public SelectionApi {
     void selectAutomationClip(AutomationClipId clipId, AutomationLaneId laneId) override;
     void selectNotes(ClipId clipId, const std::vector<size_t>& noteIndices) override;
     void clearNoteSelection() override;
+    void clearSelection() override;
 };
 
 }  // namespace magda

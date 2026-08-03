@@ -63,6 +63,15 @@ class SelectionApi {
     virtual void selectAutomationClip(AutomationClipId clipId, AutomationLaneId laneId) = 0;
     virtual void selectNotes(ClipId clipId, const std::vector<size_t>& noteIndices) = 0;
     virtual void clearNoteSelection() = 0;
+
+    /**
+     * @brief Clear the selection entirely, whatever its current type.
+     *
+     * `clearNoteSelection` only clears a note selection and is a no-op in any
+     * other mode, so it cannot express "nothing is selected" for a caller that
+     * replaces the whole selection rather than one facet of it.
+     */
+    virtual void clearSelection() = 0;
 };
 
 }  // namespace magda

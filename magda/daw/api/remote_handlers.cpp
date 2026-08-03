@@ -1,13 +1,20 @@
 #include "remote_handlers.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <unordered_set>
+#include <utility>
 
+#include "../core/AutomationCommands.hpp"
 #include "../core/AutomationInfo.hpp"
 #include "../core/AutomationTypes.hpp"
+#include "../core/ClipCommands.hpp"
 #include "../core/ClipInfo.hpp"
 #include "../core/ControlTarget.hpp"
+#include "../core/MidiNoteCommands.hpp"
+#include "../core/TrackCommands.hpp"
 #include "../core/TrackInfo.hpp"
+#include "../core/TrackPropertyCommands.hpp"
 #include "../core/TrackTypes.hpp"
 #include "../project/ProjectInfo.hpp"
 #include "automation_api.hpp"
@@ -18,6 +25,7 @@
 #include "session_api.hpp"
 #include "track_api.hpp"
 #include "transport_api.hpp"
+#include "undo_api.hpp"
 
 namespace magda::remote::handlers {
 namespace {
@@ -51,6 +59,32 @@ juce::var idResult(int id) {
     auto* object = new juce::DynamicObject();
     object->setProperty("id", id);
     return object;
+}
+
+/**
+ * @brief Run an undoable command through the facade and read a value off it.
+ *
+ * Remote writes go through commands, not the `TrackApi`/`ClipApi` setters. Those
+ * setters call the managers directly, so nothing lands on the undo stack and the
+ * dispatcher's compound closes empty — `UndoManager` only records a compound
+ * when at least one command was enqueued. Commands are also what the UI runs, so
+ * this keeps a remote edit and the equivalent user edit undoable the same way.
+ *
+ * The command is owned by the undo stack after execution, so anything the caller
+ * needs from it (a freshly allocated id) is read inside `project` while the raw
+ * pointer is still valid.
+ */
+template <typename Command, typename Projection, typename... Args>
+auto runCommandAndRead(MagdaApi& api, Projection project, Args&&... args) {
+    auto command = std::make_unique<Command>(std::forward<Args>(args)...);
+    auto* raw = command.get();
+    api.undo().executeCommand(std::move(command));
+    return project(*raw);
+}
+
+/// Run an undoable command with no value to read back.
+template <typename Command, typename... Args> void runCommand(MagdaApi& api, Args&&... args) {
+    api.undo().executeCommand(std::make_unique<Command>(std::forward<Args>(args)...));
 }
 
 juce::var acceptedResult() {
@@ -201,7 +235,14 @@ HandlerResult tracksCreate(MagdaApi& api, const juce::var& input, const RequestC
     if (!type)
         return HandlerResult::fail(ErrorCode::ValidationFailed,
                                    "unsupported track type: " + input["type"].toString());
-    const auto id = api.tracks().createTrack(input["name"].toString(), *type);
+
+    // Through a command rather than TrackApi::createTrack. The facade setters
+    // mutate the managers directly, so the dispatcher's compound would close
+    // with nothing recorded and the mutation would not be undoable at all —
+    // `UndoApi::executeCommand` is the path that actually reaches the stack.
+    const auto id = runCommandAndRead<CreateTrackCommand>(
+        api, [](const CreateTrackCommand& command) { return command.getCreatedTrackId(); }, *type,
+        input["name"].toString());
     if (id == INVALID_TRACK_ID)
         return HandlerResult::fail(ErrorCode::InternalError, "track creation failed");
     return HandlerResult::ok(idResult(id));
@@ -215,17 +256,19 @@ HandlerResult tracksUpdate(MagdaApi& api, const juce::var& input, const RequestC
 
     // Every field beyond trackId is optional: this is a patch, not a replace,
     // so an absent field must leave the current value alone rather than reset
-    // it to a default.
+    // it to a default. Each field is its own command; the dispatcher's compound
+    // collapses them into the single undo step the request represents.
     if (has(input, "name"))
-        tracks.setTrackName(trackId, input["name"].toString());
+        runCommand<SetTrackNameCommand>(api, trackId, input["name"].toString());
     if (has(input, "volume"))
-        tracks.setTrackVolume(trackId, static_cast<float>(readDouble(input, "volume")));
+        runCommand<SetTrackVolumeCommand>(api, trackId,
+                                          static_cast<float>(readDouble(input, "volume")));
     if (has(input, "pan"))
-        tracks.setTrackPan(trackId, static_cast<float>(readDouble(input, "pan")));
+        runCommand<SetTrackPanCommand>(api, trackId, static_cast<float>(readDouble(input, "pan")));
     if (has(input, "muted"))
-        tracks.setTrackMuted(trackId, readBool(input, "muted"));
+        runCommand<SetTrackMuteCommand>(api, trackId, readBool(input, "muted"));
     if (has(input, "soloed"))
-        tracks.setTrackSoloed(trackId, readBool(input, "soloed"));
+        runCommand<SetTrackSoloCommand>(api, trackId, readBool(input, "soloed"));
 
     const auto* updated = tracks.getTrack(trackId);
     if (updated == nullptr)
@@ -237,7 +280,7 @@ HandlerResult tracksDelete(MagdaApi& api, const juce::var& input, const RequestC
     const auto trackId = static_cast<TrackId>(static_cast<int>(input["trackId"]));
     if (api.tracks().getTrack(trackId) == nullptr)
         return notFound("track", trackId);
-    api.tracks().deleteTrack(trackId);
+    runCommand<DeleteTrackCommand>(api, trackId);
     return HandlerResult::ok(acceptedResult());
 }
 
@@ -281,9 +324,10 @@ HandlerResult clipsCreateMidi(MagdaApi& api, const juce::var& input, const Reque
         return notFound("track", trackId);
     const auto view =
         input["view"].toString() == "session" ? ClipView::Session : ClipView::Arrangement;
-    const auto id =
-        api.clips().createMidiClipBeats(trackId, static_cast<double>(input["startBeat"]),
-                                        static_cast<double>(input["lengthBeats"]), view);
+    const auto id = runCommandAndRead<CreateClipCommand>(
+        api, [](const CreateClipCommand& command) { return command.getCreatedClipId(); },
+        ClipType::MIDI, trackId, BeatPosition(static_cast<double>(input["startBeat"])),
+        BeatDuration(static_cast<double>(input["lengthBeats"])), juce::String(), view);
     if (id == INVALID_CLIP_ID)
         return HandlerResult::fail(ErrorCode::InternalError, "clip creation failed");
     return HandlerResult::ok(idResult(id));
@@ -293,12 +337,16 @@ HandlerResult clipsAddMidiNote(MagdaApi& api, const juce::var& input, const Requ
     const auto clipId = static_cast<ClipId>(static_cast<int>(input["clipId"]));
     if (api.clips().getClip(clipId) == nullptr)
         return notFound("clip", clipId);
-    const auto added = api.clips().addMidiNote(
-        clipId, static_cast<double>(input["startBeat"]), static_cast<int>(input["note"]),
-        static_cast<double>(input["lengthBeats"]), static_cast<int>(input["velocity"]));
-    if (!added)
+    // Refuse before running the command: AddMidiNoteCommand has no way to
+    // report that the clip could not take a note, so an audio clip would
+    // produce an undo entry for a mutation that never happened.
+    if (const auto* target = api.clips().getClip(clipId); target != nullptr && !target->isMidi())
         return HandlerResult::fail(ErrorCode::Conflict,
                                    "note rejected: clip " + juce::String(clipId) + " is not MIDI");
+
+    runCommand<AddMidiNoteCommand>(
+        api, clipId, static_cast<double>(input["startBeat"]), static_cast<int>(input["note"]),
+        static_cast<double>(input["lengthBeats"]), static_cast<int>(input["velocity"]));
     const auto* clip = api.clips().getClip(clipId);
     if (clip == nullptr)
         return notFound("clip", clipId);
@@ -309,7 +357,7 @@ HandlerResult clipsDelete(MagdaApi& api, const juce::var& input, const RequestCo
     const auto clipId = static_cast<ClipId>(static_cast<int>(input["clipId"]));
     if (api.clips().getClip(clipId) == nullptr)
         return notFound("clip", clipId);
-    api.clips().deleteClip(clipId);
+    runCommand<DeleteClipCommand>(api, clipId);
     return HandlerResult::ok(acceptedResult());
 }
 
@@ -382,7 +430,72 @@ HandlerResult selectionSet(MagdaApi& api, const juce::var& input, const RequestC
     if (!dto)
         return HandlerResult::fail(error);
 
+    // Validate every referenced object before mutating anything. SelectionManager
+    // accepts ids without checking they exist, so an unvalidated request would
+    // leave the session pointing at nothing and still report success — the
+    // opposite of the structured not-found the contract promises. Checking up
+    // front also keeps the operation all-or-nothing rather than applying the
+    // valid half of a partly bogus request.
+    if (dto->trackId && *dto->trackId != MASTER_TRACK_ID &&
+        api.tracks().getTrack(*dto->trackId) == nullptr)
+        return notFound("track", *dto->trackId);
+
+    for (const auto clipId : dto->clipIds) {
+        if (api.clips().getClip(clipId) == nullptr)
+            return notFound("clip", clipId);
+    }
+    if (dto->clipId && api.clips().getClip(*dto->clipId) == nullptr)
+        return notFound("clip", *dto->clipId);
+
+    if (dto->automationLaneId && api.automation().getLane(*dto->automationLaneId) == nullptr)
+        return notFound("automation lane", *dto->automationLaneId);
+
+    if (dto->automationClipId) {
+        const auto* automationClip = api.automation().getClip(*dto->automationClipId);
+        if (automationClip == nullptr)
+            return notFound("automation clip", *dto->automationClipId);
+        // Selecting a clip against a lane that does not own it would produce a
+        // selection the UI cannot render.
+        if (!dto->automationLaneId)
+            return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                       "automationClipId requires automationLaneId");
+        if (automationClip->laneId != *dto->automationLaneId)
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "automation clip " + juce::String(*dto->automationClipId) +
+                                           " does not belong to lane " +
+                                           juce::String(*dto->automationLaneId));
+    }
+
+    if (dto->noteClipId) {
+        const auto* noteClip = api.clips().getClip(*dto->noteClipId);
+        if (noteClip == nullptr)
+            return notFound("clip", *dto->noteClipId);
+        if (!noteClip->isMidi())
+            return HandlerResult::fail(ErrorCode::Conflict, "clip " +
+                                                                juce::String(*dto->noteClipId) +
+                                                                " has no notes to select");
+        const auto noteCount = static_cast<std::int64_t>(noteClip->midiNotes.size());
+        for (const auto index : dto->noteIndices) {
+            if (index >= noteCount)
+                return HandlerResult::fail(
+                    ErrorCode::NotFound, "note index " + juce::String(index) + " is out of range");
+        }
+    } else if (!dto->noteIndices.empty()) {
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "noteIndices requires noteClipId");
+    }
+
     auto& selection = api.selection();
+
+    // An all-empty DTO means "select nothing". clearNoteSelection only clears a
+    // note selection, so it cannot express that on its own.
+    const bool selectsNothing = !dto->trackId && !dto->clipId && dto->clipIds.empty() &&
+                                !dto->automationLaneId && !dto->automationClipId &&
+                                !dto->noteClipId;
+    if (selectsNothing) {
+        selection.clearSelection();
+        return HandlerResult::ok(toJson(makeSelectionDto(api)));
+    }
+
     if (dto->trackId)
         selection.selectTrack(*dto->trackId);
 
@@ -519,15 +632,26 @@ HandlerResult automationCreateLane(MagdaApi& api, const juce::var& input, const 
 
 HandlerResult automationAddPoint(MagdaApi& api, const juce::var& input, const RequestContext&) {
     const auto laneId = static_cast<AutomationLaneId>(static_cast<int>(input["laneId"]));
-    if (api.automation().getLane(laneId) == nullptr)
+    const auto* target = api.automation().getLane(laneId);
+    if (target == nullptr)
         return notFound("automation lane", laneId);
     const auto curve = parseCurve(input["curve"].toString());
     if (!curve)
         return HandlerResult::fail(ErrorCode::ValidationFailed,
                                    "unsupported curve: " + input["curve"].toString());
 
-    api.automation().addPoint(laneId, static_cast<double>(input["beatPosition"]),
-                              static_cast<double>(input["value"]), *curve);
+    // Points on a clip-based lane live on its clips, so addPoint refuses and
+    // returns an invalid id. Reporting success there would advance the revision
+    // for a lane that gained nothing.
+    if (!target->isAbsolute())
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "lane " + juce::String(laneId) +
+                                       " does not hold points directly; add them to its clips");
+
+    runCommand<AddAutomationPointCommand>(api, laneId, INVALID_AUTOMATION_CLIP_ID,
+                                          static_cast<double>(input["beatPosition"]),
+                                          static_cast<double>(input["value"]), *curve);
+
     const auto* lane = api.automation().getLane(laneId);
     if (lane == nullptr)
         return notFound("automation lane", laneId);
@@ -536,13 +660,30 @@ HandlerResult automationAddPoint(MagdaApi& api, const juce::var& input, const Re
 
 HandlerResult automationClearLane(MagdaApi& api, const juce::var& input, const RequestContext&) {
     const auto laneId = static_cast<AutomationLaneId>(static_cast<int>(input["laneId"]));
-    if (api.automation().getLane(laneId) == nullptr)
-        return notFound("automation lane", laneId);
-    api.automation().clearLanePoints(laneId);
     const auto* lane = api.automation().getLane(laneId);
     if (lane == nullptr)
         return notFound("automation lane", laneId);
-    return HandlerResult::ok(toJson(makeAutomationLaneDto(*lane)));
+
+    // clearLanePoints silently does nothing for a clip-based lane. Refusing is
+    // the same answer setLanePoints gives, and it keeps the caller from
+    // believing a curve was removed.
+    if (!lane->isAbsolute())
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "lane " + juce::String(laneId) +
+                                       " is clip-based; clear its clips instead");
+
+    // Already empty: succeed, but tell the dispatcher nothing changed so the
+    // revision does not move for a request that was a no-op.
+    if (lane->absolutePoints.empty())
+        return HandlerResult::unchanged(toJson(makeAutomationLaneDto(*lane)));
+
+    // Replacing the curve with an empty one is the undoable form of clearing it;
+    // clearLanePoints mutates the manager directly and leaves nothing to undo.
+    runCommand<SetAutomationLanePointsCommand>(api, laneId, std::vector<AutomationPoint>{});
+    const auto* cleared = api.automation().getLane(laneId);
+    if (cleared == nullptr)
+        return notFound("automation lane", laneId);
+    return HandlerResult::ok(toJson(makeAutomationLaneDto(*cleared)));
 }
 
 }  // namespace magda::remote::handlers

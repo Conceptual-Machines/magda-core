@@ -202,19 +202,19 @@ TEST_CASE("Retrying a completed write does not apply it twice", "[remote][servic
     context.clientId = "client-a";
     context.requestId = "req-1";
 
-    const auto first =
-        run(service, "tracks.create", object({{"name", "Keys"}, {"type", "audio"}}), context);
+    const auto first = run(service, "project.setTempo", object({{"tempo", 90.0}}), context);
     REQUIRE(first.ok);
-    REQUIRE(api.tracks_.created.size() == 1);
+    REQUIRE(api.project_.info.tempo == 90.0);
 
-    // The client never saw the response and retried with the same request id.
-    const auto retry =
-        run(service, "tracks.create", object({{"name", "Keys"}, {"type", "audio"}}), context);
+    // The client never saw the response and retried the same request id. The
+    // payload differs to make replay observable: if this executed rather than
+    // replaying, the tempo would move.
+    const auto retry = run(service, "project.setTempo", object({{"tempo", 140.0}}), context);
     REQUIRE(retry.ok);
-    REQUIRE(api.tracks_.created.size() == 1);
-    // The replay is the original response, ids included, so the client's view
-    // stays consistent.
-    REQUIRE(static_cast<int>(retry.result["id"]) == static_cast<int>(first.result["id"]));
+    REQUIRE(api.project_.info.tempo == 90.0);
+    // The replay is the original response verbatim, so the client's view stays
+    // consistent.
+    REQUIRE(static_cast<double>(retry.result["tempo"]) == 90.0);
     REQUIRE(retry.revision == first.revision);
     REQUIRE(service.currentRevision() == first.revision);
 }
@@ -231,11 +231,12 @@ TEST_CASE("Idempotency keys are scoped per client", "[remote][service][idempoten
     second.clientId = "client-b";
     second.requestId = "req-1";  // same id, different client
 
-    REQUIRE(run(service, "tracks.create", object({{"name", "A"}, {"type", "audio"}}), first).ok);
-    REQUIRE(run(service, "tracks.create", object({{"name", "B"}, {"type", "audio"}}), second).ok);
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 90.0}}), first).ok);
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 140.0}}), second).ok);
 
-    // Two distinct tracks: one client must never replay another's response.
-    REQUIRE(api.tracks_.created.size() == 2);
+    // Both executed: one client must never replay another's response.
+    REQUIRE(api.project_.info.tempo == 140.0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 2);
 }
 
 TEST_CASE("Reads are not served from the idempotency cache", "[remote][service][idempotency]") {
@@ -264,27 +265,121 @@ TEST_CASE("The idempotency cache is bounded", "[remote][service][idempotency]") 
     RemoteApiService service(api);
     service.setIdempotencyCacheCapacity(2);
 
-    const auto writeWithId = [&](const juce::String& requestId) {
+    const auto writeWithId = [&](const juce::String& requestId, double tempo) {
         RequestContext context;
         context.clientId = "client-a";
         context.requestId = requestId;
-        return run(service, "tracks.create", object({{"name", "T"}, {"type", "audio"}}), context);
+        return run(service, "project.setTempo", object({{"tempo", tempo}}), context);
     };
 
-    writeWithId("r1");
-    writeWithId("r2");
-    writeWithId("r3");  // evicts r1
-    REQUIRE(api.tracks_.created.size() == 3);
+    writeWithId("r1", 90.0);
+    writeWithId("r2", 100.0);
+    writeWithId("r3", 110.0);  // evicts r1
+    REQUIRE(api.project_.info.tempo == 110.0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 3);
 
     // r1 has aged out, so its retry re-executes rather than replaying. That is
     // the accepted trade: a bounded cache cannot promise idempotency forever,
     // and unbounded growth is the worse failure for a long-lived session.
-    writeWithId("r1");
-    REQUIRE(api.tracks_.created.size() == 4);
+    writeWithId("r1", 120.0);
+    REQUIRE(api.project_.info.tempo == 120.0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 4);
 
-    // r3 is still cached and still replays.
-    writeWithId("r3");
-    REQUIRE(api.tracks_.created.size() == 4);
+    // r3 is still cached, so this replays instead of applying 130.
+    writeWithId("r3", 130.0);
+    REQUIRE(api.project_.info.tempo == 120.0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 4);
+}
+
+TEST_CASE("Concurrent retries of one request id apply the mutation once",
+          "[remote][service][idempotency][stress]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    // The pre-queue cache lookup cannot catch this on its own: both requests can
+    // pass it before either has finished. The recheck inside the serialized
+    // execution path is what makes the duplicate replay instead of re-applying.
+    constexpr int threadCount = 8;
+    std::atomic<int> okCount{0};
+    std::vector<std::thread> workers;
+    workers.reserve(threadCount);
+    for (int worker = 0; worker < threadCount; ++worker) {
+        workers.emplace_back([&] {
+            RequestContext context;
+            context.clientId = "client-a";
+            context.requestId = "req-1";
+            service.dispatch("project.setTempo", object({{"tempo", 90.0}}), context,
+                             [&](Response response) {
+                                 if (response.ok)
+                                     ++okCount;
+                             });
+        });
+    }
+    for (auto& worker : workers)
+        worker.join();
+
+    // Every caller gets a success, but only one of them was a real mutation.
+    REQUIRE(okCount.load() == threadCount);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 1);
+}
+
+TEST_CASE("Selection ids are checked against the model", "[remote][service][selection]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto selection = [](std::initializer_list<std::pair<const char*, juce::var>> overrides) {
+        auto* result = new juce::DynamicObject();
+        result->setProperty("trackId", juce::var());
+        result->setProperty("clipId", juce::var());
+        result->setProperty("clipIds", juce::Array<juce::var>{});
+        result->setProperty("automationLaneId", juce::var());
+        result->setProperty("automationClipId", juce::var());
+        result->setProperty("noteClipId", juce::var());
+        result->setProperty("noteIndices", juce::Array<juce::var>{});
+        for (const auto& [key, value] : overrides)
+            result->setProperty(key, value);
+        return juce::var(result);
+    };
+
+    // SelectionManager accepts ids without checking they exist, so an
+    // unvalidated request would leave the session pointing at nothing and still
+    // report success.
+    const auto badTrack = run(service, "selection.set", selection({{"trackId", 999}}));
+    REQUIRE_FALSE(badTrack.ok);
+    REQUIRE(errorCodeOf(badTrack) == "not_found");
+
+    const auto badClip = run(service, "selection.set", selection({{"clipId", 777}}));
+    REQUIRE_FALSE(badClip.ok);
+    REQUIRE(errorCodeOf(badClip) == "not_found");
+
+    // Nothing was applied on the way to the error.
+    REQUIRE(api.selection_.trackSelections.empty());
+    REQUIRE(api.selection_.clipSelections.empty());
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("An empty selection clears the whole selection", "[remote][service][selection]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto* empty = new juce::DynamicObject();
+    empty->setProperty("trackId", juce::var());
+    empty->setProperty("clipId", juce::var());
+    empty->setProperty("clipIds", juce::Array<juce::var>{});
+    empty->setProperty("automationLaneId", juce::var());
+    empty->setProperty("automationClipId", juce::var());
+    empty->setProperty("noteClipId", juce::var());
+    empty->setProperty("noteIndices", juce::Array<juce::var>{});
+
+    const auto response = run(service, "selection.set", juce::var(empty));
+
+    REQUIRE(response.ok);
+    // clearNoteSelection alone is a no-op outside note mode, so it cannot
+    // express "select nothing" for a track or clip selection.
+    REQUIRE(api.selection_.clearSelectionCalls == 1);
 }
 
 TEST_CASE("An expired deadline fails with timeout instead of executing late",
@@ -353,15 +448,15 @@ TEST_CASE("Replacing the project clears the idempotency cache", "[remote][servic
     RequestContext context;
     context.clientId = "client-a";
     context.requestId = "req-1";
-    REQUIRE(run(service, "tracks.create", object({{"name", "A"}, {"type", "audio"}}), context).ok);
-    REQUIRE(api.tracks_.created.size() == 1);
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 90.0}}), context).ok);
+    REQUIRE(api.project_.info.tempo == 90.0);
 
     service.projectReplaced();
 
-    // The cached response describes the old project's ids, so replaying it
-    // would hand the client an id that means nothing now.
-    run(service, "tracks.create", object({{"name", "A"}, {"type", "audio"}}), context);
-    REQUIRE(api.tracks_.created.size() == 2);
+    // The cached response describes the outgoing project, so replaying it would
+    // answer for state that no longer exists. This must execute instead.
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 140.0}}), context).ok);
+    REQUIRE(api.project_.info.tempo == 140.0);
 }
 
 TEST_CASE("Committed writes notify the matching change topic", "[remote][service][changes]") {
@@ -380,32 +475,6 @@ TEST_CASE("Committed writes notify the matching change topic", "[remote][service
     REQUIRE(seen.size() == 1);
     REQUIRE(seen[0].topic == Topic::Project);
     REQUIRE(seen[0].revision == service.currentRevision());
-}
-
-TEST_CASE("A cascading write notifies every affected topic", "[remote][service][changes]") {
-    const MessageThreadRelaxation relaxation;
-    MockMagdaApi api;
-    RemoteApiService service(api);
-
-    REQUIRE(run(service, "tracks.create", object({{"name", "A"}, {"type", "audio"}})).ok);
-
-    std::vector<ChangeSource::Change> seen;
-    service.changes().addListener([&](const std::vector<ChangeSource::Change>& changes) {
-        seen.insert(seen.end(), changes.begin(), changes.end());
-    });
-
-    const auto trackId = api.tracks_.created.front().id;
-    REQUIRE(run(service, "tracks.delete", object({{"trackId", trackId}})).ok);
-    service.changes().flush();
-
-    // Deleting a track takes its clips and devices with it, so a subscriber
-    // watching only clips must still hear about it.
-    std::vector<Topic> topics;
-    for (const auto& change : seen)
-        topics.push_back(change.topic);
-    REQUIRE(std::find(topics.begin(), topics.end(), Topic::Tracks) != topics.end());
-    REQUIRE(std::find(topics.begin(), topics.end(), Topic::Clips) != topics.end());
-    REQUIRE(std::find(topics.begin(), topics.end(), Topic::Devices) != topics.end());
 }
 
 TEST_CASE("Reads emit no change notifications", "[remote][service][changes]") {
@@ -435,60 +504,6 @@ TEST_CASE("dispatchSync returns the response directly", "[remote][service]") {
 
     REQUIRE(response.ok);
     REQUIRE(static_cast<double>(response.result["tempo"]) == 111.0);
-}
-
-TEST_CASE("A client can create a track, add a clip, and add notes to it",
-          "[remote][service][integration]") {
-    const MessageThreadRelaxation relaxation;
-    MockMagdaApi api;
-    RemoteApiService service(api);
-
-    // The #701 acceptance path, exercised through the dispatcher rather than
-    // against the facade directly.
-    const auto track = run(service, "tracks.create", object({{"name", "Lead"}, {"type", "audio"}}));
-    REQUIRE(track.ok);
-    const auto trackId = static_cast<int>(track.result["id"]);
-
-    const auto clip = run(service, "clips.createMidi",
-                          object({{"trackId", trackId},
-                                  {"startBeat", 0.0},
-                                  {"lengthBeats", 4.0},
-                                  {"view", "arrangement"}}));
-    REQUIRE(clip.ok);
-    REQUIRE(api.clips_.midiCreations.size() == 1);
-    REQUIRE(api.clips_.midiCreations[0].trackId == trackId);
-    REQUIRE(api.clips_.midiCreations[0].lengthBeats == 4.0);
-
-    // MockClipApi records creations rather than materialising the clip, so seed
-    // the one the handler just asked for before reading it back.
-    const auto clipId = static_cast<ClipId>(static_cast<int>(clip.result["id"]));
-    ClipInfo seeded;
-    seeded.id = clipId;
-    seeded.trackId = static_cast<TrackId>(trackId);  // ClipInfo defaults to MIDI content
-    seeded.placement.startBeat = 0.0;
-    seeded.placement.lengthBeats = 4.0;
-    api.clips_.clips[clipId] = seeded;
-    api.clips_.clipsOnTrack[static_cast<TrackId>(trackId)] = {clipId};
-
-    const auto note = run(service, "clips.addMidiNote",
-                          object({{"clipId", static_cast<int>(clipId)},
-                                  {"note", 60},
-                                  {"velocity", 100},
-                                  {"startBeat", 0.0},
-                                  {"lengthBeats", 1.0}}));
-    REQUIRE(note.ok);
-    REQUIRE(note.result["notes"].getArray() != nullptr);
-    REQUIRE(note.result["notes"].getArray()->size() == 1);
-
-    const auto listed = run(service, "clips.list", object({{"trackId", trackId}}));
-    REQUIRE(listed.ok);
-    REQUIRE(listed.result.getArray() != nullptr);
-    REQUIRE(listed.result.getArray()->size() == 1);
-
-    // Four mutations, four revisions, and one undo step each.
-    REQUIRE(service.currentRevision() == 3);
-    REQUIRE(api.undo_.compoundDescriptions.size() == 3);
-    REQUIRE(api.undo_.compoundDepth == 0);
 }
 
 TEST_CASE("A local committed change bumps the revision", "[remote][service][changes]") {

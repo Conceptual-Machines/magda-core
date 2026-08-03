@@ -193,6 +193,7 @@ set(TEST_SOURCES
     test_magda_api_lua_bindings.cpp
     test_remote_api_contract.cpp
     test_remote_service.cpp
+    test_remote_service_live.cpp
     test_remote_changes.cpp
     test_remote_model_bridge.cpp
     test_device_api.cpp

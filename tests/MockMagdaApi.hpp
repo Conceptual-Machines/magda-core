@@ -190,6 +190,7 @@ class MockSelectionApi : public SelectionApi {
     std::vector<ClipId> clipSelections;
     std::vector<std::unordered_set<ClipId>> clipsSelections;
     int clearNoteCalls = 0;
+    int clearSelectionCalls = 0;
 
     TrackId getSelectedTrack() const override {
         return selectedTrack;
@@ -238,6 +239,15 @@ class MockSelectionApi : public SelectionApi {
     }
     void clearNoteSelection() override {
         ++clearNoteCalls;
+    }
+    void clearSelection() override {
+        ++clearSelectionCalls;
+        selectedTrack = INVALID_TRACK_ID;
+        selectedClip = INVALID_CLIP_ID;
+        selectedClips.clear();
+        noteSelectionPresent = false;
+        noteSelectionClipId = INVALID_CLIP_ID;
+        noteSelectionIndices.clear();
     }
 };
 

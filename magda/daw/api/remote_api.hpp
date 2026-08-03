@@ -323,15 +323,29 @@ struct RequestContext {
 struct HandlerResult {
     std::optional<Error> error;
     juce::var value;
+    /**
+     * Whether this actually changed project state.
+     *
+     * A write operation can legitimately resolve to a no-op — clearing a lane
+     * that is already empty, for instance. Reporting that as a committed
+     * mutation would advance the revision and invalidate every other client's
+     * `expectedRevision` for a request that changed nothing, so the handler
+     * says so and the dispatcher leaves the revision alone. Ignored for reads.
+     */
+    bool mutated = true;
 
     static HandlerResult ok(juce::var value) {
-        return {std::nullopt, std::move(value)};
+        return {std::nullopt, std::move(value), true};
+    }
+    /// Succeeded, but nothing changed — see `mutated`.
+    static HandlerResult unchanged(juce::var value) {
+        return {std::nullopt, std::move(value), false};
     }
     static HandlerResult fail(ErrorCode code, const juce::String& message) {
-        return {Error{code, message, {}}, {}};
+        return {Error{code, message, {}}, {}, false};
     }
     static HandlerResult fail(Error error) {
-        return {std::move(error), {}};
+        return {std::move(error), {}, false};
     }
 
     bool failed() const {

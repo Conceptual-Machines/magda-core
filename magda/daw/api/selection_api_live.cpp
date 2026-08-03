@@ -78,4 +78,8 @@ void SelectionApiLive::clearNoteSelection() {
     SelectionManager::getInstance().clearNoteSelection();
 }
 
+void SelectionApiLive::clearSelection() {
+    SelectionManager::getInstance().clearSelection();
+}
+
 }  // namespace magda

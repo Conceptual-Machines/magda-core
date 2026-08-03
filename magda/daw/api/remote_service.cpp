@@ -46,6 +46,24 @@ bool deadlinePassed(const RequestContext& context) {
     return context.deadline && std::chrono::steady_clock::now() > *context.deadline;
 }
 
+/// Publishes the executing thread for the duration of a handler and restores
+/// the previous value, so nesting cannot leave a stale id behind.
+class ScopedExecutingThread {
+  public:
+    explicit ScopedExecutingThread(std::atomic<std::thread::id>& slot)
+        : slot_(slot), previous_(slot.exchange(std::this_thread::get_id())) {}
+    ~ScopedExecutingThread() {
+        slot_.store(previous_);
+    }
+
+    ScopedExecutingThread(const ScopedExecutingThread&) = delete;
+    ScopedExecutingThread& operator=(const ScopedExecutingThread&) = delete;
+
+  private:
+    std::atomic<std::thread::id>& slot_;
+    std::thread::id previous_;
+};
+
 /// Balances beginCompound/endCompound so one mutating request is one undo step
 /// even on the early-return paths inside a handler.
 class ScopedUndoStep {
@@ -102,10 +120,33 @@ juce::var Response::toEnvelope() const {
 // ===========================================================================
 
 RemoteApiService::RemoteApiService(MagdaApi& api)
-    : api_(api), liveToken_(std::make_shared<std::atomic<bool>>(true)) {}
+    : api_(api), state_(std::make_shared<ExecutionState>()) {
+    state_->service = this;
+}
 
 RemoteApiService::~RemoteApiService() {
     shutdown();
+}
+
+std::shared_ptr<RemoteApiService::ExecutionState> RemoteApiService::currentState() const {
+    const std::lock_guard<std::mutex> lock(stateMutex_);
+    return state_;
+}
+
+void RemoteApiService::retireState() {
+    std::shared_ptr<ExecutionState> retiring;
+    {
+        const std::lock_guard<std::mutex> lock(stateMutex_);
+        retiring = std::move(state_);
+        state_.reset();
+    }
+    if (!retiring)
+        return;
+    // Taking the execution lock here is the whole point: it cannot be acquired
+    // while a job is inside execute(), so once this returns no job is running
+    // and none can start.
+    const std::lock_guard<std::mutex> lock(retiring->mutex);
+    retiring->service = nullptr;
 }
 
 void RemoteApiService::dispatch(const juce::String& operationName, const juce::var& input,
@@ -150,34 +191,50 @@ void RemoteApiService::dispatch(const juce::String& operationName, const juce::v
         return;
     }
 
-    std::shared_ptr<std::atomic<bool>> token;
-    {
-        const std::lock_guard<std::mutex> lock(tokenMutex_);
-        token = liveToken_;
+    auto state = currentState();
+    if (!state) {
+        onComplete(
+            Response::failure(ErrorCode::Cancelled, "remote API service is shut down", revision));
+        return;
     }
 
-    auto job = [this, operation, input, context, token,
-                onComplete = std::move(onComplete)]() mutable {
-        // The token, not `this`, is what makes this safe: after shutdown or a
-        // project swap it reads false and the service is never touched.
-        if (!token->load(std::memory_order_acquire)) {
+    // Copied before the job takes ownership, so the callAsync-failure path
+    // below still has a way to complete the request.
+    auto fallback = onComplete;
+
+    auto job = [state, operation, input, context, onComplete = std::move(onComplete)]() mutable {
+        // The shared state, never a bare `this`, is what makes this safe. The
+        // lock is held across the whole call, so the service cannot be retired
+        // out from under a running handler, and two handlers cannot run at
+        // once even when the caller's thread executes them inline.
+        const std::lock_guard<std::mutex> lock(state->mutex);
+        if (state->service == nullptr) {
             onComplete(Response::failure(ErrorCode::Cancelled, "request cancelled before execution",
                                          INITIAL_REVISION));
             return;
         }
-        onComplete(execute(*operation, input, context));
+        onComplete(state->service->execute(*operation, input, context));
     };
 
     // Already on the message thread, or there is no message thread to hop to.
     // The latter is the headless case — a test runner or a console host with no
     // event loop — where posting would queue work that nothing ever dispatches.
-    // Running inline there is the correct behaviour, not a test accommodation:
-    // the caller *is* the only thread that touches the model.
+    // Execution is serialized by the state lock either way, so running inline
+    // does not weaken the one-handler-at-a-time guarantee.
     if (juce::MessageManager::existsAndIsCurrentThread() ||
-        juce::MessageManager::getInstanceWithoutCreating() == nullptr)
+        juce::MessageManager::getInstanceWithoutCreating() == nullptr) {
         job();
-    else
-        juce::MessageManager::callAsync(std::move(job));
+        return;
+    }
+
+    // callAsync returns false once the message loop is quitting, and the job is
+    // destroyed unrun. Completing here keeps the exactly-once callback promise
+    // that adapters rely on to release per-request state.
+    if (!juce::MessageManager::callAsync(std::move(job))) {
+        fallback(Response::failure(ErrorCode::Cancelled,
+                                   "message loop is shutting down; request not dispatched",
+                                   revision));
+    }
 }
 
 Response RemoteApiService::dispatchSync(const juce::String& operationName, const juce::var& input,
@@ -203,6 +260,19 @@ Response RemoteApiService::dispatchSync(const juce::String& operationName, const
 Response RemoteApiService::execute(const OperationDescriptor& operation, const juce::var& input,
                                    const RequestContext& context) {
     auto revision = currentRevision();
+    const bool isWrite = operation.access == OperationAccess::Write;
+    const auto key = idempotencyKey(context);
+
+    // Re-checked here and not only before queuing. Two retries of the same
+    // request can both miss the pre-queue lookup while the first is still in
+    // flight; this runs under the serialized execution lock, so by now the
+    // first has completed and cached its response. Without it the duplicate
+    // would apply the mutation twice, or fail with a spurious conflict when the
+    // client sent an expectedRevision.
+    if (isWrite && key.isNotEmpty()) {
+        if (auto cached = cachedResponse(key))
+            return *cached;
+    }
 
     // Re-checked after the hop, not only before it: a request can sit in the
     // queue behind slower work and expire while waiting.
@@ -222,33 +292,43 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
         return Response::failure(ErrorCode::InternalError,
                                  "operation " + operation.name + " has no handler", revision);
 
-    const bool isWrite = operation.access == OperationAccess::Write;
     HandlerResult result;
-    if (isWrite) {
-        const ScopedUndoStep step(api_.undo(), operation.summary);
-        result = operation.handler(api_, input, context);
-    } else {
-        result = operation.handler(api_, input, context);
+    {
+        // Model listeners fire synchronously from inside the handler's own
+        // mutation. Publishing the executing thread here lets the bridge tell
+        // those re-entrant callbacks apart from a genuine concurrent UI edit,
+        // so one request produces one revision instead of one per notification.
+        const ScopedExecutingThread marker(executingThread_);
+        if (isWrite) {
+            const ScopedUndoStep step(api_.undo(), operation.summary);
+            result = operation.handler(api_, input, context);
+        } else {
+            result = operation.handler(api_, input, context);
+        }
     }
 
     if (result.failed())
         return Response::failure(*result.error, revision);
 
-    // Only a committed write moves the revision. A read, or a write that failed
-    // validation inside the handler, leaves it where it was — otherwise every
-    // rejected request would invalidate every other client's expectedRevision.
-    if (isWrite) {
+    // Only a committed write moves the revision. A read, a write that failed
+    // validation inside the handler, and a write the handler resolved to a
+    // no-op all leave it where it was — otherwise a request that changed
+    // nothing would invalidate every other client's expectedRevision.
+    const bool committed = isWrite && result.mutated;
+    if (committed) {
         revision = revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
         for (const auto topic : topicsFor(operation.name))
             changes_.markChanged(topic, revision);
     }
 
     auto response = Response::success(result.value, revision);
-    if (isWrite) {
-        if (const auto key = idempotencyKey(context); key.isNotEmpty())
-            cacheResponse(key, response);
-    }
+    if (committed && key.isNotEmpty())
+        cacheResponse(key, response);
     return response;
+}
+
+bool RemoteApiService::isExecutingOnThisThread() const {
+    return executingThread_.load(std::memory_order_acquire) == std::this_thread::get_id();
 }
 
 Revision RemoteApiService::currentRevision() const {
@@ -259,9 +339,10 @@ void RemoteApiService::shutdown() {
     if (shutdown_.exchange(true, std::memory_order_acq_rel))
         return;
 
-    const std::lock_guard<std::mutex> lock(tokenMutex_);
-    if (liveToken_)
-        liveToken_->store(false, std::memory_order_release);
+    // Retires the shared state under the execution lock, so this returns only
+    // once no handler is running and none can start. Queued jobs then observe a
+    // null service and complete with Cancelled without touching it.
+    retireState();
     changes_.discardPending();
 }
 
@@ -270,13 +351,17 @@ bool RemoteApiService::isShutdown() const {
 }
 
 void RemoteApiService::projectReplaced() {
+    if (shutdown_.load(std::memory_order_acquire))
+        return;
+
+    // Retire the outgoing state, then install a fresh one so requests arriving
+    // after the swap are not cancelled by the retirement of the old project's
+    // queued work.
+    retireState();
     {
-        const std::lock_guard<std::mutex> lock(tokenMutex_);
-        if (liveToken_)
-            liveToken_->store(false, std::memory_order_release);
-        // A fresh token so requests arriving after the swap are not cancelled
-        // by the one that retired the old project's queued work.
-        liveToken_ = std::make_shared<std::atomic<bool>>(true);
+        const std::lock_guard<std::mutex> lock(stateMutex_);
+        state_ = std::make_shared<ExecutionState>();
+        state_->service = this;
     }
 
     // Every outstanding expectedRevision refers to the old project, so move the
@@ -294,6 +379,16 @@ void RemoteApiService::projectReplaced() {
 void RemoteApiService::noteModelChanged(Topic topic) {
     if (shutdown_.load(std::memory_order_acquire))
         return;
+
+    // Fired from inside a handler's own mutation. The dispatcher publishes one
+    // revision for the whole request when the handler returns, so bumping again
+    // here would advance it two or more times for one logical write. The topic
+    // is still marked, so subscribers see the change either way.
+    if (isExecutingOnThisThread()) {
+        changes_.markChanged(topic, currentRevision() + 1);
+        return;
+    }
+
     const auto revision = revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
     changes_.markChanged(topic, revision);
 }

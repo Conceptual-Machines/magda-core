@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <thread>
 #include <vector>
 
 #include "remote_api.hpp"
@@ -144,6 +145,17 @@ class RemoteApiService {
      */
     void noteModelActivity(Topic topic);
 
+    /**
+     * @brief True when the calling thread is inside a handler right now.
+     *
+     * The model bridge uses this to tell a listener callback fired *by* a
+     * remote mutation apart from a genuine concurrent edit. Without it a live
+     * `tracks.create` would bump the revision once from the model notification
+     * and again when the handler returns, and a multi-field write would advance
+     * it several times for a single request.
+     */
+    bool isExecutingOnThisThread() const;
+
     ChangeSource& changes();
     const ChangeSource& changes() const;
 
@@ -156,8 +168,31 @@ class RemoteApiService {
         Response response;
     };
 
+    /**
+     * @brief Shared gate between queued work and the service's lifetime.
+     *
+     * A queued job holds a `shared_ptr` to this, never a bare `this`. It takes
+     * `mutex` and re-reads `service`: non-null means the service is alive and
+     * stays alive for the duration, because `shutdown()` clears the pointer
+     * under the same lock and therefore cannot complete while a job is running.
+     * A raw `this` guarded by a separate flag would leave a window between
+     * observing the flag and dereferencing the pointer.
+     *
+     * The same lock serializes execution. On a host with a message thread that
+     * is nearly free — handlers already run only there. On a headless host,
+     * where `dispatch` runs inline on the caller's thread, it is what preserves
+     * the one-handler-at-a-time guarantee that the model requires.
+     */
+    struct ExecutionState {
+        std::mutex mutex;
+        RemoteApiService* service = nullptr;
+    };
+
     Response execute(const OperationDescriptor& operation, const juce::var& input,
                      const RequestContext& context);
+
+    std::shared_ptr<ExecutionState> currentState() const;
+    void retireState();
 
     static juce::String idempotencyKey(const RequestContext& context);
     std::optional<Response> cachedResponse(const juce::String& key) const;
@@ -169,10 +204,21 @@ class RemoteApiService {
     std::atomic<Revision> revision_{INITIAL_REVISION};
     std::atomic<bool> shutdown_{false};
 
-    /// Cleared on shutdown and on project replacement; queued lambdas hold a
-    /// copy and check it before touching the service.
-    std::shared_ptr<std::atomic<bool>> liveToken_;
-    mutable std::mutex tokenMutex_;
+    /// Retired on shutdown and replaced on project swap, so work queued against
+    /// the outgoing project cannot run against the incoming one.
+    std::shared_ptr<ExecutionState> state_;
+    mutable std::mutex stateMutex_;
+
+    /**
+     * The thread currently inside a handler, or a default id when none is.
+     *
+     * Model listeners fire synchronously from inside a handler's own mutation,
+     * so the bridge would otherwise bump the revision again for a change the
+     * dispatcher is about to publish. Comparing against the executing thread
+     * suppresses exactly those re-entrant callbacks and leaves genuine
+     * concurrent UI edits alone.
+     */
+    std::atomic<std::thread::id> executingThread_{};
 
     mutable std::mutex cacheMutex_;
     std::vector<CachedResponse> cache_;
