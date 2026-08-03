@@ -24,7 +24,7 @@ struct CompileOptions {
  * index for index, so plans are golden-testable and the differ sees churn only
  * where the model actually changed.
  *
- * The compiler reads structure only — chain layout, routing, sends, bypass and
+ * The compiler reads structure only: chain layout, routing, sends, bypass and
  * chain power. Values (fader positions, gains, send levels, clip contents) stay
  * out of the plan and reach ops through snapshots.
  *

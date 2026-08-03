@@ -96,6 +96,8 @@ const char* toString(OpRole role) {
             return "trackFader";
         case OpRole::TrackMeter:
             return "trackMeter";
+        case OpRole::TrackMute:
+            return "trackMute";
         case OpRole::SendTap:
             return "sendTap";
         case OpRole::HardwareOutput:

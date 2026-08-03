@@ -61,6 +61,10 @@ bool chainConsumesMidi(const TrackInfo& track) {
 
 /// Tracks whose signal a device in `elements` reads as a sidechain input.
 /// `type` narrows the search to audio or MIDI sidechains; nullopt takes both.
+///
+/// Only devices the compiler will actually emit are walked. A sidechain on a
+/// bypassed device is not a dependency, and treating it as one can invent a
+/// cycle that costs a real connection when the cycle breaker resolves it.
 void collectSidechainSources(const std::vector<ChainElement>& elements,
                              std::optional<SidechainConfig::Type> type, std::set<TrackId>& out) {
     const auto collect = [&](const SidechainConfig& sidechain) {
@@ -70,34 +74,55 @@ void collectSidechainSources(const std::vector<ChainElement>& elements,
 
     for (const auto& element : elements) {
         if (isDevice(element)) {
-            collect(getDevice(element).sidechain);
+            const auto& device = getDevice(element);
+            if (!device.bypassed)
+                collect(device.sidechain);
         } else if (isRack(element)) {
-            for (const auto& chain : getRack(element).chains)
-                collectSidechainSources(chain.elements, type, out);
+            const auto& rack = getRack(element);
+            if (rack.bypassed)
+                continue;
+            for (const auto& chain : rack.chains)
+                if (!chain.bypassed && chain.outputIndex == 0)
+                    collectSidechainSources(chain.elements, type, out);
         }
     }
 }
 
 void collectSidechainSources(const TrackInfo& track, std::optional<SidechainConfig::Type> type,
                              std::set<TrackId>& out) {
-    collectSidechainSources(track.chain.fxChainElements, type, out);
+    // Chain power gates the insert chain; post-FX sits outside it. This mirrors
+    // the emission rules exactly, which is the point.
+    if (track.chain.enabled)
+        collectSidechainSources(track.chain.fxChainElements, type, out);
+
     for (const auto& element : track.chain.postFxChainElements)
-        if (element.device.sidechain.isActive() &&
+        if (!element.device.bypassed && element.device.sidechain.isActive() &&
             (!type.has_value() || element.device.sidechain.type == *type))
             out.insert(element.device.sidechain.sourceTrackId);
+}
+
+/// The track id in a "track:<id>" routing string, or nullopt for a hardware
+/// device name, the default "master", or an empty field.
+std::optional<TrackId> parseTrackReference(const juce::String& routing) {
+    if (!routing.startsWith("track:"))
+        return std::nullopt;
+
+    const auto id = routing.substring(6).trim();
+    if (id.isEmpty() || !id.containsOnly("-0123456789"))
+        return std::nullopt;
+    // Rejects "1-2" and bare "-": getIntValue would silently take the leading
+    // digits and route the signal at a track that was never selected.
+    if (juce::String(id.getIntValue()) != id)
+        return std::nullopt;
+
+    return id.getIntValue();
 }
 
 /// The track a track's audio output feeds. "track:<id>" routes into a group;
 /// everything else (including the default "master" and an empty string) goes
 /// straight to the master track.
 TrackId resolveAudioDestination(const TrackInfo& track) {
-    const auto& routing = track.audioOutputDevice;
-    if (routing.startsWith("track:")) {
-        const auto id = routing.substring(6);
-        if (id.isNotEmpty() && id.containsOnly("-0123456789"))
-            return id.getIntValue();
-    }
-    return MASTER_TRACK_ID;
+    return parseTrackReference(track.audioOutputDevice).value_or(MASTER_TRACK_ID);
 }
 
 class Compiler {
@@ -132,16 +157,25 @@ class Compiler {
     CompileOptions options_;
 
     RenderPlan plan_;
-    /// Post-fader output of each emitted track: audio sidechain sources read it.
-    std::map<TrackId, PortRef> trackOutput_;
-    /// Chain-head MIDI of each emitted track: MIDI sidechain sources read it.
+    /// Post-fader, pre-mute output of each emitted track. This is where audio
+    /// sidechains tap, matching where the current engine inserts the sidechain
+    /// send: after the plugin list (the fader included) and before the muting
+    /// node, so a muted source still feeds the compressor keying off it.
+    std::map<TrackId, PortRef> trackSidechainTap_;
+    /// Post-mute output: what the track's destination and any track taking this
+    /// track as its audio input actually receive.
+    std::map<TrackId, PortRef> trackRoutedOutput_;
+    /// Chain-head MIDI of each emitted track: MIDI sidechains and internal MIDI
+    /// routes read it, which is the source track's incoming MIDI rather than
+    /// whatever its own chain made of it.
     std::map<TrackId, PortRef> trackMidiInput_;
     /// Signals waiting to be summed into a track that has not been emitted yet:
     /// child track outputs and incoming send taps.
     std::map<TrackId, std::vector<PortRef>> pendingInputs_;
-    /// Tracks another track's device reads MIDI from. Their MIDI clips have to
-    /// be compiled even when their own chain has nothing that consumes MIDI.
-    std::set<TrackId> midiSidechainSources_;
+    /// Tracks whose MIDI another track reads, through a MIDI sidechain or an
+    /// internal MIDI route. Their MIDI clips have to be compiled even when
+    /// their own chain has nothing that consumes MIDI.
+    std::set<TrackId> midiSourceTracks_;
 };
 
 OpId Compiler::addOp(OpKind kind, const OpKey& key, std::vector<PortRef> inputs,
@@ -227,15 +261,19 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
             if (const auto destination = indexOf(resolveSendDestination(send)); destination >= 0)
                 addEdge(i, static_cast<std::size_t>(destination));
 
-        // Sidechain and multi-out read another track, so that track comes first.
-        std::set<TrackId> sidechainSources;
-        collectSidechainSources(track, std::nullopt, sidechainSources);
-        for (const auto sourceId : sidechainSources)
-            if (const auto source = indexOf(sourceId); source >= 0)
-                addEdge(static_cast<std::size_t>(source), i);
-
+        // Sidechains, internal input routes and multi-out all read another
+        // track, so that track comes first.
+        std::set<TrackId> upstream;
+        collectSidechainSources(track, std::nullopt, upstream);
+        if (const auto source = parseTrackReference(track.audioInputDevice))
+            upstream.insert(*source);
+        if (const auto source = parseTrackReference(track.midiInputDevice))
+            upstream.insert(*source);
         if (track.multiOutLink)
-            if (const auto source = indexOf(track.multiOutLink->sourceTrackId); source >= 0)
+            upstream.insert(track.multiOutLink->sourceTrackId);
+
+        for (const auto sourceId : upstream)
+            if (const auto source = indexOf(sourceId); source >= 0)
                 addEdge(static_cast<std::size_t>(source), i);
     }
 
@@ -255,12 +293,15 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
     while (order.size() < remaining) {
         if (ready.empty()) {
             // Every remaining track waits on another remaining track. Force the
-            // lowest-numbered one and drop the connections that close the cycle.
+            // lowest-numbered one. It is not necessarily on the cycle itself,
+            // only blocked by it, so this can also cost connections that were
+            // merely downstream of one; each loss is reported separately when
+            // it arrives too late to connect.
             for (std::size_t i = 0; i < numTracks; ++i) {
                 if (skipped[i] || emitted[i])
                     continue;
-                diagnose("routing cycle through track " + std::to_string(tracks_[i].id) +
-                         ": compiled ahead of its sources, connections closing the cycle dropped");
+                diagnose("routing cycle: track " + std::to_string(tracks_[i].id) +
+                         " compiled ahead of its sources to break it");
                 indegree[i] = 0;
                 ready.insert(i);
                 break;
@@ -305,8 +346,8 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
 
     PortRef sidechainIn;
     if (device.sidechain.type == SidechainConfig::Type::Audio && device.sidechain.isActive()) {
-        const auto source = trackOutput_.find(device.sidechain.sourceTrackId);
-        if (source != trackOutput_.end())
+        const auto source = trackSidechainTap_.find(device.sidechain.sourceTrackId);
+        if (source != trackSidechainTap_.end())
             sidechainIn = source->second;
         else
             diagnose("device " + std::to_string(device.id) + " on track " +
@@ -353,6 +394,14 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
 
 ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, ChainSignal signal) {
     if (rack.bypassed)
+        return signal;
+
+    // A rack with no chains is transparent, not a hole. Compiling it to a
+    // zero-input mix would silence the track; the current engine passes audio
+    // and MIDI straight through. (A rack whose chains all route to aux outputs
+    // does render silence on the main output, and that is the engine's
+    // behaviour too, so only the empty case is special.)
+    if (rack.chains.empty())
         return signal;
 
     std::vector<PortRef> chainAudio;
@@ -444,13 +493,28 @@ void Compiler::emitTrack(const TrackInfo& track) {
         audioSources.push_back(PortRef{addOp(OpKind::ClipAudio, key, {}, {SignalKind::Audio}), 0});
     }
 
+    // Input reaches a track only while it is monitoring or armed, whether it
+    // comes from hardware or from another track. Both forms go through the
+    // input path in the current engine, so both are gated the same way.
     const auto monitorsInput = track.recordArmed || track.inputMonitor != InputMonitorMode::Off;
     if (carriesClips && monitorsInput && track.audioInputDevice.isNotEmpty()) {
-        const OpKey key{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
-                        INVALID_DEVICE_ID, OpRole::LiveAudioInput, 0};
-        const auto op = addOp(OpKind::AudioInput, key, {}, {SignalKind::Audio});
-        plan_.ops[static_cast<std::size_t>(op)].liveness = LivenessDomain::Live;
-        audioSources.push_back(PortRef{op, 0});
+        if (const auto sourceId = parseTrackReference(track.audioInputDevice)) {
+            // An internal route carries the source track's post-mute output.
+            // Nothing about it is live, so liveness is left to propagate from
+            // the source rather than asserted here.
+            if (const auto source = trackRoutedOutput_.find(*sourceId);
+                source != trackRoutedOutput_.end())
+                audioSources.push_back(source->second);
+            else
+                diagnose("track " + std::to_string(track.id) + ": audio input track " +
+                         std::to_string(*sourceId) + " is not compiled, input not connected");
+        } else {
+            const OpKey key{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
+                            INVALID_DEVICE_ID, OpRole::LiveAudioInput, 0};
+            const auto op = addOp(OpKind::AudioInput, key, {}, {SignalKind::Audio});
+            plan_.ops[static_cast<std::size_t>(op)].liveness = LivenessDomain::Live;
+            audioSources.push_back(PortRef{op, 0});
+        }
     }
 
     if (const auto pending = pendingInputs_.find(track.id); pending != pendingInputs_.end()) {
@@ -464,17 +528,28 @@ void Compiler::emitTrack(const TrackInfo& track) {
     signal.audio = emitMix(inputKey, audioSources);
 
     std::vector<PortRef> midiSources;
-    if (carriesClips && (chainConsumesMidi(track) || midiSidechainSources_.contains(track.id))) {
+    if (carriesClips && (chainConsumesMidi(track) || midiSourceTracks_.contains(track.id))) {
         const OpKey key{track.id,          INVALID_RACK_ID,  INVALID_CHAIN_ID,
                         INVALID_DEVICE_ID, OpRole::ClipMidi, 0};
         midiSources.push_back(PortRef{addOp(OpKind::ClipMidi, key, {}, {SignalKind::Midi}), 0});
     }
     if (carriesClips && track.receivesLiveMidiInput() && track.midiInputDevice.isNotEmpty()) {
-        const OpKey key{track.id,          INVALID_RACK_ID,       INVALID_CHAIN_ID,
-                        INVALID_DEVICE_ID, OpRole::LiveMidiInput, 0};
-        const auto op = addOp(OpKind::MidiInput, key, {}, {SignalKind::Midi});
-        plan_.ops[static_cast<std::size_t>(op)].liveness = LivenessDomain::Live;
-        midiSources.push_back(PortRef{op, 0});
+        if (const auto sourceId = parseTrackReference(track.midiInputDevice)) {
+            // An internal MIDI route delivers the source track's incoming MIDI,
+            // not what its own chain made of it.
+            if (const auto source = trackMidiInput_.find(*sourceId);
+                source != trackMidiInput_.end())
+                midiSources.push_back(source->second);
+            else
+                diagnose("track " + std::to_string(track.id) + ": MIDI input track " +
+                         std::to_string(*sourceId) + " produces no MIDI, input not connected");
+        } else {
+            const OpKey key{track.id,          INVALID_RACK_ID,       INVALID_CHAIN_ID,
+                            INVALID_DEVICE_ID, OpRole::LiveMidiInput, 0};
+            const auto op = addOp(OpKind::MidiInput, key, {}, {SignalKind::Midi});
+            plan_.ops[static_cast<std::size_t>(op)].liveness = LivenessDomain::Live;
+            midiSources.push_back(PortRef{op, 0});
+        }
     }
     if (!midiSources.empty()) {
         const OpKey key{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
@@ -495,7 +570,12 @@ void Compiler::emitTrack(const TrackInfo& track) {
     for (const auto& element : track.chain.mixerAnalysisElements)
         signal = emitDevice(element.device, site, signal);
 
-    // --- fader, sends, meter ---
+    // --- fader, sends, meter, mute ---
+    //
+    // Mute is its own stage rather than part of the fader's resolved gain,
+    // because the current engine silences a track after the sidechain send and
+    // after the metering tap. Folding mute into the fader would make a muted
+    // track's meter read silence and would starve any compressor keyed off it.
 
     auto emitSends = [&](bool preFader, PortRef source) {
         for (std::size_t slot = 0; slot < track.sends.size(); ++slot) {
@@ -528,7 +608,12 @@ void Compiler::emitTrack(const TrackInfo& track) {
     const OpKey meterKey{track.id,          INVALID_RACK_ID,    INVALID_CHAIN_ID,
                          INVALID_DEVICE_ID, OpRole::TrackMeter, 0};
     out = PortRef{addOp(OpKind::Meter, meterKey, {out}, {SignalKind::Audio}), 0};
-    trackOutput_[track.id] = out;
+    trackSidechainTap_[track.id] = out;
+
+    const OpKey muteKey{track.id,          INVALID_RACK_ID,   INVALID_CHAIN_ID,
+                        INVALID_DEVICE_ID, OpRole::TrackMute, 0};
+    out = PortRef{addOp(OpKind::Gain, muteKey, {out}, {SignalKind::Audio}), 0};
+    trackRoutedOutput_[track.id] = out;
 
     // --- output routing ---
 
@@ -550,11 +635,14 @@ void Compiler::emitTrack(const TrackInfo& track) {
 }
 
 RenderPlan Compiler::run() {
-    // A track feeding someone else's MIDI sidechain has to produce MIDI even
-    // when nothing in its own chain consumes it, so this is collected up front.
-    for (const auto& track : tracks_)
-        collectSidechainSources(track, SidechainConfig::Type::MIDI, midiSidechainSources_);
-    collectSidechainSources(master_, SidechainConfig::Type::MIDI, midiSidechainSources_);
+    // A track whose MIDI someone else reads has to produce MIDI even when
+    // nothing in its own chain consumes it, so this is collected up front.
+    for (const auto& track : tracks_) {
+        collectSidechainSources(track, SidechainConfig::Type::MIDI, midiSourceTracks_);
+        if (const auto source = parseTrackReference(track.midiInputDevice))
+            midiSourceTracks_.insert(*source);
+    }
+    collectSidechainSources(master_, SidechainConfig::Type::MIDI, midiSourceTracks_);
 
     for (const auto* track : computeTrackOrder())
         emitTrack(*track);

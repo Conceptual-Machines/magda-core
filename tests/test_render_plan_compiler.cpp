@@ -98,19 +98,20 @@ TEST_CASE("Empty session compiles to a track feeding the master output",
     CHECK(plan.diagnostics.empty());
     CHECK(plan.outputOps.size() == 1);
 
-    // Track 1: clip source, input mix, fader, meter. Master: input mix, fader,
-    // meter, hardware output.
+    // Track 1: clip source, input mix, fader, meter, mute. Master: input mix,
+    // fader, meter, mute, hardware output.
     CHECK(countRole(plan, OpRole::ClipAudio) == 1);
     CHECK(countRole(plan, OpRole::TrackAudioInput) == 2);
     CHECK(countRole(plan, OpRole::TrackFader) == 2);
     CHECK(countRole(plan, OpRole::TrackMeter) == 2);
+    CHECK(countRole(plan, OpRole::TrackMute) == 2);
     CHECK(countRole(plan, OpRole::HardwareOutput) == 1);
 
-    // The master sums the track's post-fader meter output.
+    // The master sums the track's post-mute output.
     const auto masterInput = opsWithRole(plan, OpRole::TrackAudioInput).back();
-    const auto trackMeter = opsWithRole(plan, OpRole::TrackMeter).front();
+    const auto trackMute = opsWithRole(plan, OpRole::TrackMute).front();
     CHECK(plan.ops[static_cast<std::size_t>(masterInput)].key.trackId == MASTER_TRACK_ID);
-    CHECK(inputOp(plan, masterInput, 0) == trackMeter);
+    CHECK(inputOp(plan, masterInput, 0) == trackMute);
 }
 
 TEST_CASE("The plan dump is the compiler's golden surface", "[engine][plan][compiler]") {
@@ -121,7 +122,7 @@ TEST_CASE("The plan dump is the compiler's golden surface", "[engine][plan][comp
     requireWellFormed(plan);
 
     CHECK(magda::engine::dumpPlan(plan) == R"(magda-render-plan v1
-ops=11 outputs=1
+ops=13 outputs=1
 [  0] ClipAudio   det   T1:clipAudio                   in=-                out=audio       deps=0
 [  1] MixAudio    det   T1:trackAudioInput             in=0:0              out=audio       deps=1
 [  2] Device      det   T1/D7:deviceProcess            in=1:0,-,-          out=audio       deps=1
@@ -129,10 +130,12 @@ ops=11 outputs=1
 [  4] Meter       det   T1/D7:deviceMeter              in=3:0              out=audio       deps=1
 [  5] Fader       det   T1:trackFader                  in=4:0              out=audio       deps=1
 [  6] Meter       det   T1:trackMeter                  in=5:0              out=audio       deps=1
-[  7] MixAudio    det   T-2:trackAudioInput            in=6:0              out=audio       deps=1
-[  8] Fader       det   T-2:trackFader                 in=7:0              out=audio       deps=1
-[  9] Meter       det   T-2:trackMeter                 in=8:0              out=audio       deps=1
-[ 10] Output      det   T-2:hardwareOutput             in=9:0              out=-           deps=1
+[  7] Gain        det   T1:trackMute                   in=6:0              out=audio       deps=1
+[  8] MixAudio    det   T-2:trackAudioInput            in=7:0              out=audio       deps=1
+[  9] Fader       det   T-2:trackFader                 in=8:0              out=audio       deps=1
+[ 10] Meter       det   T-2:trackMeter                 in=9:0              out=audio       deps=1
+[ 11] Gain        det   T-2:trackMute                  in=10:0             out=audio       deps=1
+[ 12] Output      det   T-2:hardwareOutput             in=11:0             out=-           deps=1
 ready=0
 )");
 }
@@ -349,9 +352,9 @@ TEST_CASE("Group children are summed into the group track", "[engine][plan][comp
     // Both children, in project order, and nothing else: a group carries no
     // clips of its own.
     REQUIRE(plan.ops[static_cast<std::size_t>(groupInput)].inputs.size() == 2);
-    const auto meters = opsWithRole(plan, OpRole::TrackMeter);
-    CHECK(inputOp(plan, groupInput, 0) == meters[0]);
-    CHECK(inputOp(plan, groupInput, 1) == meters[1]);
+    const auto mutes = opsWithRole(plan, OpRole::TrackMute);
+    CHECK(inputOp(plan, groupInput, 0) == mutes[0]);
+    CHECK(inputOp(plan, groupInput, 1) == mutes[1]);
 
     // The master sums the group only; the children route into it, not past it.
     magda::engine::OpId masterInput = magda::engine::INVALID_OP_ID;
@@ -465,7 +468,7 @@ TEST_CASE("Scheduling constants match the compiled dependencies", "[engine][plan
     REQUIRE(plan.consumerOffsets.size() == plan.ops.size() + 1);
 
     // Every op is reachable from the initial ready set by counting down its
-    // dependencies exactly once through the consumer edges — the executor's
+    // dependencies exactly once through the consumer edges: the executor's
     // per-block loop, run here at compile time.
     auto countdown = plan.dependencyCounts;
     std::vector<magda::engine::OpId> queue = plan.initialReadyOps;
@@ -482,4 +485,258 @@ TEST_CASE("Scheduling constants match the compiled dependencies", "[engine][plan
     }
     CHECK(queue.size() == plan.ops.size());
     CHECK(std::ranges::all_of(countdown, [](auto count) { return count == 0; }));
+}
+
+TEST_CASE("An empty rack is transparent", "[engine][plan][compiler]") {
+    RackInfo rack;
+    rack.id = 4;
+
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    // Compiling an empty rack to a zero-input mix would silence the track.
+    CHECK(countRole(plan, OpRole::RackMix) == 0);
+    CHECK(countRole(plan, OpRole::RackFader) == 0);
+
+    const auto trackInput = opsWithRole(plan, OpRole::TrackAudioInput).front();
+    CHECK(inputOp(plan, opsWithRole(plan, OpRole::TrackFader).front(), 0) == trackInput);
+}
+
+TEST_CASE("A bypassed rack is transparent", "[engine][plan][compiler]") {
+    RackInfo rack;
+    rack.id = 4;
+    rack.bypassed = true;
+    ChainInfo chain;
+    chain.id = 10;
+    chain.elements.push_back(makeDeviceElement(makeEffect(7)));
+    rack.chains.push_back(std::move(chain));
+
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    CHECK(countRole(plan, OpRole::DeviceProcess) == 0);
+    CHECK(countRole(plan, OpRole::RackMix) == 0);
+    const auto trackInput = opsWithRole(plan, OpRole::TrackAudioInput).front();
+    CHECK(inputOp(plan, opsWithRole(plan, OpRole::TrackFader).front(), 0) == trackInput);
+}
+
+TEST_CASE("Nested racks compile through the outer rack's chain", "[engine][plan][compiler]") {
+    RackInfo inner;
+    inner.id = 8;
+    ChainInfo innerChain;
+    innerChain.id = 20;
+    innerChain.elements.push_back(makeDeviceElement(makeEffect(7)));
+    inner.chains.push_back(std::move(innerChain));
+
+    RackInfo outer;
+    outer.id = 4;
+    ChainInfo outerChain;
+    outerChain.id = 10;
+    outerChain.elements.push_back(makeRackElement(std::move(inner)));
+    outer.chains.push_back(std::move(outerChain));
+
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].chain.fxChainElements.push_back(makeRackElement(std::move(outer)));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), withoutDeviceMeters());
+    requireWellFormed(plan);
+
+    CHECK(countRole(plan, OpRole::RackMix) == 2);
+    CHECK(countRole(plan, OpRole::RackFader) == 2);
+
+    // The device is keyed by its innermost rack and chain, not the outer ones.
+    const auto device = opsWithRole(plan, OpRole::DeviceProcess).front();
+    CHECK(plan.ops[static_cast<std::size_t>(device)].key.rackId == 8);
+    CHECK(plan.ops[static_cast<std::size_t>(device)].key.chainId == 20);
+
+    // Inner rack fader feeds the outer chain fader, which feeds the outer mix.
+    const auto rackFaders = opsWithRole(plan, OpRole::RackFader);
+    const auto chainFaders = opsWithRole(plan, OpRole::RackChainFader);
+    REQUIRE(chainFaders.size() == 2);
+    CHECK(inputOp(plan, chainFaders[1], 0) == rackFaders[0]);
+}
+
+TEST_CASE("A MIDI sidechain reads the source track's chain-head MIDI", "[engine][plan][compiler]") {
+    auto gate = makeEffect(7);
+    gate.canReceiveMidi = true;
+    gate.sidechain.type = SidechainConfig::Type::MIDI;
+    gate.sidechain.sourceTrackId = 2;
+
+    // Track 2 has no instrument of its own, so nothing in its chain consumes
+    // MIDI; its clips still have to be compiled because track 1 reads them.
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(gate));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+
+    magda::engine::OpId sourceMidi = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackMidiInput))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 2)
+            sourceMidi = op;
+    REQUIRE(sourceMidi != magda::engine::INVALID_OP_ID);
+
+    const auto device = opsWithRole(plan, OpRole::DeviceProcess).front();
+    CHECK(inputOp(plan, device, 1) == sourceMidi);
+}
+
+TEST_CASE("An internal MIDI route reads the source track's MIDI", "[engine][plan][compiler]") {
+    // Declared before its source, so only the routing dependency can order it.
+    std::vector<TrackInfo> tracks{makeTrack(2), makeTrack(1)};
+    tracks[0].midiInputDevice = "track:1";
+    tracks[0].inputMonitor = InputMonitorMode::In;
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(3)));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+
+    // The route is internal, so it must not compile to a hardware MIDI input.
+    CHECK(countRole(plan, OpRole::LiveMidiInput) == 0);
+
+    magda::engine::OpId sourceMidi = magda::engine::INVALID_OP_ID;
+    magda::engine::OpId destMidi = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackMidiInput)) {
+        const auto trackId = plan.ops[static_cast<std::size_t>(op)].key.trackId;
+        if (trackId == 1)
+            sourceMidi = op;
+        if (trackId == 2)
+            destMidi = op;
+    }
+    REQUIRE(sourceMidi != magda::engine::INVALID_OP_ID);
+    REQUIRE(destMidi != magda::engine::INVALID_OP_ID);
+
+    // Own clips first, then the routed source.
+    REQUIRE(plan.ops[static_cast<std::size_t>(destMidi)].inputs.size() == 2);
+    CHECK(inputOp(plan, destMidi, 1) == sourceMidi);
+}
+
+TEST_CASE("An internal audio route reads the source track's post-mute output",
+          "[engine][plan][compiler]") {
+    std::vector<TrackInfo> tracks{makeTrack(2), makeTrack(1)};
+    tracks[0].audioInputDevice = "track:1";
+    tracks[0].recordArmed = true;
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+
+    CHECK(countRole(plan, OpRole::LiveAudioInput) == 0);
+
+    magda::engine::OpId sourceMute = magda::engine::INVALID_OP_ID;
+    magda::engine::OpId destInput = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackMute))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 1)
+            sourceMute = op;
+    for (const auto op : opsWithRole(plan, OpRole::TrackAudioInput))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 2)
+            destInput = op;
+    REQUIRE(sourceMute != magda::engine::INVALID_OP_ID);
+    REQUIRE(destInput != magda::engine::INVALID_OP_ID);
+
+    REQUIRE(plan.ops[static_cast<std::size_t>(destInput)].inputs.size() == 2);
+    CHECK(inputOp(plan, destInput, 1) == sourceMute);
+}
+
+TEST_CASE("Mute is applied after the meter and the sidechain tap", "[engine][plan][compiler]") {
+    // The current engine sends to the sidechain bus and taps the meter before
+    // the muting node, so a muted track still keys a compressor and still reads
+    // on its own meter.
+    auto compressor = makeEffect(7);
+    compressor.canSidechain = true;
+    compressor.sidechain.type = SidechainConfig::Type::Audio;
+    compressor.sidechain.sourceTrackId = 2;
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+    tracks[1].muted = true;
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    const auto muteOf = [&plan](magda::TrackId trackId) {
+        for (const auto op : opsWithRole(plan, OpRole::TrackMute))
+            if (plan.ops[static_cast<std::size_t>(op)].key.trackId == trackId)
+                return op;
+        return magda::engine::INVALID_OP_ID;
+    };
+    const auto meterOf = [&plan](magda::TrackId trackId) {
+        for (const auto op : opsWithRole(plan, OpRole::TrackMeter))
+            if (plan.ops[static_cast<std::size_t>(op)].key.trackId == trackId)
+                return op;
+        return magda::engine::INVALID_OP_ID;
+    };
+
+    // fader -> meter -> mute, per track.
+    REQUIRE(muteOf(2) != magda::engine::INVALID_OP_ID);
+    CHECK(inputOp(plan, muteOf(2), 0) == meterOf(2));
+
+    // The sidechain taps the meter, not the mute.
+    const auto device = opsWithRole(plan, OpRole::DeviceProcess).front();
+    CHECK(inputOp(plan, device, 2) == meterOf(2));
+
+    // What reaches the master is post-mute. Track 2 is summed first because the
+    // sidechain puts it ahead of track 1 in compile order.
+    magda::engine::OpId masterInput = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackAudioInput))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == MASTER_TRACK_ID)
+            masterInput = op;
+    REQUIRE(masterInput != magda::engine::INVALID_OP_ID);
+    CHECK(inputOp(plan, masterInput, 0) == muteOf(2));
+    CHECK(inputOp(plan, masterInput, 1) == muteOf(1));
+}
+
+TEST_CASE("A sidechain on an inactive device is not an ordering dependency",
+          "[engine][plan][compiler]") {
+    // Track 1 sends to track 2, and a bypassed device on track 1 reads track 2.
+    // Only the send is real; counting the dead sidechain as a dependency would
+    // invent a cycle and cost the send.
+    auto bypassed = makeEffect(7);
+    bypassed.bypassed = true;
+    bypassed.canSidechain = true;
+    bypassed.sidechain.type = SidechainConfig::Type::Audio;
+    bypassed.sidechain.sourceTrackId = 2;
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2, TrackType::Aux)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(bypassed));
+    tracks[1].auxBusIndex = 0;
+    tracks[0].sends.push_back(SendInfo{0, 1.0f, false, 2});
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    CHECK(plan.diagnostics.empty());
+    REQUIRE(countRole(plan, OpRole::SendTap) == 1);
+
+    magda::engine::OpId auxInput = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackAudioInput))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 2)
+            auxInput = op;
+    REQUIRE(auxInput != magda::engine::INVALID_OP_ID);
+    CHECK(inputOp(plan, auxInput, 0) == opsWithRole(plan, OpRole::SendTap).front());
+}
+
+TEST_CASE("Chain power gates sidechain dependencies too", "[engine][plan][compiler]") {
+    auto compressor = makeEffect(7);
+    compressor.canSidechain = true;
+    compressor.sidechain.type = SidechainConfig::Type::Audio;
+    compressor.sidechain.sourceTrackId = 2;
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2, TrackType::Aux)};
+    tracks[0].chain.enabled = false;
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+    tracks[1].auxBusIndex = 0;
+    tracks[0].sends.push_back(SendInfo{0, 1.0f, false, 2});
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+    CHECK(countRole(plan, OpRole::SendTap) == 1);
 }

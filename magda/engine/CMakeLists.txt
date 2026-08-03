@@ -1,7 +1,7 @@
 # MAGDA native audio engine (epic #1882).
 #
 # Dark target: nothing in the app links it yet. It is built on every configure
-# so it cannot rot, and it is deliberately isolated — the C++ standard library,
+# so it cannot rot, and it is deliberately isolated: the C++ standard library,
 # JUCE headers and the MAGDA model layer, nothing else. No Tracktion Engine, no
 # UI, no app services. The boundary check below enforces that at configure time
 # rather than leaving it to review.

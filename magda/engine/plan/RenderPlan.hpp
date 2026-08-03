@@ -11,7 +11,7 @@
  * @brief The native engine's render plan IR.
  *
  * A render plan is a flat, dependency-ordered list of ops. It encodes signal
- * topology only — tracks, devices, routing, sends. Clip positions, automation
+ * topology only: tracks, devices, routing, sends. Clip positions, automation
  * curves, modulation and parameter values are NOT in the plan: ops read those
  * through separately swapped snapshots, so editing them never triggers a
  * compile. Structural recompiles therefore happen only at human speed.
@@ -56,7 +56,7 @@ enum class OpKind : std::uint8_t {
 /**
  * @brief The op's structural role at its model location.
  *
- * Model ID alone does not identify an op — one device contributes a process op,
+ * Model ID alone does not identify an op: one device contributes a process op,
  * a gain op and a meter op, all keyed on the same DeviceId. The role is the
  * second half of the differ's identity key.
  */
@@ -76,7 +76,8 @@ enum class OpRole : std::uint8_t {
     RackMidiMix,      ///< merge of a rack's chain MIDI outputs
     RackFader,        ///< the rack's output volume + pan
     TrackFader,       ///< the track fader
-    TrackMeter,       ///< the track's post-fader level tap
+    TrackMeter,       ///< the track's post-fader, pre-mute level tap
+    TrackMute,        ///< mute and solo, applied after the meter and sidechain tap
     SendTap,          ///< one send slot
     HardwareOutput,   ///< the master's hardware output
 };

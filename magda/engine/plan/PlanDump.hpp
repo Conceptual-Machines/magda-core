@@ -11,7 +11,7 @@ namespace magda::engine {
  *
  * The dump is the plan's testable surface: golden tests assert it, and it is
  * what to look at when a compiled plan is not what a model change should have
- * produced. Deterministic and diff-friendly — one line per op, fixed columns,
+ * produced. Deterministic and diff-friendly: one line per op, fixed columns,
  * no addresses or timings.
  *
  * Shape:
