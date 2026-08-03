@@ -4,6 +4,8 @@
 #include <regex>
 #include <string>
 
+#include "core/AppPaths.hpp"
+
 namespace magda::daw::audio {
 
 namespace {
@@ -36,23 +38,30 @@ FaustPatchInfo readPatchInfo(const juce::String& source) {
 }
 
 juce::File getFaustLibrariesPath() {
-    auto exe = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
 #if JUCE_MAC
     // currentApplicationFile is the .app bundle on macOS. Libraries live in
     // Contents/Resources/faustlibraries (matches CMake's POST_BUILD copy).
-    return exe.getChildFile("Contents/Resources/faustlibraries");
+    return juce::File::getSpecialLocation(juce::File::currentApplicationFile)
+        .getChildFile("Contents/Resources/faustlibraries");
 #else
-    // On Windows/Linux, libraries sit next to the executable.
-    return exe.getParentDirectory().getChildFile("faustlibraries");
+    // On Windows/Linux, libraries sit next to the executable. Go through
+    // paths::executableDir() rather than currentApplicationFile so this
+    // resolves inside the mount when running from a Linux AppImage — libfaust
+    // takes this as its -I path, so getting it wrong fails every
+    // import("stdfaust.lib").
+    return magda::paths::executableDir().getChildFile("faustlibraries");
 #endif
 }
 
 juce::File getFaustRuntimeDspPath() {
-    auto exe = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
 #if JUCE_MAC
-    return exe.getChildFile("Contents/Resources/faust_dsp");
+    return juce::File::getSpecialLocation(juce::File::currentApplicationFile)
+        .getChildFile("Contents/Resources/faust_dsp");
 #else
-    return exe.getParentDirectory().getChildFile("faust_dsp");
+    // As above: currentApplicationFile points at the outer .AppImage launcher
+    // under an AppImage, which is why the factory starter DSPs showed up when
+    // running an extracted binary but not from the .AppImage itself (#1999).
+    return magda::paths::executableDir().getChildFile("faust_dsp");
 #endif
 }
 
