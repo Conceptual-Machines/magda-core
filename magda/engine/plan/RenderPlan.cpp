@@ -20,11 +20,12 @@ int arityOf(OpKind kind) {
             return 0;
         case OpKind::Device:
             return 3;  // audio, MIDI, sidechain audio
+        case OpKind::Fader:
+            return 2;  // audio, MIDI
         case OpKind::MixAudio:
         case OpKind::MergeMidi:
             return -1;  // variadic
         case OpKind::Gain:
-        case OpKind::Fader:
         case OpKind::SendTap:
         case OpKind::Meter:
         case OpKind::Output:
@@ -183,6 +184,44 @@ void bakeScheduling(RenderPlan& plan) {
     }
 }
 
+std::uint64_t planFingerprint(const RenderPlan& plan) {
+    // FNV-1a. Not a cryptographic claim: it has to separate plans that differ
+    // structurally, and it runs off the audio thread once per compile.
+    std::uint64_t hash = 14695981039346656037ULL;
+    const auto mix = [&hash](std::uint64_t value) {
+        for (int byte = 0; byte < 8; ++byte) {
+            hash ^= (value >> (byte * 8)) & 0xff;
+            hash *= 1099511628211ULL;
+        }
+    };
+
+    mix(static_cast<std::uint64_t>(plan.version));
+    mix(plan.ops.size());
+
+    for (const auto& op : plan.ops) {
+        mix(static_cast<std::uint64_t>(op.kind));
+        mix(static_cast<std::uint64_t>(op.liveness));
+        mix(static_cast<std::uint64_t>(op.key.trackId));
+        mix(static_cast<std::uint64_t>(op.key.rackId));
+        mix(static_cast<std::uint64_t>(op.key.chainId));
+        mix(static_cast<std::uint64_t>(op.key.deviceId));
+        mix(static_cast<std::uint64_t>(op.key.role));
+        mix(static_cast<std::uint64_t>(op.key.index));
+
+        mix(op.inputs.size());
+        for (const auto& input : op.inputs) {
+            mix(static_cast<std::uint64_t>(input.op));
+            mix(static_cast<std::uint64_t>(input.port));
+        }
+
+        mix(op.outputs.size());
+        for (const auto output : op.outputs)
+            mix(static_cast<std::uint64_t>(output));
+    }
+
+    return hash;
+}
+
 std::vector<std::string> validatePlan(const RenderPlan& plan) {
     std::vector<std::string> problems;
     const auto numOps = static_cast<OpId>(plan.ops.size());
@@ -234,7 +273,8 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
                 continue;
             }
             const auto expected =
-                (op.kind == OpKind::MergeMidi || (op.kind == OpKind::Device && slot == 1))
+                (op.kind == OpKind::MergeMidi ||
+                 ((op.kind == OpKind::Device || op.kind == OpKind::Fader) && slot == 1))
                     ? SignalKind::Midi
                     : SignalKind::Audio;
             const auto actual = producer.outputs[static_cast<std::size_t>(input.port)];

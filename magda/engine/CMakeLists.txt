@@ -13,6 +13,14 @@ add_library(magda_engine STATIC
     plan/RenderPlan.hpp
     plan/PlanCompiler.hpp
     plan/PlanDump.hpp
+    plan/TrackRouting.hpp
+    exec/PlanExecutor.cpp
+    exec/PlanValues.cpp
+    exec/PlanExecutor.hpp
+    exec/PlanValues.hpp
+    exec/PlanBindings.hpp
+    exec/EngineDevice.hpp
+    exec/RenderContext.hpp
 )
 add_library(magda::engine ALIAS magda_engine)
 
@@ -25,16 +33,28 @@ target_link_libraries(magda_engine PUBLIC magda_types)
 target_include_directories(magda_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Borrow JUCE's headers and defines without linking the modules: the model
-# headers name juce::String and juce::Colour, and the juce_core / juce_graphics
-# unity sources are already compiled once in magda_daw, so the undefined
-# symbols resolve at the final link instead of duplicating those objects here.
-# Same arrangement magda_types uses.
-target_include_directories(magda_engine PRIVATE
-    $<TARGET_PROPERTY:juce::juce_core,INTERFACE_INCLUDE_DIRECTORIES>
-    $<TARGET_PROPERTY:juce::juce_graphics,INTERFACE_INCLUDE_DIRECTORIES>)
-target_compile_definitions(magda_engine PRIVATE
-    $<TARGET_PROPERTY:juce::juce_core,INTERFACE_COMPILE_DEFINITIONS>
-    $<TARGET_PROPERTY:juce::juce_graphics,INTERFACE_COMPILE_DEFINITIONS>)
+# headers name juce::String and juce::Colour, the executor renders into
+# juce::AudioBuffer / juce::dsp::AudioBlock and passes juce::MidiBuffer around,
+# and those modules' unity sources are already compiled once in magda_daw, so
+# the undefined symbols resolve at the final link instead of duplicating those
+# objects here. Same arrangement magda_types uses.
+#
+# PUBLIC rather than PRIVATE: the executor's headers name those types, so
+# anything linking magda_engine (the tests, and eventually the app) has to see
+# them too.
+set(MAGDA_ENGINE_JUCE_MODULES
+    juce::juce_core
+    juce::juce_graphics
+    juce::juce_audio_basics
+    juce::juce_audio_formats  # juce_dsp's own dependency, headers only
+    juce::juce_dsp)
+
+foreach(_juce_module IN LISTS MAGDA_ENGINE_JUCE_MODULES)
+    target_include_directories(magda_engine PUBLIC
+        $<TARGET_PROPERTY:${_juce_module},INTERFACE_INCLUDE_DIRECTORIES>)
+    target_compile_definitions(magda_engine PUBLIC
+        $<TARGET_PROPERTY:${_juce_module},INTERFACE_COMPILE_DEFINITIONS>)
+endforeach()
 
 # --- Dependency boundary check -----------------------------------------------
 #
@@ -42,7 +62,7 @@ target_compile_definitions(magda_engine PRIVATE
 # Engine. Quoted includes may only reach the model layer ("core/...") or the
 # engine's own headers.
 
-set(MAGDA_ENGINE_ALLOWED_QUOTED_PREFIXES "core/" "plan/")
+set(MAGDA_ENGINE_ALLOWED_QUOTED_PREFIXES "core/" "plan/" "exec/")
 
 file(GLOB_RECURSE MAGDA_ENGINE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"

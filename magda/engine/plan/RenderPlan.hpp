@@ -47,7 +47,7 @@ enum class OpKind : std::uint8_t {
     MixAudio,   ///< ordered sum of audio inputs (summing order is compiled, never scheduling order)
     MergeMidi,  ///< ordered merge of MIDI inputs
     Gain,       ///< scalar gain
-    Fader,      ///< volume + pan
+    Fader,      ///< volume + pan, and the MIDI its stage passes on
     SendTap,    ///< pre/post-fader tap feeding another track
     Meter,      ///< level tap read by the UI
     Output,     ///< hardware output
@@ -200,6 +200,18 @@ int arityOf(OpKind kind);
 
 /** Fill in dependencyCounts, consumer edges and initialReadyOps. */
 void bakeScheduling(RenderPlan& plan);
+
+/**
+ * @brief Structural identity of a plan, over its ops, keys and edges.
+ *
+ * Anything resolved against a plan and published separately from it (values,
+ * snapshots) carries this so the audio thread can tell that the two belong
+ * together. Op count is not identity: a structural edit can replace or reorder
+ * ops and keep the count, and a stale table applied by index would then put one
+ * op's gain or mute on another. Two plans that compile to the same structure
+ * hash the same, which is correct: values resolved for either one fit both.
+ */
+std::uint64_t planFingerprint(const RenderPlan& plan);
 
 /**
  * @brief Structural checks over a compiled plan.

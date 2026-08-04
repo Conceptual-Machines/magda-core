@@ -11,6 +11,7 @@
 #include "core/RackInfo.hpp"
 #include "core/TrackChain.hpp"
 #include "core/TrackInfo.hpp"
+#include "plan/TrackRouting.hpp"
 
 namespace magda::engine {
 namespace {
@@ -128,22 +129,6 @@ void collectSidechainSources(const TrackInfo& track, std::optional<SidechainConf
     collectSidechainSources(track.chain.mixerAnalysisElements, type, out);
 }
 
-/// What a routing field resolves to. Malformed is deliberately distinct from
-/// External: a broken "track:..." value is a broken internal route, and
-/// collapsing the two would quietly reinterpret it as a hardware device or as
-/// the default master routing instead of reporting it. None means the track
-/// does not read that input at all, so there is nothing to route or report.
-enum class RouteKind { None, External, Track, Malformed };
-
-struct TrackRoute {
-    RouteKind kind = RouteKind::External;
-    TrackId trackId = INVALID_TRACK_ID;
-
-    bool namesTrack() const {
-        return kind == RouteKind::Track;
-    }
-};
-
 /// Whether input reaches the track at all, for either audio or MIDI.
 ///
 /// Auto is deliberately not enough on its own: it maps to TE's automatic
@@ -155,21 +140,6 @@ struct TrackRoute {
 /// the UI's input-activity light.
 bool monitorsInput(const TrackInfo& track) {
     return track.recordArmed || track.inputMonitor == InputMonitorMode::In;
-}
-
-/// Parses a routing field: "track:<id>" for an internal route, anything else
-/// (a hardware device name, the default "master", an empty field) is external.
-TrackRoute parseTrackRoute(const juce::String& routing) {
-    if (!routing.startsWith("track:"))
-        return {RouteKind::External, INVALID_TRACK_ID};
-
-    const auto id = routing.substring(6).trim();
-    // Rejects "1-2" and a bare "-": getIntValue would take the leading digits
-    // and point the signal at a track that was never selected.
-    if (id.isEmpty() || !id.containsOnly("-0123456789") || juce::String(id.getIntValue()) != id)
-        return {RouteKind::Malformed, INVALID_TRACK_ID};
-
-    return {RouteKind::Track, id.getIntValue()};
 }
 
 class Compiler {
@@ -413,6 +383,15 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     if (device.bypassed)
         return signal;
 
+    // Delta solo subtracts the device's latency-aligned dry input from its
+    // output, so it needs both a delay line and a second edge carrying the dry
+    // signal past the device. Neither exists yet: it lands with latency
+    // compensation, which is what makes the alignment meaningful.
+    if (device.deltaSolo)
+        diagnose("device " + std::to_string(device.id) + " on track " +
+                 std::to_string(site.trackId) +
+                 ": delta solo needs a latency-aligned dry path the plan does not carry yet");
+
     const auto node = routing::makeRoutingNode(device);
 
     PortRef midiIn;
@@ -490,6 +469,12 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
                  " sidechain from track " + std::to_string(rack.sidechain.sourceTrackId) +
                  " feeds rack modulation, which the plan does not carry yet");
 
+    // Same dry path a device's delta solo needs, one level up: the rack
+    // instance subtracts its own latency-aligned input from its wet output.
+    if (rack.deltaSolo)
+        diagnose("rack " + std::to_string(rack.id) +
+                 ": delta solo needs a latency-aligned dry path the plan does not carry yet");
+
     // A rack with no chains passes signal rather than silence: compiling it to
     // a zero-input mix would silence the track. It is not fully transparent
     // though, because rack volume and pan land on the instance's output gains,
@@ -502,8 +487,10 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     if (rack.chains.empty()) {
         const OpKey faderKey{site.trackId,      rack.id,           INVALID_CHAIN_ID,
                              INVALID_DEVICE_ID, OpRole::RackFader, 0};
-        return {PortRef{addOp(OpKind::Fader, faderKey, {signal.audio}, {SignalKind::Audio}), 0},
-                signal.midi};
+        return {
+            PortRef{addOp(OpKind::Fader, faderKey, {signal.audio, noInput()}, {SignalKind::Audio}),
+                    0},
+            signal.midi};
     }
 
     std::vector<PortRef> chainAudio;
@@ -526,16 +513,30 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
         if (!chain.bypassed)
             chainSignal = emitElements(chain.elements, chainSite, chainSignal);
 
-        const OpKey faderKey{site.trackId,           rack.id, chain.id, INVALID_DEVICE_ID,
-                             OpRole::RackChainFader, 0};
-        const PortRef chainOut{
-            addOp(OpKind::Fader, faderKey, {chainSignal.audio}, {SignalKind::Audio}), 0};
-
-        chainAudio.push_back(chainOut);
         // A chain that leaves the MIDI stream untouched is transparent to it;
         // only chains that generate MIDI contribute to the rack's MIDI output.
-        if (chainSignal.midi.valid() && !(chainSignal.midi == signal.midi))
-            chainMidi.push_back(chainSignal.midi);
+        const auto generatesMidi = chainSignal.midi.valid() && !(chainSignal.midi == signal.midi);
+
+        // Both signals leave the chain through its fader, which is what makes
+        // the chain switchable as a unit: mute and a sibling's solo take the
+        // whole chain out of the mix in the current engine, and audio and MIDI
+        // have to go together. Routing MIDI around the fader would leave
+        // whatever a rack nested in this chain generates with no gate at all,
+        // because those ops key on the nested rack rather than on this chain.
+        const OpKey faderKey{site.trackId,           rack.id, chain.id, INVALID_DEVICE_ID,
+                             OpRole::RackChainFader, 0};
+        std::vector<SignalKind> faderOutputs{SignalKind::Audio};
+        if (generatesMidi)
+            faderOutputs.push_back(SignalKind::Midi);
+
+        const auto faderOp =
+            addOp(OpKind::Fader, faderKey,
+                  {chainSignal.audio, generatesMidi ? chainSignal.midi : noInput()},
+                  std::move(faderOutputs));
+
+        chainAudio.push_back(PortRef{faderOp, 0});
+        if (generatesMidi)
+            chainMidi.push_back(PortRef{faderOp, 1});
     }
 
     ChainSignal out;
@@ -545,7 +546,7 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
 
     const OpKey faderKey{site.trackId,      rack.id,           INVALID_CHAIN_ID,
                          INVALID_DEVICE_ID, OpRole::RackFader, 0};
-    out.audio = PortRef{addOp(OpKind::Fader, faderKey, {mixed}, {SignalKind::Audio}), 0};
+    out.audio = PortRef{addOp(OpKind::Fader, faderKey, {mixed, noInput()}, {SignalKind::Audio}), 0};
 
     if (chainMidi.empty()) {
         out.midi = signal.midi;
@@ -739,7 +740,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
 
     const OpKey faderKey{track.id,          INVALID_RACK_ID,    INVALID_CHAIN_ID,
                          INVALID_DEVICE_ID, OpRole::TrackFader, 0};
-    PortRef out{addOp(OpKind::Fader, faderKey, {signal.audio}, {SignalKind::Audio}), 0};
+    PortRef out{addOp(OpKind::Fader, faderKey, {signal.audio, noInput()}, {SignalKind::Audio}), 0};
 
     emitSends(false, out);
 
