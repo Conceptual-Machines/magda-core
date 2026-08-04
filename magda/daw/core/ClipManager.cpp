@@ -2318,56 +2318,110 @@ void ClipManager::setLaunchFadeSamples(ClipId clipId, int samples) {
 // clip, so an overlap can never degenerate into full containment.
 static constexpr double kCrossfadeEdgeGuardBeats = 1e-3;
 
-std::optional<ClipManager::CrossfadeInfo> ClipManager::getCrossfadeAtStart(ClipId clipId) const {
-    const auto* clip = getClip(clipId);
-    if (!clip || clip->view != ClipView::Arrangement || !clip->isAudio() || !clip->autoCrossfade)
+namespace {
+
+/// Both crossfade queries answer the same question against whatever set of
+/// clips they are given: the committed lane, or a previewed one mid-drag.
+std::optional<ClipManager::CrossfadeInfo> crossfadeAtStartOf(
+    const ClipInfo& clip, const std::vector<const ClipInfo*>& lane) {
+    if (clip.view != ClipView::Arrangement || !clip.isAudio() || !clip.autoCrossfade)
         return std::nullopt;
 
-    const double startB = clip->placement.startBeat;
-    const double endB = clip->placement.endBeat();
+    const double startB = clip.placement.startBeat;
+    const double endB = clip.placement.endBeat();
 
     // The previous clip whose tail reaches furthest into this clip.
     const ClipInfo* best = nullptr;
-    for (const auto& [cid, other] : clips_) {
-        if (other.id == clipId || other.view != ClipView::Arrangement ||
-            other.trackId != clip->trackId || !other.isAudio() || !other.autoCrossfade)
+    for (const auto* other : lane) {
+        if (other->id == clip.id || other->view != ClipView::Arrangement ||
+            other->trackId != clip.trackId || !other->isAudio() || !other->autoCrossfade)
             continue;
-        const double oStart = other.placement.startBeat;
-        const double oEnd = other.placement.endBeat();
+        const double oStart = other->placement.startBeat;
+        const double oEnd = other->placement.endBeat();
         if (oStart < startB && oEnd > startB && oEnd < endB) {
             if (!best || oEnd > best->placement.endBeat())
-                best = &other;
+                best = other;
         }
     }
     if (!best)
         return std::nullopt;
-    return CrossfadeInfo{best->id, clipId, startB, best->placement.endBeat()};
+    return ClipManager::CrossfadeInfo{best->id, clip.id, startB, best->placement.endBeat()};
+}
+
+std::optional<ClipManager::CrossfadeInfo> crossfadeAtEndOf(
+    const ClipInfo& clip, const std::vector<const ClipInfo*>& lane) {
+    if (clip.view != ClipView::Arrangement || !clip.isAudio() || !clip.autoCrossfade)
+        return std::nullopt;
+
+    const double startB = clip.placement.startBeat;
+    const double endB = clip.placement.endBeat();
+
+    // The next clip whose head reaches furthest back into this clip.
+    const ClipInfo* best = nullptr;
+    for (const auto* other : lane) {
+        if (other->id == clip.id || other->view != ClipView::Arrangement ||
+            other->trackId != clip.trackId || !other->isAudio() || !other->autoCrossfade)
+            continue;
+        const double oStart = other->placement.startBeat;
+        const double oEnd = other->placement.endBeat();
+        if (oStart > startB && oStart < endB && oEnd > endB) {
+            if (!best || oStart < best->placement.startBeat)
+                best = other;
+        }
+    }
+    if (!best)
+        return std::nullopt;
+    return ClipManager::CrossfadeInfo{clip.id, best->id, best->placement.startBeat, endB};
+}
+
+std::vector<const ClipInfo*> laneView(const std::vector<ClipInfo>& clips) {
+    std::vector<const ClipInfo*> lane;
+    lane.reserve(clips.size());
+    for (const auto& clip : clips)
+        lane.push_back(&clip);
+    return lane;
+}
+
+}  // namespace
+
+std::optional<ClipManager::CrossfadeInfo> ClipManager::crossfadeAtStartIn(
+    const std::vector<ClipInfo>& lane, ClipId clipId) {
+    for (const auto& clip : lane) {
+        if (clip.id == clipId)
+            return crossfadeAtStartOf(clip, laneView(lane));
+    }
+    return std::nullopt;
+}
+
+std::optional<ClipManager::CrossfadeInfo> ClipManager::crossfadeAtEndIn(
+    const std::vector<ClipInfo>& lane, ClipId clipId) {
+    for (const auto& clip : lane) {
+        if (clip.id == clipId)
+            return crossfadeAtEndOf(clip, laneView(lane));
+    }
+    return std::nullopt;
+}
+
+std::optional<ClipManager::CrossfadeInfo> ClipManager::getCrossfadeAtStart(ClipId clipId) const {
+    const auto* clip = getClip(clipId);
+    if (!clip)
+        return std::nullopt;
+
+    std::vector<const ClipInfo*> lane;
+    for (const auto& [cid, other] : clips_)
+        lane.push_back(&other);
+    return crossfadeAtStartOf(*clip, lane);
 }
 
 std::optional<ClipManager::CrossfadeInfo> ClipManager::getCrossfadeAtEnd(ClipId clipId) const {
     const auto* clip = getClip(clipId);
-    if (!clip || clip->view != ClipView::Arrangement || !clip->isAudio() || !clip->autoCrossfade)
+    if (!clip)
         return std::nullopt;
 
-    const double startB = clip->placement.startBeat;
-    const double endB = clip->placement.endBeat();
-
-    // The next clip whose head reaches furthest back into this clip.
-    const ClipInfo* best = nullptr;
-    for (const auto& [cid, other] : clips_) {
-        if (other.id == clipId || other.view != ClipView::Arrangement ||
-            other.trackId != clip->trackId || !other.isAudio() || !other.autoCrossfade)
-            continue;
-        const double oStart = other.placement.startBeat;
-        const double oEnd = other.placement.endBeat();
-        if (oStart > startB && oStart < endB && oEnd > endB) {
-            if (!best || oStart < best->placement.startBeat)
-                best = &other;
-        }
-    }
-    if (!best)
-        return std::nullopt;
-    return CrossfadeInfo{clipId, best->id, best->placement.startBeat, endB};
+    std::vector<const ClipInfo*> lane;
+    for (const auto& [cid, other] : clips_)
+        lane.push_back(&other);
+    return crossfadeAtEndOf(*clip, lane);
 }
 
 ClipId ClipManager::findCrossfadeNeighbour(ClipId clipId, bool atStart) const {

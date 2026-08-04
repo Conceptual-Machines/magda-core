@@ -260,6 +260,15 @@ class TrackContentPanel : public juce::Component,
         return timelineController;
     }
 
+    /// The lane as it stands mid-drag: model placements, with any clip being
+    /// dragged replaced by where it would land. Empty when nothing on the track
+    /// is being dragged, which is the caller's cue to ask the model instead.
+    std::vector<ClipInfo> previewLaneClips(TrackId trackId) const;
+
+    /// Repaint every clip on one track — a crossfade belongs to a pair, so the
+    /// clip that is NOT being dragged has to redraw too (#2003).
+    void repaintClipsOnTrack(TrackId trackId);
+
   private:
     // Controller reference (not owned)
     TimelineController* timelineController = nullptr;

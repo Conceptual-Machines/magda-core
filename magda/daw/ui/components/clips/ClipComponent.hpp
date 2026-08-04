@@ -71,6 +71,11 @@ class ClipComponent : public juce::Component,
     }
     void setSelected(bool selected);
 
+    /// The placement this clip would have if the mouse were released now, in
+    /// beats. False when it is not being dragged, or when the gesture leaves it
+    /// where it is (alt-drag duplicates the clip rather than moving it).
+    bool previewPlacementBeats(double tempo, double& startBeat, double& lengthBeats) const;
+
     // Stretches of this clip that stand on a clip below it in the lane, in
     // timeline beats (#2003). Pushed by the panel because it takes the whole
     // lane to work out, and drawn so a stack does not read as a single clip.
@@ -177,6 +182,9 @@ class ClipComponent : public juce::Component,
     double multiResizeMaxLeftDelta_ =
         std::numeric_limits<double>::max();  // Same, for the left edge moving back
     DragThrottle stretchThrottle_{50};
+    // Neighbours have to repaint while this clip is dragged: a crossfade is a
+    // property of a pair, so the other side's overlay changes too (#2003).
+    DragThrottle crossfadeRepaintThrottle_{33};
     DragThrottle resizeThrottle_{50};
 
     // Alt+drag duplicate state

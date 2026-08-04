@@ -399,3 +399,98 @@ TEST_CASE("crossfade region edits keep the untouched edge fixed", "[crossfade]")
     CHECK(xf->startBeat == Catch::Approx(6.0));
     CHECK(xf->endBeat == Catch::Approx(10.0));
 }
+
+// Dropping an audio clip INSIDE another splits the lower clip, which leaves
+// butt joints on both sides. A joint is not an overlap, so no crossfade may
+// come out of it — an automatic fade there is a bug, not a feature (#2003).
+TEST_CASE("dropping a clip inside another creates no crossfade", "[crossfade][overlap]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId longClip = createAudioBeats(trackId, 0.0, 16.0);
+    const ClipId dropped = createAudioBeats(trackId, 40.0, 4.0);
+    cm.setAutoCrossfade(longClip, true);
+    cm.setAutoCrossfade(dropped, true);
+
+    cm.moveClipBeats(dropped, 6.0);  // -> [6,10], strictly inside [0,16]
+
+    CHECK_FALSE(cm.getCrossfadeAtStart(dropped).has_value());
+    CHECK_FALSE(cm.getCrossfadeAtEnd(dropped).has_value());
+
+    // Nor on the pieces the split produced.
+    for (ClipId id : cm.getClipsOnTrack(trackId)) {
+        if (id == dropped)
+            continue;
+        CHECK_FALSE(cm.getCrossfadeAtStart(id).has_value());
+        CHECK_FALSE(cm.getCrossfadeAtEnd(id).has_value());
+    }
+}
+
+// While a clip is being dragged the model still holds where it started, so the
+// overlay has to be asked against the previewed lane instead — otherwise the
+// crossfade a clip is dragging itself out of stays drawn until the mouse comes
+// up, and one it is dragging itself into does not appear at all (#2003).
+TEST_CASE("crossfades can be resolved against a previewed lane", "[crossfade][overlap]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId a = createAudioBeats(trackId, 0.0, 8.0);
+    // Creation shifts a clip clear of what is already there, so the overlap is
+    // made by moving it, the way the user would.
+    const ClipId b = createAudioBeats(trackId, 20.0, 8.0);
+    cm.setAutoCrossfade(a, true);
+    cm.setAutoCrossfade(b, true);
+    cm.moveClipBeats(b, 6.0);
+
+    auto laneFromModel = [&]() {
+        std::vector<ClipInfo> lane;
+        for (ClipId id : cm.getClipsOnTrack(trackId, ClipView::Arrangement)) {
+            if (const auto* clip = cm.getClip(id))
+                lane.push_back(*clip);
+        }
+        return lane;
+    };
+
+    // Committed state: A and B overlap over [6,8].
+    REQUIRE(cm.getCrossfadeAtStart(b).has_value());
+
+    SECTION("dragging clear of the overlap drops the crossfade immediately") {
+        auto lane = laneFromModel();
+        for (auto& clip : lane) {
+            if (clip.id == b)
+                clip.setPlacementBeats(20.0, clip.placement.lengthBeats);
+        }
+
+        CHECK_FALSE(ClipManager::crossfadeAtStartIn(lane, b).has_value());
+        CHECK_FALSE(ClipManager::crossfadeAtEndIn(lane, a).has_value());
+        // The model is untouched until the mouse comes up.
+        CHECK(cm.getCrossfadeAtStart(b).has_value());
+    }
+
+    SECTION("dragging into an overlap shows the crossfade before release") {
+        auto lane = laneFromModel();
+        for (auto& clip : lane) {
+            if (clip.id == b)
+                clip.setPlacementBeats(4.0, clip.placement.lengthBeats);
+        }
+
+        auto xf = ClipManager::crossfadeAtStartIn(lane, b);
+        REQUIRE(xf.has_value());
+        CHECK(xf->leftClipId == a);
+        CHECK(xf->startBeat == Catch::Approx(4.0));
+        CHECK(xf->endBeat == Catch::Approx(8.0));
+    }
+
+    SECTION("a clip dragged fully inside another is a cover, not a joint") {
+        auto lane = laneFromModel();
+        for (auto& clip : lane) {
+            if (clip.id == b)
+                clip.setPlacementBeats(2.0, 4.0);
+        }
+
+        CHECK_FALSE(ClipManager::crossfadeAtStartIn(lane, b).has_value());
+        CHECK_FALSE(ClipManager::crossfadeAtEndIn(lane, b).has_value());
+    }
+}

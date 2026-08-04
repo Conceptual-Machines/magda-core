@@ -495,6 +495,15 @@ class ClipManager {
     std::optional<CrossfadeInfo> getCrossfadeAtStart(ClipId clipId) const;
     std::optional<CrossfadeInfo> getCrossfadeAtEnd(ClipId clipId) const;
 
+    /// The same queries against an explicit set of clips rather than the
+    /// committed model, so a drag can show the crossfade it is about to make or
+    /// break while the mouse is still down (#2003). The lane must hold the
+    /// clips as they would be at that moment, the dragged one included.
+    static std::optional<CrossfadeInfo> crossfadeAtStartIn(const std::vector<ClipInfo>& lane,
+                                                           ClipId clipId);
+    static std::optional<CrossfadeInfo> crossfadeAtEndIn(const std::vector<ClipInfo>& lane,
+                                                         ClipId clipId);
+
     /// The audio clip abutting/overlapping this clip's start (previous) or
     /// end (next) that a crossfade could be created with — regardless of the
     /// autoCrossfade flags. INVALID_CLIP_ID if none.

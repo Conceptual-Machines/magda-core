@@ -192,6 +192,49 @@ void TrackContentPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile&
     tracksChanged();  // Rebuild with new visibility settings
 }
 
+std::vector<ClipInfo> TrackContentPanel::previewLaneClips(TrackId trackId) const {
+    auto& clipManager = ClipManager::getInstance();
+
+    const bool laneIsDragging =
+        std::any_of(clipComponents_.begin(), clipComponents_.end(), [&](const auto& comp) {
+            if (!comp->isCurrentlyDragging())
+                return false;
+            const auto* clip = clipManager.getClip(comp->getClipId());
+            return clip != nullptr && clip->trackId == trackId;
+        });
+    if (!laneIsDragging)
+        return {};
+
+    std::vector<ClipInfo> lane;
+    for (ClipId id : clipManager.getClipsOnTrack(trackId, ClipView::Arrangement)) {
+        const auto* clip = clipManager.getClip(id);
+        if (clip == nullptr)
+            continue;
+
+        ClipInfo previewed = *clip;
+        for (const auto& comp : clipComponents_) {
+            if (comp->getClipId() != id)
+                continue;
+            double startBeat = 0.0;
+            double lengthBeats = 0.0;
+            if (comp->previewPlacementBeats(tempoBPM, startBeat, lengthBeats))
+                previewed.setPlacementBeats(startBeat, lengthBeats);
+            break;
+        }
+        lane.push_back(std::move(previewed));
+    }
+    return lane;
+}
+
+void TrackContentPanel::repaintClipsOnTrack(TrackId trackId) {
+    auto& clipManager = ClipManager::getInstance();
+    for (auto& clipComp : clipComponents_) {
+        const auto* clip = clipManager.getClip(clipComp->getClipId());
+        if (clip != nullptr && clip->trackId == trackId)
+            clipComp->repaint();
+    }
+}
+
 void TrackContentPanel::repaintVisible() {
     if (auto* viewport = findParentComponentOfClass<juce::Viewport>()) {
         repaint(juce::Rectangle<int>(viewport->getViewPositionX(), viewport->getViewPositionY(),

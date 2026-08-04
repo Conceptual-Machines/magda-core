@@ -698,6 +698,23 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     }
 }
 
+bool ClipComponent::previewPlacementBeats(double tempo, double& startBeat,
+                                          double& lengthBeats) const {
+    const auto* clip = getClipInfo();
+    if (clip == nullptr || !isCurrentlyDragging() || isDuplicating_ || !isValidBpm(tempo))
+        return false;
+
+    const bool resizing = dragMode_ == DragMode::ResizeLeft || dragMode_ == DragMode::ResizeRight ||
+                          dragMode_ == DragMode::StretchLeft ||
+                          dragMode_ == DragMode::StretchRight ||
+                          dragMode_ == DragMode::CrossfadeIn || dragMode_ == DragMode::CrossfadeOut;
+
+    startBeat = previewStartTime_ * tempo / 60.0;
+    lengthBeats = (resizing && previewLength_ > 0.0) ? previewLength_ * tempo / 60.0
+                                                     : clip->placement.lengthBeats;
+    return true;
+}
+
 ClipComponent::EffectiveFades ClipComponent::computeEffectiveFades(const ClipInfo& clip) const {
     EffectiveFades fades;
     fades.fadeInSeconds = audioEventRef(clip).fadeInSeconds;
@@ -707,13 +724,29 @@ ClipComponent::EffectiveFades ClipComponent::computeEffectiveFades(const ClipInf
 
     auto& cm = ClipManager::getInstance();
     const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-    if (auto xf = cm.getCrossfadeAtStart(clipId_)) {
-        fades.xfIn = xf;
-        fades.fadeInSeconds = xf->lengthBeats() * 60.0 / tempo;
+
+    // Mid-drag the model still holds the placement the clip had when the mouse
+    // went down, so asking it draws the crossfade the clip used to have: it
+    // stays on screen for the whole gesture and only corrects itself on release
+    // — a fade hanging off a clip that has already been dragged clear, and one
+    // appearing under a clip on its way into the middle of another. The
+    // previewed lane answers for where the clips are right now (#2003).
+    const auto previewLane = parentPanel_ != nullptr ? parentPanel_->previewLaneClips(clip.trackId)
+                                                     : std::vector<ClipInfo>{};
+    const bool previewing = !previewLane.empty();
+
+    auto xfIn = previewing ? ClipManager::crossfadeAtStartIn(previewLane, clipId_)
+                           : cm.getCrossfadeAtStart(clipId_);
+    auto xfOut = previewing ? ClipManager::crossfadeAtEndIn(previewLane, clipId_)
+                            : cm.getCrossfadeAtEnd(clipId_);
+
+    if (xfIn) {
+        fades.xfIn = xfIn;
+        fades.fadeInSeconds = xfIn->lengthBeats() * 60.0 / tempo;
     }
-    if (auto xf = cm.getCrossfadeAtEnd(clipId_)) {
-        fades.xfOut = xf;
-        fades.fadeOutSeconds = xf->lengthBeats() * 60.0 / tempo;
+    if (xfOut) {
+        fades.xfOut = xfOut;
+        fades.fadeOutSeconds = xfOut->lengthBeats() * 60.0 / tempo;
     }
     return fades;
 }
@@ -2397,6 +2430,15 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
         default:
             break;
+    }
+
+    // A crossfade belongs to a pair, and only this component is repainting
+    // itself as it moves. The clip on the other side of the joint has to redraw
+    // too, or the fade it is about to gain or lose stays as it was until the
+    // mouse comes up (#2003). Throttled: this runs on every drag callback.
+    if (parentPanel_ != nullptr && crossfadeRepaintThrottle_.check()) {
+        if (const auto* dragged = getClipInfo())
+            parentPanel_->repaintClipsOnTrack(dragged->trackId);
     }
 
     // Emit real-time preview event via ClipManager (for global listeners like PianoRoll)
