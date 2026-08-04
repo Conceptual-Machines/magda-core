@@ -512,10 +512,7 @@ void ClipComponent::paint(juce::Graphics& g) {
         const auto body = bounds.withTrimmedTop(HEADER_HEIGHT);
 
         for (const auto& range : coveringRanges_) {
-            const int from = parentPanel_->beatsToPixel(range.start.value) - clipLeft;
-            const int to = parentPanel_->beatsToPixel(range.end.value) - clipLeft;
-            auto region = body.getIntersection(juce::Rectangle<int>(
-                from, body.getY(), juce::jmax(1, to - from), body.getHeight()));
+            const auto region = coveringRangeBounds(range, body);
             if (region.isEmpty())
                 continue;
 
@@ -766,7 +763,29 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
     auto bgColour = deriveClipBody(clip.colour);
     if (ghosted)
         bgColour = bgColour.withAlpha(0.55f);
-    fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
+
+    if (playsThroughOverlaps()) {
+        // This clip is not silencing what it covers, so its body must not hide
+        // it either: the covered stretches are left translucent and the clip
+        // underneath shows through, notes and all (#2003). This clip's own
+        // notes are painted over the top below, so both read in the overlap.
+        juce::RectangleList<int> solid(bounds);
+        for (const auto& range : coveringRanges_) {
+            const auto region = coveringRangeBounds(range, bounds);
+            if (!region.isEmpty())
+                solid.subtract(region);
+        }
+        for (const auto& part : solid)
+            fillClippedRoundedRect(g, bounds, part.getIntersection(visibleBounds), bgColour,
+                                   CORNER_RADIUS);
+        for (const auto& range : coveringRanges_) {
+            const auto region = coveringRangeBounds(range, bounds).getIntersection(visibleBounds);
+            if (!region.isEmpty())
+                fillClippedRoundedRect(g, bounds, region, bgColour.withAlpha(0.28f), CORNER_RADIUS);
+        }
+    } else {
+        fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
+    }
 
     auto noteArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
     paintMidiNotes(g, clip, noteArea,
@@ -3120,6 +3139,22 @@ void ClipComponent::clipSelectionChanged(ClipId clipId) {
 // ============================================================================
 // Selection
 // ============================================================================
+
+juce::Rectangle<int> ClipComponent::coveringRangeBounds(const BeatRange& range,
+                                                        juce::Rectangle<int> bounds) const {
+    if (parentPanel_ == nullptr)
+        return {};
+    const int clipLeft = getX();
+    const int from = parentPanel_->beatsToPixel(range.start.value) - clipLeft;
+    const int to = parentPanel_->beatsToPixel(range.end.value) - clipLeft;
+    return bounds.getIntersection(
+        juce::Rectangle<int>(from, bounds.getY(), juce::jmax(1, to - from), bounds.getHeight()));
+}
+
+bool ClipComponent::playsThroughOverlaps() const {
+    const auto* clip = getClipInfo();
+    return clip != nullptr && clip->overlapPlaysBoth && !coveringRanges_.empty();
+}
 
 void ClipComponent::setCoveringRanges(std::vector<BeatRange> ranges) {
     if (ranges.size() == coveringRanges_.size()) {

@@ -81,6 +81,14 @@ class ClipComponent : public juce::Component,
     // lane to work out, and drawn so a stack does not read as a single clip.
     void setCoveringRanges(std::vector<BeatRange> ranges);
 
+    /// Pixel span of a covering range inside this clip.
+    juce::Rectangle<int> coveringRangeBounds(const BeatRange& range,
+                                             juce::Rectangle<int> bounds) const;
+
+    /// This clip covers something and is set to let it be heard, so its body
+    /// must let it be seen too.
+    bool playsThroughOverlaps() const;
+
     // Marquee highlight state (visual hint during marquee drag)
     bool isMarqueeHighlighted() const {
         return isMarqueeHighlighted_;

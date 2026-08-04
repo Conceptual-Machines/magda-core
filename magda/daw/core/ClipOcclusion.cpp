@@ -90,8 +90,12 @@ std::unordered_map<ClipId, AudibleSpan> computeAudibleSpans(
                 continue;
             if (isCrossfadeJoint(clip, upper))
                 continue;
-            // Either side asking to play through is enough (#2003).
-            if (clip.overlapPlaysBoth || upper.overlapPlaysBoth)
+            // The clip on top decides whether it silences what it covers
+            // (#2003). One owner, so unticking it on the clip you can see does
+            // what it says — with either side able to veto, a clip that picked
+            // the setting up from the preference kept the whole stack sounding
+            // however you set the one above it.
+            if (upper.overlapPlaysBoth)
                 continue;
 
             const double uStart = upper.placement.startBeat;
@@ -165,10 +169,10 @@ std::vector<BeatRange> computeCoveringRanges(const std::vector<ClipInfo>& trackC
     for (const auto& other : trackClips) {
         if (other.id == clipId || !sitsBelow(other, *clip))
             continue;
+        // Crossfade joints draw their own X, so they are not marked as covers.
+        // A clip set to play through IS still marked: the mark says "there is a
+        // clip under here", which is worth knowing either way.
         if (isCrossfadeJoint(other, *clip))
-            continue;
-        // Nothing is being silenced, so there is nothing to mark in the lane.
-        if (clip->overlapPlaysBoth || other.overlapPlaysBoth)
             continue;
 
         const double from = std::max(other.placement.startBeat, start);

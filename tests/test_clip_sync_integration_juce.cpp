@@ -2437,16 +2437,13 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         expectEquals(teNoteCount(partId), 1, "By default the covered note does not play");
 
-        // Either side of the overlap can ask, so both gestures are checked: the
-        // clip underneath first, then the one on top.
-        cm.setOverlapPlaysBoth(partId, true);
-        expectEquals(teNoteCount(partId), 2, "The covered clip asking must be enough");
-
-        cm.setOverlapPlaysBoth(partId, false);
-        expectEquals(teNoteCount(partId), 1, "And switching it back silences it again");
-
+        // The clip doing the covering owns the decision, so it is the one whose
+        // setting has to move the engine.
         cm.setOverlapPlaysBoth(coverId, true);
-        expectEquals(teNoteCount(partId), 2, "The covering clip asking must work too");
+        expectEquals(teNoteCount(partId), 2, "Play-through must give the covered note back");
+
+        cm.setOverlapPlaysBoth(coverId, false);
+        expectEquals(teNoteCount(partId), 1, "And switching it back silences it again");
     }
 
     void testMidiNotesUnderACoveringClipDoNotPlay() {

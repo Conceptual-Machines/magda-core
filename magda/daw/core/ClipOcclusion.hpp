@@ -51,10 +51,9 @@ struct AudibleSpan {
  *
  * Three overlaps are deliberately NOT occlusions:
  *
- * - Either clip set to play through (ClipInfo::overlapPlaysBoth). One side
- *   asking is enough: the clip you right-click is the one on top, but it is the
- *   one underneath that would go quiet, and both gestures mean the same thing.
- *   This is the setting audio and MIDI share.
+ * - The clip on top set to play through (ClipInfo::overlapPlaysBoth). It is the
+ *   one doing the covering, so it is the one that decides — and it is the clip
+ *   you can see and right-click. This is the setting audio and MIDI share.
  *
  * - An overlap between two audio clips that both auto-crossfade is a crossfade
  *   joint (#1499). Both sides keep their full span and TE fades them into each

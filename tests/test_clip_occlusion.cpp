@@ -242,16 +242,16 @@ TEST_CASE("occlusion - abutting clips do not cover each other", "[clip][occlusio
 // Playing through is a per-clip switch, and it works the same for audio and for
 // MIDI — unlike the crossfade, which needs two waveforms (#2003).
 TEST_CASE("occlusion - a clip set to play through is not covered", "[clip][occlusion]") {
-    SECTION("the clip underneath asks to be heard") {
+    SECTION("the clip underneath asking does nothing on its own") {
         std::vector<ClipInfo> lane{makeClip(1, 0.0, 16.0, 1), makeClip(2, 4.0, 4.0, 2)};
         lane[0].overlapPlaysBoth = true;
 
-        const auto spans = computeAudibleSpans(lane);
-        CHECK(spans.at(1).lengthBeats == Catch::Approx(16.0));
-        CHECK(spans.at(1).silenced.empty());
+        // One owner: the clip doing the covering. Otherwise unticking it on the
+        // clip you can see would be overruled by the one you cannot.
+        REQUIRE(computeAudibleSpans(lane).at(1).silenced.size() == 1);
     }
 
-    SECTION("or the clip on top says it is not silencing anything") {
+    SECTION("and it is the clip on top that decides") {
         std::vector<ClipInfo> lane{makeClip(1, 0.0, 16.0, 1), makeClip(2, 4.0, 4.0, 2)};
         lane[1].overlapPlaysBoth = true;
 
