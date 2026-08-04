@@ -508,6 +508,35 @@ class ClipManager {
     static std::optional<CrossfadeInfo> crossfadeAtEndIn(const std::vector<ClipInfo>& lane,
                                                          ClipId clipId);
 
+    /// Every arrangement clip on one track, which is the unit an overlap is
+    /// resolved against.
+    std::vector<ClipInfo> arrangementLane(TrackId trackId) const;
+
+    /**
+     * @brief The fades a clip really plays with, once the lane is taken into
+     *        account (#2003).
+     *
+     * Its own stored fades, replaced at either edge by the overlap AUTO-XFADE
+     * turns into a fade, and clamped so the two never sum past the clip — the
+     * same clamp TE applies, so what is drawn is what is heard. One call for
+     * the arrangement view and for the engine, because a fade drawn differently
+     * from the one played is the bug this replaces.
+     *
+     * @param lane   The clips as they are at this moment, this one included —
+     *               the committed lane, or a previewed one mid-drag.
+     */
+    struct EffectiveFades {
+        double fadeInSeconds = 0.0;
+        double fadeOutSeconds = 0.0;
+        std::optional<CrossfadeInfo> xfIn;   // overlap covering the start edge
+        std::optional<CrossfadeInfo> xfOut;  // overlap covering the end edge
+    };
+    static EffectiveFades effectiveFadesIn(const std::vector<ClipInfo>& lane, ClipId clipId,
+                                           double bpm);
+
+    /// The same against the committed model.
+    EffectiveFades getEffectiveFades(ClipId clipId, double bpm) const;
+
     /// The audio clip abutting/overlapping this clip's start (previous) or
     /// end (next) that a crossfade could be created with — regardless of the
     /// autoCrossfade flags. INVALID_CLIP_ID if none.
@@ -880,13 +909,12 @@ class ClipManager {
      * their placement and content, and computeAudibleSpans decides what each of
      * them plays, so moving the dominant away fills the gap by itself.
      *
-     * Two cases still change the model. A dominant landing INSIDE a longer clip
-     * splits that clip in two, because a head and a tail cannot be expressed as
-     * one audible span and the engine mirror holds one clip per clip; both sides
-     * can be dragged back out over the covered span. And a partial overlap
-     * between auto-crossfade audio clips is a crossfade joint rather than a
-     * cover, so the neighbour is given the flag TE needs to fade its side
-     * (#1499).
+     * Nothing else changes the model: no trim, no split, no delete, at any
+     * overlap shape. A drop landing strictly inside another audio clip used to
+     * split it into head / covered slice / tail, because the Tracktion mirror
+     * holds one engine clip per model clip and cannot express a hole; the
+     * native engine carries silenced ranges on the clip snapshot instead
+     * (#1890), so that case keeps whole clips too.
      * Called internally by move methods and explicit opt-in creation paths.
      */
     void resolveOverlaps(ClipId dominantClipId);

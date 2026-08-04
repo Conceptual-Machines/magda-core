@@ -146,39 +146,36 @@ TEST_CASE("occlusion - edges pull in, the middle becomes a hole", "[clip][occlus
     }
 }
 
-TEST_CASE("occlusion - a crossfade joint is not a cover", "[clip][occlusion][crossfade]") {
+// AUTO-XFADE shapes an overlap that already plays both; it cannot keep a clip
+// alive on its own. Play-through is the only switch that decides (#2003).
+TEST_CASE("occlusion - AUTO-XFADE does not decide what plays", "[clip][occlusion][crossfade]") {
     std::vector<ClipInfo> lane{makeClip(1, 0.0, 8.0, 1), makeClip(2, 6.0, 8.0, 2)};
     lane[0].autoCrossfade = true;
     lane[1].autoCrossfade = true;
 
-    const auto spans = computeAudibleSpans(lane);
+    SECTION("flagged on both, and still a cover") {
+        CHECK(computeAudibleSpans(lane).at(1).lengthBeats == Catch::Approx(6.0));
+        CHECK(computeBothPlayRanges(lane, 1).empty());
+    }
 
-    // Both keep their full span so TE can fade them into each other (#1499).
-    CHECK(spans.at(1).lengthBeats == Catch::Approx(8.0));
-    CHECK(spans.at(2).lengthBeats == Catch::Approx(8.0));
+    SECTION("play-through is what opens it up, fades and all") {
+        lane[1].overlapPlaysBoth = true;
 
-    SECTION("containment between flagged clips is a joint too, not a cover") {
+        CHECK(computeAudibleSpans(lane).at(1).lengthBeats == Catch::Approx(8.0));
+        CHECK(computeAudibleSpans(lane).at(2).lengthBeats == Catch::Approx(8.0));
+        CHECK(computeBothPlayRanges(lane, 1).size() == 1);
+    }
+
+    SECTION("containment follows the same switch") {
         std::vector<ClipInfo> covering{makeClip(1, 4.0, 4.0, 1), makeClip(2, 0.0, 16.0, 2)};
         covering[0].autoCrossfade = true;
         covering[1].autoCrossfade = true;
 
-        // The button decides, not the shape of the overlap: a swallowed clip
-        // fades with the one over it rather than going silent (#2003).
+        CHECK_FALSE(computeAudibleSpans(covering).at(1).audible);
+
+        covering[1].overlapPlaysBoth = true;
         CHECK(computeAudibleSpans(covering).at(1).audible);
         CHECK(computeAudibleSpans(covering).at(1).lengthBeats == Catch::Approx(4.0));
-    }
-
-    SECTION("with the flag off the same containment covers") {
-        const std::vector<ClipInfo> covering{makeClip(1, 4.0, 4.0, 1), makeClip(2, 0.0, 16.0, 2)};
-
-        CHECK_FALSE(computeAudibleSpans(covering).at(1).audible);
-    }
-
-    SECTION("and a MIDI overlap has no fade to protect") {
-        const std::vector<ClipInfo> midi{makeClip(1, 0.0, 8.0, 1, ClipType::MIDI),
-                                         makeClip(2, 6.0, 8.0, 2, ClipType::MIDI)};
-
-        CHECK(computeAudibleSpans(midi).at(1).lengthBeats == Catch::Approx(6.0));
     }
 }
 
@@ -209,49 +206,103 @@ TEST_CASE("occlusion - covers accumulate down the stack", "[clip][occlusion]") {
     CHECK(spans.at(1).lengthBeats == Catch::Approx(8.0));
 }
 
-// The marker in the lane comes from these ranges, so a clip that merely sits
-// NEXT to another must report nothing: an adjacent clip is not a cover, and a
-// duplicate lands exactly one clip-length away.
-TEST_CASE("occlusion - abutting clips do not cover each other", "[clip][occlusion]") {
-    SECTION("touching edges") {
+// The hatch says "two clips are sounding here", so it appears exactly where
+// play-through is in effect — on both clips of the pair, and nowhere else.
+TEST_CASE("occlusion - the hatch marks what plays together", "[clip][occlusion]") {
+    SECTION("touching edges are not an overlap") {
         const std::vector<ClipInfo> lane{makeClip(1, 0.0, 8.0, 1), makeClip(2, 8.0, 8.0, 2)};
 
-        CHECK(computeCoveringRanges(lane, 2).empty());
-        CHECK(computeCoveringRanges(lane, 1).empty());
+        CHECK(computeBothPlayRanges(lane, 2).empty());
+        CHECK(computeBothPlayRanges(lane, 1).empty());
         CHECK(computeAudibleSpans(lane).at(1).lengthBeats == Catch::Approx(8.0));
         CHECK(computeAudibleSpans(lane).at(1).silenced.empty());
     }
 
     SECTION("a gap between them") {
-        const std::vector<ClipInfo> lane{makeClip(1, 0.0, 8.0, 1), makeClip(2, 12.0, 8.0, 2)};
+        std::vector<ClipInfo> lane{makeClip(1, 0.0, 8.0, 1), makeClip(2, 12.0, 8.0, 2)};
+        lane[1].overlapPlaysBoth = true;
 
-        CHECK(computeCoveringRanges(lane, 2).empty());
-        CHECK(computeCoveringRanges(lane, 1).empty());
+        CHECK(computeBothPlayRanges(lane, 2).empty());
+        CHECK(computeBothPlayRanges(lane, 1).empty());
     }
 
-    SECTION("a real overlap reports only the overlapping stretch") {
+    SECTION("an overlap that plays only the top clip is not marked") {
         const std::vector<ClipInfo> lane{makeClip(1, 0.0, 8.0, 1), makeClip(2, 6.0, 8.0, 2)};
 
-        const auto covering = computeCoveringRanges(lane, 2);
-        REQUIRE(covering.size() == 1);
-        CHECK(covering[0].start.value == Catch::Approx(6.0));
-        CHECK(covering[0].end.value == Catch::Approx(8.0));
+        CHECK(computeBothPlayRanges(lane, 1).empty());
+        CHECK(computeBothPlayRanges(lane, 2).empty());
+    }
+
+    SECTION("one that plays both is marked on both clips, over what they share") {
+        std::vector<ClipInfo> lane{makeClip(1, 0.0, 8.0, 1), makeClip(2, 6.0, 8.0, 2)};
+        lane[0].overlapPlaysBoth = true;
+
+        for (ClipId id : {ClipId{1}, ClipId{2}}) {
+            const auto shared = computeBothPlayRanges(lane, id);
+            REQUIRE(shared.size() == 1);
+            CHECK(shared[0].start.value == Catch::Approx(6.0));
+            CHECK(shared[0].end.value == Catch::Approx(8.0));
+        }
+    }
+}
+
+// The body of a clip goes translucent only where it stands on a clip that is
+// still heard — otherwise there is nothing left to show.
+TEST_CASE("occlusion - a clip shows through what it does not silence", "[clip][occlusion]") {
+    SECTION("a plain cover shows nothing through") {
+        const std::vector<ClipInfo> lane{makeClip(1, 0.0, 8.0, 1), makeClip(2, 6.0, 8.0, 2)};
+
+        CHECK(computeShowThroughRanges(lane, 2).empty());
+    }
+
+    SECTION("playing through does") {
+        std::vector<ClipInfo> lane{makeClip(1, 0.0, 8.0, 1), makeClip(2, 6.0, 8.0, 2)};
+        lane[1].overlapPlaysBoth = true;
+
+        const auto showing = computeShowThroughRanges(lane, 2);
+        REQUIRE(showing.size() == 1);
+        CHECK(showing[0].start.value == Catch::Approx(6.0));
+        CHECK(showing[0].end.value == Catch::Approx(8.0));
+    }
+
+    SECTION("AUTO-XFADE on its own does not") {
+        std::vector<ClipInfo> lane{makeClip(1, 0.0, 8.0, 1), makeClip(2, 6.0, 8.0, 2)};
+        lane[0].autoCrossfade = true;
+        lane[1].autoCrossfade = true;
+
+        CHECK(computeShowThroughRanges(lane, 2).empty());
+    }
+
+    SECTION("the clip underneath asking makes the one on top show it through") {
+        std::vector<ClipInfo> lane{makeClip(1, 0.0, 8.0, 1), makeClip(2, 6.0, 8.0, 2)};
+        lane[0].overlapPlaysBoth = true;
+
+        CHECK(computeShowThroughRanges(lane, 2).size() == 1);
+    }
+
+    SECTION("and the clip underneath shows nothing through, being underneath") {
+        std::vector<ClipInfo> lane{makeClip(1, 0.0, 8.0, 1), makeClip(2, 6.0, 8.0, 2)};
+        lane[1].overlapPlaysBoth = true;
+
+        CHECK(computeShowThroughRanges(lane, 1).empty());
     }
 }
 
 // Playing through is a per-clip switch, and it works the same for audio and for
 // MIDI — unlike the crossfade, which needs two waveforms (#2003).
 TEST_CASE("occlusion - a clip set to play through is not covered", "[clip][occlusion]") {
-    SECTION("the clip underneath asking does nothing on its own") {
+    // Either side can ask. The clip you reach for when something goes quiet is
+    // the one that went quiet, which is the one underneath — making the covering
+    // clip the sole owner meant ticking it there did nothing at all (#2003).
+    SECTION("the clip underneath asking is enough") {
         std::vector<ClipInfo> lane{makeClip(1, 0.0, 16.0, 1), makeClip(2, 4.0, 4.0, 2)};
         lane[0].overlapPlaysBoth = true;
 
-        // One owner: the clip doing the covering. Otherwise unticking it on the
-        // clip you can see would be overruled by the one you cannot.
-        REQUIRE(computeAudibleSpans(lane).at(1).silenced.size() == 1);
+        CHECK(computeAudibleSpans(lane).at(1).silenced.empty());
+        CHECK(computeAudibleSpans(lane).at(1).lengthBeats == Catch::Approx(16.0));
     }
 
-    SECTION("and it is the clip on top that decides") {
+    SECTION("and so is the clip on top asking") {
         std::vector<ClipInfo> lane{makeClip(1, 0.0, 16.0, 1), makeClip(2, 4.0, 4.0, 2)};
         lane[1].overlapPlaysBoth = true;
 
@@ -260,54 +311,45 @@ TEST_CASE("occlusion - a clip set to play through is not covered", "[clip][occlu
         CHECK(spans.at(1).silenced.empty());
     }
 
-    SECTION("neither: the top one owns the span it covers") {
+    SECTION("neither: the top one takes the span it covers") {
         const std::vector<ClipInfo> lane{makeClip(1, 0.0, 16.0, 1), makeClip(2, 4.0, 4.0, 2)};
 
         REQUIRE(computeAudibleSpans(lane).at(1).silenced.size() == 1);
     }
 
-    SECTION("MIDI clips use the same switch") {
+    SECTION("MIDI clips use the same switch, from either side") {
         std::vector<ClipInfo> lane{makeClip(1, 0.0, 16.0, 1, ClipType::MIDI),
                                    makeClip(2, 4.0, 4.0, 2, ClipType::MIDI)};
         REQUIRE(computeAudibleSpans(lane).at(1).silenced.size() == 1);
 
         lane[1].overlapPlaysBoth = true;
         CHECK(computeAudibleSpans(lane).at(1).silenced.empty());
+
+        lane[1].overlapPlaysBoth = false;
+        lane[0].overlapPlaysBoth = true;
+        CHECK(computeAudibleSpans(lane).at(1).silenced.empty());
     }
 }
 
-// A crossfade is drawn from the two clips' edge fades, which only works while
-// the overlap touches an edge of each. Swallow one clip whole and the overlap
-// sits in the middle of the other, where it has no edge to hang off — so the
-// covering clip has to draw it, or it vanishes with the clip underneath (#2003).
-TEST_CASE("occlusion - a swallowed crossfade is reported to the clip over it",
+// A clip that swallows another whole draws no fade of its own — it has no edge
+// inside the clip below it. What it does instead is show through: the swallowed
+// clip is still heard, so it is still seen, and it draws the fades it plays
+// (#2003).
+TEST_CASE("occlusion - a clip that swallows another shows it through",
           "[clip][occlusion][crossfade]") {
-    std::vector<ClipInfo> lane{makeClip(1, 0.0, 16.0, 1), makeClip(2, 4.0, 4.0, 2)};
+    std::vector<ClipInfo> lane{makeClip(1, 4.0, 4.0, 1), makeClip(2, 0.0, 16.0, 2)};
     lane[0].autoCrossfade = true;
     lane[1].autoCrossfade = true;
+    lane[1].overlapPlaysBoth = true;
 
-    SECTION("the clip on top gets the region") {
-        const auto interior = computeInteriorCrossfadeRanges(lane, 1);
-        REQUIRE(interior.size() == 1);
-        CHECK(interior[0].start.value == Catch::Approx(4.0));
-        CHECK(interior[0].end.value == Catch::Approx(8.0));
+    const auto showing = computeShowThroughRanges(lane, 2);
+    REQUIRE(showing.size() == 1);
+    CHECK(showing[0].start.value == Catch::Approx(4.0));
+    CHECK(showing[0].end.value == Catch::Approx(8.0));
 
-        // The swallowed clip draws its own: the overlap IS its whole span, so
-        // its ordinary fade-in covers it.
-        CHECK(computeInteriorCrossfadeRanges(lane, 2).empty());
-    }
+    SECTION("without play-through it is a cover, and covers show nothing") {
+        const std::vector<ClipInfo> unflagged{makeClip(1, 4.0, 4.0, 1), makeClip(2, 0.0, 16.0, 2)};
 
-    SECTION("an overlap reaching an edge is left to the edge fades") {
-        std::vector<ClipInfo> edge{makeClip(1, 0.0, 16.0, 1), makeClip(2, 12.0, 8.0, 2)};
-        edge[0].autoCrossfade = true;
-        edge[1].autoCrossfade = true;
-
-        CHECK(computeInteriorCrossfadeRanges(edge, 1).empty());
-    }
-
-    SECTION("no crossfade without the flag") {
-        const std::vector<ClipInfo> unflagged{makeClip(1, 0.0, 16.0, 1), makeClip(2, 4.0, 4.0, 2)};
-
-        CHECK(computeInteriorCrossfadeRanges(unflagged, 1).empty());
+        CHECK(computeShowThroughRanges(unflagged, 2).empty());
     }
 }

@@ -2385,6 +2385,13 @@ void TrackContentPanel::clipPropertyChanged(ClipId clipId) {
             // Update all clip positions (updateClipComponentPositions already
             // skips dragging clips internally)
             updateClipComponentPositions();
+
+            // What one clip draws depends on the clips it overlaps: AUTO-XFADE
+            // or play-through on this one changes the fade its neighbour draws
+            // and whether it shows through. Neither moves that neighbour, so
+            // nothing else would repaint it (#2003).
+            if (const auto* clip = ClipManager::getInstance().getClip(clipId))
+                repaintClipsOnTrack(clip->trackId);
             break;
         }
     }
@@ -2607,10 +2614,10 @@ void TrackContentPanel::updateClipComponentPositions() {
         visibleRight = visibleLeft + viewport->getViewWidth();
     }
 
-    // Which stretch of each clip stands on a clip below it (#2003). It takes a
-    // whole lane to work out, so it is resolved here once per track rather than
-    // per clip at paint time, and only for lanes that actually hold more than
-    // one clip.
+    // Which stretch of each clip has another clip playing with it (#2003). It
+    // takes a whole lane to work out, so it is resolved here once per track
+    // rather than per clip at paint time, and only for lanes that actually hold
+    // more than one clip.
     std::unordered_map<TrackId, std::vector<ClipInfo>> laneClips;
     for (auto& clipComp : clipComponents_) {
         if (const auto* clip = ClipManager::getInstance().getClip(clipComp->getClipId()))
@@ -2625,10 +2632,10 @@ void TrackContentPanel::updateClipComponentPositions() {
 
         const auto& lane = laneClips[clip->trackId];
         const bool stacked = lane.size() > 1;
-        clipComp->setCoveringRanges(stacked ? computeCoveringRanges(lane, clip->id)
+        clipComp->setBothPlayRanges(stacked ? computeBothPlayRanges(lane, clip->id)
                                             : std::vector<BeatRange>{});
-        clipComp->setInteriorCrossfadeRanges(
-            stacked ? computeInteriorCrossfadeRanges(lane, clip->id) : std::vector<BeatRange>{});
+        clipComp->setShowThroughRanges(stacked ? computeShowThroughRanges(lane, clip->id)
+                                               : std::vector<BeatRange>{});
 
         // Skip clips that are being dragged - they manage their own position
         if (clipComp->isCurrentlyDragging()) {

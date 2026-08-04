@@ -42,6 +42,26 @@ struct AudibleSpan {
 };
 
 /**
+ * @brief Do these two clips both sound where they overlap?
+ *
+ * One switch decides, on audio and MIDI alike: ClipInfo::overlapPlaysBoth, set
+ * on either clip. Selected, both play over the overlap and the lane hatches it.
+ * Not selected, only the clip on top plays there (#2003).
+ *
+ * Either side can ask, because the clip you reach for when something goes quiet
+ * is the one that went quiet, and that is the one underneath.
+ *
+ * AUTO-XFADE does not enter into it. It shapes an overlap that already plays
+ * both — audio fading into audio instead of both running flat — and cannot keep
+ * a clip alive on its own.
+ */
+bool overlapPlaysThrough(const ClipInfo& a, const ClipInfo& b);
+
+/// Bottom to top within a lane: stackOrder decides, clip id breaks ties so
+/// projects saved before stackOrder existed keep their creation order.
+bool clipSitsBelow(const ClipInfo& a, const ClipInfo& b);
+
+/**
  * @brief Resolve what each arrangement clip on one track plays.
  *
  * @param trackClips Every arrangement clip on the track, in any order. Clips
@@ -49,16 +69,10 @@ struct AudibleSpan {
  *                   passed in — occlusion is per lane.
  * @return An entry for every clip passed in, keyed by clip id.
  *
- * Three overlaps are deliberately NOT occlusions:
+ * Two overlaps are deliberately NOT occlusions:
  *
- * - The clip on top set to play through (ClipInfo::overlapPlaysBoth). It is the
- *   one doing the covering, so it is the one that decides — and it is the clip
- *   you can see and right-click. This is the setting audio and MIDI share.
- *
- * - An overlap between two audio clips that both auto-crossfade is a crossfade
- *   joint (#1499). Both sides keep their full span and TE fades them into each
- *   other; silencing one of them would eat the fade. Audio only — a fade needs
- *   two waveforms.
+ * - One set to play through (overlapPlaysThrough). Both sides keep their full
+ *   span.
  * - A clip disabled by hand (#1736) covers nothing. It is already silent, so
  *   letting it occlude would silence a lower clip on behalf of a clip nobody
  *   can hear.
@@ -67,26 +81,24 @@ std::unordered_map<ClipId, AudibleSpan> computeAudibleSpans(
     const std::vector<ClipInfo>& trackClips);
 
 /**
- * @brief The parts of one clip that sit over a clip below it in the same lane.
+ * @brief Every stretch of one clip where another clip is playing with it.
  *
- * The mirror of the silenced ranges, read from the covering side: what the UI
- * needs to show which stretch of a clip is standing on material it is
- * silencing. Crossfade joints are left out — those are a fade, not a cover, and
- * they draw their own X.
+ * What the UI hatches, on both clips of the pair. The hatch means "two clips
+ * are sounding here", which is the one thing about a stack you cannot see
+ * otherwise — an overlap that plays only the top clip looks exactly like a
+ * single clip, and reads as one (#2003).
  */
-std::vector<BeatRange> computeCoveringRanges(const std::vector<ClipInfo>& trackClips,
+std::vector<BeatRange> computeBothPlayRanges(const std::vector<ClipInfo>& trackClips,
                                              ClipId clipId);
 
 /**
- * @brief Crossfade joints that sit strictly inside a clip.
+ * @brief The parts of one clip that stand on a clip below that is still heard.
  *
- * A crossfade is normally drawn as the two clips' edge fades, which works while
- * the overlap touches an edge of each. When one clip swallows another the
- * overlap is in the middle of the covering clip, so it has no edge to hang off
- * and the only clip that CAN draw it is the one underneath — which is hidden.
- * These are the ranges the covering clip has to draw itself (#2003).
+ * A clip that does not silence what it covers must not hide it either: these
+ * are the stretches the body leaves translucent so the clip underneath shows
+ * through.
  */
-std::vector<BeatRange> computeInteriorCrossfadeRanges(const std::vector<ClipInfo>& trackClips,
-                                                      ClipId clipId);
+std::vector<BeatRange> computeShowThroughRanges(const std::vector<ClipInfo>& trackClips,
+                                                ClipId clipId);
 
 }  // namespace magda

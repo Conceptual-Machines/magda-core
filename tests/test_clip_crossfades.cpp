@@ -233,20 +233,104 @@ TEST_CASE("moving an auto-crossfade clip onto a neighbour keeps the overlap", "[
 
     const ClipId a = createAudioBeats(trackId, 0.0, 8.0);
     const ClipId b = createAudioBeats(trackId, 10.0, 8.0);
+    cm.setAutoCrossfade(a, true);
     cm.setAutoCrossfade(b, true);
+    // AUTO-XFADE shapes an overlap that plays both; play-through is what makes
+    // it one (#2003).
+    cm.setOverlapPlaysBoth(b, true);
 
     cm.moveClipBeats(b, 6.0);
 
-    // Overlap [6, 8] survives as a crossfade; the neighbour gets the flag too
+    // Overlap [6, 8] survives as a crossfade, both clips whole
     CHECK(cm.getClip(a)->placement.endBeat() == Catch::Approx(8.0));
     CHECK(cm.getClip(b)->placement.startBeat == Catch::Approx(6.0));
-    CHECK(cm.getClip(a)->autoCrossfade);
 
     auto xf = cm.getCrossfadeAtStart(b);
     REQUIRE(xf.has_value());
     CHECK(xf->leftClipId == a);
     CHECK(xf->startBeat == Catch::Approx(6.0));
     CHECK(xf->endBeat == Catch::Approx(8.0));
+}
+
+// AUTO-XFADE is a per-clip promise about that clip's own edge, so a drop never
+// switches it on for the clip it lands on: one side fading and the other
+// playing flat through the overlap is a state the user can ask for, and the
+// coercion made it unreachable (#2003).
+TEST_CASE("a drop leaves the neighbour's AUTO-XFADE alone", "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId a = createAudioBeats(trackId, 0.0, 8.0);
+    const ClipId b = createAudioBeats(trackId, 10.0, 8.0);
+    cm.setAutoCrossfade(a, false);
+    cm.setAutoCrossfade(b, true);
+    cm.setOverlapPlaysBoth(b, true);
+
+    cm.moveClipBeats(b, 6.0);
+
+    CHECK_FALSE(cm.getClip(a)->autoCrossfade);
+
+    // B fades in over the overlap; A does not fade out, and neither is covered.
+    auto xfB = cm.getCrossfadeAtStart(b);
+    REQUIRE(xfB.has_value());
+    CHECK(xfB->startBeat == Catch::Approx(6.0));
+    CHECK(xfB->endBeat == Catch::Approx(8.0));
+    CHECK_FALSE(cm.getCrossfadeAtEnd(a).has_value());
+    CHECK(audibleSpanFor(a).lengthBeats == Catch::Approx(8.0));
+    CHECK(audibleSpanFor(b).lengthBeats == Catch::Approx(8.0));
+}
+
+// The fade a clip plays with is the one drawn on it: derived from the overlap
+// when AUTO-XFADE is on, its own otherwise (#2003).
+TEST_CASE("effective fades come from the overlap", "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId a = createAudioBeats(trackId, 0.0, 8.0);
+    const ClipId b = createAudioBeats(trackId, 10.0, 8.0);
+    cm.setAutoCrossfade(a, true);
+    cm.setAutoCrossfade(b, true);
+    cm.setOverlapPlaysBoth(a, true);
+    cm.setOverlapPlaysBoth(b, true);
+
+    SECTION("a partial overlap fades each clip over what they share") {
+        cm.moveClipBeats(b, 6.0);  // overlap [6,8] = 2 beats = 1 s at 120 BPM
+
+        CHECK(cm.getEffectiveFades(b, 120.0).fadeInSeconds == Catch::Approx(1.0));
+        CHECK(cm.getEffectiveFades(a, 120.0).fadeOutSeconds == Catch::Approx(1.0));
+        CHECK(cm.getEffectiveFades(a, 120.0).fadeInSeconds == Catch::Approx(0.0));
+    }
+
+    // One fade per clip per overlap: the clip on the left of a pair fades out,
+    // the one on the right fades in. A clip swallowed by another has that clip
+    // on its left at both ends, so it fades IN over what they share and holds
+    // — fading it back out of itself drew two curves on one clip (#2003).
+    SECTION("a swallowed clip fades in and holds") {
+        const ClipId inside = createAudioBeats(trackId, 40.0, 4.0);
+        cm.setAutoCrossfade(inside, true);
+        cm.setOverlapPlaysBoth(inside, true);
+        cm.moveClipBeats(inside, 2.0);  // -> [2,6], strictly inside A's [0,8]
+
+        const auto fades = cm.getEffectiveFades(inside, 120.0);
+        CHECK(fades.fadeInSeconds == Catch::Approx(2.0));  // 4 beats = 2 s
+        CHECK(fades.fadeOutSeconds == Catch::Approx(0.0));
+
+        // And the clip it landed in draws nothing: neither of its edges is
+        // inside the drop.
+        const auto containerFades = cm.getEffectiveFades(a, 120.0);
+        CHECK(containerFades.fadeInSeconds == Catch::Approx(0.0));
+        CHECK(containerFades.fadeOutSeconds == Catch::Approx(0.0));
+    }
+
+    SECTION("with AUTO-XFADE off the clip keeps its own fades") {
+        cm.moveClipBeats(b, 6.0);
+        cm.setAutoCrossfade(b, false);
+        cm.setFadeIn(b, 0.25);
+
+        CHECK(cm.getEffectiveFades(b, 120.0).fadeInSeconds == Catch::Approx(0.25));
+    }
 }
 
 TEST_CASE("moving a clip without auto-crossfade covers the neighbour's tail", "[crossfade]") {
@@ -303,6 +387,7 @@ TEST_CASE("a clip covered end to end still crossfades while AUTO-XFADE is on", "
     const ClipId b = createAudioBeats(trackId, 10.0, 8.0);
     cm.setAutoCrossfade(a, true);
     cm.setAutoCrossfade(b, true);
+    cm.setOverlapPlaysBoth(b, true);
 
     cm.moveClipBeats(b, 0.0);  // -> [0,8], swallowing A at [2,4]
 
@@ -431,10 +516,12 @@ TEST_CASE("crossfade region edits keep the untouched edge fixed", "[crossfade]")
     CHECK(xf->endBeat == Catch::Approx(10.0));
 }
 
-// Dropping an audio clip INSIDE another splits the lower clip, which leaves
-// butt joints on both sides. A joint is not an overlap, so no crossfade may
-// come out of it — an automatic fade there is a bug, not a feature (#2003).
-TEST_CASE("dropping a clip inside another creates no crossfade", "[crossfade][overlap]") {
+// Dropping an audio clip INSIDE another used to split the lower clip into
+// head, covered slice and tail. It only has to when the drop SILENCES what it
+// lands on: with AUTO-XFADE on, which is the default, the two fade instead, so
+// the lane keeps two whole clips and the drop fades in and out of the one it
+// is sitting inside (#2003).
+TEST_CASE("dropping a clip inside another fades instead of splitting it", "[crossfade][overlap]") {
     resetState();
     auto& cm = ClipManager::getInstance();
     const auto trackId = createTrack();
@@ -443,19 +530,64 @@ TEST_CASE("dropping a clip inside another creates no crossfade", "[crossfade][ov
     const ClipId dropped = createAudioBeats(trackId, 40.0, 4.0);
     cm.setAutoCrossfade(longClip, true);
     cm.setAutoCrossfade(dropped, true);
+    cm.setOverlapPlaysBoth(dropped, true);
 
     cm.moveClipBeats(dropped, 6.0);  // -> [6,10], strictly inside [0,16]
 
-    CHECK_FALSE(cm.getCrossfadeAtStart(dropped).has_value());
+    CHECK(cm.getClipsOnTrack(trackId).size() == 2);
+    CHECK(cm.getClip(longClip)->placement.lengthBeats == Catch::Approx(16.0));
+    CHECK(audibleSpanFor(longClip).lengthBeats == Catch::Approx(16.0));
+    CHECK(audibleSpanFor(longClip).silenced.empty());
+
+    // The clip below starts first, so the drop is the one arriving: it fades in
+    // over what they share, and that is the only curve in the picture.
+    auto xfIn = cm.getCrossfadeAtStart(dropped);
+    REQUIRE(xfIn.has_value());
+    CHECK(xfIn->leftClipId == longClip);
     CHECK_FALSE(cm.getCrossfadeAtEnd(dropped).has_value());
 
-    // Nor on the pieces the split produced.
+    // The clip it landed in has no edge inside the drop, so it does not fade.
+    CHECK_FALSE(cm.getCrossfadeAtStart(longClip).has_value());
+    CHECK_FALSE(cm.getCrossfadeAtEnd(longClip).has_value());
+}
+
+// Nothing on a lane is cut to make room, at any overlap shape. A drop landing
+// strictly inside another clip used to split it into head, covered slice and
+// tail, purely because the Tracktion mirror holds one engine clip per model
+// clip and cannot express a hole. The native engine carries the silenced range
+// on the clip snapshot instead (#1890), so the lane keeps whole clips (#2003).
+TEST_CASE("dropping a clip inside another never splits it", "[crossfade][overlap]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId longClip = createAudioBeats(trackId, 0.0, 16.0);
+    const ClipId dropped = createAudioBeats(trackId, 40.0, 4.0);
+    cm.setAutoCrossfade(longClip, false);
+    cm.setAutoCrossfade(dropped, false);
+
+    cm.moveClipBeats(dropped, 6.0);
+
+    CHECK(cm.getClipsOnTrack(trackId).size() == 2);
+    CHECK(cm.getClip(longClip)->placement.startBeat == Catch::Approx(0.0));
+    CHECK(cm.getClip(longClip)->placement.lengthBeats == Catch::Approx(16.0));
+
+    // It keeps its whole span and reports the hole the drop sits in.
+    const auto span = audibleSpanFor(longClip);
+    CHECK(span.lengthBeats == Catch::Approx(16.0));
+    REQUIRE(span.silenced.size() == 1);
+    CHECK(span.silenced[0].start.value == Catch::Approx(6.0));
+    CHECK(span.silenced[0].end.value == Catch::Approx(10.0));
+
+    // A butt joint is not an overlap, and there are none here anyway.
     for (ClipId id : cm.getClipsOnTrack(trackId)) {
-        if (id == dropped)
-            continue;
         CHECK_FALSE(cm.getCrossfadeAtStart(id).has_value());
         CHECK_FALSE(cm.getCrossfadeAtEnd(id).has_value());
     }
+
+    // Move the drop away and the hole closes on its own.
+    cm.moveClipBeats(dropped, 40.0);
+    CHECK(audibleSpanFor(longClip).silenced.empty());
 }
 
 // While a clip is being dragged the model still holds where it started, so the
@@ -473,6 +605,8 @@ TEST_CASE("crossfades can be resolved against a previewed lane", "[crossfade][ov
     const ClipId b = createAudioBeats(trackId, 20.0, 8.0);
     cm.setAutoCrossfade(a, true);
     cm.setAutoCrossfade(b, true);
+    cm.setOverlapPlaysBoth(a, true);
+    cm.setOverlapPlaysBoth(b, true);
     cm.moveClipBeats(b, 6.0);
 
     auto laneFromModel = [&]() {
@@ -527,4 +661,35 @@ TEST_CASE("crossfades can be resolved against a previewed lane", "[crossfade][ov
         CHECK(xf->startBeat == Catch::Approx(2.0));
         CHECK(xf->endBeat == Catch::Approx(6.0));
     }
+}
+
+// Two clips landing on exactly the same span have no left and no right by
+// their placements, so the stack decides: the one on top is the one arriving
+// and fades in, the one underneath is leaving and fades out. Testing the edges
+// strictly left this case with no fade at all (#2003).
+TEST_CASE("clips that line up exactly still fade", "[crossfade][overlap]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId a = createAudioBeats(trackId, 0.0, 8.0);
+    const ClipId b = createAudioBeats(trackId, 20.0, 8.0);
+    cm.setAutoCrossfade(a, true);
+    cm.setAutoCrossfade(b, true);
+    cm.setOverlapPlaysBoth(b, true);
+
+    cm.moveClipBeats(b, 0.0);  // -> [0,8], exactly over A, and on top of it
+
+    REQUIRE(cm.getClip(b)->placement.startBeat == Catch::Approx(0.0));
+    REQUIRE(cm.getClip(b)->placement.lengthBeats == Catch::Approx(8.0));
+
+    // 8 beats = 4 s at 120 BPM: B fades in over all of it, A fades out over
+    // all of it, one curve each.
+    const auto arriving = cm.getEffectiveFades(b, 120.0);
+    CHECK(arriving.fadeInSeconds == Catch::Approx(4.0));
+    CHECK(arriving.fadeOutSeconds == Catch::Approx(0.0));
+
+    const auto leaving = cm.getEffectiveFades(a, 120.0);
+    CHECK(leaving.fadeOutSeconds == Catch::Approx(4.0));
+    CHECK(leaving.fadeInSeconds == Catch::Approx(0.0));
 }

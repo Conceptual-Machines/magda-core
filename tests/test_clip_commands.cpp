@@ -1713,12 +1713,12 @@ TEST_CASE("resolveOverlaps - covering a clip leaves it whole and gives it back",
     proj.setTempo(originalTempo);
 }
 
-// The one case that still splits, because a head and a tail cannot be one span.
-// It splits into THREE: the covered slice is kept, so nothing under the drop is
-// lost — not the audio, and not the notes, which the split partitions between
-// the pieces. Also the regression guard for #1447, where everything to the
-// right of the drop used to disappear.
-TEST_CASE("resolveOverlaps - a clip dropped inside another keeps the covered slice",
+// The last case that used to cut: a drop landing strictly inside an audio clip
+// split it into head, covered slice and tail. That existed only because the
+// Tracktion mirror holds one engine clip per model clip and cannot express a
+// hole in the middle of one; the native engine carries the silenced range on
+// the clip snapshot (#1890). Nothing on a lane is cut now, at any shape.
+TEST_CASE("resolveOverlaps - a clip dropped inside another leaves it whole",
           "[clip][overlap][regression]") {
     resetState();
     auto& proj = ProjectManager::getInstance();
@@ -1732,8 +1732,6 @@ TEST_CASE("resolveOverlaps - a clip dropped inside another keeps the covered sli
     ClipId longClip = createAudio(trackC, 0.0, 8.0);  // [0,16] beats
     ClipId source = createAudio(trackS, 0.0, 2.0);    // [0,4] beats
 
-    // AUTO-XFADE off: this test is about the split and the slice under the drop,
-    // not about the fade two flagged clips would make instead.
     cm.setAutoCrossfade(longClip, false);
     cm.setAutoCrossfade(source, false);
 
@@ -1741,39 +1739,24 @@ TEST_CASE("resolveOverlaps - a clip dropped inside another keeps the covered sli
     REQUIRE(dropped != INVALID_CLIP_ID);
     cm.setAutoCrossfade(dropped, false);
 
-    // Head [0,6], the covered slice [6,10] and tail [10,16], plus the drop.
-    const auto onTrack = cm.getClipsOnTrack(trackC);
-    REQUIRE(onTrack.size() == 4);
+    // Two clips, and the long one is untouched: no split, no lost material.
+    REQUIRE(cm.getClipsOnTrack(trackC).size() == 2);
+    const auto* whole = cm.getClip(longClip);
+    REQUIRE(whole != nullptr);
+    CHECK(whole->placement.startBeat == Catch::Approx(0.0));
+    CHECK(whole->placement.lengthBeats == Catch::Approx(16.0));
 
-    const auto* head = cm.getClip(longClip);
-    REQUIRE(head != nullptr);
-    CHECK(head->placement.startBeat == Catch::Approx(0.0));
-    CHECK(head->placement.lengthBeats == Catch::Approx(6.0));
+    // It plays around the drop: full span, one hole where the drop sits.
+    const auto span = audibleSpanFor(longClip);
+    CHECK(span.lengthBeats == Catch::Approx(16.0));
+    REQUIRE(span.silenced.size() == 1);
+    CHECK(span.silenced[0].start.value == Catch::Approx(6.0));
+    CHECK(span.silenced[0].end.value == Catch::Approx(10.0));
 
-    // The three pieces cover the original span end to end, with no gap.
-    double covered = 0.0;
-    for (ClipId id : onTrack) {
-        if (id == dropped)
-            continue;
-        const auto* piece = cm.getClip(id);
-        REQUIRE(piece != nullptr);
-        covered += piece->placement.lengthBeats;
-    }
-    CHECK(covered == Catch::Approx(16.0));
-
-    // The slice under the drop is silent while the drop is on top of it, and
-    // plays again the moment the drop moves away.
-    ClipId slice = INVALID_CLIP_ID;
-    for (ClipId id : onTrack) {
-        const auto* piece = cm.getClip(id);
-        if (id != dropped && piece->placement.startBeat == Catch::Approx(6.0))
-            slice = id;
-    }
-    REQUIRE(slice != INVALID_CLIP_ID);
-    CHECK_FALSE(audibleSpanFor(slice).audible);
-
+    // Move the drop away and the hole closes, with no restore step.
     cm.moveClipBeats(dropped, 40.0, 120.0);
-    CHECK(audibleSpanFor(slice).lengthBeats == Catch::Approx(4.0));
+    CHECK(audibleSpanFor(longClip).silenced.empty());
+    CHECK(cm.getClipsOnTrack(trackC).size() == 2);
 
     proj.setTempo(originalTempo);
 }

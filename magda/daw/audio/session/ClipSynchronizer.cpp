@@ -8,7 +8,6 @@
 
 #include "../../core/ClipManager.hpp"
 #include "../../core/ClipOperations.hpp"
-#include "../../core/Config.hpp"
 #include "../../core/TempoUtils.hpp"
 #include "../../core/TrackManager.hpp"
 #include "ArrangementClipSyncPlanner.hpp"
@@ -355,10 +354,6 @@ void ClipSynchronizer::clipsChanged() {
             syncArrangementClipToEngine(clipId) || arrangementTopologyChanged;
     }
 
-    // A clip that arrived, moved or went away changes what the clips sharing
-    // its lane play (#2003), and nothing else would tell them.
-    arrangementTopologyChanged = syncOcclusionChanges() || arrangementTopologyChanged;
-
     // Sync session clips to ClipSlots
     bool sessionClipsSynced = false;
     for (const auto& clip : sessionClips) {
@@ -376,9 +371,7 @@ void ClipSynchronizer::clipsChanged() {
 }
 
 void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
-    const bool clipNeedsRealloc = syncClipPropertyToEngine(clipId);
-    const bool laneNeedsRealloc = syncOcclusionChanges();
-    if (clipNeedsRealloc || laneNeedsRealloc)
+    if (syncClipPropertyToEngine(clipId))
         reallocateAndNotify();
 }
 
@@ -393,8 +386,6 @@ void ClipSynchronizer::clipPropertiesChanged(const std::vector<ClipId>& clipIds)
 
         needsGraphReallocation = syncClipPropertyToEngine(clipId) || needsGraphReallocation;
     }
-
-    needsGraphReallocation = syncOcclusionChanges() || needsGraphReallocation;
 
     if (needsGraphReallocation)
         reallocateAndNotify();
@@ -658,104 +649,6 @@ void ClipSynchronizer::syncClipToEngine(ClipId clipId) {
         reallocateAndNotify();
 }
 
-namespace {
-
-/// Every arrangement clip sharing a lane, which is the unit occlusion works on.
-std::vector<ClipInfo> arrangementClipsOnTrack(TrackId trackId) {
-    auto& cm = ClipManager::getInstance();
-    std::vector<ClipInfo> clips;
-    for (ClipId id : cm.getClipsOnTrack(trackId, ClipView::Arrangement)) {
-        if (const auto* clip = cm.getClip(id))
-            clips.push_back(*clip);
-    }
-    return clips;
-}
-
-AudibleSpan spanFor(const std::unordered_map<ClipId, AudibleSpan>& spans, const ClipInfo& clip) {
-    auto it = spans.find(clip.id);
-    if (it != spans.end())
-        return it->second;
-    // No entry means nothing occluded it: play the whole clip.
-    return AudibleSpan{clip.placement.startBeat, clip.placement.lengthBeats,
-                       clip.placement.lengthBeats > 0.0};
-}
-
-bool sameSpan(const AudibleSpan& a, const AudibleSpan& b) {
-    constexpr double tolBeats = 1e-6;
-    if (a.audible != b.audible || std::abs(a.startBeat - b.startBeat) >= tolBeats ||
-        std::abs(a.lengthBeats - b.lengthBeats) >= tolBeats) {
-        return false;
-    }
-    // Holes count as much as the edges: a clip dropped into the middle of a
-    // MIDI part leaves its span alone and changes only which notes play.
-    if (a.silenced.size() != b.silenced.size())
-        return false;
-    for (size_t i = 0; i < a.silenced.size(); ++i) {
-        if (std::abs(a.silenced[i].start.value - b.silenced[i].start.value) >= tolBeats ||
-            std::abs(a.silenced[i].end.value - b.silenced[i].end.value) >= tolBeats) {
-            return false;
-        }
-    }
-    return true;
-}
-
-/// Notes a clip cannot play because another clip sits over them. Only plain
-/// MIDI clips get here: the engine is handed their notes one by one, so a hole
-/// costs nothing but leaving some out, and the clip itself stays whole and
-/// editable. A looped clip repeats its content, so a hole in one iteration
-/// cannot be expressed in the single note list TE gets — ClipManager splits
-/// those instead, which for a looped clip is pure windowing and keeps the notes.
-void dropNotesUnderCovers(ClipInfo& audible, const ClipInfo& clip, const AudibleSpan& span) {
-    if (!clip.isMidi() || clip.loopEnabled || span.silenced.empty())
-        return;
-
-    // Note positions are content beats; the visible range says which content
-    // beat the container starts at, so this maps a note onto the timeline the
-    // same way the sync loop below does.
-    const auto range = ClipOperations::getMidiVisibleRange(clip);
-    const double contentOriginBeat = clip.placement.startBeat - range.startBeat;
-
-    auto& notes = audible.midiNotes;
-    notes.erase(std::remove_if(notes.begin(), notes.end(),
-                               [&](const MidiNote& note) {
-                                   const double timelineBeat = contentOriginBeat + note.startBeat;
-                                   for (const auto& cover : span.silenced) {
-                                       if (timelineBeat >= cover.start.value &&
-                                           timelineBeat < cover.end.value)
-                                           return true;
-                                   }
-                                   return false;
-                               }),
-                notes.end());
-}
-
-/// The clip as the engine should play it. Narrowing the container is the same
-/// operation as dragging an edge in: the read offset follows, and the notes and
-/// the source behind the covered part stay untouched — which is what lets the
-/// model keep the clip whole while only its audible part reaches TE.
-ClipInfo narrowToSpan(const ClipInfo& clip, const AudibleSpan& span, double bpm) {
-    constexpr double tolBeats = 1e-6;
-    ClipInfo audible = clip;
-    if (!span.audible || !isValidBpm(bpm))
-        return audible;
-
-    // Before the container moves, while note positions still line up with the
-    // placement the covers were computed against.
-    dropNotesUnderCovers(audible, clip, span);
-
-    const double clipEndBeat = clip.placement.startBeat + clip.placement.lengthBeats;
-    if (span.startBeat > clip.placement.startBeat + tolBeats) {
-        const double lengthFromLeft = (clipEndBeat - span.startBeat) * 60.0 / bpm;
-        ClipOperations::resizeContainerFromLeft(audible, lengthFromLeft, bpm);
-    }
-    if (span.endBeat() < clipEndBeat - tolBeats) {
-        ClipOperations::resizeContainerFromRight(audible, span.lengthBeats * 60.0 / bpm, bpm);
-    }
-    return audible;
-}
-
-}  // namespace
-
 bool ClipSynchronizer::syncArrangementClipToEngine(ClipId clipId) {
     auto* clip = ClipManager::getInstance().getClip(clipId);
     if (!clip) {
@@ -768,81 +661,27 @@ bool ClipSynchronizer::syncArrangementClipToEngine(ClipId clipId) {
         return false;
     }
 
-    const auto spans = computeAudibleSpans(arrangementClipsOnTrack(clip->trackId));
-    return syncArrangementClipWithSpan(clipId, *clip, spanFor(spans, *clip));
-}
-
-bool ClipSynchronizer::syncArrangementClipWithSpan(ClipId clipId, const ClipInfo& clip,
-                                                   const AudibleSpan& span) {
-    const ClipInfo audible = narrowToSpan(clip, span, projectBpmAtClip(edit_, clip));
-
     // Route to appropriate sync method by type
     bool needsGraphReallocation = false;
-    if (audible.isMidi()) {
-        needsGraphReallocation = syncMidiClipToEngine(clipId, &audible);
-    } else if (audible.isAudio()) {
-        needsGraphReallocation = syncAudioClipToEngine(clipId, &audible);
+    if (clip->isMidi()) {
+        needsGraphReallocation = syncMidiClipToEngine(clipId, clip);
+    } else if (clip->isAudio()) {
+        needsGraphReallocation = syncAudioClipToEngine(clipId, clip);
     } else {
         DBG("syncClipToEngine: Unknown clip type for clip " << clipId);
         return false;
     }
 
-    lastSyncedSpans_[clipId] = span;
-
-    // Enabled toggle (#1736), plus clips covered end to end: a clip with no
-    // audible span left keeps its place in the model and in the engine, it just
-    // does not play, so uncovering it needs no restore step (#2003). TE skips
-    // disabled clips when building the playback graph and restarts playback
-    // itself on IDs::disabled changes, so no reallocation is needed here.
-    // Guarded read-before-write: assigning an equal value to a CachedValue
-    // still using its default would create the property and trigger a spurious
-    // restart on first sync.
+    // Enabled toggle (#1736). TE skips disabled clips when building the
+    // playback graph and restarts playback itself on IDs::disabled changes,
+    // so no reallocation is needed here. Guarded read-before-write: assigning
+    // an equal value to a CachedValue still using its default would create
+    // the property and trigger a spurious restart on first sync.
     if (auto* teClip = getArrangementTeClip(clipId)) {
-        const bool wantDisabled = !clip.enabled || !span.audible;
+        const bool wantDisabled = !clip->enabled;
         if (teClip->disabled.get() != wantDisabled)
             teClip->disabled = wantDisabled;
     }
-
-    return needsGraphReallocation;
-}
-
-bool ClipSynchronizer::syncOcclusionChanges() {
-    auto& cm = ClipManager::getInstance();
-    const auto arrangementClips = cm.getArrangementClips();
-
-    std::unordered_map<TrackId, std::vector<ClipInfo>> byTrack;
-    for (const auto& clip : arrangementClips)
-        byTrack[clip.trackId].push_back(clip);
-
-    bool needsGraphReallocation = false;
-    std::unordered_set<ClipId> live;
-    live.reserve(arrangementClips.size());
-
-    for (const auto& [trackId, clips] : byTrack) {
-        const auto spans = computeAudibleSpans(clips);
-        for (const auto& clip : clips) {
-            live.insert(clip.id);
-            const auto span = spanFor(spans, clip);
-            auto known = lastSyncedSpans_.find(clip.id);
-            if (known != lastSyncedSpans_.end()) {
-                if (sameSpan(known->second, span))
-                    continue;
-            } else if (sameSpan(span, AudibleSpan{clip.placement.startBeat,
-                                                  clip.placement.lengthBeats, span.audible})) {
-                // Never seen and nothing covering it: the ordinary sync path
-                // already puts this clip where it belongs, so record what it
-                // plays and leave it alone rather than re-syncing every clip in
-                // the edit on the first pass.
-                lastSyncedSpans_[clip.id] = span;
-                continue;
-            }
-            needsGraphReallocation =
-                syncArrangementClipWithSpan(clip.id, clip, span) || needsGraphReallocation;
-        }
-    }
-
-    for (auto it = lastSyncedSpans_.begin(); it != lastSyncedSpans_.end();)
-        it = live.count(it->first) ? std::next(it) : lastSyncedSpans_.erase(it);
 
     return needsGraphReallocation;
 }

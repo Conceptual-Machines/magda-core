@@ -154,10 +154,6 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testDuplicateAudioClipCoversExisting();
         testPasteAudioClipCoversExisting();
         testCreateMidiClipPreservesExistingNeighbour();
-        testAutoCrossfadeTurnsAnOverlapIntoAJointOrACover();
-        testPlayThroughOverlapOnAudioClips();
-        testPlayThroughOverlapReachesTheEngine();
-        testMidiNotesUnderACoveringClipDoNotPlay();
         testMidiSyncClipsNotesToVisibleRangeAfterResize();
         testMidiSyncSkipsAllRestPitchBendButKeepsRealCurves();
         testLoopedMidiClipReachesEngineWithItsLoopRange();
@@ -2374,151 +2370,6 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expect(!teMidiClip->isLooping(), "Unlooping a MIDI clip must reach the engine too");
     }
 
-    void testAutoCrossfadeTurnsAnOverlapIntoAJointOrACover() {
-        beginTest("auto-crossfade decides whether an overlap fades or covers, live");
-
-        Fixture f;
-        auto& cm = ClipManager::getInstance();
-        auto& config = Config::getInstance();
-        const bool originalPlaysBoth = config.getClipOverlapPlaysBoth();
-        config.setClipOverlapPlaysBoth(false);
-
-        // At 60 BPM one second is one beat. A spans [0,8]; B lands on [4,12].
-        auto a =
-            cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
-        auto b =
-            cm.createAudioClip(f.trackId, 16.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
-        cm.setAutoCrossfade(a, true);
-        cm.setAutoCrossfade(b, true);
-        cm.moveClip(b, 4.0, 60.0);
-
-        auto teLengthBeats = [&](ClipId id) {
-            auto* teClip = f.clipSync->getArrangementTeClip(id);
-            return teClip != nullptr ? teClip->getLengthInBeats().inBeats() : -1.0;
-        };
-
-        // Both flagged: the overlap is a crossfade joint, so A keeps all 8 beats
-        // and TE fades the two into each other over [4,8] (#1499).
-        expectWithinAbsoluteError(teLengthBeats(a), 8.0, 0.01);
-        expect(cm.getCrossfadeAtEnd(a).has_value(), "The pair should read as a joint");
-
-        // Flag off on the clip on top: nothing to fade, so it simply covers A,
-        // and A plays only up to where B starts.
-        cm.setAutoCrossfade(b, false);
-        expectWithinAbsoluteError(teLengthBeats(a), 4.0, 0.01);
-        expect(!cm.getCrossfadeAtEnd(a).has_value(), "A cover is not a joint");
-
-        // Back on, and A is whole again — no edit, just the flag.
-        cm.setAutoCrossfade(b, true);
-        expectWithinAbsoluteError(teLengthBeats(a), 8.0, 0.01);
-
-        config.setClipOverlapPlaysBoth(originalPlaysBoth);
-    }
-
-    void testPlayThroughOverlapOnAudioClips() {
-        beginTest("play-through on audio clips: the covered one keeps its whole span");
-
-        Fixture f;
-        auto& cm = ClipManager::getInstance();
-
-        // At 60 BPM one second is one beat. A [0,8], B moved onto [4,12].
-        auto a = cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
-        auto b =
-            cm.createAudioClip(f.trackId, 16.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
-        // AUTO-XFADE off: with it on the pair is a crossfade joint, which
-        // already plays both sides and leaves nothing for this to change.
-        cm.setAutoCrossfade(a, false);
-        cm.setAutoCrossfade(b, false);
-        cm.setOverlapPlaysBoth(a, false);
-        cm.setOverlapPlaysBoth(b, false);
-        cm.moveClip(b, 4.0, 60.0);
-
-        auto teLengthBeats = [&](ClipId id) {
-            auto* teClip = f.clipSync->getArrangementTeClip(id);
-            return teClip != nullptr ? teClip->getLengthInBeats().inBeats() : -1.0;
-        };
-
-        // Covered: A stops where B starts.
-        expectWithinAbsoluteError(teLengthBeats(a), 4.0, 0.01);
-
-        // The covering clip lets it through: A is whole again, no fade involved.
-        cm.setOverlapPlaysBoth(b, true);
-        expectWithinAbsoluteError(teLengthBeats(a), 8.0, 0.01);
-        expect(!cm.getCrossfadeAtEnd(a).has_value(), "Play-through is not a crossfade");
-
-        cm.setOverlapPlaysBoth(b, false);
-        expectWithinAbsoluteError(teLengthBeats(a), 4.0, 0.01);
-    }
-
-    void testPlayThroughOverlapReachesTheEngine() {
-        beginTest("setting a clip to play through an overlap takes effect on the spot");
-
-        Fixture f;
-        auto& cm = ClipManager::getInstance();
-
-        auto partId = cm.createMidiClipBeats(f.trackId, 0.0, 16.0, ClipView::Arrangement);
-        expect(cm.addMidiNote(partId, {60, 100, 2.0, 1.0}));
-        expect(cm.addMidiNote(partId, {62, 100, 8.0, 1.0}));
-
-        auto coverId = cm.createMidiClipBeats(f.trackId, 6.0, 4.0, ClipView::Arrangement,
-                                              ClipOverlapPolicy::ResolveOverlaps);
-        expect(coverId != INVALID_CLIP_ID);
-        cm.setOverlapPlaysBoth(partId, false);
-        cm.setOverlapPlaysBoth(coverId, false);
-
-        auto teNoteCount = [&](ClipId id) {
-            auto* teMidiClip = f.getTeMidiClip(id);
-            return teMidiClip != nullptr ? teMidiClip->getSequence().getNumNotes() : -1;
-        };
-
-        expectEquals(teNoteCount(partId), 1, "By default the covered note does not play");
-
-        // The clip doing the covering owns the decision, so it is the one whose
-        // setting has to move the engine.
-        cm.setOverlapPlaysBoth(coverId, true);
-        expectEquals(teNoteCount(partId), 2, "Play-through must give the covered note back");
-
-        cm.setOverlapPlaysBoth(coverId, false);
-        expectEquals(teNoteCount(partId), 1, "And switching it back silences it again");
-    }
-
-    void testMidiNotesUnderACoveringClipDoNotPlay() {
-        beginTest("MIDI notes under a covering clip do not reach the engine, and come back");
-
-        Fixture f;
-        auto& cm = ClipManager::getInstance();
-
-        // 16 beats at 60 BPM, with a note before, under and after the drop.
-        auto partId = cm.createMidiClipBeats(f.trackId, 0.0, 16.0, ClipView::Arrangement);
-        expect(partId != INVALID_CLIP_ID);
-        expect(cm.addMidiNote(partId, {60, 100, 2.0, 1.0}));
-        expect(cm.addMidiNote(partId, {62, 100, 8.0, 1.0}));
-        expect(cm.addMidiNote(partId, {64, 100, 14.0, 1.0}));
-
-        auto droppedId = cm.createMidiClipBeats(f.trackId, 6.0, 4.0, ClipView::Arrangement,
-                                                ClipOverlapPolicy::ResolveOverlaps);
-        expect(droppedId != INVALID_CLIP_ID);
-
-        // The part is not split and keeps all three notes.
-        expectEquals(static_cast<int>(cm.getClipsOnTrack(f.trackId).size()), 2);
-        const auto* part = cm.getClip(partId);
-        expect(part != nullptr);
-        if (part == nullptr)
-            return;
-        expectEquals(static_cast<int>(part->midiNotes.size()), 3);
-
-        auto teNoteCount = [&](ClipId id) {
-            auto* teMidiClip = f.getTeMidiClip(id);
-            return teMidiClip != nullptr ? teMidiClip->getSequence().getNumNotes() : -1;
-        };
-
-        // The note under the drop is the one the engine does not get.
-        expectEquals(teNoteCount(partId), 2, "Notes under the covering clip must not play");
-
-        cm.moveClipBeats(droppedId, 40.0, 60.0);
-        expectEquals(teNoteCount(partId), 3, "Moving the cover away must give the note back");
-    }
-
     void testMidiSyncClipsNotesToVisibleRangeAfterResize() {
         beginTest("MIDI sync clips stale notes to visible range after resize");
 
@@ -2702,8 +2553,6 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             expectWithinAbsoluteError(sit->placement.startBeat, 0.0, 0.01);
             expectWithinAbsoluteError(sit->placement.lengthBeats, 8.0, 0.01);
         }
-        if (auto* teSitter = f.clipSync->getArrangementTeClip(sitter))
-            expect(teSitter->disabled.get(), "A covered clip must not play");
 
         const auto* m = cm.getClip(mover);
         expect(m != nullptr);

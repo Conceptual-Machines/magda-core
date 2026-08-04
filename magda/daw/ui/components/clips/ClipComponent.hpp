@@ -76,22 +76,19 @@ class ClipComponent : public juce::Component,
     /// where it is (alt-drag duplicates the clip rather than moving it).
     bool previewPlacementBeats(double tempo, double& startBeat, double& lengthBeats) const;
 
-    // Stretches of this clip that stand on a clip below it in the lane, in
+    // Stretches of this clip where a clip it overlaps is playing with it, in
     // timeline beats (#2003). Pushed by the panel because it takes the whole
-    // lane to work out, and drawn so a stack does not read as a single clip.
-    void setCoveringRanges(std::vector<BeatRange> ranges);
+    // lane to work out, and hatched: an overlap that plays only the top clip
+    // looks exactly like a single clip, so only this one is marked.
+    void setBothPlayRanges(std::vector<BeatRange> ranges);
 
-    /// Crossfade joints that sit inside this clip rather than at an edge, so
-    /// its own fade overlays cannot draw them (#2003). Pushed by the panel.
-    void setInteriorCrossfadeRanges(std::vector<BeatRange> ranges);
+    /// Stretches where this clip stands on a clip that is still heard, so its
+    /// body has to let it be seen. Pushed by the panel.
+    void setShowThroughRanges(std::vector<BeatRange> ranges);
 
-    /// Pixel span of a covering range inside this clip.
+    /// Pixel span of a beat range inside this clip.
     juce::Rectangle<int> coveringRangeBounds(const BeatRange& range,
                                              juce::Rectangle<int> bounds) const;
-
-    /// This clip covers something and is set to let it be heard, so its body
-    /// must let it be seen too.
-    bool playsThroughOverlaps() const;
 
     // Marquee highlight state (visual hint during marquee drag)
     bool isMarqueeHighlighted() const {
@@ -143,8 +140,8 @@ class ClipComponent : public juce::Component,
     ClipId clipId_;
     TrackContentPanel* parentPanel_;
     bool isSelected_ = false;
-    std::vector<BeatRange> coveringRanges_;
-    std::vector<BeatRange> interiorCrossfadeRanges_;
+    std::vector<BeatRange> bothPlayRanges_;
+    std::vector<BeatRange> showThroughRanges_;
     bool isMarqueeHighlighted_ = false;
 
     // Interaction state
@@ -247,22 +244,34 @@ class ClipComponent : public juce::Component,
 
     // Effective fades for display/interaction (#1499): a crossfaded edge shows
     // the overlap-derived fade (what TE actually plays) instead of the stored
-    // fadeIn/fadeOut, which return once the clips are pulled apart.
-    struct EffectiveFades {
-        double fadeInSeconds = 0.0;
-        double fadeOutSeconds = 0.0;
-        std::optional<ClipManager::CrossfadeInfo> xfIn;   // crossfade covering the start edge
-        std::optional<ClipManager::CrossfadeInfo> xfOut;  // crossfade covering the end edge
-    };
+    // fadeIn/fadeOut, which return once the clips are pulled apart. The same
+    // call the engine syncs from, so the curve on screen is the one played.
+    using EffectiveFades = ClipManager::EffectiveFades;
     EffectiveFades computeEffectiveFades(const ClipInfo& clip) const;
+
+    /// What this clip has to draw about the clips it shares the lane with. The
+    /// panel pushes these for the committed lane; while a clip in the lane is
+    /// being dragged they are re-resolved against the previewed placements, so
+    /// they follow the mouse instead of updating on release (#2003).
+    struct OverlapDisplay {
+        std::vector<BeatRange> bothPlay;     // hatched
+        std::vector<BeatRange> showThrough;  // left translucent
+    };
+    OverlapDisplay overlapDisplay(const ClipInfo& clip) const;
 
     // The audio clip abutting/overlapping this clip's start (previous) or end
     // (next) that a crossfade could be created with. INVALID_CLIP_ID if none.
     ClipId findCrossfadeNeighbour(bool atStart) const;
 
     // Painting helpers
-    void paintAudioClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
-    void paintMidiClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
+    /// The clip's background, translucent where a clip below it is still heard.
+    void paintClipBody(juce::Graphics& g, juce::Rectangle<int> bounds,
+                       juce::Rectangle<int> visibleBounds, juce::Colour bgColour,
+                       const std::vector<BeatRange>& showThrough);
+    void paintAudioClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds,
+                        const std::vector<BeatRange>& showThrough);
+    void paintMidiClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds,
+                       const std::vector<BeatRange>& showThrough);
     void paintMidiNotes(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> noteArea,
                         juce::Colour noteColour);
     // Chord-track clips render their chordAnnotations as named blocks instead of

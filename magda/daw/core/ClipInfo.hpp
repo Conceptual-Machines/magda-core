@@ -650,10 +650,9 @@ struct ClipInfo {
     // you can see and right-click is the one on top, but it is the one
     // underneath that would go quiet, and both gestures mean the same thing.
     //
-    // Applies to audio and MIDI alike, which autoCrossfade cannot: a fade needs
-    // two waveforms, while "do not silence this" is just as meaningful for a
-    // MIDI part. For audio the two combine — a crossfade joint already plays
-    // both sides, this is the same answer without the fade.
+    // Applies to audio and MIDI alike, and it is the ONLY thing that decides:
+    // autoCrossfade shapes an overlap that already plays both, and cannot keep
+    // a clip alive on its own.
     bool overlapPlaysBoth = false;
 
     // Stacking order within a track (#2003). Higher sits on top: it draws over
@@ -819,7 +818,10 @@ struct ClipInfo {
     float gainDB = 0.0f;    // Gain: 0 to +24 dB (inspector only)
     float pan = 0.0f;       // -1.0 to 1.0
 
-    // Crossfade with the neighbouring clip on the same track. Crossfades
+    // Fade this clip's edge across an overlap with the neighbouring clip on the
+    // same track, instead of cutting. It shapes an overlap that plays both
+    // (overlapPlaysBoth) and does not create one: fading into a clip that has
+    // been silenced under this one is a dip, not a fade (#2003). Crossfades
     // BETWEEN events inside one clip are an event-level concern.
     bool autoCrossfade = false;
 

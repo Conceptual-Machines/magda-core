@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 #include "../project/ProjectManager.hpp"
+#include "ClipOcclusion.hpp"
 #include "ClipOperations.hpp"
 #include "CompSectionMath.hpp"
 #include "Config.hpp"
@@ -2327,6 +2328,10 @@ void ClipManager::setLaunchFadeSamples(ClipId clipId, int samples) {
 // clip, so an overlap can never degenerate into full containment.
 static constexpr double kCrossfadeEdgeGuardBeats = 1e-3;
 
+// Placements land on exact beats often enough that "starts at the same beat"
+// has to be a real case, not a float coincidence.
+static constexpr double kBeatTol = 1e-6;
+
 namespace {
 
 /// Both crossfade queries answer the same question against whatever set of
@@ -2339,18 +2344,31 @@ std::optional<ClipManager::CrossfadeInfo> crossfadeAtStartOf(
     const double startB = clip.placement.startBeat;
     const double endB = clip.placement.endBeat();
 
-    // The previous clip whose tail reaches furthest into this clip.
+    // The clip on the LEFT of this one: it starts first and its tail reaches
+    // over this clip's start edge, so this clip is the one arriving and draws
+    // the fade IN. One fade per clip per overlap — the pair's other curve
+    // belongs to the other clip (#2003).
+    //
+    // Its own AUTO-XFADE is not asked for: the flag is this clip's promise
+    // about its own edge, so a clip fades into a neighbour that hard-cuts just
+    // the same. What IS asked for is that the overlap plays both — fading into
+    // a clip that has been silenced under this one is a dip, not a fade.
     const ClipInfo* best = nullptr;
     for (const auto* other : lane) {
         if (other->id == clip.id || other->view != ClipView::Arrangement ||
-            other->trackId != clip.trackId || !other->isAudio() || !other->autoCrossfade)
+            other->trackId != clip.trackId || !other->isAudio() ||
+            !overlapPlaysThrough(clip, *other))
             continue;
         const double oStart = other->placement.startBeat;
         const double oEnd = other->placement.endBeat();
-        // Reaches over this clip's start edge. It may also run past its end —
-        // a clip dropped wholly inside another still crossfades with it, over
-        // everything they share.
-        if (oStart < startB && oEnd > startB) {
+        if (!(oEnd > startB))
+            continue;
+        // Starts before this one — or on the very same beat, where the clip on
+        // top is the one arriving.
+        const bool startsFirst =
+            oStart < startB - kBeatTol ||
+            (std::abs(oStart - startB) <= kBeatTol && clipSitsBelow(*other, clip));
+        if (startsFirst) {
             if (!best || oEnd > best->placement.endBeat())
                 best = other;
         }
@@ -2369,22 +2387,32 @@ std::optional<ClipManager::CrossfadeInfo> crossfadeAtEndOf(
     const double startB = clip.placement.startBeat;
     const double endB = clip.placement.endBeat();
 
-    // The next clip whose head reaches furthest back into this clip.
+    // The mirror: the clip on the RIGHT, arriving over this clip's end edge, so
+    // this clip is the one leaving and draws the fade OUT. A clip that swallows
+    // another is not on its right — it started first — so a swallowed clip
+    // fades in and holds, rather than fading in and back out of itself.
     const ClipInfo* best = nullptr;
     for (const auto* other : lane) {
         if (other->id == clip.id || other->view != ClipView::Arrangement ||
-            other->trackId != clip.trackId || !other->isAudio() || !other->autoCrossfade)
+            other->trackId != clip.trackId || !other->isAudio() ||
+            !overlapPlaysThrough(clip, *other))
             continue;
         const double oStart = other->placement.startBeat;
         const double oEnd = other->placement.endBeat();
-        if (oStart > startB && oStart < endB && oEnd > endB) {
+        if (!(oStart < endB) ||
+            !(oStart > startB + kBeatTol ||
+              (std::abs(oStart - startB) <= kBeatTol && clipSitsBelow(clip, *other))))
+            continue;
+        // Runs past this clip's end, or ends on the very same beat.
+        if (oEnd > endB - kBeatTol) {
             if (!best || oStart < best->placement.startBeat)
                 best = other;
         }
     }
     if (!best)
         return std::nullopt;
-    return ClipManager::CrossfadeInfo{clip.id, best->id, best->placement.startBeat, endB};
+    return ClipManager::CrossfadeInfo{clip.id, best->id,
+                                      std::max(best->placement.startBeat, startB), endB};
 }
 
 std::vector<const ClipInfo*> laneView(const std::vector<ClipInfo>& clips) {
@@ -2413,6 +2441,74 @@ std::optional<ClipManager::CrossfadeInfo> ClipManager::crossfadeAtEndIn(
             return crossfadeAtEndOf(clip, laneView(lane));
     }
     return std::nullopt;
+}
+
+std::vector<ClipInfo> ClipManager::arrangementLane(TrackId trackId) const {
+    std::vector<ClipInfo> lane;
+    for (ClipId id : getClipsOnTrack(trackId, ClipView::Arrangement)) {
+        if (const auto* clip = getClip(id))
+            lane.push_back(*clip);
+    }
+    return lane;
+}
+
+namespace {
+
+ClipManager::EffectiveFades effectiveFadesOf(const ClipInfo& clip,
+                                             const std::vector<const ClipInfo*>& lane, double bpm) {
+    ClipManager::EffectiveFades fades;
+    if (!clip.isAudio())
+        return fades;
+
+    fades.fadeInSeconds = audioEventRef(clip).fadeInSeconds;
+    fades.fadeOutSeconds = audioEventRef(clip).fadeOutSeconds;
+    if (clip.view != ClipView::Arrangement || !isValidBpm(bpm))
+        return fades;
+
+    const double secondsPerBeat = 60.0 / bpm;
+    if (auto xf = crossfadeAtStartOf(clip, lane)) {
+        fades.xfIn = xf;
+        fades.fadeInSeconds = xf->lengthBeats() * secondsPerBeat;
+    }
+    if (auto xf = crossfadeAtEndOf(clip, lane)) {
+        fades.xfOut = xf;
+        fades.fadeOutSeconds = xf->lengthBeats() * secondsPerBeat;
+    }
+
+    // A short clip with a neighbour on each side can be asked for a fade-in and
+    // a fade-out that together outrun it. Scale them to fit, the same clamp TE
+    // applies, so the curve drawn is the curve played.
+    const double lengthSeconds = clip.placement.lengthBeats * secondsPerBeat;
+    const double total = fades.fadeInSeconds + fades.fadeOutSeconds;
+    if (lengthSeconds > 0.0 && total > lengthSeconds) {
+        const double scale = lengthSeconds / total;
+        fades.fadeInSeconds *= scale;
+        fades.fadeOutSeconds *= scale;
+    }
+
+    return fades;
+}
+
+}  // namespace
+
+ClipManager::EffectiveFades ClipManager::effectiveFadesIn(const std::vector<ClipInfo>& lane,
+                                                          ClipId clipId, double bpm) {
+    for (const auto& clip : lane) {
+        if (clip.id == clipId)
+            return effectiveFadesOf(clip, laneView(lane), bpm);
+    }
+    return {};
+}
+
+ClipManager::EffectiveFades ClipManager::getEffectiveFades(ClipId clipId, double bpm) const {
+    const auto* clip = getClip(clipId);
+    if (clip == nullptr)
+        return {};
+
+    std::vector<const ClipInfo*> lane;
+    for (const auto& [cid, other] : clips_)
+        lane.push_back(&other);
+    return effectiveFadesOf(*clip, lane, bpm);
 }
 
 std::optional<ClipManager::CrossfadeInfo> ClipManager::getCrossfadeAtStart(ClipId clipId) const {
@@ -2539,6 +2635,13 @@ bool ClipManager::setCrossfadeRegionBeats(ClipId leftId, ClipId rightId, double 
     const double rightStart = right->placement.startBeat;
     const double rightEnd = right->placement.endBeat();
 
+    // One clip already inside the other is not a region this can edit: the
+    // overlap has no edge of either clip to move, so the resize below would
+    // pull the containing clip in over its own material. A swallowed clip
+    // fades over the whole of what they share and that is not draggable (#2003).
+    if (leftEnd >= rightEnd)
+        return false;
+
     // Left clip's new right edge: keep it strictly inside the right clip
     // (no containment), keep the left clip at least minimum length, and don't
     // outrun the left clip's source tail.
@@ -2571,16 +2674,21 @@ bool ClipManager::setCrossfadeRegionBeats(ClipId leftId, ClipId rightId, double 
         ClipOperations::resizeContainerFromLeft(*right, (rightEnd - newStart) * 60.0 / bpm, bpm);
     }
 
-    // A non-empty overlap is a crossfade: both clips need the flag so TE
-    // fades both edges.
+    // Asking for a crossfade here is asking for both clips to be heard over the
+    // overlap, so it sets both switches: the fade on each edge, and the
+    // play-through without which the overlap would silence one side and leave
+    // the fade with nothing to fade into (#2003).
     if (newEnd - newStart > 0.0) {
-        if (!left->autoCrossfade) {
-            left->autoCrossfade = true;
-            leftChanged = true;
-        }
-        if (!right->autoCrossfade) {
-            right->autoCrossfade = true;
-            rightChanged = true;
+        for (auto* clip : {left, right}) {
+            bool& changed = (clip == left) ? leftChanged : rightChanged;
+            if (!clip->autoCrossfade) {
+                clip->autoCrossfade = true;
+                changed = true;
+            }
+            if (!clip->overlapPlaysBoth) {
+                clip->overlapPlaysBoth = true;
+                changed = true;
+            }
         }
     }
 
@@ -3040,126 +3148,18 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
 
     // Every path that places or moves an arrangement clip lands here, so this
     // is where "the clip you touched last is on top" gets decided (#2003).
+    // That is now the whole job: nothing on the lane is trimmed, split or
+    // deleted to make room. A clip keeps its placement and its content whatever
+    // lands on it, computeAudibleSpans decides what each of them plays, and
+    // moving the covering clip away brings the covered part back on its own.
+    //
+    // The one edit that survived until now was splitting an audio clip a drop
+    // landed inside, into head / covered slice / tail. That existed because the
+    // Tracktion mirror holds one engine clip per model clip and cannot express
+    // a hole in the middle of one. Playback moves to the native engine, whose
+    // clip snapshot carries the silenced ranges directly (#1890), so the split
+    // has nothing left to buy and the lane keeps whole clips in every case.
     bringToFrontOfStack(*dominant);
-
-    const double dStartB = dominant->placement.startBeat;
-    const double dEndB = dStartB + dominant->placement.lengthBeats;
-    if (!(dEndB > dStartB))
-        return;
-    const TrackId trackId = dominant->trackId;
-    const double bpm = currentProjectTempoOrDefault();
-
-    // An auto-crossfade audio dominant turns partial overlaps with other audio
-    // clips into crossfade joints (#1499). Capture the flag up front — the
-    // dominant pointer is not safe to use once clips_ mutates.
-    const bool dominantWantsCrossfade = dominant->isAudio() && dominant->autoCrossfade;
-    const bool dominantPlaysThrough = dominant->overlapPlaysBoth;
-
-    // Covered clips are no longer trimmed or deleted (#2003). A clip keeps its
-    // placement and its content whatever lands on top of it, and computeAudibleSpans
-    // decides what it plays, so pulling the covering clip away brings the
-    // covered part back on its own.
-    //
-    // The exception is an AUDIO clip the dominant lands inside. That leaves the
-    // lower clip with a head and a tail, which is two spans, and the engine
-    // mirror holds one clip per clip — so that case still splits, into three
-    // pieces rather than two: the slice under the dominant is kept as a clip of
-    // its own so no material is lost, and occlusion silences it for exactly as
-    // long as the dominant sits on top.
-    //
-    // MIDI clips are never split. Their notes are written to the engine one by
-    // one, so a hole costs nothing but leaving out the notes inside it — the
-    // part stays a single clip with every note still on it and still editable
-    // in the piano roll, which splitting into three took away.
-    std::vector<ClipId> toCrossfade;
-    std::vector<ClipId> toSplitAround;
-
-    for (const auto& [cid, clip] : clips_) {
-        if (clip.view != ClipView::Arrangement || clip.id == dominantClipId ||
-            clip.trackId != trackId) {
-            continue;
-        }
-
-        const double cStartB = clip.placement.startBeat;
-        const double cEndB = cStartB + clip.placement.lengthBeats;
-
-        // Beat-domain — the seconds mirrors can be stale after BPM changes or
-        // beat-mode edits, so never use them here.
-        if (cStartB >= dEndB || cEndB <= dStartB) {
-            continue;
-        }
-
-        if (cStartB < dStartB && cEndB > dEndB) {
-            // Audio has to split — samples cannot be left out of a rendered
-            // span. A LOOPED MIDI clip splits too, because there the split is
-            // pure windowing: both halves keep every note and only the loop
-            // phase differs, and a hole in a repeating pattern cannot be
-            // expressed in the single note list the engine gets. A plain MIDI
-            // clip does neither: it keeps its notes and plays around the hole.
-            const bool splitIsLossless =
-                clip.isAudio() || (clip.loopEnabled && clip.loopLengthBeats > 0.0);
-            // Playing through leaves no hole to carve in the first place, so
-            // the lane keeps whole clips.
-            const bool needsHole = !clip.overlapPlaysBoth && !dominantPlaysThrough;
-            if (splitIsLossless && needsHole)
-                toSplitAround.push_back(clip.id);
-        } else if (dominantWantsCrossfade && clip.isAudio() && !clip.autoCrossfade) {
-            // Partial overlaps between audio clips play as crossfades, and TE
-            // only fades both sides when both carry the flag. Containment is
-            // not a joint: it is a cover, and occlusion handles it.
-            const bool partialFromLeft = cStartB < dStartB && cEndB < dEndB;
-            const bool partialFromRight = cStartB > dStartB && cEndB > dEndB;
-            if (partialFromLeft || partialFromRight)
-                toCrossfade.push_back(clip.id);
-        }
-    }
-
-    for (auto id : toSplitAround) {
-        auto* original = getClip(id);
-        if (!original)
-            continue;
-        const auto originalName = original->name;
-
-        // Split at D's start: id keeps [cStart,dStart], rightId = [dStart,cEnd].
-        const ClipId rightId = splitClipAtBeat(id, dStartB, bpm);
-        if (rightId == INVALID_CLIP_ID)
-            continue;
-        // Split the remainder at D's end: rightId keeps [dStart,dEnd] (the slice
-        // under D), tailId = [dEnd,cEnd]. This split can only fail when
-        // dEnd >= cEnd (the tail is zero-length within float tolerance), since
-        // rightId spans exactly [dStart,cEnd] and the branch guarantees
-        // dEnd < cEnd; a failed split just means rightId IS the whole covered
-        // remainder.
-        //
-        // The covered slice is kept, not deleted. Deleting it took the notes in
-        // that span with it — splitClipAtBeat partitions notes between the
-        // halves — and left a gap in the waveform that no amount of dragging an
-        // edge could undo, which is the hole this whole issue is about (#2003).
-        // Kept, it is simply a covered clip: occlusion silences it while D is on
-        // top of it, and moving D away gives the material back.
-        const ClipId tailId = splitClipAtBeat(rightId, dEndB, bpm);
-
-        // splitClipAtBeat appends " L"/" R" suffixes; restore the original name
-        // on all three pieces so the seams do not rename the material.
-        if (auto* left = getClip(id))
-            left->name = originalName;
-        if (auto* covered = getClip(rightId))
-            covered->name = originalName;
-        if (tailId != INVALID_CLIP_ID)
-            if (auto* tail = getClip(tailId))
-                tail->name = originalName;
-    }
-
-    // Kept overlaps become crossfades: the neighbour needs the flag too so TE
-    // fades both sides (the dominant already has it).
-    for (auto id : toCrossfade) {
-        if (auto* clip = getClip(id)) {
-            if (!clip->autoCrossfade) {
-                clip->autoCrossfade = true;
-                notifyClipPropertyChanged(id);
-            }
-        }
-    }
 }
 
 // ============================================================================
