@@ -1,10 +1,16 @@
 #pragma once
 
 #include <memory>
+#include <set>
 #include <unordered_map>
+#include <vector>
 
 #include "exec/PlanBindings.hpp"
 #include "plan/RenderPlan.hpp"
+
+namespace magda {
+struct TrackInfo;
+}
 
 /**
  * @file RuntimeStateStore.hpp
@@ -52,6 +58,31 @@ class RuntimeStateFactory {
 };
 
 /**
+ * @brief Model IDs that still exist, whatever the current plan happens to use.
+ *
+ * Eviction is model-aware rather than plan-aware, and the difference is not
+ * academic: bypass and chain power are structural, so a bypassed device
+ * contributes no ops at all. Keyed on the plan, switching chain power off would
+ * tear down every plugin on the track and switching it back on would rebuild
+ * them, losing tails, plugin state and load time on a gesture the user expects
+ * to be free. Plan-named means playing, model-named means kept, and only
+ * deletion from the model destroys anything.
+ */
+struct RuntimeStateIds {
+    std::set<DeviceId> devices;
+    std::set<TrackId> tracks;
+};
+
+/**
+ * @brief Every device and track the model holds, nested racks included.
+ *
+ * Deliberately not the compiler's walk: that one answers what plays, this one
+ * answers what exists, and the gap between the two is exactly what gets kept.
+ */
+RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
+                                       const TrackInfo& master);
+
+/**
  * @brief The runtime objects behind a plan's leaf ops, owned across swaps.
  */
 class RuntimeStateStore {
@@ -67,13 +98,16 @@ class RuntimeStateStore {
     PlanBindings realise(const RenderPlan& plan);
 
     /**
-     * @brief Drop everything @p live does not name, and say how much went.
+     * @brief Destroy what the model no longer holds, and say how much went.
      *
-     * Call only after the swap has published @p live. Before that, the objects
-     * being dropped are still reachable from the plan on the audio thread, and
-     * this is where their destructors run.
+     * Objects the model still names are kept whether the plan uses them or
+     * not: that is what makes bypass, chain power and disarming free.
+     *
+     * Call only after the swap. Before it, an object about to be destroyed can
+     * still be reached from the plan the audio thread is rendering, and this is
+     * where its destructor runs.
      */
-    std::size_t retireUnused(const RenderPlan& live);
+    std::size_t releaseDeleted(const RuntimeStateIds& live);
 
     /// Objects currently owned, for tests and diagnostics.
     std::size_t size() const;

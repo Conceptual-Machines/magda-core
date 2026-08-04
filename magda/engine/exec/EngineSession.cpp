@@ -2,21 +2,22 @@
 
 namespace magda::engine {
 
-std::vector<std::string> EngineSession::publish(std::shared_ptr<const RenderPlan> plan,
-                                                const RenderContext& context) {
+EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> plan,
+                                             const RenderContext& context,
+                                             const RuntimeStateIds& modelIds) {
     if (plan == nullptr)
-        return {"no plan to publish"};
+        return {false, {"no plan to publish"}};
 
     auto prepared = std::make_shared<PreparedRender>();
     prepared->plan = std::move(plan);
 
-    // Runtime state is realised before the swap and retired after it. Creating
-    // early costs nothing if the plan turns out not to prepare; destroying
-    // early would free something the audio thread is still rendering through.
+    // Realising early costs nothing if the plan turns out not to prepare: what
+    // it created stays in the store, where the next attempt reuses it and the
+    // model, not the plan, decides when it goes.
     const auto bindings = store_.realise(*prepared->plan);
     auto messages = prepared->executor.prepare(*prepared->plan, bindings, context);
     if (!prepared->executor.isPrepared())
-        return messages;
+        return {false, std::move(messages)};
 
     // The swap. This blocks until the audio thread is out of the block it was
     // in, then hands the previous epoch back here, where its destructor runs.
@@ -25,11 +26,11 @@ std::vector<std::string> EngineSession::publish(std::shared_ptr<const RenderPlan
     livePlan_ = published_.nonRealtimeAcquire()->plan;
     published_.nonRealtimeRelease();
 
-    // Safe only now: before the swap, everything about to be dropped was still
-    // reachable from the plan the audio thread was rendering.
-    store_.retireUnused(*livePlan_);
+    // Safe only now: before the swap, everything about to be destroyed was
+    // still reachable from the plan the audio thread was rendering.
+    store_.releaseDeleted(modelIds);
 
-    return messages;
+    return {true, std::move(messages)};
 }
 
 void EngineSession::publishValues(PlanValues values) {

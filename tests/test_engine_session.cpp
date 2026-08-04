@@ -22,6 +22,7 @@ using magda::engine::PlanValues;
 using magda::engine::RenderContext;
 using magda::engine::RenderPlan;
 using magda::engine::RuntimeStateFactory;
+using magda::engine::RuntimeStateIds;
 
 namespace {
 
@@ -138,6 +139,11 @@ RenderContext context() {
     return RenderContext{44100.0, kBlockSize, 2};
 }
 
+/// What the model holds, which is what decides when runtime state is destroyed.
+RuntimeStateIds modelIds(const std::vector<TrackInfo>& tracks) {
+    return magda::engine::collectRuntimeStateIds(tracks, makeMaster());
+}
+
 Catch::Approx approx(float value) {
     return Catch::Approx(value).margin(1e-5);
 }
@@ -172,10 +178,11 @@ TEST_CASE("Publishing a plan puts it on the audio thread", "[engine][session]") 
 
     const auto tracks = trackWithEffect(7);
     const auto plan = compile(tracks);
-    const auto messages = session.publish(plan, context());
+    const auto result = session.publish(plan, context(), modelIds(tracks));
     session.publishValues(resolve(*plan, tracks));
 
-    CHECK(messages.empty());
+    CHECK(result.published);
+    CHECK(result.messages.empty());
     CHECK(session.livePlan() == plan);
 
     juce::AudioBuffer<float> output(2, kBlockSize);
@@ -191,7 +198,7 @@ TEST_CASE("A swap carries runtime state that the new plan still names", "[engine
 
     const auto first = trackWithEffect(7);
     const auto firstPlan = compile(first);
-    session.publish(firstPlan, context());
+    session.publish(firstPlan, context(), modelIds(first));
     session.publishValues(resolve(*firstPlan, first));
 
     auto* device = factory.devicesById[7];
@@ -205,7 +212,7 @@ TEST_CASE("A swap carries runtime state that the new plan still names", "[engine
     tracks[0].chain.fxChainElements.insert(tracks[0].chain.fxChainElements.begin(),
                                            makeDeviceElement(makeEffect(8)));
     const auto secondPlan = compile(tracks);
-    session.publish(secondPlan, context());
+    session.publish(secondPlan, context(), modelIds(tracks));
     session.publishValues(resolve(*secondPlan, tracks));
 
     CHECK(ledger.devicesCreated == 2);
@@ -224,7 +231,7 @@ TEST_CASE("What a swap drops is destroyed on the publishing thread", "[engine][s
 
     const auto withDevice = trackWithEffect(7);
     const auto firstPlan = compile(withDevice);
-    session.publish(firstPlan, context());
+    session.publish(firstPlan, context(), modelIds(withDevice));
     session.publishValues(resolve(*firstPlan, withDevice));
 
     juce::AudioBuffer<float> output(2, kBlockSize);
@@ -233,13 +240,63 @@ TEST_CASE("What a swap drops is destroyed on the publishing thread", "[engine][s
 
     const std::vector<TrackInfo> withoutDevice{makeTrack(1)};
     const auto secondPlan = compile(withoutDevice);
-    session.publish(secondPlan, context());
+    session.publish(secondPlan, context(), modelIds(withoutDevice));
 
     // Gone, and gone here: the audio thread neither waited for it nor ran its
     // destructor.
     CHECK(ledger.devicesDestroyed == 1);
     CHECK(ledger.lastDestroyingThread.load() == std::this_thread::get_id());
     CHECK(session.runtimeObjectCount() == 1);  // the clip source is still named
+}
+
+TEST_CASE("Bypass and chain power keep the device, deletion destroys it", "[engine][session]") {
+    // Both are structural: a bypassed device contributes no ops, and neither
+    // does anything on a chain with the power off. Keyed on the plan, either
+    // gesture would tear the plugin down and rebuild it on the way back,
+    // losing its tail and its state for what the user reads as a toggle.
+    Ledger ledger;
+    TestFactory factory(ledger);
+    EngineSession session(factory);
+
+    auto tracks = trackWithEffect(7);
+    const auto first = compile(tracks);
+    session.publish(first, context(), modelIds(tracks));
+    auto* device = factory.devicesById[7];
+    REQUIRE(device != nullptr);
+
+    SECTION("bypassed") {
+        auto bypassed = tracks;
+        getDevice(bypassed[0].chain.fxChainElements[0]).bypassed = true;
+        session.publish(compile(bypassed), context(), modelIds(bypassed));
+
+        CHECK(ledger.devicesDestroyed == 0);
+        CHECK(factory.devicesById[7] == device);
+
+        session.publish(compile(tracks), context(), modelIds(tracks));
+        CHECK(ledger.devicesCreated == 1);
+        CHECK(factory.devicesById[7] == device);
+    }
+
+    SECTION("chain power off") {
+        auto powered = tracks;
+        powered[0].chain.enabled = false;
+        session.publish(compile(powered), context(), modelIds(powered));
+
+        CHECK(ledger.devicesDestroyed == 0);
+
+        powered[0].chain.enabled = true;
+        session.publish(compile(powered), context(), modelIds(powered));
+        CHECK(ledger.devicesCreated == 1);
+        CHECK(factory.devicesById[7] == device);
+    }
+
+    SECTION("deleted from the model") {
+        const std::vector<TrackInfo> without{makeTrack(1)};
+        session.publish(compile(without), context(), modelIds(without));
+
+        CHECK(ledger.devicesDestroyed == 1);
+        CHECK(ledger.lastDestroyingThread.load() == std::this_thread::get_id());
+    }
 }
 
 TEST_CASE("A plan that does not prepare leaves the live one playing", "[engine][session]") {
@@ -249,7 +306,7 @@ TEST_CASE("A plan that does not prepare leaves the live one playing", "[engine][
 
     const auto tracks = trackWithEffect(7);
     const auto good = compile(tracks);
-    session.publish(good, context());
+    session.publish(good, context(), modelIds(tracks));
     session.publishValues(resolve(*good, tracks));
 
     auto broken = std::make_shared<RenderPlan>();
@@ -259,14 +316,47 @@ TEST_CASE("A plan that does not prepare leaves the live one playing", "[engine][
     op.outputs = {magda::engine::SignalKind::Audio};
     broken->ops.push_back(op);
 
-    const auto messages = session.publish(broken, context());
+    const auto refused = session.publish(broken, context(), modelIds(tracks));
 
-    REQUIRE_FALSE(messages.empty());
+    CHECK_FALSE(refused.published);
+    REQUIRE_FALSE(refused.messages.empty());
     CHECK(session.livePlan() == good);
 
     juce::AudioBuffer<float> output(2, kBlockSize);
     session.process(BlockInfo{kBlockSize, 0, true}, output);
     CHECK(output.getSample(0, 0) == approx(0.5f));
+}
+
+TEST_CASE("A first plan that is refused leaves a session with nothing live", "[engine][session]") {
+    Ledger ledger;
+    TestFactory factory(ledger);
+    EngineSession session(factory);
+
+    auto broken = std::make_shared<RenderPlan>();
+    magda::engine::PlanOp op;
+    op.kind = magda::engine::OpKind::Gain;
+    op.inputs = {magda::engine::PortRef{4, 0}};
+    op.outputs = {magda::engine::SignalKind::Audio};
+    broken->ops.push_back(op);
+
+    const auto tracks = trackWithEffect(7);
+    const auto refused = session.publish(broken, context(), modelIds(tracks));
+
+    CHECK_FALSE(refused.published);
+    CHECK(session.livePlan() == nullptr);
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    CHECK(output.getSample(0, 0) == approx(0.0f));
+
+    // This one named nothing, so nothing was created for it. What a refused
+    // plan does create stays for the retry, and leaves when the model stops
+    // naming it rather than when a plan stops using it.
+    CHECK(session.runtimeObjectCount() == 0);
+
+    const auto good = compile(tracks);
+    CHECK(session.publish(good, context(), modelIds(tracks)).published);
+    CHECK(session.livePlan() == good);
 }
 
 TEST_CASE("Values published for the old plan are not applied to the new one", "[engine][session]") {
@@ -277,7 +367,7 @@ TEST_CASE("Values published for the old plan are not applied to the new one", "[
     auto tracks = trackWithEffect(7);
     tracks[0].volume = 0.5f;
     const auto firstPlan = compile(tracks);
-    session.publish(firstPlan, context());
+    session.publish(firstPlan, context(), modelIds(tracks));
     session.publishValues(resolve(*firstPlan, tracks));
 
     juce::AudioBuffer<float> output(2, kBlockSize);
@@ -289,7 +379,7 @@ TEST_CASE("Values published for the old plan are not applied to the new one", "[
     auto replaced = tracks;
     replaced[0].chain.fxChainElements[0] = makeDeviceElement(makeEffect(8));
     const auto secondPlan = compile(replaced);
-    session.publish(secondPlan, context());
+    session.publish(secondPlan, context(), modelIds(replaced));
 
     session.process(BlockInfo{kBlockSize, 0, true}, output);
     CHECK(output.getSample(0, 0) == approx(0.5f));  // unity fader, device gain only
@@ -306,7 +396,7 @@ TEST_CASE("Swapping under a running audio thread never tears", "[engine][session
 
     auto tracks = trackWithEffect(7);
     const auto firstPlan = compile(tracks);
-    session.publish(firstPlan, context());
+    session.publish(firstPlan, context(), modelIds(tracks));
     session.publishValues(resolve(*firstPlan, tracks));
 
     std::atomic<bool> running{true};
@@ -334,11 +424,13 @@ TEST_CASE("Swapping under a running audio thread never tears", "[engine][session
         twoDevices[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(8)));
 
         const auto wide = compile(twoDevices);
-        session.publish(wide, context());
+        session.publish(wide, context(), modelIds(twoDevices));
         session.publishValues(resolve(*wide, twoDevices));
 
+        // Device 8 leaves the plan and the model together, so it is destroyed
+        // rather than kept dormant.
         const auto narrow = compile(tracks);
-        session.publish(narrow, context());
+        session.publish(narrow, context(), modelIds(tracks));
         session.publishValues(resolve(*narrow, tracks));
     }
 

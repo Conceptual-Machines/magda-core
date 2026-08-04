@@ -2,6 +2,9 @@
 
 #include <set>
 
+#include "core/RackInfo.hpp"
+#include "core/TrackInfo.hpp"
+
 namespace magda::engine {
 namespace {
 
@@ -20,7 +23,25 @@ auto* realiseOne(Map& map, typename Map::key_type id, Create&& create) {
     return map.emplace(id, std::move(created)).first->second.get();
 }
 
-/// Model IDs of one kind that the plan names.
+void collectDeviceIds(const std::vector<ChainElement>& elements, std::set<DeviceId>& out);
+
+void collectDeviceIds(const std::vector<PostFxChainElement>& elements, std::set<DeviceId>& out) {
+    for (const auto& element : elements)
+        out.insert(element.device.id);
+}
+
+void collectDeviceIds(const std::vector<ChainElement>& elements, std::set<DeviceId>& out) {
+    for (const auto& element : elements) {
+        if (isDevice(element)) {
+            out.insert(getDevice(element).id);
+        } else if (isRack(element)) {
+            for (const auto& chain : getRack(element).chains)
+                collectDeviceIds(chain.elements, out);
+        }
+    }
+}
+
+/// Entries whose key nothing in `named` holds any more.
 template <typename Map, typename Ids> std::size_t eraseUnnamed(Map& map, const Ids& named) {
     std::size_t removed = 0;
     for (auto entry = map.begin(); entry != map.end();) {
@@ -86,38 +107,30 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan) {
     return bindings;
 }
 
-std::size_t RuntimeStateStore::retireUnused(const RenderPlan& live) {
-    std::set<DeviceId> devices;
-    std::set<TrackId> clipAudio;
-    std::set<TrackId> clipMidi;
-    std::set<TrackId> audioInputs;
-    std::set<TrackId> midiInputs;
+std::size_t RuntimeStateStore::releaseDeleted(const RuntimeStateIds& live) {
+    return eraseUnnamed(devices_, live.devices) + eraseUnnamed(clipAudio_, live.tracks) +
+           eraseUnnamed(clipMidi_, live.tracks) + eraseUnnamed(audioInputs_, live.tracks) +
+           eraseUnnamed(midiInputs_, live.tracks);
+}
 
-    for (const auto& op : live.ops) {
-        switch (op.kind) {
-            case OpKind::Device:
-                devices.insert(op.key.deviceId);
-                break;
-            case OpKind::ClipAudio:
-                clipAudio.insert(op.key.trackId);
-                break;
-            case OpKind::ClipMidi:
-                clipMidi.insert(op.key.trackId);
-                break;
-            case OpKind::AudioInput:
-                audioInputs.insert(op.key.trackId);
-                break;
-            case OpKind::MidiInput:
-                midiInputs.insert(op.key.trackId);
-                break;
-            default:
-                break;
-        }
-    }
+RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
+                                       const TrackInfo& master) {
+    RuntimeStateIds ids;
 
-    return eraseUnnamed(devices_, devices) + eraseUnnamed(clipAudio_, clipAudio) +
-           eraseUnnamed(clipMidi_, clipMidi) + eraseUnnamed(audioInputs_, audioInputs) +
-           eraseUnnamed(midiInputs_, midiInputs);
+    const auto collectTrack = [&ids](const TrackInfo& track) {
+        ids.tracks.insert(track.id);
+        // Every section, and bypass is not consulted anywhere here: a bypassed
+        // device is still a device the user owns.
+        collectDeviceIds(track.chain.fxChainElements, ids.devices);
+        collectDeviceIds(track.chain.postFxChainElements, ids.devices);
+        collectDeviceIds(track.chain.mixerAnalysisElements, ids.devices);
+    };
+
+    for (const auto& track : tracks)
+        collectTrack(track);
+    collectTrack(master);
+
+    return ids;
 }
 
 std::size_t RuntimeStateStore::size() const {

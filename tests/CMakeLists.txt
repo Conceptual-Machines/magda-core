@@ -267,6 +267,13 @@ target_link_libraries(magda_tests
 
 if(MAGDA_BUILD_NATIVE_ENGINE)
     target_link_libraries(magda_tests PRIVATE magda_engine)
+
+    # Not a unit test and not registered with CTest: it is the plan swap run
+    # under load, built to be run by hand under ThreadSanitizer. The suite
+    # covers the same swap in-process; this exists so the sanitizer verdict
+    # stays reproducible. See the file header for the invocation.
+    add_executable(magda_engine_swap_stress engine_swap_stress.cpp)
+    target_link_libraries(magda_engine_swap_stress PRIVATE magda_engine magda_daw)
 endif()
 
 # Include directories
