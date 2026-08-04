@@ -487,8 +487,10 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     if (rack.chains.empty()) {
         const OpKey faderKey{site.trackId,      rack.id,           INVALID_CHAIN_ID,
                              INVALID_DEVICE_ID, OpRole::RackFader, 0};
-        return {PortRef{addOp(OpKind::Fader, faderKey, {signal.audio}, {SignalKind::Audio}), 0},
-                signal.midi};
+        return {
+            PortRef{addOp(OpKind::Fader, faderKey, {signal.audio, noInput()}, {SignalKind::Audio}),
+                    0},
+            signal.midi};
     }
 
     std::vector<PortRef> chainAudio;
@@ -511,16 +513,30 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
         if (!chain.bypassed)
             chainSignal = emitElements(chain.elements, chainSite, chainSignal);
 
-        const OpKey faderKey{site.trackId,           rack.id, chain.id, INVALID_DEVICE_ID,
-                             OpRole::RackChainFader, 0};
-        const PortRef chainOut{
-            addOp(OpKind::Fader, faderKey, {chainSignal.audio}, {SignalKind::Audio}), 0};
-
-        chainAudio.push_back(chainOut);
         // A chain that leaves the MIDI stream untouched is transparent to it;
         // only chains that generate MIDI contribute to the rack's MIDI output.
-        if (chainSignal.midi.valid() && !(chainSignal.midi == signal.midi))
-            chainMidi.push_back(chainSignal.midi);
+        const auto generatesMidi = chainSignal.midi.valid() && !(chainSignal.midi == signal.midi);
+
+        // Both signals leave the chain through its fader, which is what makes
+        // the chain switchable as a unit: mute and a sibling's solo take the
+        // whole chain out of the mix in the current engine, and audio and MIDI
+        // have to go together. Routing MIDI around the fader would leave
+        // whatever a rack nested in this chain generates with no gate at all,
+        // because those ops key on the nested rack rather than on this chain.
+        const OpKey faderKey{site.trackId,           rack.id, chain.id, INVALID_DEVICE_ID,
+                             OpRole::RackChainFader, 0};
+        std::vector<SignalKind> faderOutputs{SignalKind::Audio};
+        if (generatesMidi)
+            faderOutputs.push_back(SignalKind::Midi);
+
+        const auto faderOp =
+            addOp(OpKind::Fader, faderKey,
+                  {chainSignal.audio, generatesMidi ? chainSignal.midi : noInput()},
+                  std::move(faderOutputs));
+
+        chainAudio.push_back(PortRef{faderOp, 0});
+        if (generatesMidi)
+            chainMidi.push_back(PortRef{faderOp, 1});
     }
 
     ChainSignal out;
@@ -530,7 +546,7 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
 
     const OpKey faderKey{site.trackId,      rack.id,           INVALID_CHAIN_ID,
                          INVALID_DEVICE_ID, OpRole::RackFader, 0};
-    out.audio = PortRef{addOp(OpKind::Fader, faderKey, {mixed}, {SignalKind::Audio}), 0};
+    out.audio = PortRef{addOp(OpKind::Fader, faderKey, {mixed, noInput()}, {SignalKind::Audio}), 0};
 
     if (chainMidi.empty()) {
         out.midi = signal.midi;
@@ -724,7 +740,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
 
     const OpKey faderKey{track.id,          INVALID_RACK_ID,    INVALID_CHAIN_ID,
                          INVALID_DEVICE_ID, OpRole::TrackFader, 0};
-    PortRef out{addOp(OpKind::Fader, faderKey, {signal.audio}, {SignalKind::Audio}), 0};
+    PortRef out{addOp(OpKind::Fader, faderKey, {signal.audio, noInput()}, {SignalKind::Audio}), 0};
 
     emitSends(false, out);
 

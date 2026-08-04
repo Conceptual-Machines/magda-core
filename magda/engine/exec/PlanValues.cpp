@@ -118,13 +118,9 @@ class Resolver {
     Resolver(const RenderPlan& plan, const std::vector<TrackInfo>& tracks, const TrackInfo& master)
         : plan_(plan), master_(master) {
         byId_.reserve(tracks.size() + 1);
-        order_.reserve(tracks.size() + 1);
-        for (const auto& track : tracks) {
+        for (const auto& track : tracks)
             byId_.emplace(track.id, &track);
-            order_.push_back(&track);
-        }
         byId_.emplace(master.id, &master);
-        order_.push_back(&master);
 
         anySolo_ = std::ranges::any_of(tracks, [](const TrackInfo& t) { return t.soloed; });
     }
@@ -152,16 +148,6 @@ class Resolver {
     bool isMutedIncludingParents(const TrackInfo& track, int depth = 0) const;
     bool isInheritedMute(const TrackInfo& track) const;
 
-    /// A chain that is out of the mix takes its own ops down with it, because
-    /// they carry its chain ID. A rack nested inside that chain does not: its
-    /// ops key on the nested rack, so nothing can tell they belong to a chain
-    /// that is off. Audio still lands silent, since all of it passes through
-    /// the chain's fader, but MIDI the nested rack generates reaches the rack
-    /// output that the current engine leaves disconnected. Reported rather than
-    /// approximated: closing it is an IR change, not a value one.
-    void reportNestedRacksInInactiveChains(const TrackInfo& track,
-                                           const std::vector<ChainElement>& elements);
-
     void report(OpId id, const std::string& what) {
         messages_.push_back("op " + std::to_string(id) + " (" +
                             toString(plan_.ops[static_cast<std::size_t>(id)].kind) + " " +
@@ -171,37 +157,9 @@ class Resolver {
     const RenderPlan& plan_;
     const TrackInfo& master_;
     std::unordered_map<TrackId, const TrackInfo*> byId_;
-    /// Tracks in compile order, so messages come out in a stable order however
-    /// the lookup table happens to be laid out.
-    std::vector<const TrackInfo*> order_;
     bool anySolo_ = false;
     std::vector<std::string> messages_;
 };
-
-void Resolver::reportNestedRacksInInactiveChains(const TrackInfo& track,
-                                                 const std::vector<ChainElement>& elements) {
-    for (const auto& element : elements) {
-        if (!isRack(element))
-            continue;
-
-        const auto& rack = getRack(element);
-        for (const auto& chain : rack.chains) {
-            reportNestedRacksInInactiveChains(track, chain.elements);
-
-            if (isChainActive(rack, chain))
-                continue;
-            if (!std::ranges::any_of(chain.elements,
-                                     [](const ChainElement& e) { return isRack(e); }))
-                continue;
-
-            messages_.push_back(
-                "rack " + std::to_string(rack.id) + " chain " + std::to_string(chain.id) +
-                " on track " + std::to_string(track.id) +
-                " is out of the mix, but the rack nested in it keys its ops on itself: MIDI that "
-                "rack generates still reaches the mix");
-        }
-    }
-}
 
 const DeviceInfo* Resolver::findDevice(const TrackInfo& track, const OpKey& key) const {
     if (key.rackId == INVALID_RACK_ID) {
@@ -385,9 +343,6 @@ std::vector<std::string> Resolver::run(PlanValues& values) {
 
     for (std::size_t i = 0; i < plan_.ops.size(); ++i)
         resolveOp(static_cast<OpId>(i), values.ops[i]);
-
-    for (const auto* track : order_)
-        reportNestedRacksInInactiveChains(*track, track->chain.fxChainElements);
 
     return std::move(messages_);
 }

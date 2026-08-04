@@ -315,13 +315,32 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
             }
 
             case OpKind::Gain:
-            case OpKind::Fader:
             case OpKind::SendTap: {
                 auto out = audioOut(id, 0, numSamples);
                 if (value.silent || !op.inputs[0].valid())
                     out.clear();
                 else
                     copyWithGain(out, audioIn(op.inputs[0], numSamples), value, numSamples);
+                break;
+            }
+
+            case OpKind::Fader: {
+                auto out = audioOut(id, 0, numSamples);
+                if (value.silent || !op.inputs[0].valid())
+                    out.clear();
+                else
+                    copyWithGain(out, audioIn(op.inputs[0], numSamples), value, numSamples);
+
+                // A rack chain's MIDI leaves through its fader too, so that one
+                // silent flag takes the whole chain out of the mix. Gain does
+                // not apply to it: there is no such thing as MIDI at half
+                // volume, only MIDI that is connected or is not.
+                if (op.outputs.size() > 1 && op.outputs[1] == SignalKind::Midi) {
+                    auto& outMidiBuffer = midiOut(id, 1);
+                    outMidiBuffer.clear();
+                    if (!value.silent && op.inputs[1].valid())
+                        outMidiBuffer.addEvents(midiIn(op.inputs[1]), 0, numSamples, 0);
+                }
                 break;
             }
 

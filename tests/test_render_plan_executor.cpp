@@ -676,34 +676,68 @@ TEST_CASE("Block size does not change what is rendered", "[engine][exec]") {
         REQUIRE(whole[sample] == approx(split[sample]));
 }
 
-TEST_CASE("A nested rack inside a chain that is out of the mix is reported", "[engine][exec]") {
-    auto inner = std::make_unique<RackInfo>();
-    inner->id = 6;
-    ChainInfo innerChain;
-    innerChain.id = 20;
-    inner->chains.push_back(std::move(innerChain));
+TEST_CASE("A chain out of the mix silences a nested rack's MIDI too", "[engine][exec]") {
+    // The MIDI comes from a rack nested inside the muted chain, so its ops key
+    // on the nested rack and nothing about them says which outer chain they
+    // belong to. Both signals leave the chain through its fader, which is what
+    // makes one silent flag enough.
+    const auto build = [](bool muteOuterChain) {
+        auto inner = std::make_unique<RackInfo>();
+        inner->id = 6;
+        ChainInfo innerChain;
+        innerChain.id = 20;
 
-    auto outer = std::make_unique<RackInfo>();
-    outer->id = 5;
-    ChainInfo outerChain;
-    outerChain.id = 10;
-    outerChain.muted = true;
-    outerChain.elements.push_back(ChainElement{std::move(inner)});
-    outer->chains.push_back(std::move(outerChain));
+        auto arp = makeEffect(7);
+        arp.deviceType = DeviceType::MIDI;
+        arp.canReceiveMidi = true;
+        arp.producesMidi = true;
+        arp.midiInThru = false;
+        innerChain.elements.push_back(makeDeviceElement(arp));
+        inner->chains.push_back(std::move(innerChain));
 
-    auto track = makeTrack(1);
-    track.chain.fxChainElements.push_back(ChainElement{std::move(outer)});
+        auto outer = std::make_unique<RackInfo>();
+        outer->id = 5;
+        ChainInfo outerChain;
+        outerChain.id = 10;
+        outerChain.muted = muteOuterChain;
+        outerChain.elements.push_back(ChainElement{std::move(inner)});
+        outer->chains.push_back(std::move(outerChain));
 
-    Harness harness({track}, makeMaster());
-    ConstantSource source(1.0f);
-    harness.bindings.clipAudio[1] = &source;
-    harness.prepare();
+        auto track = makeTrack(1);
+        track.chain.fxChainElements.push_back(ChainElement{std::move(outer)});
+        // Downstream of the rack, so it hears whatever MIDI the rack puts out.
+        track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(8)));
+        return track;
+    };
 
-    REQUIRE(harness.valueMessages.size() == 1);
-    CHECK(harness.valueMessages.front().find("keys its ops on itself") != std::string::npos);
+    ConstantSource audio(0.0f);
+    NoteSource notes(40);
+    ArpDevice arpDevice(72);
+    NoteToDcInstrument instrument;
 
-    // Audio is still correct: everything in the chain passes through the
-    // chain's fader on its way out.
-    harness.render();
-    CHECK(harness.outputSample() == approx(0.0f));
+    SECTION("chain in the mix") {
+        Harness harness({build(false)}, makeMaster());
+        harness.bindings.clipAudio[1] = &audio;
+        harness.bindings.clipMidi[1] = &notes;
+        harness.bindings.devices[7] = &arpDevice;
+        harness.bindings.devices[8] = &instrument;
+
+        harness.prepareCleanly();
+        harness.render();
+        CHECK(harness.outputSample() == approx(72.0f / 127.0f));
+    }
+
+    SECTION("chain muted") {
+        Harness harness({build(true)}, makeMaster());
+        harness.bindings.clipAudio[1] = &audio;
+        harness.bindings.clipMidi[1] = &notes;
+        harness.bindings.devices[7] = &arpDevice;
+        harness.bindings.devices[8] = &instrument;
+
+        harness.prepareCleanly();
+        harness.render();
+
+        // No note reached the instrument, so it never left its initial silence.
+        CHECK(harness.outputSample() == approx(0.0f));
+    }
 }

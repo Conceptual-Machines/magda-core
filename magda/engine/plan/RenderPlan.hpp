@@ -47,7 +47,7 @@ enum class OpKind : std::uint8_t {
     MixAudio,   ///< ordered sum of audio inputs (summing order is compiled, never scheduling order)
     MergeMidi,  ///< ordered merge of MIDI inputs
     Gain,       ///< scalar gain
-    Fader,      ///< volume + pan
+    Fader,      ///< volume + pan, and the MIDI its stage passes on
     SendTap,    ///< pre/post-fader tap feeding another track
     Meter,      ///< level tap read by the UI
     Output,     ///< hardware output

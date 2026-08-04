@@ -128,11 +128,11 @@ ops=13 outputs=1
 [  2] Device      det   T1/D7:deviceProcess            in=1:0,-,-          out=audio       deps=1
 [  3] Gain        det   T1/D7:deviceGain               in=2:0              out=audio       deps=1
 [  4] Meter       det   T1/D7:deviceMeter              in=3:0              out=audio       deps=1
-[  5] Fader       det   T1:trackFader                  in=4:0              out=audio       deps=1
+[  5] Fader       det   T1:trackFader                  in=4:0,-            out=audio       deps=1
 [  6] Meter       det   T1:trackMeter                  in=5:0              out=audio       deps=1
 [  7] Gain        det   T1:trackMute                   in=6:0              out=audio       deps=1
 [  8] MixAudio    det   T-2:trackAudioInput            in=7:0              out=audio       deps=1
-[  9] Fader       det   T-2:trackFader                 in=8:0              out=audio       deps=1
+[  9] Fader       det   T-2:trackFader                 in=8:0,-            out=audio       deps=1
 [ 10] Meter       det   T-2:trackMeter                 in=9:0              out=audio       deps=1
 [ 11] Gain        det   T-2:trackMute                  in=10:0             out=audio       deps=1
 [ 12] Output      det   T-2:hardwareOutput             in=11:0             out=-           deps=1

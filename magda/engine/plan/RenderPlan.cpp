@@ -20,11 +20,12 @@ int arityOf(OpKind kind) {
             return 0;
         case OpKind::Device:
             return 3;  // audio, MIDI, sidechain audio
+        case OpKind::Fader:
+            return 2;  // audio, MIDI
         case OpKind::MixAudio:
         case OpKind::MergeMidi:
             return -1;  // variadic
         case OpKind::Gain:
-        case OpKind::Fader:
         case OpKind::SendTap:
         case OpKind::Meter:
         case OpKind::Output:
@@ -234,7 +235,8 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
                 continue;
             }
             const auto expected =
-                (op.kind == OpKind::MergeMidi || (op.kind == OpKind::Device && slot == 1))
+                (op.kind == OpKind::MergeMidi ||
+                 ((op.kind == OpKind::Device || op.kind == OpKind::Fader) && slot == 1))
                     ? SignalKind::Midi
                     : SignalKind::Audio;
             const auto actual = producer.outputs[static_cast<std::size_t>(input.port)];
