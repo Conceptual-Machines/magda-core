@@ -244,6 +244,7 @@ set(TEST_SOURCES
 # plain value types, so the plan tests are ordinary model-level Catch2 tests.
 if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_render_plan_compiler.cpp)
+    list(APPEND TEST_SOURCES test_render_plan_executor.cpp)
 endif()
 
 # Create test executable
