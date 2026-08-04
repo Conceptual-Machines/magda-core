@@ -8,6 +8,7 @@
 
 #include "../../core/ClipManager.hpp"
 #include "../../core/ClipOperations.hpp"
+#include "../../core/Config.hpp"
 #include "../../core/TempoUtils.hpp"
 #include "../../core/TrackManager.hpp"
 #include "ArrangementClipSyncPlanner.hpp"
@@ -767,7 +768,8 @@ bool ClipSynchronizer::syncArrangementClipToEngine(ClipId clipId) {
         return false;
     }
 
-    const auto spans = computeAudibleSpans(arrangementClipsOnTrack(clip->trackId));
+    const auto spans = computeAudibleSpans(arrangementClipsOnTrack(clip->trackId),
+                                           Config::getInstance().getClipOverlapPlayback());
     return syncArrangementClipWithSpan(clipId, *clip, spanFor(spans, *clip));
 }
 
@@ -817,8 +819,9 @@ bool ClipSynchronizer::syncOcclusionChanges() {
     std::unordered_set<ClipId> live;
     live.reserve(arrangementClips.size());
 
+    const auto playback = Config::getInstance().getClipOverlapPlayback();
     for (const auto& [trackId, clips] : byTrack) {
-        const auto spans = computeAudibleSpans(clips);
+        const auto spans = computeAudibleSpans(clips, playback);
         for (const auto& clip : clips) {
             live.insert(clip.id);
             const auto span = spanFor(spans, clip);

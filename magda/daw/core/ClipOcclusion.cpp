@@ -53,10 +53,20 @@ std::vector<BeatRange> mergeRanges(std::vector<BeatRange> ranges) {
 
 }  // namespace
 
-std::unordered_map<ClipId, AudibleSpan> computeAudibleSpans(
-    const std::vector<ClipInfo>& trackClips) {
+std::unordered_map<ClipId, AudibleSpan> computeAudibleSpans(const std::vector<ClipInfo>& trackClips,
+                                                            ClipOverlapPlayback playback) {
     std::unordered_map<ClipId, AudibleSpan> spans;
     spans.reserve(trackClips.size());
+
+    if (playback == ClipOverlapPlayback::PlayBoth) {
+        for (const auto& clip : trackClips) {
+            spans[clip.id] = AudibleSpan{clip.placement.startBeat,
+                                         clip.placement.lengthBeats,
+                                         clip.placement.lengthBeats > 0.0,
+                                         {}};
+        }
+        return spans;
+    }
 
     std::vector<const ClipInfo*> ordered;
     ordered.reserve(trackClips.size());

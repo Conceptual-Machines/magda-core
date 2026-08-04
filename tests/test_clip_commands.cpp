@@ -8,6 +8,7 @@
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipOcclusion.hpp"
 #include "magda/daw/core/ClipPropertyCommands.hpp"
+#include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/TempoMap.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
@@ -1910,4 +1911,115 @@ TEST_CASE("BounceInPlaceReplacement preserves unselected source and undo restore
     REQUIRE(restoredClip->isMidi());
     REQUIRE(restoredClip->placement.startBeat == Catch::Approx(0.0));
     REQUIRE(restoredClip->placement.lengthBeats == Catch::Approx(16.0));
+}
+
+// ============================================================================
+// FlattenClipStackCommand - fold overlapping MIDI clips into one (#2003)
+// ============================================================================
+
+TEST_CASE("FlattenClipStackCommand - commits what the stack plays into one clip",
+          "[clip][command][flatten][overlap]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(120.0);
+    auto& config = Config::getInstance();
+    const bool originalPlaysBoth = config.getClipOverlapPlaysBoth();
+    config.setClipOverlapPlaysBoth(false);
+
+    auto& cm = ClipManager::getInstance();
+    TrackId track = createTrack("Track", TrackType::Audio);
+
+    // [0,16] with notes at 2, 8 and 14; the drop covers [6,10], so the note at
+    // 8 is the one nobody hears.
+    ClipId part = createMidi(track, 0.0, 8.0, {2.0, 8.0, 14.0});
+    ClipId dropped = cm.createMidiClipBeats(track, 6.0, 4.0, ClipView::Arrangement,
+                                            ClipOverlapPolicy::ResolveOverlaps);
+    REQUIRE(dropped != INVALID_CLIP_ID);
+    // One note inside the dropped clip, at timeline beat 7.
+    cm.addMidiNote(dropped, {72, 100, 1.0, 1.0});
+
+    SECTION("top wins: the covered note is not carried over") {
+        FlattenClipStackCommand cmd(dropped);
+        cmd.execute();
+
+        // One clip left, spanning the whole stack.
+        const auto onTrack = cm.getClipsOnTrack(track);
+        REQUIRE(onTrack.size() == 1);
+        const auto* merged = cm.getClip(dropped);
+        REQUIRE(merged != nullptr);
+        CHECK(merged->placement.startBeat == Catch::Approx(0.0));
+        CHECK(merged->placement.lengthBeats == Catch::Approx(16.0));
+        CHECK_FALSE(merged->loopEnabled);
+
+        // Notes at 2 and 14 from the part, 7 from the drop. The part's note at
+        // 8 was silent under the drop, so flattening drops it too.
+        REQUIRE(merged->midiNotes.size() == 3);
+        CHECK(merged->midiNotes[0].startBeat == Catch::Approx(2.0));
+        CHECK(merged->midiNotes[1].startBeat == Catch::Approx(7.0));
+        CHECK(merged->midiNotes[2].startBeat == Catch::Approx(14.0));
+
+        SECTION("and undo puts the stack back") {
+            cmd.undo();
+            CHECK(cm.getClipsOnTrack(track).size() == 2);
+            const auto* restored = cm.getClip(part);
+            REQUIRE(restored != nullptr);
+            CHECK(restored->midiNotes.size() == 3);
+        }
+    }
+
+    SECTION("play both: every note is carried over") {
+        config.setClipOverlapPlaysBoth(true);
+
+        FlattenClipStackCommand cmd(dropped);
+        cmd.execute();
+
+        const auto* merged = cm.getClip(dropped);
+        REQUIRE(merged != nullptr);
+        REQUIRE(merged->midiNotes.size() == 4);
+        CHECK(merged->midiNotes[1].startBeat == Catch::Approx(7.0));
+        CHECK(merged->midiNotes[2].startBeat == Catch::Approx(8.0));
+    }
+
+    config.setClipOverlapPlaysBoth(originalPlaysBoth);
+    proj.setTempo(originalTempo);
+}
+
+TEST_CASE("FlattenClipStackCommand - only offers itself when there is a stack to fold",
+          "[clip][command][flatten][overlap]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(120.0);
+
+    auto& cm = ClipManager::getInstance();
+    TrackId track = createTrack("Track", TrackType::Audio);
+
+    SECTION("abutting clips are not a stack") {
+        ClipId a = createMidi(track, 0.0, 4.0, {0.0});
+        createMidi(track, 4.0, 4.0, {0.0});
+        CHECK(FlattenClipStackCommand::collectStack(a).empty());
+    }
+
+    SECTION("an audio clip in the way refuses — that is what Bounce is for") {
+        ClipId midi = createMidi(track, 0.0, 8.0, {0.0});
+        ClipId audio = createAudio(track, 2.0, 4.0);
+        cm.moveClipBeats(audio, 8.0, 120.0);
+        CHECK(FlattenClipStackCommand::collectStack(midi).empty());
+    }
+
+    SECTION("a chain of overlaps folds in one go") {
+        ClipId a = createMidi(track, 0.0, 8.0, {0.0});
+        ClipId b = cm.createMidiClipBeats(track, 12.0, 16.0, ClipView::Arrangement,
+                                          ClipOverlapPolicy::ResolveOverlaps);
+        ClipId c = cm.createMidiClipBeats(track, 24.0, 16.0, ClipView::Arrangement,
+                                          ClipOverlapPolicy::ResolveOverlaps);
+        // a[0,16] over b[12,28] over c[24,40]: a and c never touch.
+        const auto stack = FlattenClipStackCommand::collectStack(a);
+        CHECK(stack.size() == 3);
+        CHECK(std::find(stack.begin(), stack.end(), c) != stack.end());
+        juce::ignoreUnused(b);
+    }
+
+    proj.setTempo(originalTempo);
 }

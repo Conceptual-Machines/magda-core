@@ -49,6 +49,9 @@ struct AudibleSpan {
  *                   passed in — occlusion is per lane.
  * @return An entry for every clip passed in, keyed by clip id.
  *
+ * Under ClipOverlapPlayback::PlayBoth nothing occludes at all: every clip gets
+ * its whole span back and the stack simply sounds together.
+ *
  * Two overlaps are deliberately NOT occlusions:
  *
  * - A partial overlap between two audio clips that both auto-crossfade is a
@@ -59,7 +62,8 @@ struct AudibleSpan {
  *   can hear.
  */
 std::unordered_map<ClipId, AudibleSpan> computeAudibleSpans(
-    const std::vector<ClipInfo>& trackClips);
+    const std::vector<ClipInfo>& trackClips,
+    ClipOverlapPlayback playback = ClipOverlapPlayback::TopWins);
 
 /**
  * @brief The parts of one clip that sit over a clip below it in the same lane.

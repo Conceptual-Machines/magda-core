@@ -1096,6 +1096,15 @@ class ClipOperations {
             clip.midiTrimOffset = 0.0;
         }
 
+        // The notes now ARE the unrolled loop, so the clip has to stop looping.
+        // Leaving the flag on made TE loop the first cycle over the whole clip
+        // and made getMidiVisibleRange clip the note list to one loop length,
+        // so a flattened clip played only its first loop no matter how many
+        // cycles had just been written into it.
+        clip.loopEnabled = false;
+        clip.midiOffset = 0.0;
+        clip.midiTrimOffset = 0.0;
+
         clip.midiNotes = std::move(flatNotes);
     }
 

@@ -3030,7 +3030,11 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
             // clip does neither: it keeps its notes and plays around the hole.
             const bool splitIsLossless =
                 clip.isAudio() || (clip.loopEnabled && clip.loopLengthBeats > 0.0);
-            if (splitIsLossless)
+            // With overlaps set to play together there is no hole to carve in
+            // the first place, so the lane keeps whole clips whatever they are.
+            const bool needsHole =
+                Config::getInstance().getClipOverlapPlayback() == ClipOverlapPlayback::TopWins;
+            if (splitIsLossless && needsHole)
                 toSplitAround.push_back(clip.id);
         } else if (dominantWantsCrossfade && clip.isAudio() && !clip.autoCrossfade) {
             // Partial overlaps between audio clips play as crossfades, and TE

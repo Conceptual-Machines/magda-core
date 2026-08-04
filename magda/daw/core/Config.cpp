@@ -247,6 +247,7 @@ void Config::save() {
     root->setProperty("followPlayhead", followPlayhead);
     root->setProperty("chordPreviewOnByDefault", chordPreviewOnByDefault);
     root->setProperty("autoCrossfadeByDefault", autoCrossfadeByDefault);
+    root->setProperty("clipOverlapPlaysBoth", clipOverlapPlaysBoth);
 
     // Clip colour mode
     root->setProperty("clipColourMode", clipColourMode);
@@ -682,6 +683,7 @@ void Config::load() {
     followPlayhead = getBool("followPlayhead", followPlayhead);
     chordPreviewOnByDefault = getBool("chordPreviewOnByDefault", chordPreviewOnByDefault);
     autoCrossfadeByDefault = getBool("autoCrossfadeByDefault", autoCrossfadeByDefault);
+    clipOverlapPlaysBoth = getBool("clipOverlapPlaysBoth", clipOverlapPlaysBoth);
 
     clipColourMode = getInt("clipColourMode", clipColourMode);
 

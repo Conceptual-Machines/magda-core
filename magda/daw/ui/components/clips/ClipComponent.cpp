@@ -3540,8 +3540,11 @@ void ClipComponent::showContextMenu() {
             menu.addSeparator();
         }
 
-        if (canRenderMidiLoop) {
-            menu.addItem(28, "Flatten MIDI Loop", canEdit);
+        const bool canFlattenStack = !FlattenClipStackCommand::collectStack(clipId_).empty();
+        if (canRenderMidiLoop || canFlattenStack) {
+            // One entry for both jobs: unroll this clip's loop, or fold the
+            // clips stacked with it into one (#2003).
+            menu.addItem(28, canFlattenStack ? "Flatten Clips" : "Flatten MIDI Loop", canEdit);
             menu.addSeparator();
         }
     }
@@ -3807,9 +3810,17 @@ void ClipComponent::showContextMenu() {
                 break;
             }
 
-            case 28: {  // Flatten MIDI Loop (#1737)
+            case 28: {  // Flatten (#1737 loop unroll, #2003 stack merge)
                 const auto* clip = clipManager.getClip(clipId_);
-                if (clip && clip->isMidi() && clip->loopEnabled && clip->loopLengthBeats > 0.0) {
+                if (clip == nullptr || !clip->isMidi())
+                    break;
+
+                // Overlapping clips fold into one; otherwise this is the
+                // single-clip loop unroll.
+                if (!FlattenClipStackCommand::collectStack(clipId_).empty()) {
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<FlattenClipStackCommand>(clipId_));
+                } else if (clip->loopEnabled && clip->loopLengthBeats > 0.0) {
                     UndoManager::getInstance().executeCommand(
                         std::make_unique<FlattenMidiClipCommand>(clipId_));
                 }
