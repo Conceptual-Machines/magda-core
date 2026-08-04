@@ -122,6 +122,9 @@ option(MAGDA_BUILD_TESTS "Build tests" ON)
 option(MAGDA_BUILD_EXAMPLES "Build developer example tools (e.g. lua_smoke REPL)" OFF)
 option(MAGDA_BUILD_JUCE_ADAPTER "Build JUCE/Tracktion adapter" OFF)
 option(MAGDA_BUILD_FAUST_VEC_BENCH "Build the Faust scalar-vs-vector codegen benchmark" OFF)
+# The native engine (epic #1882) is dark: built and tested, never linked into
+# the app. On by default so it cannot drift away from the model it compiles.
+option(MAGDA_BUILD_NATIVE_ENGINE "Build the native audio engine target" ON)
 
 # CLAP semantic-search backend (ONNX Runtime). Forced off on Intel macOS because
 # upstream ORT dropped osx-x86_64 prebuilts in 1.26. The rest of the media DB
@@ -295,6 +298,12 @@ endif()
 add_subdirectory(magda/daw)
 add_subdirectory(magda/scripting)
 add_subdirectory(magda/agents)
+
+# Native audio engine — isolated from magda/daw on purpose, so it is added
+# after the model layer it compiles and links nothing else from it.
+if(MAGDA_BUILD_NATIVE_ENGINE)
+    add_subdirectory(magda/engine)
+endif()
 
 # Examples
 if(MAGDA_BUILD_EXAMPLES)

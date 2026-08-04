@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -36,8 +37,26 @@ enum class ErrorCode {
     ValidationFailed,
     NotFound,
     Conflict,
+    Timeout,
+    Cancelled,
     InternalError,
 };
+
+/**
+ * @brief Monotonically increasing counter over committed project mutations.
+ *
+ * Bumped once per successful write operation, never reused, never decremented.
+ * Serves two roles: optimistic concurrency (`RequestContext::expectedRevision`)
+ * and the coalescing key for change notifications — a subscriber that saw
+ * revision N asks for everything since N rather than for a stream of individual
+ * callbacks.
+ *
+ * The value is process-scoped, not persisted: it orders mutations within one
+ * run of MAGDA and carries no meaning across restarts.
+ */
+using Revision = std::uint64_t;
+
+inline constexpr Revision INITIAL_REVISION = 0;
 
 struct ValidationIssue {
     juce::String path;
@@ -278,12 +297,87 @@ struct AutomationLaneDto {
 
 enum class OperationAccess { Read, Write };
 
+/**
+ * @brief Per-request identity, limits, and concurrency expectations.
+ *
+ * Populated by the transport adapter and passed unchanged through dispatch to
+ * the handler. Scopes are carried but not enforced here — enforcement is #1860;
+ * recording them now means adapters do not change shape when it lands.
+ */
+struct RequestContext {
+    juce::String clientId;
+    /// Idempotency key. Repeating a completed write with the same id returns
+    /// the first response instead of applying the mutation twice.
+    juce::String requestId;
+    /// Optimistic concurrency: reject the write if the project has moved on.
+    std::optional<Revision> expectedRevision;
+    std::vector<juce::String> scopes;
+    /// Absolute deadline. Work still queued when it passes fails with Timeout
+    /// rather than executing late.
+    std::optional<std::chrono::steady_clock::time_point> deadline;
+};
+
+/**
+ * @brief What a handler returns: exactly one of a result value or an error.
+ */
+struct HandlerResult {
+    std::optional<Error> error;
+    juce::var value;
+    /**
+     * Whether this actually changed project state.
+     *
+     * A write operation can legitimately resolve to a no-op — clearing a lane
+     * that is already empty, for instance. Reporting that as a committed
+     * mutation would advance the revision and invalidate every other client's
+     * `expectedRevision` for a request that changed nothing, so the handler
+     * says so and the dispatcher leaves the revision alone. Ignored for reads.
+     */
+    bool mutated = true;
+
+    static HandlerResult ok(juce::var value) {
+        return {std::nullopt, std::move(value), true};
+    }
+    /// Succeeded, but nothing changed — see `mutated`.
+    static HandlerResult unchanged(juce::var value) {
+        return {std::nullopt, std::move(value), false};
+    }
+    static HandlerResult fail(ErrorCode code, const juce::String& message) {
+        return {Error{code, message, {}}, {}, false};
+    }
+    static HandlerResult fail(Error error) {
+        return {std::move(error), {}, false};
+    }
+
+    bool failed() const {
+        return error.has_value();
+    }
+};
+
+/**
+ * @brief Executes one operation against the facade.
+ *
+ * Always invoked on the JUCE message thread, with input already validated
+ * against the operation's `inputSchema`, so a handler can read its fields
+ * without re-checking presence or type. A plain function pointer rather than
+ * `std::function`: handlers are stateless free functions, and this keeps
+ * `OperationDescriptor` trivially copyable.
+ */
+using OperationHandler = HandlerResult (*)(MagdaApi& api, const juce::var& input,
+                                           const RequestContext& context);
+
 struct OperationDescriptor {
     juce::String name;
     juce::String summary;
     OperationAccess access = OperationAccess::Read;
     juce::var inputSchema;
     juce::var outputSchema;
+    /**
+     * Implementation of this operation. Lives on the descriptor rather than in
+     * a table keyed by name so a transport cannot reach a different
+     * implementation than the one declared — there is only one place to look,
+     * and the registry constructor asserts every declared operation has one.
+     */
+    OperationHandler handler = nullptr;
 };
 
 class OperationRegistry {
@@ -326,6 +420,15 @@ juce::var toJson(const AutomationPointDto& dto);
 juce::var toJson(const DevicePathDto& dto);
 juce::var toJson(const AutomationTargetDto& dto);
 juce::var toJson(const AutomationLaneDto& dto);
+
+/**
+ * @brief Decode a device path from its wire form.
+ *
+ * Total rather than fallible: an unrecognised `section` or step `type` survives
+ * as a string here and is rejected by `toChainNodePath`, which is the single
+ * point where a path becomes an internal address.
+ */
+DevicePathDto devicePathFromJson(const juce::var& json);
 
 std::optional<MidiNoteDto> midiNoteFromJson(const juce::var& json, Error& error);
 std::optional<ProjectDto> projectFromJson(const juce::var& json, Error& error);

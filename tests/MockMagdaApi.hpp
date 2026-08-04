@@ -11,6 +11,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstdlib>
@@ -151,11 +152,26 @@ class StubUndoApi : public UndoApi {
     int executeCalls = 0;
     int compoundDepth = 0;
 
-    void executeCommand(std::unique_ptr<UndoableCommand>) override {
+    /// Descriptions of every compound opened, in order, and the depth reached.
+    /// The remote dispatcher promises one named undo step per mutating request,
+    /// which is only assertable if the names and the nesting are both visible.
+    std::vector<juce::String> compoundDescriptions;
+    int maxCompoundDepth = 0;
+
+    /// Retained, not dropped: callers read ids off the raw pointer after this
+    /// returns, so destroying the command here would dangle them. Deliberately
+    /// not executed — commands act on the real singletons, which a mock-facade
+    /// test is not driving.
+    std::vector<std::unique_ptr<UndoableCommand>> commands;
+
+    void executeCommand(std::unique_ptr<UndoableCommand> command) override {
         ++executeCalls;
+        commands.push_back(std::move(command));
     }
-    void beginCompound(const juce::String&) override {
+    void beginCompound(const juce::String& description) override {
         ++compoundDepth;
+        maxCompoundDepth = std::max(maxCompoundDepth, compoundDepth);
+        compoundDescriptions.push_back(description);
     }
     void endCompound() override {
         --compoundDepth;
@@ -171,6 +187,7 @@ class MockSelectionApi : public SelectionApi {
     ClipId selectedClip = INVALID_CLIP_ID;
     std::unordered_set<ClipId> selectedClips;
     ChainNodePath selectedChainNode;
+    AutomationLaneId selectedAutomationLane = INVALID_AUTOMATION_LANE_ID;
     bool noteSelectionPresent = false;
     ClipId noteSelectionClipId = INVALID_CLIP_ID;
     std::vector<size_t> noteSelectionIndices;
@@ -181,6 +198,7 @@ class MockSelectionApi : public SelectionApi {
     std::vector<ClipId> clipSelections;
     std::vector<std::unordered_set<ClipId>> clipsSelections;
     int clearNoteCalls = 0;
+    int clearSelectionCalls = 0;
 
     TrackId getSelectedTrack() const override {
         return selectedTrack;
@@ -195,7 +213,7 @@ class MockSelectionApi : public SelectionApi {
         return selectedChainNode;
     }
     AutomationLaneId getSelectedAutomationLaneId() const override {
-        return INVALID_AUTOMATION_LANE_ID;
+        return selectedAutomationLane;
     }
     AutomationClipId getSelectedAutomationClipId() const override {
         return INVALID_AUTOMATION_CLIP_ID;
@@ -229,6 +247,21 @@ class MockSelectionApi : public SelectionApi {
     }
     void clearNoteSelection() override {
         ++clearNoteCalls;
+    }
+    std::vector<AutomationLaneId> automationLaneSelections;
+
+    void selectAutomationLane(AutomationLaneId laneId) override {
+        automationLaneSelections.push_back(laneId);
+        selectedAutomationLane = laneId;
+    }
+    void clearSelection() override {
+        ++clearSelectionCalls;
+        selectedTrack = INVALID_TRACK_ID;
+        selectedClip = INVALID_CLIP_ID;
+        selectedClips.clear();
+        noteSelectionPresent = false;
+        noteSelectionClipId = INVALID_CLIP_ID;
+        noteSelectionIndices.clear();
     }
 };
 
