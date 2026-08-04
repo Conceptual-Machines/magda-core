@@ -155,7 +155,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testPasteAudioClipCoversExisting();
         testCreateMidiClipPreservesExistingNeighbour();
         testAutoCrossfadeTurnsAnOverlapIntoAJointOrACover();
-        testOverlapPlaybackPreferenceReachesTheEngine();
+        testPlayThroughOverlapReachesTheEngine();
         testMidiNotesUnderACoveringClipDoNotPlay();
         testMidiSyncClipsNotesToVisibleRangeAfterResize();
         testMidiSyncSkipsAllRestPitchBendButKeepsRealCurves();
@@ -2414,14 +2414,11 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         config.setClipOverlapPlaysBoth(originalPlaysBoth);
     }
 
-    void testOverlapPlaybackPreferenceReachesTheEngine() {
-        beginTest("switching overlapping clips to play together takes effect on the spot");
+    void testPlayThroughOverlapReachesTheEngine() {
+        beginTest("setting a clip to play through an overlap takes effect on the spot");
 
         Fixture f;
         auto& cm = ClipManager::getInstance();
-        auto& config = Config::getInstance();
-        const bool originalPlaysBoth = config.getClipOverlapPlaysBoth();
-        config.setClipOverlapPlaysBoth(false);
 
         auto partId = cm.createMidiClipBeats(f.trackId, 0.0, 16.0, ClipView::Arrangement);
         expect(cm.addMidiNote(partId, {60, 100, 2.0, 1.0}));
@@ -2430,6 +2427,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         auto coverId = cm.createMidiClipBeats(f.trackId, 6.0, 4.0, ClipView::Arrangement,
                                               ClipOverlapPolicy::ResolveOverlaps);
         expect(coverId != INVALID_CLIP_ID);
+        cm.setOverlapPlaysBoth(partId, false);
+        cm.setOverlapPlaysBoth(coverId, false);
 
         auto teNoteCount = [&](ClipId id) {
             auto* teMidiClip = f.getTeMidiClip(id);
@@ -2438,17 +2437,16 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         expectEquals(teNoteCount(partId), 1, "By default the covered note does not play");
 
-        // The preference alone changes nothing until something re-syncs: that
-        // is what the dialog now triggers.
-        config.setClipOverlapPlaysBoth(true);
-        cm.forceNotifyClipsChanged();
-        expectEquals(teNoteCount(partId), 2, "Play-both must give the covered note back");
+        // Either side of the overlap can ask, so both gestures are checked: the
+        // clip underneath first, then the one on top.
+        cm.setOverlapPlaysBoth(partId, true);
+        expectEquals(teNoteCount(partId), 2, "The covered clip asking must be enough");
 
-        config.setClipOverlapPlaysBoth(false);
-        cm.forceNotifyClipsChanged();
-        expectEquals(teNoteCount(partId), 1, "Switching back must silence it again");
+        cm.setOverlapPlaysBoth(partId, false);
+        expectEquals(teNoteCount(partId), 1, "And switching it back silences it again");
 
-        config.setClipOverlapPlaysBoth(originalPlaysBoth);
+        cm.setOverlapPlaysBoth(coverId, true);
+        expectEquals(teNoteCount(partId), 2, "The covering clip asking must work too");
     }
 
     void testMidiNotesUnderACoveringClipDoNotPlay() {

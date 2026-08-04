@@ -464,6 +464,10 @@ class ClipManager {
     void setFadeOutBehaviour(ClipId clipId, int behaviour);
     void setAutoCrossfade(ClipId clipId, bool enabled);
 
+    /// Let this clip play through its overlaps instead of the stack silencing
+    /// one side (#2003). Audio and MIDI alike, unlike autoCrossfade.
+    void setOverlapPlaysBoth(ClipId clipId, bool playsBoth);
+
     void setLaunchFadeSamples(ClipId clipId, int samples);
 
     // ========================================================================

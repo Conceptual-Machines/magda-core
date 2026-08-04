@@ -3491,6 +3491,32 @@ void ClipComponent::showContextMenu() {
         }
     }
 
+    // Playing through an overlap (#2003). Shown only where there IS an overlap,
+    // since that is the only place it means anything, and offered for MIDI as
+    // well as audio — unlike a crossfade, which needs two waveforms.
+    const bool overlapsAnotherClip = [&] {
+        if (clipForMenu == nullptr || clipForMenu->view != ClipView::Arrangement)
+            return false;
+        const double start = clipForMenu->placement.startBeat;
+        const double end = clipForMenu->placement.endBeat();
+        for (ClipId other :
+             clipManager.getClipsOnTrack(clipForMenu->trackId, ClipView::Arrangement)) {
+            if (other == clipId_)
+                continue;
+            const auto* otherClip = clipManager.getClip(other);
+            if (otherClip == nullptr)
+                continue;
+            if (otherClip->placement.startBeat < end && start < otherClip->placement.endBeat())
+                return true;
+        }
+        return false;
+    }();
+
+    if (!isMultiSelection && canEdit && overlapsAnotherClip) {
+        menu.addItem(53, "Play Through Overlap", true, clipForMenu->overlapPlaysBoth);
+        menu.addSeparator();
+    }
+
     // Enable/disable (#1736): disabled clips do not play.
     if (clipForMenu)
         menu.addItem(27, clipForMenu->enabled ? "Disable Clip" : "Enable Clip", canEdit);
@@ -3854,6 +3880,13 @@ void ClipComponent::showContextMenu() {
                 }
                 if (compound)
                     undoManager.endCompoundOperation();
+                break;
+            }
+
+            case 53: {  // Play through overlap (#2003)
+                const auto* clip = clipManager.getClip(clipId_);
+                if (clip != nullptr)
+                    clipManager.setOverlapPlaysBoth(clipId_, !clip->overlapPlaysBoth);
                 break;
             }
 

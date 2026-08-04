@@ -54,17 +54,6 @@ enum class ClipOverlapPolicy {
 };
 
 /**
- * @brief What overlapping arrangement clips sound like (#2003).
- *
- * Overlapping never changes the clips themselves either way — this decides only
- * what reaches the engine.
- */
-enum class ClipOverlapPlayback {
-    TopWins,  // The clip on top owns the span it covers; the one below goes quiet there
-    PlayBoth  // Every clip plays its whole span, stacked
-};
-
-/**
  * @brief Get display name for clip type
  */
 inline const char* getClipTypeName(ClipType type) {

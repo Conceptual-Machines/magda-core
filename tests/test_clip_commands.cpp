@@ -1979,7 +1979,8 @@ TEST_CASE("FlattenClipStackCommand - commits what the stack plays into one clip"
     }
 
     SECTION("play both: every note is carried over") {
-        config.setClipOverlapPlaysBoth(true);
+        // The switch is on the clip now, not on the app.
+        cm.setOverlapPlaysBoth(dropped, true);
 
         FlattenClipStackCommand cmd(dropped);
         cmd.execute();

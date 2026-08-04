@@ -50,20 +50,10 @@ std::vector<BeatRange> mergeRanges(std::vector<BeatRange> ranges) {
 
 }  // namespace
 
-std::unordered_map<ClipId, AudibleSpan> computeAudibleSpans(const std::vector<ClipInfo>& trackClips,
-                                                            ClipOverlapPlayback playback) {
+std::unordered_map<ClipId, AudibleSpan> computeAudibleSpans(
+    const std::vector<ClipInfo>& trackClips) {
     std::unordered_map<ClipId, AudibleSpan> spans;
     spans.reserve(trackClips.size());
-
-    if (playback == ClipOverlapPlayback::PlayBoth) {
-        for (const auto& clip : trackClips) {
-            spans[clip.id] = AudibleSpan{clip.placement.startBeat,
-                                         clip.placement.lengthBeats,
-                                         clip.placement.lengthBeats > 0.0,
-                                         {}};
-        }
-        return spans;
-    }
 
     std::vector<const ClipInfo*> ordered;
     ordered.reserve(trackClips.size());
@@ -99,6 +89,9 @@ std::unordered_map<ClipId, AudibleSpan> computeAudibleSpans(const std::vector<Cl
             if (!upper.enabled)
                 continue;
             if (isCrossfadeJoint(clip, upper))
+                continue;
+            // Either side asking to play through is enough (#2003).
+            if (clip.overlapPlaysBoth || upper.overlapPlaysBoth)
                 continue;
 
             const double uStart = upper.placement.startBeat;
@@ -173,6 +166,9 @@ std::vector<BeatRange> computeCoveringRanges(const std::vector<ClipInfo>& trackC
         if (other.id == clipId || !sitsBelow(other, *clip))
             continue;
         if (isCrossfadeJoint(other, *clip))
+            continue;
+        // Nothing is being silenced, so there is nothing to mark in the lane.
+        if (clip->overlapPlaysBoth || other.overlapPlaysBoth)
             continue;
 
         const double from = std::max(other.placement.startBeat, start);

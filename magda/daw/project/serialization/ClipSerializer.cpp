@@ -355,6 +355,7 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("view", static_cast<int>(clip.view));
     obj->setProperty("enabled", clip.enabled);
     obj->setProperty("stackOrder", clip.stackOrder);
+    obj->setProperty("overlapPlaysBoth", clip.overlapPlaysBoth);
     obj->setProperty("sceneIndex", clip.sceneIndex);
     obj->setProperty("launchMode", static_cast<int>(clip.launchMode));
     obj->setProperty("launchQuantize", static_cast<int>(clip.launchQuantize));
@@ -597,6 +598,11 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     // those projects keep the order they were created in.
     if (!obj->getProperty("stackOrder").isVoid())
         outClip.stackOrder = static_cast<int>(obj->getProperty("stackOrder"));
+
+    // Missing in projects saved before it existed, where the top clip always
+    // won: false is that behaviour.
+    if (!obj->getProperty("overlapPlaysBoth").isVoid())
+        outClip.overlapPlaysBoth = static_cast<bool>(obj->getProperty("overlapPlaysBoth"));
 
     outClip.loopEnabled = static_cast<bool>(obj->getProperty("loopEnabled"));
     outClip.sceneIndex = obj->getProperty("sceneIndex");

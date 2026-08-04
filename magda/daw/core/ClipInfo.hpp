@@ -645,6 +645,17 @@ struct ClipInfo {
     // not silence its siblings.
     bool enabled = true;
 
+    // This clip plays through an overlap instead of the two silencing each
+    // other (#2003). Set on either side of an overlap it is enough: the clip
+    // you can see and right-click is the one on top, but it is the one
+    // underneath that would go quiet, and both gestures mean the same thing.
+    //
+    // Applies to audio and MIDI alike, which autoCrossfade cannot: a fade needs
+    // two waveforms, while "do not silence this" is just as meaningful for a
+    // MIDI part. For audio the two combine — a crossfade joint already plays
+    // both sides, this is the same answer without the fade.
+    bool overlapPlaysBoth = false;
+
     // Stacking order within a track (#2003). Higher sits on top: it draws over
     // the clips below it and owns the span it covers, which silences the part
     // of a lower clip underneath it without touching that clip's placement or

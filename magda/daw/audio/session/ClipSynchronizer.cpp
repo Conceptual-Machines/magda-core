@@ -768,8 +768,7 @@ bool ClipSynchronizer::syncArrangementClipToEngine(ClipId clipId) {
         return false;
     }
 
-    const auto spans = computeAudibleSpans(arrangementClipsOnTrack(clip->trackId),
-                                           Config::getInstance().getClipOverlapPlayback());
+    const auto spans = computeAudibleSpans(arrangementClipsOnTrack(clip->trackId));
     return syncArrangementClipWithSpan(clipId, *clip, spanFor(spans, *clip));
 }
 
@@ -819,9 +818,8 @@ bool ClipSynchronizer::syncOcclusionChanges() {
     std::unordered_set<ClipId> live;
     live.reserve(arrangementClips.size());
 
-    const auto playback = Config::getInstance().getClipOverlapPlayback();
     for (const auto& [trackId, clips] : byTrack) {
-        const auto spans = computeAudibleSpans(clips, playback);
+        const auto spans = computeAudibleSpans(clips);
         for (const auto& clip : clips) {
             live.insert(clip.id);
             const auto span = spanFor(spans, clip);

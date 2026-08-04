@@ -389,7 +389,7 @@
     "toggle.open_plugin_window_on_drop": "Open plugin window when added to a chain",
     "toggle.chord_preview_default": "Preview chord track on playback by default",
     "toggle.auto_crossfade_default": "Auto-crossfade new audio clips",
-    "toggle.clip_overlap_plays_both": "Overlapping clips all play (instead of the top one only)",
+    "toggle.clip_overlap_plays_both": "New clips play through overlaps",
     "toggle.show_tooltips": "Show tooltips",
     "button.add_colour": "+ Add Colour",
     "button.browse": "Browse",

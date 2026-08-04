@@ -49,21 +49,23 @@ struct AudibleSpan {
  *                   passed in — occlusion is per lane.
  * @return An entry for every clip passed in, keyed by clip id.
  *
- * Under ClipOverlapPlayback::PlayBoth nothing occludes at all: every clip gets
- * its whole span back and the stack simply sounds together.
+ * Three overlaps are deliberately NOT occlusions:
  *
- * Two overlaps are deliberately NOT occlusions:
+ * - Either clip set to play through (ClipInfo::overlapPlaysBoth). One side
+ *   asking is enough: the clip you right-click is the one on top, but it is the
+ *   one underneath that would go quiet, and both gestures mean the same thing.
+ *   This is the setting audio and MIDI share.
  *
- * - A partial overlap between two audio clips that both auto-crossfade is a
- *   crossfade joint (#1499). Both sides keep their full span and TE fades them
- *   into each other; silencing one of them would eat the fade.
+ * - An overlap between two audio clips that both auto-crossfade is a crossfade
+ *   joint (#1499). Both sides keep their full span and TE fades them into each
+ *   other; silencing one of them would eat the fade. Audio only — a fade needs
+ *   two waveforms.
  * - A clip disabled by hand (#1736) covers nothing. It is already silent, so
  *   letting it occlude would silence a lower clip on behalf of a clip nobody
  *   can hear.
  */
 std::unordered_map<ClipId, AudibleSpan> computeAudibleSpans(
-    const std::vector<ClipInfo>& trackClips,
-    ClipOverlapPlayback playback = ClipOverlapPlayback::TopWins);
+    const std::vector<ClipInfo>& trackClips);
 
 /**
  * @brief The parts of one clip that sit over a clip below it in the same lane.

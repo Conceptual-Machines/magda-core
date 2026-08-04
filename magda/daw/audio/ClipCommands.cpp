@@ -2540,7 +2540,7 @@ void FlattenClipStackCommand::execute() {
         if (const auto* clip = clipManager.getClip(id))
             lane.push_back(*clip);
     }
-    const auto spans = computeAudibleSpans(lane, Config::getInstance().getClipOverlapPlayback());
+    const auto spans = computeAudibleSpans(lane);
 
     // Bottom to top, so notes land in the order they are stacked.
     std::vector<ClipInfo> members;

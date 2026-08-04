@@ -239,25 +239,39 @@ TEST_CASE("occlusion - abutting clips do not cover each other", "[clip][occlusio
     }
 }
 
-// The preference (#2003): overlapping clips can be set to all play together
-// instead of the top one owning the span. Nothing about the clips changes —
-// only what the engine is told to play.
-TEST_CASE("occlusion - PlayBoth leaves every clip whole", "[clip][occlusion]") {
-    const std::vector<ClipInfo> lane{makeClip(1, 0.0, 16.0, 1), makeClip(2, 4.0, 4.0, 2),
-                                     makeClip(3, 0.0, 16.0, 3)};
+// Playing through is a per-clip switch, and it works the same for audio and for
+// MIDI — unlike the crossfade, which needs two waveforms (#2003).
+TEST_CASE("occlusion - a clip set to play through is not covered", "[clip][occlusion]") {
+    SECTION("the clip underneath asks to be heard") {
+        std::vector<ClipInfo> lane{makeClip(1, 0.0, 16.0, 1), makeClip(2, 4.0, 4.0, 2)};
+        lane[0].overlapPlaysBoth = true;
 
-    const auto spans = computeAudibleSpans(lane, ClipOverlapPlayback::PlayBoth);
-
-    for (ClipId id : {1, 2, 3}) {
-        CHECK(spans.at(id).audible);
-        CHECK(spans.at(id).silenced.empty());
+        const auto spans = computeAudibleSpans(lane);
+        CHECK(spans.at(1).lengthBeats == Catch::Approx(16.0));
+        CHECK(spans.at(1).silenced.empty());
     }
-    CHECK(spans.at(1).startBeat == Catch::Approx(0.0));
-    CHECK(spans.at(1).lengthBeats == Catch::Approx(16.0));
-    CHECK(spans.at(2).lengthBeats == Catch::Approx(4.0));
 
-    // Same lane under the default policy: clip 1 is buried, clip 2 is holed.
-    const auto topWins = computeAudibleSpans(lane, ClipOverlapPlayback::TopWins);
-    CHECK_FALSE(topWins.at(1).audible);
-    CHECK_FALSE(topWins.at(2).audible);
+    SECTION("or the clip on top says it is not silencing anything") {
+        std::vector<ClipInfo> lane{makeClip(1, 0.0, 16.0, 1), makeClip(2, 4.0, 4.0, 2)};
+        lane[1].overlapPlaysBoth = true;
+
+        const auto spans = computeAudibleSpans(lane);
+        CHECK(spans.at(1).lengthBeats == Catch::Approx(16.0));
+        CHECK(spans.at(1).silenced.empty());
+    }
+
+    SECTION("neither: the top one owns the span it covers") {
+        const std::vector<ClipInfo> lane{makeClip(1, 0.0, 16.0, 1), makeClip(2, 4.0, 4.0, 2)};
+
+        REQUIRE(computeAudibleSpans(lane).at(1).silenced.size() == 1);
+    }
+
+    SECTION("MIDI clips use the same switch") {
+        std::vector<ClipInfo> lane{makeClip(1, 0.0, 16.0, 1, ClipType::MIDI),
+                                   makeClip(2, 4.0, 4.0, 2, ClipType::MIDI)};
+        REQUIRE(computeAudibleSpans(lane).at(1).silenced.size() == 1);
+
+        lane[1].overlapPlaysBoth = true;
+        CHECK(computeAudibleSpans(lane).at(1).silenced.empty());
+    }
 }

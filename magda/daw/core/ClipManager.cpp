@@ -2301,6 +2301,15 @@ void ClipManager::setAutoCrossfade(ClipId clipId, bool enabled) {
     }
 }
 
+void ClipManager::setOverlapPlaysBoth(ClipId clipId, bool playsBoth) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->overlapPlaysBoth != playsBoth) {
+            clip->overlapPlaysBoth = playsBoth;
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
 void ClipManager::setLaunchFadeSamples(ClipId clipId, int samples) {
     if (auto* clip = getClip(clipId)) {
         if (clip->isAudio()) {
@@ -3044,6 +3053,7 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
     // clips into crossfade joints (#1499). Capture the flag up front — the
     // dominant pointer is not safe to use once clips_ mutates.
     const bool dominantWantsCrossfade = dominant->isAudio() && dominant->autoCrossfade;
+    const bool dominantPlaysThrough = dominant->overlapPlaysBoth;
 
     // Covered clips are no longer trimmed or deleted (#2003). A clip keeps its
     // placement and its content whatever lands on top of it, and computeAudibleSpans
@@ -3088,10 +3098,9 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
             // clip does neither: it keeps its notes and plays around the hole.
             const bool splitIsLossless =
                 clip.isAudio() || (clip.loopEnabled && clip.loopLengthBeats > 0.0);
-            // With overlaps set to play together there is no hole to carve in
-            // the first place, so the lane keeps whole clips whatever they are.
-            const bool needsHole =
-                Config::getInstance().getClipOverlapPlayback() == ClipOverlapPlayback::TopWins;
+            // Playing through leaves no hole to carve in the first place, so
+            // the lane keeps whole clips.
+            const bool needsHole = !clip.overlapPlaysBoth && !dominantPlaysThrough;
             if (splitIsLossless && needsHole)
                 toSplitAround.push_back(clip.id);
         } else if (dominantWantsCrossfade && clip.isAudio() && !clip.autoCrossfade) {
