@@ -23,9 +23,11 @@ class SelectionApiLive : public SelectionApi {
     void selectTracks(const std::unordered_set<TrackId>& trackIds) override;
     void selectClip(ClipId clipId) override;
     void selectClips(const std::unordered_set<ClipId>& clipIds) override;
+    void selectAutomationLane(AutomationLaneId laneId) override;
     void selectAutomationClip(AutomationClipId clipId, AutomationLaneId laneId) override;
     void selectNotes(ClipId clipId, const std::vector<size_t>& noteIndices) override;
     void clearNoteSelection() override;
+    void clearSelection() override;
 };
 
 }  // namespace magda
