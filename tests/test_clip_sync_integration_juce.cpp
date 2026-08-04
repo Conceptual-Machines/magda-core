@@ -154,6 +154,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testDuplicateAudioClipCoversExisting();
         testPasteAudioClipCoversExisting();
         testCreateMidiClipPreservesExistingNeighbour();
+        testAutoCrossfadeTurnsAnOverlapIntoAJointOrACover();
         testOverlapPlaybackPreferenceReachesTheEngine();
         testMidiNotesUnderACoveringClipDoNotPlay();
         testMidiSyncClipsNotesToVisibleRangeAfterResize();
@@ -2370,6 +2371,47 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         cm.setClipLoopEnabled(clipId, false);
         f.clipSync->syncClipToEngine(clipId);
         expect(!teMidiClip->isLooping(), "Unlooping a MIDI clip must reach the engine too");
+    }
+
+    void testAutoCrossfadeTurnsAnOverlapIntoAJointOrACover() {
+        beginTest("auto-crossfade decides whether an overlap fades or covers, live");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+        auto& config = Config::getInstance();
+        const bool originalPlaysBoth = config.getClipOverlapPlaysBoth();
+        config.setClipOverlapPlaysBoth(false);
+
+        // At 60 BPM one second is one beat. A spans [0,8]; B lands on [4,12].
+        auto a =
+            cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto b =
+            cm.createAudioClip(f.trackId, 16.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        cm.setAutoCrossfade(a, true);
+        cm.setAutoCrossfade(b, true);
+        cm.moveClip(b, 4.0, 60.0);
+
+        auto teLengthBeats = [&](ClipId id) {
+            auto* teClip = f.clipSync->getArrangementTeClip(id);
+            return teClip != nullptr ? teClip->getLengthInBeats().inBeats() : -1.0;
+        };
+
+        // Both flagged: the overlap is a crossfade joint, so A keeps all 8 beats
+        // and TE fades the two into each other over [4,8] (#1499).
+        expectWithinAbsoluteError(teLengthBeats(a), 8.0, 0.01);
+        expect(cm.getCrossfadeAtEnd(a).has_value(), "The pair should read as a joint");
+
+        // Flag off on the clip on top: nothing to fade, so it simply covers A,
+        // and A plays only up to where B starts.
+        cm.setAutoCrossfade(b, false);
+        expectWithinAbsoluteError(teLengthBeats(a), 4.0, 0.01);
+        expect(!cm.getCrossfadeAtEnd(a).has_value(), "A cover is not a joint");
+
+        // Back on, and A is whole again — no edit, just the flag.
+        cm.setAutoCrossfade(b, true);
+        expectWithinAbsoluteError(teLengthBeats(a), 8.0, 0.01);
+
+        config.setClipOverlapPlaysBoth(originalPlaysBoth);
     }
 
     void testOverlapPlaybackPreferenceReachesTheEngine() {
