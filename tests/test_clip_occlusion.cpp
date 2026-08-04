@@ -157,10 +157,19 @@ TEST_CASE("occlusion - a crossfade joint is not a cover", "[clip][occlusion][cro
     CHECK(spans.at(1).lengthBeats == Catch::Approx(8.0));
     CHECK(spans.at(2).lengthBeats == Catch::Approx(8.0));
 
-    SECTION("but containment still covers, flags or no flags") {
+    SECTION("containment between flagged clips is a joint too, not a cover") {
         std::vector<ClipInfo> covering{makeClip(1, 4.0, 4.0, 1), makeClip(2, 0.0, 16.0, 2)};
         covering[0].autoCrossfade = true;
         covering[1].autoCrossfade = true;
+
+        // The button decides, not the shape of the overlap: a swallowed clip
+        // fades with the one over it rather than going silent (#2003).
+        CHECK(computeAudibleSpans(covering).at(1).audible);
+        CHECK(computeAudibleSpans(covering).at(1).lengthBeats == Catch::Approx(4.0));
+    }
+
+    SECTION("with the flag off the same containment covers") {
+        const std::vector<ClipInfo> covering{makeClip(1, 4.0, 4.0, 1), makeClip(2, 0.0, 16.0, 2)};
 
         CHECK_FALSE(computeAudibleSpans(covering).at(1).audible);
     }

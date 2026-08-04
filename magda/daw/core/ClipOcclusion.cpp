@@ -16,8 +16,10 @@ bool sitsBelow(const ClipInfo& a, const ClipInfo& b) {
     return a.id < b.id;
 }
 
-/// A partial overlap between two auto-crossfade audio clips is a joint, not a
-/// cover: TE fades them into each other over it (#1499).
+/// An overlap between two auto-crossfade audio clips is a joint, not a cover:
+/// TE fades them into each other over it (#1499). The button decides, not the
+/// shape of the overlap — a clip that ends up wholly inside another still fades
+/// with it rather than going silent, which is what AUTO-XFADE promises.
 bool isCrossfadeJoint(const ClipInfo& lower, const ClipInfo& upper) {
     if (!lower.isAudio() || !upper.isAudio() || !lower.autoCrossfade || !upper.autoCrossfade)
         return false;
@@ -26,12 +28,7 @@ bool isCrossfadeJoint(const ClipInfo& lower, const ClipInfo& upper) {
     const double lEnd = lStart + lower.placement.lengthBeats;
     const double uStart = upper.placement.startBeat;
     const double uEnd = uStart + upper.placement.lengthBeats;
-
-    // Strictly partial: containment either way is a cover, whichever clip is on
-    // top, because a fade needs an edge of each clip inside the other.
-    const bool upperOverlapsTail = uStart > lStart && uStart < lEnd && uEnd > lEnd;
-    const bool upperOverlapsHead = uEnd > lStart && uEnd < lEnd && uStart < lStart;
-    return upperOverlapsTail || upperOverlapsHead;
+    return uStart < lEnd && lStart < uEnd;
 }
 
 /// Sorted, non-overlapping covers, so trimming and hole-finding can walk them

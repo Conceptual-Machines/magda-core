@@ -2338,14 +2338,18 @@ std::optional<ClipManager::CrossfadeInfo> crossfadeAtStartOf(
             continue;
         const double oStart = other->placement.startBeat;
         const double oEnd = other->placement.endBeat();
-        if (oStart < startB && oEnd > startB && oEnd < endB) {
+        // Reaches over this clip's start edge. It may also run past its end —
+        // a clip dropped wholly inside another still crossfades with it, over
+        // everything they share.
+        if (oStart < startB && oEnd > startB) {
             if (!best || oEnd > best->placement.endBeat())
                 best = other;
         }
     }
     if (!best)
         return std::nullopt;
-    return ClipManager::CrossfadeInfo{best->id, clip.id, startB, best->placement.endBeat()};
+    return ClipManager::CrossfadeInfo{best->id, clip.id, startB,
+                                      std::min(best->placement.endBeat(), endB)};
 }
 
 std::optional<ClipManager::CrossfadeInfo> crossfadeAtEndOf(

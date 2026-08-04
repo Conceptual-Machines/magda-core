@@ -2654,6 +2654,11 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
         expect(sitter != INVALID_CLIP_ID && mover != INVALID_CLIP_ID);
 
+        // AUTO-XFADE off: flagged, these two would fade into each other rather
+        // than one covering the other, which is what this test is about.
+        cm.setAutoCrossfade(sitter, false);
+        cm.setAutoCrossfade(mover, false);
+
         cm.moveClipToTrack(mover, secondTrackId);
 
         // Mover ends up on track 2 fully covering sitter → sitter goes silent in

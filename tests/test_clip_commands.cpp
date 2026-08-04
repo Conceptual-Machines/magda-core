@@ -1678,7 +1678,11 @@ TEST_CASE("resolveOverlaps - covering a clip leaves it whole and gives it back",
     SECTION("covered end to end") {
         ClipId covered = createAudio(track, 2.0, 2.0);  // [4,8] beats
         ClipId mover = createAudio(track, 8.0, 8.0);    // [16,32] beats
-        cm.moveClipBeats(mover, 0.0, 120.0);            // -> [0,16], swallows it
+        // AUTO-XFADE off on both: with it on these two would fade into each
+        // other instead, which is its own test in test_clip_crossfades.
+        cm.setAutoCrossfade(covered, false);
+        cm.setAutoCrossfade(mover, false);
+        cm.moveClipBeats(mover, 0.0, 120.0);  // -> [0,16], swallows it
 
         REQUIRE(cm.getClipsOnTrack(track).size() == 2);
         const auto* still = cm.getClip(covered);
@@ -1728,8 +1732,14 @@ TEST_CASE("resolveOverlaps - a clip dropped inside another keeps the covered sli
     ClipId longClip = createAudio(trackC, 0.0, 8.0);  // [0,16] beats
     ClipId source = createAudio(trackS, 0.0, 2.0);    // [0,4] beats
 
+    // AUTO-XFADE off: this test is about the split and the slice under the drop,
+    // not about the fade two flagged clips would make instead.
+    cm.setAutoCrossfade(longClip, false);
+    cm.setAutoCrossfade(source, false);
+
     ClipId dropped = cm.duplicateClipAtBeats(source, 6.0, trackC, 120.0);  // [6,10]
     REQUIRE(dropped != INVALID_CLIP_ID);
+    cm.setAutoCrossfade(dropped, false);
 
     // Head [0,6], the covered slice [6,10] and tail [10,16], plus the drop.
     const auto onTrack = cm.getClipsOnTrack(trackC);

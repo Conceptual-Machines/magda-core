@@ -290,31 +290,62 @@ TEST_CASE("auto-crossfade never applies to MIDI clips", "[crossfade]") {
     CHECK_FALSE(cm.getCrossfadeAtStart(b).has_value());
 }
 
-TEST_CASE("a clip covered end to end goes silent and stays put", "[crossfade]") {
+// AUTO-XFADE is the switch that decides what an overlap means, whatever shape
+// it has. Flagged, two audio clips fade into each other — including when one
+// ends up wholly inside the other, which used to silence it and take the
+// crossfade off screen with it (#2003).
+TEST_CASE("a clip covered end to end still crossfades while AUTO-XFADE is on", "[crossfade]") {
     resetState();
     auto& cm = ClipManager::getInstance();
     const auto trackId = createTrack();
 
     const ClipId a = createAudioBeats(trackId, 2.0, 2.0);
     const ClipId b = createAudioBeats(trackId, 10.0, 8.0);
+    cm.setAutoCrossfade(a, true);
     cm.setAutoCrossfade(b, true);
 
-    cm.moveClipBeats(b, 0.0);
+    cm.moveClipBeats(b, 0.0);  // -> [0,8], swallowing A at [2,4]
 
-    // Not deleted, not disabled, not moved — just covered.
+    // Untouched in the model, and still heard: the pair is a joint.
     const auto* covered = cm.getClip(a);
     REQUIRE(covered != nullptr);
     CHECK(covered->enabled);
     CHECK(covered->placement.startBeat == Catch::Approx(2.0));
     CHECK(covered->placement.lengthBeats == Catch::Approx(2.0));
+    CHECK(audibleSpanFor(a).audible);
+
+    // And the crossfade is still there to draw — over everything they share,
+    // which for a swallowed clip is the whole of it.
+    auto xf = cm.getCrossfadeAtStart(a);
+    REQUIRE(xf.has_value());
+    CHECK(xf->leftClipId == b);
+    CHECK(xf->startBeat == Catch::Approx(2.0));
+    CHECK(xf->endBeat == Catch::Approx(4.0));
+}
+
+TEST_CASE("a clip covered end to end goes silent with AUTO-XFADE off", "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId a = createAudioBeats(trackId, 2.0, 2.0);
+    const ClipId b = createAudioBeats(trackId, 10.0, 8.0);
+    cm.setAutoCrossfade(a, false);
+    cm.setAutoCrossfade(b, false);
+
+    cm.moveClipBeats(b, 0.0);
+
+    // Nothing to fade with, so B simply covers A. A keeps its place either way.
+    const auto* covered = cm.getClip(a);
+    REQUIRE(covered != nullptr);
+    CHECK(covered->enabled);
+    CHECK(covered->placement.startBeat == Catch::Approx(2.0));
     CHECK_FALSE(audibleSpanFor(a).audible);
+    CHECK_FALSE(cm.getCrossfadeAtStart(a).has_value());
 
     // Pull B off it and it plays again, with no restore step.
     cm.moveClipBeats(b, 20.0);
-    const auto uncovered = audibleSpanFor(a);
-    CHECK(uncovered.audible);
-    CHECK(uncovered.startBeat == Catch::Approx(2.0));
-    CHECK(uncovered.lengthBeats == Catch::Approx(2.0));
+    CHECK(audibleSpanFor(a).audible);
 }
 
 TEST_CASE("an existing crossfade survives edits to other clips on the track", "[crossfade]") {
@@ -483,14 +514,17 @@ TEST_CASE("crossfades can be resolved against a previewed lane", "[crossfade][ov
         CHECK(xf->endBeat == Catch::Approx(8.0));
     }
 
-    SECTION("a clip dragged fully inside another is a cover, not a joint") {
+    SECTION("a clip dragged fully inside another keeps its crossfade") {
         auto lane = laneFromModel();
         for (auto& clip : lane) {
             if (clip.id == b)
                 clip.setPlacementBeats(2.0, 4.0);
         }
 
-        CHECK_FALSE(ClipManager::crossfadeAtStartIn(lane, b).has_value());
-        CHECK_FALSE(ClipManager::crossfadeAtEndIn(lane, b).has_value());
+        // Swallowed by A: they share the whole of B, so that is the fade.
+        auto xf = ClipManager::crossfadeAtStartIn(lane, b);
+        REQUIRE(xf.has_value());
+        CHECK(xf->startBeat == Catch::Approx(2.0));
+        CHECK(xf->endBeat == Catch::Approx(6.0));
     }
 }
