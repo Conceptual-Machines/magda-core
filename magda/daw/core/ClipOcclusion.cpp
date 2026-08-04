@@ -184,4 +184,37 @@ std::vector<BeatRange> computeCoveringRanges(const std::vector<ClipInfo>& trackC
     return mergeRanges(std::move(covering));
 }
 
+std::vector<BeatRange> computeInteriorCrossfadeRanges(const std::vector<ClipInfo>& trackClips,
+                                                      ClipId clipId) {
+    const ClipInfo* clip = nullptr;
+    for (const auto& candidate : trackClips) {
+        if (candidate.id == clipId) {
+            clip = &candidate;
+            break;
+        }
+    }
+    if (clip == nullptr)
+        return {};
+
+    const double start = clip->placement.startBeat;
+    const double end = start + clip->placement.lengthBeats;
+    if (!(end > start))
+        return {};
+
+    std::vector<BeatRange> interior;
+    for (const auto& other : trackClips) {
+        if (other.id == clipId || !isCrossfadeJoint(other, *clip))
+            continue;
+
+        const double oStart = other.placement.startBeat;
+        const double oEnd = oStart + other.placement.lengthBeats;
+        // Only the swallowed ones: anything reaching an edge is already drawn
+        // as this clip's own fade in / fade out.
+        if (oStart > start + kTolBeats && oEnd < end - kTolBeats)
+            interior.push_back({BeatPosition{oStart}, BeatPosition{oEnd}});
+    }
+
+    return mergeRanges(std::move(interior));
+}
+
 }  // namespace magda

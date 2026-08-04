@@ -81,6 +81,10 @@ class ClipComponent : public juce::Component,
     // lane to work out, and drawn so a stack does not read as a single clip.
     void setCoveringRanges(std::vector<BeatRange> ranges);
 
+    /// Crossfade joints that sit inside this clip rather than at an edge, so
+    /// its own fade overlays cannot draw them (#2003). Pushed by the panel.
+    void setInteriorCrossfadeRanges(std::vector<BeatRange> ranges);
+
     /// Pixel span of a covering range inside this clip.
     juce::Rectangle<int> coveringRangeBounds(const BeatRange& range,
                                              juce::Rectangle<int> bounds) const;
@@ -140,6 +144,7 @@ class ClipComponent : public juce::Component,
     TrackContentPanel* parentPanel_;
     bool isSelected_ = false;
     std::vector<BeatRange> coveringRanges_;
+    std::vector<BeatRange> interiorCrossfadeRanges_;
     bool isMarqueeHighlighted_ = false;
 
     // Interaction state

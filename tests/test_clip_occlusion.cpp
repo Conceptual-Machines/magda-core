@@ -275,3 +275,39 @@ TEST_CASE("occlusion - a clip set to play through is not covered", "[clip][occlu
         CHECK(computeAudibleSpans(lane).at(1).silenced.empty());
     }
 }
+
+// A crossfade is drawn from the two clips' edge fades, which only works while
+// the overlap touches an edge of each. Swallow one clip whole and the overlap
+// sits in the middle of the other, where it has no edge to hang off — so the
+// covering clip has to draw it, or it vanishes with the clip underneath (#2003).
+TEST_CASE("occlusion - a swallowed crossfade is reported to the clip over it",
+          "[clip][occlusion][crossfade]") {
+    std::vector<ClipInfo> lane{makeClip(1, 0.0, 16.0, 1), makeClip(2, 4.0, 4.0, 2)};
+    lane[0].autoCrossfade = true;
+    lane[1].autoCrossfade = true;
+
+    SECTION("the clip on top gets the region") {
+        const auto interior = computeInteriorCrossfadeRanges(lane, 1);
+        REQUIRE(interior.size() == 1);
+        CHECK(interior[0].start.value == Catch::Approx(4.0));
+        CHECK(interior[0].end.value == Catch::Approx(8.0));
+
+        // The swallowed clip draws its own: the overlap IS its whole span, so
+        // its ordinary fade-in covers it.
+        CHECK(computeInteriorCrossfadeRanges(lane, 2).empty());
+    }
+
+    SECTION("an overlap reaching an edge is left to the edge fades") {
+        std::vector<ClipInfo> edge{makeClip(1, 0.0, 16.0, 1), makeClip(2, 12.0, 8.0, 2)};
+        edge[0].autoCrossfade = true;
+        edge[1].autoCrossfade = true;
+
+        CHECK(computeInteriorCrossfadeRanges(edge, 1).empty());
+    }
+
+    SECTION("no crossfade without the flag") {
+        const std::vector<ClipInfo> unflagged{makeClip(1, 0.0, 16.0, 1), makeClip(2, 4.0, 4.0, 2)};
+
+        CHECK(computeInteriorCrossfadeRanges(unflagged, 1).empty());
+    }
+}

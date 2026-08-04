@@ -77,4 +77,16 @@ std::unordered_map<ClipId, AudibleSpan> computeAudibleSpans(
 std::vector<BeatRange> computeCoveringRanges(const std::vector<ClipInfo>& trackClips,
                                              ClipId clipId);
 
+/**
+ * @brief Crossfade joints that sit strictly inside a clip.
+ *
+ * A crossfade is normally drawn as the two clips' edge fades, which works while
+ * the overlap touches an edge of each. When one clip swallows another the
+ * overlap is in the middle of the covering clip, so it has no edge to hang off
+ * and the only clip that CAN draw it is the one underneath — which is hidden.
+ * These are the ranges the covering clip has to draw itself (#2003).
+ */
+std::vector<BeatRange> computeInteriorCrossfadeRanges(const std::vector<ClipInfo>& trackClips,
+                                                      ClipId clipId);
+
 }  // namespace magda

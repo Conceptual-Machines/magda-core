@@ -2624,8 +2624,11 @@ void TrackContentPanel::updateClipComponentPositions() {
         }
 
         const auto& lane = laneClips[clip->trackId];
-        clipComp->setCoveringRanges(lane.size() > 1 ? computeCoveringRanges(lane, clip->id)
-                                                    : std::vector<BeatRange>{});
+        const bool stacked = lane.size() > 1;
+        clipComp->setCoveringRanges(stacked ? computeCoveringRanges(lane, clip->id)
+                                            : std::vector<BeatRange>{});
+        clipComp->setInteriorCrossfadeRanges(
+            stacked ? computeInteriorCrossfadeRanges(lane, clip->id) : std::vector<BeatRange>{});
 
         // Skip clips that are being dragged - they manage their own position
         if (clipComp->isCurrentlyDragging()) {

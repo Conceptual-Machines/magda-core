@@ -155,6 +155,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testPasteAudioClipCoversExisting();
         testCreateMidiClipPreservesExistingNeighbour();
         testAutoCrossfadeTurnsAnOverlapIntoAJointOrACover();
+        testPlayThroughOverlapOnAudioClips();
         testPlayThroughOverlapReachesTheEngine();
         testMidiNotesUnderACoveringClipDoNotPlay();
         testMidiSyncClipsNotesToVisibleRangeAfterResize();
@@ -2412,6 +2413,41 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(teLengthBeats(a), 8.0, 0.01);
 
         config.setClipOverlapPlaysBoth(originalPlaysBoth);
+    }
+
+    void testPlayThroughOverlapOnAudioClips() {
+        beginTest("play-through on audio clips: the covered one keeps its whole span");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        // At 60 BPM one second is one beat. A [0,8], B moved onto [4,12].
+        auto a = cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto b =
+            cm.createAudioClip(f.trackId, 16.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        // AUTO-XFADE off: with it on the pair is a crossfade joint, which
+        // already plays both sides and leaves nothing for this to change.
+        cm.setAutoCrossfade(a, false);
+        cm.setAutoCrossfade(b, false);
+        cm.setOverlapPlaysBoth(a, false);
+        cm.setOverlapPlaysBoth(b, false);
+        cm.moveClip(b, 4.0, 60.0);
+
+        auto teLengthBeats = [&](ClipId id) {
+            auto* teClip = f.clipSync->getArrangementTeClip(id);
+            return teClip != nullptr ? teClip->getLengthInBeats().inBeats() : -1.0;
+        };
+
+        // Covered: A stops where B starts.
+        expectWithinAbsoluteError(teLengthBeats(a), 4.0, 0.01);
+
+        // The covering clip lets it through: A is whole again, no fade involved.
+        cm.setOverlapPlaysBoth(b, true);
+        expectWithinAbsoluteError(teLengthBeats(a), 8.0, 0.01);
+        expect(!cm.getCrossfadeAtEnd(a).has_value(), "Play-through is not a crossfade");
+
+        cm.setOverlapPlaysBoth(b, false);
+        expectWithinAbsoluteError(teLengthBeats(a), 4.0, 0.01);
     }
 
     void testPlayThroughOverlapReachesTheEngine() {

@@ -542,6 +542,28 @@ void ClipComponent::paint(juce::Graphics& g) {
         }
     }
 
+    // A crossfade with a clip this one swallowed whole. The pair's fades are
+    // drawn from their edges, and this clip has no edge there — the only one
+    // that could draw it is the clip underneath, which is hidden, so the
+    // crossfade simply vanished as soon as the overlap became total (#2003).
+    if (!interiorCrossfadeRanges_.empty() && parentPanel_ != nullptr) {
+        const auto body = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
+        for (const auto& range : interiorCrossfadeRanges_) {
+            const auto region = coveringRangeBounds(range, body);
+            if (region.getWidth() < 2 || region.isEmpty())
+                continue;
+
+            const auto left = static_cast<float>(region.getX());
+            const auto right = static_cast<float>(region.getRight());
+            const auto top = static_cast<float>(region.getY());
+            const auto bottom = static_cast<float>(region.getBottom());
+
+            g.setColour(juce::Colours::white.withAlpha(0.35f));
+            g.drawLine(left, bottom, right, top, 1.5f);
+            g.drawLine(left, top, right, bottom, 1.5f);
+        }
+    }
+
     // Draw resize handles if selected
     if (isSelected_) {
         paintResizeHandles(g, bounds);
@@ -3168,6 +3190,22 @@ void ClipComponent::setCoveringRanges(std::vector<BeatRange> ranges) {
             return;
     }
     coveringRanges_ = std::move(ranges);
+    repaint();
+}
+
+void ClipComponent::setInteriorCrossfadeRanges(std::vector<BeatRange> ranges) {
+    if (ranges.size() == interiorCrossfadeRanges_.size()) {
+        constexpr double tolBeats = 1e-6;
+        bool same = true;
+        for (size_t i = 0; i < ranges.size() && same; ++i) {
+            same = std::abs(ranges[i].start.value - interiorCrossfadeRanges_[i].start.value) <
+                       tolBeats &&
+                   std::abs(ranges[i].end.value - interiorCrossfadeRanges_[i].end.value) < tolBeats;
+        }
+        if (same)
+            return;
+    }
+    interiorCrossfadeRanges_ = std::move(ranges);
     repaint();
 }
 
