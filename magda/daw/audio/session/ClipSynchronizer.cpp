@@ -1828,14 +1828,17 @@ bool ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
 
     // Update clip position/length using beats-based positioning via TE's tempo sequence
     // This ensures correct positioning regardless of when TE's tempo is updated
-    {
+    // MAGDA owns the clip's extent, so this is re-asserted after anything TE
+    // might do to it below.
+    auto applyPlacement = [&] {
         auto startPos =
             edit_.tempoSequence.beatsToTime(te::BeatPosition::fromBeats(clip->startBeats));
         auto endPos = edit_.tempoSequence.beatsToTime(
             te::BeatPosition::fromBeats(clip->startBeats + clip->lengthBeats));
         midiClipPtr->setStart(startPos, true, false);
         midiClipPtr->setEnd(endPos, false);
-    }
+    };
+    applyPlacement();
 
     // Set up internal looping on the TE clip
     if (clip->loopEnabled && clip->loopLengthBeats > 0.0) {
@@ -1857,6 +1860,15 @@ bool ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     } else {
         midiClipPtr->disableLooping();
         midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
+
+        // TE's disableLooping() pulls the clip's end back to a single loop
+        // length — right when a user switches looping off by hand in Waveform,
+        // wrong here, because MAGDA has already decided how long the clip is.
+        // Flatten is where it showed: it unrolls every cycle into the note list
+        // and keeps the clip's length, and TE then cut the clip back to the
+        // first loop, so all the notes flatten had just written were left
+        // outside it and went silent.
+        applyPlacement();
     }
 
     // Groove/Shuffle/Swing — only touch TE when values differ to avoid

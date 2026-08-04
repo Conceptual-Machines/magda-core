@@ -153,6 +153,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testDuplicateAudioClipCoversExisting();
         testPasteAudioClipCoversExisting();
         testCreateMidiClipPreservesExistingNeighbour();
+        testFlattenedLoopPlaysAllItsCycles();
         testMidiNotesUnderACoveringClipDoNotPlay();
         testMidiSyncClipsNotesToVisibleRangeAfterResize();
         testMidiSyncSkipsAllRestPitchBendButKeepsRealCurves();
@@ -2368,6 +2369,42 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         cm.setClipLoopEnabled(clipId, false);
         f.clipSync->syncClipToEngine(clipId);
         expect(!teMidiClip->isLooping(), "Unlooping a MIDI clip must reach the engine too");
+    }
+
+    void testFlattenedLoopPlaysAllItsCycles() {
+        beginTest("a flattened MIDI loop reaches the engine whole, not just its first cycle");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        // 16 beats at 60 BPM looping every 4, one note per cycle.
+        auto clipId = cm.createMidiClipBeats(f.trackId, 0.0, 16.0, ClipView::Arrangement);
+        expect(clipId != INVALID_CLIP_ID);
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr);
+        if (clip == nullptr)
+            return;
+        clip->loopEnabled = true;
+        clip->loopLengthBeats = 4.0;
+        expect(cm.addMidiNote(clipId, {60, 100, 0.0, 1.0}));
+
+        f.clipSync->syncClipToEngine(clipId);
+
+        // Flatten: every cycle written out, and looping off with them.
+        ClipOperations::flattenMidiClip(*clip);
+        expectEquals(static_cast<int>(clip->midiNotes.size()), 4);
+        cm.forceNotifyClipPropertyChanged(clipId);
+
+        auto* teMidiClip = f.getTeMidiClip(clipId);
+        expect(teMidiClip != nullptr);
+        if (teMidiClip == nullptr)
+            return;
+
+        // TE's disableLooping() pulls the clip end back to one loop length,
+        // which used to leave three of the four cycles outside the clip.
+        expectWithinAbsoluteError(teMidiClip->getLengthInBeats().inBeats(), 16.0, 0.01);
+        expectEquals(teMidiClip->getSequence().getNumNotes(), 4,
+                     "Every flattened cycle must reach the engine");
     }
 
     void testMidiNotesUnderACoveringClipDoNotPlay() {
