@@ -18,6 +18,20 @@
 
 namespace magda::engine {
 
+/**
+ * @brief Events one source or device may emit into one port in one block.
+ *
+ * The executor reserves storage for every MIDI port before the first block, so
+ * nothing on the audio thread has to grow a buffer. A port fed by a merge is
+ * sized from the sum of what feeds it; the chain has to end somewhere, and this
+ * is where: a source or device that writes more than this forces the very
+ * allocation the reservation exists to avoid. Debug builds assert on it.
+ *
+ * Deliberately generous. A block of dense controller traffic is a few dozen
+ * events, and a chord is a handful.
+ */
+constexpr int kMaxMidiEventsPerPort = 256;
+
 /** Audio and MIDI handed to a device for one block. */
 struct DeviceBlock {
     /// The device's audio input on entry, its output on exit. Devices process
@@ -29,7 +43,8 @@ struct DeviceBlock {
     const juce::MidiBuffer* midiIn = nullptr;
 
     /// Where a MIDI-producing device writes, cleared before the call. Null when
-    /// the plan gave the device no MIDI output port.
+    /// the plan gave the device no MIDI output port. At most
+    /// kMaxMidiEventsPerPort events; beyond that the buffer has to allocate.
     juce::MidiBuffer* midiOut = nullptr;
 
     /// Sidechain audio. A zero-channel block when the slot is unconnected, so
@@ -83,7 +98,8 @@ class EngineMidiSource {
 
     virtual void prepare(const RenderContext&) {}
 
-    /// Add this block's events to @p out; it arrives cleared.
+    /// Add this block's events to @p out; it arrives cleared. At most
+    /// kMaxMidiEventsPerPort of them.
     virtual void render(const BlockInfo&, juce::MidiBuffer& out) = 0;
 };
 

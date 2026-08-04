@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -44,10 +45,14 @@ struct OpValue {
 /**
  * @brief Per-op values for one compiled plan, indexed by OpId.
  *
- * Sized to the plan it was resolved against. Published to the audio thread as a
- * whole; the executor never mutates it.
+ * Published to the audio thread as a whole; the executor never mutates it.
+ * Carries the fingerprint of the plan it was resolved against, because values
+ * and plans are published separately: a table left over from a plan that has
+ * since been swapped would otherwise be applied by index to whatever op now
+ * sits there.
  */
 struct PlanValues {
+    std::uint64_t planFingerprint = 0;
     std::vector<OpValue> ops;
 };
 

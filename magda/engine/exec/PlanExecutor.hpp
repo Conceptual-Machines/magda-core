@@ -84,8 +84,15 @@ class PlanExecutor {
     // and nothing else.
     std::vector<juce::AudioBuffer<float>> audioSlots_;
     std::vector<juce::MidiBuffer> midiSlots_;
+    /// Events each MIDI port can hold without growing, summed through the MIDI
+    /// graph at prepare time. Checked in debug wherever a producer writes.
+    std::vector<int> midiEventBounds_;
     std::vector<int> portOffsets_;
     std::vector<int> portSlots_;
+
+    /// Identity of the prepared plan; values that do not carry the same one
+    /// were resolved against something else and are not applied.
+    std::uint64_t planFingerprint_ = 0;
 
     // Bindings resolved per op, so the audio thread never hashes anything.
     std::vector<EngineDevice*> deviceForOp_;

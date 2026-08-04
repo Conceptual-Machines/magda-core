@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
 #include <unordered_map>
 
 #include "core/RackInfo.hpp"
@@ -123,6 +124,10 @@ class Resolver {
         byId_.emplace(master.id, &master);
 
         anySolo_ = std::ranges::any_of(tracks, [](const TrackInfo& t) { return t.soloed; });
+
+        for (const auto& track : tracks)
+            collectSilencedRacks(track.chain.fxChainElements, false);
+        collectSilencedRacks(master.chain.fxChainElements, false);
     }
 
     std::vector<std::string> run(PlanValues& values);
@@ -145,8 +150,44 @@ class Resolver {
     const DeviceInfo* findDevice(const TrackInfo& track, const OpKey& key) const;
 
     bool isAudible(const TrackInfo& track) const;
-    bool isMutedIncludingParents(const TrackInfo& track, int depth = 0) const;
+
+    /// Mute as everything downstream sees it: the track's own flag, else its
+    /// parent's, else its destination's, each answered the same way. Muting a
+    /// group or a bus mutes what feeds it, however many hops away that is.
+    bool isMutedIncludingDestination(const TrackInfo& track, int depth = 0) const;
     bool isInheritedMute(const TrackInfo& track) const;
+
+    /// Solo as everything upstream sees it: the track's own flag, any ancestor
+    /// soloed, or its destination soloed by the same rule. This is the half
+    /// that keeps a soloed group's children audible, since a child is only
+    /// soloed by way of the group it feeds.
+    bool isSoloIncludingDestination(const TrackInfo& track, int depth = 0) const;
+
+    /// The track's destination, when its output routing names one.
+    const TrackInfo* destinationOf(const TrackInfo& track) const {
+        const auto route = parseTrackRoute(track.audioOutputDevice);
+        return route.namesTrack() ? findTrack(route.trackId) : nullptr;
+    }
+
+    /// Racks sitting inside a chain that is out of the mix. Their ops key on
+    /// the nested rack, so the chain ID on an op is not enough to find them:
+    /// without this they would keep processing, advancing their tails and
+    /// publishing meter levels, where the current engine leaves the whole
+    /// outer chain disconnected.
+    void collectSilencedRacks(const std::vector<ChainElement>& elements, bool insideInactiveChain) {
+        for (const auto& element : elements) {
+            if (!isRack(element))
+                continue;
+
+            const auto& rack = getRack(element);
+            if (insideInactiveChain)
+                silencedRacks_.insert(rack.id);
+
+            for (const auto& chain : rack.chains)
+                collectSilencedRacks(chain.elements,
+                                     insideInactiveChain || !isChainActive(rack, chain));
+        }
+    }
 
     void report(OpId id, const std::string& what) {
         messages_.push_back("op " + std::to_string(id) + " (" +
@@ -157,6 +198,7 @@ class Resolver {
     const RenderPlan& plan_;
     const TrackInfo& master_;
     std::unordered_map<TrackId, const TrackInfo*> byId_;
+    std::set<RackId> silencedRacks_;
     bool anySolo_ = false;
     std::vector<std::string> messages_;
 };
@@ -177,26 +219,55 @@ const DeviceInfo* Resolver::findDevice(const TrackInfo& track, const OpKey& key)
     return chain == nullptr ? nullptr : findDeviceIn(chain->elements, key.deviceId);
 }
 
-bool Resolver::isMutedIncludingParents(const TrackInfo& track, int depth) const {
+bool Resolver::isMutedIncludingDestination(const TrackInfo& track, int depth) const {
     if (track.muted)
         return true;
     if (depth >= kMaxTrackWalk)
         return false;
-    const auto* parent = findTrack(track.parentId);
-    return parent != nullptr && isMutedIncludingParents(*parent, depth + 1);
+
+    // A parent takes precedence over the route, the way the current engine
+    // answers it: a track inside a group asks the group, and only a track with
+    // no parent follows its output.
+    if (const auto* parent = findTrack(track.parentId))
+        return isMutedIncludingDestination(*parent, depth + 1);
+    if (const auto* destination = destinationOf(track))
+        return isMutedIncludingDestination(*destination, depth + 1);
+
+    return false;
 }
 
 bool Resolver::isInheritedMute(const TrackInfo& track) const {
     if (const auto* parent = findTrack(track.parentId))
-        if (isMutedIncludingParents(*parent))
+        if (isMutedIncludingDestination(*parent))
             return true;
 
     // Muting a track mutes everything feeding it, so a track whose output is
-    // routed into a muted track is muted too.
-    if (const auto route = parseTrackRoute(track.audioOutputDevice); route.namesTrack())
-        if (const auto* destination = findTrack(route.trackId))
-            if (isMutedIncludingParents(*destination))
-                return true;
+    // routed into a muted track is muted too, however long the chain of routes.
+    if (const auto* destination = destinationOf(track))
+        if (isMutedIncludingDestination(*destination))
+            return true;
+
+    return false;
+}
+
+bool Resolver::isSoloIncludingDestination(const TrackInfo& track, int depth) const {
+    if (track.soloed)
+        return true;
+    if (depth >= kMaxTrackWalk)
+        return false;
+
+    // Ancestors count as soloed only by their own flag; the destination is
+    // asked the whole question again.
+    for (const auto* parent = findTrack(track.parentId); parent != nullptr;
+         parent = findTrack(parent->parentId)) {
+        if (parent->soloed)
+            return true;
+        if (++depth >= kMaxTrackWalk)
+            return false;
+    }
+
+    if (const auto* destination = destinationOf(track))
+        return isSoloIncludingDestination(*destination, depth + 1);
 
     return false;
 }
@@ -207,7 +278,10 @@ bool Resolver::isAudible(const TrackInfo& track) const {
     // track's solo silences this one, and only then does self-mute apply.
     if (isInheritedMute(track))
         return false;
-    if (track.soloed)
+    // Indirect, not just this track's own flag. Soloing a group solos nothing
+    // directly: its children feed it, and it is that edge that keeps them
+    // audible while everything else is silenced.
+    if (isSoloIncludingDestination(track))
         return true;
     if (anySolo_ && track.id != master_.id)
         return false;
@@ -235,6 +309,11 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         if (chain != nullptr && !isChainActive(*rack, *chain))
             value.silent = true;
     }
+
+    // Ops of a rack nested inside such a chain name only the nested rack, so
+    // the check above cannot see them.
+    if (key.rackId != INVALID_RACK_ID && silencedRacks_.contains(key.rackId))
+        value.silent = true;
 
     switch (key.role) {
         case OpRole::TrackFader: {
@@ -293,6 +372,14 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
                 value.silent = true;
                 break;
             }
+            // A bypassed chain is wired straight from the rack's input pins to
+            // its output pins, which skips the chain's volume and pan along
+            // with everything else in it. The fader op is still compiled over
+            // that passthrough, so that its identity survives the bypass being
+            // switched off; here it simply passes signal.
+            if (chain->bypassed)
+                break;
+
             const auto gain = faderGainFromDecibels(chain->volume);
             applyLinearPanLaw(gain, faderPan(chain->pan), value.gainLeft, value.gainRight);
             break;
@@ -339,6 +426,7 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
 }
 
 std::vector<std::string> Resolver::run(PlanValues& values) {
+    values.planFingerprint = planFingerprint(plan_);
     values.ops.assign(plan_.ops.size(), OpValue{});
 
     for (std::size_t i = 0; i < plan_.ops.size(); ++i)

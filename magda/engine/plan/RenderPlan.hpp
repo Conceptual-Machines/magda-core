@@ -202,6 +202,18 @@ int arityOf(OpKind kind);
 void bakeScheduling(RenderPlan& plan);
 
 /**
+ * @brief Structural identity of a plan, over its ops, keys and edges.
+ *
+ * Anything resolved against a plan and published separately from it (values,
+ * snapshots) carries this so the audio thread can tell that the two belong
+ * together. Op count is not identity: a structural edit can replace or reorder
+ * ops and keep the count, and a stale table applied by index would then put one
+ * op's gain or mute on another. Two plans that compile to the same structure
+ * hash the same, which is correct: values resolved for either one fit both.
+ */
+std::uint64_t planFingerprint(const RenderPlan& plan);
+
+/**
  * @brief Structural checks over a compiled plan.
  *
  * Returns one message per violation, empty when the plan is well formed.

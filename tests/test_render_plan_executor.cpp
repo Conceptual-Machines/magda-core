@@ -325,6 +325,54 @@ TEST_CASE("Solo silences the tracks that are not soloed", "[engine][exec]") {
     CHECK(harness.outputSample() == approx(0.5f));
 }
 
+TEST_CASE("Soloing a group keeps its children audible", "[engine][exec]") {
+    // Nothing solos a child directly. It is soloed by way of the group it
+    // feeds, the same edge that makes it inherit the group's mute, so solo has
+    // to follow the routing graph or a soloed group renders silence.
+    auto group = makeTrack(2, TrackType::Group);
+    group.soloed = true;
+    group.childIds.push_back(1);
+
+    auto child = makeTrack(1);
+    child.parentId = 2;
+    child.audioOutputDevice = "track:2";
+
+    auto other = makeTrack(3);
+
+    Harness harness({child, other, group}, makeMaster());
+    ConstantSource inGroup(0.5f);
+    ConstantSource outside(0.25f);
+    harness.bindings.clipAudio[1] = &inGroup;
+    harness.bindings.clipAudio[3] = &outside;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    CHECK(harness.outputSample() == approx(0.5f));
+}
+
+TEST_CASE("Solo follows a chain of routes", "[engine][exec]") {
+    auto destination = makeTrack(3, TrackType::Aux);
+    destination.auxBusIndex = 0;
+    destination.soloed = true;
+
+    auto middle = makeTrack(2, TrackType::Aux);
+    middle.auxBusIndex = 1;
+    middle.audioOutputDevice = "track:3";
+
+    auto source = makeTrack(1);
+    source.audioOutputDevice = "track:2";
+
+    Harness harness({source, middle, destination}, makeMaster());
+    ConstantSource level(0.5f);
+    harness.bindings.clipAudio[1] = &level;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    CHECK(harness.outputSample() == approx(0.5f));
+}
+
 TEST_CASE("Mute is inherited from a group parent and from the destination track",
           "[engine][exec]") {
     SECTION("group parent") {
@@ -352,6 +400,27 @@ TEST_CASE("Mute is inherited from a group parent and from the destination track"
         source.audioOutputDevice = "track:2";
 
         Harness harness({source, destination}, makeMaster());
+        ConstantSource level(0.5f);
+        harness.bindings.clipAudio[1] = &level;
+
+        harness.prepareCleanly();
+        harness.render();
+        CHECK(harness.outputSample() == approx(0.0f));
+    }
+
+    SECTION("a destination two routes away") {
+        auto destination = makeTrack(3, TrackType::Aux);
+        destination.auxBusIndex = 0;
+        destination.muted = true;
+
+        auto middle = makeTrack(2, TrackType::Aux);
+        middle.auxBusIndex = 1;
+        middle.audioOutputDevice = "track:3";
+
+        auto source = makeTrack(1);
+        source.audioOutputDevice = "track:2";
+
+        Harness harness({source, middle, destination}, makeMaster());
         ConstantSource level(0.5f);
         harness.bindings.clipAudio[1] = &level;
 
@@ -508,6 +577,103 @@ TEST_CASE("A rack chain out of the mix contributes neither audio nor MIDI", "[en
     }
 }
 
+TEST_CASE("A bypassed rack chain passes signal at unity", "[engine][exec]") {
+    // Bypass wires the rack's input pins straight to its output pins, which
+    // skips the chain's volume and pan along with its devices. The fader op is
+    // still there, so that it keeps its identity when bypass comes off.
+    auto rack = std::make_unique<RackInfo>();
+    rack->id = 5;
+
+    ChainInfo chain;
+    chain.id = 10;
+    chain.bypassed = true;
+    chain.volume = -12.0f;
+    chain.pan = 0.8f;
+    chain.elements.push_back(makeDeviceElement(makeEffect(7)));
+    rack->chains.push_back(std::move(chain));
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(ChainElement{std::move(rack)});
+
+    Harness harness({track}, makeMaster());
+    ConstantSource source(0.5f);
+    harness.bindings.clipAudio[1] = &source;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    CHECK(harness.outputSample(0) == approx(0.5f));
+    CHECK(harness.outputSample(1) == approx(0.5f));
+}
+
+TEST_CASE("A rack inside a chain out of the mix stops processing", "[engine][exec]") {
+    // Its ops key on the nested rack, so the chain ID on an op cannot find
+    // them. Left running they would advance their tails and publish meter
+    // levels for a chain the current engine leaves disconnected.
+    auto inner = std::make_unique<RackInfo>();
+    inner->id = 6;
+    ChainInfo innerChain;
+    innerChain.id = 20;
+    innerChain.elements.push_back(makeDeviceElement(makeEffect(7)));
+    inner->chains.push_back(std::move(innerChain));
+
+    auto outer = std::make_unique<RackInfo>();
+    outer->id = 5;
+    ChainInfo outerChain;
+    outerChain.id = 10;
+    outerChain.muted = true;
+    outerChain.elements.push_back(ChainElement{std::move(inner)});
+    outer->chains.push_back(std::move(outerChain));
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(ChainElement{std::move(outer)});
+
+    Harness harness({track}, makeMaster());
+    ConstantSource source(1.0f);
+    GainDevice nested(1.0f);
+    harness.bindings.clipAudio[1] = &source;
+    harness.bindings.devices[7] = &nested;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    CHECK(nested.processedBlocks == 0);
+    CHECK(harness.meterFor(OpRole::DeviceMeter, 1) == approx(0.0f));
+    CHECK(harness.outputSample() == approx(0.0f));
+}
+
+TEST_CASE("Values resolved for another plan are not applied", "[engine][exec]") {
+    // Swapping one device for another is the everyday structural edit that
+    // keeps the op count and changes what each index means. Nothing about the
+    // sizes says the table is stale, so identity has to be carried.
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+
+    auto replaced = makeTrack(1);
+    replaced.volume = 0.5f;
+    replaced.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(8)));
+
+    Harness harness({track}, makeMaster());
+    ConstantSource source(1.0f);
+    GainDevice device(1.0f);
+    harness.bindings.clipAudio[1] = &source;
+    harness.bindings.devices[7] = &device;
+    harness.prepareCleanly();
+
+    const std::vector<TrackInfo> otherTracks{replaced};
+    const auto other = magda::engine::compileRenderPlan(otherTracks, makeMaster());
+    PlanValues otherValues;
+    magda::engine::resolvePlanValues(other, otherTracks, makeMaster(), otherValues);
+    REQUIRE(otherValues.ops.size() == harness.values.ops.size());
+    REQUIRE(otherValues.planFingerprint != harness.values.planFingerprint);
+
+    harness.values = otherValues;
+    harness.render();
+
+    // Rendered at unity rather than with the other plan's fader value.
+    CHECK(harness.outputSample() == approx(1.0f));
+}
+
 TEST_CASE("An instrument turns the track's MIDI into audio", "[engine][exec]") {
     auto track = makeTrack(1);
     track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(8)));
@@ -553,6 +719,55 @@ TEST_CASE("A MIDI-producing device's output reaches the device after it", "[engi
     // The arp replaces the incoming note rather than passing it through, so the
     // instrument sees only what the arp emitted.
     CHECK(harness.outputSample() == approx(72.0f / 127.0f));
+}
+
+TEST_CASE("A merge carries everything that reaches it", "[engine][exec]") {
+    // Two dense sources into one merge. The port's reservation is summed
+    // through the MIDI graph for exactly this: a flat per-port figure would be
+    // outgrown here, and growing it happens on the audio thread.
+    class BurstSource final : public EngineMidiSource {
+      public:
+        explicit BurstSource(int count, int firstNote) : count_(count), firstNote_(firstNote) {}
+
+        void render(const BlockInfo&, juce::MidiBuffer& out) override {
+            for (int event = 0; event < count_; ++event)
+                out.addEvent(juce::MidiMessage::noteOn(1, (firstNote_ + event) % 128, 1.0f), 0);
+        }
+
+      private:
+        int count_;
+        int firstNote_;
+    };
+
+    class EventCounter final : public EngineDevice {
+      public:
+        void process(DeviceBlock& block) override {
+            events = block.midiIn->getNumEvents();
+            block.audio.clear();
+        }
+
+        int events = 0;
+    };
+
+    auto track = makeTrack(1);
+    track.recordArmed = true;
+    track.midiInputDevice = "midi-hardware";
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(8)));
+
+    Harness harness({track}, makeMaster());
+    ConstantSource audio(0.0f);
+    BurstSource clips(magda::engine::kMaxMidiEventsPerPort, 0);
+    BurstSource live(magda::engine::kMaxMidiEventsPerPort, 64);
+    EventCounter counter;
+    harness.bindings.clipAudio[1] = &audio;
+    harness.bindings.clipMidi[1] = &clips;
+    harness.bindings.midiInputs[1] = &live;
+    harness.bindings.devices[8] = &counter;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    CHECK(counter.events == 2 * magda::engine::kMaxMidiEventsPerPort);
 }
 
 TEST_CASE("An audio sidechain reaches the device that asked for it", "[engine][exec]") {

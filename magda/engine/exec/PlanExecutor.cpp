@@ -6,11 +6,11 @@
 namespace magda::engine {
 namespace {
 
-/// Headroom for one block of MIDI on one port, reserved at prepare time so
-/// addEvent() never grows a buffer on the audio thread. Generous: a block of
-/// dense controller traffic is a few hundred bytes. The sample-accurate event
-/// streams replace this with a proper reader.
-constexpr int kMidiPortCapacityBytes = 8192;
+/// Bytes MidiBuffer spends on one event: a sample position, a length, and the
+/// message itself. Sized for the longest short message rather than the
+/// average, so a reservation computed from an event count always holds.
+constexpr int kMidiBytesPerEvent =
+    static_cast<int>(sizeof(std::int32_t) + sizeof(std::uint16_t)) + 3;
 
 /// Per-channel gain for a stereo pair. Anything wider alternates, which keeps
 /// the pairs correct if a device ever reports more than two channels; the model
@@ -44,8 +44,10 @@ float peakOf(juce::dsp::AudioBlock<float> block, int numSamples) {
 
 void PlanExecutor::reset() {
     plan_ = nullptr;
+    planFingerprint_ = 0;
     audioSlots_.clear();
     midiSlots_.clear();
+    midiEventBounds_.clear();
     portOffsets_.clear();
     portSlots_.clear();
     deviceForOp_.clear();
@@ -90,13 +92,41 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     for (auto& buffer : audioSlots_)
         buffer.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
 
+    // Reserving a flat amount per MIDI port is not enough: a merge carries
+    // everything that reaches it, so fan-in outgrows any fixed figure and the
+    // first block that does grows a buffer on the callback. The bound is
+    // computed through the MIDI graph instead, which ops being in dependency
+    // order makes a single forward pass. Producers are capped by contract
+    // (kMaxMidiEventsPerPort), and that cap is what the sums are built from.
     midiSlots_.resize(static_cast<std::size_t>(numMidiSlots));
-    for (auto& buffer : midiSlots_)
-        buffer.ensureSize(kMidiPortCapacityBytes);
+    midiEventBounds_.assign(static_cast<std::size_t>(numMidiSlots), kMaxMidiEventsPerPort);
+    for (std::size_t i = 0; i < numOps; ++i) {
+        const auto& op = plan.ops[i];
+        if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader)
+            continue;
+
+        int carried = 0;
+        for (std::size_t slot = 0; slot < op.inputs.size(); ++slot) {
+            const auto& input = op.inputs[slot];
+            if (!input.valid())
+                continue;
+            if (plan.ops[static_cast<std::size_t>(input.op)]
+                    .outputs[static_cast<std::size_t>(input.port)] != SignalKind::Midi)
+                continue;
+            carried += midiEventBounds_[static_cast<std::size_t>(slotFor(input))];
+        }
+
+        for (int port = 0; port < static_cast<int>(op.outputs.size()); ++port)
+            if (op.outputs[static_cast<std::size_t>(port)] == SignalKind::Midi)
+                midiEventBounds_[static_cast<std::size_t>(
+                    slotFor(PortRef{static_cast<OpId>(i), port}))] = carried;
+    }
+
+    for (std::size_t slot = 0; slot < midiSlots_.size(); ++slot)
+        midiSlots_[slot].ensureSize(midiEventBounds_[slot] * kMidiBytesPerEvent);
 
     silence_.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
     silence_.clear();
-    noMidi_.ensureSize(kMidiPortCapacityBytes);
     noMidi_.clear();
 
     deviceForOp_.assign(numOps, nullptr);
@@ -192,6 +222,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                                " samples of latency, which nothing compensates for yet");
     }
 
+    planFingerprint_ = planFingerprint(plan);
     plan_ = &plan;
     return messages;
 }
@@ -222,16 +253,25 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
     if (plan_ == nullptr)
         return;
 
+    // A host asking for more than the block the plan was prepared for would
+    // otherwise leave the tail of its buffer silent with nothing saying so.
+    jassert(requestedBlock.numSamples <= context_.maxBlockSize);
+
     auto block = requestedBlock;
     block.numSamples = std::min(block.numSamples, context_.maxBlockSize);
     const auto numSamples = block.numSamples;
     if (numSamples <= 0)
         return;
 
-    // Values are resolved against a plan; one resolved against a different plan
-    // would apply another op's gain to this one, so unity is the safe reading.
+    // Values are resolved against a plan and published separately from it, so
+    // a table can outlive the plan it was made for. Matching op counts prove
+    // nothing: a structural edit can replace ops and keep the count, and the
+    // stale gains and mutes would land on whatever op now holds each index.
+    // The fingerprint is what says the two belong together; without it, unity
+    // is the safe reading.
     static constexpr OpValue kUnity;
-    const auto haveValues = values.ops.size() == plan_->ops.size();
+    const auto haveValues =
+        values.planFingerprint == planFingerprint_ && values.ops.size() == plan_->ops.size();
 
     for (std::size_t i = 0; i < plan_->ops.size(); ++i) {
         const auto& op = plan_->ops[i];
@@ -253,8 +293,10 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
             case OpKind::MidiInput: {
                 auto& out = midiOut(id, 0);
                 out.clear();
-                if (!value.silent && midiSourceForOp_[i] != nullptr)
+                if (!value.silent && midiSourceForOp_[i] != nullptr) {
                     midiSourceForOp_[i]->render(block, out);
+                    jassert(out.getNumEvents() <= kMaxMidiEventsPerPort);
+                }
                 break;
             }
 
@@ -311,6 +353,8 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
                 if (op.inputs[2].valid())
                     deviceBlock.sidechain = audioIn(op.inputs[2], numSamples);
                 device->process(deviceBlock);
+                jassert(deviceMidiOut == nullptr ||
+                        deviceMidiOut->getNumEvents() <= kMaxMidiEventsPerPort);
                 break;
             }
 
