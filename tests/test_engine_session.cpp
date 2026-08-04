@@ -299,6 +299,39 @@ TEST_CASE("Bypass and chain power keep the device, deletion destroys it", "[engi
     }
 }
 
+TEST_CASE("Model IDs that have moved on cannot retire what the live plan uses",
+          "[engine][session]") {
+    // Plans are compiled from one model revision and published against
+    // whatever the model has become, so the two arguments to retirement drift
+    // apart by design. When they do, the plan wins: what it names is reachable
+    // from the audio thread this instant, and freeing it is not an early
+    // eviction but a pointer the callback is about to follow.
+    Ledger ledger;
+    TestFactory factory(ledger);
+    EngineSession session(factory);
+
+    const auto tracks = trackWithEffect(7);
+    const auto plan = compile(tracks);
+
+    // The model has already lost the device this plan renders through.
+    const std::vector<TrackInfo> without{makeTrack(1)};
+    session.publish(plan, context(), modelIds(without));
+    session.publishValues(resolve(*plan, tracks));
+
+    CHECK(ledger.devicesDestroyed == 0);
+    REQUIRE(factory.devicesById[7] != nullptr);
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    CHECK(output.getSample(0, 0) == approx(0.5f));
+
+    // It goes when the plan stops naming it too, which is the first moment
+    // nothing can reach it.
+    session.publish(compile(without), context(), modelIds(without));
+    CHECK(ledger.devicesDestroyed == 1);
+    CHECK(ledger.lastDestroyingThread.load() == std::this_thread::get_id());
+}
+
 TEST_CASE("A plan that does not prepare leaves the live one playing", "[engine][session]") {
     Ledger ledger;
     TestFactory factory(ledger);

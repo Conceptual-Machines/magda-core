@@ -98,16 +98,25 @@ class RuntimeStateStore {
     PlanBindings realise(const RenderPlan& plan);
 
     /**
-     * @brief Destroy what the model no longer holds, and say how much went.
+     * @brief Destroy what neither @p livePlan nor @p modelIds names.
      *
-     * Objects the model still names are kept whether the plan uses them or
-     * not: that is what makes bypass, chain power and disarming free.
+     * Two keep sets, for two different reasons, and the plan's is the one that
+     * cannot be waived. Anything @p livePlan names is reachable from the audio
+     * thread right now, so destroying it is a use-after-free rather than an
+     * early eviction; taking the plan here rather than trusting the caller's
+     * IDs is what stops that from depending on the two arguments agreeing.
+     * They will not always agree: plans are compiled from a model revision and
+     * published later, so a caller collecting IDs from the current model can
+     * hand over a set that has already lost something the plan still uses.
      *
-     * Call only after the swap. Before it, an object about to be destroyed can
-     * still be reached from the plan the audio thread is rendering, and this is
-     * where its destructor runs.
+     * @p modelIds only ever extends retention, to what exists but is not
+     * playing: a bypassed device, a chain with the power off, the input source
+     * of a track nobody has armed.
+     *
+     * Call only after the swap, with the plan that is now live. Destructors
+     * run on the calling thread.
      */
-    std::size_t releaseDeleted(const RuntimeStateIds& live);
+    std::size_t releaseDeleted(const RenderPlan& livePlan, const RuntimeStateIds& modelIds);
 
     /// Objects currently owned, for tests and diagnostics.
     std::size_t size() const;

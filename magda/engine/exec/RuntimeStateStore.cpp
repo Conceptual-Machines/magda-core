@@ -107,10 +107,31 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan) {
     return bindings;
 }
 
-std::size_t RuntimeStateStore::releaseDeleted(const RuntimeStateIds& live) {
-    return eraseUnnamed(devices_, live.devices) + eraseUnnamed(clipAudio_, live.tracks) +
-           eraseUnnamed(clipMidi_, live.tracks) + eraseUnnamed(audioInputs_, live.tracks) +
-           eraseUnnamed(midiInputs_, live.tracks);
+std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
+                                              const RuntimeStateIds& modelIds) {
+    // The plan's own IDs go in first and unconditionally. Everything it names
+    // is reachable from the audio thread this instant, whatever the caller
+    // believes the model still holds.
+    auto keep = modelIds;
+    for (const auto& op : livePlan.ops) {
+        switch (op.kind) {
+            case OpKind::Device:
+                keep.devices.insert(op.key.deviceId);
+                break;
+            case OpKind::ClipAudio:
+            case OpKind::ClipMidi:
+            case OpKind::AudioInput:
+            case OpKind::MidiInput:
+                keep.tracks.insert(op.key.trackId);
+                break;
+            default:
+                break;
+        }
+    }
+
+    return eraseUnnamed(devices_, keep.devices) + eraseUnnamed(clipAudio_, keep.tracks) +
+           eraseUnnamed(clipMidi_, keep.tracks) + eraseUnnamed(audioInputs_, keep.tracks) +
+           eraseUnnamed(midiInputs_, keep.tracks);
 }
 
 RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,

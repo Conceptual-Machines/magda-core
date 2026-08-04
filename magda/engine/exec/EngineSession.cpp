@@ -27,8 +27,10 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     published_.nonRealtimeRelease();
 
     // Safe only now: before the swap, everything about to be destroyed was
-    // still reachable from the plan the audio thread was rendering.
-    store_.releaseDeleted(modelIds);
+    // still reachable from the plan the audio thread was rendering. The plan
+    // that is live goes in as well, so what it names survives however stale
+    // the caller's model IDs turn out to be.
+    store_.releaseDeleted(*livePlan_, modelIds);
 
     return {true, std::move(messages)};
 }

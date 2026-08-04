@@ -53,8 +53,10 @@ class EngineSession {
      *
      * @p modelIds is what the model still holds, which is not the same
      * question as what the plan uses: runtime state is kept for everything the
-     * model names and destroyed only for what it has lost. Pass
-     * collectRuntimeStateIds() over the same model the plan was compiled from.
+     * model names and destroyed only for what it has lost. It only ever
+     * extends retention, so a set that has drifted from the plan being
+     * published costs a dormant object its retirement, never the audio thread
+     * a pointer.
      *
      * Values are published separately, and a plan swap invalidates the ones in
      * flight: they were resolved against the old plan, so the executor falls
