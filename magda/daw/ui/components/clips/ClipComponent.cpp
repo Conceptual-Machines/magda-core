@@ -503,40 +503,45 @@ void ClipComponent::paint(juce::Graphics& g) {
 
     // Where this clip stands on another one (#2003). A stack is otherwise
     // indistinguishable from a single clip, since the clip on top is opaque and
-    // the material it silences is completely hidden. This is a marker, not a
-    // treatment of the clip: a shadow bar along the bottom of the covering
-    // stretch, below the notes and clear of the header, so the clip still reads
-    // as itself.
+    // the material it silences is completely hidden. Hatching the covering
+    // stretch says "there is a clip under here" at a glance. It stays inside
+    // the body: hatching the header too turned the clip into a black striped
+    // block that read as broken rather than as stacked.
     if (!coveringRanges_.empty() && parentPanel_ != nullptr) {
         const int clipLeft = getX();
-        const int barHeight = juce::jlimit(2, 5, bounds.getHeight() / 10);
-        const int barTop = bounds.getBottom() - barHeight;
+        const auto body = bounds.withTrimmedTop(HEADER_HEIGHT);
 
         for (const auto& range : coveringRanges_) {
             const int from = parentPanel_->beatsToPixel(range.start.value) - clipLeft;
             const int to = parentPanel_->beatsToPixel(range.end.value) - clipLeft;
-            auto bar = bounds.getIntersection(
-                juce::Rectangle<int>(from, barTop, juce::jmax(1, to - from), barHeight));
-            if (bar.isEmpty())
+            auto region = body.getIntersection(juce::Rectangle<int>(
+                from, body.getY(), juce::jmax(1, to - from), body.getHeight()));
+            if (region.isEmpty())
                 continue;
 
-            g.setColour(juce::Colours::black.withAlpha(0.55f));
-            g.fillRect(bar);
-            g.setColour(juce::Colours::white.withAlpha(0.30f));
-            g.drawHorizontalLine(bar.getY(), static_cast<float>(bar.getX()),
-                                 static_cast<float>(bar.getRight()));
+            juce::Graphics::ScopedSaveState clipped(g);
+            g.reduceClipRegion(region);
 
-            // Ticks at the ends of the covered stretch, so a cover that starts
-            // or ends inside this clip has a readable boundary. Skipped where
-            // the stretch runs to the clip's own edge — there is nothing to
-            // mark there.
-            g.setColour(juce::Colours::white.withAlpha(0.35f));
-            const float tickTop = static_cast<float>(bounds.getBottom() - bounds.getHeight() / 3);
-            const float tickBottom = static_cast<float>(bounds.getBottom());
-            if (bar.getX() > bounds.getX())
-                g.drawVerticalLine(bar.getX(), tickTop, tickBottom);
-            if (bar.getRight() < bounds.getRight())
-                g.drawVerticalLine(bar.getRight() - 1, tickTop, tickBottom);
+            g.setColour(juce::Colours::black.withAlpha(0.22f));
+            g.fillRect(region);
+
+            // Diagonal hatch, one line every 6px, running the full height so it
+            // reads at any clip size.
+            g.setColour(juce::Colours::white.withAlpha(0.10f));
+            const float height = static_cast<float>(region.getHeight());
+            for (float x = static_cast<float>(region.getX()) - height;
+                 x < static_cast<float>(region.getRight()); x += 6.0f) {
+                g.drawLine(x, static_cast<float>(region.getBottom()), x + height,
+                           static_cast<float>(region.getY()), 1.0f);
+            }
+
+            // Edges of the covered stretch, so a cover starting or ending inside
+            // this clip has a readable boundary.
+            g.setColour(juce::Colours::white.withAlpha(0.28f));
+            g.drawVerticalLine(region.getX(), static_cast<float>(region.getY()),
+                               static_cast<float>(region.getBottom()));
+            g.drawVerticalLine(region.getRight() - 1, static_cast<float>(region.getY()),
+                               static_cast<float>(region.getBottom()));
         }
     }
 
