@@ -22,6 +22,7 @@
 #include "../themes/UserTheme.hpp"
 #include "../windows/MainWindow.hpp"
 #include "core/AppPaths.hpp"
+#include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/StringTable.hpp"
@@ -225,6 +226,8 @@ class GeneralPage : public juce::Component {
                     tr("preferences.toggle.chord_preview_default"));
         setupToggle(*this, autoCrossfadeDefaultToggle,
                     tr("preferences.toggle.auto_crossfade_default"));
+        setupToggle(*this, clipOverlapPlaysBothToggle,
+                    tr("preferences.toggle.clip_overlap_plays_both"));
 
         setupSectionHeader(*this, languageHeader, tr("preferences.language.header"));
         setupComboLabel(*this, languageLabel, tr("preferences.language.label"));
@@ -317,6 +320,8 @@ class GeneralPage : public juce::Component {
                                                     juce::dontSendNotification);
         chordPreviewDefaultToggle.setToggleState(config.getChordPreviewOnByDefault(),
                                                  juce::dontSendNotification);
+        clipOverlapPlaysBothToggle.setToggleState(config.getClipOverlapPlaysBoth(),
+                                                  juce::dontSendNotification);
         autoCrossfadeDefaultToggle.setToggleState(config.getAutoCrossfadeByDefault(),
                                                   juce::dontSendNotification);
 
@@ -368,6 +373,11 @@ class GeneralPage : public juce::Component {
         config.setOpenPluginWindowOnDrop(openPluginWindowOnDropToggle.getToggleState());
         config.setChordPreviewOnByDefault(chordPreviewDefaultToggle.getToggleState());
         config.setAutoCrossfadeByDefault(autoCrossfadeDefaultToggle.getToggleState());
+
+        // Playing through an overlap is a per-clip switch (#2003), so this is
+        // the value new clips start with — the same shape as AUTO-XFADE's
+        // default above. Existing clips keep whatever they were set to.
+        config.setClipOverlapPlaysBoth(clipOverlapPlaysBothToggle.getToggleState());
 
         int selIdx = languageCombo.getSelectedId() - 1;
         if (selIdx >= 0 && selIdx < static_cast<int>(availableLanguages_.size())) {
@@ -485,6 +495,8 @@ class GeneralPage : public juce::Component {
         chordPreviewDefaultToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         autoCrossfadeDefaultToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        clipOverlapPlaysBothToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(secGap);
 
         // Language
@@ -572,6 +584,8 @@ class GeneralPage : public juce::Component {
         chordPreviewDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
         autoCrossfadeDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
+        clipOverlapPlaysBothToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
     }
 
     juce::Label zoomHeader, timelineHeader, transportHeader, autoSaveHeader;
@@ -594,6 +608,7 @@ class GeneralPage : public juce::Component {
     juce::ToggleButton openPluginWindowOnDropToggle;
     juce::ToggleButton chordPreviewDefaultToggle;
     juce::ToggleButton autoCrossfadeDefaultToggle;
+    juce::ToggleButton clipOverlapPlaysBothToggle;
     juce::Label languageLabel;
     juce::ComboBox languageCombo;
     juce::Label restartHint;

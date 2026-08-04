@@ -19,6 +19,7 @@ target_sources(magda_daw PRIVATE
     TrackManagerDevices.cpp
     ModulatorEngine.cpp
     ClipManager.cpp
+    ClipOcclusion.cpp
     SourcePool.cpp
     ChordProgressionConverter.cpp
     SessionLaunchService.cpp

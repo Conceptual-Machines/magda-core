@@ -6,7 +6,9 @@
 #include "AudioClipTestHelpers.hpp"
 #include "magda/daw/core/ClipCommands.hpp"
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/ClipOcclusion.hpp"
 #include "magda/daw/core/ClipPropertyCommands.hpp"
+#include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/TempoMap.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
@@ -1641,14 +1643,82 @@ TEST_CASE("Paste preserves the enabled flag", "[clip][command][paste]") {
 }
 
 // ============================================================================
-// resolveOverlaps - "C fully contains D" (regression for #1447)
+// resolveOverlaps - covering a clip never destroys it (#2003)
 // ============================================================================
 
-// Duplicating a selection on top of the interior of a long clip used to delete
-// the whole right-hand portion of that clip (the remaining audio disappeared).
-// resolveOverlaps must instead split the long clip into a left and a right part
-// around the dropped clip, losing only the slice the new clip actually covers.
-TEST_CASE("resolveOverlaps - dropping a clip inside a longer one splits it, no data loss",
+/// What a clip plays once the clips stacked over it are taken into account. The
+/// model keeps every clip whole, so a cover only shows up here.
+static AudibleSpan audibleSpanFor(ClipId clipId) {
+    auto& cm = ClipManager::getInstance();
+    const auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+
+    std::vector<ClipInfo> lane;
+    for (ClipId other : cm.getClipsOnTrack(clip->trackId, ClipView::Arrangement)) {
+        if (const auto* c = cm.getClip(other))
+            lane.push_back(*c);
+    }
+    return computeAudibleSpans(lane).at(clipId);
+}
+
+// Moving a clip used to read as an eraser: whatever it landed on top of was
+// trimmed back or deleted outright. Nothing is cut now — a covered clip keeps
+// its placement and its content and simply stops being heard, so dragging the
+// covering clip away fills the gap with no restore step.
+TEST_CASE("resolveOverlaps - covering a clip leaves it whole and gives it back",
+          "[clip][overlap][regression]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(120.0);
+
+    auto& cm = ClipManager::getInstance();
+    TrackId track = createTrack("Track", TrackType::Audio);
+
+    SECTION("covered end to end") {
+        ClipId covered = createAudio(track, 2.0, 2.0);  // [4,8] beats
+        ClipId mover = createAudio(track, 8.0, 8.0);    // [16,32] beats
+        // AUTO-XFADE off on both: with it on these two would fade into each
+        // other instead, which is its own test in test_clip_crossfades.
+        cm.setAutoCrossfade(covered, false);
+        cm.setAutoCrossfade(mover, false);
+        cm.moveClipBeats(mover, 0.0, 120.0);  // -> [0,16], swallows it
+
+        REQUIRE(cm.getClipsOnTrack(track).size() == 2);
+        const auto* still = cm.getClip(covered);
+        REQUIRE(still != nullptr);
+        CHECK(still->enabled);
+        CHECK(still->placement.startBeat == Catch::Approx(4.0));
+        CHECK(still->placement.lengthBeats == Catch::Approx(4.0));
+        CHECK_FALSE(audibleSpanFor(covered).audible);
+
+        cm.moveClipBeats(mover, 32.0, 120.0);
+        CHECK(audibleSpanFor(covered).lengthBeats == Catch::Approx(4.0));
+    }
+
+    SECTION("covered at one edge") {
+        ClipId covered = createMidi(track, 0.0, 4.0);  // [0,8] beats
+        ClipId mover = createMidi(track, 8.0, 4.0);    // [16,24] beats
+        cm.moveClipBeats(mover, 4.0, 120.0);           // -> [4,12], covers the tail
+
+        const auto* still = cm.getClip(covered);
+        REQUIRE(still != nullptr);
+        CHECK(still->placement.lengthBeats == Catch::Approx(8.0));
+        CHECK(audibleSpanFor(covered).lengthBeats == Catch::Approx(4.0));
+
+        cm.moveClipBeats(mover, 16.0, 120.0);
+        CHECK(audibleSpanFor(covered).lengthBeats == Catch::Approx(8.0));
+    }
+
+    proj.setTempo(originalTempo);
+}
+
+// The last case that used to cut: a drop landing strictly inside an audio clip
+// split it into head, covered slice and tail. That existed only because the
+// Tracktion mirror holds one engine clip per model clip and cannot express a
+// hole in the middle of one; the native engine carries the silenced range on
+// the clip snapshot (#1890). Nothing on a lane is cut now, at any shape.
+TEST_CASE("resolveOverlaps - a clip dropped inside another leaves it whole",
           "[clip][overlap][regression]") {
     resetState();
     auto& proj = ProjectManager::getInstance();
@@ -1659,43 +1729,78 @@ TEST_CASE("resolveOverlaps - dropping a clip inside a longer one splits it, no d
     TrackId trackC = createTrack("Long", TrackType::Audio);
     TrackId trackS = createTrack("Source", TrackType::Audio);
 
-    // Long clip C spanning [0,16] beats (0..8 s at 120 BPM).
-    ClipId c = createAudio(trackC, 0.0, 8.0);
-    // Short source clip on another track, [0,4] beats (0..2 s).
-    ClipId s = createAudio(trackS, 0.0, 2.0);
+    ClipId longClip = createAudio(trackC, 0.0, 8.0);  // [0,16] beats
+    ClipId source = createAudio(trackS, 0.0, 2.0);    // [0,4] beats
 
-    // Duplicate the short clip into C's interior on C's track: D = [6,10] beats.
-    ClipId d = cm.duplicateClipAtBeats(s, 6.0, trackC, 120.0);
-    REQUIRE(d != INVALID_CLIP_ID);
+    cm.setAutoCrossfade(longClip, false);
+    cm.setAutoCrossfade(source, false);
 
-    // C survives on BOTH sides of D — three clips total on the track.
-    auto onC = cm.getClipsOnTrack(trackC);
-    REQUIRE(onC.size() == 3);
+    ClipId dropped = cm.duplicateClipAtBeats(source, 6.0, trackC, 120.0);  // [6,10]
+    REQUIRE(dropped != INVALID_CLIP_ID);
+    cm.setAutoCrossfade(dropped, false);
 
-    // Original keeps the left part [0,6].
-    auto* left = cm.getClip(c);
-    REQUIRE(left != nullptr);
-    REQUIRE(left->placement.startBeat == Catch::Approx(0.0));
-    REQUIRE(left->placement.lengthBeats == Catch::Approx(6.0));
+    // Two clips, and the long one is untouched: no split, no lost material.
+    REQUIRE(cm.getClipsOnTrack(trackC).size() == 2);
+    const auto* whole = cm.getClip(longClip);
+    REQUIRE(whole != nullptr);
+    CHECK(whole->placement.startBeat == Catch::Approx(0.0));
+    CHECK(whole->placement.lengthBeats == Catch::Approx(16.0));
 
-    // Duplicate occupies [6,10].
-    auto* dup = cm.getClip(d);
-    REQUIRE(dup != nullptr);
-    REQUIRE(dup->placement.startBeat == Catch::Approx(6.0));
-    REQUIRE(dup->placement.lengthBeats == Catch::Approx(4.0));
+    // It plays around the drop: full span, one hole where the drop sits.
+    const auto span = audibleSpanFor(longClip);
+    CHECK(span.lengthBeats == Catch::Approx(16.0));
+    REQUIRE(span.silenced.size() == 1);
+    CHECK(span.silenced[0].start.value == Catch::Approx(6.0));
+    CHECK(span.silenced[0].end.value == Catch::Approx(10.0));
 
-    // The surviving right part [10,16] exists — this is what the bug deleted.
-    bool foundRight = false;
-    for (ClipId id : onC) {
-        if (id == c || id == d)
-            continue;
-        auto* right = cm.getClip(id);
-        REQUIRE(right != nullptr);
-        REQUIRE(right->placement.startBeat == Catch::Approx(10.0));
-        REQUIRE(right->placement.lengthBeats == Catch::Approx(6.0));
-        foundRight = true;
-    }
-    REQUIRE(foundRight);
+    // Move the drop away and the hole closes, with no restore step.
+    cm.moveClipBeats(dropped, 40.0, 120.0);
+    CHECK(audibleSpanFor(longClip).silenced.empty());
+    CHECK(cm.getClipsOnTrack(trackC).size() == 2);
+
+    proj.setTempo(originalTempo);
+}
+
+// The reported loss: a clip dropped into the middle of a MIDI part used to
+// split it into pieces and delete the covered slice, taking the notes in that
+// span with it. MIDI clips are not split at all now — the part stays one clip
+// with every note still on it, and the notes under the drop simply are not
+// played until the drop moves away.
+TEST_CASE("resolveOverlaps - dropping a clip inside a MIDI clip keeps it whole",
+          "[clip][overlap][regression]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(120.0);
+
+    auto& cm = ClipManager::getInstance();
+    TrackId track = createTrack("Track", TrackType::Audio);
+
+    // [0,16] beats with a note before, under and after the drop.
+    ClipId part = createMidi(track, 0.0, 8.0, {2.0, 8.0, 14.0});
+    ClipId dropped = cm.createMidiClipBeats(track, 6.0, 4.0, ClipView::Arrangement,
+                                            ClipOverlapPolicy::ResolveOverlaps);
+    REQUIRE(dropped != INVALID_CLIP_ID);
+
+    // No split: two clips, and the part is untouched.
+    REQUIRE(cm.getClipsOnTrack(track).size() == 2);
+    const auto* whole = cm.getClip(part);
+    REQUIRE(whole != nullptr);
+    CHECK(whole->placement.startBeat == Catch::Approx(0.0));
+    CHECK(whole->placement.lengthBeats == Catch::Approx(16.0));
+    CHECK(whole->midiNotes.size() == 3);
+
+    // It plays around the drop: full span, one hole where the drop sits.
+    const auto span = audibleSpanFor(part);
+    CHECK(span.lengthBeats == Catch::Approx(16.0));
+    REQUIRE(span.silenced.size() == 1);
+    CHECK(span.silenced[0].start.value == Catch::Approx(6.0));
+    CHECK(span.silenced[0].end.value == Catch::Approx(10.0));
+
+    // Move the drop away and the hole closes on its own.
+    cm.moveClipBeats(dropped, 40.0, 120.0);
+    CHECK(audibleSpanFor(part).silenced.empty());
+    CHECK(cm.getClip(part)->midiNotes.size() == 3);
 
     proj.setTempo(originalTempo);
 }
@@ -1799,4 +1904,116 @@ TEST_CASE("BounceInPlaceReplacement preserves unselected source and undo restore
     REQUIRE(restoredClip->isMidi());
     REQUIRE(restoredClip->placement.startBeat == Catch::Approx(0.0));
     REQUIRE(restoredClip->placement.lengthBeats == Catch::Approx(16.0));
+}
+
+// ============================================================================
+// FlattenClipStackCommand - fold overlapping MIDI clips into one (#2003)
+// ============================================================================
+
+TEST_CASE("FlattenClipStackCommand - commits what the stack plays into one clip",
+          "[clip][command][flatten][overlap]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(120.0);
+    auto& config = Config::getInstance();
+    const bool originalPlaysBoth = config.getClipOverlapPlaysBoth();
+    config.setClipOverlapPlaysBoth(false);
+
+    auto& cm = ClipManager::getInstance();
+    TrackId track = createTrack("Track", TrackType::Audio);
+
+    // [0,16] with notes at 2, 8 and 14; the drop covers [6,10], so the note at
+    // 8 is the one nobody hears.
+    ClipId part = createMidi(track, 0.0, 8.0, {2.0, 8.0, 14.0});
+    ClipId dropped = cm.createMidiClipBeats(track, 6.0, 4.0, ClipView::Arrangement,
+                                            ClipOverlapPolicy::ResolveOverlaps);
+    REQUIRE(dropped != INVALID_CLIP_ID);
+    // One note inside the dropped clip, at timeline beat 7.
+    cm.addMidiNote(dropped, {72, 100, 1.0, 1.0});
+
+    SECTION("top wins: the covered note is not carried over") {
+        FlattenClipStackCommand cmd(dropped);
+        cmd.execute();
+
+        // One clip left, spanning the whole stack.
+        const auto onTrack = cm.getClipsOnTrack(track);
+        REQUIRE(onTrack.size() == 1);
+        const auto* merged = cm.getClip(dropped);
+        REQUIRE(merged != nullptr);
+        CHECK(merged->placement.startBeat == Catch::Approx(0.0));
+        CHECK(merged->placement.lengthBeats == Catch::Approx(16.0));
+        CHECK_FALSE(merged->loopEnabled);
+
+        // Notes at 2 and 14 from the part, 7 from the drop. The part's note at
+        // 8 was silent under the drop, so flattening drops it too.
+        REQUIRE(merged->midiNotes.size() == 3);
+        CHECK(merged->midiNotes[0].startBeat == Catch::Approx(2.0));
+        CHECK(merged->midiNotes[1].startBeat == Catch::Approx(7.0));
+        CHECK(merged->midiNotes[2].startBeat == Catch::Approx(14.0));
+
+        SECTION("and undo puts the stack back") {
+            cmd.undo();
+            CHECK(cm.getClipsOnTrack(track).size() == 2);
+            const auto* restored = cm.getClip(part);
+            REQUIRE(restored != nullptr);
+            CHECK(restored->midiNotes.size() == 3);
+        }
+    }
+
+    SECTION("play both: every note is carried over") {
+        // The switch is on the clip now, not on the app.
+        cm.setOverlapPlaysBoth(dropped, true);
+
+        FlattenClipStackCommand cmd(dropped);
+        cmd.execute();
+
+        const auto* merged = cm.getClip(dropped);
+        REQUIRE(merged != nullptr);
+        REQUIRE(merged->midiNotes.size() == 4);
+        CHECK(merged->midiNotes[1].startBeat == Catch::Approx(7.0));
+        CHECK(merged->midiNotes[2].startBeat == Catch::Approx(8.0));
+    }
+
+    config.setClipOverlapPlaysBoth(originalPlaysBoth);
+    proj.setTempo(originalTempo);
+}
+
+TEST_CASE("FlattenClipStackCommand - only offers itself when there is a stack to fold",
+          "[clip][command][flatten][overlap]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(120.0);
+
+    auto& cm = ClipManager::getInstance();
+    TrackId track = createTrack("Track", TrackType::Audio);
+
+    SECTION("abutting clips are not a stack") {
+        ClipId a = createMidi(track, 0.0, 4.0, {0.0});
+        createMidi(track, 4.0, 4.0, {0.0});
+        CHECK(FlattenClipStackCommand::collectStack(a).empty());
+    }
+
+    SECTION("an audio clip in the way refuses — that is what Bounce is for") {
+        ClipId midi = createMidi(track, 0.0, 8.0, {0.0});
+        ClipId audio = createAudio(track, 2.0, 4.0);
+        cm.moveClipBeats(audio, 8.0, 120.0);
+        CHECK(FlattenClipStackCommand::collectStack(midi).empty());
+    }
+
+    SECTION("a chain of overlaps folds in one go") {
+        ClipId a = createMidi(track, 0.0, 8.0, {0.0});
+        ClipId b = cm.createMidiClipBeats(track, 12.0, 16.0, ClipView::Arrangement,
+                                          ClipOverlapPolicy::ResolveOverlaps);
+        ClipId c = cm.createMidiClipBeats(track, 24.0, 16.0, ClipView::Arrangement,
+                                          ClipOverlapPolicy::ResolveOverlaps);
+        // a[0,16] over b[12,28] over c[24,40]: a and c never touch.
+        const auto stack = FlattenClipStackCommand::collectStack(a);
+        CHECK(stack.size() == 3);
+        CHECK(std::find(stack.begin(), stack.end(), c) != stack.end());
+        juce::ignoreUnused(b);
+    }
+
+    proj.setTempo(originalTempo);
 }

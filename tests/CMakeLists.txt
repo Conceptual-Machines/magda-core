@@ -73,6 +73,7 @@ set(TEST_SOURCES
     test_clip_batch_edit.cpp
     test_clip_commands.cpp
     test_clip_crossfades.cpp
+    test_clip_occlusion.cpp
     # Ghost clips / link groups (issue #12)
     test_ghost_clips.cpp
     test_clip_resize_operations.cpp

@@ -852,6 +852,40 @@ class FlattenMidiClipCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Flatten a stack of overlapping MIDI clips into one clip (#2003)
+ *
+ * Commits what you hear: every clip in the stack is unrolled (loops expanded,
+ * offsets applied) and the notes that actually play are gathered into a single
+ * clip spanning the whole stack. Which notes those are follows the overlap
+ * preference — under the default the covered ones are dropped, under "play
+ * both" everything is kept — so flattening never changes the sound.
+ *
+ * MIDI only. Two overlapping audio clips cannot be merged without rendering
+ * them, which is what Bounce is for.
+ */
+class FlattenClipStackCommand : public UndoableCommand {
+  public:
+    explicit FlattenClipStackCommand(ClipId anchorClipId);
+
+    juce::String getDescription() const override {
+        return "Flatten Clips";
+    }
+
+    void execute() override;
+    void undo() override;
+
+    /// Every MIDI clip overlapping `anchorClipId` on its track, the anchor
+    /// included, walked transitively so a chain of overlaps flattens in one go.
+    /// Empty when there is nothing to merge or when an audio clip is involved.
+    static std::vector<ClipId> collectStack(ClipId anchorClipId);
+
+  private:
+    ClipId anchorId_;
+    std::vector<ClipInfo> arrangementSnapshot_;
+    bool executed_ = false;
+};
+
+/**
  * @brief Post-hoc command for undoing a session-to-arrangement recording pass.
  *
  * The SessionRecorder creates arrangement clips during recording. When it
