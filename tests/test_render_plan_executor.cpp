@@ -756,8 +756,12 @@ TEST_CASE("A merge carries everything that reaches it", "[engine][exec]") {
 
     Harness harness({track}, makeMaster());
     ConstantSource audio(0.0f);
-    BurstSource clips(magda::engine::kMaxMidiEventsPerPort, 0);
-    BurstSource live(magda::engine::kMaxMidiEventsPerPort, 64);
+    // Each source fills its own port to the byte budget, so the merge has to
+    // hold both at once.
+    constexpr auto perPort =
+        magda::engine::kMaxMidiBytesPerPort / magda::engine::kMidiShortMessageBytes;
+    BurstSource clips(perPort, 0);
+    BurstSource live(perPort, 64);
     EventCounter counter;
     harness.bindings.clipAudio[1] = &audio;
     harness.bindings.clipMidi[1] = &clips;
@@ -767,7 +771,7 @@ TEST_CASE("A merge carries everything that reaches it", "[engine][exec]") {
     harness.prepareCleanly();
     harness.render();
 
-    CHECK(counter.events == 2 * magda::engine::kMaxMidiEventsPerPort);
+    CHECK(counter.events == 2 * perPort);
 }
 
 TEST_CASE("An audio sidechain reaches the device that asked for it", "[engine][exec]") {

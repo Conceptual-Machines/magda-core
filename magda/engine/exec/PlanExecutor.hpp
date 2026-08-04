@@ -84,9 +84,9 @@ class PlanExecutor {
     // and nothing else.
     std::vector<juce::AudioBuffer<float>> audioSlots_;
     std::vector<juce::MidiBuffer> midiSlots_;
-    /// Events each MIDI port can hold without growing, summed through the MIDI
-    /// graph at prepare time. Checked in debug wherever a producer writes.
-    std::vector<int> midiEventBounds_;
+    /// Encoded bytes each MIDI port can hold without growing, summed through
+    /// the MIDI graph at prepare time. Checked in debug where producers write.
+    std::vector<int> midiByteBounds_;
     std::vector<int> portOffsets_;
     std::vector<int> portSlots_;
 

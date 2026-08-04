@@ -47,7 +47,7 @@ void PlanExecutor::reset() {
     planFingerprint_ = 0;
     audioSlots_.clear();
     midiSlots_.clear();
-    midiEventBounds_.clear();
+    midiByteBounds_.clear();
     portOffsets_.clear();
     portSlots_.clear();
     deviceForOp_.clear();
@@ -97,9 +97,9 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     // first block that does grows a buffer on the callback. The bound is
     // computed through the MIDI graph instead, which ops being in dependency
     // order makes a single forward pass. Producers are capped by contract
-    // (kMaxMidiEventsPerPort), and that cap is what the sums are built from.
+    // (kMaxMidiBytesPerPort), and that cap is what the sums are built from.
     midiSlots_.resize(static_cast<std::size_t>(numMidiSlots));
-    midiEventBounds_.assign(static_cast<std::size_t>(numMidiSlots), kMaxMidiEventsPerPort);
+    midiByteBounds_.assign(static_cast<std::size_t>(numMidiSlots), kMaxMidiBytesPerPort);
     for (std::size_t i = 0; i < numOps; ++i) {
         const auto& op = plan.ops[i];
         if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader)
@@ -113,17 +113,17 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
             if (plan.ops[static_cast<std::size_t>(input.op)]
                     .outputs[static_cast<std::size_t>(input.port)] != SignalKind::Midi)
                 continue;
-            carried += midiEventBounds_[static_cast<std::size_t>(slotFor(input))];
+            carried += midiByteBounds_[static_cast<std::size_t>(slotFor(input))];
         }
 
         for (int port = 0; port < static_cast<int>(op.outputs.size()); ++port)
             if (op.outputs[static_cast<std::size_t>(port)] == SignalKind::Midi)
-                midiEventBounds_[static_cast<std::size_t>(
+                midiByteBounds_[static_cast<std::size_t>(
                     slotFor(PortRef{static_cast<OpId>(i), port}))] = carried;
     }
 
     for (std::size_t slot = 0; slot < midiSlots_.size(); ++slot)
-        midiSlots_[slot].ensureSize(midiEventBounds_[slot] * kMidiBytesPerEvent);
+        midiSlots_[slot].ensureSize(static_cast<std::size_t>(midiByteBounds_[slot]));
 
     silence_.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
     silence_.clear();
@@ -295,7 +295,9 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
                 out.clear();
                 if (!value.silent && midiSourceForOp_[i] != nullptr) {
                     midiSourceForOp_[i]->render(block, out);
-                    jassert(out.getNumEvents() <= kMaxMidiEventsPerPort);
+                    // Bytes, not events: one SysEx dump outweighs a thousand
+                    // notes, and an event count would wave it through.
+                    jassert(out.data.size() <= kMaxMidiBytesPerPort);
                 }
                 break;
             }
@@ -354,7 +356,7 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
                     deviceBlock.sidechain = audioIn(op.inputs[2], numSamples);
                 device->process(deviceBlock);
                 jassert(deviceMidiOut == nullptr ||
-                        deviceMidiOut->getNumEvents() <= kMaxMidiEventsPerPort);
+                        deviceMidiOut->data.size() <= kMaxMidiBytesPerPort);
                 break;
             }
 

@@ -19,18 +19,24 @@
 namespace magda::engine {
 
 /**
- * @brief Events one source or device may emit into one port in one block.
+ * @brief Encoded MIDI one source or device may write to one port in one block.
  *
  * The executor reserves storage for every MIDI port before the first block, so
  * nothing on the audio thread has to grow a buffer. A port fed by a merge is
  * sized from the sum of what feeds it; the chain has to end somewhere, and this
- * is where: a source or device that writes more than this forces the very
- * allocation the reservation exists to avoid. Debug builds assert on it.
+ * is where: a producer that writes past this forces the very allocation the
+ * reservation exists to avoid. Debug builds assert on it at every write site.
  *
- * Deliberately generous. A block of dense controller traffic is a few dozen
- * events, and a chord is a handful.
+ * The budget is bytes rather than events because a MIDI message is not a fixed
+ * size: one SysEx dump from a controller can outweigh a thousand notes, and a
+ * cap on the number of events would let it through. An event costs six bytes
+ * plus its own length, so a note or a controller change is nine, and this
+ * budget holds around four hundred and fifty of them.
  */
-constexpr int kMaxMidiEventsPerPort = 256;
+constexpr int kMaxMidiBytesPerPort = 4096;
+
+/// What one short message costs against kMaxMidiBytesPerPort.
+constexpr int kMidiShortMessageBytes = 9;
 
 /** Audio and MIDI handed to a device for one block. */
 struct DeviceBlock {
@@ -44,7 +50,7 @@ struct DeviceBlock {
 
     /// Where a MIDI-producing device writes, cleared before the call. Null when
     /// the plan gave the device no MIDI output port. At most
-    /// kMaxMidiEventsPerPort events; beyond that the buffer has to allocate.
+    /// kMaxMidiBytesPerPort of encoded MIDI; past that the buffer allocates.
     juce::MidiBuffer* midiOut = nullptr;
 
     /// Sidechain audio. A zero-channel block when the slot is unconnected, so
@@ -99,7 +105,7 @@ class EngineMidiSource {
     virtual void prepare(const RenderContext&) {}
 
     /// Add this block's events to @p out; it arrives cleared. At most
-    /// kMaxMidiEventsPerPort of them.
+    /// kMaxMidiBytesPerPort of encoded MIDI, SysEx included.
     virtual void render(const BlockInfo&, juce::MidiBuffer& out) = 0;
 };
 
