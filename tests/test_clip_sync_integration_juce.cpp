@@ -16,6 +16,7 @@
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipOperations.hpp"
+#include "magda/daw/core/Config.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
@@ -153,6 +154,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testDuplicateAudioClipCoversExisting();
         testPasteAudioClipCoversExisting();
         testCreateMidiClipPreservesExistingNeighbour();
+        testOverlapPlaybackPreferenceReachesTheEngine();
         testMidiNotesUnderACoveringClipDoNotPlay();
         testMidiSyncClipsNotesToVisibleRangeAfterResize();
         testMidiSyncSkipsAllRestPitchBendButKeepsRealCurves();
@@ -2368,6 +2370,43 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         cm.setClipLoopEnabled(clipId, false);
         f.clipSync->syncClipToEngine(clipId);
         expect(!teMidiClip->isLooping(), "Unlooping a MIDI clip must reach the engine too");
+    }
+
+    void testOverlapPlaybackPreferenceReachesTheEngine() {
+        beginTest("switching overlapping clips to play together takes effect on the spot");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+        auto& config = Config::getInstance();
+        const bool originalPlaysBoth = config.getClipOverlapPlaysBoth();
+        config.setClipOverlapPlaysBoth(false);
+
+        auto partId = cm.createMidiClipBeats(f.trackId, 0.0, 16.0, ClipView::Arrangement);
+        expect(cm.addMidiNote(partId, {60, 100, 2.0, 1.0}));
+        expect(cm.addMidiNote(partId, {62, 100, 8.0, 1.0}));
+
+        auto coverId = cm.createMidiClipBeats(f.trackId, 6.0, 4.0, ClipView::Arrangement,
+                                              ClipOverlapPolicy::ResolveOverlaps);
+        expect(coverId != INVALID_CLIP_ID);
+
+        auto teNoteCount = [&](ClipId id) {
+            auto* teMidiClip = f.getTeMidiClip(id);
+            return teMidiClip != nullptr ? teMidiClip->getSequence().getNumNotes() : -1;
+        };
+
+        expectEquals(teNoteCount(partId), 1, "By default the covered note does not play");
+
+        // The preference alone changes nothing until something re-syncs: that
+        // is what the dialog now triggers.
+        config.setClipOverlapPlaysBoth(true);
+        cm.forceNotifyClipsChanged();
+        expectEquals(teNoteCount(partId), 2, "Play-both must give the covered note back");
+
+        config.setClipOverlapPlaysBoth(false);
+        cm.forceNotifyClipsChanged();
+        expectEquals(teNoteCount(partId), 1, "Switching back must silence it again");
+
+        config.setClipOverlapPlaysBoth(originalPlaysBoth);
     }
 
     void testMidiNotesUnderACoveringClipDoNotPlay() {

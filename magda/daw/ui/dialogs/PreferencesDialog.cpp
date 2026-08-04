@@ -22,6 +22,7 @@
 #include "../themes/UserTheme.hpp"
 #include "../windows/MainWindow.hpp"
 #include "core/AppPaths.hpp"
+#include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/StringTable.hpp"
@@ -372,7 +373,15 @@ class GeneralPage : public juce::Component {
         config.setOpenPluginWindowOnDrop(openPluginWindowOnDropToggle.getToggleState());
         config.setChordPreviewOnByDefault(chordPreviewDefaultToggle.getToggleState());
         config.setAutoCrossfadeByDefault(autoCrossfadeDefaultToggle.getToggleState());
+
+        // What overlapping clips play is resolved when a clip changes, so
+        // flipping this on its own would sit there doing nothing until the next
+        // edit. Re-notify to push the new answer for every clip (#2003).
+        const bool overlapPlaybackChanged =
+            config.getClipOverlapPlaysBoth() != clipOverlapPlaysBothToggle.getToggleState();
         config.setClipOverlapPlaysBoth(clipOverlapPlaysBothToggle.getToggleState());
+        if (overlapPlaybackChanged)
+            ClipManager::getInstance().forceNotifyClipsChanged();
 
         int selIdx = languageCombo.getSelectedId() - 1;
         if (selIdx >= 0 && selIdx < static_cast<int>(availableLanguages_.size())) {
