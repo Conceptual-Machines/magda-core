@@ -292,6 +292,29 @@ if(MAGDA_HAVE_CLAP)
     add_subdirectory(third_party/onnxruntime)
 endif()
 
+# cpp-httplib 0.52.0 — HTTP/WebSocket transport for the remote API (issue #1856).
+# Header-only on purpose: HTTPLIB_COMPILE splits the header with a Python script,
+# and the adapter includes it from a single TU behind a pimpl, so there is
+# nothing to gain for a new build prerequisite.
+#
+# OPENSSL, ZLIB, BROTLI and ZSTD all default to "use it if you find it", which
+# would make the build depend on whatever happens to be installed on the machine.
+# Forced off so every platform compiles the same thing; the remote API binds
+# loopback only, so there is no TLS to configure.
+set(HTTPLIB_COMPILE                  OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_INSTALL                  OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_TEST                     OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZLIB_IF_AVAILABLE    OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_BROTLI_IF_AVAILABLE  OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZSTD_IF_AVAILABLE    OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    cpp-httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG v0.52.0
+)
+FetchContent_MakeAvailable(cpp-httplib)
+
 # Simple agent system - no external dependencies needed
 
 # Product-based subdirectories
