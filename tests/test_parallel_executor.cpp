@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "core/RackInfo.hpp"
@@ -15,6 +16,7 @@
 #include "exec/RenderThreadPool.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanDump.hpp"
+#include "plan/RenderPlan.hpp"
 
 /**
  * @file test_parallel_executor.cpp
@@ -738,14 +740,76 @@ TEST_CASE("The two executors prepare to the same layout", "[engine][exec][parall
     }
 }
 
-TEST_CASE("A plan the compiler never baked a schedule into is refused",
+TEST_CASE("A plan whose schedule is not the one its ops imply is refused",
           "[engine][exec][parallel]") {
+    // Every one of these is expensive rather than merely wrong, which is why
+    // the check is a recompute and not a look at the array lengths. An op that
+    // nothing will ever release leaves the block unfinished, and a block that
+    // never finishes is an audio callback that never returns; an op released
+    // early runs while another op is still writing the buffer it reads. Both
+    // are invisible to validatePlan, which reads the topology, and to the
+    // fingerprint, which is computed from the topology too.
     Rig rig(wideScene());
     RenderThreadPool pool(2, false);
-    ParallelPlanExecutor executor(&pool);
 
     auto plan = rig.plan;
-    plan.dependencyCounts.clear();
+    REQUIRE(plan.ops.size() > 4);
+    REQUIRE_FALSE(plan.initialReadyOps.empty());
+
+    bool broken = true;
+
+    SECTION("nothing wrong with it") {
+        broken = false;
+    }
+
+    SECTION("no counts at all") {
+        plan.dependencyCounts.clear();
+    }
+
+    SECTION("a count that is one too high") {
+        // The op waits for a producer that does not exist, so nothing ever
+        // takes it to zero and the block cannot end.
+        ++plan.dependencyCounts.back();
+    }
+
+    SECTION("a count that is one too low") {
+        for (auto& count : plan.dependencyCounts)
+            if (count > 0) {
+                --count;
+                break;
+            }
+    }
+
+    SECTION("a source missing from the ready set") {
+        // The one the size checks could never catch: everything is the right
+        // length, and an op with no producers is simply never seeded.
+        plan.initialReadyOps.pop_back();
+    }
+
+    SECTION("a ready op that is not an op") {
+        plan.initialReadyOps.back() = static_cast<OpId>(plan.ops.size() + 3);
+    }
+
+    SECTION("offsets that do not describe these edges") {
+        plan.consumerOffsets[1] += 5;
+    }
+
+    SECTION("an edge pointing somewhere else") {
+        REQUIRE_FALSE(plan.consumerEdges.empty());
+        plan.consumerEdges.front() = static_cast<OpId>(plan.ops.size() + 1);
+    }
+
+    ParallelPlanExecutor executor(&pool);
+
+    if (!broken) {
+        CHECK(executor.prepare(plan, rig.scene.bindings, rig.context).empty());
+        CHECK(executor.isPrepared());
+        return;
+    }
+
+    // Checked here as well as through prepare, so a section that meant to break
+    // something and did not is a failure rather than a test that quietly agrees.
+    REQUIRE_FALSE(magda::engine::carriesSchedule(plan));
 
     const auto messages = executor.prepare(plan, rig.scene.bindings, rig.context);
     CHECK_FALSE(messages.empty());
@@ -756,6 +820,83 @@ TEST_CASE("A plan the compiler never baked a schedule into is refused",
     rig.output.clear();
     executor.process(rig.values, blockAt(0, kBlockSize), rig.output);
     CHECK(rig.output.getMagnitude(0, kBlockSize) == 0.0f);
+}
+
+TEST_CASE("Retiring an epoch waits for its own workers and not for the ones after it",
+          "[engine][exec][parallel]") {
+    // The shape a session makes, with both threads doing their real jobs: one
+    // renders block after block on the pool, the other publishes epochs and
+    // retires the ones they replace. What is being asked of the retirement is
+    // that it ends, and ends while the pool is busy. A wait on how many workers
+    // are in the pool rather than on how many are in this job would be pushed
+    // back up by every block the render thread starts next.
+    struct Epoch {
+        Epoch(Scene scene, RenderThreadPool& pool) : rig(std::move(scene)), executor(&pool) {}
+
+        Rig rig;
+        ParallelPlanExecutor executor;
+    };
+
+    RenderThreadPool pool(4, false);
+
+    std::mutex swapMutex;
+    std::shared_ptr<Epoch> current;
+    std::atomic<int> published{0};
+    std::atomic<int> rendered{-1};
+    std::atomic<bool> stop{false};
+    std::atomic<int> blocks{0};
+
+    std::thread audioThread([&] {
+        for (std::int64_t block = 0; !stop.load(); ++block) {
+            std::shared_ptr<Epoch> epoch;
+            int generation = 0;
+            {
+                const std::lock_guard<std::mutex> lock(swapMutex);
+                epoch = current;
+                generation = published.load();
+            }
+            if (epoch == nullptr) {
+                juce::Thread::yield();
+                continue;
+            }
+
+            epoch->executor.process(epoch->rig.values, blockAt(block * kBlockSize, kBlockSize),
+                                    epoch->rig.output);
+            rendered.store(generation);
+            ++blocks;
+        }
+    });
+
+    const auto started = std::chrono::steady_clock::now();
+    for (int swap = 0; swap < 20; ++swap) {
+        auto next = std::make_shared<Epoch>(wideScene(), pool);
+        REQUIRE(next->executor.prepare(next->rig.plan, next->rig.scene.bindings, next->rig.context)
+                    .empty());
+
+        std::shared_ptr<Epoch> retiring;
+        {
+            const std::lock_guard<std::mutex> lock(swapMutex);
+            retiring = std::move(current);
+            current = std::move(next);
+            published.fetch_add(1);
+        }
+
+        // Let the render thread get into the new epoch, so the one being
+        // retired is let go of while the pool is busy rather than idle.
+        while (rendered.load() < published.load())
+            juce::Thread::yield();
+
+        // The last reference, so the destructor and its wait run here.
+        retiring.reset();
+    }
+    const auto elapsed =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+
+    stop.store(true);
+    audioThread.join();
+
+    CHECK(blocks.load() > 0);
+    CHECK(elapsed < 10.0);
 }
 
 TEST_CASE("An executor with no plan renders silence", "[engine][exec][parallel]") {

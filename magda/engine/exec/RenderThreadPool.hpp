@@ -46,6 +46,17 @@ class RenderThreadPool {
          * rather than leave, because they will make more work for it.
          */
         virtual void takeWork() = 0;
+
+      private:
+        friend class RenderThreadPool;
+
+        /// Workers inside this job. The pool's, not the job's: it is how
+        /// release() knows whether anyone can still be in here, and counting it
+        /// per job rather than per pool is what keeps that wait finite. A
+        /// pool-wide count would be pushed back up by every later block, so a
+        /// session rendering back to back could keep a retiring epoch waiting
+        /// indefinitely for workers that were never in it.
+        std::atomic<int> workersInside{0};
     };
 
     /**
@@ -89,9 +100,14 @@ class RenderThreadPool {
      * @brief Let go of @p job, so it can be destroyed. Off the audio thread.
      *
      * Returns once no worker can enter it again, waiting out any that is inside
-     * it. That wait is why this is not audio-thread code: it is bounded by a
-     * block, and it belongs on the thread that retires an epoch rather than on
-     * the one rendering the next.
+     * it. That wait is why this is not audio-thread code: it is bounded by the
+     * last block of that job, and it belongs on the thread that retires an
+     * epoch rather than on the one rendering the next.
+     *
+     * Only this job is waited for. A worker rendering the epoch that replaced
+     * it is not something a retirement has any reason to wait on, and waiting
+     * on it would not be a wait with an end: a busy session starts the next
+     * block before the last worker has left the one before.
      *
      * The caller still owes the ordering that makes the wait finite: a job
      * being rendered right now is a job whose render() call has to return
@@ -110,13 +126,16 @@ class RenderThreadPool {
     std::vector<std::unique_ptr<Worker>> workers_;
 
     /// The job the workers render, or null between blocks that are the last of
-    /// their epoch. Sequentially consistent, and so is inJob_: the two are read
-    /// and written against each other by release(), which is exactly the
+    /// their epoch. Sequentially consistent, and so is arriving_: the two are
+    /// read and written against each other by release(), which is exactly the
     /// handshake that acquire/release alone does not settle.
     std::atomic<Job*> job_{nullptr};
 
-    /// Workers that have committed to reading job_ and have not yet left it.
-    std::atomic<int> inJob_{0};
+    /// Workers that have committed to reading job_ and have not yet reached the
+    /// job's own count. Nothing but a load and an increment happens inside this
+    /// window, so it empties in the time it takes a thread to be scheduled,
+    /// which is what makes waiting on it different from waiting on the work.
+    std::atomic<int> arriving_{0};
 };
 
 }  // namespace magda::engine

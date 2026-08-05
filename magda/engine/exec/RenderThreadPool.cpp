@@ -79,14 +79,24 @@ void RenderThreadPool::render(Job& job) {
 }
 
 void RenderThreadPool::takeWork() {
-    // Announced before the job is read, so release() cannot see zero here and
-    // conclude that a worker on its way in will not arrive.
-    inJob_.fetch_add(1, std::memory_order_seq_cst);
+    // Arrival is announced before the job is read, so release() cannot see an
+    // empty pool and conclude that a worker on its way in will not arrive. Then
+    // the worker moves itself onto the job's own count and leaves the arrival
+    // window, which is what makes a retirement wait for its own workers rather
+    // than for whoever is rendering now.
+    arriving_.fetch_add(1, std::memory_order_seq_cst);
 
-    if (auto* job = job_.load(std::memory_order_seq_cst))
-        job->takeWork();
+    auto* job = job_.load(std::memory_order_seq_cst);
+    if (job != nullptr)
+        job->workersInside.fetch_add(1, std::memory_order_seq_cst);
 
-    inJob_.fetch_sub(1, std::memory_order_seq_cst);
+    arriving_.fetch_sub(1, std::memory_order_seq_cst);
+
+    if (job == nullptr)
+        return;
+
+    job->takeWork();
+    job->workersInside.fetch_sub(1, std::memory_order_seq_cst);
 }
 
 void RenderThreadPool::release(Job& job) {
@@ -95,10 +105,19 @@ void RenderThreadPool::release(Job& job) {
     auto* expected = &job;
     job_.compare_exchange_strong(expected, nullptr, std::memory_order_seq_cst);
 
-    // Anything inside a job now is either this one, which has to be waited out,
-    // or a newer one, which is a block and will end. Either way this is a wait
-    // measured in one callback, on a thread that is allowed to wait.
-    while (inJob_.load(std::memory_order_seq_cst) != 0)
+    // Two waits, and they are for different things. The first is for workers
+    // that read the job pointer before it was taken away and have not yet
+    // counted themselves against it; nothing but a load and an increment lives
+    // in that window, so it drains as fast as those threads get a core. The
+    // second is for workers actually inside this job, which is bounded by the
+    // block they are finishing.
+    //
+    // In this order, because a worker still arriving is one that has not
+    // reached the second count yet.
+    while (arriving_.load(std::memory_order_seq_cst) != 0)
+        juce::Thread::yield();
+
+    while (job.workersInside.load(std::memory_order_seq_cst) != 0)
         juce::Thread::yield();
 }
 

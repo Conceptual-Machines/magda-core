@@ -174,38 +174,55 @@ std::vector<OpId> distinctProducers(const PlanOp& op) {
 
 }  // namespace
 
-void bakeScheduling(RenderPlan& plan) {
+PlanScheduling scheduleOf(const RenderPlan& plan) {
     const auto numOps = plan.ops.size();
 
-    plan.dependencyCounts.assign(numOps, 0);
-    plan.initialReadyOps.clear();
-    plan.consumerOffsets.assign(numOps + 1, 0);
-    plan.consumerEdges.clear();
+    PlanScheduling schedule;
+    schedule.dependencyCounts.assign(numOps, 0);
+    schedule.consumerOffsets.assign(numOps + 1, 0);
 
     // Pass 1: dependency counts, and per-producer consumer counts into the
     // offset array (shifted by one so the prefix sum below lands in place).
     for (std::size_t i = 0; i < numOps; ++i) {
         const auto producers = distinctProducers(plan.ops[i]);
-        plan.dependencyCounts[i] = static_cast<std::uint16_t>(producers.size());
+        schedule.dependencyCounts[i] = static_cast<std::uint16_t>(producers.size());
         if (producers.empty())
-            plan.initialReadyOps.push_back(static_cast<OpId>(i));
+            schedule.initialReadyOps.push_back(static_cast<OpId>(i));
         for (const auto producer : producers)
-            ++plan.consumerOffsets[static_cast<std::size_t>(producer) + 1];
+            ++schedule.consumerOffsets[static_cast<std::size_t>(producer) + 1];
     }
 
     for (std::size_t i = 0; i < numOps; ++i)
-        plan.consumerOffsets[i + 1] += plan.consumerOffsets[i];
+        schedule.consumerOffsets[i + 1] += schedule.consumerOffsets[i];
 
     // Pass 2: fill the edge array. Consumers land in ascending op order because
     // ops are visited in order and each producer precedes all of its consumers.
-    plan.consumerEdges.assign(static_cast<std::size_t>(plan.consumerOffsets[numOps]),
-                              INVALID_OP_ID);
-    std::vector<int> cursor(plan.consumerOffsets.begin(), plan.consumerOffsets.end() - 1);
+    schedule.consumerEdges.assign(static_cast<std::size_t>(schedule.consumerOffsets[numOps]),
+                                  INVALID_OP_ID);
+    std::vector<int> cursor(schedule.consumerOffsets.begin(), schedule.consumerOffsets.end() - 1);
     for (std::size_t i = 0; i < numOps; ++i) {
         for (const auto producer : distinctProducers(plan.ops[i]))
-            plan.consumerEdges[static_cast<std::size_t>(
+            schedule.consumerEdges[static_cast<std::size_t>(
                 cursor[static_cast<std::size_t>(producer)]++)] = static_cast<OpId>(i);
     }
+
+    return schedule;
+}
+
+void bakeScheduling(RenderPlan& plan) {
+    auto schedule = scheduleOf(plan);
+    plan.dependencyCounts = std::move(schedule.dependencyCounts);
+    plan.consumerOffsets = std::move(schedule.consumerOffsets);
+    plan.consumerEdges = std::move(schedule.consumerEdges);
+    plan.initialReadyOps = std::move(schedule.initialReadyOps);
+}
+
+bool carriesSchedule(const RenderPlan& plan) {
+    const auto expected = scheduleOf(plan);
+    return plan.dependencyCounts == expected.dependencyCounts &&
+           plan.consumerOffsets == expected.consumerOffsets &&
+           plan.consumerEdges == expected.consumerEdges &&
+           plan.initialReadyOps == expected.initialReadyOps;
 }
 
 std::uint64_t planFingerprint(const RenderPlan& plan) {

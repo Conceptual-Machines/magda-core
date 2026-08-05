@@ -24,17 +24,6 @@ constexpr std::uint32_t readyTag(std::uint64_t packed) {
 static_assert(packReady(INVALID_OP_ID, 0) == kEmptyReadyStack,
               "an executor that has not started a block must not look like one with op 0 ready");
 
-/// Whether the plan carries a schedule this executor can run: the counts, the
-/// reversed edges and the ready set, all agreeing about the same op count.
-/// bakeScheduling produces exactly this, and nothing else does.
-bool hasSchedule(const RenderPlan& plan) {
-    const auto numOps = plan.ops.size();
-    return plan.dependencyCounts.size() == numOps && plan.consumerOffsets.size() == numOps + 1 &&
-           plan.consumerEdges.size() == static_cast<std::size_t>(plan.consumerOffsets.empty()
-                                                                     ? 0
-                                                                     : plan.consumerOffsets.back());
-}
-
 }  // namespace
 
 void ParallelPlanExecutor::letGoOfPool() {
@@ -72,14 +61,22 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
     if (!core_.isPrepared())
         return messages;
 
-    if (!hasSchedule(plan)) {
-        // Refused rather than worked around. Baking it here would put the one
-        // thing every block depends on somewhere it is computed twice, and a
-        // plan without it did not come from the compiler.
+    // Checked against the topology rather than taken on trust, because every
+    // way of being wrong here costs more than a wrong render: an op nobody
+    // releases means a block that never finishes and a callback that spins for
+    // ever, and an op released early is a race on a buffer another op is still
+    // writing. Recomputing is the same linear pass that produced them, off the
+    // audio thread, once per prepare.
+    //
+    // Refused rather than rebaked. A plan is immutable and shared, this is not
+    // the place that owns what its schedule should be, and a plan whose
+    // constants disagree with its ops did not come from the compiler.
+    if (!carriesSchedule(plan)) {
         core_.reset();
         messages.push_back(
-            "plan carries no baked scheduling: dependency counts and consumer edges are missing "
-            "or do not match its ops, so it cannot be scheduled");
+            "plan does not carry the schedule its topology implies: its dependency counts, "
+            "consumer edges or initially-ready set are missing or disagree with its ops, so it "
+            "cannot be scheduled");
         return messages;
     }
 
