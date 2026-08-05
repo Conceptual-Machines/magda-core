@@ -140,6 +140,7 @@ void PlanExecutor::reset() {
     carriedDelayLines_ = 0;
     audioSlots_.clear();
     midiSlots_.clear();
+    slotChannels_.clear();
     midiByteBounds_.clear();
     portOffsets_.clear();
     portSlots_.clear();
@@ -433,21 +434,40 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     silence_.clear();
     noMidi_.clear();
 
+    // The arena, as the render path sees it. Taken once, here, so that nothing
+    // during a block goes through juce::AudioBuffer: making a block out of one
+    // writes its isClear flag, and two ops reading the same port would be two
+    // threads writing that byte at once.
+    const auto channels = static_cast<std::size_t>(context_.numChannels);
+    slotChannels_.assign((audioSlots_.size() + 1) * channels, nullptr);
+    for (std::size_t slot = 0; slot < audioSlots_.size(); ++slot)
+        for (std::size_t channel = 0; channel < channels; ++channel)
+            slotChannels_[slot * channels + channel] =
+                audioSlots_[slot].getWritePointer(static_cast<int>(channel));
+    for (std::size_t channel = 0; channel < channels; ++channel)
+        slotChannels_[audioSlots_.size() * channels + channel] =
+            silence_.getWritePointer(static_cast<int>(channel));
+
     planFingerprint_ = magda::engine::planFingerprint(plan);
     plan_ = &plan;
     return messages;
 }
 
-juce::dsp::AudioBlock<float> PlanExecutor::audioIn(const PortRef& ref, int numSamples) {
-    auto& buffer = ref.valid() ? audioSlots_[static_cast<std::size_t>(slotFor(ref))] : silence_;
-    return juce::dsp::AudioBlock<float>(buffer).getSubBlock(0,
-                                                            static_cast<std::size_t>(numSamples));
+juce::dsp::AudioBlock<float> PlanExecutor::audioBlock(std::size_t row, int numSamples) const {
+    const auto channels = static_cast<std::size_t>(context_.numChannels);
+    return juce::dsp::AudioBlock<float>(&slotChannels_[row * channels], channels,
+                                        static_cast<std::size_t>(numSamples));
 }
 
-juce::dsp::AudioBlock<float> PlanExecutor::audioOut(OpId op, int port, int numSamples) {
-    auto& buffer = audioSlots_[static_cast<std::size_t>(slotFor(PortRef{op, port}))];
-    return juce::dsp::AudioBlock<float>(buffer).getSubBlock(0,
-                                                            static_cast<std::size_t>(numSamples));
+juce::dsp::AudioBlock<float> PlanExecutor::audioIn(const PortRef& ref, int numSamples) const {
+    // An unconnected slot reads the silence row, which is the last one and is
+    // the reason the array has one more row than there are slots.
+    return audioBlock(ref.valid() ? static_cast<std::size_t>(slotFor(ref)) : audioSlots_.size(),
+                      numSamples);
+}
+
+juce::dsp::AudioBlock<float> PlanExecutor::audioOut(OpId op, int port, int numSamples) const {
+    return audioBlock(static_cast<std::size_t>(slotFor(PortRef{op, port})), numSamples);
 }
 
 const juce::MidiBuffer& PlanExecutor::midiIn(const PortRef& ref) const {
@@ -458,21 +478,22 @@ juce::MidiBuffer& PlanExecutor::midiOut(OpId op, int port) {
     return midiSlots_[static_cast<std::size_t>(slotFor(PortRef{op, port}))];
 }
 
-void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,
-                           juce::AudioBuffer<float>& output) {
+PlanExecutor::BlockStart PlanExecutor::beginBlock(const PlanValues& values,
+                                                  const BlockInfo& requested,
+                                                  juce::AudioBuffer<float>& output) const {
+    BlockStart start;
     output.clear();
     if (plan_ == nullptr)
-        return;
+        return start;
 
     // A host asking for more than the block the plan was prepared for would
     // otherwise leave the tail of its buffer silent with nothing saying so.
-    jassert(requestedBlock.numSamples <= context_.maxBlockSize);
+    jassert(requested.numSamples <= context_.maxBlockSize);
 
-    auto block = requestedBlock;
-    block.numSamples = std::min(block.numSamples, context_.maxBlockSize);
-    const auto numSamples = block.numSamples;
-    if (numSamples <= 0)
-        return;
+    start.block = requested;
+    start.block.numSamples = std::min(requested.numSamples, context_.maxBlockSize);
+    if (start.block.numSamples <= 0)
+        return start;
 
     // Values are resolved against a plan and published separately from it, so
     // a table can outlive the plan it was made for. Matching op counts prove
@@ -480,202 +501,214 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
     // stale gains and mutes would land on whatever op now holds each index.
     // The fingerprint is what says the two belong together; without it, unity
     // is the safe reading.
-    static constexpr OpValue kUnity;
-    const auto haveValues = appliesValues(values);
+    start.applyValues = appliesValues(values);
+    start.render = true;
+    return start;
+}
 
-    for (std::size_t i = 0; i < plan_->ops.size(); ++i) {
-        const auto& op = plan_->ops[i];
-        const auto& value = haveValues ? values.ops[i] : kUnity;
-        const auto id = static_cast<OpId>(i);
+void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,
+                           juce::AudioBuffer<float>& output) {
+    const auto start = beginBlock(values, requestedBlock, output);
+    if (!start.render)
+        return;
 
-        switch (op.kind) {
-            case OpKind::ClipAudio:
-            case OpKind::AudioInput: {
-                auto out = audioOut(id, 0, numSamples);
-                if (value.silent || audioSourceForOp_[i] == nullptr)
-                    out.clear();
-                else
-                    audioSourceForOp_[i]->render(block, out);
-                break;
-            }
+    // In order, which is a schedule: ops are in dependency order, so everything
+    // an op reads has already run by the time the walk reaches it.
+    for (std::size_t i = 0; i < plan_->ops.size(); ++i)
+        renderOp(static_cast<OpId>(i), start.applyValues ? values.ops[i] : kUnityValue, start.block,
+                 output);
+}
 
-            case OpKind::ClipMidi:
-            case OpKind::MidiInput: {
-                auto& out = midiOut(id, 0);
+void PlanExecutor::renderOp(OpId id, const OpValue& value, const BlockInfo& block,
+                            juce::AudioBuffer<float>& output) {
+    const auto i = static_cast<std::size_t>(id);
+    const auto& op = plan_->ops[i];
+    const auto numSamples = block.numSamples;
+
+    switch (op.kind) {
+        case OpKind::ClipAudio:
+        case OpKind::AudioInput: {
+            auto out = audioOut(id, 0, numSamples);
+            if (value.silent || audioSourceForOp_[i] == nullptr)
                 out.clear();
-                if (!value.silent && midiSourceForOp_[i] != nullptr) {
-                    midiSourceForOp_[i]->render(block, out);
-                    // Bytes, not events: one SysEx dump outweighs a thousand
-                    // notes, and an event count would wave it through.
-                    jassert(out.data.size() <= kMaxMidiBytesPerPort);
-                }
+            else
+                audioSourceForOp_[i]->render(block, out);
+            break;
+        }
+
+        case OpKind::ClipMidi:
+        case OpKind::MidiInput: {
+            auto& out = midiOut(id, 0);
+            out.clear();
+            if (!value.silent && midiSourceForOp_[i] != nullptr) {
+                midiSourceForOp_[i]->render(block, out);
+                // Bytes, not events: one SysEx dump outweighs a thousand
+                // notes, and an event count would wave it through.
+                jassert(out.data.size() <= kMaxMidiBytesPerPort);
+            }
+            break;
+        }
+
+        case OpKind::MixAudio: {
+            auto out = audioOut(id, 0, numSamples);
+            if (value.silent) {
+                out.clear();
                 break;
             }
-
-            case OpKind::MixAudio: {
-                auto out = audioOut(id, 0, numSamples);
-                if (value.silent) {
-                    out.clear();
-                    break;
+            // Summed in compiled order, never in the order inputs finish:
+            // float addition is not associative, so this is what makes the
+            // parallel executor's output bit-identical to this one.
+            //
+            // The first input may already be here, in the buffer it was
+            // written into. Skipping the copy is the same sum, not a
+            // different one: it is added first either way.
+            auto pending = writesInPlace(i);
+            if (!pending)
+                out.clear();
+            for (const auto& input : op.inputs) {
+                if (!input.valid())
+                    continue;
+                if (pending) {
+                    pending = false;
+                    continue;
                 }
-                // Summed in compiled order, never in the order inputs finish:
-                // float addition is not associative, so this is what makes the
-                // parallel executor's output bit-identical to this one.
-                //
-                // The first input may already be here, in the buffer it was
-                // written into. Skipping the copy is the same sum, not a
-                // different one: it is added first either way.
-                auto pending = writesInPlace(i);
-                if (!pending)
-                    out.clear();
-                for (const auto& input : op.inputs) {
-                    if (!input.valid())
-                        continue;
-                    if (pending) {
-                        pending = false;
-                        continue;
-                    }
-                    out.add(audioIn(input, numSamples));
-                }
-                break;
+                out.add(audioIn(input, numSamples));
             }
+            break;
+        }
 
-            case OpKind::Delay: {
-                // A delay runs whatever the value layer says about the ops
-                // around it. One that stopped writing while its chain was
-                // silent would hand back audio from before the silence when
-                // the chain returned, which is the one thing a delay line
-                // cannot do.
-                if (op.outputs.front() == SignalKind::Audio) {
-                    const auto line = audioDelayForOp_[i];
-                    if (line < 0)
-                        break;  // no samples to hold: its port is its input's
-                    auto out = audioOut(id, 0, numSamples);
-                    if (!writesInPlace(i))
-                        out.copyFrom(audioIn(op.inputs[0], numSamples));
-                    audioDelays_[static_cast<std::size_t>(line)]->process(out, numSamples);
-                    break;
-                }
-
-                const auto line = midiDelayForOp_[i];
+        case OpKind::Delay: {
+            // A delay runs whatever the value layer says about the ops
+            // around it. One that stopped writing while its chain was
+            // silent would hand back audio from before the silence when
+            // the chain returned, which is the one thing a delay line
+            // cannot do.
+            if (op.outputs.front() == SignalKind::Audio) {
+                const auto line = audioDelayForOp_[i];
                 if (line < 0)
-                    break;
-                auto& out = midiOut(id, 0);
-                out.clear();
-                midiDelays_[static_cast<std::size_t>(line)]->process(midiIn(op.inputs[0]), out,
-                                                                     numSamples);
-                jassert(out.data.size() <=
-                        midiByteBounds_[static_cast<std::size_t>(slotFor(PortRef{id, 0}))]);
-                break;
-            }
-
-            case OpKind::MergeMidi: {
-                auto& out = midiOut(id, 0);
-                out.clear();
-                if (value.silent)
-                    break;
-                for (const auto& input : op.inputs)
-                    if (input.valid())
-                        out.addEvents(midiIn(input), 0, numSamples, 0);
-                break;
-            }
-
-            case OpKind::Device: {
-                auto audio = audioOut(id, 0, numSamples);
-                const auto producesMidi =
-                    op.outputs.size() > 1 && op.outputs[1] == SignalKind::Midi;
-                juce::MidiBuffer* deviceMidiOut = nullptr;
-                if (producesMidi) {
-                    deviceMidiOut = &midiOut(id, 1);
-                    deviceMidiOut->clear();
-                }
-
-                if (value.silent) {
-                    audio.clear();
-                    break;
-                }
-
-                if (!op.inputs[0].valid())
-                    audio.clear();
-                else if (!writesInPlace(i))
-                    audio.copyFrom(audioIn(op.inputs[0], numSamples));
-
-                auto* device = deviceForOp_[i];
-                if (device == nullptr)
-                    break;
-
-                DeviceBlock deviceBlock{audio, &midiIn(op.inputs[1]), deviceMidiOut, {}, block};
-                if (op.inputs[2].valid())
-                    deviceBlock.sidechain = audioIn(op.inputs[2], numSamples);
-                device->process(deviceBlock);
-                jassert(deviceMidiOut == nullptr ||
-                        deviceMidiOut->data.size() <= kMaxMidiBytesPerPort);
-                break;
-            }
-
-            case OpKind::Gain:
-            case OpKind::SendTap: {
+                    break;  // no samples to hold: its port is its input's
                 auto out = audioOut(id, 0, numSamples);
-                if (value.silent || !op.inputs[0].valid())
-                    out.clear();
-                else if (writesInPlace(i))
-                    applyGain(out, value, numSamples);
-                else
-                    copyWithGain(out, audioIn(op.inputs[0], numSamples), value, numSamples);
-                break;
-            }
-
-            case OpKind::Fader: {
-                auto out = audioOut(id, 0, numSamples);
-                if (value.silent || !op.inputs[0].valid())
-                    out.clear();
-                else if (writesInPlace(i))
-                    applyGain(out, value, numSamples);
-                else
-                    copyWithGain(out, audioIn(op.inputs[0], numSamples), value, numSamples);
-
-                // A rack chain's MIDI leaves through its fader too, so that one
-                // silent flag takes the whole chain out of the mix. Gain does
-                // not apply to it: there is no such thing as MIDI at half
-                // volume, only MIDI that is connected or is not.
-                if (op.outputs.size() > 1 && op.outputs[1] == SignalKind::Midi) {
-                    auto& outMidiBuffer = midiOut(id, 1);
-                    outMidiBuffer.clear();
-                    if (!value.silent && op.inputs[1].valid())
-                        outMidiBuffer.addEvents(midiIn(op.inputs[1]), 0, numSamples, 0);
-                }
-                break;
-            }
-
-            case OpKind::Meter: {
-                auto out = audioOut(id, 0, numSamples);
-                if (value.silent || !op.inputs[0].valid())
-                    out.clear();
-                else if (!writesInPlace(i))
+                if (!writesInPlace(i))
                     out.copyFrom(audioIn(op.inputs[0], numSamples));
-
-                // Written on silent blocks too, though a maximum takes nothing
-                // from them. What that buys is that the tap is only ever
-                // cleared by being read, so how fast a meter falls is the
-                // reader's cadence and not which blocks the executor bothered
-                // to report.
-                if (auto* tap = meterForOp_[i]; tap != nullptr)
-                    tap->write(out, numSamples);
+                audioDelays_[static_cast<std::size_t>(line)]->process(out, numSamples);
                 break;
             }
 
-            case OpKind::Output: {
-                if (value.silent || !op.inputs[0].valid())
-                    break;
-                auto in = audioIn(op.inputs[0], numSamples);
-                const auto numChannels =
-                    std::min(static_cast<int>(in.getNumChannels()), output.getNumChannels());
-                for (int channel = 0; channel < numChannels; ++channel)
-                    output.addFrom(channel, 0,
-                                   in.getChannelPointer(static_cast<std::size_t>(channel)),
-                                   numSamples);
+            const auto line = midiDelayForOp_[i];
+            if (line < 0)
+                break;
+            auto& out = midiOut(id, 0);
+            out.clear();
+            midiDelays_[static_cast<std::size_t>(line)]->process(midiIn(op.inputs[0]), out,
+                                                                 numSamples);
+            jassert(out.data.size() <=
+                    midiByteBounds_[static_cast<std::size_t>(slotFor(PortRef{id, 0}))]);
+            break;
+        }
+
+        case OpKind::MergeMidi: {
+            auto& out = midiOut(id, 0);
+            out.clear();
+            if (value.silent)
+                break;
+            for (const auto& input : op.inputs)
+                if (input.valid())
+                    out.addEvents(midiIn(input), 0, numSamples, 0);
+            break;
+        }
+
+        case OpKind::Device: {
+            auto audio = audioOut(id, 0, numSamples);
+            const auto producesMidi = op.outputs.size() > 1 && op.outputs[1] == SignalKind::Midi;
+            juce::MidiBuffer* deviceMidiOut = nullptr;
+            if (producesMidi) {
+                deviceMidiOut = &midiOut(id, 1);
+                deviceMidiOut->clear();
+            }
+
+            if (value.silent) {
+                audio.clear();
                 break;
             }
+
+            if (!op.inputs[0].valid())
+                audio.clear();
+            else if (!writesInPlace(i))
+                audio.copyFrom(audioIn(op.inputs[0], numSamples));
+
+            auto* device = deviceForOp_[i];
+            if (device == nullptr)
+                break;
+
+            DeviceBlock deviceBlock{audio, &midiIn(op.inputs[1]), deviceMidiOut, {}, block};
+            if (op.inputs[2].valid())
+                deviceBlock.sidechain = audioIn(op.inputs[2], numSamples);
+            device->process(deviceBlock);
+            jassert(deviceMidiOut == nullptr || deviceMidiOut->data.size() <= kMaxMidiBytesPerPort);
+            break;
+        }
+
+        case OpKind::Gain:
+        case OpKind::SendTap: {
+            auto out = audioOut(id, 0, numSamples);
+            if (value.silent || !op.inputs[0].valid())
+                out.clear();
+            else if (writesInPlace(i))
+                applyGain(out, value, numSamples);
+            else
+                copyWithGain(out, audioIn(op.inputs[0], numSamples), value, numSamples);
+            break;
+        }
+
+        case OpKind::Fader: {
+            auto out = audioOut(id, 0, numSamples);
+            if (value.silent || !op.inputs[0].valid())
+                out.clear();
+            else if (writesInPlace(i))
+                applyGain(out, value, numSamples);
+            else
+                copyWithGain(out, audioIn(op.inputs[0], numSamples), value, numSamples);
+
+            // A rack chain's MIDI leaves through its fader too, so that one
+            // silent flag takes the whole chain out of the mix. Gain does
+            // not apply to it: there is no such thing as MIDI at half
+            // volume, only MIDI that is connected or is not.
+            if (op.outputs.size() > 1 && op.outputs[1] == SignalKind::Midi) {
+                auto& outMidiBuffer = midiOut(id, 1);
+                outMidiBuffer.clear();
+                if (!value.silent && op.inputs[1].valid())
+                    outMidiBuffer.addEvents(midiIn(op.inputs[1]), 0, numSamples, 0);
+            }
+            break;
+        }
+
+        case OpKind::Meter: {
+            auto out = audioOut(id, 0, numSamples);
+            if (value.silent || !op.inputs[0].valid())
+                out.clear();
+            else if (!writesInPlace(i))
+                out.copyFrom(audioIn(op.inputs[0], numSamples));
+
+            // Written on silent blocks too, though a maximum takes nothing
+            // from them. What that buys is that the tap is only ever
+            // cleared by being read, so how fast a meter falls is the
+            // reader's cadence and not which blocks the executor bothered
+            // to report.
+            if (auto* tap = meterForOp_[i]; tap != nullptr)
+                tap->write(out, numSamples);
+            break;
+        }
+
+        case OpKind::Output: {
+            if (value.silent || !op.inputs[0].valid())
+                break;
+            auto in = audioIn(op.inputs[0], numSamples);
+            const auto numChannels =
+                std::min(static_cast<int>(in.getNumChannels()), output.getNumChannels());
+            for (int channel = 0; channel < numChannels; ++channel)
+                output.addFrom(channel, 0, in.getChannelPointer(static_cast<std::size_t>(channel)),
+                               numSamples);
+            break;
         }
     }
 }

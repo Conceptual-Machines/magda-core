@@ -282,6 +282,31 @@ test: test-build
 	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	cd $(BUILD_DIR) && $(TEST_ENV) ./tests/magda_tests
 
+# Build and run the Catch2 tests under ThreadSanitizer. The native engine's
+# parallel executor is lock-free, so "it passed" from an ordinary build says
+# nothing about the orderings it did not happen to take. TEST=<filter> narrows
+# it, e.g. make test-tsan TEST="[parallel]".
+.PHONY: test-tsan-build
+test-tsan-build:
+	@echo "🧵 Building tests (Debug + ThreadSanitizer)..."
+	@mkdir -p $(BUILD_DIR_TSAN) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@if [ ! -f $(BUILD_DIR_TSAN)/CMakeCache.txt ]; then \
+		echo "📝 Configuring project with TSAN..."; \
+		cd $(BUILD_DIR_TSAN) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+			-DCMAKE_CXX_FLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=thread" \
+			-DCMAKE_C_FLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=thread" \
+			-DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" \
+			-DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=thread" \
+			-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+	fi
+	cd $(BUILD_DIR_TSAN) && $(BUILD_ENV) ninja magda_tests
+
+.PHONY: test-tsan
+test-tsan: test-tsan-build
+	@echo "🧵 Running tests with ThreadSanitizer..."
+	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	cd $(BUILD_DIR_TSAN) && $(TEST_ENV) ./tests/magda_tests $(if $(TEST),"$(TEST)",)
+
 # Run tests using CTest
 .PHONY: test-ctest
 test-ctest: test-build

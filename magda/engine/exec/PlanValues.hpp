@@ -43,6 +43,15 @@ struct OpValue {
 };
 
 /**
+ * @brief What an op renders with when no table applies to the plan.
+ *
+ * Unity and audible, which is the only safe reading of values that were
+ * resolved against something else: a gain nobody asked for is a mix nobody
+ * mixed, and a silence nobody asked for is a track that has gone missing.
+ */
+inline constexpr OpValue kUnityValue{};
+
+/**
  * @brief Per-op values for one compiled plan, indexed by OpId.
  *
  * Published to the audio thread as a whole; the executor never mutates it.

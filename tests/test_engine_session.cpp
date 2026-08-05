@@ -1007,3 +1007,51 @@ TEST_CASE("A host that wants no meters binds none and renders the same", "[engin
 
     CHECK(output.getMagnitude(0, kBlockSize) > 0.0f);
 }
+
+TEST_CASE("A session on a thread pool renders what a session without one renders",
+          "[engine][session][parallel]") {
+    // The session drives the parallel executor whether or not it was given
+    // threads, so this is not two engines being compared: it is one, with the
+    // block spread out and not. Bit for bit, because that is the executor's
+    // whole claim and the session is where it has to survive plan swaps,
+    // published values and a callback cut by the transport.
+    const auto render = [](magda::engine::RenderThreadPool* pool) {
+        Ledger ledger;
+        TestFactory factory(ledger);
+        factory.latencyFor[7] = 53;
+        EngineSession session(factory, pool);
+
+        auto tracks = trackWithEffect(7);
+        tracks.push_back(makeTrack(2));
+        const auto plan = compile(tracks);
+        REQUIRE(publish(session, plan, tracks).published);
+        session.publishValues(resolve(*plan, tracks));
+        session.publishTransport(rolling(0.0));
+
+        std::vector<float> samples;
+        juce::AudioBuffer<float> output(2, kBlockSize);
+        for (int block = 0; block < 16; ++block) {
+            // A swap partway through, so what the differ carried across it is
+            // part of what is being compared.
+            if (block == 8) {
+                tracks.push_back(makeTrack(3));
+                const auto grown = compile(tracks);
+                REQUIRE(publish(session, grown, tracks).published);
+                session.publishValues(resolve(*grown, tracks));
+            }
+
+            output.clear();
+            session.process(kBlockSize, output);
+            for (int channel = 0; channel < output.getNumChannels(); ++channel)
+                for (int sample = 0; sample < kBlockSize; ++sample)
+                    samples.push_back(output.getSample(channel, sample));
+        }
+        return samples;
+    };
+
+    const auto alone = render(nullptr);
+    REQUIRE_FALSE(alone.empty());
+
+    magda::engine::RenderThreadPool pool(4, false);
+    CHECK(render(&pool) == alone);
+}

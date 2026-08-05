@@ -24,6 +24,12 @@
  * When the two disagree, this is the arbiter, so it stays a straight walk of
  * the op vector with no scheduling of any kind: ops are in dependency order, so
  * running them in order is enough.
+ *
+ * "Through the same ops" is meant literally. Everything below the walk lives
+ * here and both executors use it: preparing a plan against its bindings, the
+ * buffers it renders through, and the body of every op. What the parallel
+ * executor replaces is the loop and nothing else, which is why its output is
+ * bit-identical to this one's rather than close to it.
  */
 
 namespace magda::engine {
@@ -135,6 +141,11 @@ class PlanExecutor {
                                      const RenderContext& context,
                                      const PlanExecutor* previous = nullptr);
 
+    /// Forget the prepared plan and everything sized for it. Off the audio
+    /// thread. Every prepare starts here, so a plan that is refused leaves
+    /// nothing behind that could still be rendered.
+    void reset();
+
     /**
      * @brief Render one block into @p output.
      *
@@ -144,6 +155,52 @@ class PlanExecutor {
      */
     void process(const PlanValues& values, const BlockInfo& block,
                  juce::AudioBuffer<float>& output);
+
+    /** @brief Where one block's render starts, before any op has run. */
+    struct BlockStart {
+        /// The block as this plan will actually render it, which is the one
+        /// asked for clipped to what it was prepared for.
+        BlockInfo block;
+
+        /// Whether the values belong to this plan. When they do not, every op
+        /// renders at unity rather than at whatever the table happens to say.
+        bool applyValues = false;
+
+        /// False when there is nothing to render at all: no plan prepared, or
+        /// no samples asked for. The output has been cleared either way.
+        bool render = false;
+    };
+
+    /**
+     * @brief Settle what a block is, and clear @p output.
+     *
+     * Shared with the parallel executor because the two have to agree on it:
+     * how much of the block this plan can render, and whether the values were
+     * resolved against it. A second copy of that reasoning is a second answer.
+     */
+    BlockStart beginBlock(const PlanValues& values, const BlockInfo& requested,
+                          juce::AudioBuffer<float>& output) const;
+
+    /**
+     * @brief Render one op of the prepared plan.
+     *
+     * Every op the engine renders passes through here, from both executors,
+     * and that is what makes their output bit-identical rather than merely
+     * close: the arithmetic is in one place, and scheduling is the only thing
+     * the parallel executor changes. Anything that sums does so in compiled
+     * order, whatever order its inputs arrived in.
+     *
+     * The caller owes it a schedule. Every op this one reads has finished, and
+     * nothing that reads what it writes has started; ports share buffers on
+     * exactly that promise (see assignBuffers).
+     *
+     * @p output is touched by Output ops alone. Those accumulate into a buffer
+     * every one of them shares, so whoever drives the block runs them itself,
+     * in plan order, rather than letting a schedule decide what adds to what
+     * first.
+     */
+    void renderOp(OpId op, const OpValue& value, const BlockInfo& block,
+                  juce::AudioBuffer<float>& output);
 
     /// Meter ops whose tap the bindings filled. The rest still render; they
     /// publish nothing, because nothing is reading them.
@@ -226,8 +283,15 @@ class PlanExecutor {
                                                    ref.port)];
     }
 
-    juce::dsp::AudioBlock<float> audioIn(const PortRef& ref, int numSamples);
-    juce::dsp::AudioBlock<float> audioOut(OpId op, int port, int numSamples);
+    /// One audio slot, as an op sees it. Built from the cached channel
+    /// pointers rather than from the buffer, because making a block out of a
+    /// juce::AudioBuffer writes the buffer's isClear flag: two ops reading the
+    /// same port at once would be two threads writing one byte, which is
+    /// benign in value and a data race in fact.
+    juce::dsp::AudioBlock<float> audioBlock(std::size_t row, int numSamples) const;
+
+    juce::dsp::AudioBlock<float> audioIn(const PortRef& ref, int numSamples) const;
+    juce::dsp::AudioBlock<float> audioOut(OpId op, int port, int numSamples) const;
     const juce::MidiBuffer& midiIn(const PortRef& ref) const;
     juce::MidiBuffer& midiOut(OpId op, int port);
 
@@ -242,8 +306,6 @@ class PlanExecutor {
     const std::shared_ptr<AudioDelayLine>& audioDelayFor(OpId op) const;
     const std::shared_ptr<MidiDelayLine>& midiDelayFor(OpId op) const;
 
-    void reset();
-
     const RenderPlan* plan_ = nullptr;
     RenderContext context_;
 
@@ -251,6 +313,12 @@ class PlanExecutor {
     /// which is worked out in assignBuffers rather than here.
     std::vector<juce::AudioBuffer<float>> audioSlots_;
     std::vector<juce::MidiBuffer> midiSlots_;
+
+    /// Channel pointers into the arena, flattened: slot s, channel c is at
+    /// s * numChannels + c, and the row past the last slot is silence_. Every
+    /// audio block an op is handed is made from these, so nothing on the
+    /// render path touches a juce::AudioBuffer (see audioBlock).
+    std::vector<float*> slotChannels_;
     /// Encoded bytes each MIDI buffer can hold without growing, summed through
     /// the MIDI graph at prepare time. Checked in debug where producers write.
     std::vector<int> midiByteBounds_;
