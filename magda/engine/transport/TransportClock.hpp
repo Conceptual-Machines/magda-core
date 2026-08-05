@@ -100,7 +100,11 @@ class TransportClock {
     /// from.
     void anchorTo(const TempoMap& tempo, double beat);
 
-    /// The beat the cursor would be at @p samples after the anchor.
+    /// Where the cursor would be @p samples after the anchor, in seconds and
+    /// in beats. The seconds are the primitive: the anchor is a position in
+    /// seconds and the device counts samples, so this is the whole of the
+    /// conversion and the beats are that answer read through a tempo map.
+    double secondsAfter(std::int64_t samples) const;
     double beatAfter(const TempoMap& tempo, std::int64_t samples) const;
 
     /// Samples from the cursor until the timeline reaches @p beat, rounded up
