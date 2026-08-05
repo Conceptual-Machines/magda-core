@@ -69,9 +69,10 @@ maintained library with the right hook turned out to be free.
 ## Chosen: cpp-httplib, pinned at v0.52.0
 
 MIT, no required dependencies — OpenSSL, zlib, Brotli and zstd are all
-`#ifdef`-optional. It is already in the tree at
-`third_party/llama.cpp/vendor/cpp-httplib/` (0.50.1), which is how it was found,
-but we do not consume it from there (see below).
+`#ifdef`-optional. It is already vendored inside llama.cpp at
+`third_party/llama.cpp/vendor/cpp-httplib/`, which is how it was found, but we
+do not consume it from there (see below). The version there moves with the
+submodule, so it is not quoted here.
 
 Version 0.50 has a WebSocket server, and its upgrade path was built for exactly
 this case. From `httplib.cpp:8496`:
@@ -99,9 +100,10 @@ handler; upgrade with a valid token and allowed `Origin` completing and
 round-tripping a JSON-RPC frame; an oversized frame closing the connection; a
 server-initiated close seen by the client; and `stop()` joining the listener.
 
-Eleven checks, all passing, against both 0.50.1 (compiled, from llama.cpp's
-vendored copy) and 0.52.0 (header-only, from the pinned tag) — so the API we
-depend on is stable across the two. Compilation is 2–4 seconds at `-O0`.
+Eleven checks, all passing, against two versions a release apart — 0.50.1
+compiled from a vendored copy, and 0.52.0 header-only from the pinned tag — so
+the API we depend on is stable across the range rather than pinned to one
+release. Compilation is 2–4 seconds at `-O0`.
 
 ## How it is wired
 
