@@ -93,6 +93,7 @@ class DecayDevice final : public EngineDevice {
   public:
     void process(DeviceBlock& block) override {
         ++blocksProcessed;
+        startBeats.push_back(block.block.startBeat);
         for (auto sample = 0; sample < block.block.numSamples; ++sample) {
             for (std::size_t channel = 0; channel < block.audio.getNumChannels(); ++channel) {
                 level_ = std::max(
@@ -105,6 +106,11 @@ class DecayDevice final : public EngineDevice {
     }
 
     int blocksProcessed = 0;
+
+    /// Where on the timeline each block sat. A device sees every block, tail
+    /// included, which is what makes it the one thing that can say where a
+    /// stopped block thinks it is.
+    std::vector<double> startBeats;
 
   private:
     float level_ = 0.0f;
@@ -309,6 +315,40 @@ TEST_CASE("Nothing plays during an offline render's tail", "[engine][offline]") 
     for (auto sample = rangeSamples; sample < sink.samples.size(); ++sample) {
         INFO("sample " << sample);
         REQUIRE(sink.samples[sample] == approx(0.0f));
+    }
+}
+
+TEST_CASE("A tail stands where the range ended", "[engine][offline]") {
+    Harness harness(true);
+    REQUIRE(harness.prepare(512).empty());
+    REQUIRE(harness.decay != nullptr);
+
+    CollectingSink sink;
+    harness.render({4.0, 8.0, 0.25, 512}, sink);
+
+    REQUIRE_FALSE(harness.decay->startBeats.empty());
+    CHECK(harness.decay->startBeats.front() == approx(4.0f));
+    CHECK(harness.decay->startBeats.back() == approx(8.0f));
+}
+
+TEST_CASE("An empty range's tail stands where the range was, not at the beginning",
+          "[engine][offline]") {
+    // A range that rounds to no samples renders no blocks, so nothing had
+    // applied the locate. The tail would then run at beat zero, where the clock
+    // starts, and a transport-aware device would be handed a tail from the
+    // wrong end of the song.
+    Harness harness(true);
+    REQUIRE(harness.prepare(512).empty());
+    REQUIRE(harness.decay != nullptr);
+
+    CollectingSink sink;
+    const auto result = harness.render({4.0, 4.0, 0.25, 512}, sink);
+
+    CHECK(result.samplesRendered == static_cast<std::int64_t>(std::llround(0.25 * kSampleRate)));
+    REQUIRE_FALSE(harness.decay->startBeats.empty());
+    for (const auto beat : harness.decay->startBeats) {
+        INFO("block at beat " << beat);
+        REQUIRE(beat == approx(4.0f));
     }
 }
 

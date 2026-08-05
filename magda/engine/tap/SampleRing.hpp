@@ -108,20 +108,32 @@ class SampleRing {
     /**
      * @brief Copy the most recent @p numSamples into @p destination.
      *
-     * Off the audio thread. Zero-padded at the front while the ring has not
-     * filled once, so a display opened a moment ago draws silence rather than
-     * whatever the allocation held. Returns the running count of samples ever
-     * written, which is how a caller tells that nothing new has arrived since
-     * it last asked without comparing the audio itself.
+     * Off the audio thread. Zero-padded at the front for anything the ring
+     * cannot answer for, which is two cases and one rule: history from before
+     * it had been written to, and history older than it is deep. A caller
+     * asking for a longer window than the ring holds gets silence in front of
+     * what there is, rather than the ring's contents repeated: the masked index
+     * would happily fold two laps onto the same slots and hand back a
+     * duplicated waveform, which draws as a signal that was never played and
+     * transforms as harmonics that were never there.
+     *
+     * Returns the running count of samples ever written, which is how a caller
+     * tells that nothing new has arrived since it last asked without comparing
+     * the audio itself.
      */
     std::size_t readLatest(float* destination, int numSamples) const {
         const auto position = writePosition_.load(std::memory_order_acquire);
 
+        // The oldest position still in the ring. Below it the slot has been
+        // overwritten by a later lap and answers for a different sample.
+        const auto oldest = static_cast<long long>(position) - capacity_;
+
         for (auto i = 0; i < numSamples; ++i) {
             const auto index = static_cast<long long>(position) - numSamples + i;
-            destination[i] = index < 0 ? 0.0f
-                                       : samples_[static_cast<std::size_t>(index) & mask_].load(
-                                             std::memory_order_relaxed);
+            destination[i] = index < 0 || index < oldest
+                                 ? 0.0f
+                                 : samples_[static_cast<std::size_t>(index) & mask_].load(
+                                       std::memory_order_relaxed);
         }
 
         return position;

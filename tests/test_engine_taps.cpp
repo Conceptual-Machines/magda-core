@@ -153,6 +153,33 @@ TEST_CASE("A sample ring keeps the newest samples once it has wrapped", "[engine
     CHECK(read[1] == approx(static_cast<float>(written.size() - 1)));
 }
 
+TEST_CASE("A sample ring pads a window longer than it is deep", "[engine][tap]") {
+    // A scope on a long timebase asks for more history than the ring holds.
+    // What it must not get is the ring twice: the masked index folds two laps
+    // onto the same slots, and the second copy would draw as signal that was
+    // never played.
+    SampleRing ring(1024);
+    const auto capacity = ring.capacity();
+
+    std::vector<float> written(static_cast<std::size_t>(capacity) * 2);
+    for (std::size_t i = 0; i < written.size(); ++i)
+        written[i] = 1.0f + static_cast<float>(i);
+    ring.write(written.data(), static_cast<int>(written.size()));
+
+    std::vector<float> read(static_cast<std::size_t>(capacity) * 2);
+    ring.readLatest(read.data(), static_cast<int>(read.size()));
+
+    // The half the ring cannot answer for is silence, not a repeat.
+    for (auto sample = 0; sample < capacity; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(read[static_cast<std::size_t>(sample)] == approx(0.0f));
+    }
+
+    // The half it can is the newest audio, in order.
+    CHECK(read[static_cast<std::size_t>(capacity)] == approx(written[written.size() - capacity]));
+    CHECK(read.back() == approx(written.back()));
+}
+
 TEST_CASE("A sample ring downmixes without a maximum block size", "[engine][tap]") {
     SampleRing ring(1024);
 

@@ -101,6 +101,15 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
         }
     };
 
+    // Applied before anything renders rather than by the first block, because a
+    // range that rounds to no samples renders no blocks and would leave the
+    // locate unapplied: the tail below would then stand at beat zero, where the
+    // clock starts, instead of where the range ended. A zero-length advance
+    // takes the request and does nothing else, and for a range that does render
+    // it changes nothing, because the first real block would have applied the
+    // same request a moment later.
+    clock.advance(snapshot, context.sampleRate, 0);
+
     renderSpan(rangeSamples);
 
     if (result.cancelled || tailSamples <= 0)
