@@ -38,6 +38,15 @@ namespace magda::engine {
  * from the new lap. At the default capacity that is a third of a second of
  * audio, which a UI would have to have stopped entirely to hit, and the cost
  * when it happens is one ragged frame of a drawing.
+ *
+ * The slots are atomic so that the lap is that and nothing more. Plain floats
+ * would make it a data race, which is undefined rather than merely ragged: the
+ * bound above would be a claim about what compilers happen to do, and the first
+ * analysis device wired to a ring would hand `make tsan` a real positive, whose
+ * only answers are a suppression that blunts the tool or a rewrite under time
+ * pressure. Relaxed on both sides, because the ordering that matters is the
+ * position counter's and the slots order nothing: what this compiles to is the
+ * plain loads and stores it would have been anyway.
  */
 class SampleRing {
   public:
@@ -46,7 +55,7 @@ class SampleRing {
     explicit SampleRing(int capacity = 16384)
         : capacity_(juce::nextPowerOfTwo(std::max(1024, capacity))),
           mask_(static_cast<std::size_t>(capacity_) - 1),
-          samples_(static_cast<std::size_t>(capacity_), 0.0f) {}
+          samples_(static_cast<std::size_t>(capacity_)) {}
 
     int capacity() const {
         return capacity_;
@@ -57,9 +66,10 @@ class SampleRing {
         if (numSamples <= 0)
             return;
 
-        auto position = writePosition_.load(std::memory_order_relaxed);
+        const auto position = writePosition_.load(std::memory_order_relaxed);
         for (auto i = 0; i < numSamples; ++i)
-            samples_[(position + static_cast<std::size_t>(i)) & mask_] = samples[i];
+            samples_[(position + static_cast<std::size_t>(i)) & mask_].store(
+                samples[i], std::memory_order_relaxed);
 
         writePosition_.store(position + static_cast<std::size_t>(numSamples),
                              std::memory_order_release);
@@ -81,13 +91,14 @@ class SampleRing {
             return;
 
         const auto scale = 1.0f / static_cast<float>(channels);
-        auto position = writePosition_.load(std::memory_order_relaxed);
+        const auto position = writePosition_.load(std::memory_order_relaxed);
 
         for (auto i = 0; i < numSamples; ++i) {
             auto sum = 0.0f;
             for (auto channel = 0; channel < channels; ++channel)
                 sum += block.getSample(channel, i);
-            samples_[(position + static_cast<std::size_t>(i)) & mask_] = sum * scale;
+            samples_[(position + static_cast<std::size_t>(i)) & mask_].store(
+                sum * scale, std::memory_order_relaxed);
         }
 
         writePosition_.store(position + static_cast<std::size_t>(numSamples),
@@ -108,7 +119,9 @@ class SampleRing {
 
         for (auto i = 0; i < numSamples; ++i) {
             const auto index = static_cast<long long>(position) - numSamples + i;
-            destination[i] = index < 0 ? 0.0f : samples_[static_cast<std::size_t>(index) & mask_];
+            destination[i] = index < 0 ? 0.0f
+                                       : samples_[static_cast<std::size_t>(index) & mask_].load(
+                                             std::memory_order_relaxed);
         }
 
         return position;
@@ -122,7 +135,9 @@ class SampleRing {
   private:
     const int capacity_;
     const std::size_t mask_;
-    std::vector<float> samples_;
+    /// Value-initialised, which for an atomic is zero: a ring that has not been
+    /// written to yet reads as silence rather than as whatever was allocated.
+    std::vector<std::atomic<float>> samples_;
     std::atomic<std::size_t> writePosition_{0};
 };
 

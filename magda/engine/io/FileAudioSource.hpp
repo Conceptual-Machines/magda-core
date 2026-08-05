@@ -29,8 +29,13 @@ namespace magda::engine {
 
 class FileAudioSource final : public EngineAudioSource {
   public:
-    /// The reader is owned elsewhere, so the same file can back an offline
-    /// render and whatever else the host has open on it.
+    /// The reader is owned elsewhere, and is this source's alone while it
+    /// exists. One file backing two consumers is two readers over it, not one
+    /// shared between them: a reader seeks and reads as one operation, so two
+    /// of them interleaving lands both somewhere neither asked for. The path
+    /// that makes this concrete is not exotic, it is a stem export, which is
+    /// one render per stem over the same files and is the obvious thing to run
+    /// in parallel.
     FileAudioSource(AudioFileReader& reader, const ClipPlacement& placement);
 
     void prepare(const RenderContext& context) override;

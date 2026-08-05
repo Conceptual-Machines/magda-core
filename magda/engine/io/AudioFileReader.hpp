@@ -38,10 +38,17 @@ class AudioFileReader {
     /**
      * @brief Read @p numSamples into @p destination from @p destinationOffset.
      *
-     * Called on the prefetch thread, never on the audio thread. Returns how
-     * many samples were actually available, which is short only at the end of
-     * the file; the rest of the destination is cleared rather than left
-     * holding whatever was there.
+     * One consumer per reader, on any thread that is not the audio thread. The
+     * prefetch thread is one such consumer and an offline render is another,
+     * but never through the same instance: a read is a seek and a read
+     * together, so two of them interleaving leaves both somewhere neither
+     * asked for. Locking here instead would put a bounce and the prefetch
+     * thread in each other's way, which is the wrong trade for a file that
+     * could simply have been opened twice.
+     *
+     * Returns how many samples were actually available, which is short only at
+     * the end of the file; the rest of the destination is cleared rather than
+     * left holding whatever was there.
      *
      * The destination carries the engine's channel count rather than the
      * file's: a mono file fans out to every channel, and a file with more

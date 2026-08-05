@@ -58,6 +58,15 @@ class LevelTap {
      * A tap nobody reads accumulates rather than growing: peak is a maximum, so
      * a meter that goes unwatched for a minute reports that minute's loudest
      * sample the next time it is read.
+     *
+     * Each channel is taken on its own, so a read is not one instant across the
+     * two of them. A read landing between the channels of a write comes back
+     * with one that has this block in it and one that does not, which on a
+     * meter is a single frame where a signal shows on the left and not the
+     * right. Nothing is lost to it: the channel that missed the read keeps its
+     * level for the next one. Making the pair atomic means packing both floats
+     * into one word, which is worth doing if that frame ever proves visible and
+     * is not worth doing before.
      */
     Levels read() {
         Levels levels;
@@ -85,14 +94,17 @@ class LevelTap {
                 block.getChannelPointer(static_cast<std::size_t>(channel)), numSamples);
             const auto peak = std::max(std::abs(range.getStart()), std::abs(range.getEnd()));
             accumulate(channel, peak);
-        }
 
-        // A mono block on a stereo tap reads as the same level on both, which is
-        // what it sounds like. Nothing in the engine produces one today; a tap
-        // that reported silence on the right if something did would be a meter
-        // lying about audible signal.
-        if (channels == 1)
-            accumulate(1, peaks_[0].load(std::memory_order_relaxed));
+            // A mono block on a stereo tap reads as the same level on both,
+            // which is what it sounds like. The block's own peak rather than
+            // whatever channel 0 holds by now: a read landing between the two
+            // takes that slot to zero, and the transient would then reach
+            // neither channel rather than both. Nothing in the engine produces
+            // a mono block today, which is the argument for getting the path
+            // right while nothing depends on it.
+            if (channels == 1)
+                accumulate(1, peak);
+        }
     }
 
     /// Drop what has not been read. For a meter whose signal has gone away:

@@ -174,6 +174,48 @@ TEST_CASE("A sample ring downmixes without a maximum block size", "[engine][tap]
     CHECK(ring.writePosition() == static_cast<std::size_t>(numSamples));
 }
 
+TEST_CASE("A sample ring reads while it is being written", "[engine][tap]") {
+    // The SPSC claim, across two threads, which is where the atomic slots earn
+    // themselves: under `make tsan` a plain float ring laps the reader and
+    // reports a race. What is asserted is only what the class promises, that a
+    // read returns samples the writer has written and the position never goes
+    // backwards. Which samples is deliberately not asserted: the reader is
+    // allowed to be lapped, and that is the documented bound rather than a
+    // failure.
+    SampleRing ring(1024);
+    constexpr int kWrites = 20000;
+    std::atomic<bool> writing{true};
+
+    std::thread writer([&] {
+        for (auto i = 0; i < kWrites; ++i) {
+            const auto sample = static_cast<float>(i % 100) * 0.01f;
+            ring.write(&sample, 1);
+        }
+        writing = false;
+    });
+
+    std::vector<float> read(64);
+    std::size_t lastPosition = 0;
+    auto reads = 0;
+
+    while (writing) {
+        const auto position = ring.readLatest(read.data(), static_cast<int>(read.size()));
+        REQUIRE(position >= lastPosition);
+        lastPosition = position;
+        ++reads;
+    }
+
+    writer.join();
+
+    CHECK(reads > 0);
+    CHECK(ring.writePosition() == static_cast<std::size_t>(kWrites));
+
+    // Whatever it was lapped by along the way, the ring settles on the last
+    // samples written once the writer stops.
+    ring.readLatest(read.data(), static_cast<int>(read.size()));
+    CHECK(read.back() == approx(static_cast<float>((kWrites - 1) % 100) * 0.01f));
+}
+
 TEST_CASE("A level tap loses nothing to a reader running beside the writer", "[engine][tap]") {
     LevelTap tap;
 
