@@ -16,11 +16,15 @@ add_library(magda_engine STATIC
     plan/TrackRouting.hpp
     exec/PlanExecutor.cpp
     exec/PlanValues.cpp
+    exec/RuntimeStateStore.cpp
+    exec/EngineSession.cpp
     exec/PlanExecutor.hpp
     exec/PlanValues.hpp
     exec/PlanBindings.hpp
     exec/EngineDevice.hpp
     exec/RenderContext.hpp
+    exec/RuntimeStateStore.hpp
+    exec/EngineSession.hpp
 )
 add_library(magda::engine ALIAS magda_engine)
 
@@ -31,6 +35,12 @@ target_compile_features(magda_engine PUBLIC cxx_std_20)
 target_link_libraries(magda_engine PUBLIC magda_types)
 
 target_include_directories(magda_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Vendored, pinned, header-only: farbot (MIT). The engine owns its copy so
+# that nothing outside third_party/ can break this target.
+#
+# Standing rule for the engine: nothing real-time-concurrent is hand-rolled.
+target_include_directories(magda_engine PUBLIC ${CMAKE_SOURCE_DIR}/third_party/farbot/include)
 
 # Borrow JUCE's headers and defines without linking the modules: the model
 # headers name juce::String and juce::Colour, the executor renders into

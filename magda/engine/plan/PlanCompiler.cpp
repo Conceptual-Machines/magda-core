@@ -131,8 +131,8 @@ void collectSidechainSources(const TrackInfo& track, std::optional<SidechainConf
 
 /// Whether input reaches the track at all, for either audio or MIDI.
 ///
-/// Auto is deliberately not enough on its own: it maps to TE's automatic
-/// monitor mode, which passes input only while the track is armed. Including it
+/// Auto is deliberately not enough on its own: automatic monitoring passes
+/// input only while the track is armed. Including it
 /// unarmed would emit a live input op the current engine keeps silent, and
 /// would mark the whole downstream chain Live, pessimising the anticipative
 /// executor for a track that cannot sound. This is why the compiler does not

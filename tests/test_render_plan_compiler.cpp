@@ -1029,7 +1029,7 @@ TEST_CASE("Sidechain discovery reaches every section emission does", "[engine][p
 
 TEST_CASE("Auto input monitoring only counts while the track is armed",
           "[engine][plan][compiler]") {
-    // Auto maps to TE's automatic monitor mode, which passes input only while
+    // Automatic monitoring passes input only while
     // armed. Emitting a live op for an unarmed Auto track would both add a op
     // the engine keeps silent and mark the whole chain downstream Live.
     SECTION("unarmed Auto emits no live input") {
