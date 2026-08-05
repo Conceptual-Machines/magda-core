@@ -217,8 +217,42 @@ struct RenderPlan {
  */
 int arityOf(OpKind kind);
 
+/** The scheduling constants a plan's topology implies. */
+struct PlanScheduling {
+    std::vector<std::uint16_t> dependencyCounts;
+    std::vector<int> consumerOffsets;
+    std::vector<OpId> consumerEdges;
+    std::vector<OpId> initialReadyOps;
+};
+
+/**
+ * @brief Work out the scheduling constants for @p plan, without writing them.
+ *
+ * A pure function of the ops and their inputs, which is what lets the executor
+ * check a plan's constants rather than take them on trust.
+ */
+PlanScheduling scheduleOf(const RenderPlan& plan);
+
 /** Fill in dependencyCounts, consumer edges and initialReadyOps. */
 void bakeScheduling(RenderPlan& plan);
+
+/**
+ * @brief Whether a plan's baked constants are the ones its topology implies.
+ *
+ * Not a size check. The parallel executor's whole safety story is that the
+ * schedule it copies in every block came from the compiler, and every way of
+ * being wrong here is expensive: a count too high or a seed op missing leaves
+ * ops nobody will ever release, so the block never finishes and the callback
+ * spins for ever; a count too low releases an op while its producers are still
+ * writing, which is a race on a shared buffer; an offset or an edge out of
+ * range walks off the end of an array. None of it is visible to validatePlan,
+ * which reads the topology, and none of it is in the fingerprint, which is
+ * computed from the topology too.
+ *
+ * So the constants are recomputed and compared. It runs off the audio thread,
+ * once per prepare, and it is the same linear pass that produced them.
+ */
+bool carriesSchedule(const RenderPlan& plan);
 
 /**
  * @brief Structural identity of a plan, over its ops, keys and edges.

@@ -10,7 +10,7 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     if (plan == nullptr)
         return {false, {"no plan to publish"}};
 
-    auto prepared = std::make_shared<PreparedRender>();
+    auto prepared = std::make_shared<PreparedRender>(pool_);
     prepared->plan = std::move(plan);
     prepared->values = std::move(values);
     prepared->context = context;
