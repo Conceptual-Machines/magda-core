@@ -114,10 +114,14 @@ class TestFactory final : public RuntimeStateFactory {
 
     std::unique_ptr<EngineDevice> createDevice(DeviceId id) override {
         auto device = std::make_unique<LedgerDevice>(ledger_, id);
+        device->latency = latencyFor.count(id) != 0 ? latencyFor[id] : 0;
         lastDevice = device.get();
         devicesById[id] = device.get();
         return device;
     }
+
+    /// What a device reports once it is loaded, per device ID.
+    std::map<DeviceId, int> latencyFor;
 
     std::unique_ptr<EngineAudioSource> createClipAudioSource(TrackId) override {
         ++ledger_.sourcesCreated;
@@ -236,6 +240,44 @@ TEST_CASE("A latency change re-prepares the plan rather than recompiling it",
     CHECK(output.getSample(0, 0) == approx(0.5f));
     CHECK(output.getSample(0, 15) == approx(0.5f));
     CHECK(output.getSample(0, 16) == approx(1.5f));
+}
+
+TEST_CASE("A structural edit does not cut what is in flight", "[engine][session][diff]") {
+    // Track 2 is compensated for track 1's latency, so sixteen samples of it
+    // are always inside a delay line. An edit on track 1 has nothing to do with
+    // that line, and the differ is what says so: the epoch being replaced hands
+    // it over rather than the new one starting it empty.
+    Ledger ledger;
+    TestFactory factory(ledger);
+    factory.latencyFor[7] = 16;
+    EngineSession session(factory);
+
+    auto tracks = trackWithEffect(7);
+    tracks.push_back(makeTrack(2));
+    const auto first = compile(tracks);
+
+    REQUIRE(session.publish(first, context(), modelIds(tracks)).published);
+    session.publishValues(resolve(*first, tracks));
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    session.process(BlockInfo{kBlockSize, 0, true}, output);
+
+    // Track 1 through its device, and track 2 arriving sixteen samples in.
+    CHECK(output.getSample(0, 0) == approx(0.5f));
+    CHECK(output.getSample(0, 16) == approx(1.5f));
+
+    // A second device on track 1. Track 2's path is untouched by it.
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(8)));
+    const auto second = compile(tracks);
+    REQUIRE(session.publish(second, context(), modelIds(tracks)).published);
+    session.publishValues(resolve(*second, tracks));
+
+    session.process(BlockInfo{kBlockSize, kBlockSize, true}, output);
+
+    // Track 1 through both devices now, and track 2 straight away rather than
+    // sixteen samples of silence and then a step.
+    CHECK(output.getSample(0, 0) == approx(1.25f));
+    CHECK(output.getSample(0, 16) == approx(1.25f));
 }
 
 TEST_CASE("A swap carries runtime state that the new plan still names", "[engine][session]") {

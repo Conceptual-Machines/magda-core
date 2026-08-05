@@ -14,17 +14,25 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // Realising early costs nothing if the plan turns out not to prepare: what
     // it created stays in the store, where the next attempt reuses it and the
     // model, not the plan, decides when it goes.
+    //
+    // The epoch still rendering is handed over so the new one can take on what
+    // the differ says survived, rather than starting every delay line empty.
+    // Read only: it is live until the swap below, and it is this thread's own
+    // handle on it that keeps it alive long enough to be read at all.
     const auto bindings = store_.realise(*prepared->plan);
-    auto messages = prepared->executor.prepare(*prepared->plan, bindings, context);
+    auto messages = prepared->executor.prepare(*prepared->plan, bindings, context,
+                                               live_ == nullptr ? nullptr : &live_->executor);
     if (!prepared->executor.isPrepared())
         return {false, std::move(messages)};
 
     // The swap. This blocks until the audio thread is out of the block it was
     // in, then hands the previous epoch back here, where its destructor runs.
-    published_.nonRealtimeReplace(std::move(prepared));
+    published_.nonRealtimeReplace(prepared);
 
-    livePlan_ = published_.nonRealtimeAcquire()->plan;
-    published_.nonRealtimeRelease();
+    // Only now: until the swap, the epoch this replaces was the one rendering,
+    // and anything the new one took over from it is shared rather than copied.
+    live_ = std::move(prepared);
+    livePlan_ = live_->plan;
 
     // Safe only now: before the swap, everything about to be destroyed was
     // still reachable from the plan the audio thread was rendering. The plan

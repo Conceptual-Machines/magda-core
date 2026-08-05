@@ -1360,6 +1360,73 @@ TEST_CASE("Block size does not change where delayed MIDI lands", "[engine][exec]
     }
 }
 
+TEST_CASE("What is in flight survives the plan being replaced", "[engine][exec][diff]") {
+    // Track 2 is compensated for track 1's latency, so at any moment there are
+    // 80 samples of it inside a delay line. Recompiling used to be the end of
+    // them: a new executor built a new line and those samples became silence.
+    // This is the rebuild click in its smallest form, and the differ is what
+    // answers it.
+    auto latentTrack = makeTrack(1);
+    latentTrack.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+    const std::vector<TrackInfo> tracks{latentTrack, makeTrack(2)};
+    const auto master = makeMaster();
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, master);
+    PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, master, values);
+
+    ImpulseSource impulse(0.5f);
+    ConstantSource silent(0.0f);
+    LatentDevice latent(80);
+    PlanBindings bindings;
+    bindings.clipAudio[1] = &silent;
+    bindings.clipAudio[2] = &impulse;
+    bindings.devices[7] = &latent;
+
+    const RenderContext context{44100.0, kBlockSize, 2};
+    juce::AudioBuffer<float> output(2, kBlockSize);
+
+    PlanExecutor first;
+    REQUIRE(first.prepare(plan, bindings, context).empty());
+
+    // Block 0 carries the impulse into the delay line and nothing out of it.
+    first.process(values, BlockInfo{kBlockSize, 0, true}, output);
+    CHECK(output.getSample(0, 0) == approx(0.0f));
+
+    PlanExecutor second;
+
+    SECTION("taking over from the epoch being replaced") {
+        REQUIRE(second.prepare(plan, bindings, context, &first).empty());
+        CHECK(second.carriedDelayLines() == 1);
+
+        // Block 1, on the new executor: the impulse comes out where it would
+        // have if nothing had happened.
+        second.process(values, BlockInfo{kBlockSize, kBlockSize, true}, output);
+        CHECK(output.getSample(0, 80 - kBlockSize) == approx(0.5f));
+    }
+
+    SECTION("starting again, which is what it used to do") {
+        REQUIRE(second.prepare(plan, bindings, context).empty());
+        CHECK(second.carriedDelayLines() == 0);
+
+        second.process(values, BlockInfo{kBlockSize, kBlockSize, true}, output);
+        CHECK(output.getSample(0, 80 - kBlockSize) == approx(0.0f));
+    }
+
+    SECTION("a line whose delay changed is rebuilt rather than reinterpreted") {
+        // The samples in the old line are 80 apart from what they now have to
+        // be aligned with. Handing them over would be a few milliseconds of
+        // audio in the wrong place; starting again is a few milliseconds of
+        // silence, and only one of those is recoverable.
+        LatentDevice deeper(120);
+        bindings.devices[7] = &deeper;
+
+        REQUIRE(second.prepare(plan, bindings, context, &first).empty());
+        CHECK(second.carriedDelayLines() == 0);
+        CHECK(second.latencySamples() == 120);
+    }
+}
+
 TEST_CASE("A chain out of the mix silences a nested rack's MIDI too", "[engine][exec]") {
     // The MIDI comes from a rack nested inside the muted chain, so its ops key
     // on the nested rack and nothing about them says which outer chain they

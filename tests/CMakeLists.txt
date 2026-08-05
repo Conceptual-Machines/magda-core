@@ -246,6 +246,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_render_plan_compiler.cpp)
     list(APPEND TEST_SOURCES test_render_plan_executor.cpp)
     list(APPEND TEST_SOURCES test_plan_layout.cpp)
+    list(APPEND TEST_SOURCES test_plan_diff.cpp)
     list(APPEND TEST_SOURCES test_engine_session.cpp)
 endif()
 

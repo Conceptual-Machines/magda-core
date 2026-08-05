@@ -100,6 +100,13 @@ class EngineSession {
     RuntimeStateStore store_;
     PublishedRender published_;
     PublishedValues values_;
+
+    /// This thread's own handle on the epoch that is rendering. Held because
+    /// the next publish prepares against it: the differ needs the plan it was
+    /// built for, and whatever survives is shared with it rather than copied
+    /// out of it. Replaced after the swap, which is where the epoch it
+    /// displaces is destroyed, on this thread.
+    std::shared_ptr<PreparedRender> live_;
     std::shared_ptr<const RenderPlan> livePlan_;
 };
 

@@ -137,10 +137,23 @@ void MidiDelayLine::process(const juce::MidiBuffer& in, juce::MidiBuffer& out, i
     }
 }
 
+const std::shared_ptr<AudioDelayLine>& PlanExecutor::audioDelayFor(OpId op) const {
+    static const std::shared_ptr<AudioDelayLine> none;
+    const auto line = audioDelayForOp_[static_cast<std::size_t>(op)];
+    return line < 0 ? none : audioDelays_[static_cast<std::size_t>(line)];
+}
+
+const std::shared_ptr<MidiDelayLine>& PlanExecutor::midiDelayFor(OpId op) const {
+    static const std::shared_ptr<MidiDelayLine> none;
+    const auto line = midiDelayForOp_[static_cast<std::size_t>(op)];
+    return line < 0 ? none : midiDelays_[static_cast<std::size_t>(line)];
+}
+
 void PlanExecutor::reset() {
     plan_ = nullptr;
     planFingerprint_ = 0;
     latencySamples_ = 0;
+    carriedDelayLines_ = 0;
     audioSlots_.clear();
     midiSlots_.clear();
     midiByteBounds_.clear();
@@ -158,7 +171,8 @@ void PlanExecutor::reset() {
 }
 
 std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const PlanBindings& bindings,
-                                               const RenderContext& context) {
+                                               const RenderContext& context,
+                                               const PlanExecutor* previous) {
     reset();
 
     std::vector<std::string> messages;
@@ -353,40 +367,78 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     // Delay lines, for the edges that turned out to need one. A plan with no
     // latency in it allocates nothing here, which is the whole point of
     // resolving the counts before anything is sized.
+    //
+    // A line the differ matched is taken over rather than built, so what was in
+    // flight when the plan changed comes out of the new one instead of being
+    // replaced by that many samples of silence. Taken over means shared: the
+    // audio thread is still rendering through the executor it came from, so
+    // preparing it here would clear a ring being read. Anything that cannot be
+    // shared as it stands is built fresh beside it and the old one goes when
+    // its epoch does.
+    // Not this executor: reset() has already emptied what a carry would read,
+    // and an executor cannot take over from itself in any case. A caller
+    // re-preparing in place is starting again, and gets what it asked for.
+    const auto carry = previous != nullptr && previous != this && previous->plan_ != nullptr
+                           ? diffPlans(*previous->plan_, plan)
+                           : PlanDiff{};
+
+    const auto carriedFrom = [&carry](std::size_t op) {
+        return carry.carriedFrom.empty() ? INVALID_OP_ID : carry.carriedFrom[op];
+    };
+
     audioDelayForOp_.assign(numOps, -1);
     midiDelayForOp_.assign(numOps, -1);
-    int numAudioDelays = 0;
-    int numMidiDelays = 0;
-    for (std::size_t i = 0; i < numOps; ++i) {
-        if (plan.ops[i].kind != OpKind::Delay || latency.delaySamples[i] <= 0)
-            continue;
-        if (plan.ops[i].outputs.front() == SignalKind::Audio)
-            audioDelayForOp_[i] = numAudioDelays++;
-        else
-            midiDelayForOp_[i] = numMidiDelays++;
-    }
-
-    audioDelays_.resize(static_cast<std::size_t>(numAudioDelays));
-    // Built rather than resized: a MIDI line carries an atomic, so it cannot be
-    // moved, and only the vector itself needs to be.
-    midiDelays_ = std::vector<MidiDelayLine>(static_cast<std::size_t>(numMidiDelays));
     for (std::size_t i = 0; i < numOps; ++i) {
         const auto samples = latency.delaySamples[i];
-        if (audioDelayForOp_[i] >= 0)
-            audioDelays_[static_cast<std::size_t>(audioDelayForOp_[i])].prepare(
-                context_.numChannels, samples, context_.maxBlockSize);
+        if (plan.ops[i].kind != OpKind::Delay || samples <= 0)
+            continue;
 
-        if (midiDelayForOp_[i] >= 0) {
-            // Everything the delay spans is in flight at once, counted in the
-            // spans the port's budget is a budget over rather than in
-            // callbacks: how many callbacks that stretch of timeline arrives
-            // in is the host's business and would make this the wrong size.
-            // Two spare covers the one being filled and the one being drained,
-            // neither of which lines up with those spans.
-            const auto blocks = samples / context_.maxBlockSize + 2;
-            midiDelays_[static_cast<std::size_t>(midiDelayForOp_[i])].prepare(
-                samples, blocks * portMidiBytes[flatPort(plan.ops[i].inputs.front())]);
+        const auto from = carriedFrom(i);
+
+        if (plan.ops[i].outputs.front() == SignalKind::Audio) {
+            std::shared_ptr<AudioDelayLine> line;
+            if (from != INVALID_OP_ID)
+                if (const auto& adopted = previous->audioDelayFor(from);
+                    adopted != nullptr && adopted->hasConfiguration(context_.numChannels, samples,
+                                                                    context_.maxBlockSize)) {
+                    line = adopted;
+                    ++carriedDelayLines_;
+                }
+
+            if (line == nullptr) {
+                line = std::make_shared<AudioDelayLine>();
+                line->prepare(context_.numChannels, samples, context_.maxBlockSize);
+            }
+
+            audioDelayForOp_[i] = static_cast<int>(audioDelays_.size());
+            audioDelays_.push_back(std::move(line));
+            continue;
         }
+
+        // Everything the delay spans is in flight at once, counted in the spans
+        // the port's budget is a budget over rather than in callbacks: how many
+        // callbacks that stretch of timeline arrives in is the host's business
+        // and would make this the wrong size. Two spare covers the one being
+        // filled and the one being drained, neither of which lines up with
+        // those spans.
+        const auto blocks = samples / context_.maxBlockSize + 2;
+        const auto capacity = blocks * portMidiBytes[flatPort(plan.ops[i].inputs.front())];
+
+        std::shared_ptr<MidiDelayLine> line;
+        if (from != INVALID_OP_ID)
+            if (const auto& adopted = previous->midiDelayFor(from);
+                adopted != nullptr && adopted->hasConfiguration(samples, capacity)) {
+                line = adopted;
+                ++carriedDelayLines_;
+            }
+
+        if (line == nullptr) {
+            line = std::make_shared<MidiDelayLine>();
+            line->prepare(samples, capacity);
+        }
+
+        midiDelayForOp_[i] = static_cast<int>(midiDelays_.size());
+        midiDelays_.push_back(std::move(line));
     }
 
     silence_.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
@@ -514,7 +566,7 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
                     auto out = audioOut(id, 0, numSamples);
                     if (!writesInPlace(i))
                         out.copyFrom(audioIn(op.inputs[0], numSamples));
-                    audioDelays_[static_cast<std::size_t>(line)].process(out, numSamples);
+                    audioDelays_[static_cast<std::size_t>(line)]->process(out, numSamples);
                     break;
                 }
 
@@ -523,8 +575,8 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
                     break;
                 auto& out = midiOut(id, 0);
                 out.clear();
-                midiDelays_[static_cast<std::size_t>(line)].process(midiIn(op.inputs[0]), out,
-                                                                    numSamples);
+                midiDelays_[static_cast<std::size_t>(line)]->process(midiIn(op.inputs[0]), out,
+                                                                     numSamples);
                 jassert(out.data.size() <=
                         static_cast<std::size_t>(
                             midiByteBounds_[static_cast<std::size_t>(slotFor(PortRef{id, 0}))]));

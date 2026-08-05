@@ -4,6 +4,7 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include <atomic>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -11,6 +12,7 @@
 #include "exec/PlanLayout.hpp"
 #include "exec/PlanValues.hpp"
 #include "exec/RenderContext.hpp"
+#include "plan/PlanDiff.hpp"
 #include "plan/RenderPlan.hpp"
 
 /**
@@ -37,6 +39,14 @@ class AudioDelayLine {
   public:
     void prepare(int numChannels, int delaySamples, int maxBlockSize);
     void process(juce::dsp::AudioBlock<float> block, int numSamples);
+
+    /// Whether a line already running is one this configuration could adopt
+    /// rather than build. Everything here changes what the ring means, so
+    /// anything that differs is a new line and a fresh start.
+    bool hasConfiguration(int numChannels, int delaySamples, int maxBlockSize) const {
+        return delay_ == delaySamples && ring_.getNumChannels() == numChannels &&
+               ring_.getNumSamples() == delaySamples + maxBlockSize;
+    }
 
   private:
     juce::AudioBuffer<float> ring_;
@@ -70,6 +80,12 @@ class MidiDelayLine {
         return overflowed_.load(std::memory_order_relaxed);
     }
 
+    /// As AudioDelayLine::hasConfiguration. The reservation is part of it: a
+    /// line whose port now carries more would be adopted with too little room.
+    bool hasConfiguration(int delaySamples, int capacityBytes) const {
+        return delay_ == delaySamples && capacity_ == capacityBytes;
+    }
+
   private:
     juce::MidiBuffer pending_, scratch_;
     int delay_ = 0;
@@ -96,9 +112,21 @@ class PlanExecutor {
      * settled: how many samples each delay holds, and therefore which ports can
      * share a buffer. A plugin that changes its reported latency is a re-prepare
      * of the same plan, not a recompile of a new one.
+     *
+     * @p previous is the executor this one is about to replace, if there is
+     * one. Ops the differ matches adopt its state rather than starting again,
+     * which is what keeps a structural edit from cutting whatever was in
+     * flight. Nothing it owns is written to here: the audio thread is still
+     * rendering through it until the swap, so a carried object is shared, never
+     * reset, and one that cannot be shared is rebuilt beside it instead.
+     *
+     * It has to still be prepared, and the plan it was prepared with has to
+     * still exist, which is why the session holds its own handle on the epoch
+     * that is rendering rather than reaching for whatever is published.
      */
     std::vector<std::string> prepare(const RenderPlan& plan, const PlanBindings& bindings,
-                                     const RenderContext& context);
+                                     const RenderContext& context,
+                                     const PlanExecutor* previous = nullptr);
 
     /**
      * @brief Render one block into @p output.
@@ -139,8 +167,14 @@ class PlanExecutor {
     int midiDelayOverflows() const {
         int overflows = 0;
         for (const auto& line : midiDelays_)
-            overflows += line.hasOverflowed() ? 1 : 0;
+            overflows += line->hasOverflowed() ? 1 : 0;
         return overflows;
+    }
+
+    /// Delay lines this executor took over from the one it replaced, rather
+    /// than building. What the differ bought, in other words.
+    int carriedDelayLines() const {
+        return carriedDelayLines_;
     }
 
     /// True once a valid plan has been prepared.
@@ -167,6 +201,11 @@ class PlanExecutor {
         return writesInPlace_[op] != 0;
     }
 
+    /// The line an op of this executor's plan drives, for the executor
+    /// replacing it to take over. Null where the op drives none.
+    const std::shared_ptr<AudioDelayLine>& audioDelayFor(OpId op) const;
+    const std::shared_ptr<MidiDelayLine>& midiDelayFor(OpId op) const;
+
     void reset();
 
     const RenderPlan* plan_ = nullptr;
@@ -185,11 +224,18 @@ class PlanExecutor {
 
     /// Per op: the delay line it drives, or -1. Ops that need none are the
     /// common case, and a plan with no latency in it allocates nothing here.
+    ///
+    /// Held by shared pointer because a line can outlive the executor that
+    /// built it: the one replacing this takes a reference to every line it
+    /// adopts, and the rest go when this does. Nothing else shares them, and
+    /// only one epoch renders at a time, so there is no concurrent use to
+    /// guard against, only an owner to outlive.
     std::vector<int> audioDelayForOp_;
     std::vector<int> midiDelayForOp_;
-    std::vector<AudioDelayLine> audioDelays_;
-    std::vector<MidiDelayLine> midiDelays_;
+    std::vector<std::shared_ptr<AudioDelayLine>> audioDelays_;
+    std::vector<std::shared_ptr<MidiDelayLine>> midiDelays_;
     int latencySamples_ = 0;
+    int carriedDelayLines_ = 0;
 
     /// Identity of the prepared plan; values that do not carry the same one
     /// were resolved against something else and are not applied.
