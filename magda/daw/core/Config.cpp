@@ -217,6 +217,19 @@ void Config::save() {
     root->setProperty("lastUpdateCheckTimestamp",
                       static_cast<juce::int64>(lastUpdateCheckTimestamp));
 
+    // Remote API — nested "remoteApi" object. No token here by design; it is
+    // generated per run into a file only the user can read.
+    {
+        auto* remoteObj = new juce::DynamicObject();
+        remoteObj->setProperty("enabled", remoteApiEnabled);
+        remoteObj->setProperty("port", remoteApiPort);
+        juce::Array<juce::var> originArray;
+        for (const auto& origin : remoteApiAllowedOrigins)
+            originArray.add(toJuceString(origin));
+        remoteObj->setProperty("allowedOrigins", originArray);
+        root->setProperty("remoteApi", juce::var(remoteObj));
+    }
+
     // Recent projects
     juce::Array<juce::var> recentArray;
     for (const auto& r : recentProjects)
@@ -672,6 +685,20 @@ void Config::load() {
     if (obj->hasProperty("lastUpdateCheckTimestamp"))
         lastUpdateCheckTimestamp = static_cast<int64_t>(
             static_cast<juce::int64>(obj->getProperty("lastUpdateCheckTimestamp")));
+
+    // Remote API — absent means the defaults, which leave the listener off.
+    if (obj->hasProperty("remoteApi")) {
+        if (auto* remoteObj = obj->getProperty("remoteApi").getDynamicObject()) {
+            if (remoteObj->hasProperty("enabled"))
+                remoteApiEnabled = remoteObj->getProperty("enabled");
+            if (remoteObj->hasProperty("port"))
+                remoteApiPort = remoteObj->getProperty("port");
+            remoteApiAllowedOrigins.clear();
+            if (const auto* origins = remoteObj->getProperty("allowedOrigins").getArray())
+                for (const auto& origin : *origins)
+                    remoteApiAllowedOrigins.push_back(origin.toString().toStdString());
+        }
+    }
     recentProjects = getStringArray("recentProjects");
     customPluginPaths = getStringArray("customPluginPaths");
     autoEnabledInsertInputs_ = getStringArray("autoEnabledInsertInputs");

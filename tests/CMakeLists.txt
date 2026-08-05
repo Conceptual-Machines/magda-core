@@ -197,6 +197,7 @@ set(TEST_SOURCES
     test_remote_changes.cpp
     test_remote_model_bridge.cpp
     test_remote_websocket_server.cpp
+    test_remote_api_host.cpp
     test_device_api.cpp
     test_automation_api_surface.cpp
     # Lua controller tests (issue #592 — MIDI dispatch)

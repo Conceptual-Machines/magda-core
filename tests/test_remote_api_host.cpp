@@ -1,0 +1,171 @@
+// Lifecycle and credential handling for the remote API (#1856): what MAGDA
+// opens, what it publishes, and what it leaves behind.
+
+#include <httplib.h>
+
+#include <catch2/catch_test_macros.hpp>
+#include <string>
+
+#include "MockMagdaApi.hpp"
+#include "magda/daw/api/remote_api_host.hpp"
+#include "magda/daw/core/Config.hpp"
+
+#if !JUCE_WINDOWS
+    #include <sys/stat.h>
+#endif
+
+using namespace magda;
+using namespace magda::remote;
+using magda::test::MockMagdaApi;
+
+namespace {
+
+struct MessageThreadRelaxation {
+    ScopedMessageThreadAssertionDisabler disabler;
+};
+
+/// Config is a process-wide singleton, so a test that changes it has to put it
+/// back or it leaks into whatever runs next.
+struct ScopedRemoteApiConfig {
+    explicit ScopedRemoteApiConfig(bool enabled) {
+        auto& config = Config::getInstance();
+        wasEnabled_ = config.getRemoteApiEnabled();
+        previousPort_ = config.getRemoteApiPort();
+        config.setRemoteApiEnabled(enabled);
+        config.setRemoteApiPort(0);
+    }
+    ~ScopedRemoteApiConfig() {
+        auto& config = Config::getInstance();
+        config.setRemoteApiEnabled(wasEnabled_);
+        config.setRemoteApiPort(previousPort_);
+    }
+
+  private:
+    bool wasEnabled_ = false;
+    int previousPort_ = 0;
+};
+
+juce::var readTokenFile(const juce::File& file) {
+    juce::var parsed;
+    REQUIRE(juce::JSON::parse(file.loadFileAsString(), parsed).wasOk());
+    return parsed;
+}
+
+}  // namespace
+
+TEST_CASE("A disabled remote API opens no listener", "[remote][host][lifecycle]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(false);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+
+    // The acceptance criterion is about absence: not a listener that refuses
+    // everything, but no socket and no published credential at all.
+    REQUIRE_FALSE(host.start());
+    REQUIRE_FALSE(host.isRunning());
+    REQUIRE(host.boundPort() == 0);
+    REQUIRE_FALSE(host.tokenFile().existsAsFile());
+}
+
+TEST_CASE("Starting publishes a token a local client can use", "[remote][host][auth]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+    REQUIRE(host.isRunning());
+    REQUIRE(host.boundPort() > 0);
+
+    const auto file = host.tokenFile();
+    REQUIRE(file.existsAsFile());
+
+    const auto published = readTokenFile(file);
+    const auto token = published["token"].toString();
+
+    // 256 bits, hex encoded. A short or empty token would still "work" while
+    // being guessable, so the width is worth asserting.
+    REQUIRE(token.length() == 64);
+    REQUIRE(static_cast<int>(published["port"]) == host.boundPort());
+    REQUIRE(published["url"].toString() ==
+            "ws://127.0.0.1:" + juce::String(host.boundPort()) + "/rpc");
+
+    const auto endpoint = published["url"].toString().toStdString();
+
+    SECTION("the published token is accepted") {
+        httplib::ws::WebSocketClient client(endpoint,
+                                            {{"Authorization", "Bearer " + token.toStdString()}});
+        REQUIRE(client.connect());
+    }
+
+    SECTION("anything else is not") {
+        httplib::ws::WebSocketClient client(endpoint, {{"Authorization", "Bearer not-the-token"}});
+        REQUIRE_FALSE(client.connect());
+    }
+}
+
+#if !JUCE_WINDOWS
+TEST_CASE("The token file is readable only by its owner", "[remote][host][auth]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+
+    struct stat info {};
+    REQUIRE(stat(host.tokenFile().getFullPathName().toRawUTF8(), &info) == 0);
+
+    // A credential every account on the machine can read is not a credential.
+    REQUIRE((info.st_mode & 0777) == (S_IRUSR | S_IWUSR));
+}
+#endif
+
+TEST_CASE("Stopping takes the credential down with the listener", "[remote][host][lifecycle]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+
+    const auto file = host.tokenFile();
+    const auto endpoint = readTokenFile(file)["url"].toString().toStdString();
+    const auto token = readTokenFile(file)["token"].toString().toStdString();
+    REQUIRE(file.existsAsFile());
+
+    host.stop();
+
+    // Leaving the file behind would advertise a dead port and a token that no
+    // longer opens anything.
+    REQUIRE_FALSE(host.isRunning());
+    REQUIRE(host.boundPort() == 0);
+    REQUIRE_FALSE(file.existsAsFile());
+
+    httplib::ws::WebSocketClient client(endpoint, {{"Authorization", "Bearer " + token}});
+    REQUIRE_FALSE(client.connect());
+
+    host.stop();  // idempotent
+}
+
+TEST_CASE("Each run generates its own token", "[remote][host][auth]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+
+    juce::String first;
+    {
+        RemoteApiHost host(api);
+        REQUIRE(host.start());
+        first = readTokenFile(host.tokenFile())["token"].toString();
+    }
+
+    RemoteApiHost second(api);
+    REQUIRE(second.start());
+
+    // Per run, not per install: a token that survived a restart would outlive
+    // the reason anyone was trusted with it.
+    REQUIRE(readTokenFile(second.tokenFile())["token"].toString() != first);
+}

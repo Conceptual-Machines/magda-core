@@ -13,6 +13,7 @@
 #include "../../magda/agents/llm_client_factory.hpp"
 #include "../../magda/agents/llm_presets.hpp"
 #include "api/magda_api_live.hpp"
+#include "api/remote_api_host.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/AppPaths.hpp"
@@ -86,6 +87,9 @@ class MagdaDAWApplication : public JUCEApplication {
     // layer rather than inside TracktionEngineWrapper so the engine library
     // (magda_daw) doesn't pull magda_scripting into its link line.
     std::unique_ptr<magda::scripting::LuaController> luaController_;
+    // Remote API (#1856): dispatcher, model bridge and WebSocket transport.
+    // Owned here so it is torn down before the managers its bridge listens to.
+    std::unique_ptr<magda::remote::RemoteApiHost> remoteApi_;
     // Latches true once the deferred startup auto-load has fired. The
     // engine's onMidiDevicesReady callback runs on every device-list
     // change, but we only want to auto-load the active script once.
@@ -307,6 +311,14 @@ class MagdaDAWApplication : public JUCEApplication {
         mainWindow_ = std::make_unique<magda::MainWindow>(daw_engine_.get());
         juce::Logger::writeToLog("MainWindow created");
 
+        // 4b. Remote API (#1856). Off unless configuration says otherwise, and
+        // it opens nothing at all when disabled. After the window, because the
+        // model bridge attaches to managers the engine has finished setting up.
+        remoteApi_ = std::make_unique<magda::remote::RemoteApiHost>(daw_engine_->getMagdaApi());
+        if (remoteApi_->start())
+            juce::Logger::writeToLog("Remote API token written to " +
+                                     remoteApi_->tokenFile().getFullPathName());
+
         // 5. Dismiss splash screen
         splashScreen_.reset();
 
@@ -400,6 +412,12 @@ class MagdaDAWApplication : public JUCEApplication {
             modelLoadThread_.join();
         if (sampleTaggerLoadThread_.joinable())
             sampleTaggerLoadThread_.join();
+
+        // Close the remote API before anything else goes away: it holds live
+        // sockets whose threads are calling into the dispatcher, and its model
+        // bridge is attached to managers that are about to shut down.
+        DBG("[0] Remote API shutdown...");
+        remoteApi_.reset();
 
         // Stop timers first to prevent callbacks during destruction
         DBG("[1] ModulatorEngine shutdown...");
