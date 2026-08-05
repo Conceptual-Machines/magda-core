@@ -66,6 +66,10 @@ class EngineSession {
      * -20 dB jumping to 0 dB is louder than any click the swap could have made.
      * So a plan and the values it was resolved with travel together, and
      * publishValues() is left as what it is: the mixer-speed update path.
+     *
+     * They have to be values for this plan. A table resolved against another
+     * one is refused rather than published, because the executor would decline
+     * to apply it and render at unity with nothing saying why.
      */
     Result publish(std::shared_ptr<const RenderPlan> plan, const RenderContext& context,
                    const RuntimeStateIds& modelIds, PlanValues values);

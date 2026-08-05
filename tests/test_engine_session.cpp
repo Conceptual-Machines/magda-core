@@ -258,6 +258,69 @@ TEST_CASE("A latency change re-prepares the plan rather than recompiling it",
     CHECK(output.getSample(0, 16) == approx(1.5f));
 }
 
+TEST_CASE("Republishing a plan applies the values it was published with", "[engine][session]") {
+    // Two tables with the same fingerprint fit the same structure. That says
+    // nothing about which of them is newer, and republishing a plan whose
+    // structure did not change is the ordinary case: a plugin reporting new
+    // latency re-prepares exactly this plan. Selecting on compatibility alone
+    // would keep choosing the table from before and never apply this one.
+    Ledger ledger;
+    TestFactory factory(ledger);
+    EngineSession session(factory);
+
+    auto tracks = trackWithEffect(7);
+    tracks[0].volume = 0.5f;
+    const auto plan = compile(tracks);
+
+    publish(session, plan, tracks);
+    session.publishValues(resolve(*plan, tracks));
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    REQUIRE(output.getSample(0, 0) == approx(0.25f));
+
+    // The same plan, and nothing published after it.
+    tracks[0].volume = 1.0f;
+    REQUIRE(publish(session, plan, tracks).published);
+    session.process(BlockInfo{kBlockSize, 0, true}, output);
+
+    CHECK(output.getSample(0, 0) == approx(0.5f));
+}
+
+TEST_CASE("A plan published with another plan's values is refused", "[engine][session]") {
+    // The executor would decline to apply them and render at unity, which is
+    // the thing bundling values with an epoch exists to prevent. Better to
+    // refuse the publish and keep playing what is already right.
+    Ledger ledger;
+    TestFactory factory(ledger);
+    EngineSession session(factory);
+
+    const auto tracks = trackWithEffect(7);
+    const auto plan = compile(tracks);
+    REQUIRE(publish(session, plan, tracks).published);
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    REQUIRE(output.getSample(0, 0) == approx(0.5f));
+
+    // A structurally different plan, and this plan's values.
+    auto edited = tracks;
+    edited[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(8)));
+    const auto other = compile(edited);
+
+    const auto refused =
+        session.publish(other, context(), modelIds(edited), resolve(*plan, tracks));
+
+    CHECK_FALSE(refused.published);
+    REQUIRE_FALSE(refused.messages.empty());
+    CHECK(refused.messages.back().find("resolved against a different one") != std::string::npos);
+
+    // Still the plan that was right, still rendering what it was.
+    CHECK(session.livePlan() == plan);
+    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    CHECK(output.getSample(0, 0) == approx(0.5f));
+}
+
 TEST_CASE("An object that is already playing is never prepared again", "[engine][session][diff]") {
     // prepare() on a real plugin resizes the buffers process() reads and clears
     // what it has accumulated, and the instance a publish reuses is the one the

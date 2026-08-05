@@ -26,6 +26,30 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     if (!prepared->executor.isPrepared())
         return {false, std::move(messages)};
 
+    // Values resolved against a different plan are refused rather than
+    // published, because the executor would quietly decline to apply them and
+    // render at unity: the caller would have asked for a fader and got 0 dB,
+    // with nothing anywhere saying why. The check is free here, where prepare
+    // has just computed the fingerprint, and it makes "an epoch never renders
+    // without values resolved for it" something the epoch enforces where it is
+    // assembled rather than something its parameter comment asks for.
+    if (prepared->values.planFingerprint != prepared->executor.planFingerprint()) {
+        messages.push_back(
+            "the values published with this plan were resolved against a different one, "
+            "so it is not published: it would have rendered at unity");
+        return {false, std::move(messages)};
+    }
+
+    // The epoch's values become the ones in flight as well. Matching
+    // fingerprints say two tables fit the same structure, which is not the same
+    // as saying which of them is newer: republishing a plan whose structure did
+    // not change (a latency re-prepare is exactly that) leaves a table from
+    // before it still matching, and selecting on compatibility alone would keep
+    // choosing it and ignore what this publish carries. Replacing it here is
+    // what makes the bundled table the newest thing there is at the moment it
+    // goes live.
+    values_.nonRealtimeReplace(prepared->values);
+
     // The swap. This blocks until the audio thread is out of the block it was
     // in, then hands the previous epoch back here, where its destructor runs.
     published_.nonRealtimeReplace(prepared);
@@ -55,11 +79,15 @@ void EngineSession::process(const BlockInfo& block, juce::AudioBuffer<float>& ou
         return;
     }
 
-    // Values and plans travel separately, so the ones in flight can belong to
-    // the plan this replaced. The epoch's own are what it renders with until
-    // newer ones for this plan arrive, which is the difference between a fader
-    // holding its position through a structural edit and jumping to unity for
-    // a block.
+    // Values and plans travel separately and are swapped one after the other,
+    // so for the moment between the two the ones in flight can belong to the
+    // plan this replaced. The epoch's own are the floor for exactly that
+    // window, and the difference between a fader holding its position through a
+    // structural edit and jumping to unity for a block.
+    //
+    // Compatibility is all this can ask. Which of two tables is newer is
+    // settled by publish, which replaces the one in flight with the epoch's as
+    // it goes live, so anything still matching afterwards arrived after it.
     PublishedValues::ScopedAccess<farbot::ThreadType::realtime> values(values_);
     const auto& table = values->planFingerprint == (*render)->executor.planFingerprint()
                             ? *values
