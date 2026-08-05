@@ -35,7 +35,22 @@ PrefetchStream::PrefetchStream(std::unique_ptr<AudioFileReader> reader,
 }
 
 void PrefetchStream::seek(std::int64_t sourceStart) {
-    requestSeek(sourceStart);
+    // Publish and return. Everything the callback owns is left alone, which is
+    // what makes this safe to call while the stream is playing rather than
+    // safe only if nobody forgets it is not.
+    cue_.nonRealtimeReplace(SeekRequest{sourceStart, ++cueGeneration_});
+}
+
+void PrefetchStream::applyPendingCue() {
+    farbot::RealtimeObject<SeekRequest, farbot::RealtimeObjectOptions::nonRealtimeMutatable>::
+        ScopedAccess<farbot::ThreadType::realtime>
+            cue(cue_);
+
+    if (cue->generation == appliedCue_)
+        return;
+
+    appliedCue_ = cue->generation;
+    requestSeek(cue->sourceStart);
 }
 
 void PrefetchStream::requestSeek(std::int64_t sourceStart) {
@@ -44,6 +59,19 @@ void PrefetchStream::requestSeek(std::int64_t sourceStart) {
 
     // Whatever the callback was reading came from somewhere else now.
     releaseCurrent();
+
+    // And so is everything waiting behind it. Handing the pool back here rather
+    // than as the callback works through it is what lets the reader start
+    // refilling immediately: a stream that was cued but is not being read yet
+    // is the whole point of cueing, and it has no callback coming to recycle
+    // chunks for it. Every chunk in the fifo was read for the generation this
+    // call just left behind, so all of them go.
+    Chunk* stale = nullptr;
+    while (filled_.pop(stale)) {
+        const auto returned = spent_.push(std::move(stale));
+        jassert(returned);
+        juce::ignoreUnused(returned);
+    }
 
     farbot::RealtimeObject<SeekRequest, farbot::RealtimeObjectOptions::realtimeMutatable>::
         ScopedAccess<farbot::ThreadType::realtime>
@@ -97,6 +125,10 @@ int PrefetchStream::read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> 
                          int numSamples) {
     if (numSamples <= 0)
         return 0;
+
+    // Anything cued since the last block, before deciding whether this one is
+    // a seek: a read that lands exactly where the cue pointed is then not one.
+    applyPendingCue();
 
     if (sourceStart != nextSample_)
         requestSeek(sourceStart);

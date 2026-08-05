@@ -58,9 +58,16 @@ class StreamingAudioSource final : public EngineAudioSource {
      * stopped timeline is not a held sample, it is no material.
      *
      * Rate conversion is not done here. The stream delivers the file's own
-     * samples, and a file recorded at another rate than the device runs at
-     * plays at the wrong pitch until the clip layer resamples it; that layer
-     * owns stretch and warp and this is the same question.
+     * samples, one per output sample, so a file recorded at another rate than
+     * the device runs at plays at the wrong pitch and the wrong length until
+     * the clip layer resamples it; that layer owns stretch and warp and this is
+     * the same question.
+     *
+     * Wrong and continuous, not wrong and broken: positions are derived at the
+     * device's rate so that what is asked for and what is consumed agree. A
+     * mapping at the file's rate would disagree by the difference every block,
+     * which the stream would read as a seek, and a mismatched file would spend
+     * every callback re-pointing the reader and playing nothing at all.
      */
     void render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) override;
 

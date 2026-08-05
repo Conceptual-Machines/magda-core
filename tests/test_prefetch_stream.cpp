@@ -91,6 +91,11 @@ struct Fixture {
     /// position it was never pointed at has to seek, and a seek costs a block.
     void cue(std::int64_t sourceStart) {
         stream->seek(sourceStart);
+
+        // Stands in for the callback before this one: a cue is published from
+        // another thread and taken up on the audio thread, which is what keeps
+        // the cross-thread path away from everything the callback owns.
+        stream->applyPendingCue();
     }
 
     /// Read one block's worth from a position, having read ahead first.
@@ -253,4 +258,40 @@ TEST_CASE("A stream asked for nothing does nothing", "[engine][io][prefetch]") {
 
     CHECK(fixture.readPrefetched(0, 0) == 0);
     CHECK(fixture.stream->underruns() == 0);
+}
+
+TEST_CASE("A reader that fails is not a reader that returned audio", "[engine][io][prefetch]") {
+    // A decode can fail inside the length a file advertises: truncated under
+    // us, a stream that went away mid-frame. What must not happen is the
+    // destination's previous contents being reported as material.
+    class FailingFormatReader final : public juce::AudioFormatReader {
+      public:
+        FailingFormatReader() : juce::AudioFormatReader(nullptr, "failing") {
+            sampleRate = 44100.0;
+            bitsPerSample = 32;
+            numChannels = 2;
+            usesFloatingPointData = true;
+            lengthInSamples = 10000;
+        }
+
+        bool readSamples(int* const*, int, int, std::int64_t, int) override {
+            return false;
+        }
+    };
+
+    magda::engine::JuceAudioFileReader reader(std::make_unique<FailingFormatReader>());
+
+    juce::AudioBuffer<float> destination(2, kBlockSize);
+    for (auto channel = 0; channel < 2; ++channel)
+        for (auto sample = 0; sample < kBlockSize; ++sample)
+            destination.setSample(channel, sample, 0.5f);
+
+    CHECK(reader.read(destination, 0, 0, kBlockSize) == 0);
+
+    // Cleared, so that nothing downstream can publish what was in the buffer
+    // before as audio read from the file.
+    for (auto sample = 0; sample < kBlockSize; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(destination.getSample(0, sample) == approx(0.0f));
+    }
 }

@@ -98,10 +98,12 @@ struct Fixture {
         stream.seek(source.sourceSampleAt(std::max(block.startSeconds, placement.startSeconds)));
     }
 
-    /// Cue, read ahead, and render: what a clip that was scheduled properly
-    /// sounds like.
+    /// Cue, let a callback take the cue up, read ahead, and render: what a
+    /// clip that was scheduled properly sounds like. The fold-in stands in for
+    /// the block before this one, which is where a live engine would do it.
     void renderCued(const BlockInfo& block) {
         cue(block);
+        stream.applyPendingCue();
         render(block);
     }
 
@@ -297,4 +299,82 @@ TEST_CASE("The prefetch thread reads for the streams registered with it",
     // makes destroying it afterwards safe.
     thread.remove(stream);
     CHECK(thread.streamCount() == 0);
+}
+
+TEST_CASE("A file at another rate plays wrong, not broken", "[engine][io][clip]") {
+    // 48 kHz material in a 44.1 kHz session. Resampling belongs to the clip
+    // layer (#1890); until it exists, what this layer owes is playback that is
+    // continuous and pitched wrong, rather than a position derived one way and
+    // consumed another, which would land somewhere unexpected every block and
+    // spend every callback seeking.
+    class MismatchedReader final : public AudioFileReader {
+      public:
+        std::int64_t lengthInSamples() const override {
+            return 1000000;
+        }
+        double sampleRate() const override {
+            return 48000.0;
+        }
+        int numChannels() const override {
+            return 2;
+        }
+        int read(juce::AudioBuffer<float>& destination, int destinationOffset,
+                 std::int64_t startSample, int numSamples) override {
+            for (auto channel = 0; channel < destination.getNumChannels(); ++channel)
+                for (auto sample = 0; sample < numSamples; ++sample)
+                    destination.setSample(channel, destinationOffset + sample,
+                                          static_cast<float>(startSample + sample));
+            return numSamples;
+        }
+    };
+
+    PrefetchStream stream(std::make_unique<MismatchedReader>(), context(), {256, 8});
+    StreamingAudioSource source(stream, ClipPlacement{0.0, 10.0, 0});
+    source.prepare(context());
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+
+    for (auto block = 0; block < 20; ++block) {
+        while (stream.fill()) {
+        }
+
+        output.clear();
+        source.render(blockFrom(static_cast<double>(block * kBlockSize) / kSampleRate),
+                      juce::dsp::AudioBlock<float>(output));
+
+        // Every sample of the file, in order, with none skipped between blocks.
+        INFO("block " << block);
+        REQUIRE(output.getSample(0, 0) == approx(static_cast<float>(block * kBlockSize)));
+        REQUIRE(output.getSample(0, kBlockSize - 1) ==
+                approx(static_cast<float>(block * kBlockSize + kBlockSize - 1)));
+    }
+
+    // Which is to say: not one seek in twenty blocks.
+    CHECK(stream.underruns() == 0);
+}
+
+TEST_CASE("A clip cued before it starts plays without a gap", "[engine][io][prefetch]") {
+    // The case cueing exists for: a clip that has not started, on a transport
+    // that is already rolling. Nothing reads this stream yet, so nothing would
+    // notice a cue at all if the source did not offer one every block.
+    const ClipPlacement placement{5.0, 10.0, 0};
+    Fixture fixture(placement);
+
+    const auto target = fixture.source.sourceSampleAt(5.0);
+
+    // Published from a thread that is not the audio one, touching nothing the
+    // callback owns.
+    fixture.stream.seek(target);
+
+    // Blocks before the clip starts: silent, and the one that takes the cue up
+    // is what lets the reader get ahead.
+    for (auto block = 0; block < 4; ++block) {
+        fixture.render(blockFrom(4.0 + static_cast<double>(block * kBlockSize) / kSampleRate));
+        REQUIRE(fixture.at(0) == approx(0.0f));
+    }
+
+    // And then it starts, with the material already in memory.
+    fixture.render(blockFrom(5.0));
+    REQUIRE(fixture.at(0) == approx(static_cast<float>(target)));
+    CHECK(fixture.stream.underruns() == 0);
 }

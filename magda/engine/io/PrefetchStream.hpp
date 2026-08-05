@@ -1,7 +1,8 @@
 #pragma once
 
-// Ahead of farbot, which leaves including the standard library to whoever uses
-// it: its headers are written to drop into a project that has already done so.
+// farbot leaves including the standard library to whoever uses it: its headers
+// are written to drop into a project that has already done so, and on their own
+// they do not compile. The JUCE headers above it here bring in what it needs.
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 
@@ -78,9 +79,33 @@ class PrefetchStream {
      */
     bool fill();
 
-    /// Where the stream will be pointed next. Off the audio thread, before it
-    /// is playing: the callback is what moves the cursor once it is.
+    /**
+     * @brief Point the reader at a position before anything asks for it.
+     *
+     * From any thread that is not the audio thread, at any time, including
+     * while the stream is playing: whoever schedules material knows where
+     * playback will be before the callback does, and a stream told in advance
+     * is one that does not have to seek in the block that needs the samples.
+     *
+     * Nothing here touches what the callback owns. It publishes a cue, and the
+     * callback picks it up at the top of its next block through
+     * @ref applyPendingCue, so the seek itself happens where every other seek
+     * happens. That is a block's delay before the reader starts moving, which
+     * is nothing against the reason to cue at all: a clip scheduled a moment
+     * ahead is read ahead long before it plays.
+     */
     void seek(std::int64_t sourceStart);
+
+    /**
+     * @brief Take up a cue, if one is waiting. On the audio thread.
+     *
+     * read() does this itself, so a caller that only reads never has to. What
+     * needs it is a caller that does not read every block: a clip that has not
+     * started yet is exactly the thing a cue is for, and a stream nobody reads
+     * from would otherwise not hear about it until the material it was cued
+     * for was already due.
+     */
+    void applyPendingCue();
 
     /**
      * @brief Blocks the callback could not be given the samples for.
@@ -153,11 +178,23 @@ class PrefetchStream {
 
     farbot::RealtimeObject<SeekRequest, farbot::RealtimeObjectOptions::realtimeMutatable> request_;
 
+    /// A position published from off the audio thread, waiting to be taken up.
+    /// The other direction from @ref request_, and a separate object for the
+    /// same reason it is a different type: one writer each, so neither side is
+    /// ever writing what the other is reading.
+    farbot::RealtimeObject<SeekRequest, farbot::RealtimeObjectOptions::nonRealtimeMutatable> cue_;
+
+    /// The cueing side's own counter. Not shared with @ref generation_, which
+    /// the audio thread owns: what makes a cue new is that it is not the one
+    /// already taken up.
+    std::uint32_t cueGeneration_ = 0;
+
     // Audio thread only.
     Chunk* current_ = nullptr;
     int currentOffset_ = 0;
     std::int64_t nextSample_ = 0;
     std::uint32_t generation_ = 0;
+    std::uint32_t appliedCue_ = 0;
 
     // Prefetch thread only.
     std::int64_t fillPosition_ = 0;

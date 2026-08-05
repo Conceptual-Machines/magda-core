@@ -34,8 +34,20 @@ int JuceAudioFileReader::read(juce::AudioBuffer<float>& destination, int destina
     if (available < numSamples)
         destination.clear(destinationOffset + available, numSamples - available);
 
-    if (available > 0)
-        reader_->read(&destination, destinationOffset, available, startSample, true, true);
+    if (available <= 0)
+        return 0;
+
+    // Whether the decode worked is the only thing that says the destination now
+    // holds audio rather than whatever was in it. A reader can fail inside the
+    // length it advertises: a file truncated under us, a stream that went away
+    // mid-frame. Reporting the samples as read anyway would publish undefined
+    // buffer contents as material, and the stream would have no reason to
+    // suspect anything, because a full chunk is exactly what success looks
+    // like.
+    if (!reader_->read(&destination, destinationOffset, available, startSample, true, true)) {
+        destination.clear(destinationOffset, numSamples);
+        return 0;
+    }
 
     return available;
 }
