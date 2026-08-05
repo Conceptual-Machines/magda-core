@@ -390,6 +390,27 @@ TEST_CASE("A loop too short to render is reported, not silently dropped",
     requireCovers(block, 512);
     CHECK(clock.loopWrapOverflows() > 0);
 
+    SECTION("including one whose end is not a sample away from its start") {
+        // Short enough that the wrap lands where it started: the count of
+        // samples to the loop end comes back zero however many times the
+        // cursor is put back at the top. Without that zero reaching the
+        // fallback, the callback renders straight through with nothing
+        // counted, and the cursor ends past the end where no later callback
+        // will wrap it.
+        TransportClock tiny;
+        auto degenerate = playing(0.0);
+        degenerate.loop = {true, 0.0, 0.005 / kSamplesPerBeat};
+
+        const auto first = advance(tiny, degenerate, 512);
+        requireCovers(first, 512);
+        CHECK(tiny.loopWrapOverflows() == 1);
+
+        const auto second = advance(tiny, degenerate, 512);
+        requireCovers(second, 512);
+        CHECK(second.segments[0].block.startBeat == approx(0.0));
+        CHECK(tiny.loopWrapOverflows() == 2);
+    }
+
     SECTION("and it costs one callback, not every callback after it") {
         // Rendering the remainder straight through leaves the cursor past the
         // loop end, which is also where a cursor located beyond the loop sits.

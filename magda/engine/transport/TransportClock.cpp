@@ -143,10 +143,13 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
 
         // The loop catches a cursor that reached its end, and only that one:
         // one already beyond it was put there, and dragging it back would be
-        // ignoring where it was put. Back to the top before anything is
-        // rendered, so no samples are ever taken from past the end.
-        if (looping && untilLoopEnd <= 0 &&
-            beatAfter(tempo, samplesSinceAnchor_) <= snapshot.loop.endBeat + kBeatEpsilon) {
+        // ignoring where it was put.
+        const auto insideLoop = looping && beatAfter(tempo, samplesSinceAnchor_) <=
+                                               snapshot.loop.endBeat + kBeatEpsilon;
+
+        // Back to the top before anything is rendered, so no samples are ever
+        // taken from past the end.
+        if (insideLoop && untilLoopEnd <= 0) {
             anchorTo(tempo, snapshot.loop.startBeat);
             continuous_ = false;
             untilLoopEnd = samplesUntil(tempo, snapshot.loop.endBeat);
@@ -155,7 +158,14 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         auto samples = static_cast<std::int64_t>(remaining);
         if (countingIn_)
             samples = std::min(samples, samplesUntil(tempo, countInUntilBeat_));
-        if (untilLoopEnd > 0)
+
+        // Clamped from inside the loop only. From outside it the count is
+        // negative and would cut a callback that is not looping at all; from
+        // inside, it can still be zero, for a loop so short that its end is not
+        // a sample away from its start even after wrapping. That zero is what
+        // routes such a loop into the fallback below rather than letting it
+        // render straight through uncounted.
+        if (insideLoop)
             samples = std::min(samples, untilLoopEnd);
 
         // Both boundaries were just moved past if they were behind, so a whole
