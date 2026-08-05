@@ -58,13 +58,21 @@ class EngineSession {
      * published costs a dormant object its retirement, never the audio thread
      * a pointer.
      *
-     * Values are published separately, and a plan swap invalidates the ones in
-     * flight: they were resolved against the old plan, so the executor falls
-     * back to unity until publishValues() catches up. Publish the plan first,
-     * then its values.
+     * @p values is what the new plan renders with until publishValues() sends
+     * something newer, and it is not optional. A plan swap invalidates whatever
+     * was in flight, because those values were resolved against the plan being
+     * replaced; without a table of its own, the new plan would render at unity
+     * for the block or two before the next one arrives, and a fader sitting at
+     * -20 dB jumping to 0 dB is louder than any click the swap could have made.
+     * So a plan and the values it was resolved with travel together, and
+     * publishValues() is left as what it is: the mixer-speed update path.
+     *
+     * They have to be values for this plan. A table resolved against another
+     * one is refused rather than published, because the executor would decline
+     * to apply it and render at unity with nothing saying why.
      */
     Result publish(std::shared_ptr<const RenderPlan> plan, const RenderContext& context,
-                   const RuntimeStateIds& modelIds);
+                   const RuntimeStateIds& modelIds, PlanValues values);
 
     /// On the publishing thread. Values change at mixer speed rather than
     /// structural speed, so they travel on their own.
@@ -84,11 +92,18 @@ class EngineSession {
     }
 
   private:
-    /// One epoch: a plan and the executor prepared for it. The executor points
-    /// into the plan, so the two are retired together and never separately.
+    /// One epoch: a plan, the executor prepared for it, and the values it was
+    /// published with. The executor points into the plan, so the three are
+    /// retired together and never separately.
+    ///
+    /// The values are the floor rather than the current reading: whatever
+    /// publishValues() has sent since is used when it belongs to this plan, and
+    /// these are what the epoch renders with until it does. An epoch never
+    /// renders without values that were resolved for it.
     struct PreparedRender {
         std::shared_ptr<const RenderPlan> plan;
         PlanExecutor executor;
+        PlanValues values;
     };
 
     using PublishedRender =
@@ -100,6 +115,13 @@ class EngineSession {
     RuntimeStateStore store_;
     PublishedRender published_;
     PublishedValues values_;
+
+    /// This thread's own handle on the epoch that is rendering. Held because
+    /// the next publish prepares against it: the differ needs the plan it was
+    /// built for, and whatever survives is shared with it rather than copied
+    /// out of it. Replaced after the swap, which is where the epoch it
+    /// displaces is destroyed, on this thread.
+    std::shared_ptr<PreparedRender> live_;
     std::shared_ptr<const RenderPlan> livePlan_;
 };
 

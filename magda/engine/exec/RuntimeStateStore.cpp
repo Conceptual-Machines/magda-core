@@ -11,8 +11,12 @@ namespace {
 /// Fetches the entry for @p id, asking the factory once if there is none.
 /// A factory that declines is asked again next time rather than remembered as
 /// a null: the reason is usually a plugin that has not finished loading.
+///
+/// Only what the factory hands back is prepared. Anything the map already held
+/// is reachable from the audio thread and is left exactly as it is.
 template <typename Map, typename Create>
-auto* realiseOne(Map& map, typename Map::key_type id, Create&& create) {
+auto* realiseOne(Map& map, typename Map::key_type id, const RenderContext& context,
+                 Create&& create) {
     if (const auto found = map.find(id); found != map.end())
         return found->second.get();
 
@@ -20,7 +24,15 @@ auto* realiseOne(Map& map, typename Map::key_type id, Create&& create) {
     if (created == nullptr)
         return decltype(created.get()){nullptr};
 
+    created->prepare(context);
     return map.emplace(id, std::move(created)).first->second.get();
+}
+
+/// Everything in @p map, for a context change: not a live operation, and the
+/// only path that touches an object the store already holds.
+template <typename Map> void prepareAll(Map& map, const RenderContext& context) {
+    for (auto& [id, object] : map)
+        object->prepare(context);
 }
 
 void collectDeviceIds(const std::vector<ChainElement>& elements, std::set<DeviceId>& out);
@@ -57,7 +69,20 @@ template <typename Map, typename Ids> std::size_t eraseUnnamed(Map& map, const I
 
 }  // namespace
 
-PlanBindings RuntimeStateStore::realise(const RenderPlan& plan) {
+PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderContext& context) {
+    // A context that has changed is the one case where something already
+    // playing is touched, and it is only reachable with the audio device
+    // stopped: nothing renders at a sample rate it was not prepared for.
+    if (hasContext_ && !(context_ == context)) {
+        prepareAll(devices_, context);
+        prepareAll(clipAudio_, context);
+        prepareAll(clipMidi_, context);
+        prepareAll(audioInputs_, context);
+        prepareAll(midiInputs_, context);
+    }
+    context_ = context;
+    hasContext_ = true;
+
     PlanBindings bindings;
 
     for (const auto& op : plan.ops) {
@@ -65,35 +90,35 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan) {
 
         switch (op.kind) {
             case OpKind::Device:
-                if (auto* device = realiseOne(devices_, op.key.deviceId, [this](DeviceId id) {
-                        return factory_.createDevice(id);
-                    }))
+                if (auto* device =
+                        realiseOne(devices_, op.key.deviceId, context,
+                                   [this](DeviceId id) { return factory_.createDevice(id); }))
                     bindings.devices[op.key.deviceId] = device;
                 break;
 
             case OpKind::ClipAudio:
-                if (auto* source = realiseOne(clipAudio_, trackId, [this](TrackId id) {
+                if (auto* source = realiseOne(clipAudio_, trackId, context, [this](TrackId id) {
                         return factory_.createClipAudioSource(id);
                     }))
                     bindings.clipAudio[trackId] = source;
                 break;
 
             case OpKind::ClipMidi:
-                if (auto* source = realiseOne(clipMidi_, trackId, [this](TrackId id) {
+                if (auto* source = realiseOne(clipMidi_, trackId, context, [this](TrackId id) {
                         return factory_.createClipMidiSource(id);
                     }))
                     bindings.clipMidi[trackId] = source;
                 break;
 
             case OpKind::AudioInput:
-                if (auto* source = realiseOne(audioInputs_, trackId, [this](TrackId id) {
+                if (auto* source = realiseOne(audioInputs_, trackId, context, [this](TrackId id) {
                         return factory_.createAudioInput(id);
                     }))
                     bindings.audioInputs[trackId] = source;
                 break;
 
             case OpKind::MidiInput:
-                if (auto* source = realiseOne(midiInputs_, trackId, [this](TrackId id) {
+                if (auto* source = realiseOne(midiInputs_, trackId, context, [this](TrackId id) {
                         return factory_.createMidiInput(id);
                     }))
                     bindings.midiInputs[trackId] = source;

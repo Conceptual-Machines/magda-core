@@ -4,27 +4,59 @@ namespace magda::engine {
 
 EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> plan,
                                              const RenderContext& context,
-                                             const RuntimeStateIds& modelIds) {
+                                             const RuntimeStateIds& modelIds, PlanValues values) {
     if (plan == nullptr)
         return {false, {"no plan to publish"}};
 
     auto prepared = std::make_shared<PreparedRender>();
     prepared->plan = std::move(plan);
+    prepared->values = std::move(values);
 
     // Realising early costs nothing if the plan turns out not to prepare: what
     // it created stays in the store, where the next attempt reuses it and the
     // model, not the plan, decides when it goes.
-    const auto bindings = store_.realise(*prepared->plan);
-    auto messages = prepared->executor.prepare(*prepared->plan, bindings, context);
+    //
+    // The epoch still rendering is handed over so the new one can take on what
+    // the differ says survived, rather than starting every delay line empty.
+    // Read only: it is live until the swap below, and it is this thread's own
+    // handle on it that keeps it alive long enough to be read at all.
+    const auto bindings = store_.realise(*prepared->plan, context);
+    auto messages = prepared->executor.prepare(*prepared->plan, bindings, context,
+                                               live_ == nullptr ? nullptr : &live_->executor);
     if (!prepared->executor.isPrepared())
         return {false, std::move(messages)};
 
+    // Values the executor would not apply are refused rather than published,
+    // because what it does with them instead is render at unity: the caller
+    // would have asked for a fader and got 0 dB, with nothing anywhere saying
+    // why. Asked of the executor rather than worked out here, so that the
+    // answer cannot differ from the one the block itself will get.
+    if (!prepared->executor.appliesValues(prepared->values)) {
+        messages.push_back(
+            "the values published with this plan are not values it can render: they were "
+            "resolved against a different plan, or against this one before it was whole. "
+            "It is not published, because it would have rendered at unity");
+        return {false, std::move(messages)};
+    }
+
+    // The epoch's values become the ones in flight as well. Matching
+    // fingerprints say two tables fit the same structure, which is not the same
+    // as saying which of them is newer: republishing a plan whose structure did
+    // not change (a latency re-prepare is exactly that) leaves a table from
+    // before it still matching, and selecting on compatibility alone would keep
+    // choosing it and ignore what this publish carries. Replacing it here is
+    // what makes the bundled table the newest thing there is at the moment it
+    // goes live.
+    values_.nonRealtimeReplace(prepared->values);
+
     // The swap. This blocks until the audio thread is out of the block it was
     // in, then hands the previous epoch back here, where its destructor runs.
-    published_.nonRealtimeReplace(std::move(prepared));
+    published_.nonRealtimeReplace(prepared);
 
-    livePlan_ = published_.nonRealtimeAcquire()->plan;
-    published_.nonRealtimeRelease();
+    // Only now: until the swap, the epoch this replaces was the one rendering,
+    // and anything the new one took over from it is shared rather than copied.
+    live_ = std::move(prepared);
+    livePlan_ = live_->plan;
 
     // Safe only now: before the swap, everything about to be destroyed was
     // still reachable from the plan the audio thread was rendering. The plan
@@ -46,8 +78,18 @@ void EngineSession::process(const BlockInfo& block, juce::AudioBuffer<float>& ou
         return;
     }
 
+    // Values and plans travel separately and are swapped one after the other,
+    // so for the moment between the two the ones in flight can belong to the
+    // plan this replaced. The epoch's own are the floor for exactly that
+    // window, and the difference between a fader holding its position through a
+    // structural edit and jumping to unity for a block.
+    //
+    // Compatibility is all this can ask. Which of two tables is newer is
+    // settled by publish, which replaces the one in flight with the epoch's as
+    // it goes live, so anything still matching afterwards arrived after it.
     PublishedValues::ScopedAccess<farbot::ThreadType::realtime> values(values_);
-    (*render)->executor.process(*values, block, output);
+    const auto& table = (*render)->executor.appliesValues(*values) ? *values : (*render)->values;
+    (*render)->executor.process(table, block, output);
 }
 
 }  // namespace magda::engine
