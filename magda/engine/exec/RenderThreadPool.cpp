@@ -23,9 +23,22 @@ class RenderThreadPool::Worker final : public juce::Thread {
             wait(-1);
             if (threadShouldExit())
                 return;
-            pool_.takeWork();
+            pool_.takeWork(*this);
         }
     }
+
+    /**
+     * @brief Where this worker is between waking and reaching a job's count.
+     *
+     * Ticked twice per arrival, so odd means inside that window and the value
+     * itself says which arrival it is. That is what release() needs and what a
+     * count could not give it: a count has to reach zero, and on a pool
+     * rendering block after block the arrivals of later ones keep it off zero,
+     * so a retirement waits on a window that reopens rather than on one that
+     * closes. A mark is per worker and monotonic, so a worker that has moved on
+     * has moved on whatever anyone starts afterwards.
+     */
+    std::atomic<std::uint64_t> arrival{0};
 
   private:
     RenderThreadPool& pool_;
@@ -78,19 +91,19 @@ void RenderThreadPool::render(Job& job) {
     job.takeWork();
 }
 
-void RenderThreadPool::takeWork() {
-    // Arrival is announced before the job is read, so release() cannot see an
-    // empty pool and conclude that a worker on its way in will not arrive. Then
-    // the worker moves itself onto the job's own count and leaves the arrival
-    // window, which is what makes a retirement wait for its own workers rather
-    // than for whoever is rendering now.
-    arriving_.fetch_add(1, std::memory_order_seq_cst);
+void RenderThreadPool::takeWork(Worker& worker) {
+    // Arrival is marked before the job is read, so release() cannot look at an
+    // idle-seeming pool and conclude that a worker on its way in will not
+    // arrive. Then the worker moves itself onto the job's own count and leaves
+    // the arrival window, which is what makes a retirement wait for its own
+    // workers rather than for whoever is rendering now.
+    worker.arrival.fetch_add(1, std::memory_order_seq_cst);
 
     auto* job = job_.load(std::memory_order_seq_cst);
     if (job != nullptr)
         job->workersInside.fetch_add(1, std::memory_order_seq_cst);
 
-    arriving_.fetch_sub(1, std::memory_order_seq_cst);
+    worker.arrival.fetch_add(1, std::memory_order_seq_cst);
 
     if (job == nullptr)
         return;
@@ -105,17 +118,30 @@ void RenderThreadPool::release(Job& job) {
     auto* expected = &job;
     job_.compare_exchange_strong(expected, nullptr, std::memory_order_seq_cst);
 
-    // Two waits, and they are for different things. The first is for workers
-    // that read the job pointer before it was taken away and have not yet
-    // counted themselves against it; nothing but a load and an increment lives
-    // in that window, so it drains as fast as those threads get a core. The
-    // second is for workers actually inside this job, which is bounded by the
-    // block they are finishing.
+    // Two waits, and they are for different things.
     //
-    // In this order, because a worker still arriving is one that has not
-    // reached the second count yet.
-    while (arriving_.load(std::memory_order_seq_cst) != 0)
-        juce::Thread::yield();
+    // The first is for workers that read the job pointer before it was taken
+    // away and have not yet counted themselves against it. Each is waited for
+    // by name: the mark this worker was on when it was looked at, and then that
+    // mark moving. Only a load and an increment live inside that window, so it
+    // is over as soon as the thread holding it gets a core, and an arrival that
+    // starts afterwards moves the mark rather than holding the wait open. That
+    // is the whole difference from asking a count to reach zero, which on a
+    // pool rendering block after block it need never do.
+    //
+    // The second is for workers actually inside this job, which is bounded by
+    // the block they are finishing.
+    //
+    // In this order, because a worker still arriving is one whose increment
+    // against the job has not happened yet.
+    for (auto& worker : workers_) {
+        const auto marked = worker->arrival.load(std::memory_order_seq_cst);
+        if (marked % 2 == 0)
+            continue;  // between arrivals, and the next one is after the swap
+
+        while (worker->arrival.load(std::memory_order_seq_cst) == marked)
+            juce::Thread::yield();
+    }
 
     while (job.workersInside.load(std::memory_order_seq_cst) != 0)
         juce::Thread::yield();

@@ -120,22 +120,19 @@ class RenderThreadPool {
 
     /// What a worker runs when it wakes. Separate from render() because a
     /// worker has to announce itself before it reads the job pointer, so that
-    /// release() cannot conclude the coast is clear while one is arriving.
-    void takeWork();
+    /// release() cannot conclude the coast is clear while one is arriving. It
+    /// announces on its own slot, which is what keeps that announcement from
+    /// being something a later block can renew.
+    void takeWork(Worker& worker);
 
     std::vector<std::unique_ptr<Worker>> workers_;
 
     /// The job the workers render, or null between blocks that are the last of
-    /// their epoch. Sequentially consistent, and so is arriving_: the two are
-    /// read and written against each other by release(), which is exactly the
-    /// handshake that acquire/release alone does not settle.
+    /// their epoch. Sequentially consistent, and so are the workers' arrival
+    /// marks: the two are read and written against each other by release(),
+    /// which is exactly the handshake that acquire/release alone does not
+    /// settle.
     std::atomic<Job*> job_{nullptr};
-
-    /// Workers that have committed to reading job_ and have not yet reached the
-    /// job's own count. Nothing but a load and an increment happens inside this
-    /// window, so it empties in the time it takes a thread to be scheduled,
-    /// which is what makes waiting on it different from waiting on the work.
-    std::atomic<int> arriving_{0};
 };
 
 }  // namespace magda::engine
