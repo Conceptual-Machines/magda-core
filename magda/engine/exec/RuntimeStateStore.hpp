@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <memory>
 #include <set>
 #include <unordered_map>
@@ -7,6 +8,7 @@
 
 #include "exec/PlanBindings.hpp"
 #include "plan/RenderPlan.hpp"
+#include "tap/LevelTap.hpp"
 
 namespace magda {
 struct TrackInfo;
@@ -53,6 +55,23 @@ class RuntimeStateFactory {
         return nullptr;
     }
     virtual std::unique_ptr<EngineMidiSource> createMidiInput(TrackId) {
+        return nullptr;
+    }
+
+    /**
+     * @brief The level tap behind one Meter op, or nullptr for one nobody reads.
+     *
+     * Declining is the ordinary answer rather than a failure: a plan has a
+     * meter at every track, every device slot and the master, and a host with
+     * no mixer on screen wants none of them. What it costs to decline is the
+     * meter, and nothing else: the op still renders, because a Meter op is a
+     * point in the signal path first and a display second.
+     *
+     * Handed the whole key because a device's meter and the device itself share
+     * a DeviceId. Which track or device the tap belongs to is read off the key,
+     * and so is what kind of meter it is.
+     */
+    virtual std::unique_ptr<LevelTap> createMeter(const OpKey&) {
         return nullptr;
     }
 };
@@ -135,6 +154,12 @@ class RuntimeStateStore {
     std::size_t size() const;
 
   private:
+    /// The tap for one Meter op, asking the factory once if there is none. A
+    /// factory that declines is asked again next time, exactly as it is for
+    /// everything else: a mixer that opens after the plan was published should
+    /// get its meters at the next publish rather than never.
+    LevelTap* realiseMeter(const OpKey& key);
+
     RuntimeStateFactory& factory_;
 
     /// What everything the store holds has been prepared for. Set by the first
@@ -147,6 +172,12 @@ class RuntimeStateStore {
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> clipMidi_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> audioInputs_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> midiInputs_;
+
+    /// Keyed by the op's whole key, and retained by the model IDs that key
+    /// names: a meter is kept while the track or device it reads exists, which
+    /// is the same rule everything else here follows read through the one
+    /// binding whose identity is not a bare model ID.
+    std::map<OpKey, std::unique_ptr<LevelTap>> meters_;
 };
 
 }  // namespace magda::engine

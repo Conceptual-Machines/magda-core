@@ -136,12 +136,43 @@ class TestFactory final : public RuntimeStateFactory {
         return std::make_unique<ConstantSource>(1.0f);
     }
 
+    /// A host with a mixer on screen: every meter the plan has gets one. A host
+    /// without would return nullptr here and nothing else would change.
+    std::unique_ptr<magda::engine::LevelTap> createMeter(const magda::engine::OpKey& key) override {
+        if (!makesMeters)
+            return nullptr;
+
+        ++metersCreated;
+        auto tap = std::make_unique<magda::engine::LevelTap>();
+        metersByKey[key] = tap.get();
+        return tap;
+    }
+
+    bool makesMeters = true;
+    int metersCreated = 0;
+    std::map<magda::engine::OpKey, magda::engine::LevelTap*> metersByKey;
+
     LedgerDevice* lastDevice = nullptr;
     std::map<DeviceId, LedgerDevice*> devicesById;
 
   private:
     Ledger& ledger_;
 };
+
+/// The one meter with this role at this location, or null.
+magda::engine::LevelTap* meterAt(const TestFactory& factory, const RenderPlan& plan,
+                                 magda::engine::OpRole role, TrackId trackId,
+                                 DeviceId deviceId = INVALID_DEVICE_ID) {
+    for (const auto& op : plan.ops) {
+        if (op.kind != magda::engine::OpKind::Meter || op.key.role != role)
+            continue;
+        if (op.key.trackId != trackId || op.key.deviceId != deviceId)
+            continue;
+        const auto found = factory.metersByKey.find(op.key);
+        return found == factory.metersByKey.end() ? nullptr : found->second;
+    }
+    return nullptr;
+}
 
 std::shared_ptr<const RenderPlan> compile(const std::vector<TrackInfo>& tracks) {
     return std::make_shared<const RenderPlan>(
@@ -499,7 +530,11 @@ TEST_CASE("What a swap drops is destroyed on the publishing thread", "[engine][s
     // destructor.
     CHECK(ledger.devicesDestroyed == 1);
     CHECK(ledger.lastDestroyingThread.load() == std::this_thread::get_id());
-    CHECK(session.runtimeObjectCount() == 1);  // the clip source is still named
+
+    // What the model still names: the track's clip source, the track's meter
+    // and the master's. The device's own meter went with the device, keyed on
+    // the DeviceId that is no longer there.
+    CHECK(session.runtimeObjectCount() == 3);
 }
 
 TEST_CASE("Bypass and chain power keep the device, deletion destroys it", "[engine][session]") {
@@ -861,4 +896,162 @@ TEST_CASE("The metronome is added after the plan, not through it",
 
         CHECK(output.getMagnitude(0, kBlockSize) > 0.1f);
     }
+}
+
+TEST_CASE("A meter is bound at the master, at a track and at a device slot",
+          "[engine][session][tap]") {
+    // The three places the issue names, and the three the compiler emits a
+    // Meter op at. A tap that only reached one of them would leave a mixer with
+    // meters on some strips and not others.
+    Ledger ledger;
+    TestFactory factory(ledger);
+    EngineSession session(factory);
+
+    const auto tracks = trackWithEffect(7);
+    const auto plan = compile(tracks);
+    REQUIRE(publish(session, plan, tracks).published);
+
+    CHECK(meterAt(factory, *plan, magda::engine::OpRole::TrackMeter, MASTER_TRACK_ID) != nullptr);
+    CHECK(meterAt(factory, *plan, magda::engine::OpRole::TrackMeter, 1) != nullptr);
+    CHECK(meterAt(factory, *plan, magda::engine::OpRole::DeviceMeter, 1, 7) != nullptr);
+}
+
+TEST_CASE("A meter reads the level the track is rendering", "[engine][session][tap]") {
+    Ledger ledger;
+    TestFactory factory(ledger);
+    EngineSession session(factory);
+
+    const std::vector<TrackInfo> tracks{makeTrack(1)};
+    const auto plan = compile(tracks);
+    REQUIRE(publish(session, plan, tracks).published);
+
+    auto* tap = meterAt(factory, *plan, magda::engine::OpRole::TrackMeter, 1);
+    REQUIRE(tap != nullptr);
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    session.publishTransport(rolling(0.0));
+    session.process(kBlockSize, output);
+
+    // The source renders at unity and nothing between it and the meter
+    // attenuates, so this is the whole of the path from a block to a display.
+    CHECK(tap->read().loudest() == approx(1.0f));
+}
+
+TEST_CASE("A meter is the same tap across a plan swap", "[engine][session][tap]") {
+    // The differ's promise, applied to taps: a structural edit elsewhere in the
+    // project must not reset a meter that was reading. Rebuilding it would drop
+    // whatever it had accumulated since the last poll, which is a meter that
+    // flickers to zero every time a device is added anywhere.
+    Ledger ledger;
+    TestFactory factory(ledger);
+    EngineSession session(factory);
+
+    const std::vector<TrackInfo> before{makeTrack(1)};
+    const auto firstPlan = compile(before);
+    REQUIRE(publish(session, firstPlan, before).published);
+
+    auto* firstTap = meterAt(factory, *firstPlan, magda::engine::OpRole::TrackMeter, 1);
+    REQUIRE(firstTap != nullptr);
+    const auto metersAfterFirst = factory.metersCreated;
+
+    const auto after = trackWithEffect(7);
+    const auto secondPlan = compile(after);
+    REQUIRE(publish(session, secondPlan, after).published);
+
+    CHECK(meterAt(factory, *secondPlan, magda::engine::OpRole::TrackMeter, 1) == firstTap);
+
+    // Only the new device's meter was made. The track's and the master's were
+    // already there and were handed back.
+    CHECK(factory.metersCreated == metersAfterFirst + 1);
+}
+
+TEST_CASE("A meter goes when the device it reads is deleted", "[engine][session][tap]") {
+    Ledger ledger;
+    TestFactory factory(ledger);
+    EngineSession session(factory);
+
+    const auto withEffect = trackWithEffect(7);
+    const auto firstPlan = compile(withEffect);
+    REQUIRE(publish(session, firstPlan, withEffect).published);
+    const auto objectsWithEffect = session.runtimeObjectCount();
+
+    const std::vector<TrackInfo> withoutEffect{makeTrack(1)};
+    const auto secondPlan = compile(withoutEffect);
+    REQUIRE(publish(session, secondPlan, withoutEffect).published);
+
+    // The device and its meter, both keyed on the DeviceId the model no longer
+    // holds. A tap that outlived its device would be a row in the mixer for
+    // something that is not there.
+    CHECK(session.runtimeObjectCount() == objectsWithEffect - 2);
+}
+
+TEST_CASE("A host that wants no meters binds none and renders the same", "[engine][session][tap]") {
+    Ledger ledger;
+    TestFactory factory(ledger);
+    factory.makesMeters = false;
+    EngineSession session(factory);
+
+    const auto tracks = trackWithEffect(7);
+    const auto plan = compile(tracks);
+    const auto result = publish(session, plan, tracks);
+
+    // Not a diagnostic. A plan has a meter at every track and device slot, and
+    // an export reporting one line per meter would bury whatever it had to say.
+    CHECK(result.published);
+    CHECK(result.messages.empty());
+    CHECK(factory.metersCreated == 0);
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    session.publishTransport(rolling(0.0));
+    session.process(kBlockSize, output);
+
+    CHECK(output.getMagnitude(0, kBlockSize) > 0.0f);
+}
+
+TEST_CASE("A session on a thread pool renders what a session without one renders",
+          "[engine][session][parallel]") {
+    // The session drives the parallel executor whether or not it was given
+    // threads, so this is not two engines being compared: it is one, with the
+    // block spread out and not. Bit for bit, because that is the executor's
+    // whole claim and the session is where it has to survive plan swaps,
+    // published values and a callback cut by the transport.
+    const auto render = [](magda::engine::RenderThreadPool* pool) {
+        Ledger ledger;
+        TestFactory factory(ledger);
+        factory.latencyFor[7] = 53;
+        EngineSession session(factory, pool);
+
+        auto tracks = trackWithEffect(7);
+        tracks.push_back(makeTrack(2));
+        const auto plan = compile(tracks);
+        REQUIRE(publish(session, plan, tracks).published);
+        session.publishValues(resolve(*plan, tracks));
+        session.publishTransport(rolling(0.0));
+
+        std::vector<float> samples;
+        juce::AudioBuffer<float> output(2, kBlockSize);
+        for (int block = 0; block < 16; ++block) {
+            // A swap partway through, so what the differ carried across it is
+            // part of what is being compared.
+            if (block == 8) {
+                tracks.push_back(makeTrack(3));
+                const auto grown = compile(tracks);
+                REQUIRE(publish(session, grown, tracks).published);
+                session.publishValues(resolve(*grown, tracks));
+            }
+
+            output.clear();
+            session.process(kBlockSize, output);
+            for (int channel = 0; channel < output.getNumChannels(); ++channel)
+                for (int sample = 0; sample < kBlockSize; ++sample)
+                    samples.push_back(output.getSample(channel, sample));
+        }
+        return samples;
+    };
+
+    const auto alone = render(nullptr);
+    REQUIRE_FALSE(alone.empty());
+
+    magda::engine::RenderThreadPool pool(4, false);
+    CHECK(render(&pool) == alone);
 }

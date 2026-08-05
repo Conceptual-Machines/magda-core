@@ -17,10 +17,13 @@ add_library(magda_engine STATIC
     plan/PlanDump.hpp
     plan/TrackRouting.hpp
     exec/PlanExecutor.cpp
+    exec/ParallelPlanExecutor.cpp
+    exec/RenderThreadPool.cpp
     exec/PlanLayout.cpp
     exec/PlanValues.cpp
     exec/RuntimeStateStore.cpp
     exec/EngineSession.cpp
+    exec/OfflineRender.cpp
     exec/PlanExecutor.hpp
     exec/PlanLayout.hpp
     exec/PlanValues.hpp
@@ -29,6 +32,9 @@ add_library(magda_engine STATIC
     exec/RenderContext.hpp
     exec/RuntimeStateStore.hpp
     exec/EngineSession.hpp
+    exec/OfflineRender.hpp
+    tap/LevelTap.hpp
+    tap/SampleRing.hpp
     transport/TempoMap.cpp
     transport/TransportClock.cpp
     transport/ClickGenerator.cpp
@@ -36,6 +42,17 @@ add_library(magda_engine STATIC
     transport/TransportState.hpp
     transport/TransportClock.hpp
     transport/ClickGenerator.hpp
+    io/AudioFileReader.cpp
+    io/PrefetchStream.cpp
+    io/PrefetchThread.cpp
+    io/StreamingAudioSource.cpp
+    io/FileAudioSource.cpp
+    io/AudioFileReader.hpp
+    io/ClipPlacement.hpp
+    io/PrefetchStream.hpp
+    io/PrefetchThread.hpp
+    io/StreamingAudioSource.hpp
+    io/FileAudioSource.hpp
 )
 add_library(magda::engine ALIAS magda_engine)
 
@@ -83,7 +100,7 @@ endforeach()
 # Engine. Quoted includes may only reach the model layer ("core/...") or the
 # engine's own headers.
 
-set(MAGDA_ENGINE_ALLOWED_QUOTED_PREFIXES "core/" "plan/" "exec/" "transport/")
+set(MAGDA_ENGINE_ALLOWED_QUOTED_PREFIXES "core/" "plan/" "exec/" "transport/" "io/" "tap/")
 
 file(GLOB_RECURSE MAGDA_ENGINE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"

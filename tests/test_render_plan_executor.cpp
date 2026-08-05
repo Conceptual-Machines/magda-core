@@ -1,6 +1,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <deque>
+#include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -365,7 +367,22 @@ struct Harness {
         valueMessages = magda::engine::resolvePlanValues(plan, tracks, master, values);
         const RenderContext context{44100.0, kBlockSize, 2};
         prepareBindings(bindings, context);
+        bindMeters();
         return executor.prepare(plan, bindings, context);
+    }
+
+    /// A tap on every Meter op, which is what a host with a mixer on screen
+    /// binds. Nothing forces it: a Meter op with no tap renders the same and
+    /// publishes nothing.
+    void bindMeters() {
+        for (const auto& op : plan.ops) {
+            if (op.kind != magda::engine::OpKind::Meter)
+                continue;
+            auto& tap = meters[op.key];
+            if (tap == nullptr)
+                tap = std::make_unique<magda::engine::LevelTap>();
+            bindings.meters[op.key] = tap.get();
+        }
     }
 
     /// Prepares, requiring both layers to have nothing to report.
@@ -397,14 +414,20 @@ struct Harness {
         return magda::engine::INVALID_OP_ID;
     }
 
-    float meterFor(OpRole role, TrackId trackId) const {
-        return executor.meterLevels()[static_cast<std::size_t>(opWithRole(role, trackId))];
+    /// Takes the tap's level, which is what reading a meter does: it reports
+    /// the loudest thing since it was last read and starts again.
+    float takeMeterFor(OpRole role, TrackId trackId) {
+        const auto op = opWithRole(role, trackId);
+        const auto found = meters.find(plan.ops[static_cast<std::size_t>(op)].key);
+        REQUIRE(found != meters.end());
+        return found->second->read().loudest();
     }
 
     std::vector<TrackInfo> tracks;
     TrackInfo master;
     RenderPlan plan;
     PlanBindings bindings;
+    std::map<magda::engine::OpKey, std::unique_ptr<magda::engine::LevelTap>> meters;
     PlanValues values;
     std::vector<std::string> valueMessages;
     PlanExecutor executor;
@@ -521,7 +544,7 @@ TEST_CASE("Mute silences the track after its meter has read it", "[engine][exec]
     CHECK(harness.outputSample() == approx(0.0f));
     // Mute is its own stage after the meter, so a muted track still shows a
     // level: folding it into the fader would make the meter read silence.
-    CHECK(harness.meterFor(OpRole::TrackMeter, 1) == approx(0.8f));
+    CHECK(harness.takeMeterFor(OpRole::TrackMeter, 1) == approx(0.8f));
 }
 
 TEST_CASE("Solo silences the tracks that are not soloed", "[engine][exec]") {
@@ -775,7 +798,7 @@ TEST_CASE("A rack chain out of the mix contributes neither audio nor MIDI", "[en
         // The instrument in the muted chain never ran, so the chain adds
         // nothing to the mix: it is out of the graph, not turned down.
         CHECK(harness.outputSample() == approx(0.25f));
-        CHECK(harness.meterFor(OpRole::DeviceMeter, 1) == approx(0.0f));
+        CHECK(harness.takeMeterFor(OpRole::DeviceMeter, 1) == approx(0.0f));
     }
 
     SECTION("a sibling chain is soloed") {
@@ -790,7 +813,7 @@ TEST_CASE("A rack chain out of the mix contributes neither audio nor MIDI", "[en
         harness.prepareCleanly();
         harness.render();
         CHECK(harness.outputSample() == approx(0.25f));
-        CHECK(harness.meterFor(OpRole::DeviceMeter, 1) == approx(0.0f));
+        CHECK(harness.takeMeterFor(OpRole::DeviceMeter, 1) == approx(0.0f));
     }
 }
 
@@ -855,7 +878,7 @@ TEST_CASE("A rack inside a chain out of the mix stops processing", "[engine][exe
     harness.render();
 
     CHECK(nested.processedBlocks == 0);
-    CHECK(harness.meterFor(OpRole::DeviceMeter, 1) == approx(0.0f));
+    CHECK(harness.takeMeterFor(OpRole::DeviceMeter, 1) == approx(0.0f));
     CHECK(harness.outputSample() == approx(0.0f));
 }
 

@@ -247,12 +247,18 @@ set(TEST_SOURCES
 if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_render_plan_compiler.cpp)
     list(APPEND TEST_SOURCES test_render_plan_executor.cpp)
+    list(APPEND TEST_SOURCES test_parallel_executor.cpp)
     list(APPEND TEST_SOURCES test_plan_layout.cpp)
     list(APPEND TEST_SOURCES test_plan_diff.cpp)
     list(APPEND TEST_SOURCES test_engine_session.cpp)
     list(APPEND TEST_SOURCES test_tempo_map.cpp)
     list(APPEND TEST_SOURCES test_transport_clock.cpp)
     list(APPEND TEST_SOURCES test_click_generator.cpp)
+    list(APPEND TEST_SOURCES test_prefetch_stream.cpp)
+    list(APPEND TEST_SOURCES test_streaming_audio_source.cpp)
+    list(APPEND TEST_SOURCES test_file_audio_source.cpp)
+    list(APPEND TEST_SOURCES test_offline_render.cpp)
+    list(APPEND TEST_SOURCES test_engine_taps.cpp)
 endif()
 
 # Create test executable

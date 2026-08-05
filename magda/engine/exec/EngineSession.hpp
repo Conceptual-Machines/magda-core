@@ -5,7 +5,8 @@
 #include <string>
 #include <vector>
 
-#include "exec/PlanExecutor.hpp"
+#include "exec/ParallelPlanExecutor.hpp"
+#include "exec/RenderThreadPool.hpp"
 #include "exec/RuntimeStateStore.hpp"
 #include "transport/ClickGenerator.hpp"
 #include "transport/TransportClock.hpp"
@@ -35,7 +36,17 @@ namespace magda::engine {
 
 class EngineSession {
   public:
-    explicit EngineSession(RuntimeStateFactory& factory) : store_(factory) {}
+    /**
+     * @brief A session rendering on @p pool.
+     *
+     * Null is a session that renders every block on the audio thread alone,
+     * which is the same executor with one thread rather than a different one.
+     * A host with a pool passes it here, once: it outlives every plan, and it
+     * has to outlive this, because the epochs retired here are what let go of
+     * it.
+     */
+    explicit EngineSession(RuntimeStateFactory& factory, RenderThreadPool* pool = nullptr)
+        : store_(factory), pool_(pool) {}
 
     /// What came of a publish. `published` false means the plan was refused
     /// and the previous one is still playing; true with messages means it is
@@ -146,8 +157,10 @@ class EngineSession {
     /// shared with the epoch it replaces whenever the context has not changed,
     /// so a click that is sounding is not cut off by a structural edit.
     struct PreparedRender {
+        explicit PreparedRender(RenderThreadPool* pool) : executor(pool) {}
+
         std::shared_ptr<const RenderPlan> plan;
-        PlanExecutor executor;
+        ParallelPlanExecutor executor;
         PlanValues values;
         RenderContext context;
         std::shared_ptr<ClickGenerator> click;
@@ -163,6 +176,12 @@ class EngineSession {
                                farbot::RealtimeObjectOptions::nonRealtimeMutatable>;
 
     RuntimeStateStore store_;
+
+    /// The threads every epoch renders on, or null for a session that renders
+    /// on the audio thread alone. Not owned, and shared across epochs: threads
+    /// are made once and a structural edit is not a reason to remake them.
+    RenderThreadPool* pool_ = nullptr;
+
     PublishedRender published_;
     PublishedValues values_;
     PublishedTransport transport_;

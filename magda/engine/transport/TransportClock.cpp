@@ -24,12 +24,16 @@ void TransportClock::anchorTo(const TempoMap& tempo, double beat) {
     positionBeats_.store(beat, std::memory_order_relaxed);
 }
 
+double TransportClock::secondsAfter(std::int64_t samples) const {
+    return anchorSeconds_ + static_cast<double>(samples) / sampleRate_;
+}
+
 double TransportClock::beatAfter(const TempoMap& tempo, std::int64_t samples) const {
-    return tempo.timeToBeat(anchorSeconds_ + static_cast<double>(samples) / sampleRate_);
+    return tempo.timeToBeat(secondsAfter(samples));
 }
 
 std::int64_t TransportClock::samplesUntil(const TempoMap& tempo, double beat) const {
-    const auto now = anchorSeconds_ + static_cast<double>(samplesSinceAnchor_) / sampleRate_;
+    const auto now = secondsAfter(samplesSinceAnchor_);
     const auto target = tempo.beatToTime(beat);
     return static_cast<std::int64_t>(std::ceil((target - now) * sampleRate_ - kSampleEpsilon));
 }
@@ -108,11 +112,15 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
     if (!playing_) {
         const auto beat = beatAfter(tempo, samplesSinceAnchor_);
 
+        const auto seconds = secondsAfter(samplesSinceAnchor_);
+
         auto& segment = segments_[0];
         segment.block.numSamples = numSamples;
         segment.block.playing = false;
         segment.block.startBeat = beat;
         segment.block.endBeat = beat;
+        segment.block.startSeconds = seconds;
+        segment.block.endSeconds = seconds;
         segment.block.continuous = continuous_;
         segment.startSample = 0;
         segment.countingIn = false;
@@ -185,6 +193,8 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.playing = true;
         segment.block.startBeat = beatAfter(tempo, samplesSinceAnchor_);
         segment.block.endBeat = beatAfter(tempo, samplesSinceAnchor_ + samples);
+        segment.block.startSeconds = secondsAfter(samplesSinceAnchor_);
+        segment.block.endSeconds = secondsAfter(samplesSinceAnchor_ + samples);
         segment.block.continuous = continuous_;
         segment.startSample = offset;
         segment.countingIn = countingIn_;
