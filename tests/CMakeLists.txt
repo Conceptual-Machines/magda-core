@@ -196,6 +196,7 @@ set(TEST_SOURCES
     test_remote_service.cpp
     test_remote_changes.cpp
     test_remote_model_bridge.cpp
+    test_remote_websocket_server.cpp
     test_device_api.cpp
     test_automation_api_surface.cpp
     # Lua controller tests (issue #592 — MIDI dispatch)
@@ -266,6 +267,10 @@ target_link_libraries(magda_tests
     # Faust runtime headers + the backend selection, so test_faust_backend.cpp
     # resolves to the same factory the app was built with.
     magda_faust_backend
+    # cpp-httplib ships the WebSocket client, so the transport tests in
+    # test_remote_websocket_server.cpp drive real sockets without a test-only
+    # dependency. magda_daw links it PRIVATE, so this target needs its own.
+    httplib::httplib
     # JUCE (core + gui_basics) comes transitively from magda_daw, compiled once
     # there; direct links would recompile the JUCE stack into this target.
 )

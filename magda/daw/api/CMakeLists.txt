@@ -21,6 +21,7 @@ target_sources(magda_daw PRIVATE
     remote_service.cpp
     remote_changes.cpp
     remote_model_bridge_live.cpp
+    remote_websocket_server.cpp
     # Headers (listed for IDE visibility)
     magda_api.hpp
     magda_api_live.hpp
