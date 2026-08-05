@@ -30,6 +30,30 @@ namespace {
 
 constexpr int kBlockSize = 64;
 
+/// These tests place things on a sample timeline, because that is what makes
+/// two short blocks comparable with one long one, sample for sample. The
+/// transport hands out beats, so the fixtures convert with one constant chosen
+/// so that every sample position is a beat position exactly: what is being
+/// tested here is the executor, and a rounding error in the fixture would look
+/// like one in the thing under test.
+constexpr double kSamplesPerBeat = 64.0;
+
+BlockInfo blockAt(std::int64_t timelineSample, int numSamples, bool continuous = true) {
+    BlockInfo block;
+    block.numSamples = numSamples;
+    block.playing = true;
+    block.startBeat = static_cast<double>(timelineSample) / kSamplesPerBeat;
+    block.endBeat = static_cast<double>(timelineSample + numSamples) / kSamplesPerBeat;
+    block.continuous = continuous;
+    return block;
+}
+
+/// Where a block starts, back in samples. What a real source does with the
+/// clip's own mapping, done here with the fixture's.
+std::int64_t timelineSampleOf(const BlockInfo& block) {
+    return std::llround(block.startBeat * kSamplesPerBeat);
+}
+
 TrackInfo makeTrack(TrackId id, TrackType type = TrackType::Audio) {
     TrackInfo track;
     track.id = id;
@@ -85,7 +109,7 @@ class RampSource final : public EngineAudioSource {
     void render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) override {
         for (int sample = 0; sample < block.numSamples; ++sample) {
             const auto value =
-                static_cast<float>((block.timelineSample + sample) % 97) * (1.0f / 97.0f);
+                static_cast<float>((timelineSampleOf(block) + sample) % 97) * (1.0f / 97.0f);
             for (std::size_t channel = 0; channel < out.getNumChannels(); ++channel)
                 out.setSample(static_cast<int>(channel), sample, value);
         }
@@ -99,11 +123,11 @@ class TimelineNoteSource final : public EngineMidiSource {
     TimelineNoteSource(int noteNumber, int period) : noteNumber_(noteNumber), period_(period) {}
 
     void render(const BlockInfo& block, juce::MidiBuffer& out) override {
-        const auto first = (block.timelineSample + period_ - 1) / period_ * period_;
-        for (auto position = first; position < block.timelineSample + block.numSamples;
-             position += period_)
+        const auto start = timelineSampleOf(block);
+        const auto first = (start + period_ - 1) / period_ * period_;
+        for (auto position = first; position < start + block.numSamples; position += period_)
             out.addEvent(juce::MidiMessage::noteOn(1, noteNumber_, 1.0f),
-                         static_cast<int>(position - block.timelineSample));
+                         static_cast<int>(position - start));
     }
 
   private:
@@ -186,10 +210,10 @@ class ImpulseSource final : public EngineAudioSource {
 
     void render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) override {
         out.clear();
-        if (block.timelineSample <= 0 && block.timelineSample + block.numSamples > 0)
+        const auto start = timelineSampleOf(block);
+        if (start <= 0 && start + block.numSamples > 0)
             for (std::size_t channel = 0; channel < out.getNumChannels(); ++channel)
-                out.setSample(static_cast<int>(channel), static_cast<int>(-block.timelineSample),
-                              level_);
+                out.setSample(static_cast<int>(channel), static_cast<int>(-start), level_);
     }
 
   private:
@@ -291,7 +315,7 @@ class MidiPositionProbe final : public EngineDevice {
             if (const auto message = metadata.getMessage(); message.isNoteOn())
                 notes.push_back(
                     {message.getNoteNumber(),
-                     static_cast<int>(block.block.timelineSample) + metadata.samplePosition});
+                     static_cast<int>(timelineSampleOf(block.block)) + metadata.samplePosition});
     }
 
     struct Note {
@@ -357,7 +381,7 @@ struct Harness {
     }
 
     void render(int numSamples = kBlockSize, std::int64_t timelineSample = 0) {
-        executor.process(values, BlockInfo{numSamples, timelineSample, true}, output);
+        executor.process(values, blockAt(timelineSample, numSamples), output);
     }
 
     float outputSample(int channel = 0, int sample = 0) const {
@@ -1219,7 +1243,7 @@ TEST_CASE("A malformed plan is refused, and the executor renders silence", "[eng
 
     juce::AudioBuffer<float> output(2, 64);
     output.clear();
-    executor.process(PlanValues{}, BlockInfo{64, 0, true}, output);
+    executor.process(PlanValues{}, blockAt(0, 64), output);
     CHECK(output.getSample(0, 0) == approx(0.0f));
 }
 
@@ -1410,7 +1434,7 @@ TEST_CASE("What is in flight survives the plan being replaced", "[engine][exec][
     REQUIRE(first.prepare(plan, bindings, context).empty());
 
     // Block 0 carries the impulse into the delay line and nothing out of it.
-    first.process(values, BlockInfo{kBlockSize, 0, true}, output);
+    first.process(values, blockAt(0, kBlockSize), output);
     CHECK(output.getSample(0, 0) == approx(0.0f));
 
     PlanExecutor second;
@@ -1421,7 +1445,7 @@ TEST_CASE("What is in flight survives the plan being replaced", "[engine][exec][
 
         // Block 1, on the new executor: the impulse comes out where it would
         // have if nothing had happened.
-        second.process(values, BlockInfo{kBlockSize, kBlockSize, true}, output);
+        second.process(values, blockAt(kBlockSize, kBlockSize), output);
         CHECK(output.getSample(0, 80 - kBlockSize) == approx(0.5f));
     }
 
@@ -1429,7 +1453,7 @@ TEST_CASE("What is in flight survives the plan being replaced", "[engine][exec][
         REQUIRE(second.prepare(plan, bindings, context).empty());
         CHECK(second.carriedDelayLines() == 0);
 
-        second.process(values, BlockInfo{kBlockSize, kBlockSize, true}, output);
+        second.process(values, blockAt(kBlockSize, kBlockSize), output);
         CHECK(output.getSample(0, 80 - kBlockSize) == approx(0.0f));
     }
 

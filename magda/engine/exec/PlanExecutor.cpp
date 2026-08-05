@@ -6,12 +6,6 @@
 namespace magda::engine {
 namespace {
 
-/// Bytes MidiBuffer spends on one event: a sample position, a length, and the
-/// message itself. Sized for the longest short message rather than the
-/// average, so a reservation computed from an event count always holds.
-constexpr int kMidiBytesPerEvent =
-    static_cast<int>(sizeof(std::int32_t) + sizeof(std::uint16_t)) + 3;
-
 /// Per-channel gain for a stereo pair. Anything wider alternates, which keeps
 /// the pairs correct if a device ever reports more than two channels; the model
 /// has no way to express one today.
@@ -564,8 +558,7 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
                 midiDelays_[static_cast<std::size_t>(line)]->process(midiIn(op.inputs[0]), out,
                                                                      numSamples);
                 jassert(out.data.size() <=
-                        static_cast<std::size_t>(
-                            midiByteBounds_[static_cast<std::size_t>(slotFor(PortRef{id, 0}))]));
+                        midiByteBounds_[static_cast<std::size_t>(slotFor(PortRef{id, 0}))]);
                 break;
             }
 

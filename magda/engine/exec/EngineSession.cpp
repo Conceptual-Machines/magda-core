@@ -1,5 +1,7 @@
 #include "exec/EngineSession.hpp"
 
+#include <algorithm>
+
 namespace magda::engine {
 
 EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> plan,
@@ -11,6 +13,19 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     auto prepared = std::make_shared<PreparedRender>();
     prepared->plan = std::move(plan);
     prepared->values = std::move(values);
+    prepared->context = context;
+
+    // The metronome is prepared against the device, not the plan, so it is
+    // shared with the epoch it replaces unless the device changed. Sharing is
+    // what keeps a click that is sounding from being cut in half by an edit
+    // somewhere else in the project; a new one is built only when the old one
+    // was made for a sample rate that no longer applies.
+    if (live_ != nullptr && live_->click != nullptr && live_->context == context) {
+        prepared->click = live_->click;
+    } else {
+        prepared->click = std::make_shared<ClickGenerator>();
+        prepared->click->prepare(context);
+    }
 
     // Realising early costs nothing if the plan turns out not to prepare: what
     // it created stays in the store, where the next attempt reuses it and the
@@ -71,12 +86,24 @@ void EngineSession::publishValues(PlanValues values) {
     values_.nonRealtimeReplace(std::move(values));
 }
 
-void EngineSession::process(const BlockInfo& block, juce::AudioBuffer<float>& output) {
+void EngineSession::publishTransport(TransportSnapshot transport) {
+    transport_.nonRealtimeReplace(std::move(transport));
+}
+
+void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
+    output.clear();
+
     PublishedRender::ScopedAccess<farbot::ThreadType::realtime> render(published_);
-    if (*render == nullptr) {
-        output.clear();
+    if (*render == nullptr || numSamples <= 0)
         return;
-    }
+
+    // The executor asserts on a block longer than the plan was prepared for.
+    // Here the same number also says how much buffer there is to write into, so
+    // it is held to what the caller actually provided rather than trusted: the
+    // pieces of a split callback are views onto this, and a view past the end
+    // of it is not a wrong answer, it is someone else's memory.
+    jassert(numSamples <= output.getNumSamples());
+    numSamples = std::min(numSamples, output.getNumSamples());
 
     // Values and plans travel separately and are swapped one after the other,
     // so for the moment between the two the ones in flight can belong to the
@@ -89,7 +116,30 @@ void EngineSession::process(const BlockInfo& block, juce::AudioBuffer<float>& ou
     // it goes live, so anything still matching afterwards arrived after it.
     PublishedValues::ScopedAccess<farbot::ThreadType::realtime> values(values_);
     const auto& table = (*render)->executor.appliesValues(*values) ? *values : (*render)->values;
-    (*render)->executor.process(table, block, output);
+
+    PublishedTransport::ScopedAccess<farbot::ThreadType::realtime> transport(transport_);
+
+    // One callback is one or more stretches of timeline. It is more than one
+    // exactly when a loop wraps inside it, and the pieces are rendered as
+    // separate blocks so that nothing downstream has to know a wrap can happen
+    // in the middle of a buffer. Everything below the plan is block-size
+    // independent already, which is what makes cutting a callback free.
+    for (const auto& segment :
+         clock_.advance(*transport, (*render)->context.sampleRate, numSamples)) {
+        // A view on the output, not a copy: same channels, same memory, offset
+        // to where this piece belongs.
+        juce::AudioBuffer<float> piece(output.getArrayOfWritePointers(), output.getNumChannels(),
+                                       segment.startSample, segment.block.numSamples);
+
+        (*render)->executor.process(table, segment.block, piece);
+
+        // After the plan and outside it. The metronome is not in the graph: it
+        // is never recorded, never routed, and not the master fader's to
+        // attenuate.
+        if ((*render)->click != nullptr)
+            (*render)->click->render(transport->tempo, transport->click, segment.block,
+                                     segment.countingIn, output, segment.startSample);
+    }
 }
 
 }  // namespace magda::engine

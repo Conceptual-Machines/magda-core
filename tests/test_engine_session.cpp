@@ -183,6 +183,36 @@ std::vector<TrackInfo> trackWithEffect(DeviceId deviceId) {
     return {track};
 }
 
+/// Records the stretch of timeline it was asked for, so a test can see how a
+/// callback was cut up on its way to the ops.
+class BlockLog final : public EngineAudioSource {
+  public:
+    void render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) override {
+        out.fill(1.0f);
+        blocks.push_back(block);
+    }
+
+    std::vector<BlockInfo> blocks;
+};
+
+class LoggingFactory final : public RuntimeStateFactory {
+  public:
+    std::unique_ptr<EngineAudioSource> createClipAudioSource(TrackId) override {
+        auto source = std::make_unique<BlockLog>();
+        log = source.get();
+        return source;
+    }
+
+    BlockLog* log = nullptr;
+};
+
+/// Playing from a beat, with the metronome off.
+magda::engine::TransportSnapshot rolling(double fromBeat) {
+    magda::engine::TransportSnapshot transport;
+    transport.request = {1, true, fromBeat, 0.0};
+    return transport;
+}
+
 }  // namespace
 
 TEST_CASE("A session renders nothing until a plan is published", "[engine][session]") {
@@ -192,7 +222,7 @@ TEST_CASE("A session renders nothing until a plan is published", "[engine][sessi
 
     juce::AudioBuffer<float> output(2, kBlockSize);
     output.clear();
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
 
     CHECK(session.livePlan() == nullptr);
     CHECK(output.getSample(0, 0) == approx(0.0f));
@@ -213,7 +243,7 @@ TEST_CASE("Publishing a plan puts it on the audio thread", "[engine][session]") 
     CHECK(session.livePlan() == plan);
 
     juce::AudioBuffer<float> output(2, kBlockSize);
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
 
     CHECK(output.getSample(0, 0) == approx(0.5f));
 }
@@ -236,7 +266,7 @@ TEST_CASE("A latency change re-prepares the plan rather than recompiling it",
     session.publishValues(resolve(*plan, tracks));
 
     juce::AudioBuffer<float> output(2, kBlockSize);
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(1.5f));
 
     auto* device = factory.devicesById[7];
@@ -252,7 +282,7 @@ TEST_CASE("A latency change re-prepares the plan rather than recompiling it",
 
     // Track 2 now waits for the track the device is on, so the first sixteen
     // samples are the latent track alone and the rest are both.
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(0.5f));
     CHECK(output.getSample(0, 15) == approx(0.5f));
     CHECK(output.getSample(0, 16) == approx(1.5f));
@@ -276,13 +306,13 @@ TEST_CASE("Republishing a plan applies the values it was published with", "[engi
     session.publishValues(resolve(*plan, tracks));
 
     juce::AudioBuffer<float> output(2, kBlockSize);
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
     REQUIRE(output.getSample(0, 0) == approx(0.25f));
 
     // The same plan, and nothing published after it.
     tracks[0].volume = 1.0f;
     REQUIRE(publish(session, plan, tracks).published);
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
 
     CHECK(output.getSample(0, 0) == approx(0.5f));
 }
@@ -300,7 +330,7 @@ TEST_CASE("A plan published with another plan's values is refused", "[engine][se
     REQUIRE(publish(session, plan, tracks).published);
 
     juce::AudioBuffer<float> output(2, kBlockSize);
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
     REQUIRE(output.getSample(0, 0) == approx(0.5f));
 
     // A structurally different plan, and this plan's values.
@@ -335,7 +365,7 @@ TEST_CASE("A plan published with another plan's values is refused", "[engine][se
 
     // Still the plan that was right, still rendering what it was.
     CHECK(session.livePlan() == plan);
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(0.5f));
 }
 
@@ -357,7 +387,7 @@ TEST_CASE("An object that is already playing is never prepared again", "[engine]
     CHECK(device->prepareCalls == 1);
 
     juce::AudioBuffer<float> output(2, kBlockSize);
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
     REQUIRE(device->blocksProcessed == 1);
 
     // A second device on the track: a structural edit that keeps the first one.
@@ -392,7 +422,7 @@ TEST_CASE("A structural edit does not cut what is in flight", "[engine][session]
     session.publishValues(resolve(*first, tracks));
 
     juce::AudioBuffer<float> output(2, kBlockSize);
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
 
     // Track 1 through its device, and track 2 arriving sixteen samples in.
     CHECK(output.getSample(0, 0) == approx(0.5f));
@@ -404,7 +434,7 @@ TEST_CASE("A structural edit does not cut what is in flight", "[engine][session]
     REQUIRE(publish(session, second, tracks).published);
     session.publishValues(resolve(*second, tracks));
 
-    session.process(BlockInfo{kBlockSize, kBlockSize, true}, output);
+    session.process(kBlockSize, output);
 
     // Track 1 through both devices now, and track 2 straight away rather than
     // sixteen samples of silence and then a step.
@@ -441,7 +471,7 @@ TEST_CASE("A swap carries runtime state that the new plan still names", "[engine
     CHECK(factory.devicesById[7] == device);
 
     juce::AudioBuffer<float> output(2, kBlockSize);
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(0.25f));
 }
 
@@ -456,7 +486,7 @@ TEST_CASE("What a swap drops is destroyed on the publishing thread", "[engine][s
     session.publishValues(resolve(*firstPlan, withDevice));
 
     juce::AudioBuffer<float> output(2, kBlockSize);
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
     REQUIRE(ledger.devicesDestroyed == 0);
 
     const std::vector<TrackInfo> withoutDevice{makeTrack(1)};
@@ -543,7 +573,7 @@ TEST_CASE("Model IDs that have moved on cannot retire what the live plan uses",
     REQUIRE(factory.devicesById[7] != nullptr);
 
     juce::AudioBuffer<float> output(2, kBlockSize);
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(0.5f));
 
     // It goes when the plan stops naming it too, which is the first moment
@@ -577,7 +607,7 @@ TEST_CASE("A plan that does not prepare leaves the live one playing", "[engine][
     CHECK(session.livePlan() == good);
 
     juce::AudioBuffer<float> output(2, kBlockSize);
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(0.5f));
 }
 
@@ -600,7 +630,7 @@ TEST_CASE("A first plan that is refused leaves a session with nothing live", "[e
     CHECK(session.livePlan() == nullptr);
 
     juce::AudioBuffer<float> output(2, kBlockSize);
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(0.0f));
 
     // This one named nothing, so nothing was created for it. What a refused
@@ -631,7 +661,7 @@ TEST_CASE("A plan renders with values that belong to it, always", "[engine][sess
     session.publishValues(resolve(*firstPlan, tracks));
 
     juce::AudioBuffer<float> output(2, kBlockSize);
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
     REQUIRE(output.getSample(0, 0) == approx(0.25f));
 
     // Swap the device out and publish nothing new: the values in flight belong
@@ -641,13 +671,13 @@ TEST_CASE("A plan renders with values that belong to it, always", "[engine][sess
     const auto secondPlan = compile(replaced);
     publish(session, secondPlan, replaced);
 
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(0.25f));
 
     // And the mixer-speed path still lands, on top of the same reading.
     replaced[0].volume = 1.0f;
     session.publishValues(resolve(*secondPlan, replaced));
-    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(0.5f));
 }
 
@@ -683,7 +713,7 @@ TEST_CASE("Swapping under a running audio thread never tears", "[engine][session
     std::thread audio([&] {
         juce::AudioBuffer<float> output(2, kBlockSize);
         while (running.load(std::memory_order_relaxed)) {
-            session.process(BlockInfo{kBlockSize, 0, true}, output);
+            session.process(kBlockSize, output);
             const auto sample = output.getSample(0, 0);
             // Every plan in the rotation renders one of these, and a torn read
             // would land somewhere else entirely.
@@ -718,4 +748,115 @@ TEST_CASE("Swapping under a running audio thread never tears", "[engine][session
     CHECK(ledger.devicesDestroyed > 0);
     CHECK(factory.devicesById[7] != nullptr);
     CHECK(ledger.lastDestroyingThread.load() == std::this_thread::get_id());
+}
+
+// A plan renders one stretch of timeline at a time. The transport is what
+// decides which stretch that is, and what happens when one callback covers two.
+TEST_CASE("A callback the loop wraps inside renders as two blocks",
+          "[engine][session][transport]") {
+    LoggingFactory factory;
+    EngineSession session(factory);
+
+    const std::vector<TrackInfo> tracks{makeTrack(1)};
+    const auto plan = compile(tracks);
+    REQUIRE(publish(session, plan, tracks).published);
+    REQUIRE(factory.log != nullptr);
+
+    // A loop one beat long at 120 bpm: 22050 samples, which a callback lands
+    // inside of after 344 blocks of 64.
+    auto transport = rolling(0.0);
+    transport.loop = {true, 0.0, 1.0};
+    session.publishTransport(transport);
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    for (auto block = 0; block < 345; ++block)
+        session.process(kBlockSize, output);
+
+    REQUIRE(factory.log->blocks.size() == 346);
+
+    const auto& before = factory.log->blocks[344];
+    const auto& after = factory.log->blocks[345];
+
+    // The two pieces of the callback that straddled the loop end. Neither of
+    // them covers the wrap, which is the point: an op is never handed a block
+    // whose timeline jumps in the middle.
+    CHECK(before.numSamples + after.numSamples == kBlockSize);
+    CHECK(before.endBeat == Catch::Approx(1.0).margin(1e-9));
+    CHECK(after.startBeat == Catch::Approx(0.0).margin(1e-9));
+    CHECK(before.continuous);
+    CHECK(!after.continuous);
+}
+
+TEST_CASE("The transport, not the caller, says where the timeline is",
+          "[engine][session][transport]") {
+    LoggingFactory factory;
+    EngineSession session(factory);
+
+    const std::vector<TrackInfo> tracks{makeTrack(1)};
+    const auto plan = compile(tracks);
+    REQUIRE(publish(session, plan, tracks).published);
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+
+    SECTION("stopped until it is asked to play") {
+        session.process(kBlockSize, output);
+
+        REQUIRE(factory.log->blocks.size() == 1);
+        CHECK(!factory.log->blocks[0].playing);
+        CHECK(session.positionBeats() == Catch::Approx(0.0));
+    }
+
+    SECTION("and moves at the rate the tempo map says") {
+        session.publishTransport(rolling(0.0));
+
+        // 22050 samples to the beat at 120 bpm, which is not a whole number of
+        // blocks: the last one is short, and the cursor lands on the beat
+        // either way because it counts samples rather than callbacks.
+        for (auto block = 0; block < 22050 / kBlockSize; ++block)
+            session.process(kBlockSize, output);
+        session.process(22050 % kBlockSize, output);
+
+        CHECK(session.positionBeats() == Catch::Approx(1.0).margin(1e-9));
+        CHECK(factory.log->blocks.back().playing);
+    }
+}
+
+TEST_CASE("The metronome is added after the plan, not through it",
+          "[engine][session][transport][click]") {
+    LoggingFactory factory;
+    EngineSession session(factory);
+
+    // A muted master: the plan renders silence, so anything in the output came
+    // from outside it.
+    auto master = makeMaster();
+    master.muted = true;
+
+    const std::vector<TrackInfo> tracks{makeTrack(1)};
+    const auto plan =
+        std::make_shared<const RenderPlan>(magda::engine::compileRenderPlan(tracks, master));
+
+    PlanValues values;
+    magda::engine::resolvePlanValues(*plan, tracks, master, values);
+    REQUIRE(
+        session
+            .publish(plan, context(), magda::engine::collectRuntimeStateIds(tracks, master), values)
+            .published);
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+
+    SECTION("silent with the metronome off") {
+        session.publishTransport(rolling(0.0));
+        session.process(kBlockSize, output);
+
+        CHECK(output.getMagnitude(0, kBlockSize) == approx(0.0f));
+    }
+
+    SECTION("sounding with it on, through a master that is muted") {
+        auto transport = rolling(0.0);
+        transport.click = {true, true, 1.0f};
+        session.publishTransport(transport);
+        session.process(kBlockSize, output);
+
+        CHECK(output.getMagnitude(0, kBlockSize) > 0.1f);
+    }
 }

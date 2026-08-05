@@ -1,6 +1,7 @@
 #pragma once
 
-#include <cstdint>
+#include <algorithm>
+#include <cmath>
 
 /**
  * @file RenderContext.hpp
@@ -32,18 +33,70 @@ struct RenderContext {
 };
 
 /**
- * @brief The transport state for one block.
+ * @brief The stretch of timeline one block covers.
  *
- * Samples appear here and nowhere else in the engine. Beats are the canonical
- * musical domain; the executor's sample clock is the one place a musical
- * position becomes a sample position. There is no tempo map yet, so the caller
- * supplies the cursor directly and the transport slice replaces it with a
- * tempo-snapshot cursor reading beats.
+ * Beats, because beats are what the model positions things in. The transport's
+ * sample clock is what turns the audio device's sample count into this, once
+ * per block, and it is the only thing that reads a tempo map: an op is handed
+ * the two ends of its block and needs nothing else to know where it is.
+ *
+ * A block never spans a jump. The transport cuts a callback at every loop wrap,
+ * so what arrives here always runs from @ref startBeat to @ref endBeat without
+ * interruption, and @ref continuous says whether the previous block ended where
+ * this one begins.
  */
 struct BlockInfo {
     int numSamples = 0;
-    std::int64_t timelineSample = 0;
-    bool playing = true;
+
+    /// Whether the transport is rolling. A stopped block still renders: the
+    /// graph keeps running so tails ring out and live input passes through.
+    /// What a stopped block does not do is advance the timeline, so its start
+    /// and end beats are the same.
+    bool playing = false;
+
+    double startBeat = 0.0;
+    double endBeat = 0.0;
+
+    /**
+     * @brief Whether the timeline ran into this block out of the last one.
+     *
+     * False on the first block after the transport starts, after a locate, and
+     * after a loop wrap. What that licenses is narrow: anything an op derived
+     * from where the cursor *was* is stale and has to be derived again, which
+     * for a source means seeking.
+     *
+     * What it does not license is a reset. Audio did not stop flowing through
+     * the graph because the cursor moved, so delay lines, reverb tails and
+     * envelopes carry on across a jump exactly as they carry on across any
+     * other block boundary. An op that clears its state here is inventing a gap
+     * the transport never asked for.
+     */
+    bool continuous = false;
+
+    /**
+     * @brief Sample offset within this block of a musical position inside it.
+     *
+     * The conversion every op needs and none of them should be doing twice: a
+     * MIDI clip placing a note, a metronome placing a tick. Linear across the
+     * block, which is exact at a constant tempo and, across a ramp, wrong by
+     * far less than a sample over the few milliseconds a block lasts.
+     *
+     * Positions outside the block clamp to its ends: an event has to land on a
+     * sample this block actually has.
+     */
+    int sampleForBeat(double beat) const {
+        if (numSamples <= 0)
+            return 0;
+        if (endBeat <= startBeat)
+            return 0;
+
+        // Nearest rather than truncated: a position that lands exactly on a
+        // sample has to resolve to that sample, and the arithmetic getting
+        // there is not exact enough for truncation to promise it.
+        const auto position = (beat - startBeat) / (endBeat - startBeat);
+        const auto sample = static_cast<int>(std::lround(position * numSamples));
+        return std::clamp(sample, 0, numSamples - 1);
+    }
 };
 
 }  // namespace magda::engine
