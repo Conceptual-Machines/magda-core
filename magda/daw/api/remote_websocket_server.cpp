@@ -114,12 +114,18 @@ std::string errorReply(const juce::var& id, int code, const juce::String& messag
 /**
  * A dispatcher response as a JSON-RPC reply.
  *
- * The MAGDA envelope and the JSON-RPC envelope say overlapping things, so
- * rather than nest one inside the other the operation's `result` becomes the
- * JSON-RPC `result` with `revision` and `apiVersion` folded in beside it. On
- * failure the revision goes into `error.data`, where it matters most: a client
- * that lost an optimistic-concurrency race learns what the revision actually is
- * in the same message that rejects its write.
+ * `result` is whatever the operation produced, untouched. The revision and API
+ * version go in a `meta` sibling — the mirror of how a request carries its own
+ * meta beside `params`, and the only arrangement that works for every
+ * operation: `tracks.list` answers with a bare array, which has nowhere to hang
+ * a revision, so folding meta into the result would mean wrapping some
+ * operations' output and not others'. A client would then have to know which
+ * shape each operation returns before it could read either one.
+ *
+ * On failure the revision goes into `error.data` instead, where JSON-RPC keeps
+ * application detail, and where it matters most: a client that lost an
+ * optimistic-concurrency race learns the real revision in the message that
+ * rejects its write.
  */
 std::string replyFor(const juce::var& id, const Response& response) {
     if (!response.ok) {
@@ -128,23 +134,15 @@ std::string replyFor(const juce::var& id, const Response& response) {
         return errorReply(id, jsonRpcCodeFor(response.error.code), response.error.message, data);
     }
 
-    auto result = response.result;
-    if (result.getDynamicObject() == nullptr) {
-        // Operations that answer with a bare value still need somewhere to hang
-        // the revision, so they get wrapped rather than losing it.
-        auto wrapped = makeObject();
-        setProperty(wrapped, "value", result);
-        result = wrapped;
-    } else {
-        result = result.clone();
-    }
-    setProperty(result, "revision", static_cast<juce::int64>(response.revision));
-    setProperty(result, "apiVersion", juce::String(API_VERSION.data()));
+    auto meta = makeObject();
+    setProperty(meta, "revision", static_cast<juce::int64>(response.revision));
+    setProperty(meta, "apiVersion", juce::String(API_VERSION.data()));
 
     auto reply = makeObject();
     setProperty(reply, "jsonrpc", "2.0");
     setProperty(reply, "id", id);
-    setProperty(reply, "result", result);
+    setProperty(reply, "result", response.result);
+    setProperty(reply, "meta", meta);
     return juce::JSON::toString(reply, true).toStdString();
 }
 

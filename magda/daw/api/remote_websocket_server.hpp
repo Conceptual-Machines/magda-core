@@ -42,10 +42,15 @@ class RemoteApiService;
  * sibling member is also what JSON-RPC's own extensibility rules expect, and
  * clients that do not send one simply get the defaults.
  *
- * A reply carries the MAGDA envelope's `result` as the JSON-RPC `result`, with
- * `revision` and `apiVersion` folded in beside it. A failure becomes a JSON-RPC
- * `error` whose `data` keeps the MAGDA error code and the revision, so a client
- * that lost an optimistic-concurrency race can resync without a second call.
+ * A reply mirrors that shape: `result` is the operation's output verbatim, and
+ * `meta` beside it carries `revision` and `apiVersion`. Meta cannot live inside
+ * the result, because not every operation returns an object — `tracks.list`
+ * answers with a bare array — and wrapping only those would make the reply
+ * shape depend on which operation was called.
+ *
+ * A failure becomes a JSON-RPC `error` whose `data` keeps the MAGDA error code
+ * and the revision, so a client that lost an optimistic-concurrency race can
+ * resync without a second call.
  *
  * ## Threading
  *

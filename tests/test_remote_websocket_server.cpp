@@ -172,10 +172,11 @@ TEST_CASE("A request round-trips as JSON-RPC 2.0", "[remote][websocket][framing]
     REQUIRE(reply["jsonrpc"].toString() == "2.0");
     REQUIRE(static_cast<int>(reply["id"]) == 1);
     REQUIRE(reply["error"].isVoid());
-    // The revision rides in the result so a client can seed its next write from
-    // the reply rather than making a second call for it.
-    REQUIRE(static_cast<juce::int64>(reply["result"]["revision"]) >= INITIAL_REVISION);
-    REQUIRE(reply["result"]["apiVersion"].toString().isNotEmpty());
+    // The revision rides in meta beside the result, so a client can seed its
+    // next write from the reply rather than making a second call for it, and so
+    // the result stays exactly what the operation returned.
+    REQUIRE(static_cast<juce::int64>(reply["meta"]["revision"]) >= INITIAL_REVISION);
+    REQUIRE(reply["meta"]["apiVersion"].toString().isNotEmpty());
 
     server.stop();
 }
