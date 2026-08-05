@@ -31,16 +31,6 @@ void applyGain(juce::dsp::AudioBlock<float> block, const OpValue& value, int num
                                               numSamples);
 }
 
-float peakOf(juce::dsp::AudioBlock<float> block, int numSamples) {
-    float peak = 0.0f;
-    for (std::size_t channel = 0; channel < block.getNumChannels(); ++channel) {
-        const auto range = juce::FloatVectorOperations::findMinAndMax(
-            block.getChannelPointer(channel), numSamples);
-        peak = std::max({peak, std::abs(range.getStart()), std::abs(range.getEnd())});
-    }
-    return peak;
-}
-
 }  // namespace
 
 void AudioDelayLine::prepare(int numChannels, int delaySamples, int maxBlockSize) {
@@ -161,7 +151,8 @@ void PlanExecutor::reset() {
     deviceForOp_.clear();
     audioSourceForOp_.clear();
     midiSourceForOp_.clear();
-    meterLevels_.clear();
+    meterForOp_.clear();
+    boundMeterCount_ = 0;
 }
 
 std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const PlanBindings& bindings,
@@ -186,7 +177,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     deviceForOp_.assign(numOps, nullptr);
     audioSourceForOp_.assign(numOps, nullptr);
     midiSourceForOp_.assign(numOps, nullptr);
-    meterLevels_.assign(numOps, 0.0f);
+    meterForOp_.assign(numOps, nullptr);
 
     const auto describe = [&plan](std::size_t index) {
         return "op " + std::to_string(index) + " (" + toString(plan.ops[index].kind) + " " +
@@ -247,6 +238,22 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                     break;
                 }
                 deviceForOp_[i] = found->second;
+                break;
+            }
+
+            case OpKind::Meter: {
+                // Silently optional, unlike every other binding above. A meter
+                // is the one op whose runtime object exists for something
+                // outside the render: unbound, the op still passes its audio
+                // on, and the only thing missing is a display nobody asked for.
+                // Reporting it would put a line per track and per device slot
+                // in front of every host that renders without a mixer, which is
+                // every offline render there is.
+                const auto found = bindings.meters.find(op.key);
+                if (found == bindings.meters.end() || found->second == nullptr)
+                    break;
+                meterForOp_[i] = found->second;
+                ++boundMeterCount_;
                 break;
             }
 
@@ -646,7 +653,14 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
                     out.clear();
                 else if (!writesInPlace(i))
                     out.copyFrom(audioIn(op.inputs[0], numSamples));
-                meterLevels_[i] = peakOf(out, numSamples);
+
+                // Written on silent blocks too, though a maximum takes nothing
+                // from them. What that buys is that the tap is only ever
+                // cleared by being read, so how fast a meter falls is the
+                // reader's cadence and not which blocks the executor bothered
+                // to report.
+                if (auto* tap = meterForOp_[i]; tap != nullptr)
+                    tap->write(out, numSamples);
                 break;
             }
 
