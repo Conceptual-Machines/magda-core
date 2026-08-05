@@ -214,9 +214,11 @@ class PrefetchStream {
     std::uint32_t generation_ = 0;
     std::uint32_t appliedCue_ = 0;
 
-    /// Whether anything played out of this stream since the last cue check.
-    /// What separates a stream waiting to be given somewhere to go from one
-    /// already on its way somewhere.
+    /// Whether anything could have played out of this stream since the last
+    /// cue check. What separates a stream waiting to be given somewhere to go
+    /// from one already on its way somewhere, which is not the same question as
+    /// whether it was asked: a clip placed past the end of its own material is
+    /// asked every block and plays nothing.
     bool readSinceCueCheck_ = false;
 
     // Prefetch thread only.

@@ -415,3 +415,32 @@ TEST_CASE("Cueing a stream that is sounding does not interrupt it", "[engine][io
         CHECK(fixture.stream.underruns() == before);
     }
 }
+
+TEST_CASE("A clip rolling past the end of its file is not sounding", "[engine][io][prefetch]") {
+    // Five thousand samples of material under a placement that runs for a
+    // second. Past the material the source still asks every block, because the
+    // clip is still placed there, and every ask comes back with nothing.
+    const ClipPlacement placement{0.0, 1.0, 0};
+    Fixture fixture(placement, 5000);
+
+    for (auto block = 0; block < 100; ++block)
+        fixture.render(blockFrom(static_cast<double>(block * kBlockSize) / kSampleRate));
+
+    REQUIRE(fixture.at(0) == approx(0.0f));
+    REQUIRE(fixture.stream.underruns() == 0);
+
+    // A stream playing nothing is exactly when pointing it at its next use is
+    // worth doing, so being asked for silence must not look like sounding.
+    fixture.stream.seek(fixture.source.sourceSampleAt(0.0));
+
+    // Two more blocks past the end: the first takes the cue up, the second
+    // reads ahead for it.
+    fixture.render(blockFrom(static_cast<double>(100 * kBlockSize) / kSampleRate));
+    fixture.render(blockFrom(static_cast<double>(101 * kBlockSize) / kSampleRate));
+
+    // And the material is there when playback returns to it.
+    fixture.render(blockFrom(0.0, kBlockSize, false));
+    REQUIRE(fixture.at(0) == approx(0.0f));
+    REQUIRE(fixture.at(kBlockSize - 1) == approx(static_cast<float>(kBlockSize - 1)));
+    CHECK(fixture.stream.underruns() == 0);
+}

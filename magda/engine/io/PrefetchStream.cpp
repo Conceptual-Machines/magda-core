@@ -140,16 +140,27 @@ int PrefetchStream::read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> 
     if (numSamples <= 0)
         return 0;
 
-    // Reading is what sounding means. Taking a cue up is not done here: it
-    // happens once at the top of a block, through applyPendingCue, and doing it
-    // again inside the read would see a stream that has not read *yet this
-    // block* and mistake it for one that is not playing at all.
+    destination.clear();
+
+    // Nothing in this request can play: it is past the last sample of the file,
+    // or before the first. Not an underrun, and not a seek either. A stream
+    // whose clip is still placed but whose material has run out has not gone
+    // anywhere, and moving the cursor for it would throw away a cue meant for
+    // wherever it goes next, which is exactly when cueing it is useful.
+    if (sourceStart >= length_ || sourceStart + numSamples <= 0)
+        return 0;
+
+    // Reading is what sounding means, and this is a read that could play
+    // something: one that comes back short because the reader is behind still
+    // counts, because that stream is playing and merely starved. Taking a cue
+    // up is not done here: it happens once at the top of a block, through
+    // applyPendingCue, and doing it again inside the read would see a stream
+    // that has not reached its read *yet this block* and mistake it for one
+    // that is not playing at all.
     readSinceCueCheck_ = true;
 
     if (sourceStart != nextSample_)
         requestSeek(sourceStart);
-
-    destination.clear();
 
     auto done = 0;
 
