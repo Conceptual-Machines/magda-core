@@ -189,6 +189,20 @@ class PlanExecutor {
     }
 
     /**
+     * @brief The device properties the prepared plan was prepared for.
+     *
+     * Readable because anything driving the executor has to agree with it, and
+     * because the disagreement is silent where it matters. process() renders at
+     * most maxBlockSize samples and says so only through an assert, so a caller
+     * that sized its blocks from a different context prints the first
+     * maxBlockSize samples of each one and silence for the rest: a bounce full
+     * of regular gaps, in release, from a build that passed every test.
+     */
+    const RenderContext& preparedContext() const {
+        return context_;
+    }
+
+    /**
      * @brief Whether process() would apply @p values rather than ignore them.
      *
      * The one definition of applicable, so that a caller deciding which table

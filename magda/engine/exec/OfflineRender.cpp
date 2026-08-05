@@ -22,7 +22,16 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
                                   const std::function<bool()>& shouldContinue) {
     OfflineRenderResult result;
 
-    if (!executor.isPrepared() || !executor.appliesValues(values)) {
+    // The context is refused on the same grounds the values are, and for the
+    // same reason: what the executor does with either when they do not belong
+    // to it is render something plausible and say nothing. Blocks are sized and
+    // the clock is advanced from the argument, while process() renders at most
+    // what it was prepared for, so a longer maxBlockSize prints the head of
+    // every block and silence for the rest. A sample rate that disagrees puts
+    // the whole render at the wrong speed, and a channel count that does at the
+    // wrong width.
+    if (!executor.isPrepared() || !executor.appliesValues(values) ||
+        !(executor.preparedContext() == context)) {
         result.refused = true;
         return result;
     }
@@ -80,10 +89,11 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
 
             const auto numSamples = static_cast<int>(std::min<std::int64_t>(samples, blockSize));
 
-            // Cleared here rather than by the executor, exactly as a callback
-            // clears it: the Output op sums into what it is handed, so what a
-            // plan with nothing routed to the output renders is silence only if
-            // silence is what was already there.
+            // The executor clears each piece it is handed, so this covers only
+            // what no piece reaches. Nothing should qualify, because a callback
+            // with samples in it always yields at least one segment, and the
+            // cost of being wrong about that is the previous block printed
+            // twice into a file.
             buffer.clear();
 
             for (const auto& segment : clock.advance(snapshot, context.sampleRate, numSamples)) {

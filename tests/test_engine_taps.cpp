@@ -212,8 +212,16 @@ TEST_CASE("A sample ring reads while it is being written", "[engine][tap]") {
     SampleRing ring(1024);
     constexpr int kWrites = 20000;
     std::atomic<bool> writing{true};
+    std::atomic<bool> readerReady{false};
 
+    // The writer waits to be joined before it starts. Without the handshake the
+    // whole run can finish before this thread first looks at `writing`, which
+    // is a legal schedule on a loaded CI box and would leave the test asserting
+    // about an overlap that never happened.
     std::thread writer([&] {
+        while (!readerReady) {
+        }
+
         for (auto i = 0; i < kWrites; ++i) {
             const auto sample = static_cast<float>(i % 100) * 0.01f;
             ring.write(&sample, 1);
@@ -225,6 +233,7 @@ TEST_CASE("A sample ring reads while it is being written", "[engine][tap]") {
     std::size_t lastPosition = 0;
     auto reads = 0;
 
+    readerReady = true;
     while (writing) {
         const auto position = ring.readLatest(read.data(), static_cast<int>(read.size()));
         REQUIRE(position >= lastPosition);

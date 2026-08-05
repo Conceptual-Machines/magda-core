@@ -397,6 +397,37 @@ TEST_CASE("An offline render refuses values that belong to another plan", "[engi
     CHECK(sink.blocks == 0);
 }
 
+TEST_CASE("An offline render refuses a context the plan was not prepared for",
+          "[engine][offline]") {
+    // Every field, because each one goes wrong differently and all of them go
+    // wrong quietly. A longer maxBlockSize gets the head of every block and
+    // silence for the rest, since the executor renders only what it prepared
+    // for and says so with an assert that is not there in release. A different
+    // rate runs the whole bounce at the wrong speed, and a different channel
+    // count renders it at the wrong width.
+    Harness harness;
+    REQUIRE(harness.prepare(512).empty());
+
+    auto mismatched = harness.context;
+    SECTION("a longer block than it prepared for") {
+        mismatched.maxBlockSize = 4096;
+    }
+    SECTION("another sample rate") {
+        mismatched.sampleRate = 96000.0;
+    }
+    SECTION("another channel count") {
+        mismatched.numChannels = 1;
+    }
+
+    CollectingSink sink;
+    const auto result = magda::engine::renderOffline(harness.executor, harness.values, mismatched,
+                                                     harness.tempo, {0.0, 4.0, 0.0, 512}, sink);
+
+    CHECK(result.refused);
+    CHECK(result.samplesRendered == 0);
+    CHECK(sink.blocks == 0);
+}
+
 TEST_CASE("An offline render does not need meters bound", "[engine][offline]") {
     // A plan has a meter at every track and device slot. Offline there is
     // nothing watching them, and needing to bind one per meter to render a
