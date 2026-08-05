@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "exec/EngineDevice.hpp"
+#include "io/ClipPlacement.hpp"
 #include "io/PrefetchStream.hpp"
 
 /**
@@ -21,23 +22,6 @@
  */
 
 namespace magda::engine {
-
-/**
- * @brief Where a file sits on the timeline, and where playback starts in it.
- *
- * In seconds rather than beats. The clip layer positions clips in beats, as the
- * model does, and resolves them to seconds through the tempo map before they
- * reach here; a source that had to do it itself would need a tempo map on the
- * audio thread, and there would then be two of them.
- */
-struct ClipPlacement {
-    double startSeconds = 0.0;
-    double endSeconds = 0.0;
-
-    /// The sample of the file that plays at @ref startSeconds. What trimming
-    /// the front of a clip moves.
-    std::int64_t sourceOffsetSamples = 0;
-};
 
 class StreamingAudioSource final : public EngineAudioSource {
   public:
@@ -78,8 +62,14 @@ class StreamingAudioSource final : public EngineAudioSource {
      * Whoever schedules playback knows where it is about to start before the
      * callback does, and a stream told in advance is one that does not have to
      * seek in the block that needs the samples.
+     *
+     * The shared mapping, read at this source's placement and rate. An offline
+     * render of the same clip resolves to the same file sample through the same
+     * function, which is what makes a bounce the thing that was heard.
      */
-    std::int64_t sourceSampleAt(double seconds) const;
+    std::int64_t sourceSampleAt(double seconds) const {
+        return engine::sourceSampleAt(placement_, seconds, sampleRate_);
+    }
 
   private:
     PrefetchStream& stream_;

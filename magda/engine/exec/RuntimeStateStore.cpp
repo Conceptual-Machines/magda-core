@@ -53,6 +53,16 @@ void collectDeviceIds(const std::vector<ChainElement>& elements, std::set<Device
     }
 }
 
+/// Whether a Meter op's key still names something the model holds. A meter at a
+/// device slot lives and dies with the device; one at a track, with the track.
+/// The key says which, because the compiler only ever emits a meter at one of
+/// those two places.
+bool isNamed(const OpKey& key, const RuntimeStateIds& ids) {
+    if (key.deviceId != INVALID_DEVICE_ID)
+        return ids.devices.contains(key.deviceId);
+    return ids.tracks.contains(key.trackId);
+}
+
 /// Entries whose key nothing in `named` holds any more.
 template <typename Map, typename Ids> std::size_t eraseUnnamed(Map& map, const Ids& named) {
     std::size_t removed = 0;
@@ -124,12 +134,34 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
                     bindings.midiInputs[trackId] = source;
                 break;
 
+            case OpKind::Meter:
+                // Its own path rather than realiseOne's, because a tap has
+                // nothing to prepare: it holds two atomics, and what they mean
+                // does not depend on a sample rate or a block size. That is
+                // also why a context change leaves the taps alone above, where
+                // it prepares everything else again: a meter reads on through
+                // a device switch instead of dropping to silence.
+                if (auto* tap = realiseMeter(op.key))
+                    bindings.meters[op.key] = tap;
+                break;
+
             default:
                 break;
         }
     }
 
     return bindings;
+}
+
+LevelTap* RuntimeStateStore::realiseMeter(const OpKey& key) {
+    if (const auto found = meters_.find(key); found != meters_.end())
+        return found->second.get();
+
+    auto created = factory_.createMeter(key);
+    if (created == nullptr)
+        return nullptr;
+
+    return meters_.emplace(key, std::move(created)).first->second.get();
 }
 
 std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
@@ -149,14 +181,35 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
             case OpKind::MidiInput:
                 keep.tracks.insert(op.key.trackId);
                 break;
+            case OpKind::Meter:
+                // Same unconditional reading as everything else the live plan
+                // names: the executor holds a pointer to this tap and the audio
+                // thread is writing through it right now.
+                if (op.key.deviceId != INVALID_DEVICE_ID)
+                    keep.devices.insert(op.key.deviceId);
+                else
+                    keep.tracks.insert(op.key.trackId);
+                break;
             default:
                 break;
         }
     }
 
-    return eraseUnnamed(devices_, keep.devices) + eraseUnnamed(clipAudio_, keep.tracks) +
-           eraseUnnamed(clipMidi_, keep.tracks) + eraseUnnamed(audioInputs_, keep.tracks) +
-           eraseUnnamed(midiInputs_, keep.tracks);
+    std::size_t removed =
+        eraseUnnamed(devices_, keep.devices) + eraseUnnamed(clipAudio_, keep.tracks) +
+        eraseUnnamed(clipMidi_, keep.tracks) + eraseUnnamed(audioInputs_, keep.tracks) +
+        eraseUnnamed(midiInputs_, keep.tracks);
+
+    for (auto entry = meters_.begin(); entry != meters_.end();) {
+        if (isNamed(entry->first, keep)) {
+            ++entry;
+            continue;
+        }
+        entry = meters_.erase(entry);
+        ++removed;
+    }
+
+    return removed;
 }
 
 RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
@@ -181,7 +234,7 @@ RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
 
 std::size_t RuntimeStateStore::size() const {
     return devices_.size() + clipAudio_.size() + clipMidi_.size() + audioInputs_.size() +
-           midiInputs_.size();
+           midiInputs_.size() + meters_.size();
 }
 
 }  // namespace magda::engine

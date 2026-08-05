@@ -145,11 +145,10 @@ class PlanExecutor {
     void process(const PlanValues& values, const BlockInfo& block,
                  juce::AudioBuffer<float>& output);
 
-    /// Peak level of each Meter op's block, indexed by OpId, zero elsewhere.
-    /// A plain vector for now: publishing meters to the UI thread without
-    /// tearing is the metering slice's problem, not the executor's.
-    const std::vector<float>& meterLevels() const {
-        return meterLevels_;
+    /// Meter ops whose tap the bindings filled. The rest still render; they
+    /// publish nothing, because nothing is reading them.
+    int boundMeterCount() const {
+        return boundMeterCount_;
     }
 
     /// Samples the prepared plan's output is delayed by: what the devices along
@@ -187,6 +186,20 @@ class PlanExecutor {
     /// True once a valid plan has been prepared.
     bool isPrepared() const {
         return plan_ != nullptr;
+    }
+
+    /**
+     * @brief The device properties the prepared plan was prepared for.
+     *
+     * Readable because anything driving the executor has to agree with it, and
+     * because the disagreement is silent where it matters. process() renders at
+     * most maxBlockSize samples and says so only through an assert, so a caller
+     * that sized its blocks from a different context prints the first
+     * maxBlockSize samples of each one and silence for the rest: a bounce full
+     * of regular gaps, in release, from a build that passed every test.
+     */
+    const RenderContext& preparedContext() const {
+        return context_;
     }
 
     /**
@@ -274,7 +287,10 @@ class PlanExecutor {
     juce::AudioBuffer<float> silence_;
     juce::MidiBuffer noMidi_;
 
-    std::vector<float> meterLevels_;
+    /// Per op: where a Meter op publishes, or null for one nobody reads. Bound
+    /// once here so the audio thread never looks a key up.
+    std::vector<LevelTap*> meterForOp_;
+    int boundMeterCount_ = 0;
 };
 
 }  // namespace magda::engine

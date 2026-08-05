@@ -12,19 +12,6 @@ void StreamingAudioSource::prepare(const RenderContext& context) {
     sampleRate_ = context.sampleRate;
 }
 
-std::int64_t StreamingAudioSource::sourceSampleAt(double seconds) const {
-    // At the device's rate, not the file's, and that is not a slip. One file
-    // sample is copied per output sample below, so a position derived at any
-    // other rate would disagree with what playing actually consumes: every
-    // block would land somewhere the stream was not expecting, which is a seek,
-    // and a file at the wrong rate would spend every callback re-pointing the
-    // reader and hearing nothing. Deriving it at the device's rate keeps the
-    // two in step, and what a mismatched file costs is then pitch rather than
-    // playback.
-    return placement_.sourceOffsetSamples + static_cast<std::int64_t>(std::llround(
-                                                (seconds - placement_.startSeconds) * sampleRate_));
-}
-
 void StreamingAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) {
     out.clear();
 
