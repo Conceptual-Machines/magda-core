@@ -92,6 +92,41 @@ class RampSource final : public EngineAudioSource {
     }
 };
 
+/// A note-on at fixed positions on the timeline, so how the blocks are cut up
+/// does not change what it plays.
+class TimelineNoteSource final : public EngineMidiSource {
+  public:
+    TimelineNoteSource(int noteNumber, int period) : noteNumber_(noteNumber), period_(period) {}
+
+    void render(const BlockInfo& block, juce::MidiBuffer& out) override {
+        const auto first = (block.timelineSample + period_ - 1) / period_ * period_;
+        for (auto position = first; position < block.timelineSample + block.numSamples;
+             position += period_)
+            out.addEvent(juce::MidiMessage::noteOn(1, noteNumber_, 1.0f),
+                         static_cast<int>(position - block.timelineSample));
+    }
+
+  private:
+    int noteNumber_, period_;
+};
+
+/// As many notes per sample as the port's budget allows, to run a delay line
+/// at the rate its storage was reserved for.
+class DenseNoteSource final : public EngineMidiSource {
+  public:
+    DenseNoteSource(int noteNumber, int perSample)
+        : noteNumber_(noteNumber), perSample_(perSample) {}
+
+    void render(const BlockInfo& block, juce::MidiBuffer& out) override {
+        for (int sample = 0; sample < block.numSamples; ++sample)
+            for (int note = 0; note < perSample_; ++note)
+                out.addEvent(juce::MidiMessage::noteOn(1, noteNumber_, 1.0f), sample);
+    }
+
+  private:
+    int noteNumber_, perSample_;
+};
+
 /// A note-on at a fixed offset, every block.
 class NoteSource final : public EngineMidiSource {
   public:
@@ -1234,6 +1269,95 @@ TEST_CASE("Block size does not change what is rendered", "[engine][exec]") {
     REQUIRE(compensatedWhole.size() == compensatedSplit.size());
     for (std::size_t sample = 0; sample < compensatedWhole.size(); ++sample)
         REQUIRE(compensatedWhole[sample] == approx(compensatedSplit[sample]));
+}
+
+TEST_CASE("Block size does not change where delayed MIDI lands", "[engine][exec][pdc]") {
+    // A MIDI delay is the one thing here that holds state across blocks, so it
+    // is the one thing a host cutting the same stretch of timeline into
+    // different callbacks can pull apart. What it carries is budgeted over a
+    // span of samples for exactly that reason: counted per callback, the
+    // reservation would be short by whatever the host chose the block size to
+    // be, and the short blocks below are what would find it.
+    const auto renderNotes = [](const std::vector<int>& blockSizes) {
+        auto track = makeTrack(1);
+        track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+        track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(8)));
+
+        Harness harness({track}, makeMaster());
+        ConstantSource audio(0.0f);
+        // A period that lines up with no block boundary in the test, so notes
+        // land all over the delay's window rather than at the edges of it.
+        TimelineNoteSource notes(48, 23);
+        LatentDevice latent(80);
+        MidiPositionProbe probe;
+        harness.bindings.clipAudio[1] = &audio;
+        harness.bindings.clipMidi[1] = &notes;
+        harness.bindings.devices[7] = &latent;
+        harness.bindings.devices[8] = &probe;
+        harness.prepareCleanly();
+
+        std::int64_t timelineSample = 0;
+        for (const auto numSamples : blockSizes) {
+            harness.render(numSamples, timelineSample);
+            timelineSample += numSamples;
+        }
+        return probe.positionsOf(48);
+    };
+
+    const auto whole = renderNotes({kBlockSize, kBlockSize, kBlockSize, kBlockSize});
+    const auto split = renderNotes({1, 7, kBlockSize, 3, 1, 40, 20, kBlockSize, 60, 24});
+
+    // The instrument's audio arrives 80 samples late, so its MIDI is held to
+    // meet it: a note at t is seen at t + 80, however the blocks were cut.
+    REQUIRE_FALSE(whole.empty());
+    for (const auto position : whole)
+        CHECK(position % 23 == 80 % 23);
+
+    const auto common = std::min(whole.size(), split.size());
+    REQUIRE(common > 4);
+    for (std::size_t note = 0; note < common; ++note)
+        CHECK(whole[note] == split[note]);
+
+    SECTION("with the port carrying as much as its budget allows") {
+        // Right up against kMaxMidiBytesPerPort for a span of kBlockSize
+        // samples, which is the rate the delay's storage was reserved for. If
+        // that reservation is ever computed from callbacks again, this is what
+        // holds eighty samples of it in flight while the callbacks are short.
+        constexpr int perSample = magda::engine::kMaxMidiBytesPerPort /
+                                  (kBlockSize * magda::engine::kMidiShortMessageBytes);
+
+        auto track = makeTrack(1);
+        track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+        track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(8)));
+
+        Harness harness({track}, makeMaster());
+        ConstantSource audio(0.0f);
+        DenseNoteSource notes(48, perSample);
+        LatentDevice latent(80);
+        MidiPositionProbe probe;
+        harness.bindings.clipAudio[1] = &audio;
+        harness.bindings.clipMidi[1] = &notes;
+        harness.bindings.devices[7] = &latent;
+        harness.bindings.devices[8] = &probe;
+        harness.prepareCleanly();
+
+        std::int64_t timelineSample = 0;
+        for (const auto numSamples : {1, 3, kBlockSize, 5, 40, kBlockSize, 11, kBlockSize}) {
+            harness.render(numSamples, timelineSample);
+            timelineSample += numSamples;
+        }
+
+        // Everything played more than the delay ago has arrived, and nothing
+        // has arrived early.
+        const auto arrived = probe.positionsOf(48);
+        REQUIRE(arrived.size() == static_cast<std::size_t>((timelineSample - 80) * perSample));
+        CHECK(arrived.front() == 80);
+        CHECK(arrived.back() == static_cast<int>(timelineSample) - 1);
+
+        // And it was all held in the room reserved for it, which is the part a
+        // reservation counted in callbacks rather than samples gets wrong.
+        CHECK(harness.executor.midiDelayOverflows() == 0);
+    }
 }
 
 TEST_CASE("A chain out of the mix silences a nested rack's MIDI too", "[engine][exec]") {

@@ -19,13 +19,30 @@
 namespace magda::engine {
 
 /**
- * @brief Encoded MIDI one source or device may write to one port in one block.
+ * @brief Encoded MIDI one source or device may write to one port over any
+ *        RenderContext::maxBlockSize samples of the timeline.
  *
  * The executor reserves storage for every MIDI port before the first block, so
  * nothing on the audio thread has to grow a buffer. A port fed by a merge is
  * sized from the sum of what feeds it; the chain has to end somewhere, and this
  * is where: a producer that writes past this forces the very allocation the
  * reservation exists to avoid. Debug builds assert on it at every write site.
+ *
+ * The budget is per span of samples rather than per callback, and the
+ * difference is not pedantry. Blocks may be shorter than the one the plan was
+ * prepared for, so a callback is not a fixed amount of time: a host delivering
+ * one sample at a time against a plan prepared for five hundred and twelve
+ * would fit five hundred and twelve callbacks inside the same stretch of
+ * timeline, and any storage sized from a per-callback figure would be short by
+ * that factor. Nothing noticed while every reservation covered one block; a
+ * delay line holds what is in flight across many, and it is what the amount of
+ * time a callback stands for has to be pinned down for.
+ *
+ * Every producer the engine has already works this way, because MIDI is
+ * positioned on the timeline rather than per call: a clip source renders the
+ * events its block's time range contains, live input delivers what arrived
+ * while that time passed, and a generator places notes at musical positions.
+ * Spelling it out is what lets storage be sized from it.
  *
  * The budget is bytes rather than events because a MIDI message is not a fixed
  * size: one SysEx dump from a controller can outweigh a thousand notes, and a

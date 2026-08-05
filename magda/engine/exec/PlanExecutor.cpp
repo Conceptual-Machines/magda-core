@@ -91,6 +91,8 @@ void AudioDelayLine::process(juce::dsp::AudioBlock<float> block, int numSamples)
 
 void MidiDelayLine::prepare(int delaySamples, int capacityBytes) {
     delay_ = delaySamples;
+    capacity_ = capacityBytes;
+    overflowed_ = false;
     pending_.clear();
     scratch_.clear();
     // Both, and to the same size: they are swapped every block, so the storage
@@ -122,6 +124,17 @@ void MidiDelayLine::process(const juce::MidiBuffer& in, juce::MidiBuffer& out, i
     }
 
     pending_.swapWith(scratch_);
+
+    // The reservation covers what a port may carry over one block's worth of
+    // samples, times the spans the delay holds in flight. Past it the buffer
+    // grows on the callback, which is the one thing this whole arrangement
+    // exists to avoid, and a producer writing faster than its budget is the
+    // only way to get here. Recorded as well as asserted: a release build
+    // would otherwise take the allocation and say nothing.
+    if (static_cast<int>(pending_.data.size()) > capacity_) {
+        overflowed_ = true;
+        jassertfalse;
+    }
 }
 
 void PlanExecutor::reset() {
@@ -293,10 +306,11 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         if (op.kind == OpKind::Delay) {
             if (op.outputs.front() != SignalKind::Midi)
                 continue;
-            // A delay's output block covers one block of its input's time, and
-            // a block-length window falls across two of them unless the delay
-            // is a whole number of blocks. Zero is not a delay at all: the op
-            // does not run and the port is its input's.
+            // A delay's output block covers one block's worth of its input's
+            // time, and that stretch falls across two of the spans the budget
+            // is counted over unless the delay is a whole number of them. Zero
+            // is not a delay at all: the op does not run, and the port is its
+            // input's.
             const auto carried = portMidiBytes[flatPort(op.inputs.front())];
             portMidiBytes[static_cast<std::size_t>(portOffsets_[i])] =
                 latency.delaySamples[i] == 0 ? carried : 2 * carried;
@@ -361,8 +375,12 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 context_.numChannels, samples, context_.maxBlockSize);
 
         if (midiDelayForOp_[i] >= 0) {
-            // Every block the delay spans is holding events, plus the one being
-            // filled and the one being drained.
+            // Everything the delay spans is in flight at once, counted in the
+            // spans the port's budget is a budget over rather than in
+            // callbacks: how many callbacks that stretch of timeline arrives
+            // in is the host's business and would make this the wrong size.
+            // Two spare covers the one being filled and the one being drained,
+            // neither of which lines up with those spans.
             const auto blocks = samples / context_.maxBlockSize + 2;
             midiDelays_[static_cast<std::size_t>(midiDelayForOp_[i])].prepare(
                 samples, blocks * portMidiBytes[flatPort(plan.ops[i].inputs.front())]);

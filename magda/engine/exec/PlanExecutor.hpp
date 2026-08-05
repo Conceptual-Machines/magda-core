@@ -47,17 +47,30 @@ class AudioDelayLine {
  * @brief The same delay for one MIDI port.
  *
  * Events move by sample position and the ones that fall past the end of the
- * block are held for the next one, so the storage has to cover every block the
- * delay spans rather than one block's worth.
+ * block are held for the next one, so the storage has to cover every sample the
+ * delay spans rather than one block's worth. That span is what
+ * kMaxMidiBytesPerPort is a budget over: measured per callback it would be
+ * whatever the host chose the block size to be.
  */
 class MidiDelayLine {
   public:
     void prepare(int delaySamples, int capacityBytes);
     void process(const juce::MidiBuffer& in, juce::MidiBuffer& out, int numSamples);
 
+    /// Whether more has ever been in flight than prepare() reserved room for.
+    /// Reported rather than only asserted: past the reservation the buffer
+    /// grows on the callback, and a release build would do that quietly.
+    bool hasOverflowed() const {
+        return overflowed_;
+    }
+
   private:
     juce::MidiBuffer pending_, scratch_;
     int delay_ = 0;
+    /// What prepare() reserved, kept so process() can tell when the budget the
+    /// reservation was computed from has been exceeded.
+    int capacity_ = 0;
+    bool overflowed_ = false;
 };
 
 class PlanExecutor {
@@ -109,6 +122,16 @@ class PlanExecutor {
     }
     int midiBufferCount() const {
         return static_cast<int>(midiSlots_.size());
+    }
+
+    /// MIDI delay lines that have held more than they reserved room for, which
+    /// means a producer wrote past the budget every reservation here is
+    /// computed from. Zero on anything that keeps to it.
+    int midiDelayOverflows() const {
+        int overflows = 0;
+        for (const auto& line : midiDelays_)
+            overflows += line.hasOverflowed() ? 1 : 0;
+        return overflows;
     }
 
     /// True once a valid plan has been prepared.
