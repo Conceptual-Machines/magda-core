@@ -53,6 +53,20 @@ double tickBeatsOf(int denominator) {
     return 4.0 / denominator;
 }
 
+/// One constant-tempo step of the tempo track, before signatures are merged in.
+struct GridTempo {
+    double startBeat = 0.0;
+    double bpm = 120.0;
+};
+
+/// One signature region, and the bar it opens on.
+struct GridSignature {
+    double startBeat = 0.0;
+    int numerator = 4;
+    int denominator = 4;
+    int startBar = 0;
+};
+
 std::uint64_t mixInto(std::uint64_t hash, std::uint64_t value) {
     // FNV-1a, as everywhere else in the engine that fingerprints a structure.
     for (int byte = 0; byte < 8; ++byte) {
@@ -124,102 +138,122 @@ TempoMap::TempoMap(std::vector<TempoChange> tempos, std::vector<TimeSignatureCha
         fingerprint_ = mixInto(fingerprint_, static_cast<std::uint64_t>(signature.denominator));
     }
 
-    // Every beat where anything changes, in order and without repeats. A
-    // section runs from one of these to the next, subdivided if a ramp crosses
-    // it.
-    std::vector<double> changeBeats;
-    changeBeats.reserve(tempos.size() + signatures.size());
-    for (const auto& tempo : tempos)
-        changeBeats.push_back(tempo.startBeat);
-    for (const auto& signature : signatures)
-        changeBeats.push_back(signature.startBeat);
+    // The tempo grid: where the tempo takes a new constant value, from the
+    // tempo track alone.
+    //
+    // Built before anything knows about signatures, and that is the whole point
+    // of building it separately. A section's tempo has to come from here rather
+    // than from re-evaluating the ramp at the section's own start, because a
+    // signature change cuts sections in two and re-evaluating would give the
+    // second half a different tempo from the one it would have had. Beats would
+    // then move in time when a signature changed, and a signature only groups
+    // beats: it never says when one happens.
+    std::vector<GridTempo> grid;
+    grid.reserve(tempos.size());
 
-    std::sort(changeBeats.begin(), changeBeats.end());
-    changeBeats.erase(std::unique(changeBeats.begin(), changeBeats.end()), changeBeats.end());
+    for (std::size_t i = 0; i < tempos.size(); ++i) {
+        // The last change written at a beat is the one in force from it.
+        // Everything before it was only ever the target of the ramp arriving
+        // there, which is how a step is spelled: ramp to the first, jump to the
+        // last.
+        if (i + 1 < tempos.size() && tempos[i + 1].startBeat <= tempos[i].startBeat)
+            continue;
 
-    sections_.reserve(changeBeats.size());
-
-    double time = 0.0;
-    std::size_t tempoIndex = 0, signatureIndex = 0;
-    TempoChange currentTempo = tempos.front();
-    TimeSignatureChange currentSignature = signatures.front();
-    double signatureStartBeat = 0.0;
-    int signatureStartBar = 0;
-
-    for (std::size_t i = 0; i < changeBeats.size(); ++i) {
-        const auto changeBeat = changeBeats[i];
-
-        // The last change at this beat is the one in force from it. Everything
-        // before it was only ever the target of the ramp arriving here, which
-        // is how a step is spelled: ramp to the first, then jump to the last.
-        while (tempoIndex < tempos.size() && tempos[tempoIndex].startBeat <= changeBeat)
-            currentTempo = tempos[tempoIndex++];
-
-        while (signatureIndex < signatures.size() &&
-               signatures[signatureIndex].startBeat <= changeBeat) {
-            const auto& signature = signatures[signatureIndex++];
-
-            // A signature change starts a bar, whether or not the bar it
-            // interrupts was finished.
-            if (signature.startBeat > signatureStartBeat) {
-                const auto bars = std::ceil(
-                    (signature.startBeat - signatureStartBeat) /
-                        barBeatsOf(currentSignature.numerator, currentSignature.denominator) -
-                    kBeatEpsilon);
-                signatureStartBar += static_cast<int>(bars);
-                signatureStartBeat = signature.startBeat;
-            }
-
-            currentSignature = signature;
-        }
-
-        const auto isLast = i + 1 == changeBeats.size();
-        const auto segmentEnd = isLast ? changeBeat + kTailBeats : changeBeats[i + 1];
-        const auto* rampTarget = tempoIndex < tempos.size() ? &tempos[tempoIndex] : nullptr;
+        const auto& current = tempos[i];
+        const auto* rampTarget = i + 1 < tempos.size() ? &tempos[i + 1] : nullptr;
         const auto ramping =
-            rampTarget != nullptr && std::abs(rampTarget->bpm - currentTempo.bpm) > 1.0e-9;
+            rampTarget != nullptr && std::abs(rampTarget->bpm - current.bpm) > 1.0e-9;
+        const auto spanEnd =
+            rampTarget != nullptr ? rampTarget->startBeat : current.startBeat + kTailBeats;
 
         auto subdivisions = 1;
         if (ramping)
             subdivisions = static_cast<int>(std::clamp(
-                kRampSectionsPerBeat * (segmentEnd - changeBeat), 1.0, kMaxRampSections));
+                kRampSectionsPerBeat * (spanEnd - current.startBeat), 1.0, kMaxRampSections));
 
-        const auto sectionBeats = (segmentEnd - changeBeat) / subdivisions;
+        const auto step = (spanEnd - current.startBeat) / subdivisions;
 
         for (auto k = 0; k < subdivisions; ++k) {
             // Computed from the change beat rather than accumulated, so a long
-            // ramp's sections still start exactly where the next change does.
-            const auto sectionStartBeat = changeBeat + sectionBeats * k;
-
-            Section section;
-            section.startBeat = sectionStartBeat;
-            section.startTime = time;
-            section.bpm =
-                ramping ? rampedBpm(sectionStartBeat, currentTempo, *rampTarget) : currentTempo.bpm;
-            section.secondsPerBeat = 60.0 / section.bpm;
-            section.numerator = currentSignature.numerator;
-            section.denominator = currentSignature.denominator;
-            section.signatureStartBeat = signatureStartBeat;
-            section.signatureStartBar = signatureStartBar;
-            sections_.push_back(section);
-
-            time += sectionBeats * section.secondsPerBeat;
+            // ramp's steps still start exactly where the next change does.
+            const auto startBeat = current.startBeat + step * k;
+            grid.push_back(
+                {startBeat, ramping ? rampedBpm(startBeat, current, *rampTarget) : current.bpm});
         }
     }
 
-    // Where each section's signature gives way to the next. A run of sections
-    // shares a signature, and the run ends where the next one starts.
-    for (std::size_t runStart = 0, i = 1; i <= sections_.size(); ++i) {
-        const auto lastRun = i == sections_.size();
-        if (!lastRun && sections_[i].signatureStartBeat == sections_[runStart].signatureStartBeat)
+    // The signature regions, and which bar each one opens on.
+    std::vector<GridSignature> regions;
+    regions.reserve(signatures.size());
+
+    for (const auto& signature : signatures) {
+        if (!regions.empty() && signature.startBeat <= regions.back().startBeat) {
+            // Coincident: the last one written wins, and the bar it opens is
+            // the one already counted.
+            regions.back().numerator = signature.numerator;
+            regions.back().denominator = signature.denominator;
             continue;
+        }
 
-        const auto signatureEnd =
-            lastRun ? std::numeric_limits<double>::infinity() : sections_[i].startBeat;
-        for (auto section = runStart; section < i; ++section)
-            sections_[section].signatureEndBeat = signatureEnd;
+        if (regions.empty()) {
+            regions.push_back({signature.startBeat, signature.numerator, signature.denominator, 0});
+            continue;
+        }
 
-        runStart = i;
+        // A signature change starts a bar, whether or not the bar it interrupts
+        // was finished.
+        const auto& previous = regions.back();
+        const auto bars = std::ceil((signature.startBeat - previous.startBeat) /
+                                        barBeatsOf(previous.numerator, previous.denominator) -
+                                    kBeatEpsilon);
+        regions.push_back({signature.startBeat, signature.numerator, signature.denominator,
+                           previous.startBar + static_cast<int>(bars)});
+    }
+
+    // A section begins wherever either grid does. Merging is all a signature
+    // does to the tempo: it splits sections, and both halves keep the tempo the
+    // one they came from had.
+    std::vector<double> boundaries;
+    boundaries.reserve(grid.size() + regions.size());
+    for (const auto& tempo : grid)
+        boundaries.push_back(tempo.startBeat);
+    for (const auto& region : regions)
+        boundaries.push_back(region.startBeat);
+
+    std::sort(boundaries.begin(), boundaries.end());
+    boundaries.erase(std::unique(boundaries.begin(), boundaries.end()), boundaries.end());
+
+    sections_.reserve(boundaries.size());
+
+    double time = 0.0;
+    std::size_t gridIndex = 0, regionIndex = 0;
+
+    for (std::size_t i = 0; i < boundaries.size(); ++i) {
+        const auto startBeat = boundaries[i];
+
+        while (gridIndex + 1 < grid.size() && grid[gridIndex + 1].startBeat <= startBeat)
+            ++gridIndex;
+        while (regionIndex + 1 < regions.size() && regions[regionIndex + 1].startBeat <= startBeat)
+            ++regionIndex;
+
+        const auto isLast = i + 1 == boundaries.size();
+        const auto endBeat = isLast ? startBeat + kTailBeats : boundaries[i + 1];
+
+        Section section;
+        section.startBeat = startBeat;
+        section.startTime = time;
+        section.bpm = grid[gridIndex].bpm;
+        section.secondsPerBeat = 60.0 / section.bpm;
+        section.numerator = regions[regionIndex].numerator;
+        section.denominator = regions[regionIndex].denominator;
+        section.signatureStartBeat = regions[regionIndex].startBeat;
+        section.signatureStartBar = regions[regionIndex].startBar;
+        section.signatureEndBeat = regionIndex + 1 < regions.size()
+                                       ? regions[regionIndex + 1].startBeat
+                                       : std::numeric_limits<double>::infinity();
+        sections_.push_back(section);
+
+        time += (endBeat - startBeat) * section.secondsPerBeat;
     }
 }
 

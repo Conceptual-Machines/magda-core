@@ -22,13 +22,25 @@ Catch::Approx approx(double value) {
 /// Playing from a beat, with everything else left alone.
 TransportSnapshot playing(double fromBeat, std::uint64_t generation = 1) {
     TransportSnapshot snapshot;
-    snapshot.request = {generation, true, fromBeat, 0.0};
+    snapshot.request.generation = generation;
+    snapshot.request.playing = true;
+    snapshot.request.positionBeat = fromBeat;
     return snapshot;
 }
 
 TransportSnapshot stopped(double atBeat, std::uint64_t generation = 1) {
     TransportSnapshot snapshot;
-    snapshot.request = {generation, false, atBeat, 0.0};
+    snapshot.request.generation = generation;
+    snapshot.request.positionBeat = atBeat;
+    return snapshot;
+}
+
+/// Stopping without naming a position: the play state changes and nothing
+/// else does.
+TransportSnapshot halt(std::uint64_t generation) {
+    TransportSnapshot snapshot;
+    snapshot.request.generation = generation;
+    snapshot.request.locate = false;
     return snapshot;
 }
 
@@ -319,6 +331,36 @@ TEST_CASE("A request is applied once", "[engine][transport][clock]") {
     }
 }
 
+TEST_CASE("Stopping does not have to say where", "[engine][transport][clock]") {
+    TransportClock clock;
+
+    advance(clock, playing(0.0), 512);
+    advance(clock, playing(0.0), 512);
+    const auto at = clock.positionBeats();
+
+    // The publisher cannot name where the cursor is: whatever it read from
+    // positionBeats() is a callback out of date by the time the request lands.
+    // Naming a stale position would step the cursor back and read as a jump,
+    // so a stop says nothing about position at all.
+    const auto halted = advance(clock, halt(2), 512);
+
+    CHECK(!halted.segments[0].block.playing);
+    CHECK(halted.segments[0].block.startBeat == approx(at));
+    CHECK(clock.positionBeats() == approx(at));
+    CHECK(halted.segments[0].block.continuous);
+
+    SECTION("and playing again from there does not have to either") {
+        auto resumed = halt(3);
+        resumed.request.playing = true;
+
+        const auto block = advance(clock, resumed, 512);
+        CHECK(block.segments[0].block.startBeat == approx(at));
+
+        // Starting is a jump wherever it starts from.
+        CHECK(!block.segments[0].block.continuous);
+    }
+}
+
 TEST_CASE("A change of sample rate keeps the position it was given", "[engine][transport][clock]") {
     TransportClock clock;
     const auto snapshot = playing(0.0);
@@ -347,4 +389,16 @@ TEST_CASE("A loop too short to render is reported, not silently dropped",
     // the count is what says so.
     requireCovers(block, 512);
     CHECK(clock.loopWrapOverflows() > 0);
+
+    SECTION("and it costs one callback, not every callback after it") {
+        // Rendering the remainder straight through leaves the cursor past the
+        // loop end, which is also where a cursor located beyond the loop sits.
+        // Without putting it back, the next callback would read it as one that
+        // was put there on purpose and never wrap again.
+        const auto next = advance(clock, snapshot, 512);
+
+        requireCovers(next, 512);
+        CHECK(next.segments.size() > 1);
+        CHECK(next.segments[0].block.startBeat == approx(0.0));
+    }
 }

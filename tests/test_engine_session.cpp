@@ -209,7 +209,9 @@ class LoggingFactory final : public RuntimeStateFactory {
 /// Playing from a beat, with the metronome off.
 magda::engine::TransportSnapshot rolling(double fromBeat) {
     magda::engine::TransportSnapshot transport;
-    transport.request = {1, true, fromBeat, 0.0};
+    transport.request.generation = 1;
+    transport.request.playing = true;
+    transport.request.positionBeat = fromBeat;
     return transport;
 }
 

@@ -179,6 +179,25 @@ TEST_CASE("Bars come from the time signature, beats do not",
     }
 }
 
+TEST_CASE("A signature groups beats and never moves one", "[engine][transport][tempo][signature]") {
+    // Long enough that the ramp runs out of sections and the cap decides how
+    // finely it is cut, which is where a signature could change the answer: cut
+    // per span, a signature in the middle would buy the ramp twice the
+    // sections and a different beat-to-time everywhere after it.
+    const std::vector<TempoChange> ramp{{0.0, 60.0, 0.0f}, {1000.0, 180.0, 0.0f}};
+
+    const TempoMap plain(ramp, {});
+    const TempoMap regrouped(ramp, {{0.0, 4, 4}, {500.0, 7, 8}});
+
+    for (const auto beat : {1.0, 250.0, 499.0, 500.0, 501.0, 750.0, 1000.0, 1200.0})
+        CHECK(regrouped.beatToTime(beat) == approx(plain.beatToTime(beat)));
+
+    // The signature did what a signature does, and only that.
+    CHECK(plain.barsAndBeatsAt(500.0).numerator == 4);
+    CHECK(regrouped.barsAndBeatsAt(500.0).numerator == 7);
+    CHECK(regrouped.barsAndBeatsAt(500.0).beat == approx(0.0));
+}
+
 TEST_CASE("The metronome grid follows the signature", "[engine][transport][tempo][signature]") {
     SECTION("a beat sitting on a tick is that tick") {
         const TempoMap map;

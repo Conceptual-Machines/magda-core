@@ -48,21 +48,30 @@ void TransportClock::applyRequest(const TransportSnapshot& snapshot) {
     playingPublic_.store(playing_, std::memory_order_relaxed);
 
     countingIn_ = request.playing && request.countInBeats > 0.0;
-    countInUntilBeat_ = request.positionBeat;
 
-    // A locate is honoured as it was asked for, loop or no loop. The loop is
-    // somewhere the timeline returns to when it gets there, not a pen: a
-    // playhead put down at bar 40 with a two-bar loop enabled plays bar 40,
-    // which is what the user pointed at.
-    const auto position =
-        countingIn_ ? request.positionBeat - request.countInBeats : request.positionBeat;
+    // A request that moves the cursor at all: a locate, or a roll-in, which
+    // moves it back to where the count begins. Everything else leaves the
+    // anchor alone rather than re-deriving the position it already has.
+    if (request.locate || countingIn_) {
+        // A locate is honoured as it was asked for, loop or no loop. The loop
+        // is somewhere the timeline returns to when it gets there, not a pen: a
+        // playhead put down at bar 40 with a two-bar loop enabled plays bar 40,
+        // which is what the user pointed at.
+        const auto target = request.locate ? request.positionBeat : wasAt;
+        const auto position = countingIn_ ? target - request.countInBeats : target;
 
-    anchorTo(snapshot.tempo, position);
+        countInUntilBeat_ = target;
+        anchorTo(snapshot.tempo, position);
 
-    // Starting is a jump, and so is arriving somewhere else. Stopping where the
-    // cursor already was is neither, and neither is a request that only
-    // repeated what the transport was already doing.
-    if ((playing_ && !wasPlaying) || std::abs(position - wasAt) > kBeatEpsilon)
+        // Arriving somewhere else is a jump.
+        if (std::abs(position - wasAt) > kBeatEpsilon)
+            continuous_ = false;
+    }
+
+    // As is starting. Stopping where the cursor already was is neither, and
+    // neither is a request that only repeated what the transport was already
+    // doing.
+    if (playing_ && !wasPlaying)
         continuous_ = false;
 }
 
@@ -153,8 +162,10 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         // segment is left. What is not left is room to keep cutting: past the
         // last slot, and for a loop too short to have a sample in it, the rest
         // of the callback plays straight through and the overflow is counted.
+        auto overflowed = false;
         if (samples < 1 || segmentCount_ + 1 == kMaxSegmentsPerBlock) {
-            if (samples < remaining)
+            overflowed = samples < remaining;
+            if (overflowed)
                 loopWrapOverflows_.fetch_add(1, std::memory_order_relaxed);
             samples = remaining;
         }
@@ -172,6 +183,17 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         offset += static_cast<int>(samples);
         remaining -= static_cast<int>(samples);
         continuous_ = true;
+
+        // Rendering straight through left the cursor past the loop end, which
+        // is where a cursor that was put there deliberately also sits, and the
+        // guard above cannot tell them apart. Put it back at the top: an
+        // overflow costs this callback its wrapping, and without this it would
+        // cost every callback after it too, because the loop would never catch
+        // the cursor again.
+        if (overflowed && snapshot.loop.valid() && !countingIn_) {
+            anchorTo(tempo, snapshot.loop.startBeat);
+            continuous_ = false;
+        }
     }
 
     positionBeat_ = beatAfter(tempo, samplesSinceAnchor_);

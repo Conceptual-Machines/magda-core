@@ -58,11 +58,28 @@ struct ClickSettings {
  * position in every other one, so republishing the same transport because the
  * tempo changed does not drag the cursor back to where playback started.
  * Whoever publishes bumps it for every play, stop and locate, and for nothing
- * else.
+ * else. It starts at zero and the clock starts there too, so the first real
+ * request has to carry one above it or it will not be applied.
  */
 struct TransportRequest {
     std::uint64_t generation = 0;
     bool playing = false;
+
+    /**
+     * @brief Where to put the cursor, if @ref locate says to move it at all.
+     *
+     * False means the request is about the play state and nothing else: the
+     * cursor stays exactly where it is, and nothing about the timeline is
+     * discontinuous.
+     *
+     * Stopping is what needs it, and stopping is the most common transport
+     * action there is. A stop that had to name a position could only name one
+     * read from positionBeats() on another thread, which is a callback out of
+     * date by the time it arrives: the cursor would step back a few
+     * milliseconds on every stop, and the step would read as a jump, so every
+     * source would seek over a discontinuity nobody asked for.
+     */
+    bool locate = true;
     double positionBeat = 0.0;
 
     /**
