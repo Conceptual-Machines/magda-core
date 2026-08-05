@@ -1,6 +1,7 @@
 #include "io/PrefetchStream.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace magda::engine {
 
@@ -42,11 +43,24 @@ void PrefetchStream::seek(std::int64_t sourceStart) {
 }
 
 void PrefetchStream::applyPendingCue() {
+    // Whether anything played out of this stream since the last time it was
+    // asked. Read here rather than in read(), so that what it answers is a
+    // question about the block that just went by.
+    const auto wasSounding = std::exchange(readSinceCueCheck_, false);
+
     farbot::RealtimeObject<SeekRequest, farbot::RealtimeObjectOptions::nonRealtimeMutatable>::
         ScopedAccess<farbot::ThreadType::realtime>
             cue(cue_);
 
     if (cue->generation == appliedCue_)
+        return;
+
+    // A stream that is sounding keeps sounding. Taking the cue up would abandon
+    // the generation the material still playing was read for and hand its pool
+    // back, so the cue would cost a gap and then be overridden by the very next
+    // read anyway, which asks for where playback actually is. It waits instead,
+    // and is taken up when the stream falls silent.
+    if (wasSounding)
         return;
 
     appliedCue_ = cue->generation;
@@ -126,9 +140,11 @@ int PrefetchStream::read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> 
     if (numSamples <= 0)
         return 0;
 
-    // Anything cued since the last block, before deciding whether this one is
-    // a seek: a read that lands exactly where the cue pointed is then not one.
-    applyPendingCue();
+    // Reading is what sounding means. Taking a cue up is not done here: it
+    // happens once at the top of a block, through applyPendingCue, and doing it
+    // again inside the read would see a stream that has not read *yet this
+    // block* and mistake it for one that is not playing at all.
+    readSinceCueCheck_ = true;
 
     if (sourceStart != nextSample_)
         requestSeek(sourceStart);

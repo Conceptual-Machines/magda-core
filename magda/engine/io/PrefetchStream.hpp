@@ -82,10 +82,10 @@ class PrefetchStream {
     /**
      * @brief Point the reader at a position before anything asks for it.
      *
-     * From any thread that is not the audio thread, at any time, including
-     * while the stream is playing: whoever schedules material knows where
-     * playback will be before the callback does, and a stream told in advance
-     * is one that does not have to seek in the block that needs the samples.
+     * From any thread that is not the audio thread, at any time: whoever
+     * schedules material knows where playback will be before the callback does,
+     * and a stream told in advance is one that does not have to seek in the
+     * block that needs the samples.
      *
      * Nothing here touches what the callback owns. It publishes a cue, and the
      * callback picks it up at the top of its next block through
@@ -93,17 +93,35 @@ class PrefetchStream {
      * happens. That is a block's delay before the reader starts moving, which
      * is nothing against the reason to cue at all: a clip scheduled a moment
      * ahead is read ahead long before it plays.
+     *
+     * A cue points a stream that is not sounding. One that is keeps playing and
+     * takes the cue up when it stops, because a single reader cannot be in two
+     * places: pointing it somewhere else would abandon the material still
+     * playing and hand back the pool holding it, for a position the next read
+     * would immediately override.
+     *
+     * That is also why a loop's return is not seamless here. Reading the top of
+     * a loop while the end of it is still playing means holding two positions
+     * at once, which is a second fill cursor and a second pool, and it belongs
+     * with whoever owns clip looping (#1890) rather than being half-built
+     * underneath them. Today a wrap costs the block it happens in, and the
+     * underrun count says so.
      */
     void seek(std::int64_t sourceStart);
 
     /**
      * @brief Take up a cue, if one is waiting. On the audio thread.
      *
-     * read() does this itself, so a caller that only reads never has to. What
-     * needs it is a caller that does not read every block: a clip that has not
-     * started yet is exactly the thing a cue is for, and a stream nobody reads
-     * from would otherwise not hear about it until the material it was cued
-     * for was already due.
+     * Once per block, at the top of it, by whoever drives the stream. Not done
+     * inside read(), and the difference matters: what decides whether a cue is
+     * taken up now or waits is whether this stream is sounding, and that
+     * question is only answerable at a block boundary. Asked again halfway
+     * through, a stream that simply has not reached its read yet looks exactly
+     * like one that is silent.
+     *
+     * It has to be a separate call for the same reason. The stream a cue is
+     * most useful to is one nobody is reading from: a clip that has not started
+     * would otherwise not hear about it until the material was already due.
      */
     void applyPendingCue();
 
@@ -195,6 +213,11 @@ class PrefetchStream {
     std::int64_t nextSample_ = 0;
     std::uint32_t generation_ = 0;
     std::uint32_t appliedCue_ = 0;
+
+    /// Whether anything played out of this stream since the last cue check.
+    /// What separates a stream waiting to be given somewhere to go from one
+    /// already on its way somewhere.
+    bool readSinceCueCheck_ = false;
 
     // Prefetch thread only.
     std::int64_t fillPosition_ = 0;

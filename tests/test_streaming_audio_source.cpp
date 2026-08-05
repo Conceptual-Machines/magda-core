@@ -228,21 +228,18 @@ TEST_CASE("A jump is a seek, and needs nothing said about it", "[engine][io][cli
         REQUIRE(fixture.at(63) == approx(static_cast<float>(kBlockSize + 63)));
     }
 
-    SECTION("a wrap the reader was pointed at costs nothing") {
-        const auto wrapped = blockFrom(0.0, kBlockSize, false);
-
-        fixture.renderCued(wrapped);
-        REQUIRE(fixture.at(0) == approx(0.0f));
-        REQUIRE(fixture.at(63) == approx(63.0f));
-        CHECK(fixture.stream.underruns() == 0);
-    }
-
     SECTION("a locate forwards is the same shape") {
-        const auto located = blockFrom(5.0);
+        // Silence in the block that jumps, material in the one after it, and
+        // one underrun to say so. Cueing does not shorten this: the stream is
+        // sounding, and a cue given to a stream that is sounding waits.
+        fixture.render(blockFrom(5.0));
+        for (auto sample = 0; sample < kBlockSize; ++sample)
+            REQUIRE(fixture.at(sample) == approx(0.0f));
+        REQUIRE(fixture.stream.underruns() == 1);
 
-        fixture.renderCued(located);
+        fixture.render(blockFrom(5.0 + static_cast<double>(kBlockSize) / kSampleRate));
 
-        const auto expected = static_cast<float>(std::llround(5.0 * kSampleRate));
+        const auto expected = static_cast<float>(std::llround(5.0 * kSampleRate) + kBlockSize);
         REQUIRE(fixture.at(0) == approx(expected));
     }
 }
@@ -377,4 +374,44 @@ TEST_CASE("A clip cued before it starts plays without a gap", "[engine][io][pref
     fixture.render(blockFrom(5.0));
     REQUIRE(fixture.at(0) == approx(static_cast<float>(target)));
     CHECK(fixture.stream.underruns() == 0);
+}
+
+TEST_CASE("Cueing a stream that is sounding does not interrupt it", "[engine][io][prefetch]") {
+    // The loop-return case, from underneath: something cues the top of the loop
+    // while the end of it is still playing. One reader cannot be in two places,
+    // so what this owes is that playback is not damaged by being asked. The
+    // cue waits; it does not abandon the material still going out.
+    const ClipPlacement placement{0.0, 10.0, 0};
+    Fixture fixture(placement);
+
+    for (auto block = 0; block < 4; ++block)
+        fixture.render(blockFrom(static_cast<double>(block * kBlockSize) / kSampleRate));
+
+    const auto before = fixture.stream.underruns();
+    fixture.stream.seek(fixture.source.sourceSampleAt(0.0));
+
+    // Every block after the cue is the one that was going to play anyway,
+    // sample for sample, with nothing dropped and nothing re-read.
+    for (auto block = 4; block < 12; ++block) {
+        fixture.render(blockFrom(static_cast<double>(block * kBlockSize) / kSampleRate));
+
+        INFO("block " << block);
+        REQUIRE(fixture.at(0) == approx(static_cast<float>(block * kBlockSize)));
+        REQUIRE(fixture.at(kBlockSize - 1) == approx(static_cast<float>(block * kBlockSize + 63)));
+    }
+
+    // And it cost nothing to have asked.
+    CHECK(fixture.stream.underruns() == before);
+
+    SECTION("and is taken up once it falls silent") {
+        // The clip stops sounding, so the stream is free to go where it was
+        // pointed, and the material is there when playback returns to it.
+        fixture.render(blockFrom(20.0));
+        fixture.render(blockFrom(20.0 + static_cast<double>(kBlockSize) / kSampleRate));
+
+        fixture.render(blockFrom(0.0, kBlockSize, false));
+        REQUIRE(fixture.at(0) == approx(0.0f));
+        REQUIRE(fixture.at(kBlockSize - 1) == approx(static_cast<float>(kBlockSize - 1)));
+        CHECK(fixture.stream.underruns() == before);
+    }
 }
