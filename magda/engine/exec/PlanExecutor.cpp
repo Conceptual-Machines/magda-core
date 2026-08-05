@@ -30,6 +30,13 @@ void copyWithGain(juce::dsp::AudioBlock<float> destination, juce::dsp::AudioBloc
             channelGain(value, channel), numSamples);
 }
 
+void applyGain(juce::dsp::AudioBlock<float> block, const OpValue& value, int numSamples) {
+    for (std::size_t channel = 0; channel < block.getNumChannels(); ++channel)
+        juce::FloatVectorOperations::multiply(block.getChannelPointer(channel),
+                                              channelGain(value, static_cast<int>(channel)),
+                                              numSamples);
+}
+
 float peakOf(juce::dsp::AudioBlock<float> block, int numSamples) {
     float peak = 0.0f;
     for (std::size_t channel = 0; channel < block.getNumChannels(); ++channel) {
@@ -42,14 +49,108 @@ float peakOf(juce::dsp::AudioBlock<float> block, int numSamples) {
 
 }  // namespace
 
+void AudioDelayLine::prepare(int numChannels, int delaySamples, int maxBlockSize) {
+    delay_ = delaySamples;
+    writePosition_ = 0;
+    ring_.setSize(numChannels, delaySamples + maxBlockSize, false, true, false);
+    ring_.clear();
+}
+
+void AudioDelayLine::process(juce::dsp::AudioBlock<float> block, int numSamples) {
+    const auto capacity = ring_.getNumSamples();
+    const auto numChannels =
+        std::min(ring_.getNumChannels(), static_cast<int>(block.getNumChannels()));
+
+    // Written before it is read, so a block whose delay is shorter than itself
+    // reads back the samples it just handed over, and an output sharing its
+    // input's buffer is no different from one that does not.
+    for (int done = 0; done < numSamples;) {
+        const auto chunk = std::min(numSamples - done, capacity - writePosition_);
+        for (int channel = 0; channel < numChannels; ++channel)
+            ring_.copyFrom(channel, writePosition_,
+                           block.getChannelPointer(static_cast<std::size_t>(channel)) + done,
+                           chunk);
+        writePosition_ = (writePosition_ + chunk) % capacity;
+        done += chunk;
+    }
+
+    auto readPosition = writePosition_ - numSamples - delay_;
+    while (readPosition < 0)
+        readPosition += capacity;
+
+    for (int done = 0; done < numSamples;) {
+        const auto chunk = std::min(numSamples - done, capacity - readPosition);
+        for (int channel = 0; channel < numChannels; ++channel)
+            juce::FloatVectorOperations::copy(
+                block.getChannelPointer(static_cast<std::size_t>(channel)) + done,
+                ring_.getReadPointer(channel, readPosition), chunk);
+        readPosition = (readPosition + chunk) % capacity;
+        done += chunk;
+    }
+}
+
+void MidiDelayLine::prepare(int delaySamples, int capacityBytes) {
+    delay_ = delaySamples;
+    capacity_ = capacityBytes;
+    overflowed_ = false;
+    pending_.clear();
+    scratch_.clear();
+    // Both, and to the same size: they are swapped every block, so the storage
+    // travels with them and one of them being the small one would allocate on
+    // the callback the first time it came round.
+    pending_.ensureSize(static_cast<std::size_t>(capacityBytes));
+    scratch_.ensureSize(static_cast<std::size_t>(capacityBytes));
+}
+
+void MidiDelayLine::process(const juce::MidiBuffer& in, juce::MidiBuffer& out, int numSamples) {
+    scratch_.clear();
+
+    // Positions are relative to the start of the block, so what is still in the
+    // future stays here and moves one block closer.
+    for (const auto metadata : pending_) {
+        if (metadata.samplePosition < numSamples)
+            out.addEvent(metadata.data, metadata.numBytes, metadata.samplePosition);
+        else
+            scratch_.addEvent(metadata.data, metadata.numBytes,
+                              metadata.samplePosition - numSamples);
+    }
+
+    for (const auto metadata : in) {
+        const auto position = metadata.samplePosition + delay_;
+        if (position < numSamples)
+            out.addEvent(metadata.data, metadata.numBytes, position);
+        else
+            scratch_.addEvent(metadata.data, metadata.numBytes, position - numSamples);
+    }
+
+    pending_.swapWith(scratch_);
+
+    // The reservation covers what a port may carry over one block's worth of
+    // samples, times the spans the delay holds in flight. Past it the buffer
+    // grows on the callback, which is the one thing this whole arrangement
+    // exists to avoid, and a producer writing faster than its budget is the
+    // only way to get here. Recorded as well as asserted: a release build
+    // would otherwise take the allocation and say nothing.
+    if (static_cast<int>(pending_.data.size()) > capacity_) {
+        overflowed_ = true;
+        jassertfalse;
+    }
+}
+
 void PlanExecutor::reset() {
     plan_ = nullptr;
     planFingerprint_ = 0;
+    latencySamples_ = 0;
     audioSlots_.clear();
     midiSlots_.clear();
     midiByteBounds_.clear();
     portOffsets_.clear();
     portSlots_.clear();
+    writesInPlace_.clear();
+    audioDelayForOp_.clear();
+    midiDelayForOp_.clear();
+    audioDelays_.clear();
+    midiDelays_.clear();
     deviceForOp_.clear();
     audioSourceForOp_.clear();
     midiSourceForOp_.clear();
@@ -73,61 +174,6 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
     context_ = context;
     const auto numOps = plan.ops.size();
-
-    // Flatten (op, port) to a buffer slot. Audio and MIDI ports are counted
-    // separately; which array a slot indexes follows from the port's kind,
-    // which the plan already carries.
-    portOffsets_.assign(numOps + 1, 0);
-    portSlots_.clear();
-    int numAudioSlots = 0;
-    int numMidiSlots = 0;
-    for (std::size_t i = 0; i < numOps; ++i) {
-        portOffsets_[i] = static_cast<int>(portSlots_.size());
-        for (const auto kind : plan.ops[i].outputs)
-            portSlots_.push_back(kind == SignalKind::Audio ? numAudioSlots++ : numMidiSlots++);
-    }
-    portOffsets_[numOps] = static_cast<int>(portSlots_.size());
-
-    audioSlots_.resize(static_cast<std::size_t>(numAudioSlots));
-    for (auto& buffer : audioSlots_)
-        buffer.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
-
-    // Reserving a flat amount per MIDI port is not enough: a merge carries
-    // everything that reaches it, so fan-in outgrows any fixed figure and the
-    // first block that does grows a buffer on the callback. The bound is
-    // computed through the MIDI graph instead, which ops being in dependency
-    // order makes a single forward pass. Producers are capped by contract
-    // (kMaxMidiBytesPerPort), and that cap is what the sums are built from.
-    midiSlots_.resize(static_cast<std::size_t>(numMidiSlots));
-    midiByteBounds_.assign(static_cast<std::size_t>(numMidiSlots), kMaxMidiBytesPerPort);
-    for (std::size_t i = 0; i < numOps; ++i) {
-        const auto& op = plan.ops[i];
-        if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader)
-            continue;
-
-        int carried = 0;
-        for (std::size_t slot = 0; slot < op.inputs.size(); ++slot) {
-            const auto& input = op.inputs[slot];
-            if (!input.valid())
-                continue;
-            if (plan.ops[static_cast<std::size_t>(input.op)]
-                    .outputs[static_cast<std::size_t>(input.port)] != SignalKind::Midi)
-                continue;
-            carried += midiByteBounds_[static_cast<std::size_t>(slotFor(input))];
-        }
-
-        for (int port = 0; port < static_cast<int>(op.outputs.size()); ++port)
-            if (op.outputs[static_cast<std::size_t>(port)] == SignalKind::Midi)
-                midiByteBounds_[static_cast<std::size_t>(
-                    slotFor(PortRef{static_cast<OpId>(i), port}))] = carried;
-    }
-
-    for (std::size_t slot = 0; slot < midiSlots_.size(); ++slot)
-        midiSlots_[slot].ensureSize(static_cast<std::size_t>(midiByteBounds_[slot]));
-
-    silence_.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
-    silence_.clear();
-    noMidi_.clear();
 
     deviceForOp_.assign(numOps, nullptr);
     audioSourceForOp_.assign(numOps, nullptr);
@@ -212,15 +258,138 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         prepareOnce(audioSourceForOp_[i]);
         prepareOnce(midiSourceForOp_[i]);
         prepareOnce(deviceForOp_[i]);
-
-        // Read but not acted on. Latency compensation is its own slice, and a
-        // device that delays its output by samples nobody aligns is a phase
-        // error in the mix rather than a missing feature nobody notices.
-        if (const auto* device = deviceForOp_[i]; device != nullptr && device->latencySamples() > 0)
-            messages.push_back(describe(i) + "device reports " +
-                               std::to_string(device->latencySamples()) +
-                               " samples of latency, which nothing compensates for yet");
     }
+
+    // --- what the bindings decide -------------------------------------------
+    //
+    // Everything below reads the instances rather than the plan or the model. A
+    // plugin only reports its latency once it is loaded and prepared, which is
+    // now, and how many samples each delay holds decides which ports can share
+    // a buffer. So the two passes run here, in this order, on every prepare.
+
+    std::vector<int> deviceLatency(numOps, 0);
+    for (std::size_t i = 0; i < numOps; ++i)
+        if (const auto* device = deviceForOp_[i]; device != nullptr)
+            deviceLatency[i] = device->latencySamples();
+
+    portOffsets_ = portOffsetsOf(plan);
+    const auto latency = resolvePlanLatency(plan, portOffsets_, deviceLatency);
+    latencySamples_ = latency.outputLatency;
+
+    const auto layout = assignBuffers(plan, portOffsets_, latency.delaySamples);
+    portSlots_ = layout.portSlots;
+    writesInPlace_ = layout.writesInPlace;
+
+    audioSlots_.resize(static_cast<std::size_t>(layout.numAudioSlots));
+    for (auto& buffer : audioSlots_)
+        buffer.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
+
+    // Reserving a flat amount per MIDI port is not enough: a merge carries
+    // everything that reaches it, so fan-in outgrows any fixed figure and the
+    // first block that does grows a buffer on the callback. The bound is
+    // computed through the MIDI graph instead, which ops being in dependency
+    // order makes a single forward pass. Producers are capped by contract
+    // (kMaxMidiBytesPerPort), and that cap is what the sums are built from.
+    //
+    // Ports sharing a buffer changes what that bound is for: one port at a time
+    // is live in a slot, so a slot has to hold the largest of its users rather
+    // than the sum of them.
+    const auto numPorts = static_cast<std::size_t>(portOffsets_.back());
+    std::vector<int> portMidiBytes(numPorts, kMaxMidiBytesPerPort);
+    const auto flatPort = [this](const PortRef& ref) {
+        return static_cast<std::size_t>(portOffsets_[static_cast<std::size_t>(ref.op)] + ref.port);
+    };
+
+    for (std::size_t i = 0; i < numOps; ++i) {
+        const auto& op = plan.ops[i];
+
+        if (op.kind == OpKind::Delay) {
+            if (op.outputs.front() != SignalKind::Midi)
+                continue;
+            // A delay's output block covers one block's worth of its input's
+            // time, and that stretch falls across two of the spans the budget
+            // is counted over unless the delay is a whole number of them. Zero
+            // is not a delay at all: the op does not run, and the port is its
+            // input's.
+            const auto carried = portMidiBytes[flatPort(op.inputs.front())];
+            portMidiBytes[static_cast<std::size_t>(portOffsets_[i])] =
+                latency.delaySamples[i] == 0 ? carried : 2 * carried;
+            continue;
+        }
+
+        if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader)
+            continue;
+
+        int carried = 0;
+        for (const auto& input : op.inputs) {
+            if (!input.valid())
+                continue;
+            if (plan.ops[static_cast<std::size_t>(input.op)]
+                    .outputs[static_cast<std::size_t>(input.port)] != SignalKind::Midi)
+                continue;
+            carried += portMidiBytes[flatPort(input)];
+        }
+
+        for (std::size_t port = 0; port < op.outputs.size(); ++port)
+            if (op.outputs[port] == SignalKind::Midi)
+                portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + port] = carried;
+    }
+
+    midiSlots_.resize(static_cast<std::size_t>(layout.numMidiSlots));
+    midiByteBounds_.assign(static_cast<std::size_t>(layout.numMidiSlots), 0);
+    for (std::size_t i = 0; i < numOps; ++i) {
+        for (std::size_t port = 0; port < plan.ops[i].outputs.size(); ++port) {
+            if (plan.ops[i].outputs[port] != SignalKind::Midi)
+                continue;
+            const auto flat = static_cast<std::size_t>(portOffsets_[i]) + port;
+            auto& bound = midiByteBounds_[static_cast<std::size_t>(portSlots_[flat])];
+            bound = std::max(bound, portMidiBytes[flat]);
+        }
+    }
+
+    for (std::size_t slot = 0; slot < midiSlots_.size(); ++slot)
+        midiSlots_[slot].ensureSize(static_cast<std::size_t>(midiByteBounds_[slot]));
+
+    // Delay lines, for the edges that turned out to need one. A plan with no
+    // latency in it allocates nothing here, which is the whole point of
+    // resolving the counts before anything is sized.
+    audioDelayForOp_.assign(numOps, -1);
+    midiDelayForOp_.assign(numOps, -1);
+    int numAudioDelays = 0;
+    int numMidiDelays = 0;
+    for (std::size_t i = 0; i < numOps; ++i) {
+        if (plan.ops[i].kind != OpKind::Delay || latency.delaySamples[i] <= 0)
+            continue;
+        if (plan.ops[i].outputs.front() == SignalKind::Audio)
+            audioDelayForOp_[i] = numAudioDelays++;
+        else
+            midiDelayForOp_[i] = numMidiDelays++;
+    }
+
+    audioDelays_.resize(static_cast<std::size_t>(numAudioDelays));
+    midiDelays_.resize(static_cast<std::size_t>(numMidiDelays));
+    for (std::size_t i = 0; i < numOps; ++i) {
+        const auto samples = latency.delaySamples[i];
+        if (audioDelayForOp_[i] >= 0)
+            audioDelays_[static_cast<std::size_t>(audioDelayForOp_[i])].prepare(
+                context_.numChannels, samples, context_.maxBlockSize);
+
+        if (midiDelayForOp_[i] >= 0) {
+            // Everything the delay spans is in flight at once, counted in the
+            // spans the port's budget is a budget over rather than in
+            // callbacks: how many callbacks that stretch of timeline arrives
+            // in is the host's business and would make this the wrong size.
+            // Two spare covers the one being filled and the one being drained,
+            // neither of which lines up with those spans.
+            const auto blocks = samples / context_.maxBlockSize + 2;
+            midiDelays_[static_cast<std::size_t>(midiDelayForOp_[i])].prepare(
+                samples, blocks * portMidiBytes[flatPort(plan.ops[i].inputs.front())]);
+        }
+    }
+
+    silence_.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
+    silence_.clear();
+    noMidi_.clear();
 
     planFingerprint_ = planFingerprint(plan);
     plan_ = &plan;
@@ -304,15 +473,59 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
 
             case OpKind::MixAudio: {
                 auto out = audioOut(id, 0, numSamples);
-                out.clear();
-                if (value.silent)
+                if (value.silent) {
+                    out.clear();
                     break;
+                }
                 // Summed in compiled order, never in the order inputs finish:
                 // float addition is not associative, so this is what makes the
                 // parallel executor's output bit-identical to this one.
-                for (const auto& input : op.inputs)
-                    if (input.valid())
-                        out.add(audioIn(input, numSamples));
+                //
+                // The first input may already be here, in the buffer it was
+                // written into. Skipping the copy is the same sum, not a
+                // different one: it is added first either way.
+                auto pending = writesInPlace(i);
+                if (!pending)
+                    out.clear();
+                for (const auto& input : op.inputs) {
+                    if (!input.valid())
+                        continue;
+                    if (pending) {
+                        pending = false;
+                        continue;
+                    }
+                    out.add(audioIn(input, numSamples));
+                }
+                break;
+            }
+
+            case OpKind::Delay: {
+                // A delay runs whatever the value layer says about the ops
+                // around it. One that stopped writing while its chain was
+                // silent would hand back audio from before the silence when
+                // the chain returned, which is the one thing a delay line
+                // cannot do.
+                if (op.outputs.front() == SignalKind::Audio) {
+                    const auto line = audioDelayForOp_[i];
+                    if (line < 0)
+                        break;  // no samples to hold: its port is its input's
+                    auto out = audioOut(id, 0, numSamples);
+                    if (!writesInPlace(i))
+                        out.copyFrom(audioIn(op.inputs[0], numSamples));
+                    audioDelays_[static_cast<std::size_t>(line)].process(out, numSamples);
+                    break;
+                }
+
+                const auto line = midiDelayForOp_[i];
+                if (line < 0)
+                    break;
+                auto& out = midiOut(id, 0);
+                out.clear();
+                midiDelays_[static_cast<std::size_t>(line)].process(midiIn(op.inputs[0]), out,
+                                                                    numSamples);
+                jassert(out.data.size() <=
+                        static_cast<std::size_t>(
+                            midiByteBounds_[static_cast<std::size_t>(slotFor(PortRef{id, 0}))]));
                 break;
             }
 
@@ -342,10 +555,10 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
                     break;
                 }
 
-                if (op.inputs[0].valid())
-                    audio.copyFrom(audioIn(op.inputs[0], numSamples));
-                else
+                if (!op.inputs[0].valid())
                     audio.clear();
+                else if (!writesInPlace(i))
+                    audio.copyFrom(audioIn(op.inputs[0], numSamples));
 
                 auto* device = deviceForOp_[i];
                 if (device == nullptr)
@@ -365,6 +578,8 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
                 auto out = audioOut(id, 0, numSamples);
                 if (value.silent || !op.inputs[0].valid())
                     out.clear();
+                else if (writesInPlace(i))
+                    applyGain(out, value, numSamples);
                 else
                     copyWithGain(out, audioIn(op.inputs[0], numSamples), value, numSamples);
                 break;
@@ -374,6 +589,8 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
                 auto out = audioOut(id, 0, numSamples);
                 if (value.silent || !op.inputs[0].valid())
                     out.clear();
+                else if (writesInPlace(i))
+                    applyGain(out, value, numSamples);
                 else
                     copyWithGain(out, audioIn(op.inputs[0], numSamples), value, numSamples);
 
@@ -394,7 +611,7 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
                 auto out = audioOut(id, 0, numSamples);
                 if (value.silent || !op.inputs[0].valid())
                     out.clear();
-                else
+                else if (!writesInPlace(i))
                     out.copyFrom(audioIn(op.inputs[0], numSamples));
                 meterLevels_[i] = peakOf(out, numSamples);
                 break;

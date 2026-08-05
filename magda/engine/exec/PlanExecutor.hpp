@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "exec/PlanBindings.hpp"
+#include "exec/PlanLayout.hpp"
 #include "exec/PlanValues.hpp"
 #include "exec/RenderContext.hpp"
 #include "plan/RenderPlan.hpp"
@@ -24,16 +25,68 @@
 
 namespace magda::engine {
 
+/**
+ * @brief A fixed delay on one audio port, in samples.
+ *
+ * Reads and writes the same block: the input is captured before the delayed
+ * output is read back, so a delay whose output shares its input's buffer is no
+ * different from one that does not.
+ */
+class AudioDelayLine {
+  public:
+    void prepare(int numChannels, int delaySamples, int maxBlockSize);
+    void process(juce::dsp::AudioBlock<float> block, int numSamples);
+
+  private:
+    juce::AudioBuffer<float> ring_;
+    int delay_ = 0;
+    int writePosition_ = 0;
+};
+
+/**
+ * @brief The same delay for one MIDI port.
+ *
+ * Events move by sample position and the ones that fall past the end of the
+ * block are held for the next one, so the storage has to cover every sample the
+ * delay spans rather than one block's worth. That span is what
+ * kMaxMidiBytesPerPort is a budget over: measured per callback it would be
+ * whatever the host chose the block size to be.
+ */
+class MidiDelayLine {
+  public:
+    void prepare(int delaySamples, int capacityBytes);
+    void process(const juce::MidiBuffer& in, juce::MidiBuffer& out, int numSamples);
+
+    /// Whether more has ever been in flight than prepare() reserved room for.
+    /// Reported rather than only asserted: past the reservation the buffer
+    /// grows on the callback, and a release build would do that quietly.
+    bool hasOverflowed() const {
+        return overflowed_;
+    }
+
+  private:
+    juce::MidiBuffer pending_, scratch_;
+    int delay_ = 0;
+    /// What prepare() reserved, kept so process() can tell when the budget the
+    /// reservation was computed from has been exceeded.
+    int capacity_ = 0;
+    bool overflowed_ = false;
+};
+
 class PlanExecutor {
   public:
     /**
      * @brief Bind a plan to its runtime objects and allocate everything.
      *
      * Off the audio thread. Returns one message per thing the executor cannot
-     * honour: an op with no binding, a device asking for latency compensation
-     * that does not exist yet, a plan that does not validate. A plan that does
-     * not validate is not prepared at all, and process() renders silence until
-     * a good one arrives.
+     * honour: an op with no binding, a plan that does not validate. A plan that
+     * does not validate is not prepared at all, and process() renders silence
+     * until a good one arrives.
+     *
+     * This is also where everything that depends on the bound instances is
+     * settled: how many samples each delay holds, and therefore which ports can
+     * share a buffer. A plugin that changes its reported latency is a re-prepare
+     * of the same plan, not a recompile of a new one.
      */
     std::vector<std::string> prepare(const RenderPlan& plan, const PlanBindings& bindings,
                                      const RenderContext& context);
@@ -55,6 +108,32 @@ class PlanExecutor {
         return meterLevels_;
     }
 
+    /// Samples the prepared plan's output is delayed by: what the devices along
+    /// its longest path to the output report between them.
+    int latencySamples() const {
+        return latencySamples_;
+    }
+
+    /// Audio and MIDI buffers the prepared plan renders through. One per output
+    /// port would always work; sharing is what the assignment pass is for, so
+    /// these are how much it saved.
+    int audioBufferCount() const {
+        return static_cast<int>(audioSlots_.size());
+    }
+    int midiBufferCount() const {
+        return static_cast<int>(midiSlots_.size());
+    }
+
+    /// MIDI delay lines that have held more than they reserved room for, which
+    /// means a producer wrote past the budget every reservation here is
+    /// computed from. Zero on anything that keeps to it.
+    int midiDelayOverflows() const {
+        int overflows = 0;
+        for (const auto& line : midiDelays_)
+            overflows += line.hasOverflowed() ? 1 : 0;
+        return overflows;
+    }
+
     /// True once a valid plan has been prepared.
     bool isPrepared() const {
         return plan_ != nullptr;
@@ -73,22 +152,35 @@ class PlanExecutor {
     const juce::MidiBuffer& midiIn(const PortRef& ref) const;
     juce::MidiBuffer& midiOut(OpId op, int port);
 
+    /// Whether an op's output port 0 is the buffer one of its inputs arrived
+    /// in, so the copy that would fill it has already happened.
+    bool writesInPlace(std::size_t op) const {
+        return writesInPlace_[op] != 0;
+    }
+
     void reset();
 
     const RenderPlan* plan_ = nullptr;
     RenderContext context_;
 
-    // One scratch buffer per output port, allocated here. The buffer
-    // assignment pass replaces this with an arena sized from the dependency
-    // DAG; until then the mapping is one port, one buffer, which costs memory
-    // and nothing else.
+    /// The arena. Ports share these where no schedule can want both at once,
+    /// which is worked out in assignBuffers rather than here.
     std::vector<juce::AudioBuffer<float>> audioSlots_;
     std::vector<juce::MidiBuffer> midiSlots_;
-    /// Encoded bytes each MIDI port can hold without growing, summed through
+    /// Encoded bytes each MIDI buffer can hold without growing, summed through
     /// the MIDI graph at prepare time. Checked in debug where producers write.
     std::vector<int> midiByteBounds_;
     std::vector<int> portOffsets_;
     std::vector<int> portSlots_;
+    std::vector<char> writesInPlace_;
+
+    /// Per op: the delay line it drives, or -1. Ops that need none are the
+    /// common case, and a plan with no latency in it allocates nothing here.
+    std::vector<int> audioDelayForOp_;
+    std::vector<int> midiDelayForOp_;
+    std::vector<AudioDelayLine> audioDelays_;
+    std::vector<MidiDelayLine> midiDelays_;
+    int latencySamples_ = 0;
 
     /// Identity of the prepared plan; values that do not carry the same one
     /// were resolved against something else and are not applied.

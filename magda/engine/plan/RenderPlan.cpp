@@ -25,6 +25,7 @@ int arityOf(OpKind kind) {
         case OpKind::MixAudio:
         case OpKind::MergeMidi:
             return -1;  // variadic
+        case OpKind::Delay:
         case OpKind::Gain:
         case OpKind::SendTap:
         case OpKind::Meter:
@@ -50,6 +51,8 @@ const char* toString(OpKind kind) {
             return "MixAudio";
         case OpKind::MergeMidi:
             return "MergeMidi";
+        case OpKind::Delay:
+            return "Delay";
         case OpKind::Gain:
             return "Gain";
         case OpKind::Fader:
@@ -104,6 +107,14 @@ const char* toString(OpRole role) {
             return "sendTap";
         case OpRole::HardwareOutput:
             return "hardwareOutput";
+        case OpRole::MixInputDelay:
+            return "mixInputDelay";
+        case OpRole::MergeInputDelay:
+            return "mergeInputDelay";
+        case OpRole::DeviceInputDelay:
+            return "deviceInputDelay";
+        case OpRole::FaderInputDelay:
+            return "faderInputDelay";
     }
     return "?";
 }
@@ -134,6 +145,19 @@ std::string toString(const OpKey& key) {
 }
 
 namespace {
+
+/// Whether a role names a delay on one input slot of the op it is keyed to.
+bool isInputDelayRole(OpRole role) {
+    switch (role) {
+        case OpRole::MixInputDelay:
+        case OpRole::MergeInputDelay:
+        case OpRole::DeviceInputDelay:
+        case OpRole::FaderInputDelay:
+            return true;
+        default:
+            return false;
+    }
+}
 
 /// Producer ops an op waits on, each counted once however many slots it feeds.
 std::vector<OpId> distinctProducers(const PlanOp& op) {
@@ -226,6 +250,14 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
     std::vector<std::string> problems;
     const auto numOps = static_cast<OpId>(plan.ops.size());
 
+    // How many input slots anywhere in the plan read each op. Only the delay
+    // rules below need it, and they need it before the op they are checking.
+    std::vector<int> readerCounts(plan.ops.size(), 0);
+    for (const auto& op : plan.ops)
+        for (const auto& input : op.inputs)
+            if (input.valid() && input.op >= 0 && input.op < numOps)
+                ++readerCounts[static_cast<std::size_t>(input.op)];
+
     // The differ hash-joins old and new plans on OpKey, so a duplicate key does
     // not fail loudly: it carries one op's state into another. Identity bugs
     // are the concentrated risk of this design, so uniqueness is an invariant
@@ -272,15 +304,46 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
                                    std::to_string(producer.outputs.size()) + " ports");
                 continue;
             }
+            // A delay carries whatever reaches it, so its own output port is
+            // what its input has to agree with.
             const auto expected =
-                (op.kind == OpKind::MergeMidi ||
-                 ((op.kind == OpKind::Device || op.kind == OpKind::Fader) && slot == 1))
-                    ? SignalKind::Midi
-                    : SignalKind::Audio;
+                op.kind == OpKind::Delay
+                    ? (op.outputs.empty() ? SignalKind::Audio : op.outputs.front())
+                    : ((op.kind == OpKind::MergeMidi ||
+                        ((op.kind == OpKind::Device || op.kind == OpKind::Fader) && slot == 1))
+                           ? SignalKind::Midi
+                           : SignalKind::Audio);
             const auto actual = producer.outputs[static_cast<std::size_t>(input.port)];
             if (actual != expected)
                 problems.push_back(label + "input " + std::to_string(slot) + " is " +
                                    toString(actual) + ", expected " + toString(expected));
+        }
+
+        // A delay's sample count is not in the plan: it is resolved when the
+        // plan is prepared, from the latency the ops upstream of its consumer
+        // report. That resolution walks the plan once, forwards, and reads each
+        // delay's count off the consumer it feeds, so it is only well defined
+        // while these three hold. They are cheap here and impossible to check
+        // anywhere else without walking the whole plan again.
+        if (op.kind == OpKind::Delay) {
+            if (!isInputDelayRole(op.key.role))
+                problems.push_back(label + "is a delay but is not keyed to an input slot");
+
+            if (op.inputs.empty() || !op.inputs.front().valid())
+                problems.push_back(label + "is a delay with nothing to compensate");
+
+            if (readerCounts[static_cast<std::size_t>(i)] != 1)
+                problems.push_back(label + "is a delay read by " +
+                                   std::to_string(readerCounts[static_cast<std::size_t>(i)]) +
+                                   " input slots, and a delay compensates exactly one edge");
+
+            if (!op.inputs.empty() && op.inputs.front().valid() && op.inputs.front().op >= 0 &&
+                op.inputs.front().op < i &&
+                plan.ops[static_cast<std::size_t>(op.inputs.front().op)].kind == OpKind::Delay)
+                problems.push_back(label + "is a delay reading another delay, which double-counts "
+                                           "the same edge's compensation");
+        } else if (isInputDelayRole(op.key.role)) {
+            problems.push_back(label + "carries an input-delay role but is not a delay");
         }
 
         // Out-of-range inputs are already reported above; skip them here so a
