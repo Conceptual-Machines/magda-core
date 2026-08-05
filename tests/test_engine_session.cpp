@@ -422,6 +422,19 @@ TEST_CASE("Values published for the old plan are not applied to the new one", "[
     CHECK(output.getSample(0, 0) == approx(0.25f));
 }
 
+// This is also the sanitizer target. A clean pass here says the swap holds
+// under load; whether it is free of races is a question only a sanitizer
+// answers, and this suite is not built with one:
+//
+//   cmake -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMAGDA_BUILD_TESTS=ON \
+//       -DCMAKE_CXX_FLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=thread" \
+//       -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+//   cmake --build build-tsan --target magda_tests
+//   ./build-tsan/tests/magda_tests "[engine][session]"
+//
+// A clean sanitizer run means nothing unless the harness can fail: a plain
+// non-atomic counter incremented from both threads below is enough to check
+// that the sanitizer is really watching.
 TEST_CASE("Swapping under a running audio thread never tears", "[engine][session]") {
     Ledger ledger;
     TestFactory factory(ledger);
@@ -452,7 +465,7 @@ TEST_CASE("Swapping under a running audio thread never tears", "[engine][session
         }
     });
 
-    for (int round = 0; round < 100; ++round) {
+    for (int round = 0; round < 300; ++round) {
         auto twoDevices = tracks;
         twoDevices[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(8)));
 
