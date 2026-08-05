@@ -44,6 +44,12 @@ namespace magda::engine {
  * while that time passed, and a generator places notes at musical positions.
  * Spelling it out is what lets storage be sized from it.
  *
+ * The debug asserts at the write sites see one callback and so can only check
+ * the looser reading of this, which is all a producer can be caught at where it
+ * writes. What actually enforces the budget is downstream, at the one place a
+ * violation costs something: a delay line holding more than it reserved room
+ * for reports it (MidiDelayLine::hasOverflowed), in release as well as debug.
+ *
  * The budget is bytes rather than events because a MIDI message is not a fixed
  * size: one SysEx dump from a controller can outweigh a thousand notes, and a
  * cap on the number of events would let it through. An event costs six bytes

@@ -92,7 +92,7 @@ void AudioDelayLine::process(juce::dsp::AudioBlock<float> block, int numSamples)
 void MidiDelayLine::prepare(int delaySamples, int capacityBytes) {
     delay_ = delaySamples;
     capacity_ = capacityBytes;
-    overflowed_ = false;
+    overflowed_.store(false, std::memory_order_relaxed);
     pending_.clear();
     scratch_.clear();
     // Both, and to the same size: they are swapped every block, so the storage
@@ -132,7 +132,7 @@ void MidiDelayLine::process(const juce::MidiBuffer& in, juce::MidiBuffer& out, i
     // only way to get here. Recorded as well as asserted: a release build
     // would otherwise take the allocation and say nothing.
     if (static_cast<int>(pending_.data.size()) > capacity_) {
-        overflowed_ = true;
+        overflowed_.store(true, std::memory_order_relaxed);
         jassertfalse;
     }
 }
@@ -367,7 +367,9 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     }
 
     audioDelays_.resize(static_cast<std::size_t>(numAudioDelays));
-    midiDelays_.resize(static_cast<std::size_t>(numMidiDelays));
+    // Built rather than resized: a MIDI line carries an atomic, so it cannot be
+    // moved, and only the vector itself needs to be.
+    midiDelays_ = std::vector<MidiDelayLine>(static_cast<std::size_t>(numMidiDelays));
     for (std::size_t i = 0; i < numOps; ++i) {
         const auto samples = latency.delaySamples[i];
         if (audioDelayForOp_[i] >= 0)

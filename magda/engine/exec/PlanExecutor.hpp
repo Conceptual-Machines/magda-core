@@ -3,6 +3,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -60,8 +61,13 @@ class MidiDelayLine {
     /// Whether more has ever been in flight than prepare() reserved room for.
     /// Reported rather than only asserted: past the reservation the buffer
     /// grows on the callback, and a release build would do that quietly.
+    ///
+    /// Safe to read while rendering. The per-write asserts can only see one
+    /// callback's worth, which for short callbacks is looser than the budget
+    /// the reservation is computed from, so this is where the budget is
+    /// actually enforced and it has to be readable from wherever asks.
     bool hasOverflowed() const {
-        return overflowed_;
+        return overflowed_.load(std::memory_order_relaxed);
     }
 
   private:
@@ -70,7 +76,10 @@ class MidiDelayLine {
     /// What prepare() reserved, kept so process() can tell when the budget the
     /// reservation was computed from has been exceeded.
     int capacity_ = 0;
-    bool overflowed_ = false;
+    /// Written on the audio thread, read from anywhere. Relaxed both ways: it
+    /// orders nothing and guards nothing, it only has to be a read and a write
+    /// the standard has an answer for.
+    std::atomic<bool> overflowed_{false};
 };
 
 class PlanExecutor {
