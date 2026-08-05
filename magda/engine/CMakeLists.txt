@@ -29,6 +29,13 @@ add_library(magda_engine STATIC
     exec/RenderContext.hpp
     exec/RuntimeStateStore.hpp
     exec/EngineSession.hpp
+    transport/TempoMap.cpp
+    transport/TransportClock.cpp
+    transport/ClickGenerator.cpp
+    transport/TempoMap.hpp
+    transport/TransportState.hpp
+    transport/TransportClock.hpp
+    transport/ClickGenerator.hpp
 )
 add_library(magda::engine ALIAS magda_engine)
 
@@ -76,7 +83,7 @@ endforeach()
 # Engine. Quoted includes may only reach the model layer ("core/...") or the
 # engine's own headers.
 
-set(MAGDA_ENGINE_ALLOWED_QUOTED_PREFIXES "core/" "plan/" "exec/")
+set(MAGDA_ENGINE_ALLOWED_QUOTED_PREFIXES "core/" "plan/" "exec/" "transport/")
 
 file(GLOB_RECURSE MAGDA_ENGINE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
