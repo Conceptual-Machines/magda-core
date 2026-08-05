@@ -189,10 +189,20 @@ class PlanExecutor {
         return plan_ != nullptr;
     }
 
-    /// Structural identity of the prepared plan. What a value table has to
-    /// carry to be applied rather than ignored.
-    std::uint64_t planFingerprint() const {
-        return planFingerprint_;
+    /**
+     * @brief Whether process() would apply @p values rather than ignore them.
+     *
+     * The one definition of applicable, so that a caller deciding which table
+     * to hand over and the block that reads it cannot come to different
+     * answers. A matching fingerprint says the table was resolved against this
+     * structure; a matching op count says it is all there, which a table
+     * assembled halfway can fail while still carrying the right fingerprint.
+     * Anything else renders at unity, which is why what publishes an epoch
+     * checks this before letting it play rather than after.
+     */
+    bool appliesValues(const PlanValues& values) const {
+        return plan_ != nullptr && values.planFingerprint == planFingerprint_ &&
+               values.ops.size() == plan_->ops.size();
     }
 
   private:

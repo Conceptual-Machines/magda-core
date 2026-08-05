@@ -26,17 +26,16 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     if (!prepared->executor.isPrepared())
         return {false, std::move(messages)};
 
-    // Values resolved against a different plan are refused rather than
-    // published, because the executor would quietly decline to apply them and
-    // render at unity: the caller would have asked for a fader and got 0 dB,
-    // with nothing anywhere saying why. The check is free here, where prepare
-    // has just computed the fingerprint, and it makes "an epoch never renders
-    // without values resolved for it" something the epoch enforces where it is
-    // assembled rather than something its parameter comment asks for.
-    if (prepared->values.planFingerprint != prepared->executor.planFingerprint()) {
+    // Values the executor would not apply are refused rather than published,
+    // because what it does with them instead is render at unity: the caller
+    // would have asked for a fader and got 0 dB, with nothing anywhere saying
+    // why. Asked of the executor rather than worked out here, so that the
+    // answer cannot differ from the one the block itself will get.
+    if (!prepared->executor.appliesValues(prepared->values)) {
         messages.push_back(
-            "the values published with this plan were resolved against a different one, "
-            "so it is not published: it would have rendered at unity");
+            "the values published with this plan are not values it can render: they were "
+            "resolved against a different plan, or against this one before it was whole. "
+            "It is not published, because it would have rendered at unity");
         return {false, std::move(messages)};
     }
 
@@ -89,9 +88,7 @@ void EngineSession::process(const BlockInfo& block, juce::AudioBuffer<float>& ou
     // settled by publish, which replaces the one in flight with the epoch's as
     // it goes live, so anything still matching afterwards arrived after it.
     PublishedValues::ScopedAccess<farbot::ThreadType::realtime> values(values_);
-    const auto& table = values->planFingerprint == (*render)->executor.planFingerprint()
-                            ? *values
-                            : (*render)->values;
+    const auto& table = (*render)->executor.appliesValues(*values) ? *values : (*render)->values;
     (*render)->executor.process(table, block, output);
 }
 

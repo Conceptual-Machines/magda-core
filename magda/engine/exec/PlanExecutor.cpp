@@ -480,8 +480,7 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
     // The fingerprint is what says the two belong together; without it, unity
     // is the safe reading.
     static constexpr OpValue kUnity;
-    const auto haveValues =
-        values.planFingerprint == planFingerprint_ && values.ops.size() == plan_->ops.size();
+    const auto haveValues = appliesValues(values);
 
     for (std::size_t i = 0; i < plan_->ops.size(); ++i) {
         const auto& op = plan_->ops[i];

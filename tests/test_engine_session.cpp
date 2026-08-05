@@ -308,12 +308,30 @@ TEST_CASE("A plan published with another plan's values is refused", "[engine][se
     edited[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(8)));
     const auto other = compile(edited);
 
-    const auto refused =
-        session.publish(other, context(), modelIds(edited), resolve(*plan, tracks));
+    SECTION("resolved against another plan") {
+        const auto refused =
+            session.publish(other, context(), modelIds(edited), resolve(*plan, tracks));
 
-    CHECK_FALSE(refused.published);
-    REQUIRE_FALSE(refused.messages.empty());
-    CHECK(refused.messages.back().find("resolved against a different one") != std::string::npos);
+        CHECK_FALSE(refused.published);
+        REQUIRE_FALSE(refused.messages.empty());
+        CHECK(refused.messages.back().find("not values it can render") != std::string::npos);
+    }
+
+    SECTION("resolved against this plan, but not all of it") {
+        // The right fingerprint and one op short of the plan it names, which
+        // is what a table caught halfway through being assembled looks like.
+        // The executor would decline that too, so the fingerprint alone is not
+        // what makes a table applicable.
+        auto truncated = resolve(*other, edited);
+        REQUIRE(truncated.ops.size() > 1);
+        truncated.ops.pop_back();
+
+        const auto refused = session.publish(other, context(), modelIds(edited), truncated);
+
+        CHECK_FALSE(refused.published);
+        REQUIRE_FALSE(refused.messages.empty());
+        CHECK(refused.messages.back().find("not values it can render") != std::string::npos);
+    }
 
     // Still the plan that was right, still rendering what it was.
     CHECK(session.livePlan() == plan);
