@@ -261,19 +261,6 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         }
     }
 
-    // Prepare each bound object once, however many ops reference it.
-    std::set<const void*> prepared;
-    const auto prepareOnce = [&prepared, &context](auto* object) {
-        if (object != nullptr && prepared.insert(object).second)
-            object->prepare(context);
-    };
-
-    for (std::size_t i = 0; i < numOps; ++i) {
-        prepareOnce(audioSourceForOp_[i]);
-        prepareOnce(midiSourceForOp_[i]);
-        prepareOnce(deviceForOp_[i]);
-    }
-
     // --- what the bindings decide -------------------------------------------
     //
     // Everything below reads the instances rather than the plan or the model. A
@@ -445,7 +432,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     silence_.clear();
     noMidi_.clear();
 
-    planFingerprint_ = planFingerprint(plan);
+    planFingerprint_ = magda::engine::planFingerprint(plan);
     plan_ = &plan;
     return messages;
 }

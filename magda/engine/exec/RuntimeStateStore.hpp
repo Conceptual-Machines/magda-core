@@ -94,8 +94,21 @@ class RuntimeStateStore {
      *
      * Never destroys anything: a plan being prepared is not published yet, and
      * until it is, the audio thread is still rendering the previous one.
+     *
+     * Preparing an object is part of creating it and happens nowhere else, for
+     * the same reason. A device the store already holds is one the live plan
+     * may be inside the process() of this instant, and prepare() on a real
+     * plugin resizes and clears what process() is reading: it is a race, and on
+     * the runs where it is not, it is the tail, the delay line and the filter
+     * state the swap exists to keep. So an object is prepared once, when it is
+     * new, before anything can reach it.
+     *
+     * @p context changing is not a live operation. Every object the store holds
+     * is prepared again for it, which is only safe because a sample rate or
+     * block size change means the audio device has stopped and there is no
+     * callback to race.
      */
-    PlanBindings realise(const RenderPlan& plan);
+    PlanBindings realise(const RenderPlan& plan, const RenderContext& context);
 
     /**
      * @brief Destroy what neither @p livePlan nor @p modelIds names.
@@ -123,6 +136,11 @@ class RuntimeStateStore {
 
   private:
     RuntimeStateFactory& factory_;
+
+    /// What everything the store holds has been prepared for. Set by the first
+    /// realise() and only ever changed by one that disagrees with it.
+    RenderContext context_;
+    bool hasContext_ = false;
 
     std::unordered_map<DeviceId, std::unique_ptr<EngineDevice>> devices_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> clipAudio_;

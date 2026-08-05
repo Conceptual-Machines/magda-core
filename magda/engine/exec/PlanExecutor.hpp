@@ -108,6 +108,13 @@ class PlanExecutor {
      * does not validate is not prepared at all, and process() renders silence
      * until a good one arrives.
      *
+     * @p bindings arrive already prepared for @p context. The executor does not
+     * own those objects and must not prepare them: they are shared with the
+     * epoch still rendering, and preparing a device the audio thread is inside
+     * is both a race and the loss of the state a swap exists to keep. Whoever
+     * owns them prepares them when they are made, which is the one moment
+     * nothing can reach them.
+     *
      * This is also where everything that depends on the bound instances is
      * settled: how many samples each delay holds, and therefore which ports can
      * share a buffer. A plugin that changes its reported latency is a re-prepare
@@ -180,6 +187,12 @@ class PlanExecutor {
     /// True once a valid plan has been prepared.
     bool isPrepared() const {
         return plan_ != nullptr;
+    }
+
+    /// Structural identity of the prepared plan. What a value table has to
+    /// carry to be applied rather than ignored.
+    std::uint64_t planFingerprint() const {
+        return planFingerprint_;
     }
 
   private:

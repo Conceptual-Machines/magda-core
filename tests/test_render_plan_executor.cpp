@@ -310,6 +310,23 @@ class MidiPositionProbe final : public EngineDevice {
     }
 };
 
+/// What the runtime store does when it makes an object. The executor does not
+/// prepare what it does not own: the instances are shared with the epoch still
+/// rendering, and preparing one the audio thread is inside is both a race and
+/// the loss of what a swap exists to keep.
+void prepareBindings(PlanBindings& bindings, const RenderContext& context) {
+    for (auto& [id, device] : bindings.devices)
+        device->prepare(context);
+    for (auto& [id, source] : bindings.clipAudio)
+        source->prepare(context);
+    for (auto& [id, source] : bindings.clipMidi)
+        source->prepare(context);
+    for (auto& [id, source] : bindings.audioInputs)
+        source->prepare(context);
+    for (auto& [id, source] : bindings.midiInputs)
+        source->prepare(context);
+}
+
 /// Compile, resolve, prepare and render, so a test says what it is about and
 /// nothing else.
 struct Harness {
@@ -322,7 +339,9 @@ struct Harness {
     std::vector<std::string> prepare() {
         INFO(magda::engine::dumpPlan(plan));
         valueMessages = magda::engine::resolvePlanValues(plan, tracks, master, values);
-        return executor.prepare(plan, bindings, RenderContext{44100.0, kBlockSize, 2});
+        const RenderContext context{44100.0, kBlockSize, 2};
+        prepareBindings(bindings, context);
+        return executor.prepare(plan, bindings, context);
     }
 
     /// Prepares, requiring both layers to have nothing to report.
@@ -1384,6 +1403,7 @@ TEST_CASE("What is in flight survives the plan being replaced", "[engine][exec][
     bindings.devices[7] = &latent;
 
     const RenderContext context{44100.0, kBlockSize, 2};
+    prepareBindings(bindings, context);
     juce::AudioBuffer<float> output(2, kBlockSize);
 
     PlanExecutor first;

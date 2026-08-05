@@ -27,6 +27,8 @@ struct RenderContext {
     /// Channels on every audio port. Stereo throughout: the model has no mono
     /// tracks and the plan carries no channel layouts.
     int numChannels = 2;
+
+    bool operator==(const RenderContext&) const = default;
 };
 
 /**
