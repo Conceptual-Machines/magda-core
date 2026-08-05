@@ -184,6 +184,11 @@ class Compiler {
     /// identity survives sources appearing and disappearing.
     PortRef emitMix(const OpKey& key, const std::vector<PortRef>& sources);
 
+    /// Puts a Delay op on each connected input of an op that has more than one,
+    /// so latency compensation has somewhere to land. @p key and @p kind are
+    /// the consuming op's, which is what the delays are keyed to.
+    std::vector<PortRef> alignInputs(const OpKey& key, OpKind kind, std::vector<PortRef> inputs);
+
     const std::vector<TrackInfo>& tracks_;
     const TrackInfo& master_;
     CompileOptions options_;
@@ -375,7 +380,55 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
 }
 
 PortRef Compiler::emitMix(const OpKey& key, const std::vector<PortRef>& sources) {
-    return PortRef{addOp(OpKind::MixAudio, key, sources, {SignalKind::Audio}), 0};
+    return PortRef{addOp(OpKind::MixAudio, key, alignInputs(key, OpKind::MixAudio, sources),
+                         {SignalKind::Audio}),
+                   0};
+}
+
+std::vector<PortRef> Compiler::alignInputs(const OpKey& key, OpKind kind,
+                                           std::vector<PortRef> inputs) {
+    // One input is its own maximum, so its compensation is zero in every
+    // configuration and the delay would be a copy that never delays anything.
+    // Two or more is the only case where paths can arrive apart, and the
+    // compiler cannot tell whether they will: latency belongs to instances it
+    // has never seen. So the delays go in wherever they could be needed, and
+    // prepare resolves the ones that are not to nothing at all.
+    const auto connected =
+        std::ranges::count_if(inputs, [](const PortRef& p) { return p.valid(); });
+    if (connected < 2)
+        return inputs;
+
+    const auto role = [kind] {
+        switch (kind) {
+            case OpKind::MixAudio:
+                return OpRole::MixInputDelay;
+            case OpKind::MergeMidi:
+                return OpRole::MergeInputDelay;
+            case OpKind::Device:
+                return OpRole::DeviceInputDelay;
+            case OpKind::Fader:
+                return OpRole::FaderInputDelay;
+            default:
+                jassertfalse;  // nothing else fans in
+                return OpRole::MixInputDelay;
+        }
+    }();
+
+    for (std::size_t slot = 0; slot < inputs.size(); ++slot) {
+        auto& input = inputs[slot];
+        if (!input.valid())
+            continue;
+
+        const auto& producer = plan_.ops[static_cast<std::size_t>(input.op)];
+        OpKey delayKey = key;
+        delayKey.role = role;
+        delayKey.index = static_cast<int>(slot);
+        input = PortRef{addOp(OpKind::Delay, delayKey, {input},
+                              {producer.outputs[static_cast<std::size_t>(input.port)]}),
+                        0};
+    }
+
+    return inputs;
 }
 
 ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site,
@@ -383,14 +436,15 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     if (device.bypassed)
         return signal;
 
-    // Delta solo subtracts the device's latency-aligned dry input from its
-    // output, so it needs both a delay line and a second edge carrying the dry
-    // signal past the device. Neither exists yet: it lands with latency
-    // compensation, which is what makes the alignment meaningful.
+    // Delta solo subtracts the device's dry input, aligned to its output, from
+    // that output. The alignment is a delay like any other now; what is still
+    // missing is the edge carrying the dry signal past the device and the op
+    // that subtracts it.
     if (device.deltaSolo)
         diagnose("device " + std::to_string(device.id) + " on track " +
                  std::to_string(site.trackId) +
-                 ": delta solo needs a latency-aligned dry path the plan does not carry yet");
+                 ": delta solo needs a dry edge past the device and an op to subtract it, "
+                 "which the plan does not carry yet");
 
     const auto node = routing::makeRoutingNode(device);
 
@@ -424,8 +478,9 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
         outputs.push_back(SignalKind::Midi);
 
     OpKey key{site.trackId, site.rackId, site.chainId, device.id, OpRole::DeviceProcess, 0};
-    const auto processOp =
-        addOp(OpKind::Device, key, {signal.audio, midiIn, sidechainIn}, std::move(outputs));
+    const auto processOp = addOp(
+        OpKind::Device, key, alignInputs(key, OpKind::Device, {signal.audio, midiIn, sidechainIn}),
+        std::move(outputs));
 
     ChainSignal out;
     out.audio = PortRef{processOp, 0};
@@ -445,8 +500,10 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
         const PortRef deviceMidi{processOp, 1};
         if (node.passesRawMidiInput() && signal.midi.valid()) {
             key.role = OpRole::ChainMidiMerge;
-            out.midi = PortRef{
-                addOp(OpKind::MergeMidi, key, {signal.midi, deviceMidi}, {SignalKind::Midi}), 0};
+            out.midi = PortRef{addOp(OpKind::MergeMidi, key,
+                                     alignInputs(key, OpKind::MergeMidi, {signal.midi, deviceMidi}),
+                                     {SignalKind::Midi}),
+                               0};
         } else {
             out.midi = deviceMidi;
         }
@@ -470,10 +527,13 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
                  " feeds rack modulation, which the plan does not carry yet");
 
     // Same dry path a device's delta solo needs, one level up: the rack
-    // instance subtracts its own latency-aligned input from its wet output.
+    // instance subtracts its own input, aligned to its wet output, from that
+    // output. The current engine keeps a dry edge around every rack instance
+    // for exactly this, and delays it to match the wet path.
     if (rack.deltaSolo)
         diagnose("rack " + std::to_string(rack.id) +
-                 ": delta solo needs a latency-aligned dry path the plan does not carry yet");
+                 ": delta solo needs a dry edge around the rack and an op to subtract it, "
+                 "which the plan does not carry yet");
 
     // A rack with no chains passes signal rather than silence: compiling it to
     // a zero-input mix would silence the track. It is not fully transparent
@@ -531,7 +591,8 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
 
         const auto faderOp =
             addOp(OpKind::Fader, faderKey,
-                  {chainSignal.audio, generatesMidi ? chainSignal.midi : noInput()},
+                  alignInputs(faderKey, OpKind::Fader,
+                              {chainSignal.audio, generatesMidi ? chainSignal.midi : noInput()}),
                   std::move(faderOutputs));
 
         chainAudio.push_back(PortRef{faderOp, 0});
@@ -555,7 +616,10 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     } else {
         const OpKey midiKey{site.trackId,        rack.id, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
                             OpRole::RackMidiMix, 0};
-        out.midi = PortRef{addOp(OpKind::MergeMidi, midiKey, chainMidi, {SignalKind::Midi}), 0};
+        out.midi =
+            PortRef{addOp(OpKind::MergeMidi, midiKey,
+                          alignInputs(midiKey, OpKind::MergeMidi, chainMidi), {SignalKind::Midi}),
+                    0};
     }
 
     return out;
@@ -683,7 +747,10 @@ void Compiler::emitTrack(const TrackInfo& track) {
     if (!midiSources.empty()) {
         const OpKey key{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
                         INVALID_DEVICE_ID, OpRole::TrackMidiInput, 0};
-        signal.midi = PortRef{addOp(OpKind::MergeMidi, key, midiSources, {SignalKind::Midi}), 0};
+        signal.midi =
+            PortRef{addOp(OpKind::MergeMidi, key, alignInputs(key, OpKind::MergeMidi, midiSources),
+                          {SignalKind::Midi}),
+                    0};
         trackMidiInput_[track.id] = signal.midi;
     }
 

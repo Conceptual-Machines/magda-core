@@ -76,11 +76,18 @@ class LedgerDevice final : public EngineDevice {
         block.audio.multiplyBy(0.5f);
     }
 
+    int latencySamples() const override {
+        return latency;
+    }
+
     DeviceId id() const {
         return id_;
     }
 
     int blocksProcessed = 0;
+    /// What a plugin reports once it is loaded, and may report differently
+    /// later. Not const for the same reason the real thing is not.
+    int latency = 0;
 
   private:
     Ledger& ledger_;
@@ -189,6 +196,46 @@ TEST_CASE("Publishing a plan puts it on the audio thread", "[engine][session]") 
     session.process(BlockInfo{kBlockSize, 0, true}, output);
 
     CHECK(output.getSample(0, 0) == approx(0.5f));
+}
+
+TEST_CASE("A latency change re-prepares the plan rather than recompiling it",
+          "[engine][session][pdc]") {
+    // Where the compensation goes is topology and lives in the plan; how many
+    // samples it holds comes from an instance the compiler has never seen. So a
+    // plugin that changes what it reports is this: the same plan, published
+    // again, with nothing rebuilt and nothing recompiled.
+    Ledger ledger;
+    TestFactory factory(ledger);
+    EngineSession session(factory);
+
+    auto tracks = trackWithEffect(7);
+    tracks.push_back(makeTrack(2));
+    const auto plan = compile(tracks);
+
+    REQUIRE(session.publish(plan, context(), modelIds(tracks)).published);
+    session.publishValues(resolve(*plan, tracks));
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    CHECK(output.getSample(0, 0) == approx(1.5f));
+
+    auto* device = factory.devicesById[7];
+    REQUIRE(device != nullptr);
+    const auto devicesCreated = ledger.devicesCreated.load();
+    device->latency = 16;
+
+    REQUIRE(session.publish(plan, context(), modelIds(tracks)).published);
+
+    CHECK(session.livePlan() == plan);
+    CHECK(ledger.devicesCreated.load() == devicesCreated);
+    CHECK(factory.devicesById[7] == device);
+
+    // Track 2 now waits for the track the device is on, so the first sixteen
+    // samples are the latent track alone and the rest are both.
+    session.process(BlockInfo{kBlockSize, 0, true}, output);
+    CHECK(output.getSample(0, 0) == approx(0.5f));
+    CHECK(output.getSample(0, 15) == approx(0.5f));
+    CHECK(output.getSample(0, 16) == approx(1.5f));
 }
 
 TEST_CASE("A swap carries runtime state that the new plan still names", "[engine][session]") {

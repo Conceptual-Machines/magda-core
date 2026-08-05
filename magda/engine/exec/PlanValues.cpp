@@ -292,6 +292,14 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
     const auto& op = plan_.ops[static_cast<std::size_t>(id)];
     const auto& key = op.key;
 
+    // A delay has no value and cannot be given one. Its line has to keep
+    // advancing whatever the model says: one that stopped writing while its
+    // chain was silent would hand back audio from before the silence when the
+    // chain returned. The executor reads no entry for it, so this leaves unity
+    // behind rather than deciding anything.
+    if (op.kind == OpKind::Delay)
+        return;
+
     const auto* track = findTrack(key.trackId);
     if (track == nullptr) {
         report(id, "no track " + std::to_string(key.trackId) + " in the model, rendering silence");
@@ -421,6 +429,11 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::RackMidiMix:
         case OpRole::TrackMeter:
         case OpRole::HardwareOutput:
+        // Delay roles never reach here: they return above.
+        case OpRole::MixInputDelay:
+        case OpRole::MergeInputDelay:
+        case OpRole::DeviceInputDelay:
+        case OpRole::FaderInputDelay:
             break;
     }
 }

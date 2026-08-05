@@ -63,12 +63,27 @@ int countRole(const RenderPlan& plan, OpRole role) {
     return static_cast<int>(opsWithRole(plan, role).size());
 }
 
-/// The op an input slot reads, or -1 when the slot is unconnected.
+/// The op an input slot reads, or -1 when the slot is unconnected. Latency
+/// compensation is looked through: a delay stands for the op behind it, and
+/// these tests are about what is routed where rather than about the delays,
+/// which have their own.
 magda::engine::OpId inputOp(const RenderPlan& plan, magda::engine::OpId op, std::size_t slot) {
     const auto& inputs = plan.ops[static_cast<std::size_t>(op)].inputs;
     if (slot >= inputs.size())
         return magda::engine::INVALID_OP_ID;
-    return inputs[slot].op;
+
+    const auto source = inputs[slot].op;
+    if (source == magda::engine::INVALID_OP_ID)
+        return source;
+
+    const auto& producer = plan.ops[static_cast<std::size_t>(source)];
+    return producer.kind == magda::engine::OpKind::Delay ? producer.inputs.front().op : source;
+}
+
+/// The op an input slot reads without looking through anything.
+magda::engine::OpId rawInputOp(const RenderPlan& plan, magda::engine::OpId op, std::size_t slot) {
+    const auto& inputs = plan.ops[static_cast<std::size_t>(op)].inputs;
+    return slot >= inputs.size() ? magda::engine::INVALID_OP_ID : inputs[slot].op;
 }
 
 /// Every fixture must compile to a structurally sound plan; this is asserted
@@ -137,6 +152,45 @@ ops=13 outputs=1
 [ 11] Gain        det   T-2:trackMute                  in=10:0             out=audio       deps=1
 [ 12] Output      det   T-2:hardwareOutput             in=11:0             out=-           deps=1
 ready=0
+)");
+}
+
+TEST_CASE("A second track is a fan-in, and a fan-in is where the delays go",
+          "[engine][plan][compiler][pdc]") {
+    // The same golden surface with one more track in it. Everything the first
+    // track had is unchanged, and what the second one adds is a sum with two
+    // inputs and a delay on each: how many samples they hold is not here,
+    // because it is not known until the plan is prepared against the plugins
+    // it names.
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    CHECK(magda::engine::dumpPlan(plan) == R"(magda-render-plan v1
+ops=20 outputs=1
+[  0] ClipAudio   det   T1:clipAudio                   in=-                out=audio       deps=0
+[  1] MixAudio    det   T1:trackAudioInput             in=0:0              out=audio       deps=1
+[  2] Device      det   T1/D7:deviceProcess            in=1:0,-,-          out=audio       deps=1
+[  3] Gain        det   T1/D7:deviceGain               in=2:0              out=audio       deps=1
+[  4] Meter       det   T1/D7:deviceMeter              in=3:0              out=audio       deps=1
+[  5] Fader       det   T1:trackFader                  in=4:0,-            out=audio       deps=1
+[  6] Meter       det   T1:trackMeter                  in=5:0              out=audio       deps=1
+[  7] Gain        det   T1:trackMute                   in=6:0              out=audio       deps=1
+[  8] ClipAudio   det   T2:clipAudio                   in=-                out=audio       deps=0
+[  9] MixAudio    det   T2:trackAudioInput             in=8:0              out=audio       deps=1
+[ 10] Fader       det   T2:trackFader                  in=9:0,-            out=audio       deps=1
+[ 11] Meter       det   T2:trackMeter                  in=10:0             out=audio       deps=1
+[ 12] Gain        det   T2:trackMute                   in=11:0             out=audio       deps=1
+[ 13] Delay       det   T-2:mixInputDelay              in=7:0              out=audio       deps=1
+[ 14] Delay       det   T-2:mixInputDelay#1            in=12:0             out=audio       deps=1
+[ 15] MixAudio    det   T-2:trackAudioInput            in=13:0,14:0        out=audio       deps=2
+[ 16] Fader       det   T-2:trackFader                 in=15:0,-           out=audio       deps=1
+[ 17] Meter       det   T-2:trackMeter                 in=16:0             out=audio       deps=1
+[ 18] Gain        det   T-2:trackMute                  in=17:0             out=audio       deps=1
+[ 19] Output      det   T-2:hardwareOutput             in=18:0             out=-           deps=1
+ready=0,8
 )");
 }
 
@@ -1107,6 +1161,200 @@ TEST_CASE("validatePlan enforces the differ's identity precondition", "[engine][
     const auto problems = magda::engine::validatePlan(plan);
     REQUIRE(problems.size() == 1);
     CHECK(problems.front().find("same key as op 0") != std::string::npos);
+}
+
+TEST_CASE("validatePlan enforces the delay invariants", "[engine][plan][validate]") {
+    using magda::engine::PlanOp;
+    using magda::engine::PortRef;
+    using magda::engine::SignalKind;
+
+    // Latency resolution reads a delay's sample count off the op it feeds, so
+    // a delay on two edges, or behind another delay, is not a plan that is
+    // merely odd: it is one whose compensation has no single answer.
+    RenderPlan plan;
+
+    PlanOp source;
+    source.kind = OpKind::ClipAudio;
+    source.key = {1, INVALID_RACK_ID, INVALID_CHAIN_ID, INVALID_DEVICE_ID, OpRole::ClipAudio, 0};
+    source.outputs = {SignalKind::Audio};
+    plan.ops.push_back(source);
+
+    PlanOp delay;
+    delay.kind = OpKind::Delay;
+    delay.key = {1, INVALID_RACK_ID, INVALID_CHAIN_ID, INVALID_DEVICE_ID, OpRole::MixInputDelay, 0};
+    delay.inputs = {PortRef{0, 0}};
+    delay.outputs = {SignalKind::Audio};
+
+    SECTION("a delay on two edges is rejected") {
+        plan.ops.push_back(delay);
+
+        for (int reader = 0; reader < 2; ++reader) {
+            PlanOp mix;
+            mix.kind = OpKind::MixAudio;
+            mix.key = {1,
+                       INVALID_RACK_ID,
+                       INVALID_CHAIN_ID,
+                       INVALID_DEVICE_ID,
+                       OpRole::TrackAudioInput,
+                       reader};
+            mix.inputs = {PortRef{1, 0}};
+            mix.outputs = {SignalKind::Audio};
+            plan.ops.push_back(mix);
+        }
+
+        const auto problems = magda::engine::validatePlan(plan);
+        REQUIRE(problems.size() == 1);
+        CHECK(problems.front().find("read by 2 input slots") != std::string::npos);
+    }
+
+    SECTION("a delay behind another delay is rejected") {
+        plan.ops.push_back(delay);
+
+        auto stacked = delay;
+        stacked.key.index = 1;
+        stacked.inputs = {PortRef{1, 0}};
+        plan.ops.push_back(stacked);
+
+        PlanOp mix;
+        mix.kind = OpKind::MixAudio;
+        mix.key = {1, INVALID_RACK_ID, INVALID_CHAIN_ID, INVALID_DEVICE_ID, OpRole::TrackAudioInput,
+                   0};
+        mix.inputs = {PortRef{2, 0}};
+        mix.outputs = {SignalKind::Audio};
+        plan.ops.push_back(mix);
+
+        const auto problems = magda::engine::validatePlan(plan);
+        REQUIRE(problems.size() == 1);
+        CHECK(problems.front().find("delay reading another delay") != std::string::npos);
+    }
+
+    SECTION("a delay keyed to nothing in particular is rejected") {
+        delay.key.role = OpRole::TrackFader;
+        plan.ops.push_back(delay);
+
+        PlanOp mix;
+        mix.kind = OpKind::MixAudio;
+        mix.key = {1, INVALID_RACK_ID, INVALID_CHAIN_ID, INVALID_DEVICE_ID, OpRole::TrackAudioInput,
+                   0};
+        mix.inputs = {PortRef{1, 0}};
+        mix.outputs = {SignalKind::Audio};
+        plan.ops.push_back(mix);
+
+        const auto problems = magda::engine::validatePlan(plan);
+        REQUIRE(problems.size() == 1);
+        CHECK(problems.front().find("not keyed to an input slot") != std::string::npos);
+    }
+
+    SECTION("an op wearing a delay's role without being one is rejected") {
+        PlanOp gain;
+        gain.kind = OpKind::Gain;
+        gain.key = delay.key;
+        gain.inputs = {PortRef{0, 0}};
+        gain.outputs = {SignalKind::Audio};
+        plan.ops.push_back(gain);
+
+        const auto problems = magda::engine::validatePlan(plan);
+        REQUIRE(problems.size() == 1);
+        CHECK(problems.front().find("input-delay role but is not a delay") != std::string::npos);
+    }
+}
+
+TEST_CASE("Latency compensation goes where paths can arrive apart",
+          "[engine][plan][compiler][pdc]") {
+    using magda::engine::OpKind;
+
+    const auto delaysInto = [](const RenderPlan& plan, magda::engine::OpId consumer) {
+        int delays = 0;
+        for (std::size_t slot = 0;
+             slot < plan.ops[static_cast<std::size_t>(consumer)].inputs.size(); ++slot) {
+            const auto source = rawInputOp(plan, consumer, slot);
+            if (source != magda::engine::INVALID_OP_ID &&
+                plan.ops[static_cast<std::size_t>(source)].kind == OpKind::Delay)
+                ++delays;
+        }
+        return delays;
+    };
+
+    SECTION("a sum of two tracks, but not a sum of one") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        const auto inputs = opsWithRole(plan, OpRole::TrackAudioInput);
+        REQUIRE(inputs.size() == 3);
+        CHECK(delaysInto(plan, inputs[0]) == 0);  // one clip source
+        CHECK(delaysInto(plan, inputs[1]) == 0);
+        CHECK(delaysInto(plan, inputs[2]) == 2);  // the master, summing both
+        CHECK(countRole(plan, OpRole::MixInputDelay) == 2);
+    }
+
+    SECTION("a device reading audio and MIDI, but not one reading audio alone") {
+        // Track 2 has nothing in it that consumes MIDI, so no MIDI is compiled
+        // for it at all and its effect has one input to wait on.
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(3)));
+        tracks[1].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(4)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        const auto devices = opsWithRole(plan, OpRole::DeviceProcess);
+        REQUIRE(devices.size() == 2);
+        CHECK(delaysInto(plan, devices[0]) == 2);  // the instrument: audio and MIDI
+        CHECK(delaysInto(plan, devices[1]) == 0);  // the effect: audio alone
+        CHECK(countRole(plan, OpRole::DeviceInputDelay) == 2);
+    }
+
+    SECTION("a device reading a sidechain") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+        auto device = makeEffect(7);
+        device.sidechain.type = SidechainConfig::Type::Audio;
+        device.sidechain.sourceTrackId = 2;
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(device));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        const auto devices = opsWithRole(plan, OpRole::DeviceProcess);
+        REQUIRE(devices.size() == 1);
+        CHECK(delaysInto(plan, devices[0]) == 2);  // audio and the key it is aligned with
+    }
+
+    SECTION("a rack's chains, and the MIDI they generate") {
+        auto rack = std::make_unique<RackInfo>();
+        rack->id = 5;
+        for (const ChainId chainId : {ChainId{10}, ChainId{11}}) {
+            ChainInfo chain;
+            chain.id = chainId;
+            auto arp = makeEffect(static_cast<DeviceId>(chainId));
+            arp.deviceType = DeviceType::MIDI;
+            arp.canReceiveMidi = true;
+            arp.producesMidi = true;
+            arp.midiInThru = false;
+            chain.elements.push_back(makeDeviceElement(arp));
+            rack->chains.push_back(std::move(chain));
+        }
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(ChainElement{std::move(rack)});
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(9)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        const auto mix = opsWithRole(plan, OpRole::RackMix);
+        REQUIRE(mix.size() == 1);
+        CHECK(delaysInto(plan, mix.front()) == 2);
+
+        const auto midiMix = opsWithRole(plan, OpRole::RackMidiMix);
+        REQUIRE(midiMix.size() == 1);
+        CHECK(delaysInto(plan, midiMix.front()) == 2);
+
+        // Each chain's fader carries the chain's audio and its MIDI, which
+        // arrive from different places and so may arrive apart.
+        for (const auto fader : opsWithRole(plan, OpRole::RackChainFader))
+            CHECK(delaysInto(plan, fader) == 2);
+    }
 }
 
 TEST_CASE("validatePlan enforces liveness provenance", "[engine][plan][validate]") {

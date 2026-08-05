@@ -19,6 +19,14 @@
  * A published plan is immutable. Every structural change compiles a new plan
  * and swaps it in atomically; the differ carries runtime state across the swap
  * by matching ops on their OpKey.
+ *
+ * Latency compensation splits along the same seam. Where the delay lines go is
+ * topology and lives here as Delay ops; how many samples each one holds is a
+ * property of a loaded plugin, which the model cannot know and the compiler has
+ * never seen, so it is resolved when the plan is prepared against its bindings.
+ * A plugin whose reported latency changes therefore re-prepares rather than
+ * recompiling, and the plan, its fingerprint and everything keyed on an OpKey
+ * come through untouched.
  */
 
 namespace magda::engine {
@@ -46,6 +54,7 @@ enum class OpKind : std::uint8_t {
     Device,      ///< a device instance (instrument, effect, MIDI or analysis)
     MixAudio,   ///< ordered sum of audio inputs (summing order is compiled, never scheduling order)
     MergeMidi,  ///< ordered merge of MIDI inputs
+    Delay,      ///< latency compensation on one edge; the sample count is bound at prepare time
     Gain,       ///< scalar gain
     Fader,      ///< volume + pan, and the MIDI its stage passes on
     SendTap,    ///< pre/post-fader tap feeding another track
@@ -80,6 +89,16 @@ enum class OpRole : std::uint8_t {
     TrackMute,        ///< mute and solo, applied after the meter and sidechain tap
     SendTap,          ///< one send slot
     HardwareOutput,   ///< the master's hardware output
+
+    // Latency compensation. A delay sits on one edge, so its identity is the
+    // op it feeds plus the input slot it fills: the role says which op that is,
+    // and OpKey::index says which slot. Two ops of the same kind never share a
+    // location, so this is unique wherever the compiler emits it, which
+    // validatePlan's key check is what actually guarantees.
+    MixInputDelay,     ///< aligns one input of a MixAudio
+    MergeInputDelay,   ///< aligns one input of a MergeMidi
+    DeviceInputDelay,  ///< aligns one input slot of a Device
+    FaderInputDelay,   ///< aligns one input slot of a Fader
 };
 
 /**
@@ -226,6 +245,10 @@ std::uint64_t planFingerprint(const RenderPlan& plan);
  * failing; and liveness provenance in both directions, because an over-tagged
  * Live op is silently correct while quietly shrinking what the anticipative
  * executor may precompute.
+ *
+ * Delays get the same treatment: one edge each, no stacking, and a key that
+ * names the slot they fill. Latency resolution reads a delay's count off the op
+ * it feeds, which is only well defined while that holds.
  */
 std::vector<std::string> validatePlan(const RenderPlan& plan);
 

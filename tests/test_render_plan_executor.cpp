@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -142,6 +143,74 @@ class NoteToDcInstrument final : public EngineDevice {
     float level_ = 0.0f;
 };
 
+/// One sample at timeline position zero and silence everywhere else, so where
+/// a signal ends up is a sample index rather than a level.
+class ImpulseSource final : public EngineAudioSource {
+  public:
+    explicit ImpulseSource(float level) : level_(level) {}
+
+    void render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) override {
+        out.clear();
+        if (block.timelineSample <= 0 && block.timelineSample + block.numSamples > 0)
+            for (std::size_t channel = 0; channel < out.getNumChannels(); ++channel)
+                out.setSample(static_cast<int>(channel), static_cast<int>(-block.timelineSample),
+                              level_);
+    }
+
+  private:
+    float level_;
+};
+
+/// Delays its input, and says so.
+///
+/// Deliberately not the engine's own delay line: a device that reports latency
+/// it does not produce would pass a compensation test whether or not anything
+/// compensated, and one that borrowed the line under test would pass a broken
+/// line twice over.
+class LatentDevice final : public EngineDevice {
+  public:
+    explicit LatentDevice(int latency) : latency_(latency) {}
+
+    void prepare(const RenderContext& context) override {
+        history_.assign(static_cast<std::size_t>(context.numChannels),
+                        std::deque<float>(static_cast<std::size_t>(latency_), 0.0f));
+    }
+
+    void process(DeviceBlock& block) override {
+        for (std::size_t channel = 0; channel < block.audio.getNumChannels(); ++channel) {
+            auto* samples = block.audio.getChannelPointer(channel);
+            auto& history = history_[channel];
+            for (int sample = 0; sample < block.block.numSamples; ++sample) {
+                history.push_back(samples[sample]);
+                samples[sample] = history.front();
+                history.pop_front();
+            }
+        }
+    }
+
+    int latencySamples() const override {
+        return latency_;
+    }
+
+  private:
+    int latency_;
+    std::vector<std::deque<float>> history_;
+};
+
+/// Adds its sidechain to its audio, so where the two arrive relative to each
+/// other is visible downstream.
+class SidechainSumDevice final : public EngineDevice {
+  public:
+    void process(DeviceBlock& block) override {
+        const auto numChannels =
+            std::min(block.audio.getNumChannels(), block.sidechain.getNumChannels());
+        for (std::size_t channel = 0; channel < numChannels; ++channel)
+            juce::FloatVectorOperations::add(block.audio.getChannelPointer(channel),
+                                             block.sidechain.getChannelPointer(channel),
+                                             block.block.numSamples);
+    }
+};
+
 /// Emits MIDI of its own, to exercise the MIDI ports and merges.
 class ArpDevice final : public EngineDevice {
   public:
@@ -155,6 +224,55 @@ class ArpDevice final : public EngineDevice {
 
   private:
     int noteNumber_;
+};
+
+/// An arp whose notes really do come out as late as it says they do, at a fixed
+/// offset into every block.
+class LatentArpDevice final : public EngineDevice {
+  public:
+    LatentArpDevice(int noteNumber, int latency, int offsetInBlock)
+        : noteNumber_(noteNumber), latency_(latency), offset_(offsetInBlock) {}
+
+    void process(DeviceBlock& block) override {
+        block.audio.clear();
+        if (block.midiOut != nullptr && offset_ < block.block.numSamples)
+            block.midiOut->addEvent(juce::MidiMessage::noteOn(1, noteNumber_, 1.0f), offset_);
+    }
+
+    int latencySamples() const override {
+        return latency_;
+    }
+
+  private:
+    int noteNumber_, latency_, offset_;
+};
+
+/// Where every note-on reached it, on the timeline.
+class MidiPositionProbe final : public EngineDevice {
+  public:
+    void process(DeviceBlock& block) override {
+        block.audio.clear();
+        for (const auto metadata : *block.midiIn)
+            if (const auto message = metadata.getMessage(); message.isNoteOn())
+                notes.push_back(
+                    {message.getNoteNumber(),
+                     static_cast<int>(block.block.timelineSample) + metadata.samplePosition});
+    }
+
+    struct Note {
+        int number = 0;
+        int position = 0;
+    };
+    std::vector<Note> notes;
+
+    /// Where the given note landed, once per block it arrived in.
+    std::vector<int> positionsOf(int number) const {
+        std::vector<int> positions;
+        for (const auto& note : notes)
+            if (note.number == number)
+                positions.push_back(note.position);
+        return positions;
+    }
 };
 
 /// Compile, resolve, prepare and render, so a test says what it is about and
@@ -217,6 +335,27 @@ struct Harness {
 
 Catch::Approx approx(float value) {
     return Catch::Approx(value).margin(1e-5);
+}
+
+/// Channel 0 of @p numBlocks consecutive blocks, as one stream, so where a
+/// signal came out is an index into it.
+std::vector<float> renderStream(Harness& harness, int numBlocks) {
+    std::vector<float> stream;
+    for (int block = 0; block < numBlocks; ++block) {
+        harness.render(kBlockSize, static_cast<std::int64_t>(block) * kBlockSize);
+        for (int sample = 0; sample < kBlockSize; ++sample)
+            stream.push_back(harness.outputSample(0, sample));
+    }
+    return stream;
+}
+
+/// Every sample that is not silent, as (position, level).
+std::vector<std::pair<int, float>> soundingSamples(const std::vector<float>& stream) {
+    std::vector<std::pair<int, float>> sounding;
+    for (std::size_t sample = 0; sample < stream.size(); ++sample)
+        if (std::abs(stream[sample]) > 1e-5f)
+            sounding.push_back({static_cast<int>(sample), stream[sample]});
+    return sounding;
 }
 
 }  // namespace
@@ -826,19 +965,187 @@ TEST_CASE("Unbound ops are reported and render silence", "[engine][exec]") {
     CHECK(harness.outputSample() == approx(0.0f));
 }
 
-TEST_CASE("Device latency is reported rather than silently ignored", "[engine][exec]") {
+TEST_CASE("A device's latency becomes the plan's latency", "[engine][exec][pdc]") {
     auto track = makeTrack(1);
     track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
 
     Harness harness({track}, makeMaster());
-    ConstantSource source(1.0f);
-    GainDevice device(1.0f, 128);
+    ImpulseSource source(0.5f);
+    LatentDevice device(80);
     harness.bindings.clipAudio[1] = &source;
     harness.bindings.devices[7] = &device;
 
-    const auto messages = harness.prepare();
-    REQUIRE(messages.size() == 1);
-    CHECK(messages[0].find("128 samples of latency") != std::string::npos);
+    harness.prepareCleanly();
+    CHECK(harness.executor.latencySamples() == 80);
+
+    // Longer than a block, so the delay has to survive being read back across
+    // one and the ring has to wrap.
+    const auto sounding = soundingSamples(renderStream(harness, 4));
+    REQUIRE(sounding.size() == 1);
+    CHECK(sounding[0].first == 80);
+    CHECK(sounding[0].second == approx(0.5f));
+}
+
+TEST_CASE("Paths that meet are aligned to the longest of them", "[engine][exec][pdc]") {
+    // The current engine delays every input of a sum up to the longest one and
+    // never pulls anything early, wherever that sum happens to be. These are
+    // the places it happens: two tracks meeting in a mix, a group summing
+    // children, a send landing on another track's input, a sidechain meeting
+    // the chain it keys, and a rack's chains meeting each other.
+    ImpulseSource loud(0.5f);
+    ImpulseSource quiet(0.25f);
+    LatentDevice latent(48);
+
+    SECTION("two tracks summed into the master") {
+        auto latentTrack = makeTrack(1);
+        latentTrack.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+
+        Harness harness({latentTrack, makeTrack(2)}, makeMaster());
+        harness.bindings.clipAudio[1] = &loud;
+        harness.bindings.clipAudio[2] = &quiet;
+        harness.bindings.devices[7] = &latent;
+
+        harness.prepareCleanly();
+        const auto sounding = soundingSamples(renderStream(harness, 3));
+
+        REQUIRE(sounding.size() == 1);
+        CHECK(sounding[0].first == 48);
+        CHECK(sounding[0].second == approx(0.75f));
+    }
+
+    SECTION("a group summing children of unequal latency") {
+        auto latentTrack = makeTrack(1);
+        latentTrack.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+        latentTrack.audioOutputDevice = "track:3";
+
+        auto cleanTrack = makeTrack(2);
+        cleanTrack.audioOutputDevice = "track:3";
+
+        Harness harness({latentTrack, cleanTrack, makeTrack(3, TrackType::Group)}, makeMaster());
+        harness.bindings.clipAudio[1] = &loud;
+        harness.bindings.clipAudio[2] = &quiet;
+        harness.bindings.devices[7] = &latent;
+
+        harness.prepareCleanly();
+        const auto sounding = soundingSamples(renderStream(harness, 3));
+
+        REQUIRE(sounding.size() == 1);
+        CHECK(sounding[0].first == 48);
+        CHECK(sounding[0].second == approx(0.75f));
+    }
+
+    SECTION("a send from a latent track landing on a track of its own") {
+        auto latentTrack = makeTrack(1);
+        latentTrack.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+        latentTrack.sends.push_back(SendInfo{0, 1.0f, false, 2});
+
+        Harness harness({latentTrack, makeTrack(2)}, makeMaster());
+        harness.bindings.clipAudio[1] = &loud;
+        harness.bindings.clipAudio[2] = &quiet;
+        harness.bindings.devices[7] = &latent;
+
+        harness.prepareCleanly();
+        const auto sounding = soundingSamples(renderStream(harness, 3));
+
+        // Track 1 direct, the same signal again through the send, and track 2's
+        // own, which the send's arrival is what delays.
+        REQUIRE(sounding.size() == 1);
+        CHECK(sounding[0].first == 48);
+        CHECK(sounding[0].second == approx(1.25f));
+    }
+
+    SECTION("a sidechain meeting the chain it keys") {
+        auto keyed = makeTrack(1);
+        auto device = makeEffect(7);
+        device.sidechain.type = SidechainConfig::Type::Audio;
+        device.sidechain.sourceTrackId = 2;
+        keyed.chain.fxChainElements.push_back(makeDeviceElement(device));
+
+        auto source = makeTrack(2);
+        source.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(8)));
+
+        Harness harness({keyed, source}, makeMaster());
+        SidechainSumDevice sum;
+        harness.bindings.clipAudio[1] = &loud;
+        harness.bindings.clipAudio[2] = &quiet;
+        harness.bindings.devices[7] = &sum;
+        harness.bindings.devices[8] = &latent;
+
+        harness.prepareCleanly();
+        const auto sounding = soundingSamples(renderStream(harness, 3));
+
+        // Track 1's own signal is what moves: the key it is being summed with
+        // arrives 48 samples late, so the plan delays the chain to meet it.
+        REQUIRE(sounding.size() == 1);
+        CHECK(sounding[0].first == 48);
+        CHECK(sounding[0].second == approx(1.0f));
+    }
+
+    SECTION("parallel rack chains of unequal latency") {
+        auto rack = std::make_unique<RackInfo>();
+        rack->id = 5;
+
+        ChainInfo latentChain;
+        latentChain.id = 10;
+        latentChain.elements.push_back(makeDeviceElement(makeEffect(7)));
+        rack->chains.push_back(std::move(latentChain));
+
+        ChainInfo cleanChain;
+        cleanChain.id = 11;
+        rack->chains.push_back(std::move(cleanChain));
+
+        auto track = makeTrack(1);
+        track.chain.fxChainElements.push_back(ChainElement{std::move(rack)});
+
+        Harness harness({track}, makeMaster());
+        harness.bindings.clipAudio[1] = &loud;
+        harness.bindings.devices[7] = &latent;
+
+        harness.prepareCleanly();
+        const auto sounding = soundingSamples(renderStream(harness, 3));
+
+        // Both chains carry the same signal, so aligned they sum to twice it.
+        REQUIRE(sounding.size() == 1);
+        CHECK(sounding[0].first == 48);
+        CHECK(sounding[0].second == approx(1.0f));
+    }
+}
+
+TEST_CASE("MIDI is aligned against the audio it travels with", "[engine][exec][pdc]") {
+    // The current engine carries a plugin's MIDI in the same stream as its
+    // audio, so a delay on that stream moves both. Here they are separate
+    // ports, and the merge is where they meet: the chain's own MIDI is delayed
+    // to where the device's arrives.
+    auto arp = makeEffect(7);
+    arp.deviceType = DeviceType::MIDI;
+    arp.canReceiveMidi = true;
+    arp.producesMidi = true;
+    arp.midiInThru = true;
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(arp));
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(8)));
+
+    Harness harness({track}, makeMaster());
+    ConstantSource audio(0.0f);
+    NoteSource notes(40);
+    // 80 samples of latency at a 64 sample block: the arp's own note comes out
+    // 16 samples into the following block, and the chain's has to be held over
+    // the block boundary to land beside it.
+    LatentArpDevice latentArp(72, 80, 16);
+    MidiPositionProbe probe;
+    harness.bindings.clipAudio[1] = &audio;
+    harness.bindings.clipMidi[1] = &notes;
+    harness.bindings.devices[7] = &latentArp;
+    harness.bindings.devices[8] = &probe;
+
+    harness.prepareCleanly();
+    renderStream(harness, 4);
+
+    // Every block's note-on from the source is held 80 samples; the arp's are
+    // already where they claim to be.
+    CHECK(probe.positionsOf(72) == std::vector<int>{16, 80, 144, 208});
+    CHECK(probe.positionsOf(40) == std::vector<int>{80, 144, 208});
 }
 
 TEST_CASE("A malformed plan is refused, and the executor renders silence", "[engine][exec]") {
@@ -885,6 +1192,31 @@ TEST_CASE("Block size does not change what is rendered", "[engine][exec]") {
             out.push_back(harness.outputSample(0, sample));
     };
 
+    // The same, with two tracks and one of them latent, so what is compared is
+    // a delay line read back across a block boundary it does not line up with.
+    const auto renderCompensatedTwice = [](int firstBlock, int secondBlock,
+                                           std::vector<float>& out) {
+        auto latentTrack = makeTrack(1);
+        latentTrack.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+
+        Harness harness({latentTrack, makeTrack(2)}, makeMaster());
+        RampSource ramp;
+        ConstantSource steady(0.25f);
+        LatentDevice device(37);
+        harness.bindings.clipAudio[1] = &ramp;
+        harness.bindings.clipAudio[2] = &steady;
+        harness.bindings.devices[7] = &device;
+        harness.prepareCleanly();
+
+        harness.render(firstBlock, 0);
+        for (int sample = 0; sample < firstBlock; ++sample)
+            out.push_back(harness.outputSample(0, sample));
+
+        harness.render(secondBlock, firstBlock);
+        for (int sample = 0; sample < secondBlock; ++sample)
+            out.push_back(harness.outputSample(0, sample));
+    };
+
     std::vector<float> whole;
     std::vector<float> split;
     renderTwice(kBlockSize, 0, whole);
@@ -893,6 +1225,15 @@ TEST_CASE("Block size does not change what is rendered", "[engine][exec]") {
     REQUIRE(whole.size() == split.size());
     for (std::size_t sample = 0; sample < whole.size(); ++sample)
         REQUIRE(whole[sample] == approx(split[sample]));
+
+    std::vector<float> compensatedWhole;
+    std::vector<float> compensatedSplit;
+    renderCompensatedTwice(kBlockSize, 0, compensatedWhole);
+    renderCompensatedTwice(kBlockSize / 4, kBlockSize - (kBlockSize / 4), compensatedSplit);
+
+    REQUIRE(compensatedWhole.size() == compensatedSplit.size());
+    for (std::size_t sample = 0; sample < compensatedWhole.size(); ++sample)
+        REQUIRE(compensatedWhole[sample] == approx(compensatedSplit[sample]));
 }
 
 TEST_CASE("A chain out of the mix silences a nested rack's MIDI too", "[engine][exec]") {

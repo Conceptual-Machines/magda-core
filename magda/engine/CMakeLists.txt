@@ -15,10 +15,12 @@ add_library(magda_engine STATIC
     plan/PlanDump.hpp
     plan/TrackRouting.hpp
     exec/PlanExecutor.cpp
+    exec/PlanLayout.cpp
     exec/PlanValues.cpp
     exec/RuntimeStateStore.cpp
     exec/EngineSession.cpp
     exec/PlanExecutor.hpp
+    exec/PlanLayout.hpp
     exec/PlanValues.hpp
     exec/PlanBindings.hpp
     exec/EngineDevice.hpp
