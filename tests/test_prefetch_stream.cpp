@@ -274,7 +274,7 @@ TEST_CASE("A reader that fails is not a reader that returned audio", "[engine][i
             lengthInSamples = 10000;
         }
 
-        bool readSamples(int* const*, int, int, std::int64_t, int) override {
+        bool readSamples(int* const*, int, int, juce::int64, int) override {
             return false;
         }
     };
