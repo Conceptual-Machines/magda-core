@@ -196,6 +196,8 @@ set(TEST_SOURCES
     test_remote_service.cpp
     test_remote_changes.cpp
     test_remote_model_bridge.cpp
+    test_remote_websocket_server.cpp
+    test_remote_api_host.cpp
     test_device_api.cpp
     test_automation_api_surface.cpp
     # Lua controller tests (issue #592 — MIDI dispatch)
@@ -273,6 +275,10 @@ target_link_libraries(magda_tests
     # Faust runtime headers + the backend selection, so test_faust_backend.cpp
     # resolves to the same factory the app was built with.
     magda_faust_backend
+    # cpp-httplib ships the WebSocket client, so the transport tests in
+    # test_remote_websocket_server.cpp drive real sockets without a test-only
+    # dependency. magda_daw links it PRIVATE, so this target needs its own.
+    httplib::httplib
     # JUCE (core + gui_basics) comes transitively from magda_daw, compiled once
     # there; direct links would recompile the JUCE stack into this target.
 )
@@ -360,6 +366,7 @@ target_sources(magda_juce_tests PRIVATE
     test_midi_bridge_note_events_juce.cpp
     test_section_scoped_device_ids_juce.cpp
     test_remote_service_live_juce.cpp
+    test_remote_websocket_live_juce.cpp
     test_clip_inspector_juce.cpp
     test_multi_clip_resize_preview_juce.cpp
     test_clip_paint_juce.cpp
@@ -430,6 +437,9 @@ target_link_libraries(magda_juce_tests
     # ClipComponent's context menu reaches the AI settings dialog, which lives
     # on the agents library.
     magda_agents
+    # cpp-httplib's WebSocket client, for driving the transport against the live
+    # facade in test_remote_websocket_live_juce.cpp. magda_daw links it PRIVATE.
+    httplib::httplib
     # JUCE (core/events/gui_basics) comes transitively from magda_daw, compiled
     # once there; direct links would recompile the JUCE stack into this target.
     # Linux: juce_gui_extra is pulled in transitively via magda_daw's

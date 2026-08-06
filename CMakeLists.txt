@@ -292,6 +292,45 @@ if(MAGDA_HAVE_CLAP)
     add_subdirectory(third_party/onnxruntime)
 endif()
 
+# cpp-httplib 0.52.0 — HTTP/WebSocket transport for the remote API (issue #1856).
+# Header-only on purpose: HTTPLIB_COMPILE splits the header with a Python script,
+# and the adapter includes it from a single TU behind a pimpl, so there is
+# nothing to gain for a new build prerequisite.
+#
+# OPENSSL, ZLIB, BROTLI and ZSTD all default to "use it if you find it", which
+# would make the build depend on whatever happens to be installed on the machine.
+# Forced off so every platform compiles the same thing; the remote API binds
+# loopback only, so there is no TLS to configure.
+set(HTTPLIB_COMPILE                  OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_INSTALL                  OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_TEST                     OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZLIB_IF_AVAILABLE    OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_BROTLI_IF_AVAILABLE  OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZSTD_IF_AVAILABLE    OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    cpp-httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG v0.52.0
+)
+FetchContent_MakeAvailable(cpp-httplib)
+
+# cpp-httplib is configured by macros read inside a header-only library, so a
+# #define in one .cpp changes the inline functions that translation unit sees and
+# nothing else. Two TUs in one executable disagreeing about a limit is an ODR
+# violation whose winner is chosen by the linker, so the values live here, once,
+# on the target every consumer already links.
+#
+# The payload cap governs how much of a frame is read into memory before any
+# handler sees it. The read timeout is how long a connection's reader may sit in
+# read() before it comes up for air, and therefore how long shutdown can take:
+# cpp-httplib offers no way to interrupt a blocked reader, so this is the
+# cancellation quantum (see remote_websocket_server.cpp).
+target_compile_definitions(httplib INTERFACE
+    CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH=262144
+    CPPHTTPLIB_WEBSOCKET_READ_TIMEOUT_SECOND=3
+)
+
 # Simple agent system - no external dependencies needed
 
 # Product-based subdirectories

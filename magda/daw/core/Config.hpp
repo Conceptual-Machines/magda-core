@@ -436,6 +436,31 @@ class Config {
         lastUpdateCheckTimestamp = ms;
     }
 
+    // Remote API (issue #1856). Off by default: starting a listener is not
+    // something a DAW should do because it was installed, even on loopback.
+    bool getRemoteApiEnabled() const {
+        return remoteApiEnabled;
+    }
+    void setRemoteApiEnabled(bool enabled) {
+        remoteApiEnabled = enabled;
+    }
+    /// 0 asks the OS for a free port. Clients read the actual one out of the
+    /// token file, so a fixed port is a convenience rather than a requirement.
+    int getRemoteApiPort() const {
+        return remoteApiPort;
+    }
+    void setRemoteApiPort(int port) {
+        remoteApiPort = port;
+    }
+    /// Browser origins allowed to connect. Empty means no browser may; native
+    /// clients send no Origin and are unaffected.
+    const std::vector<std::string>& getRemoteApiAllowedOrigins() const {
+        return remoteApiAllowedOrigins;
+    }
+    void setRemoteApiAllowedOrigins(const std::vector<std::string>& origins) {
+        remoteApiAllowedOrigins = origins;
+    }
+
     // Browser filter settings
     bool getBrowserFilterAudio() const {
         return browserFilterAudio;
@@ -1311,6 +1336,14 @@ class Config {
     // Auto-update check
     bool autoCheckUpdates = true;          // Check GitHub for newer releases on startup
     int64_t lastUpdateCheckTimestamp = 0;  // ms since epoch; rate-limit at 24h
+
+    // Remote API (#1856). The bearer token is deliberately absent: it is
+    // generated per run and written to a file only the user can read, so it
+    // never sits in a config file that gets copied around or pasted into a bug
+    // report.
+    bool remoteApiEnabled = false;
+    int remoteApiPort = 0;  // 0 = ephemeral; the token file carries the real one
+    std::vector<std::string> remoteApiAllowedOrigins;
 
     // Export audio settings
     std::string exportFormat = "WAV24";  // WAV16, WAV24, WAV32, FLAC

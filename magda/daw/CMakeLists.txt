@@ -520,6 +520,10 @@ target_link_libraries(magda_daw
     PRIVATE
     ${MAGDA_JUCE_STACK}
     LibXml2::LibXml2
+    # Remote API transport (#1856). PRIVATE on purpose: httplib.h appears in
+    # remote_websocket_server.cpp and nowhere else, so no dependent inherits a
+    # 20k-line header it does not use.
+    httplib::httplib
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
     INTERFACE
