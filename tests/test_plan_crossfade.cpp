@@ -284,7 +284,9 @@ TEST_CASE("A device inserted mid-chain fades the edge it displaced", "[engine][p
     CHECK(fade.key.trackId == 1);
     CHECK(fade.key.role == OpRole::EdgeCrossfade);
     CHECK(magda::engine::crossfadeConsumerRole(fade.key.index) == OpRole::TrackFader);
+    CHECK(magda::engine::crossfadeConsumerIndex(fade.key.index) == 0);
     CHECK(magda::engine::crossfadeSlot(fade.key.index) == 0);
+    CHECK(magda::engine::crossfadeDepth(fade.key.index) == 0);
 
     // The edge as it was on one side and as it is on the other.
     CHECK(fade.inputs[0].op == findOp(faded.plan, OpRole::DeviceMeter, 1, 7));
@@ -355,33 +357,84 @@ TEST_CASE("A send changes what a sum is, and a sum is not an edge", "[engine][pl
     CHECK(faded.unfaded > 0);
 }
 
-TEST_CASE("An edit during a fade fades from where the last one was heading",
+TEST_CASE("An edit during a fade fades from the fade that is still running",
           "[engine][plan][crossfade]") {
+    // The signal on the edge right now is neither of the first fade's sides: it
+    // is the mixture between them. Collapsing to where it was heading would
+    // step by everything the fade had not got through, so the running one stays
+    // in the plan and the new one fades from its output.
     Bench bench;
     const auto first = bench.compile();
 
     bench.setChain({7});
     const auto second = insertCrossfades(first, bench.compile());
     REQUIRE(second.inserted == 1);
+    const auto firstFade = fadesIn(second.plan).front();
 
     // Still running, which is what the executor would say.
     std::vector<char> running(second.plan.ops.size(), 0);
-    running[static_cast<std::size_t>(fadesIn(second.plan).front())] = 1;
+    running[static_cast<std::size_t>(firstFade)] = 1;
 
     bench.setChain({7, 8});
     const auto third = insertCrossfades(second.plan, bench.compile(), running);
     INFO(magda::engine::dumpPlan(third.plan));
 
     const auto fades = fadesIn(third.plan);
-    REQUIRE(fades.size() == 1);
-    CHECK(third.inserted == 1);
+    REQUIRE(fades.size() == 2);
+    CHECK(third.inserted == 2);
 
-    // From device 7, which is where the first fade was heading, and never from
-    // the fade itself: fades collapse rather than stack.
-    const auto& fade = third.plan.ops[static_cast<std::size_t>(fades.front())];
-    CHECK(fade.inputs[0].op == findOp(third.plan, OpRole::DeviceMeter, 1, 7));
-    CHECK(fade.inputs[1].op == findOp(third.plan, OpRole::DeviceMeter, 1, 8));
+    // The one that was running, under the key it had, so the executor carries
+    // its ramp rather than starting it again.
+    const auto& kept = third.plan.ops[static_cast<std::size_t>(fades.front())];
+    CHECK(kept.key == second.plan.ops[static_cast<std::size_t>(firstFade)].key);
+    CHECK(magda::engine::crossfadeDepth(kept.key.index) == 0);
+    CHECK(kept.inputs[0].op == findOp(third.plan, OpRole::TrackAudioInput, 1));
+    CHECK(kept.inputs[1].op == findOp(third.plan, OpRole::DeviceMeter, 1, 7));
+
+    // And the new one, stacked on it: what is audible on one side, device 8 on
+    // the other.
+    const auto& stacked = third.plan.ops[static_cast<std::size_t>(fades.back())];
+    CHECK(magda::engine::crossfadeDepth(stacked.key.index) == 1);
+    CHECK(stacked.inputs[0].op == fades.front());
+    CHECK(stacked.inputs[1].op == findOp(third.plan, OpRole::DeviceMeter, 1, 8));
+
+    const auto fader = findOp(third.plan, OpRole::TrackFader, 1);
+    CHECK(third.plan.ops[static_cast<std::size_t>(fader)].inputs[0].op == fades.back());
     CHECK(validatePlan(third.plan).empty());
+}
+
+TEST_CASE("Two edges at one location are two fades, not one key twice",
+          "[engine][plan][crossfade]") {
+    // Send taps on one track are the same role at the same location, told apart
+    // by nothing but their slot index. Two of them moving in one edit is two
+    // fades, and a key that did not carry that index would be the same key
+    // twice: validatePlan would refuse the plan and the edit would not play.
+    auto source = makeTrack(1);
+    auto destination = makeTrack(2);
+    const auto master = makeMaster();
+
+    SendInfo send;
+    send.destTrackId = destination.id;
+    send.level = 0.5f;
+    send.preFader = true;
+    source.sends.push_back(send);
+    source.sends.push_back(send);
+
+    const auto before = magda::engine::compileRenderPlan({source, destination}, master);
+
+    for (auto& moved : source.sends)
+        moved.preFader = false;
+    const auto after = magda::engine::compileRenderPlan({source, destination}, master);
+
+    const auto faded = insertCrossfades(before, after);
+    INFO(magda::engine::dumpPlan(faded.plan));
+
+    const auto fades = fadesIn(faded.plan);
+    REQUIRE(fades.size() == 2);
+    CHECK(faded.plan.ops[static_cast<std::size_t>(fades[0])].key !=
+          faded.plan.ops[static_cast<std::size_t>(fades[1])].key);
+    for (const auto& problem : validatePlan(faded.plan))
+        FAIL_CHECK(problem);
 }
 
 TEST_CASE("A faded plan is a plan in every other respect", "[engine][plan][crossfade]") {
@@ -478,6 +531,41 @@ TEST_CASE("A plan republished mid-fade picks the fade up where it was",
     CHECK(second.front() != 1.0f);
 }
 
+TEST_CASE("A second edit mid-fade starts on the sample the first one was about to render",
+          "[engine][plan][crossfade]") {
+    // The continuity the stacking exists for, measured across the swap rather
+    // than asserted about the topology: the last sample of one epoch and the
+    // first of the next are consecutive samples of the same ramp.
+    Bench bench;
+    bench.bindDevice(7, 0.5f);
+    bench.bindDevice(8, 0.25f);
+    const auto before = bench.compile();
+
+    bench.setChain({7});
+    const auto faded = insertCrossfades(before, bench.compile());
+    Epoch fading(faded.plan, bench, nullptr);
+
+    const auto firstBlock = fading.render(1);
+    REQUIRE(firstBlock.back() == rampLevel(1.0f, 0.5f, kBlockSize - 1));
+
+    bench.setChain({7, 8});
+    const auto second =
+        insertCrossfades(fading.plan, bench.compile(), fading.executor.unfinishedCrossfades());
+    INFO(magda::engine::dumpPlan(second.plan));
+    REQUIRE(second.inserted == 2);
+
+    Epoch stacked(second.plan, bench, &fading.executor);
+    CHECK(stacked.executor.carriedCrossfades() == 1);
+
+    const auto next = stacked.render(1);
+    CHECK(next.front() == rampLevel(1.0f, 0.5f, kBlockSize));
+
+    // Not where the first fade was heading, and not where the second one is:
+    // the point is that it is neither.
+    CHECK(next.front() != 0.5f);
+    CHECK(next.front() != 0.125f);
+}
+
 TEST_CASE("A spent fade leaves at the next publish", "[engine][plan][crossfade]") {
     Bench bench;
     bench.bindDevice(7, 0.5f);
@@ -561,7 +649,7 @@ TEST_CASE("A fade produces the latency of the side it is becoming", "[engine][pl
     const auto fade =
         add(OpKind::Crossfade,
             {1, INVALID_RACK_ID, INVALID_CHAIN_ID, INVALID_DEVICE_ID, OpRole::EdgeCrossfade,
-             magda::engine::crossfadeIndex(OpRole::TrackFader, 0)},
+             magda::engine::crossfadeIndex(OpRole::TrackFader, 0, 0, 0)},
             {PortRef{device, 0}, PortRef{clipOne, 0}}, {SignalKind::Audio});
     const auto fader =
         add(OpKind::Fader,
@@ -643,9 +731,12 @@ TEST_CASE("A faded plan renders the same on both executors", "[engine][plan][cro
              magda::engine::resolvePlanValues(faded.plan, {bench.track}, bench.master, values))
             FAIL_CHECK(message);
 
+        // Not realtime: a test that asks the OS for audio priority competes
+        // with whatever else is on the machine, and the comparison is about
+        // which thread reaches an op rather than how soon.
         std::unique_ptr<RenderThreadPool> pool;
         if (numThreads > 0)
-            pool = std::make_unique<RenderThreadPool>(numThreads);
+            pool = std::make_unique<RenderThreadPool>(numThreads, false);
 
         ParallelPlanExecutor executor(pool.get());
         for (const auto& message : executor.prepare(faded.plan, bench.bindings, bench.context))

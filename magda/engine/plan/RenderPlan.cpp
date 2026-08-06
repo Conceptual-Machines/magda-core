@@ -146,12 +146,20 @@ std::string toString(const OpKey& key) {
     out += ":";
     out += toString(key.role);
 
-    // A fade's index is two numbers packed into one, and printing the packing
-    // would put "#14336" in front of anyone reading a dump. What it stands for
-    // is the edge the fade sits on, so that is what comes out.
+    // A fade's index is four numbers packed into one, and printing the packing
+    // would put "#117441536" in front of anyone reading a dump. What it stands
+    // for is the edge the fade sits on, so that is what comes out.
     if (key.role == OpRole::EdgeCrossfade) {
-        out += "(" + std::string(toString(crossfadeConsumerRole(key.index))) + "#" +
-               std::to_string(crossfadeSlot(key.index)) + ")";
+        const auto consumerIndex = crossfadeConsumerIndex(key.index);
+        const auto depth = crossfadeDepth(key.index);
+        out += "(";
+        out += toString(crossfadeConsumerRole(key.index));
+        if (consumerIndex != 0)
+            out += "#" + std::to_string(consumerIndex);
+        out += " slot " + std::to_string(crossfadeSlot(key.index));
+        if (depth != 0)
+            out += " over " + std::to_string(depth);
+        out += ")";
         return out;
     }
 
@@ -397,9 +405,9 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
             if (op.outputs.size() != 1 || op.outputs.front() != SignalKind::Audio)
                 problems.push_back(label + "is a crossfade and does not produce one audio port");
 
-            if (crossfadeSlot(op.key.index) < 0)
-                problems.push_back(label + "is a crossfade keyed to input slot " +
-                                   std::to_string(crossfadeSlot(op.key.index)));
+            if (op.key.index < 0)
+                problems.push_back(label + "is a crossfade whose key index does not decode: " +
+                                   std::to_string(op.key.index));
         }
 
         // Out-of-range inputs are already reported above; skip them here so a

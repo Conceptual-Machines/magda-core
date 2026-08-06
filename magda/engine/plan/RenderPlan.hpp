@@ -108,30 +108,76 @@ enum class OpRole : std::uint8_t {
 
     // A fade sits on one edge, like a delay, so its identity is the op it feeds
     // plus the slot it fills. Unlike a delay it has no role of its own to say
-    // which op that is, because it can land on any of them, so the consumer's
-    // role goes into OpKey::index alongside the slot (see crossfadeIndex). Two
-    // fades at one model location, on a fader and on the meter behind it, would
-    // otherwise be the same key and the differ would carry one into the other.
+    // which op that is, because it can land on any of them, so everything that
+    // identifies the edge goes into OpKey::index instead (see crossfadeIndex).
+    // Two fades at one model location, on a fader and on the meter behind it,
+    // would otherwise be the same key and the differ would carry one into the
+    // other; so would two send taps on one track, which differ by nothing but
+    // the index of their slot.
     EdgeCrossfade,  ///< ramps one input slot of the op it is keyed to
 };
 
-/// Roles per index band in a crossfade's key. Larger than any op's slot count
-/// by a wide margin, so the two halves of the index never run into each other.
-constexpr int kCrossfadeRoleStride = 1024;
+// The four things that identify a fade, packed into OpKey::index, low bits
+// first. Everything about the edge it sits on is in there, because the location
+// fields of the key belong to the op it feeds and two ops at one location can
+// both be faded at once.
+//
+// Depth is what keeps a fade that is still running distinct from the one
+// stacked in front of it. A second edit arriving mid-fade cannot use the first
+// fade's destination as its old side without stepping to it, so the running
+// fade stays in the plan as the new one's old side, and the pair needs two
+// keys. It only ever grows outwards: the fade already there keeps its depth,
+// and therefore its ramp, for as long as it runs.
+constexpr unsigned kCrossfadeSlotBits = 10;
+constexpr unsigned kCrossfadeIndexBits = 12;
+constexpr unsigned kCrossfadeDepthBits = 3;
 
-/** The key index a fade on @p slot of an op with @p consumerRole carries. */
-constexpr int crossfadeIndex(OpRole consumerRole, int slot) {
-    return (static_cast<int>(consumerRole) * kCrossfadeRoleStride) + slot;
+/// One past the largest slot, consumer index and depth a fade's key can hold.
+constexpr int kCrossfadeMaxSlot = static_cast<int>(1U << kCrossfadeSlotBits);
+constexpr int kCrossfadeMaxIndex = static_cast<int>(1U << kCrossfadeIndexBits);
+constexpr int kCrossfadeMaxDepth = static_cast<int>(1U << kCrossfadeDepthBits);
+
+/**
+ * @brief The key index of a fade on one edge.
+ *
+ * @param consumerRole   role of the op the fade feeds
+ * @param consumerIndex  that op's own key index, which is what tells two send
+ *                       taps on one track apart
+ * @param slot           the input slot of that op the fade fills
+ * @param depth          how many fades are already stacked on this edge
+ */
+constexpr int crossfadeIndex(OpRole consumerRole, int consumerIndex, int slot, int depth) {
+    constexpr auto depthShift = kCrossfadeIndexBits + kCrossfadeSlotBits;
+    constexpr auto roleShift = kCrossfadeDepthBits + depthShift;
+    return static_cast<int>((static_cast<unsigned>(consumerRole) << roleShift) |
+                            (static_cast<unsigned>(depth) << depthShift) |
+                            (static_cast<unsigned>(consumerIndex) << kCrossfadeSlotBits) |
+                            static_cast<unsigned>(slot));
 }
 
 /** The role of the op a fade with this key index feeds. */
 constexpr OpRole crossfadeConsumerRole(int index) {
-    return static_cast<OpRole>(index / kCrossfadeRoleStride);
+    return static_cast<OpRole>(static_cast<unsigned>(index) >>
+                               (kCrossfadeDepthBits + kCrossfadeIndexBits + kCrossfadeSlotBits));
+}
+
+/** How many fades this one is stacked on. */
+constexpr int crossfadeDepth(int index) {
+    return static_cast<int>(
+        (static_cast<unsigned>(index) >> (kCrossfadeIndexBits + kCrossfadeSlotBits)) &
+        static_cast<unsigned>(kCrossfadeMaxDepth - 1));
+}
+
+/** The key index of the op a fade with this key index feeds. */
+constexpr int crossfadeConsumerIndex(int index) {
+    return static_cast<int>((static_cast<unsigned>(index) >> kCrossfadeSlotBits) &
+                            static_cast<unsigned>(kCrossfadeMaxIndex - 1));
 }
 
 /** The input slot a fade with this key index fills. */
 constexpr int crossfadeSlot(int index) {
-    return index % kCrossfadeRoleStride;
+    return static_cast<int>(static_cast<unsigned>(index) &
+                            static_cast<unsigned>(kCrossfadeMaxSlot - 1));
 }
 
 /**

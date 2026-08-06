@@ -8,25 +8,6 @@
 namespace magda::engine {
 namespace {
 
-/// How far an edge may be followed through fades before something is wrong.
-/// A fade never reads a fade, so one hop is the real bound; the rest is so a
-/// malformed plan cannot make this a loop.
-constexpr int kMaxFadeHops = 8;
-
-/// The edge behind a fade, taking @p slot at every one. Anything else is
-/// returned as it came, so this is the identity on an ordinary edge.
-PortRef throughFades(const RenderPlan& plan, PortRef ref, std::size_t slot) {
-    for (int hop = 0; hop < kMaxFadeHops; ++hop) {
-        if (!ref.valid())
-            return ref;
-        const auto& op = plan.ops[static_cast<std::size_t>(ref.op)];
-        if (op.kind != OpKind::Crossfade || slot >= op.inputs.size())
-            return ref;
-        ref = op.inputs[slot];
-    }
-    return ref;
-}
-
 /// The signal a port carries, or Midi where there is no port to ask.
 SignalKind kindOf(const RenderPlan& plan, const PortRef& ref) {
     if (!ref.valid())
@@ -55,11 +36,20 @@ std::map<OpKey, OpId> keysOf(const RenderPlan& plan) {
     return byKey;
 }
 
-/// One fade to put in front of one op: which slot it fills, and where the old
-/// side is in the new plan.
-struct Insertion {
+/// One fade to emit in front of one op.
+struct Fade {
+    /// The consumer input slot it fills. A consumer can be faded on more than
+    /// one slot, and the last fade emitted for a slot is the one it reads.
     std::size_t slot = 0;
+    OpKey key;
+
+    /// Where the old side comes from: an op of the new plan, or an earlier fade
+    /// in the same list, which is what a fade stacked on a running one reads.
     PortRef oldSide;
+    int oldSideFade = -1;
+
+    /// Always an op of the new plan: a fade is always heading somewhere real.
+    PortRef newSide;
 };
 
 class Pass {
@@ -71,29 +61,49 @@ class Pass {
           diff_(diffPlans(oldPlan, newPlan)),
           oldByKey_(keysOf(oldPlan)),
           newByKey_(keysOf(newPlan)),
-          insertions_(newPlan.ops.size()),
+          fades_(newPlan.ops.size()),
           unchanged_(newPlan.ops.size(), 0) {}
 
     CrossfadedPlan run();
 
   private:
-    /// Whether the op the old plan holds at @p ref was faded and has not
-    /// finished. Ops of the old plan, so the caller's vector indexes straight.
-    bool isRunningFade(const PortRef& ref) const {
-        if (!ref.valid() || old_.ops[static_cast<std::size_t>(ref.op)].kind != OpKind::Crossfade)
-            return false;
-        const auto op = static_cast<std::size_t>(ref.op);
-        return op < stillFading_.size() && stillFading_[op] != 0;
+    /// Whether an op of the old plan is a fade that has not finished. Indexed
+    /// straight, because stillFading_ came from the epoch rendering that plan.
+    bool isRunning(OpId op) const {
+        const auto index = static_cast<std::size_t>(op);
+        return old_.ops[index].kind == OpKind::Crossfade && index < stillFading_.size() &&
+               stillFading_[index] != 0;
     }
+
+    /// The fades an edge of the old plan goes through, outermost first, and
+    /// whether the walk reached the end of them. A chain longer than a key can
+    /// hold cannot be reproduced, and a plan should never contain one.
+    std::vector<OpId> chainOf(PortRef ref, bool& whole) const;
 
     /// Decide one op's slots. Returns whether the op is computing what it
     /// computed before, which is the seed the forward pass needs.
     bool visitConsumer(std::size_t consumer, const PlanOp& before, CrossfadedPlan& result);
+    bool visitSlot(std::size_t consumer, const PlanOp& before, std::size_t slot,
+                   CrossfadedPlan& result);
 
-    /// Put a fade on @p slot of @p consumer, fading from the edge @p oldSide
-    /// names in the old plan. Returns false when any of the conditions in
-    /// PlanCrossfade.hpp fails, and nothing is recorded.
-    bool insert(std::size_t consumer, std::size_t slot, const PortRef& oldSide);
+    /// Whether a fade may be put on this slot at all, whatever it would fade
+    /// between: the shape of the edge rather than the signals on it.
+    bool canFade(std::size_t consumer, std::size_t slot, int depth) const;
+
+    /// Where an edge of the old plan is in the new one. @p mustBeUnchanged for
+    /// an old side being chosen, which has to be the signal it used to be;
+    /// false for a fade being kept, which reads the edges it already read
+    /// whatever they now carry.
+    bool resolveSide(std::size_t consumer, const PortRef& oldSide, bool mustBeUnchanged,
+                     PortRef& resolved) const;
+
+    /// Re-emit a chain of running fades, innermost first, so what is audible
+    /// now is what the new plan starts from. False when any of them cannot be
+    /// reproduced, and @p emit is then not to be used. @p base is where @p emit
+    /// will land in the consumer's list, because a fade reading another names
+    /// it by its place there.
+    bool retain(std::size_t consumer, std::size_t slot, const std::vector<OpId>& chain,
+                std::size_t base, std::vector<Fade>& emit) const;
 
     /// Every input of an op that already counts as unchanged in itself.
     bool inputsUnchanged(std::size_t op) const {
@@ -103,6 +113,14 @@ class Pass {
         return true;
     }
 
+    OpKey fadeKey(std::size_t consumer, std::size_t slot, int depth) const {
+        auto key = now_.ops[consumer].key;
+        key.role = OpRole::EdgeCrossfade;
+        key.index = crossfadeIndex(now_.ops[consumer].key.role, now_.ops[consumer].key.index,
+                                   static_cast<int>(slot), depth);
+        return key;
+    }
+
     RenderPlan build(int& inserted) const;
 
     const RenderPlan& old_;
@@ -110,16 +128,36 @@ class Pass {
     const std::vector<char>& stillFading_;
     PlanDiff diff_;
     std::map<OpKey, OpId> oldByKey_, newByKey_;
-    std::vector<std::vector<Insertion>> insertions_;
+
+    /// Per op of the new plan: the fades to emit in front of it, in the order
+    /// they are emitted. Innermost first, so a stacked fade's old side is
+    /// already there when it is built.
+    std::vector<std::vector<Fade>> fades_;
 
     /// Per op of the new plan: it carried, and so did everything it reads. The
-    /// only thing a fade may take as its old side.
+    /// only thing a new fade may take as its old side.
     std::vector<char> unchanged_;
 };
 
-bool Pass::insert(std::size_t consumer, std::size_t slot, const PortRef& oldSide) {
+std::vector<OpId> Pass::chainOf(PortRef ref, bool& whole) const {
+    std::vector<OpId> chain;
+    whole = true;
+
+    while (ref.valid() && old_.ops[static_cast<std::size_t>(ref.op)].kind == OpKind::Crossfade) {
+        if (chain.size() >= static_cast<std::size_t>(kCrossfadeMaxDepth)) {
+            whole = false;
+            break;
+        }
+        chain.push_back(ref.op);
+        ref = old_.ops[static_cast<std::size_t>(ref.op)].inputs.front();
+    }
+
+    return chain;
+}
+
+bool Pass::canFade(std::size_t consumer, std::size_t slot, int depth) const {
     const auto& after = now_.ops[consumer];
-    if (!oldSide.valid() || slot >= after.inputs.size() || !after.inputs[slot].valid())
+    if (slot >= after.inputs.size() || !after.inputs[slot].valid())
         return false;
 
     // A delay's count is read off the fan-in it feeds. A fade in front of one
@@ -131,20 +169,24 @@ bool Pass::insert(std::size_t consumer, std::size_t slot, const PortRef& oldSide
     if (now_.ops[static_cast<std::size_t>(after.inputs[slot].op)].kind == OpKind::Delay)
         return false;
 
-    // The key is one integer holding two numbers, and a slot past the stride
-    // would land in the next role's band.
-    if (slot >= static_cast<std::size_t>(kCrossfadeRoleStride))
+    // The key is four numbers in one integer, and a field that does not fit
+    // would land in the next one's bits.
+    return slot < static_cast<std::size_t>(kCrossfadeMaxSlot) && after.key.index >= 0 &&
+           after.key.index < kCrossfadeMaxIndex && depth >= 0 && depth < kCrossfadeMaxDepth;
+}
+
+bool Pass::resolveSide(std::size_t consumer, const PortRef& oldSide, bool mustBeUnchanged,
+                       PortRef& resolved) const {
+    if (!oldSide.valid())
         return false;
 
-    // The old side has to still be in the plan, and still be where the fade can
-    // read it: ops are in dependency order, so one integer comparison is also
-    // the whole of the cycle check.
+    // Ops are in dependency order, so one integer comparison is also the whole
+    // of the cycle check.
     const auto producer = newByKey_.find(old_.ops[static_cast<std::size_t>(oldSide.op)].key);
     if (producer == newByKey_.end() || producer->second >= static_cast<OpId>(consumer))
         return false;
 
-    const auto oldSideOp = static_cast<std::size_t>(producer->second);
-    const auto& producerOp = now_.ops[oldSideOp];
+    const auto& producerOp = now_.ops[static_cast<std::size_t>(producer->second)];
     if (producerOp.kind == OpKind::Delay || producerOp.kind == OpKind::Crossfade)
         return false;
 
@@ -154,18 +196,137 @@ bool Pass::insert(std::size_t consumer, std::size_t slot, const PortRef& oldSide
 
     // What it is computing, not only that it is still there. A producer whose
     // own inputs moved hands back a signal that was never the old one.
-    if (unchanged_[oldSideOp] == 0)
+    if (mustBeUnchanged && unchanged_[static_cast<std::size_t>(producer->second)] == 0)
         return false;
 
     // Liveness travels downstream and validatePlan checks it both ways, so a
     // fade cannot be the thing that puts a live signal in front of an op the
     // anticipative executor is allowed to run early.
     if (producerOp.liveness == LivenessDomain::Live &&
-        after.liveness == LivenessDomain::Deterministic)
+        now_.ops[consumer].liveness == LivenessDomain::Deterministic)
         return false;
 
-    insertions_[consumer].push_back({slot, PortRef{producer->second, oldSide.port}});
+    resolved = PortRef{producer->second, oldSide.port};
     return true;
+}
+
+bool Pass::retain(std::size_t consumer, std::size_t slot, const std::vector<OpId>& chain,
+                  std::size_t base, std::vector<Fade>& emit) const {
+    // Innermost first, so each one's old side is either a real op or the fade
+    // emitted just before it.
+    for (auto level = chain.size(); level-- > 0;) {
+        const auto& fade = old_.ops[static_cast<std::size_t>(chain[level])];
+        if (!canFade(consumer, slot, crossfadeDepth(fade.key.index)))
+            return false;
+
+        Fade kept;
+        kept.slot = slot;
+        kept.key = fade.key;
+
+        // Kept as it is, not re-decided: it is already running, and what it
+        // reads is what it has to go on reading for the sample after the swap
+        // to follow the one before it. Whether those edges have changed
+        // underneath is not this fade's business; anything that changed one of
+        // them has its own fade smoothing it.
+        if (!resolveSide(consumer, fade.inputs[1], false, kept.newSide))
+            return false;
+
+        if (level + 1 == chain.size()) {
+            if (!resolveSide(consumer, fade.inputs[0], false, kept.oldSide))
+                return false;
+        } else {
+            kept.oldSideFade = static_cast<int>(base + emit.size()) - 1;
+        }
+
+        emit.push_back(kept);
+    }
+
+    return true;
+}
+
+bool Pass::visitSlot(std::size_t consumer, const PlanOp& before, std::size_t slot,
+                     CrossfadedPlan& result) {
+    const auto beforeRef = before.inputs[slot];
+    const auto afterRef = now_.ops[consumer].inputs[slot];
+
+    bool whole = true;
+    const auto chain = chainOf(beforeRef, whole);
+
+    // What the edge is, or was heading for. A fade's destination is what it
+    // becomes once it is spent, so an edge that has arrived there did not move.
+    const auto destination =
+        chain.empty() ? beforeRef : old_.ops[static_cast<std::size_t>(chain.front())].inputs[1];
+    const auto running = !chain.empty() && isRunning(chain.front());
+    const auto arrived = sameEdge(old_, destination, now_, afterRef);
+
+    if (arrived && !running)
+        return true;  // nothing moved, or a spent chain is retiring off the edge
+
+    const auto audio = kindOf(now_, afterRef) == SignalKind::Audio ||
+                       kindOf(old_, destination) == SignalKind::Audio;
+    if (!audio)
+        return false;  // MIDI is events, and there is no half of a note-on
+
+    if (!beforeRef.valid() || !afterRef.valid()) {
+        ++result.unfaded;  // an edge that was connected and is not, or the reverse
+        return false;
+    }
+
+    // A running fade is kept rather than collapsed. Collapsing one to the side
+    // it was heading for is a step of exactly the size the fade had not got
+    // through yet, which is the thing this whole pass exists to remove: a
+    // second edit arriving four milliseconds into a five millisecond fade would
+    // make the biggest click in the session.
+    const auto base = fades_[consumer].size();
+    std::vector<Fade> emit;
+    const auto kept = whole && running && retain(consumer, slot, chain, base, emit);
+
+    if (kept) {
+        if (arrived) {
+            // The edge arrived where the chain was heading and the chain is
+            // still running: it carries on, and the executor adopts every ramp
+            // in it because none of their keys or sides moved.
+            fades_[consumer].insert(fades_[consumer].end(), emit.begin(), emit.end());
+            return false;
+        }
+
+        const auto depth =
+            crossfadeDepth(old_.ops[static_cast<std::size_t>(chain.front())].key.index) + 1;
+        if (canFade(consumer, slot, depth)) {
+            Fade stacked;
+            stacked.slot = slot;
+            stacked.key = fadeKey(consumer, slot, depth);
+            stacked.oldSideFade = static_cast<int>(base + emit.size()) - 1;
+            stacked.newSide = afterRef;
+            emit.push_back(stacked);
+            fades_[consumer].insert(fades_[consumer].end(), emit.begin(), emit.end());
+            return false;
+        }
+    }
+
+    if (arrived) {
+        // A running chain that could not be kept. The edge is where it was
+        // heading, so there is nothing to fade to; it steps by whatever the
+        // chain had left to run.
+        ++result.unfaded;
+        return false;
+    }
+
+    // No chain, or one that could not be kept. A spent chain is already
+    // outputting the side it was heading for, so fading from there is exact;
+    // for a running one this is the step described above, and the only thing
+    // left when its ops cannot be reproduced.
+    Fade fade;
+    fade.slot = slot;
+    fade.key = fadeKey(consumer, slot, 0);
+    fade.newSide = afterRef;
+    if (!canFade(consumer, slot, 0) || !resolveSide(consumer, destination, true, fade.oldSide)) {
+        ++result.unfaded;
+        return false;
+    }
+
+    fades_[consumer].push_back(fade);
+    return false;
 }
 
 bool Pass::visitConsumer(std::size_t consumer, const PlanOp& before, CrossfadedPlan& result) {
@@ -184,44 +345,8 @@ bool Pass::visitConsumer(std::size_t consumer, const PlanOp& before, CrossfadedP
     }
 
     auto equivalent = true;
-
-    for (std::size_t slot = 0; slot < after.inputs.size(); ++slot) {
-        const auto beforeRef = before.inputs[slot];
-        const auto afterRef = after.inputs[slot];
-
-        // A fade already on this edge is not the old signal, it is the pair of
-        // signals it is between. What the edge was heading for is the old side
-        // of anything that replaces it, so fades collapse rather than stack.
-        const auto wasHeadingFor = throughFades(old_, beforeRef, 1);
-        const auto audio = kindOf(now_, afterRef) == SignalKind::Audio ||
-                           kindOf(old_, wasHeadingFor) == SignalKind::Audio;
-
-        if (sameEdge(old_, wasHeadingFor, now_, afterRef)) {
-            if (!isRunningFade(beforeRef))
-                continue;  // either nothing moved, or a spent fade is retiring
-
-            // The edge arrived where the fade was heading and the fade is still
-            // running, so it carries on: same key, same sides, and the executor
-            // adopts the ramp where it had got to.
-            equivalent = false;
-            const auto& fade = old_.ops[static_cast<std::size_t>(beforeRef.op)];
-            if (!insert(consumer, slot, throughFades(old_, fade.inputs.front(), 0)) && audio)
-                ++result.unfaded;
-            continue;
-        }
-
-        equivalent = false;
-        if (!audio)
-            continue;  // MIDI is events, and there is no half of a note-on
-
-        if (!beforeRef.valid() || !afterRef.valid()) {
-            ++result.unfaded;  // an edge that was connected and is not, or the reverse
-            continue;
-        }
-
-        if (!insert(consumer, slot, wasHeadingFor))
-            ++result.unfaded;
-    }
+    for (std::size_t slot = 0; slot < after.inputs.size(); ++slot)
+        equivalent = visitSlot(consumer, before, slot, result) && equivalent;
 
     return equivalent;
 }
@@ -241,30 +366,33 @@ RenderPlan Pass::build(int& inserted) const {
             if (input.valid())
                 input.op = moved[static_cast<std::size_t>(input.op)];
 
-        // Immediately before the op it feeds, which is what keeps the plan in
-        // dependency order: its old side is earlier than the consumer and its
-        // new side is what the consumer was already reading.
-        for (const auto& insertion : insertions_[i]) {
-            const PortRef oldSide{moved[static_cast<std::size_t>(insertion.oldSide.op)],
-                                  insertion.oldSide.port};
-            const auto newSide = op.inputs[insertion.slot];
+        // Immediately before the op they feed, which is what keeps the plan in
+        // dependency order: every side is either earlier than the consumer or a
+        // fade emitted a moment ago.
+        std::vector<OpId> emitted;
+        for (const auto& fade : fades_[i]) {
+            const PortRef oldSide =
+                fade.oldSideFade >= 0
+                    ? PortRef{emitted[static_cast<std::size_t>(fade.oldSideFade)], 0}
+                    : PortRef{moved[static_cast<std::size_t>(fade.oldSide.op)], fade.oldSide.port};
+            const PortRef newSide{moved[static_cast<std::size_t>(fade.newSide.op)],
+                                  fade.newSide.port};
 
-            PlanOp fade;
-            fade.kind = OpKind::Crossfade;
-            fade.key = op.key;
-            fade.key.role = OpRole::EdgeCrossfade;
-            fade.key.index = crossfadeIndex(now_.ops[i].key.role, static_cast<int>(insertion.slot));
-            fade.inputs = {oldSide, newSide};
-            fade.outputs = {SignalKind::Audio};
-            fade.liveness =
+            PlanOp fadeOp;
+            fadeOp.kind = OpKind::Crossfade;
+            fadeOp.key = fade.key;
+            fadeOp.inputs = {oldSide, newSide};
+            fadeOp.outputs = {SignalKind::Audio};
+            fadeOp.liveness =
                 built.ops[static_cast<std::size_t>(oldSide.op)].liveness == LivenessDomain::Live ||
                         built.ops[static_cast<std::size_t>(newSide.op)].liveness ==
                             LivenessDomain::Live
                     ? LivenessDomain::Live
                     : LivenessDomain::Deterministic;
 
-            op.inputs[insertion.slot] = PortRef{static_cast<OpId>(built.ops.size()), 0};
-            built.ops.push_back(std::move(fade));
+            emitted.push_back(static_cast<OpId>(built.ops.size()));
+            op.inputs[fade.slot] = PortRef{emitted.back(), 0};
+            built.ops.push_back(std::move(fadeOp));
             ++inserted;
         }
 
@@ -310,7 +438,7 @@ CrossfadedPlan Pass::run() {
 
     // Nothing to insert is the common case by far, and the plan the compiler
     // produced is then the plan that is published, byte for byte.
-    if (std::ranges::all_of(insertions_, [](const auto& list) { return list.empty(); })) {
+    if (std::ranges::all_of(fades_, [](const auto& list) { return list.empty(); })) {
         result.plan = now_;
         return result;
     }
