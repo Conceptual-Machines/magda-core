@@ -61,8 +61,7 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
         // and the placeholder decides what it can show from the width it is
         // given — fed a narrow strip it drops its label, so a partial repaint
         // erased it and left the clip looking fine (#2026).
-        thumbnailManager.drawWaveform(g, waveformArea, clip.audio().source.filePath, 0.0, 0.0,
-                                      spec.colour, 1.0f, false, spec.thick);
+        AudioThumbnailManager::drawMissingFilePlaceholder(g, waveformArea);
         return;
     }
 
