@@ -689,9 +689,14 @@ void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& /*lan
     g.setColour(bgColour.withAlpha(0.7f));
     g.fillRect(paintArea);
 
-    // Border (horizontal separators between tracks)
+    // Border (horizontal separators between tracks). Drawn on the whole lane,
+    // never on paintArea: an outline follows the rectangle it is given, so
+    // clipping it to the damaged region draws a box around the damage instead
+    // of around the lane. A clip moving away leaves its old bounds as the
+    // damage, so that box stayed behind as a ghost outline (#2026). Fills are
+    // uniform and can stay clipped; outlines cannot.
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawRect(paintArea, 1);
+    g.drawRect(area, 1);
 
     // Frozen overlay
     if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
@@ -718,17 +723,18 @@ void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& /*lan
                 int x2 = timeToPixel(latest);
                 auto extentArea =
                     juce::Rectangle<int>(x1, area.getY() + 2, x2 - x1, area.getHeight() - 4);
-                auto visibleExtentArea = extentArea.getIntersection(g.getClipBounds());
-                if (visibleExtentArea.isEmpty())
+                if (!extentArea.intersects(g.getClipBounds()))
                     return;
 
+                // Full geometry, clipped by the graphics context — see the lane
+                // border above (#2026).
                 // Subtle filled background
                 g.setColour(juce::Colours::white.withAlpha(0.06f));
-                g.fillRoundedRectangle(visibleExtentArea.toFloat(), 3.0f);
+                g.fillRoundedRectangle(extentArea.toFloat(), 3.0f);
 
                 // Outline
                 g.setColour(juce::Colours::white.withAlpha(0.15f));
-                g.drawRoundedRectangle(visibleExtentArea.toFloat(), 3.0f, 1.0f);
+                g.drawRoundedRectangle(extentArea.toFloat(), 3.0f, 1.0f);
             }
         }
     }

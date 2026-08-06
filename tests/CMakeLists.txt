@@ -327,6 +327,7 @@ target_sources(magda_juce_tests PRIVATE
     test_clip_nudge_juce.cpp
     test_multiband_curve_view_juce.cpp
     test_timeline_extreme_zoom_paint_juce.cpp
+    test_repaint_invariance_juce.cpp
     test_arrange_beat_native_juce.cpp
     test_tempo_map_juce.cpp
     test_tempo_lane_bridge_juce.cpp
