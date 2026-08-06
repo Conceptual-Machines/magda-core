@@ -70,6 +70,19 @@ class AudioThumbnailManager {
                       bool useHighRes = false, bool thick = false);
 
     /**
+     * @brief The broken-state fill drawn where a waveform cannot be read.
+     *
+     * Exposed so a caller that has already established there is no thumbnail
+     * can draw it without a second getThumbnail() — missing files are never
+     * cached, so each lookup re-stats the path.
+     *
+     * @param bounds The whole area the waveform would have occupied. It sizes
+     *        the label, so pass the real area and never a repaint-damage strip
+     *        (#2026).
+     */
+    static void drawMissingFilePlaceholder(juce::Graphics& g, const juce::Rectangle<int>& bounds);
+
+    /**
      * @brief Detect BPM of an audio file.
      *
      * DSP detection is currently disabled because Tracktion/SoundTouch BPMDetect

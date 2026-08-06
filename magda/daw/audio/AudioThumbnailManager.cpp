@@ -80,6 +80,16 @@ juce::AudioThumbnail* AudioThumbnailManager::createThumbnail(const juce::String&
     return thumbnailPtr;
 }
 
+void AudioThumbnailManager::drawMissingFilePlaceholder(juce::Graphics& g,
+                                                       const juce::Rectangle<int>& bounds) {
+    g.setColour(juce::Colours::red.withAlpha(0.16f));
+    g.fillRect(bounds);
+    if (bounds.getWidth() >= 54) {
+        g.setColour(juce::Colours::red.brighter(0.2f).withAlpha(0.9f));
+        g.drawText("Missing file", bounds, juce::Justification::centred);
+    }
+}
+
 void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangle<int>& bounds,
                                          const juce::String& audioFilePath, double startTime,
                                          double endTime, const juce::Colour& colour,
@@ -93,12 +103,7 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
         // reader synchronously, so the only way to get here is a file that cannot
         // be opened - moved, deleted, or unreadable. Show a clear broken state
         // instead of a perpetual "Loading..." (#1415).
-        g.setColour(juce::Colours::red.withAlpha(0.16f));
-        g.fillRect(bounds);
-        if (bounds.getWidth() >= 54) {
-            g.setColour(juce::Colours::red.brighter(0.2f).withAlpha(0.9f));
-            g.drawText("Missing file", bounds, juce::Justification::centred);
-        }
+        drawMissingFilePlaceholder(g, bounds);
         return;
     }
 

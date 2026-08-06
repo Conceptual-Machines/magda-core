@@ -265,8 +265,7 @@ class ClipComponent : public juce::Component,
 
     // Painting helpers
     /// The clip's background, translucent where a clip below it is still heard.
-    void paintClipBody(juce::Graphics& g, juce::Rectangle<int> bounds,
-                       juce::Rectangle<int> visibleBounds, juce::Colour bgColour,
+    void paintClipBody(juce::Graphics& g, juce::Rectangle<int> bounds, juce::Colour bgColour,
                        const std::vector<BeatRange>& showThrough);
     void paintAudioClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds,
                         const std::vector<BeatRange>& showThrough);
