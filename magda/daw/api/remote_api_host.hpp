@@ -33,11 +33,23 @@ class RemoteWebSocketServer;
  * lives in a file beside the other app data, written with owner-only
  * permissions and deleted on shutdown, carrying the port alongside it:
  *
- *     {"port":51734,"token":"…","url":"ws://127.0.0.1:51734/rpc"}
+ *     remote-api-<pid>.json
+ *     {"port":51734,"token":"…","url":"ws://127.0.0.1:51734/rpc","pid":4021}
  *
  * A client reads that file to learn where to connect and what to present. This
  * is the same shape Jupyter uses for its local server, and it means a client on
  * the machine needs no configuration while a process elsewhere gets nothing.
+ *
+ * The record is named after the process because MAGDA allows more than one
+ * instance. One shared file would mean the second instance to start hides the
+ * first, and the first to stop deletes the record of the one still running —
+ * and with a fixed port, where SO_REUSEPORT lets both listeners bind, a client
+ * could hold one instance's token and be routed to the other. A client that
+ * finds several records is looking at several running instances and has to
+ * choose; each is independently valid for the port it names.
+ *
+ * A record whose process is gone is debris from a crash, and any instance's
+ * `start()` will collect it. An instance only ever deletes its own live record.
  *
  * ## Disabled means disabled
  *

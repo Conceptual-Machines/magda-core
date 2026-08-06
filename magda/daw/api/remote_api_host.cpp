@@ -8,8 +8,14 @@
 #include "remote_service.hpp"
 #include "remote_websocket_server.hpp"
 
-#if !JUCE_WINDOWS
+#if JUCE_WINDOWS
+    #include <windows.h>
+#else
     #include <sys/stat.h>
+    #include <unistd.h>
+
+    #include <cerrno>
+    #include <csignal>
 #endif
 
 namespace magda {
@@ -17,7 +23,74 @@ namespace remote {
 
 namespace {
 
-constexpr const char* kTokenFileName = "remote-api.json";
+/**
+ * Discovery records are per process, not per installation.
+ *
+ * MAGDA does not set `moreThanOneInstanceAllowed()` to false, so two instances
+ * are a supported thing to run. Sharing one file between them means the second
+ * to start hides the first, and the first to stop deletes the record of the one
+ * still running. With a fixed port it is worse, because cpp-httplib sets
+ * SO_REUSEPORT and both listeners bind: a client then holds one instance's token
+ * and may be routed to the other, which does not accept it.
+ *
+ * Naming the record after the process keeps each instance's file its own, and
+ * the pid inside is what makes cleanup safe — an instance deletes only its own,
+ * and a record whose process no longer exists is debris anyone may collect.
+ */
+constexpr const char* kTokenFilePrefix = "remote-api-";
+constexpr const char* kTokenFileSuffix = ".json";
+constexpr const char* kTokenFilePattern = "remote-api-*.json";
+
+juce::int64 currentProcessId() {
+#if JUCE_WINDOWS
+    return static_cast<juce::int64>(GetCurrentProcessId());
+#else
+    return static_cast<juce::int64>(getpid());
+#endif
+}
+
+bool isProcessAlive(juce::int64 processId) {
+#if JUCE_WINDOWS
+    auto* handle =
+        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(processId));
+    if (handle == nullptr)
+        return false;
+    DWORD exitCode = 0;
+    const auto running = GetExitCodeProcess(handle, &exitCode) != 0 && exitCode == STILL_ACTIVE;
+    CloseHandle(handle);
+    return running;
+#else
+    // Signal 0 runs the existence and permission checks without delivering
+    // anything. EPERM means the process is there and belongs to someone else,
+    // which still counts as alive.
+    return kill(static_cast<pid_t>(processId), 0) == 0 || errno == EPERM;
+#endif
+}
+
+/**
+ * @brief Delete records left by instances that are no longer running.
+ *
+ * A crashed run cannot clean up after itself, and with per-process records
+ * nobody else was going to. Ours is left alone here — `start()` handles that —
+ * and so is every record whose process still answers, because that one belongs
+ * to a live instance.
+ *
+ * A pid can in principle be recycled onto an unrelated process, which would keep
+ * one dead record alive a while longer. The cost of that is a file, and the next
+ * sweep after the recycled process exits takes it.
+ */
+void sweepAbandonedRecords(const juce::File& directory, juce::int64 ownProcessId) {
+    for (const auto& record :
+         directory.findChildFiles(juce::File::findFiles, false, kTokenFilePattern)) {
+        const auto owner = record.getFileNameWithoutExtension()
+                               .fromLastOccurrenceOf("-", false, false)
+                               .getLargeIntValue();
+        if (owner <= 0 || owner == ownProcessId)
+            continue;
+        if (!isProcessAlive(owner))
+            record.deleteFile();
+    }
+}
 
 /**
  * @brief 256 bits of entropy, hex encoded.
@@ -60,6 +133,9 @@ bool writeTokenFile(const juce::File& file, const juce::String& token, int port)
     payload->setProperty("port", port);
     payload->setProperty("token", token);
     payload->setProperty("url", "ws://127.0.0.1:" + juce::String(port) + "/rpc");
+    // Whose listener this is. A reader can tell two live instances apart, and
+    // cleanup can tell an abandoned record from someone else's live one.
+    payload->setProperty("pid", currentProcessId());
 
     // Write into the file we just restricted, rather than replaceWithText: that
     // writes a temp file and moves it over the target, so the new inode arrives
@@ -88,14 +164,18 @@ bool RemoteApiHost::start() {
     if (server_ != nullptr && server_->isRunning())
         return true;
 
-    // Anything here predates this listener, and a token file without a listener
-    // behind it is worse than no file: it hands a client a port and a credential
-    // that a crashed previous run left behind. Clearing it before every early
-    // return — disabled in config, no token, a port already taken — keeps the
-    // rule that the file exists only while something is answering on it. The
-    // already-running check comes first so a second call cannot delete a file
-    // that is still good.
+    // Our own record predates this listener, and a record without a listener
+    // behind it is worse than none: it hands a client a port and a credential
+    // that a crashed previous run left behind, and if the OS has reissued that
+    // port it points them at a stranger. Clearing it before every early return —
+    // disabled in config, no token, a port already taken — keeps the rule that a
+    // record exists only while something is answering on it. The already-running
+    // check comes first so a second call cannot delete a record still in use.
     tokenFile().deleteFile();
+
+    // Other instances' records are theirs to remove; only the ones whose process
+    // has gone are ours to sweep.
+    sweepAbandonedRecords(paths::dataDir(), currentProcessId());
 
     auto& config = Config::getInstance();
     if (!config.getRemoteApiEnabled())
@@ -159,7 +239,8 @@ int RemoteApiHost::boundPort() const {
 }
 
 juce::File RemoteApiHost::tokenFile() const {
-    return paths::dataDir().getChildFile(kTokenFileName);
+    return paths::dataDir().getChildFile(juce::String(kTokenFilePrefix) +
+                                         juce::String(currentProcessId()) + kTokenFileSuffix);
 }
 
 RemoteApiService& RemoteApiHost::service() {

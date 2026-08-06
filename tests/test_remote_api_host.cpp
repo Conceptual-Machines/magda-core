@@ -84,6 +84,66 @@ TEST_CASE("A disabled remote API opens no listener", "[remote][host][lifecycle]"
 // return rather than on the disabled path alone, so the case above exercises the
 // same statement.
 
+TEST_CASE("Another instance's record is left alone", "[remote][host][lifecycle]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+
+    // pid 1 is init/launchd: always running, never us. It stands in for a second
+    // MAGDA instance, which the app permits — moreThanOneInstanceAllowed()
+    // defaults to true. Deleting this on start or stop would strand a live
+    // instance with no way for a client to find it.
+    const auto other = host.tokenFile().getSiblingFile("remote-api-1.json");
+    other.replaceWithText(R"({"port":1,"token":"theirs","url":"ws://127.0.0.1:1/rpc","pid":1})");
+
+    REQUIRE(host.start());
+    REQUIRE(host.tokenFile() != other);
+    REQUIRE(other.existsAsFile());
+
+    host.stop();
+
+    REQUIRE_FALSE(host.tokenFile().existsAsFile());
+    REQUIRE(other.existsAsFile());
+
+    other.deleteFile();
+}
+
+TEST_CASE("A record whose process is gone is collected", "[remote][host][lifecycle]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+
+    // No live process carries this id: macOS caps pids below 100000 and Linux's
+    // default pid_max is 4194304. A crashed instance cannot clear its own
+    // record, and with a record per process nobody else would have.
+    const auto abandoned = host.tokenFile().getSiblingFile("remote-api-2147483647.json");
+    abandoned.replaceWithText(R"({"port":2,"token":"dead","url":"ws://127.0.0.1:2/rpc"})");
+
+    REQUIRE(host.start());
+    REQUIRE_FALSE(abandoned.existsAsFile());
+
+    abandoned.deleteFile();
+}
+
+TEST_CASE("The record is named after the process that owns it", "[remote][host][lifecycle]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+
+    const auto published = readTokenFile(host.tokenFile());
+    const auto pid = static_cast<juce::int64>(published["pid"]);
+
+    REQUIRE(pid > 0);
+    REQUIRE(host.tokenFile().getFileName() == "remote-api-" + juce::String(pid) + ".json");
+}
+
 TEST_CASE("Starting publishes a token a local client can use", "[remote][host][auth]") {
     MessageThreadRelaxation relax;
     ScopedRemoteApiConfig config(true);
