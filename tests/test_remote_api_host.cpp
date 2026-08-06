@@ -60,6 +60,14 @@ TEST_CASE("A disabled remote API opens no listener", "[remote][host][lifecycle]"
     MockMagdaApi api;
     RemoteApiHost host(api);
 
+    // A crashed run never reaches stop(), so its token file outlives it. Left
+    // alone, it advertises a port nothing is listening on and a credential that
+    // opens nothing — and if the OS hands that port to some other process, it
+    // points a client at a stranger.
+    host.tokenFile().getParentDirectory().createDirectory();
+    host.tokenFile().replaceWithText(R"({"port":1,"token":"stale","url":"ws://127.0.0.1:1/rpc"})");
+    REQUIRE(host.tokenFile().existsAsFile());
+
     // The acceptance criterion is about absence: not a listener that refuses
     // everything, but no socket and no published credential at all.
     REQUIRE_FALSE(host.start());
@@ -67,6 +75,14 @@ TEST_CASE("A disabled remote API opens no listener", "[remote][host][lifecycle]"
     REQUIRE(host.boundPort() == 0);
     REQUIRE_FALSE(host.tokenFile().existsAsFile());
 }
+
+// A "port already taken" case would cover the other early returns, but there is
+// no portable way to make binding fail here: cpp-httplib sets SO_REUSEPORT where
+// it exists (httplib.h:10050), so a second listener on the same port succeeds on
+// macOS and Linux, and the alternatives — privileged ports — pass or fail
+// depending on who the test runs as. The clearing happens before every early
+// return rather than on the disabled path alone, so the case above exercises the
+// same statement.
 
 TEST_CASE("Starting publishes a token a local client can use", "[remote][host][auth]") {
     MessageThreadRelaxation relax;

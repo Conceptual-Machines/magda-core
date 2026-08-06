@@ -85,12 +85,21 @@ RemoteApiHost::~RemoteApiHost() {
 }
 
 bool RemoteApiHost::start() {
+    if (server_ != nullptr && server_->isRunning())
+        return true;
+
+    // Anything here predates this listener, and a token file without a listener
+    // behind it is worse than no file: it hands a client a port and a credential
+    // that a crashed previous run left behind. Clearing it before every early
+    // return — disabled in config, no token, a port already taken — keeps the
+    // rule that the file exists only while something is answering on it. The
+    // already-running check comes first so a second call cannot delete a file
+    // that is still good.
+    tokenFile().deleteFile();
+
     auto& config = Config::getInstance();
     if (!config.getRemoteApiEnabled())
         return false;
-
-    if (server_ != nullptr && server_->isRunning())
-        return true;
 
     token_ = generateToken();
     if (token_.isEmpty()) {
