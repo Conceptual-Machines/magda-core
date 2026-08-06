@@ -297,7 +297,12 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
     // chain was silent would hand back audio from before the silence when the
     // chain returned. The executor reads no entry for it, so this leaves unity
     // behind rather than deciding anything.
-    if (op.kind == OpKind::Delay)
+    // A fade has no model location of its own: it sits on an edge between two
+    // ops that have one, and what it does is settled by where its ramp has got
+    // to. Like a delay, it has to keep running whatever the model says about
+    // the ops around it, so it is left at unity here rather than given a value
+    // that could silence it.
+    if (op.kind == OpKind::Delay || op.kind == OpKind::Crossfade)
         return;
 
     const auto* track = findTrack(key.trackId);
@@ -429,11 +434,12 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::RackMidiMix:
         case OpRole::TrackMeter:
         case OpRole::HardwareOutput:
-        // Delay roles never reach here: they return above.
+        // Delay and crossfade roles never reach here: they return above.
         case OpRole::MixInputDelay:
         case OpRole::MergeInputDelay:
         case OpRole::DeviceInputDelay:
         case OpRole::FaderInputDelay:
+        case OpRole::EdgeCrossfade:
             break;
     }
 }

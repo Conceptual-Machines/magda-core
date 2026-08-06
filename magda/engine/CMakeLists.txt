@@ -10,10 +10,12 @@ add_library(magda_engine STATIC
     plan/RenderPlan.cpp
     plan/PlanCompiler.cpp
     plan/PlanDiff.cpp
+    plan/PlanCrossfade.cpp
     plan/PlanDump.cpp
     plan/RenderPlan.hpp
     plan/PlanCompiler.hpp
     plan/PlanDiff.hpp
+    plan/PlanCrossfade.hpp
     plan/PlanDump.hpp
     plan/TrackRouting.hpp
     exec/PlanExecutor.cpp

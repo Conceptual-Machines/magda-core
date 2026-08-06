@@ -108,6 +108,15 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     int carriedDelayLines() const {
         return core_.carriedDelayLines();
     }
+    std::vector<char> unfinishedCrossfades() const {
+        return core_.unfinishedCrossfades();
+    }
+    int activeCrossfades() const {
+        return core_.activeCrossfades();
+    }
+    int carriedCrossfades() const {
+        return core_.carriedCrossfades();
+    }
     bool isPrepared() const {
         return plan_ != nullptr;
     }
