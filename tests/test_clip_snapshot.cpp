@@ -227,6 +227,119 @@ TEST_CASE("Fades arrive resolved, and a crossfade is two of them", "[engine][cli
           Approx(audioClip(snapshot, 2)->fadeInSeconds));
 }
 
+TEST_CASE("Both halves of a crossfade agree across a tempo change", "[engine][clip]") {
+    // 120 bpm until beat 8, 60 bpm after it: the two clips start under
+    // different tempos, and the overlap they share sits across the change.
+    const TempoMap tempoMap({{0.0, 120.0, 0.0f}, {8.0, 60.0, 0.0f}}, {{0.0, 4, 4}});
+
+    auto left = makeAudioClip(1, 0.0, 10.0);
+    auto right = makeAudioClip(2, 6.0, 8.0);
+    right.stackOrder = 1;
+    left.overlapPlaysBoth = true;
+    left.autoCrossfade = true;
+    right.autoCrossfade = true;
+
+    const auto snapshot = compile({left, right}, tempoMap);
+
+    // One overlap, one length: beats 6 to 10 through this map, and not
+    // whatever the bpm at either clip's start would have priced it at.
+    const double overlapSeconds = tempoMap.beatToTime(10.0) - tempoMap.beatToTime(6.0);
+    CHECK(audioClip(snapshot, 1)->fadeOutSeconds == Approx(overlapSeconds));
+    CHECK(audioClip(snapshot, 2)->fadeInSeconds == Approx(overlapSeconds));
+
+    // Which is not what one bpm reading gives: the fade crosses the change.
+    CHECK(overlapSeconds != Approx(4.0 * 60.0 / 120.0));
+    CHECK(overlapSeconds != Approx(4.0 * 60.0 / 60.0));
+
+    // And it agrees with the spans it sits inside.
+    CHECK(audioClip(snapshot, 2)->span.startSeconds == Approx(tempoMap.beatToTime(6.0)));
+    CHECK(audioClip(snapshot, 1)->span.endSeconds == Approx(tempoMap.beatToTime(10.0)));
+}
+
+TEST_CASE("Fades that outrun their clip are scaled to fit it", "[engine][clip]") {
+    auto clip = makeAudioClip(1, 0.0, 2.0);  // one second at 120 bpm
+    eventOf(clip).fadeInSeconds = 3.0;
+    eventOf(clip).fadeOutSeconds = 1.0;
+
+    const auto snapshot = compile({clip}, makeTempoMap());
+    const auto* compiled = audioClip(snapshot, 1);
+    REQUIRE(compiled != nullptr);
+    CHECK(compiled->fadeInSeconds + compiled->fadeOutSeconds == Approx(1.0));
+    CHECK(compiled->fadeInSeconds == Approx(0.75));
+    CHECK(compiled->fadeOutSeconds == Approx(0.25));
+}
+
+TEST_CASE("Every event keeps its own fades, not just the primary", "[engine][clip]") {
+    auto clip = makeAudioClip(1, 0.0, 8.0);
+    eventOf(clip).lengthBeats = 4.0;
+    eventOf(clip).fadeInSeconds = 0.5;
+    eventOf(clip).fadeOutSeconds = 0.25;
+    eventOf(clip).fadeInType = static_cast<int>(FadeCurve::Concave);
+
+    AudioEvent second;
+    second.sourceId = kSource;
+    second.interpBpm = 120.0;
+    second.startBeat = 4.0;
+    second.lengthBeats = 4.0;
+    second.fadeInSeconds = 0.125;
+    second.fadeOutSeconds = 1.5;
+    second.fadeInType = static_cast<int>(FadeCurve::SCurve);
+    second.fadeOutBehaviour = 1;  // speed ramp
+    clip.audio().addEvent(second);
+
+    const auto snapshot = compile({clip}, makeTempoMap());
+    const auto* compiled = audioClip(snapshot, 1);
+    REQUIRE(compiled != nullptr);
+    REQUIRE(compiled->events.size() == 2);
+
+    CHECK(compiled->events[0].fadeInSeconds == Approx(0.5));
+    CHECK(compiled->events[0].fadeOutSeconds == Approx(0.25));
+    CHECK(compiled->events[0].fadeInCurve == FadeCurve::Concave);
+
+    // The event the clip-level pair says nothing about.
+    CHECK(compiled->events[1].fadeInSeconds == Approx(0.125));
+    CHECK(compiled->events[1].fadeOutSeconds == Approx(1.5));
+    CHECK(compiled->events[1].fadeInCurve == FadeCurve::SCurve);
+    CHECK(compiled->events[1].fadeOutBehaviour == 1);
+
+    // The clip's own edges still play the primary event's, resolved.
+    CHECK(compiled->fadeInSeconds == Approx(0.5));
+    CHECK(compiled->fadeOutSeconds == Approx(0.25));
+    CHECK(compiled->fadeInCurve == FadeCurve::Concave);
+}
+
+TEST_CASE("A clip that does not belong to the lane cannot cover one that does", "[engine][clip]") {
+    SECTION("a session clip sitting on top of an arrangement clip") {
+        auto arrangement = makeAudioClip(1, 0.0, 8.0);
+        auto session = makeAudioClip(2, 0.0, 8.0);
+        session.view = ClipView::Session;
+        session.stackOrder = 1;
+
+        const auto snapshot = compile({arrangement, session}, makeTempoMap());
+        const auto* clip = audioClip(snapshot, 1);
+        REQUIRE(clip != nullptr);
+        CHECK(clip->span.startBeat == Approx(0.0));
+        CHECK(clip->span.endBeat == Approx(8.0));
+        CHECK(clip->silenced.empty());
+        CHECK(snapshot.diagnostics.size() == 1);
+    }
+
+    SECTION("a clip from another track sitting on top of it") {
+        auto mine = makeAudioClip(1, 0.0, 16.0);
+        auto stranger = makeAudioClip(2, 4.0, 4.0);
+        stranger.trackId = kTrack + 1;
+        stranger.stackOrder = 1;
+
+        const auto snapshot = compile({mine, stranger}, makeTempoMap());
+        const auto* clip = audioClip(snapshot, 1);
+        REQUIRE(clip != nullptr);
+        CHECK(clip->span.endBeat == Approx(16.0));
+        // The hole it would have punched is not there.
+        CHECK(clip->silenced.empty());
+        CHECK(snapshot.diagnostics.size() == 1);
+    }
+}
+
 TEST_CASE("A clip's own fade and its curve survive the compile", "[engine][clip]") {
     auto clip = makeAudioClip(1, 0.0, 8.0);
     eventOf(clip).fadeInSeconds = 0.75;
@@ -296,16 +409,28 @@ TEST_CASE("What will not sound says so, and what is merely covered does not", "[
         CHECK(snapshot.diagnostics.front().find("session clip") != std::string::npos);
     }
 
-    SECTION("an unresolvable source is reported and plays nothing") {
+    SECTION("an unresolvable source is reported, and takes the clip with it") {
         auto clip = makeAudioClip(1, 0.0, 8.0);
         eventOf(clip).sourceId = 99;
 
         const auto snapshot = compile({clip}, makeTempoMap());
-        const auto* compiled = audioClip(snapshot, 1);
-        REQUIRE(compiled != nullptr);
-        CHECK(compiled->events.empty());
+        // Nothing left to read, so nothing to carry: the same shape a clip with
+        // no events at all comes out as, rather than an empty entry that would
+        // cost a voice to discover.
+        CHECK(audioClip(snapshot, 1) == nullptr);
+        CHECK(snapshot.tracks.empty());
         REQUIRE(snapshot.diagnostics.size() == 1);
         CHECK(snapshot.diagnostics.front().find("source table") != std::string::npos);
+    }
+
+    SECTION("an audio clip with no events is reported the same way") {
+        auto clip = makeAudioClip(1, 0.0, 8.0);
+        clip.audio().events.clear();
+
+        const auto snapshot = compile({clip}, makeTempoMap());
+        CHECK(snapshot.tracks.empty());
+        REQUIRE(snapshot.diagnostics.size() == 1);
+        CHECK(snapshot.diagnostics.front().find("no events") != std::string::npos);
     }
 
     SECTION("a clip that belongs to another track is reported") {

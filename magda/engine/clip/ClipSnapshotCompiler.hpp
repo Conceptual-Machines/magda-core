@@ -51,18 +51,24 @@ struct ClipLane {
  * @brief Resolve @p lanes into a snapshot.
  *
  * Deterministic: the same model always compiles to the same snapshot, entry for
- * entry, so a dump diff means a model change and nothing else.
+ * entry, so a dump diff means a model change and nothing else. Tracks and the
+ * clips on them are sorted here, but diagnostics keep the order the lanes
+ * arrived in, so a caller that wants two compiles to dump alike hands the lanes
+ * over in a stable order. Project order is the obvious one.
  *
  * Occlusion and fades come from the model's own functions (computeAudibleSpans,
- * effectiveFadesIn) rather than from a second implementation of the rules. The
- * fades are asked for at the tempo where the clip starts, which is the same
- * question the arrangement asks when it draws them: a fade computed any other
- * way here would be a second interpretation, and the one on screen would be the
- * one that was wrong.
+ * effectiveFadesIn) rather than from a second implementation of the rules. What
+ * this adds is the tempo map: which edge a crossfade covers is the model's
+ * answer, how long those beats last is asked of the map, so the two halves of
+ * one crossfade agree even when their clips start under different tempos. The
+ * arrangement still draws its curves at the project tempo, which is the same
+ * number on a flat map and a thing to reconcile when tempo curves reach
+ * playback.
  *
  * Anything that will not sound lands in ClipSnapshot::diagnostics rather than
- * disappearing. A clip the lane leaves inaudible is not a diagnostic: being
- * covered is what covering means.
+ * disappearing, and does not reach the snapshot: a clip with nothing playable
+ * left is not carried as an empty one. A clip the lane leaves inaudible is
+ * neither, because being covered is what covering means.
  */
 ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
                                  const std::vector<ClipSourceInfo>& sources,

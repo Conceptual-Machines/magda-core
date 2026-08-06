@@ -32,8 +32,10 @@ struct AudibleSpan {
 
     /// Covers that fall strictly inside the span, in timeline beats — a clip
     /// dropped into the middle of another leaves one. A MIDI clip plays around
-    /// them by dropping the notes that start inside; an audio clip cannot, so
-    /// ClipManager splits audio clips before a hole can reach here.
+    /// them by dropping the notes that start inside. So does an audio clip:
+    /// nothing on a lane is cut, so resolveOverlaps no longer splits one, and
+    /// the native engine's clip snapshot carries the holes through to playback
+    /// (#2034).
     std::vector<BeatRange> silenced;
 
     double endBeat() const {

@@ -132,6 +132,27 @@ struct AudioEventPlayback {
 
     /// This event's own trim. The clip's gain sits above it.
     float gainDb = 0.0f;
+
+    // ---- The event's own fades ---------------------------------------------
+    //
+    // Its own, and not the clip's. The pair on the clip is what its EDGES play,
+    // resolved against the lane; these are what this event fades with inside
+    // it. For the event at a clip edge the two are the same fade before and
+    // after resolution, so playback shapes that edge once, with the clip's.
+    //
+    // They are carried per event because fades are per event in the model, and
+    // a clip holding several of them (#1901) has fades the clip-level pair
+    // cannot express: promoting only the primary event's would lose every
+    // other event's.
+
+    double fadeInSeconds = 0.0;
+    double fadeOutSeconds = 0.0;
+    FadeCurve fadeInCurve = FadeCurve::Linear;
+    FadeCurve fadeOutCurve = FadeCurve::Linear;
+
+    /// 0 = gain fade, 1 = speed ramp, as on the clip.
+    int fadeInBehaviour = 0;
+    int fadeOutBehaviour = 0;
 };
 
 /**

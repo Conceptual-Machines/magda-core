@@ -83,6 +83,16 @@ void dumpEvent(std::ostringstream& out, const AudioEventPlayback& event) {
     if (event.gainDb != 0.0f)
         out << " gain=" << fixed(event.gainDb, 1);
 
+    // The event's own fades, printed only when it has any: for the one event
+    // that spans its clip these repeat what the clip line already showed, and
+    // what they are here for is the clip that holds several.
+    if (event.fadeInSeconds > 0.0 || event.fadeOutSeconds > 0.0) {
+        out << " fade=" << fixed(event.fadeInSeconds, 3) << "/" << fixed(event.fadeOutSeconds, 3)
+            << " curve=" << curveName(event.fadeInCurve) << "/" << curveName(event.fadeOutCurve);
+        if (event.fadeInBehaviour != 0 || event.fadeOutBehaviour != 0)
+            out << " behaviour=" << event.fadeInBehaviour << "/" << event.fadeOutBehaviour;
+    }
+
     out << "\n";
 }
 
