@@ -343,6 +343,48 @@ TEST_CASE("CriticalSection protects shared state", "[threading]") {
 - ❌ Test rendering/painting (test state instead)
 - ❌ Rely on timing (use deterministic sequences)
 - ❌ Test third-party library behavior
+- ❌ Let POSIX be the implicit default (see below)
+
+## Platform Assumptions
+
+MAGDA ships on macOS, Linux and Windows, and every test runs on all three. A
+test that mentions a **process id, a path, a permission bit, or a signal** is
+making a platform assumption, whether or not it looks like one — and the one
+platform that disagrees is usually Windows, which is also the slowest CI leg to
+find out from.
+
+Prefer a property that does not depend on the difference:
+
+```cpp
+// Assumes POSIX: pid 1 is init/launchd and always alive. On Windows it is not a
+// process at all, so this record is swept and the assertion fails there only.
+const auto other = tokenFile().getSiblingFile("remote-api-1.json");
+REQUIRE(other.existsAsFile());
+
+// No liveness assumption: written after the sweep has already run, so what is
+// under test is that stop() removes this instance's record and nothing else.
+REQUIRE(host.start());
+const auto other = tokenFile().getSiblingFile("remote-api-424242.json");
+other.replaceWithText(...);
+host.stop();
+REQUIRE(other.existsAsFile());
+```
+
+When the difference is the point, guard it and say why:
+
+```cpp
+#if !JUCE_WINDOWS
+// The parent of this process: alive, and not us. Reaching a foreign pid's
+// liveness on Windows portably needs a toolhelp snapshot, which is more
+// machinery than this warrants — the abandoned-record case covers the other
+// half of the same branch everywhere.
+#endif
+```
+
+Values worth distrusting: pids (Windows issues multiples of four, macOS caps
+below 100000, Linux defaults to 4194304), file permissions (`chmod` is a no-op
+on Windows, where ACLs are inherited), path separators and case sensitivity, and
+anything involving signals.
 
 ## Running Tests
 
