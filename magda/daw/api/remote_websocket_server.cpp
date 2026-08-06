@@ -11,22 +11,12 @@
     #endif
 #endif
 
-// The frame cap has to be a compile-time constant, because it governs how much
-// cpp-httplib will read into memory *before* a handler ever sees the message.
-// Enforcing only in the handler would mean happily buffering 16 MB of a frame we
-// intend to reject. `Options::maxFrameBytes` can lower this per server; it
-// cannot raise it.
-#define CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH (256 * 1024)
-
-// How long a reader may sit in read() before it comes up for air, and therefore
-// how long shutdown can take. cpp-httplib exposes no way to interrupt a blocked
-// reader — there is no socket handle on the request or the socket, and
-// set_socket_options only reaches the listening socket — so this timeout is the
-// cancellation quantum. It is short because the server pings every second (see
-// kPingIntervalSeconds), which keeps frames arriving from any client that is
-// reading, so the timeout only expires on a client that has genuinely stopped.
-#define CPPHTTPLIB_WEBSOCKET_READ_TIMEOUT_SECOND 3
-
+// cpp-httplib's frame cap and read timeout are set once, as compile
+// definitions on the httplib target in the root CMakeLists.txt. They cannot be
+// #defined here: this is a header-only library, so a definition in one
+// translation unit changes only the inline functions that unit sees, and two
+// units in an executable disagreeing is an ODR violation the linker resolves
+// however it likes.
 #include <httplib.h>
 
 #include <algorithm>
@@ -194,10 +184,17 @@ std::optional<juce::int64> asIntegerInRange(const juce::var& value, juce::int64 
         const auto number = static_cast<double>(value);
         if (!std::isfinite(number) || number != std::floor(number))
             return std::nullopt;
-        // Compared as doubles, before any conversion: the bounds are exactly
-        // representable and the cast that would be undefined never happens.
-        if (number < static_cast<double>(lowest) || number > static_cast<double>(highest))
+
+        // Establish that the value fits an int64 at all before converting, and
+        // do it against 2^63 exclusive rather than (double)INT64_MAX. That cast
+        // rounds *up* to exactly 2^63, so comparing against it lets 2^63 itself
+        // through as "not greater" and straight into the conversion it was meant
+        // to prevent. The negative bound needs no such care: -2^63 is exactly
+        // representable and is a valid int64.
+        constexpr double twoPow63 = 9223372036854775808.0;
+        if (number >= twoPow63 || number < -twoPow63)
             return std::nullopt;
+
         result = static_cast<juce::int64>(number);
     } else {
         return std::nullopt;
@@ -523,16 +520,21 @@ struct RemoteWebSocketServer::Impl {
         }
 
         const auto id = parsed["id"];
-        const auto method = parsed["method"].toString();
+        const auto methodValue = parsed["method"];
 
         if (parsed["jsonrpc"].toString() != "2.0") {
             refuse(connection, id, kInvalidRequest, "jsonrpc must be \"2.0\"");
             return;
         }
-        if (method.isEmpty()) {
-            refuse(connection, id, kInvalidRequest, "method is required");
+        // JSON-RPC requires a string. Converting whatever arrived would turn
+        // `"method":123` into the operation name "123" and report it as an
+        // unknown operation, which tells the client it asked for something that
+        // does not exist rather than that it sent something malformed.
+        if (!methodValue.isString() || methodValue.toString().isEmpty()) {
+            refuse(connection, id, kInvalidRequest, "method must be a non-empty string");
             return;
         }
+        const auto method = methodValue.toString();
         // Every operation returns a revision the client needs in order to make
         // its next write, so a notification would be a request whose answer the
         // client cannot do without.

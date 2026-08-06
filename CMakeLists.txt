@@ -315,6 +315,22 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cpp-httplib)
 
+# cpp-httplib is configured by macros read inside a header-only library, so a
+# #define in one .cpp changes the inline functions that translation unit sees and
+# nothing else. Two TUs in one executable disagreeing about a limit is an ODR
+# violation whose winner is chosen by the linker, so the values live here, once,
+# on the target every consumer already links.
+#
+# The payload cap governs how much of a frame is read into memory before any
+# handler sees it. The read timeout is how long a connection's reader may sit in
+# read() before it comes up for air, and therefore how long shutdown can take:
+# cpp-httplib offers no way to interrupt a blocked reader, so this is the
+# cancellation quantum (see remote_websocket_server.cpp).
+target_compile_definitions(httplib INTERFACE
+    CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH=262144
+    CPPHTTPLIB_WEBSOCKET_READ_TIMEOUT_SECOND=3
+)
+
 # Simple agent system - no external dependencies needed
 
 # Product-based subdirectories

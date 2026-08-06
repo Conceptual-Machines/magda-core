@@ -1,5 +1,3 @@
-#define CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH (256 * 1024)
-
 #include <httplib.h>
 
 #include <atomic>

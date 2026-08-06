@@ -6,8 +6,6 @@
 // malformed frame does, and how limits and shutdown behave. What the operations
 // themselves do belongs to test_remote_service.cpp.
 
-#define CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH (256 * 1024)
-
 #include <httplib.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -483,8 +481,40 @@ TEST_CASE("Numbers in meta must be whole and in range", "[remote][websocket][fra
     REQUIRE(send(R"({"expectedRevision":-1})") == -32600);
     REQUIRE(send(R"({"expectedRevision":2.5})") == -32600);
 
-    // Whole and in range still works.
+    // 2^63 exactly. Guarding with (double)INT64_MAX does not catch this: that
+    // conversion rounds *up* to 2^63, so the value is equal to the bound rather
+    // than above it, passes a `>` test, and reaches a cast that is undefined.
+    // expectedRevision is the one that reaches for the full int64 range, so it
+    // is the one that has to be checked at the boundary.
+    REQUIRE(send(R"({"expectedRevision":9223372036854775808})") == -32600);
+    REQUIRE(send(R"({"expectedRevision":-1e19})") == -32600);
+
+    // Whole and in range still works, at the boundary and below it.
     REQUIRE(send(R"({"deadlineMs":250})") != -32600);
+    REQUIRE(send(R"({"expectedRevision":0})") != -32600);
+}
+
+TEST_CASE("method must be a string", "[remote][websocket][framing][errors]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    RemoteWebSocketServer server(service, testOptions());
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+
+    // Converting whatever arrived would make `123` the operation name "123" and
+    // report it as unknown — telling the client it asked for something that does
+    // not exist, when what it actually did was send something malformed.
+    REQUIRE(errorCodeOf(roundTrip(client, R"({"jsonrpc":"2.0","id":1,"method":123})")) == -32600);
+    REQUIRE(errorCodeOf(roundTrip(client, R"({"jsonrpc":"2.0","id":1,"method":true})")) == -32600);
+    REQUIRE(errorCodeOf(roundTrip(
+                client, R"({"jsonrpc":"2.0","id":1,"method":["tracks.list"]})")) == -32600);
+
+    // A string that names nothing is still a well-formed request for something
+    // that does not exist, and keeps its own code.
+    REQUIRE(errorCodeOf(roundTrip(client, request("tracks.summonDragon"))) == -32601);
 }
 
 TEST_CASE("The connection cap holds when clients arrive together", "[remote][websocket][limits]") {

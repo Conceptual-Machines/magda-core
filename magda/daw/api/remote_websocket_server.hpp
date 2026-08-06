@@ -117,9 +117,19 @@ class RemoteWebSocketServer {
         /// a non-browser client, the second is a page we did not authorise.
         std::vector<juce::String> allowedOrigins;
 
-        /// Connections are a thread each, so this is a real resource bound
-        /// rather than a policy knob. Further connections are refused at the
-        /// handshake with 503.
+        /**
+         * Connections are a thread each, so this is a real resource bound rather
+         * than a policy knob, and it is exact: the count is never exceeded.
+         *
+         * How a client over the limit is told is best-effort. Usually it is a
+         * 503 before the handshake. A client that wins the race for the last
+         * slot may instead see the handshake succeed and be closed immediately
+         * afterwards with `PolicyViolation`, because the cap is claimed on the
+         * connection's own thread rather than reserved ahead of it — a
+         * reservation would have to be handed back along every path cpp-httplib
+         * can take to never reach a handler, and one it misses is a slot
+         * stranded for the life of the process.
+         */
         int maxConnections = 8;
 
         /// Frames above this are refused and the connection is closed with
