@@ -237,55 +237,60 @@ constexpr int kProgressionTargetBaseId = 400;
 // resize it afterwards; setCrossfadeRegionBeats clamps it into both clips.
 constexpr double kDefaultCrossfadeBeats = 0.5;
 
-juce::Path makeClippedRoundedRectPath(juce::Rectangle<int> bounds,
-                                      juce::Rectangle<int> visibleBounds, float radius) {
+// Rounded rect of `bounds`, but only the part of it that falls inside
+// `region`, with the corners kept where the clip's own corners are. `region`
+// must be real geometry (a show-through stretch, #2003) — never the repaint
+// damage rect, or a partial repaint redraws the shape around the damage
+// instead of around the clip (#2026).
+juce::Path makeClippedRoundedRectPath(juce::Rectangle<int> bounds, juce::Rectangle<int> region,
+                                      float radius) {
     juce::Path path;
 
-    if (bounds.isEmpty() || visibleBounds.isEmpty())
+    if (bounds.isEmpty() || region.isEmpty())
         return path;
 
-    const bool leftEdgeVisible = visibleBounds.getX() <= bounds.getX();
-    const bool rightEdgeVisible = visibleBounds.getRight() >= bounds.getRight();
+    const bool drawLeftEdge = region.getX() <= bounds.getX();
+    const bool drawRightEdge = region.getRight() >= bounds.getRight();
 
-    if (!leftEdgeVisible && !rightEdgeVisible) {
-        path.addRectangle(visibleBounds.toFloat());
+    if (!drawLeftEdge && !drawRightEdge) {
+        path.addRectangle(region.toFloat());
         return path;
     }
 
-    const float left = static_cast<float>(visibleBounds.getX());
-    const float right = static_cast<float>(visibleBounds.getRight());
-    const float top = static_cast<float>(visibleBounds.getY());
-    const float bottom = static_cast<float>(visibleBounds.getBottom());
+    const float left = static_cast<float>(region.getX());
+    const float right = static_cast<float>(region.getRight());
+    const float top = static_cast<float>(region.getY());
+    const float bottom = static_cast<float>(region.getBottom());
     const float boundsLeft = static_cast<float>(bounds.getX());
     const float boundsRight = static_cast<float>(bounds.getRight());
-    const float r = juce::jmin(radius, 0.5f * static_cast<float>(visibleBounds.getHeight()),
-                               0.5f * static_cast<float>(visibleBounds.getWidth()));
+    const float r = juce::jmin(radius, 0.5f * static_cast<float>(region.getHeight()),
+                               0.5f * static_cast<float>(region.getWidth()));
 
-    path.startNewSubPath(leftEdgeVisible ? boundsLeft + r : left, top);
-    path.lineTo(rightEdgeVisible ? boundsRight - r : right, top);
+    path.startNewSubPath(drawLeftEdge ? boundsLeft + r : left, top);
+    path.lineTo(drawRightEdge ? boundsRight - r : right, top);
 
-    if (rightEdgeVisible)
+    if (drawRightEdge)
         path.quadraticTo(boundsRight, top, boundsRight, top + r);
     else
         path.lineTo(right, top);
 
-    path.lineTo(rightEdgeVisible ? boundsRight : right, rightEdgeVisible ? bottom - r : bottom);
+    path.lineTo(drawRightEdge ? boundsRight : right, drawRightEdge ? bottom - r : bottom);
 
-    if (rightEdgeVisible)
+    if (drawRightEdge)
         path.quadraticTo(boundsRight, bottom, boundsRight - r, bottom);
     else
         path.lineTo(right, bottom);
 
-    path.lineTo(leftEdgeVisible ? boundsLeft + r : left, bottom);
+    path.lineTo(drawLeftEdge ? boundsLeft + r : left, bottom);
 
-    if (leftEdgeVisible)
+    if (drawLeftEdge)
         path.quadraticTo(boundsLeft, bottom, boundsLeft, bottom - r);
     else
         path.lineTo(left, bottom);
 
-    path.lineTo(leftEdgeVisible ? boundsLeft : left, leftEdgeVisible ? top + r : top);
+    path.lineTo(drawLeftEdge ? boundsLeft : left, drawLeftEdge ? top + r : top);
 
-    if (leftEdgeVisible)
+    if (drawLeftEdge)
         path.quadraticTo(boundsLeft, top, boundsLeft + r, top);
     else
         path.lineTo(left, top);
@@ -295,17 +300,9 @@ juce::Path makeClippedRoundedRectPath(juce::Rectangle<int> bounds,
 }
 
 void fillClippedRoundedRect(juce::Graphics& g, juce::Rectangle<int> bounds,
-                            juce::Rectangle<int> visibleBounds, juce::Colour colour, float radius) {
+                            juce::Rectangle<int> region, juce::Colour colour, float radius) {
     g.setColour(colour);
-    g.fillPath(makeClippedRoundedRectPath(bounds, visibleBounds, radius));
-}
-
-void strokeClippedRoundedRect(juce::Graphics& g, juce::Rectangle<int> bounds,
-                              juce::Rectangle<int> visibleBounds, juce::Colour colour, float radius,
-                              float strokeWidth) {
-    g.setColour(colour);
-    g.strokePath(makeClippedRoundedRectPath(bounds, visibleBounds, radius),
-                 juce::PathStrokeType(strokeWidth));
+    g.fillPath(makeClippedRoundedRectPath(bounds, region, radius));
 }
 
 void logArrangeRangeSelect(const juce::String& message) {
@@ -399,8 +396,11 @@ void ClipComponent::paint(juce::Graphics& g) {
     }
 
     auto bounds = getLocalBounds();
-    auto visibleBounds = bounds.getIntersection(g.getClipBounds());
-    if (visibleBounds.isEmpty())
+    // The damaged region decides whether to paint, never what to paint: a
+    // rounded rect built from it gets its corners at the damage edge instead of
+    // at the clip's, so a partial repaint left the real corners stale (#2026).
+    // Geometry below is always the full bounds; the context does the clipping.
+    if (!bounds.intersects(g.getClipBounds()))
         return;
 
     const auto overlaps = overlapDisplay(*clip);
@@ -562,30 +562,30 @@ void ClipComponent::paint(juce::Graphics& g) {
 
     // Marquee highlight overlay (during marquee drag)
     if (isMarqueeHighlighted_) {
-        fillClippedRoundedRect(g, bounds, visibleBounds, juce::Colours::white.withAlpha(0.2f),
-                               CORNER_RADIUS);
+        g.setColour(juce::Colours::white.withAlpha(0.2f));
+        g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
     }
 
     // Disabled overlay (#1736) — heavier than the ghost treatment and the
     // frozen/session dims, and it covers the header too, so a disabled clip
     // reads as "off" at a glance (ghosts keep a full-colour header).
     if (!clip->enabled) {
-        fillClippedRoundedRect(g, bounds, visibleBounds, juce::Colours::black.withAlpha(0.55f),
-                               CORNER_RADIUS);
+        g.setColour(juce::Colours::black.withAlpha(0.55f));
+        g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
     }
 
     // Frozen overlay — dim clip on frozen tracks
     auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
     if (trackInfo && trackInfo->frozen) {
-        fillClippedRoundedRect(g, bounds, visibleBounds, juce::Colours::black.withAlpha(0.35f),
-                               CORNER_RADIUS);
+        g.setColour(juce::Colours::black.withAlpha(0.35f));
+        g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
     }
 
     // Session mode overlay — dim arrangement clips when track is in Session mode
     if (trackInfo && trackInfo->playbackMode == TrackPlaybackMode::Session &&
         clip->view == ClipView::Arrangement) {
-        fillClippedRoundedRect(g, bounds, visibleBounds, juce::Colours::black.withAlpha(0.35f),
-                               CORNER_RADIUS);
+        g.setColour(juce::Colours::black.withAlpha(0.35f));
+        g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
     }
 }
 
@@ -646,8 +646,7 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
 void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                                    juce::Rectangle<int> bounds,
                                    const std::vector<BeatRange>& showThrough) {
-    auto visibleBounds = bounds.getIntersection(g.getClipBounds());
-    if (visibleBounds.isEmpty())
+    if (!bounds.intersects(g.getClipBounds()))
         return;
 
     auto waveformArea = bounds.reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
@@ -677,14 +676,14 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     auto bgColour = deriveClipBody(clip.colour);
     if (ghosted)
         bgColour = bgColour.withAlpha(0.55f);
-    paintClipBody(g, bounds, visibleBounds, bgColour, showThrough);
+    paintClipBody(g, bounds, bgColour, showThrough);
 
     if (audioEventRef(clip).sourceFilePath().isNotEmpty())
         paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength,
                              ghosted ? juce::Colours::black.withAlpha(0.65f) : juce::Colour());
 
-    strokeClippedRoundedRect(g, bounds, visibleBounds, deriveTrackSwatch(clip.colour, 0.45f),
-                             CORNER_RADIUS, 1.0f);
+    g.setColour(deriveTrackSwatch(clip.colour, 0.45f));
+    g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
 
     // Fade overlays (crossfaded edges show the overlap-derived fade, #1499)
     const auto fades = computeEffectiveFades(clip);
@@ -749,10 +748,11 @@ ClipId ClipComponent::findCrossfadeNeighbour(bool atStart) const {
 }
 
 void ClipComponent::paintClipBody(juce::Graphics& g, juce::Rectangle<int> bounds,
-                                  juce::Rectangle<int> visibleBounds, juce::Colour bgColour,
+                                  juce::Colour bgColour,
                                   const std::vector<BeatRange>& showThrough) {
     if (showThrough.empty()) {
-        fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
+        g.setColour(bgColour);
+        g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
         return;
     }
 
@@ -767,10 +767,9 @@ void ClipComponent::paintClipBody(juce::Graphics& g, juce::Rectangle<int> bounds
             solid.subtract(region);
     }
     for (const auto& part : solid)
-        fillClippedRoundedRect(g, bounds, part.getIntersection(visibleBounds), bgColour,
-                               CORNER_RADIUS);
+        fillClippedRoundedRect(g, bounds, part, bgColour, CORNER_RADIUS);
     for (const auto& range : showThrough) {
-        const auto region = coveringRangeBounds(range, bounds).getIntersection(visibleBounds);
+        const auto region = coveringRangeBounds(range, bounds);
         if (!region.isEmpty())
             fillClippedRoundedRect(g, bounds, region, bgColour.withAlpha(0.28f), CORNER_RADIUS);
     }
@@ -779,8 +778,7 @@ void ClipComponent::paintClipBody(juce::Graphics& g, juce::Rectangle<int> bounds
 void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
                                   juce::Rectangle<int> bounds,
                                   const std::vector<BeatRange>& showThrough) {
-    auto visibleBounds = bounds.getIntersection(g.getClipBounds());
-    if (visibleBounds.isEmpty())
+    if (!bounds.intersects(g.getClipBounds()))
         return;
 
     // Ghost clips paint a translucent body + dimmed notes (see paintAudioClip).
@@ -789,14 +787,14 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
     if (ghosted)
         bgColour = bgColour.withAlpha(0.55f);
 
-    paintClipBody(g, bounds, visibleBounds, bgColour, showThrough);
+    paintClipBody(g, bounds, bgColour, showThrough);
 
     auto noteArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
     paintMidiNotes(g, clip, noteArea,
                    ghosted ? juce::Colours::black.withAlpha(0.65f) : juce::Colours::black);
 
-    strokeClippedRoundedRect(g, bounds, visibleBounds, deriveTrackSwatch(clip.colour, 0.45f),
-                             CORNER_RADIUS, 1.0f);
+    g.setColour(deriveTrackSwatch(clip.colour, 0.45f));
+    g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
 }
 
 void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
@@ -931,8 +929,7 @@ bool ClipComponent::isChordClip(const ClipInfo& clip) const {
 
 void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
                                    juce::Rectangle<int> bounds) {
-    auto visibleBounds = bounds.getIntersection(g.getClipBounds());
-    if (visibleBounds.isEmpty())
+    if (!bounds.intersects(g.getClipBounds()))
         return;
 
     const bool selected = isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
@@ -941,7 +938,8 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
     // than a solid pastel card. Selection makes the clip body read as the track
     // colour while keeping the black selected header separate.
     auto bgColour = deriveTrackSwatch(clip.colour, selected ? 0.24f : 0.16f);
-    fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
+    g.setColour(bgColour);
+    g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
 
     auto blockArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2).reduced(2, 0);
     if (!clip.chordAnnotations.empty() && blockArea.getHeight() > 5 && blockArea.getWidth() > 2) {
@@ -1016,8 +1014,8 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
         }
     }
 
-    strokeClippedRoundedRect(g, bounds, visibleBounds, deriveTrackSwatch(clip.colour, 0.45f),
-                             CORNER_RADIUS, 1.0f);
+    g.setColour(deriveTrackSwatch(clip.colour, 0.45f));
+    g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
 }
 
 void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
@@ -1032,13 +1030,14 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     const auto headerForeground =
         selected ? juce::Colours::white : DarkTheme::getColour(DarkTheme::BACKGROUND);
 
-    auto visibleHeaderArea =
-        headerArea.withBottom(headerArea.getBottom() + 2).getIntersection(g.getClipBounds());
-    if (visibleHeaderArea.isEmpty())
+    // Extended 2px past its bottom so the lower corners get cut off by the body
+    // and only the top pair reads as rounded.
+    const auto headerFill = headerArea.withBottom(headerArea.getBottom() + 2);
+    if (!headerFill.intersects(g.getClipBounds()))
         return;
 
-    fillClippedRoundedRect(g, headerArea.withBottom(headerArea.getBottom() + 2), visibleHeaderArea,
-                           headerColour, CORNER_RADIUS);
+    g.setColour(headerColour);
+    g.fillRoundedRectangle(headerFill.toFloat(), CORNER_RADIUS);
 
     // Ghost clips (link-group members) show a link glyph at the left of the
     // header and an italicised name.
