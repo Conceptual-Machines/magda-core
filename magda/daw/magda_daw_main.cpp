@@ -100,6 +100,9 @@ class MagdaDAWApplication : public JUCEApplication {
     // Neither has anything to tear down. Latched early, not at the end of
     // initialise(), so a failed engine init still gets the full teardown.
     bool runningAsApp_ = false;
+    // This process is a TE plugin scanner child, so it has third-party plugin
+    // dylibs loaded. Matters only for how it terminates: see shutdown().
+    bool isPluginScanChild_ = false;
 
   public:
     /** Convenience accessor used by the free functions in scripting_app.hpp. */
@@ -164,6 +167,7 @@ class MagdaDAWApplication : public JUCEApplication {
         // Check if we're being launched as a plugin scanner subprocess
         if (tracktion::PluginManager::startChildProcessPluginScan(commandLine)) {
             // This process is a plugin scanner - it will exit when done
+            isPluginScanChild_ = true;
             return;
         }
 
@@ -430,6 +434,20 @@ class MagdaDAWApplication : public JUCEApplication {
         // below would lazily construct every singleton purely to shut it down.
         if (!runningAsApp_) {
             DBG("=== SHUTDOWN (uninitialised process) ===");
+
+            // A scanner child has third-party plugin dylibs loaded, so it needs the
+            // same _exit() the full teardown ends with, for the same reason: buggy
+            // static destructors corrupting the heap on the way out. It normally
+            // terminates inside TE instead of here (PluginScanChildProcess::
+            // handleConnectionLost calls std::exit), so this is belt and braces.
+            //
+            // A second launch that the gate turned away deliberately does not get
+            // this. It has loaded nothing worth skipping, and it has just posted the
+            // broadcast carrying its command line to the running instance, so it
+            // should unwind normally rather than be shot in the head.
+            if (isPluginScanChild_)
+                _exit(0);
+
             return;
         }
 
