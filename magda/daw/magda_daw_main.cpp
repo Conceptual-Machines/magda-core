@@ -93,6 +93,13 @@ class MagdaDAWApplication : public JUCEApplication {
     std::unique_ptr<magda::MainWindow> mainWindow_;
     std::unique_ptr<magda::MainLookAndFeel> lookAndFeel_;
     std::unique_ptr<magda::SplashScreen> splashScreen_;
+    // True once this process has committed to running as the DAW. Two kinds of
+    // process never do, yet JUCE still calls shutdown() on them: plugin scanner
+    // children, which return from initialise() immediately, and a second launch
+    // that the single-instance gate turns away before initialise() runs at all.
+    // Neither has anything to tear down. Latched early, not at the end of
+    // initialise(), so a failed engine init still gets the full teardown.
+    bool runningAsApp_ = false;
 
   public:
     /** Convenience accessor used by the free functions in scripting_app.hpp. */
@@ -131,12 +138,36 @@ class MagdaDAWApplication : public JUCEApplication {
         return MAGDA_VERSION;
     }
 
+    /** MAGDA is single-instance (#2031).
+
+        Returning false here makes JUCE hand a second launch's command line to
+        the running app via anotherInstanceStarted() and quit the new process,
+        so double-clicking a .mgd opens the project in the DAW that is already
+        up instead of starting a rival one. Two instances would fight over the
+        audio device (most ASIO drivers are single-client, so the second one
+        gets no audio at all) and race each other writing the shared config,
+        log and caches under the user data dir.
+
+        The out-of-process plugin scanner is exempt. TE launches it as a child
+        of this same binary with "--PluginScan:<pipe>", and JUCE applies this
+        gate before initialise() runs, so without the exemption every scanner
+        child would forward its pipe name to the main app and exit, breaking
+        plugin scanning outright. Prefix per tracktion_PluginScanHelpers.h
+        (commandLineUID) plus ChildProcessWorker's "--<uid>:" convention; that
+        header is module-internal, so the string is reproduced here.
+    */
+    bool moreThanOneInstanceAllowed() override {
+        return getCommandLineParameters().trim().startsWith("--PluginScan:");
+    }
+
     void initialise(const String& commandLine) override {
         // Check if we're being launched as a plugin scanner subprocess
         if (tracktion::PluginManager::startChildProcessPluginScan(commandLine)) {
             // This process is a plugin scanner - it will exit when done
             return;
         }
+
+        runningAsApp_ = true;
 
         // 0. Configurable user-data paths. Two-phase resolution (issue:
         //    custom data dir).
@@ -393,6 +424,15 @@ class MagdaDAWApplication : public JUCEApplication {
     }
 
     void shutdown() override {
+        // Nothing was built, so there is nothing to tear down: a plugin scanner
+        // child, or a second launch that the single-instance gate turned away
+        // before initialise() ran. Both still land here. Running the teardown
+        // below would lazily construct every singleton purely to shut it down.
+        if (!runningAsApp_) {
+            DBG("=== SHUTDOWN (uninitialised process) ===");
+            return;
+        }
+
         initTimer_.reset();
         DBG("=== SHUTDOWN START ===");
 
@@ -460,12 +500,22 @@ class MagdaDAWApplication : public JUCEApplication {
 
     void anotherInstanceStarted(const String& commandLine) override {
         // Another instance was launched with a file path (e.g. double-click .mgd while app is
-        // running)
+        // running). It has already quit, having handed us its command line, so this is the
+        // only chance to act on the file. openProjectFile() goes through
+        // ProjectManager::loadProjectAsync, which prompts on unsaved changes.
+        juce::Logger::writeToLog("Another instance started, command line: " + commandLine);
+        if (mainWindow_ == nullptr)
+            return;
+
+        // The process that would have put a window on screen has just exited, so raise
+        // ours instead. Unconditional: a bare relaunch carries no file and would
+        // otherwise look like the launch did nothing at all.
+        mainWindow_->toFront(true);
+
         auto filePath = commandLine.unquoted().trim();
         juce::File projectFile(filePath);
-        if (projectFile.existsAsFile() && projectFile.hasFileExtension("mgd") && mainWindow_) {
+        if (projectFile.existsAsFile() && projectFile.hasFileExtension("mgd"))
             mainWindow_->openProjectFile(projectFile);
-        }
     }
 
     void systemRequestedQuit() override {
