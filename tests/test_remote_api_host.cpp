@@ -12,6 +12,7 @@
 
 #if !JUCE_WINDOWS
     #include <sys/stat.h>
+    #include <unistd.h>
 #endif
 
 using namespace magda;
@@ -84,23 +85,22 @@ TEST_CASE("A disabled remote API opens no listener", "[remote][host][lifecycle]"
 // return rather than on the disabled path alone, so the case above exercises the
 // same statement.
 
-TEST_CASE("Another instance's record is left alone", "[remote][host][lifecycle]") {
+TEST_CASE("Stopping removes only this instance's record", "[remote][host][lifecycle]") {
     MessageThreadRelaxation relax;
     ScopedRemoteApiConfig config(true);
 
     MockMagdaApi api;
     RemoteApiHost host(api);
-
-    // pid 1 is init/launchd: always running, never us. It stands in for a second
-    // MAGDA instance, which the app permits — moreThanOneInstanceAllowed()
-    // defaults to true. Deleting this on start or stop would strand a live
-    // instance with no way for a client to find it.
-    const auto other = host.tokenFile().getSiblingFile("remote-api-1.json");
-    other.replaceWithText(R"({"port":1,"token":"theirs","url":"ws://127.0.0.1:1/rpc","pid":1})");
-
     REQUIRE(host.start());
+
+    // Written after start(), so the sweep has already run and cannot be what
+    // decides this. It stands in for a second MAGDA instance, which the app
+    // permits — moreThanOneInstanceAllowed() defaults to true. Shutdown deleting
+    // this would strand a live instance with no way for a client to find it.
+    const auto other = host.tokenFile().getSiblingFile("remote-api-424242.json");
+    other.replaceWithText(
+        R"({"port":1,"token":"theirs","url":"ws://127.0.0.1:1/rpc","pid":424242})");
     REQUIRE(host.tokenFile() != other);
-    REQUIRE(other.existsAsFile());
 
     host.stop();
 
@@ -109,6 +109,32 @@ TEST_CASE("Another instance's record is left alone", "[remote][host][lifecycle]"
 
     other.deleteFile();
 }
+
+#if !JUCE_WINDOWS
+TEST_CASE("A live instance's record survives the sweep", "[remote][host][lifecycle]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+
+    // The parent of this test process: alive, and not us. POSIX only — pid 1 is
+    // init there and would do just as well, but on Windows it is not a process
+    // at all, and reaching a foreign pid's liveness portably needs a toolhelp
+    // snapshot that is not worth a test. The abandoned-record case below covers
+    // the other half of the same branch on every platform.
+    const auto parent = static_cast<juce::int64>(getppid());
+    const auto other =
+        host.tokenFile().getSiblingFile("remote-api-" + juce::String(parent) + ".json");
+    REQUIRE(host.tokenFile() != other);
+    other.replaceWithText(R"({"port":1,"token":"theirs","url":"ws://127.0.0.1:1/rpc"})");
+
+    REQUIRE(host.start());
+    REQUIRE(other.existsAsFile());
+
+    other.deleteFile();
+}
+#endif
 
 TEST_CASE("A record whose process is gone is collected", "[remote][host][lifecycle]") {
     MessageThreadRelaxation relax;
