@@ -81,6 +81,14 @@ std::optional<std::size_t> inPlaceInputOf(const PlanOp& op) {
             return op.inputs.empty() || !op.inputs.front().valid() ? std::nullopt
                                                                    : std::optional<std::size_t>(0);
 
+        // The side the edge is becoming, never the side it was. A fade reads
+        // both at an index before it writes it, so writing over the new side
+        // costs nothing; writing over the old one would too, but the new side
+        // is the buffer the fade's output goes on being once it is spent.
+        case OpKind::Crossfade:
+            return op.inputs.size() < 2 || !op.inputs[1].valid() ? std::nullopt
+                                                                 : std::optional<std::size_t>(1);
+
         // A sum can accumulate into the first thing it sums, which is what it
         // would have copied there anyway.
         case OpKind::MixAudio:
@@ -158,8 +166,16 @@ PlanLatency resolvePlanLatency(const RenderPlan& plan, const std::vector<int>& p
             resolved.portLatency[flat(PortRef{input.op, 0})] = target;
         }
 
+        // A fade produces the latency of the side it is becoming, not the
+        // longest of the two. A fade that was refused a ramp outputs only the
+        // new side, a spent one is a pass-through of it, and a running one has
+        // already been told its two sides arrive together; taking the maximum
+        // would misalign every parallel path downstream for as long as an old
+        // side that happened to be more latent stayed in the plan.
         const auto produced =
-            target + (op.kind == OpKind::Device ? std::max(0, deviceLatency[i]) : 0);
+            op.kind == OpKind::Crossfade && op.inputs.size() > 1 && op.inputs[1].valid()
+                ? arriving(op.inputs[1])
+                : target + (op.kind == OpKind::Device ? std::max(0, deviceLatency[i]) : 0);
         for (std::size_t port = 0; port < op.outputs.size(); ++port)
             resolved.portLatency[static_cast<std::size_t>(portOffsets[i]) + port] = produced;
 

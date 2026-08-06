@@ -20,6 +20,11 @@
  * and swaps it in atomically; the differ carries runtime state across the swap
  * by matching ops on their OpKey.
  *
+ * Not everything in a plan came from the compiler. A plan published while an
+ * edit is being faded in carries Crossfade ops the compiler never emitted, put
+ * there by a pass over its output (see PlanCrossfade.hpp); they are ordinary
+ * ops in every other respect, and they leave again at the next publish.
+ *
  * Latency compensation splits along the same seam. Where the delay lines go is
  * topology and lives here as Delay ops; how many samples each one holds is a
  * property of a loaded plugin, which the model cannot know and the compiler has
@@ -55,6 +60,7 @@ enum class OpKind : std::uint8_t {
     MixAudio,   ///< ordered sum of audio inputs (summing order is compiled, never scheduling order)
     MergeMidi,  ///< ordered merge of MIDI inputs
     Delay,      ///< latency compensation on one edge; the sample count is bound at prepare time
+    Crossfade,  ///< an edge as it was and as it is, ramped from one to the other
     Gain,       ///< scalar gain
     Fader,      ///< volume + pan, and the MIDI its stage passes on
     SendTap,    ///< pre/post-fader tap feeding another track
@@ -99,7 +105,34 @@ enum class OpRole : std::uint8_t {
     MergeInputDelay,   ///< aligns one input of a MergeMidi
     DeviceInputDelay,  ///< aligns one input slot of a Device
     FaderInputDelay,   ///< aligns one input slot of a Fader
+
+    // A fade sits on one edge, like a delay, so its identity is the op it feeds
+    // plus the slot it fills. Unlike a delay it has no role of its own to say
+    // which op that is, because it can land on any of them, so the consumer's
+    // role goes into OpKey::index alongside the slot (see crossfadeIndex). Two
+    // fades at one model location, on a fader and on the meter behind it, would
+    // otherwise be the same key and the differ would carry one into the other.
+    EdgeCrossfade,  ///< ramps one input slot of the op it is keyed to
 };
+
+/// Roles per index band in a crossfade's key. Larger than any op's slot count
+/// by a wide margin, so the two halves of the index never run into each other.
+constexpr int kCrossfadeRoleStride = 1024;
+
+/** The key index a fade on @p slot of an op with @p consumerRole carries. */
+constexpr int crossfadeIndex(OpRole consumerRole, int slot) {
+    return (static_cast<int>(consumerRole) * kCrossfadeRoleStride) + slot;
+}
+
+/** The role of the op a fade with this key index feeds. */
+constexpr OpRole crossfadeConsumerRole(int index) {
+    return static_cast<OpRole>(index / kCrossfadeRoleStride);
+}
+
+/** The input slot a fade with this key index fills. */
+constexpr int crossfadeSlot(int index) {
+    return index % kCrossfadeRoleStride;
+}
 
 /**
  * @brief Whether an op's output is computable ahead of the transport.

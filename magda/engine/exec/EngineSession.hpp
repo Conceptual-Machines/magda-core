@@ -141,6 +141,18 @@ class EngineSession {
         return livePlan_;
     }
 
+    /**
+     * @brief Fades of the live plan that have not finished, by its OpIds.
+     *
+     * On the publishing thread, and what insertCrossfades needs to know before
+     * the next plan is compiled: a fade whose edge has arrived is re-emitted
+     * while it is still running and dropped once it is not. Empty when nothing
+     * is published, which is what a caller with no epoch to ask should pass.
+     */
+    std::vector<char> unfinishedCrossfades() const {
+        return live_ == nullptr ? std::vector<char>{} : live_->executor.unfinishedCrossfades();
+    }
+
   private:
     /// One epoch: a plan, the executor prepared for it, and the values it was
     /// published with. The executor points into the plan, so the three are

@@ -22,6 +22,8 @@ int arityOf(OpKind kind) {
             return 3;  // audio, MIDI, sidechain audio
         case OpKind::Fader:
             return 2;  // audio, MIDI
+        case OpKind::Crossfade:
+            return 2;  // the edge as it was, the edge as it is
         case OpKind::MixAudio:
         case OpKind::MergeMidi:
             return -1;  // variadic
@@ -53,6 +55,8 @@ const char* toString(OpKind kind) {
             return "MergeMidi";
         case OpKind::Delay:
             return "Delay";
+        case OpKind::Crossfade:
+            return "Crossfade";
         case OpKind::Gain:
             return "Gain";
         case OpKind::Fader:
@@ -115,6 +119,8 @@ const char* toString(OpRole role) {
             return "deviceInputDelay";
         case OpRole::FaderInputDelay:
             return "faderInputDelay";
+        case OpRole::EdgeCrossfade:
+            return "edgeCrossfade";
     }
     return "?";
 }
@@ -139,6 +145,16 @@ std::string toString(const OpKey& key) {
         out += "/D" + std::to_string(key.deviceId);
     out += ":";
     out += toString(key.role);
+
+    // A fade's index is two numbers packed into one, and printing the packing
+    // would put "#14336" in front of anyone reading a dump. What it stands for
+    // is the edge the fade sits on, so that is what comes out.
+    if (key.role == OpRole::EdgeCrossfade) {
+        out += "(" + std::string(toString(crossfadeConsumerRole(key.index))) + "#" +
+               std::to_string(crossfadeSlot(key.index)) + ")";
+        return out;
+    }
+
     if (key.index != 0)
         out += "#" + std::to_string(key.index);
     return out;
@@ -361,6 +377,29 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
                                            "the same edge's compensation");
         } else if (isInputDelayRole(op.key.role)) {
             problems.push_back(label + "carries an input-delay role but is not a delay");
+        }
+
+        // A fade is the one op a plan can hold that the compiler did not emit,
+        // so the shape it is supposed to have is worth stating where every plan
+        // passes rather than trusting the pass that inserts them. Both sides
+        // connected because a fade from nothing is a fade in from silence, and
+        // the key because the index is what keeps two fades at one location
+        // apart: the differ joins on it, and a fade adopting the wrong ramp
+        // resumes at a position that belongs to another edge.
+        if ((op.kind == OpKind::Crossfade) != (op.key.role == OpRole::EdgeCrossfade)) {
+            problems.push_back(label + (op.kind == OpKind::Crossfade
+                                            ? "is a crossfade but is not keyed as one"
+                                            : "carries a crossfade role but is not a crossfade"));
+        } else if (op.kind == OpKind::Crossfade) {
+            if (op.inputs.size() != 2 || !op.inputs[0].valid() || !op.inputs[1].valid())
+                problems.push_back(label + "is a crossfade without both sides of the edge");
+
+            if (op.outputs.size() != 1 || op.outputs.front() != SignalKind::Audio)
+                problems.push_back(label + "is a crossfade and does not produce one audio port");
+
+            if (crossfadeSlot(op.key.index) < 0)
+                problems.push_back(label + "is a crossfade keyed to input slot " +
+                                   std::to_string(crossfadeSlot(op.key.index)));
         }
 
         // Out-of-range inputs are already reported above; skip them here so a

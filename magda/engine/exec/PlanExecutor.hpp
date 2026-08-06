@@ -104,6 +104,63 @@ class MidiDelayLine {
     std::atomic<bool> overflowed_{false};
 };
 
+/**
+ * @brief How long an edge takes to become the edge that replaced it.
+ *
+ * Long enough that the step is a slope rather than an edge, short enough that
+ * dragging a device around does not sound like a fader move. It is a time
+ * rather than a block count: the executor is block-size invariant everywhere
+ * else and a fade that lasted longer at 64 samples than at 512 would be the one
+ * thing in the plan that was not.
+ */
+inline constexpr double kCrossfadeSeconds = 0.005;
+
+/**
+ * @brief The ramp from one side of a changed edge to the other.
+ *
+ * Equal gain, linearly: the two sides are the same material a moment apart, so
+ * they are correlated and sum to full amplitude. A constant-power law, which is
+ * right for uncorrelated material, would put a bulge in the middle of every
+ * device insert.
+ *
+ * Position is counted off what is left rather than off blocks, so the fade is
+ * the same length however the host cuts its callbacks, and a fade that runs out
+ * mid-block finishes there rather than at the next boundary.
+ */
+class CrossfadeRamp {
+  public:
+    void prepare(int lengthSamples);
+
+    /// Whether a ramp already running is one this configuration could adopt
+    /// rather than build. A different length is a different fade.
+    bool hasConfiguration(int lengthSamples) const {
+        return length_ == lengthSamples;
+    }
+
+    /// Whether the fade has finished. Safe to read from anywhere, which is what
+    /// the thread publishing the next plan asks so it knows to let it go.
+    bool spent() const {
+        return remaining_.load(std::memory_order_relaxed) <= 0;
+    }
+
+    /**
+     * @brief Write @p numSamples of the fade into @p dest.
+     *
+     * On the audio thread. @p dest may be the same buffer as @p newSide: every
+     * sample is read before the same index is written.
+     */
+    void process(juce::dsp::AudioBlock<float> dest, juce::dsp::AudioBlock<float> oldSide,
+                 juce::dsp::AudioBlock<float> newSide, int numSamples);
+
+  private:
+    int length_ = 0;
+
+    /// Samples of fade left. Written on the audio thread and read from the
+    /// thread that publishes the next plan; relaxed both ways, because it
+    /// orders nothing and guards nothing.
+    std::atomic<int> remaining_{0};
+};
+
 class PlanExecutor {
   public:
     /**
@@ -240,6 +297,26 @@ class PlanExecutor {
         return carriedDelayLines_;
     }
 
+    /**
+     * @brief Per op of the prepared plan: 1 where a fade is still running.
+     *
+     * Off the audio thread, and the whole of the retirement protocol. The pass
+     * that compiles the next plan asks this: a fade whose edge has arrived is
+     * re-emitted while it says 1 and dropped once it does not, so a spent fade
+     * leaves at the next publish and nothing on the callback ever has to remove
+     * an op from a plan the audio thread can see.
+     */
+    std::vector<char> unfinishedCrossfades() const;
+
+    /// Fades still running. What unfinishedCrossfades() counts, for tests.
+    int activeCrossfades() const;
+
+    /// Fades this executor took over mid-ramp from the one it replaced, rather
+    /// than starting again.
+    int carriedCrossfades() const {
+        return carriedCrossfades_;
+    }
+
     /// True once a valid plan has been prepared.
     bool isPrepared() const {
         return plan_ != nullptr;
@@ -305,6 +382,7 @@ class PlanExecutor {
     /// replacing it to take over. Null where the op drives none.
     const std::shared_ptr<AudioDelayLine>& audioDelayFor(OpId op) const;
     const std::shared_ptr<MidiDelayLine>& midiDelayFor(OpId op) const;
+    const std::shared_ptr<CrossfadeRamp>& crossfadeFor(OpId op) const;
 
     const RenderPlan* plan_ = nullptr;
     RenderContext context_;
@@ -340,6 +418,16 @@ class PlanExecutor {
     std::vector<std::shared_ptr<MidiDelayLine>> midiDelays_;
     int latencySamples_ = 0;
     int carriedDelayLines_ = 0;
+
+    /// Per op: the ramp a Crossfade op runs, or -1. Held by shared pointer for
+    /// the same reason the delay lines are: a fade the next plan re-emits is
+    /// still running while the audio thread is inside the executor that owns
+    /// it, so the one taking over shares it rather than copying where it had
+    /// got to. A fade whose two sides do not arrive at the same latency has no
+    /// ramp at all and passes the new side through (see prepare).
+    std::vector<int> crossfadeForOp_;
+    std::vector<std::shared_ptr<CrossfadeRamp>> crossfades_;
+    int carriedCrossfades_ = 0;
 
     /// Identity of the prepared plan; values that do not carry the same one
     /// were resolved against something else and are not applied.
