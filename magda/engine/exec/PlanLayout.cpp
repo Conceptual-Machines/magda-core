@@ -81,6 +81,14 @@ std::optional<std::size_t> inPlaceInputOf(const PlanOp& op) {
             return op.inputs.empty() || !op.inputs.front().valid() ? std::nullopt
                                                                    : std::optional<std::size_t>(0);
 
+        // A fade writes over the side it is fading to, which is the side it
+        // ends up passing through: every sample is read before the one at the
+        // same index is written, so the buffer it would have copied there is
+        // the buffer it is already in.
+        case OpKind::Crossfade:
+            return op.inputs.size() < 2 || !op.inputs[1].valid() ? std::nullopt
+                                                                 : std::optional<std::size_t>(1);
+
         // A sum can accumulate into the first thing it sums, which is what it
         // would have copied there anyway.
         case OpKind::MixAudio:

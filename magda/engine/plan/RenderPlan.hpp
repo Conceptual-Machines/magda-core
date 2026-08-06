@@ -55,6 +55,7 @@ enum class OpKind : std::uint8_t {
     MixAudio,   ///< ordered sum of audio inputs (summing order is compiled, never scheduling order)
     MergeMidi,  ///< ordered merge of MIDI inputs
     Delay,      ///< latency compensation on one edge; the sample count is bound at prepare time
+    Crossfade,  ///< equal-gain fade on one edge, from the signal it used to carry to the new one
     Gain,       ///< scalar gain
     Fader,      ///< volume + pan, and the MIDI its stage passes on
     SendTap,    ///< pre/post-fader tap feeding another track
@@ -99,7 +100,43 @@ enum class OpRole : std::uint8_t {
     MergeInputDelay,   ///< aligns one input of a MergeMidi
     DeviceInputDelay,  ///< aligns one input slot of a Device
     FaderInputDelay,   ///< aligns one input slot of a Fader
+
+    // A crossfade sits on one edge too, so its identity is the same shape: the
+    // op it feeds plus the slot it fills. Unlike a delay it can sit on any op's
+    // input rather than only on a fan-in's, so there is no consumer kind to put
+    // in the role and the consumer's own role goes in OpKey::index instead. See
+    // crossfadeIndex.
+    EdgeCrossfade,  ///< fades one input slot of the op it is keyed to
 };
+
+/**
+ * @brief The OpKey::index a crossfade on one input slot of a consumer carries.
+ *
+ * The consumer's role has to be in the key somewhere. Two ops at one model
+ * location differ only by their role (a track's fader and its meter are both
+ * keyed on the bare track), so a crossfade keyed on the location and the slot
+ * alone would collide between them, and a collision does not fail loudly: the
+ * differ hash-joins on the key and would carry one fade's position into
+ * another.
+ *
+ * The delay roles solve the same problem by naming the consumer's kind, which
+ * works because kind is unique within a model location. A crossfade can sit on
+ * any op's input, so it would need a role per kind; the index carries it
+ * instead, and validatePlan checks the encoding rather than trusting it.
+ */
+constexpr int kCrossfadeRoleStride = 1024;
+
+constexpr int crossfadeIndex(OpRole consumerRole, int slot) {
+    return (static_cast<int>(consumerRole) * kCrossfadeRoleStride) + slot;
+}
+
+constexpr OpRole crossfadeConsumerRole(int index) {
+    return static_cast<OpRole>(index / kCrossfadeRoleStride);
+}
+
+constexpr int crossfadeSlot(int index) {
+    return index % kCrossfadeRoleStride;
+}
 
 /**
  * @brief Whether an op's output is computable ahead of the transport.

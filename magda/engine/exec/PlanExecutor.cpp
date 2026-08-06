@@ -1,6 +1,7 @@
 #include "exec/PlanExecutor.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <set>
 
 namespace magda::engine {
@@ -121,6 +122,36 @@ void MidiDelayLine::process(const juce::MidiBuffer& in, juce::MidiBuffer& out, i
     }
 }
 
+void CrossfadeRamp::process(juce::dsp::AudioBlock<float> destination,
+                            juce::dsp::AudioBlock<float> oldSide,
+                            juce::dsp::AudioBlock<float> newSide, int numSamples) {
+    const auto numChannels =
+        static_cast<int>(std::min(destination.getNumChannels(),
+                                  std::min(oldSide.getNumChannels(), newSide.getNumChannels())));
+    const auto left = remaining_.load(std::memory_order_relaxed);
+    const auto faded = std::min(numSamples, left);
+    const auto scale = 1.0f / static_cast<float>(length_);
+
+    for (int channel = 0; channel < numChannels; ++channel) {
+        const auto row = static_cast<std::size_t>(channel);
+        auto* out = destination.getChannelPointer(row);
+        const auto* before = oldSide.getChannelPointer(row);
+        const auto* after = newSide.getChannelPointer(row);
+
+        for (int sample = 0; sample < faded; ++sample) {
+            // Where the ramp is, counted off what is left rather than off the
+            // block: a fade is the same length however many callbacks it takes.
+            const auto position = static_cast<float>(length_ - (left - sample)) * scale;
+            out[sample] = (before[sample] * (1.0f - position)) + (after[sample] * position);
+        }
+
+        if (faded < numSamples && out != after)
+            juce::FloatVectorOperations::copy(out + faded, after + faded, numSamples - faded);
+    }
+
+    remaining_.store(std::max(0, left - numSamples), std::memory_order_relaxed);
+}
+
 const std::shared_ptr<AudioDelayLine>& PlanExecutor::audioDelayFor(OpId op) const {
     static const std::shared_ptr<AudioDelayLine> none;
     const auto line = audioDelayForOp_[static_cast<std::size_t>(op)];
@@ -131,6 +162,21 @@ const std::shared_ptr<MidiDelayLine>& PlanExecutor::midiDelayFor(OpId op) const 
     static const std::shared_ptr<MidiDelayLine> none;
     const auto line = midiDelayForOp_[static_cast<std::size_t>(op)];
     return line < 0 ? none : midiDelays_[static_cast<std::size_t>(line)];
+}
+
+const std::shared_ptr<CrossfadeRamp>& PlanExecutor::crossfadeFor(OpId op) const {
+    static const std::shared_ptr<CrossfadeRamp> none;
+    const auto ramp = crossfadeForOp_[static_cast<std::size_t>(op)];
+    return ramp < 0 ? none : crossfades_[static_cast<std::size_t>(ramp)];
+}
+
+std::vector<char> PlanExecutor::unfinishedCrossfades() const {
+    std::vector<char> running(crossfadeForOp_.size(), 0);
+    for (std::size_t i = 0; i < crossfadeForOp_.size(); ++i) {
+        const auto ramp = crossfadeForOp_[i];
+        running[i] = ramp >= 0 && !crossfades_[static_cast<std::size_t>(ramp)]->spent() ? 1 : 0;
+    }
+    return running;
 }
 
 void PlanExecutor::reset() {
@@ -149,6 +195,10 @@ void PlanExecutor::reset() {
     midiDelayForOp_.clear();
     audioDelays_.clear();
     midiDelays_.clear();
+    crossfadeForOp_.clear();
+    crossfades_.clear();
+    activeCrossfades_ = 0;
+    carriedCrossfades_ = 0;
     deviceForOp_.clear();
     audioSourceForOp_.clear();
     midiSourceForOp_.clear();
@@ -430,6 +480,46 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         midiDelays_.push_back(std::move(line));
     }
 
+    // Fades, for the edges the pass that produced this plan says changed. The
+    // length is a property of the device rather than of the edit: the same few
+    // milliseconds whatever moved.
+    const auto fadeSamples =
+        std::max(1, static_cast<int>(std::lround(kCrossfadeSeconds * context_.sampleRate)));
+
+    crossfadeForOp_.assign(numOps, -1);
+    for (std::size_t i = 0; i < numOps; ++i) {
+        const auto& op = plan.ops[i];
+        if (op.kind != OpKind::Crossfade)
+            continue;
+
+        // Both sides have to be the same moment of the timeline, and where the
+        // edit changed the latency along the edge they are not. Nothing here can
+        // fix that: a delay line built now starts flushed, so compensating the
+        // old side would fade in from silence, which is a dip where there was a
+        // step. The op stays and passes the new side through.
+        const auto sides = latency.portLatency[flatPort(op.inputs[0])] ==
+                           latency.portLatency[flatPort(op.inputs[1])];
+        if (!sides)
+            continue;
+
+        std::shared_ptr<CrossfadeRamp> ramp;
+        if (const auto from = carriedFrom(i); from != INVALID_OP_ID)
+            if (const auto& adopted = previous->crossfadeFor(from);
+                adopted != nullptr && adopted->hasConfiguration(fadeSamples)) {
+                ramp = adopted;
+                ++carriedCrossfades_;
+            }
+
+        if (ramp == nullptr) {
+            ramp = std::make_shared<CrossfadeRamp>();
+            ramp->prepare(fadeSamples);
+        }
+
+        crossfadeForOp_[i] = static_cast<int>(crossfades_.size());
+        crossfades_.push_back(std::move(ramp));
+        ++activeCrossfades_;
+    }
+
     silence_.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
     silence_.clear();
     noMidi_.clear();
@@ -603,6 +693,27 @@ void PlanExecutor::renderOp(OpId id, const OpValue& value, const BlockInfo& bloc
                                                                  numSamples);
             jassert(out.data.size() <=
                     midiByteBounds_[static_cast<std::size_t>(slotFor(PortRef{id, 0}))]);
+            break;
+        }
+
+        case OpKind::Crossfade: {
+            // No value of its own, and none it could use: a fade is continuity,
+            // and a chain that has gone silent is silenced at the ops around
+            // this one rather than here. It runs on silent blocks for the same
+            // reason a delay does, so that a fade started before a mute finishes
+            // during it instead of resuming when the mute comes off.
+            auto out = audioOut(id, 0, numSamples);
+            const auto newSide = audioIn(op.inputs[1], numSamples);
+            const auto ramp = crossfadeForOp_[i];
+
+            if (ramp < 0 || crossfades_[static_cast<std::size_t>(ramp)]->spent()) {
+                if (!writesInPlace(i))
+                    out.copyFrom(newSide);
+                break;
+            }
+
+            crossfades_[static_cast<std::size_t>(ramp)]->process(
+                out, audioIn(op.inputs[0], numSamples), newSide, numSamples);
             break;
         }
 

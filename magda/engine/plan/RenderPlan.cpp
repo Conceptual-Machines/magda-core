@@ -22,6 +22,8 @@ int arityOf(OpKind kind) {
             return 3;  // audio, MIDI, sidechain audio
         case OpKind::Fader:
             return 2;  // audio, MIDI
+        case OpKind::Crossfade:
+            return 2;  // the edge as it was, the edge as it is
         case OpKind::MixAudio:
         case OpKind::MergeMidi:
             return -1;  // variadic
@@ -53,6 +55,8 @@ const char* toString(OpKind kind) {
             return "MergeMidi";
         case OpKind::Delay:
             return "Delay";
+        case OpKind::Crossfade:
+            return "Crossfade";
         case OpKind::Gain:
             return "Gain";
         case OpKind::Fader:
@@ -115,6 +119,8 @@ const char* toString(OpRole role) {
             return "deviceInputDelay";
         case OpRole::FaderInputDelay:
             return "faderInputDelay";
+        case OpRole::EdgeCrossfade:
+            return "edgeCrossfade";
     }
     return "?";
 }
@@ -139,8 +145,17 @@ std::string toString(const OpKey& key) {
         out += "/D" + std::to_string(key.deviceId);
     out += ":";
     out += toString(key.role);
-    if (key.index != 0)
+
+    // A crossfade's index is an encoding rather than a number, and a dump is
+    // read by people. Printed as what it means: the op the fade feeds and the
+    // slot it fills.
+    if (key.role == OpRole::EdgeCrossfade) {
+        out += "[";
+        out += toString(crossfadeConsumerRole(key.index));
+        out += "#" + std::to_string(crossfadeSlot(key.index)) + "]";
+    } else if (key.index != 0) {
         out += "#" + std::to_string(key.index);
+    }
     return out;
 }
 
@@ -361,6 +376,30 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
                                            "the same edge's compensation");
         } else if (isInputDelayRole(op.key.role)) {
             problems.push_back(label + "carries an input-delay role but is not a delay");
+        }
+
+        // A crossfade's own invariants, for the same reason the delay's are
+        // here: what it costs to get them wrong is silence or a wrong signal
+        // rather than a failure. Both sides connected, because a fade with one
+        // side missing is a fade from or to silence and nothing asks for that;
+        // audio only, because MIDI has no such thing as half an event; and an
+        // index that decodes back to what encoded it, because the differ joins
+        // on the key and the encoding is the only thing keeping two fades at one
+        // model location apart.
+        if (op.kind == OpKind::Crossfade) {
+            if (op.key.role != OpRole::EdgeCrossfade)
+                problems.push_back(label + "is a crossfade but is not keyed to an input slot");
+            else if (crossfadeSlot(op.key.index) < 0 || op.key.index < 0)
+                problems.push_back(label + "has a crossfade index that decodes to no slot");
+
+            if (op.inputs.size() == 2 && (!op.inputs[0].valid() || !op.inputs[1].valid()))
+                problems.push_back(label + "is a crossfade with a side missing, and a fade needs "
+                                           "both the edge it came from and the one it goes to");
+
+            if (op.outputs.size() != 1 || op.outputs.front() != SignalKind::Audio)
+                problems.push_back(label + "is a crossfade and must produce one audio port");
+        } else if (op.key.role == OpRole::EdgeCrossfade) {
+            problems.push_back(label + "carries a crossfade role but is not a crossfade");
         }
 
         // Out-of-range inputs are already reported above; skip them here so a

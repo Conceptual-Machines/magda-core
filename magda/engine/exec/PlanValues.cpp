@@ -297,7 +297,13 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
     // chain was silent would hand back audio from before the silence when the
     // chain returned. The executor reads no entry for it, so this leaves unity
     // behind rather than deciding anything.
-    if (op.kind == OpKind::Delay)
+    //
+    // A crossfade is left alone for the same reason and one of its own: it has
+    // no model to read. It is not at a place in the model at all, it is on an
+    // edge between two of them, and it borrows its key's location from the op it
+    // feeds. Everything the model has to say about that location is already said
+    // there.
+    if (op.kind == OpKind::Delay || op.kind == OpKind::Crossfade)
         return;
 
     const auto* track = findTrack(key.trackId);
@@ -426,6 +432,7 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::DeviceMeter:
         case OpRole::ChainMidiMerge:
         case OpRole::RackMix:
+        case OpRole::EdgeCrossfade:
         case OpRole::RackMidiMix:
         case OpRole::TrackMeter:
         case OpRole::HardwareOutput:
