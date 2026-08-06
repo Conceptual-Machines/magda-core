@@ -7,6 +7,13 @@
 # rather than leaving it to review.
 
 add_library(magda_engine STATIC
+    clip/ClipSnapshot.cpp
+    clip/ClipSnapshotCompiler.cpp
+    clip/ClipSnapshotDump.cpp
+    clip/ClipSnapshot.hpp
+    clip/ClipSnapshotCompiler.hpp
+    clip/ClipSnapshotDump.hpp
+    clip/ClipSnapshotFeed.hpp
     plan/RenderPlan.cpp
     plan/PlanCompiler.cpp
     plan/PlanDiff.cpp
@@ -102,7 +109,7 @@ endforeach()
 # Engine. Quoted includes may only reach the model layer ("core/...") or the
 # engine's own headers.
 
-set(MAGDA_ENGINE_ALLOWED_QUOTED_PREFIXES "core/" "plan/" "exec/" "transport/" "io/" "tap/")
+set(MAGDA_ENGINE_ALLOWED_QUOTED_PREFIXES "core/" "clip/" "plan/" "exec/" "transport/" "io/" "tap/")
 
 file(GLOB_RECURSE MAGDA_ENGINE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"

@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "ClipFades.hpp"
 #include "ClipInfo.hpp"
 #include "ClipOperations.hpp"
 #include "ClipTypes.hpp"
@@ -482,16 +483,13 @@ class ClipManager {
     // field to keep in sync.
     // ========================================================================
 
-    struct CrossfadeInfo {
-        ClipId leftClipId = INVALID_CLIP_ID;   // earlier clip (fades out)
-        ClipId rightClipId = INVALID_CLIP_ID;  // later clip (fades in)
-        double startBeat = 0.0;                // overlap start (right clip's start)
-        double endBeat = 0.0;                  // overlap end (left clip's end)
-
-        double lengthBeats() const {
-            return endBeat - startBeat;
-        }
-    };
+    /// The queries themselves live in ClipFades.hpp, on their own, because they
+    /// answer against a lane rather than against the model: the arrangement
+    /// asks about a drag it has not committed, and the native engine's clip
+    /// snapshot asks without a manager at all (#2034). These names stay so the
+    /// call sites that ask the model read as they always did.
+    using CrossfadeInfo = ::magda::CrossfadeInfo;
+    using EffectiveFades = ::magda::EffectiveFades;
 
     /// The crossfade covering this clip's start/end edge, if any. Only
     /// returns a value when the overlap qualifies (both clips audio,
@@ -525,12 +523,6 @@ class ClipManager {
      * @param lane   The clips as they are at this moment, this one included —
      *               the committed lane, or a previewed one mid-drag.
      */
-    struct EffectiveFades {
-        double fadeInSeconds = 0.0;
-        double fadeOutSeconds = 0.0;
-        std::optional<CrossfadeInfo> xfIn;   // overlap covering the start edge
-        std::optional<CrossfadeInfo> xfOut;  // overlap covering the end edge
-    };
     static EffectiveFades effectiveFadesIn(const std::vector<ClipInfo>& lane, ClipId clipId,
                                            double bpm);
 

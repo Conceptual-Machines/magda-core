@@ -262,8 +262,18 @@ juce_add_binary_data(MagdaAssets
 add_library(magda_types STATIC
     core/ParameterUtils.cpp
     core/DeviceState.cpp
+    # Clip placement rules (#2003). Pure, beat domain, no manager: they answer
+    # against a lane of clips, which is what lets the arrangement ask about a
+    # drag it has not committed and the native engine's clip snapshot ask with
+    # no ClipManager at all (#2034). They live here rather than in magda_daw so
+    # the engine links a leaf instead of the whole DAW.
+    core/ClipOcclusion.cpp
+    core/ClipFades.cpp
     # value-type headers (listed to document the leaf's surface)
     core/TypeIds.hpp
+    core/ClipInfo.hpp
+    core/ClipOcclusion.hpp
+    core/ClipFades.hpp
     core/TechnicalText.hpp
     core/ChainNodePath.hpp
     core/ControlTarget.hpp
@@ -277,11 +287,15 @@ add_library(magda_types STATIC
     core/TempoUtils.hpp
 )
 target_compile_features(magda_types PUBLIC cxx_std_20)
+# juce_graphics as well as juce_core: ClipInfo names juce::Colour. Headers and
+# defines only, on the same terms as juce_core above.
 target_include_directories(magda_types
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}  # dependents resolve "core/<type>.hpp"
-    PRIVATE $<TARGET_PROPERTY:juce::juce_core,INTERFACE_INCLUDE_DIRECTORIES>)
+    PRIVATE $<TARGET_PROPERTY:juce::juce_core,INTERFACE_INCLUDE_DIRECTORIES>
+            $<TARGET_PROPERTY:juce::juce_graphics,INTERFACE_INCLUDE_DIRECTORIES>)
 target_compile_definitions(magda_types
-    PRIVATE $<TARGET_PROPERTY:juce::juce_core,INTERFACE_COMPILE_DEFINITIONS>)
+    PRIVATE $<TARGET_PROPERTY:juce::juce_core,INTERFACE_COMPILE_DEFINITIONS>
+            $<TARGET_PROPERTY:juce::juce_graphics,INTERFACE_COMPILE_DEFINITIONS>)
 
 # Core library — populated by per-subdir CMakeLists.txt below.
 add_library(magda_daw STATIC
