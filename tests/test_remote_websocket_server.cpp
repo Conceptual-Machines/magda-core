@@ -426,6 +426,67 @@ TEST_CASE("Garbage is rate limited like anything else", "[remote][websocket][lim
     REQUIRE(refused);
 }
 
+TEST_CASE("A malformed upgrade cannot strand a connection slot", "[remote][websocket][limits]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto options = testOptions();
+    options.maxConnections = 2;
+    RemoteWebSocketServer server(service, options);
+    REQUIRE(server.start());
+
+    // Authenticated, addressed to the endpoint, and carrying an Upgrade header,
+    // but with a key cpp-httplib rejects: it wants 24 base64 characters. These
+    // fall through to a 404 without ever reaching the WebSocket handler, so a
+    // slot claimed before the handshake would never be given back — and enough
+    // of them would answer every honest client with 503 until restart.
+    httplib::Client http("127.0.0.1", server.boundPort());
+    const httplib::Headers malformed{{"Authorization", std::string("Bearer ") + kToken},
+                                     {"Upgrade", "websocket"},
+                                     {"Connection", "Upgrade"},
+                                     {"Sec-WebSocket-Key", "too-short"},
+                                     {"Sec-WebSocket-Version", "13"}};
+    for (int i = 0; i < 10; ++i)
+        http.Get("/rpc", malformed);
+
+    REQUIRE(server.connectionCount() == 0);
+
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+    REQUIRE(roundTrip(client, request("tracks.list"))["error"].isVoid());
+}
+
+TEST_CASE("Numbers in meta must be whole and in range", "[remote][websocket][framing][errors]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    RemoteWebSocketServer server(service, testOptions());
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+
+    const auto send = [&client](const char* meta) {
+        return errorCodeOf(roundTrip(
+            client, juce::String(R"({"jsonrpc":"2.0","id":1,"method":"tracks.list","meta":%META%})")
+                        .replace("%META%", meta)
+                        .toStdString()));
+    };
+
+    // JSON has one numeric type, so any of these arrives as a double. Casting
+    // that to int truncates a fraction silently and is undefined behaviour when
+    // it does not fit — neither is acceptable on a path fed by whatever a client
+    // decided to send.
+    REQUIRE(send(R"({"deadlineMs":250.5})") == -32600);
+    REQUIRE(send(R"({"deadlineMs":1e18})") == -32600);
+    REQUIRE(send(R"({"expectedRevision":-1})") == -32600);
+    REQUIRE(send(R"({"expectedRevision":2.5})") == -32600);
+
+    // Whole and in range still works.
+    REQUIRE(send(R"({"deadlineMs":250})") != -32600);
+}
+
 TEST_CASE("The connection cap holds when clients arrive together", "[remote][websocket][limits]") {
     MessageThreadRelaxation relax;
     MockMagdaApi api;
@@ -441,6 +502,7 @@ TEST_CASE("The connection cap holds when clients arrive together", "[remote][web
     constexpr int kAttempts = 8;
     std::atomic<int> connected{0};
     std::atomic<int> finished{0};
+    std::atomic<bool> release{false};
     std::vector<std::thread> clients;
 
     for (int i = 0; i < kAttempts; ++i) {
@@ -449,16 +511,30 @@ TEST_CASE("The connection cap holds when clients arrive together", "[remote][web
             if (client.connect())
                 ++connected;
             ++finished;
-            // Hold the connection until every attempt has been made, so a slot
-            // freed early cannot be handed to a later arrival.
-            while (finished.load() < kAttempts)
+            // Hold on until every attempt has been made, so a slot freed early
+            // cannot be handed to a later arrival and hide the overshoot.
+            while (!release.load())
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
         });
     }
 
+    while (finished.load() < kAttempts)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+    // Registered connections are the real bound, and it is exact: the check and
+    // the insert happen under one lock, on the connection's own thread.
+    const auto peak = server.connectionCount();
+
+    release.store(true);
     for (auto& thread : clients)
         thread.join();
 
-    REQUIRE(connected.load() <= options.maxConnections);
-    REQUIRE(connected.load() > 0);
+    REQUIRE(peak <= options.maxConnections);
+    REQUIRE(peak > 0);
+
+    // A racer can still see its handshake succeed and be closed immediately
+    // afterwards: the pre-handshake 503 is best-effort, because reserving a slot
+    // there would mean reserving for requests cpp-httplib may never hand to a
+    // handler, and those reservations would never come back.
+    REQUIRE(connected.load() >= peak);
 }

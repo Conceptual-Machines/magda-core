@@ -32,10 +32,13 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstring>
 #include <deque>
+#include <limits>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -172,6 +175,40 @@ bool isNumber(const juce::var& value) {
 }
 
 /**
+ * @brief A JSON number as an exact integer in range, or nothing.
+ *
+ * JSON has one numeric type, so a field declared as a count arrives as a double
+ * whenever it was written with a decimal point — and casting that to `int` or
+ * `int64` truncates silently when it is fractional and is undefined behaviour
+ * when it is out of range or not finite. Neither belongs on a path fed by
+ * whatever a client chose to send, so the value has to be proved integral and
+ * within bounds before it becomes one.
+ */
+std::optional<juce::int64> asIntegerInRange(const juce::var& value, juce::int64 lowest,
+                                            juce::int64 highest) {
+    juce::int64 result = 0;
+
+    if (value.isInt() || value.isInt64()) {
+        result = static_cast<juce::int64>(value);
+    } else if (value.isDouble()) {
+        const auto number = static_cast<double>(value);
+        if (!std::isfinite(number) || number != std::floor(number))
+            return std::nullopt;
+        // Compared as doubles, before any conversion: the bounds are exactly
+        // representable and the cast that would be undefined never happens.
+        if (number < static_cast<double>(lowest) || number > static_cast<double>(highest))
+            return std::nullopt;
+        result = static_cast<juce::int64>(number);
+    } else {
+        return std::nullopt;
+    }
+
+    if (result < lowest || result > highest)
+        return std::nullopt;
+    return result;
+}
+
+/**
  * @brief A JSON-RPC id as an idempotency key, or empty for an id we will not take.
  *
  * The type has to survive into the key. JSON-RPC treats the number 1 and the
@@ -236,9 +273,26 @@ struct Connection {
     const int id;
     const int maxQueuedReplies;
 
+    /**
+     * A reply waiting to be written, and whether it carries an admitted
+     * request's slot.
+     *
+     * Ownership has to travel with the payload. Releasing at the point a reply
+     * is produced and again when it is written decrements twice for one
+     * request; replying to something that was never admitted — a rate-limit
+     * refusal — and releasing on write decrements for a request that never
+     * acquired anything. Either way `inFlight` falls below the truth and
+     * readmits while earlier work is still outstanding, which is the limit
+     * quietly not being a limit.
+     */
+    struct Outgoing {
+        std::string payload;
+        bool ownsSlot = false;
+    };
+
     mutable std::mutex mutex;
     std::condition_variable ready;
-    std::deque<std::string> outbox;
+    std::deque<Outgoing> outbox;
     bool closed = false;
     int inFlight = 0;
 
@@ -252,53 +306,52 @@ struct Connection {
      * parks the writer thread inside `send()`, and would otherwise let the
      * outbox grow without limit. Beyond the cap the payload is dropped: the
      * alternative is unbounded memory held on behalf of a client that is not
-     * listening to any of it.
+     * listening to any of it. A dropped payload that owned a slot releases it
+     * here, so the release happens exactly once either way.
      */
-    bool enqueue(std::string payload) {
+    bool enqueue(std::string payload, bool ownsSlot) {
         {
             const std::lock_guard<std::mutex> lock(mutex);
-            if (closed || static_cast<int>(outbox.size()) >= maxQueuedReplies)
+            if (closed || static_cast<int>(outbox.size()) >= maxQueuedReplies) {
+                if (ownsSlot)
+                    releaseLocked();
                 return false;
-            outbox.push_back(std::move(payload));
+            }
+            outbox.push_back({std::move(payload), ownsSlot});
         }
         ready.notify_one();
         return true;
     }
 
     /**
-     * @brief Queue a reply for an admitted request, releasing its slot if it
-     *        cannot be queued.
+     * @brief Queue the reply to an admitted request.
      *
      * Called from the dispatch completion on the message thread, which does no
-     * I/O here — appending to a deque is all of it. The slot itself is not
-     * released until the bytes are actually written, so a client that stops
-     * reading stops being admitted rather than accumulating work.
+     * I/O here — appending to a deque is all of it. The slot travels with the
+     * payload and is released when the bytes are written, so a client that
+     * stops reading stops being admitted rather than accumulating work.
      */
     void complete(std::string payload) {
-        if (!enqueue(std::move(payload)))
-            release();
+        enqueue(std::move(payload), true);
     }
 
-    /// One admitted request has finished with the socket, by being written or
-    /// by being dropped.
     void release() {
         {
             const std::lock_guard<std::mutex> lock(mutex);
-            if (inFlight > 0)
-                --inFlight;
+            releaseLocked();
         }
         ready.notify_one();
     }
 
     void markClosed() {
-        std::deque<std::string> abandoned;
+        std::deque<Outgoing> abandoned;
         {
             const std::lock_guard<std::mutex> lock(mutex);
             closed = true;
             abandoned.swap(outbox);
-            inFlight -= static_cast<int>(abandoned.size());
-            if (inFlight < 0)
-                inFlight = 0;
+            for (const auto& entry : abandoned)
+                if (entry.ownsSlot)
+                    releaseLocked();
         }
         ready.notify_all();
     }
@@ -332,6 +385,12 @@ struct Connection {
         ++inFlight;
         return {};
     }
+
+  private:
+    void releaseLocked() {
+        if (inFlight > 0)
+            --inFlight;
+    }
 };
 
 // ===========================================================================
@@ -354,29 +413,34 @@ struct RemoteWebSocketServer::Impl {
     mutable std::mutex liveMutex;
     std::vector<std::shared_ptr<Connection>> live;
 
-    /**
-     * Connections admitted but not necessarily registered yet.
-     *
-     * The cap cannot be enforced by counting `live`: authorise() runs before the
-     * handshake and registration happens after it, so concurrent upgrades would
-     * all look at an empty roster and all be let in. This is claimed atomically
-     * at admission and released when the connection's thread returns, which
-     * closes that window.
-     */
-    std::atomic<int> admitted{0};
-
     int connectionCount() const {
         const std::lock_guard<std::mutex> lock(liveMutex);
         return static_cast<int>(live.size());
     }
 
-    /// True for a request that is actually trying to become a WebSocket on our
-    /// endpoint, so a plain GET cannot consume a connection slot it will never
-    /// give back.
-    bool isUpgradeToEndpoint(const httplib::Request& request) const {
-        return request.path == kEndpoint &&
-               juce::String(request.get_header_value("Upgrade")).equalsIgnoreCase("websocket") &&
-               !request.get_header_value("Sec-WebSocket-Key").empty();
+    /**
+     * @brief Claim a slot and register, or refuse — as one indivisible step.
+     *
+     * The cap has to be decided here rather than in `authorise()`. A slot
+     * reserved before the handshake is only given back by the connection
+     * handler, and cpp-httplib has several ways to never reach that handler: an
+     * upgrade this code considers valid but `is_websocket_upgrade` rejects
+     * (it also demands GET, `Connection: upgrade`, and a 24-character base64
+     * key) falls through to a 404, and a failed 101 write returns earlier still.
+     * Each of those would strand a slot for the life of the process, and enough
+     * of them would answer every honest client with 503 until restart.
+     *
+     * Testing and inserting under one lock makes the cap exact without anything
+     * to leak: this runs on the connection's own thread, so the only way to
+     * reach it is to have a connection, and the only way to leave it is through
+     * the same function that removes one.
+     */
+    bool registerConnection(const std::shared_ptr<Connection>& connection) {
+        const std::lock_guard<std::mutex> lock(liveMutex);
+        if (static_cast<int>(live.size()) >= options.maxConnections)
+            return false;
+        live.push_back(connection);
+        return true;
     }
 
     /**
@@ -408,25 +472,25 @@ struct RemoteWebSocketServer::Impl {
             }
         }
 
-        if (isUpgradeToEndpoint(request)) {
-            // Claim the slot here rather than testing a count: between a test and
-            // the registration that follows the handshake, every concurrent
-            // upgrade would see the same spare capacity.
-            if (admitted.fetch_add(1) >= options.maxConnections) {
-                admitted.fetch_sub(1);
-                response.status = httplib::StatusCode::ServiceUnavailable_503;
-                return httplib::Server::HandlerResponse::Handled;
-            }
+        // Best-effort only, and deliberately reserves nothing: a client over the
+        // cap is told so before the handshake rather than after it, but the cap
+        // itself is enforced by registerConnection(), which cannot be raced or
+        // leaked. Reserving here would mean handing a slot to a request that
+        // several cpp-httplib paths never deliver to a handler.
+        if (connectionCount() >= options.maxConnections) {
+            response.status = httplib::StatusCode::ServiceUnavailable_503;
+            return httplib::Server::HandlerResponse::Handled;
         }
 
         return httplib::Server::HandlerResponse::Unhandled;
     }
 
-    /// Reply to a frame that never became a request, and give back its slot.
+    /// Reply to an admitted frame that never became a request. The slot rides
+    /// with the reply and is released when it is written or dropped — never
+    /// here, or it would be released twice.
     static void refuse(const std::shared_ptr<Connection>& connection, const juce::var& id, int code,
                        const juce::String& message) {
-        connection->enqueue(errorReply(id, code, message));
-        connection->release();
+        connection->enqueue(errorReply(id, code, message), true);
     }
 
     /// Parse one frame and dispatch it, or answer with the reason it failed.
@@ -438,7 +502,10 @@ struct RemoteWebSocketServer::Impl {
                 connection->admit(options.maxInFlightPerConnection, options.maxRequestsPerSecond,
                                   options.maxInFlightPerConnection);
             refusal.isNotEmpty()) {
-            connection->enqueue(errorReply({}, kTooManyRequests, refusal));
+            // Nothing was admitted, so this reply owns no slot. Releasing one
+            // when it is written would hand back capacity that belongs to a
+            // request still in flight.
+            connection->enqueue(errorReply({}, kTooManyRequests, refusal), false);
             return;
         }
 
@@ -505,13 +572,14 @@ struct RemoteWebSocketServer::Impl {
         auto deadlineMs = options.defaultDeadlineMs;
         if (meta.getDynamicObject() != nullptr) {
             if (const auto expected = meta["expectedRevision"]; !expected.isVoid()) {
-                if (!isNumber(expected)) {
+                const auto revision =
+                    asIntegerInRange(expected, 0, std::numeric_limits<juce::int64>::max());
+                if (!revision.has_value()) {
                     refuse(connection, id, kInvalidRequest,
-                           "meta.expectedRevision must be a number");
+                           "meta.expectedRevision must be a non-negative whole number");
                     return;
                 }
-                context.expectedRevision =
-                    static_cast<Revision>(static_cast<juce::int64>(expected));
+                context.expectedRevision = static_cast<Revision>(*revision);
             }
 
             // A client may ask for less time than the server allows, never for
@@ -519,12 +587,14 @@ struct RemoteWebSocketServer::Impl {
             // sign lets -1 win it, after which a non-positive deadline is read as
             // "no deadline" and the request outlives every bound there is.
             if (const auto requested = meta["deadlineMs"]; !requested.isVoid()) {
-                if (!isNumber(requested) || static_cast<int>(requested) <= 0) {
+                const auto milliseconds =
+                    asIntegerInRange(requested, 1, std::numeric_limits<int>::max());
+                if (!milliseconds.has_value()) {
                     refuse(connection, id, kInvalidRequest,
-                           "meta.deadlineMs must be a positive number of milliseconds");
+                           "meta.deadlineMs must be a positive whole number of milliseconds");
                     return;
                 }
-                deadlineMs = std::min(deadlineMs, static_cast<int>(requested));
+                deadlineMs = std::min(deadlineMs, static_cast<int>(*milliseconds));
             }
         }
         context.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(deadlineMs);
@@ -541,39 +611,36 @@ struct RemoteWebSocketServer::Impl {
      * before this returns, because `socket` lives on this stack frame.
      */
     void runConnection(httplib::ws::WebSocket& socket) {
-        // Balances the reservation authorise() took before the handshake.
-        const struct ReservationGuard {
-            std::atomic<int>& count;
-            ~ReservationGuard() {
-                count.fetch_sub(1);
-            }
-        } reservation{admitted};
-
         auto connection = std::make_shared<Connection>(socket, nextConnectionId.fetch_add(1),
                                                        options.maxQueuedRepliesPerConnection,
                                                        options.maxInFlightPerConnection);
-        {
-            const std::lock_guard<std::mutex> lock(liveMutex);
-            live.push_back(connection);
+
+        if (!registerConnection(connection)) {
+            // Lost a race for the last slot. Closing from here is safe because
+            // this is the connection's own thread, the only one allowed to read.
+            socket.close(httplib::ws::CloseStatus::PolicyViolation, "connection limit reached");
+            return;
         }
 
         std::thread writer([connection] {
             while (true) {
-                std::string payload;
+                Connection::Outgoing outgoing;
                 {
                     std::unique_lock<std::mutex> lock(connection->mutex);
                     connection->ready.wait(
                         lock, [&] { return connection->closed || !connection->outbox.empty(); });
                     if (connection->closed)
                         break;
-                    payload = std::move(connection->outbox.front());
+                    outgoing = std::move(connection->outbox.front());
                     connection->outbox.pop_front();
                 }
-                const auto sent = connection->socket.send(payload);
+                const auto sent = connection->socket.send(outgoing.payload);
                 // The slot belongs to the request until its bytes are gone, so a
                 // client that stops reading stops being admitted instead of
-                // queueing more work behind a stalled write.
-                connection->release();
+                // queueing more work behind a stalled write. Replies that never
+                // held a slot — a rate-limit refusal — release nothing.
+                if (outgoing.ownsSlot)
+                    connection->release();
                 if (!sent)
                     break;
             }
