@@ -54,6 +54,18 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
         return rect.getWidth() > 0;
     };
 
+    auto* thumbnail = thumbnailManager.getThumbnail(clip.audio().source.filePath);
+    if (thumbnail == nullptr) {
+        // Broken file: there is nothing to tile, so draw the placeholder once
+        // over the whole area. The tiles below are clipped to the repaint damage,
+        // and the placeholder decides what it can show from the width it is
+        // given — fed a narrow strip it drops its label, so a partial repaint
+        // erased it and left the clip looking fine (#2026).
+        thumbnailManager.drawWaveform(g, waveformArea, clip.audio().source.filePath, 0.0, 0.0,
+                                      spec.colour, 1.0f, false, spec.thick);
+        return;
+    }
+
     if (clip.isReversed) {
         g.saveState();
         g.addTransform(juce::AffineTransform::scale(-1.0f, 1.0f, waveformArea.getCentreX(),
@@ -62,10 +74,7 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
 
     const double tempo = spec.tempo;
 
-    double fileDuration = 0.0;
-    auto* thumbnail = thumbnailManager.getThumbnail(clip.audio().source.filePath);
-    if (thumbnail)
-        fileDuration = thumbnail->getTotalLength();
+    const double fileDuration = thumbnail->getTotalLength();
 
     // Build display info with the real file duration so loop-region
     // fields get clamped against the file extent. Without this the
