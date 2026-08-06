@@ -21,7 +21,9 @@
  * what lets a source be tested with no session at all.
  *
  * One publishing thread. The swap keeps the audio thread out of the publisher's
- * way, not two publishers out of each other's.
+ * way, not two publishers out of each other's, and publishing waits for the
+ * block the callback is in the way a plan swap does: it is the reading side
+ * that never waits, not this one.
  */
 
 namespace magda::engine {

@@ -14,7 +14,7 @@
  * Clip positions are deliberately not in the render plan (see RenderPlan.hpp):
  * a plan is topology, and moving a clip is not a topology change. Clips reach
  * the audio thread through this instead, swapped in whole the way a plan is, so
- * an edit to a clip never recompiles a plan and never allocates on a callback.
+ * an edit to a clip never recompiles a plan.
  *
  * Resolved is the point of it. Occlusion and crossfades are worked out once, at
  * compile time, by the model functions that already own those rules
@@ -29,7 +29,8 @@
  * are derived here, once, through the tempo map, because a source is handed
  * seconds (ClipPlacement.hpp) and there must not be a second tempo map on the
  * audio thread. The transport publishes both faces of its cursor for the same
- * reason, and the two agree because they come from the same map.
+ * reason; that the two were derived through the same map is what the
+ * fingerprint below is for.
  *
  * Not keyed to a plan. Everything here is keyed by TrackId, so unlike PlanValues
  * it carries no plan fingerprint and a plan swap does not invalidate it. It does
@@ -74,8 +75,9 @@ struct AudioEventPlayback {
     SourceId sourceId = INVALID_SOURCE_ID;
 
     /// Resolved from the source table at compile time, so nothing on the audio
-    /// thread reaches a pool. Empty when the source could not be resolved,
-    /// which is a diagnostic and renders silence.
+    /// thread reaches a pool. Always set in a compiled snapshot: an event whose
+    /// source the table does not hold is dropped with a diagnostic rather than
+    /// carried with nothing to read.
     std::string filePath;
     double sourceSampleRate = 0.0;
     double sourceDurationSeconds = 0.0;
