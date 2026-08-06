@@ -18,6 +18,15 @@
 // cannot raise it.
 #define CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH (256 * 1024)
 
+// How long a reader may sit in read() before it comes up for air, and therefore
+// how long shutdown can take. cpp-httplib exposes no way to interrupt a blocked
+// reader — there is no socket handle on the request or the socket, and
+// set_socket_options only reaches the listening socket — so this timeout is the
+// cancellation quantum. It is short because the server pings every second (see
+// kPingIntervalSeconds), which keeps frames arriving from any client that is
+// reading, so the timeout only expires on a client that has genuinely stopped.
+#define CPPHTTPLIB_WEBSOCKET_READ_TIMEOUT_SECOND 3
+
 #include <httplib.h>
 
 #include <algorithm>
@@ -40,6 +49,18 @@ namespace {
 
 /// The path a client upgrades on. Everything else 404s.
 constexpr const char* kEndpoint = "/rpc";
+
+/**
+ * How often the server pings an idle client.
+ *
+ * This is what makes the short read timeout safe. A client sitting in `read()`
+ * answers each Ping with a Pong, which cpp-httplib consumes inside the same
+ * read, so frames keep arriving and the timeout never fires on a live
+ * connection. It is the reason a client must stay in `read()` between requests:
+ * one that neither sends nor reads produces no traffic and is indistinguishable
+ * from a dead one.
+ */
+constexpr time_t kPingIntervalSeconds = 1;
 
 // JSON-RPC 2.0 reserves -32768..-32000; -32099..-32000 is the implementation-
 // defined slice, which is where MAGDA's own failure modes land.
@@ -146,6 +167,26 @@ std::string replyFor(const juce::var& id, const Response& response) {
     return juce::JSON::toString(reply, true).toStdString();
 }
 
+bool isNumber(const juce::var& value) {
+    return value.isInt() || value.isInt64() || value.isDouble();
+}
+
+/**
+ * @brief A JSON-RPC id as an idempotency key, or empty for an id we will not take.
+ *
+ * The type has to survive into the key. JSON-RPC treats the number 1 and the
+ * string "1" as different identifiers, so collapsing both to `1` lets a client's
+ * second write silently receive the first one's cached response instead of
+ * executing.
+ */
+juce::String idempotencyKeyFor(const juce::var& id) {
+    if (id.isString())
+        return "s:" + id.toString();
+    if (isNumber(id))
+        return "n:" + id.toString();
+    return {};
+}
+
 /// Compare in time independent of how much of the token matched, so a client
 /// cannot learn the token one byte at a time from response latency.
 bool secureEquals(const juce::String& a, const juce::String& b) {
@@ -173,21 +214,27 @@ bool secureEquals(const juce::String& a, const juce::String& b) {
  * One client's shared state, owned by a `shared_ptr` so a dispatch completion
  * that outlives the socket has something valid to land on.
  *
- * `socket` is a reference to a `ws::WebSocket` living on the reading thread's
- * stack, so it is only ever touched by the reading thread and by the writer
- * thread that the reading thread joins before returning. A completion arriving
- * afterwards finds `closed` set and drops its payload rather than reaching for
- * a socket that no longer exists.
+ * `socket` belongs to the reading thread. That thread alone may call `read()`
+ * or `close()` on it, because `close()` does not merely write a Close frame —
+ * it then reads, waiting for the peer's echo, and `SocketStream` buffers
+ * internally, so a second reader corrupts the first one's state. Writes are
+ * safe from anywhere: every write path in cpp-httplib takes the socket's own
+ * write mutex, which is why the writer thread may send while the reader blocks.
+ *
+ * A completion arriving after the reader has gone finds `closed` set and drops
+ * its payload rather than reaching for a stack frame that has returned.
  */
 struct Connection {
-    Connection(httplib::ws::WebSocket& webSocket, int identifier, double burst)
+    Connection(httplib::ws::WebSocket& webSocket, int identifier, int maxQueued, double burst)
         : socket(webSocket),
           id(identifier),
+          maxQueuedReplies(maxQueued),
           tokens(burst),
           lastRefill(std::chrono::steady_clock::now()) {}
 
     httplib::ws::WebSocket& socket;
     const int id;
+    const int maxQueuedReplies;
 
     mutable std::mutex mutex;
     std::condition_variable ready;
@@ -198,39 +245,71 @@ struct Connection {
     double tokens;
     std::chrono::steady_clock::time_point lastRefill;
 
-    void send(std::string payload) {
+    /**
+     * @brief Queue one reply, or drop it if the client is not keeping up.
+     *
+     * A client that sends without ever reading fills the socket's send buffer,
+     * parks the writer thread inside `send()`, and would otherwise let the
+     * outbox grow without limit. Beyond the cap the payload is dropped: the
+     * alternative is unbounded memory held on behalf of a client that is not
+     * listening to any of it.
+     */
+    bool enqueue(std::string payload) {
         {
             const std::lock_guard<std::mutex> lock(mutex);
-            if (closed)
-                return;
+            if (closed || static_cast<int>(outbox.size()) >= maxQueuedReplies)
+                return false;
             outbox.push_back(std::move(payload));
         }
         ready.notify_one();
+        return true;
     }
 
-    /// Called from the dispatch completion on the message thread. Nothing here
-    /// touches the socket — appending to a deque is all the message thread does.
+    /**
+     * @brief Queue a reply for an admitted request, releasing its slot if it
+     *        cannot be queued.
+     *
+     * Called from the dispatch completion on the message thread, which does no
+     * I/O here — appending to a deque is all of it. The slot itself is not
+     * released until the bytes are actually written, so a client that stops
+     * reading stops being admitted rather than accumulating work.
+     */
     void complete(std::string payload) {
+        if (!enqueue(std::move(payload)))
+            release();
+    }
+
+    /// One admitted request has finished with the socket, by being written or
+    /// by being dropped.
+    void release() {
         {
             const std::lock_guard<std::mutex> lock(mutex);
-            --inFlight;
-            if (closed)
-                return;
-            outbox.push_back(std::move(payload));
+            if (inFlight > 0)
+                --inFlight;
         }
         ready.notify_one();
     }
 
     void markClosed() {
+        std::deque<std::string> abandoned;
         {
             const std::lock_guard<std::mutex> lock(mutex);
             closed = true;
+            abandoned.swap(outbox);
+            inFlight -= static_cast<int>(abandoned.size());
+            if (inFlight < 0)
+                inFlight = 0;
         }
         ready.notify_all();
     }
 
     /**
      * @brief Take one request slot, or say why not.
+     *
+     * Every inbound frame comes through here, including one too malformed to
+     * have a method: parsing costs work and every reply costs memory, so a
+     * client that floods garbage must run out of allowance exactly like one
+     * that floods valid requests.
      *
      * The bucket refills at `ratePerSecond` and holds at most one burst, so a
      * client may spend its allowance at once and then settles to the rate.
@@ -275,9 +354,29 @@ struct RemoteWebSocketServer::Impl {
     mutable std::mutex liveMutex;
     std::vector<std::shared_ptr<Connection>> live;
 
+    /**
+     * Connections admitted but not necessarily registered yet.
+     *
+     * The cap cannot be enforced by counting `live`: authorise() runs before the
+     * handshake and registration happens after it, so concurrent upgrades would
+     * all look at an empty roster and all be let in. This is claimed atomically
+     * at admission and released when the connection's thread returns, which
+     * closes that window.
+     */
+    std::atomic<int> admitted{0};
+
     int connectionCount() const {
         const std::lock_guard<std::mutex> lock(liveMutex);
         return static_cast<int>(live.size());
+    }
+
+    /// True for a request that is actually trying to become a WebSocket on our
+    /// endpoint, so a plain GET cannot consume a connection slot it will never
+    /// give back.
+    bool isUpgradeToEndpoint(const httplib::Request& request) const {
+        return request.path == kEndpoint &&
+               juce::String(request.get_header_value("Upgrade")).equalsIgnoreCase("websocket") &&
+               !request.get_header_value("Sec-WebSocket-Key").empty();
     }
 
     /**
@@ -309,18 +408,42 @@ struct RemoteWebSocketServer::Impl {
             }
         }
 
-        if (connectionCount() >= options.maxConnections) {
-            response.status = httplib::StatusCode::ServiceUnavailable_503;
-            return httplib::Server::HandlerResponse::Handled;
+        if (isUpgradeToEndpoint(request)) {
+            // Claim the slot here rather than testing a count: between a test and
+            // the registration that follows the handshake, every concurrent
+            // upgrade would see the same spare capacity.
+            if (admitted.fetch_add(1) >= options.maxConnections) {
+                admitted.fetch_sub(1);
+                response.status = httplib::StatusCode::ServiceUnavailable_503;
+                return httplib::Server::HandlerResponse::Handled;
+            }
         }
 
         return httplib::Server::HandlerResponse::Unhandled;
     }
 
+    /// Reply to a frame that never became a request, and give back its slot.
+    static void refuse(const std::shared_ptr<Connection>& connection, const juce::var& id, int code,
+                       const juce::String& message) {
+        connection->enqueue(errorReply(id, code, message));
+        connection->release();
+    }
+
     /// Parse one frame and dispatch it, or answer with the reason it failed.
     void handleMessage(const std::shared_ptr<Connection>& connection, const std::string& message) {
+        // Admission comes first, before the frame is even parsed. Rejecting
+        // later would leave the cheapest thing a client can send — a megabyte of
+        // garbage — as the one thing no limit applied to.
+        if (const auto refusal =
+                connection->admit(options.maxInFlightPerConnection, options.maxRequestsPerSecond,
+                                  options.maxInFlightPerConnection);
+            refusal.isNotEmpty()) {
+            connection->enqueue(errorReply({}, kTooManyRequests, refusal));
+            return;
+        }
+
         if (message.size() > options.maxFrameBytes) {
-            connection->send(errorReply({}, kInvalidRequest, "request too large"));
+            refuse(connection, {}, kInvalidRequest, "request too large");
             connection->socket.close(httplib::ws::CloseStatus::MessageTooBig, "request too large");
             return;
         }
@@ -328,7 +451,7 @@ struct RemoteWebSocketServer::Impl {
         juce::var parsed;
         if (juce::JSON::parse(juce::String(message), parsed).failed() ||
             parsed.getDynamicObject() == nullptr) {
-            connection->send(errorReply({}, kParseError, "malformed JSON"));
+            refuse(connection, {}, kParseError, "malformed JSON");
             return;
         }
 
@@ -336,18 +459,27 @@ struct RemoteWebSocketServer::Impl {
         const auto method = parsed["method"].toString();
 
         if (parsed["jsonrpc"].toString() != "2.0") {
-            connection->send(errorReply(id, kInvalidRequest, "jsonrpc must be \"2.0\""));
+            refuse(connection, id, kInvalidRequest, "jsonrpc must be \"2.0\"");
             return;
         }
         if (method.isEmpty()) {
-            connection->send(errorReply(id, kInvalidRequest, "method is required"));
+            refuse(connection, id, kInvalidRequest, "method is required");
             return;
         }
         // Every operation returns a revision the client needs in order to make
         // its next write, so a notification would be a request whose answer the
         // client cannot do without.
         if (id.isVoid() || id.isUndefined()) {
-            connection->send(errorReply({}, kInvalidRequest, "notifications are not supported"));
+            refuse(connection, {}, kInvalidRequest, "notifications are not supported");
+            return;
+        }
+
+        // JSON-RPC allows a string or a number. Anything else has no defined
+        // meaning, and accepting it would put a shape in the idempotency key
+        // that cannot be told apart from another.
+        const auto idKey = idempotencyKeyFor(id);
+        if (idKey.isEmpty()) {
+            refuse(connection, {}, kInvalidRequest, "id must be a string or a number");
             return;
         }
 
@@ -355,23 +487,16 @@ struct RemoteWebSocketServer::Impl {
         if (params.isVoid() || params.isUndefined())
             params = makeObject();
         if (params.getDynamicObject() == nullptr) {
-            connection->send(errorReply(id, kInvalidParams, "params must be an object"));
-            return;
-        }
-
-        if (const auto refusal =
-                connection->admit(options.maxInFlightPerConnection, options.maxRequestsPerSecond,
-                                  options.maxInFlightPerConnection);
-            refusal.isNotEmpty()) {
-            connection->send(errorReply(id, kTooManyRequests, refusal));
+            refuse(connection, id, kInvalidParams, "params must be an object");
             return;
         }
 
         RequestContext context;
         context.clientId = "ws:" + juce::String(connection->id);
         // Scoped by connection so two clients reusing id 1 do not collide in the
-        // dispatcher's idempotency cache.
-        context.requestId = context.clientId + ":" + id.toString();
+        // dispatcher's idempotency cache, and typed so that one client's numeric
+        // 1 and string "1" — different requests under JSON-RPC — cannot either.
+        context.requestId = context.clientId + ":" + idKey;
 
         // Operation schemas are declared additionalProperties:false, so anything
         // that is not operation input has to arrive beside params rather than
@@ -379,15 +504,30 @@ struct RemoteWebSocketServer::Impl {
         const auto meta = parsed["meta"];
         auto deadlineMs = options.defaultDeadlineMs;
         if (meta.getDynamicObject() != nullptr) {
-            if (const auto expected = meta["expectedRevision"]; !expected.isVoid())
+            if (const auto expected = meta["expectedRevision"]; !expected.isVoid()) {
+                if (!isNumber(expected)) {
+                    refuse(connection, id, kInvalidRequest,
+                           "meta.expectedRevision must be a number");
+                    return;
+                }
                 context.expectedRevision =
                     static_cast<Revision>(static_cast<juce::int64>(expected));
-            if (const auto requested = meta["deadlineMs"]; !requested.isVoid())
+            }
+
+            // A client may ask for less time than the server allows, never for
+            // more — and never for none. Taking the minimum without checking the
+            // sign lets -1 win it, after which a non-positive deadline is read as
+            // "no deadline" and the request outlives every bound there is.
+            if (const auto requested = meta["deadlineMs"]; !requested.isVoid()) {
+                if (!isNumber(requested) || static_cast<int>(requested) <= 0) {
+                    refuse(connection, id, kInvalidRequest,
+                           "meta.deadlineMs must be a positive number of milliseconds");
+                    return;
+                }
                 deadlineMs = std::min(deadlineMs, static_cast<int>(requested));
+            }
         }
-        if (deadlineMs > 0)
-            context.deadline =
-                std::chrono::steady_clock::now() + std::chrono::milliseconds(deadlineMs);
+        context.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(deadlineMs);
 
         service.dispatch(method, params, context, [connection, id](Response response) {
             connection->complete(replyFor(id, response));
@@ -401,7 +541,16 @@ struct RemoteWebSocketServer::Impl {
      * before this returns, because `socket` lives on this stack frame.
      */
     void runConnection(httplib::ws::WebSocket& socket) {
+        // Balances the reservation authorise() took before the handshake.
+        const struct ReservationGuard {
+            std::atomic<int>& count;
+            ~ReservationGuard() {
+                count.fetch_sub(1);
+            }
+        } reservation{admitted};
+
         auto connection = std::make_shared<Connection>(socket, nextConnectionId.fetch_add(1),
+                                                       options.maxQueuedRepliesPerConnection,
                                                        options.maxInFlightPerConnection);
         {
             const std::lock_guard<std::mutex> lock(liveMutex);
@@ -420,7 +569,12 @@ struct RemoteWebSocketServer::Impl {
                     payload = std::move(connection->outbox.front());
                     connection->outbox.pop_front();
                 }
-                if (!connection->socket.send(payload))
+                const auto sent = connection->socket.send(payload);
+                // The slot belongs to the request until its bytes are gone, so a
+                // client that stops reading stops being admitted instead of
+                // queueing more work behind a stalled write.
+                connection->release();
+                if (!sent)
                     break;
             }
         });
@@ -438,16 +592,6 @@ struct RemoteWebSocketServer::Impl {
         {
             const std::lock_guard<std::mutex> lock(liveMutex);
             live.erase(std::remove(live.begin(), live.end(), connection), live.end());
-        }
-    }
-
-    /// Close every live client so their reading threads leave `read()`. Stopping
-    /// the acceptor alone would leave connected clients running indefinitely.
-    void closeLiveConnections() {
-        const std::lock_guard<std::mutex> lock(liveMutex);
-        for (const auto& connection : live) {
-            connection->markClosed();
-            connection->socket.close(httplib::ws::CloseStatus::GoingAway, "server shutting down");
         }
     }
 };
@@ -480,6 +624,13 @@ bool RemoteWebSocketServer::start() {
         });
 
     impl_->server.set_payload_max_length(impl_->options.maxFrameBytes);
+
+    // Keeps traffic flowing on an idle connection so the read timeout stays a
+    // shutdown quantum rather than a disconnect. Deliberately no
+    // set_websocket_max_missed_pongs: that arms cpp-httplib's heartbeat thread
+    // to call close() itself, and close() reads — the exact cross-thread read
+    // this design exists to avoid. A dead peer is caught by the read timeout.
+    impl_->server.set_websocket_ping_interval(kPingIntervalSeconds);
 
     impl_->server.WebSocket(kEndpoint, [this](const httplib::Request&, httplib::ws::WebSocket& ws) {
         impl_->runConnection(ws);
@@ -516,8 +667,19 @@ void RemoteWebSocketServer::stop() {
     if (!impl_->running.exchange(false))
         return;
 
+    // Only mark the connections; do not touch their sockets. `close()` writes a
+    // Close frame and then reads, waiting for the peer's echo, so calling it
+    // here would put this thread into the same buffered stream the connection's
+    // own thread is already blocked reading. Each reader instead notices within
+    // one read timeout and closes its own socket, which is the one thread
+    // allowed to.
+    {
+        const std::lock_guard<std::mutex> lock(impl_->liveMutex);
+        for (const auto& connection : impl_->live)
+            connection->markClosed();
+    }
+
     impl_->server.stop();
-    impl_->closeLiveConnections();
 
     if (impl_->listener.joinable())
         impl_->listener.join();

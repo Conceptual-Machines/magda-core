@@ -123,7 +123,10 @@ TEST_CASE("An upgrade without a valid token is refused before the handshake",
     // No connection was ever established, which is the difference between
     // failing closed and hanging up after the fact.
     REQUIRE(server.connectionCount() == 0);
-    server.stop();
+    // No explicit stop(): the server is declared before the client, so the
+    // client is destroyed first and its socket shutdown wakes the reader at
+    // once. Stopping while a client is still connected would instead wait out
+    // the read timeout, which is what the shutdown test below measures.
 }
 
 TEST_CASE("Origin is checked only when the client sends one", "[remote][websocket][auth]") {
@@ -154,7 +157,10 @@ TEST_CASE("Origin is checked only when the client sends one", "[remote][websocke
         REQUIRE(client.connect());
     }
 
-    server.stop();
+    // No explicit stop(): the server is declared before the client, so the
+    // client is destroyed first and its socket shutdown wakes the reader at
+    // once. Stopping while a client is still connected would instead wait out
+    // the read timeout, which is what the shutdown test below measures.
 }
 
 TEST_CASE("A request round-trips as JSON-RPC 2.0", "[remote][websocket][framing]") {
@@ -178,7 +184,10 @@ TEST_CASE("A request round-trips as JSON-RPC 2.0", "[remote][websocket][framing]
     REQUIRE(static_cast<juce::int64>(reply["meta"]["revision"]) >= INITIAL_REVISION);
     REQUIRE(reply["meta"]["apiVersion"].toString().isNotEmpty());
 
-    server.stop();
+    // No explicit stop(): the server is declared before the client, so the
+    // client is destroyed first and its socket shutdown wakes the reader at
+    // once. Stopping while a client is still connected would instead wait out
+    // the read timeout, which is what the shutdown test below measures.
 }
 
 TEST_CASE("Malformed requests fail with the right JSON-RPC code",
@@ -223,7 +232,10 @@ TEST_CASE("Malformed requests fail with the right JSON-RPC code",
                 -32602);
     }
 
-    server.stop();
+    // No explicit stop(): the server is declared before the client, so the
+    // client is destroyed first and its socket shutdown wakes the reader at
+    // once. Stopping while a client is still connected would instead wait out
+    // the read timeout, which is what the shutdown test below measures.
 }
 
 TEST_CASE("Connections are capped", "[remote][websocket][limits]") {
@@ -246,7 +258,10 @@ TEST_CASE("Connections are capped", "[remote][websocket][limits]") {
     httplib::ws::WebSocketClient third(endpoint(server), authorised());
     REQUIRE_FALSE(third.connect());
 
-    server.stop();
+    // No explicit stop(): the server is declared before the client, so the
+    // client is destroyed first and its socket shutdown wakes the reader at
+    // once. Stopping while a client is still connected would instead wait out
+    // the read timeout, which is what the shutdown test below measures.
 }
 
 TEST_CASE("An oversized frame closes the connection", "[remote][websocket][limits]") {
@@ -263,7 +278,10 @@ TEST_CASE("An oversized frame closes the connection", "[remote][websocket][limit
     std::string ignored;
     REQUIRE(client.read(ignored) == httplib::ws::ReadResult::Fail);
 
-    server.stop();
+    // No explicit stop(): the server is declared before the client, so the
+    // client is destroyed first and its socket shutdown wakes the reader at
+    // once. Stopping while a client is still connected would instead wait out
+    // the read timeout, which is what the shutdown test below measures.
 }
 
 TEST_CASE("Shutdown closes live connections and joins every thread",
@@ -278,8 +296,11 @@ TEST_CASE("Shutdown closes live connections and joins every thread",
     REQUIRE(client.connect());
     REQUIRE(roundTrip(client, request("tracks.list"))["error"].isVoid());
 
-    // Stopping the acceptor alone would leave this client's reading thread
-    // parked in read() until its timeout; stop() has to close it explicitly.
+    // Stopping with a client still connected is the bounded case: nothing can
+    // interrupt a reader blocked in read(), so stop() marks the connection and
+    // waits for the reader to come up for air on its own. It must not touch the
+    // socket itself — close() reads as well as writes, and a second reader on
+    // one buffered stream is a data race, not merely a slow shutdown.
     server.stop();
 
     REQUIRE_FALSE(server.isRunning());
@@ -291,4 +312,153 @@ TEST_CASE("Shutdown closes live connections and joins every thread",
 
     // Idempotent: the destructor calls it too.
     server.stop();
+}
+
+TEST_CASE("meta.deadlineMs may only shorten the deadline", "[remote][websocket][limits][errors]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    RemoteWebSocketServer server(service, testOptions());
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+
+    // A negative value used to win the min() against the server's default, and
+    // a non-positive deadline then read as "no deadline at all" — so the way to
+    // escape the bound was to ask for less than none of it.
+    SECTION("negative is refused") {
+        REQUIRE(
+            errorCodeOf(roundTrip(
+                client,
+                R"({"jsonrpc":"2.0","id":1,"method":"tracks.list","meta":{"deadlineMs":-1}})")) ==
+            -32600);
+    }
+
+    SECTION("zero is refused") {
+        REQUIRE(
+            errorCodeOf(roundTrip(
+                client,
+                R"({"jsonrpc":"2.0","id":1,"method":"tracks.list","meta":{"deadlineMs":0}})")) ==
+            -32600);
+    }
+
+    SECTION("a non-number is refused") {
+        REQUIRE(
+            errorCodeOf(roundTrip(
+                client,
+                R"({"jsonrpc":"2.0","id":1,"method":"tracks.list","meta":{"deadlineMs":"soon"}})")) ==
+            -32600);
+    }
+
+    SECTION("a shorter one is accepted") {
+        const auto reply = roundTrip(
+            client, R"({"jsonrpc":"2.0","id":1,"method":"tracks.list","meta":{"deadlineMs":250}})");
+        REQUIRE(reply["error"].isVoid());
+    }
+}
+
+TEST_CASE("A numeric id and the same digits as a string are different requests",
+          "[remote][websocket][framing]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    RemoteWebSocketServer server(service, testOptions());
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+
+    const auto setTempo = R"({"jsonrpc":"2.0","id":%ID%,"method":"project.setTempo",)"
+                          R"("params":{"tempo":%BPM%}})";
+    const auto build = [&setTempo](const char* id, const char* bpm) {
+        return juce::String(setTempo).replace("%ID%", id).replace("%BPM%", bpm).toStdString();
+    };
+
+    REQUIRE(roundTrip(client, build("1", "120.0"))["error"].isVoid());
+    REQUIRE(api.project_.info.tempo == 120.0);
+
+    REQUIRE(roundTrip(client, build("\"1\"", "140.0"))["error"].isVoid());
+
+    // JSON-RPC treats the number 1 and the string "1" as distinct identifiers.
+    // Flattening both to `1` in the idempotency key made the second write replay
+    // the first one's response instead of executing — and the cache is keyed on
+    // the request id alone, not the method, so the mutation vanished silently.
+    REQUIRE(api.project_.info.tempo == 140.0);
+}
+
+TEST_CASE("An id of an unusable shape is refused", "[remote][websocket][framing][errors]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    RemoteWebSocketServer server(service, testOptions());
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+
+    REQUIRE(errorCodeOf(roundTrip(
+                client, R"({"jsonrpc":"2.0","id":{"a":1},"method":"tracks.list"})")) == -32600);
+    REQUIRE(errorCodeOf(roundTrip(
+                client, R"({"jsonrpc":"2.0","id":[1],"method":"tracks.list"})")) == -32600);
+}
+
+TEST_CASE("Garbage is rate limited like anything else", "[remote][websocket][limits]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto options = testOptions();
+    options.maxRequestsPerSecond = 5.0;
+    options.maxInFlightPerConnection = 2;  // also the burst
+    RemoteWebSocketServer server(service, options);
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+
+    // Admission used to happen after parsing, which left the cheapest thing a
+    // client can send as the one thing no limit applied to.
+    bool refused = false;
+    for (int i = 0; i < 6 && !refused; ++i)
+        refused = errorCodeOf(roundTrip(client, "{not json at all")) == -32005;
+
+    REQUIRE(refused);
+}
+
+TEST_CASE("The connection cap holds when clients arrive together", "[remote][websocket][limits]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto options = testOptions();
+    options.maxConnections = 2;
+    RemoteWebSocketServer server(service, options);
+    REQUIRE(server.start());
+
+    // The cap used to be a count read before the handshake and a registration
+    // performed after it, so upgrades racing each other all saw room.
+    constexpr int kAttempts = 8;
+    std::atomic<int> connected{0};
+    std::atomic<int> finished{0};
+    std::vector<std::thread> clients;
+
+    for (int i = 0; i < kAttempts; ++i) {
+        clients.emplace_back([&] {
+            httplib::ws::WebSocketClient client(endpoint(server), authorised());
+            if (client.connect())
+                ++connected;
+            ++finished;
+            // Hold the connection until every attempt has been made, so a slot
+            // freed early cannot be handed to a later arrival.
+            while (finished.load() < kAttempts)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        });
+    }
+
+    for (auto& thread : clients)
+        thread.join();
+
+    REQUIRE(connected.load() <= options.maxConnections);
+    REQUIRE(connected.load() > 0);
 }

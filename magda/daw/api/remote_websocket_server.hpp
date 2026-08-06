@@ -75,8 +75,25 @@ class RemoteApiService;
  * a closed connection's outbox is drained and discarded — the same shape
  * `RemoteApiService` uses for work queued against a retired project.
  *
- * `stop()` closes the listener, closes every live connection, and joins every
+ * `stop()` closes the listener, marks every connection closed, and joins every
  * thread it started. It is safe to call twice, and the destructor calls it.
+ *
+ * Shutdown is bounded rather than immediate. cpp-httplib exposes no way to
+ * interrupt a reader blocked in `read()` — there is no socket handle on the
+ * request or the socket, and `set_socket_options` reaches only the listening
+ * socket — and its `close()` reads as well as writes, so calling it from the
+ * stopping thread would put two threads in one buffered stream. Each reader
+ * therefore notices on its own, within one read timeout of a few seconds.
+ *
+ * ## What a client has to do
+ *
+ * **Stay in `read()` between requests.** The server pings every second, and a
+ * client sitting in a read answers automatically, which is what keeps the short
+ * read timeout from expiring on a live connection. A client that neither sends
+ * nor reads produces no traffic at all and will be dropped, because nothing
+ * distinguishes it from one that has gone away. This costs a real client
+ * nothing — waiting for replies and, once #1857 lands, for pushed changes, is
+ * where a client spends its time anyway.
  */
 class RemoteWebSocketServer {
   public:
@@ -112,8 +129,16 @@ class RemoteWebSocketServer {
 
         /// Requests accepted per connection before the dispatcher has answered
         /// the earlier ones. Handlers are serialized by the service, so this
-        /// bounds how much one client can queue against everyone else.
+        /// bounds how much one client can queue against everyone else. A slot is
+        /// held until the reply's bytes are written, not until the handler
+        /// returns, so a client that stops reading stops being admitted.
         int maxInFlightPerConnection = 8;
+
+        /// Replies allowed to sit unwritten before further ones are dropped.
+        /// The backstop for a client that sends without ever reading: its socket
+        /// buffer fills, the writer parks inside send(), and without this the
+        /// queue would grow for as long as it kept talking.
+        int maxQueuedRepliesPerConnection = 32;
 
         /// Token-bucket rate limit per connection. Bursts up to
         /// `maxInFlightPerConnection`, then holds this rate.
