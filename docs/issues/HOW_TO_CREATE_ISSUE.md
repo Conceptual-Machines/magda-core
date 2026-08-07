@@ -1,6 +1,6 @@
 # How to Create the AudioBridge Refactoring Issue on GitHub
 
-This guide shows how to create a GitHub issue from the comprehensive documentation in `docs/issues/audiobridge-refactoring.md`.
+This guide shows how to create a GitHub issue from the comprehensive documentation in `audiobridge-refactoring.md`.
 
 ## Quick Create
 
@@ -72,7 +72,7 @@ Break into **12 focused modules** organized in 4 phases:
 
 ## Detailed Documentation
 
-See **[docs/issues/audiobridge-refactoring.md](docs/issues/audiobridge-refactoring.md)** for:
+See **[audiobridge-refactoring.md](audiobridge-refactoring.md)** for:
 - Complete responsibility analysis
 - Module specifications with estimated LOC
 - Phase-by-phase implementation plan
@@ -109,20 +109,20 @@ See **[docs/issues/audiobridge-refactoring.md](docs/issues/audiobridge-refactori
 gh issue create \
   --repo Conceptual-Machines/magda-core \
   --title "Refactor: AudioBridge into Focused Modules" \
-  --body-file docs/issues/audiobridge-refactoring.md \
+  --body-file audiobridge-refactoring.md \
   --label "refactoring,architecture,code-quality,audio"
 ```
 
 ## Tips
 
-- **Link to detailed doc**: Always reference `docs/issues/audiobridge-refactoring.md` for full details
+- **Link to detailed doc**: Always reference `audiobridge-refactoring.md` for full details
 - **Keep it actionable**: Focus on the high-level plan in the issue, details in the doc
 - **Update both**: When implementation progresses, update both the issue and the doc
 - **Track progress**: Use issue checkboxes to track which phases/modules are complete
 
 ## After Creating
 
-1. Link the issue number back in `docs/issues/audiobridge-refactoring.md`
+1. Link the issue number back in `audiobridge-refactoring.md`
 2. Reference it in any related PRs
 3. Update progress as modules are extracted
 4. Close when AudioBridge is successfully refactored

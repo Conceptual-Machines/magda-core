@@ -103,7 +103,7 @@ The project includes automated GitHub Actions workflows:
 - **Periodic Code Analysis**: Weekly scans for TODOs, FIXMEs, and code smells
 - **Refactoring Scanner**: Bi-weekly analysis of code complexity and technical debt
 
-See [docs/AUTOMATED_WORKFLOWS.md](docs/AUTOMATED_WORKFLOWS.md) for details on automated analysis and periodic workflows.
+See [docs/ci/automated-workflows.md](docs/ci/automated-workflows.md) for details on automated analysis and periodic workflows.
 
 ## Security
 
@@ -117,7 +117,7 @@ MAGDA takes security seriously. The repository implements comprehensive security
 
 **Found a security issue?** Please review our [Security Policy](SECURITY.md) for responsible disclosure.
 
-For detailed information about branch protection and security architecture, see [docs/BRANCH_PROTECTION.md](docs/BRANCH_PROTECTION.md).
+For detailed information about branch protection and security architecture, see [docs/ci/branch-protection.md](docs/ci/branch-protection.md).
 
 ## Architecture
 
