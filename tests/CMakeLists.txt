@@ -113,6 +113,8 @@ set(TEST_SOURCES
     test_scale_detection.cpp
     test_step_clock.cpp
     test_string_table.cpp
+    # Guards the juce::String(const char*) ASCII-decode trap (#1858 follow-up)
+    test_non_ascii_string_literals.cpp
     # Arrangement pointer hit tester (#1719)
     test_arrangement_hit_tester.cpp
     # Keyboard clip nudging (#1957)

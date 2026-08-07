@@ -271,13 +271,13 @@ void SessionClipScheduler::processStateEvents() {
     // symptom is "the UI looks wrong but no logs say why."
     if (uint32_t cmdDropped = audioMonitor_.commandQueue().getDroppedCount()) {
         DBG("SessionClip command queue dropped " << static_cast<int>(cmdDropped)
-                                                 << " push(es) — bursty scene launches exceeding "
+                                                 << " push(es) - bursty scene launches exceeding "
                                                     "queue size?");
         audioMonitor_.commandQueue().clearDroppedCount();
     }
     if (uint32_t stateDropped = audioMonitor_.stateQueue().getDroppedCount()) {
         DBG("SessionClip state queue dropped " << static_cast<int>(stateDropped)
-                                               << " push(es) — message thread fell behind audio");
+                                               << " push(es) - message thread fell behind audio");
         audioMonitor_.stateQueue().clearDroppedCount();
     }
 
@@ -331,7 +331,7 @@ void SessionClipScheduler::processStateEvents() {
     // Transport just stopped — stop all LaunchHandles so clips reset to start.
     // activeSessionClipId stays set (user intent preserved).
     if (wasTransportPlaying_ && !transportPlaying && hasActiveClips()) {
-        DBG("SessionClipScheduler: Transport stopped — stopping all LaunchHandles");
+        DBG("SessionClipScheduler: Transport stopped - stopping all LaunchHandles");
         for (const auto& track : tm.getTracks()) {
             ClipId clipId = track.activeSessionClipId;
             if (clipId == INVALID_CLIP_ID)

@@ -3766,7 +3766,7 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
         UndoManager::getInstance().executeCommand(std::move(cmd));
         TrackManager::getInstance().setSelectedTrack(trackId);
 
-        DBG("Dropped plugin on track header: " << juce::String(device.name) << " → track "
+        DBG("Dropped plugin on track header: " << juce::String(device.name) << " -> track "
                                                << trackId);
     } else {
         // Dropped on empty area → create new track with plugin

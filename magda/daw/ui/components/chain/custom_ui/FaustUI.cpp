@@ -161,7 +161,7 @@ void FaustUI::refreshNameLabel() {
 bool FaustUI::tryLoad(const juce::String& name, const juce::String& source) {
     DBG("[FaustUI] tryLoad name='" << name << "' src.len=" << source.length());
     if (plugin_ == nullptr) {
-        DBG("[FaustUI] tryLoad: plugin_ is NULL — bailing");
+        DBG("[FaustUI] tryLoad: plugin_ is NULL - bailing");
         return false;
     }
     juce::String err;

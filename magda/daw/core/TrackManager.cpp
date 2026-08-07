@@ -802,7 +802,7 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
     pairRef.trackId = newTrackId;
 
     DBG("TrackManager: Activated multi-out pair " << pairIndex << " for device " << deviceId
-                                                  << " → track " << newTrackId);
+                                                  << " -> track " << newTrackId);
 
     notifyTracksChanged();
     return newTrackId;

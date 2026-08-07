@@ -327,7 +327,7 @@ FaustPlugin::FaustPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) 
         savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource), err);
     activeDspMatchesSource_ = compiled != nullptr;
     if (!compiled) {
-        DBG("FaustPlugin: failed to compile saved source: " << err << " — using default");
+        DBG("FaustPlugin: failed to compile saved source: " << err << " - using default");
         compiled = compileAndRebind(kDefaultDspSource, err);
     }
 

@@ -26,8 +26,8 @@ MixerDebugPanel::MixerDebugPanel() {
     addIntSlider("Fader Width", &metrics.faderWidth, 24, 60);
 
     // Spacing (int)
-    addIntSlider("Tick→Fader Gap", &metrics.tickToFaderGap, -5, 10);
-    addIntSlider("Tick→Label Gap", &metrics.tickToLabelGap, -5, 10);
+    addIntSlider(juce::String::fromUTF8("Tick→Fader Gap"), &metrics.tickToFaderGap, -5, 10);
+    addIntSlider(juce::String::fromUTF8("Tick→Label Gap"), &metrics.tickToLabelGap, -5, 10);
 
     // Calculate content height
     contentHeight_ = static_cast<int>(rows.size()) * 50 + 10;

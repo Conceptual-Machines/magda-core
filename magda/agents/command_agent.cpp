@@ -75,6 +75,7 @@ CommandAgent::GenerateResult CommandAgent::generateLocal(const std::string& mess
         // abstain class, so out-of-scope requests return nothing rather than
         // being mapped onto the nearest command and executed. Say that, rather
         // than reporting it as a malfunction.
+        // utf8-ok: result.error is std::string, so the UTF-8 bytes are kept verbatim.
         result.error = "That is not one of the on-device commands. Editing "
                        "operations work here (tracks, clips, devices, notes); "
                        "playback, mute/solo and questions do not — use a "

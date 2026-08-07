@@ -1205,7 +1205,7 @@ void AudioBridge::timerCallback() {
                             const bool renderInProgress =
                                 engine_.getRenderManager().isProxyBeingGenerated(playbackFile);
                             if (playbackFile.isValid() && !renderInProgress) {
-                                DBG("REVERSE TIMER: proxy ready — reallocating ("
+                                DBG("REVERSE TIMER: proxy ready - reallocating ("
                                     << playbackFile.getFile().getFullPathName() << ")");
                                 clipSynchronizer_.clearPendingReverseClipId();
                                 // AudioFile::isValid() can become true before ReverseRenderJob has
