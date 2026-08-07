@@ -10,10 +10,20 @@ add_library(magda_engine STATIC
     clip/ClipSnapshot.cpp
     clip/ClipSnapshotCompiler.cpp
     clip/ClipSnapshotDump.cpp
+    clip/ClipAudioSource.cpp
+    clip/ClipStreamFeed.cpp
+    clip/ClipVoice.cpp
+    clip/ClipVoicePool.cpp
+    clip/FadeCurves.cpp
     clip/ClipSnapshot.hpp
     clip/ClipSnapshotCompiler.hpp
     clip/ClipSnapshotDump.hpp
     clip/ClipSnapshotFeed.hpp
+    clip/ClipAudioSource.hpp
+    clip/ClipStreamFeed.hpp
+    clip/ClipVoice.hpp
+    clip/ClipVoicePool.hpp
+    clip/FadeCurves.hpp
     plan/RenderPlan.cpp
     plan/PlanCompiler.cpp
     plan/PlanDiff.cpp

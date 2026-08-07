@@ -35,6 +35,15 @@ PrefetchStream::PrefetchStream(std::unique_ptr<AudioFileReader> reader,
     }
 }
 
+void PrefetchStream::startAt(std::int64_t sourceStart) {
+    // Both cursors, and neither generation. Nothing has been read for the
+    // position this leaves behind, so there is nothing to invalidate; leaving
+    // the two sides on the generation they were born with is exactly what keeps
+    // the first fill from being read for one position and dropped for another.
+    nextSample_ = sourceStart;
+    fillPosition_ = sourceStart;
+}
+
 void PrefetchStream::seek(std::int64_t sourceStart) {
     // Publish and return. Everything the callback owns is left alone, which is
     // what makes this safe to call while the stream is playing rather than

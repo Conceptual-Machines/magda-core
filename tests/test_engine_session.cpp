@@ -237,6 +237,63 @@ class LoggingFactory final : public RuntimeStateFactory {
     BlockLog* log = nullptr;
 };
 
+/// Enough of a file for a stream to be opened over it. What it holds does not
+/// matter here: whether a reader exists is the question, not what it plays.
+class SilentReader final : public magda::engine::AudioFileReader {
+  public:
+    std::int64_t lengthInSamples() const override {
+        return 1000000;
+    }
+    double sampleRate() const override {
+        return 44100.0;
+    }
+    int numChannels() const override {
+        return 2;
+    }
+    int read(juce::AudioBuffer<float>& destination, int destinationOffset, std::int64_t,
+             int numSamples) override {
+        destination.clear(destinationOffset, numSamples);
+        return numSamples;
+    }
+};
+
+class OpenEverything final : public magda::engine::AudioFileReaderFactory {
+  public:
+    std::unique_ptr<magda::engine::AudioFileReader> open(const std::string&) override {
+        return std::make_unique<SilentReader>();
+    }
+};
+
+/// One track, one clip, over the seconds given.
+std::shared_ptr<const magda::engine::ClipSnapshot> clipsOver(TrackId trackId, double startSeconds,
+                                                             double endSeconds) {
+    magda::engine::SnapshotSpan span;
+    span.startSeconds = startSeconds;
+    span.endSeconds = endSeconds;
+    span.startBeat = startSeconds * 2.0;
+    span.endBeat = endSeconds * 2.0;
+
+    magda::engine::AudioEventPlayback event;
+    event.eventId = 1;
+    event.sourceId = 1;
+    event.filePath = "take.wav";
+    event.sourceSampleRate = 44100.0;
+    event.span = span;
+
+    magda::engine::AudioClipPlayback clip;
+    clip.clipId = 1;
+    clip.span = span;
+    clip.events.push_back(std::move(event));
+
+    magda::engine::TrackClipPlayback track;
+    track.trackId = trackId;
+    track.audio.push_back(std::move(clip));
+
+    auto snapshot = std::make_shared<magda::engine::ClipSnapshot>();
+    snapshot->tracks.push_back(std::move(track));
+    return snapshot;
+}
+
 /// Playing from a beat, with the metronome off.
 magda::engine::TransportSnapshot rolling(double fromBeat) {
     magda::engine::TransportSnapshot transport;
@@ -1054,4 +1111,40 @@ TEST_CASE("A session on a thread pool renders what a session without one renders
 
     magda::engine::RenderThreadPool pool(4, false);
     CHECK(render(&pool) == alone);
+}
+
+TEST_CASE("Clips reach the voice pool with the transport that plays them",
+          "[engine][session][clip]") {
+    // Two things the session owes the clip layer (#2035), and both of them are
+    // silence when they are missing: a pool that never sees a snapshot opens no
+    // readers at all, and one that never hears where the transport is opens
+    // them for the top of the timeline while playback is somewhere else.
+    Ledger ledger;
+    TestFactory factory(ledger);
+    OpenEverything files;
+    magda::engine::PrefetchThread reader;
+    magda::engine::ClipVoicePool voices(files, reader, context());
+
+    EngineSession session(factory, nullptr, &voices);
+
+    const auto tracks = trackWithEffect(7);
+    REQUIRE(publish(session, compile(tracks), tracks).published);
+    session.publishTransport(rolling(0.0));
+
+    // Far enough down the timeline that only a transport which has got near it
+    // provisions a reader.
+    session.publishClips(clipsOver(1, 2.0, 3.0));
+
+    voices.service();
+    REQUIRE(voices.streamCount() == 0);
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    const auto blocks = static_cast<int>(1.2 * 44100.0 / kBlockSize);
+    for (auto block = 0; block < blocks; ++block) {
+        output.clear();
+        session.process(kBlockSize, output);
+    }
+
+    voices.service();
+    CHECK(voices.streamCount() == 1);
 }

@@ -91,6 +91,13 @@ void EngineSession::publishTransport(TransportSnapshot transport) {
 }
 
 void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
+    // Both sides of the clip layer, from one call. The callback plays what the
+    // snapshot says and the pool opens readers for it, and the two disagreeing
+    // is a clip that is audible with nothing to read: exactly the sync problem
+    // that keeping one representation was supposed to have made impossible.
+    if (voices_ != nullptr)
+        voices_->setSnapshot(clips);
+
     clips_.publish(std::move(clips));
 }
 
@@ -134,6 +141,13 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
         // to where this piece belongs.
         juce::AudioBuffer<float> piece(output.getArrayOfWritePointers(), output.getNumChannels(),
                                        segment.startSample, segment.block.numSamples);
+
+        // Where the transport is, for the thread that reads ahead of it. A
+        // relaxed store of a double, before the block rather than after: the
+        // pool's window starts here, and a clip inside it has until the next
+        // round to be given a reader.
+        if (voices_ != nullptr)
+            voices_->setPosition(segment.block.startSeconds);
 
         (*render)->executor.process(table, segment.block, piece);
 
