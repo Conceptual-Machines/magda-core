@@ -7,7 +7,7 @@
 .clang-tidy:generic-api-key:125
 
 # False positive: Example AWS key in testing documentation
-docs/GITHUB_SETTINGS_GUIDE.md:aws-access-token:187
+docs/ci/github-settings.md:aws-access-token:187
 
 # False positive: README.md had gitleaks output accidentally dumped in git history
 # (commit 91252207 - since reverted). Gitleaks scans history and finds these examples.

@@ -76,7 +76,7 @@ enum class FaustOutputStyle {
 struct ControlMetadata {
     /// Slot index from `[idx:N]`. -1 means "no idx tag, use encounter
     /// order". Out-of-range or duplicate idx values are left as-is by
-    /// the parser; the pool decides what to do (see FAUST_POOL_REFACTOR.md).
+    /// the parser; the pool decides what to do (see docs/architecture/faust-param-pool.md).
     int slotIndex = -1;
 
     /// Display unit from `[unit:Hz]`, `[unit:dB]`, etc. Empty if absent.

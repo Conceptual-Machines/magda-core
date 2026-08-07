@@ -353,7 +353,7 @@ This security architecture is continuously improved through:
 
 ## Resources
 
-- [SECURITY.md](../SECURITY.md) - Vulnerability reporting
+- [SECURITY.md](../../SECURITY.md) - Vulnerability reporting
 - [GitHub Security Features](https://docs.github.com/en/code-security)
 - [CodeQL Documentation](https://codeql.github.com/docs/)
 - [Gitleaks Documentation](https://github.com/gitleaks/gitleaks)
@@ -362,7 +362,7 @@ This security architecture is continuously improved through:
 ## Contact
 
 For security questions or concerns:
-- Review [SECURITY.md](../SECURITY.md)
+- Review [SECURITY.md](../../SECURITY.md)
 - Open a private security advisory
 - Contact repository maintainers
 

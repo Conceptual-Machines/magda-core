@@ -30,7 +30,7 @@ namespace te = tracktion::engine;
 //
 // Shared scaffolding (UIHarvester, pool rebind, atomic state swap, retire
 // timer) is still copied from FaustPlugin rather than shared; a future
-// refactor can extract a common base. See docs/FAUST_POOL_REFACTOR.md.
+// refactor can extract a common base. See docs/architecture/faust-param-pool.md.
 class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
   public:
     FaustInstrumentPlugin(const te::PluginCreationInfo& info);
