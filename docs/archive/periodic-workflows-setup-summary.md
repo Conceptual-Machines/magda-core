@@ -60,7 +60,7 @@ gh workflow run ci.yml -f skip-cpp-build=true
 
 ### 4. Documentation
 
-**Created `docs/AUTOMATED_WORKFLOWS.md`:**
+**Created `../ci/automated-workflows.md`:**
 - Complete guide to all automated workflows
 - Usage instructions and examples
 - Customization guide (schedules, thresholds)
@@ -206,4 +206,4 @@ magda/daw/engine/TracktionEngineWrapper.cpp: 1603 lines
 
 ## Questions?
 
-See [docs/AUTOMATED_WORKFLOWS.md](docs/AUTOMATED_WORKFLOWS.md) for complete documentation or create an issue for support.
+See [../ci/automated-workflows.md](../ci/automated-workflows.md) for complete documentation or create an issue for support.
