@@ -484,12 +484,125 @@ jobs:
         { [ -d "$MUTABLE_DEBUG_DIR/lib" ] && echo "mutable_debug_hit=true" >> "$GITHUB_OUTPUT"; } || true
         { [ -d "$MUTABLE_RELEASE_DIR/lib" ] && echo "mutable_release_hit=true" >> "$GITHUB_OUTPUT"; } || true
 
+    # Third-party source tarballs, self-hosted variant. build-debug and
+    # build-release are deleted at the end of every run (the housekeeping step
+    # below), so FetchContent downloads Lua and SQLite from their upstream
+    # hosts again on every single run, and a run is then one outbound timeout
+    # away from failing in configure over something the change under test never
+    # touched. Not hypothetical: www.lua.org went unreachable from these
+    # runners and took both native jobs down with it, while the Linux job on
+    # another route passed the same commit.
+    #
+    # Same answer as the Faust artifacts above: a fixed directory outside the
+    # git workspace, keyed on version, handed to CMake as the source it should
+    # use rather than downloading one. FETCHCONTENT_SOURCE_DIR_<NAME> replaces
+    # the download and nothing else, so each build tree keeps its own binary
+    # dirs and the Debug and Release configures share one seed.
+    #
+    # Nothing is kept that does not match the hash CMakeLists.txt pins, and a
+    # seed that cannot be fetched leaves its flag off rather than failing the
+    # job: CMake then downloads it the way it always did.
+    - name: Prepare third-party source cache (self-hosted)
+      id: deps-cache
+      # A step that exists to save a download must never be the reason a build
+      # goes red. Everything below already degrades to letting CMake do the
+      # downloading; this covers whatever is left.
+      continue-on-error: true
+      run: |
+        set -uo pipefail
+        CACHE_ROOT="$HOME/magda-ci-cache/deps"
+        mkdir -p "$CACHE_ROOT"
+
+        # seed <dir> <sha256> <archive> <url>...
+        seed() {
+          local dir="$1" sha="$2" archive="$3"
+          shift 3
+
+          if [ -d "$dir" ]; then
+            echo "cached: $dir"
+            return 0
+          fi
+
+          local work
+          work="$(mktemp -d)"
+
+          # A short connect timeout so a host that is being blackholed rather
+          # than refusing costs seconds before the next URL is tried, instead
+          # of however long this machine's TCP stack takes to give up.
+          local fetched=""
+          for url in "$@"; do
+            if curl -sSfL --connect-timeout 30 --max-time 180 -o "$work/$archive" "$url"; then
+              fetched="$url"
+              break
+            fi
+            echo "could not fetch $url"
+          done
+
+          if [ -z "$fetched" ]; then
+            echo "no source for $(basename "$dir"), leaving it to CMake"
+            rm -rf "$work"
+            return 1
+          fi
+
+          if ! echo "$sha  $work/$archive" | shasum -a 256 -c - >/dev/null; then
+            echo "$fetched does not match the pinned hash, leaving it to CMake"
+            rm -rf "$work"
+            return 1
+          fi
+
+          mkdir -p "$work/extracted"
+          case "$archive" in
+            *.zip) unzip -q "$work/$archive" -d "$work/extracted" ;;
+            *)     tar -xzf "$work/$archive" -C "$work/extracted" ;;
+          esac
+
+          # FetchContent hands its caller what is inside the archive rather
+          # than the archive's own root, so the seed has to be the directory
+          # it would have unpacked to and not the level above it.
+          local top
+          top="$(find "$work/extracted" -mindepth 1 -maxdepth 1)"
+          if [ "$(printf '%s\n' "$top" | wc -l)" -ne 1 ]; then
+            echo "$archive is not a single directory, leaving it to CMake"
+            rm -rf "$work"
+            return 1
+          fi
+
+          # Moved into place whole, so a directory that exists is a directory
+          # that is complete: an interrupted run leaves nothing to trust.
+          mv "$top" "$dir"
+          rm -rf "$work"
+          echo "seeded: $dir from $fetched"
+        }
+
+        LUA_DIR="$CACHE_ROOT/lua-5.4.7"
+        SQLITE_DIR="$CACHE_ROOT/sqlite-amalgamation-3530100"
+
+        seed "$LUA_DIR" \
+          9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30 \
+          lua-5.4.7.tar.gz \
+          https://www.lua.org/ftp/lua-5.4.7.tar.gz \
+          http://deb.debian.org/debian/pool/main/l/lua5.4/lua5.4_5.4.7.orig.tar.gz \
+          && echo "lua_dir=$LUA_DIR" >> "$GITHUB_OUTPUT"
+
+        # The SHA-256 of the zip CMakeLists.txt pins by its SHA3-256, which is
+        # not a digest the tools on a runner can take. Both are of the same
+        # file and a version bump changes both.
+        seed "$SQLITE_DIR" \
+          36ad6e7f38540a3b21a2ac36340833f0a9e426bc1c752751c3ba669466827eae \
+          sqlite-amalgamation-3530100.zip \
+          https://www.sqlite.org/2026/sqlite-amalgamation-3530100.zip \
+          && echo "sqlite_dir=$SQLITE_DIR" >> "$GITHUB_OUTPUT"
+
+        exit 0
+
     - name: Configure CMake (Debug)
       run: |
         cmake -B build-debug -G Ninja \
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
           -DMAGDA_BUILD_TESTS=ON \
+          ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.faust_debug_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.faust_debug_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.mutable_debug_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.mutable_debug_dir) || '' }}
 
@@ -532,6 +645,8 @@ jobs:
         cmake -B build-release -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
           -DMAGDA_BUILD_TESTS=OFF \
+          ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.faust_release_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.faust_release_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.mutable_release_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.mutable_release_dir) || '' }}
 
@@ -775,12 +890,119 @@ jobs:
         path: third_party/eurorack/build/lib
         key: ${{ runner.os }}-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-debug
 
+    # The macOS job's third-party source cache, in PowerShell. Same reason and
+    # same shape: the build dirs go at the end of every run, so Lua and SQLite
+    # would be downloaded again on every one, and www.lua.org going unreachable
+    # has already failed this job in configure. On the github-hosted fallback
+    # runner nothing persists between runs, so this simply does the download
+    # CMake would have done and costs nothing either way.
+    #
+    # No shell key, so this runs in whatever the job's other steps run in.
+    # Naming pwsh explicitly fails outright on a runner that only has Windows
+    # PowerShell, where the default falls back to it; and continue-on-error
+    # because a step that exists to save a download must never be the reason a
+    # build goes red.
+    - name: Prepare third-party source cache
+      id: deps-cache
+      continue-on-error: true
+      run: |
+        # Windows PowerShell 5.1 negotiates TLS 1.0 by default, which every
+        # host here refused years ago, and draws a progress bar for every
+        # buffer it reads, which is worth an order of magnitude on a download
+        # this size.
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $ProgressPreference = 'SilentlyContinue'
+
+        $cacheRoot = Join-Path $HOME 'magda-ci-cache\deps'
+        New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+
+        function Seed($dir, $sha, $archive, $urls) {
+            if (Test-Path $dir) {
+                Write-Host "cached: $dir"
+                return $true
+            }
+
+            $work = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
+            New-Item -ItemType Directory -Force -Path $work | Out-Null
+            $file = Join-Path $work $archive
+
+            $fetched = ''
+            foreach ($url in $urls) {
+                try {
+                    Invoke-WebRequest -Uri $url -OutFile $file -UseBasicParsing -TimeoutSec 180
+                    $fetched = $url
+                    break
+                } catch {
+                    Write-Host "could not fetch $url"
+                }
+            }
+
+            if (-not $fetched) {
+                Write-Host "no source for $dir, leaving it to CMake"
+                Remove-Item -Recurse -Force $work
+                return $false
+            }
+
+            if ((Get-FileHash $file -Algorithm SHA256).Hash -ne $sha.ToUpper()) {
+                Write-Host "$fetched does not match the pinned hash, leaving it to CMake"
+                Remove-Item -Recurse -Force $work
+                return $false
+            }
+
+            $extracted = Join-Path $work 'extracted'
+            New-Item -ItemType Directory -Force -Path $extracted | Out-Null
+
+            # bsdtar, which ships with Windows and reads both the tarball and
+            # the zip.
+            tar -xf $file -C $extracted
+
+            # FetchContent hands its caller what is inside the archive rather
+            # than the archive's own root, so the seed has to be the directory
+            # it would have unpacked to and not the level above it.
+            $top = @(Get-ChildItem $extracted)
+            if ($top.Count -ne 1) {
+                Write-Host "$archive is not a single directory, leaving it to CMake"
+                Remove-Item -Recurse -Force $work
+                return $false
+            }
+
+            # Moved into place whole, so a directory that exists is a directory
+            # that is complete.
+            Move-Item $top[0].FullName $dir
+            Remove-Item -Recurse -Force $work
+            Write-Host "seeded: $dir from $fetched"
+            return $true
+        }
+
+        $luaDir = Join-Path $cacheRoot 'lua-5.4.7'
+        $sqliteDir = Join-Path $cacheRoot 'sqlite-amalgamation-3530100'
+
+        # Written through .NET rather than Out-File: Windows PowerShell writes
+        # UTF-16 there and the runner reads the file as UTF-8.
+        if (Seed $luaDir '9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30' 'lua-5.4.7.tar.gz' @(
+                'https://www.lua.org/ftp/lua-5.4.7.tar.gz',
+                'http://deb.debian.org/debian/pool/main/l/lua5.4/lua5.4_5.4.7.orig.tar.gz')) {
+            [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "lua_dir=$luaDir`n")
+        }
+
+        # The SHA-256 of the zip CMakeLists.txt pins by its SHA3-256, which is
+        # not a digest the tools on a runner can take. Both are of the same
+        # file and a version bump changes both.
+        if (Seed $sqliteDir '36ad6e7f38540a3b21a2ac36340833f0a9e426bc1c752751c3ba669466827eae' 'sqlite-amalgamation-3530100.zip' @(
+                'https://www.sqlite.org/2026/sqlite-amalgamation-3530100.zip')) {
+            [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "sqlite_dir=$sqliteDir`n")
+        }
+
+        exit 0
+
     - name: Configure CMake (Debug)
       run: |
         cmake -B build-debug -G Ninja `
           -DCMAKE_BUILD_TYPE=Debug `
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON `
           -DMAGDA_BUILD_TESTS=ON `
+          ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} `
+          ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} `
           -DCMAKE_C_COMPILER_LAUNCHER=ccache `
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache `
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
@@ -839,6 +1061,8 @@ jobs:
         cmake -B build-release -G Ninja `
           -DCMAKE_BUILD_TYPE=Release `
           -DMAGDA_BUILD_TESTS=OFF `
+          ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} `
+          ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} `
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
           -DVCPKG_TARGET_TRIPLET=x64-windows `
           ${{ steps.dsp-prebuilt-self.outputs.faust_release_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt-self.outputs.faust_release_dir) || '' }} `
