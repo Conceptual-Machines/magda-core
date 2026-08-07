@@ -149,6 +149,18 @@ jobs:
             "$APP_PATH/Contents/MacOS/magda_plugin_scanner"
         fi
 
+        # The MCP bridge (#1858) is another nested executable, and an MCP host
+        # launches it directly rather than through MAGDA — so an unsigned one is
+        # not merely untidy, it is a binary Gatekeeper refuses to run.
+        if [ -f "$APP_PATH/Contents/MacOS/magda-mcp" ]; then
+          echo "Signing MCP bridge..."
+          codesign --force --verify --verbose --timestamp \
+            --options runtime \
+            --entitlements "$ENTITLEMENTS" \
+            --sign "$IDENTITY" \
+            "$APP_PATH/Contents/MacOS/magda-mcp"
+        fi
+
         # Sign any embedded frameworks/dylibs
         find "$APP_PATH/Contents/Frameworks" -name "*.dylib" -o -name "*.framework" 2>/dev/null | while read -r lib; do
           echo "Signing: $lib"
@@ -406,6 +418,18 @@ jobs:
             --entitlements "$ENTITLEMENTS" \
             --sign "$IDENTITY" \
             "$APP_PATH/Contents/MacOS/magda_plugin_scanner"
+        fi
+
+        # The MCP bridge (#1858) is another nested executable, and an MCP host
+        # launches it directly rather than through MAGDA — so an unsigned one is
+        # not merely untidy, it is a binary Gatekeeper refuses to run.
+        if [ -f "$APP_PATH/Contents/MacOS/magda-mcp" ]; then
+          echo "Signing MCP bridge..."
+          codesign --force --verify --verbose --timestamp \
+            --options runtime \
+            --entitlements "$ENTITLEMENTS" \
+            --sign "$IDENTITY" \
+            "$APP_PATH/Contents/MacOS/magda-mcp"
         fi
 
         find "$APP_PATH/Contents/Frameworks" -name "*.dylib" -o -name "*.framework" 2>/dev/null | while read -r lib; do
@@ -842,6 +866,17 @@ jobs:
           Write-Warning "magda_plugin_scanner.exe not found at $scanner"
         }
 
+        # The MCP bridge (#1858). An MCP host is configured with its absolute
+        # path, so it has to land in the install directory beside MAGDA.exe —
+        # that is the path the AI settings page tells the user to paste.
+        $mcpBridge = Join-Path $exeDir "magda-mcp.exe"
+        if (Test-Path $mcpBridge) {
+          Copy-Item $mcpBridge "$stage\magda-mcp.exe"
+          Write-Output "Copied MCP bridge to staging"
+        } else {
+          Write-Warning "magda-mcp.exe not found at $mcpBridge"
+        }
+
         # Runtime DLLs sitting next to MAGDA.exe: the ONNX Runtime DLLs (media DB
         # sample tagger) and libxml2.dll + its transitive deps (DAWproject XSD
         # validation), all placed there by the build's POST_BUILD steps. Windows
@@ -1079,6 +1114,18 @@ jobs:
           echo "Warning: magda_plugin_scanner not found"
         fi
 
+        # The MCP bridge (#1858), beside the binary like everywhere else so the
+        # AI settings page can name it. Also kept as a standalone release asset
+        # below: an AppImage is a single squashfs file, so a path inside it only
+        # exists while it is mounted and cannot go in an MCP host's config.
+        MCP_BRIDGE=$(find build -name "magda-mcp" -type f -executable | head -1)
+        if [ -n "$MCP_BRIDGE" ]; then
+          echo "Found MCP bridge: $MCP_BRIDGE"
+          cp "$MCP_BRIDGE" "$APPDIR/usr/bin/magda-mcp"
+        else
+          echo "Warning: magda-mcp not found"
+        fi
+
         # Localization JSON - StringTable looks for lang/ next to the binary
         cp -r lang "$APPDIR/usr/bin/lang"
 
@@ -1177,6 +1224,20 @@ jobs:
         sha256sum "$APPIMAGE" > "${APPIMAGE}.sha256"
         cat "${APPIMAGE}.sha256"
 
+        # The MCP bridge ships separately on Linux because the AppImage cannot
+        # expose a stable path to anything inside it. Users drop this on their
+        # PATH and name it in their MCP host's config; it finds MAGDA through the
+        # discovery record either way, so it does not care where it lives.
+        MCP_BRIDGE=$(find build -name "magda-mcp" -type f -executable | head -1)
+        if [ -n "$MCP_BRIDGE" ]; then
+          cp "$MCP_BRIDGE" "magda-mcp-${VERSION}-Linux-x86_64"
+          chmod +x "magda-mcp-${VERSION}-Linux-x86_64"
+          sha256sum "magda-mcp-${VERSION}-Linux-x86_64" > "magda-mcp-${VERSION}-Linux-x86_64.sha256"
+          cat "magda-mcp-${VERSION}-Linux-x86_64.sha256"
+        else
+          echo "Warning: magda-mcp not found; the Linux MCP asset will be missing"
+        fi
+
     - name: Upload artifact
       uses: actions/upload-artifact@v7
       with:
@@ -1184,6 +1245,8 @@ jobs:
         path: |
           MAGDA-*-Linux-x86_64.AppImage
           MAGDA-*-Linux-x86_64.AppImage.sha256
+          magda-mcp-*-Linux-x86_64
+          magda-mcp-*-Linux-x86_64.sha256
 
   create-release:
     # Publish a GitHub Release only for tag pushes. A workflow_dispatch run is

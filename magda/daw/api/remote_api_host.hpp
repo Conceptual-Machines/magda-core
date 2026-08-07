@@ -13,16 +13,22 @@ namespace remote {
 
 class ModelChangeBridge;
 class RemoteApiService;
+class RemoteMcpServer;
 class RemoteWebSocketServer;
 class SubscriptionHub;
 
 /**
- * @brief Owns the remote API for the lifetime of a running MAGDA (#1856).
+ * @brief Owns the remote API for the lifetime of a running MAGDA (#1856, #1858).
  *
- * The dispatcher, the model bridge that feeds it local edits, and the WebSocket
- * transport are three objects with one lifetime and a required construction
- * order, so something has to own them together. This is that something, and it
- * is the only place in the app that knows the remote API exists at all.
+ * The dispatcher, the model bridge that feeds it local edits, and the two
+ * transports are objects with one lifetime and a required construction order, so
+ * something has to own them together. This is that something, and it is the only
+ * place in the app that knows the remote API exists at all.
+ *
+ * Both transports share one dispatcher and one subscription hub. That is the
+ * point of the layering rather than an optimisation: two dispatchers would be
+ * two revision counters and two undo groupings over one project, and two hubs
+ * would be two projections of the same model drifting apart.
  *
  * Construct and destroy on the message thread: `ModelChangeBridge` attaches to
  * the model singletons, which notify there.
@@ -36,11 +42,16 @@ class SubscriptionHub;
  * permissions and deleted on shutdown, carrying the port alongside it:
  *
  *     remote-api-<pid>.json
- *     {"port":51734,"token":"…","url":"ws://127.0.0.1:51734/rpc","pid":4021}
+ *     {"port":51734,"token":"…","url":"ws://127.0.0.1:51734/rpc",
+ *      "mcpPort":51735,"mcpUrl":"http://127.0.0.1:51735/mcp","pid":4021}
  *
  * A client reads that file to learn where to connect and what to present. This
  * is the same shape Jupyter uses for its local server, and it means a client on
  * the machine needs no configuration while a process elsewhere gets nothing.
+ *
+ * Both transports are named because a client picks one: an MCP host wants
+ * `mcpUrl`, a script that needs pushed state wants `url`. The token is the same
+ * for both — it authenticates the user at the keyboard, not a protocol.
  *
  * The record is named after the process because MAGDA allows more than one
  * instance. One shared file would mean the second instance to start hides the
@@ -84,21 +95,47 @@ class RemoteApiHost {
      */
     bool start();
 
-    /// Stop listening and remove the token file. Idempotent; the destructor
-    /// calls it.
+    /**
+     * @brief Close the listeners and withdraw the credential, permanently.
+     *
+     * Shuts the dispatcher and the subscription hub down as well, which is
+     * one-way: `RemoteApiService::shutdown()` retires its execution state and
+     * never comes back. This is the destruction path, and `start()` must not be
+     * called afterwards — it would bind listeners around a dispatcher that
+     * answers every request with `Cancelled`.
+     *
+     * Idempotent; the destructor calls it. To turn the feature off and leave it
+     * restartable, use `stopListening()`.
+     */
     void stop();
+
+    /**
+     * @brief Close the listeners and withdraw the credential, reversibly.
+     *
+     * What the settings toggle needs: no socket and no published token, but the
+     * dispatcher, the model bridge, and the subscription hub all still alive, so
+     * a later `start()` produces a working server rather than one whose every
+     * operation is already cancelled.
+     *
+     * Idempotent, and safe to call when nothing is listening.
+     */
+    void stopListening();
 
     bool isRunning() const;
 
-    /// The port actually bound, or 0 when not running.
+    /// The WebSocket port actually bound, or 0 when not running.
     int boundPort() const;
+
+    /// The MCP port actually bound, or 0 when it is not listening. Zero with a
+    /// live WebSocket is a supported state, not a broken one — see `start()`.
+    int mcpPort() const;
 
     /// Where the token was published, whether or not it currently exists.
     juce::File tokenFile() const;
 
-    /// The dispatcher, for adapters that share it — #1858's MCP adapter is the
-    /// next one, and it must route through the same instance rather than build
-    /// its own.
+    /// The dispatcher, shared by both transports: it must be one instance, or
+    /// revisions, undo grouping, and idempotency would each exist twice over one
+    /// project.
     RemoteApiService& service();
 
     /// The subscription hub, for the same reason: MCP resource updates and
@@ -108,15 +145,35 @@ class RemoteApiHost {
 
   private:
     // Declaration order is destruction order reversed, and it is load-bearing:
-    // the server's connections deregister from the hub, the hub listens to the
+    // a transport's connections deregister from the hub, the hub listens to the
     // service's change source, and the bridge writes into the service. Each has
     // to outlive the thing that talks to it.
     std::unique_ptr<RemoteApiService> service_;
     std::unique_ptr<ModelChangeBridge> bridge_;
     std::unique_ptr<SubscriptionHub> subscriptions_;
     std::unique_ptr<RemoteWebSocketServer> server_;
+    std::unique_ptr<RemoteMcpServer> mcpServer_;
     juce::String token_;
 };
+
+/**
+ * @brief The host the running application owns, or nullptr.
+ *
+ * The settings UI has to be able to turn the remote API on and off while MAGDA
+ * is running — a toggle that only took effect after a restart would be a worse
+ * answer than no toggle. The dialog is constructed from a static entry point
+ * with no context to thread a pointer through, so the one instance the app owns
+ * registers itself here.
+ *
+ * Message thread only, and last-constructed-wins. The application creates
+ * exactly one; tests create several in sequence, and each destructor clears this
+ * only if it is still the registered one, so an earlier host outliving a later
+ * one cannot leave a dangling pointer behind.
+ *
+ * Returns nullptr in the headless CLI, in tests, and before the app has finished
+ * starting — callers must check.
+ */
+RemoteApiHost* activeHost();
 
 }  // namespace remote
 }  // namespace magda

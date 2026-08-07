@@ -19,6 +19,7 @@
 #include "../project/ProjectInfo.hpp"
 #include "automation_api.hpp"
 #include "clip_api.hpp"
+#include "device_api.hpp"
 #include "magda_api.hpp"
 #include "project_api.hpp"
 #include "selection_api.hpp"
@@ -416,6 +417,13 @@ HandlerResult devicesList(MagdaApi& api, const juce::var& input, const RequestCo
     if (track == nullptr)
         return notFound("track", trackId);
     return HandlerResult::ok(toJson(makeDeviceGraphDto({*track})));
+}
+
+HandlerResult devicesCatalog(MagdaApi& api, const juce::var&, const RequestContext&) {
+    std::vector<juce::var> items;
+    for (const auto& entry : api.devices().getCatalog())
+        items.push_back(toJson(makeDeviceCatalogEntryDto(entry)));
+    return HandlerResult::ok(toJsonArray(items));
 }
 
 HandlerResult racksCreate(MagdaApi& api, const juce::var& input, const RequestContext&) {

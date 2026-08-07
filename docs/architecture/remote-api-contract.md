@@ -33,6 +33,11 @@ shared input/output schemas. A transport may add its own correlation or
 framing metadata outside these envelopes, but it must not change the contract
 payload.
 
+Two transports carry this today. WebSocket wraps it in JSON-RPC over a socket;
+MCP projects operations into tools and read operations into `magda://` resources
+— see [remote-api-mcp.md](remote-api-mcp.md). Both consume this registry, and
+neither declares an operation or a schema of its own.
+
 ## Subscriptions
 
 Ten topics partition what a client can watch: `project`, `tracks`, `clips`,

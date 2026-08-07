@@ -199,6 +199,10 @@ set(TEST_SOURCES
     test_remote_changes.cpp
     test_remote_subscriptions.cpp
     test_remote_model_bridge.cpp
+    test_remote_mcp.cpp
+    test_remote_mcp_server.cpp
+    test_remote_mcp_bridge.cpp
+    test_mcp_sse_parser.cpp
     test_remote_websocket_server.cpp
     test_remote_api_host.cpp
     test_device_api.cpp
@@ -282,9 +286,10 @@ target_link_libraries(magda_tests
     # Faust runtime headers + the backend selection, so test_faust_backend.cpp
     # resolves to the same factory the app was built with.
     magda_faust_backend
-    # cpp-httplib ships the WebSocket client, so the transport tests in
-    # test_remote_websocket_server.cpp drive real sockets without a test-only
-    # dependency. magda_daw links it PRIVATE, so this target needs its own.
+    # cpp-httplib ships both an HTTP and a WebSocket client, so the transport
+    # tests in test_remote_websocket_server.cpp and test_remote_mcp_server.cpp
+    # drive real sockets without a test-only dependency. magda_daw links it
+    # PRIVATE, so this target needs its own.
     httplib::httplib
     # JUCE (core + gui_basics) comes transitively from magda_daw, compiled once
     # there; direct links would recompile the JUCE stack into this target.
@@ -316,7 +321,15 @@ target_compile_definitions(magda_tests
     # COMPILE_DEFINITIONS; set it explicitly so this target does not depend on
     # that re-export staying broad.
     MAGDA_ENABLE_TEST_HOOKS=1
+    # test_remote_mcp_bridge.cpp forks the real bridge binary: the thing it
+    # verifies is the process boundary, so there is nothing to link. Taking the
+    # path from the target rather than reconstructing it keeps the test pointed
+    # at the binary this build produced.
+    MAGDA_MCP_BRIDGE_BINARY="$<TARGET_FILE:magda_mcp_bridge>"
 )
+
+# The bridge is exec'd, not linked, so nothing in the link graph would build it.
+add_dependencies(magda_tests magda_mcp_bridge)
 
 # Add the test to CTest
 add_test(NAME magda_unit_tests COMMAND magda_tests)

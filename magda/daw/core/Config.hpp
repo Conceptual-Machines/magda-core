@@ -452,6 +452,18 @@ class Config {
     void setRemoteApiPort(int port) {
         remoteApiPort = port;
     }
+    /// The MCP endpoint's own port (issue #1858). A second listener rather than
+    /// routes on the WebSocket's: an MCP notification stream holds a connection
+    /// thread for its lifetime, so its budget is sized separately. 0 asks the OS
+    /// for a free port, and the discovery file carries the real one alongside
+    /// the WebSocket's. Gated by the same `enabled` flag — there is one remote
+    /// API, with two ways in.
+    int getRemoteApiMcpPort() const {
+        return remoteApiMcpPort;
+    }
+    void setRemoteApiMcpPort(int port) {
+        remoteApiMcpPort = port;
+    }
     /// Browser origins allowed to connect. Empty means no browser may; native
     /// clients send no Origin and are unaffected.
     const std::vector<std::string>& getRemoteApiAllowedOrigins() const {
@@ -1342,7 +1354,8 @@ class Config {
     // never sits in a config file that gets copied around or pasted into a bug
     // report.
     bool remoteApiEnabled = false;
-    int remoteApiPort = 0;  // 0 = ephemeral; the token file carries the real one
+    int remoteApiPort = 0;     // 0 = ephemeral; the token file carries the real one
+    int remoteApiMcpPort = 0;  // likewise, for the MCP endpoint (#1858)
     std::vector<std::string> remoteApiAllowedOrigins;
 
     // Export audio settings

@@ -176,6 +176,14 @@ if (Test-Path $scanner) {
 } else {
     Write-Warning "magda_plugin_scanner.exe not present in stage - skipping (out-of-process scanning will be unavailable)"
 }
+$mcpBridge = Join-Path $StageDir "magda-mcp.exe"
+if (Test-Path $mcpBridge) {
+    # An MCP host launches this directly rather than through MAGDA, so an
+    # unsigned copy trips SmartScreen on its own account.
+    Invoke-Sign $mcpBridge
+} else {
+    Write-Warning "magda-mcp.exe not present in stage - skipping (MCP integration will be unavailable)"
+}
 
 # 2. Build the installer from the now-signed exes. The .nsi's OutFile is a
 #    relative path, so run makensis with the working directory set to StageDir

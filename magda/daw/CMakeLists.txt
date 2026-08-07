@@ -872,6 +872,39 @@ else()
     )
 endif()
 
+# Stage the MCP stdio bridge next to the main app (issue #1858).
+#
+# It has to be somewhere a user can name in an MCP host's config, and beside the
+# executable is the one place that is true of every install layout: inside the
+# bundle on macOS, in the install directory on Windows, next to the binary on
+# Linux. The AI settings page composes the config snippet from exactly this path,
+# so a dev build and a shipped one both produce a snippet that works.
+#
+# A separate always-run target rather than a POST_BUILD on magda_daw_app. A
+# POST_BUILD only fires when its own target relinks, so a change to the bridge
+# alone left a stale copy inside the bundle while the freshly built one sat in
+# its own artefacts directory — the build reported success and the installed
+# binary was the old one. `copy_if_different` makes running every build free
+# when nothing moved.
+if(APPLE)
+    set(MAGDA_MCP_BRIDGE_DEST "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/MacOS/magda-mcp")
+elseif(WIN32)
+    set(MAGDA_MCP_BRIDGE_DEST "$<TARGET_FILE_DIR:magda_daw_app>/magda-mcp.exe")
+else()
+    set(MAGDA_MCP_BRIDGE_DEST "$<TARGET_FILE_DIR:magda_daw_app>/magda-mcp")
+endif()
+
+add_custom_target(magda_stage_mcp_bridge ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:magda_mcp_bridge>"
+        "${MAGDA_MCP_BRIDGE_DEST}"
+    # Both, and in this order: the bridge supplies the file, and the app has to
+    # have created the bundle directory it is copied into.
+    DEPENDS magda_mcp_bridge magda_daw_app
+    COMMENT "Staging MCP bridge beside MAGDA"
+    VERBATIM
+)
+
 # Copy lang/ (localization JSON) into the app so StringTable can load it at runtime.
 set(MAGDA_LANG_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../lang")
 if(APPLE)

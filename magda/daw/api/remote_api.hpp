@@ -17,6 +17,7 @@ namespace magda {
 class MagdaApi;
 struct AutomationLaneInfo;
 struct ClipInfo;
+struct DeviceCatalogEntry;
 struct DeviceInfo;
 struct ProjectInfo;
 struct TrackInfo;
@@ -227,6 +228,32 @@ struct DeviceGraphDto {
     bool operator==(const DeviceGraphDto&) const = default;
 };
 
+/**
+ * @brief A device the user could add, as opposed to one already on a track.
+ *
+ * `DeviceDto` describes an instance — it has a track, a path, and a bypass
+ * state. This describes a *kind*, and the two are not interchangeable: a client
+ * needs the catalogue to know what `catalogId` to ask for, and the graph to know
+ * what is already there.
+ *
+ * `catalogId` is the whole address. `DeviceCatalogEntry` was already built to
+ * carry no `fileOrIdentifier`, so this projection has nothing to strip: naming a
+ * plugin never teaches a remote caller the filesystem layout of the machine
+ * hosting it.
+ */
+struct DeviceCatalogEntryDto {
+    juce::String catalogId;
+    juce::String name;
+    juce::String manufacturer;
+    juce::String category;
+    juce::String description;
+    juce::String format;  // "vst3" | "au" | "lv2" | "internal"
+    juce::String type;    // "instrument" | "effect" | "midi" | "analysis"
+    bool instrument = false;
+
+    bool operator==(const DeviceCatalogEntryDto&) const = default;
+};
+
 struct SelectionDto {
     std::optional<TrackId> trackId;
     std::optional<ClipId> clipId;
@@ -420,6 +447,22 @@ juce::var errorEnvelope(const Error& error);
 
 std::vector<ValidationIssue> validateJson(const juce::var& value, const juce::var& schema,
                                           const juce::String& path = "$");
+
+/**
+ * @brief A JSON number as an exact integer in range, or nothing.
+ *
+ * JSON has one numeric type, so a field declared as a count arrives as a double
+ * whenever it was written with a decimal point — and casting that to `int` or
+ * `int64` truncates silently when it is fractional and is undefined behaviour
+ * when it is out of range or not finite. Neither belongs on a path fed by
+ * whatever a client chose to send, so the value has to be proved integral and
+ * within bounds before it becomes one.
+ *
+ * Shared by every transport rather than reimplemented per adapter: getting the
+ * `2^63` boundary wrong is silent, and one copy is one thing to get right.
+ */
+std::optional<juce::int64> jsonInteger(const juce::var& value, juce::int64 lowest,
+                                       juce::int64 highest);
 std::optional<Error> validateOperationInput(const OperationDescriptor& operation,
                                             const juce::var& input);
 
@@ -431,6 +474,7 @@ juce::var toJson(const DeviceDto& dto);
 juce::var toJson(const ChainDto& dto);
 juce::var toJson(const RackDto& dto);
 juce::var toJson(const DeviceGraphDto& dto);
+juce::var toJson(const DeviceCatalogEntryDto& dto);
 juce::var toJson(const SelectionDto& dto);
 juce::var toJson(const TransportDto& dto);
 juce::var toJson(const SessionSlotDto& dto);
@@ -457,6 +501,8 @@ std::optional<DeviceDto> deviceFromJson(const juce::var& json, Error& error);
 std::optional<ChainDto> chainFromJson(const juce::var& json, Error& error);
 std::optional<RackDto> rackFromJson(const juce::var& json, Error& error);
 std::optional<DeviceGraphDto> deviceGraphFromJson(const juce::var& json, Error& error);
+std::optional<DeviceCatalogEntryDto> deviceCatalogEntryFromJson(const juce::var& json,
+                                                                Error& error);
 std::optional<SelectionDto> selectionFromJson(const juce::var& json, Error& error);
 std::optional<TransportDto> transportFromJson(const juce::var& json, Error& error);
 std::optional<SessionDto> sessionFromJson(const juce::var& json, Error& error);
@@ -466,6 +512,7 @@ ProjectDto makeProjectDto(const ProjectInfo& project);
 TrackDto makeTrackDto(const TrackInfo& track);
 ClipDto makeClipDto(const ClipInfo& clip);
 DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks);
+DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry);
 SelectionDto makeSelectionDto(MagdaApi& api);
 TransportDto makeTransportDto(MagdaApi& api);
 SessionDto makeSessionDto(MagdaApi& api);

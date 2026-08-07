@@ -223,6 +223,7 @@ void Config::save() {
         auto* remoteObj = new juce::DynamicObject();
         remoteObj->setProperty("enabled", remoteApiEnabled);
         remoteObj->setProperty("port", remoteApiPort);
+        remoteObj->setProperty("mcpPort", remoteApiMcpPort);
         juce::Array<juce::var> originArray;
         for (const auto& origin : remoteApiAllowedOrigins)
             originArray.add(toJuceString(origin));
@@ -693,6 +694,8 @@ void Config::load() {
                 remoteApiEnabled = remoteObj->getProperty("enabled");
             if (remoteObj->hasProperty("port"))
                 remoteApiPort = remoteObj->getProperty("port");
+            if (remoteObj->hasProperty("mcpPort"))
+                remoteApiMcpPort = remoteObj->getProperty("mcpPort");
             remoteApiAllowedOrigins.clear();
             if (const auto* origins = remoteObj->getProperty("allowedOrigins").getArray())
                 for (const auto& origin : *origins)

@@ -268,6 +268,11 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
         {{30, 20, "Main", 0, false, false, false, 0.0, 0.0, {10}, {}}}};
     requireRoundTrip(graph, deviceGraphFromJson);
 
+    const DeviceCatalogEntryDto catalogEntry{
+        "4osc",     "4OSC",       "Tracktion", "Synth", "Four oscillator synth",
+        "internal", "instrument", true};
+    requireRoundTrip(catalogEntry, deviceCatalogEntryFromJson);
+
     const SelectionDto selection{3, 9, {9, 12}, 5, 6, 9, {0, 2}};
     requireRoundTrip(selection, selectionFromJson);
 
@@ -405,6 +410,48 @@ TEST_CASE("Remote projections expose only allow-listed state",
     api.transport_.playing = true;
     api.transport_.positionBeats = 6.0;
     REQUIRE(makeTransportDto(api) == TransportDto{true, false, false, 6.0});
+}
+
+TEST_CASE("devices.catalog lists addable devices without their file locations",
+          "[remote-api][contract][projection]") {
+    const ScopedMessageThreadAssertionDisabler threadAssertionGuard;
+    magda::test::MockMagdaApi api;
+
+    api.devices_.catalog = {{"4osc", "4OSC", "Tracktion", "Synth", "Four oscillator synth",
+                             PluginFormat::Internal, DeviceType::Instrument, true},
+                            {"VST3-Reverb-1a2b3c4d-5e6f7a8b", "Reverb", "Acme", "Reverb",
+                             "Plate reverb", PluginFormat::VST3, DeviceType::Effect, false}};
+
+    const auto* operation = OperationRegistry::instance().find("devices.catalog");
+    REQUIRE(operation != nullptr);
+    REQUIRE(operation->access == OperationAccess::Read);
+    REQUIRE_FALSE(operation->transportScoped);
+
+    const auto result = operation->handler(api, juce::var(new juce::DynamicObject()), {});
+    REQUIRE_FALSE(result.failed());
+
+    // The output has to satisfy the schema the registry publishes, or a client
+    // validating against `system.describe` would reject a legitimate response.
+    REQUIRE(validateJson(result.value, operation->outputSchema).empty());
+
+    const auto* entries = result.value.getArray();
+    REQUIRE(entries != nullptr);
+    REQUIRE(entries->size() == 2);
+    REQUIRE((*entries)[0]["catalogId"].toString() == "4osc");
+    REQUIRE((*entries)[0]["format"].toString() == "internal");
+    REQUIRE((*entries)[0]["type"].toString() == "instrument");
+    REQUIRE(static_cast<bool>((*entries)[0]["instrument"]));
+
+    // The allow-list, asserted as a set rather than as an absence: what could
+    // regress here is a field being *added*, and naming every excluded field is
+    // a list nobody would keep current. An external plugin is addressed by its
+    // scanned identifier, so nothing on this entry is a filesystem path.
+    REQUIRE((*entries)[1]["catalogId"].toString() == "VST3-Reverb-1a2b3c4d-5e6f7a8b");
+    std::set<juce::String> fields;
+    for (const auto& property : (*entries)[1].getDynamicObject()->getProperties())
+        fields.insert(property.name.toString());
+    REQUIRE(fields == std::set<juce::String>{"catalogId", "name", "manufacturer", "category",
+                                             "description", "format", "type", "instrument"});
 }
 
 TEST_CASE("devices.list addresses colliding fx and post-fx device ids",

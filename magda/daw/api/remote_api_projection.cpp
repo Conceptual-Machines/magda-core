@@ -9,6 +9,7 @@
 #include "../project/ProjectInfo.hpp"
 #include "automation_api.hpp"
 #include "clip_api.hpp"
+#include "device_api.hpp"
 #include "magda_api.hpp"
 #include "project_api.hpp"
 #include "remote_api.hpp"
@@ -322,6 +323,19 @@ DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks) {
         // mixerAnalysisElements are session-only UI state and are deliberately excluded.
     }
     return graph;
+}
+
+DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry) {
+    DeviceCatalogEntryDto dto;
+    dto.catalogId = entry.catalogId;
+    dto.name = entry.name;
+    dto.manufacturer = entry.manufacturer;
+    dto.category = entry.category;
+    dto.description = entry.description;
+    dto.format = pluginFormatName(entry.format);
+    dto.type = deviceTypeName(entry.type);
+    dto.instrument = entry.isInstrument;
+    return dto;
 }
 
 SelectionDto makeSelectionDto(MagdaApi& api) {

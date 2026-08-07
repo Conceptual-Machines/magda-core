@@ -327,6 +327,26 @@ const juce::var& deviceGraphSchema() {
     return value;
 }
 
+const juce::var& deviceCatalogEntrySchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "catalogId":{"type":"string"},
+            "name":{"type":"string"},
+            "manufacturer":{"type":"string"},
+            "category":{"type":"string"},
+            "description":{"type":"string"},
+            "format":{"type":"string","enum":["vst3","au","lv2","internal"]},
+            "type":{"type":"string","enum":["instrument","effect","midi","analysis"]},
+            "instrument":{"type":"boolean"}
+        },
+        "required":["catalogId","name","manufacturer","category","description","format","type",
+                    "instrument"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
 const juce::var& selectionSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
@@ -838,6 +858,37 @@ std::vector<ValidationIssue> validateJson(const juce::var& value, const juce::va
     return issues;
 }
 
+std::optional<juce::int64> jsonInteger(const juce::var& value, juce::int64 lowest,
+                                       juce::int64 highest) {
+    juce::int64 result = 0;
+
+    if (value.isInt() || value.isInt64()) {
+        result = static_cast<juce::int64>(value);
+    } else if (value.isDouble()) {
+        const auto number = static_cast<double>(value);
+        if (!std::isfinite(number) || number != std::floor(number))
+            return std::nullopt;
+
+        // Establish that the value fits an int64 at all before converting, and
+        // do it against 2^63 exclusive rather than (double)INT64_MAX. That cast
+        // rounds *up* to exactly 2^63, so comparing against it lets 2^63 itself
+        // through as "not greater" and straight into the conversion it was meant
+        // to prevent. The negative bound needs no such care: -2^63 is exactly
+        // representable and is a valid int64.
+        constexpr double twoPow63 = 9223372036854775808.0;
+        if (number >= twoPow63 || number < -twoPow63)
+            return std::nullopt;
+
+        result = static_cast<juce::int64>(number);
+    } else {
+        return std::nullopt;
+    }
+
+    if (result < lowest || result > highest)
+        return std::nullopt;
+    return result;
+}
+
 std::optional<Error> validateOperationInput(const OperationDescriptor& operation,
                                             const juce::var& input) {
     auto issues = validateJson(input, operation.inputSchema);
@@ -975,6 +1026,19 @@ juce::var toJson(const DeviceGraphDto& dto) {
     object->setProperty("devices", devices);
     object->setProperty("racks", racks);
     object->setProperty("chains", chains);
+    return object;
+}
+
+juce::var toJson(const DeviceCatalogEntryDto& dto) {
+    auto object = new juce::DynamicObject();
+    object->setProperty("catalogId", dto.catalogId);
+    object->setProperty("name", dto.name);
+    object->setProperty("manufacturer", dto.manufacturer);
+    object->setProperty("category", dto.category);
+    object->setProperty("description", dto.description);
+    object->setProperty("format", dto.format);
+    object->setProperty("type", dto.type);
+    object->setProperty("instrument", dto.instrument);
     return object;
 }
 
@@ -1224,6 +1288,22 @@ std::optional<DeviceGraphDto> deviceGraphFromJson(const juce::var& json, Error& 
     return dto;
 }
 
+std::optional<DeviceCatalogEntryDto> deviceCatalogEntryFromJson(const juce::var& json,
+                                                                Error& error) {
+    if (!prepareDecode(json, deviceCatalogEntrySchema(), error))
+        return std::nullopt;
+    DeviceCatalogEntryDto dto;
+    dto.catalogId = json["catalogId"].toString();
+    dto.name = json["name"].toString();
+    dto.manufacturer = json["manufacturer"].toString();
+    dto.category = json["category"].toString();
+    dto.description = json["description"].toString();
+    dto.format = json["format"].toString();
+    dto.type = json["type"].toString();
+    dto.instrument = static_cast<bool>(json["instrument"]);
+    return dto;
+}
+
 std::optional<SelectionDto> selectionFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, selectionSchema(), error))
         return std::nullopt;
@@ -1435,6 +1515,11 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"),
         deviceGraphSchema());
+    // The kinds a client may add, as opposed to devices.list's instances. Read
+    // rather than write, and answered from the same catalogue `addDevice` takes
+    // its `catalogId` from — so what this lists is exactly what can be asked for.
+    add("devices.catalog", "List devices that can be added, by catalogue id", OperationAccess::Read,
+        &handlers::devicesCatalog, emptyObjectSchema(), arraySchema(deviceCatalogEntrySchema()));
     add("racks.create", "Create a top-level rack", OperationAccess::Write, &handlers::racksCreate,
         operationInputSchema(R"json({
             "type":"object",

@@ -8,6 +8,7 @@
 
 #include "MockMagdaApi.hpp"
 #include "magda/daw/api/remote_api_host.hpp"
+#include "magda/daw/api/remote_service.hpp"
 #include "magda/daw/core/Config.hpp"
 
 #if !JUCE_WINDOWS
@@ -32,18 +33,22 @@ struct ScopedRemoteApiConfig {
         auto& config = Config::getInstance();
         wasEnabled_ = config.getRemoteApiEnabled();
         previousPort_ = config.getRemoteApiPort();
+        previousMcpPort_ = config.getRemoteApiMcpPort();
         config.setRemoteApiEnabled(enabled);
         config.setRemoteApiPort(0);
+        config.setRemoteApiMcpPort(0);
     }
     ~ScopedRemoteApiConfig() {
         auto& config = Config::getInstance();
         config.setRemoteApiEnabled(wasEnabled_);
         config.setRemoteApiPort(previousPort_);
+        config.setRemoteApiMcpPort(previousMcpPort_);
     }
 
   private:
     bool wasEnabled_ = false;
     int previousPort_ = 0;
+    int previousMcpPort_ = 0;
 };
 
 juce::var readTokenFile(const juce::File& file) {
@@ -205,6 +210,178 @@ TEST_CASE("Starting publishes a token a local client can use", "[remote][host][a
         httplib::ws::WebSocketClient client(endpoint, {{"Authorization", "Bearer not-the-token"}});
         REQUIRE_FALSE(client.connect());
     }
+}
+
+TEST_CASE("Turning the remote API off and on again leaves it working",
+          "[remote][host][lifecycle]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+    const auto firstPort = host.boundPort();
+    REQUIRE(firstPort > 0);
+
+    // What the settings toggle does. `stop()` would also shut the dispatcher
+    // down, and that is one-way: the listeners would come back up around a
+    // service whose execution state has been retired, so every operation
+    // through them would answer `cancelled` and every subscription would fail
+    // to register — a server that looks healthy and does nothing.
+    host.stopListening();
+    REQUIRE_FALSE(host.isRunning());
+    REQUIRE(host.boundPort() == 0);
+    REQUIRE(host.mcpPort() == 0);
+    REQUIRE_FALSE(host.tokenFile().existsAsFile());
+
+    REQUIRE(host.start());
+    REQUIRE(host.isRunning());
+    REQUIRE(host.boundPort() > 0);
+    REQUIRE(host.tokenFile().existsAsFile());
+
+    // The dispatcher still executes, which is the whole point of the
+    // distinction.
+    REQUIRE_FALSE(host.service().isShutdown());
+    const auto response = host.service().dispatchSync(
+        "project.get", juce::var(new juce::DynamicObject()), RequestContext{});
+    REQUIRE(response.ok);
+
+    // And a fresh credential, because the old one was withdrawn.
+    const auto token = readTokenFile(host.tokenFile())["token"].toString();
+    REQUIRE(token.length() == 64);
+}
+
+TEST_CASE("Restarting the listeners voids cached request identities", "[remote][host][lifecycle]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    api.project_.info.tempo = 120.0;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+
+    // Driven through real sockets, because the identity under test is the one
+    // the transport builds. A hand-written context would assert whatever shape
+    // the test happened to choose, which is exactly the thing that changed.
+    const auto setTempo = [](const juce::String& endpoint, const juce::String& token,
+                             double tempo) {
+        httplib::ws::WebSocketClient client(endpoint.toStdString(),
+                                            {{"Authorization", "Bearer " + token.toStdString()}});
+        REQUIRE(client.connect());
+        auto* params = new juce::DynamicObject();
+        params->setProperty("tempo", tempo);
+        auto* request = new juce::DynamicObject();
+        request->setProperty("jsonrpc", "2.0");
+        // The same JSON-RPC id every time — a client that counts from 1, which
+        // is every client.
+        request->setProperty("id", 1);
+        request->setProperty("method", "project.setTempo");
+        request->setProperty("params", juce::var(params));
+        REQUIRE(client.send(juce::JSON::toString(juce::var(request), true).toStdString()));
+        std::string reply;
+        REQUIRE(client.read(reply) != httplib::ws::ReadResult::Fail);
+    };
+
+    const auto endpointOf = [](const RemoteApiHost& h) {
+        return "ws://127.0.0.1:" + juce::String(h.boundPort()) + "/rpc";
+    };
+
+    setTempo(endpointOf(host), readTokenFile(host.tokenFile())["token"].toString(), 140.0);
+    REQUIRE(api.project_.info.tempo == 140.0);
+
+    host.stopListening();
+    REQUIRE(host.start());
+
+    // A new listener, a new client, and the same JSON-RPC id 1 on the same
+    // connection id 1. Without a generation in the identity this key would hit
+    // the entry cached above and replay it, leaving the tempo at 140 for a
+    // write that was never executed.
+    setTempo(endpointOf(host), readTokenFile(host.tokenFile())["token"].toString(), 90.0);
+    REQUIRE(api.project_.info.tempo == 90.0);
+}
+
+TEST_CASE("A client-supplied idempotency key still dedupes across a restart",
+          "[remote][host][lifecycle]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    api.project_.info.tempo = 120.0;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+
+    // MCP keys are UUIDs the client chooses, and they are *meant* to outlive a
+    // restart: that is what makes a retry safe when the endpoint went away
+    // mid-request. Clearing the shared cache on restart would have broken this
+    // — the retry would apply the write a second time.
+    RequestContext context;
+    context.clientId = "mcp:stateless";
+    context.requestId = "mcp::0f7c1a2b-3d4e-5f60-8a9b-cbd0e1f23456";
+
+    auto* first = new juce::DynamicObject();
+    first->setProperty("tempo", 140.0);
+    REQUIRE(host.service().dispatchSync("project.setTempo", juce::var(first), context).ok);
+    REQUIRE(api.project_.info.tempo == 140.0);
+
+    host.stopListening();
+    REQUIRE(host.start());
+
+    auto* retry = new juce::DynamicObject();
+    retry->setProperty("tempo", 90.0);
+    const auto replayed =
+        host.service().dispatchSync("project.setTempo", juce::var(retry), context);
+    REQUIRE(replayed.ok);
+    REQUIRE(api.project_.info.tempo == 140.0);
+}
+
+TEST_CASE("The record names both transports, and both take the same token",
+          "[remote][host][auth][mcp]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+    REQUIRE(host.mcpPort() > 0);
+    // Two listeners, so two ports. Sharing one would mean sharing a resource
+    // budget between a WebSocket connection cap and an SSE stream cap, which are
+    // not the same thing.
+    REQUIRE(host.mcpPort() != host.boundPort());
+
+    const auto published = readTokenFile(host.tokenFile());
+    const auto token = published["token"].toString();
+    REQUIRE(static_cast<int>(published["mcpPort"]) == host.mcpPort());
+    REQUIRE(published["mcpUrl"].toString() ==
+            "http://127.0.0.1:" + juce::String(host.mcpPort()) + "/mcp");
+    // The WebSocket entry is still there: a client picks the transport it wants
+    // out of one record rather than needing to know which file to read.
+    REQUIRE(published["url"].toString().startsWith("ws://"));
+
+    httplib::Client client("http://127.0.0.1:" + std::to_string(host.mcpPort()));
+
+    // The token authenticates the user at the keyboard, not a protocol, so the
+    // one credential opens both transports.
+    const httplib::Headers headers = {{"Authorization", "Bearer " + token.toStdString()},
+                                      {"MCP-Protocol-Version", "2026-07-28"},
+                                      {"Mcp-Method", "server/discover"}};
+    auto discovered =
+        client.Post("/mcp", headers,
+                    R"({"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{)"
+                    R"("io.modelcontextprotocol/protocolVersion":"2026-07-28",)"
+                    R"("io.modelcontextprotocol/clientCapabilities":{}}}})",
+                    "application/json");
+    REQUIRE(discovered);
+    REQUIRE(discovered->status == 200);
+
+    auto refused =
+        client.Post("/mcp", {{"Authorization", "Bearer not-the-token"}}, "{}", "application/json");
+    REQUIRE(refused);
+    REQUIRE(refused->status == 401);
+
+    // Both listeners go down together, and the record goes with them.
+    host.stop();
+    REQUIRE(host.mcpPort() == 0);
+    REQUIRE_FALSE(host.tokenFile().existsAsFile());
 }
 
 #if !JUCE_WINDOWS
