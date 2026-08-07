@@ -40,10 +40,33 @@ class SseParser {
         }
 
         pending_ += chunk;
+
+        // The incomplete frame is bounded too. Capping only the raw copy left
+        // this one unlimited, and it is fed by the same bytes: a peer that never
+        // sends a frame separator grows it forever, which is the identical leak
+        // one buffer further along.
+        //
+        // Past the cap no frame can complete within it, so the partial is
+        // discarded and the parser resynchronises: bytes are dropped until the
+        // next separator, and the segment that ends there is dropped too, since
+        // it is the tail of something already truncated. A message that large is
+        // not one of ours — these frames are single JSON-RPC notifications.
+        if (pending_.size() > kMaxFrameBytes) {
+            pending_.clear();
+            pending_.shrink_to_fit();
+            resynchronising_ = true;
+        }
+
         for (auto split = pending_.find("\n\n"); split != std::string::npos;
              split = pending_.find("\n\n")) {
             const auto frame = pending_.substr(0, split);
             pending_.erase(0, split + 2);
+
+            if (resynchronising_) {
+                resynchronising_ = false;
+                continue;
+            }
+
             // A line beginning with a colon is a keep-alive comment, which the
             // SSE grammar says to ignore.
             if (frame.rfind("data: ", 0) == 0) {
@@ -64,13 +87,17 @@ class SseParser {
         return raw_;
     }
 
-    /// Bytes currently retained against the possibility that this response is
-    /// an error body rather than a stream. Exposed so the bound is assertable:
-    /// it is the difference between a subscription that costs nothing to keep
-    /// open and one that grows for the life of the process.
+    /**
+     * @brief Every byte this parser is holding, across both buffers.
+     *
+     * Deliberately the total. An earlier version reported only the raw copy,
+     * and a test asserting on it passed while the incomplete-frame buffer grew
+     * to megabytes alongside — the accessor measured the buffer that had been
+     * fixed rather than the memory the object was using.
+     */
     std::size_t retainedBytes() const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return raw_.size();
+        return raw_.size() + pending_.size();
     }
 
   private:
@@ -78,8 +105,13 @@ class SseParser {
     /// what a stream would reach.
     static constexpr std::size_t kMaxRetainedRaw = 64 * 1024;
 
+    /// A frame here is one JSON-RPC notification. This is orders of magnitude
+    /// above the largest of those and still bounded.
+    static constexpr std::size_t kMaxFrameBytes = 1024 * 1024;
+
     mutable std::mutex mutex_;
     bool retainRaw_ = true;
+    bool resynchronising_ = false;
     std::string raw_;
     std::string pending_;
 };

@@ -62,6 +62,26 @@ constexpr const char* kEventMethod = "subscriptions.event";
  */
 constexpr time_t kPingIntervalSeconds = 1;
 
+/**
+ * @brief Distinguishes one listener's connection ids from the next one's.
+ *
+ * Connection ids restart at 1 with every server instance, and the dispatcher's
+ * idempotency keys are scoped by them. Without a generation, the first client
+ * to connect after the remote API is switched off and on again is `ws:1` and
+ * can collide with a key left by an entirely different client — returning that
+ * cached response for a write that never executed.
+ *
+ * A counter rather than clearing the cache on restart. Clearing races with a
+ * write already queued on the message thread, which repopulates the stale key
+ * after the clear; and the cache is shared with MCP, whose keys are
+ * client-supplied UUIDs that are *meant* to survive a restart, so clearing
+ * would let an MCP retry apply twice. Making the identity unique costs nothing
+ * and has neither problem.
+ *
+ * Process-lifetime is sufficient: the cache does not outlive the process.
+ */
+std::atomic<juce::uint64> nextListenerGeneration{1};
+
 // JSON-RPC 2.0 reserves -32768..-32000; -32099..-32000 is the implementation-
 // defined slice, which is where MAGDA's own failure modes land.
 constexpr int kParseError = -32700;
@@ -427,6 +447,8 @@ struct RemoteWebSocketServer::Impl {
     std::atomic<bool> running{false};
     std::atomic<int> port{0};
     std::atomic<int> nextConnectionId{1};
+    /// Fixed for this listener's lifetime; see nextListenerGeneration.
+    const juce::uint64 listenerGeneration = nextListenerGeneration.fetch_add(1);
 
     mutable std::mutex liveMutex;
     std::vector<std::shared_ptr<Connection>> live;
@@ -603,7 +625,8 @@ struct RemoteWebSocketServer::Impl {
         }
 
         RequestContext context;
-        context.clientId = "ws:" + juce::String(connection->id);
+        context.clientId =
+            "ws:" + juce::String(listenerGeneration) + ":" + juce::String(connection->id);
         // Scoped by connection so two clients reusing id 1 do not collide in the
         // dispatcher's idempotency cache, and typed so that one client's numeric
         // 1 and string "1" — different requests under JSON-RPC — cannot either.

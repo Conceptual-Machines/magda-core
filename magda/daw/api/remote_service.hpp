@@ -172,22 +172,6 @@ class RemoteApiService {
     /// Idempotency cache capacity, in completed write responses.
     void setIdempotencyCacheCapacity(std::size_t capacity);
 
-    /**
-     * @brief Forget every cached write response.
-     *
-     * Idempotency keys are scoped by the transport's own name for a client —
-     * `ws:1`, and so on — which is only unique for as long as that transport
-     * lives. Replacing the listeners restarts those counters, so a new
-     * connection becomes `ws:1` again and its first request can collide with a
-     * key left by an entirely different client. The cached response would then
-     * be returned for a write that never executed.
-     *
-     * Anything that replaces a listener must call this. It is not the same as
-     * `projectReplaced()`, which also bumps the revision and cancels queued
-     * work: here the project is untouched and only the identities are void.
-     */
-    void clearIdempotencyCache();
-
   private:
     struct CachedResponse {
         juce::String key;

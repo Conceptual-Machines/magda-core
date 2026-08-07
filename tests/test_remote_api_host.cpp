@@ -260,35 +260,78 @@ TEST_CASE("Restarting the listeners voids cached request identities", "[remote][
     RemoteApiHost host(api);
     REQUIRE(host.start());
 
-    // An idempotency key is scoped by the transport's name for a client, and a
-    // WebSocket names them by connection id starting at 1. A fresh server
-    // restarts that counter, so the first client to reconnect is `ws:1` again —
-    // and without this its first write would collide with whatever the previous
-    // `ws:1` cached, returning that response instead of executing.
-    RequestContext context;
-    context.clientId = "ws:1";
-    context.requestId = "ws:1:n:1";
+    // Driven through real sockets, because the identity under test is the one
+    // the transport builds. A hand-written context would assert whatever shape
+    // the test happened to choose, which is exactly the thing that changed.
+    const auto setTempo = [](const juce::String& endpoint, const juce::String& token,
+                             double tempo) {
+        httplib::ws::WebSocketClient client(endpoint.toStdString(),
+                                            {{"Authorization", "Bearer " + token.toStdString()}});
+        REQUIRE(client.connect());
+        auto* params = new juce::DynamicObject();
+        params->setProperty("tempo", tempo);
+        auto* request = new juce::DynamicObject();
+        request->setProperty("jsonrpc", "2.0");
+        // The same JSON-RPC id every time — a client that counts from 1, which
+        // is every client.
+        request->setProperty("id", 1);
+        request->setProperty("method", "project.setTempo");
+        request->setProperty("params", juce::var(params));
+        REQUIRE(client.send(juce::JSON::toString(juce::var(request), true).toStdString()));
+        std::string reply;
+        REQUIRE(client.read(reply) != httplib::ws::ReadResult::Fail);
+    };
 
-    auto* tempo = new juce::DynamicObject();
-    tempo->setProperty("tempo", 140.0);
-    REQUIRE(host.service().dispatchSync("project.setTempo", juce::var(tempo), context).ok);
-    REQUIRE(api.project_.info.tempo == 140.0);
+    const auto endpointOf = [](const RemoteApiHost& h) {
+        return "ws://127.0.0.1:" + juce::String(h.boundPort()) + "/rpc";
+    };
 
-    // Same key, still running: replayed rather than re-executed. That is the
-    // behaviour the cache exists for, and what makes the collision dangerous.
-    auto* ignored = new juce::DynamicObject();
-    ignored->setProperty("tempo", 90.0);
-    REQUIRE(host.service().dispatchSync("project.setTempo", juce::var(ignored), context).ok);
+    setTempo(endpointOf(host), readTokenFile(host.tokenFile())["token"].toString(), 140.0);
     REQUIRE(api.project_.info.tempo == 140.0);
 
     host.stopListening();
     REQUIRE(host.start());
 
-    // After a restart the same key must be a new request, and must execute.
-    auto* afterRestart = new juce::DynamicObject();
-    afterRestart->setProperty("tempo", 90.0);
-    REQUIRE(host.service().dispatchSync("project.setTempo", juce::var(afterRestart), context).ok);
+    // A new listener, a new client, and the same JSON-RPC id 1 on the same
+    // connection id 1. Without a generation in the identity this key would hit
+    // the entry cached above and replay it, leaving the tempo at 140 for a
+    // write that was never executed.
+    setTempo(endpointOf(host), readTokenFile(host.tokenFile())["token"].toString(), 90.0);
     REQUIRE(api.project_.info.tempo == 90.0);
+}
+
+TEST_CASE("A client-supplied idempotency key still dedupes across a restart",
+          "[remote][host][lifecycle]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    api.project_.info.tempo = 120.0;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+
+    // MCP keys are UUIDs the client chooses, and they are *meant* to outlive a
+    // restart: that is what makes a retry safe when the endpoint went away
+    // mid-request. Clearing the shared cache on restart would have broken this
+    // — the retry would apply the write a second time.
+    RequestContext context;
+    context.clientId = "mcp:stateless";
+    context.requestId = "mcp::0f7c1a2b-3d4e-5f60-8a9b-cbd0e1f23456";
+
+    auto* first = new juce::DynamicObject();
+    first->setProperty("tempo", 140.0);
+    REQUIRE(host.service().dispatchSync("project.setTempo", juce::var(first), context).ok);
+    REQUIRE(api.project_.info.tempo == 140.0);
+
+    host.stopListening();
+    REQUIRE(host.start());
+
+    auto* retry = new juce::DynamicObject();
+    retry->setProperty("tempo", 90.0);
+    const auto replayed =
+        host.service().dispatchSync("project.setTempo", juce::var(retry), context);
+    REQUIRE(replayed.ok);
+    REQUIRE(api.project_.info.tempo == 140.0);
 }
 
 TEST_CASE("The record names both transports, and both take the same token",

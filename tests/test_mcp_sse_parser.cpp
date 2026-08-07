@@ -82,10 +82,31 @@ TEST_CASE("A response that never frames is retained, but bounded", "[mcp][sse]")
     for (int i = 0; i < 64; ++i)
         parser.consume(junk, [](const std::string&) {});
 
-    REQUIRE(parser.retainedBytes() <= 64 * 1024);
+    // Both buffers, not just the raw copy. The first version of this assertion
+    // read only `raw_` and passed while the incomplete-frame buffer held four
+    // megabytes of the same junk beside it.
+    REQUIRE(parser.retainedBytes() <= 2 * 1024 * 1024);
     // Small error bodies still survive intact, which is the whole point of
     // retaining anything.
     SseParser small;
     small.consume("{\"error\":{\"code\":-32600}}", [](const std::string&) {});
     REQUIRE(small.raw() == "{\"error\":{\"code\":-32600}}");
+}
+
+TEST_CASE("Framing resynchronises after an oversized partial", "[mcp][sse]") {
+    SseParser parser;
+
+    // A frame that never terminates. Past the cap it cannot complete, so the
+    // partial is dropped rather than held — and the truncated tail that follows
+    // must not be emitted as though it were a message.
+    const std::string unterminated(1024 * 1024 + 4096, 'x');
+    REQUIRE(feed(parser, "data: " + unterminated).empty());
+    REQUIRE(parser.retainedBytes() <= 2 * 1024 * 1024);
+
+    // The separator that ends the garbage closes it out and nothing is emitted.
+    REQUIRE(feed(parser, "tail\n\n").empty());
+
+    // The stream is usable again straight afterwards.
+    REQUIRE(feed(parser, "data: {\"after\":true}\n\n") ==
+            std::vector<std::string>{"{\"after\":true}"});
 }
