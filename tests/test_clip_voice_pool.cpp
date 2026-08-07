@@ -7,6 +7,7 @@
 
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipVoicePool.hpp"
+#include "core/TimeStretchModes.hpp"
 
 /**
  * Which clips have a reader standing by, and where it is pointed (#2035).
@@ -724,4 +725,118 @@ TEST_CASE("A pool with nothing published provisions nothing", "[engine][clip][po
 
     for (auto sample = 0; sample < kBlockSize; ++sample)
         REQUIRE(output.getSample(0, sample) == Catch::Approx(0.0f).margin(1e-4));
+}
+
+TEST_CASE("A stretched clip is provisioned with a stretcher of its own",
+          "[engine][clip][pool][stretch]") {
+    // Made here rather than in a voice, because building one allocates and
+    // configuring one needs the event: this thread may do both and the callback
+    // may do neither (clip/ClipStretcher.hpp).
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    auto stretched = clipAt(1, 0.0, 4.0);
+    stretched.events.front().timeStretchMode = magda::time_stretch_mode::kSignalsmith;
+    stretched.events.front().speedRatio = 2.0;
+
+    pool.setSnapshot(snapshotOf({stretched}));
+    pool.setPosition(0.0);
+    pool.service();
+
+    const magda::engine::ClipStreamFeed::Reader published(pool.feed());
+    REQUIRE(published);
+    REQUIRE(published->entries.size() == 1);
+
+    const auto& entry = published->entries.front();
+    REQUIRE(entry.stretcher != nullptr);
+
+    // And cued behind the clip, by exactly what that stretcher asked for, so
+    // the voice's first read is one contiguous read that begins with the
+    // material priming needs.
+    CHECK(entry.preRollSamples > 0);
+}
+
+TEST_CASE("A clip at its file's own speed is provisioned without one",
+          "[engine][clip][pool][stretch]") {
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    pool.setSnapshot(snapshotOf({clipAt(1, 0.0, 4.0)}));
+    pool.setPosition(0.0);
+    pool.service();
+
+    const magda::engine::ClipStreamFeed::Reader published(pool.feed());
+    REQUIRE(published);
+    REQUIRE(published->entries.size() == 1);
+
+    CHECK(published->entries.front().stretcher == nullptr);
+    CHECK(published->entries.front().preRollSamples == 0);
+}
+
+TEST_CASE("A pitch change replaces the stretcher and keeps the file open",
+          "[engine][clip][pool][stretch]") {
+    // A stretcher is state and a warm-up, both of which a pitch change
+    // invalidates. The file is neither, and reopening it would cost a seek for
+    // an edit that did not move anything.
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    auto stretched = clipAt(1, 0.0, 4.0);
+    stretched.events.front().timeStretchMode = magda::time_stretch_mode::kSignalsmith;
+    stretched.events.front().speedRatio = 2.0;
+
+    pool.setSnapshot(snapshotOf({stretched}));
+    pool.setPosition(0.0);
+    pool.service();
+
+    std::shared_ptr<magda::engine::PrefetchStream> stream;
+    std::shared_ptr<magda::engine::ClipStretcher> stretcher;
+    {
+        const magda::engine::ClipStreamFeed::Reader published(pool.feed());
+        REQUIRE(published);
+        REQUIRE(published->entries.size() == 1);
+        stream = published->entries.front().stream;
+        stretcher = published->entries.front().stretcher;
+    }
+
+    stretched.events.front().pitchChange = 5.0f;
+    pool.setSnapshot(snapshotOf({stretched}));
+    pool.service();
+
+    const magda::engine::ClipStreamFeed::Reader published(pool.feed());
+    REQUIRE(published);
+    REQUIRE(published->entries.size() == 1);
+
+    CHECK(published->entries.front().stream == stream);
+    CHECK(published->entries.front().stretcher != stretcher);
+}
+
+TEST_CASE("A round over a stretched clip that is playing does not swap a table",
+          "[engine][clip][pool][stretch]") {
+    // The cue a stretched reader carries is worked out from where the clip
+    // begins rather than from where the transport is, so a clip the cursor is
+    // moving through goes on looking like the same reader round after round.
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    auto stretched = clipAt(1, 0.0, 4.0);
+    stretched.events.front().timeStretchMode = magda::time_stretch_mode::kSignalsmith;
+    stretched.events.front().speedRatio = 2.0;
+
+    pool.setSnapshot(snapshotOf({stretched}));
+    pool.setPosition(0.0);
+    pool.service();
+
+    REQUIRE(pool.tablesPublished() == 1);
+
+    pool.setPosition(0.5);
+    pool.service();
+    pool.setPosition(1.0);
+    pool.service();
+
+    CHECK(pool.tablesPublished() == 1);
 }

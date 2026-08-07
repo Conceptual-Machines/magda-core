@@ -130,6 +130,28 @@ struct BlockInfo {
      * edges of a region, and a region that runs to the end of the block ends at
      * the sample after the last one, the way every half-open range does.
      */
+    /**
+     * @brief The beat face of a moment inside this block.
+     *
+     * The two faces are two views of one stretch of timeline, so a moment given
+     * in one has an answer in the other, and this is the conversion that does
+     * not need a tempo map: the ends are known in both, and a block is short
+     * enough that the curve between them is a straight line to well under a
+     * sample.
+     *
+     * What asks is a clip whose material is consumed against beats rather than
+     * against seconds, which is what auto tempo is (clip/EventPlacement.hpp).
+     * The window such a clip plays over is worked out in seconds, because that
+     * is what spans and fades are in, and then has to be asked about in beats.
+     */
+    double beatAtTime(double seconds) const {
+        if (endSeconds <= startSeconds)
+            return startBeat;
+
+        const auto position = (seconds - startSeconds) / (endSeconds - startSeconds);
+        return startBeat + position * (endBeat - startBeat);
+    }
+
     int sampleForTime(double seconds) const {
         if (numSamples <= 0)
             return 0;

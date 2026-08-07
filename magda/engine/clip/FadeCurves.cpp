@@ -32,6 +32,32 @@ float fadeGain(FadeCurve curve, float alpha) {
     return alpha;
 }
 
+double fadeRampPosition(FadeCurve curve, double alpha, bool rising) {
+    alpha = std::clamp(alpha, 0.0, 1.0);
+
+    const auto pi = static_cast<double>(kPi);
+
+    switch (curve) {
+        case FadeCurve::Convex:
+            return rising ? (-2.0 * std::cos((pi * alpha) / 2.0)) / pi + 1.0
+                          : 1.0 - ((-2.0 * std::cos((pi * (alpha - 1.0)) / 2.0)) / pi + 1.0);
+
+        case FadeCurve::Concave:
+            return rising
+                       ? alpha - (2.0 * std::sin((pi * alpha) / 2.0)) / pi + (2.0 / pi)
+                       : ((2.0 * std::sin((pi * (alpha + 1.0)) / 2.0)) / pi) + alpha - (2.0 / pi);
+
+        case FadeCurve::SCurve:
+            return rising ? (alpha / 2.0) - (std::sin(pi * alpha) / (2.0 * pi)) + 0.5
+                          : std::sin(pi * alpha) / (2.0 * pi) + (alpha / 2.0);
+
+        case FadeCurve::Linear:
+            break;
+    }
+
+    return rising ? (alpha * alpha * 0.5) + 0.5 : ((-(alpha - 1.0) * (alpha - 1.0)) * 0.5) + 0.5;
+}
+
 void applyStartDeClick(juce::dsp::AudioBlock<float> audio, int fadeSamples) {
     const auto length = std::min(static_cast<std::size_t>(std::max(0, fadeSamples)),
                                  static_cast<std::size_t>(audio.getNumSamples()));

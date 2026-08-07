@@ -44,6 +44,25 @@
 namespace magda::engine {
 
 /**
+ * @brief Cubic Lagrange through four samples, @p t of the way from @p second to
+ *        @p third.
+ *
+ * Here rather than inside the rate converter because there is more than one
+ * thing that lands between samples: a file recorded at another rate is one, and
+ * a clip played at a speed that is not its own is the other (ClipStretcher.hpp).
+ * Two curves would mean a file at 48 kHz and a clip at half speed were resampled
+ * to different qualities for no reason a listener could name.
+ */
+inline float cubicLagrange(float first, float second, float third, float fourth, double t) {
+    const auto a = -t * (t - 1.0) * (t - 2.0) / 6.0;
+    const auto b = (t + 1.0) * (t - 1.0) * (t - 2.0) / 2.0;
+    const auto c = -(t + 1.0) * t * (t - 2.0) / 2.0;
+    const auto d = (t + 1.0) * t * (t - 1.0) / 6.0;
+
+    return static_cast<float>(a * first + b * second + c * third + d * fourth);
+}
+
+/**
  * @brief What an event asks of its file, beyond the samples themselves.
  *
  * In the source's own samples at the source's own rate, which is how the model

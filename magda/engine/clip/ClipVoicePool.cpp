@@ -1,6 +1,7 @@
 #include "clip/ClipVoicePool.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 #include <vector>
 
@@ -18,10 +19,32 @@ bool reachesInto(const SnapshotSpan& span, double windowStart, double windowEnd)
     return span.startSeconds < windowEnd && span.endSeconds > windowStart;
 }
 
+/**
+ * @brief The beat face of a moment inside @p event's span.
+ *
+ * The pool works in seconds, because that is what the transport hands it, and an
+ * auto tempo event's position is a question about beats (EventPlacement.hpp).
+ * Both faces of the span are already resolved, so a moment inside it can be
+ * placed on the beat axis without a tempo map: linear between the ends, which is
+ * exact at the ends themselves and that is the case that has to be exact. A cue
+ * for a clip that has not started is worked out at its own first sample, and a
+ * cue for one the transport is already inside is corrected by the first read
+ * either way.
+ */
+double beatNear(const AudioEventPlayback& event, double seconds) {
+    const auto span = event.span.lengthSeconds();
+    if (!(span > 0.0))
+        return event.span.startBeat;
+
+    const auto through = (seconds - event.span.startSeconds) / span;
+    return event.span.startBeat + through * event.span.lengthBeats();
+}
+
 /// One entry that wants a stream, and what decides whether it gets one.
 struct Candidate {
     ClipId clipId = INVALID_CLIP_ID;
     EventId eventId = INVALID_EVENT_ID;
+    const AudioClipPlayback* clip = nullptr;
     const AudioEventPlayback* event = nullptr;
     double startSeconds = 0.0;
     double endSeconds = 0.0;
@@ -188,24 +211,52 @@ std::size_t ClipVoicePool::streamCount() const {
     return streams_.size();
 }
 
-ClipVoicePool::Reader ClipVoicePool::open(const AudioEventPlayback& event, double cueSeconds) {
-    // What this event asks of its file, and where its first sample sits in the
-    // answer. Both from EventPlacement.hpp, which is also where the voice asks:
-    // a reversed event is read in a mirrored file's coordinates, and a reader
-    // pointed by one derivation and read by another would play a clip's
-    // material from somewhere neither of them named.
-    const auto how = sourceReadFor(event, context_.sampleRate);
-    const auto placement = placementFor(event, context_.sampleRate);
+std::int64_t ClipVoicePool::cueFor(const AudioClipPlayback& clip, const AudioEventPlayback& event,
+                                   double seconds, const Reader& reader) const {
+    const auto position =
+        readingPositionAt(clip, event, seconds, beatNear(event, seconds), context_.sampleRate);
+
+    const auto ahead = reader.stretcher != nullptr ? reader.stretcher->readAheadSamples() : 0;
+
+    return static_cast<std::int64_t>(std::llround(position)) + ahead - reader.preRoll;
+}
+
+ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
+                                          const AudioEventPlayback& event, double cueSeconds) {
+    // What this event asks of its file, and how what comes back is turned into
+    // playback. Both from EventPlacement.hpp, which is also where the voice
+    // asks: a reversed event is read in a mirrored file's coordinates and a
+    // stretched one starts behind itself, and a reader pointed by one derivation
+    // and read by another would play a clip's material from somewhere neither of
+    // them named.
+    Reader reader;
+    reader.path = event.filePath;
+    reader.read = sourceReadFor(event, context_.sampleRate);
+    reader.setup = stretchSetupFor(clip, event, context_);
+
+    // Made here, on the thread that is allowed to allocate, and configured for
+    // this event alone. A clip playing its file at its file's own speed gets
+    // none and pays for none, the same rule the reading chain follows.
+    reader.stretcher = makeStretcher(reader.setup);
+    if (reader.stretcher != nullptr)
+        reader.preRoll = reader.stretcher->preRollSamples(reader.setup.nominalRate);
+
+    // The event's own first sample, which is what this is compared against next
+    // round: an identity rather than a position. Where the stream is actually
+    // pointed is below and depends on where the transport is, so storing that
+    // instead would make a clip the transport is moving through look different
+    // on every round and republish a table for it every ten milliseconds.
+    reader.cueSamples = cueFor(clip, event, event.span.startSeconds, reader);
 
     auto file = files_.open(event.filePath);
     if (file == nullptr)
-        return Reader{nullptr, event.filePath, how, placement.sourceOffsetSamples};
+        return reader;
 
     // Mirrored, tiled and converted before the prefetcher ever sees it, so what
     // is prefetched is a plain forward file at the device's rate however the
     // clip is set (io/SourceReaders.hpp).
-    auto stream =
-        std::make_shared<PrefetchStream>(readThrough(std::move(file), how), context_, settings_);
+    reader.stream = std::make_shared<PrefetchStream>(readThrough(std::move(file), reader.read),
+                                                     context_, settings_);
 
     // Pointed before anything asks, and before the reader is even told the
     // stream exists. This is the whole reason the pool runs ahead of the
@@ -214,10 +265,13 @@ ClipVoicePool::Reader ClipVoicePool::open(const AudioEventPlayback& event, doubl
     // seek, because a stream nobody has read from has nothing to invalidate and
     // no callback to wait for, and every read it does before the redirect
     // landed would be a read of the wrong part of the file.
-    stream->startAt(sourceSampleAt(placement, cueSeconds, context_.sampleRate));
+    //
+    // Where playback will pick it up rather than where the event begins: a clip
+    // the transport is already standing inside is read from where the cursor is.
+    reader.stream->startAt(cueFor(clip, event, cueSeconds, reader));
 
-    reader_.add(*stream);
-    return Reader{std::move(stream), event.filePath, how, placement.sourceOffsetSamples};
+    reader_.add(*reader.stream);
+    return reader;
 }
 
 void ClipVoicePool::service() {
@@ -257,7 +311,7 @@ void ClipVoicePool::service() {
                             continue;
 
                         candidates.push_back(Candidate{
-                            clip.clipId, event.eventId, &event, event.span.startSeconds,
+                            clip.clipId, event.eventId, &clip, &event, event.span.startSeconds,
                             event.span.endSeconds, event.span.startSeconds <= windowStart});
                     }
                 }
@@ -309,25 +363,40 @@ void ClipVoicePool::service() {
                     // the reader rather than asked of it per block, so the
                     // reader has to be built again.
                     const auto how = sourceReadFor(event, context_.sampleRate);
-                    const auto placement = placementFor(event, context_.sampleRate);
+                    const auto setup = stretchSetupFor(*candidate.clip, event, context_);
 
                     if (const auto found = streams_.find(key);
                         found != streams_.end() && found->second.path == event.filePath &&
                         found->second.read == how) {
                         auto reuse = found->second;
 
-                        // The milder version: the same file, read from
-                        // somewhere else. A clip that has not started is
-                        // re-cued and loses nothing; one the transport is
-                        // already inside is left alone, because a reader that
-                        // is playing cannot be pointed elsewhere and the next
-                        // read corrects it anyway, at the cost of a seek.
-                        if (reuse.anchorSamples != placement.sourceOffsetSamples) {
-                            if (reuse.stream != nullptr && !candidate.sounding)
-                                reuse.stream->seek(sourceSampleAt(
-                                    placement, event.span.startSeconds, context_.sampleRate));
+                        // A stretch setting changed, which the file did not.
+                        // Rebuilding the whole reader for it would close a file
+                        // and pay a seek to reopen it at the same place, so only
+                        // the stretcher is replaced; it is state and a warm-up,
+                        // both of which a rate or pitch change invalidates
+                        // anyway.
+                        if (reuse.setup != setup) {
+                            reuse.setup = setup;
+                            reuse.stretcher = makeStretcher(setup);
+                            reuse.preRoll = reuse.stretcher != nullptr
+                                                ? reuse.stretcher->preRollSamples(setup.nominalRate)
+                                                : 0;
+                        }
 
-                            reuse.anchorSamples = placement.sourceOffsetSamples;
+                        // The milder version of a changed reader: the same file,
+                        // read from somewhere else. A clip that has not started
+                        // is re-cued and loses nothing; one the transport is
+                        // already inside is left alone, because a reader that is
+                        // playing cannot be pointed elsewhere and the next read
+                        // corrects it anyway, at the cost of a seek.
+                        if (const auto cue =
+                                cueFor(*candidate.clip, event, event.span.startSeconds, reuse);
+                            reuse.cueSamples != cue) {
+                            if (reuse.stream != nullptr && !candidate.sounding)
+                                reuse.stream->seek(cue);
+
+                            reuse.cueSamples = cue;
                         }
 
                         if (reuse.stream == nullptr)
@@ -342,7 +411,7 @@ void ClipVoicePool::service() {
                     // already is for one the transport is standing inside.
                     const auto cueSeconds = std::max(windowStart, event.span.startSeconds);
 
-                    auto reader = open(event, cueSeconds);
+                    auto reader = open(*candidate.clip, event, cueSeconds);
                     if (reader.stream == nullptr)
                         ++unreadable;
 
@@ -359,8 +428,9 @@ void ClipVoicePool::service() {
             table->entries.reserve(wanted.size());
             for (const auto& [key, reader] : wanted)
                 if (reader.stream != nullptr)
-                    table->entries.push_back(ClipStreamTable::Entry{key.trackId, key.clipId,
-                                                                    key.eventId, reader.stream});
+                    table->entries.push_back(
+                        ClipStreamTable::Entry{key.trackId, key.clipId, key.eventId, reader.stream,
+                                               reader.stretcher, reader.preRoll});
 
             // Published before anything is retired, and it waits for the block
             // the callback is in: after this returns, nothing the audio thread

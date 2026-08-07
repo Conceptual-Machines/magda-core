@@ -2,9 +2,10 @@
 #
 # Dark target: nothing in the app links it yet. It is built on every configure
 # so it cannot rot, and it is deliberately isolated: the C++ standard library,
-# JUCE headers and the MAGDA model layer, nothing else. No Tracktion Engine, no
-# UI, no app services. The boundary check below enforces that at configure time
-# rather than leaving it to review.
+# JUCE headers, the MAGDA model layer and a short list of vendored DSP
+# libraries it owns copies of (farbot, Signalsmith Stretch, SoundTouch). No
+# Tracktion Engine, no UI, no app services. The boundary check below enforces
+# that at configure time rather than leaving it to review.
 
 add_library(magda_engine STATIC
     clip/ClipSnapshot.cpp
@@ -12,6 +13,7 @@ add_library(magda_engine STATIC
     clip/ClipSnapshotDump.cpp
     clip/ClipAudioSource.cpp
     clip/ClipStreamFeed.cpp
+    clip/ClipStretcher.cpp
     clip/ClipVoice.cpp
     clip/ClipVoicePool.cpp
     clip/EventPlacement.cpp
@@ -22,6 +24,7 @@ add_library(magda_engine STATIC
     clip/ClipSnapshotFeed.hpp
     clip/ClipAudioSource.hpp
     clip/ClipStreamFeed.hpp
+    clip/ClipStretcher.hpp
     clip/ClipVoice.hpp
     clip/ClipVoicePool.hpp
     clip/EventPlacement.hpp
@@ -92,6 +95,17 @@ target_include_directories(magda_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 #
 # Standing rule for the engine: nothing real-time-concurrent is hand-rolled.
 target_include_directories(magda_engine PUBLIC ${CMAKE_SOURCE_DIR}/third_party/farbot/include)
+
+# The two stretch engines (#2037). Signalsmith Stretch is header-only and MIT;
+# SoundTouch is LGPL-2.1 and its own static target, which is what keeps it
+# replaceable (third_party/soundtouch/SOURCES.md). Both are vendored under
+# third_party/ rather than reached for inside the Tracktion fork, which the
+# boundary check below forbids and which is the whole point of this target.
+#
+# SYSTEM so their warnings are theirs rather than ours.
+target_include_directories(magda_engine SYSTEM PRIVATE
+    ${CMAKE_SOURCE_DIR}/third_party/signalsmith-stretch)
+target_link_libraries(magda_engine PRIVATE soundtouch)
 
 # Borrow JUCE's headers and defines without linking the modules: the model
 # headers name juce::String and juce::Colour, the executor renders into

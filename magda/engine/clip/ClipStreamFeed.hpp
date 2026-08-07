@@ -5,6 +5,7 @@
 #include <utility>
 #include <vector>
 
+#include "clip/ClipStretcher.hpp"
 #include "core/ClipTypes.hpp"
 #include "core/TypeIds.hpp"
 #include "io/PrefetchStream.hpp"
@@ -49,6 +50,22 @@ struct ClipStreamTable {
         /// pool and the last table holding one lets go last is what closes the
         /// file, and neither of them is the audio thread.
         std::shared_ptr<PrefetchStream> stream;
+
+        /// What turns the reading into playback at a speed that is not the
+        /// file's, or null for an entry that plays at its file's own speed.
+        ///
+        /// Here rather than in a voice because it is expensive to build and
+        /// cheap to keep: it is configured for this event, on the thread that
+        /// opened the file, and it lives exactly as long as the reader does. A
+        /// voice claimed and released per block would otherwise be allocating
+        /// one on the audio thread (ClipStretcher.hpp).
+        std::shared_ptr<ClipStretcher> stretcher;
+
+        /// Reading samples the pre-roll sits in front of the event's first
+        /// sample, which is where the stream was pointed. Zero without a
+        /// stretcher, and the reason a voice's first read is the one the pool
+        /// cued rather than one that seeks.
+        int preRollSamples = 0;
     };
 
     std::vector<Entry> entries;

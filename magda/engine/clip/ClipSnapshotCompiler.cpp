@@ -162,6 +162,13 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
             audio.fadeInSeconds = fadeIn;
             audio.fadeOutSeconds = fadeOut;
 
+            // Both faces of the same two lengths, converted here because the
+            // audio thread has no tempo map to convert them with. Off the ends
+            // of the audible span rather than of the placement, because that is
+            // what a fade shapes (ClipVoice.hpp).
+            audio.fadeInBeats = tempoMap.timeToBeat(span.startSeconds + fadeIn) - span.startBeat;
+            audio.fadeOutBeats = span.endBeat - tempoMap.timeToBeat(span.endSeconds - fadeOut);
+
             // The clip's edges are the primary event's edges, so they carry its
             // curves. A curve that is not one is reported once, below, where
             // every event is checked rather than only this one.

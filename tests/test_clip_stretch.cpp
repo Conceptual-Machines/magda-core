@@ -1,0 +1,789 @@
+#include <algorithm>
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <cmath>
+#include <memory>
+#include <vector>
+
+#include "clip/ClipAudioSource.hpp"
+#include "clip/ClipStretcher.hpp"
+#include "clip/EventPlacement.hpp"
+#include "core/TimeStretchModes.hpp"
+#include "io/SourceReaders.hpp"
+
+/**
+ * Playing a clip at a speed and a pitch that are not its file's (#2037).
+ *
+ * Two halves, and they are tested differently on purpose.
+ *
+ * Where in the reading a moment sits is arithmetic, so it is tested as
+ * arithmetic: exactly, against numbers worked out by hand. Everything this slice
+ * adds is that one function answering differently, so this is where a speed
+ * ratio, auto tempo, analog pitch and a speed ramp are actually pinned down.
+ *
+ * What comes out of a stretcher is not arithmetic. A phase vocoder's samples are
+ * its own business, so what is asserted of those is what a listener would say:
+ * the block is full, the level survived, and the pitch moved or did not move.
+ * The resampling path is the exception, and a useful one: cubic interpolation of
+ * a straight line is exact, so a counting reader through it says precisely which
+ * sample of the file was heard.
+ *
+ * Everything rolls, the way the other clip rigs do. A test that skipped from one
+ * block to a distant one would be testing a locate rather than playback (#2016).
+ */
+
+using magda::engine::AudioClipPlayback;
+using magda::engine::AudioEventPlayback;
+using magda::engine::BlockInfo;
+using magda::engine::ClipAudioSource;
+using magda::engine::ClipSnapshot;
+using magda::engine::ClipSnapshotFeed;
+using magda::engine::ClipStreamFeed;
+using magda::engine::ClipStreamTable;
+using magda::engine::ClipStretcher;
+using magda::engine::PrefetchStream;
+using magda::engine::RenderContext;
+using magda::engine::SnapshotSpan;
+using magda::engine::StretchSetup;
+using magda::engine::TrackClipPlayback;
+
+namespace mode = magda::time_stretch_mode;
+
+namespace {
+
+constexpr double kSampleRate = 44100.0;
+
+/// Long enough that a block holds a dozen cycles of the test tone, because one
+/// of the questions here is what happened to the pitch.
+constexpr int kBlockSize = 512;
+
+constexpr magda::TrackId kTrack = 7;
+
+/// The rig's tempo. Beats and seconds are two faces of one instant everywhere in
+/// the engine, so a span built here carries both, and auto tempo reads the one
+/// the others ignore.
+constexpr double kBpm = 120.0;
+constexpr double kBeatsPerSecond = kBpm / 60.0;
+
+double blockTime(int index) {
+    return index * static_cast<double>(kBlockSize) / kSampleRate;
+}
+
+RenderContext context() {
+    return RenderContext{kSampleRate, kBlockSize, 2};
+}
+
+Catch::Approx approx(double value, double margin = 1e-4) {
+    return Catch::Approx(value).margin(margin);
+}
+
+/// Sample n reads back as n, so which sample of the file was heard is readable
+/// off the value. Through the resampling path that stays true between samples:
+/// the curve is cubic and a straight line is one of the things a cubic is.
+class CountingReader final : public magda::engine::AudioFileReader {
+  public:
+    std::int64_t lengthInSamples() const override {
+        return 100000000;
+    }
+    double sampleRate() const override {
+        return kSampleRate;
+    }
+    int numChannels() const override {
+        return 2;
+    }
+
+    int read(juce::AudioBuffer<float>& destination, int destinationOffset, std::int64_t startSample,
+             int numSamples) override {
+        for (auto channel = 0; channel < destination.getNumChannels(); ++channel)
+            for (auto sample = 0; sample < numSamples; ++sample)
+                destination.setSample(channel, destinationOffset + sample,
+                                      static_cast<float>(startSample + sample));
+        return numSamples;
+    }
+};
+
+/// A tone at a known frequency, which is what a question about pitch needs.
+class SineReader final : public magda::engine::AudioFileReader {
+  public:
+    explicit SineReader(double frequency) : frequency_(frequency) {}
+
+    std::int64_t lengthInSamples() const override {
+        return 100000000;
+    }
+    double sampleRate() const override {
+        return kSampleRate;
+    }
+    int numChannels() const override {
+        return 2;
+    }
+
+    int read(juce::AudioBuffer<float>& destination, int destinationOffset, std::int64_t startSample,
+             int numSamples) override {
+        for (auto channel = 0; channel < destination.getNumChannels(); ++channel)
+            for (auto sample = 0; sample < numSamples; ++sample) {
+                const auto phase = 2.0 * juce::MathConstants<double>::pi * frequency_ *
+                                   static_cast<double>(startSample + sample) / kSampleRate;
+                destination.setSample(channel, destinationOffset + sample,
+                                      static_cast<float>(std::sin(phase)));
+            }
+        return numSamples;
+    }
+
+  private:
+    double frequency_;
+};
+
+/// Every sample the same, so a gain that was applied is visible and a gain that
+/// was not is visible too.
+class ConstantReader final : public magda::engine::AudioFileReader {
+  public:
+    std::int64_t lengthInSamples() const override {
+        return 100000000;
+    }
+    double sampleRate() const override {
+        return kSampleRate;
+    }
+    int numChannels() const override {
+        return 2;
+    }
+
+    int read(juce::AudioBuffer<float>& destination, int destinationOffset, std::int64_t,
+             int numSamples) override {
+        for (auto channel = 0; channel < destination.getNumChannels(); ++channel)
+            for (auto sample = 0; sample < numSamples; ++sample)
+                destination.setSample(channel, destinationOffset + sample, 1.0f);
+        return numSamples;
+    }
+};
+
+SnapshotSpan seconds(double start, double end) {
+    SnapshotSpan span;
+    span.startBeat = start * kBeatsPerSecond;
+    span.endBeat = end * kBeatsPerSecond;
+    span.startSeconds = start;
+    span.endSeconds = end;
+    return span;
+}
+
+SnapshotSpan blocks(int firstBlock, int lastBlock) {
+    return seconds(blockTime(firstBlock), blockTime(lastBlock));
+}
+
+BlockInfo blockFrom(double startSeconds, bool continuous = true) {
+    BlockInfo block;
+    block.numSamples = kBlockSize;
+    block.playing = true;
+    block.startSeconds = startSeconds;
+    block.endSeconds = startSeconds + kBlockSize / kSampleRate;
+    block.startBeat = startSeconds * kBeatsPerSecond;
+    block.endBeat = block.endSeconds * kBeatsPerSecond;
+    block.continuous = continuous;
+    return block;
+}
+
+AudioClipPlayback clipOver(magda::ClipId id, SnapshotSpan span, std::int64_t anchor = 0) {
+    AudioClipPlayback clip;
+    clip.clipId = id;
+    clip.span = span;
+    clip.launchFadeSamples = 0;
+
+    AudioEventPlayback event;
+    event.eventId = id;
+    event.sourceId = id;
+    event.filePath = "take.wav";
+    event.sourceSampleRate = kSampleRate;
+    event.sourceDurationSeconds = 10000.0;
+    event.span = span;
+    event.anchorSamples = anchor;
+    clip.events.push_back(std::move(event));
+
+    return clip;
+}
+
+/// The beat face of a moment, at the rig's tempo. What the transport publishes
+/// beside the seconds, and what auto tempo reads.
+double beatAt(double seconds) {
+    return seconds * kBeatsPerSecond;
+}
+
+/// A track's clips, the readers and stretchers behind them, and a transport that
+/// rolls. Provisioned the way ClipVoicePool provisions: through the same
+/// functions, so that where a stream is pointed and where a voice reads are one
+/// derivation rather than two that have to be kept in step by hand.
+struct Rig {
+    Rig() {
+        source.prepare(context());
+        output.setSize(2, kBlockSize);
+        output.clear();
+    }
+
+    PrefetchStream& give(magda::ClipId clipId, magda::EventId eventId,
+                         std::unique_ptr<magda::engine::AudioFileReader> reader,
+                         magda::engine::PrefetchSettings settings = {8192, 8}) {
+        const auto* clip = clipOf(clipId);
+        REQUIRE(clip != nullptr);
+        const auto* event = eventOf(clipId, eventId);
+        REQUIRE(event != nullptr);
+
+        auto stream = std::make_shared<PrefetchStream>(
+            magda::engine::readThrough(std::move(reader),
+                                       magda::engine::sourceReadFor(*event, kSampleRate)),
+            context(), settings);
+
+        const auto setup = magda::engine::stretchSetupFor(*clip, *event, context());
+        std::shared_ptr<ClipStretcher> stretcher = magda::engine::makeStretcher(setup);
+        const auto preRoll =
+            stretcher != nullptr ? stretcher->preRollSamples(setup.nominalRate) : 0;
+
+        auto& created = *stream;
+        table.entries.push_back(ClipStreamTable::Entry{kTrack, clipId, eventId, std::move(stream),
+                                                       std::move(stretcher), preRoll});
+        return created;
+    }
+
+    void publish() {
+        auto compiled = std::make_shared<ClipSnapshot>();
+        compiled->tracks.push_back(lane);
+        clips.publish(std::move(compiled));
+
+        std::sort(table.entries.begin(), table.entries.end(),
+                  [](const ClipStreamTable::Entry& a, const ClipStreamTable::Entry& b) {
+                      if (a.trackId != b.trackId)
+                          return a.trackId < b.trackId;
+                      if (a.clipId != b.clipId)
+                          return a.clipId < b.clipId;
+                      return a.eventId < b.eventId;
+                  });
+        streams.publish(std::make_shared<const ClipStreamTable>(table));
+    }
+
+    /// Put the transport @p lead blocks before @p targetBlock and roll to it,
+    /// cueing every stream where the pool would have (ClipVoicePool::cueFor).
+    void start(int targetBlock, int lead) {
+        next_ = targetBlock - lead;
+
+        for (const auto& entry : table.entries) {
+            const auto* clip = clipOf(entry.clipId);
+            const auto* event = eventOf(entry.clipId, entry.eventId);
+            REQUIRE(event != nullptr);
+
+            const auto at = std::max(blockTime(next_), event->span.startSeconds);
+            const auto position =
+                magda::engine::readingPositionAt(*clip, *event, at, beatAt(at), kSampleRate);
+            const auto ahead = entry.stretcher != nullptr ? entry.stretcher->readAheadSamples() : 0;
+
+            entry.stream->seek(static_cast<std::int64_t>(std::llround(position)) + ahead -
+                               entry.preRollSamples);
+        }
+
+        advance(lead + 1);
+    }
+
+    /// Roll to @p targetBlock, starting from before the clip does.
+    ///
+    /// Where the pool would have cued it: a stream told where to go a second
+    /// early has its material in memory by the time its clip starts, so the
+    /// first block of that clip primes its stretcher with material rather than
+    /// with the silence a reader that has not caught up gives. A stretcher
+    /// primed on silence still plays, and fades in over its own window instead
+    /// of arriving aligned, which is what a locate onto a clip sounds like and
+    /// not what starting one does.
+    void rollTo(int targetBlock) {
+        start(targetBlock, targetBlock - kFirstBlock + 8);
+    }
+
+    void advance(int count = 1, bool continuous = true) {
+        for (auto index = 0; index < count; ++index) {
+            render(blockFrom(blockTime(next_), continuous || index > 0));
+            ++next_;
+        }
+    }
+
+    /// Jump the transport to @p targetBlock, the way a locate does: the block
+    /// that lands there is not continuous with the one before it.
+    void locate(int targetBlock) {
+        next_ = targetBlock;
+        advance(1, false);
+    }
+
+    void render(const BlockInfo& block) {
+        fill();
+        source.render(block, juce::dsp::AudioBlock<float>(output));
+    }
+
+    void fill() {
+        auto worked = true;
+        while (worked) {
+            worked = false;
+            for (const auto& entry : table.entries)
+                worked = entry.stream->fill() || worked;
+        }
+    }
+
+    float at(int sample, int channel = 0) const {
+        return output.getSample(channel, sample);
+    }
+
+    double rms(int channel = 0) const {
+        auto sum = 0.0;
+        for (auto sample = 0; sample < kBlockSize; ++sample) {
+            const auto value = output.getSample(channel, sample);
+            sum += value * value;
+        }
+        return std::sqrt(sum / kBlockSize);
+    }
+
+    /// How often the block crosses zero, which is what a question about pitch
+    /// reduces to for a single tone.
+    int zeroCrossings(int channel = 0) const {
+        auto crossings = 0;
+        for (auto sample = 1; sample < kBlockSize; ++sample)
+            if ((output.getSample(channel, sample - 1) < 0.0f) !=
+                (output.getSample(channel, sample) < 0.0f))
+                ++crossings;
+        return crossings;
+    }
+
+    const AudioClipPlayback* clipOf(magda::ClipId clipId) const {
+        for (const auto& clip : lane.audio)
+            if (clip.clipId == clipId)
+                return &clip;
+        return nullptr;
+    }
+
+    const AudioEventPlayback* eventOf(magda::ClipId clipId, magda::EventId eventId) const {
+        if (const auto* clip = clipOf(clipId))
+            for (const auto& event : clip->events)
+                if (event.eventId == eventId)
+                    return &event;
+        return nullptr;
+    }
+
+    AudioEventPlayback& event(magda::ClipId clipId) {
+        return lane.audio.front().events.front();
+    }
+
+    TrackClipPlayback lane{kTrack, {}, {}};
+    ClipSnapshotFeed clips;
+    ClipStreamFeed streams;
+    ClipAudioSource source{kTrack, clips, streams};
+    ClipStreamTable table;
+    juce::AudioBuffer<float> output;
+
+    int next_ = 0;
+
+    /// The block every clip in this file starts on, so that rolling in from
+    /// before it is one number rather than one per test.
+    static constexpr int kFirstBlock = 100;
+};
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// Where in the reading a moment sits.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("A clip at its file's own speed consumes one sample per sample",
+          "[engine][clip][stretch]") {
+    const auto clip = clipOver(1, seconds(10.0, 20.0), 500);
+    const auto& event = clip.events.front();
+
+    REQUIRE(magda::engine::readingRateOf(event) == approx(1.0));
+    REQUIRE(magda::engine::readingPositionAt(clip, event, 10.0, beatAt(10.0), kSampleRate) ==
+            approx(500.0));
+
+    // One second later, one second of the file later.
+    REQUIRE(magda::engine::readingPositionAt(clip, event, 11.0, beatAt(11.0), kSampleRate) ==
+            approx(500.0 + kSampleRate));
+}
+
+TEST_CASE("A speed ratio is a constant factor on how fast the reading is consumed",
+          "[engine][clip][stretch]") {
+    auto clip = clipOver(1, seconds(10.0, 20.0), 500);
+    auto& event = clip.events.front();
+
+    SECTION("twice as fast") {
+        event.speedRatio = 2.0;
+
+        REQUIRE(magda::engine::readingRateOf(event) == approx(2.0));
+        REQUIRE(magda::engine::readingPositionAt(clip, event, 11.0, beatAt(11.0), kSampleRate) ==
+                approx(500.0 + 2.0 * kSampleRate));
+    }
+
+    SECTION("half as fast") {
+        event.speedRatio = 0.5;
+
+        REQUIRE(magda::engine::readingPositionAt(clip, event, 11.0, beatAt(11.0), kSampleRate) ==
+                approx(500.0 + 0.5 * kSampleRate));
+    }
+
+    SECTION("a ratio no stretcher will run at is clamped rather than obeyed") {
+        event.speedRatio = 1000.0;
+
+        REQUIRE(magda::engine::readingRateOf(event) == approx(magda::engine::kMaxStretchRate));
+        REQUIRE(magda::engine::readingPositionAt(clip, event, 11.0, beatAt(11.0), kSampleRate) ==
+                approx(500.0 + magda::engine::kMaxStretchRate * kSampleRate));
+    }
+}
+
+TEST_CASE("Auto tempo consumes the file against beats rather than against seconds",
+          "[engine][clip][stretch]") {
+    // A file analysed at 60 bpm, played on a 120 bpm timeline: twice as fast.
+    auto clip = clipOver(1, seconds(10.0, 20.0), 0);
+    auto& event = clip.events.front();
+    event.autoTempo = true;
+    event.interpBpm = 60.0;
+
+    REQUIRE(magda::engine::readingRateOf(event) == approx(2.0));
+
+    SECTION("at a constant tempo it is the equivalent constant ratio") {
+        auto pinned = clip;
+        pinned.events.front().autoTempo = false;
+        pinned.events.front().speedRatio = 2.0;
+
+        for (const auto at : {10.0, 12.5, 17.25}) {
+            const auto following =
+                magda::engine::readingPositionAt(clip, event, at, beatAt(at), kSampleRate);
+            const auto fixed = magda::engine::readingPositionAt(pinned, pinned.events.front(), at,
+                                                                beatAt(at), kSampleRate);
+            REQUIRE(following == approx(fixed, 1e-6));
+        }
+    }
+
+    SECTION("the beat face is what it reads, so a tempo that moved moves it") {
+        // The same instant in seconds, but the timeline has run twice as many
+        // beats to get there. A clip following the tempo has consumed twice the
+        // material; one on a fixed ratio would not have noticed.
+        const auto atDoubleTempo = magda::engine::readingPositionAt(
+            clip, event, 11.0, beatAt(11.0) + beatAt(1.0), kSampleRate);
+
+        REQUIRE(atDoubleTempo == approx(4.0 * kSampleRate));
+    }
+}
+
+TEST_CASE("A speed ramp warps where the material is, and lands where the clip says",
+          "[engine][clip][stretch]") {
+    // A one second linear ramp into a clip that starts at ten seconds.
+    auto clip = clipOver(1, seconds(10.0, 20.0), 0);
+    clip.fadeInSeconds = 1.0;
+    clip.fadeInBeats = 1.0 * kBeatsPerSecond;
+    clip.fadeInBehaviour = 1;
+    const auto& event = clip.events.front();
+
+    // Not at the clip's first sample: a ramp that ran the material from the very
+    // start of its region would arrive at the far end half a region behind. The
+    // linear ramp's integral says half way in.
+    REQUIRE(magda::engine::readingPositionAt(clip, event, 10.0, beatAt(10.0), kSampleRate) ==
+            approx(0.5 * kSampleRate, 1.0));
+
+    // And by the end of the ramp it has caught up with where an unramped clip
+    // would be, which is what makes the rest of the clip play in time.
+    REQUIRE(magda::engine::readingPositionAt(clip, event, 11.0, beatAt(11.0), kSampleRate) ==
+            approx(1.0 * kSampleRate, 1.0));
+
+    // Past the ramp nothing is warped at all.
+    REQUIRE(magda::engine::readingPositionAt(clip, event, 12.0, beatAt(12.0), kSampleRate) ==
+            approx(2.0 * kSampleRate, 1.0));
+}
+
+TEST_CASE("A reversed clip mirrors its anchor and still runs forwards through the reading",
+          "[engine][clip][stretch]") {
+    auto clip = clipOver(1, seconds(10.0, 11.0), 0);
+    auto& event = clip.events.front();
+    event.reversed = true;
+    event.speedRatio = 2.0;
+
+    const auto opens =
+        magda::engine::readingPositionAt(clip, event, 10.0, beatAt(10.0), kSampleRate);
+    const auto later =
+        magda::engine::readingPositionAt(clip, event, 10.5, beatAt(10.5), kSampleRate);
+
+    // Forwards through the mirrored file, at the ratio, whatever the flip did to
+    // where it starts.
+    REQUIRE(later - opens == approx(2.0 * 0.5 * kSampleRate));
+}
+
+// ---------------------------------------------------------------------------
+// Which stretcher an event gets.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("A clip asks for a stretcher only when it needs one", "[engine][clip][stretch]") {
+    auto clip = clipOver(1, seconds(0.0, 10.0), 0);
+    auto& event = clip.events.front();
+
+    SECTION("its file's own speed, nothing asked: no layer at all") {
+        REQUIRE(magda::engine::makeStretcher(
+                    magda::engine::stretchSetupFor(clip, event, context())) == nullptr);
+    }
+
+    SECTION("analog pitch resamples, and the model already folded the pitch into the ratio") {
+        event.analogPitch = true;
+        event.speedRatio = 2.0;
+
+        const auto setup = magda::engine::stretchSetupFor(clip, event, context());
+        const auto stretcher = magda::engine::makeStretcher(setup);
+
+        REQUIRE(stretcher != nullptr);
+
+        // The curve reaches past the sample it lands on, so the reading runs a
+        // little ahead of the position wanted.
+        REQUIRE(stretcher->readAheadSamples() > 0);
+        REQUIRE(stretcher->preRollSamples(setup.nominalRate) > 0);
+    }
+
+    SECTION("a speed ramp needs one even at the file's own speed") {
+        clip.fadeInSeconds = 0.5;
+        clip.fadeInBehaviour = 1;
+
+        REQUIRE(magda::engine::makeStretcher(
+                    magda::engine::stretchSetupFor(clip, event, context())) != nullptr);
+    }
+
+    SECTION("the pinned modes each resolve to an engine that primes") {
+        for (const auto which :
+             {mode::kSignalsmith, mode::kSoundTouchNormal, mode::kSoundTouchBetter}) {
+            event.timeStretchMode = which;
+            event.speedRatio = 2.0;
+
+            const auto setup = magda::engine::stretchSetupFor(clip, event, context());
+            const auto stretcher = magda::engine::makeStretcher(setup);
+
+            REQUIRE(stretcher != nullptr);
+
+            // Every one of them holds material back, and says how much, which is
+            // what the pool cues behind the clip's own start.
+            REQUIRE(stretcher->preRollSamples(setup.nominalRate) > 0);
+            REQUIRE(stretcher->readAheadSamples() == 0);
+        }
+    }
+
+    SECTION("a mode this build has no engine for plays at unity rather than silence") {
+        event.timeStretchMode = 6;  // elastiquePro, which is not vendored here
+        event.speedRatio = 2.0;
+
+        REQUIRE(magda::engine::makeStretcher(
+                    magda::engine::stretchSetupFor(clip, event, context())) == nullptr);
+    }
+}
+
+TEST_CASE("Pitch is the transpose a following clip has and the change a fixed one has",
+          "[engine][clip][stretch]") {
+    auto clip = clipOver(1, seconds(0.0, 10.0), 0);
+    auto& event = clip.events.front();
+    event.pitchChange = 3.0f;
+    event.transpose = -5;
+
+    REQUIRE(magda::engine::stretchSetupFor(clip, event, context()).semitones == approx(3.0));
+
+    event.autoPitch = true;
+    REQUIRE(magda::engine::stretchSetupFor(clip, event, context()).semitones == approx(-5.0));
+}
+
+// ---------------------------------------------------------------------------
+// Playing it.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("A resampled clip plays the samples its position map named", "[engine][clip][stretch]") {
+    Rig rig;
+    rig.lane.audio.push_back(clipOver(1, blocks(100, 300), 0));
+
+    auto& event = rig.event(1);
+    event.analogPitch = true;
+    event.speedRatio = 2.0;
+
+    rig.give(1, 1, std::make_unique<CountingReader>());
+    rig.publish();
+    rig.rollTo(120);
+
+    // Twice as fast: the block that begins twenty blocks into the clip is the
+    // fortieth block of the file, and it advances two samples per sample.
+    const auto opens = 2.0 * (blockTime(120) - blockTime(100)) * kSampleRate;
+
+    REQUIRE(rig.at(0) == approx(opens, 0.05));
+    REQUIRE(rig.at(1) == approx(opens + 2.0, 0.05));
+    REQUIRE(rig.at(kBlockSize - 1) == approx(opens + 2.0 * (kBlockSize - 1), 0.05));
+
+    // And the next block continues it exactly, with no sample lost or repeated
+    // at the join.
+    rig.advance();
+    REQUIRE(rig.at(0) == approx(opens + 2.0 * kBlockSize, 0.05));
+}
+
+TEST_CASE("A resampled clip lands between samples rather than on the nearest one",
+          "[engine][clip][stretch]") {
+    Rig rig;
+    rig.lane.audio.push_back(clipOver(1, blocks(100, 300), 0));
+
+    auto& event = rig.event(1);
+    event.analogPitch = true;
+    event.speedRatio = 0.5;
+
+    rig.give(1, 1, std::make_unique<CountingReader>());
+    rig.publish();
+    rig.rollTo(120);
+
+    const auto opens = 0.5 * (blockTime(120) - blockTime(100)) * kSampleRate;
+
+    // Half speed is a sample every other output sample, so the ones in between
+    // are the halves the curve found.
+    REQUIRE(rig.at(0) == approx(opens, 0.05));
+    REQUIRE(rig.at(1) == approx(opens + 0.5, 0.05));
+    REQUIRE(rig.at(2) == approx(opens + 1.0, 0.05));
+}
+
+TEST_CASE("A locate into a stretched clip resumes at the material the timeline names",
+          "[engine][clip][stretch]") {
+    Rig rig;
+    rig.lane.audio.push_back(clipOver(1, blocks(100, 400), 0));
+
+    auto& event = rig.event(1);
+    event.analogPitch = true;
+    event.speedRatio = 2.0;
+
+    rig.give(1, 1, std::make_unique<CountingReader>());
+    rig.publish();
+    rig.rollTo(120);
+
+    // Somewhere else entirely, with nothing said about it: the reader seeks, the
+    // stretcher resets and primes from the material in front of where it landed.
+    rig.locate(300);
+    rig.advance(2);
+
+    const auto opens = 2.0 * (blockTime(302) - blockTime(100)) * kSampleRate;
+
+    // Aligned, not a pre-roll late. What was primed with was the material
+    // before this position, not the material at it.
+    REQUIRE(rig.at(0) == approx(opens, 0.05));
+}
+
+TEST_CASE("A stretched clip keeps its pitch and a resampled one does not",
+          "[engine][clip][stretch]") {
+    constexpr double kTone = 1000.0;
+
+    // A tone at 1 kHz through a 512 sample block: about twelve cycles, so about
+    // twenty four zero crossings, and twice that if the pitch went up an octave.
+    const auto crossingsAtUnity = 2 * static_cast<int>(kTone * kBlockSize / kSampleRate);
+
+    SECTION("stretched") {
+        Rig rig;
+        rig.lane.audio.push_back(clipOver(1, blocks(100, 400), 0));
+
+        auto& event = rig.event(1);
+        event.timeStretchMode = mode::kSignalsmith;
+        event.speedRatio = 2.0;
+
+        rig.give(1, 1, std::make_unique<SineReader>(kTone));
+        rig.publish();
+        rig.rollTo(140);
+
+        // Twice the material in the same time, and the same note.
+        REQUIRE(rig.rms() > 0.3);
+        REQUIRE(rig.zeroCrossings() ==
+                Catch::Approx(crossingsAtUnity).margin(crossingsAtUnity / 4));
+    }
+
+    SECTION("resampled") {
+        Rig rig;
+        rig.lane.audio.push_back(clipOver(1, blocks(100, 400), 0));
+
+        auto& event = rig.event(1);
+        event.analogPitch = true;
+        event.speedRatio = 2.0;
+
+        rig.give(1, 1, std::make_unique<SineReader>(kTone));
+        rig.publish();
+        rig.rollTo(140);
+
+        // Twice the material in the same time, an octave up: tape, not a
+        // stretcher.
+        REQUIRE(rig.rms() > 0.3);
+        REQUIRE(rig.zeroCrossings() ==
+                Catch::Approx(2 * crossingsAtUnity).margin(crossingsAtUnity / 4));
+    }
+}
+
+TEST_CASE("Both SoundTouch modes play, because projects were saved naming them",
+          "[engine][clip][stretch]") {
+    for (const auto which : {mode::kSoundTouchNormal, mode::kSoundTouchBetter}) {
+        Rig rig;
+        rig.lane.audio.push_back(clipOver(1, blocks(100, 400), 0));
+
+        auto& event = rig.event(1);
+        event.timeStretchMode = which;
+        event.speedRatio = 2.0;
+
+        rig.give(1, 1, std::make_unique<SineReader>(1000.0));
+        rig.publish();
+        rig.rollTo(140);
+
+        // A full block of material rather than the silence a pipe that had not
+        // caught up would give.
+        INFO("mode " << which);
+        REQUIRE(rig.rms() > 0.2);
+    }
+}
+
+TEST_CASE("Auto tempo plays through a stretcher without being told a ratio",
+          "[engine][clip][stretch]") {
+    Rig rig;
+    rig.lane.audio.push_back(clipOver(1, blocks(100, 400), 0));
+
+    auto& event = rig.event(1);
+    event.autoTempo = true;
+    event.interpBpm = kBpm / 2.0;  // half the timeline's, so twice as fast
+    event.timeStretchMode = mode::kSignalsmith;
+
+    rig.give(1, 1, std::make_unique<SineReader>(1000.0));
+    rig.publish();
+    rig.rollTo(140);
+
+    REQUIRE(rig.rms() > 0.3);
+}
+
+TEST_CASE("A speed ramp changes the speed rather than the gain", "[engine][clip][stretch]") {
+    Rig rig;
+    rig.lane.audio.push_back(clipOver(1, blocks(100, 400), 0));
+
+    auto& clip = rig.lane.audio.front();
+    clip.fadeInSeconds = blockTime(110) - blockTime(100);
+    clip.fadeInBeats = clip.fadeInSeconds * kBeatsPerSecond;
+    clip.fadeInBehaviour = 1;
+
+    rig.give(1, 1, std::make_unique<ConstantReader>());
+    rig.publish();
+    rig.rollTo(102);
+
+    // Two blocks into a ten block ramp. A gain fade would be a fifth of the way
+    // up and audibly quiet; a speed ramp leaves the level alone and moves the
+    // material instead.
+    REQUIRE(rig.at(0) == approx(1.0, 1e-3));
+    REQUIRE(rig.at(kBlockSize - 1) == approx(1.0, 1e-3));
+}
+
+TEST_CASE("A speed ramp reads the file at a rate that climbs to unity", "[engine][clip][stretch]") {
+    Rig rig;
+    rig.lane.audio.push_back(clipOver(1, blocks(100, 400), 0));
+
+    auto& clip = rig.lane.audio.front();
+    clip.fadeInSeconds = blockTime(110) - blockTime(100);
+    clip.fadeInBeats = clip.fadeInSeconds * kBeatsPerSecond;
+    clip.fadeInBehaviour = 1;
+
+    rig.give(1, 1, std::make_unique<CountingReader>());
+    rig.publish();
+    rig.rollTo(101);
+
+    // Inside the ramp the material is ahead of where an unramped clip would be,
+    // and moving slower than one sample per sample.
+    const auto opens = rig.at(0);
+    const auto step = rig.at(kBlockSize - 1) - rig.at(0);
+
+    REQUIRE(opens > (blockTime(101) - blockTime(100)) * kSampleRate);
+    REQUIRE(step < kBlockSize - 1);
+
+    // By the far end of the ramp it is running at the file's own speed again,
+    // and where the clip says it should be.
+    rig.advance(10);
+    REQUIRE(rig.at(kBlockSize - 1) - rig.at(0) == approx(kBlockSize - 1, 0.5));
+    REQUIRE(rig.at(0) == approx((blockTime(111) - blockTime(100)) * kSampleRate, 2.0));
+}

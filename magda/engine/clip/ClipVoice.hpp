@@ -4,6 +4,7 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include "clip/ClipSnapshot.hpp"
+#include "clip/ClipStretcher.hpp"
 #include "exec/RenderContext.hpp"
 #include "io/PrefetchStream.hpp"
 
@@ -36,9 +37,14 @@
  * the device's rate whether the clip is reversed, tiled, resampled or none of
  * them.
  *
- * Not here at all: stretch and pitch (#2037), warp (#2038). Those change how
- * fast the reading is consumed rather than what it holds, which is why they
- * belong above it and these belong below.
+ * Speed and pitch are the other way round (#2037). They change how fast the
+ * reading is consumed rather than what it holds, so they are above the stream
+ * rather than below it, and this is where the two meet: a voice asks
+ * EventPlacement.hpp where in the reading the block's two ends are, reads
+ * exactly that much, and hands it to the stretcher standing beside the stream
+ * to come back as this block's length. A clip at its file's own speed has no
+ * stretcher and reads one sample per sample, which is the same code path with
+ * nothing in the middle.
  */
 
 namespace magda::engine {
@@ -69,16 +75,24 @@ class ClipVoice {
     /**
      * @brief Add this block's contribution to @p out.
      *
-     * On the audio thread. @p scratch is working space of at least the block's
-     * length, owned by the caller because one is enough for every voice on a
-     * track: they are rendered one after another and summed as they go.
+     * On the audio thread. @p scratch is working space of at least
+     * stretchScratchSamples(maxBlockSize), owned by the caller because one is
+     * enough for every voice on a track: they are rendered one after another and
+     * summed as they go. It holds what this voice renders and, behind it, the
+     * reading that block was made from, which is longer than the block whenever
+     * the clip plays faster than its file.
+     *
+     * @p stretcher is the one standing beside @p stream, or null for a clip
+     * played at its file's own speed, and @p preRoll is what that stretcher was
+     * cued with (ClipStreamFeed.hpp).
      *
      * Returns false when nothing was added, which is the ordinary answer for a
      * voice whose entry does not reach into this block.
      */
     bool render(const AudioClipPlayback& clip, const AudioEventPlayback& event,
-                const BlockInfo& block, PrefetchStream& stream,
-                juce::dsp::AudioBlock<float> scratch, juce::dsp::AudioBlock<float> out);
+                const BlockInfo& block, PrefetchStream& stream, ClipStretcher* stretcher,
+                int preRoll, juce::dsp::AudioBlock<float> scratch,
+                juce::dsp::AudioBlock<float> out);
 
   private:
     /// Multiply the part of @p region inside [@p startSeconds, @p endSeconds)
@@ -89,6 +103,10 @@ class ClipVoice {
 
     double sampleRate_ = 44100.0;
 
+    /// Where in the scratch the reading starts: past the longest block this
+    /// voice can be asked to render, because both live in the one buffer.
+    int maxBlockSamples_ = 512;
+
     ClipId clipId_ = INVALID_CLIP_ID;
     EventId eventId_ = INVALID_EVENT_ID;
 
@@ -96,6 +114,13 @@ class ClipVoice {
     /// voice that is beginning from one that is carrying on, which is the
     /// difference the launch ramp is for.
     bool sounded_ = false;
+
+    /// Whether the stretcher beside this voice's stream has been given the
+    /// material leading up to where it is playing. Separate from @ref sounded_,
+    /// because a block that came back short is not a reason to prime again: the
+    /// reader is behind, and priming reads backwards, so doing it would seek and
+    /// keep it behind for good.
+    bool primed_ = false;
 };
 
 }  // namespace magda::engine

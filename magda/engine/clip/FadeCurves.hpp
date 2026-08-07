@@ -30,6 +30,27 @@ namespace magda::engine {
 float fadeGain(FadeCurve curve, float alpha);
 
 /**
+ * @brief Where a speed ramp has got to, @p alpha along itself.
+ *
+ * The other thing a clip's fade pair can mean (ClipInfo::fadeInBehaviour). A
+ * speed ramp is not a gain envelope at all: the material accelerates into the
+ * clip and decelerates out of it, pitch and all, the way a tape machine starts
+ * and stops. So the curve is read as a position rather than as a level, and what
+ * comes back is the proportion of the ramp's own stretch that has been consumed.
+ *
+ * These are the incumbent's shapes, which are the integrals of the gain curves
+ * above rather than the curves themselves: what the gain curve is worth at a
+ * point is the *rate* the material runs at there, and where the material has got
+ * to is the area under that. A rising ramp therefore ends at 1 and begins at a
+ * half, which is not a mistake: a ramp that ran the material from the very start
+ * of the region would arrive at the far end half a region behind where the clip
+ * says it should be. Starting ahead is what makes it land in the right place.
+ *
+ * @p alpha runs 0 to 1 across the ramp, and @p rising says which edge it is.
+ */
+double fadeRampPosition(FadeCurve curve, double alpha, bool rising);
+
+/**
  * @brief Return the start of @p audio to zero without fading what follows it.
  *
  * The launch ramp (ClipInfo::launchFadeSamples), and deliberately not a fade:
