@@ -504,6 +504,10 @@ jobs:
     # job: CMake then downloads it the way it always did.
     - name: Prepare third-party source cache (self-hosted)
       id: deps-cache
+      # A step that exists to save a download must never be the reason a build
+      # goes red. Everything below already degrades to letting CMake do the
+      # downloading; this covers whatever is left.
+      continue-on-error: true
       run: |
         set -uo pipefail
         CACHE_ROOT="$HOME/magda-ci-cache/deps"
@@ -892,10 +896,23 @@ jobs:
     # has already failed this job in configure. On the github-hosted fallback
     # runner nothing persists between runs, so this simply does the download
     # CMake would have done and costs nothing either way.
+    #
+    # No shell key, so this runs in whatever the job's other steps run in.
+    # Naming pwsh explicitly fails outright on a runner that only has Windows
+    # PowerShell, where the default falls back to it; and continue-on-error
+    # because a step that exists to save a download must never be the reason a
+    # build goes red.
     - name: Prepare third-party source cache
       id: deps-cache
-      shell: pwsh
+      continue-on-error: true
       run: |
+        # Windows PowerShell 5.1 negotiates TLS 1.0 by default, which every
+        # host here refused years ago, and draws a progress bar for every
+        # buffer it reads, which is worth an order of magnitude on a download
+        # this size.
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $ProgressPreference = 'SilentlyContinue'
+
         $cacheRoot = Join-Path $HOME 'magda-ci-cache\deps'
         New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
 
@@ -960,10 +977,12 @@ jobs:
         $luaDir = Join-Path $cacheRoot 'lua-5.4.7'
         $sqliteDir = Join-Path $cacheRoot 'sqlite-amalgamation-3530100'
 
+        # Written through .NET rather than Out-File: Windows PowerShell writes
+        # UTF-16 there and the runner reads the file as UTF-8.
         if (Seed $luaDir '9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30' 'lua-5.4.7.tar.gz' @(
                 'https://www.lua.org/ftp/lua-5.4.7.tar.gz',
                 'http://deb.debian.org/debian/pool/main/l/lua5.4/lua5.4_5.4.7.orig.tar.gz')) {
-            "lua_dir=$luaDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "lua_dir=$luaDir`n")
         }
 
         # The SHA-256 of the zip CMakeLists.txt pins by its SHA3-256, which is
@@ -971,7 +990,7 @@ jobs:
         # file and a version bump changes both.
         if (Seed $sqliteDir '36ad6e7f38540a3b21a2ac36340833f0a9e426bc1c752751c3ba669466827eae' 'sqlite-amalgamation-3530100.zip' @(
                 'https://www.sqlite.org/2026/sqlite-amalgamation-3530100.zip')) {
-            "sqlite_dir=$sqliteDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "sqlite_dir=$sqliteDir`n")
         }
 
         exit 0
