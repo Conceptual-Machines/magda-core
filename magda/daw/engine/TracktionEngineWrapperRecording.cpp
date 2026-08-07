@@ -123,7 +123,7 @@ void TracktionEngineWrapper::recordingFinished(
                 audioTrackInfo && !audioTrackInfo->audioInputDevice.isEmpty();
 
             if (!audioTrackHasInput) {
-                DBG("  skipping audio clip — track has no audio input configured");
+                DBG("  skipping audio clip - track has no audio input configured");
                 audioClip->removeFromParent();
                 continue;
             }

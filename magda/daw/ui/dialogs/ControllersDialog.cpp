@@ -327,7 +327,7 @@ void ControllerProfilesPage::importProfileFile(const juce::File& file, const juc
     if (!issues.empty()) {
         juce::String body = tr("controllers.upload_validation_failed");
         for (const auto& issue : issues)
-            body += "\n  • " + tr(issue.key).replace("{0}", issue.arg);
+            body += juce::String::fromUTF8("\n  • ") + tr(issue.key).replace("{0}", issue.arg);
         return fail(body);
     }
 

@@ -162,12 +162,12 @@ void AddMidiNoteCommand::execute() {
     auto* clip = clipManager.getClip(clipId_);
 
     if (!clip) {
-        DBG("AddMidiNoteCommand: clip " + juce::String(clipId_) + " NOT FOUND — note dropped");
+        DBG("AddMidiNoteCommand: clip " + juce::String(clipId_) + " NOT FOUND - note dropped");
         return;
     }
     if (!clip->isMidi()) {
         DBG("AddMidiNoteCommand: clip " + juce::String(clipId_) +
-            " type=" + juce::String(static_cast<int>(clip->getType())) + " != MIDI — note dropped");
+            " type=" + juce::String(static_cast<int>(clip->getType())) + " != MIDI - note dropped");
         return;
     }
 

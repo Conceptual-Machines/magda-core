@@ -84,7 +84,7 @@ bool FontManager::initialize() {
         notoSansCJKFamily = notoSansCJK->getName();
         DBG("Noto Sans CJK loaded, family=" << notoSansCJKFamily);
     } else {
-        DBG("Failed to load Noto Sans CJK — CJK glyphs will use OS fallback");
+        DBG("Failed to load Noto Sans CJK - CJK glyphs will use OS fallback");
     }
 
     initialized = success;

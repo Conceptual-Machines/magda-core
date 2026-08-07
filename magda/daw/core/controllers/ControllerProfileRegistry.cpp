@@ -136,7 +136,7 @@ void ControllerProfileRegistry::loadFromDirectory(const juce::File& dir) {
         if (existing != profiles_.end()) {
             DBG("ControllerProfileRegistry: duplicate id '" << profileOpt->id << "' in "
                                                             << file.getFullPathName()
-                                                            << " — replacing earlier entry");
+                                                            << " - replacing earlier entry");
             *existing = *profileOpt;
         } else {
             DBG("ControllerProfileRegistry: loaded profile '" << profileOpt->id << "' from "

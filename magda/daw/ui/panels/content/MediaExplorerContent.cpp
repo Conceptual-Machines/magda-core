@@ -2153,8 +2153,9 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
                         };
 
                         if (newFullPath == fsPath) {
-                            showError("The new parent is the folder's current parent — "
-                                      "nothing to do.");
+                            showError(juce::String::fromUTF8(
+                                "The new parent is the folder's current parent — "
+                                "nothing to do."));
                             return;
                         }
                         std::error_code ec;

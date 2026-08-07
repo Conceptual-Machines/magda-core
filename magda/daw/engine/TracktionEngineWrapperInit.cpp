@@ -164,7 +164,7 @@ void TracktionEngineWrapper::initializeDeviceManager() {
                                           << " output channels");
 
     if (juceDeviceManager.getCurrentAudioDevice() == nullptr)
-        DBG("WARNING: No audio device opened after initialise — user can configure in Audio "
+        DBG("WARNING: No audio device opened after initialise - user can configure in Audio "
             "Settings");
 }
 

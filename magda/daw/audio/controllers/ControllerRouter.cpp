@@ -30,7 +30,7 @@ void ControllerRouter::reconfigure() {
         BindingRegistry::getInstance().addListener(this);
         configured_ = true;
     }
-    DBG("ControllerRouter: reconfigure — "
+    DBG("ControllerRouter: reconfigure - "
         << ControllerRegistry::getInstance().all().size() << " controller(s), "
         << BindingRegistry::getInstance().bindings(BindingScope::Global).size()
         << " global binding(s), "
@@ -370,7 +370,7 @@ void ControllerRouter::executeWrite(const BindingId& bindingId, int rawValue, in
 
     // Resolve target and write
     if (!paramWriter_) {
-        DBG("ControllerRouter: no paramWriter_ set — dropping write for binding "
+        DBG("ControllerRouter: no paramWriter_ set - dropping write for binding "
             << bindingId.toDashedString());
         return;
     }

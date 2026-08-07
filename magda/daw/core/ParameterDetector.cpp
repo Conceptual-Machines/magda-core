@@ -530,7 +530,7 @@ DetectedParameterInfo detectSingleParameter(const ParameterScanInput& input) {
 
     // 5. No clear unit from display text or name — send to AI for refinement.
     // Default to "%" in case AI doesn't reach this param.
-    DETECT_LOG("  [detect] '" << input.name << "' AMBIGUOUS — no unit from display or name");
+    DETECT_LOG("  [detect] '" << input.name << "' AMBIGUOUS - no unit from display or name");
     result.unit = technicalText(TechnicalTextToken::Percent);
     result.confidence = 0.0f;
     result.minValue = input.rangeMin;
@@ -697,7 +697,7 @@ void detectWithAI(const juce::String& pluginName, const std::vector<ParameterSca
     DBG("AI parameter detection - " << totalAmbiguous << " params in " << batches->size()
                                     << " parallel batches");
 
-    auto systemPrompt = juce::String(
+    auto systemPrompt = juce::String::fromUTF8(
         "You are an audio plugin parameter classifier for a DAW.\n"
         "For each parameter, determine:\n"
         "- unit: the physical unit (Hz, dB, ms, %, semitones, cents, BPM, sec, or empty)\n"
