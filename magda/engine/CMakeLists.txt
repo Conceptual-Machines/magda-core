@@ -14,6 +14,7 @@ add_library(magda_engine STATIC
     clip/ClipStreamFeed.cpp
     clip/ClipVoice.cpp
     clip/ClipVoicePool.cpp
+    clip/EventPlacement.cpp
     clip/FadeCurves.cpp
     clip/ClipSnapshot.hpp
     clip/ClipSnapshotCompiler.hpp
@@ -23,6 +24,7 @@ add_library(magda_engine STATIC
     clip/ClipStreamFeed.hpp
     clip/ClipVoice.hpp
     clip/ClipVoicePool.hpp
+    clip/EventPlacement.hpp
     clip/FadeCurves.hpp
     plan/RenderPlan.cpp
     plan/PlanCompiler.cpp
@@ -64,12 +66,14 @@ add_library(magda_engine STATIC
     io/AudioFileReader.cpp
     io/PrefetchStream.cpp
     io/PrefetchThread.cpp
+    io/SourceReaders.cpp
     io/StreamingAudioSource.cpp
     io/FileAudioSource.cpp
     io/AudioFileReader.hpp
     io/ClipPlacement.hpp
     io/PrefetchStream.hpp
     io/PrefetchThread.hpp
+    io/SourceReaders.hpp
     io/StreamingAudioSource.hpp
     io/FileAudioSource.hpp
 )

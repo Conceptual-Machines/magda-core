@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "clip/ClipAudioSource.hpp"
+#include "clip/EventPlacement.hpp"
 #include "clip/FadeCurves.hpp"
 #include "io/ClipPlacement.hpp"
 
@@ -30,7 +31,6 @@ using magda::engine::AudioClipPlayback;
 using magda::engine::AudioEventPlayback;
 using magda::engine::BlockInfo;
 using magda::engine::ClipAudioSource;
-using magda::engine::ClipPlacement;
 using magda::engine::ClipSnapshot;
 using magda::engine::ClipSnapshotFeed;
 using magda::engine::ClipStreamFeed;
@@ -55,8 +55,10 @@ double blockTime(int index) {
 /// value and a position that slipped is visible rather than inferred.
 class CountingReader final : public magda::engine::AudioFileReader {
   public:
+    explicit CountingReader(std::int64_t length = 10000000) : length_(length) {}
+
     std::int64_t lengthInSamples() const override {
-        return 10000000;
+        return length_;
     }
     double sampleRate() const override {
         return kSampleRate;
@@ -65,14 +67,30 @@ class CountingReader final : public magda::engine::AudioFileReader {
         return 2;
     }
 
+    /// Ends where it says it does, the way the real reader does. A clip that
+    /// reads past its own source has to find silence there rather than more
+    /// counting, which is the difference between the tests below meaning
+    /// anything and not.
     int read(juce::AudioBuffer<float>& destination, int destinationOffset, std::int64_t startSample,
              int numSamples) override {
+        const auto available =
+            static_cast<int>(std::clamp<std::int64_t>(length_ - startSample, 0, numSamples));
+
+        if (available < numSamples)
+            destination.clear(destinationOffset + available, numSamples - available);
+        if (available <= 0)
+            return 0;
+
         for (auto channel = 0; channel < destination.getNumChannels(); ++channel)
-            for (auto sample = 0; sample < numSamples; ++sample)
+            for (auto sample = 0; sample < available; ++sample)
                 destination.setSample(channel, destinationOffset + sample,
                                       static_cast<float>(startSample + sample));
-        return numSamples;
+
+        return available;
     }
+
+  private:
+    std::int64_t length_ = 0;
 };
 
 /// Every sample the same, so a gain, a fade or a pan is readable straight off
@@ -101,6 +119,30 @@ class ConstantReader final : public magda::engine::AudioFileReader {
 
   private:
     float value_;
+};
+
+/// A different value on each side, so which of the source's channels a sample
+/// came from is readable off it.
+class SidesReader final : public magda::engine::AudioFileReader {
+  public:
+    std::int64_t lengthInSamples() const override {
+        return 10000000;
+    }
+    double sampleRate() const override {
+        return kSampleRate;
+    }
+    int numChannels() const override {
+        return 2;
+    }
+
+    int read(juce::AudioBuffer<float>& destination, int destinationOffset, std::int64_t,
+             int numSamples) override {
+        for (auto channel = 0; channel < destination.getNumChannels(); ++channel)
+            for (auto sample = 0; sample < numSamples; ++sample)
+                destination.setSample(channel, destinationOffset + sample,
+                                      channel == 0 ? 1.0f : 2.0f);
+        return numSamples;
+    }
 };
 
 RenderContext context() {
@@ -167,10 +209,22 @@ struct Rig {
 
     /// A reader standing by for one entry. Returned so a test can read its
     /// underrun count.
+    ///
+    /// Through the reading its event asked for, because that is what the pool
+    /// hands a voice: reverse, looping and rate conversion are layers over the
+    /// file rather than anything a voice does (io/SourceReaders.hpp). The clip
+    /// has to be on the lane before its reader is given, which every test here
+    /// does anyway.
     PrefetchStream& give(magda::ClipId clipId, magda::EventId eventId,
                          std::unique_ptr<magda::engine::AudioFileReader> reader,
                          magda::engine::PrefetchSettings settings = {256, 8}) {
-        auto stream = std::make_shared<PrefetchStream>(std::move(reader), context(), settings);
+        const auto* event = eventOf(clipId, eventId);
+        REQUIRE(event != nullptr);
+
+        auto stream = std::make_shared<PrefetchStream>(
+            magda::engine::readThrough(std::move(reader),
+                                       magda::engine::sourceReadFor(*event, kSampleRate)),
+            context(), settings);
         auto& created = *stream;
         table.entries.push_back(ClipStreamTable::Entry{kTrack, clipId, eventId, std::move(stream)});
         return created;
@@ -210,10 +264,9 @@ struct Rig {
         for (const auto& entry : table.entries) {
             const auto* event = eventOf(entry.clipId, entry.eventId);
             REQUIRE(event != nullptr);
-            const ClipPlacement placement{event->span.startSeconds, event->span.endSeconds,
-                                          event->anchorSamples};
             entry.stream->seek(magda::engine::sourceSampleAt(
-                placement, std::max(blockTime(next_), event->span.startSeconds), kSampleRate));
+                magda::engine::placementFor(*event, kSampleRate),
+                std::max(blockTime(next_), event->span.startSeconds), kSampleRate));
         }
 
         advance(lead + 1);
@@ -481,6 +534,330 @@ TEST_CASE("A clip plays at its own gain and pan", "[engine][clip][voice]") {
     const auto gain = juce::Decibels::decibelsToGain(-6.0f);
     REQUIRE(rig.at(0, 0) == approx(gain - 0.5f * gain));
     REQUIRE(rig.at(0, 1) == approx(gain + 0.5f * gain));
+}
+
+TEST_CASE("An event's own trim sits under the clip's gain", "[engine][clip][voice]") {
+    // Under it rather than in place of it, so one event of several can be
+    // levelled against the others without touching what the clip plays at.
+    Rig rig;
+
+    auto clip = clipOver(1, blocks(0, 1000));
+    clip.gainDb = -6.0f;
+    clip.events[0].gainDb = -6.0f;
+    rig.lane.audio.push_back(clip);
+
+    rig.give(1, 1, std::make_unique<ConstantReader>(1.0f));
+    rig.publish();
+
+    rig.start(300, 100);
+
+    REQUIRE(rig.at(0) == approx(juce::Decibels::decibelsToGain(-12.0f)));
+}
+
+TEST_CASE("A channel that is off is not heard, and the other one is heard on both",
+          "[engine][clip][voice]") {
+    // Not hard panned. Where a clip sits in the image is what its pan decides,
+    // and silencing an output here would spend that decision on this.
+    Rig rig;
+
+    rig.lane.audio.push_back(clipOver(1, blocks(0, 1000)));
+    rig.give(1, 1, std::make_unique<SidesReader>());
+    rig.publish();
+
+    SECTION("both on is the source as it is") {
+        rig.start(300, 100);
+        CHECK(rig.at(0, 0) == approx(1.0f));
+        CHECK(rig.at(0, 1) == approx(2.0f));
+    }
+
+    SECTION("the left off leaves the right on both sides") {
+        auto lane = rig.lane;
+        lane.audio[0].events[0].leftChannelActive = false;
+        rig.publish(lane);
+
+        rig.start(300, 100);
+        CHECK(rig.at(0, 0) == approx(2.0f));
+        CHECK(rig.at(0, 1) == approx(2.0f));
+    }
+
+    SECTION("and the right off leaves the left on both") {
+        auto lane = rig.lane;
+        lane.audio[0].events[0].rightChannelActive = false;
+        rig.publish(lane);
+
+        rig.start(300, 100);
+        CHECK(rig.at(0, 0) == approx(1.0f));
+        CHECK(rig.at(0, 1) == approx(1.0f));
+    }
+
+    SECTION("neither is silence rather than the file") {
+        auto lane = rig.lane;
+        lane.audio[0].events[0].leftChannelActive = false;
+        lane.audio[0].events[0].rightChannelActive = false;
+        rig.publish(lane);
+
+        rig.start(300, 100);
+        CHECK(rig.at(0, 0) == approx(0.0f));
+        CHECK(rig.at(0, 1) == approx(0.0f));
+    }
+}
+
+TEST_CASE("A file recorded at another rate plays at the device's", "[engine][clip][voice]") {
+    // Half the device's rate, so half a source sample per output sample. The
+    // conversion is underneath (io/SourceReaders.hpp): the voice still consumes
+    // one sample of the reading per output sample, and the clip plays at its
+    // own pitch over its own length instead of at four semitones and half the
+    // length it was placed at.
+    Rig rig;
+
+    auto clip = clipOver(1, blocks(100, 300), 10);
+    clip.events[0].sourceSampleRate = kSampleRate / 2.0;
+    rig.lane.audio.push_back(clip);
+
+    rig.give(1, 1, std::make_unique<CountingReader>());
+    rig.publish();
+
+    rig.start(100, 40);
+
+    // From the source sample the trim names, because an anchor is a count at
+    // the source's own rate and stays one.
+    for (auto sample = 0; sample < kBlockSize; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(rig.at(sample) == approx(10.0f + 0.5f * static_cast<float>(sample)));
+    }
+
+    SECTION("and goes on being in step a hundred blocks later") {
+        rig.advance(100);
+        REQUIRE(rig.at(0) == approx(10.0f + 0.5f * static_cast<float>(100 * kBlockSize)));
+    }
+}
+
+TEST_CASE("A reversed clip plays the region it was given, backwards", "[engine][clip][voice]") {
+    // The model holds the anchor in the original file's coordinates, which is
+    // what an editor goes on showing and what the project file keeps. What
+    // reverse changes is the order the region comes out in, and the first
+    // sample heard is the one at its far end.
+    Rig rig;
+
+    auto clip = clipOver(1, blocks(100, 200), 10000);
+    clip.events[0].sourceDurationSeconds = 10.0;
+    clip.events[0].reversed = true;
+    rig.lane.audio.push_back(clip);
+
+    auto& stream = rig.give(1, 1, std::make_unique<CountingReader>());
+    rig.publish();
+
+    rig.start(100, 40);
+
+    const auto region = 100 * kBlockSize;
+
+    REQUIRE(rig.at(0) == approx(static_cast<float>(10000 + region - 1)));
+    REQUIRE(rig.at(1) == approx(static_cast<float>(10000 + region - 2)));
+    REQUIRE(rig.at(kBlockSize - 1) == approx(static_cast<float>(10000 + region - kBlockSize)));
+
+    SECTION("and ends on the sample it was trimmed to") {
+        rig.advance(99);
+        REQUIRE(rig.at(kBlockSize - 1) == approx(10000.0f));
+    }
+
+    // The reader is still reading forwards through a file that happens to be
+    // the other way round, so nothing about this is a seek.
+    CHECK(stream.underruns() == 0);
+}
+
+TEST_CASE("A reversed clip trimmed longer than its source arrives on time",
+          "[engine][clip][voice]") {
+    // The silence a mirrored read begins with. A clip drawn longer than the
+    // audio behind it has that silence at its end going forwards, and at its
+    // start going backwards, so the stream is cued in front of its own first
+    // sample and has to walk through the gap rather than wait it out: a stream
+    // that stood still would reach the material with its read-ahead somewhere
+    // else, seek, and lose the block the material begins in.
+    Rig rig;
+
+    // Two blocks short of a tenth of a second of source, under a clip that
+    // reads two hundred blocks, so the mirror starts 136 blocks before it.
+    constexpr std::int64_t kSource = 4096;
+    constexpr int kSilentBlocks = (200 * kBlockSize - kSource) / kBlockSize;
+
+    auto clip = clipOver(1, blocks(100, 300));
+    clip.events[0].sourceDurationSeconds = static_cast<double>(kSource) / kSampleRate;
+    clip.events[0].reversed = true;
+    rig.lane.audio.push_back(clip);
+
+    auto& stream = rig.give(1, 1, std::make_unique<CountingReader>(kSource));
+    rig.publish();
+
+    rig.start(100, 40);
+
+    SECTION("the silence in front of the material is silence") {
+        for (auto sample = 0; sample < kBlockSize; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(rig.at(sample) == approx(0.0f));
+        }
+    }
+
+    SECTION("and the material begins in the block it was placed in") {
+        rig.advance(kSilentBlocks);
+
+        REQUIRE(rig.at(0) == approx(static_cast<float>(kSource - 1)));
+        REQUIRE(rig.at(1) == approx(static_cast<float>(kSource - 2)));
+
+        // The point of walking through the silence rather than waiting it out.
+        CHECK(stream.underruns() == 0);
+    }
+}
+
+TEST_CASE("A reversed looped clip tiles the region it was given, backwards",
+          "[engine][clip][voice]") {
+    // Both derivations at once, and the reason they are one function: the
+    // mirrored loop region comes from sourceReadFor and the phase the event
+    // starts on comes from placementFor, and a reader pointed by one and read
+    // by the other would play a tile from somewhere neither of them named.
+    //
+    // What plays first is what the forward clip would have played last, which
+    // for a loop is wherever its phase had got to by the end.
+    Rig rig;
+
+    constexpr std::int64_t kLoopStart = 1000;
+    constexpr std::int64_t kLoopLength = 100;
+    constexpr int kRegion = 200 * kBlockSize;
+
+    auto clip = clipOver(1, blocks(100, 300), kLoopStart);
+    clip.events[0].sourceDurationSeconds = 10.0;
+    clip.events[0].reversed = true;
+    clip.events[0].loopEnabled = true;
+    clip.events[0].loopStartSamples = kLoopStart;
+    clip.events[0].loopLengthSamples = kLoopLength;
+
+    // Where the forward clip ends inside the region, which is where the
+    // backwards one begins.
+    std::int64_t phase = (kRegion - 1) % kLoopLength;
+
+    SECTION("anchored at the top of the region") {
+        // phase stays where it is: the anchor is the loop start.
+    }
+
+    SECTION("anchored part way into it") {
+        clip.events[0].anchorSamples = kLoopStart + 50;
+        phase = (50 + kRegion - 1) % kLoopLength;
+    }
+
+    rig.lane.audio.push_back(clip);
+    auto& stream = rig.give(1, 1, std::make_unique<CountingReader>());
+    rig.publish();
+
+    rig.start(100, 40);
+
+    /// The sample of the file heard @p sample outputs after the clip begins:
+    /// down from the phase it started on, round the region and down again.
+    const auto expected = [phase](int sample) {
+        const auto position = (phase - sample) % kLoopLength;
+        return static_cast<float>(kLoopStart + (position < 0 ? position + kLoopLength : position));
+    };
+
+    for (auto sample = 0; sample < kBlockSize; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(rig.at(sample) == approx(expected(sample)));
+    }
+
+    // Still on that phase blocks later, over a wrap that is not a multiple of
+    // the block: the tiling is the reader's and nothing here counts tiles.
+    rig.advance(37);
+    for (auto sample = 0; sample < kBlockSize; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(rig.at(sample) == approx(expected(37 * kBlockSize + sample)));
+    }
+
+    CHECK(stream.underruns() == 0);
+}
+
+TEST_CASE("A loop over a region longer than its file comes round again", "[engine][clip][voice]") {
+    // The region is what the model asked for, so a region reaching past the end
+    // of its own file plays that silence every time round. Its tail here is far
+    // longer than a prefetch chunk, which is the shape that would stop a reader
+    // for good if silence outside the file were reported as a reader that had
+    // stopped answering: the top of the loop would never come round.
+    Rig rig;
+
+    constexpr std::int64_t kSource = 1000;
+    constexpr std::int64_t kLoopStart = 900;
+    constexpr std::int64_t kLoopLength = 32 * kBlockSize;
+
+    auto clip = clipOver(1, blocks(100, 400), kLoopStart);
+    clip.events[0].sourceDurationSeconds = static_cast<double>(kSource) / kSampleRate;
+    clip.events[0].loopEnabled = true;
+    clip.events[0].loopStartSamples = kLoopStart;
+    clip.events[0].loopLengthSamples = kLoopLength;
+    rig.lane.audio.push_back(clip);
+
+    auto& stream = rig.give(1, 1, std::make_unique<CountingReader>(kSource));
+    rig.publish();
+
+    rig.start(100, 40);
+
+    // The hundred samples the file does have, from where the clip was trimmed.
+    for (auto sample = 0; sample < kBlockSize; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(rig.at(sample) == approx(static_cast<float>(kLoopStart + sample)));
+    }
+
+    SECTION("the rest of the region is the silence the file has there") {
+        rig.advance(4);
+        for (auto sample = 0; sample < kBlockSize; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(rig.at(sample) == approx(0.0f));
+        }
+    }
+
+    SECTION("and the next tile plays the material again") {
+        rig.advance(32);
+
+        REQUIRE(rig.at(0) == approx(static_cast<float>(kLoopStart)));
+        REQUIRE(rig.at(kBlockSize - 1) == approx(static_cast<float>(kLoopStart + kBlockSize - 1)));
+        CHECK(stream.underruns() == 0);
+    }
+}
+
+TEST_CASE("A looped clip tiles its region without a seek", "[engine][clip][voice]") {
+    // A wrap is a discontinuity in the file and nowhere else: it happens inside
+    // the reading, below the stream, so the reader is never pointed at the top
+    // of the region and never pays for a block of silence on the way back to it
+    // (PrefetchStream::seek).
+    Rig rig;
+
+    auto clip = clipOver(1, blocks(100, 300), 1000);
+    clip.events[0].loopEnabled = true;
+    clip.events[0].loopStartSamples = 1000;
+    clip.events[0].loopLengthSamples = 100;
+    rig.lane.audio.push_back(clip);
+
+    auto& stream = rig.give(1, 1, std::make_unique<CountingReader>());
+    rig.publish();
+
+    rig.start(100, 40);
+
+    for (auto sample = 0; sample < kBlockSize; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(rig.at(sample) == approx(static_cast<float>(1000 + sample % 100)));
+    }
+
+    SECTION("the block the wrap falls in carries straight on into the next tile") {
+        rig.advance();
+        for (auto sample = 0; sample < kBlockSize; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(rig.at(sample) ==
+                    approx(static_cast<float>(1000 + (kBlockSize + sample) % 100)));
+        }
+
+        CHECK(stream.underruns() == 0);
+    }
+
+    SECTION("and it is still going round a hundred blocks later") {
+        rig.advance(100);
+        REQUIRE(rig.at(0) == approx(static_cast<float>(1000 + (100 * kBlockSize) % 100)));
+        CHECK(stream.underruns() == 0);
+    }
 }
 
 TEST_CASE("The launch ramp takes the step out of a voice that begins mid-material",

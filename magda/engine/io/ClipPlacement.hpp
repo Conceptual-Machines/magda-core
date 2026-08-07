@@ -29,24 +29,31 @@ struct ClipPlacement {
     double startSeconds = 0.0;
     double endSeconds = 0.0;
 
-    /// The sample of the file that plays at @ref startSeconds. What trimming
-    /// the front of a clip moves.
+    /// The sample that plays at @ref startSeconds. What trimming the front of a
+    /// clip moves.
+    ///
+    /// Of the reading rather than of the file, and the two are the same thing
+    /// for a clip that asks nothing of its source. Where it asks for reverse,
+    /// looping or another rate, what is read is a file arranged the way it
+    /// asked (io/SourceReaders.hpp) and this counts in that file's samples;
+    /// clip/EventPlacement.hpp is what converts one into the other, once.
     std::int64_t sourceOffsetSamples = 0;
 };
 
 /**
- * @brief The file sample that plays at @p seconds on the timeline.
+ * @brief The sample that plays at @p seconds on the timeline.
  *
  * At @p sampleRate, the device's rate, not the file's, and that is not a slip.
- * One file sample is consumed per output sample, so a position derived at any
- * other rate would disagree with what playing actually gets through: every
- * block would land somewhere the reader was not expecting, which is a seek, and
- * a file at a mismatched rate would spend every callback re-pointing the reader
- * and hearing nothing. Deriving it at the device's rate keeps the two in step,
- * and what a mismatched file costs is then pitch rather than playback.
+ * One sample of the reading is consumed per output sample, so a position
+ * derived at any other rate would disagree with what playing actually gets
+ * through: every block would land somewhere the reader was not expecting, which
+ * is a seek, and a mismatched file would spend every callback re-pointing the
+ * reader and hearing nothing.
  *
- * Rate conversion belongs to the clip layer (#1890), which owns stretch and
- * warp and is the same question asked once.
+ * Which is why rate conversion happens below this rather than here. A file
+ * recorded at another rate is read through a layer that presents it at the
+ * device's (io/SourceReaders.hpp), so the samples this counts are always the
+ * device's own and this mapping is always the whole of it.
  */
 inline std::int64_t sourceSampleAt(const ClipPlacement& placement, double seconds,
                                    double sampleRate) {

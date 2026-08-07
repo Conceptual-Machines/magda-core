@@ -18,6 +18,7 @@
 #include "io/AudioFileReader.hpp"
 #include "io/PrefetchStream.hpp"
 #include "io/PrefetchThread.hpp"
+#include "io/SourceReaders.hpp"
 
 /**
  * @file ClipVoicePool.hpp
@@ -280,6 +281,11 @@ class ClipVoicePool {
      * that is no longer there. The anchor is here for the milder version of the
      * same thing, a trim that moves where the reader should be pointed.
      *
+     * The path is not the whole of what was opened either. Reverse, looping and
+     * rate conversion are built into the reader rather than asked of it per
+     * block (io/SourceReaders.hpp), so a clip that has been reversed since is
+     * reading a different file from the same path and needs a new one.
+     *
      * The stream is null where the file would not open. Kept rather than
      * dropped so a path that failed is not retried every round for as long as
      * it sits in the window; leaving the window and coming back is what asks
@@ -288,10 +294,15 @@ class ClipVoicePool {
     struct Reader {
         std::shared_ptr<PrefetchStream> stream;
         std::string path;
+        SourceRead read;
+
+        /// The sample of that reading the event starts on, which is where the
+        /// stream is pointed. Derived rather than the event's own anchor: a
+        /// mirrored read counts from the other end (clip/EventPlacement.hpp).
         std::int64_t anchorSamples = 0;
 
         bool operator==(const Reader& other) const {
-            return stream == other.stream && path == other.path &&
+            return stream == other.stream && path == other.path && read == other.read &&
                    anchorSamples == other.anchorSamples;
         }
     };
