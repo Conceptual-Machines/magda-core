@@ -55,11 +55,16 @@ TEST_CASE("Every declared operation has a handler", "[remote][service][registry]
     // The property the handler-on-descriptor design exists to guarantee: before
     // it, the registry declared 36 operations and implemented none, and nothing
     // detected that.
+    //
+    // Transport-scoped operations (#1857) are the one deliberate exception, and
+    // the assertion is two-way rather than a carve-out: an operation with no
+    // handler must say it is the transport's, and one that claims to be the
+    // transport's must not also carry a handler here.
     const auto& operations = OperationRegistry::instance().operations();
     REQUIRE_FALSE(operations.empty());
     for (const auto& operation : operations) {
         INFO("operation: " << operation.name);
-        REQUIRE(operation.handler != nullptr);
+        REQUIRE((operation.handler != nullptr) == !operation.transportScoped);
     }
 }
 

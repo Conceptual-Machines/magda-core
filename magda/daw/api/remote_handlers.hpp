@@ -73,6 +73,7 @@ HandlerResult sessionStopAll(MagdaApi&, const juce::var&, const RequestContext&)
 HandlerResult sessionLaunchScene(MagdaApi&, const juce::var&, const RequestContext&);
 
 // Automation
+HandlerResult automationListLanes(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult automationGetLane(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult automationCreateLane(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult automationAddPoint(MagdaApi&, const juce::var&, const RequestContext&);

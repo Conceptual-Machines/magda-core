@@ -37,6 +37,10 @@ const char* toString(Topic topic) {
     return "project";
 }
 
+bool isContinuousTopic(Topic topic) {
+    return topic == Topic::Meters || topic == Topic::Playhead;
+}
+
 std::optional<Topic> parseTopic(juce::StringRef topic) {
     const juce::String name(topic);
     for (std::size_t index = 0; index < TOPIC_COUNT; ++index) {

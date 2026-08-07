@@ -195,6 +195,7 @@ set(TEST_SOURCES
     test_remote_api_contract.cpp
     test_remote_service.cpp
     test_remote_changes.cpp
+    test_remote_subscriptions.cpp
     test_remote_model_bridge.cpp
     test_remote_websocket_server.cpp
     test_remote_api_host.cpp

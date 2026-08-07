@@ -16,6 +16,7 @@
 
 #include "MockMagdaApi.hpp"
 #include "magda/daw/api/remote_service.hpp"
+#include "magda/daw/api/remote_subscriptions.hpp"
 #include "magda/daw/api/remote_websocket_server.hpp"
 
 using namespace magda;
@@ -61,14 +62,30 @@ std::string request(const juce::String& method, const juce::var& params = {},
     return juce::JSON::toString(juce::var(object), true).toStdString();
 }
 
+/// Read one frame, whatever it is. A subscribed client receives replies and
+/// pushed events on the same socket, so a test that expects an event has to read
+/// frames rather than round-trip requests.
+juce::var readFrame(httplib::ws::WebSocketClient& client) {
+    std::string message;
+    REQUIRE(client.read(message) == httplib::ws::ReadResult::Text);
+    juce::var parsed;
+    REQUIRE(juce::JSON::parse(juce::String(message), parsed).wasOk());
+    return parsed;
+}
+
 /// Send one request, read one reply, parse it.
 juce::var roundTrip(httplib::ws::WebSocketClient& client, const std::string& payload) {
     REQUIRE(client.send(payload));
-    std::string reply;
-    REQUIRE(client.read(reply) == httplib::ws::ReadResult::Text);
-    juce::var parsed;
-    REQUIRE(juce::JSON::parse(juce::String(reply), parsed).wasOk());
-    return parsed;
+    return readFrame(client);
+}
+
+juce::var topicList(const std::vector<const char*>& topics) {
+    juce::Array<juce::var> array;
+    for (const auto* topic : topics)
+        array.add(juce::String(topic));
+    auto* params = new juce::DynamicObject();
+    params->setProperty("topics", array);
+    return params;
 }
 
 int errorCodeOf(const juce::var& reply) {
@@ -567,4 +584,242 @@ TEST_CASE("The connection cap holds when clients arrive together", "[remote][web
     // there would mean reserving for requests cpp-httplib may never hand to a
     // handler, and those reservations would never come back.
     REQUIRE(connected.load() >= peak);
+}
+
+// ===========================================================================
+// Subscriptions (#1857)
+// ===========================================================================
+
+TEST_CASE("A subscriber is pushed changes another client made",
+          "[remote][websocket][subscriptions]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    api.project_.info.tempo = 120.0;
+
+    RemoteApiService service(api);
+    SubscriptionHub hub(api, service);
+    RemoteWebSocketServer server(service, testOptions(), &hub);
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient watcher(endpoint(server), authorised());
+    REQUIRE(watcher.connect());
+
+    const auto subscribed =
+        roundTrip(watcher, request("subscriptions.subscribe", topicList({"project"})));
+    REQUIRE(subscribed["error"].isVoid());
+    // State arrives in the reply, so there is no window in which a client is
+    // subscribed and does not know what it is watching.
+    const auto* snapshots = subscribed["result"]["snapshots"].getArray();
+    REQUIRE(snapshots != nullptr);
+    REQUIRE(snapshots->size() == 1);
+    REQUIRE((*snapshots)[0]["type"].toString() == "snapshot");
+    REQUIRE(static_cast<double>((*snapshots)[0]["payload"]["tempo"]) == 120.0);
+
+    {
+        httplib::ws::WebSocketClient editor(endpoint(server), authorised());
+        REQUIRE(editor.connect());
+        auto* tempo = new juce::DynamicObject();
+        tempo->setProperty("tempo", 145.0);
+        const auto applied = roundTrip(editor, request("project.setTempo", juce::var(tempo), 7));
+        REQUIRE(applied["error"].isVoid());
+    }
+
+    // No MessageManager in the Catch2 runner means no flush timer, so the
+    // coalescing window is closed by hand. In the app this is the 30 Hz pump.
+    service.changes().flush();
+
+    const auto event = readFrame(watcher);
+    REQUIRE(event["jsonrpc"].toString() == "2.0");
+    REQUIRE(event["method"].toString() == "subscriptions.event");
+    // A notification: no id, because there is nothing for the client to answer.
+    REQUIRE(event["id"].isVoid());
+    REQUIRE(event["params"]["topic"].toString() == "project");
+    REQUIRE(event["params"]["type"].toString() == "delta");
+    REQUIRE(static_cast<juce::int64>(event["params"]["revision"]) > 0);
+    REQUIRE(static_cast<double>(event["params"]["payload"]["tempo"]) == 145.0);
+}
+
+TEST_CASE("A subscriber's own reply precedes the event it caused",
+          "[remote][websocket][subscriptions][ordering]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    SubscriptionHub hub(api, service);
+    RemoteWebSocketServer server(service, testOptions(), &hub);
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+    roundTrip(client, request("subscriptions.subscribe", topicList({"transport"})));
+
+    const auto reply = roundTrip(client, request("transport.play", {}, 2));
+    REQUIRE(static_cast<int>(reply["id"]) == 2);
+
+    service.changes().flush();
+
+    // Events share the reply queue precisely so this holds: a client applies the
+    // change it asked for before it is told the change happened, rather than
+    // having to reconcile the two arriving out of order.
+    const auto event = readFrame(client);
+    REQUIRE(event["method"].toString() == "subscriptions.event");
+    REQUIRE(event["params"]["topic"].toString() == "transport");
+    REQUIRE(static_cast<juce::int64>(event["params"]["revision"]) ==
+            static_cast<juce::int64>(reply["meta"]["revision"]));
+}
+
+TEST_CASE("A transport with no subscription support says so",
+          "[remote][websocket][subscriptions][errors]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    // Deliberately no hub — the configuration an embedder gets by leaving the
+    // argument off.
+    RemoteWebSocketServer server(service, testOptions());
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+
+    const auto refused =
+        roundTrip(client, request("subscriptions.subscribe", topicList({"tracks"})));
+    // A real operation over a transport that cannot carry it, so InvalidRequest
+    // rather than method-not-found: telling the client it asked for something
+    // that does not exist would send it looking for a spelling mistake.
+    REQUIRE(errorCodeOf(refused) == -32600);
+    REQUIRE(juce::String(refused["error"]["message"].toString()).contains("subscriptions"));
+}
+
+TEST_CASE("Subscription input is rejected by the shared schema",
+          "[remote][websocket][subscriptions][errors]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    SubscriptionHub hub(api, service);
+    RemoteWebSocketServer server(service, testOptions(), &hub);
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+
+    // The transport declares no schema of its own; this is the registry's, the
+    // same one system.describe publishes.
+    const auto unknown =
+        roundTrip(client, request("subscriptions.subscribe", topicList({"telemetry"})));
+    REQUIRE(errorCodeOf(unknown) == -32602);
+
+    const auto missing = roundTrip(client, request("subscriptions.subscribe", {}, 2));
+    REQUIRE(errorCodeOf(missing) == -32602);
+}
+
+TEST_CASE("A subscriber that disconnects stops costing the others",
+          "[remote][websocket][subscriptions][lifetime]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    SubscriptionHub hub(api, service);
+    RemoteWebSocketServer server(service, testOptions(), &hub);
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient survivor(endpoint(server), authorised());
+    REQUIRE(survivor.connect());
+    roundTrip(survivor, request("subscriptions.subscribe", topicList({"transport"})));
+
+    {
+        httplib::ws::WebSocketClient leaving(endpoint(server), authorised());
+        REQUIRE(leaving.connect());
+        roundTrip(leaving, request("subscriptions.subscribe", topicList({"transport"})));
+        REQUIRE(hub.clientCount() == 2);
+    }
+
+    // The connection's own thread deregisters it, within one read timeout of the
+    // socket closing.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    while (hub.clientCount() > 1 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    REQUIRE(hub.clientCount() == 1);
+
+    // And the one still there is unaffected.
+    roundTrip(survivor, request("transport.play", {}, 2));
+    service.changes().flush();
+    const auto event = readFrame(survivor);
+    REQUIRE(event["params"]["topic"].toString() == "transport");
+}
+
+TEST_CASE("A subscriber that cannot take events is dropped, not queued for",
+          "[remote][websocket][subscriptions][limits]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    SubscriptionHub::Options hubOptions;
+    hubOptions.droppedFlushesBeforeDisconnect = 2;
+    SubscriptionHub hub(api, service, hubOptions);
+
+    auto options = testOptions();
+    // No room for a single event. A budget of zero is the same code path as a
+    // client whose socket has stopped draining, without the timing.
+    options.maxQueuedEventsPerConnection = 0;
+    RemoteWebSocketServer server(service, options, &hub);
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+
+    // Replies draw on their own budget, so this still works. Sharing one cap
+    // would let a busy subscription starve the answer a client is waiting on.
+    const auto subscribed =
+        roundTrip(client, request("subscriptions.subscribe", topicList({"transport"})));
+    REQUIRE(subscribed["error"].isVoid());
+    REQUIRE(hub.clientCount() == 1);
+
+    for (int i = 0; i < 2; ++i) {
+        // Really change something: a topic that was marked but projects the same
+        // is coalesced away before anyone is asked to take it, which would leave
+        // nothing for the client to refuse.
+        api.transport_.playing = !api.transport_.playing;
+        service.noteModelChanged(Topic::Transport);
+        service.changes().flush();
+    }
+
+    // Nothing was buffered on its behalf and nothing was retried; it simply
+    // stopped being a subscriber.
+    REQUIRE(hub.clientCount() == 0);
+}
+
+TEST_CASE("A dropped subscriber stops being able to change the project",
+          "[remote][websocket][subscriptions][limits]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    SubscriptionHub::Options hubOptions;
+    hubOptions.droppedFlushesBeforeDisconnect = 1;
+    SubscriptionHub hub(api, service, hubOptions);
+
+    auto options = testOptions();
+    options.maxQueuedEventsPerConnection = 0;
+    RemoteWebSocketServer server(service, options, &hub);
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+    roundTrip(client, request("subscriptions.subscribe", topicList({"transport"})));
+
+    api.transport_.playing = true;
+    service.noteModelChanged(Topic::Transport);
+    service.changes().flush();
+    REQUIRE(hub.clientCount() == 0);
+
+    // Marking a connection closed is all a foreign thread may do — the reader
+    // owns the socket. That only ends the connection if the reader looks, and
+    // until it did, a client dropped for backpressure kept getting its requests
+    // executed with only the replies thrown away.
+    REQUIRE(client.send(request("transport.play", {}, 2)));
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    while (server.connectionCount() > 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    REQUIRE(server.connectionCount() == 0);
+    REQUIRE(api.transport_.playCalls == 0);
 }

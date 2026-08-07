@@ -10,6 +10,7 @@ namespace magda {
 namespace remote {
 
 class RemoteApiService;
+class SubscriptionHub;
 
 /**
  * @brief JSON-RPC 2.0 over WebSocket, on top of `RemoteApiService` (#1856).
@@ -52,6 +53,30 @@ class RemoteApiService;
  * and the revision, so a client that lost an optimistic-concurrency race can
  * resync without a second call.
  *
+ * ## Pushed events
+ *
+ * A subscribed client (#1857) also receives server-to-client notifications —
+ * JSON-RPC requests with no `id`, which is the standard's own shape for
+ * something that expects no reply:
+ *
+ *     {"jsonrpc":"2.0","method":"subscriptions.event",
+ *      "params":{"topic":"tracks","type":"delta","revision":57,"payload":{…}}}
+ *
+ * Inbound notifications are still refused; the asymmetry is deliberate. A
+ * request without an id cannot be answered, and every operation's answer carries
+ * a revision the client needs. An event is the opposite case: there is nothing
+ * to answer, and inventing an id would only invite a reply.
+ *
+ * `subscriptions.subscribe`, `.unsubscribe`, `.list`, and `.resync` are answered
+ * by this class rather than by the dispatcher, because what a connection is
+ * subscribed to is per-connection state and the dispatcher has no connections.
+ * Their names and schemas still come from the shared registry, which marks them
+ * `transportScoped`; this class adds no contract of its own.
+ *
+ * Events share the reply queue, so a mutation's reply and the event describing
+ * it arrive in the order they were produced, but they hold a separate budget:
+ * see `Options::maxQueuedEventsPerConnection`.
+ *
  * ## Threading
  *
  * The message thread is never used for I/O. The listener runs on its own
@@ -92,8 +117,14 @@ class RemoteApiService;
  * read timeout from expiring on a live connection. A client that neither sends
  * nor reads produces no traffic at all and will be dropped, because nothing
  * distinguishes it from one that has gone away. This costs a real client
- * nothing — waiting for replies and, once #1857 lands, for pushed changes, is
- * where a client spends its time anyway.
+ * nothing — waiting for replies and for pushed changes is where a client spends
+ * its time anyway.
+ *
+ * **Keep reading while subscribed.** A subscriber that stops consuming has its
+ * events dropped rather than buffered, is told so by receiving a `snapshot`
+ * where it expected a `delta`, and is eventually disconnected. Nothing about
+ * that is recoverable by the server on the client's behalf: a queue held for a
+ * client that is not reading is memory spent on nobody.
  */
 class RemoteWebSocketServer {
   public:
@@ -150,6 +181,24 @@ class RemoteWebSocketServer {
         /// queue would grow for as long as it kept talking.
         int maxQueuedRepliesPerConnection = 32;
 
+        /**
+         * Pushed events allowed to sit unwritten before further ones are
+         * dropped (#1857).
+         *
+         * Budgeted separately from replies rather than sharing their cap, in
+         * both directions. A client subscribed to a busy project generates
+         * events continuously, and one outbox cap would let them crowd out the
+         * answer to the request the client is waiting on; conversely a burst of
+         * replies must not silently cost a subscriber its stream. Ordering is
+         * still one queue, so a mutation's reply and the event it caused arrive
+         * in the order they were produced.
+         *
+         * Dropping is the whole policy: an event refused here tells the
+         * subscription hub the client is behind, and it answers with a fresh
+         * snapshot rather than with the deltas it missed.
+         */
+        int maxQueuedEventsPerConnection = 64;
+
         /// Token-bucket rate limit per connection. Bursts up to
         /// `maxInFlightPerConnection`, then holds this rate.
         double maxRequestsPerSecond = 50.0;
@@ -159,7 +208,11 @@ class RemoteWebSocketServer {
         int defaultDeadlineMs = 10'000;
     };
 
-    RemoteWebSocketServer(RemoteApiService& service, Options options);
+    /// `subscriptions` is optional: without one the four `subscriptions.*`
+    /// methods fail with a clear message rather than silently doing nothing, and
+    /// the rest of the API is unaffected. It must outlive this server.
+    RemoteWebSocketServer(RemoteApiService& service, Options options,
+                          SubscriptionHub* subscriptions = nullptr);
     ~RemoteWebSocketServer();
 
     RemoteWebSocketServer(const RemoteWebSocketServer&) = delete;

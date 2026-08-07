@@ -376,8 +376,27 @@ struct OperationDescriptor {
      * a table keyed by name so a transport cannot reach a different
      * implementation than the one declared — there is only one place to look,
      * and the registry constructor asserts every declared operation has one.
+     *
+     * Null only for a `transportScoped` operation, which by definition has no
+     * implementation that could run here.
      */
     OperationHandler handler = nullptr;
+
+    /**
+     * Executed by the transport adapter rather than by `RemoteApiService`.
+     *
+     * The subscription methods (#1857) are the reason this exists: subscribing
+     * is per-connection state, and a connection is the one thing the dispatcher
+     * deliberately knows nothing about. Their names, summaries, and schemas
+     * still belong here — that is what stops the WebSocket and MCP adapters
+     * declaring two different contracts for the same thing, and what keeps
+     * `system.describe` a complete catalogue.
+     *
+     * Dispatching one through the service is an error, and says so, rather than
+     * failing as an unknown operation: a client that reaches this has asked for
+     * something real over a transport that cannot carry it.
+     */
+    bool transportScoped = false;
 };
 
 class OperationRegistry {

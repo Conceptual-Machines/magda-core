@@ -23,12 +23,19 @@ namespace {
 std::vector<Topic> topicsFor(const juce::String& operationName) {
     if (operationName.startsWith("project."))
         return {Topic::Project};
+    // Session slots are keyed by track and derived from clips, so a track
+    // disappearing takes its column of the grid with it.
     if (operationName == "tracks.create" || operationName == "tracks.delete")
-        return {Topic::Tracks, Topic::Clips, Topic::Devices};
+        return {Topic::Tracks, Topic::Clips, Topic::Devices, Topic::Session};
     if (operationName.startsWith("tracks."))
         return {Topic::Tracks};
+    // `session.get` projects its slots out of the clips, so creating or deleting
+    // one changes the session grid whether or not the request said "session".
+    // Over-broad on the clip operations that cannot affect it — adding a note —
+    // which costs nothing: an unchanged projection is coalesced away before any
+    // event is built.
     if (operationName.startsWith("clips."))
-        return {Topic::Clips};
+        return {Topic::Clips, Topic::Session};
     if (operationName.startsWith("devices.") || operationName.startsWith("racks."))
         return {Topic::Devices};
     if (operationName.startsWith("selection."))
@@ -165,6 +172,19 @@ void RemoteApiService::dispatch(const juce::String& operationName, const juce::v
     if (operation == nullptr) {
         onComplete(Response::failure(ErrorCode::UnknownOperation,
                                      "unknown operation: " + operationName, revision));
+        return;
+    }
+
+    // A subscription method reached the dispatcher, which means the transport
+    // that received it cannot push. Saying so beats UnknownOperation: the
+    // operation is real and the client's request is well formed, and the only
+    // thing wrong is where it arrived.
+    if (operation->transportScoped) {
+        onComplete(Response::failure(ErrorCode::InvalidRequest,
+                                     operationName +
+                                         " is handled by the transport, and this transport "
+                                         "does not support subscriptions",
+                                     revision));
         return;
     }
 
@@ -389,9 +409,21 @@ void RemoteApiService::projectReplaced() {
     // silently applied to different state. Pending changes describe the
     // outgoing project, so they are dropped rather than delivered — but the
     // swap itself is published, at the new revision, so subscribers resync.
+    //
+    // Every discrete topic, not just `project`: a different project has
+    // different tracks, clips, devices, selection, session grid, automation, and
+    // transport state, and a subscriber watching only one of those would
+    // otherwise hear nothing at all and keep showing the old project's contents
+    // until something happened to change that topic in the new one. The two
+    // continuous topics are excluded because nothing marks them — a meter
+    // reading is sampled, not invalidated.
     const auto revision = revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
     changes_.discardPending();
-    changes_.markChanged(Topic::Project, revision);
+    for (std::size_t index = 0; index < TOPIC_COUNT; ++index) {
+        const auto topic = static_cast<Topic>(index);
+        if (!isContinuousTopic(topic))
+            changes_.markChanged(topic, revision);
+    }
 
     {
         const std::lock_guard<std::mutex> lock(cacheMutex_);
@@ -400,20 +432,26 @@ void RemoteApiService::projectReplaced() {
 }
 
 void RemoteApiService::noteModelChanged(Topic topic) {
+    noteModelChanged({topic});
+}
+
+void RemoteApiService::noteModelChanged(std::initializer_list<Topic> topics) {
     if (shutdown_.load(std::memory_order_acquire))
         return;
 
     // Fired from inside a handler's own mutation. The dispatcher publishes one
     // revision for the whole request when the handler returns, so bumping again
-    // here would advance it two or more times for one logical write. The topic
-    // is still marked, so subscribers see the change either way.
+    // here would advance it two or more times for one logical write. The topics
+    // are still marked, so subscribers see the change either way.
     if (isExecutingOnThisThread()) {
-        changes_.markChanged(topic, currentRevision() + 1);
+        for (const auto topic : topics)
+            changes_.markChanged(topic, currentRevision() + 1);
         return;
     }
 
     const auto revision = revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
-    changes_.markChanged(topic, revision);
+    for (const auto topic : topics)
+        changes_.markChanged(topic, revision);
 }
 
 void RemoteApiService::noteModelActivity(Topic topic) {

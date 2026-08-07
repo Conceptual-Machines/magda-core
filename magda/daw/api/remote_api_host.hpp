@@ -6,6 +6,7 @@
 
 namespace magda {
 
+class AudioEngine;
 class MagdaApi;
 
 namespace remote {
@@ -13,6 +14,7 @@ namespace remote {
 class ModelChangeBridge;
 class RemoteApiService;
 class RemoteWebSocketServer;
+class SubscriptionHub;
 
 /**
  * @brief Owns the remote API for the lifetime of a running MAGDA (#1856).
@@ -59,7 +61,16 @@ class RemoteWebSocketServer;
  */
 class RemoteApiHost {
   public:
-    explicit RemoteApiHost(MagdaApi& api);
+    /**
+     * @brief Construct the remote API over a facade, and optionally an engine.
+     *
+     * `engine` is what the `meters` subscription reads (#1857) and the only
+     * thing it is used for. Passing nothing is a supported configuration, not a
+     * degraded one: the whole API works, and `meters` delivers empty samples
+     * rather than failing — a host with no audio engine is not something a
+     * remote client can detect or act on.
+     */
+    explicit RemoteApiHost(MagdaApi& api, AudioEngine* engine = nullptr);
     ~RemoteApiHost();
 
     RemoteApiHost(const RemoteApiHost&) = delete;
@@ -90,9 +101,19 @@ class RemoteApiHost {
     /// its own.
     RemoteApiService& service();
 
+    /// The subscription hub, for the same reason: MCP resource updates and
+    /// WebSocket subscriptions have to be fed by one projection of the model,
+    /// not two.
+    SubscriptionHub& subscriptions();
+
   private:
+    // Declaration order is destruction order reversed, and it is load-bearing:
+    // the server's connections deregister from the hub, the hub listens to the
+    // service's change source, and the bridge writes into the service. Each has
+    // to outlive the thing that talks to it.
     std::unique_ptr<RemoteApiService> service_;
     std::unique_ptr<ModelChangeBridge> bridge_;
+    std::unique_ptr<SubscriptionHub> subscriptions_;
     std::unique_ptr<RemoteWebSocketServer> server_;
     juce::String token_;
 };

@@ -6,6 +6,7 @@
 #include "MockMagdaApi.hpp"
 #include "magda/daw/api/remote_model_bridge.hpp"
 #include "magda/daw/api/remote_service.hpp"
+#include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
 
@@ -135,4 +136,25 @@ TEST_CASE("A shut-down service ignores model notifications", "[remote][bridge][l
     fixture.service.changes().flush();
 
     REQUIRE(fixture.seen.empty());
+}
+
+TEST_CASE("Clip and track notifications also invalidate the session grid", "[remote][bridge]") {
+    BridgeFixture fixture;
+    const auto before = fixture.service.currentRevision();
+
+    // The session grid is projected out of the clips and keyed by track, so a
+    // subscriber watching only `session` has to hear about both. Marking only
+    // the obvious topic would leave it showing a grid the project no longer has.
+    TrackManager::getInstance().createTrack("Drums", TrackType::Audio);
+    ClipManager::getInstance().clearAllClips();
+    fixture.service.changes().flush();
+
+    REQUIRE(fixture.sawTopic(Topic::Tracks));
+    REQUIRE(fixture.sawTopic(Topic::Clips));
+    REQUIRE(fixture.sawTopic(Topic::Session));
+
+    // Two edits, two revisions — not four. A change that invalidates several
+    // topics is still one change, and advancing the counter per topic would make
+    // every multi-topic edit look like several to an optimistic writer.
+    REQUIRE(fixture.service.currentRevision() == before + 2);
 }

@@ -34,6 +34,7 @@
 #include <utility>
 
 #include "remote_service.hpp"
+#include "remote_subscriptions.hpp"
 
 namespace magda {
 namespace remote {
@@ -42,6 +43,11 @@ namespace {
 
 /// The path a client upgrades on. Everything else 404s.
 constexpr const char* kEndpoint = "/rpc";
+
+/// The notification method every pushed event arrives under. One method rather
+/// than one per topic: a client routes on `params.topic`, and a JSON-RPC library
+/// that dispatches on method name needs exactly one handler registered.
+constexpr const char* kEventMethod = "subscriptions.event";
 
 /**
  * How often the server pings an idle client.
@@ -160,6 +166,22 @@ std::string replyFor(const juce::var& id, const Response& response) {
     return juce::JSON::toString(reply, true).toStdString();
 }
 
+/**
+ * A pushed event as a JSON-RPC notification — a request with no `id`.
+ *
+ * The standard's own shape for something that expects no reply, and the reason
+ * an event is not simply a `result` with no request behind it: a client library
+ * routes on `method`, and every one of them already knows that a missing id
+ * means "do not answer this".
+ */
+std::string notificationFor(const SubscriptionEvent& event) {
+    auto notification = makeObject();
+    setProperty(notification, "jsonrpc", "2.0");
+    setProperty(notification, "method", kEventMethod);
+    setProperty(notification, "params", event.toJson());
+    return juce::JSON::toString(notification, true).toStdString();
+}
+
 bool isNumber(const juce::var& value) {
     return value.isInt() || value.isInt64() || value.isDouble();
 }
@@ -259,20 +281,26 @@ bool secureEquals(const juce::String& a, const juce::String& b) {
  * its payload rather than reaching for a stack frame that has returned.
  */
 struct Connection {
-    Connection(httplib::ws::WebSocket& webSocket, int identifier, int maxQueued, double burst)
+    Connection(httplib::ws::WebSocket& webSocket, int identifier, int maxQueued, int maxEvents,
+               double burst)
         : socket(webSocket),
           id(identifier),
           maxQueuedReplies(maxQueued),
+          maxQueuedEvents(maxEvents),
           tokens(burst),
           lastRefill(std::chrono::steady_clock::now()) {}
 
     httplib::ws::WebSocket& socket;
     const int id;
     const int maxQueuedReplies;
+    const int maxQueuedEvents;
+
+    /// The hub's handle on this connection, or 0 when subscriptions are off.
+    SubscriptionHub::ClientId subscriber = 0;
 
     /**
-     * A reply waiting to be written, and whether it carries an admitted
-     * request's slot.
+     * A frame waiting to be written, whether it carries an admitted request's
+     * slot, and which budget it was drawn from.
      *
      * Ownership has to travel with the payload. Releasing at the point a reply
      * is produced and again when it is written decrements twice for one
@@ -285,6 +313,7 @@ struct Connection {
     struct Outgoing {
         std::string payload;
         bool ownsSlot = false;
+        bool isEvent = false;
     };
 
     mutable std::mutex mutex;
@@ -292,6 +321,13 @@ struct Connection {
     std::deque<Outgoing> outbox;
     bool closed = false;
     int inFlight = 0;
+
+    // Counted rather than derived from `outbox.size()`, because the two share
+    // one queue — ordering between a reply and the event it caused is worth
+    // keeping — while holding separate budgets. Sizing either from the total
+    // would let a burst of one starve the other.
+    int queuedReplies = 0;
+    int queuedEvents = 0;
 
     double tokens;
     std::chrono::steady_clock::time_point lastRefill;
@@ -309,12 +345,35 @@ struct Connection {
     bool enqueue(std::string payload, bool ownsSlot) {
         {
             const std::lock_guard<std::mutex> lock(mutex);
-            if (closed || static_cast<int>(outbox.size()) >= maxQueuedReplies) {
+            if (closed || queuedReplies >= maxQueuedReplies) {
                 if (ownsSlot)
                     releaseLocked();
                 return false;
             }
-            outbox.push_back({std::move(payload), ownsSlot});
+            ++queuedReplies;
+            outbox.push_back({std::move(payload), ownsSlot, false});
+        }
+        ready.notify_one();
+        return true;
+    }
+
+    /**
+     * @brief Queue one pushed event, or refuse it.
+     *
+     * Refusing is not a failure to report: it is the answer the subscription hub
+     * needs. A client over its event budget has stopped reading, so the hub stops
+     * sending it deltas it could not apply anyway and hands it a snapshot when it
+     * catches up. Nothing is retried and nothing is buffered past the cap.
+     *
+     * Never carries a request slot — an event answers no request.
+     */
+    bool enqueueEvent(std::string payload) {
+        {
+            const std::lock_guard<std::mutex> lock(mutex);
+            if (closed || queuedEvents >= maxQueuedEvents)
+                return false;
+            ++queuedEvents;
+            outbox.push_back({std::move(payload), false, true});
         }
         ready.notify_one();
         return true;
@@ -340,12 +399,30 @@ struct Connection {
         ready.notify_one();
     }
 
+    /**
+     * @brief Whether this connection has been retired by anything but its reader.
+     *
+     * `markClosed` is how a foreign thread — the subscription hub dropping a
+     * subscriber that stopped consuming — says the connection is finished, and
+     * it is all a foreign thread may do, because the reader owns the socket.
+     * That only ends the connection if the reader looks, which is why this is
+     * checked around every frame rather than only when replies are queued:
+     * without it a client dropped for backpressure keeps having its requests
+     * executed, mutations and all, and only its replies are thrown away.
+     */
+    bool isClosed() const {
+        const std::lock_guard<std::mutex> lock(mutex);
+        return closed;
+    }
+
     void markClosed() {
         std::deque<Outgoing> abandoned;
         {
             const std::lock_guard<std::mutex> lock(mutex);
             closed = true;
             abandoned.swap(outbox);
+            queuedReplies = 0;
+            queuedEvents = 0;
             for (const auto& entry : abandoned)
                 if (entry.ownsSlot)
                     releaseLocked();
@@ -395,11 +472,12 @@ struct Connection {
 // ===========================================================================
 
 struct RemoteWebSocketServer::Impl {
-    Impl(RemoteApiService& apiService, Options serverOptions)
-        : service(apiService), options(std::move(serverOptions)) {}
+    Impl(RemoteApiService& apiService, Options serverOptions, SubscriptionHub* hub)
+        : service(apiService), options(std::move(serverOptions)), subscriptions(hub) {}
 
     RemoteApiService& service;
     const Options options;
+    SubscriptionHub* const subscriptions;
 
     httplib::Server server;
     std::thread listener;
@@ -560,6 +638,26 @@ struct RemoteWebSocketServer::Impl {
             return;
         }
 
+        // Answered here rather than by the dispatcher: what a connection watches
+        // is state only the connection has. The names and schemas still come
+        // from the shared registry, which the hub validates against. The hub
+        // makes its own hop to the message thread for the part that reads the
+        // model, so this completes the same way a dispatch does.
+        if (SubscriptionHub::isSubscriptionMethod(method)) {
+            if (subscriptions == nullptr) {
+                connection->complete(
+                    replyFor(id, Response::failure(ErrorCode::InvalidRequest,
+                                                   "this transport does not support subscriptions",
+                                                   service.currentRevision())));
+                return;
+            }
+            subscriptions->handle(connection->subscriber, method, params,
+                                  [connection, id](Response response) {
+                                      connection->complete(replyFor(id, response));
+                                  });
+            return;
+        }
+
         RequestContext context;
         context.clientId = "ws:" + juce::String(connection->id);
         // Scoped by connection so two clients reusing id 1 do not collide in the
@@ -613,15 +711,33 @@ struct RemoteWebSocketServer::Impl {
      * before this returns, because `socket` lives on this stack frame.
      */
     void runConnection(httplib::ws::WebSocket& socket) {
-        auto connection = std::make_shared<Connection>(socket, nextConnectionId.fetch_add(1),
-                                                       options.maxQueuedRepliesPerConnection,
-                                                       options.maxInFlightPerConnection);
+        auto connection = std::make_shared<Connection>(
+            socket, nextConnectionId.fetch_add(1), options.maxQueuedRepliesPerConnection,
+            options.maxQueuedEventsPerConnection, options.maxInFlightPerConnection);
 
         if (!registerConnection(connection)) {
             // Lost a race for the last slot. Closing from here is safe because
             // this is the connection's own thread, the only one allowed to read.
             socket.close(httplib::ws::CloseStatus::PolicyViolation, "connection limit reached");
             return;
+        }
+
+        // The hub holds the connection alive for as long as it is registered,
+        // which costs nothing: `Connection` refers to the socket but never
+        // touches it from here — an event only reaches the outbox, and a
+        // disconnect only sets a flag. Both are safe on any thread, and the
+        // deregistration below is unconditional.
+        if (subscriptions != nullptr) {
+            connection->subscriber = subscriptions->addClient(
+                [connection](const SubscriptionEvent& event) {
+                    return connection->enqueueEvent(notificationFor(event));
+                },
+                [connection](const juce::String&) {
+                    // Marking is all a foreign thread may do. The reader owns
+                    // the socket and notices within one read timeout, which is
+                    // the same shutdown path stop() uses.
+                    connection->markClosed();
+                });
         }
 
         std::thread writer([connection] {
@@ -635,6 +751,14 @@ struct RemoteWebSocketServer::Impl {
                         break;
                     outgoing = std::move(connection->outbox.front());
                     connection->outbox.pop_front();
+                    // The budget is freed when the frame leaves the queue, not
+                    // when its bytes land: a subscriber's next event may as well
+                    // be admitted while this one is still going out, because the
+                    // memory it was holding is already back.
+                    if (outgoing.isEvent)
+                        --connection->queuedEvents;
+                    else
+                        --connection->queuedReplies;
                 }
                 const auto sent = connection->socket.send(outgoing.payload);
                 // The slot belongs to the request until its bytes are gone, so a
@@ -649,11 +773,25 @@ struct RemoteWebSocketServer::Impl {
         });
 
         std::string message;
-        while (socket.is_open() && running.load()) {
+        while (socket.is_open() && running.load() && !connection->isClosed()) {
             if (socket.read(message) == httplib::ws::ReadResult::Fail)
+                break;
+            // Re-checked after the read, not only before it: the read is where
+            // this thread spends its time, so a connection retired while it was
+            // blocked would otherwise get one more request executed on the way
+            // out — and for a client dropped for backpressure, one more per
+            // frame it kept sending.
+            if (connection->isClosed())
                 break;
             handleMessage(connection, message);
         }
+
+        // Deregister before closing: removeClient takes the hub's lock, so it
+        // returns only once a publish already inside the sink has finished. The
+        // other order would leave the hub calling into a connection this thread
+        // is dismantling.
+        if (subscriptions != nullptr && connection->subscriber != 0)
+            subscriptions->removeClient(connection->subscriber);
 
         connection->markClosed();
         writer.join();
@@ -669,8 +807,9 @@ struct RemoteWebSocketServer::Impl {
 // RemoteWebSocketServer
 // ===========================================================================
 
-RemoteWebSocketServer::RemoteWebSocketServer(RemoteApiService& service, Options options)
-    : impl_(std::make_unique<Impl>(service, std::move(options))) {}
+RemoteWebSocketServer::RemoteWebSocketServer(RemoteApiService& service, Options options,
+                                             SubscriptionHub* subscriptions)
+    : impl_(std::make_unique<Impl>(service, std::move(options), subscriptions)) {}
 
 RemoteWebSocketServer::~RemoteWebSocketServer() {
     stop();

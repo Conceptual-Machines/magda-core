@@ -61,7 +61,9 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
     // ---- TrackManagerListener -------------------------------------------
 
     void tracksChanged() override {
-        service_.noteModelChanged(Topic::Tracks);
+        // Session slots are keyed by track, so a track appearing or going away
+        // adds or removes a whole column of the grid.
+        service_.noteModelChanged({Topic::Tracks, Topic::Session});
     }
     void trackPropertyChanged(int) override {
         service_.noteModelChanged(Topic::Tracks);
@@ -101,17 +103,21 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
 
     // ---- ClipManagerListener --------------------------------------------
 
+    // The session grid is projected out of the clips rather than stored beside
+    // them, so anything that adds, removes, or moves a clip can change it. The
+    // extra topic costs nothing when it did not: an unchanged projection is
+    // coalesced away before an event is built.
     void clipsChanged() override {
-        service_.noteModelChanged(Topic::Clips);
+        service_.noteModelChanged({Topic::Clips, Topic::Session});
     }
     void clipPropertyChanged(ClipId) override {
-        service_.noteModelChanged(Topic::Clips);
+        service_.noteModelChanged({Topic::Clips, Topic::Session});
     }
     void clipPropertiesChanged(const std::vector<ClipId>&) override {
         // Overridden rather than inherited: the base implementation fans out to
         // one clipPropertyChanged per id, which would be one revision bump per
         // clip for what the user did as a single multi-selection drag.
-        service_.noteModelChanged(Topic::Clips);
+        service_.noteModelChanged({Topic::Clips, Topic::Session});
     }
     void clipSelectionChanged(ClipId) override {
         service_.noteModelChanged(Topic::Selection);
