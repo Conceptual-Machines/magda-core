@@ -633,6 +633,8 @@ int main(int argc, char** argv) {
         const juce::String argument(argv[i]);
         if (argument == "--help" || argument == "-h") {
             std::cout
+                // Written straight to std::cout, so the bytes reach the
+                // terminal as authored, never through juce::String. utf8-ok
                 << "magda-mcp — bridges an MCP host's stdio transport to the MAGDA MCP "
                    "endpoint.\n\n"
                    "Takes no options. It finds a running MAGDA through the discovery record it\n"
