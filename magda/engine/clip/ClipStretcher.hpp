@@ -200,15 +200,39 @@ constexpr double kMinStretchRate = 0.1;
 constexpr double kMaxStretchRate = 10.0;
 
 /**
+ * @brief The most reading one block may consume.
+ *
+ * Bounded only because the rate is (@ref kMaxStretchRate): without a ceiling on
+ * how fast a clip may play there would be no size to allocate a buffer at, and
+ * every buffer here has to be allocated before the callback.
+ *
+ * It is one function because more than one thing is sized against it: the
+ * voice's scratch, the interleaving a pipe needs, and the bound the voice
+ * clamps a block's reading to. Two of those disagreeing by a few samples is a
+ * write past the end of the third, so they are not allowed to be separately
+ * derived.
+ *
+ * The clamp is what makes the ceiling true rather than merely intended. A rate
+ * can exceed it: a constant ratio is clamped where it is read, but auto tempo's
+ * is the project's tempo over the file's own and a file analysed at an absurd
+ * bpm can ask for anything. Bounding what is consumed rather than the position
+ * itself keeps the position map pure, which is what makes one block's reading
+ * end where the next one's begins; a clip past the ceiling then plays wrongly,
+ * the way one with a ratio past the ceiling already does, rather than writing
+ * where it should not.
+ */
+inline int maxReadingSamples(int maxBlockSamples) {
+    return static_cast<int>(maxBlockSamples * kMaxStretchRate) + 1;
+}
+
+/**
  * @brief Working space one voice needs for one block.
  *
  * What it renders, and behind that the most reading a block of that length can
- * consume. Bounded only because the rate is (@ref kMaxStretchRate): without a
- * ceiling on how fast a clip may play there would be no size to allocate this
- * at, and it has to be allocated before the callback.
+ * consume.
  */
 inline int stretchScratchSamples(int maxBlockSamples) {
-    return maxBlockSamples + static_cast<int>(maxBlockSamples * kMaxStretchRate) + 4;
+    return maxBlockSamples + maxReadingSamples(maxBlockSamples);
 }
 
 }  // namespace magda::engine

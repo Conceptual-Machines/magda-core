@@ -115,12 +115,18 @@ class ClipVoice {
     /// difference the launch ramp is for.
     bool sounded_ = false;
 
-    /// Whether the stretcher beside this voice's stream has been given the
-    /// material leading up to where it is playing. Separate from @ref sounded_,
-    /// because a block that came back short is not a reason to prime again: the
-    /// reader is behind, and priming reads backwards, so doing it would seek and
-    /// keep it behind for good.
-    bool primed_ = false;
+    /// The stretcher this voice primed, or null for one that has not primed
+    /// anything. An identity rather than a flag, because the pool replaces a
+    /// stretcher without touching the stream whenever a rate, a pitch or a mode
+    /// is edited, and the entry a voice is playing does not change when it does:
+    /// a fresh engine would otherwise reach the callback cold and stay cold,
+    /// which for a phase vocoder is its whole latency late for the rest of the
+    /// take.
+    ///
+    /// Separate from @ref sounded_, because a block that came back short is not
+    /// a reason to prime again: the reader is behind, and priming reads
+    /// backwards, so doing it would seek and keep it behind for good.
+    const ClipStretcher* primed_ = nullptr;
 };
 
 }  // namespace magda::engine

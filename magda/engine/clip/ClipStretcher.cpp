@@ -206,17 +206,7 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         if (count <= 0)
             return;
 
-        // In pieces, because the interleaving buffer is sized for a block rather
-        // than for a whole pre-roll, and because putSamples does not care how
-        // many calls the material arrives in.
-        const auto stride =
-            static_cast<int>(interleaved_.size() / static_cast<std::size_t>(channels_));
-
-        for (auto done = 0; done < count;) {
-            const auto run = std::min(stride, count - done);
-            write(before, done, run);
-            done += run;
-        }
+        writeAll(before, count);
 
         // Everything the pre-roll will eventually come back out as. Discarding
         // it is what puts the output at the first sample meant to be heard;
@@ -235,7 +225,7 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         if (in > 0) {
             touch_.setTempo(
                 std::clamp(static_cast<double>(in) / out, kMinStretchRate, kMaxStretchRate));
-            write(input, 0, in);
+            writeAll(input, in);
         }
 
         if (discard_ > 0)
@@ -265,6 +255,21 @@ class SoundTouchClipStretcher final : public ClipStretcher {
     }
 
   private:
+    /// All of @p count, in pieces the interleaving buffer can hold. The buffer
+    /// is sized for one block's worth of reading and a pre-roll is many times
+    /// that, and putSamples does not care how many calls the material arrives
+    /// in; nothing else here may assume a length it did not size for.
+    void writeAll(juce::dsp::AudioBlock<const float> block, int count) {
+        const auto stride =
+            static_cast<int>(interleaved_.size() / static_cast<std::size_t>(channels_));
+
+        for (auto done = 0; done < count;) {
+            const auto run = std::min(stride, count - done);
+            write(block, done, run);
+            done += run;
+        }
+    }
+
     void write(juce::dsp::AudioBlock<const float> block, int offset, int count) {
         for (auto sample = 0; sample < count; ++sample)
             for (auto channel = 0; channel < channels_; ++channel) {
@@ -467,10 +472,16 @@ std::unique_ptr<ClipStretcher> makeStretcher(const StretchSetup& setup) {
             return std::make_unique<ResamplingClipStretcher>(setup);
 
         default:
-            // A mode this build has no engine for. Playing it at unity is the
-            // honest answer: the alternative is silence, and the alternative to
-            // that is quietly substituting an algorithm the project never named.
-            return nullptr;
+            // A mode this build has no engine for, which is every value
+            // Tracktion's enum holds that MAGDA never wrote. The incumbent
+            // answers this with its default engine (TimeStretcher::
+            // checkModeIsAvailable) and so does this: the clip is asking to be
+            // stretched, and the position map has already decided how much
+            // material a block will consume. Returning nothing here would leave
+            // a block reading that material at unity and the next one starting
+            // where the ratio says, which is a skip at every block boundary
+            // rather than a fallback.
+            return std::make_unique<SignalsmithClipStretcher>(setup);
     }
 }
 

@@ -200,6 +200,20 @@ StretchSetup stretchSetupFor(const AudioClipPlayback& clip, const AudioEventPlay
     setup.speedRamp = (clip.fadeInBehaviour == 1 && clip.fadeInSeconds > 0.0) ||
                       (clip.fadeOutBehaviour == 1 && clip.fadeOutSeconds > 0.0);
 
+    // A pitch nothing else asked for a stretcher for. The model's rule upgrades
+    // a mode left at Off for auto tempo, warp, a speed ratio and a pitch change,
+    // and not for the transpose an auto pitch clip carries
+    // (AudioEvent::getEffectiveTimeStretchMode), so a clip that only transposes
+    // arrives here asking for semitones with nothing to apply them with. The
+    // engine will not silently drop a value it was handed: it takes the default
+    // engine, which is what every other route to this arrives at.
+    //
+    // Not for analog pitch, which is the one kind of pitch that is not a
+    // stretcher at all: the model has already folded it into the speed ratio.
+    if (setup.mode == time_stretch_mode::kDisabled && !event.analogPitch &&
+        std::abs(setup.semitones) > 0.001f)
+        setup.mode = time_stretch_mode::kSignalsmith;
+
     return setup;
 }
 

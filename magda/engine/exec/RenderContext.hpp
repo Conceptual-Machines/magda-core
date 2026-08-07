@@ -130,6 +130,17 @@ struct BlockInfo {
      * edges of a region, and a region that runs to the end of the block ends at
      * the sample after the last one, the way every half-open range does.
      */
+    int sampleForTime(double seconds) const {
+        if (numSamples <= 0)
+            return 0;
+        if (endSeconds <= startSeconds)
+            return 0;
+
+        const auto position = (seconds - startSeconds) / (endSeconds - startSeconds);
+        const auto sample = static_cast<int>(std::lround(position * numSamples));
+        return std::clamp(sample, 0, numSamples);
+    }
+
     /**
      * @brief The beat face of a moment inside this block.
      *
@@ -150,17 +161,6 @@ struct BlockInfo {
 
         const auto position = (seconds - startSeconds) / (endSeconds - startSeconds);
         return startBeat + position * (endBeat - startBeat);
-    }
-
-    int sampleForTime(double seconds) const {
-        if (numSamples <= 0)
-            return 0;
-        if (endSeconds <= startSeconds)
-            return 0;
-
-        const auto position = (seconds - startSeconds) / (endSeconds - startSeconds);
-        const auto sample = static_cast<int>(std::lround(position * numSamples));
-        return std::clamp(sample, 0, numSamples);
     }
 };
 

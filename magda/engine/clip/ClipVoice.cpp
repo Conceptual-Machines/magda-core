@@ -19,7 +19,7 @@ void ClipVoice::release() {
     clipId_ = INVALID_CLIP_ID;
     eventId_ = INVALID_EVENT_ID;
     sounded_ = false;
-    primed_ = false;
+    primed_ = nullptr;
 }
 
 void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, int regionFirstSample,
@@ -66,7 +66,7 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
         clipId_ = clip.clipId;
         eventId_ = event.eventId;
         sounded_ = false;
-        primed_ = false;
+        primed_ = nullptr;
     }
 
     const auto nothing = [this] {
@@ -130,12 +130,19 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // A clip with no stretcher consumes one sample per sample by definition, and
     // asking for the difference would let a rounding of a hair shorten a block
     // that is not stretched at all.
-    const auto wanted =
-        stretcher == nullptr
-            ? count
-            : static_cast<int>(std::clamp<std::int64_t>(
-                  readTo - readFrom, 0,
-                  static_cast<std::int64_t>(scratch.getNumSamples()) - maxBlockSamples_));
+    //
+    // The ceiling is the contract every buffer downstream was sized against
+    // (maxReadingSamples), and it is enforced here because it cannot be enforced
+    // in the position map: clamping a position would break the rounded ends that
+    // make one block's reading continue the last one's. A rate past the ceiling
+    // is reachable through auto tempo alone, where the ratio is the project's
+    // tempo over a file's own analysed bpm and nothing bounds their quotient.
+    // Such a clip reads short and seeks after it, which is wrong the way a
+    // clamped ratio is wrong, rather than wrong the way a buffer overrun is.
+    const auto wanted = stretcher == nullptr
+                            ? count
+                            : static_cast<int>(std::clamp<std::int64_t>(
+                                  readTo - readFrom, 0, maxReadingSamples(maxBlockSamples_)));
 
     // The reading sits behind what the block renders, in the same scratch: they
     // are different lengths whenever the clip is not at its file's own speed.
@@ -157,10 +164,12 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // is a seek that guarantees the next block is short too. A stretcher handed
     // silence and then material has a discontinuity in what it is playing, which
     // is what a loop wrap is as well, and neither needs anything said about it.
-    if (stretcher != nullptr && (!primed_ || !block.continuous)) {
+    // A stretcher this voice has not primed is either its first or one the pool
+    // has just put in place of the last, and both need the same thing.
+    if (stretcher != nullptr && (primed_ != stretcher || !block.continuous)) {
         stretcher->reset();
         stretcher->prime(stream, readFrom, preRoll, step);
-        primed_ = true;
+        primed_ = stretcher;
     }
 
     const auto delivered = stream.read(readFrom, reading, wanted);

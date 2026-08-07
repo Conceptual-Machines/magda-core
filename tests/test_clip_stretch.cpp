@@ -156,6 +156,39 @@ class ConstantReader final : public magda::engine::AudioFileReader {
     }
 };
 
+/// A stretcher that records what it was asked to do and passes the material
+/// through. What a voice calls, and when, is the question some of these tests
+/// ask; what a phase vocoder does with it is not.
+class CountingStretcher final : public magda::engine::ClipStretcher {
+  public:
+    int preRollSamples(double) const override {
+        return 0;
+    }
+
+    void reset() override {
+        ++resets;
+    }
+
+    void prime(PrefetchStream&, std::int64_t, int, double) override {
+        ++primes;
+    }
+
+    void process(juce::dsp::AudioBlock<const float> input, double, double,
+                 juce::dsp::AudioBlock<float> output) override {
+        ++processes;
+
+        for (std::size_t channel = 0; channel < output.getNumChannels(); ++channel)
+            for (std::size_t sample = 0; sample < output.getNumSamples(); ++sample)
+                output.getChannelPointer(channel)[sample] =
+                    sample < input.getNumSamples() ? input.getChannelPointer(channel)[sample]
+                                                   : 0.0f;
+    }
+
+    int primes = 0;
+    int resets = 0;
+    int processes = 0;
+};
+
 SnapshotSpan seconds(double start, double end) {
     SnapshotSpan span;
     span.startBeat = start * kBeatsPerSecond;
@@ -557,12 +590,42 @@ TEST_CASE("A clip asks for a stretcher only when it needs one", "[engine][clip][
         }
     }
 
-    SECTION("a mode this build has no engine for plays at unity rather than silence") {
+    SECTION("a mode this build has no engine for falls back rather than skipping material") {
         event.timeStretchMode = 6;  // elastiquePro, which is not vendored here
         event.speedRatio = 2.0;
 
+        // The default engine, as the incumbent answers the same question. Not
+        // null: the position map has already decided this block consumes twice
+        // its length, so a clip with nothing to consume it through would read
+        // that material at unity and skip the rest at every block boundary.
         REQUIRE(magda::engine::makeStretcher(
-                    magda::engine::stretchSetupFor(clip, event, context())) == nullptr);
+                    magda::engine::stretchSetupFor(clip, event, context())) != nullptr);
+    }
+
+    SECTION("a transpose with nothing else asked for still gets one") {
+        // The model's rule upgrades a mode left at Off for auto tempo, warp, a
+        // ratio and a pitch change, and not for the transpose an auto pitch clip
+        // carries. A clip that only transposes would otherwise be handed
+        // semitones with nothing to apply them with, and would play untransposed.
+        event.autoPitch = true;
+        event.transpose = -4;
+
+        const auto setup = magda::engine::stretchSetupFor(clip, event, context());
+
+        CHECK(setup.semitones == approx(-4.0));
+        CHECK(setup.mode == mode::kSignalsmith);
+        REQUIRE(magda::engine::makeStretcher(setup) != nullptr);
+    }
+
+    SECTION("and analog pitch still does not, because its pitch is not a stretch") {
+        event.analogPitch = true;
+        event.pitchChange = 7.0f;
+        event.speedRatio = std::pow(2.0, 7.0 / 12.0);
+
+        const auto setup = magda::engine::stretchSetupFor(clip, event, context());
+
+        CHECK(setup.mode == mode::kDisabled);
+        CHECK(magda::engine::makeStretcher(setup)->readAheadSamples() > 0);
     }
 }
 
@@ -786,4 +849,82 @@ TEST_CASE("A speed ramp reads the file at a rate that climbs to unity", "[engine
     rig.advance(10);
     REQUIRE(rig.at(kBlockSize - 1) - rig.at(0) == approx(kBlockSize - 1, 0.5));
     REQUIRE(rig.at(0) == approx((blockTime(111) - blockTime(100)) * kSampleRate, 2.0));
+}
+
+TEST_CASE("A voice primes the stretcher it is handed, and the one that replaces it",
+          "[engine][clip][stretch]") {
+    // A rate, pitch or mode edit on a sounding clip swaps in a fresh stretcher
+    // and leaves the stream alone (ClipVoicePool::service). The entry a voice is
+    // playing does not change when it does, so a voice that remembered only
+    // *that* it had primed would run the new engine cold, and cold for a phase
+    // vocoder is its whole latency out of step with every other voice on the
+    // track, for the rest of the take.
+    //
+    // Driven directly rather than through a track, because what is being
+    // asserted is which calls a voice makes rather than what they sound like.
+    magda::engine::ClipVoice voice;
+    voice.prepare(context());
+
+    const auto clip = clipOver(1, blocks(0, 400), 0);
+    const auto& event = clip.events.front();
+
+    PrefetchStream stream(std::make_unique<CountingReader>(), context(), {8192, 8});
+
+    juce::AudioBuffer<float> scratch(2, magda::engine::stretchScratchSamples(kBlockSize));
+    juce::AudioBuffer<float> out(2, kBlockSize);
+    scratch.clear();
+    out.clear();
+
+    CountingStretcher first;
+    CountingStretcher second;
+
+    const auto render = [&](magda::engine::ClipStretcher& stretcher, int block, bool continuous) {
+        voice.render(clip, event, blockFrom(blockTime(block), continuous), stream, &stretcher, 0,
+                     juce::dsp::AudioBlock<float>(scratch), juce::dsp::AudioBlock<float>(out));
+    };
+
+    render(first, 10, false);
+    CHECK(first.primes == 1);
+
+    // Carrying on, so nothing is primed again: priming reads behind where the
+    // block is, and doing that every block would seek every block.
+    render(first, 11, true);
+    render(first, 12, true);
+    CHECK(first.primes == 1);
+
+    // The edit. Same clip, same event, same stream, continuous block, different
+    // engine, and it has to be primed.
+    render(second, 13, true);
+    CHECK(second.primes == 1);
+    CHECK(first.primes == 1);
+
+    // And a jump primes whatever is in place, as before.
+    render(second, 200, false);
+    CHECK(second.primes == 2);
+}
+
+TEST_CASE("An auto tempo ratio past what a stretcher will run at stays inside its buffers",
+          "[engine][clip][stretch]") {
+    // A constant ratio is clamped where it is read, and auto tempo's is not: it
+    // is the project's tempo over a file's own analysed bpm, and nothing bounds
+    // their quotient. A file analysed at fifteen bpm under this rig is past the
+    // ceiling by a long way. It plays wrongly, which is what a clamped ratio
+    // does too; what it must not do is read more than the block was sized for.
+    Rig rig;
+    rig.lane.audio.push_back(clipOver(1, blocks(100, 400), 0));
+
+    auto& event = rig.event(1);
+    event.autoTempo = true;
+    event.interpBpm = 5.0;
+    event.timeStretchMode = mode::kSoundTouchNormal;
+
+    rig.give(1, 1, std::make_unique<SineReader>(1000.0));
+    rig.publish();
+    rig.rollTo(140);
+
+    // Nothing to assert about the sound of it. That it got here at all is the
+    // assertion: the reading a block asks for is bounded by the same function
+    // every buffer behind it was sized against.
+    CHECK(magda::engine::readingRateOf(event) == approx(magda::engine::kMaxStretchRate));
+    CHECK(std::isfinite(rig.rms()));
 }
