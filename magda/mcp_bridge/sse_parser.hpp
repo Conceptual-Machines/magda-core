@@ -46,21 +46,34 @@ class SseParser {
         // sends a frame separator grows it forever, which is the identical leak
         // one buffer further along.
         //
-        // Past the cap no frame can complete within it, so the partial is
-        // discarded and the parser resynchronises: bytes are dropped until the
-        // next separator, and the segment that ends there is dropped too, since
-        // it is the tail of something already truncated. A message that large is
-        // not one of ours — these frames are single JSON-RPC notifications.
+        // Past the cap the frame being accumulated can never be one of ours —
+        // these are single JSON-RPC notifications — so it is abandoned. What
+        // matters is abandoning *only* it: the chunk that crossed the limit may
+        // also carry that frame's terminator and several perfectly good frames
+        // behind it, and clearing the buffer wholesale would discard those
+        // separators along with the oversized frame, then drop the next valid
+        // frame as well when the resync flag consumed it.
+        //
+        // So: if a separator is already buffered, the oversized frame ends
+        // there. Drop through it and let the loop below parse everything after
+        // it normally. Only when none has arrived is there nothing to keep, and
+        // the flag then makes the eventual terminating segment — the tail of
+        // something already truncated — the one that gets dropped.
         if (pending_.size() > kMaxFrameBytes) {
-            pending_.clear();
-            pending_.shrink_to_fit();
-            resynchronising_ = true;
+            if (const auto split = pending_.find(kFrameSeparator); split != std::string::npos) {
+                pending_.erase(0, split + kFrameSeparatorLength);
+                resynchronising_ = false;
+            } else {
+                pending_.clear();
+                pending_.shrink_to_fit();
+                resynchronising_ = true;
+            }
         }
 
-        for (auto split = pending_.find("\n\n"); split != std::string::npos;
-             split = pending_.find("\n\n")) {
+        for (auto split = pending_.find(kFrameSeparator); split != std::string::npos;
+             split = pending_.find(kFrameSeparator)) {
             const auto frame = pending_.substr(0, split);
-            pending_.erase(0, split + 2);
+            pending_.erase(0, split + kFrameSeparatorLength);
 
             if (resynchronising_) {
                 resynchronising_ = false;
@@ -107,7 +120,10 @@ class SseParser {
 
     /// A frame here is one JSON-RPC notification. This is orders of magnitude
     /// above the largest of those and still bounded.
-    static constexpr std::size_t kMaxFrameBytes = 1024 * 1024;
+    static constexpr std::size_t kMaxFrameBytes = std::size_t{1024} * 1024;
+
+    static constexpr const char* kFrameSeparator = "\n\n";
+    static constexpr std::size_t kFrameSeparatorLength = 2;
 
     mutable std::mutex mutex_;
     bool retainRaw_ = true;

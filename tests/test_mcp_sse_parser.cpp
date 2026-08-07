@@ -93,6 +93,24 @@ TEST_CASE("A response that never frames is retained, but bounded", "[mcp][sse]")
     REQUIRE(small.raw() == "{\"error\":{\"code\":-32600}}");
 }
 
+TEST_CASE("Resynchronising keeps whatever followed the oversized frame", "[mcp][sse]") {
+    SseParser parser;
+
+    // The chunk that crosses the limit carries the oversized frame's own
+    // terminator *and* good frames behind it. Discarding the buffer wholesale
+    // threw those separators away with it, and the resync flag then ate the
+    // next valid frame as well — two messages lost for one bad one.
+    const std::string oversized(1024 * 1024 + 4096, 'x');
+    const auto emitted = feed(parser, "data: " + oversized + "\n\ndata: {\"same\":\"chunk\"}\n\n");
+    REQUIRE(emitted == std::vector<std::string>{"{\"same\":\"chunk\"}"});
+
+    // And the one after it, in a later chunk, is not swallowed either.
+    REQUIRE(feed(parser, "data: {\"next\":true}\n\n") ==
+            std::vector<std::string>{"{\"next\":true}"});
+
+    REQUIRE(parser.retainedBytes() == 0);
+}
+
 TEST_CASE("Framing resynchronises after an oversized partial", "[mcp][sse]") {
     SseParser parser;
 
