@@ -177,6 +177,38 @@ class SoundTouchClipStretcher final : public ClipStretcher {
 
         allocatePreRoll(channels_, static_cast<int>(std::ceil(preRollSamples(setup.nominalRate) *
                                                               kPreRollHeadroom)));
+
+        // SoundTouch grows its own pipes on demand: putSamples calls
+        // ensureCapacity, which is a new[], a memcpy and a delete[], and it
+        // starts life with room for thirty two samples. Both the calls that feed
+        // it are on the audio thread, so without this the first clip start, the
+        // first locate and every setting change would allocate inside a
+        // callback.
+        //
+        // Grown here instead, on the thread that made it, and cleared after:
+        // FIFOSampleBuffer::clear drops the samples and keeps the buffer, so the
+        // capacity stays behind and nothing downstream ever grows again.
+        //
+        // In one push rather than in the pieces playback uses, and that is the
+        // whole trick. putSamples grows to hold what a single call hands it, so
+        // one call of the worst case settles the capacity outright; feeding the
+        // same total in block-sized pieces only grows it to whatever residue
+        // that particular rate happened to leave between batches, which is why
+        // a warm-up that ran at ten and a clip that played at nine could still
+        // meet an allocation.
+        const auto worst = worstCase(setup);
+
+        for (const auto rate : {kMaxStretchRate, kMinStretchRate,
+                                std::clamp(setup.nominalRate, kMinStretchRate, kMaxStretchRate)}) {
+            touch_.setTempo(rate);
+            pushSilence(worst);
+
+            while (touch_.numSamples() > 0)
+                touch_.receiveSamples(touch_.numSamples());
+        }
+
+        touch_.setTempo(std::clamp(setup.nominalRate, kMinStretchRate, kMaxStretchRate));
+        touch_.clear();
     }
 
     int preRollSamples(double rate) const override {
@@ -255,6 +287,44 @@ class SoundTouchClipStretcher final : public ClipStretcher {
     }
 
   private:
+    /**
+     * @brief The most this pipe can ever be holding at once.
+     *
+     * What it keeps back between batches, plus the largest single push a
+     * callback can hand it. The first is the sequence length it asks for, which
+     * moves with the tempo, so the range is scanned for the longest one: that is
+     * arithmetic rather than processing, because setTempo recalculates the
+     * lengths and getSetting reports them without a sample going through.
+     *
+     * The second is whichever is larger of a block's reading and a pre-roll.
+     * Both are bounded before the callback: the reading by the rate ceiling, the
+     * pre-roll by the buffer it is read into.
+     */
+    int worstCase(const StretchSetup& setup) {
+        auto sequence = 0;
+
+        for (auto step = 0; step <= kWarmUpSteps; ++step) {
+            const auto through = static_cast<double>(step) / kWarmUpSteps;
+            touch_.setTempo(kMinStretchRate + (kMaxStretchRate - kMinStretchRate) * through);
+            sequence = std::max(sequence, touch_.getSetting(SETTING_NOMINAL_INPUT_SEQUENCE));
+        }
+
+        touch_.setTempo(std::clamp(setup.nominalRate, kMinStretchRate, kMaxStretchRate));
+
+        const auto handed = std::max(
+            maxReadingSamples(maxBlockSamples_),
+            static_cast<int>(std::ceil(preRollSamples(setup.nominalRate) * kPreRollHeadroom)));
+
+        return sequence + handed;
+    }
+
+    /// @p count samples of silence, in one call, so that the pipe grows to hold
+    /// all of it rather than to whatever it had room for at the time.
+    void pushSilence(int count) {
+        std::vector<float> silence(static_cast<std::size_t>(count * channels_), 0.0f);
+        touch_.putSamples(silence.data(), static_cast<unsigned int>(count));
+    }
+
     /// All of @p count, in pieces the interleaving buffer can hold. The buffer
     /// is sized for one block's worth of reading and a pre-roll is many times
     /// that, and putSamples does not care how many calls the material arrives
@@ -281,6 +351,11 @@ class SoundTouchClipStretcher final : public ClipStretcher {
 
         touch_.putSamples(interleaved_.data(), static_cast<unsigned int>(count));
     }
+
+    /// Tempos the range is scanned at for the longest sequence. The lengths are
+    /// a clamped straight line in the tempo (TDStretch::calcSeqParameters), so
+    /// this is a fine sieve over a smooth curve rather than a hopeful sample.
+    static constexpr int kWarmUpSteps = 64;
 
     int channels_ = 2;
     int maxBlockSamples_ = 512;

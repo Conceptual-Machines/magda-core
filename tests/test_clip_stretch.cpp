@@ -959,3 +959,48 @@ TEST_CASE("An auto tempo ratio past what a stretcher will run at stays inside it
     CHECK(magda::engine::readingRateOf(event) == approx(magda::engine::kMaxStretchRate));
     CHECK(std::isfinite(rig.rms()));
 }
+
+TEST_CASE("SoundTouch runs the whole rate range without growing a buffer under a callback",
+          "[engine][clip][stretch]") {
+    // SoundTouch grows its own pipes on demand, and both the calls that feed it
+    // are on the audio thread, so its buffers are pushed to their worst case on
+    // the thread that builds it (SoundTouchClipStretcher). The worst case is the
+    // sequence it keeps back plus the largest single push a callback can hand
+    // it, and it is settled in one call because putSamples grows to hold what a
+    // single call hands it: the same total in block-sized pieces only grows it
+    // to whatever residue that rate happened to leave.
+    //
+    // What this covers is the range that has to have been reached: both modes,
+    // rates from a sixth to the ceiling, a pitch shift so the rate transposer is
+    // in the chain too, auto tempo so the rate moves block to block, and locates
+    // in both directions so priming runs again over material the reader has to
+    // seek for. Verified against a counter on the vendored ensureCapacity, which
+    // stays at zero throughout and is what caught the first version of the
+    // warm-up, where a clip playing at nine could still allocate after a warm-up
+    // that ran at ten.
+    for (const auto which : {mode::kSoundTouchNormal, mode::kSoundTouchBetter}) {
+        for (const auto ratio : {0.15, 0.5, 1.7, 2.0, 4.3, 9.0, 9.97}) {
+            Rig rig;
+            rig.lane.audio.push_back(clipOver(1, blocks(100, 400), 0));
+
+            auto& event = rig.event(1);
+            event.timeStretchMode = which;
+            event.autoTempo = true;
+            event.interpBpm = kBpm / ratio;
+            event.pitchChange = 4.0f;
+
+            rig.give(1, 1, std::make_unique<SineReader>(1000.0));
+            rig.publish();
+
+            rig.rollTo(140);
+            rig.advance(20);
+            rig.locate(300);
+            rig.advance(20);
+            rig.locate(150);
+            rig.advance(30);
+
+            INFO("mode " << which << " ratio " << ratio);
+            CHECK(std::isfinite(rig.rms()));
+        }
+    }
+}
