@@ -213,7 +213,7 @@ void SessionClipEditor::setupHeader() {
     addAndMakeVisible(*lengthLabel_);
 
     // Close button
-    closeButton_ = std::make_unique<juce::TextButton>("✕");
+    closeButton_ = std::make_unique<juce::TextButton>(juce::String::fromUTF8("✕"));
     closeButton_->setColour(juce::TextButton::buttonColourId,
                             DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
     closeButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());

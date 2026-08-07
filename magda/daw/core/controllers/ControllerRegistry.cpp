@@ -129,7 +129,7 @@ bool ControllerRegistry::isControllerInputPort(const juce::String& liveIdentifie
 void ControllerRegistry::loadFromConfig(const juce::var& json) {
     controllers_.clear();
 
-    DBG("ControllerRegistry::loadFromConfig — input isArray="
+    DBG("ControllerRegistry::loadFromConfig - input isArray="
         << (json.isArray() ? "yes" : "no") << " isVoid=" << (json.isVoid() ? "yes" : "no")
         << " dump=" << juce::JSON::toString(json, true));
 
@@ -149,7 +149,7 @@ void ControllerRegistry::loadFromConfig(const juce::var& json) {
         }
     }
 
-    DBG("ControllerRegistry::loadFromConfig — " << (int)controllers_.size()
+    DBG("ControllerRegistry::loadFromConfig - " << (int)controllers_.size()
                                                 << " controller(s) loaded");
 
     rebuildSnapshot();

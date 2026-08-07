@@ -1216,11 +1216,11 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
         if (clip) {
             lastLaunchTimeByTrack_[clip->trackId] = edit_.getTransport().position.get().inSeconds();
         }
-        DBG("ClipSync: play(nullopt) — immediate launch for clip "
+        DBG("ClipSync: play(nullopt) - immediate launch for clip "
             << clipId << " forceImmediate=" << (int)forceImmediate);
         launchHandle->play(std::nullopt);
     } else {
-        DBG("ClipSync: play(beat " << targetBeat->v.inBeats() << ") — quantized launch for clip "
+        DBG("ClipSync: play(beat " << targetBeat->v.inBeats() << ") - quantized launch for clip "
                                    << clipId << " qType=" << static_cast<int>(qType));
         launchHandle->play(*targetBeat);
     }

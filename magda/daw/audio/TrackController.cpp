@@ -285,7 +285,7 @@ void TrackController::setTrackAudioOutput(TrackId trackId, const juce::String& d
             track->getOutput().setOutputToTrack(targetTrack);
         } else {
             DBG("TrackController::setTrackAudioOutput - target track not found: trackId="
-                << trackId << " targetId=" << targetId << " — falling back to master");
+                << trackId << " targetId=" << targetId << " - falling back to master");
             track->getOutput().setOutputToDefaultDevice(false);
         }
     } else {

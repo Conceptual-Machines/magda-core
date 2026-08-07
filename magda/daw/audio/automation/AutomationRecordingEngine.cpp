@@ -69,13 +69,13 @@ void AutomationRecordingEngine::process() {
     bool playing = edit_.getTransport().isPlaying();
 
     if (!wasPlaying_ && playing && isWriteEnabled()) {
-        DBG("[AutoRec] Transport started with write ON — begin recording");
+        DBG("[AutoRec] Transport started with write ON - begin recording");
         UndoManager::getInstance().beginCompoundOperation("Record Automation");
         isRecording_ = true;
         lastRecorded_.clear();
         seedBaselines();
     } else if (wasPlaying_ && !playing && isRecording_) {
-        DBG("[AutoRec] Transport stopped — end recording");
+        DBG("[AutoRec] Transport stopped - end recording");
         flushFinalPoints();
         UndoManager::getInstance().endCompoundOperation();
         isRecording_ = false;
@@ -84,13 +84,13 @@ void AutomationRecordingEngine::process() {
         lanePreRecordingPoints_.clear();
         clearLatchState();
     } else if (playing && isWriteEnabled() && !isRecording_) {
-        DBG("[AutoRec] Write toggled ON mid-playback — begin recording");
+        DBG("[AutoRec] Write toggled ON mid-playback - begin recording");
         UndoManager::getInstance().beginCompoundOperation("Record Automation");
         isRecording_ = true;
         lastRecorded_.clear();
         seedBaselines();
     } else if (isRecording_ && !isWriteEnabled()) {
-        DBG("[AutoRec] Write toggled OFF — end recording");
+        DBG("[AutoRec] Write toggled OFF - end recording");
         flushFinalPoints();
         UndoManager::getInstance().endCompoundOperation();
         isRecording_ = false;
@@ -484,7 +484,7 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
                 static_cast<double>(ParameterUtils::realToNormalized(seedDb, paramInfo));
             const auto* lane = autoMgr.getLane(laneId);
             if (lane && !lane->absolutePoints.empty()) {
-                DBG("[AutoRec] New vol lane — anchor was "
+                DBG("[AutoRec] New vol lane - anchor was "
                     << gainToDb(track->volume) << " dB, correcting to seed=" << seedDb << " dB"
                     << " (track->vol=" << track->volume << " preSeed=" << preSeedVolume << ")");
                 UndoManager::getInstance().executeCommand(

@@ -298,7 +298,8 @@ ConsoleExecutionResult ConsoleAgentResultExecutor::execute(ConsoleRunOutput outp
                 if (clausePos > 0 && clausePos < kMaxClipNameLen)
                     clipName = clipName.substring(0, clausePos);
                 if (clipName.length() > kMaxClipNameLen)
-                    clipName = clipName.substring(0, kMaxClipNameLen).trim() + "…";
+                    clipName =
+                        clipName.substring(0, kMaxClipNameLen).trim() + juce::String::fromUTF8("…");
                 ClipManager::getInstance().setClipName(executor.getCurrentClipId(),
                                                        clipName.trim());
             }

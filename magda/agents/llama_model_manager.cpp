@@ -158,6 +158,7 @@ LlamaModelManager::InferenceResult LlamaModelManager::infer(const InferenceReque
     InferenceResult result;
 
     if (model_ == nullptr || ctx_ == nullptr) {
+        // utf8-ok: result.error is std::string, so the UTF-8 bytes are kept verbatim.
         result.error = "Local (Embedded) model is not loaded. Download/enable it in "
                        "Settings → Models, or pick a different provider for this agent.";
         return result;

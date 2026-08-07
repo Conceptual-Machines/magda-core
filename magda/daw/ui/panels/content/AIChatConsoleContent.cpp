@@ -481,7 +481,7 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
                 clipRow.label = clip->name.isNotEmpty() ? clip->name : "Untitled MIDI clip";
                 clipRow.detail = juce::String(static_cast<int>(clip->midiNotes.size())) + " notes";
                 if (clip->view == magda::ClipView::Session)
-                    clipRow.detail += " · live";
+                    clipRow.detail += juce::String::fromUTF8(" · live");
                 rows_.push_back(std::move(clipRow));
             }
         }
@@ -2192,13 +2192,14 @@ juce::String AIChatConsoleContent::getMidiContextSummary() const {
             midiClipsOnTrack += clip != nullptr && clip->isMidi() ? 1 : 0;
         }
         if (midiClipsOnTrack == static_cast<int>(midiContextClipIds_.size()))
-            return trackName + " · all MIDI";
-        return trackName + " · " + juce::String(static_cast<int>(midiContextClipIds_.size())) +
-               " MIDI";
+            return trackName + juce::String::fromUTF8(" · all MIDI");
+        return trackName + juce::String::fromUTF8(" · ") +
+               juce::String(static_cast<int>(midiContextClipIds_.size())) + " MIDI";
     }
 
-    return juce::String(static_cast<int>(midiContextClipIds_.size())) + " MIDI · " +
-           juce::String(static_cast<int>(trackIds.size())) + " tracks";
+    return juce::String(static_cast<int>(midiContextClipIds_.size())) +
+           juce::String::fromUTF8(" MIDI · ") + juce::String(static_cast<int>(trackIds.size())) +
+           " tracks";
 }
 
 bool AIChatConsoleContent::isLastGeneratedMidiClipValid() const {
@@ -3101,8 +3102,9 @@ void AIChatConsoleContent::finishControllerGeneration(bool success, const juce::
 
                 auto profileOpt = magda::ControllerProfileRegistry::getInstance().findById(finalId);
                 if (!profileOpt.has_value()) {
-                    safeThis->appendToChat(juce::String::charToString(0x25C6) +
-                                           " Profile disappeared — cannot enable.");
+                    safeThis->appendToChat(
+                        juce::String::charToString(0x25C6) +
+                        juce::String::fromUTF8(" Profile disappeared — cannot enable."));
                     return;
                 }
 

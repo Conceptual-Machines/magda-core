@@ -2500,11 +2500,11 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
                 // no idea why no audio analysis ran.
                 const auto skipReason =
                     std::filesystem::exists(ctx.audioModelPath())
-                        ? juce::String(
-                              "Sample Tagger model failed to load — skipping audio analysis")
-                        : juce::String(
+                        ? juce::String(juce::String::fromUTF8(
+                              "Sample Tagger model failed to load — skipping audio analysis"))
+                        : juce::String(juce::String::fromUTF8(
                               "Sample Tagger not installed — skipping audio analysis. Install it "
-                              "in AI Settings to enable semantic search.");
+                              "in AI Settings to enable semantic search."));
                 finalStatus = scanStatus + " | " + skipReason;
                 juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + skipReason);
             }
