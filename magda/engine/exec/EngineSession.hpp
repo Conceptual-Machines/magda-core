@@ -35,6 +35,10 @@
 
 namespace magda::engine {
 
+/// Only ever held as a pointer here, and only ever used from the .cpp, so the
+/// session does not hand its own includers a thread and a stream pool.
+class ClipVoicePool;
+
 class EngineSession {
   public:
     /**
@@ -45,9 +49,17 @@ class EngineSession {
      * A host with a pool passes it here, once: it outlives every plan, and it
      * has to outlive this, because the epochs retired here are what let go of
      * it.
+     *
+     * @p voices provisions the readers a track's clips play through (#2035),
+     * and is null for a session with no arrangement audio: an offline render
+     * that reads straight through its files, and every test that publishes no
+     * clips. It is passed here rather than fed separately because a snapshot
+     * has to reach it and the audio thread together, and because it is what
+     * wants to know where the transport is.
      */
-    explicit EngineSession(RuntimeStateFactory& factory, RenderThreadPool* pool = nullptr)
-        : store_(factory), pool_(pool) {}
+    explicit EngineSession(RuntimeStateFactory& factory, RenderThreadPool* pool = nullptr,
+                           ClipVoicePool* voices = nullptr)
+        : store_(factory), pool_(pool), voices_(voices) {}
 
     /// What came of a publish. `published` false means the plan was refused
     /// and the previous one is still playing; true with messages means it is
@@ -218,6 +230,12 @@ class EngineSession {
     /// on the audio thread alone. Not owned, and shared across epochs: threads
     /// are made once and a structural edit is not a reason to remake them.
     RenderThreadPool* pool_ = nullptr;
+
+    /// Where the readers behind a track's clips come from, or null. Not owned
+    /// and not swapped with anything: like the clip feed, it is a property of
+    /// the session, and a structural edit must not cost a track the readers it
+    /// was playing through.
+    ClipVoicePool* voices_ = nullptr;
 
     PublishedRender published_;
     PublishedValues values_;

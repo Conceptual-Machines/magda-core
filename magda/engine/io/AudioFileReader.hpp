@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 
 /**
  * @file AudioFileReader.hpp
@@ -77,6 +78,34 @@ class JuceAudioFileReader final : public AudioFileReader {
 
   private:
     std::unique_ptr<juce::AudioFormatReader> reader_;
+};
+
+/**
+ * @brief Opens the files a snapshot names.
+ *
+ * Implemented by the host for the same reason the reader is an interface: which
+ * formats exist and where a path points are the host's business, and the engine
+ * is handed something that can already read. A snapshot carries paths because
+ * that is what the model has; turning one into a reader happens here.
+ *
+ * One reader per call, never a shared one. A reader is a position as well as a
+ * file, so two clips over one file need two of them (AudioFileReader::read).
+ */
+class AudioFileReaderFactory {
+  public:
+    virtual ~AudioFileReaderFactory() = default;
+
+    /**
+     * @brief A reader over @p path, or null when there is not one to be had.
+     *
+     * Off the audio thread, and allowed to take as long as opening a file
+     * takes: whoever calls this is a thread that may wait for a disk.
+     *
+     * Null is the ordinary answer for a file that has moved, been deleted or
+     * cannot be decoded. The caller reports it and plays silence; nothing here
+     * throws and nothing retries behind the caller's back.
+     */
+    virtual std::unique_ptr<AudioFileReader> open(const std::string& path) = 0;
 };
 
 }  // namespace magda::engine

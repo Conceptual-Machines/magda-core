@@ -80,6 +80,24 @@ class PrefetchStream {
     bool fill();
 
     /**
+     * @brief Point the reader before anything is reading it at all.
+     *
+     * Before the stream is registered with a prefetch thread and before any
+     * block has read from it, on the thread that made it. Not a seek and not a
+     * cue: it moves both cursors while there is nobody to disagree with, so
+     * there is no generation to bump, nothing in flight to throw away, and no
+     * block to wait for.
+     *
+     * What it is for is that a stream is made for a clip, and a clip starts
+     * somewhere. Without this a new stream spends its first reads on the
+     * material at sample zero, which is not what it was opened for, and the
+     * cue that redirects it cannot be taken up until a callback has run
+     * (@ref applyPendingCue). Every one of those reads would then be thrown
+     * away, and the reader would start again from behind.
+     */
+    void startAt(std::int64_t sourceStart);
+
+    /**
      * @brief Point the reader at a position before anything asks for it.
      *
      * From any thread that is not the audio thread, at any time: whoever
