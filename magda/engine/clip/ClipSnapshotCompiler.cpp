@@ -238,6 +238,17 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
                 playback.pitchChange = event.pitchChange;
                 playback.transpose = event.transpose;
 
+                // Half of what auto pitch means is an offset from the project's
+                // pitch sequence, and there is no pitch track in the engine yet
+                // (#1891). The clip plays, at its own transpose, which is the
+                // other half; saying so here is the difference between a known
+                // gap and a clip that is quietly a few semitones out.
+                if (event.autoPitch)
+                    snapshot.diagnostics.push_back(
+                        label + "event " + std::to_string(event.id) +
+                        " follows the pitch track, which the engine does not have yet, so it "
+                        "plays its own transpose alone");
+
                 playback.reversed = event.reversed;
                 playback.leftChannelActive = event.leftChannelActive;
                 playback.rightChannelActive = event.rightChannelActive;
