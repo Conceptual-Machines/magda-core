@@ -946,6 +946,18 @@ struct RemoteMcpServer::Impl {
         }
 
         const auto id = parsed["id"];
+
+        // MCP is JSON-RPC 2.0, and the envelope is checked before anything is
+        // routed. Without this a request carrying no `jsonrpc` at all — or a
+        // different version — still reaches a tool and mutates the project,
+        // then receives a 2.0 reply it never asked for. The WebSocket transport
+        // has always rejected these; this one had not.
+        if (parsed["jsonrpc"].toString() != "2.0") {
+            writeJson(response, httplib::StatusCode::BadRequest_400,
+                      jsonRpcError(id, McpError{MCP_INVALID_REQUEST, "jsonrpc must be \"2.0\""}));
+            return;
+        }
+
         const auto methodValue = parsed["method"];
         if (!methodValue.isString() || methodValue.toString().isEmpty()) {
             writeJson(response, httplib::StatusCode::BadRequest_400,

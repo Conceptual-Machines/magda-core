@@ -550,6 +550,54 @@ TEST_CASE("An unknown method is 404 and an unknown tool is not", "[remote][mcp-h
     REQUIRE(static_cast<int>(parse(malformed->body)["error"]["code"]) == MCP_PARSE_ERROR);
 }
 
+TEST_CASE("A request without jsonrpc 2.0 is refused before it can act",
+          "[remote][mcp-http][framing]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    api.project_.info.tempo = 120.0;
+
+    RemoteApiService service(api);
+    RemoteMcpServer server(service, testOptions());
+    REQUIRE(server.start());
+
+    httplib::Client client(base(server));
+
+    // A mutating call with no `jsonrpc` member at all. Routing this would apply
+    // the write and answer with a 2.0 envelope the caller never asked for.
+    auto* malformed = new juce::DynamicObject();
+    malformed->setProperty("id", 1);
+    malformed->setProperty("method", "tools/call");
+    malformed->setProperty("params",
+                           modernParams(object({{"name", "project.setTempo"},
+                                                {"arguments", object({{"tempo", 99.0}})}})));
+
+    const auto missing = post(client, modernHeaders("tools/call", "project.setTempo"),
+                              juce::JSON::toString(juce::var(malformed), true).toStdString());
+    REQUIRE(missing.status == 400);
+    REQUIRE(static_cast<int>(missing.json["error"]["code"]) == MCP_INVALID_REQUEST);
+    // Refused *before* dispatch, not after: the project is untouched.
+    REQUIRE(api.project_.info.tempo == 120.0);
+
+    // A version that is not 2.0 is refused the same way.
+    auto* wrongVersion = new juce::DynamicObject();
+    wrongVersion->setProperty("jsonrpc", "1.0");
+    wrongVersion->setProperty("id", 2);
+    wrongVersion->setProperty("method", "ping");
+    wrongVersion->setProperty("params", modernParams());
+    const auto old = post(client, modernHeaders("ping"),
+                          juce::JSON::toString(juce::var(wrongVersion), true).toStdString());
+    REQUIRE(old.status == 400);
+    REQUIRE(static_cast<int>(old.json["error"]["code"]) == MCP_INVALID_REQUEST);
+
+    // The same call with a correct envelope goes through, so this is the
+    // envelope check and not something else refusing the request.
+    REQUIRE(call(client, "tools/call",
+                 object({{"name", "project.setTempo"}, {"arguments", object({{"tempo", 99.0}})}}),
+                 "project.setTempo")
+                .status == 200);
+    REQUIRE(api.project_.info.tempo == 99.0);
+}
+
 TEST_CASE("A notification is accepted and answered with 202", "[remote][mcp-http][framing]") {
     MessageThreadRelaxation relax;
     MockMagdaApi api;

@@ -31,6 +31,7 @@
 #include <juce_core/juce_core.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <iostream>
 #include <map>
@@ -40,6 +41,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #if JUCE_WINDOWS
@@ -179,6 +181,48 @@ std::optional<Endpoint> resolveEndpoint() {
 }
 
 /**
+ * @brief One response's SSE framing, and the raw bytes behind it.
+ *
+ * Owned by the request that opened the stream rather than by the bridge: a
+ * content receiver is called on the connection's own thread, so two concurrent
+ * `subscriptions/listen` requests interleave, and a single buffer would splice
+ * a half-received frame from one response onto the next.
+ *
+ * `raw` is kept because a content receiver is also handed the body of a refused
+ * request, which is an ordinary JSON-RPC error rather than an event stream —
+ * and by then `Result::body` is empty, so this is the only copy left.
+ */
+class SseParser {
+  public:
+    using Emit = std::function<void(const std::string&)>;
+
+    void consume(const std::string& chunk, const Emit& emit) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        raw_ += chunk;
+        pending_ += chunk;
+        for (auto split = pending_.find("\n\n"); split != std::string::npos;
+             split = pending_.find("\n\n")) {
+            const auto frame = pending_.substr(0, split);
+            pending_.erase(0, split + 2);
+            // A line beginning with a colon is a keep-alive comment, which the
+            // SSE grammar says to ignore.
+            if (frame.rfind("data: ", 0) == 0)
+                emit(frame.substr(6));
+        }
+    }
+
+    std::string raw() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return raw_;
+    }
+
+  private:
+    mutable std::mutex mutex_;
+    std::string raw_;
+    std::string pending_;
+};
+
+/**
  * @brief The bridge itself.
  *
  * One thread reads stdin; each request gets its own thread so a long-lived
@@ -229,8 +273,31 @@ class Bridge {
             return;
         }
 
+        auto finished = std::make_shared<std::atomic<bool>>(false);
         std::lock_guard<std::mutex> lock(threadsMutex_);
-        threads_.emplace_back([this, message] { forward(message); });
+
+        // Reap before adding. A thread handle is a native resource, and a host
+        // that stays open for hours sends thousands of requests — without this
+        // the vector only ever grows, and nothing is released until stdin
+        // closes.
+        for (auto it = threads_.begin(); it != threads_.end();) {
+            if (it->second->load()) {
+                if (it->first.joinable())
+                    it->first.join();
+                it = threads_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
+        threads_.emplace_back(std::thread([this, message, finished] {
+                                  forward(message);
+                                  // Last thing it does, so a reaper that sees
+                                  // this flag knows the thread is about to be
+                                  // joinable rather than mid-request.
+                                  finished->store(true);
+                              }),
+                              finished);
     }
 
     void forward(const juce::var& message) {
@@ -286,11 +353,18 @@ class Bridge {
             client->set_read_timeout(0, 0);
             registerStream(id, client);
 
-            auto result = client->Post(endpoint.path, headers, body, "application/json",
-                                       [this](const char* data, std::size_t length) {
-                                           consumeSse(std::string(data, length));
-                                           return true;
-                                       });
+            // Per request, not shared. Two concurrent listen streams both feed
+            // this callback, and one buffer between them splices a partial frame
+            // from one response onto the next — corrupting both.
+            auto stream = std::make_shared<SseParser>();
+
+            auto result = client->Post(
+                endpoint.path, headers, body, "application/json",
+                [this, stream](const char* data, std::size_t length) {
+                    stream->consume(std::string(data, length),
+                                    [this](const std::string& message) { emitRaw(message); });
+                    return true;
+                });
             unregisterStream(id);
 
             // A stream that ended is not a failure to retry: the host cancelled
@@ -299,7 +373,23 @@ class Bridge {
             if (!result)
                 return isCancelled(id);
             rememberSession(*result);
-            return result->status != 401;
+            if (result->status == 401)
+                return false;
+
+            // The request was refused rather than streamed — a 400 or a 503 with
+            // an ordinary JSON-RPC error body. A content receiver is handed the
+            // body for *every* status, so that body went into the SSE parser,
+            // found no frames, and left `result->body` empty. Returning here as
+            // though the request had been answered leaves the host waiting on
+            // this id forever, so the raw bytes are emitted instead.
+            if (!isEventStream(*result)) {
+                const auto raw = stream->raw();
+                if (!raw.empty())
+                    emitRaw(raw);
+                else
+                    fail(id, "The server refused the subscription with an empty response");
+            }
+            return true;
         }
 
         auto result = client->Post(endpoint.path, headers, body, "application/json");
@@ -338,7 +428,8 @@ class Bridge {
             return true;
 
         if (isEventStream(*result)) {
-            consumeSse(result->body);
+            SseParser complete;
+            complete.consume(result->body, [this](const std::string& m) { emitRaw(m); });
             return true;
         }
 
@@ -412,20 +503,6 @@ class Bridge {
 
     static bool isEventStream(const httplib::Response& response) {
         return response.get_header_value("Content-Type").rfind("text/event-stream", 0) == 0;
-    }
-
-    /// Turn an SSE byte stream back into stdio messages: one `data:` payload per
-    /// line, comments discarded.
-    void consumeSse(const std::string& chunk) {
-        std::lock_guard<std::mutex> lock(sseMutex_);
-        sseBuffer_ += chunk;
-        for (auto split = sseBuffer_.find("\n\n"); split != std::string::npos;
-             split = sseBuffer_.find("\n\n")) {
-            const auto frame = sseBuffer_.substr(0, split);
-            sseBuffer_.erase(0, split + 2);
-            if (frame.rfind("data: ", 0) == 0)
-                emitRaw(frame.substr(6));
-        }
     }
 
     /**
@@ -564,7 +641,7 @@ class Bridge {
             }
         }
         std::lock_guard<std::mutex> lock(threadsMutex_);
-        for (auto& thread : threads_)
+        for (auto& [thread, finished] : threads_)
             if (thread.joinable())
                 thread.join();
         threads_.clear();
@@ -582,10 +659,9 @@ class Bridge {
     std::set<std::string> cancelled_;
 
     std::mutex threadsMutex_;
-    std::vector<std::thread> threads_;
-
-    std::mutex sseMutex_;
-    std::string sseBuffer_;
+    /// Each worker with the flag it sets on the way out, so finished ones can
+    /// be joined and dropped rather than accumulating for the process's life.
+    std::vector<std::pair<std::thread, std::shared_ptr<std::atomic<bool>>>> threads_;
 
     std::mutex outputMutex_;
 };

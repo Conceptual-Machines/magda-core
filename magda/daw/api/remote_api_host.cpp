@@ -270,7 +270,7 @@ bool RemoteApiHost::start() {
     return true;
 }
 
-void RemoteApiHost::stop() {
+void RemoteApiHost::stopListening() {
     // Before the hub, like the WebSocket server: an open notification stream is
     // a registered hub client, and the hub must not be shut down underneath one.
     if (mcpServer_ != nullptr) {
@@ -281,17 +281,26 @@ void RemoteApiHost::stop() {
         server_->stop();
         server_.reset();
     }
-    // After the server, so no connection is still registered, and before the
-    // service's own shutdown, because this is what detaches the change listener
-    // the service owns.
-    if (subscriptions_ != nullptr)
-        subscriptions_->shutdown();
-    // The token dies with the run that generated it; leaving the file behind
+    // The token dies with the listener that used it; leaving the file behind
     // would advertise a port that is no longer listening and a credential that
     // no longer works.
     tokenFile().deleteFile();
     token_ = {};
+}
 
+void RemoteApiHost::stop() {
+    stopListening();
+
+    // Only on the way out. Both of these are one-way — the service retires its
+    // execution state and never restores it — so doing them when the user
+    // merely switched the feature off would leave a host that can never be
+    // started again: the listeners would bind, and every operation through them
+    // would answer `Cancelled`.
+    //
+    // The hub goes first: it is what detaches the change listener the service
+    // owns, and it must not outlive the source it is attached to.
+    if (subscriptions_ != nullptr)
+        subscriptions_->shutdown();
     if (service_ != nullptr)
         service_->shutdown();
 }

@@ -2596,7 +2596,10 @@ class AISettingsDialog::RemoteApiPage : public juce::Component, private juce::Ti
             if (enabled)
                 host->start();
             else
-                host->stop();
+                // Not stop(): that shuts the dispatcher down for good, and the
+                // user switching the feature off has to be able to switch it
+                // back on without relaunching MAGDA.
+                host->stopListening();
         }
         refresh();
     }
@@ -2633,9 +2636,17 @@ class AISettingsDialog::RemoteApiPage : public juce::Component, private juce::Ti
 #elif JUCE_WINDOWS
         return appBundle.getParentDirectory().getChildFile("magda-mcp.exe");
 #else
-        // Resolve the real binary rather than argv[0]: inside an AppImage the
-        // type-2 runtime leaves argv[0] pointing at the outer .AppImage, so the
-        // sibling lookup would land in the user's download folder.
+        // Inside an AppImage there is no usable answer. The bridge is in there,
+        // under a /tmp/.mount_… path — but that mount is torn down when MAGDA
+        // exits and gets a different name every launch, so publishing it would
+        // hand the user a command that stops existing the moment they quit. The
+        // Linux release ships `magda-mcp` as its own asset for exactly this
+        // reason, and the page says so instead of guessing.
+        if (isRunningFromAppImage())
+            return {};
+
+        // Resolve the real binary rather than argv[0]: even outside an AppImage,
+        // JUCE's lookup goes through dladdr, which on glibc yields argv[0].
         char buffer[PATH_MAX];
         if (const auto length = ::readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
             length > 0) {
@@ -2648,6 +2659,14 @@ class AISettingsDialog::RemoteApiPage : public juce::Component, private juce::Ti
         return appBundle.getParentDirectory().getChildFile("magda-mcp");
 #endif
     }
+
+#if !JUCE_WINDOWS && !JUCE_MAC
+    /// The type-2 AppImage runtime exports both of these; neither is set for an
+    /// ordinary install.
+    static bool isRunningFromAppImage() {
+        return std::getenv("APPIMAGE") != nullptr || std::getenv("APPDIR") != nullptr;
+    }
+#endif
 
     void refresh() {
         auto* host = magda::remote::activeHost();
@@ -2683,25 +2702,33 @@ class AISettingsDialog::RemoteApiPage : public juce::Component, private juce::Ti
         }
 
         const auto bridge = bridgeExecutable();
+        const auto haveBridge = bridge != juce::File() && bridge.existsAsFile();
+
         // Named as it will be typed, JSON-escaped so a Windows path's
         // backslashes survive being pasted.
         auto* server = new juce::DynamicObject();
-        server->setProperty("command", bridge.getFullPathName());
+        server->setProperty("command", haveBridge ? bridge.getFullPathName()
+                                                  : juce::String("/path/to/magda-mcp"));
         auto* servers = new juce::DynamicObject();
         servers->setProperty("magda", juce::var(server));
         auto* root = new juce::DynamicObject();
         root->setProperty("mcpServers", juce::var(servers));
 
         auto snippet = juce::JSON::toString(juce::var(root), false);
-        if (!bridge.existsAsFile()) {
-            snippet = "// magda-mcp was not found beside MAGDA. Reinstall, or build the\n"
-                      "// magda_mcp_bridge target if this is a development build.\n" +
+        if (!haveBridge) {
+            // A wrong path is worse than an obvious placeholder: it fails inside
+            // another application, at launch, with nothing pointing back here.
+            snippet = juce::String::fromUTF8(
+                          "// Download magda-mcp from the MAGDA release and put it somewhere\n"
+                          "// permanent, then replace the path below. It finds MAGDA on its\n"
+                          "// own, so it works wherever you keep it.\n") +
                       snippet;
         }
         if (snippet != configField_.getText())
             configField_.setText(snippet, juce::dontSendNotification);
 
-        copyButton_.setEnabled(bridge.existsAsFile());
+        // Nothing worth copying when the path is a placeholder.
+        copyButton_.setEnabled(haveBridge);
     }
 
     juce::Label blurbLabel_;

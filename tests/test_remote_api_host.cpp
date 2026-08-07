@@ -8,6 +8,7 @@
 
 #include "MockMagdaApi.hpp"
 #include "magda/daw/api/remote_api_host.hpp"
+#include "magda/daw/api/remote_service.hpp"
 #include "magda/daw/core/Config.hpp"
 
 #if !JUCE_WINDOWS
@@ -209,6 +210,45 @@ TEST_CASE("Starting publishes a token a local client can use", "[remote][host][a
         httplib::ws::WebSocketClient client(endpoint, {{"Authorization", "Bearer not-the-token"}});
         REQUIRE_FALSE(client.connect());
     }
+}
+
+TEST_CASE("Turning the remote API off and on again leaves it working",
+          "[remote][host][lifecycle]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+    const auto firstPort = host.boundPort();
+    REQUIRE(firstPort > 0);
+
+    // What the settings toggle does. `stop()` would also shut the dispatcher
+    // down, and that is one-way: the listeners would come back up around a
+    // service whose execution state has been retired, so every operation
+    // through them would answer `cancelled` and every subscription would fail
+    // to register — a server that looks healthy and does nothing.
+    host.stopListening();
+    REQUIRE_FALSE(host.isRunning());
+    REQUIRE(host.boundPort() == 0);
+    REQUIRE(host.mcpPort() == 0);
+    REQUIRE_FALSE(host.tokenFile().existsAsFile());
+
+    REQUIRE(host.start());
+    REQUIRE(host.isRunning());
+    REQUIRE(host.boundPort() > 0);
+    REQUIRE(host.tokenFile().existsAsFile());
+
+    // The dispatcher still executes, which is the whole point of the
+    // distinction.
+    REQUIRE_FALSE(host.service().isShutdown());
+    const auto response = host.service().dispatchSync(
+        "project.get", juce::var(new juce::DynamicObject()), RequestContext{});
+    REQUIRE(response.ok);
+
+    // And a fresh credential, because the old one was withdrawn.
+    const auto token = readTokenFile(host.tokenFile())["token"].toString();
+    REQUIRE(token.length() == 64);
 }
 
 TEST_CASE("The record names both transports, and both take the same token",

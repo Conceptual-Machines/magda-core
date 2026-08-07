@@ -54,6 +54,10 @@ too — beside the binary, for an extracted install — but the asset is what a 
 should point at. Drop it anywhere on `PATH`; it locates MAGDA through the
 discovery record and does not care where it was run from.
 
+The settings page knows this: running from an AppImage it prints a placeholder
+and disables Copy rather than publishing its own `/tmp/.mount_…` path, which
+would stop existing the moment MAGDA quit.
+
 It is signed on macOS and Windows in its own right, not just as part of the
 bundle. An MCP host launches it directly, so Gatekeeper and SmartScreen judge it
 on its own.

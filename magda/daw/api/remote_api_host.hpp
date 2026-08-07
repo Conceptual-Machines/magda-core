@@ -95,9 +95,31 @@ class RemoteApiHost {
      */
     bool start();
 
-    /// Stop listening and remove the token file. Idempotent; the destructor
-    /// calls it.
+    /**
+     * @brief Close the listeners and withdraw the credential, permanently.
+     *
+     * Shuts the dispatcher and the subscription hub down as well, which is
+     * one-way: `RemoteApiService::shutdown()` retires its execution state and
+     * never comes back. This is the destruction path, and `start()` must not be
+     * called afterwards — it would bind listeners around a dispatcher that
+     * answers every request with `Cancelled`.
+     *
+     * Idempotent; the destructor calls it. To turn the feature off and leave it
+     * restartable, use `stopListening()`.
+     */
     void stop();
+
+    /**
+     * @brief Close the listeners and withdraw the credential, reversibly.
+     *
+     * What the settings toggle needs: no socket and no published token, but the
+     * dispatcher, the model bridge, and the subscription hub all still alive, so
+     * a later `start()` produces a working server rather than one whose every
+     * operation is already cancelled.
+     *
+     * Idempotent, and safe to call when nothing is listening.
+     */
+    void stopListening();
 
     bool isRunning() const;
 
