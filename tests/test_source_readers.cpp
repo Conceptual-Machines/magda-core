@@ -77,6 +77,28 @@ class CountingReader final : public AudioFileReader {
     double rate_ = 44100.0;
 };
 
+/// Advertises material and answers none of it: a file truncated under us, a
+/// device that went away. What a reader that has stopped answering looks like,
+/// as against a position where the material is not.
+class DeadReader final : public AudioFileReader {
+  public:
+    std::int64_t lengthInSamples() const override {
+        return 1000;
+    }
+    double sampleRate() const override {
+        return 44100.0;
+    }
+    int numChannels() const override {
+        return 2;
+    }
+
+    int read(juce::AudioBuffer<float>& destination, int destinationOffset, std::int64_t,
+             int numSamples) override {
+        destination.clear(destinationOffset, numSamples);
+        return 0;
+    }
+};
+
 /// What a read of @p count samples from @p start came back with, channel zero.
 std::vector<float> readOut(AudioFileReader& reader, std::int64_t start, int count) {
     juce::AudioBuffer<float> destination(2, count);
@@ -132,6 +154,38 @@ TEST_CASE("A reversed reader is the file back to front", "[engine][clip][source]
         CHECK(out[3] == approx(0.0f));
         CHECK(out[4] == approx(0.0f));
         CHECK(out[7] == approx(0.0f));
+    }
+}
+
+TEST_CASE("The silence in front of a mirrored file is read, not reported as a failure",
+          "[engine][clip][source]") {
+    // A reversed clip trimmed longer than its source starts before the mirror's
+    // first sample, which is past the file's last. That silence is content: a
+    // stream told nothing came back stops reading altogether and reaches the
+    // material with its read-ahead somewhere else (PrefetchStream::fill).
+    ReversedAudioFileReader reader(std::make_unique<CountingReader>(100), 100);
+
+    juce::AudioBuffer<float> destination(2, 8);
+    destination.clear();
+
+    CHECK(reader.read(destination, 0, -16, 8) == 8);
+    CHECK(destination.getSample(0, 0) == approx(0.0f));
+    CHECK(destination.getSample(0, 7) == approx(0.0f));
+
+    SECTION("and a run crossing into it arrives on the sample it should") {
+        const auto out = readOut(reader, -4, 8);
+        CHECK(out[0] == approx(0.0f));
+        CHECK(out[3] == approx(0.0f));
+        CHECK(out[4] == approx(99.0f));
+        CHECK(out[7] == approx(96.0f));
+    }
+
+    SECTION("while a reader that stops answering inside the file still says so") {
+        ReversedAudioFileReader dead(std::make_unique<DeadReader>(), 1000);
+
+        juce::AudioBuffer<float> buffer(2, 8);
+        buffer.clear();
+        CHECK(dead.read(buffer, 0, 0, 8) == 0);
     }
 }
 
@@ -198,12 +252,29 @@ TEST_CASE("A loop over a region the file does not reach plays the silence in it"
     CHECK(out[4] == approx(0.0f));
     CHECK(out[7] == approx(0.0f));
 
-    SECTION("and a region with nothing in it at all says so") {
-        LoopingAudioFileReader empty(std::make_unique<CountingReader>(100), 200, 8);
+    SECTION("a read landing wholly inside that silence is still a read") {
+        // The shape that would stop a reader for good: a region whose tail past
+        // the end of its file is longer than a chunk, so a whole read lands in
+        // it. Reported as nothing, the stream stops and the top of the loop
+        // never comes round again.
+        LoopingAudioFileReader reaching(std::make_unique<CountingReader>(100), 50, 400);
+
+        juce::AudioBuffer<float> destination(2, 64);
+        destination.clear();
+
+        CHECK(reaching.read(destination, 0, 200, 64) == 64);
+        CHECK(destination.getSample(0, 0) == approx(0.0f));
+
+        // And the top of the region still plays, next time round.
+        CHECK(readOut(reaching, 450, 2)[0] == approx(50.0f));
+    }
+
+    SECTION("while a reader that stops answering inside the file still says so") {
+        LoopingAudioFileReader dead(std::make_unique<DeadReader>(), 0, 64);
 
         juce::AudioBuffer<float> destination(2, 8);
         destination.clear();
-        CHECK(empty.read(destination, 0, 200, 8) == 0);
+        CHECK(dead.read(destination, 0, 0, 8) == 0);
     }
 }
 
@@ -243,6 +314,26 @@ TEST_CASE("A resampling reader presents the file at the device's rate", "[engine
 
         CHECK(reader.read(destination, 0, 2000, 8) == 0);
         CHECK(destination.getSample(0, 0) == approx(0.0f));
+    }
+
+    SECTION("in front of the first, silence that is read like any other") {
+        // A clip cued into the silence ahead of its own material reads it and
+        // walks through it, converted or not. The layers have to agree with the
+        // base reader about what structural silence is, or a converted clip
+        // stalls where an unconverted one plays.
+        juce::AudioBuffer<float> destination(2, 32);
+        destination.clear();
+
+        CHECK(reader.read(destination, 0, -64, 32) == 32);
+        CHECK(destination.getSample(0, 0) == approx(0.0f));
+    }
+
+    SECTION("while a reader that stops answering inside the file still says so") {
+        ResamplingAudioFileReader dead(std::make_unique<DeadReader>(), 22050.0, 44100.0);
+
+        juce::AudioBuffer<float> destination(2, 8);
+        destination.clear();
+        CHECK(dead.read(destination, 0, 0, 8) == 0);
     }
 }
 

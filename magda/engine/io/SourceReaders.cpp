@@ -29,6 +29,25 @@ int readFrom(AudioFileReader& file, juce::AudioBuffer<float>& destination, int d
                      numSamples - silent);
 }
 
+/**
+ * @brief Whether a run reaches any of @p file's own samples.
+ *
+ * What separates silence that is where the material is not from silence that is
+ * a reader which has stopped answering. Both come back as an empty buffer and
+ * they are not the same thing at all: the first is content, and the second is a
+ * fault the stream above has to stop reading against (PrefetchStream::fill).
+ * Reporting structural silence as a failure stalls a reader in the middle of
+ * material it was going to reach.
+ *
+ * The base reader already draws this line: silence before the first sample is
+ * padded and reported as read, and only a decode failure inside the length the
+ * file advertises reports nothing (AudioFileReader.cpp). These readers rearrange
+ * which samples answer a position, so they have to draw it in the same place.
+ */
+bool insideMaterial(const AudioFileReader& file, std::int64_t startSample, int numSamples) {
+    return startSample + numSamples > 0 && startSample < file.lengthInSamples();
+}
+
 /// Cubic Lagrange through four samples, @p t of the way from the second to the
 /// third.
 float interpolate(float first, float second, float third, float fourth, double t) {
@@ -99,8 +118,8 @@ int ReversedAudioFileReader::read(juce::AudioBuffer<float>& destination, int des
     // sample of this is past the last sample of the file, and comes back as the
     // silence the file has there; the flip puts it where it belongs, in front
     // of the material rather than behind it.
-    const auto found =
-        file_->read(destination, destinationOffset, length_ - startSample - available, available);
+    const auto from = length_ - startSample - available;
+    const auto found = file_->read(destination, destinationOffset, from, available);
 
     for (auto channel = 0; channel < destination.getNumChannels(); ++channel) {
         auto* samples = destination.getWritePointer(channel) + destinationOffset;
@@ -110,7 +129,16 @@ int ReversedAudioFileReader::read(juce::AudioBuffer<float>& destination, int des
     // Every one of these positions exists, whatever the file had at the far end
     // of them. Reporting the file's count would say the material starts where
     // the flip has just put the silence.
-    return found > 0 ? available : 0;
+    //
+    // A run that lies wholly past the file is the mirror of one that lies
+    // wholly before it, which is the silence a reversed clip trimmed longer
+    // than its own source begins with. It is content, and a reader walks
+    // through it; only a run that came back with nothing from inside the
+    // material is a reader that has stopped answering.
+    if (found > 0 || !insideMaterial(*file_, from, available))
+        return available;
+
+    return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -145,7 +173,7 @@ int LoopingAudioFileReader::read(juce::AudioBuffer<float>& destination, int dest
     const auto loopEnd = loopStart_ + loopLength_;
 
     auto done = 0;
-    auto material = false;
+    auto failed = false;
 
     while (done < numSamples) {
         // Every position is inside the region, including the ones in front of
@@ -160,8 +188,9 @@ int LoopingAudioFileReader::read(juce::AudioBuffer<float>& destination, int dest
         if (run <= 0)
             break;
 
-        if (readFrom(*file_, destination, destinationOffset + done, found, run) > 0)
-            material = true;
+        if (readFrom(*file_, destination, destinationOffset + done, found, run) <= 0 &&
+            insideMaterial(*file_, found, run))
+            failed = true;
 
         done += run;
     }
@@ -169,12 +198,16 @@ int LoopingAudioFileReader::read(juce::AudioBuffer<float>& destination, int dest
     if (done < numSamples)
         destination.clear(destinationOffset + done, numSamples - done);
 
-    // Silence inside the region is material: a loop over a region the file does
-    // not reach plays that silence every time round, and calling it the end of
-    // the file would leave the stream above asking for it again instead of
-    // moving on. A read with nothing anywhere in it is the other thing, and
+    // Silence inside the region is material, and a region that reaches past the
+    // end of its own file plays that silence every time round. The tail of such
+    // a region can be longer than a whole chunk, so a read landing entirely
+    // inside it is ordinary rather than the end of anything: reporting nothing
+    // there would stop the reader for good, and the top of the loop, which is
+    // where the material is, would never come round again.
+    //
+    // A run that came back empty from inside the file is the other thing, and
     // says so, because a reader that has stopped answering has to be visible.
-    return material ? numSamples : 0;
+    return failed ? 0 : numSamples;
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +261,13 @@ int ResamplingAudioFileReader::read(juce::AudioBuffer<float>& destination, int d
 
     if (readFrom(*file_, window_, 0, first, count) <= 0) {
         destination.clear(destinationOffset, available);
-        return 0;
+
+        // A window wholly outside the material is silence at this rate as well
+        // as at the source's: a clip cued into the silence in front of its own
+        // first sample reads it, and walks through it, the way it would have
+        // without a conversion in the way. Nothing from inside the material is
+        // the other thing.
+        return insideMaterial(*file_, first, count) ? 0 : available;
     }
 
     for (auto channel = 0; channel < channels; ++channel) {

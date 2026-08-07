@@ -55,8 +55,10 @@ double blockTime(int index) {
 /// value and a position that slipped is visible rather than inferred.
 class CountingReader final : public magda::engine::AudioFileReader {
   public:
+    explicit CountingReader(std::int64_t length = 10000000) : length_(length) {}
+
     std::int64_t lengthInSamples() const override {
-        return 10000000;
+        return length_;
     }
     double sampleRate() const override {
         return kSampleRate;
@@ -65,14 +67,30 @@ class CountingReader final : public magda::engine::AudioFileReader {
         return 2;
     }
 
+    /// Ends where it says it does, the way the real reader does. A clip that
+    /// reads past its own source has to find silence there rather than more
+    /// counting, which is the difference between the tests below meaning
+    /// anything and not.
     int read(juce::AudioBuffer<float>& destination, int destinationOffset, std::int64_t startSample,
              int numSamples) override {
+        const auto available =
+            static_cast<int>(std::clamp<std::int64_t>(length_ - startSample, 0, numSamples));
+
+        if (available < numSamples)
+            destination.clear(destinationOffset + available, numSamples - available);
+        if (available <= 0)
+            return 0;
+
         for (auto channel = 0; channel < destination.getNumChannels(); ++channel)
-            for (auto sample = 0; sample < numSamples; ++sample)
+            for (auto sample = 0; sample < available; ++sample)
                 destination.setSample(channel, destinationOffset + sample,
                                       static_cast<float>(startSample + sample));
-        return numSamples;
+
+        return available;
     }
+
+  private:
+    std::int64_t length_ = 0;
 };
 
 /// Every sample the same, so a gain, a fade or a pan is readable straight off
@@ -645,6 +663,160 @@ TEST_CASE("A reversed clip plays the region it was given, backwards", "[engine][
     // The reader is still reading forwards through a file that happens to be
     // the other way round, so nothing about this is a seek.
     CHECK(stream.underruns() == 0);
+}
+
+TEST_CASE("A reversed clip trimmed longer than its source arrives on time",
+          "[engine][clip][voice]") {
+    // The silence a mirrored read begins with. A clip drawn longer than the
+    // audio behind it has that silence at its end going forwards, and at its
+    // start going backwards, so the stream is cued in front of its own first
+    // sample and has to walk through the gap rather than wait it out: a stream
+    // that stood still would reach the material with its read-ahead somewhere
+    // else, seek, and lose the block the material begins in.
+    Rig rig;
+
+    // Two blocks short of a tenth of a second of source, under a clip that
+    // reads two hundred blocks, so the mirror starts 136 blocks before it.
+    constexpr std::int64_t kSource = 4096;
+    constexpr int kSilentBlocks = (200 * kBlockSize - kSource) / kBlockSize;
+
+    auto clip = clipOver(1, blocks(100, 300));
+    clip.events[0].sourceDurationSeconds = static_cast<double>(kSource) / kSampleRate;
+    clip.events[0].reversed = true;
+    rig.lane.audio.push_back(clip);
+
+    auto& stream = rig.give(1, 1, std::make_unique<CountingReader>(kSource));
+    rig.publish();
+
+    rig.start(100, 40);
+
+    SECTION("the silence in front of the material is silence") {
+        for (auto sample = 0; sample < kBlockSize; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(rig.at(sample) == approx(0.0f));
+        }
+    }
+
+    SECTION("and the material begins in the block it was placed in") {
+        rig.advance(kSilentBlocks);
+
+        REQUIRE(rig.at(0) == approx(static_cast<float>(kSource - 1)));
+        REQUIRE(rig.at(1) == approx(static_cast<float>(kSource - 2)));
+
+        // The point of walking through the silence rather than waiting it out.
+        CHECK(stream.underruns() == 0);
+    }
+}
+
+TEST_CASE("A reversed looped clip tiles the region it was given, backwards",
+          "[engine][clip][voice]") {
+    // Both derivations at once, and the reason they are one function: the
+    // mirrored loop region comes from sourceReadFor and the phase the event
+    // starts on comes from placementFor, and a reader pointed by one and read
+    // by the other would play a tile from somewhere neither of them named.
+    //
+    // What plays first is what the forward clip would have played last, which
+    // for a loop is wherever its phase had got to by the end.
+    Rig rig;
+
+    constexpr std::int64_t kLoopStart = 1000;
+    constexpr std::int64_t kLoopLength = 100;
+    constexpr int kRegion = 200 * kBlockSize;
+
+    auto clip = clipOver(1, blocks(100, 300), kLoopStart);
+    clip.events[0].sourceDurationSeconds = 10.0;
+    clip.events[0].reversed = true;
+    clip.events[0].loopEnabled = true;
+    clip.events[0].loopStartSamples = kLoopStart;
+    clip.events[0].loopLengthSamples = kLoopLength;
+
+    // Where the forward clip ends inside the region, which is where the
+    // backwards one begins.
+    std::int64_t phase = (kRegion - 1) % kLoopLength;
+
+    SECTION("anchored at the top of the region") {
+        // phase stays where it is: the anchor is the loop start.
+    }
+
+    SECTION("anchored part way into it") {
+        clip.events[0].anchorSamples = kLoopStart + 50;
+        phase = (50 + kRegion - 1) % kLoopLength;
+    }
+
+    rig.lane.audio.push_back(clip);
+    auto& stream = rig.give(1, 1, std::make_unique<CountingReader>());
+    rig.publish();
+
+    rig.start(100, 40);
+
+    /// The sample of the file heard @p sample outputs after the clip begins:
+    /// down from the phase it started on, round the region and down again.
+    const auto expected = [phase](int sample) {
+        const auto position = (phase - sample) % kLoopLength;
+        return static_cast<float>(kLoopStart + (position < 0 ? position + kLoopLength : position));
+    };
+
+    for (auto sample = 0; sample < kBlockSize; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(rig.at(sample) == approx(expected(sample)));
+    }
+
+    // Still on that phase blocks later, over a wrap that is not a multiple of
+    // the block: the tiling is the reader's and nothing here counts tiles.
+    rig.advance(37);
+    for (auto sample = 0; sample < kBlockSize; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(rig.at(sample) == approx(expected(37 * kBlockSize + sample)));
+    }
+
+    CHECK(stream.underruns() == 0);
+}
+
+TEST_CASE("A loop over a region longer than its file comes round again", "[engine][clip][voice]") {
+    // The region is what the model asked for, so a region reaching past the end
+    // of its own file plays that silence every time round. Its tail here is far
+    // longer than a prefetch chunk, which is the shape that would stop a reader
+    // for good if silence outside the file were reported as a reader that had
+    // stopped answering: the top of the loop would never come round.
+    Rig rig;
+
+    constexpr std::int64_t kSource = 1000;
+    constexpr std::int64_t kLoopStart = 900;
+    constexpr std::int64_t kLoopLength = 32 * kBlockSize;
+
+    auto clip = clipOver(1, blocks(100, 400), kLoopStart);
+    clip.events[0].sourceDurationSeconds = static_cast<double>(kSource) / kSampleRate;
+    clip.events[0].loopEnabled = true;
+    clip.events[0].loopStartSamples = kLoopStart;
+    clip.events[0].loopLengthSamples = kLoopLength;
+    rig.lane.audio.push_back(clip);
+
+    auto& stream = rig.give(1, 1, std::make_unique<CountingReader>(kSource));
+    rig.publish();
+
+    rig.start(100, 40);
+
+    // The hundred samples the file does have, from where the clip was trimmed.
+    for (auto sample = 0; sample < kBlockSize; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(rig.at(sample) == approx(static_cast<float>(kLoopStart + sample)));
+    }
+
+    SECTION("the rest of the region is the silence the file has there") {
+        rig.advance(4);
+        for (auto sample = 0; sample < kBlockSize; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(rig.at(sample) == approx(0.0f));
+        }
+    }
+
+    SECTION("and the next tile plays the material again") {
+        rig.advance(32);
+
+        REQUIRE(rig.at(0) == approx(static_cast<float>(kLoopStart)));
+        REQUIRE(rig.at(kBlockSize - 1) == approx(static_cast<float>(kLoopStart + kBlockSize - 1)));
+        CHECK(stream.underruns() == 0);
+    }
 }
 
 TEST_CASE("A looped clip tiles its region without a seek", "[engine][clip][voice]") {

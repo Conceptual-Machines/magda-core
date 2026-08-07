@@ -118,12 +118,12 @@ class PrefetchStream {
      * playing and hand back the pool holding it, for a position the next read
      * would immediately override.
      *
-     * That is also why a loop's return is not seamless here. Reading the top of
-     * a loop while the end of it is still playing means holding two positions
-     * at once, which is a second fill cursor and a second pool, and it belongs
-     * with whoever owns clip looping (#1890) rather than being half-built
-     * underneath them. Today a wrap costs the block it happens in, and the
-     * underrun count says so.
+     * A clip's loop does not come through here at all, which is what it took to
+     * make its return seamless. Reading the top of a loop through a cue would
+     * mean holding two positions at once, a second fill cursor and a second
+     * pool; instead the tiling happens below this, in what the stream reads
+     * (io/SourceReaders.hpp), so a wrap is a discontinuity in the material and
+     * a position like any other to everything here.
      */
     void seek(std::int64_t sourceStart);
 
