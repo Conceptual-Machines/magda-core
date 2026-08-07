@@ -42,6 +42,16 @@ const char* toString(Topic topic);
 std::optional<Topic> parseTopic(juce::StringRef topic);
 
 /**
+ * @brief True for `Meters` and `Playhead`.
+ *
+ * The two that are sampled rather than published. Nothing in the model marks
+ * them — the playhead moves without notifying anyone — so they are never part of
+ * a "everything changed" sweep and never carry a revisioned delta. Callers that
+ * iterate every topic almost always mean the eight discrete ones.
+ */
+bool isContinuousTopic(Topic topic);
+
+/**
  * @brief Coalescing, revisioned source of "what changed".
  *
  * Sits between MAGDA's model listeners and every remote transport. Model

@@ -132,6 +132,16 @@ class RemoteApiService {
     void noteModelChanged(Topic topic);
 
     /**
+     * @brief The same, for a change that invalidates several topics at once.
+     *
+     * One revision for the whole set rather than one per topic. Creating a
+     * session clip changes both `clips` and the `session` grid derived from it,
+     * and that is one edit — advancing the counter twice for it would be the
+     * same double-bump the re-entrancy check above exists to prevent.
+     */
+    void noteModelChanged(std::initializer_list<Topic> topics);
+
+    /**
      * @brief Record continuous movement on a topic without bumping the revision.
      *
      * For values that change at automation or gesture rate — a drag preview, a

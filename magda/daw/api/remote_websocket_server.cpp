@@ -399,6 +399,22 @@ struct Connection {
         ready.notify_one();
     }
 
+    /**
+     * @brief Whether this connection has been retired by anything but its reader.
+     *
+     * `markClosed` is how a foreign thread — the subscription hub dropping a
+     * subscriber that stopped consuming — says the connection is finished, and
+     * it is all a foreign thread may do, because the reader owns the socket.
+     * That only ends the connection if the reader looks, which is why this is
+     * checked around every frame rather than only when replies are queued:
+     * without it a client dropped for backpressure keeps having its requests
+     * executed, mutations and all, and only its replies are thrown away.
+     */
+    bool isClosed() const {
+        const std::lock_guard<std::mutex> lock(mutex);
+        return closed;
+    }
+
     void markClosed() {
         std::deque<Outgoing> abandoned;
         {
@@ -757,8 +773,15 @@ struct RemoteWebSocketServer::Impl {
         });
 
         std::string message;
-        while (socket.is_open() && running.load()) {
+        while (socket.is_open() && running.load() && !connection->isClosed()) {
             if (socket.read(message) == httplib::ws::ReadResult::Fail)
+                break;
+            // Re-checked after the read, not only before it: the read is where
+            // this thread spends its time, so a connection retired while it was
+            // blocked would otherwise get one more request executed on the way
+            // out — and for a client dropped for backpressure, one more per
+            // frame it kept sending.
+            if (connection->isClosed())
                 break;
             handleMessage(connection, message);
         }

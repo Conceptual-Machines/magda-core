@@ -940,3 +940,140 @@ TEST_CASE("A client that has stopped reading does not hold up the others",
         REQUIRE(event.type == SubscriptionEvent::Type::Delta);
     REQUIRE(hub.clientCount() == 2);
 }
+
+// ===========================================================================
+// Recovery and invalidation
+// ===========================================================================
+
+TEST_CASE("The stalled client is the one disconnected, not whoever follows it",
+          "[remote][subscriptions][backpressure]") {
+    MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.tracks_.tracks.push_back(makeTrack(1, "Drums"));
+
+    RemoteApiService service(api);
+    Recorder stalled;
+    Recorder healthy;
+    SubscriptionHub::Options options;
+    options.droppedFlushesBeforeDisconnect = 2;
+    SubscriptionHub hub(api, service, options);
+
+    // Order matters. Removing the stalled client compacts the healthy one over
+    // the top of it, so a disconnect callback read from the tail afterwards
+    // belongs to a moved-from copy rather than to the client that stalled.
+    subscribe(hub, hub.addClient(stalled.sink(), stalled.disconnect()), {"tracks"});
+    subscribe(hub, hub.addClient(healthy.sink(), healthy.disconnect()), {"tracks"});
+
+    stalled.accepting = false;
+    for (int i = 0; i < 2; ++i) {
+        api.tracks_.tracks[0].volume = 0.1f * static_cast<float>(i + 1);
+        commit(service, Topic::Tracks);
+    }
+
+    // The one that stopped consuming is told to go, and it is the only one:
+    // dropping it while leaving its socket open would strand a thread and a
+    // connection slot for the life of the process.
+    REQUIRE(stalled.disconnects == 1);
+    REQUIRE(healthy.disconnects == 0);
+    REQUIRE(hub.clientCount() == 1);
+    REQUIRE_FALSE(healthy.events.empty());
+}
+
+TEST_CASE("A refused event is followed by a snapshot even if nothing else changes",
+          "[remote][subscriptions][backpressure][resync]") {
+    MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.tracks_.tracks.push_back(makeTrack(1, "Drums"));
+
+    RemoteApiService service(api);
+    Recorder recorder;
+    SubscriptionHub hub(api, service);
+
+    const auto client = hub.addClient(recorder.sink(), recorder.disconnect());
+    subscribe(hub, client, {"tracks"});
+
+    recorder.accepting = false;
+    api.tracks_.tracks[0].name = "Kit";
+    commit(service, Topic::Tracks);
+    REQUIRE(recorder.refused == 1);
+
+    // The project goes quiet. Nothing will ever change this topic again, so a
+    // recovery that waited for the next observable change would wait forever —
+    // the client would be silently stale until it thought to ask for a resync.
+    recorder.accepting = true;
+    service.changes().flush();
+
+    REQUIRE(recorder.events.size() == 1);
+    REQUIRE(recorder.events[0].type == SubscriptionEvent::Type::Snapshot);
+    REQUIRE(recorder.events[0].payload[0]["name"].toString() == "Kit");
+
+    // And the retry stops once the debt is paid, rather than republishing on
+    // every flush from then on.
+    recorder.clear();
+    service.changes().flush();
+    REQUIRE(recorder.events.empty());
+}
+
+TEST_CASE("Opening a different project reaches subscribers of every topic",
+          "[remote][subscriptions][resync]") {
+    MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.tracks_.tracks.push_back(makeTrack(1, "Old project"));
+
+    RemoteApiService service(api);
+    Recorder tracksOnly;
+    SubscriptionHub hub(api, service);
+
+    // Deliberately not subscribed to `project`. A client watching one topic
+    // would otherwise keep showing the outgoing project's contents until
+    // something happened to change that same topic in the new one.
+    const auto client = hub.addClient(tracksOnly.sink(), tracksOnly.disconnect());
+    subscribe(hub, client, {"tracks"});
+
+    api.tracks_.tracks.clear();
+    api.tracks_.tracks.push_back(makeTrack(9, "New project"));
+    service.projectReplaced();
+    service.changes().flush();
+
+    REQUIRE(tracksOnly.events.size() == 1);
+    const auto& payload = tracksOnly.events[0].payload;
+    REQUIRE(payload["removed"].getArray()->size() == 1);
+    REQUIRE(static_cast<int>(payload["removed"][0]) == 1);
+    REQUIRE(payload["added"].getArray()->size() == 1);
+    REQUIRE(payload["added"][0]["name"].toString() == "New project");
+}
+
+TEST_CASE("A session subscriber hears about a clip that changes the grid",
+          "[remote][subscriptions][delta]") {
+    MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.tracks_.tracks.push_back(makeTrack(1, "Drums"));
+
+    RemoteApiService service(api);
+    Recorder sessionOnly;
+    SubscriptionHub hub(api, service);
+
+    const auto client = hub.addClient(sessionOnly.sink(), sessionOnly.disconnect());
+    subscribe(hub, client, {"session"});
+
+    // `session.get` projects its slots out of the clips rather than storing them
+    // beside them, so a clip operation that marked only `clips` would leave this
+    // subscriber stale for as long as the session grid went untouched.
+    ClipInfo clip;
+    clip.id = 50;
+    clip.trackId = 1;
+    clip.name = "Loop";
+    clip.setMidiContent();
+    clip.view = ClipView::Session;
+    clip.sceneIndex = 0;
+    api.clips_.clips.emplace(clip.id, clip);
+    api.clips_.clipsOnTrack[1] = {clip.id};
+
+    for (const auto topic : {Topic::Clips, Topic::Session})
+        service.noteModelChanged(topic);
+    service.changes().flush();
+
+    REQUIRE(sessionOnly.events.size() == 1);
+    REQUIRE(sessionOnly.events[0].topic == Topic::Session);
+    REQUIRE(sessionOnly.events[0].payload["added"].getArray()->size() == 1);
+}

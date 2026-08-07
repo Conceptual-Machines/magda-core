@@ -80,11 +80,16 @@ revision, no committed change has been missed and the snapshots are skipped;
 any other value is an explicit full resync, because no per-revision history is
 kept to replay from. `resync` forces the same thing at any time.
 
+Opening a different project invalidates every discrete topic at once, so a
+client watching only `tracks` hears about the swap rather than continuing to
+show the outgoing project's contents.
+
 Delivery is bounded rather than buffered. A client that stops reading has its
-events dropped, is marked for resync, and receives a `snapshot` in place of the
-`delta` it missed as soon as it reads again; one that never resumes is
-disconnected. Subscribing to `meters` or `playhead` costs nothing until asked
-for: nothing samples them otherwise.
+events dropped and is marked for resync; the snapshot it is owed is retried on
+its own until it is taken, so a client that fell behind is not left stale by the
+project happening to go quiet. One that never resumes is disconnected.
+Subscribing to `meters` or `playhead` costs nothing until asked for: nothing
+samples them otherwise.
 
 ## Deliberately excluded data
 

@@ -19,12 +19,6 @@ std::size_t indexOf(Topic topic) {
     return static_cast<std::size_t>(topic);
 }
 
-/// Sampled rather than published: driven by their own timer, never by a model
-/// notification, and never delta-encoded.
-bool isSampled(Topic topic) {
-    return topic == Topic::Meters || topic == Topic::Playhead;
-}
-
 juce::var makeObject() {
     return juce::var(new juce::DynamicObject());
 }
@@ -442,7 +436,7 @@ void SubscriptionHub::applyTopology() {
             const auto topic = static_cast<Topic>(index);
             if (!anySubscriberLocked(topic))
                 continue;
-            if (isSampled(topic))
+            if (isContinuousTopic(topic))
                 wantSampler = true;
             else
                 wantChanges = true;
@@ -599,51 +593,73 @@ void SubscriptionHub::deliverLocked(Client& client, const SubscriptionEvent& eve
     ++client.consecutiveDrops;
 }
 
+bool SubscriptionHub::owesSnapshotLocked(Topic topic) const {
+    const auto index = indexOf(topic);
+    return std::any_of(clients_.begin(), clients_.end(), [index](const Client& client) {
+        return client.subscribed[index] && client.needsSnapshot[index];
+    });
+}
+
 void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision) {
     const auto index = indexOf(topic);
+
+    // A client that refused an event is owed complete state, and it is owed it
+    // whether or not anything has changed since. Deciding that before the
+    // early-out below is what makes the promise good: otherwise the snapshot
+    // would arrive only on the next observable change, and a client that dropped
+    // one event from a project that then went quiet would stay stale until it
+    // thought to ask for a resync.
+    const bool owed = owesSnapshotLocked(topic);
+
     auto current = projectTopic(topic);
     auto& state = topics_[index];
+    const bool hadBaseline = state.hasBaseline;
 
     SubscriptionEvent delta{topic, SubscriptionEvent::Type::Delta, revision, {}};
-    bool haveDelta = false;
+    bool changed = !hadBaseline;
 
-    if (state.hasBaseline) {
+    if (hadBaseline) {
         if (!keyFieldsFor(topic).empty()) {
             const auto difference = diffElements(topic, state.baseline, current);
-            if (!difference.changed()) {
-                // The topic was marked but nothing observable changed — a
-                // parameter that came back to where it started, or a
-                // notification for state this projection does not expose. The
-                // coalescing that matters most is the event never sent.
-                state.baseline = current;
-                return;
-            }
-            delta.payload = difference.toJson();
+            changed = difference.changed();
+            if (changed)
+                delta.payload = difference.toJson();
         } else {
-            if (deepEquals(state.baseline, current)) {
-                state.baseline = current;
-                return;
-            }
-            delta.payload = current;
+            changed = !deepEquals(state.baseline, current);
+            if (changed)
+                delta.payload = current;
         }
-        haveDelta = true;
     }
 
     state.baseline = current;
     state.hasBaseline = true;
+
+    // The topic was marked but nothing observable changed — a parameter that
+    // came back to where it started, or a notification for state this projection
+    // does not expose — and nobody is behind. The coalescing that matters most
+    // is the event never sent.
+    if (!changed && !owed)
+        return;
 
     const SubscriptionEvent snapshot{topic, SubscriptionEvent::Type::Snapshot, revision, current};
 
     for (auto& client : clients_) {
         if (!client.subscribed[index])
             continue;
-        const bool complete = client.needsSnapshot[index] || !haveDelta;
-        deliverLocked(client, complete ? snapshot : delta);
+        if (client.needsSnapshot[index] || !hadBaseline) {
+            deliverLocked(client, snapshot);
+            continue;
+        }
+        // A client that is current and has nothing to be told: this pass exists
+        // only for the ones that are behind.
+        if (changed)
+            deliverLocked(client, delta);
     }
 }
 
 void SubscriptionHub::publish(const std::vector<ChangeSource::Change>& changes) {
     bool dropped = false;
+    std::vector<Topic> stillOwed;
     {
         const std::lock_guard<std::mutex> lock(mutex_);
         if (shutdown_)
@@ -652,7 +668,7 @@ void SubscriptionHub::publish(const std::vector<ChangeSource::Change>& changes) 
         for (const auto& change : changes) {
             // Nothing marks these, and if something did, a revisioned delta is
             // the wrong shape for a continuous signal.
-            if (isSampled(change.topic))
+            if (isContinuousTopic(change.topic))
                 continue;
             if (!anySubscriberLocked(change.topic))
                 continue;
@@ -660,6 +676,24 @@ void SubscriptionHub::publish(const std::vector<ChangeSource::Change>& changes) 
         }
 
         dropped = dropAbandonedLocked();
+
+        for (std::size_t index = 0; index < TOPIC_COUNT; ++index) {
+            const auto topic = static_cast<Topic>(index);
+            if (!isContinuousTopic(topic) && owesSnapshotLocked(topic))
+                stillOwed.push_back(topic);
+        }
+    }
+
+    // A client that refused again is owed a snapshot that nothing else will
+    // deliver: a quiet project produces no flush at all, so there would be no
+    // next attempt. Marking the topic dirty schedules one, which keeps the retry
+    // on the coalescing pump that already exists rather than giving it a timer
+    // of its own — and keeps the disconnect budget meaning what it says, since
+    // each retry is one more flush the client refused.
+    if (!stillOwed.empty()) {
+        const auto revision = service_.currentRevision();
+        for (const auto topic : stillOwed)
+            service_.changes().markChanged(topic, revision);
     }
 
     // Only when the client set actually changed. This runs inside the flush
@@ -690,18 +724,31 @@ bool SubscriptionHub::dropAbandonedLocked() {
     if (options_.droppedFlushesBeforeDisconnect <= 0)
         return false;
 
-    const auto abandoned =
-        std::remove_if(clients_.begin(), clients_.end(), [this](const Client& client) {
-            return client.consecutiveDrops >= options_.droppedFlushesBeforeDisconnect;
-        });
-    if (abandoned == clients_.end())
+    const auto abandoned = [this](const Client& client) {
+        return client.consecutiveDrops >= options_.droppedFlushesBeforeDisconnect;
+    };
+
+    // Collected before anything is removed, and deliberately not from the tail
+    // that `remove_if` leaves behind. That tail holds moved-from elements, not
+    // the ones that matched: with a stalled client followed by a healthy one,
+    // the healthy one is moved over the stalled one and what remains at the end
+    // is a hollowed-out copy whose `disconnect` is empty. The stalled client
+    // would then be dropped from the hub while keeping its socket, its thread,
+    // and its connection slot — silently, because the callback that was supposed
+    // to close it no longer exists.
+    std::vector<Disconnect> departing;
+    for (const auto& client : clients_)
+        if (abandoned(client) && client.disconnect != nullptr)
+            departing.push_back(client.disconnect);
+
+    const auto removed = std::remove_if(clients_.begin(), clients_.end(), abandoned);
+    if (removed == clients_.end())
         return false;
+    clients_.erase(removed, clients_.end());
 
-    for (auto it = abandoned; it != clients_.end(); ++it)
-        if (it->disconnect != nullptr)
-            it->disconnect("subscriber is not consuming events");
+    for (const auto& disconnect : departing)
+        disconnect("subscriber is not consuming events");
 
-    clients_.erase(abandoned, clients_.end());
     releaseIdleTopicsLocked();
     return true;
 }
@@ -713,7 +760,7 @@ bool SubscriptionHub::dropAbandonedLocked() {
 void SubscriptionHub::sendSnapshotsLocked(Client& client, const std::vector<Topic>& topics,
                                           Revision revision, juce::Array<juce::var>& into) {
     for (const auto topic : topics) {
-        if (isSampled(topic))
+        if (isContinuousTopic(topic))
             continue;
 
         const auto index = indexOf(topic);
@@ -847,7 +894,7 @@ Response SubscriptionHub::execute(ClientId client, const juce::String& method,
                 sendSnapshotsLocked(*entry, requested, revision, snapshots);
             else
                 for (const auto topic : requested)
-                    if (!isSampled(topic) && !topics_[indexOf(topic)].hasBaseline) {
+                    if (!isContinuousTopic(topic) && !topics_[indexOf(topic)].hasBaseline) {
                         topics_[indexOf(topic)].baseline = projectTopic(topic);
                         topics_[indexOf(topic)].hasBaseline = true;
                     }

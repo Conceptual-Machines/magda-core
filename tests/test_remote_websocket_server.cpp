@@ -785,3 +785,41 @@ TEST_CASE("A subscriber that cannot take events is dropped, not queued for",
     // stopped being a subscriber.
     REQUIRE(hub.clientCount() == 0);
 }
+
+TEST_CASE("A dropped subscriber stops being able to change the project",
+          "[remote][websocket][subscriptions][limits]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    SubscriptionHub::Options hubOptions;
+    hubOptions.droppedFlushesBeforeDisconnect = 1;
+    SubscriptionHub hub(api, service, hubOptions);
+
+    auto options = testOptions();
+    options.maxQueuedEventsPerConnection = 0;
+    RemoteWebSocketServer server(service, options, &hub);
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+    roundTrip(client, request("subscriptions.subscribe", topicList({"transport"})));
+
+    api.transport_.playing = true;
+    service.noteModelChanged(Topic::Transport);
+    service.changes().flush();
+    REQUIRE(hub.clientCount() == 0);
+
+    // Marking a connection closed is all a foreign thread may do — the reader
+    // owns the socket. That only ends the connection if the reader looks, and
+    // until it did, a client dropped for backpressure kept getting its requests
+    // executed with only the replies thrown away.
+    REQUIRE(client.send(request("transport.play", {}, 2)));
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    while (server.connectionCount() > 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    REQUIRE(server.connectionCount() == 0);
+    REQUIRE(api.transport_.playCalls == 0);
+}

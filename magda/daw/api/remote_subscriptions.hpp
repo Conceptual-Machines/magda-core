@@ -263,6 +263,8 @@ class SubscriptionHub {
     void sendSnapshotsLocked(Client& client, const std::vector<Topic>& topics, Revision revision,
                              juce::Array<juce::var>& into);
     bool anySubscriberLocked(Topic topic) const;
+    /// Whether any subscriber of `topic` is behind and owed a snapshot.
+    bool owesSnapshotLocked(Topic topic) const;
     void releaseIdleTopicsLocked();
     /// @return true when a client was dropped, so the caller knows to reconcile.
     bool dropAbandonedLocked();
