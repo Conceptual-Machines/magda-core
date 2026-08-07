@@ -93,6 +93,38 @@ TEST_CASE("A response that never frames is retained, but bounded", "[mcp][sse]")
     REQUIRE(small.raw() == "{\"error\":{\"code\":-32600}}");
 }
 
+TEST_CASE("A complete frame is judged on its own size, not the buffer's", "[mcp][sse]") {
+    SseParser parser;
+
+    // A good frame, then an unterminated partial that pushes the buffer over
+    // the cap. Testing the total before parsing mistook the good frame for the
+    // oversized one — it was discarded, and the partial stayed put, still over
+    // the limit. Completeness is a property of the frame, not of what arrived
+    // behind it.
+    const std::string partial(1024 * 1024 + 4096, 'x');
+    REQUIRE(feed(parser, "data: {\"kept\":true}\n\ndata: " + partial) ==
+            std::vector<std::string>{"{\"kept\":true}"});
+
+    // And the partial was still capped, rather than left sitting above it.
+    REQUIRE(parser.retainedBytes() <= 2 * 1024 * 1024);
+
+    // Its truncated tail is dropped, and the stream carries on.
+    REQUIRE(feed(parser, "tail\n\n").empty());
+    REQUIRE(feed(parser, "data: {\"after\":true}\n\n") ==
+            std::vector<std::string>{"{\"after\":true}"});
+}
+
+TEST_CASE("An oversized frame is dropped without taking its neighbours", "[mcp][sse]") {
+    SseParser parser;
+
+    // Complete but too large: rejected on its own, with the frames either side
+    // of it delivered normally.
+    const std::string huge(1024 * 1024 + 4096, 'x');
+    REQUIRE(feed(parser, "data: {\"before\":1}\n\ndata: " + huge + "\n\ndata: {\"after\":2}\n\n") ==
+            std::vector<std::string>{"{\"before\":1}", "{\"after\":2}"});
+    REQUIRE(parser.retainedBytes() == 0);
+}
+
 TEST_CASE("Resynchronising keeps whatever followed the oversized frame", "[mcp][sse]") {
     SseParser parser;
 

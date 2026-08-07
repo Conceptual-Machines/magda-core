@@ -41,44 +41,28 @@ class SseParser {
 
         pending_ += chunk;
 
-        // The incomplete frame is bounded too. Capping only the raw copy left
-        // this one unlimited, and it is fed by the same bytes: a peer that never
-        // sends a frame separator grows it forever, which is the identical leak
-        // one buffer further along.
-        //
-        // Past the cap the frame being accumulated can never be one of ours —
-        // these are single JSON-RPC notifications — so it is abandoned. What
-        // matters is abandoning *only* it: the chunk that crossed the limit may
-        // also carry that frame's terminator and several perfectly good frames
-        // behind it, and clearing the buffer wholesale would discard those
-        // separators along with the oversized frame, then drop the next valid
-        // frame as well when the resync flag consumed it.
-        //
-        // So: if a separator is already buffered, the oversized frame ends
-        // there. Drop through it and let the loop below parse everything after
-        // it normally. Only when none has arrived is there nothing to keep, and
-        // the flag then makes the eventual terminating segment — the tail of
-        // something already truncated — the one that gets dropped.
-        if (pending_.size() > kMaxFrameBytes) {
-            if (const auto split = pending_.find(kFrameSeparator); split != std::string::npos) {
-                pending_.erase(0, split + kFrameSeparatorLength);
-                resynchronising_ = false;
-            } else {
-                pending_.clear();
-                pending_.shrink_to_fit();
-                resynchronising_ = true;
-            }
-        }
-
+        // Complete frames first, and judged on their own size rather than the
+        // buffer's. A frame terminated by a separator is complete no matter what
+        // follows it, so testing the total here would mistake a perfectly good
+        // frame for an oversized one whenever an unterminated partial happened
+        // to arrive behind it in the same chunk — discarding the good frame and
+        // leaving the partial in place, still over the limit.
         for (auto split = pending_.find(kFrameSeparator); split != std::string::npos;
              split = pending_.find(kFrameSeparator)) {
             const auto frame = pending_.substr(0, split);
             pending_.erase(0, split + kFrameSeparatorLength);
 
+            // The remainder of a partial that was already truncated below.
             if (resynchronising_) {
                 resynchronising_ = false;
                 continue;
             }
+
+            // Complete, but too large to be one of ours — these frames are
+            // single JSON-RPC notifications. Dropped individually, which costs
+            // nothing that follows it.
+            if (frame.size() > kMaxFrameBytes)
+                continue;
 
             // A line beginning with a colon is a keep-alive comment, which the
             // SSE grammar says to ignore.
@@ -92,6 +76,18 @@ class SseParser {
                 }
                 emit(frame.substr(6));
             }
+        }
+
+        // Whatever is left is an incomplete frame, and it is bounded too:
+        // capping only the raw copy left this one unlimited, fed by the same
+        // bytes, so a peer that never sends a separator grew it forever. Past
+        // the cap no frame can complete within the limit, so the partial is
+        // abandoned and the segment that eventually terminates it — its own
+        // truncated tail — is dropped rather than emitted.
+        if (pending_.size() > kMaxFrameBytes) {
+            pending_.clear();
+            pending_.shrink_to_fit();
+            resynchronising_ = true;
         }
     }
 
