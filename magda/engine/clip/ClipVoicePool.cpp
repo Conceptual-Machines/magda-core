@@ -98,10 +98,17 @@ int peakConcurrent(const std::vector<Candidate>& candidates, double windowStart,
  * that is doing exactly what it says. ClipVoicePool::overSubscribed has it
  * already; this reports what is left, so the two never name the same clip.
  *
- * Which voices are spoken for is answerable cheaply because of the ordering:
- * every kept candidate starts no later than any dropped one, so the kept clips
- * live when a dropped one begins are simply the ones that have not ended by
- * then. Ends in order, queries in order, one pass.
+ * Which voices are spoken for is two sets, not one. The kept clips are the
+ * obvious half, and cheap because of the ordering: every kept candidate starts
+ * no later than any dropped one, so the kept clips live when a dropped one
+ * begins are simply the ones that have not ended by then. The other half is the
+ * dropped clips already counted here. Twenty clips starting together where
+ * nothing else is playing are sixteen the budget failed and four the ceiling
+ * would have refused anyway, and only a walk that lets each counted clip occupy
+ * a voice against the ones behind it can tell those apart.
+ *
+ * Ends in order, queries in order, one pass, and the counted set never grows
+ * past the ceiling because having a voice free is the condition for joining it.
  */
 int unbridgedAmong(const std::vector<Candidate>& candidates, int kept, double windowStart,
                    double blockSeconds) {
@@ -114,7 +121,11 @@ int unbridgedAmong(const std::vector<Candidate>& candidates, int kept, double wi
 
     std::sort(keptEnds.begin(), keptEnds.end());
 
-    auto ended = std::size_t{0};
+    // The dropped clips counted so far and still live, by when they finish.
+    std::vector<double> countedEnds;
+    countedEnds.reserve(static_cast<std::size_t>(kMaxVoicesPerTrack));
+
+    auto keptEnded = std::size_t{0};
     auto unbridged = 0;
 
     for (auto index = static_cast<std::size_t>(kept); index < candidates.size(); ++index) {
@@ -124,11 +135,22 @@ int unbridgedAmong(const std::vector<Candidate>& candidates, int kept, double wi
         if (dropped.startSeconds >= bridgeEnd)
             break;
 
-        while (ended < keptEnds.size() && keptEnds[ended] <= dropped.startSeconds)
-            ++ended;
+        while (keptEnded < keptEnds.size() && keptEnds[keptEnded] <= dropped.startSeconds)
+            ++keptEnded;
 
-        if (static_cast<int>(keptEnds.size() - ended) < kMaxVoicesPerTrack)
-            ++unbridged;
+        countedEnds.erase(
+            countedEnds.begin(),
+            std::upper_bound(countedEnds.begin(), countedEnds.end(), dropped.startSeconds));
+
+        const auto live =
+            static_cast<int>(keptEnds.size() - keptEnded) + static_cast<int>(countedEnds.size());
+        if (live >= kMaxVoicesPerTrack)
+            continue;
+
+        ++unbridged;
+
+        const auto end = dropped.endSeconds + blockSeconds;
+        countedEnds.insert(std::upper_bound(countedEnds.begin(), countedEnds.end(), end), end);
     }
 
     return unbridged;

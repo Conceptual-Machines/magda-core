@@ -399,6 +399,41 @@ TEST_CASE("A clip with no voice free is not also blamed on the reader budget",
     CHECK(pool.unbridged() == 0);
 }
 
+TEST_CASE("Clips the budget dropped take up the voices they were counted for",
+          "[engine][clip][pool]") {
+    // The readers are all spent on clips that are over before the bridge, so
+    // nothing the pool kept is playing when the next lot arrive. Twenty of them
+    // start together: sixteen the budget failed, and four the ceiling would
+    // have refused whatever the budget had been. Without the counted clips
+    // taking up voices against each other, all twenty look like budget
+    // failures and four of them are counted twice.
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    std::vector<AudioClipPlayback> lane;
+
+    // Sequential, short, and finished well before the crowd arrives.
+    for (auto index = 0; index < kMaxReadersPerTrack; ++index)
+        lane.push_back(clipAt(index + 1, index * 0.001, (index + 1) * 0.001));
+
+    constexpr auto kCrowd = kMaxVoicesPerTrack + 4;
+    for (auto index = 0; index < kCrowd; ++index)
+        lane.push_back(clipAt(kMaxReadersPerTrack + index + 1, 0.05, 0.5));
+
+    pool.setSnapshot(snapshotOf(std::move(lane)));
+    pool.setPosition(0.0);
+    pool.service();
+
+    REQUIRE(pool.streamCount() == static_cast<std::size_t>(kMaxReadersPerTrack));
+
+    CHECK(pool.overSubscribed() == kCrowd - kMaxVoicesPerTrack);
+    CHECK(pool.unbridged() == kMaxVoicesPerTrack);
+
+    // Which is the point: every clip that will not sound is named once.
+    CHECK(pool.overSubscribed() + pool.unbridged() == kCrowd);
+}
+
 TEST_CASE("A clip that fits the ceiling is provisioned before the next round",
           "[engine][clip][pool]") {
     // What the reader budget is for. Sixteen clips sounding and more starting
