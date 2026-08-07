@@ -74,7 +74,7 @@ flowchart LR
         T["tracks, devices, routing"]
         C["clips"]
         V["faders, sends, mutes"]
-        M["tempo, playhead"]
+        M["tempo, loop, locates"]
     end
 
     subgraph compiled["compiled off the audio thread"]
@@ -110,7 +110,12 @@ What travels on which channel, and what it costs:
 | `RenderPlan` | signal topology only | a device moves, a track is added, a chain is bypassed | a compile, at human speed |
 | `PlanValues` | gains, faders, pans, sends, mutes | a mixer move | resolve a flat table, no compile |
 | `ClipSnapshot` | what every track plays, resolved | a clip moves, is trimmed, is faded | recompile the snapshot, no plan touched |
-| `TransportSnapshot` | where the timeline is | every block | published by the clock |
+| `TransportSnapshot` | tempo, loop, metronome, and where the transport has been asked to be | a tempo edit, a loop drag, a locate | published like the others |
+
+The transport row is the one to read carefully, because its name invites the wrong reading. The
+snapshot is the clock's **input**, not a per-block reading of it: where the timeline actually is
+belongs to `TransportClock::advance`, which owns that cursor on the audio thread and exposes the
+position separately. Nothing is published every block.
 
 The rule of thumb, and the one worth remembering: **moving a clip or a fader never recompiles a
 plan.** If a change to the model forces a plan recompile, either it really is topology or
@@ -145,9 +150,13 @@ ops=13 outputs=1
 ready=0
 ```
 
-`T-2` is the master. `det` is the op's liveness domain, carried from day one and unused until
-the anticipative executor ([#1898](https://github.com/Conceptual-Machines/magda-core/issues/1898))
-has a reason to read it.
+`T-2` is the master. `det` is the op's liveness domain: whether what it computes is the same
+every time it is asked, or depends on something live arriving. It is read today, in two places.
+`validatePlan` checks it both ways, so a deterministic op can never read a live one and a live
+op can never appear without a live source behind it, and the crossfade pass refuses to introduce
+a live producer ahead of a deterministic consumer. Its larger purpose is still ahead of it: the
+anticipative executor ([#1898](https://github.com/Conceptual-Machines/magda-core/issues/1898))
+is what the tag was carried from day one for.
 
 ```mermaid
 flowchart TD
@@ -167,9 +176,13 @@ flowchart TD
 
 Two things that look like clutter and are not:
 
-**One device is three ops.** Its processing, its gain trim and its meter tap are separate, so
-the differ can carry, rebuild and crossfade each independently. A device whose trim changed does
-not rebuild.
+**An ordinary device is three ops.** Its processing, its gain trim and its meter tap are
+separate, so the differ can carry, rebuild and crossfade each independently. A device whose trim
+changed does not rebuild.
+
+Three is the usual shape rather than a rule: an analysis device is a transparent passthrough
+with no trim and no tap, so it compiles to a bare process op, and a compile with device meters
+switched off emits no meter ops at all.
 
 **Every op has a key.** `T1/D7:deviceGain` is the model location plus the structural role, and
 `validatePlan` proves keys are unique. That key is how a new plan recognises an op in the old
@@ -195,7 +208,7 @@ sequenceDiagram
     P->>P: validate it
     P->>P: diff it against the live one
     P->>S: bind ops to instances
-    S-->>P: plugins and readers, kept by model id
+    S-->>P: devices, clip sources, inputs, meter taps, kept by model id
     P->>P: prepare: resolve delays, assign buffers
     P->>A: publish
     A-->>P: the block in flight finishes
@@ -209,11 +222,16 @@ The parts that matter:
 the kind, the ports and the connected inputs all agree. That is what keeps delay lines full and
 tails alive across an edit, and it is the answer to the rebuild click.
 
-**The store** (`exec/RuntimeStateStore.hpp`) owns the expensive things, keyed by model id rather
-than by plan membership. A bypassed device contributes no ops at all, so keying on the plan
-would tear its plugin down and rebuild it when you toggle bypass, losing tail, state and load
-time on a gesture that should be free. Plan-named means playing; model-named means kept; only
-deletion from the model destroys anything.
+**The store** (`exec/RuntimeStateStore.hpp`) owns the expensive things an op resolves to:
+devices, a track's clip sources, live inputs, meter taps. Keyed by model id rather than by plan
+membership. A bypassed device contributes no ops at all, so keying on the plan would tear its
+plugin down and rebuild it when you toggle bypass, losing tail, state and load time on a gesture
+that should be free. Plan-named means playing; model-named means kept; only deletion from the
+model destroys anything.
+
+File readers are **not** here, and that is deliberate rather than an omission. A clip's readers
+are opened and owned by `ClipVoicePool`, on its own thread, and reach the audio thread through
+their own table; they never enter a plan epoch. Section 6 is where they live.
 
 **Prepare** (`exec/PlanLayout.hpp`) is what a plan becomes when it meets the instances behind it.
 How many samples each delay holds comes from what a loaded plugin reports, which the model
@@ -305,11 +323,21 @@ readers at the sample their clip starts on. That is the difference between a cli
 the beat and a clip starting a block late: a read that does not continue the last one is a seek,
 and a seek costs a block of silence.
 
-Two ceilings, and they answer different questions. `kMaxVoicesPerTrack` is 16, and it is how
-many clips a track can sound in one callback. `kMaxReadersPerTrack` is twice that, because a
-reader has to exist before its clip is due. Past either, the track says so through
-`starvedVoices` and `overSubscribed` rather than quietly dropping the extras, because silence
-nobody counted is indistinguishable from a gap in the material.
+Two ceilings, and they answer different questions through different counters.
+
+`kMaxVoicesPerTrack` is 16, and it is how many clips a track can sound in one callback. Past it,
+the pool reports `overSubscribed`, which is peak concurrency beyond the ceiling, and the source
+reports `starvedVoices` as the clips actually go unheard.
+
+`kMaxReadersPerTrack` is twice that, because a reader has to exist before its clip is due. Past
+it, the counter is `unbridged`, and `overSubscribed` stays at zero by design: a lane of
+sequential slices fills the reader budget many times over without two of them ever sounding
+together. A crowded one-second window is normally harmless, so only clips the budget turned away
+that start within `kReadAheadBridgeSeconds`, which is to say clips that will be due before the
+next round, count as unbridged.
+
+None of the three is silent about it, because silence nobody counted is indistinguishable from a
+gap in the material.
 
 ### The reading chain
 
@@ -341,8 +369,11 @@ Worth knowing before reading the code and wondering where something is:
 - **Parameters and automation** ([#1891](https://github.com/Conceptual-Machines/magda-core/issues/1891)).
   `PlanValues` carries mixer values; automation curves, modifiers and macros do not exist in the
   engine yet.
-- **Racks** ([#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892)). The op
-  roles for rack chains, mixes and faders are in the vocabulary; the compiler does not emit them.
+- **Racks, the rest of them** ([#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892)).
+  The ordinary shape already compiles: `PlanCompiler::emitRack` emits chain faders, the rack
+  mix, its MIDI merges and its output fader, nested racks included, and the compiler and
+  executor tests cover them. What is missing is the full pin graph, auxiliary and multi-output
+  routing, and parity for what those imply.
 - **External plugins** ([#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893)).
   A `Device` op resolves to whatever the host hands the store. Nothing hosts VST3 yet.
 - **Launcher and recording** ([#1894](https://github.com/Conceptual-Machines/magda-core/issues/1894),
