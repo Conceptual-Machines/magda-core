@@ -217,6 +217,12 @@ class ClipVoicePool {
      * and will still play nothing, because the round that could have opened it
      * spent its budget on the clips in front of it.
      *
+     * Fits the ceiling is checked rather than assumed. A clip dropped into a
+     * stretch where every voice is already spoken for was not going to sound
+     * whatever the budget had been, and it belongs to @ref overSubscribed; a
+     * clip counted here would otherwise be counted twice and send a reader for
+     * a voice that was never free.
+     *
      * Non-zero means the material is denser than this track can read ahead for.
      * Nothing in the engine fixes that by trying harder; what it can do is say
      * so rather than let a lane of slices go quiet for no stated reason.

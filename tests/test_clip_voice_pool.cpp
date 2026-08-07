@@ -376,6 +376,29 @@ TEST_CASE("A lane the budget cannot reach ahead of says so, and is not called st
     CHECK(pool.unbridged() > 0);
 }
 
+TEST_CASE("A clip with no voice free is not also blamed on the reader budget",
+          "[engine][clip][pool]") {
+    // Enough clips over one stretch to exhaust the readers and the voices
+    // together. The ones the budget turned away could not have sounded if every
+    // one of them had had a reader, so they belong to the ceiling and to
+    // nothing else; counting them twice would point at the wrong limit.
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    std::vector<AudioClipPlayback> lane;
+    for (auto index = 0; index < kMaxReadersPerTrack + 8; ++index)
+        lane.push_back(clipAt(index + 1, 0.0, 4.0));
+
+    pool.setSnapshot(snapshotOf(std::move(lane)));
+    pool.setPosition(1.0);
+    pool.service();
+
+    REQUIRE(pool.streamCount() == static_cast<std::size_t>(kMaxReadersPerTrack));
+    CHECK(pool.overSubscribed() == kMaxReadersPerTrack + 8 - kMaxVoicesPerTrack);
+    CHECK(pool.unbridged() == 0);
+}
+
 TEST_CASE("A clip that fits the ceiling is provisioned before the next round",
           "[engine][clip][pool]") {
     // What the reader budget is for. Sixteen clips sounding and more starting

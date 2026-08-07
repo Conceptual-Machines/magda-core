@@ -101,10 +101,12 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
                 });
 
             if (found == lastStream || soundingCount == kMaxVoicesPerTrack) {
-                // No reader standing by, or no room left for one. One number
-                // bounds both (kMaxVoicesPerTrack), so the second of these is
-                // only reachable through a table this source did not get from
-                // the pool; either way the clip does not sound and the count is
+                // No reader standing by, or no voice left to play it through.
+                // Both happen and they are different failures: a track may hold
+                // more readers than a callback has voices (kMaxReadersPerTrack
+                // is the larger, because a reader has to exist before its clip
+                // is due), so a block can be handed more entries than it can
+                // render. Either way the clip does not sound and the count is
                 // what says so.
                 starved_.fetch_add(1, std::memory_order_relaxed);
                 continue;

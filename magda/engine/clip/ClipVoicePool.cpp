@@ -85,6 +85,55 @@ int peakConcurrent(const std::vector<Candidate>& candidates, double windowStart,
     return peak;
 }
 
+/**
+ * @brief Clips the budget turned away that a voice was waiting for.
+ *
+ * @p candidates sorted soonest first, of which the first @p kept get readers.
+ * Counts the ones after that which are due inside the bridge and would have
+ * sounded had they had one.
+ *
+ * That last clause is the whole difficulty. A clip dropped into a stretch where
+ * every voice is already spoken for was not going to sound whatever the budget
+ * had been, and counting it here would blame the reader budget for a ceiling
+ * that is doing exactly what it says. ClipVoicePool::overSubscribed has it
+ * already; this reports what is left, so the two never name the same clip.
+ *
+ * Which voices are spoken for is answerable cheaply because of the ordering:
+ * every kept candidate starts no later than any dropped one, so the kept clips
+ * live when a dropped one begins are simply the ones that have not ended by
+ * then. Ends in order, queries in order, one pass.
+ */
+int unbridgedAmong(const std::vector<Candidate>& candidates, int kept, double windowStart,
+                   double blockSeconds) {
+    const auto bridgeEnd = windowStart + kReadAheadBridgeSeconds;
+
+    std::vector<double> keptEnds;
+    keptEnds.reserve(static_cast<std::size_t>(kept));
+    for (auto index = 0; index < kept; ++index)
+        keptEnds.push_back(candidates[static_cast<std::size_t>(index)].endSeconds + blockSeconds);
+
+    std::sort(keptEnds.begin(), keptEnds.end());
+
+    auto ended = std::size_t{0};
+    auto unbridged = 0;
+
+    for (auto index = static_cast<std::size_t>(kept); index < candidates.size(); ++index) {
+        const auto& dropped = candidates[index];
+
+        // Sorted by start, so the first one past the bridge ends the walk.
+        if (dropped.startSeconds >= bridgeEnd)
+            break;
+
+        while (ended < keptEnds.size() && keptEnds[ended] <= dropped.startSeconds)
+            ++ended;
+
+        if (static_cast<int>(keptEnds.size() - ended) < kMaxVoicesPerTrack)
+            ++unbridged;
+    }
+
+    return unbridged;
+}
+
 }  // namespace
 
 ClipVoicePool::ClipVoicePool(AudioFileReaderFactory& files, PrefetchThread& reader,
@@ -205,15 +254,8 @@ void ClipVoicePool::service() {
                           });
 
                 if (candidates.size() > static_cast<std::size_t>(kMaxReadersPerTrack)) {
-                    // What the budget turned away that was due before this pool
-                    // will look again. Those are the clips that fit the voice
-                    // ceiling and will still play nothing, which is a different
-                    // failure from too many at once and is counted as one.
-                    for (auto index = static_cast<std::size_t>(kMaxReadersPerTrack);
-                         index < candidates.size(); ++index)
-                        if (candidates[index].startSeconds < windowStart + kReadAheadBridgeSeconds)
-                            ++unbridged;
-
+                    unbridged +=
+                        unbridgedAmong(candidates, kMaxReadersPerTrack, windowStart, blockSeconds);
                     candidates.resize(static_cast<std::size_t>(kMaxReadersPerTrack));
                 }
 

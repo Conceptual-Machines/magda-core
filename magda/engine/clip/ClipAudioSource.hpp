@@ -26,10 +26,14 @@
  * compiled, and a crossfade reaching here is two voices each playing the fade
  * it was handed.
  *
- * How many clips a track may sound at once is decided rather than discovered.
- * kMaxVoicesPerTrack streams are provisioned per track (ClipVoicePool.hpp), and
- * a track wanting more says so through @ref starvedVoices, because silence
- * nobody counted is indistinguishable from a gap in the material.
+ * How many clips a track may sound at once is decided rather than discovered:
+ * kMaxVoicesPerTrack, below. That is not how many readers a track may have,
+ * which is larger and is ClipVoicePool.hpp's (kMaxReadersPerTrack), because a
+ * reader has to exist before its clip is due while a voice is only needed while
+ * it plays. So a block can be handed more entries than it can render, and a
+ * track wanting more than either says so through @ref
+ * ClipAudioSource::starvedVoices, because silence nobody counted is
+ * indistinguishable from a gap in the material.
  */
 
 namespace magda::engine {
