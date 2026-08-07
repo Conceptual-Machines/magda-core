@@ -251,6 +251,46 @@ TEST_CASE("Turning the remote API off and on again leaves it working",
     REQUIRE(token.length() == 64);
 }
 
+TEST_CASE("Restarting the listeners voids cached request identities", "[remote][host][lifecycle]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    api.project_.info.tempo = 120.0;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+
+    // An idempotency key is scoped by the transport's name for a client, and a
+    // WebSocket names them by connection id starting at 1. A fresh server
+    // restarts that counter, so the first client to reconnect is `ws:1` again —
+    // and without this its first write would collide with whatever the previous
+    // `ws:1` cached, returning that response instead of executing.
+    RequestContext context;
+    context.clientId = "ws:1";
+    context.requestId = "ws:1:n:1";
+
+    auto* tempo = new juce::DynamicObject();
+    tempo->setProperty("tempo", 140.0);
+    REQUIRE(host.service().dispatchSync("project.setTempo", juce::var(tempo), context).ok);
+    REQUIRE(api.project_.info.tempo == 140.0);
+
+    // Same key, still running: replayed rather than re-executed. That is the
+    // behaviour the cache exists for, and what makes the collision dangerous.
+    auto* ignored = new juce::DynamicObject();
+    ignored->setProperty("tempo", 90.0);
+    REQUIRE(host.service().dispatchSync("project.setTempo", juce::var(ignored), context).ok);
+    REQUIRE(api.project_.info.tempo == 140.0);
+
+    host.stopListening();
+    REQUIRE(host.start());
+
+    // After a restart the same key must be a new request, and must execute.
+    auto* afterRestart = new juce::DynamicObject();
+    afterRestart->setProperty("tempo", 90.0);
+    REQUIRE(host.service().dispatchSync("project.setTempo", juce::var(afterRestart), context).ok);
+    REQUIRE(api.project_.info.tempo == 90.0);
+}
+
 TEST_CASE("The record names both transports, and both take the same token",
           "[remote][host][auth][mcp]") {
     MessageThreadRelaxation relax;

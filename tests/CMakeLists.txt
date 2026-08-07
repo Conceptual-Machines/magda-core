@@ -200,6 +200,7 @@ set(TEST_SOURCES
     test_remote_mcp.cpp
     test_remote_mcp_server.cpp
     test_remote_mcp_bridge.cpp
+    test_mcp_sse_parser.cpp
     test_remote_websocket_server.cpp
     test_remote_api_host.cpp
     test_device_api.cpp

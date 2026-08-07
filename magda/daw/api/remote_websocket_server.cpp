@@ -541,7 +541,10 @@ struct RemoteWebSocketServer::Impl {
         const auto id = parsed["id"];
         const auto methodValue = parsed["method"];
 
-        if (parsed["jsonrpc"].toString() != "2.0") {
+        // isString() first: the number 2.0 renders as the text "2.0", so
+        // comparing the rendering alone would accept a numeric version. Not
+        // reported against this transport, but it is the same check.
+        if (!parsed["jsonrpc"].isString() || parsed["jsonrpc"].toString() != "2.0") {
             refuse(connection, id, kInvalidRequest, "jsonrpc must be \"2.0\"");
             return;
         }

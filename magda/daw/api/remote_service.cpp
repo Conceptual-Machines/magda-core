@@ -431,6 +431,11 @@ void RemoteApiService::projectReplaced() {
     }
 }
 
+void RemoteApiService::clearIdempotencyCache() {
+    const std::lock_guard<std::mutex> lock(cacheMutex_);
+    cache_.clear();
+}
+
 void RemoteApiService::noteModelChanged(Topic topic) {
     noteModelChanged({topic});
 }

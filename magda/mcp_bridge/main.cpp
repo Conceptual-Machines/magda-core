@@ -44,6 +44,8 @@
 #include <utility>
 #include <vector>
 
+#include "sse_parser.hpp"
+
 #if JUCE_WINDOWS
     #include <windows.h>
 #else
@@ -181,48 +183,6 @@ std::optional<Endpoint> resolveEndpoint() {
 }
 
 /**
- * @brief One response's SSE framing, and the raw bytes behind it.
- *
- * Owned by the request that opened the stream rather than by the bridge: a
- * content receiver is called on the connection's own thread, so two concurrent
- * `subscriptions/listen` requests interleave, and a single buffer would splice
- * a half-received frame from one response onto the next.
- *
- * `raw` is kept because a content receiver is also handed the body of a refused
- * request, which is an ordinary JSON-RPC error rather than an event stream —
- * and by then `Result::body` is empty, so this is the only copy left.
- */
-class SseParser {
-  public:
-    using Emit = std::function<void(const std::string&)>;
-
-    void consume(const std::string& chunk, const Emit& emit) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        raw_ += chunk;
-        pending_ += chunk;
-        for (auto split = pending_.find("\n\n"); split != std::string::npos;
-             split = pending_.find("\n\n")) {
-            const auto frame = pending_.substr(0, split);
-            pending_.erase(0, split + 2);
-            // A line beginning with a colon is a keep-alive comment, which the
-            // SSE grammar says to ignore.
-            if (frame.rfind("data: ", 0) == 0)
-                emit(frame.substr(6));
-        }
-    }
-
-    std::string raw() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return raw_;
-    }
-
-  private:
-    mutable std::mutex mutex_;
-    std::string raw_;
-    std::string pending_;
-};
-
-/**
  * @brief The bridge itself.
  *
  * One thread reads stdin; each request gets its own thread so a long-lived
@@ -356,7 +316,7 @@ class Bridge {
             // Per request, not shared. Two concurrent listen streams both feed
             // this callback, and one buffer between them splices a partial frame
             // from one response onto the next — corrupting both.
-            auto stream = std::make_shared<SseParser>();
+            auto stream = std::make_shared<magda::mcp::SseParser>();
 
             auto result = client->Post(
                 endpoint.path, headers, body, "application/json",
@@ -428,7 +388,7 @@ class Bridge {
             return true;
 
         if (isEventStream(*result)) {
-            SseParser complete;
+            magda::mcp::SseParser complete;
             complete.consume(result->body, [this](const std::string& m) { emitRaw(m); });
             return true;
         }

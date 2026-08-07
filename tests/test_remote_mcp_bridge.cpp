@@ -18,6 +18,7 @@
 #include "MockMagdaApi.hpp"
 #include "magda/daw/api/remote_mcp_server.hpp"
 #include "magda/daw/api/remote_service.hpp"
+#include "magda/daw/api/remote_subscriptions.hpp"
 
 #if !JUCE_WINDOWS
     #include <fcntl.h>

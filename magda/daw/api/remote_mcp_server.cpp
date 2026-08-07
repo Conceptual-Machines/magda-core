@@ -952,7 +952,10 @@ struct RemoteMcpServer::Impl {
         // different version — still reaches a tool and mutates the project,
         // then receives a 2.0 reply it never asked for. The WebSocket transport
         // has always rejected these; this one had not.
-        if (parsed["jsonrpc"].toString() != "2.0") {
+        // isString() before comparing: JSON has one numeric type, and JUCE
+        // renders the number 2.0 as the text "2.0", so a bare toString()
+        // comparison accepts `"jsonrpc": 2.0` — which JSON-RPC does not.
+        if (!parsed["jsonrpc"].isString() || parsed["jsonrpc"].toString() != "2.0") {
             writeJson(response, httplib::StatusCode::BadRequest_400,
                       jsonRpcError(id, McpError{MCP_INVALID_REQUEST, "jsonrpc must be \"2.0\""}));
             return;

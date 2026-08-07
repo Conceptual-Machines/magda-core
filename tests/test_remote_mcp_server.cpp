@@ -578,6 +578,19 @@ TEST_CASE("A request without jsonrpc 2.0 is refused before it can act",
     // Refused *before* dispatch, not after: the project is untouched.
     REQUIRE(api.project_.info.tempo == 120.0);
 
+    // A *numeric* 2.0 is refused too. JSON has one numeric type and JUCE
+    // renders that number as the text "2.0", so comparing the rendering alone
+    // would let this through — and JSON-RPC requires a string.
+    auto* numeric = new juce::DynamicObject();
+    numeric->setProperty("jsonrpc", 2.0);
+    numeric->setProperty("id", 3);
+    numeric->setProperty("method", "ping");
+    numeric->setProperty("params", modernParams());
+    const auto asNumber = post(client, modernHeaders("ping"),
+                               juce::JSON::toString(juce::var(numeric), true).toStdString());
+    REQUIRE(asNumber.status == 400);
+    REQUIRE(static_cast<int>(asNumber.json["error"]["code"]) == MCP_INVALID_REQUEST);
+
     // A version that is not 2.0 is refused the same way.
     auto* wrongVersion = new juce::DynamicObject();
     wrongVersion->setProperty("jsonrpc", "1.0");

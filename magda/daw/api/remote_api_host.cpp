@@ -286,6 +286,16 @@ void RemoteApiHost::stopListening() {
     // no longer works.
     tokenFile().deleteFile();
     token_ = {};
+
+    // The dispatcher survives this, and so would its idempotency cache — but
+    // the keys in it do not. A WebSocket key is scoped by connection id, and a
+    // fresh server starts counting at 1 again, so the first client to reconnect
+    // becomes `ws:1` and can collide with a key left by a different client
+    // before the restart. That collision returns a cached response for a write
+    // that never ran, which is the worst shape a bug can take here: silent, and
+    // on the write path.
+    if (service_ != nullptr)
+        service_->clearIdempotencyCache();
 }
 
 void RemoteApiHost::stop() {
