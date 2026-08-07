@@ -168,9 +168,9 @@ struct Rig {
     /// A reader standing by for one entry. Returned so a test can read its
     /// underrun count.
     PrefetchStream& give(magda::ClipId clipId, magda::EventId eventId,
-                         std::unique_ptr<magda::engine::AudioFileReader> reader) {
-        auto stream = std::make_shared<PrefetchStream>(std::move(reader), context(),
-                                                       magda::engine::PrefetchSettings{256, 8});
+                         std::unique_ptr<magda::engine::AudioFileReader> reader,
+                         magda::engine::PrefetchSettings settings = {256, 8}) {
+        auto stream = std::make_shared<PrefetchStream>(std::move(reader), context(), settings);
         auto& created = *stream;
         table.entries.push_back(ClipStreamTable::Entry{kTrack, clipId, eventId, std::move(stream)});
         return created;
@@ -228,7 +228,8 @@ struct Rig {
     }
 
     void render(const BlockInfo& block) {
-        fill();
+        if (autoFill)
+            fill();
         source.render(block, juce::dsp::AudioBlock<float>(output));
     }
 
@@ -260,6 +261,10 @@ struct Rig {
     ClipAudioSource source{kTrack, clips, streams};
     ClipStreamTable table;
     juce::AudioBuffer<float> output;
+
+    /// Off, a test can run the callback further than the reader has got, which
+    /// is how a block that comes back half filled is arranged on purpose.
+    bool autoFill = true;
 
     int next_ = 0;
 };
@@ -508,6 +513,41 @@ TEST_CASE("The launch ramp takes the step out of a voice that begins mid-materia
         rig.advance();
         REQUIRE(rig.at(0) == approx(1.0f));
     }
+}
+
+TEST_CASE("A block the reader half filled is not a voice that carried on",
+          "[engine][clip][voice]") {
+    // A read that comes back short leaves the rest of the block silent, so the
+    // block after it starts mid-material exactly as one after a total underrun
+    // does. Counting any delivery at all as carrying on would let that one
+    // resume out of silence with no ramp to take the step out of it.
+    Rig rig;
+
+    auto clip = clipOver(1, blocks(0, 1000));
+    clip.launchFadeSamples = 32;
+    rig.lane.audio.push_back(clip);
+
+    // A pool of 288 samples, which four blocks of 64 do not divide: the fifth
+    // gets the 32 samples that are left and nothing more.
+    rig.give(1, 1, std::make_unique<ConstantReader>(1.0f), {96, 3});
+    rig.publish();
+
+    rig.fill();
+    rig.autoFill = false;
+
+    rig.advance(4);
+    REQUIRE(rig.at(kBlockSize - 1) == approx(1.0f));
+
+    rig.advance();
+    REQUIRE(rig.at(31) == approx(1.0f));
+    REQUIRE(rig.at(32) == approx(0.0f));
+
+    // The reader catches up, and the block that resumes is ramped.
+    rig.autoFill = true;
+    rig.advance();
+
+    REQUIRE(rig.at(0) == approx(0.0f));
+    REQUIRE(rig.at(31) == approx(1.0f));
 }
 
 TEST_CASE("A launch ramp of zero preserves the leading transient exactly",

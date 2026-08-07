@@ -118,6 +118,11 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // for the single event a clip has today they are the same fade before and
     // after resolution, so applying both would fade the edge twice. Interior
     // event fades arrive with the clips that have interior events (#1901).
+    //
+    // Both behaviours play as gain fades here, the speed ramp included, and
+    // that is a decision rather than an oversight: a ramp is a stretch, there
+    // is no stretcher until #2037, and the alternative to fading it is not
+    // fading the edge at all.
     applyFade(region, first, block, clip.span.startSeconds,
               clip.span.startSeconds + clip.fadeInSeconds, clip.fadeInCurve, true);
     applyFade(region, first, block, clip.span.endSeconds - clip.fadeOutSeconds,
@@ -145,10 +150,11 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
 
     out.getSubBlock(static_cast<std::size_t>(first), static_cast<std::size_t>(count)).add(region);
 
-    // Silence the reader could not fill is not sounding. Saying otherwise would
-    // let the block that resumes start mid-material with nothing to take the
-    // step out of it.
-    sounded_ = delivered > 0;
+    // Silence the reader could not fill is not sounding, and a block it only
+    // half filled ends in that silence as surely as one it missed entirely.
+    // Either way the block that resumes starts mid-material, and saying this
+    // voice carried on would leave it with nothing to take the step out of it.
+    sounded_ = delivered == count;
     return true;
 }
 

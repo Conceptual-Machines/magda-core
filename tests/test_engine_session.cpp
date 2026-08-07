@@ -5,6 +5,7 @@
 #include <thread>
 #include <vector>
 
+#include "clip/ClipVoicePool.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
 #include "exec/EngineSession.hpp"

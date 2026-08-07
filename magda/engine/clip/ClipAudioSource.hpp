@@ -37,15 +37,21 @@ namespace magda::engine {
 /**
  * @brief Clips one track may sound at the same instant.
  *
- * A ceiling on simultaneous voices, and therefore on open files and prefetch
- * pools: eight streams is two megabytes of read-ahead per track at the default
- * settings, and only for tracks with clips near the cursor.
- *
  * Eight rather than two. A crossfade is two, a clip dropped inside another is
  * two, and a clip made of several events is one voice per event (#1901), so the
  * shapes a lane can legitimately be in add up past the obvious pair. What eight
  * is not is a guess at how many a user might stack: past it the track reports
  * rather than quietly dropping the extras.
+ *
+ * Simultaneity, not throughput. A voice costs a few bytes of state, so this is
+ * not the number that bounds memory; how many readers a track may have standing
+ * by is kMaxReadersPerTrack, and clips that follow one another consume that
+ * without ever needing two voices at once.
+ *
+ * At this resolution "sounding in the same block" and "sounding at the same
+ * instant" are the same question. Two entries that share a block each hold a
+ * voice for it whether or not their samples overlap, which stops mattering
+ * somewhere below the ten clips a millisecond it would take to notice.
  */
 constexpr int kMaxVoicesPerTrack = 8;
 

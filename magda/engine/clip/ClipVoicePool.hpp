@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <string>
 
 #include "clip/ClipSnapshot.hpp"
 #include "clip/ClipStreamFeed.hpp"
@@ -58,6 +59,31 @@ namespace magda::engine {
  */
 constexpr double kCueAheadSeconds = 1.0;
 
+/**
+ * @brief Readers one track may have standing by.
+ *
+ * Not the same ceiling as kMaxVoicesPerTrack and not measuring the same thing.
+ * A voice is state and a reader is an open file and a chunk pool, a quarter of
+ * a megabyte at the default settings, so this is the number that bounds memory:
+ * four megabytes for a track with clips near the cursor, and nothing at all for
+ * one without.
+ *
+ * Higher than the voice ceiling because a window is not an instant. Chopped
+ * material puts a dozen clips inside a second while never sounding two of them
+ * at once, and every one of them needs its own reader pointed at its own slice
+ * of its own file. Sizing this to the voice count would have starved exactly
+ * the material that needs the read-ahead most.
+ *
+ * A window holding more than this is not a clip that will not sound. The
+ * soonest are provisioned first and a clip that has been passed gives its
+ * reader back, so a queue of sequential clips rotates through the budget and
+ * each one has its reader well before it is due. What it costs when the budget
+ * really is exhausted is the read-ahead, which is a seek, which the stream
+ * already counts as an underrun. What will not sound is counted by
+ * @ref ClipVoicePool::overSubscribed and by ClipAudioSource::starvedVoices.
+ */
+constexpr int kMaxReadersPerTrack = 16;
+
 class ClipVoicePool {
   public:
     /**
@@ -71,6 +97,19 @@ class ClipVoicePool {
     ClipVoicePool(AudioFileReaderFactory& files, PrefetchThread& reader,
                   const RenderContext& context, const PrefetchSettings& settings = {});
 
+    /**
+     * @brief Give every reader back.
+     *
+     * Publishes an empty table so nothing the audio thread can reach names a
+     * stream, then waits for the prefetch thread to be out of each one.
+     *
+     * Nothing may call @ref service() again from here on, and that is the
+     * caller's to guarantee rather than this class's: a round in flight would
+     * publish a full table straight after the empty one and the streams it
+     * named would be pulled out from under the reader. A host driving this with
+     * a ClipVoiceThread destroys the thread first, which is what declaring the
+     * thread after the pool gets for free.
+     */
     ~ClipVoicePool();
 
     ClipVoicePool(const ClipVoicePool&) = delete;
@@ -112,9 +151,10 @@ class ClipVoicePool {
      * @brief One round of provisioning: open, cue, publish, retire.
      *
      * On a thread that may wait for a disk, and not the prefetch thread (see
-     * the file comment). Idempotent: a round that finds every clip in the
-     * window already provisioned opens nothing and cues nothing, and publishes
-     * a table equal to the one that is live.
+     * the file comment). Idempotent, and cheaply so: a round that finds every
+     * clip in the window already provisioned opens nothing, retires nothing and
+     * publishes nothing, so an idle session is not swapping a table at a
+     * hundred hertz and making the callback wait for each one.
      */
     void service();
 
@@ -122,13 +162,17 @@ class ClipVoicePool {
     std::size_t streamCount() const;
 
     /**
-     * @brief Clips in the window the last round could not provision.
+     * @brief Clips the last round found stacked past what a track can sound.
      *
-     * A gauge rather than a tally: it is what the last round found, so it falls
-     * back to zero when the material stops asking for more voices than a track
-     * has. Non-zero means either a lane stacking more simultaneous clips than
-     * kMaxVoicesPerTrack, or files that will not open; ClipAudioSource counts
-     * what that actually costs the audio.
+     * Measured where it means something: the most clips overlapping at any one
+     * instant inside the window, less kMaxVoicesPerTrack. Not the number the
+     * reader budget turned away, which is a different and usually harmless
+     * thing (see kMaxReadersPerTrack): a lane of sequential clips can fill that
+     * budget many times over without two of them ever sounding together.
+     *
+     * A gauge rather than a tally, so it falls back to zero when the material
+     * stops asking. Non-zero means clips that will not be heard, and
+     * ClipAudioSource::starvedVoices counts them as they are not heard.
      */
     int overSubscribed() const {
         return overSubscribed_.load(std::memory_order_relaxed);
@@ -139,6 +183,19 @@ class ClipVoicePool {
     /// provisioned for it.
     int unreadableFiles() const {
         return unreadableFiles_.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Tables handed to the audio thread since this pool was made.
+     *
+     * Every one of them made a callback finish its block before the swap could
+     * land, so this is the cost of provisioning as the audio thread sees it. It
+     * should climb while the transport moves through new material and stand
+     * still otherwise; a session sitting idle and still counting means rounds
+     * are publishing work that has not changed.
+     */
+    int tablesPublished() const {
+        return tablesPublished_.load(std::memory_order_relaxed);
     }
 
   private:
@@ -156,14 +213,39 @@ class ClipVoicePool {
                 return clipId < other.clipId;
             return eventId < other.eventId;
         }
+
+        bool operator==(const Key& other) const = default;
     };
 
-    /// Null where the file would not open. Kept rather than dropped so a path
-    /// that failed is not retried every round for as long as it sits in the
-    /// window; leaving the window and coming back is what asks again.
-    using Streams = std::map<Key, std::shared_ptr<PrefetchStream>>;
+    /**
+     * @brief A reader, and what it was opened for.
+     *
+     * The identity matters because the key does not carry it. An id survives
+     * edits that change everything a reader was opened for: swap a clip's file
+     * and the ids are the same clip and the same event over different material,
+     * and a reader kept on the strength of its id would go on playing the file
+     * that is no longer there. The anchor is here for the milder version of the
+     * same thing, a trim that moves where the reader should be pointed.
+     *
+     * The stream is null where the file would not open. Kept rather than
+     * dropped so a path that failed is not retried every round for as long as
+     * it sits in the window; leaving the window and coming back is what asks
+     * again.
+     */
+    struct Reader {
+        std::shared_ptr<PrefetchStream> stream;
+        std::string path;
+        std::int64_t anchorSamples = 0;
 
-    std::shared_ptr<PrefetchStream> open(const AudioEventPlayback& event, double cueSeconds);
+        bool operator==(const Reader& other) const {
+            return stream == other.stream && path == other.path &&
+                   anchorSamples == other.anchorSamples;
+        }
+    };
+
+    using Streams = std::map<Key, Reader>;
+
+    Reader open(const AudioEventPlayback& event, double cueSeconds);
 
     AudioFileReaderFactory& files_;
     PrefetchThread& reader_;
@@ -185,6 +267,7 @@ class ClipVoicePool {
 
     std::atomic<int> overSubscribed_{0};
     std::atomic<int> unreadableFiles_{0};
+    std::atomic<int> tablesPublished_{0};
 };
 
 /**
@@ -194,6 +277,10 @@ class ClipVoicePool {
  * takes a lock, and the audio thread does not take locks. A clip that came into
  * the window between two rounds is found on the next one, which is a fraction
  * of the second the window is wide.
+ *
+ * Declare it after the pool it drives. Destruction runs in reverse, so the
+ * thread stops before the pool gives its readers back, which is the order
+ * ~ClipVoicePool requires and the one nothing else enforces.
  */
 class ClipVoiceThread final : private juce::Thread {
   public:

@@ -80,6 +80,14 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
     auto soundingCount = 0;
 
     for (const auto& clip : track->audio) {
+        // Sorted by where they start (ClipSnapshot.hpp), so once one begins at
+        // or after the end of this block, so does everything behind it. Without
+        // the break a track pays for its whole tail on every callback, all
+        // session, and the cost grows with the length of the arrangement rather
+        // than with what is playing.
+        if (clip.span.startSeconds >= block.endSeconds)
+            break;
+
         if (!reachesInto(clip.span, block))
             continue;
 

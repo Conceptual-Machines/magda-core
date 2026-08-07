@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "clip/ClipSnapshotFeed.hpp"
-#include "clip/ClipVoicePool.hpp"
 #include "exec/ParallelPlanExecutor.hpp"
 #include "exec/RenderThreadPool.hpp"
 #include "exec/RuntimeStateStore.hpp"
@@ -35,6 +34,10 @@
  */
 
 namespace magda::engine {
+
+/// Only ever held as a pointer here, and only ever used from the .cpp, so the
+/// session does not hand its own includers a thread and a stream pool.
+class ClipVoicePool;
 
 class EngineSession {
   public:

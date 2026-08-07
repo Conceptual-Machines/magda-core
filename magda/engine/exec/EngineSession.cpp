@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "clip/ClipVoicePool.hpp"
+
 namespace magda::engine {
 
 EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> plan,
