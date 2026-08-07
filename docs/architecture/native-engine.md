@@ -63,14 +63,14 @@ null-diff corpus ([#2040](https://github.com/Conceptual-Machines/magda-core/issu
 An audio callback may not wait, may not allocate and may not free. Everything else follows from
 arranging the engine so it never has to.
 
-So nothing the audio thread reads is ever edited. Four separate immutable values are compiled
+So nothing the audio thread reads is ever modified in place. Four separate immutable values are compiled
 off the audio thread and swapped in whole, and the audio thread only ever reads the current
 one. They are separate because they change at wildly different rates, and lumping them together
 would make a fader move cost what a device move costs.
 
 ```mermaid
 flowchart LR
-    subgraph model["the model, edited on the message thread"]
+    subgraph model["the model, changed on the message thread"]
         T["tracks, devices, routing"]
         C["clips"]
         V["faders, sends, mutes"]
@@ -110,7 +110,7 @@ What travels on which channel, and what it costs:
 | `RenderPlan` | signal topology only | a device moves, a track is added, a chain is bypassed | a compile, at human speed |
 | `PlanValues` | gains, faders, pans, sends, mutes | a mixer move | resolve a flat table, no compile |
 | `ClipSnapshot` | what every track plays, resolved | a clip moves, is trimmed, is faded | recompile the snapshot, no plan touched |
-| `TransportSnapshot` | tempo, loop, metronome, and where the transport has been asked to be | a tempo edit, a loop drag, a locate | published like the others |
+| `TransportSnapshot` | tempo, loop, metronome, and where the transport has been asked to be | a tempo change, a loop drag, a locate | published like the others |
 
 The transport row is the one to read carefully, because its name invites the wrong reading. The
 snapshot is the clock's **input**, not a per-block reading of it: where the timeline actually is
@@ -194,11 +194,11 @@ The op vocabulary is deliberately small: `ClipAudio`, `ClipMidi`, `AudioInput`, 
 
 ---
 
-## 4. The life of an edit
+## 4. The life of a change
 
 ```mermaid
 sequenceDiagram
-    participant U as an edit
+    participant U as a change
     participant P as publishing thread
     participant S as RuntimeStateStore
     participant A as audio thread
@@ -220,7 +220,7 @@ The parts that matter:
 
 **The differ** (`plan/PlanDiff.hpp`) decides what survives. An op carries its state when the key,
 the kind, the ports and the connected inputs all agree. That is what keeps delay lines full and
-tails alive across an edit, and it is the answer to the rebuild click.
+tails alive across a change, and it is the answer to the rebuild click.
 
 **The store** (`exec/RuntimeStateStore.hpp`) owns the expensive things an op resolves to:
 devices, a track's clip sources, live inputs, meter taps. Keyed by model id rather than by plan
@@ -242,7 +242,7 @@ rather than recompiling.
 That is the point: after it returns, nothing the audio thread can reach names the old epoch, so
 the old epoch is destroyed right there, on the publishing thread. The callback never frees.
 
-**Crossfade** (`plan/PlanCrossfade.hpp`) ramps the edges an edit moved. Fades are ops the
+**Crossfade** (`plan/PlanCrossfade.hpp`) ramps the edges a change moved. Fades are ops the
 compiler never emitted, added by a pass over its output and gone again at the next publish.
 
 ---
