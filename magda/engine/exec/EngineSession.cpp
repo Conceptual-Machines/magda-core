@@ -90,6 +90,10 @@ void EngineSession::publishTransport(TransportSnapshot transport) {
     transport_.nonRealtimeReplace(std::move(transport));
 }
 
+void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
+    clips_.publish(std::move(clips));
+}
+
 void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
     output.clear();
 

@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "clip/ClipSnapshotFeed.hpp"
 #include "exec/ParallelPlanExecutor.hpp"
 #include "exec/RenderThreadPool.hpp"
 #include "exec/RuntimeStateStore.hpp"
@@ -105,6 +106,30 @@ class EngineSession {
     void publishTransport(TransportSnapshot transport);
 
     /**
+     * @brief What every track plays, resolved (#2034).
+     *
+     * On the publishing thread, and on its own, like values and the transport:
+     * moving a clip is not a topology change and must not compile a plan. The
+     * one it replaces is destroyed here, on this thread.
+     *
+     * Its seconds were derived through a tempo map, so a tempo edit publishes
+     * both: a snapshot compiled against the previous map places every clip at
+     * the seconds that map gave it.
+     */
+    void publishClips(std::shared_ptr<const ClipSnapshot> clips);
+
+    /**
+     * @brief The feed clip sources read.
+     *
+     * Handed to a source when it is created, and owned here because it outlives
+     * every plan those sources are bound into: a structural recompile must not
+     * cost a track the clips it was playing.
+     */
+    ClipSnapshotFeed& clipFeed() {
+        return clips_;
+    }
+
+    /**
      * @brief Render @p numSamples. On the audio thread.
      *
      * The transport decides what stretch of timeline that is: the caller says
@@ -197,6 +222,10 @@ class EngineSession {
     PublishedRender published_;
     PublishedValues values_;
     PublishedTransport transport_;
+
+    /// Not swapped with a plan and not keyed to one: what a track plays is a
+    /// property of the model, and a structural edit is not a reason to lose it.
+    ClipSnapshotFeed clips_;
 
     /// The cursor. Not published and not swapped: it is where the timeline is,
     /// which is a property of the session rather than of any plan, and a plan

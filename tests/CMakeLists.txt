@@ -260,6 +260,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_file_audio_source.cpp)
     list(APPEND TEST_SOURCES test_offline_render.cpp)
     list(APPEND TEST_SOURCES test_engine_taps.cpp)
+    list(APPEND TEST_SOURCES test_clip_snapshot.cpp)
 endif()
 
 # Create test executable
