@@ -33,6 +33,7 @@
 #include <thread>
 #include <utility>
 
+#include "remote_http_auth.hpp"
 #include "remote_service.hpp"
 #include "remote_subscriptions.hpp"
 
@@ -187,47 +188,6 @@ bool isNumber(const juce::var& value) {
 }
 
 /**
- * @brief A JSON number as an exact integer in range, or nothing.
- *
- * JSON has one numeric type, so a field declared as a count arrives as a double
- * whenever it was written with a decimal point — and casting that to `int` or
- * `int64` truncates silently when it is fractional and is undefined behaviour
- * when it is out of range or not finite. Neither belongs on a path fed by
- * whatever a client chose to send, so the value has to be proved integral and
- * within bounds before it becomes one.
- */
-std::optional<juce::int64> asIntegerInRange(const juce::var& value, juce::int64 lowest,
-                                            juce::int64 highest) {
-    juce::int64 result = 0;
-
-    if (value.isInt() || value.isInt64()) {
-        result = static_cast<juce::int64>(value);
-    } else if (value.isDouble()) {
-        const auto number = static_cast<double>(value);
-        if (!std::isfinite(number) || number != std::floor(number))
-            return std::nullopt;
-
-        // Establish that the value fits an int64 at all before converting, and
-        // do it against 2^63 exclusive rather than (double)INT64_MAX. That cast
-        // rounds *up* to exactly 2^63, so comparing against it lets 2^63 itself
-        // through as "not greater" and straight into the conversion it was meant
-        // to prevent. The negative bound needs no such care: -2^63 is exactly
-        // representable and is a valid int64.
-        constexpr double twoPow63 = 9223372036854775808.0;
-        if (number >= twoPow63 || number < -twoPow63)
-            return std::nullopt;
-
-        result = static_cast<juce::int64>(number);
-    } else {
-        return std::nullopt;
-    }
-
-    if (result < lowest || result > highest)
-        return std::nullopt;
-    return result;
-}
-
-/**
  * @brief A JSON-RPC id as an idempotency key, or empty for an id we will not take.
  *
  * The type has to survive into the key. JSON-RPC treats the number 1 and the
@@ -241,23 +201,6 @@ juce::String idempotencyKeyFor(const juce::var& id) {
     if (isNumber(id))
         return "n:" + id.toString();
     return {};
-}
-
-/// Compare in time independent of how much of the token matched, so a client
-/// cannot learn the token one byte at a time from response latency.
-bool secureEquals(const juce::String& a, const juce::String& b) {
-    const auto* lhs = a.toRawUTF8();
-    const auto* rhs = b.toRawUTF8();
-    const auto lhsLength = std::strlen(lhs);
-    const auto rhsLength = std::strlen(rhs);
-
-    unsigned char difference = lhsLength == rhsLength ? 0 : 1;
-    for (std::size_t i = 0, count = std::max(lhsLength, rhsLength); i < count; ++i) {
-        const auto left = i < lhsLength ? lhs[i] : '\0';
-        const auto right = i < rhsLength ? rhs[i] : '\0';
-        difference |= static_cast<unsigned char>(left ^ right);
-    }
-    return difference == 0;
 }
 
 }  // namespace
@@ -529,8 +472,8 @@ struct RemoteWebSocketServer::Impl {
      */
     httplib::Server::HandlerResponse authorise(const httplib::Request& request,
                                                httplib::Response& response) {
-        if (!secureEquals(juce::String(request.get_header_value("Authorization")),
-                          "Bearer " + options.bearerToken)) {
+        if (!isAuthorised(juce::String(request.get_header_value("Authorization")),
+                          options.bearerToken)) {
             response.status = httplib::StatusCode::Unauthorized_401;
             return httplib::Server::HandlerResponse::Handled;
         }
@@ -538,13 +481,11 @@ struct RemoteWebSocketServer::Impl {
         // A native client sends no Origin at all; only a browser does, and a
         // browser we did not authorise is refused. Treating "absent" as
         // "unrecognised" would lock out every non-browser client.
-        if (request.has_header("Origin")) {
-            const juce::String origin(request.get_header_value("Origin"));
-            const auto& permitted = options.allowedOrigins;
-            if (std::find(permitted.begin(), permitted.end(), origin) == permitted.end()) {
-                response.status = httplib::StatusCode::Forbidden_403;
-                return httplib::Server::HandlerResponse::Handled;
-            }
+        if (!isOriginAllowed(request.has_header("Origin"),
+                             juce::String(request.get_header_value("Origin")),
+                             options.allowedOrigins)) {
+            response.status = httplib::StatusCode::Forbidden_403;
+            return httplib::Server::HandlerResponse::Handled;
         }
 
         // Best-effort only, and deliberately reserves nothing: a client over the
@@ -673,7 +614,7 @@ struct RemoteWebSocketServer::Impl {
         if (meta.getDynamicObject() != nullptr) {
             if (const auto expected = meta["expectedRevision"]; !expected.isVoid()) {
                 const auto revision =
-                    asIntegerInRange(expected, 0, std::numeric_limits<juce::int64>::max());
+                    jsonInteger(expected, 0, std::numeric_limits<juce::int64>::max());
                 if (!revision.has_value()) {
                     refuse(connection, id, kInvalidRequest,
                            "meta.expectedRevision must be a non-negative whole number");
@@ -688,7 +629,7 @@ struct RemoteWebSocketServer::Impl {
             // "no deadline" and the request outlives every bound there is.
             if (const auto requested = meta["deadlineMs"]; !requested.isVoid()) {
                 const auto milliseconds =
-                    asIntegerInRange(requested, 1, std::numeric_limits<int>::max());
+                    jsonInteger(requested, 1, std::numeric_limits<int>::max());
                 if (!milliseconds.has_value()) {
                     refuse(connection, id, kInvalidRequest,
                            "meta.deadlineMs must be a positive whole number of milliseconds");

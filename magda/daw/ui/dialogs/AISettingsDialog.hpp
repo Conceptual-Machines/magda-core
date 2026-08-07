@@ -10,6 +10,7 @@ namespace magda {
  *  - Cloud: manage cloud provider API keys
  *  - Config: preset or per-agent provider mapping (references configured providers)
  *  - Models: embedded, sample-analysis, and stem-separation models
+ *  - Remote: the MCP endpoint and WebSocket API an external AI host connects to
  */
 class AISettingsDialog : public juce::Component {
   public:
@@ -31,6 +32,7 @@ class AISettingsDialog : public juce::Component {
     class StemSeparationPage;
     class CommandModelPage;
     class ModelDownloadsPage;
+    class RemoteApiPage;
 
     class TabComponent : public juce::TabbedComponent {
       public:
@@ -50,6 +52,7 @@ class AISettingsDialog : public juce::Component {
     std::unique_ptr<StemSeparationPage> stemsPage_;
     std::unique_ptr<CommandModelPage> commandModelPage_;
     std::unique_ptr<ModelDownloadsPage> modelDownloadsPage_;
+    std::unique_ptr<RemoteApiPage> remoteApiPage_;
 
     juce::TextButton okBtn_{"OK"};
     juce::TextButton cancelBtn_{"Cancel"};

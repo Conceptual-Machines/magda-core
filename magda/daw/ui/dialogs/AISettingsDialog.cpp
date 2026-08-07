@@ -5,11 +5,20 @@
 #include <array>
 #include <utility>
 
+// For the AppImage-safe /proc/self/exe lookup in RemoteApiPage::bridgeExecutable.
+#if !JUCE_WINDOWS && !JUCE_MAC
+    #include <unistd.h>
+
+    #include <climits>
+#endif
+
 #include "../../../agents/llama_model_manager.hpp"
 #include "../../../agents/llm_config_utils.hpp"
 #include "../../../agents/llm_presets.hpp"
 #include "../../../agents/model_downloader.hpp"
 #include "../../../agents/openai_url.hpp"
+#include "../../api/remote_api_host.hpp"
+#include "../../core/AppPaths.hpp"
 #include "../../core/Config.hpp"
 #include "../../media_db/MediaDbContext.hpp"
 #include "../../media_db/SampleTaggerDownloader.hpp"
@@ -2452,6 +2461,260 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
 };
 
 // ============================================================================
+// RemoteApiPage — the MCP endpoint and WebSocket API (#1856, #1858)
+//
+// Turning this on opens a listener, so it is off until asked for and the toggle
+// takes effect immediately rather than at the next launch: a switch whose
+// result you have to restart to see is one nobody trusts.
+//
+// The config snippet is composed from the running install rather than
+// documented, because the one thing a user cannot look up is where their own
+// copy of the bridge lives.
+// ============================================================================
+
+class AISettingsDialog::RemoteApiPage : public juce::Component, private juce::Timer {
+  public:
+    RemoteApiPage() {
+        blurbLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        blurbLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        blurbLabel_.setJustificationType(juce::Justification::topLeft);
+        blurbLabel_.setText(
+            "Lets an external AI assistant inspect and control this session over MCP. It listens "
+            "on this machine only, and every connection needs the token MAGDA generates for this "
+            "run. Turn it off and nothing is listening.",
+            juce::dontSendNotification);
+        addAndMakeVisible(blurbLabel_);
+
+        enableToggle_.setButtonText("Enable the remote API");
+        enableToggle_.setColour(juce::ToggleButton::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        enableToggle_.setColour(juce::ToggleButton::tickColourId,
+                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        // Applied on the spot rather than on OK. The rest of this dialog
+        // configures things that are read later; this one owns a socket, and a
+        // toggle that leaves it in the opposite state to what the checkbox shows
+        // is worse than no feedback at all.
+        enableToggle_.onClick = [this]() { applyEnabled(enableToggle_.getToggleState()); };
+        addAndMakeVisible(enableToggle_);
+
+        styleLabel(statusLabel_, 11.0f);
+        addAndMakeVisible(statusLabel_);
+
+        configCaption_.setText("MCP host configuration", juce::dontSendNotification);
+        styleLabel(configCaption_);
+        addAndMakeVisible(configCaption_);
+
+        configField_.setMultiLine(true, false);
+        configField_.setReadOnly(true);
+        configField_.setFont(juce::Font(juce::FontOptions(
+            juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain)));
+        styleEditor(configField_, "");
+        addAndMakeVisible(configField_);
+
+        copyButton_.setButtonText("Copy");
+        copyButton_.onClick = [this]() {
+            juce::SystemClipboard::copyTextToClipboard(configField_.getText());
+            copyButton_.setButtonText("Copied");
+            // Back to "Copy" on the next refresh tick, so the confirmation is
+            // visible without a second timer to manage.
+            copiedAt_ = juce::Time::getCurrentTime();
+        };
+        addAndMakeVisible(copyButton_);
+
+        hintLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+        hintLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        hintLabel_.setJustificationType(juce::Justification::topLeft);
+        hintLabel_.setText("Paste this into your MCP host's config. It stays correct across "
+                           "restarts: the helper it names finds MAGDA's current port and token "
+                           "each time, so neither has to be written down.",
+                           juce::dontSendNotification);
+        addAndMakeVisible(hintLabel_);
+
+        refresh();
+        // Starting a listener is not instantaneous, and the port is only known
+        // once it is bound. A slow tick keeps the status honest without polling
+        // hard at something that changes twice a session.
+        startTimer(1000);
+    }
+
+    ~RemoteApiPage() override {
+        stopTimer();
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(12);
+        const int rowH = 24;
+
+        blurbLabel_.setBounds(bounds.removeFromTop(56));
+        bounds.removeFromTop(8);
+
+        enableToggle_.setBounds(bounds.removeFromTop(rowH));
+        bounds.removeFromTop(2);
+        statusLabel_.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(12);
+
+        auto captionRow = bounds.removeFromTop(rowH);
+        copyButton_.setBounds(captionRow.removeFromRight(70).reduced(0, 1));
+        configCaption_.setBounds(captionRow);
+        bounds.removeFromTop(4);
+
+        hintLabel_.setBounds(bounds.removeFromBottom(48));
+        bounds.removeFromBottom(6);
+        configField_.setBounds(bounds);
+    }
+
+    void load(const magda::Config& config) {
+        enableToggle_.setToggleState(config.getRemoteApiEnabled(), juce::dontSendNotification);
+        refresh();
+    }
+
+    void apply(magda::Config&) {
+        // Nothing: the toggle already wrote its value and started or stopped the
+        // listener. Doing it again here would restart a healthy server every
+        // time the user pressed OK.
+    }
+
+  private:
+    void timerCallback() override {
+        if (copiedAt_ != juce::Time() &&
+            juce::Time::getCurrentTime().toMilliseconds() - copiedAt_.toMilliseconds() > 1200) {
+            copyButton_.setButtonText("Copy");
+            copiedAt_ = juce::Time();
+        }
+        refresh();
+    }
+
+    void applyEnabled(bool enabled) {
+        auto& config = magda::Config::getInstance();
+        config.setRemoteApiEnabled(enabled);
+        config.save();
+
+        // Absent in the headless CLI and in tests. The config is still written,
+        // so the next launch honours it — there is simply no live listener here
+        // to reconcile.
+        if (auto* host = magda::remote::activeHost()) {
+            if (enabled)
+                host->start();
+            else
+                host->stop();
+        }
+        refresh();
+    }
+
+    /**
+     * @brief Where this install's bridge lives.
+     *
+     * The same resolution `PluginScanCoordinator::getScannerExecutable()` uses,
+     * and for the same reasons — this is the second helper binary MAGDA stages
+     * beside itself, and "beside itself" means something different on each
+     * platform.
+     *
+     * `paths::executableDir()` is deliberately not used: it is built on JUCE's
+     * `currentApplicationFile`, which for a bundled Mac app returns the `.app`
+     * itself, so its parent is `/Applications` rather than the directory holding
+     * the binary. And on Linux that same call goes through `dladdr`, which
+     * inside an AppImage yields the user's download folder rather than the
+     * mounted `usr/bin`.
+     *
+     * A user pastes whatever this returns into their MCP host's config, so a
+     * plausible-but-wrong path is the worst outcome available: it fails at
+     * launch, inside another application, with no hint of where it came from.
+     */
+    static juce::File bridgeExecutable() {
+        const auto appBundle = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
+
+#if JUCE_MAC
+        // Installed: /Applications/MAGDA.app/Contents/MacOS/magda-mcp
+        if (const auto bundled = appBundle.getChildFile("Contents/MacOS/magda-mcp");
+            bundled.existsAsFile())
+            return bundled;
+        // Unbundled, as a console or test build produces.
+        return appBundle.getParentDirectory().getChildFile("magda-mcp");
+#elif JUCE_WINDOWS
+        return appBundle.getParentDirectory().getChildFile("magda-mcp.exe");
+#else
+        // Resolve the real binary rather than argv[0]: inside an AppImage the
+        // type-2 runtime leaves argv[0] pointing at the outer .AppImage, so the
+        // sibling lookup would land in the user's download folder.
+        char buffer[PATH_MAX];
+        if (const auto length = ::readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+            length > 0) {
+            buffer[length] = '\0';
+            const juce::File selfExe(juce::String::fromUTF8(buffer));
+            if (const auto sibling = selfExe.getParentDirectory().getChildFile("magda-mcp");
+                sibling.existsAsFile())
+                return sibling;
+        }
+        return appBundle.getParentDirectory().getChildFile("magda-mcp");
+#endif
+    }
+
+    void refresh() {
+        auto* host = magda::remote::activeHost();
+        const auto running = host != nullptr && host->isRunning();
+        const auto enabled = magda::Config::getInstance().getRemoteApiEnabled();
+
+        if (running && host->mcpPort() > 0) {
+            // fromUTF8, not a bare literal: juce::String(const char*) decodes
+            // through CharPointer_ASCII, which turns the em dash's three UTF-8
+            // bytes into three Latin-1 characters. The rest of the UI uses this
+            // same helper wherever a string leaves ASCII.
+            statusLabel_.setText(juce::String::fromUTF8("Listening — MCP on port ") +
+                                     juce::String(host->mcpPort()),
+                                 juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId,
+                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        } else if (running) {
+            // The WebSocket came up and the MCP listener did not. Worth saying
+            // plainly: the rest of the remote API works, and this tab does not.
+            statusLabel_.setText("Listening, but the MCP endpoint did not start",
+                                 juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        } else if (enabled) {
+            statusLabel_.setText(juce::String::fromUTF8("Enabled — starts with MAGDA"),
+                                 juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        } else {
+            statusLabel_.setText("Not listening", juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        }
+
+        const auto bridge = bridgeExecutable();
+        // Named as it will be typed, JSON-escaped so a Windows path's
+        // backslashes survive being pasted.
+        auto* server = new juce::DynamicObject();
+        server->setProperty("command", bridge.getFullPathName());
+        auto* servers = new juce::DynamicObject();
+        servers->setProperty("magda", juce::var(server));
+        auto* root = new juce::DynamicObject();
+        root->setProperty("mcpServers", juce::var(servers));
+
+        auto snippet = juce::JSON::toString(juce::var(root), false);
+        if (!bridge.existsAsFile()) {
+            snippet = "// magda-mcp was not found beside MAGDA. Reinstall, or build the\n"
+                      "// magda_mcp_bridge target if this is a development build.\n" +
+                      snippet;
+        }
+        if (snippet != configField_.getText())
+            configField_.setText(snippet, juce::dontSendNotification);
+
+        copyButton_.setEnabled(bridge.existsAsFile());
+    }
+
+    juce::Label blurbLabel_;
+    juce::ToggleButton enableToggle_;
+    juce::Label statusLabel_;
+    juce::Label configCaption_;
+    juce::TextEditor configField_;
+    juce::TextButton copyButton_;
+    juce::Label hintLabel_;
+    juce::Time copiedAt_;
+};
+
+// ============================================================================
 // AISettingsDialog
 // ============================================================================
 
@@ -2474,6 +2737,7 @@ AISettingsDialog::AISettingsDialog() {
     }
     modelDownloadsPage_ = std::make_unique<ModelDownloadsPage>(
         *localPage_, samplePage_.get(), stemsPage_.get(), commandModelPage_.get());
+    remoteApiPage_ = std::make_unique<RemoteApiPage>();
 
     // Wire config page to sibling pages
     configPage_->cloudPage = cloudPage_.get();
@@ -2483,6 +2747,7 @@ AISettingsDialog::AISettingsDialog() {
     tabbedComponent_.addTab("Cloud", tabBg, cloudPage_.get(), false);
     tabbedComponent_.addTab("Config", tabBg, configPage_.get(), false);
     tabbedComponent_.addTab("Models", tabBg, modelDownloadsPage_.get(), false);
+    tabbedComponent_.addTab("Remote", tabBg, remoteApiPage_.get(), false);
 
     // Refresh config combos when switching to Config tab
     tabbedComponent_.onTabChanged = [this](int tabIndex) {
@@ -2544,6 +2809,7 @@ void AISettingsDialog::loadSettings() {
     if (commandModelPage_) {
         commandModelPage_->load(config);
     }
+    remoteApiPage_->load(config);
 }
 
 void AISettingsDialog::applySettings() {
@@ -2560,6 +2826,7 @@ void AISettingsDialog::applySettings() {
     if (commandModelPage_) {
         commandModelPage_->apply(config);
     }
+    remoteApiPage_->apply(config);
     config.save();
 }
 

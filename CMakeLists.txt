@@ -342,6 +342,10 @@ target_compile_definitions(httplib INTERFACE
 # Simple agent system - no external dependencies needed
 
 # Product-based subdirectories
+# Before magda/daw: the app stages this binary into its bundle in a POST_BUILD
+# step, so the target has to exist by the time that directory is processed. The
+# bridge depends on nothing here in return — juce_core and cpp-httplib only.
+add_subdirectory(magda/mcp_bridge)
 add_subdirectory(magda/daw)
 add_subdirectory(magda/scripting)
 add_subdirectory(magda/agents)

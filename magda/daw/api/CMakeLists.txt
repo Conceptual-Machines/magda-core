@@ -23,6 +23,9 @@ target_sources(magda_daw PRIVATE
     remote_model_bridge_live.cpp
     remote_subscriptions.cpp
     remote_meters_live.cpp
+    remote_http_auth.cpp
+    remote_mcp.cpp
+    remote_mcp_server.cpp
     remote_websocket_server.cpp
     remote_api_host.cpp
     # Headers (listed for IDE visibility)
@@ -59,6 +62,9 @@ target_sources(magda_daw PRIVATE
     remote_changes.hpp
     remote_model_bridge.hpp
     remote_subscriptions.hpp
+    remote_http_auth.hpp
+    remote_mcp.hpp
+    remote_mcp_server.hpp
     remote_websocket_server.hpp
     remote_api_host.hpp
 )

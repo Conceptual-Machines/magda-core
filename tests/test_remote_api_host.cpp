@@ -32,18 +32,22 @@ struct ScopedRemoteApiConfig {
         auto& config = Config::getInstance();
         wasEnabled_ = config.getRemoteApiEnabled();
         previousPort_ = config.getRemoteApiPort();
+        previousMcpPort_ = config.getRemoteApiMcpPort();
         config.setRemoteApiEnabled(enabled);
         config.setRemoteApiPort(0);
+        config.setRemoteApiMcpPort(0);
     }
     ~ScopedRemoteApiConfig() {
         auto& config = Config::getInstance();
         config.setRemoteApiEnabled(wasEnabled_);
         config.setRemoteApiPort(previousPort_);
+        config.setRemoteApiMcpPort(previousMcpPort_);
     }
 
   private:
     bool wasEnabled_ = false;
     int previousPort_ = 0;
+    int previousMcpPort_ = 0;
 };
 
 juce::var readTokenFile(const juce::File& file) {
@@ -205,6 +209,56 @@ TEST_CASE("Starting publishes a token a local client can use", "[remote][host][a
         httplib::ws::WebSocketClient client(endpoint, {{"Authorization", "Bearer not-the-token"}});
         REQUIRE_FALSE(client.connect());
     }
+}
+
+TEST_CASE("The record names both transports, and both take the same token",
+          "[remote][host][auth][mcp]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+    REQUIRE(host.mcpPort() > 0);
+    // Two listeners, so two ports. Sharing one would mean sharing a resource
+    // budget between a WebSocket connection cap and an SSE stream cap, which are
+    // not the same thing.
+    REQUIRE(host.mcpPort() != host.boundPort());
+
+    const auto published = readTokenFile(host.tokenFile());
+    const auto token = published["token"].toString();
+    REQUIRE(static_cast<int>(published["mcpPort"]) == host.mcpPort());
+    REQUIRE(published["mcpUrl"].toString() ==
+            "http://127.0.0.1:" + juce::String(host.mcpPort()) + "/mcp");
+    // The WebSocket entry is still there: a client picks the transport it wants
+    // out of one record rather than needing to know which file to read.
+    REQUIRE(published["url"].toString().startsWith("ws://"));
+
+    httplib::Client client("http://127.0.0.1:" + std::to_string(host.mcpPort()));
+
+    // The token authenticates the user at the keyboard, not a protocol, so the
+    // one credential opens both transports.
+    const httplib::Headers headers = {{"Authorization", "Bearer " + token.toStdString()},
+                                      {"MCP-Protocol-Version", "2026-07-28"},
+                                      {"Mcp-Method", "server/discover"}};
+    auto discovered =
+        client.Post("/mcp", headers,
+                    R"({"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{)"
+                    R"("io.modelcontextprotocol/protocolVersion":"2026-07-28",)"
+                    R"("io.modelcontextprotocol/clientCapabilities":{}}}})",
+                    "application/json");
+    REQUIRE(discovered);
+    REQUIRE(discovered->status == 200);
+
+    auto refused =
+        client.Post("/mcp", {{"Authorization", "Bearer not-the-token"}}, "{}", "application/json");
+    REQUIRE(refused);
+    REQUIRE(refused->status == 401);
+
+    // Both listeners go down together, and the record goes with them.
+    host.stop();
+    REQUIRE(host.mcpPort() == 0);
+    REQUIRE_FALSE(host.tokenFile().existsAsFile());
 }
 
 #if !JUCE_WINDOWS

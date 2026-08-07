@@ -4,6 +4,7 @@
 
 #include "AppPaths.hpp"
 #include "Config.hpp"
+#include "remote_mcp_server.hpp"
 #include "remote_model_bridge.hpp"
 #include "remote_service.hpp"
 #include "remote_subscriptions.hpp"
@@ -116,7 +117,7 @@ juce::String generateToken() {
  * is never briefly world-readable. On Windows the file inherits the ACL of the
  * per-user app data directory, which is already owner-only.
  */
-bool writeTokenFile(const juce::File& file, const juce::String& token, int port) {
+bool writeTokenFile(const juce::File& file, const juce::String& token, int port, int mcpPort) {
     file.getParentDirectory().createDirectory();
     file.deleteFile();
     if (!file.create().wasOk())
@@ -134,6 +135,15 @@ bool writeTokenFile(const juce::File& file, const juce::String& token, int port)
     payload->setProperty("port", port);
     payload->setProperty("token", token);
     payload->setProperty("url", "ws://127.0.0.1:" + juce::String(port) + "/rpc");
+    // Named separately because a client picks one: an MCP host wants `mcpUrl`, a
+    // script that needs pushed state wants `url`. Present only when the MCP
+    // listener actually came up — a URL for a port nothing is answering on is
+    // worse than its absence, which a client can at least act on.
+    if (mcpPort > 0) {
+        payload->setProperty("mcpPort", mcpPort);
+        payload->setProperty("mcpUrl", "http://127.0.0.1:" + juce::String(mcpPort) +
+                                           RemoteMcpServer::endpointPath());
+    }
     // Whose listener this is. A reader can tell two live instances apart, and
     // cleanup can tell an abandoned record from someone else's live one.
     payload->setProperty("pid", currentProcessId());
@@ -151,7 +161,16 @@ bool writeTokenFile(const juce::File& file, const juce::String& token, int port)
     return true;
 }
 
+/// See `activeHost()`. Message thread only, so a plain pointer rather than an
+/// atomic — an atomic here would advertise a thread-safety this cannot have,
+/// since the object it points at is not safe to use from another thread anyway.
+RemoteApiHost* activeHostInstance = nullptr;
+
 }  // namespace
+
+RemoteApiHost* activeHost() {
+    return activeHostInstance;
+}
 
 RemoteApiHost::RemoteApiHost(MagdaApi& api, AudioEngine* engine)
     : service_(std::make_unique<RemoteApiService>(api)),
@@ -159,10 +178,16 @@ RemoteApiHost::RemoteApiHost(MagdaApi& api, AudioEngine* engine)
       subscriptions_(std::make_unique<SubscriptionHub>(api, *service_)) {
     if (engine != nullptr)
         subscriptions_->setMeterSource(makeLiveMeterSource(*engine));
+    activeHostInstance = this;
 }
 
 RemoteApiHost::~RemoteApiHost() {
     stop();
+    // Only if we are still the registered one. Tests construct hosts in
+    // sequence, and an earlier one destructing after a later one was registered
+    // must not clear the later one's registration.
+    if (activeHostInstance == this)
+        activeHostInstance = nullptr;
 }
 
 bool RemoteApiHost::start() {
@@ -205,10 +230,30 @@ bool RemoteApiHost::start() {
         return false;
     }
 
+    // The MCP endpoint, on its own port and behind the same token and the same
+    // enable flag. Its failure is not fatal to the WebSocket: they are separate
+    // listeners precisely so one cannot take the other down, and a MAGDA with a
+    // working control socket and no MCP endpoint is a degraded state a user can
+    // still work in. The discovery record then simply omits `mcpUrl`.
+    RemoteMcpServer::Options mcpOptions;
+    mcpOptions.bearerToken = token_;
+    mcpOptions.port = config.getRemoteApiMcpPort();
+    mcpOptions.allowedOrigins = options.allowedOrigins;
+
+    mcpServer_ = std::make_unique<RemoteMcpServer>(*service_, mcpOptions, subscriptions_.get());
+    if (!mcpServer_->start()) {
+        DBG("RemoteApiHost: MCP endpoint did not start; the WebSocket API is unaffected");
+        mcpServer_.reset();
+    }
+
     // A running listener whose token nobody can read is useless and still a
-    // listener, so a failure to publish takes the server down with it.
-    if (!writeTokenFile(tokenFile(), token_, server_->boundPort())) {
+    // listener, so a failure to publish takes the servers down with it.
+    if (!writeTokenFile(tokenFile(), token_, server_->boundPort(), mcpPort())) {
         DBG("RemoteApiHost: could not write " + tokenFile().getFullPathName());
+        if (mcpServer_ != nullptr) {
+            mcpServer_->stop();
+            mcpServer_.reset();
+        }
         server_->stop();
         server_.reset();
         token_ = {};
@@ -217,10 +262,21 @@ bool RemoteApiHost::start() {
 
     juce::Logger::writeToLog(
         "Remote API listening on ws://127.0.0.1:" + juce::String(server_->boundPort()) + "/rpc");
+    if (mcpServer_ != nullptr) {
+        juce::Logger::writeToLog(
+            "MCP endpoint listening on http://127.0.0.1:" + juce::String(mcpServer_->boundPort()) +
+            RemoteMcpServer::endpointPath());
+    }
     return true;
 }
 
 void RemoteApiHost::stop() {
+    // Before the hub, like the WebSocket server: an open notification stream is
+    // a registered hub client, and the hub must not be shut down underneath one.
+    if (mcpServer_ != nullptr) {
+        mcpServer_->stop();
+        mcpServer_.reset();
+    }
     if (server_ != nullptr) {
         server_->stop();
         server_.reset();
@@ -246,6 +302,10 @@ bool RemoteApiHost::isRunning() const {
 
 int RemoteApiHost::boundPort() const {
     return server_ != nullptr ? server_->boundPort() : 0;
+}
+
+int RemoteApiHost::mcpPort() const {
+    return mcpServer_ != nullptr ? mcpServer_->boundPort() : 0;
 }
 
 juce::File RemoteApiHost::tokenFile() const {
