@@ -245,9 +245,17 @@ endif()
 # Lua's official source distribution ships no CMakeLists.txt, so
 # FetchContent_MakeAvailable just populates lua_SOURCE_DIR; the actual
 # static library is built by magda/scripting/CMakeLists.txt.
+#
+# Two URLs for one file, tried in order. www.lua.org is a single small host and
+# it has already gone unreachable from the self-hosted runners for long enough
+# to fail a build in configure; Debian's pool carries the pristine upstream
+# tarball, byte for byte, and the hash below is what proves it before anything
+# is unpacked. A mirror is only ever an availability question when the bytes
+# are pinned.
 FetchContent_Declare(
     lua
     URL https://www.lua.org/ftp/lua-5.4.7.tar.gz
+        http://deb.debian.org/debian/pool/main/l/lua5.4/lua5.4_5.4.7.orig.tar.gz
     URL_HASH SHA256=9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30
 )
 FetchContent_MakeAvailable(lua)
