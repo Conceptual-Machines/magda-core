@@ -264,7 +264,24 @@ struct SubscriptionHub::Client {
     /// Set when a delivery was refused: the client has no baseline for the
     /// delta it just missed, so the next thing it takes has to be complete.
     std::array<bool, TOPIC_COUNT> needsSnapshot{};
+
+    /// Flushes in a row in which this client refused something.
     int consecutiveDrops = 0;
+
+    /**
+     * What happened to this client during the flush now in progress.
+     *
+     * Meaningful only between the start and the end of one `publish`, which
+     * resets them and folds them into `consecutiveDrops` exactly once. They
+     * exist because a flush delivers up to one event per subscribed topic, and
+     * per-event accounting gets both directions wrong: several refusals in one
+     * flush would count as several flushes, and — worse — a client that accepts
+     * one topic and refuses another every time would have the counter reset by
+     * the acceptance before the refusal put it back, so it would sit at one
+     * forever while the refused topic stayed permanently stale.
+     */
+    bool refusedThisFlush = false;
+    bool acceptedThisFlush = false;
 };
 
 /**
@@ -579,7 +596,7 @@ void SubscriptionHub::deliverLocked(Client& client, const SubscriptionEvent& eve
         if (event.type == SubscriptionEvent::Type::Snapshot)
             client.needsSnapshot[index] = false;
         if (event.type != SubscriptionEvent::Type::Sample)
-            client.consecutiveDrops = 0;
+            client.acceptedThisFlush = true;
         return;
     }
 
@@ -590,7 +607,27 @@ void SubscriptionHub::deliverLocked(Client& client, const SubscriptionEvent& eve
         return;
 
     client.needsSnapshot[index] = true;
-    ++client.consecutiveDrops;
+    client.refusedThisFlush = true;
+}
+
+/**
+ * Charge one flush against every client that refused something during it.
+ *
+ * A refusal outweighs an acceptance in the same flush: a client keeping up on
+ * one topic while never taking another is not keeping up, and counting the
+ * acceptance would leave it connected and permanently stale on the rest.
+ *
+ * A flush that delivered nothing to a client leaves its count alone. That is not
+ * evidence in either direction, and a subscriber to a quiet topic must not have
+ * its arrears forgiven by the silence.
+ */
+void SubscriptionHub::foldFlushOutcomesLocked() {
+    for (auto& client : clients_) {
+        if (client.refusedThisFlush)
+            ++client.consecutiveDrops;
+        else if (client.acceptedThisFlush)
+            client.consecutiveDrops = 0;
+    }
 }
 
 bool SubscriptionHub::owesSnapshotLocked(Topic topic) const {
@@ -665,6 +702,11 @@ void SubscriptionHub::publish(const std::vector<ChangeSource::Change>& changes) 
         if (shutdown_)
             return;
 
+        for (auto& client : clients_) {
+            client.refusedThisFlush = false;
+            client.acceptedThisFlush = false;
+        }
+
         for (const auto& change : changes) {
             // Nothing marks these, and if something did, a revisioned delta is
             // the wrong shape for a continuous signal.
@@ -675,6 +717,9 @@ void SubscriptionHub::publish(const std::vector<ChangeSource::Change>& changes) 
             publishTopicLocked(change.topic, change.revision);
         }
 
+        // Once per client per flush, after every topic has had its turn, so the
+        // unit the disconnect threshold counts is the one it is named for.
+        foldFlushOutcomesLocked();
         dropped = dropAbandonedLocked();
 
         for (std::size_t index = 0; index < TOPIC_COUNT; ++index) {

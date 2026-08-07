@@ -1077,3 +1077,93 @@ TEST_CASE("A session subscriber hears about a clip that changes the grid",
     REQUIRE(sessionOnly.events[0].topic == Topic::Session);
     REQUIRE(sessionOnly.events[0].payload["added"].getArray()->size() == 1);
 }
+
+TEST_CASE("Keeping up on one topic is not keeping up", "[remote][subscriptions][backpressure]") {
+    MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.tracks_.tracks.push_back(makeTrack(1, "Drums"));
+    api.project_.info.tempo = 120.0;
+
+    RemoteApiService service(api);
+    SubscriptionHub::Options options;
+    options.droppedFlushesBeforeDisconnect = 3;
+    SubscriptionHub hub(api, service, options);
+
+    // A client whose outgoing queue holds one event, drained between flushes —
+    // the shape a real connection has when its writer is slower than the model.
+    // Each flush it takes the first topic offered and refuses the second.
+    struct Budgeted {
+        int capacity = 1;
+        int queued = 0;
+        int refused = 0;
+        int disconnects = 0;
+        std::vector<Topic> taken;
+
+        SubscriptionHub::Sink sink() {
+            return [this](const SubscriptionEvent& event) {
+                if (queued >= capacity) {
+                    ++refused;
+                    return false;
+                }
+                ++queued;
+                taken.push_back(event.topic);
+                return true;
+            };
+        }
+        SubscriptionHub::Disconnect disconnect() {
+            return [this](const juce::String&) { ++disconnects; };
+        }
+        void drain() {
+            queued = 0;
+        }
+    };
+
+    Budgeted client;
+    subscribe(hub, hub.addClient(client.sink(), client.disconnect()), {"project", "tracks"});
+
+    for (int flush = 0; flush < 3; ++flush) {
+        client.drain();
+        api.project_.info.tempo += 1.0;
+        api.tracks_.tracks[0].volume = 0.1f * static_cast<float>(flush + 1);
+        service.noteModelChanged(Topic::Project);
+        service.noteModelChanged(Topic::Tracks);
+        service.changes().flush();
+    }
+
+    // It accepted something every single flush. Counting that as recovery would
+    // reset the tally before the refusal in the same flush could raise it, so it
+    // would sit at one forever: connected, apparently healthy, and permanently
+    // stale on the topic it never manages to take.
+    REQUIRE(client.refused == 3);
+    REQUIRE(client.disconnects == 1);
+    REQUIRE(hub.clientCount() == 0);
+}
+
+TEST_CASE("Several refusals in one flush are one flush", "[remote][subscriptions][backpressure]") {
+    MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.tracks_.tracks.push_back(makeTrack(1, "Drums"));
+
+    RemoteApiService service(api);
+    Recorder recorder;
+    SubscriptionHub::Options options;
+    options.droppedFlushesBeforeDisconnect = 2;
+    SubscriptionHub hub(api, service, options);
+
+    subscribe(hub, hub.addClient(recorder.sink(), recorder.disconnect()),
+              {"project", "tracks", "transport"});
+
+    recorder.accepting = false;
+    api.project_.info.tempo = 128.0;
+    api.tracks_.tracks[0].name = "Kit";
+    api.transport_.playing = true;
+    for (const auto topic : {Topic::Project, Topic::Tracks, Topic::Transport})
+        service.noteModelChanged(topic);
+    service.changes().flush();
+
+    // Three topics refused, but one flush. The threshold is stated in flushes,
+    // so a client watching more topics must not be disconnected sooner for it.
+    REQUIRE(recorder.refused == 3);
+    REQUIRE(recorder.disconnects == 0);
+    REQUIRE(hub.clientCount() == 1);
+}
