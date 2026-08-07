@@ -33,17 +33,26 @@ struct Candidate {
 };
 
 /**
- * @brief The most of these that overlap at any one instant.
+ * @brief The most of these a single callback can be asked for.
  *
  * What a track is actually being asked to sound at once, which is not how many
  * clips are in the window: a lane of sequential slices fills a window without
- * ever wanting two voices. A sweep over the edges, which is exact and costs a
- * sort of a handful of entries off the audio thread.
+ * ever wanting two voices.
+ *
+ * Live to the end of the block it ends in, not to the sample it ends on. The
+ * callback is where voices are claimed and released, so two clips that share
+ * one need two voices however little they overlap, and a run of clips shorter
+ * than a block needs one apiece. Measuring bare overlap would report a track in
+ * the clear while the callback was dropping the extras, which is the whole
+ * reason this is measured rather than counted.
+ *
+ * A sweep over the edges: exact, and a sort of a handful of entries off the
+ * audio thread.
  */
-int peakSimultaneous(const std::vector<Candidate>& candidates, double windowStart,
-                     double windowEnd) {
-    // Clamped to the window, because an overlap outside it belongs to the round
-    // that has the transport near it.
+int peakConcurrent(const std::vector<Candidate>& candidates, double windowStart, double windowEnd,
+                   double blockSeconds) {
+    // Clamped to the window, because concurrency outside it belongs to the
+    // round that has the transport near it.
     std::vector<std::pair<double, int>> edges;
     edges.reserve(candidates.size() * 2);
 
@@ -54,11 +63,11 @@ int peakSimultaneous(const std::vector<Candidate>& candidates, double windowStar
             continue;
 
         edges.emplace_back(from, 1);
-        edges.emplace_back(to, -1);
+        edges.emplace_back(to + blockSeconds, -1);
     }
 
-    // Ends before starts at a shared instant: a clip that finishes exactly
-    // where the next begins is a handover, not an overlap.
+    // Ends before starts at a shared instant, so a clip whose block finishes
+    // exactly where the next begins is a handover rather than an overlap.
     std::sort(edges.begin(), edges.end(), [](const auto& a, const auto& b) {
         if (a.first != b.first)
             return a.first < b.first;
@@ -139,6 +148,10 @@ void ClipVoicePool::service() {
     const auto windowStart = position_.load(std::memory_order_relaxed);
     const auto windowEnd = windowStart + kCueAheadSeconds;
 
+    // The largest callback the plan was prepared for, which is the resolution
+    // voices are claimed and released at.
+    const auto blockSeconds = context_.maxBlockSize / context_.sampleRate;
+
     auto overSubscribed = 0;
     auto unreadable = 0;
 
@@ -169,8 +182,9 @@ void ClipVoicePool::service() {
                 // What this track is being asked to sound at once, which is the
                 // only count worth reporting. How many clips are in the window
                 // is a different number and usually a much larger one.
-                overSubscribed += std::max(0, peakSimultaneous(candidates, windowStart, windowEnd) -
-                                                  kMaxVoicesPerTrack);
+                overSubscribed +=
+                    std::max(0, peakConcurrent(candidates, windowStart, windowEnd, blockSeconds) -
+                                    kMaxVoicesPerTrack);
 
                 // Sounding first, then by where they start. Deterministic, so
                 // which clips a crowded window waits for is a property of the
@@ -189,8 +203,8 @@ void ClipVoicePool::service() {
                               return a.eventId < b.eventId;
                           });
 
-                if (candidates.size() > static_cast<std::size_t>(kMaxReadersPerTrack))
-                    candidates.resize(static_cast<std::size_t>(kMaxReadersPerTrack));
+                if (candidates.size() > static_cast<std::size_t>(kMaxVoicesPerTrack))
+                    candidates.resize(static_cast<std::size_t>(kMaxVoicesPerTrack));
 
                 for (const auto& candidate : candidates) {
                     const Key key{track.trackId, candidate.clipId, candidate.eventId};

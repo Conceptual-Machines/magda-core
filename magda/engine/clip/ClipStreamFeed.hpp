@@ -36,7 +36,8 @@ namespace magda::engine {
  *
  * Sorted by track, then clip, then event, so the audio thread can find a
  * track's range without hashing and walk it without searching. A track's range
- * is at most kMaxVoicesPerTrack long, which is what makes the walk free.
+ * is bounded by what the pool may provision for one track, which is what makes
+ * the walk free.
  */
 struct ClipStreamTable {
     struct Entry {

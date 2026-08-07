@@ -35,25 +35,33 @@
 namespace magda::engine {
 
 /**
- * @brief Clips one track may sound at the same instant.
+ * @brief Clips one track may have live at once.
  *
- * Eight rather than two. A crossfade is two, a clip dropped inside another is
- * two, and a clip made of several events is one voice per event (#1901), so the
- * shapes a lane can legitimately be in add up past the obvious pair. What eight
- * is not is a guess at how many a user might stack: past it the track reports
- * rather than quietly dropping the extras.
+ * One number for both halves of the layer, because a voice cannot sound without
+ * a reader and a reader nothing sounds through is waste. Two ceilings would be
+ * two answers to the same question, and they would disagree: whichever was
+ * lower would be doing the work while the other was reported.
  *
- * Simultaneity, not throughput. A voice costs a few bytes of state, so this is
- * not the number that bounds memory; how many readers a track may have standing
- * by is kMaxReadersPerTrack, and clips that follow one another consume that
- * without ever needing two voices at once.
+ * Live, not overlapping. Everything a callback touches is live for that
+ * callback, whether or not the clips overlap by a sample: they are rendered in
+ * the same call, so each holds its own voice for it. At the default block that
+ * makes back to back clips shorter than about twelve milliseconds count against
+ * this, and a host running a large block stretches that to tens of
+ * milliseconds, which is inside what chopped material actually does. The pool
+ * measures against the same block for that reason, so what it reports and what
+ * the callback enforces are the same thing.
  *
- * At this resolution "sounding in the same block" and "sounding at the same
- * instant" are the same question. Two entries that share a block each hold a
- * voice for it whether or not their samples overlap, which stops mattering
- * somewhere below the ten clips a millisecond it would take to notice.
+ * Sixteen. A crossfade is two, a clip dropped inside another is two, and a clip
+ * made of several events is one voice per event (#1901), so the shapes a lane
+ * can legitimately be in add up well past the obvious pair, and a lane of
+ * slices adds up faster still. It is also what bounds memory, since each of
+ * these is an open file and a chunk pool: four megabytes for a track with clips
+ * near the cursor, and nothing at all for one without.
+ *
+ * Past it the track reports rather than quietly dropping the extras, through
+ * @ref ClipAudioSource::starvedVoices and ClipVoicePool::overSubscribed.
  */
-constexpr int kMaxVoicesPerTrack = 8;
+constexpr int kMaxVoicesPerTrack = 16;
 
 class ClipAudioSource final : public EngineAudioSource {
   public:

@@ -59,31 +59,6 @@ namespace magda::engine {
  */
 constexpr double kCueAheadSeconds = 1.0;
 
-/**
- * @brief Readers one track may have standing by.
- *
- * Not the same ceiling as kMaxVoicesPerTrack and not measuring the same thing.
- * A voice is state and a reader is an open file and a chunk pool, a quarter of
- * a megabyte at the default settings, so this is the number that bounds memory:
- * four megabytes for a track with clips near the cursor, and nothing at all for
- * one without.
- *
- * Higher than the voice ceiling because a window is not an instant. Chopped
- * material puts a dozen clips inside a second while never sounding two of them
- * at once, and every one of them needs its own reader pointed at its own slice
- * of its own file. Sizing this to the voice count would have starved exactly
- * the material that needs the read-ahead most.
- *
- * A window holding more than this is not a clip that will not sound. The
- * soonest are provisioned first and a clip that has been passed gives its
- * reader back, so a queue of sequential clips rotates through the budget and
- * each one has its reader well before it is due. What it costs when the budget
- * really is exhausted is the read-ahead, which is a seek, which the stream
- * already counts as an underrun. What will not sound is counted by
- * @ref ClipVoicePool::overSubscribed and by ClipAudioSource::starvedVoices.
- */
-constexpr int kMaxReadersPerTrack = 16;
-
 class ClipVoicePool {
   public:
     /**
@@ -155,6 +130,15 @@ class ClipVoicePool {
      * clip in the window already provisioned opens nothing, retires nothing and
      * publishes nothing, so an idle session is not swapping a table at a
      * hundred hertz and making the callback wait for each one.
+     *
+     * A window holding more clips than kMaxVoicesPerTrack is not a failure and
+     * is not reported as one. The ceiling is per instant and a window is a
+     * second of timeline: a lane of slices fills it many times over while never
+     * asking for two voices at once, and the soonest are taken first, so a clip
+     * that has been passed gives its reader back to the one behind it long
+     * before that one is due. What a crowded window costs is the read-ahead of
+     * the clips at the far end of it, which is a seek, which the stream already
+     * counts as an underrun. What will not sound is @ref overSubscribed.
      */
     void service();
 
@@ -164,11 +148,15 @@ class ClipVoicePool {
     /**
      * @brief Clips the last round found stacked past what a track can sound.
      *
-     * Measured where it means something: the most clips overlapping at any one
-     * instant inside the window, less kMaxVoicesPerTrack. Not the number the
-     * reader budget turned away, which is a different and usually harmless
-     * thing (see kMaxReadersPerTrack): a lane of sequential clips can fill that
-     * budget many times over without two of them ever sounding together.
+     * The most that are live at once anywhere in the window, less
+     * kMaxVoicesPerTrack. Live rather than overlapping, and measured against
+     * the same block the callback renders: clips that share a callback each
+     * need their own voice for it whether or not they overlap by a sample, so
+     * measuring bare overlap here would report zero while the callback was
+     * dropping the extras.
+     *
+     * Not the number the window turned away, which is a different and usually
+     * harmless thing (see @ref service).
      *
      * A gauge rather than a tally, so it falls back to zero when the material
      * stops asking. Non-zero means clips that will not be heard, and
