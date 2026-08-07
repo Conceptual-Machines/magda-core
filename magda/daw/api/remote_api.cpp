@@ -482,12 +482,20 @@ juce::var topicSelectionSchema() {
     return schema;
 }
 
+/**
+ * @brief `{"topics":[…], "snapshot": true}`.
+ *
+ * No revision to resume from. A project revision counts committed mutations,
+ * and subscription events are also published for motion that commits nothing,
+ * so naming a revision cannot establish that a client saw every event up to it.
+ * `snapshot:false` is the deliberate opt-out — the client asserting it has state
+ * and will resync itself — rather than the server guessing on its behalf.
+ */
 juce::var subscribeInputSchema() {
     auto schema = parseSchema(R"json({
         "type":"object",
         "properties":{
             "topics":{},
-            "fromRevision":{"type":"integer","minimum":0},
             "snapshot":{"type":"boolean"}
         },
         "required":["topics"],"additionalProperties":false

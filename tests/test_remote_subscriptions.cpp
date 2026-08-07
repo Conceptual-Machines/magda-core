@@ -601,8 +601,61 @@ TEST_CASE("Resync with no topics covers everything subscribed", "[remote][subscr
     REQUIRE(snapshotCount(resync) == 2);
 }
 
-TEST_CASE("Reconnecting at the current revision skips the snapshots",
+TEST_CASE("Subscribing snapshots even when the revision has not moved",
           "[remote][subscriptions][resync]") {
+    MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.tracks_.tracks.push_back(makeTrack(1, "Drums"));
+
+    RemoteApiService service(api);
+    Recorder first;
+    SubscriptionHub hub(api, service);
+
+    subscribe(hub, hub.addClient(first.sink(), first.disconnect()), {"tracks"});
+    const auto revision = service.currentRevision();
+
+    // Motion, not a commit. `noteModelActivity` publishes an event and
+    // deliberately leaves the revision alone, because bumping it for a parameter
+    // that is merely following automation would make optimistic concurrency
+    // unusable whenever the transport is rolling.
+    api.tracks_.tracks[0].volume = 0.75f;
+    service.noteModelActivity(Topic::Tracks);
+    service.changes().flush();
+    REQUIRE(first.events.size() == 1);
+    REQUIRE(service.currentRevision() == revision);
+
+    // A client that missed exactly that event and reconnects has a cursor
+    // identical to a client that saw it. The revision cannot tell them apart, so
+    // resuming on one would leave the stale client stale and never say so.
+    Recorder reconnecting;
+    const auto resumed =
+        call(hub, hub.addClient(reconnecting.sink(), reconnecting.disconnect()),
+             "subscriptions.subscribe", params({{"topics", stringArray({"tracks"})}}));
+    REQUIRE(snapshotCount(resumed) == 1);
+    const auto* snapshots = resumed.result["snapshots"].getArray();
+    REQUIRE(static_cast<double>((*snapshots)[0]["payload"][0]["volume"]) == 0.75);
+}
+
+TEST_CASE("A revision cannot be offered as a subscription cursor",
+          "[remote][subscriptions][resync]") {
+    MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    Recorder recorder;
+    SubscriptionHub hub(api, service);
+
+    const auto client = hub.addClient(recorder.sink(), recorder.disconnect());
+    // Rejected rather than ignored. A client that used to send this is asking
+    // for a guarantee the server cannot make, and being told so beats silently
+    // getting the snapshots it thought it had skipped.
+    const auto refused = call(hub, client, "subscriptions.subscribe",
+                              params({{"topics", stringArray({"tracks"})},
+                                      {"fromRevision", static_cast<juce::int64>(0)}}));
+    REQUIRE_FALSE(refused.ok);
+    REQUIRE(refused.error.code == ErrorCode::ValidationFailed);
+}
+
+TEST_CASE("A client that says it has state is not sent any", "[remote][subscriptions][resync]") {
     MessageThreadRelaxation relaxation;
     MockMagdaApi api;
     api.tracks_.tracks.push_back(makeTrack(1, "Drums"));
@@ -611,51 +664,22 @@ TEST_CASE("Reconnecting at the current revision skips the snapshots",
     Recorder recorder;
     SubscriptionHub hub(api, service);
 
-    commit(service, Topic::Tracks);
-    const auto revision = service.currentRevision();
-    REQUIRE(revision > INITIAL_REVISION);
-
     const auto client = hub.addClient(recorder.sink(), recorder.disconnect());
+    // The client's assertion, not the server's inference — which is the whole
+    // difference. It is on the client to be right, and `subscriptions.resync` is
+    // there for when it is not.
     const auto resumed = call(hub, client, "subscriptions.subscribe",
-                              params({{"topics", stringArray({"tracks"})},
-                                      {"fromRevision", static_cast<juce::int64>(revision)}}));
+                              params({{"topics", stringArray({"tracks"})}, {"snapshot", false}}));
     REQUIRE(resumed.ok);
-    // Nothing has been committed since the client last looked, so re-sending
-    // every track would be a full transfer to say "no change".
     REQUIRE(snapshotCount(resumed) == 0);
 
-    // And it is a live subscriber from there, on deltas.
+    // Still a live subscriber, and on deltas: the baseline was established even
+    // though nothing was sent.
     api.tracks_.tracks.push_back(makeTrack(2, "Bass"));
     commit(service, Topic::Tracks);
     REQUIRE(recorder.events.size() == 1);
     REQUIRE(recorder.events[0].type == SubscriptionEvent::Type::Delta);
     REQUIRE(recorder.events[0].payload["added"].getArray()->size() == 1);
-}
-
-TEST_CASE("Reconnecting at a revision that has moved on forces a full resync",
-          "[remote][subscriptions][resync]") {
-    MessageThreadRelaxation relaxation;
-    MockMagdaApi api;
-    api.tracks_.tracks.push_back(makeTrack(1, "Drums"));
-
-    RemoteApiService service(api);
-    Recorder recorder;
-    SubscriptionHub hub(api, service);
-
-    commit(service, Topic::Tracks);
-    const auto stale = service.currentRevision();
-    commit(service, Topic::Tracks);
-    REQUIRE(service.currentRevision() > stale);
-
-    const auto client = hub.addClient(recorder.sink(), recorder.disconnect());
-    const auto resumed = call(hub, client, "subscriptions.subscribe",
-                              params({{"topics", stringArray({"tracks"})},
-                                      {"fromRevision", static_cast<juce::int64>(stale)}}));
-
-    // No per-revision history is kept, so a client that is behind by any amount
-    // cannot be caught up incrementally. Saying so explicitly beats replaying
-    // what happens to still be in memory.
-    REQUIRE(snapshotCount(resumed) == 1);
 }
 
 TEST_CASE("A second subscriber does not cost the first one its next delta",

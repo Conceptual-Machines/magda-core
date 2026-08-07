@@ -925,17 +925,23 @@ Response SubscriptionHub::execute(ClientId client, const juce::String& method,
             for (const auto topic : requested)
                 entry->subscribed[indexOf(topic)] = true;
 
-            // A client that reconnects at the revision the project is still on
-            // has missed no committed change and may skip the snapshots. Any
-            // other revision — including one it never saw — is an explicit
-            // resync, because no per-revision history is kept to replay from.
-            const auto from = params["fromRevision"];
-            const bool current = !from.isVoid() && static_cast<juce::int64>(from) ==
-                                                       static_cast<juce::int64>(revision);
+            // Subscribing snapshots, and the only thing that stops it is the
+            // client saying so.
+            //
+            // There was a `fromRevision` here that skipped the snapshots when a
+            // reconnecting client named the revision the project was still on.
+            // It cannot work: `noteModelActivity` publishes events without
+            // advancing the revision — a clip's play state, a parameter under
+            // automation — so a client can disconnect at revision N, miss one of
+            // those, and come back naming N. The revision is a commit cursor and
+            // proves only that nothing was committed; establishing event
+            // continuity would need a second, per-topic cursor on the wire, and
+            // being wrong about it leaves a client silently stale, which is the
+            // failure this whole design is meant to make impossible.
             const auto wanted = params["snapshot"];
             const bool asked = wanted.isVoid() || static_cast<bool>(wanted);
 
-            if (asked && !current)
+            if (asked)
                 sendSnapshotsLocked(*entry, requested, revision, snapshots);
             else
                 for (const auto topic : requested)

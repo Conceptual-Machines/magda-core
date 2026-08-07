@@ -75,10 +75,17 @@ Continuous motion — a parameter following an LFO, a drag preview — publishes
 events without advancing it, so equal revisions on consecutive events are
 expected and mean "nothing was committed".
 
-`subscribe` takes `fromRevision` for reconnects. If it equals the current
-revision, no committed change has been missed and the snapshots are skipped;
-any other value is an explicit full resync, because no per-revision history is
-kept to replay from. `resync` forces the same thing at any time.
+`subscribe` always delivers snapshots, including on a reconnect, and
+`subscriptions.resync` forces the same thing at any time. There is no "resume
+from revision N": `revision` counts committed mutations, while events are also
+published for motion that commits nothing, so a client that disconnected and
+missed one of those has a revision indistinguishable from a client that saw it.
+A cursor that cannot tell those apart cannot be used to skip state.
+
+A client that knows it already has state — because it is about to resync itself,
+or only cares about what happens from now on — passes `"snapshot": false`. That
+is the client asserting it, which is the difference: being wrong about it is then
+its own choice rather than the server's guess.
 
 Opening a different project invalidates every discrete topic at once, so a
 client watching only `tracks` hears about the swap rather than continuing to
