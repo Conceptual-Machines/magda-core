@@ -153,6 +153,7 @@ void ClipVoicePool::service() {
     const auto blockSeconds = context_.maxBlockSize / context_.sampleRate;
 
     auto overSubscribed = 0;
+    auto unbridged = 0;
     auto unreadable = 0;
 
     Streams wanted;
@@ -203,8 +204,18 @@ void ClipVoicePool::service() {
                               return a.eventId < b.eventId;
                           });
 
-                if (candidates.size() > static_cast<std::size_t>(kMaxVoicesPerTrack))
-                    candidates.resize(static_cast<std::size_t>(kMaxVoicesPerTrack));
+                if (candidates.size() > static_cast<std::size_t>(kMaxReadersPerTrack)) {
+                    // What the budget turned away that was due before this pool
+                    // will look again. Those are the clips that fit the voice
+                    // ceiling and will still play nothing, which is a different
+                    // failure from too many at once and is counted as one.
+                    for (auto index = static_cast<std::size_t>(kMaxReadersPerTrack);
+                         index < candidates.size(); ++index)
+                        if (candidates[index].startSeconds < windowStart + kReadAheadBridgeSeconds)
+                            ++unbridged;
+
+                    candidates.resize(static_cast<std::size_t>(kMaxReadersPerTrack));
+                }
 
                 for (const auto& candidate : candidates) {
                     const Key key{track.trackId, candidate.clipId, candidate.eventId};
@@ -292,6 +303,7 @@ void ClipVoicePool::service() {
     }
 
     overSubscribed_.store(overSubscribed, std::memory_order_relaxed);
+    unbridged_.store(unbridged, std::memory_order_relaxed);
     unreadableFiles_.store(unreadable, std::memory_order_relaxed);
 }
 

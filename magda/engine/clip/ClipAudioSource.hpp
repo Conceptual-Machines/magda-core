@@ -35,28 +35,26 @@
 namespace magda::engine {
 
 /**
- * @brief Clips one track may have live at once.
+ * @brief Clips one track may sound in a single callback.
  *
- * One number for both halves of the layer, because a voice cannot sound without
- * a reader and a reader nothing sounds through is waste. Two ceilings would be
- * two answers to the same question, and they would disagree: whichever was
- * lower would be doing the work while the other was reported.
+ * Capacity, and only capacity. How many readers a track may have standing by is
+ * kMaxReadersPerTrack, which is larger and answers a different question: this
+ * one is what a callback can render at once, that one is how far ahead of the
+ * transport the material has to be open. Collapsing the two starves clips that
+ * fit here perfectly well and simply have no reader yet.
  *
  * Live, not overlapping. Everything a callback touches is live for that
  * callback, whether or not the clips overlap by a sample: they are rendered in
  * the same call, so each holds its own voice for it. At the default block that
- * makes back to back clips shorter than about twelve milliseconds count against
- * this, and a host running a large block stretches that to tens of
- * milliseconds, which is inside what chopped material actually does. The pool
- * measures against the same block for that reason, so what it reports and what
- * the callback enforces are the same thing.
+ * makes back to back clips shorter than about a millisecond and a half count
+ * against this, and a host running a large block stretches that to tens of
+ * milliseconds. The pool measures against the same block for that reason, so
+ * what it reports and what the callback enforces are the same thing.
  *
  * Sixteen. A crossfade is two, a clip dropped inside another is two, and a clip
  * made of several events is one voice per event (#1901), so the shapes a lane
  * can legitimately be in add up well past the obvious pair, and a lane of
- * slices adds up faster still. It is also what bounds memory, since each of
- * these is an open file and a chunk pool: four megabytes for a track with clips
- * near the cursor, and nothing at all for one without.
+ * slices adds up faster still.
  *
  * Past it the track reports rather than quietly dropping the extras, through
  * @ref ClipAudioSource::starvedVoices and ClipVoicePool::overSubscribed.

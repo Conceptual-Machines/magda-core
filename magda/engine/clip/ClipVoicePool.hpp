@@ -9,6 +9,7 @@
 #include <mutex>
 #include <string>
 
+#include "clip/ClipAudioSource.hpp"
 #include "clip/ClipSnapshot.hpp"
 #include "clip/ClipStreamFeed.hpp"
 #include "core/ClipTypes.hpp"
@@ -58,6 +59,45 @@ namespace magda::engine {
  * that is due.
  */
 constexpr double kCueAheadSeconds = 1.0;
+
+/**
+ * @brief How soon a clip may be due and still be given a reader in time.
+ *
+ * A round finds a clip, opens its file and points the stream at it; the
+ * prefetch thread notices on its next poll and reads. Until both have happened
+ * the clip has a reader that cannot answer, so a clip due sooner than this is
+ * one this pool was too late for however much budget it had.
+ *
+ * It is what the reader budget has to cover, and the reason that budget is not
+ * the voice ceiling. A callback can only sound kMaxVoicesPerTrack clips, but
+ * the pool has to have opened every clip that will sound before it next wakes,
+ * which is a different and larger set: sixteen readers is sixteen clips, and
+ * sixteen clips is a tenth of a second of chopped material or an hour of a
+ * ballad.
+ */
+constexpr double kReadAheadBridgeSeconds = 0.1;
+
+/**
+ * @brief Readers one track may have standing by.
+ *
+ * The voice ceiling plus room to be early. Every clip that is sounding needs a
+ * reader, and so does every clip that will start before this pool next gets to
+ * look, so the budget has to hold both: kMaxVoicesPerTrack for the first and as
+ * much again for the second. Sized to the voice ceiling instead, a lane would
+ * spend its whole budget on what is playing and open the next clip at the
+ * moment it was due, which is a seek, which is the one thing this file exists
+ * to avoid.
+ *
+ * Thirty-two is where the memory is too: each of these is an open file and a
+ * chunk pool, a quarter of a megabyte at the default settings, so eight
+ * megabytes for a track with clips near the cursor and nothing at all for one
+ * without.
+ *
+ * It does not make the pool keep up with anything. Material dense enough that
+ * even this cannot reach kReadAheadBridgeSeconds ahead is reported rather than
+ * silently late (@ref ClipVoicePool::unbridged).
+ */
+constexpr int kMaxReadersPerTrack = 2 * kMaxVoicesPerTrack;
 
 class ClipVoicePool {
   public:
@@ -131,14 +171,16 @@ class ClipVoicePool {
      * publishes nothing, so an idle session is not swapping a table at a
      * hundred hertz and making the callback wait for each one.
      *
-     * A window holding more clips than kMaxVoicesPerTrack is not a failure and
-     * is not reported as one. The ceiling is per instant and a window is a
-     * second of timeline: a lane of slices fills it many times over while never
-     * asking for two voices at once, and the soonest are taken first, so a clip
-     * that has been passed gives its reader back to the one behind it long
-     * before that one is due. What a crowded window costs is the read-ahead of
-     * the clips at the far end of it, which is a seek, which the stream already
-     * counts as an underrun. What will not sound is @ref overSubscribed.
+     * A window holding more clips than there are readers is not a failure and
+     * is not reported as one. A window is a second of timeline and the budget
+     * is spent soonest first, so a clip that has been passed gives its reader
+     * back to the one behind it, and a queue of clips rotates through. What a
+     * crowded window costs is the read-ahead of the clips at the far end of it,
+     * which is nothing until the far end comes close.
+     *
+     * When it does come close, that is @ref unbridged. When more clips want to
+     * sound at once than a callback can render, that is @ref overSubscribed.
+     * The two are separate because they fail separately.
      */
     void service();
 
@@ -164,6 +206,23 @@ class ClipVoicePool {
      */
     int overSubscribed() const {
         return overSubscribed_.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Clips due too soon for the reader budget to have reached them.
+     *
+     * The other way a clip goes silent, and the one that has nothing to do with
+     * how many can sound at once: entries the budget turned away that start
+     * inside kReadAheadBridgeSeconds. Every one of them fits the voice ceiling
+     * and will still play nothing, because the round that could have opened it
+     * spent its budget on the clips in front of it.
+     *
+     * Non-zero means the material is denser than this track can read ahead for.
+     * Nothing in the engine fixes that by trying harder; what it can do is say
+     * so rather than let a lane of slices go quiet for no stated reason.
+     */
+    int unbridged() const {
+        return unbridged_.load(std::memory_order_relaxed);
     }
 
     /// Paths the factory declined, in the last round. A file that has moved or
@@ -254,6 +313,7 @@ class ClipVoicePool {
     Streams streams_;
 
     std::atomic<int> overSubscribed_{0};
+    std::atomic<int> unbridged_{0};
     std::atomic<int> unreadableFiles_{0};
     std::atomic<int> tablesPublished_{0};
 };

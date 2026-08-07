@@ -24,6 +24,7 @@ using magda::engine::ClipSnapshot;
 using magda::engine::ClipSnapshotFeed;
 using magda::engine::ClipVoicePool;
 using magda::engine::kCueAheadSeconds;
+using magda::engine::kMaxReadersPerTrack;
 using magda::engine::kMaxVoicesPerTrack;
 using magda::engine::PrefetchThread;
 using magda::engine::RenderContext;
@@ -241,9 +242,9 @@ TEST_CASE("A lane stacking more clips than a track has voices reports the excess
     pool.setPosition(1.0);
     pool.service();
 
-    // Every reader the track may have, and three reported, because that is how
-    // many of them will not be heard.
-    CHECK(pool.streamCount() == static_cast<std::size_t>(kMaxVoicesPerTrack));
+    // A reader each, because the budget is not the ceiling, and three
+    // reported, because that is how many of them will not be heard.
+    CHECK(pool.streamCount() == static_cast<std::size_t>(kMaxVoicesPerTrack + 3));
     CHECK(pool.overSubscribed() == 3);
 
     SECTION("and stops reporting once the lane thins out") {
@@ -301,21 +302,25 @@ TEST_CASE("Clips that follow one another are not clips stacked on one another",
 
 TEST_CASE("Slices too short to fill a callback are concurrent, and say so",
           "[engine][clip][pool]") {
-    // The other end of the same question. Clips shorter than a block share one,
-    // so a callback needs a voice for each of them however little they overlap.
-    // Measuring bare overlap would report this track in the clear while the
-    // callback was dropping every slice past the sixteenth.
+    // Clips shorter than a block share one, so a callback needs a voice for
+    // each of them however little they overlap. Measuring bare overlap would
+    // report this track in the clear while the callback was dropping every
+    // slice past the sixteenth.
+    //
+    // Three samples each, back to back: a block spans twenty-two of them, and
+    // the whole run fits inside the reader budget, so the only thing this can
+    // be short of is voices.
     TestFiles files;
     PrefetchThread reader;
     ClipVoicePool pool(files, reader, context());
 
-    // Four samples each, back to back: a block spans seventeen of them.
-    constexpr auto kSliceSeconds = 4.0 / kSampleRate;
+    constexpr auto kSliceSeconds = 3.0 / kSampleRate;
+    constexpr auto kSlices = kMaxReadersPerTrack;
 
     std::vector<AudioClipPlayback> lane;
     TrackClipPlayback track;
     track.trackId = kTrack;
-    for (auto index = 0; index < kMaxVoicesPerTrack * 2; ++index) {
+    for (auto index = 0; index < kSlices; ++index) {
         lane.push_back(clipAt(index + 1, index * kSliceSeconds, (index + 1) * kSliceSeconds));
         track.audio.push_back(lane.back());
     }
@@ -324,6 +329,9 @@ TEST_CASE("Slices too short to fill a callback are concurrent, and say so",
     pool.setPosition(0.0);
     pool.service();
 
+    // Every one of them has a reader, so nothing here is waiting on a disk.
+    REQUIRE(pool.streamCount() == static_cast<std::size_t>(kSlices));
+    CHECK(pool.unbridged() == 0);
     CHECK(pool.overSubscribed() > 0);
 
     // And the callback is where it costs something.
@@ -340,6 +348,61 @@ TEST_CASE("Slices too short to fill a callback are concurrent, and say so",
     CHECK(source.starvedVoices() > 0);
 }
 
+TEST_CASE("A lane the budget cannot reach ahead of says so, and is not called stacked",
+          "[engine][clip][pool]") {
+    // The failure the voice ceiling has nothing to do with. Eight-sample
+    // slices: a callback wants nine of them at once, well inside the ceiling,
+    // but the whole reader budget covers a quarter of a millisecond of them and
+    // the pool will not look again for ten. Every clip past the budget fits
+    // and still plays nothing.
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    constexpr auto kSliceSeconds = 8.0 / kSampleRate;
+
+    std::vector<AudioClipPlayback> lane;
+    for (auto index = 0; index < kMaxReadersPerTrack * 4; ++index)
+        lane.push_back(clipAt(index + 1, index * kSliceSeconds, (index + 1) * kSliceSeconds));
+
+    pool.setSnapshot(snapshotOf(std::move(lane)));
+    pool.setPosition(0.0);
+    pool.service();
+
+    CHECK(pool.streamCount() == static_cast<std::size_t>(kMaxReadersPerTrack));
+
+    // Not too many at once. Too many too soon, which is its own count.
+    CHECK(pool.overSubscribed() == 0);
+    CHECK(pool.unbridged() > 0);
+}
+
+TEST_CASE("A clip that fits the ceiling is provisioned before the next round",
+          "[engine][clip][pool]") {
+    // What the reader budget is for. Sixteen clips sounding and more starting
+    // in the moments after: sized to the voice ceiling the budget would go
+    // entirely on what is playing, and every clip after it would be opened at
+    // the instant it was due, which is a seek.
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    std::vector<AudioClipPlayback> lane;
+    for (auto index = 0; index < kMaxVoicesPerTrack; ++index)
+        lane.push_back(clipAt(index + 1, 0.0, 4.0));
+
+    // And one starting inside the bridge, which is where a reader has to exist
+    // already for it to be ready in time.
+    const auto soon = magda::engine::kReadAheadBridgeSeconds / 2.0;
+    lane.push_back(clipAt(kMaxVoicesPerTrack + 1, soon, 4.0));
+
+    pool.setSnapshot(snapshotOf(std::move(lane)));
+    pool.setPosition(0.0);
+    pool.service();
+
+    CHECK(pool.streamCount() == static_cast<std::size_t>(kMaxVoicesPerTrack + 1));
+    CHECK(pool.unbridged() == 0);
+}
+
 TEST_CASE("A window holding more clips than there are readers takes the soonest",
           "[engine][clip][pool]") {
     TestFiles files;
@@ -347,7 +410,7 @@ TEST_CASE("A window holding more clips than there are readers takes the soonest"
     ClipVoicePool pool(files, reader, context());
 
     std::vector<AudioClipPlayback> lane;
-    for (auto index = 0; index < kMaxVoicesPerTrack + 5; ++index)
+    for (auto index = 0; index < kMaxReadersPerTrack + 5; ++index)
         lane.push_back(clipAt(index + 1, index * 0.02, (index + 1) * 0.02));
 
     pool.setSnapshot(snapshotOf(std::move(lane)));
@@ -357,14 +420,15 @@ TEST_CASE("A window holding more clips than there are readers takes the soonest"
     // The budget is spent, and none of it is reported: nothing here will fail
     // to sound, because each slice is passed and gives its reader back long
     // before the ones behind it are due.
-    CHECK(pool.streamCount() == static_cast<std::size_t>(kMaxVoicesPerTrack));
+    CHECK(pool.streamCount() == static_cast<std::size_t>(kMaxReadersPerTrack));
     CHECK(pool.overSubscribed() == 0);
+    CHECK(pool.unbridged() == 0);
 
     // Rolling past the first few hands their readers to the ones behind.
     pool.setPosition(0.1);
     pool.service();
 
-    CHECK(pool.streamCount() == static_cast<std::size_t>(kMaxVoicesPerTrack));
+    CHECK(pool.streamCount() == static_cast<std::size_t>(kMaxReadersPerTrack));
 }
 
 TEST_CASE("A round that changes nothing does not swap a table", "[engine][clip][pool]") {
@@ -437,14 +501,14 @@ TEST_CASE("A clip that is sounding keeps its reader over one that has not starte
     // One long clip the transport is standing inside, and enough clips starting
     // just ahead of it to use up every reader twice over.
     lane.push_back(clipAt(1, 0.0, 10.0));
-    for (auto index = 0; index < kMaxVoicesPerTrack * 2; ++index)
+    for (auto index = 0; index < kMaxReadersPerTrack * 2; ++index)
         lane.push_back(clipAt(index + 2, 5.2 + index * 0.01, 9.0));
 
     pool.setSnapshot(snapshotOf(std::move(lane)));
     pool.setPosition(5.0);
     pool.service();
 
-    CHECK(pool.streamCount() == static_cast<std::size_t>(kMaxVoicesPerTrack));
+    CHECK(pool.streamCount() == static_cast<std::size_t>(kMaxReadersPerTrack));
 
     // The clip that is playing is one of the ones that kept a reader: render a
     // block of it and it sounds.
