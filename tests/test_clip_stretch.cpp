@@ -572,6 +572,37 @@ TEST_CASE("A clip asks for a stretcher only when it needs one", "[engine][clip][
                     magda::engine::stretchSetupFor(clip, event, context())) != nullptr);
     }
 
+    SECTION("a mode set once on a clip that asks for nothing gets no engine") {
+        // The mode is a preference for how to stretch, not an instruction to
+        // stretch. The incumbent engages on auto tempo, auto pitch, a pitch
+        // change or a ratio off unity and never on the mode alone
+        // (AudioClipBase::usesTimeStretchedProxy), and a phase vocoder run at
+        // one-to-one is not transparent: it re-synthesises what it was given.
+        for (const auto which :
+             {mode::kSignalsmith, mode::kSoundTouchNormal, mode::kSoundTouchBetter}) {
+            event.timeStretchMode = which;
+
+            INFO("mode " << which);
+            REQUIRE(magda::engine::makeStretcher(
+                        magda::engine::stretchSetupFor(clip, event, context())) == nullptr);
+        }
+    }
+
+    SECTION("auto tempo keeps its engine even where its average is unity") {
+        // The average is not what it plays at: an auto tempo ratio is the
+        // project's tempo over the file's own and moves with the tempo curve, so
+        // a clip averaging unity is still stretching in both directions around
+        // it.
+        event.timeStretchMode = mode::kSignalsmith;
+        event.autoTempo = true;
+        event.interpBpm = 120.0;
+
+        const auto setup = magda::engine::stretchSetupFor(clip, event, context());
+
+        REQUIRE(setup.nominalRate == approx(1.0));
+        REQUIRE(magda::engine::makeStretcher(setup) != nullptr);
+    }
+
     SECTION("the pinned modes each resolve to an engine that primes") {
         for (const auto which :
              {mode::kSignalsmith, mode::kSoundTouchNormal, mode::kSoundTouchBetter}) {

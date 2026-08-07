@@ -197,6 +197,7 @@ StretchSetup stretchSetupFor(const AudioClipPlayback& clip, const AudioEventPlay
     setup.sampleRate = context.sampleRate;
     setup.maxBlockSamples = context.maxBlockSize;
     setup.nominalRate = readingRateOf(event);
+    setup.followsTempo = event.autoTempo && event.interpBpm > 0.0;
     setup.speedRamp = (clip.fadeInBehaviour == 1 && clip.fadeInSeconds > 0.0) ||
                       (clip.fadeOutBehaviour == 1 && clip.fadeOutSeconds > 0.0);
 

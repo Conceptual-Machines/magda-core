@@ -167,11 +167,11 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         touch_.setPitchSemiTones(setup.semitones);
         touch_.setTempo(std::clamp(setup.nominalRate, kMinStretchRate, kMaxStretchRate));
 
-        // Sized for the worst block this can be asked for: the largest output
-        // block, times the fastest the reading may be consumed for it. Grown
-        // here, on the thread that made this, and never again.
-        const auto frames =
-            static_cast<int>(std::ceil(setup.maxBlockSamples * kMaxStretchRate)) + 1;
+        // Sized for the worst block this can be asked for, through the same
+        // function the voice bounds a block's reading with: two derivations of
+        // that number differing by a sample is a write past the end of this.
+        // Grown here, on the thread that made this, and never again.
+        const auto frames = maxReadingSamples(setup.maxBlockSamples);
         interleaved_.resize(static_cast<std::size_t>(frames * channels_));
         deinterleaved_.resize(static_cast<std::size_t>(setup.maxBlockSamples * channels_));
 
@@ -450,6 +450,26 @@ std::unique_ptr<ClipStretcher> makeStretcher(const StretchSetup& setup) {
     if (setup.numChannels <= 0 || setup.maxBlockSamples <= 0 || !(setup.sampleRate > 0.0))
         return nullptr;
 
+    // A clip that asks for nothing gets nothing, whatever its mode field says,
+    // and that is a parity requirement rather than an economy. The mode is a
+    // preference for how to stretch and not an instruction to stretch: the
+    // incumbent engages an engine on auto tempo, auto pitch, a pitch change or a
+    // ratio off unity, and never on the mode alone
+    // (AudioClipBase::usesTimeStretchedProxy). A clip whose dropdown was touched
+    // once and asks for nothing plays clean through the fork, and a phase
+    // vocoder run at one-to-one is not clean: it re-synthesises what it was
+    // given. Every project that ever opened that dropdown would otherwise be a
+    // difference in the null-diff corpus (#2040).
+    //
+    // Auto tempo is the carve-out, and keeps its engine at a unity average. The
+    // average is not what it plays at: its ratio is the project's tempo over the
+    // file's own and moves with the tempo curve, so a clip averaging unity is
+    // still stretching in both directions around it. The incumbent engages on
+    // auto tempo alone for the same reason.
+    if (!setup.followsTempo && !setup.speedRamp && std::abs(setup.semitones) < 0.001f &&
+        std::abs(setup.nominalRate - 1.0) < 1.0e-9)
+        return nullptr;
+
     switch (setup.mode) {
         case time_stretch_mode::kSignalsmith:
             return std::make_unique<SignalsmithClipStretcher>(setup);
@@ -459,16 +479,9 @@ std::unique_ptr<ClipStretcher> makeStretcher(const StretchSetup& setup) {
             return std::make_unique<SoundTouchClipStretcher>(setup);
 
         case time_stretch_mode::kDisabled:
-            // Nothing to preserve, so a rate change is a tape speed change and a
-            // rate of one is nothing at all. This is the analog pitch path: the
-            // model has already put the pitch factor into the speed ratio.
-            //
-            // A speed ramp is the exception to the rate of one. Its edges are
-            // not at one however the clip is set, and a ramp is a tape effect in
-            // any case, so this is what plays it.
-            if (!setup.speedRamp && std::abs(setup.nominalRate - 1.0) < 1.0e-9)
-                return nullptr;
-
+            // Nothing to preserve, so a rate change is a tape speed change. This
+            // is the analog pitch path: the model has already put the pitch
+            // factor into the speed ratio, and a ramp is a tape effect too.
             return std::make_unique<ResamplingClipStretcher>(setup);
 
         default:

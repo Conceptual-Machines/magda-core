@@ -79,6 +79,12 @@ struct StretchSetup {
     /// at its file's own speed at all.
     bool speedRamp = false;
 
+    /// Whether the clip follows the project's tempo. Carried because @ref
+    /// nominalRate is only an average for one that does, and a clip averaging
+    /// unity is still stretching in both directions around it: it needs an
+    /// engine where a clip actually pinned at unity does not.
+    bool followsTempo = false;
+
     bool operator==(const StretchSetup&) const = default;
 };
 
