@@ -646,6 +646,13 @@ HandlerResult sessionLaunchScene(MagdaApi& api, const juce::var& input, const Re
 // Automation
 // ===========================================================================
 
+HandlerResult automationListLanes(MagdaApi& api, const juce::var&, const RequestContext&) {
+    std::vector<juce::var> items;
+    for (const auto& lane : api.automation().getLanes())
+        items.push_back(toJson(makeAutomationLaneDto(lane)));
+    return HandlerResult::ok(toJsonArray(items));
+}
+
 HandlerResult automationGetLane(MagdaApi& api, const juce::var& input, const RequestContext&) {
     const auto laneId = static_cast<AutomationLaneId>(static_cast<int>(input["laneId"]));
     const auto* lane = api.automation().getLane(laneId);

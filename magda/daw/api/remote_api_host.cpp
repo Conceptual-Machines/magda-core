@@ -6,6 +6,7 @@
 #include "Config.hpp"
 #include "remote_model_bridge.hpp"
 #include "remote_service.hpp"
+#include "remote_subscriptions.hpp"
 #include "remote_websocket_server.hpp"
 
 #if JUCE_WINDOWS
@@ -152,9 +153,13 @@ bool writeTokenFile(const juce::File& file, const juce::String& token, int port)
 
 }  // namespace
 
-RemoteApiHost::RemoteApiHost(MagdaApi& api)
+RemoteApiHost::RemoteApiHost(MagdaApi& api, AudioEngine* engine)
     : service_(std::make_unique<RemoteApiService>(api)),
-      bridge_(std::make_unique<ModelChangeBridge>(*service_)) {}
+      bridge_(std::make_unique<ModelChangeBridge>(*service_)),
+      subscriptions_(std::make_unique<SubscriptionHub>(api, *service_)) {
+    if (engine != nullptr)
+        subscriptions_->setMeterSource(makeLiveMeterSource(*engine));
+}
 
 RemoteApiHost::~RemoteApiHost() {
     stop();
@@ -193,7 +198,7 @@ bool RemoteApiHost::start() {
     for (const auto& origin : config.getRemoteApiAllowedOrigins())
         options.allowedOrigins.push_back(juce::String::fromUTF8(origin.c_str()));
 
-    server_ = std::make_unique<RemoteWebSocketServer>(*service_, options);
+    server_ = std::make_unique<RemoteWebSocketServer>(*service_, options, subscriptions_.get());
     if (!server_->start()) {
         server_.reset();
         token_ = {};
@@ -220,6 +225,11 @@ void RemoteApiHost::stop() {
         server_->stop();
         server_.reset();
     }
+    // After the server, so no connection is still registered, and before the
+    // service's own shutdown, because this is what detaches the change listener
+    // the service owns.
+    if (subscriptions_ != nullptr)
+        subscriptions_->shutdown();
     // The token dies with the run that generated it; leaving the file behind
     // would advertise a port that is no longer listening and a credential that
     // no longer works.
@@ -245,6 +255,10 @@ juce::File RemoteApiHost::tokenFile() const {
 
 RemoteApiService& RemoteApiHost::service() {
     return *service_;
+}
+
+SubscriptionHub& RemoteApiHost::subscriptions() {
+    return *subscriptions_;
 }
 
 }  // namespace remote

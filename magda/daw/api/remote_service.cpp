@@ -168,6 +168,19 @@ void RemoteApiService::dispatch(const juce::String& operationName, const juce::v
         return;
     }
 
+    // A subscription method reached the dispatcher, which means the transport
+    // that received it cannot push. Saying so beats UnknownOperation: the
+    // operation is real and the client's request is well formed, and the only
+    // thing wrong is where it arrived.
+    if (operation->transportScoped) {
+        onComplete(Response::failure(ErrorCode::InvalidRequest,
+                                     operationName +
+                                         " is handled by the transport, and this transport "
+                                         "does not support subscriptions",
+                                     revision));
+        return;
+    }
+
     // Validation happens here, on the caller's thread, precisely because it is
     // a pure function of the request: a malformed or oversized payload is
     // rejected without ever occupying the message thread.

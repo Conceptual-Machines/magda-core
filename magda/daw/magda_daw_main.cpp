@@ -349,7 +349,11 @@ class MagdaDAWApplication : public JUCEApplication {
         // 4b. Remote API (#1856). Off unless configuration says otherwise, and
         // it opens nothing at all when disabled. After the window, because the
         // model bridge attaches to managers the engine has finished setting up.
-        remoteApi_ = std::make_unique<magda::remote::RemoteApiHost>(daw_engine_->getMagdaApi());
+        // The engine is passed for the `meters` subscription (#1857), which
+        // reads the levels the audio path already publishes; nothing else in the
+        // remote API touches it.
+        remoteApi_ = std::make_unique<magda::remote::RemoteApiHost>(daw_engine_->getMagdaApi(),
+                                                                    daw_engine_.get());
         if (remoteApi_->start())
             juce::Logger::writeToLog("Remote API token written to " +
                                      remoteApi_->tokenFile().getFullPathName());

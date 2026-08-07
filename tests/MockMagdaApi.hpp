@@ -54,6 +54,11 @@ namespace magda::test {
 
 class StubAutomationApi : public AutomationApi {
   public:
+    /// Seedable, unlike the rest of this stub. `automation.listLanes` backs the
+    /// `automation` subscription topic, so enumerating lanes has to be a read a
+    /// test can drive rather than an abort.
+    std::vector<AutomationLaneInfo> lanes;
+
     AutomationLaneId createLane(const AutomationTarget&, AutomationLaneType) override {
         std::abort();
     }
@@ -73,7 +78,7 @@ class StubAutomationApi : public AutomationApi {
         std::abort();
     }
     const std::vector<AutomationLaneInfo>& getLanes() const override {
-        std::abort();
+        return lanes;
     }
     std::vector<AutomationLaneId> getLanesForTrack(TrackId) const override {
         std::abort();
@@ -355,7 +360,13 @@ class MockTrackApi : public TrackApi {
     int getNumTracks() const override {
         return static_cast<int>(tracks.size());
     }
+    /// Counted so a test can assert how often the model was read, not only what
+    /// came back — the subscription hub promises one projection per flush no
+    /// matter how many clients are watching.
+    mutable int getTracksCalls = 0;
+
     const std::vector<TrackInfo>& getTracks() const override {
+        ++getTracksCalls;
         return tracks;
     }
     TrackInfo* getTrack(TrackId id) override {

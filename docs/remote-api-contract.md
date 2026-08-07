@@ -33,6 +33,59 @@ shared input/output schemas. A transport may add its own correlation or
 framing metadata outside these envelopes, but it must not change the contract
 payload.
 
+## Subscriptions
+
+Ten topics partition what a client can watch: `project`, `tracks`, `clips`,
+`devices`, `selection`, `transport`, `session`, `automation`, and the two
+continuous ones, `meters` and `playhead`.
+
+`subscriptions.subscribe`, `.unsubscribe`, `.list`, and `.resync` are declared in
+the registry like any other operation and marked `transportScoped: true`. They
+are executed by the transport adapter rather than by the dispatcher, because
+what a connection watches is state only that connection has. Dispatching one
+through a transport that cannot push fails with `invalid_request` rather than
+`unknown_operation` — the operation is real, and only the route is wrong.
+
+A pushed change is one envelope, independent of the transport that carries it:
+
+```json
+{ "topic": "clips", "type": "delta", "revision": 57, "payload": {} }
+```
+
+`type` is one of:
+
+- `snapshot` — complete state for the topic, in the same shape as the topic's
+  read operation (`tracks` is `tracks.list`, `project` is `project.get`, and so
+  on). Delivered in the reply to `subscribe` and `resync`, so a client is never
+  subscribed without knowing what it is watching, and pushed as an event when a
+  client has fallen behind.
+- `delta` — what changed since the previous event on that topic. For `tracks`,
+  `clips`, `automation`, and `session` the payload is
+  `{"added": [], "updated": [], "removed": []}`, where `removed` carries
+  identities only — an id, or `{trackId, sceneIndex}` for a session slot. Apply
+  `added` and `updated` as upserts keyed by id: a client may legitimately be sent
+  a change it already has, and doing so must be harmless. For `project`,
+  `transport`, `selection`, and `devices` the payload is the topic's full state,
+  because there is nothing useful to diff.
+- `sample` — a point reading of `meters` or `playhead`. Latest value wins,
+  intermediate readings are discarded, and a dropped sample is never resent.
+
+`revision` orders the stream and is the same counter `expected_revision` uses.
+Continuous motion — a parameter following an LFO, a drag preview — publishes
+events without advancing it, so equal revisions on consecutive events are
+expected and mean "nothing was committed".
+
+`subscribe` takes `fromRevision` for reconnects. If it equals the current
+revision, no committed change has been missed and the snapshots are skipped;
+any other value is an explicit full resync, because no per-revision history is
+kept to replay from. `resync` forces the same thing at any time.
+
+Delivery is bounded rather than buffered. A client that stops reading has its
+events dropped, is marked for resync, and receives a `snapshot` in place of the
+`delta` it missed as soon as it reads again; one that never resumes is
+disconnected. Subscribing to `meters` or `playhead` costs nothing until asked
+for: nothing samples them otherwise.
+
 ## Deliberately excluded data
 
 DTO fields are allow-listed. In particular, the remote API does not expose:

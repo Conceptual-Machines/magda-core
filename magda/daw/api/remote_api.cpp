@@ -457,6 +457,91 @@ const juce::var& automationLaneSchema() {
     return value;
 }
 
+// ---------------------------------------------------------------------------
+// Subscription schemas (#1857)
+// ---------------------------------------------------------------------------
+
+/// The topic names, spelled once. Kept in step with `magda::remote::Topic` by
+/// the round-trip test over `parseTopic`, which fails the moment the two drift.
+const char* kTopicEnumJson =
+    R"json({"type":"array","minItems":1,"maxItems":10,
+            "items":{"type":"string","enum":["project","tracks","clips","devices","selection",
+                                             "transport","session","automation","meters",
+                                             "playhead"]}})json";
+
+juce::var topicListSchema() {
+    return parseSchema(kTopicEnumJson);
+}
+
+/// `{"topics":[…]}` with topics optional — absent means every subscribed topic.
+juce::var topicSelectionSchema() {
+    auto schema = parseSchema(R"json({
+        "type":"object","properties":{"topics":{}},"additionalProperties":false
+    })json");
+    schema["properties"].getDynamicObject()->setProperty("topics", topicListSchema());
+    return schema;
+}
+
+juce::var subscribeInputSchema() {
+    auto schema = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "topics":{},
+            "fromRevision":{"type":"integer","minimum":0},
+            "snapshot":{"type":"boolean"}
+        },
+        "required":["topics"],"additionalProperties":false
+    })json");
+    schema["properties"].getDynamicObject()->setProperty("topics", topicListSchema());
+    return schema;
+}
+
+/**
+ * @brief The pushed envelope, published so a client can generate against it.
+ *
+ * `payload` is deliberately unconstrained: for a snapshot it is the matching
+ * read operation's output, for a delta it is `{added,updated,removed}` or that
+ * same output, and for a sample it is a meter or playhead reading. Declaring one
+ * shape here would be declaring a false one.
+ */
+const juce::var& subscriptionEventSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "topic":{"type":"string"},
+            "type":{"type":"string","enum":["snapshot","delta","sample"]},
+            "revision":{"type":"integer","minimum":0},
+            "payload":{}
+        },
+        "required":["topic","type","revision","payload"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+/// `withSnapshots` distinguishes the two methods that hand back initial state
+/// in their reply from the two that only report what is subscribed.
+juce::var subscriptionResultSchema(bool withSnapshots) {
+    auto schema = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "topics":{"type":"array","items":{"type":"string"}},
+            "revision":{"type":"integer","minimum":0}
+        },
+        "required":["topics","revision"],
+        "additionalProperties":false
+    })json");
+    if (!withSnapshots)
+        return schema;
+
+    auto* properties = schema["properties"].getDynamicObject();
+    properties->setProperty("snapshots", arraySchema(subscriptionEventSchema()));
+    schema.getDynamicObject()->setProperty(
+        "required", juce::var(juce::Array<juce::var>{juce::var("topics"), juce::var("revision"),
+                                                     juce::var("snapshots")}));
+    return schema;
+}
+
 bool matchesType(const juce::var& value, const juce::String& type) {
     if (type == "object")
         return value.getDynamicObject() != nullptr;
@@ -567,6 +652,9 @@ void validateValue(const juce::var& value, const juce::var& schema, const juce::
         const auto maxItems = schemaObject->getProperty("maxItems");
         if (!maxItems.isVoid() && array->size() > static_cast<int>(maxItems))
             addIssue(issues, path, "max_items", "Array exceeds the allowed item count");
+        const auto minItems = schemaObject->getProperty("minItems");
+        if (!minItems.isVoid() && array->size() < static_cast<int>(minItems))
+            addIssue(issues, path, "min_items", "Array has fewer items than allowed");
         const auto itemSchema = schemaObject->getProperty("items");
         if (!itemSchema.isVoid()) {
             for (int index = 0; index < array->size(); ++index)
@@ -1427,6 +1515,8 @@ OperationRegistry::OperationRegistry() {
         })json"),
         sessionSchema());
 
+    add("automation.listLanes", "List every automation lane in the project", OperationAccess::Read,
+        &handlers::automationListLanes, emptyObjectSchema(), arraySchema(automationLaneSchema()));
     add("automation.getLane", "Get an automation lane", OperationAccess::Read,
         &handlers::automationGetLane, operationInputSchema(R"json({
             "type":"object","properties":{"laneId":{"type":"integer","minimum":0}},
@@ -1465,13 +1555,47 @@ OperationRegistry::OperationRegistry() {
         })json"),
         automationLaneSchema());
 
+    // -----------------------------------------------------------------------
+    // Subscriptions (#1857)
+    //
+    // Declared here and executed by the transport. Subscribing is per-connection
+    // state and the dispatcher has no connections, but the contract — names,
+    // schemas, what a snapshot looks like — has to be one thing or the WebSocket
+    // and MCP adapters will grow two. `system.describe` therefore lists these
+    // like any other operation, marked so a client can tell that reaching them
+    // needs a transport that can push.
+    // -----------------------------------------------------------------------
+
+    auto addTransportScoped = [this](const char* name, const char* summary, juce::var input,
+                                     juce::var output) {
+        input = input.clone();
+        applyRequestLimits(input);
+        operations_.push_back({juce::String(name), juce::String(summary), OperationAccess::Read,
+                               std::move(input), std::move(output), nullptr, true});
+    };
+
+    addTransportScoped(
+        "subscriptions.subscribe",
+        "Start receiving change events for the given topics, with an initial snapshot",
+        subscribeInputSchema(), subscriptionResultSchema(true));
+    addTransportScoped("subscriptions.unsubscribe",
+                       "Stop receiving change events; no topics means every topic",
+                       topicSelectionSchema(), subscriptionResultSchema(false));
+    addTransportScoped("subscriptions.list", "List the topics this connection is subscribed to",
+                       emptyObjectSchema(), subscriptionResultSchema(false));
+    addTransportScoped("subscriptions.resync",
+                       "Re-send a complete snapshot for the subscribed topics",
+                       topicSelectionSchema(), subscriptionResultSchema(true));
+
     // A declared operation with no implementation is a startup failure, not a
     // runtime surprise. Before handlers lived on the descriptor there was
     // nothing to catch it, and the registry advertised 36 operations that
-    // `system.describe` would happily list and no transport could execute.
+    // `system.describe` would happily list and no transport could execute. A
+    // transport-scoped operation is the one legitimate exception: its
+    // implementation lives in the adapter, so there is nothing to point at here.
     for (const auto& operation : operations_) {
-        jassert(operation.handler != nullptr);
-        if (operation.handler == nullptr)
+        jassert(operation.transportScoped == (operation.handler == nullptr));
+        if (!operation.transportScoped && operation.handler == nullptr)
             juce::Logger::writeToLog("Remote API operation has no handler: " + operation.name);
     }
 }
@@ -1502,6 +1626,9 @@ juce::var OperationRegistry::describe() const {
         object->setProperty("access", operation.access == OperationAccess::Read ? "read" : "write");
         object->setProperty("inputSchema", operation.inputSchema.clone());
         object->setProperty("outputSchema", operation.outputSchema.clone());
+        // Always present rather than only when true: a client deciding whether
+        // it can call something should read a field, not infer one from silence.
+        object->setProperty("transportScoped", operation.transportScoped);
         operations.add(object);
     }
     result->setProperty("operations", operations);
