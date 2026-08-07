@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "clip/EventPlacement.hpp"
 #include "clip/FadeCurves.hpp"
 #include "io/ClipPlacement.hpp"
 
@@ -89,12 +90,16 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     auto region = scratch.getSubBlock(0, static_cast<std::size_t>(count));
 
     // Derived from where the timeline is, never from where the last block left
-    // off, so a locate and a loop wrap need nothing said about them: the stream
-    // sees a position it was not expecting and seeks (#2016).
-    const ClipPlacement placement{event.span.startSeconds, event.span.endSeconds,
-                                  event.anchorSamples};
-    const auto delivered =
-        stream.read(sourceSampleAt(placement, windowStart, sampleRate_), region, count);
+    // off, so a locate needs nothing said about it: the stream sees a position
+    // it was not expecting and seeks (#2016).
+    //
+    // Through the same function the pool pointed the reader with
+    // (EventPlacement.hpp), because a reversed event is read in a mirrored
+    // file's coordinates and two derivations of that could disagree. A loop
+    // wrap is not a position at all any more: it happens inside the reading,
+    // below the stream, so this walks straight through one.
+    const auto delivered = stream.read(
+        sourceSampleAt(placementFor(event, sampleRate_), windowStart, sampleRate_), region, count);
 
     // The holes, cleared out of what was read rather than skipped over.
     for (const auto& hole : clip.silenced) {
@@ -108,6 +113,24 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
         if (to > from)
             region.getSubBlock(static_cast<std::size_t>(from), static_cast<std::size_t>(to - from))
                 .clear();
+    }
+
+    // Which of the source's channels are heard. One that is off contributes
+    // nothing and the other is heard on both sides rather than the clip going
+    // hard to one of them: where a clip sits in the image is what the pan below
+    // decides, and silencing an output here would spend that decision on this.
+    //
+    // A mono source has already fanned out to every channel by the time it gets
+    // here (AudioFileReader::read), so turning one of them off copies the same
+    // material over itself and leaves it alone, which is the right answer for a
+    // file that never had two sides.
+    if (!event.leftChannelActive && !event.rightChannelActive) {
+        region.clear();
+    } else if (event.leftChannelActive != event.rightChannelActive && region.getNumChannels() > 1) {
+        const std::size_t heard = event.leftChannelActive ? 0 : 1;
+        for (std::size_t channel = 0; channel < region.getNumChannels(); ++channel)
+            if (channel != heard)
+                region.getSingleChannelBlock(channel).copyFrom(region.getSingleChannelBlock(heard));
     }
 
     // The span's edges, not the placement's. What the lane leaves audible is
@@ -131,7 +154,12 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // Volume and gain summed, panned the way the incumbent pans a clip: linear,
     // and hotter on one side rather than quieter on the other. Not a law with a
     // centre correction, because a bounce has to match what was heard.
-    const auto gain = juce::Decibels::decibelsToGain(clip.gainDb);
+    //
+    // The event's own trim sits under the clip's rather than replacing it, so
+    // one event of several can be levelled against the others without touching
+    // what the clip plays at. Summed in decibels, which is where they are both
+    // expressed and where adding them is what a listener means by it.
+    const auto gain = juce::Decibels::decibelsToGain(clip.gainDb + event.gainDb);
     const auto channels = region.getNumChannels();
 
     if (channels == 2) {

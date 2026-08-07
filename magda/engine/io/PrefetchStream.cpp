@@ -151,12 +151,19 @@ int PrefetchStream::read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> 
 
     destination.clear();
 
-    // Nothing in this request can play: it is past the last sample of the file,
-    // or before the first. Not an underrun, and not a seek either. A stream
-    // whose clip is still placed but whose material has run out has not gone
-    // anywhere, and moving the cursor for it would throw away a cue meant for
-    // wherever it goes next, which is exactly when cueing it is useful.
-    if (sourceStart >= length_ || sourceStart + numSamples <= 0)
+    // Nothing in this request can play: it is past the last sample of the
+    // reading. Not an underrun, and not a seek either. A stream whose clip is
+    // still placed but whose material has run out has not gone anywhere, and
+    // moving the cursor for it would throw away a cue meant for wherever it
+    // goes next, which is exactly when cueing it is useful.
+    //
+    // Before the first sample is the opposite case and is read rather than
+    // skipped. That silence belongs to a stream on its way into its own
+    // material: a reversed clip trimmed longer than its source begins with it
+    // (io/SourceReaders.hpp), and a stream that stood still through it would
+    // arrive at the material with its read-ahead pointed somewhere else, seek,
+    // and cost a block of silence at the one moment the clip has to be exact.
+    if (sourceStart >= length_)
         return 0;
 
     // Reading is what sounding means, and this is a read that could play

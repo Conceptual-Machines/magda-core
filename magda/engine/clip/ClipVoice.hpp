@@ -28,8 +28,17 @@
  * reader somewhere it was not pointed, which is a seek and costs a block of
  * silence on the far side (#2016).
  *
- * Not here: rate conversion, looping and reverse (#2036), stretch and pitch
- * (#2037), warp (#2038). A voice reads one file sample per output sample.
+ * Reverse, looping and rate conversion are not here either, and not because
+ * they are missing: they are underneath, in what the stream reads through
+ * (io/SourceReaders.hpp). Each of them is a question about which of a file's
+ * samples answer a position, so each is a reader wrapped around a reader, and a
+ * voice goes on consuming one sample of one forward stream per output sample at
+ * the device's rate whether the clip is reversed, tiled, resampled or none of
+ * them.
+ *
+ * Not here at all: stretch and pitch (#2037), warp (#2038). Those change how
+ * fast the reading is consumed rather than what it holds, which is why they
+ * belong above it and these belong below.
  */
 
 namespace magda::engine {

@@ -622,6 +622,83 @@ TEST_CASE("A clip provisioned ahead of the transport plays from its first sample
     CHECK(source.starvedVoices() == 0);
 }
 
+TEST_CASE("A reversed clip is cued where a reversed clip starts", "[engine][clip][pool]") {
+    // The same end to end shape over a mirrored reading. The point of it is
+    // that both sides work the mirrored anchor out through the same function
+    // (clip/EventPlacement.hpp): a reader pointed by one derivation and read by
+    // another would play from somewhere neither of them named, and it would
+    // sound like material rather than like a fault.
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    constexpr std::int64_t kAnchor = 1000;
+
+    // A ten second file, and a second and a half of it from the thousandth
+    // sample. What plays first is the sample at the far end of that.
+    auto clip = clipAt(1, 0.5, 2.0, kAnchor);
+    clip.events[0].sourceDurationSeconds = 10.0;
+    clip.events[0].reversed = true;
+
+    auto snapshot = snapshotOf({clip});
+
+    pool.setSnapshot(snapshot);
+    pool.setPosition(0.0);
+    pool.service();
+    REQUIRE(pool.streamCount() == 1);
+
+    ClipSnapshotFeed clips;
+    ClipAudioSource source(kTrack, clips, pool.feed());
+    source.prepare(context());
+    clips.publish(snapshot);
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+
+    source.render(blockFrom(0.0, false), juce::dsp::AudioBlock<float>(output));
+    while (reader.fillOnce()) {
+    }
+
+    source.render(blockFrom(0.5), juce::dsp::AudioBlock<float>(output));
+
+    const auto last = kAnchor + static_cast<std::int64_t>(std::llround(1.5 * kSampleRate)) - 1;
+
+    CHECK(output.getSample(0, 0) == Catch::Approx(static_cast<float>(last)).margin(1e-4));
+    CHECK(output.getSample(0, kBlockSize - 1) ==
+          Catch::Approx(static_cast<float>(last - kBlockSize + 1)).margin(1e-4));
+    CHECK(source.starvedVoices() == 0);
+}
+
+TEST_CASE("A reader is reopened when what its clip asks of the file changes",
+          "[engine][clip][pool]") {
+    // Reverse, looping and rate conversion are built into the reader rather
+    // than asked of it block by block (io/SourceReaders.hpp), so a clip that
+    // has been reversed since is reading a different file from the same path
+    // and the reader it had cannot answer for it.
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    pool.setSnapshot(snapshotOf({clipAt(1, 0.0, 4.0)}));
+    pool.setPosition(0.0);
+    pool.service();
+
+    REQUIRE(files.opens == 1);
+
+    auto reversed = clipAt(1, 0.0, 4.0);
+    reversed.events[0].reversed = true;
+    pool.setSnapshot(snapshotOf({reversed}));
+    pool.service();
+
+    CHECK(files.opens == 2);
+    CHECK(pool.streamCount() == 1);
+    CHECK(reader.streamCount() == 1);
+
+    SECTION("and left alone once it is the reading it was opened for") {
+        pool.service();
+        CHECK(files.opens == 2);
+    }
+}
+
 TEST_CASE("A pool with nothing published provisions nothing", "[engine][clip][pool]") {
     TestFiles files;
     PrefetchThread reader;

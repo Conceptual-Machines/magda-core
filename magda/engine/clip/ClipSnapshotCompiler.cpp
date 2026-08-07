@@ -191,6 +191,17 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
                         ", whose sample rate is unknown, so it plays nothing");
                     continue;
                 }
+                // Playing backwards is reading the file from its far end
+                // (io/SourceReaders.hpp), so an event that does it needs to
+                // know where that end is. Everything else is placed from the
+                // front and does not care how much is behind it.
+                if (event.reversed && !(source->second->durationSeconds > 0.0)) {
+                    snapshot.diagnostics.push_back(
+                        label + "event " + std::to_string(event.id) +
+                        " plays reversed and source " + std::to_string(event.sourceId) +
+                        " has no known length to turn about, so it plays nothing");
+                    continue;
+                }
 
                 AudioEventPlayback playback;
                 playback.eventId = event.id;

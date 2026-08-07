@@ -423,6 +423,23 @@ TEST_CASE("What will not sound says so, and what is merely covered does not", "[
         CHECK(snapshot.diagnostics.front().find("source table") != std::string::npos);
     }
 
+    SECTION("an event that plays backwards over a source of unknown length is reported") {
+        // Playing backwards reads the file from its far end, so where that end
+        // is has to be known. Forwards does not care what is behind it.
+        auto clip = makeAudioClip(1, 0.0, 8.0);
+        eventOf(clip).reversed = true;
+
+        const std::vector<ClipSourceInfo> unmeasured{
+            ClipSourceInfo{kSource, "/tmp/magda-fixtures/loop.wav", 48000.0, 0.0}};
+
+        const auto snapshot =
+            compileClipSnapshot({ClipLane{kTrack, {clip}}}, unmeasured, makeTempoMap());
+
+        CHECK(snapshot.tracks.empty());
+        REQUIRE(snapshot.diagnostics.size() == 1);
+        CHECK(snapshot.diagnostics.front().find("turn about") != std::string::npos);
+    }
+
     SECTION("an audio clip with no events is reported the same way") {
         auto clip = makeAudioClip(1, 0.0, 8.0);
         clip.audio().events.clear();
