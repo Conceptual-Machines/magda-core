@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "clip/ClipAudioSource.hpp"
+#include "clip/EventPlacement.hpp"
 #include "io/ClipPlacement.hpp"
 
 namespace magda::engine {
@@ -188,11 +189,23 @@ std::size_t ClipVoicePool::streamCount() const {
 }
 
 ClipVoicePool::Reader ClipVoicePool::open(const AudioEventPlayback& event, double cueSeconds) {
+    // What this event asks of its file, and where its first sample sits in the
+    // answer. Both from EventPlacement.hpp, which is also where the voice asks:
+    // a reversed event is read in a mirrored file's coordinates, and a reader
+    // pointed by one derivation and read by another would play a clip's
+    // material from somewhere neither of them named.
+    const auto how = sourceReadFor(event, context_.sampleRate);
+    const auto placement = placementFor(event, context_.sampleRate);
+
     auto file = files_.open(event.filePath);
     if (file == nullptr)
-        return Reader{nullptr, event.filePath, event.anchorSamples};
+        return Reader{nullptr, event.filePath, how, placement.sourceOffsetSamples};
 
-    auto stream = std::make_shared<PrefetchStream>(std::move(file), context_, settings_);
+    // Mirrored, tiled and converted before the prefetcher ever sees it, so what
+    // is prefetched is a plain forward file at the device's rate however the
+    // clip is set (io/SourceReaders.hpp).
+    auto stream =
+        std::make_shared<PrefetchStream>(readThrough(std::move(file), how), context_, settings_);
 
     // Pointed before anything asks, and before the reader is even told the
     // stream exists. This is the whole reason the pool runs ahead of the
@@ -201,12 +214,10 @@ ClipVoicePool::Reader ClipVoicePool::open(const AudioEventPlayback& event, doubl
     // seek, because a stream nobody has read from has nothing to invalidate and
     // no callback to wait for, and every read it does before the redirect
     // landed would be a read of the wrong part of the file.
-    const ClipPlacement placement{event.span.startSeconds, event.span.endSeconds,
-                                  event.anchorSamples};
     stream->startAt(sourceSampleAt(placement, cueSeconds, context_.sampleRate));
 
     reader_.add(*stream);
-    return Reader{std::move(stream), event.filePath, event.anchorSamples};
+    return Reader{std::move(stream), event.filePath, how, placement.sourceOffsetSamples};
 }
 
 void ClipVoicePool::service() {
@@ -290,8 +301,19 @@ void ClipVoicePool::service() {
                     // is checked rather than assumed: kept on the strength of
                     // its id alone, a reader would go on playing a file the
                     // clip no longer points at.
+                    //
+                    // The file is not the whole of what it was opened for. A
+                    // clip that has been reversed, looped or relinked onto a
+                    // source at another rate reads a different file from the
+                    // same path (io/SourceReaders.hpp), and that is built into
+                    // the reader rather than asked of it per block, so the
+                    // reader has to be built again.
+                    const auto how = sourceReadFor(event, context_.sampleRate);
+                    const auto placement = placementFor(event, context_.sampleRate);
+
                     if (const auto found = streams_.find(key);
-                        found != streams_.end() && found->second.path == event.filePath) {
+                        found != streams_.end() && found->second.path == event.filePath &&
+                        found->second.read == how) {
                         auto reuse = found->second;
 
                         // The milder version: the same file, read from
@@ -300,15 +322,12 @@ void ClipVoicePool::service() {
                         // already inside is left alone, because a reader that
                         // is playing cannot be pointed elsewhere and the next
                         // read corrects it anyway, at the cost of a seek.
-                        if (reuse.anchorSamples != event.anchorSamples) {
-                            if (reuse.stream != nullptr && !candidate.sounding) {
-                                const ClipPlacement placement{event.span.startSeconds,
-                                                              event.span.endSeconds,
-                                                              event.anchorSamples};
+                        if (reuse.anchorSamples != placement.sourceOffsetSamples) {
+                            if (reuse.stream != nullptr && !candidate.sounding)
                                 reuse.stream->seek(sourceSampleAt(
                                     placement, event.span.startSeconds, context_.sampleRate));
-                            }
-                            reuse.anchorSamples = event.anchorSamples;
+
+                            reuse.anchorSamples = placement.sourceOffsetSamples;
                         }
 
                         if (reuse.stream == nullptr)
