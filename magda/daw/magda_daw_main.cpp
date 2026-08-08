@@ -13,10 +13,13 @@
 #include "../../magda/agents/llm_client_factory.hpp"
 #include "../../magda/agents/llm_presets.hpp"
 #include "api/magda_api_live.hpp"
+#include "api/osc_command_sink_live.hpp"
 #include "api/remote_api_host.hpp"
 #include "api/remote_audit.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "audio/controllers/ControllerParamWriter.hpp"
+#include "audio/osc/OscService.hpp"
 #include "core/AppPaths.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
@@ -91,6 +94,10 @@ class MagdaDAWApplication : public JUCEApplication {
     // Remote API (#1856): dispatcher, model bridge and WebSocket transport.
     // Owned here so it is torn down before the managers its bridge listens to.
     std::unique_ptr<magda::remote::RemoteApiHost> remoteApi_;
+    // OSC control surfaces (#1757): the UDP listener and the routing behind it.
+    // Owned here for the same reason as the remote API — it holds a socket
+    // whose receive thread posts work against the model.
+    std::unique_ptr<magda::osc::OscService> oscService_;
     // Latches true once the deferred startup auto-load has fired. The
     // engine's onMidiDevicesReady callback runs on every device-list
     // change, but we only want to auto-load the active script once.
@@ -363,6 +370,21 @@ class MagdaDAWApplication : public JUCEApplication {
                                      magda::remote::redactedFileName(remoteApi_->tokenFile()));
         }
 
+        // 4c. OSC control surfaces (#1757). Also off unless configuration says
+        // otherwise. Needs the AudioBridge for the parameter writer, which is
+        // what makes an OSC fader land exactly where a MIDI one does — so it is
+        // built here rather than earlier, once the engine has one.
+        if (auto* audioBridge = daw_engine_->getAudioBridge()) {
+            auto sink = std::make_unique<magda::OscCommandSinkLive>(
+                daw_engine_->getMagdaApi(),
+                std::make_unique<magda::DefaultControllerParamWriter>(*audioBridge));
+            oscService_ = std::make_unique<magda::osc::OscService>(
+                std::make_unique<magda::osc::OscRouter>(std::move(sink)));
+            if (oscService_->applyConfig())
+                juce::Logger::writeToLog("OSC listening on " + oscService_->boundAddress() + ":" +
+                                         juce::String(oscService_->boundPort()));
+        }
+
         // 5. Dismiss splash screen
         splashScreen_.reset();
 
@@ -485,6 +507,12 @@ class MagdaDAWApplication : public JUCEApplication {
         // bridge is attached to managers that are about to shut down.
         DBG("[0] Remote API shutdown...");
         remoteApi_.reset();
+
+        // Same argument for OSC: its receive thread is posting parameter
+        // writes at whatever rate a surface is sending, and everything those
+        // land on is about to be torn down.
+        DBG("[0b] OSC shutdown...");
+        oscService_.reset();
 
         // Stop timers first to prevent callbacks during destruction
         DBG("[1] ModulatorEngine shutdown...");
