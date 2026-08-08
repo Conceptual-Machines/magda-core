@@ -20,6 +20,8 @@
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -136,6 +138,48 @@ Outcome runOverWebSocket(httplib::ws::WebSocketClient& client, const Vector& tes
     REQUIRE(juce::JSON::parse(juce::String(reply), parsed).wasOk());
 
     Outcome outcome;
+    outcome.allowed = parsed["error"].isVoid();
+    if (!outcome.allowed)
+        outcome.errorCode = parsed["error"]["data"]["code"].toString();
+    return outcome;
+}
+
+/// The same round trip, with no Catch2 macros in it.
+///
+/// `runOverWebSocket` asserts as it goes, which is right for a single-threaded
+/// test and wrong for the load one: Catch2's assertion macros are not
+/// thread-safe, and four workers driving them concurrently is undefined
+/// behaviour that happens to look like a passing test. This reports failure in
+/// its return value instead, and the load test asserts on the totals from the
+/// main thread once the workers are joined.
+struct RawOutcome {
+    /// False when the exchange itself failed — nothing was sent, nothing came
+    /// back, or what came back was not JSON.
+    bool answered = false;
+    bool allowed = false;
+    juce::String errorCode;
+};
+
+RawOutcome sendWrite(httplib::ws::WebSocketClient& client) {
+    auto* request = new juce::DynamicObject();
+    request->setProperty("jsonrpc", "2.0");
+    request->setProperty("id", 1);
+    request->setProperty("method", "project.setTempo");
+    request->setProperty("params", object({{"tempo", 130.0}}));
+
+    RawOutcome outcome;
+    if (!client.send(juce::JSON::toString(juce::var(request), true).toStdString()))
+        return outcome;
+
+    std::string reply;
+    if (client.read(reply) != httplib::ws::ReadResult::Text)
+        return outcome;
+
+    juce::var parsed;
+    if (!juce::JSON::parse(juce::String(reply), parsed).wasOk())
+        return outcome;
+
+    outcome.answered = true;
     outcome.allowed = parsed["error"].isVoid();
     if (!outcome.allowed)
         outcome.errorCode = parsed["error"]["data"]["code"].toString();
@@ -602,14 +646,18 @@ TEST_CASE("Permission decisions hold up under concurrent load",
     service.setAuditLog(&log);
 
     constexpr int kClients = 4;
-    constexpr int kRequestsEach = 40;
+    constexpr int kGrantedRound = 15;
+    constexpr int kRevokedRound = 15;
+    constexpr int kRacingRound = 10;
+    constexpr int kRequestsEach = kGrantedRound + kRevokedRound + kRacingRound;
+    constexpr int kTotal = kClients * kRequestsEach;
 
     RemoteWebSocketServer::Options options;
     options.bearerToken = kToken;
     options.clients = &registry;
     options.audit = &log;
     options.maxConnections = kClients + 2;
-    // Above what the loop below can generate, so a refusal here would be the
+    // Above what the rounds below can generate, so a refusal here would be the
     // rate limiter rather than the permission model — a different test.
     options.maxRequestsPerSecond = 10'000.0;
     RemoteWebSocketServer server(service, options);
@@ -620,88 +668,159 @@ TEST_CASE("Permission decisions hold up under concurrent load",
     std::atomic<int> allowed{0};
     std::atomic<int> denied{0};
     std::atomic<int> unexpected{0};
-    /// Requests finished, of any outcome. What the grant flipping below is
-    /// paced against, so the test does not depend on how fast the machine is.
-    std::atomic<int> completed{0};
 
-    std::vector<std::thread> workers;
-    workers.reserve(kClients);
+    /**
+     * @brief The rounds, and the barrier between them.
+     *
+     * Polling a progress counter is not enough, and the earlier version of this
+     * test proved it twice: a sleep-paced one flaked on CI, and the counter-paced
+     * replacement was still wrong, because "a quarter of the work has finished"
+     * does not mean the main thread *resumes* at that boundary — it can wake with
+     * the workers nearly done and have almost nothing left to deny.
+     *
+     * So the grant only ever moves while every worker is parked here. A request
+     * therefore belongs to the round it was issued in, by construction, and the
+     * bounds below are arithmetic rather than a race the test usually wins.
+     */
+    struct Rounds {
+        std::mutex mutex;
+        std::condition_variable cv;
+        int open = 0;     ///< The highest round workers may run.
+        int waiting = 0;  ///< Workers parked at the current boundary.
+        bool aborted = false;
+
+        /// Worker: park until `round` opens. False means give up — the main
+        /// thread has abandoned the test and is trying to join.
+        bool await(int round) {
+            std::unique_lock<std::mutex> lock(mutex);
+            ++waiting;
+            cv.notify_all();
+            cv.wait(lock, [&] { return aborted || open >= round; });
+            return !aborted;
+        }
+
+        /// Main: block until every worker is parked, so nothing is mid-request.
+        bool allParked(int count) {
+            std::unique_lock<std::mutex> lock(mutex);
+            return cv.wait_for(lock, std::chrono::seconds(60),
+                               [&] { return aborted || waiting >= count; });
+        }
+
+        void openRound(int round) {
+            {
+                const std::lock_guard<std::mutex> lock(mutex);
+                open = round;
+                waiting = 0;
+            }
+            cv.notify_all();
+        }
+
+        void abort() {
+            {
+                const std::lock_guard<std::mutex> lock(mutex);
+                aborted = true;
+            }
+            cv.notify_all();
+        }
+    } rounds;
+
+    /**
+     * @brief Owns the workers, and joins them however this test leaves.
+     *
+     * A failed `REQUIRE` throws, and unwinding past a `std::thread` that is
+     * still joinable calls `std::terminate` — turning a legible assertion
+     * failure into a process abort with no output. Aborting first is what makes
+     * the join safe: workers parked at a barrier that will now never open would
+     * otherwise deadlock the join they are being joined by.
+     */
+    struct WorkerPool {
+        Rounds& rounds;
+        std::vector<std::thread> threads;
+
+        ~WorkerPool() {
+            rounds.abort();
+            for (auto& thread : threads)
+                if (thread.joinable())
+                    thread.join();
+        }
+    } pool{rounds, {}};
+
+    pool.threads.reserve(kClients);
     for (int worker = 0; worker < kClients; ++worker) {
-        workers.emplace_back([&] {
+        pool.threads.emplace_back([&] {
+            // No Catch2 macros on this thread. `REQUIRE` is not thread-safe, so
+            // the worker records into atomics and every assertion is made on the
+            // main thread once the workers have been joined.
             httplib::ws::WebSocketClient client(
                 wsEndpoint(server), {{"Authorization", std::string("Bearer ") + kToken}});
-            if (!client.connect()) {
+            const auto connected = client.connect();
+            if (!connected)
                 unexpected.fetch_add(1);
-                return;
-            }
 
-            const Vector write{"write", "project.setTempo", object({{"tempo", 130.0}}),
-                               ScopeSet{Scope::Read, Scope::Edit}, true};
-            for (int index = 0; index < kRequestsEach; ++index) {
-                const auto outcome = runOverWebSocket(client, write);
-                if (outcome.allowed)
-                    allowed.fetch_add(1);
-                else if (outcome.errorCode == "permission_denied")
-                    denied.fetch_add(1);
-                else
-                    // Anything else — a timeout, a conflict, a dropped reply —
-                    // means the load itself broke something, which is exactly
-                    // what this is watching for.
-                    unexpected.fetch_add(1);
-                completed.fetch_add(1);
-            }
+            const auto round = [&](int count) {
+                for (int index = 0; index < count && connected; ++index) {
+                    const auto outcome = sendWrite(client);
+                    if (!outcome.answered)
+                        unexpected.fetch_add(1);
+                    else if (outcome.allowed)
+                        allowed.fetch_add(1);
+                    else if (outcome.errorCode == "permission_denied")
+                        denied.fetch_add(1);
+                    else
+                        // A timeout, a conflict, a dropped reply — the load
+                        // itself broke something, which is what this watches for.
+                        unexpected.fetch_add(1);
+                }
+            };
+
+            round(kGrantedRound);
+            if (!rounds.await(1))
+                return;
+            round(kRevokedRound);
+            if (!rounds.await(2))
+                return;
+            round(kRacingRound);
+            // Parking here too, so the main thread knows the racing round is
+            // over and can stop flipping before it starts asserting.
+            rounds.await(3);
         });
     }
 
-    // Flip the grant underneath them, anchored on their observed progress rather
-    // than on a sleep.
-    //
-    // The first version of this slept between flips and then asserted that both
-    // outcomes had occurred — which is a coincidence, not a property. On a
-    // machine where the requests outran the flipping, every one of them saw the
-    // same grant and the assertion failed with nothing wrong. Waiting for a
-    // quarter of the work to finish before revoking makes both halves
-    // guaranteed: those requests were allowed, and the three quarters that start
-    // afterwards cannot have been.
-    const auto total = kClients * kRequestsEach;
-    const auto waitForProgress = [&](int target) {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-        while (completed.load() < target && std::chrono::steady_clock::now() < deadline)
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        return completed.load() >= target;
-    };
-
-    REQUIRE(waitForProgress(total / 4));
+    // Round 1 ran entirely with the grant in place. Every worker is now parked,
+    // so nothing is in flight and the revoke below cannot be read by a request
+    // that already started.
+    REQUIRE(rounds.allParked(kClients));
     registry.setScopes(kClient, defaultClientScopes());
+    rounds.openRound(1);
 
-    // Hold it revoked until another quarter has gone through, so those requests
-    // are provably denied rather than probably denied.
-    REQUIRE(waitForProgress(total / 2));
+    // Round 2 ran entirely without it.
+    REQUIRE(rounds.allParked(kClients));
+    rounds.openRound(2);
 
-    // Only then start moving it, so the concurrent read-vs-write race on the
-    // grant is exercised too rather than only the two steady states. Bounded by
-    // the same deadline: a stalled worker should fail this test, not hang it.
-    const auto flipUntil = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    while (completed.load() < total && std::chrono::steady_clock::now() < flipUntil) {
+    // Round 3 is the actual concurrency: the grant moves continuously while the
+    // requests run. It contributes to neither bound below — its whole job is to
+    // exercise the per-request lookup racing a writer, and to fail loudly if
+    // that produces anything other than one of the two valid answers.
+    const auto racingDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (allowed.load() + denied.load() + unexpected.load() < kTotal &&
+           std::chrono::steady_clock::now() < racingDeadline) {
         registry.setScopes(kClient, ScopeSet{Scope::Read, Scope::Edit});
         registry.setScopes(kClient, defaultClientScopes());
         // Yielding rather than spinning flat out: on a two-core runner this
         // thread would otherwise compete with the workers it is waiting for.
-        // The loop's exit is progress-based, so this cannot affect the outcome.
         std::this_thread::yield();
     }
+    rounds.openRound(3);
 
-    for (auto& worker : workers)
-        worker.join();
+    for (auto& thread : pool.threads)
+        thread.join();
 
     REQUIRE(unexpected.load() == 0);
-    REQUIRE(allowed.load() + denied.load() == total);
-    // Both outcomes provably occurred rather than probably: the first quarter
-    // ran with the grant in place and the second with it withdrawn, and each
-    // was waited for rather than slept through. The margin absorbs the handful
-    // of requests already in flight when a flip lands.
-    REQUIRE(allowed.load() >= (total / 4) - kClients);
-    REQUIRE(denied.load() >= (total / 4) - kClients);
+    REQUIRE(allowed.load() + denied.load() == kTotal);
+    // Arithmetic, not a race: round 1 is all-allowed and round 2 all-denied
+    // because the grant only moved while every worker was parked between them.
+    REQUIRE(allowed.load() >= kClients * kGrantedRound);
+    REQUIRE(denied.load() >= kClients * kRevokedRound);
 
     // Every one of them is in the record, and none of them carries a payload.
     const auto entries = log.forClient(kClient);
