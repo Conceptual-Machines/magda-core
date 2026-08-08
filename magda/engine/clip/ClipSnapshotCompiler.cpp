@@ -162,6 +162,13 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
             audio.fadeInSeconds = fadeIn;
             audio.fadeOutSeconds = fadeOut;
 
+            // Both faces of the same two lengths, converted here because the
+            // audio thread has no tempo map to convert them with. Off the ends
+            // of the audible span rather than of the placement, because that is
+            // what a fade shapes (ClipVoice.hpp).
+            audio.fadeInBeats = tempoMap.timeToBeat(span.startSeconds + fadeIn) - span.startBeat;
+            audio.fadeOutBeats = span.endBeat - tempoMap.timeToBeat(span.endSeconds - fadeOut);
+
             // The clip's edges are the primary event's edges, so they carry its
             // curves. A curve that is not one is reported once, below, where
             // every event is checked rather than only this one.
@@ -230,6 +237,17 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
                 playback.autoPitchMode = event.autoPitchMode;
                 playback.pitchChange = event.pitchChange;
                 playback.transpose = event.transpose;
+
+                // Half of what auto pitch means is an offset from the project's
+                // pitch sequence, and there is no pitch track in the engine yet
+                // (#1891). The clip plays, at its own transpose, which is the
+                // other half; saying so here is the difference between a known
+                // gap and a clip that is quietly a few semitones out.
+                if (event.autoPitch)
+                    snapshot.diagnostics.push_back(
+                        label + "event " + std::to_string(event.id) +
+                        " follows the pitch track, which the engine does not have yet, so it "
+                        "plays its own transpose alone");
 
                 playback.reversed = event.reversed;
                 playback.leftChannelActive = event.leftChannelActive;

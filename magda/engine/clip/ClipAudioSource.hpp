@@ -106,6 +106,11 @@ class ClipAudioSource final : public EngineAudioSource {
         const AudioClipPlayback* clip = nullptr;
         const AudioEventPlayback* event = nullptr;
         PrefetchStream* stream = nullptr;
+
+        /// What plays it at a speed that is not its file's, and what that one
+        /// was cued with. Null and zero for a clip at its file's own speed.
+        ClipStretcher* stretcher = nullptr;
+        int preRoll = 0;
     };
 
     /// The voice already playing this entry, or a free one, or null when every
@@ -119,8 +124,9 @@ class ClipAudioSource final : public EngineAudioSource {
     std::array<ClipVoice, kMaxVoicesPerTrack> voices_;
 
     /// Working space one voice at a time renders into before being summed in.
-    /// One is enough: voices are rendered one after another, and sized for the
-    /// largest block the plan was prepared for.
+    /// One is enough: voices are rendered one after another. Sized for the
+    /// largest block the plan was prepared for, plus the most reading a block
+    /// that long can consume (stretchScratchSamples).
     juce::AudioBuffer<float> scratch_;
 
     std::atomic<int> starved_{0};

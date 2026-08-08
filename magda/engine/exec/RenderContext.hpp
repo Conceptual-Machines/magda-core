@@ -140,6 +140,28 @@ struct BlockInfo {
         const auto sample = static_cast<int>(std::lround(position * numSamples));
         return std::clamp(sample, 0, numSamples);
     }
+
+    /**
+     * @brief The beat face of a moment inside this block.
+     *
+     * The two faces are two views of one stretch of timeline, so a moment given
+     * in one has an answer in the other, and this is the conversion that does
+     * not need a tempo map: the ends are known in both, and a block is short
+     * enough that the curve between them is a straight line to well under a
+     * sample.
+     *
+     * What asks is a clip whose material is consumed against beats rather than
+     * against seconds, which is what auto tempo is (clip/EventPlacement.hpp).
+     * The window such a clip plays over is worked out in seconds, because that
+     * is what spans and fades are in, and then has to be asked about in beats.
+     */
+    double beatAtTime(double seconds) const {
+        if (endSeconds <= startSeconds)
+            return startBeat;
+
+        const auto position = (seconds - startSeconds) / (endSeconds - startSeconds);
+        return startBeat + position * (endBeat - startBeat);
+    }
 };
 
 }  // namespace magda::engine

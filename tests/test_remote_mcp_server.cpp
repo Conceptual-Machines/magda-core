@@ -273,6 +273,29 @@ TEST_CASE("A request without a valid token is refused", "[remote][mcp-http][auth
     REQUIRE(sameLength->status == 401);
 }
 
+TEST_CASE("A refusal reaches a client that sent a body and asked for the connection to close",
+          "[remote][mcp-http][auth]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    RemoteMcpServer server(service, testOptions());
+    REQUIRE(server.start());
+
+    // Refusing a request before its body has been read leaves that body unread
+    // in the socket, and closing on unread data sends RST rather than FIN —
+    // which discards the refusal the client had already been sent. A one-shot
+    // client, which is what `httplib::Client` is by default, asks for the close
+    // that triggers it. Any single attempt usually wins the race, so this
+    // asserts over enough of them to catch a server that refuses too early.
+    for (int attempt = 0; attempt < 50; ++attempt) {
+        httplib::Client client(base(server));
+        auto refused =
+            client.Post("/mcp", {}, body(1, "tools/list", modernParams()), "application/json");
+        REQUIRE(refused);
+        REQUIRE(refused->status == 401);
+    }
+}
+
 TEST_CASE("Origin is checked only when the client sends one", "[remote][mcp-http][auth]") {
     MessageThreadRelaxation relax;
     MockMagdaApi api;
@@ -886,11 +909,23 @@ TEST_CASE("A legacy client initializes, subscribes, and is served on its GET str
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     REQUIRE(hub.clientCount() == 1);
 
-    api.transport_.playing = true;
-    service.noteModelChanged(Topic::Transport);
-    service.changes().flush();
+    // A client is in the hub from the moment its stream attaches, which is a
+    // moment before the topics it asked for are registered against it, and
+    // counting clients cannot see that second step. Announcing once can
+    // therefore land in the gap — and the hub publishes against a baseline it
+    // updates whether or not anybody was listening, so that announcement is not
+    // merely early, it is spent: re-announcing the same state is no longer a
+    // change and says nothing. Move the state each round instead, so whichever
+    // round finds the subscription live carries a difference the hub forwards.
+    bool delivered = false;
+    for (int round = 0; round < 100 && !delivered; ++round) {
+        api.transport_.playing = (round % 2) == 0;
+        service.noteModelChanged(Topic::Transport);
+        service.changes().flush();
+        delivered = stream.waitFor(1, std::chrono::milliseconds(50));
+    }
+    REQUIRE(delivered);
 
-    REQUIRE(stream.waitFor(1));
     const auto event = stream.events().front();
     REQUIRE(event["method"].toString() == "notifications/resources/updated");
     REQUIRE(event["params"]["uri"].toString() == "magda://transport");

@@ -385,20 +385,34 @@ struct RemoteMcpServer::Impl {
     }
 
     /**
-     * @brief Everything that can refuse a client before a handler runs.
+     * @brief Everything that can refuse a client before a handler acts.
+     *
+     * Returns true when the request may proceed; otherwise `response` already
+     * carries the refusal.
      *
      * Validating `Origin` is a MUST in the MCP transport specification, and the
      * reason is DNS rebinding: without it a page the user merely visited could
      * reach this listener from the browser they are already running.
+     *
+     * Deliberately called from each route rather than installed as
+     * cpp-httplib's pre-routing handler, which is the obvious place for it.
+     * Pre-routing runs before the request body is read, so refusing there
+     * leaves an unread POST body in the socket; when the client asked for
+     * `Connection: close` — as a one-shot client does — cpp-httplib skips its
+     * drain and closes anyway, and closing a socket with unread data sends RST
+     * rather than FIN. The refusal is already in the client's receive buffer at
+     * that point, and RST discards it: the client sees a reset connection
+     * instead of the 401 or 403 it was sent, on a race it loses often enough to
+     * matter. Refusing from the route runs after cpp-httplib has consumed the
+     * body, so the close is clean and the status always arrives.
      */
-    httplib::Server::HandlerResponse authorise(const httplib::Request& request,
-                                               httplib::Response& response) {
+    bool authorise(const httplib::Request& request, httplib::Response& response) {
         if (!isAuthorised(juce::String(request.get_header_value("Authorization")),
                           options.bearerToken)) {
             // The reason, never the credential.
             auditRefusal("invalid or missing bearer token");
             response.status = httplib::StatusCode::Unauthorized_401;
-            return httplib::Server::HandlerResponse::Handled;
+            return false;
         }
 
         if (!isOriginAllowed(request.has_header("Origin"),
@@ -409,10 +423,10 @@ struct RemoteMcpServer::Impl {
             // more use to a developer than a bare 403.
             writeJson(response, httplib::StatusCode::Forbidden_403,
                       jsonRpcError({}, McpError{MCP_INVALID_REQUEST, "Origin not allowed"}));
-            return httplib::Server::HandlerResponse::Handled;
+            return false;
         }
 
-        return httplib::Server::HandlerResponse::Unhandled;
+        return true;
     }
 
     // -----------------------------------------------------------------------
@@ -1371,11 +1385,6 @@ bool RemoteMcpServer::start() {
         return false;
     }
 
-    impl_->server.set_pre_routing_handler(
-        [this](const httplib::Request& request, httplib::Response& response) {
-            return impl_->authorise(request, response);
-        });
-
     impl_->server.set_payload_max_length(impl_->options.maxBodyBytes);
 
     // Sized rather than defaulted. A request handler blocks its pool thread
@@ -1389,15 +1398,18 @@ bool RemoteMcpServer::start() {
 
     impl_->server.Post(kEndpoint,
                        [this](const httplib::Request& request, httplib::Response& response) {
-                           impl_->handlePost(request, response);
+                           if (impl_->authorise(request, response))
+                               impl_->handlePost(request, response);
                        });
     impl_->server.Get(kEndpoint,
                       [this](const httplib::Request& request, httplib::Response& response) {
-                          impl_->handleGet(request, response);
+                          if (impl_->authorise(request, response))
+                              impl_->handleGet(request, response);
                       });
     impl_->server.Delete(kEndpoint,
                          [this](const httplib::Request& request, httplib::Response& response) {
-                             impl_->handleDelete(request, response);
+                             if (impl_->authorise(request, response))
+                                 impl_->handleDelete(request, response);
                          });
 
     // Registered before the listener opens and cleared in stop(), so the

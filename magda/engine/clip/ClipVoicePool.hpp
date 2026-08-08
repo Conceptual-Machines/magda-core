@@ -12,6 +12,7 @@
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipSnapshot.hpp"
 #include "clip/ClipStreamFeed.hpp"
+#include "clip/ClipStretcher.hpp"
 #include "core/ClipTypes.hpp"
 #include "core/TypeIds.hpp"
 #include "exec/RenderContext.hpp"
@@ -296,20 +297,40 @@ class ClipVoicePool {
         std::string path;
         SourceRead read;
 
-        /// The sample of that reading the event starts on, which is where the
-        /// stream is pointed. Derived rather than the event's own anchor: a
-        /// mirrored read counts from the other end (clip/EventPlacement.hpp).
-        std::int64_t anchorSamples = 0;
+        /// The sample of that reading the stream is pointed at: where the event
+        /// starts, less whatever its stretcher wants in front of it. Derived
+        /// rather than the event's own anchor, because a mirrored read counts
+        /// from the other end and a stretched one starts behind itself
+        /// (clip/EventPlacement.hpp, clip/ClipStretcher.hpp).
+        std::int64_t cueSamples = 0;
+
+        /// What plays it at a speed that is not its file's, and how far in front
+        /// of the event that one wants to be handed. Null and zero for a clip
+        /// that asks for neither, which is every clip in slice 3.
+        ///
+        /// Kept across an edit that leaves the setup alone, and replaced without
+        /// touching the stream when only the setup changed: a pitch change
+        /// should not close a file and pay a seek for it.
+        std::shared_ptr<ClipStretcher> stretcher;
+        StretchSetup setup;
+        int preRoll = 0;
 
         bool operator==(const Reader& other) const {
             return stream == other.stream && path == other.path && read == other.read &&
-                   anchorSamples == other.anchorSamples;
+                   cueSamples == other.cueSamples && stretcher == other.stretcher &&
+                   setup == other.setup && preRoll == other.preRoll;
         }
     };
 
     using Streams = std::map<Key, Reader>;
 
-    Reader open(const AudioEventPlayback& event, double cueSeconds);
+    Reader open(const AudioClipPlayback& clip, const AudioEventPlayback& event, double cueSeconds);
+
+    /// Where a stream playing @p event is pointed to pick it up at @p seconds:
+    /// the reading position of that moment, forward by whatever its stretcher
+    /// consumes ahead of itself and back by whatever it wants in front of it.
+    std::int64_t cueFor(const AudioClipPlayback& clip, const AudioEventPlayback& event,
+                        double seconds, const Reader& reader) const;
 
     AudioFileReaderFactory& files_;
     PrefetchThread& reader_;

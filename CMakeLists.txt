@@ -187,6 +187,11 @@ add_subdirectory(third_party/JUCE)
 # Tracktion Engine for DAW functionality (using local submodule)
 add_subdirectory(third_party/tracktion_engine)
 
+# SoundTouch — time stretching for the native engine (#1882, #2037). Vendored here
+# rather than borrowed from the Tracktion fork, which the engine may not include.
+# Signalsmith Stretch sits beside it and is header-only, so it needs no target.
+add_subdirectory(third_party/soundtouch)
+
 # LLM API client module (juce_core only)
 juce_add_module(${CMAKE_CURRENT_SOURCE_DIR}/third_party/juce-llm/juce_llm)
 

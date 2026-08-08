@@ -48,17 +48,6 @@ bool insideMaterial(const AudioFileReader& file, std::int64_t startSample, int n
     return startSample + numSamples > 0 && startSample < file.lengthInSamples();
 }
 
-/// Cubic Lagrange through four samples, @p t of the way from the second to the
-/// third.
-float interpolate(float first, float second, float third, float fourth, double t) {
-    const auto a = -t * (t - 1.0) * (t - 2.0) / 6.0;
-    const auto b = (t + 1.0) * (t - 1.0) * (t - 2.0) / 2.0;
-    const auto c = -(t + 1.0) * t * (t - 2.0) / 2.0;
-    const auto d = (t + 1.0) * t * (t - 1.0) / 6.0;
-
-    return static_cast<float>(a * first + b * second + c * third + d * fourth);
-}
-
 }  // namespace
 
 std::unique_ptr<AudioFileReader> readThrough(std::unique_ptr<AudioFileReader> file,
@@ -281,8 +270,8 @@ int ResamplingAudioFileReader::read(juce::AudioBuffer<float>& destination, int d
                 static_cast<double>(startSample + sample) * ratio_ - static_cast<double>(first);
             const auto index = static_cast<int>(std::floor(position));
 
-            out[sample] = interpolate(source[index - 1], source[index], source[index + 1],
-                                      source[index + 2], position - index);
+            out[sample] = cubicLagrange(source[index - 1], source[index], source[index + 1],
+                                        source[index + 2], position - index);
         }
     }
 
