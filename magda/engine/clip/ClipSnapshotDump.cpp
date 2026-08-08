@@ -65,8 +65,13 @@ void dumpEvent(std::ostringstream& out, const AudioEventPlayback& event) {
 
     if (event.autoTempo)
         out << " auto-tempo";
+    // Off the flag, because a warped event with nothing left in its map is
+    // still warped and still plays on the beat face. Points rather than
+    // markers: what the clip plays is the compiled map, and a dump echoing the
+    // model's count would hide exactly the case the compile diagnoses.
     if (event.warpEnabled)
-        out << " warp=" << event.warpMarkers.size();
+        out << " warp=" << event.warp.points.size()
+            << " warp-max=" << fixed(event.warp.maxSourcePerWarp(), 3);
     if (event.analogPitch)
         out << " analog-pitch";
     if (event.autoPitch)
