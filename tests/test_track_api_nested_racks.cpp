@@ -227,8 +227,23 @@ TEST_CASE("An unresolvable path yields nothing rather than the wrong node",
     REQUIRE(api.tracks().getRackByPath(top.chainPath()) ==
             api.tracks().getRackByPath(top.rackPath()));
 
+    // A path whose *middle* step is broken resolves to nothing, rather than to
+    // something it merely walked through on the way. The live suite is what
+    // pins this against the real resolver — this mock always failed closed, and
+    // `TrackManager` did not, so the agreement here is the thing that used to be
+    // a lie. See `test_track_api_nested_racks_live_juce.cpp`.
+    REQUIRE(api.tracks().getRackByPath(top.rackPath().withChain(9999).withRack(9998)) == nullptr);
+
     // Writing through an unresolvable path changes nothing rather than
     // asserting or landing somewhere else.
     api.tracks().setChainName(ChainNodePath::chain(top.track, top.rack, 9999), "Nowhere");
     REQUIRE(api.tracks().getChainByPath(top.chainPath())->name != "Nowhere");
+
+    const auto* outerBefore = api.tracks().getRackByPath(top.rackPath());
+    REQUIRE(outerBefore != nullptr);
+    const auto chainsBefore = outerBefore->chains.size();
+    api.tracks().setRackVolume(top.rackPath().withChain(9999).withRack(9998), -24.0f);
+    api.tracks().addChainToRack(top.rackPath().withChain(9999).withRack(9998), "Nowhere");
+    REQUIRE(api.tracks().getRackByPath(top.rackPath())->volume != -24.0f);
+    REQUIRE(api.tracks().getRackByPath(top.rackPath())->chains.size() == chainsBefore);
 }

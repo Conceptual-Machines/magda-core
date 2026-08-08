@@ -154,6 +154,42 @@ class TrackApiNestedRacksLiveTest final : public juce::UnitTest {
             // tightening it would reach well beyond this facade. Tracked as #2057.
             expect(api.getRackByPath(chainPath) == api.getRackByPath(rackPath));
 
+            // A path whose *middle* step is broken must not resolve to
+            // something it merely passed through. This is the case the mock
+            // could not catch: it failed closed at the first miss while the
+            // real resolver carried the last rack it had seen forward, so a
+            // write through `outer > missingChain > missingRack` landed on
+            // `outer` — a mutation of a node the caller never named.
+            const auto brokenMiddle = rackPath.withChain(9999).withRack(9998);
+            expect(api.getRackByPath(brokenMiddle) == nullptr);
+
+            // And the nastier shape: the trailing step names a rack that really
+            // does exist, just somewhere else entirely. The missed chain step
+            // used to leave the traversal at track level, so this resolved to
+            // that unrelated top-level rack.
+            const auto secondTopLevel = api.addRackToTrack(track, "Elsewhere");
+            const auto brokenToElsewhere = rackPath.withChain(9999).withRack(secondTopLevel);
+            expect(api.getRackByPath(brokenToElsewhere) == nullptr);
+
+            // The writes that resolve through it are therefore no-ops rather
+            // than misdirected. `setRackVolume` is the clearest: it is new
+            // facade surface in this change, so the blast radius was new too.
+            const auto* outerBefore = api.getRackByPath(rackPath);
+            expect(outerBefore != nullptr);
+            const auto volumeBefore = outerBefore->volume;
+            const auto bypassedBefore = outerBefore->bypassed;
+
+            api.setRackVolume(brokenMiddle, -24.0f);
+            api.setRackBypassedByPath(brokenMiddle, true);
+            const auto chainsBefore = api.getRackByPath(rackPath)->chains.size();
+            api.addChainToRack(brokenMiddle, "Should not appear");
+
+            const auto* outerAfter = api.getRackByPath(rackPath);
+            expect(outerAfter != nullptr);
+            expectWithinAbsoluteError(outerAfter->volume, volumeBefore, 0.001f);
+            expect(outerAfter->bypassed == bypassedBefore);
+            expect(outerAfter->chains.size() == chainsBefore);
+
             api.setChainName(ChainNodePath::chain(track, rackId, 9999), "Nowhere");
             expect(api.getChainByPath(chainPath)->name != "Nowhere");
         }

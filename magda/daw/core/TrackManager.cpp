@@ -2431,42 +2431,55 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
     RackInfo* currentRack = nullptr;
     ChainInfo* currentChain = nullptr;
 
+    // A step that resolves to nothing ends the walk. This used to leave the
+    // previous `currentRack` in place and carry on, which made a broken path
+    // resolve to whatever it had passed through — so `outer > missingChain >
+    // missingRack` answered with `outer`. Worse, a missed Chain step left
+    // `currentChain` null, so the *next* Rack step searched the track's
+    // top-level list again and `outer > missingChain > someOtherTopLevelRack`
+    // answered with that unrelated rack.
+    //
+    // Every path-based rack mutator resolves through here, so that was a write
+    // landing silently on a node the caller never named. Failing closed is the
+    // only answer that cannot do that.
+    //
+    // Deliberately unchanged: a path that resolves *completely* but ends on a
+    // Chain or Device step still returns the enclosing rack rather than
+    // nothing. That leniency is long-standing, callers may rely on it, and it
+    // is a different question — #2057.
     for (const auto& step : rackPath.steps) {
         switch (step.type) {
             case ChainStepType::Rack: {
-                if (currentChain == nullptr) {
-                    // Top-level rack in track's chainElements
-                    for (auto& element : track->chain.fxChainElements) {
-                        if (magda::isRack(element)) {
-                            if (magda::getRack(element).id == step.id) {
-                                currentRack = &magda::getRack(element);
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    // Nested rack within a chain
-                    for (auto& element : currentChain->elements) {
-                        if (magda::isRack(element)) {
-                            if (magda::getRack(element).id == step.id) {
-                                currentRack = &magda::getRack(element);
-                                currentChain = nullptr;  // Reset chain context
-                                break;
-                            }
-                        }
+                // Top-level racks live in the track's own FX list; a nested one
+                // lives in the chain the previous step reached.
+                auto& elements =
+                    currentChain != nullptr ? currentChain->elements : track->chain.fxChainElements;
+                RackInfo* found = nullptr;
+                for (auto& element : elements) {
+                    if (magda::isRack(element) && magda::getRack(element).id == step.id) {
+                        found = &magda::getRack(element);
+                        break;
                     }
                 }
+                if (found == nullptr)
+                    return nullptr;
+                currentRack = found;
+                currentChain = nullptr;  // Reset chain context
                 break;
             }
             case ChainStepType::Chain: {
-                if (currentRack != nullptr) {
-                    for (auto& chain : currentRack->chains) {
-                        if (chain.id == step.id) {
-                            currentChain = &chain;
-                            break;
-                        }
+                if (currentRack == nullptr)
+                    return nullptr;
+                ChainInfo* found = nullptr;
+                for (auto& chain : currentRack->chains) {
+                    if (chain.id == step.id) {
+                        found = &chain;
+                        break;
                     }
                 }
+                if (found == nullptr)
+                    return nullptr;
+                currentChain = found;
                 break;
             }
             case ChainStepType::Device:
