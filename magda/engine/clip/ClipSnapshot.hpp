@@ -182,6 +182,15 @@ struct AudioClipPlayback {
     FadeCurve fadeInCurve = FadeCurve::Linear;
     FadeCurve fadeOutCurve = FadeCurve::Linear;
 
+    /// The same two lengths on the beat face, derived here through the same
+    /// tempo map. Only a speed ramp asks for them, and only on an auto tempo
+    /// clip, where where the material has got to is a question about beats: the
+    /// ramp then has to be measured in the domain the position is derived from,
+    /// and converting a fade length on the audio thread would need a tempo map
+    /// there.
+    double fadeInBeats = 0.0;
+    double fadeOutBeats = 0.0;
+
     /// 0 = gain fade, 1 = speed ramp. A speed ramp is a stretch feature rather
     /// than a gain one, which is why it travels with the fade.
     int fadeInBehaviour = 0;

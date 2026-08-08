@@ -28,7 +28,7 @@ is. When the two disagree, the headers are right and this file is stale.
 | Retire stock TE plugin wrappers | [#1888](https://github.com/Conceptual-Machines/magda-core/issues/1888) | done |
 | Clip model: container from content | [#1901](https://github.com/Conceptual-Machines/magda-core/issues/1901) | done |
 | **Engine core: plan, executor, PDC** | [#1889](https://github.com/Conceptual-Machines/magda-core/issues/1889) | **all 10 slices done** |
-| **Arranger clip playback** | [#1890](https://github.com/Conceptual-Machines/magda-core/issues/1890) | **slices 1 to 3 of 7** |
+| **Arranger clip playback** | [#1890](https://github.com/Conceptual-Machines/magda-core/issues/1890) | **slices 1 to 4 of 7** |
 | Parameters, modifiers, macros, automation | [#1891](https://github.com/Conceptual-Machines/magda-core/issues/1891) | not started |
 | Rack graph: pins, summing, multi-out, nesting | [#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892) | not started |
 | External plugin hosting and hardware inserts | [#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893) | not started |
@@ -50,9 +50,9 @@ crossfading a plan swap ([#2019](https://github.com/Conceptual-Machines/magda-co
 
 Clips, slice by slice: the snapshot ([#2034](https://github.com/Conceptual-Machines/magda-core/issues/2034)),
 voices, spans and fades ([#2035](https://github.com/Conceptual-Machines/magda-core/issues/2035)),
-rate conversion, looping and reverse ([#2036](https://github.com/Conceptual-Machines/magda-core/issues/2036), in review).
-Still open: stretch and pitch ([#2037](https://github.com/Conceptual-Machines/magda-core/issues/2037)),
-warp ([#2038](https://github.com/Conceptual-Machines/magda-core/issues/2038)),
+rate conversion, looping and reverse ([#2036](https://github.com/Conceptual-Machines/magda-core/issues/2036)),
+stretch and pitch ([#2037](https://github.com/Conceptual-Machines/magda-core/issues/2037)).
+Still open: warp ([#2038](https://github.com/Conceptual-Machines/magda-core/issues/2038)),
 MIDI clips ([#2039](https://github.com/Conceptual-Machines/magda-core/issues/2039)),
 null-diff corpus ([#2040](https://github.com/Conceptual-Machines/magda-core/issues/2040)).
 
@@ -341,9 +341,6 @@ gap in the material.
 
 ### The reading chain
 
-Slice 3 ([#2036](https://github.com/Conceptual-Machines/magda-core/issues/2036)), in review as
-this is written, so the files below are on its branch rather than here yet.
-
 Reverse, looping and rate conversion are not processing. They are which of a file's samples
 answer a position, so each is a reader wrapped around the reader, built once when the pool opens
 a clip.
@@ -354,11 +351,69 @@ flowchart LR
     R --> L["LoopingAudioFileReader<br/>only if the clip loops"]
     L --> S["ResamplingAudioFileReader<br/>only if the rates differ"]
     S --> PS["PrefetchStream"]
-    PS --> V["ClipVoice<br/>span, holes, fades, channels, gain, pan"]
+    PS --> ST["ClipStretcher<br/>only if the clip is not at its file's speed"]
+    ST --> V["ClipVoice<br/>span, holes, fades, channels, gain, pan"]
 ```
 
 Everything above the chain sees one forward file at the device's rate, whatever the clip is set
 to. A clip that asks for none of it reads through no extra layer at all.
+
+### Speed and pitch
+
+Slice 4 ([#2037](https://github.com/Conceptual-Machines/magda-core/issues/2037)). The chain
+above decides **what** the reading holds; this decides **how fast it is consumed**, which is why
+it sits above the stream where the chain sits below it.
+
+All of it is one function. `readingPositionAt` in `clip/EventPlacement.hpp` says where in the
+reading a moment of the timeline sits, and everything on the list is that function answering
+differently:
+
+| What the clip asks for | What the position does |
+| --- | --- |
+| its file's own speed | advances one reading sample per output sample |
+| a speed ratio | advances by the ratio, a constant, resolved in the snapshot |
+| auto tempo | advances by the beats that have passed, times a beat of the file |
+| analog pitch | advances by the ratio the model already folded the pitch into, with no stretcher |
+| a speed ramp fade | the moment itself is warped near the clip's edge, and the rate with it |
+| warp ([#2038](https://github.com/Conceptual-Machines/magda-core/issues/2038)) | another answer from the same place |
+
+Auto tempo is the one worth reading twice. Its ratio is the project's tempo over the file's own
+and moves with the tempo curve, so it cannot be resolved to seconds ahead of a block. What saves
+it is that the integral of that ratio is beats: the material an instant has consumed is how many
+beats have passed since the event began, times what a beat of the file is worth. That is why the
+clock publishes both faces of one instant, and why there is no second tempo map on the audio
+thread.
+
+A block then reads exactly `round(P(end)) - round(P(start))` samples and hands them to the
+stretcher to come back as the block's own length, so the ratio a block runs at is whatever its
+own two ends say. A tempo curve and a speed ramp therefore cost nothing extra, and nothing
+accumulates: both ends are rounded rather than counted forward, so one block's reading ends
+exactly where the next one's begins.
+
+**Where a stretcher lives** answers the questions that come with it. One per provisioned event,
+built and configured by `ClipVoicePool` on the thread that opens the file, carried to the
+callback in the same table as the stream (`clip/ClipStreamFeed.hpp`). So a plan swap does nothing
+to it, because it never enters a plan epoch; a loop wrap does nothing to it, because tiling
+happens below the stream and a wrap is a discontinuity in the material rather than a change of
+position; and a locate resets and re-primes something that already exists, which allocates
+nothing. An event that asks for no stretch gets none, the same rule the reading chain follows.
+
+**Latency is answered here rather than reported upwards.** Every engine wants material from
+*before* the first sample to be heard, says how much, and the pool cues the stream that far back,
+so a voice's first read is one contiguous read that begins with the priming samples. A
+`ClipAudio` op therefore reports no latency at all and stretched voices stay aligned with
+unstretched ones on the same track. One deliberate divergence from the fork: its Signalsmith
+wrapper primes with the material *at* the start rather than before it, so it begins every
+stretched clip about a window late. The null-diff corpus
+([#2040](https://github.com/Conceptual-Machines/magda-core/issues/2040)) will show that as a
+fixed offset, and the engine is the one that is right.
+
+The engines are `third_party/signalsmith-stretch` (MIT, the default, and what the pinned mode
+`kSignalsmith` names) and `third_party/soundtouch` (LGPL-2.1, its own replaceable static target,
+carried because `kSoundTouchNormal` and `kSoundTouchBetter` are project-file integers and
+sessions saved with them have to play as they were made). A clip that resamples instead of
+stretching uses the same cubic curve the rate converter below the stream uses, so a file at
+another rate and a clip playing fast are not two different sounds.
 
 ---
 
@@ -378,10 +433,9 @@ Worth knowing before reading the code and wondering where something is:
   A `Device` op resolves to whatever the host hands the store. Nothing hosts VST3 yet.
 - **Launcher and recording** ([#1894](https://github.com/Conceptual-Machines/magda-core/issues/1894),
   [#1895](https://github.com/Conceptual-Machines/magda-core/issues/1895)).
-- **Stretch, warp and MIDI clips** ([#2037](https://github.com/Conceptual-Machines/magda-core/issues/2037),
-  [#2038](https://github.com/Conceptual-Machines/magda-core/issues/2038),
-  [#2039](https://github.com/Conceptual-Machines/magda-core/issues/2039)). Everything plays at
-  unity speed today.
+- **Warp and MIDI clips** ([#2038](https://github.com/Conceptual-Machines/magda-core/issues/2038),
+  [#2039](https://github.com/Conceptual-Machines/magda-core/issues/2039)). Speed, pitch and auto
+  tempo play; warp markers are carried in the snapshot and nothing reads them yet.
 - **The null-diff harness** ([#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896)),
   which is what decides the engine is right rather than merely tested: render the same project
   through both engines and assert a near-null difference.
@@ -421,7 +475,7 @@ Its tests are ordinary Catch2 model-level tests, tagged `[engine]`:
 
 Useful narrower tags while working on one part: `[plan]`, `[clip]`, `[exec]`, `[io]`,
 `[transport]`, `[session]`, `[tap]`, `[offline]`, and inside those `[compiler]`, `[diff]`,
-`[pdc]`, `[crossfade]`, `[voice]`, `[pool]`.
+`[pdc]`, `[crossfade]`, `[voice]`, `[pool]`, `[stretch]`.
 
 Two properties the tests lean on and that are worth preserving:
 

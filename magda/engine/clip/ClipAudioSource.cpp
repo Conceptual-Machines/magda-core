@@ -19,7 +19,10 @@ ClipAudioSource::ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipS
     : trackId_(trackId), clips_(clips), streams_(streams) {}
 
 void ClipAudioSource::prepare(const RenderContext& context) {
-    scratch_.setSize(context.numChannels, context.maxBlockSize, false, true, false);
+    // Longer than a block, because a clip playing faster than its file consumes
+    // more reading than it renders and both live in here (ClipStretcher.hpp).
+    scratch_.setSize(context.numChannels, stretchScratchSamples(context.maxBlockSize), false, true,
+                     false);
     scratch_.clear();
 
     for (auto& voice : voices_)
@@ -112,8 +115,8 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
                 continue;
             }
 
-            sounding[static_cast<std::size_t>(soundingCount++)] =
-                Sounding{&clip, &event, found->stream.get()};
+            sounding[static_cast<std::size_t>(soundingCount++)] = Sounding{
+                &clip, &event, found->stream.get(), found->stretcher.get(), found->preRollSamples};
         }
     }
 
@@ -130,8 +133,10 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
             voice.release();
     }
 
-    auto scratch =
-        juce::dsp::AudioBlock<float>(scratch_).getSubBlock(0, static_cast<std::size_t>(numSamples));
+    // The whole of it, not this block's length: the voice renders into the front
+    // and reads into what is behind, and where the second part starts is fixed
+    // by the largest block rather than by this one.
+    auto scratch = juce::dsp::AudioBlock<float>(scratch_);
 
     for (auto index = 0; index < soundingCount; ++index) {
         const auto& entry = sounding[static_cast<std::size_t>(index)];
@@ -145,7 +150,8 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
             continue;
         }
 
-        voice->render(*entry.clip, *entry.event, block, *entry.stream, scratch, out);
+        voice->render(*entry.clip, *entry.event, block, *entry.stream, entry.stretcher,
+                      entry.preRoll, scratch, out);
     }
 }
 
