@@ -245,6 +245,47 @@ class TrackApiNestedRacksLiveTest final : public juce::UnitTest {
             expect(!afterB->bypassed);
             expect(afterB->chains.size() == chainsB);
         }
+
+        beginTest("A device is not reachable through a sideways route either");
+        {
+            // Device paths are the ones a remote client supplies verbatim —
+            // `toChainNodePath` builds them from whatever steps arrive — so a
+            // malformed route here reaches a real device in a part of the tree
+            // the caller never named.
+            //
+            // Worth its own case because the device resolver went through a
+            // *second* copy of the chain lookup, which did not learn the
+            // structural guards when `getChainByPath` did. Both now share one
+            // body.
+            Fixture fixture;
+            TrackManager& model = TrackManager::getInstance();
+            TrackApiLive api;
+
+            const auto track = api.createTrack("Bus", TrackType::Audio);
+            const auto rackId = api.addRackToTrack(track, "Outer");
+            const auto rackPath = ChainNodePath::rack(track, rackId);
+            const auto chain1 = api.getRackByPath(rackPath)->chains.front().id;
+            const auto chain2 = api.addChainToRack(rackPath, "Second");
+
+            // A real device, in the second chain.
+            DeviceInfo device;
+            device.name = "Hidden";
+            const auto deviceId = api.addDeviceToChainByPath(rackPath.withChain(chain2), device);
+            expect(deviceId != INVALID_DEVICE_ID);
+
+            // Reachable by its own route.
+            const auto realRoute = rackPath.withChain(chain2).withDevice(deviceId);
+            expect(model.getDeviceInChainByPath(realRoute) != nullptr);
+
+            // Not by one that hops from its sibling chain into it.
+            const auto sideways = rackPath.withChain(chain1).withChain(chain2).withDevice(deviceId);
+            expect(model.getDeviceInChainByPath(sideways) == nullptr);
+
+            // Nor by one that claims it sits directly under a doubled rack step.
+            const auto doubledRack =
+                rackPath.withRack(rackId).withChain(chain2).withDevice(deviceId);
+            expect(model.getDeviceInChainByPath(doubledRack) == nullptr);
+        }
     }
 
   private:
