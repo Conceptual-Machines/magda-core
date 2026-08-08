@@ -722,7 +722,33 @@ TEST_CASE("Permission decisions hold up under concurrent load",
             }
             cv.notify_all();
         }
+
+        bool isAborted() {
+            const std::lock_guard<std::mutex> lock(mutex);
+            return aborted;
+        }
     } rounds;
+
+    /**
+     * @brief The grant writer that races round 3, and the proof that it did.
+     *
+     * `flips` alone is not evidence. Sampling it on the main thread around the
+     * round leaves a gap at each end — a flip landing between the sample and the
+     * release, with the flipper then descheduled for the whole round, satisfies
+     * "the count moved" while nothing raced anything.
+     *
+     * So the observation is made by the workers, over their own requests:
+     * each reads the counter either side of its racing round, and a worker that
+     * saw it move was demonstrably issuing requests while the grant was being
+     * rewritten. That is the property, asserted directly, with no window for the
+     * main thread to race.
+     */
+    struct Racing {
+        std::atomic<bool> running{true};
+        std::atomic<int> flips{0};
+        /// Workers that saw `flips` move across their own racing round.
+        std::atomic<int> observedConcurrent{0};
+    } racing;
 
     /**
      * @brief Owns the workers, and joins them however this test leaves.
@@ -779,7 +805,30 @@ TEST_CASE("Permission decisions hold up under concurrent load",
             round(kRevokedRound);
             if (!rounds.await(2))
                 return;
+
+            // Give the flipper a moment to get going, so the round does not
+            // start against a writer that has not woken yet. Best effort, and
+            // deliberately brief: this thread is not in `read()` while it waits,
+            // and the server pings every second and drops a client that stops
+            // answering — so a long wait here would kill the connection and turn
+            // a diagnosable failure into forty unexplained transport errors. In
+            // the healthy case the flipper is already spinning and this costs
+            // nothing; if it expires, `observedConcurrent` below is what reports
+            // the problem, and it says exactly what went wrong.
+            const auto flipDeadline =
+                std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+            while (racing.flips.load() == 0 && !rounds.isAborted() &&
+                   std::chrono::steady_clock::now() < flipDeadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+            // Either side of this worker's own requests: if the counter moved
+            // between them, the grant was provably being rewritten while this
+            // worker was issuing them.
+            const auto flipsBefore = racing.flips.load();
             round(kRacingRound);
+            if (racing.flips.load() > flipsBefore)
+                racing.observedConcurrent.fetch_add(1);
+
             // Parking here too, so the main thread knows the racing round is
             // over and can stop flipping before it starts asserting.
             rounds.await(3);
@@ -797,20 +846,14 @@ TEST_CASE("Permission decisions hold up under concurrent load",
     REQUIRE(rounds.allParked(kClients));
 
     // Round 3 is the actual concurrency: the grant has to be moving *while* the
-    // requests run. Releasing the workers and then starting to toggle on this
-    // thread does not achieve that — if this thread is descheduled at the
-    // handover, the workers can finish the whole round before a single write
-    // lands, and the test passes having exercised nothing.
-    //
-    // So the flipper is its own thread, started first, and the workers are not
-    // released until it has demonstrably flipped at least once.
-    std::atomic<bool> flipping{true};
-    std::atomic<int> flips{0};
+    // requests run. The flipper is its own thread, started before the round is
+    // released — releasing the workers and only then toggling on this thread
+    // would let a deschedule at the handover produce a round that raced nothing.
     std::thread flipper([&] {
-        while (flipping.load()) {
+        while (racing.running.load()) {
             registry.setScopes(kClient, ScopeSet{Scope::Read, Scope::Edit});
             registry.setScopes(kClient, defaultClientScopes());
-            flips.fetch_add(1);
+            racing.flips.fetch_add(1);
             // Yielding rather than spinning flat out: on a two-core runner this
             // would otherwise compete with the workers it exists to interfere
             // with, which is the opposite of the point.
@@ -819,30 +862,20 @@ TEST_CASE("Permission decisions hold up under concurrent load",
     });
     // Joined however this test leaves, for the same reason the workers are.
     struct FlipperGuard {
-        std::atomic<bool>& flipping;
+        Racing& racing;
         std::thread& thread;
         ~FlipperGuard() {
-            flipping.store(false);
+            racing.running.store(false);
             if (thread.joinable())
                 thread.join();
         }
-    } flipperGuard{flipping, flipper};
+    } flipperGuard{racing, flipper};
 
-    const auto flipDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    while (flips.load() == 0 && std::chrono::steady_clock::now() < flipDeadline)
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    REQUIRE(flips.load() > 0);
-
-    const auto flipsBefore = flips.load();
     rounds.openRound(2);
 
     // Every worker parks again at the end of the round, so this returns only
-    // once the racing requests are done — with the flipper still running
-    // throughout, rather than stopped early by a counter this thread was racing.
+    // once the racing requests are done, with the flipper still running.
     REQUIRE(rounds.allParked(kClients));
-    // The flipper kept working for the whole round, so the requests in it really
-    // did run against a moving grant.
-    REQUIRE(flips.load() > flipsBefore);
     rounds.openRound(3);
 
     for (auto& thread : pool.threads)
@@ -854,6 +887,12 @@ TEST_CASE("Permission decisions hold up under concurrent load",
     // because the grant only moved while every worker was parked between them.
     REQUIRE(allowed.load() >= kClients * kGrantedRound);
     REQUIRE(denied.load() >= kClients * kRevokedRound);
+    // And round 3 raced something: at least one worker saw the grant rewritten
+    // between its own first and last racing request. Asserted from the worker's
+    // own observation rather than from a counter sampled around the round on
+    // this thread, which leaves a gap at each end that a descheduled flipper
+    // can slip through while the count still moves.
+    REQUIRE(racing.observedConcurrent.load() > 0);
 
     // Every one of them is in the record, and none of them carries a payload.
     const auto entries = log->forClient(kClient);

@@ -247,6 +247,22 @@ void RemoteApiHost::persistGrants() {
     }
 
     auto apply = [writer] {
+        // Held across the whole write, not just the read of `latest`.
+        //
+        // On the message-thread path there is only ever one of these in flight,
+        // but the inline path below has no such guarantee: clearing `posted` and
+        // then writing unlocked lets a second transport thread walk in, see
+        // `posted` false, and run its own apply while this one is still inside
+        // `Config::save()`. Two threads then write a singleton that has no
+        // locking of its own — which is exactly the situation the hop exists to
+        // avoid, reintroduced on the path that cannot hop.
+        //
+        // Taken before `mutex` and never the other way round. `persistGrants`
+        // only ever takes `mutex`, so a recorder is never blocked behind a file
+        // write; it just leaves a newer `latest` for whoever is inside here to
+        // pick up.
+        const std::lock_guard<std::mutex> applying(writer->applyMutex);
+
         juce::var latest;
         {
             const std::lock_guard<std::mutex> lock(writer->mutex);

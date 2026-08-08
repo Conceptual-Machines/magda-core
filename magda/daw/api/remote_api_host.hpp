@@ -203,7 +203,13 @@ class RemoteApiHost {
      * reaching into it.
      */
     struct GrantWriter {
+        /// Guards `latest` and `posted`. Held briefly, never across I/O.
         std::mutex mutex;
+        /// Serialises the config write itself. Separate from `mutex` so a
+        /// transport thread recording a newer grant is never blocked behind a
+        /// file save — it leaves `latest` for whoever is inside the write to
+        /// pick up. Always taken before `mutex`, never after.
+        std::mutex applyMutex;
         juce::var latest;
         bool posted = false;
     };
