@@ -459,6 +459,91 @@ TEST_CASE("A transport with no registry refuses everything rather than allowing 
     const auto outcome = runOverWebSocket(client, read);
     REQUIRE_FALSE(outcome.allowed);
     REQUIRE(outcome.errorCode == "permission_denied");
+
+    // MCP too, and not only its dispatched surface. `tools/list` and the two
+    // resource listings are answered from the endpoint's own catalogue without
+    // ever building a RequestContext, so they were readable with no registry
+    // configured at all — the whole operation surface and its schemas, handed to
+    // a client entitled to nothing. Fail-closed has to mean these as well.
+    RemoteMcpServer::Options mcpOptions;
+    mcpOptions.bearerToken = kToken;
+    // Deliberately no `clients` here either.
+    RemoteMcpServer mcpServer(service, mcpOptions);
+    REQUIRE(mcpServer.start());
+
+    httplib::Client mcpClient("http://127.0.0.1:" + std::to_string(mcpServer.boundPort()));
+
+    const auto catalogueCall = [&](const juce::String& method) {
+        auto* request = new juce::DynamicObject();
+        request->setProperty("jsonrpc", "2.0");
+        request->setProperty("id", 1);
+        request->setProperty("method", method);
+        request->setProperty("params", mcpParams(emptyObject()));
+
+        const httplib::Headers headers = {{"Authorization", std::string("Bearer ") + kToken},
+                                          {"MCP-Protocol-Version", kMcpVersion},
+                                          {"Mcp-Method", method.toStdString()}};
+        auto result = mcpClient.Post("/mcp", headers,
+                                     juce::JSON::toString(juce::var(request), true).toStdString(),
+                                     "application/json");
+        REQUIRE(result);
+        juce::var parsed;
+        REQUIRE(juce::JSON::parse(juce::String(result->body), parsed).wasOk());
+        return parsed;
+    };
+
+    for (const auto* method : {"tools/list", "resources/list", "resources/templates/list"}) {
+        INFO("method: " << method);
+        const auto reply = catalogueCall(method);
+        REQUIRE_FALSE(reply["error"].isVoid());
+        REQUIRE(static_cast<int>(reply["error"]["code"]) == MCP_PERMISSION_DENIED);
+        // Nothing leaked alongside the refusal.
+        REQUIRE(reply["result"].isVoid());
+    }
+
+    // And the dispatched surface, for the same server.
+    const Vector mcpRead{"read", "project.get", emptyObject(), ScopeSet{}, false};
+    const auto mcpOutcome = runOverMcp(mcpClient, mcpRead);
+    REQUIRE_FALSE(mcpOutcome.allowed);
+    REQUIRE(mcpOutcome.errorCode == "permission_denied");
+}
+
+TEST_CASE("The catalogue is readable by an ordinary client", "[remote][permissions][conformance]") {
+    // The other half of the gate above: `read` is the default every client has,
+    // so requiring it must not have made the catalogue unreachable for anyone
+    // who simply connected.
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    RemoteClientRegistry registry;
+
+    RemoteMcpServer::Options mcpOptions;
+    mcpOptions.bearerToken = kToken;
+    mcpOptions.clients = &registry;
+    RemoteMcpServer mcpServer(service, mcpOptions);
+    REQUIRE(mcpServer.start());
+
+    httplib::Client mcpClient("http://127.0.0.1:" + std::to_string(mcpServer.boundPort()));
+
+    auto* request = new juce::DynamicObject();
+    request->setProperty("jsonrpc", "2.0");
+    request->setProperty("id", 1);
+    request->setProperty("method", "tools/list");
+    request->setProperty("params", mcpParams(emptyObject()));
+
+    const httplib::Headers headers = {{"Authorization", std::string("Bearer ") + kToken},
+                                      {"MCP-Protocol-Version", kMcpVersion},
+                                      {"Mcp-Method", "tools/list"}};
+    auto result = mcpClient.Post("/mcp", headers,
+                                 juce::JSON::toString(juce::var(request), true).toStdString(),
+                                 "application/json");
+    REQUIRE(result);
+    juce::var parsed;
+    REQUIRE(juce::JSON::parse(juce::String(result->body), parsed).wasOk());
+
+    REQUIRE(parsed["error"].isVoid());
+    REQUIRE(parsed["result"]["tools"].getArray() != nullptr);
+    REQUIRE_FALSE(parsed["result"]["tools"].getArray()->isEmpty());
 }
 
 TEST_CASE("A refused connection is recorded without its credential",

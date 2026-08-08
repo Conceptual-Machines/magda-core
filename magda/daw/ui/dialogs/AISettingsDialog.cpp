@@ -3024,9 +3024,18 @@ class AISettingsDialog::RemoteClientsPage : public juce::Component, private juce
         const auto grants = host->clients().grants();
         const auto connections = host->clients().connections();
 
+        // The union of the two, not just the grants. `forget()` drops a grant
+        // without disconnecting — deliberately, since the client reverts to
+        // read-only rather than being cut off — and a list built from grants
+        // alone would make that row vanish while its client was still
+        // connected, leaving no way to disconnect it until it happened to ask
+        // for something and recreate its entry.
         juce::StringArray names;
         for (const auto& grant : grants)
-            names.add(grant.name);
+            names.addIfNotAlreadyThere(grant.name);
+        for (const auto& connection : connections)
+            names.addIfNotAlreadyThere(connection.name);
+        names.sort(false);
 
         if (names != rowNames_) {
             rowNames_ = names;
@@ -3043,20 +3052,30 @@ class AISettingsDialog::RemoteClientsPage : public juce::Component, private juce
         emptyLabel_.setVisible(rows_.empty());
         emptyLabel_.setText("No client has connected yet.", juce::dontSendNotification);
 
-        for (const auto& grant : grants) {
-            auto* row = rowFor(grant.name);
-            if (row == nullptr)
-                continue;
+        // Driven by the rows rather than by the grants, because a row can exist
+        // without one: a client that was forgotten while still connected keeps
+        // its row until it disconnects. It shows the read-only default, which is
+        // what it will actually get on its next request.
+        for (const auto& row : rows_) {
+            const auto& name = row->clientName();
+
+            auto scopes = magda::remote::defaultClientScopes();
+            for (const auto& grant : grants) {
+                if (grant.name == name) {
+                    scopes = grant.scopes;
+                    break;
+                }
+            }
 
             int count = 0;
             juce::StringArray transports;
             for (const auto& connection : connections) {
-                if (connection.name != grant.name)
+                if (connection.name != name)
                     continue;
                 ++count;
                 transports.addIfNotAlreadyThere(connection.transport);
             }
-            row->update(grant.scopes, count, transports.joinIntoString(", "));
+            row->update(scopes, count, transports.joinIntoString(", "));
         }
 
         refreshActivity(host->audit());

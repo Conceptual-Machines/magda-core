@@ -447,6 +447,40 @@ struct Connection {
     }
 };
 
+namespace {
+
+/**
+ * @brief One audit line, written through a log pointer rather than a server.
+ *
+ * Free rather than a member of `Impl`, so a completion that outlives this
+ * server can still record without reaching back through it. The subscription
+ * hub answers on the message thread, so a reply can be produced after `stop()`
+ * — during a token rotation, say — has destroyed the server that queued it.
+ * That is the same shape `RemoteApiService` completions have, and the same
+ * reason they carry the log by value.
+ *
+ * `connection` is a `shared_ptr`, so the client fields stay valid regardless.
+ * The log's lifetime is `RemoteApiHost`'s to guarantee: it declares the log
+ * before both transports, so it is destroyed after them.
+ */
+void recordAudit(RemoteAuditLog* log, const std::shared_ptr<Connection>& connection,
+                 const juce::String& operation, const juce::String& requestId, AuditOutcome outcome,
+                 const juce::String& detail) {
+    if (log == nullptr)
+        return;
+    AuditEntry entry;
+    entry.client = connection != nullptr ? connection->clientName : juce::String();
+    entry.connectionId = connection != nullptr ? connection->handle : juce::String();
+    entry.transport = TRANSPORT_WEBSOCKET;
+    entry.operation = operation;
+    entry.requestId = requestId;
+    entry.outcome = outcome;
+    entry.detail = detail;
+    log->record(std::move(entry));
+}
+
+}  // namespace
+
 // ===========================================================================
 // Impl
 // ===========================================================================
@@ -481,17 +515,7 @@ struct RemoteWebSocketServer::Impl {
     void audit(const std::shared_ptr<Connection>& connection, const juce::String& operation,
                const juce::String& requestId, AuditOutcome outcome,
                const juce::String& detail = {}) const {
-        if (options.audit == nullptr)
-            return;
-        AuditEntry entry;
-        entry.client = connection != nullptr ? connection->clientName : juce::String();
-        entry.connectionId = connection != nullptr ? connection->handle : juce::String();
-        entry.transport = TRANSPORT_WEBSOCKET;
-        entry.operation = operation;
-        entry.requestId = requestId;
-        entry.outcome = outcome;
-        entry.detail = detail;
-        options.audit->record(std::move(entry));
+        recordAudit(options.audit, connection, operation, requestId, outcome, detail);
     }
 
     /// A refusal that happened before there was a connection to attribute it to.
@@ -717,14 +741,18 @@ struct RemoteWebSocketServer::Impl {
                                                    service.currentRevision())));
                 return;
             }
-            subscriptions->handle(connection->subscriber, method, params,
-                                  [this, connection, id, method, idKey](Response response) {
-                                      audit(connection, method, idKey,
-                                            response.ok ? AuditOutcome::Ok : AuditOutcome::Failed,
-                                            response.ok ? juce::String()
-                                                        : toString(response.error.code));
-                                      connection->complete(replyFor(id, response));
-                                  });
+            // The log by value, never `this`: the hub completes on the message
+            // thread, so this can run after `stop()` has destroyed the server —
+            // during a token rotation, which tears both listeners down while
+            // connections are live. Everything else it needs is copied.
+            subscriptions->handle(
+                connection->subscriber, method, params,
+                [log = options.audit, connection, id, method, idKey](Response response) {
+                    recordAudit(log, connection, method, idKey,
+                                response.ok ? AuditOutcome::Ok : AuditOutcome::Failed,
+                                response.ok ? juce::String() : toString(response.error.code));
+                    connection->complete(replyFor(id, response));
+                });
             return;
         }
 

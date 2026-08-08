@@ -215,13 +215,38 @@ RemoteApiHost::~RemoteApiHost() {
 }
 
 void RemoteApiHost::persistGrants() {
-    // Snapshotted here, applied possibly later, and deliberately capturing no
-    // `this`: the host may be destroyed between the two, and the queued write
-    // needs nothing from it.
+    // Read before taking the writer's lock: `grantsToJson` takes the registry's,
+    // and holding two is worth avoiding even where the order happens to be safe.
     auto grants = clients_->grantsToJson();
-    auto apply = [grants = std::move(grants)] {
+
+    auto writer = grantWriter_;
+    {
+        const std::lock_guard<std::mutex> lock(writer->mutex);
+        writer->latest = std::move(grants);
+        // Already a write on its way. It reads `latest` when it runs, so it will
+        // carry this change too — and posting a second task would be how the
+        // older of two snapshots ends up applied last.
+        //
+        // That reordering is the reason this is a slot rather than a captured
+        // value: a transport thread can snapshot, the user can then revoke a
+        // scope in the settings dialog and have it saved inline, and the
+        // transport's older snapshot would land afterwards and put the revoked
+        // grant back — silently, and permanently, because config is what the
+        // next launch reads.
+        if (writer->posted)
+            return;
+        writer->posted = true;
+    }
+
+    auto apply = [writer] {
+        juce::var latest;
+        {
+            const std::lock_guard<std::mutex> lock(writer->mutex);
+            latest = writer->latest;
+            writer->posted = false;
+        }
         auto& config = Config::getInstance();
-        config.setRemoteApiClients(grants);
+        config.setRemoteApiClients(latest);
         config.save();
     };
 
@@ -229,7 +254,8 @@ void RemoteApiHost::persistGrants() {
     // member of it while the settings pages write them. This is reached from a
     // transport thread whenever a client MAGDA has not seen registers itself, so
     // writing from here would race the UI over the whole config file — for a
-    // change that is not urgent by any measure.
+    // change that is not urgent by any measure. Hopping also gives the
+    // coalescing above one thread to serialise on.
     //
     // Inline when there is no message loop to post to, which is the headless
     // case: a test or a console host, where nothing else is writing config.
@@ -238,7 +264,15 @@ void RemoteApiHost::persistGrants() {
         apply();
         return;
     }
-    juce::MessageManager::callAsync(std::move(apply));
+
+    // The task captures only the shared slot, so it is safe for it to outlive
+    // this host. If the loop is already quitting it is dropped, and the grant
+    // is not persisted — the same outcome as the process being killed a moment
+    // earlier, and not something worth a synchronous write on shutdown.
+    if (!juce::MessageManager::callAsync(apply)) {
+        const std::lock_guard<std::mutex> lock(writer->mutex);
+        writer->posted = false;
+    }
 }
 
 bool RemoteApiHost::start() {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 
 #include "remote_api.hpp"
 
@@ -175,11 +176,38 @@ class RemoteApiHost {
     RemoteAuditLog& audit();
 
   private:
-    /// Mirror the registry's grants into the config file. Wired as the
-    /// registry's change handler, so a grant made in the settings dialog and one
-    /// created by a client connecting for the first time are persisted by the
-    /// same path.
+    /**
+     * @brief Mirror the registry's grants into the config file.
+     *
+     * Wired as the registry's change handler, so a grant made in the settings
+     * dialog and one created by a client connecting for the first time are
+     * persisted by the same path — which means this is called from transport
+     * threads as well as the message thread.
+     */
     void persistGrants();
+
+    /**
+     * @brief The pending config write, shared by every thread that asks for one.
+     *
+     * A slot rather than a value captured per call, because the writes have to
+     * be ordered and there is more than one writer. A transport thread can
+     * snapshot the grants, the user can then revoke a scope and have that saved,
+     * and the transport's older snapshot would otherwise land last and restore
+     * what was just revoked — in the file the next launch reads.
+     *
+     * Whoever finds `posted` false owns the hop; everyone after simply replaces
+     * `latest`, which the pending task re-reads when it runs. So the newest
+     * state always wins and a burst of changes costs one write.
+     *
+     * Held by `shared_ptr` so a queued write can outlive this host without
+     * reaching into it.
+     */
+    struct GrantWriter {
+        std::mutex mutex;
+        juce::var latest;
+        bool posted = false;
+    };
+    std::shared_ptr<GrantWriter> grantWriter_ = std::make_shared<GrantWriter>();
     // Declaration order is destruction order reversed, and it is load-bearing:
     // a transport's connections deregister from the hub, the hub listens to the
     // service's change source, and the bridge writes into the service. Each has
