@@ -2,6 +2,7 @@
 
 #include <juce_events/juce_events.h>
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 
@@ -57,7 +58,69 @@ MessageArgument firstNumericArgument(const juce::OSCMessage& message) {
     return {ArgumentState::Present, value};
 }
 
+/// The value a binding takes from a message, if that argument is one we can
+/// read. Bound sources are always continuous positions, so the argument
+/// conventions of the fixed namespace — triggers, flips — do not apply here.
+std::optional<float> boundArgument(const juce::OSCMessage& message, int argIndex) {
+    if (argIndex < 0 || argIndex >= message.size())
+        return std::nullopt;
+
+    const auto& argument = message[argIndex];
+    float value = 0.0f;
+    if (argument.isFloat32())
+        value = argument.getFloat32();
+    else if (argument.isInt32())
+        value = static_cast<float>(argument.getInt32());
+    else
+        return std::nullopt;
+
+    if (!std::isfinite(value))
+        return std::nullopt;
+    return juce::jlimit(0.0f, 1.0f, value);
+}
+
 }  // namespace
+
+// ============================================================================
+// OscBindingRoutes
+// ============================================================================
+
+std::shared_ptr<OscBindingRoutes> OscBindingRoutes::build(const std::vector<Binding>& bindings) {
+    auto routes = std::make_shared<OscBindingRoutes>();
+
+    for (const auto& binding : bindings) {
+        if (!binding.source.isOsc() || !binding.isValid())
+            continue;
+        routes->entries.push_back(
+            Entry{binding.source.oscAddress, binding.source.oscArgIndex, binding});
+    }
+
+    std::sort(routes->entries.begin(), routes->entries.end(),
+              [](const Entry& a, const Entry& b) { return a.address < b.address; });
+
+    const auto count = routes->entries.size();
+    routes->values = std::make_unique<std::atomic<float>[]>(count);
+    routes->dirtyWords = (count + 63) / 64;
+    routes->dirty = std::make_unique<std::atomic<std::uint64_t>[]>(routes->dirtyWords);
+    for (std::size_t i = 0; i < routes->dirtyWords; ++i)
+        routes->dirty[i].store(0, std::memory_order_relaxed);
+
+    return routes;
+}
+
+std::pair<std::size_t, std::size_t> OscBindingRoutes::findRange(juce::StringRef address) const {
+    const juce::String wanted(address);
+    auto first = std::lower_bound(
+        entries.begin(), entries.end(), wanted,
+        [](const Entry& entry, const juce::String& value) { return entry.address < value; });
+
+    auto last = first;
+    while (last != entries.end() && last->address == wanted)
+        ++last;
+
+    return {static_cast<std::size_t>(first - entries.begin()),
+            static_cast<std::size_t>(last - entries.begin())};
+}
 
 // ============================================================================
 // Argument extraction
@@ -113,6 +176,83 @@ OscRouter::~OscRouter() {
 }
 
 bool OscRouter::handleMessage(const juce::OSCMessage& message) {
+    // The fixed namespace first, and it is not negotiable: `/magda/…` is a
+    // documented contract, so a binding cannot take one of those addresses
+    // over and leave a stock template mysteriously half-working. It also comes
+    // before learn, so a control already carrying a meaning cannot be captured
+    // as if it were free.
+    if (handleFixedNamespace(message))
+        return true;
+    if (handleLearn(message))
+        return true;
+    return handleBindings(message);
+}
+
+bool OscRouter::handleLearn(const juce::OSCMessage& message) {
+    if (learn_ == nullptr || !learn_->active.load(std::memory_order_acquire))
+        return false;
+
+    OscLearnCapture capture;
+    capture.address = message.getAddressPattern().toString();
+
+    // The first argument we can read is the one the control is sending. A
+    // surface that sends several down one address — an XY pad — is captured on
+    // its first axis, and the other can be learned by moving it alone.
+    bool found = false;
+    for (int i = 0; i < message.size(); ++i) {
+        if (const auto value = boundArgument(message, i)) {
+            capture.argIndex = i;
+            capture.value = *value;
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+        return false;  // stay armed: this said nothing a binding could use
+
+    LearnCallback callback;
+    {
+        const juce::ScopedLock lock(learnLock_);
+        if (learn_ == nullptr)
+            return false;
+        learn_->active.store(false, std::memory_order_release);
+        callback = std::move(learn_->callback);
+        learn_.reset();
+    }
+    if (!callback)
+        return false;
+
+    auto* manager = juce::MessageManager::getInstanceWithoutCreating();
+    if (manager == nullptr || manager->isThisTheMessageThread())
+        callback(capture);
+    else
+        juce::MessageManager::callAsync(
+            [callback = std::move(callback), capture]() mutable { callback(capture); });
+
+    // Consumed, not routed: the gesture that teaches a control must not also
+    // move whatever that control is bound to today.
+    return true;
+}
+
+void OscRouter::beginLearnSession(LearnCallback onCaptured) {
+    const juce::ScopedLock lock(learnLock_);
+    learn_ = std::make_unique<LearnState>();
+    learn_->callback = std::move(onCaptured);
+    learn_->active.store(true, std::memory_order_release);
+}
+
+void OscRouter::cancelLearnSession() {
+    const juce::ScopedLock lock(learnLock_);
+    if (learn_ != nullptr)
+        learn_->active.store(false, std::memory_order_release);
+    learn_.reset();
+}
+
+bool OscRouter::isLearning() const {
+    return learn_ != nullptr && learn_->active.load(std::memory_order_acquire);
+}
+
+bool OscRouter::handleFixedNamespace(const juce::OSCMessage& message) {
     // Named rather than inlined into the call: the parser reads through the
     // StringRef into this buffer, so it has to outlive the parse. Copying a
     // juce::String is a reference-count bump, so this costs no allocation.
@@ -129,6 +269,44 @@ bool OscRouter::handleMessage(const juce::OSCMessage& message) {
     accepted_.fetch_add(1, std::memory_order_relaxed);
     submit(*command, *value);
     return true;
+}
+
+bool OscRouter::handleBindings(const juce::OSCMessage& message) {
+    // A reference-count bump, not an allocation, and it pins the snapshot for
+    // as long as we are reading and writing through it — which is what makes
+    // an index and its value belong to the same list.
+    auto routes = std::atomic_load(&bindingRoutes_);
+    if (routes == nullptr || routes->entries.empty())
+        return false;
+
+    const auto address = message.getAddressPattern().toString();
+    const auto [first, last] = routes->findRange(address);
+    if (first == last)
+        return false;
+
+    bool accepted = false;
+    for (std::size_t i = first; i < last; ++i) {
+        const auto value = boundArgument(message, routes->entries[i].argIndex);
+        if (!value.has_value())
+            continue;  // this binding wanted an argument the message did not carry
+
+        // Same publish order as the fixed namespace: value, then the bit that
+        // advertises it.
+        routes->values[i].store(*value, std::memory_order_relaxed);
+        routes->dirty[i / 64].fetch_or(1ULL << (i % 64), std::memory_order_release);
+        accepted = true;
+    }
+
+    if (!accepted)
+        return false;
+
+    accepted_.fetch_add(1, std::memory_order_relaxed);
+    scheduleDrain();
+    return true;
+}
+
+void OscRouter::updateBindings(const std::vector<Binding>& bindings) {
+    std::atomic_store(&bindingRoutes_, OscBindingRoutes::build(bindings));
 }
 
 void OscRouter::submit(const OscCommand& command, float value) {
@@ -210,10 +388,34 @@ void OscRouter::drainPending() {
         }
     }
 
+    drainBindings();
+
     // Values first, then edges. A cue that locates and rolls in one bundle
     // should locate before the transport acts on it, rather than rolling from
     // the old position and jumping.
     drainOrdered();
+}
+
+void OscRouter::drainBindings() {
+    if (bindingSink_ == nullptr)
+        return;
+
+    // Read the snapshot once. A value published into a snapshot that has since
+    // been replaced goes with it — see OscBindingRoutes for why that is the
+    // behaviour we want rather than a leak to plug.
+    auto routes = std::atomic_load(&bindingRoutes_);
+    if (routes == nullptr)
+        return;
+
+    for (std::size_t word = 0; word < routes->dirtyWords; ++word) {
+        auto bits = routes->dirty[word].exchange(0, std::memory_order_acquire);
+        while (bits != 0) {
+            const auto index = (word * 64) + static_cast<std::size_t>(std::countr_zero(bits));
+            bits &= bits - 1;
+            bindingSink_->apply(routes->entries[index].binding,
+                                routes->values[index].load(std::memory_order_relaxed));
+        }
+    }
 }
 
 void OscRouter::drainOrdered() {
@@ -275,6 +477,10 @@ void OscRouter::setSink(std::unique_ptr<OscCommandSink> sink) {
     jassert(sink != nullptr);
     if (sink != nullptr)
         sink_ = std::move(sink);
+}
+
+void OscRouter::setBindingSink(std::unique_ptr<OscBindingSink> sink) {
+    bindingSink_ = std::move(sink);
 }
 
 void OscRouter::setDrainScheduler(std::function<void()> scheduler) {

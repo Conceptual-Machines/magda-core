@@ -1,9 +1,11 @@
 #pragma once
 
 #include <memory>
+#include <unordered_map>
 
 #include "../audio/osc/OscRouter.hpp"
 #include "../core/TypeIds.hpp"
+#include "../core/controllers/BindingTransform.hpp"
 
 namespace magda {
 
@@ -78,6 +80,40 @@ class OscCommandSinkLive : public osc::OscCommandSink {
 
     MagdaApi& api_;
     std::unique_ptr<ControllerParamWriter> writer_;
+};
+
+/**
+ * @brief Applies a bound OSC value to whatever the binding targets (#1757).
+ *
+ * The binding counterpart of `OscCommandSinkLive`, and deliberately the same
+ * shape as `ControllerRouter`'s write path: the surface's position goes through
+ * the binding's mode, curve and range, the target resolves through the alias
+ * and resolver registries, and the result is written by the same
+ * `ControllerParamWriter`. A parameter learned from a MIDI knob and one learned
+ * from an OSC fader therefore behave identically from the transform onwards —
+ * only the source differs, which is the whole reason `BindingSource` grew a
+ * kind rather than OSC growing a parallel binding type.
+ *
+ * Message thread only, which is what makes the per-binding toggle state here
+ * safe to hold in a plain map.
+ */
+class OscBindingSinkLive : public osc::OscBindingSink {
+  public:
+    explicit OscBindingSinkLive(std::unique_ptr<ControllerParamWriter> writer);
+    ~OscBindingSinkLive() override;
+
+    OscBindingSinkLive(const OscBindingSinkLive&) = delete;
+    OscBindingSinkLive& operator=(const OscBindingSinkLive&) = delete;
+
+    void apply(const Binding& binding, float value) override;
+
+  private:
+    std::unique_ptr<ControllerParamWriter> writer_;
+
+    /// Toggle state per binding, so a bound toggle remembers which way it is.
+    /// Keyed by binding id rather than by address: the address can be shared by
+    /// several bindings, and each toggles independently.
+    std::unordered_map<juce::String, ToggleState> toggleState_;
 };
 
 }  // namespace magda
