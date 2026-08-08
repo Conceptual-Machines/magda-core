@@ -65,8 +65,12 @@ void dumpEvent(std::ostringstream& out, const AudioEventPlayback& event) {
 
     if (event.autoTempo)
         out << " auto-tempo";
-    if (event.warpEnabled)
-        out << " warp=" << event.warpMarkers.size();
+    // Points rather than markers: what the clip plays is the compiled map, and
+    // a dump that echoed the model's count would hide exactly the case the
+    // compile diagnoses, where the two differ.
+    if (!event.warp.empty())
+        out << " warp=" << event.warp.points.size()
+            << " warp-max=" << fixed(event.warp.maxSourcePerWarp(), 3);
     if (event.analogPitch)
         out << " analog-pitch";
     if (event.autoPitch)

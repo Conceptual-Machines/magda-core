@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "clip/WarpMap.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/TypeIds.hpp"
 
@@ -118,8 +119,12 @@ struct AudioEventPlayback {
     /// has already forced a stretcher on (AudioEvent::isAnalogPitchActive).
     bool analogPitch = false;
 
-    bool warpEnabled = false;
-    std::vector<WarpMarker> warpMarkers;
+    /// Compiled and inverted, never the model's marker list (WarpMap.hpp).
+    /// Empty is identity, which is both "warp is off" and "warp is on and there
+    /// are no markers": the two describe the same playback and nothing
+    /// downstream has to tell them apart. Already mirrored where the event is
+    /// reversed, so the audio thread does one lookup whichever way it plays.
+    WarpMap warp;
 
     bool autoPitch = false;
     int autoPitchMode = 0;

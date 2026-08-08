@@ -272,6 +272,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_clip_voice.cpp)
     list(APPEND TEST_SOURCES test_clip_voice_pool.cpp)
     list(APPEND TEST_SOURCES test_clip_stretch.cpp)
+    list(APPEND TEST_SOURCES test_clip_warp.cpp)
+    list(APPEND TEST_SOURCES test_transient_detector.cpp)
+    list(APPEND TEST_SOURCES test_source_loop_info.cpp)
 endif()
 
 # Create test executable
