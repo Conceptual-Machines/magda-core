@@ -27,8 +27,13 @@ std::int64_t samplesIn(double seconds, double rate) {
 /// hands both of them source-beat processing at the event's own interpretation
 /// (AudioEvent::sourceInstantToTimelineBeats), so playback has to read the same
 /// face the model wrote.
+///
+/// Off the flag rather than off the map having points in it. A warped event
+/// with no markers bends nothing and is still interpreted at its own bpm, so
+/// reading this off the map would drop such a clip onto the seconds face and
+/// stop it following the tempo the moment its last marker was deleted.
 bool usesBeatFace(const AudioEventPlayback& event) {
-    return (event.autoTempo || !event.warp.empty()) && event.interpBpm > 0.0;
+    return (event.autoTempo || event.warpEnabled) && event.interpBpm > 0.0;
 }
 
 /// The constant ratio, clamped the way the rate is, so that a project holding a
@@ -357,7 +362,7 @@ StretchSetup stretchSetupFor(const AudioClipPlayback& clip, const AudioEventPlay
     // Warp counts as following as much as auto tempo does. The flag means the
     // rate moves inside the event, so the nominal above is an approximation and
     // a clip averaging unity is still stretching in both directions around it.
-    setup.followsTempo = usesBeatFace(event) || !event.warp.empty();
+    setup.followsTempo = usesBeatFace(event) || event.warpEnabled;
     setup.speedRamp = (clip.fadeInBehaviour == 1 && clip.fadeInSeconds > 0.0) ||
                       (clip.fadeOutBehaviour == 1 && clip.fadeOutSeconds > 0.0);
 

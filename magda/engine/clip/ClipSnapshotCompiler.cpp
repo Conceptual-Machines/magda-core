@@ -231,11 +231,19 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
                 playback.speedRatio = event.speedRatio;
                 playback.timeStretchMode = event.getEffectiveTimeStretchMode();
                 playback.analogPitch = event.isAnalogPitchActive();
-                // Inverted, mirrored where the event is reversed, and known to
-                // be invertible before anything plays it (WarpMap.hpp). A
-                // marker that cannot be part of a monotonic map is dropped
-                // here; saying how many is the difference between a clip whose
-                // timing is not what its editor shows and one that says so.
+                // Inverted, and known to be invertible before anything plays it
+                // (WarpMap.hpp). Nothing here mirrors it for a reversed event:
+                // reverse stays a read-time coordinate change in
+                // EventPlacement.hpp. A marker that cannot be part of a
+                // monotonic map is dropped here; saying how many is the
+                // difference between a clip whose timing is not what its editor
+                // shows and one that says so.
+                //
+                // The flag travels beside the map because an event that warps
+                // with no markers is still a warped event: identity as a map,
+                // and on the beat face with a stretcher as an interpretation.
+                playback.warpEnabled = event.warpEnabled;
+
                 if (event.warpEnabled) {
                     auto warp = compileWarpMap(event.warpMarkers);
                     playback.warp = std::move(warp.map);

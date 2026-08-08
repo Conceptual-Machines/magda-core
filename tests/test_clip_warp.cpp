@@ -7,6 +7,7 @@
 #include "clip/ClipStretcher.hpp"
 #include "clip/EventPlacement.hpp"
 #include "clip/WarpMap.hpp"
+#include "exec/RenderContext.hpp"
 #include "io/SourceReaders.hpp"
 
 /**
@@ -94,6 +95,7 @@ AudioClipPlayback warpedClip(std::int64_t anchor = 0,
     event.span = clip.span;
     event.anchorSamples = anchor;
     event.interpBpm = kBpm;
+    event.warpEnabled = true;
     event.warp = magda::engine::compileWarpMap(warp).map;
 
     clip.events.push_back(std::move(event));
@@ -170,6 +172,26 @@ TEST_CASE("Compiling refuses what it cannot invert", "[engine][clip][warp]") {
 
         REQUIRE(backwards.droppedMarkers == 1);
         REQUIRE(backwards.map.points.size() == 2);
+    }
+
+    SECTION("one marker flung forwards costs itself and not the rest") {
+        // A greedy pass would anchor on the marker at warp 100 and drop the
+        // three behind it. What should go is the one marker that is wrong.
+        const auto flung = magda::engine::compileWarpMap(
+            {{0.0, 0.0}, {1.0, 100.0}, {2.0, 1.0}, {3.0, 2.0}, {4.0, 3.0}});
+
+        REQUIRE(flung.droppedMarkers == 1);
+        REQUIRE(flung.map.points.size() == 4);
+        REQUIRE(flung.map.points[1].warpSeconds == approx(1.0));
+        REQUIRE(flung.map.points.back().warpSeconds == approx(3.0));
+    }
+
+    SECTION("compiling one list twice keeps the same markers") {
+        const std::vector<magda::WarpMarker> awkward{
+            {0.0, 0.0}, {1.0, 100.0}, {2.0, 1.0}, {3.0, 2.0}, {4.0, 3.0}};
+
+        REQUIRE(magda::engine::compileWarpMap(awkward).map ==
+                magda::engine::compileWarpMap(awkward).map);
     }
 
     SECTION("two markers at one instant collapse") {
@@ -315,9 +337,75 @@ TEST_CASE("A warped loop bends the same way on every pass", "[engine][clip][warp
     }
 }
 
+TEST_CASE("Warp with no markers is still warp", "[engine][clip][warp]") {
+    // Identity as a map, and an interpretation as far as the model is
+    // concerned: the event stays on the beat face at its own bpm and still
+    // wants a stretcher. Deleting the last marker off a clip must not quietly
+    // stop it following the tempo.
+    auto clip = warpedClip(0, {});
+    auto& event = clip.events.front();
+    event.interpBpm = kBpm / 2.0;  // half the timeline's, so twice as fast
+
+    REQUIRE(event.warp.empty());
+    REQUIRE(event.warpEnabled);
+    REQUIRE(magda::engine::readingRateOf(event) == approx(2.0));
+    REQUIRE(readingAt(clip, 1.0) == approx(atSourceSecond(2.0)));
+
+    SECTION("and it still asks for a stretcher that can follow") {
+        const magda::engine::RenderContext context{kSampleRate, 512, 2};
+        REQUIRE(magda::engine::stretchSetupFor(clip, event, context).followsTempo);
+    }
+}
+
+TEST_CASE("A warp second is not a timeline second when the file disagrees",
+          "[engine][clip][warp]") {
+    // The rig above interprets the file at the timeline's own tempo, which
+    // makes the beat-face conversion a multiply by one and hides a units slip.
+    // Here the file is read at half the timeline's tempo, so a timeline second
+    // is two warp seconds and the map is walked twice as fast.
+    auto clip = warpedClip();
+    auto& event = clip.events.front();
+    event.interpBpm = kBpm / 2.0;
+
+    // Half a second of timeline is one warp second, which is source second two.
+    REQUIRE(readingAt(clip, 0.5) == approx(atSourceSecond(2.0)));
+
+    // And one and a half is warp three, the last marker.
+    REQUIRE(readingAt(clip, 1.5) == approx(atSourceSecond(3.0)));
+}
+
+TEST_CASE("A reversed warped loop composes both", "[engine][clip][warp]") {
+    auto clip = warpedClip();
+    auto& event = clip.events.front();
+    event.reversed = true;
+    event.loopEnabled = true;
+    event.loopStartSamples = 0;
+    event.loopLengthSamples = static_cast<std::int64_t>(atSourceSecond(2.0));
+
+    SECTION("it repeats on the loop's warped length") {
+        REQUIRE(readingAt(clip, 1.5) == approx(readingAt(clip, 0.5)));
+        REQUIRE(readingAt(clip, 3.25) == approx(readingAt(clip, 0.25)));
+    }
+
+    SECTION("and every position is still in the mirrored file") {
+        const auto mirrored = [](double sourceSeconds) {
+            return atSourceSecond(10000.0) - 1.0 - atSourceSecond(sourceSeconds);
+        };
+
+        // Warp folds into [0, 1); walking backwards from the far end lands at
+        // warp 0 exactly, which is source zero.
+        REQUIRE(readingAt(clip, 0.0) == approx(mirrored(0.0)));
+    }
+
+    SECTION("the reading chain still does not tile it a second time") {
+        REQUIRE(magda::engine::sourceReadFor(event, kSampleRate).loopLengthSamples == 0);
+    }
+}
+
 TEST_CASE("An unwarped event is untouched by any of this", "[engine][clip][warp]") {
     auto clip = warpedClip(500, {});
     auto& event = clip.events.front();
+    event.warpEnabled = false;
 
     REQUIRE(event.warp.empty());
     REQUIRE(magda::engine::readingPositionAt(clip, event, 11.0, beatAt(11.0), kSampleRate) ==

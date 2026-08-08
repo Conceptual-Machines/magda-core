@@ -103,13 +103,18 @@ struct WarpCompileResult {
 /**
  * @brief Compile @p markers into an invertible map.
  *
- * Sorts by source time and drops what does not strictly increase on both sides.
+ * Sorts by source time, collapses markers sharing an instant of the file, and
+ * keeps the largest set of what is left that runs forwards on the warp side.
  *
- * A marker that does not increase is dropped rather than the whole map being
- * refused: the rest of them still describe something, and a user who dragged
- * one marker past its neighbour should lose that marker rather than the clip's
- * timing. Coincident markers go the same way, which is what keeps every
- * segment's span positive and the lookup free of a zero divide.
+ * Largest rather than first-come. A marker the user dragged past its
+ * neighbours should cost itself, and a single forward pass does not deliver
+ * that: it anchors on whatever it saw first, so one marker flung far ahead
+ * survives and every marker behind it is dropped. What is kept here is a
+ * longest increasing subsequence, so the offending marker is the one that goes.
+ *
+ * The whole map is never refused. The markers that remain still describe
+ * something, and a clip that loses its timing entirely is a worse answer than
+ * one that loses a marker.
  */
 WarpCompileResult compileWarpMap(const std::vector<WarpMarker>& markers);
 

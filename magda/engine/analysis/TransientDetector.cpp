@@ -144,7 +144,15 @@ std::vector<double> detectTransients(AudioFileReader& reader,
     // from. Placing the marker where the sound starts rather than where the
     // detector noticed is the difference between a warped beat landing on the
     // grid and landing just behind it.
-    const auto rewind = static_cast<int>(sampleRate * 0.0005);
+    //
+    // Rounded up, which is not a preference. The incumbent truncates after the
+    // subtraction (`int (i - sampleRate * 0.0005)`), and for a whole-numbered i
+    // that is the same as subtracting the rounded-up rewind: at 44100 its
+    // effective rewind is 23 samples, not the 22 that truncating the rewind on
+    // its own would give. Reproducing this detector exactly is the whole
+    // argument for having written it this way, and one sample is a marker that
+    // moved.
+    const auto rewind = static_cast<int>(std::ceil(sampleRate * 0.0005));
 
     int countdown = 0;
 

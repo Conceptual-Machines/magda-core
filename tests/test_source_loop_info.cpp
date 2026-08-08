@@ -166,15 +166,47 @@ TEST_CASE("Time signatures come off either spelling", "[engine][io][loop-info]")
         REQUIRE(*info.denominator == 4);
     }
 
-    SECTION("the plainer one AIFF writes") {
+    SECTION("the plainer one AIFF writes, numerator first") {
+        // The fork reads this one backwards (tracktion_LoopInfo.cpp assigns the
+        // left side to the denominator), and 6/8 is 6 over 8 everywhere else.
         juce::StringPairArray metadata;
         metadata.set("time signature", "6/8");
 
         const auto info = loopInfoFrom(metadata, kSampleRate, kTwoSeconds);
 
-        REQUIRE(*info.denominator == 6);
-        REQUIRE(*info.numerator == 8);
+        REQUIRE(*info.numerator == 6);
+        REQUIRE(*info.denominator == 8);
     }
+}
+
+TEST_CASE("A zero acid field says no more than a missing one", "[engine][io][loop-info]") {
+    // What a real file looks like: JUCE writes every acid field whenever a file
+    // has an acid chunk at all, zeros included, so a loop carrying a beat count
+    // and no tempo arrives with acidTempo set to "0".
+    juce::StringPairArray metadata;
+    metadata.set(juce::WavAudioFormat::acidBeats, "4");
+    metadata.set(juce::WavAudioFormat::acidTempo, "0");
+    metadata.set(juce::WavAudioFormat::acidNumerator, "0");
+    metadata.set(juce::WavAudioFormat::acidDenominator, "0");
+
+    const auto info = loopInfoFrom(metadata, kSampleRate, kTwoSeconds);
+
+    REQUIRE(*info.numBeats == approx(4.0));
+    REQUIRE(info.bpm.has_value());
+    REQUIRE(*info.bpm == approx(120.0));
+    REQUIRE_FALSE(info.numerator.has_value());
+    REQUIRE_FALSE(info.denominator.has_value());
+}
+
+TEST_CASE("A tempo with no beats works the same way round", "[engine][io][loop-info]") {
+    juce::StringPairArray metadata;
+    metadata.set(juce::WavAudioFormat::acidBeats, "0");
+    metadata.set(juce::WavAudioFormat::acidTempo, "120");
+
+    const auto info = loopInfoFrom(metadata, kSampleRate, kTwoSeconds);
+
+    REQUIRE(*info.bpm == approx(120.0));
+    REQUIRE(*info.numBeats == approx(4.0));
 }
 
 TEST_CASE("An empty value said no more than a missing key", "[engine][io][loop-info]") {

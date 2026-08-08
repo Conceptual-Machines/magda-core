@@ -29,8 +29,10 @@ namespace {
 constexpr double kSampleRate = 44100.0;
 
 /// Half a millisecond, which is how far back a trigger is placed from where the
-/// differentiated envelope crossed the threshold.
-constexpr int kRewindSamples = 22;
+/// differentiated envelope crossed the threshold. Rounded up, because the
+/// incumbent truncates after subtracting it rather than before: at 44100 the
+/// effective rewind is 23 samples, not 22.
+constexpr int kRewindSamples = 23;
 
 Catch::Approx approx(double value, double margin = 1e-4) {
     return Catch::Approx(value).margin(margin);

@@ -119,11 +119,26 @@ struct AudioEventPlayback {
     /// has already forced a stretcher on (AudioEvent::isAnalogPitchActive).
     bool analogPitch = false;
 
+    /// Whether the event warps at all, which is not the same question as
+    /// whether @ref warp bends anything.
+    ///
+    /// Warp with no markers is identity as a map and is still warp as an
+    /// interpretation: the model puts such an event in the beat domain at its
+    /// own bpm and forces a stretcher on it
+    /// (AudioEvent::sourceInstantToTimelineBeats,
+    /// AudioEvent::getEffectiveTimeStretchMode). Reading that off the map being
+    /// empty would play it on the seconds face instead, which is a clip that
+    /// stops following the tempo the moment its last marker is deleted.
+    bool warpEnabled = false;
+
     /// Compiled and inverted, never the model's marker list (WarpMap.hpp).
-    /// Empty is identity, which is both "warp is off" and "warp is on and there
-    /// are no markers": the two describe the same playback and nothing
-    /// downstream has to tell them apart. Already mirrored where the event is
-    /// reversed, so the audio thread does one lookup whichever way it plays.
+    /// Empty is the identity lookup, which is what an event with no markers and
+    /// one with none left after the compile both get.
+    ///
+    /// In the model's own coordinates, forwards. Reverse is not baked in: it is
+    /// a coordinate change that EventPlacement.hpp resolves per lookup, because
+    /// mirroring the map would need the length of the region the event reads
+    /// and that is itself an answer from the map.
     WarpMap warp;
 
     bool autoPitch = false;

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace magda::engine {
 
@@ -101,22 +102,64 @@ WarpCompileResult compileWarpMap(const std::vector<WarpMarker>& markers) {
         return a.sourceSeconds < b.sourceSeconds;
     });
 
-    auto& points = result.map.points;
-    points.reserve(sorted.size());
+    // Coincident on the source side first. Two markers on one instant of the
+    // file are a segment with no span, which is an infinite rate; the earlier
+    // one is kept so that which survives does not depend on the order they were
+    // stored in.
+    std::vector<WarpMap::Point> distinct;
+    distinct.reserve(sorted.size());
 
     for (const auto& point : sorted) {
-        // Strictly increasing on both sides. Equal on either is a segment with
-        // no span, which is an infinite rate one way and a zero-divide the
-        // other; decreasing is a map with no inverse. Both are the user having
-        // dragged a marker past its neighbour, and both cost that marker.
-        if (!points.empty() && (point.sourceSeconds <= points.back().sourceSeconds ||
-                                point.warpSeconds <= points.back().warpSeconds)) {
+        if (!distinct.empty() && point.sourceSeconds <= distinct.back().sourceSeconds) {
             ++result.droppedMarkers;
             continue;
         }
 
-        points.push_back(point);
+        distinct.push_back(point);
     }
+
+    // Then the largest set of them that runs forwards on the warp side too.
+    //
+    // Largest, rather than whatever a single forward pass happens to keep. A
+    // greedy pass anchors on whatever it saw first, so one marker dragged far
+    // ahead of its neighbours survives and every marker it cleared is dropped
+    // behind it: markers at warp 0, 100, 1, 2, 3 would cost four of the five
+    // when dropping the one at 100 leaves a perfectly good map. What an
+    // offending marker costs should be itself, and that is a longest increasing
+    // subsequence.
+    //
+    // Deterministic: ties resolve towards the subsequence with the smallest
+    // tail, so two compiles of one marker list keep the same markers.
+    constexpr auto kNone = std::numeric_limits<std::size_t>::max();
+
+    std::vector<std::size_t> tails;  // tails[k]: index ending the best run of length k+1
+    std::vector<std::size_t> previous(distinct.size(), kNone);
+
+    for (std::size_t i = 0; i < distinct.size(); ++i) {
+        const auto at = std::lower_bound(tails.begin(), tails.end(), distinct[i].warpSeconds,
+                                         [&](std::size_t candidate, double value) {
+                                             return distinct[candidate].warpSeconds < value;
+                                         });
+
+        const auto length = static_cast<std::size_t>(at - tails.begin());
+
+        if (length > 0)
+            previous[i] = tails[length - 1];
+
+        if (at == tails.end())
+            tails.push_back(i);
+        else
+            *at = i;
+    }
+
+    auto& points = result.map.points;
+    points.resize(tails.size());
+
+    for (auto index = tails.empty() ? kNone : tails.back(), slot = tails.size(); index != kNone;
+         index = previous[index])
+        points[--slot] = distinct[index];
+
+    result.droppedMarkers += static_cast<int>(distinct.size() - points.size());
 
     return result;
 }
