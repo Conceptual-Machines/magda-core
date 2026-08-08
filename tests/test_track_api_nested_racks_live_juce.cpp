@@ -193,6 +193,58 @@ class TrackApiNestedRacksLiveTest final : public juce::UnitTest {
             api.setChainName(ChainNodePath::chain(track, rackId, 9999), "Nowhere");
             expect(api.getChainByPath(chainPath)->name != "Nowhere");
         }
+
+        beginTest("A structurally impossible route is refused, even with real ids");
+        {
+            // The harder case than a missing id: every step below names
+            // something that genuinely exists, and only the *shape* is wrong.
+            // Rejecting a miss is not enough, because two consecutive steps of
+            // the same kind walk sideways through the tree on ids that resolve.
+            Fixture fixture;
+            TrackApiLive api;
+
+            const auto track = api.createTrack("Bus", TrackType::Audio);
+            const auto rackA = api.addRackToTrack(track, "A");
+            const auto rackB = api.addRackToTrack(track, "B");
+            const auto pathA = ChainNodePath::rack(track, rackA);
+            const auto pathB = ChainNodePath::rack(track, rackB);
+
+            // Rack after Rack. `rackB` is a *sibling* of `rackA`, not inside
+            // it — with the chain context cleared, the second step used to
+            // search the track list again and find it.
+            expect(api.getRackByPath(pathA.withRack(rackB)) == nullptr);
+
+            // Chain after Chain. Two chains in one rack; the second is a
+            // sibling of the first, reached by a route that passes through
+            // nothing.
+            const auto chain1 = api.getRackByPath(pathA)->chains.front().id;
+            const auto chain2 = api.addChainToRack(pathA, "Second");
+            expect(chain2 != INVALID_CHAIN_ID);
+            expect(api.getChainByPath(pathA.withChain(chain1).withChain(chain2)) == nullptr);
+            expect(api.getRackByPath(pathA.withChain(chain1).withChain(chain2)) == nullptr);
+
+            // A device is a leaf; nothing follows it.
+            DeviceInfo device;
+            device.name = "Leaf";
+            const auto deviceId = api.addDeviceToChainByPath(pathA.withChain(chain1), device);
+            expect(deviceId != INVALID_DEVICE_ID);
+            expect(api.getRackByPath(
+                       pathA.withChain(chain1).withDevice(deviceId).withRack(rackB)) == nullptr);
+
+            // And the writes that resolve through it leave both racks alone,
+            // rather than landing on the sibling the route wandered into.
+            const auto volumeB = api.getRackByPath(pathB)->volume;
+            const auto chainsB = api.getRackByPath(pathB)->chains.size();
+            api.setRackVolume(pathA.withRack(rackB), -24.0f);
+            api.setRackBypassedByPath(pathA.withRack(rackB), true);
+            api.addChainToRack(pathA.withRack(rackB), "Should not appear");
+
+            const auto* afterB = api.getRackByPath(pathB);
+            expect(afterB != nullptr);
+            expectWithinAbsoluteError(afterB->volume, volumeB, 0.001f);
+            expect(!afterB->bypassed);
+            expect(afterB->chains.size() == chainsB);
+        }
     }
 
   private:

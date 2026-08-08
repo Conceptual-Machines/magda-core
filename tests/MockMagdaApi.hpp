@@ -428,34 +428,53 @@ class MockTrackApi : public TrackApi {
         if (track == nullptr)
             return nullptr;
 
+        // Mirrors `TrackManager::getRackByPath` step for step, including its
+        // structural rules: a route alternates `Rack > Chain > Rack > Chain`,
+        // a Device is a leaf, and a Segment only ever leads. Two consecutive
+        // steps of the same kind move sideways through the tree on ids that all
+        // exist, which is a route the model cannot express — see the long note
+        // on the model's copy for the shapes that used to resolve.
         RackInfo* rack = nullptr;
         ChainInfo* chain = nullptr;
-        for (const auto& step : rackPath.steps) {
+        for (std::size_t index = 0; index < rackPath.steps.size(); ++index) {
+            const auto& step = rackPath.steps[index];
+            const bool isLast = index + 1 == rackPath.steps.size();
+
             if (step.type == ChainStepType::Rack) {
+                if (rack != nullptr && chain == nullptr)
+                    return nullptr;
                 // A rack sits either directly in the track's FX list or inside
                 // the chain reached by the previous step.
                 auto& elements = chain != nullptr ? chain->elements : track->chain.fxChainElements;
-                rack = nullptr;
+                RackInfo* found = nullptr;
                 for (auto& element : elements) {
                     if (magda::isRack(element) && magda::getRack(element).id == step.id) {
-                        rack = &magda::getRack(element);
+                        found = &magda::getRack(element);
                         break;
                     }
                 }
-                chain = nullptr;
-                if (rack == nullptr)
+                if (found == nullptr)
                     return nullptr;
+                rack = found;
+                chain = nullptr;
             } else if (step.type == ChainStepType::Chain) {
-                if (rack == nullptr)
+                if (rack == nullptr || chain != nullptr)
                     return nullptr;
-                chain = nullptr;
+                ChainInfo* found = nullptr;
                 for (auto& candidate : rack->chains) {
                     if (candidate.id == step.id) {
-                        chain = &candidate;
+                        found = &candidate;
                         break;
                     }
                 }
-                if (chain == nullptr)
+                if (found == nullptr)
+                    return nullptr;
+                chain = found;
+            } else if (step.type == ChainStepType::Device) {
+                if (!isLast)
+                    return nullptr;
+            } else if (step.type == ChainStepType::Segment) {
+                if (index != 0)
                     return nullptr;
             }
         }
@@ -473,6 +492,13 @@ class MockTrackApi : public TrackApi {
 
     ChainInfo* resolveChain(const ChainNodePath& chainPath) {
         if (chainPath.steps.empty() || chainPath.steps.back().type != ChainStepType::Chain)
+            return nullptr;
+        // A chain hangs directly off a rack. Resolving the prefix is not enough
+        // by itself — for `rack > chain1 > chain2` the prefix is legal, and the
+        // search below would find `chain2` beside `chain1` in the same rack.
+        // Mirrors the same guard in `TrackManager::getChainByPath`.
+        if (chainPath.steps.size() < 2 ||
+            chainPath.steps[chainPath.steps.size() - 2].type != ChainStepType::Rack)
             return nullptr;
         auto* rack = resolveRack(chainPath.parent());
         if (rack == nullptr)

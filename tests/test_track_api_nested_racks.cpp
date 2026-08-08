@@ -247,3 +247,47 @@ TEST_CASE("An unresolvable path yields nothing rather than the wrong node",
     REQUIRE(api.tracks().getRackByPath(top.rackPath())->volume != -24.0f);
     REQUIRE(api.tracks().getRackByPath(top.rackPath())->chains.size() == chainsBefore);
 }
+
+TEST_CASE("A structurally impossible route is refused, even with real ids",
+          "[track-api][racks][nesting]") {
+    // Harder than a missing id: every step here names something real, and only
+    // the shape is wrong. The model alternates `Rack > Chain > Rack > Chain`,
+    // so two consecutive steps of the same kind walk sideways through the tree
+    // on ids that all resolve — which is how a write reaches a node on the
+    // other side of it. The live suite asserts the same shapes against the real
+    // resolver.
+    MockMagdaApi api;
+    const auto top = makeTopLevel(api);
+    const auto rackB = api.tracks().addRackToTrack(top.track, "B");
+    REQUIRE(rackB != INVALID_RACK_ID);
+
+    // Rack after Rack: `rackB` is a sibling, not a child.
+    REQUIRE(api.tracks().getRackByPath(top.rackPath().withRack(rackB)) == nullptr);
+
+    // Chain after Chain: siblings within one rack.
+    const auto secondChain = api.tracks().addChainToRack(top.rackPath(), "Second");
+    REQUIRE(secondChain != INVALID_CHAIN_ID);
+    REQUIRE(api.tracks().getChainByPath(top.chainPath().withChain(secondChain)) == nullptr);
+    REQUIRE(api.tracks().getRackByPath(top.chainPath().withChain(secondChain)) == nullptr);
+
+    // A device is a leaf; nothing follows it.
+    DeviceInfo device;
+    device.name = "Leaf";
+    const auto deviceId = api.tracks().addDeviceToChainByPath(top.chainPath(), device);
+    REQUIRE(api.tracks().getRackByPath(top.chainPath().withDevice(deviceId).withRack(rackB)) ==
+            nullptr);
+
+    // A Segment only ever leads a path.
+    auto trailingSegment = top.rackPath();
+    trailingSegment.steps.push_back(
+        {ChainStepType::Segment, static_cast<int>(ChainSegment::PostFx)});
+    REQUIRE(api.tracks().getRackByPath(trailingSegment) == nullptr);
+
+    // And the sideways write lands nowhere.
+    const auto* siblingBefore = api.tracks().getRackByPath(ChainNodePath::rack(top.track, rackB));
+    REQUIRE(siblingBefore != nullptr);
+    const auto volumeBefore = siblingBefore->volume;
+    api.tracks().setRackVolume(top.rackPath().withRack(rackB), -24.0f);
+    REQUIRE(api.tracks().getRackByPath(ChainNodePath::rack(top.track, rackB))->volume ==
+            volumeBefore);
+}

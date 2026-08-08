@@ -2443,13 +2443,40 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
     // landing silently on a node the caller never named. Failing closed is the
     // only answer that cannot do that.
     //
+    // The structure has to hold as well as the ids. Racks contain chains and
+    // chains contain racks, so a route alternates `Rack > Chain > Rack > Chain`;
+    // a step that cannot follow the one before it describes a route the model
+    // has no way to express. Checking only that each id resolves is not enough,
+    // because two consecutive steps of the same kind then move sideways through
+    // the tree using ids that all genuinely exist:
+    //
+    //   rack(A).withRack(B)            — B is a *sibling* top-level rack, and
+    //                                    with `currentChain` null the second
+    //                                    Rack step searched the track list
+    //                                    again and found it.
+    //   rack(R).withChain(c1).withChain(c2)
+    //                                  — c2 is a sibling chain of c1 in the
+    //                                    same rack, reached by a route that
+    //                                    never went through anything.
+    //
+    // Both resolved, and every path-based rack mutator would then write to a
+    // node on the other side of the tree from the one the caller named.
+    //
     // Deliberately unchanged: a path that resolves *completely* but ends on a
     // Chain or Device step still returns the enclosing rack rather than
-    // nothing. That leniency is long-standing, callers may rely on it, and it
-    // is a different question — #2057.
-    for (const auto& step : rackPath.steps) {
+    // nothing. That is a terminal-type leniency on a route that does exist,
+    // which is a different question — #2057.
+    for (std::size_t index = 0; index < rackPath.steps.size(); ++index) {
+        const auto& step = rackPath.steps[index];
+        const bool isLast = index + 1 == rackPath.steps.size();
+
         switch (step.type) {
             case ChainStepType::Rack: {
+                // Valid at track level, or immediately inside a chain. A Rack
+                // straight after a Rack is the sideways move above.
+                if (currentRack != nullptr && currentChain == nullptr)
+                    return nullptr;
+
                 // Top-level racks live in the track's own FX list; a nested one
                 // lives in the chain the previous step reached.
                 auto& elements =
@@ -2468,8 +2495,11 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
                 break;
             }
             case ChainStepType::Chain: {
-                if (currentRack == nullptr)
+                // Only ever directly inside a rack. A Chain after a Chain would
+                // hop between siblings.
+                if (currentRack == nullptr || currentChain != nullptr)
                     return nullptr;
+
                 ChainInfo* found = nullptr;
                 for (auto& chain : currentRack->chains) {
                     if (chain.id == step.id) {
@@ -2483,10 +2513,16 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
                 break;
             }
             case ChainStepType::Device:
-                // Devices don't contain racks, skip
+                // A leaf. Devices contain nothing, so nothing may follow one.
+                if (!isLast)
+                    return nullptr;
                 break;
             case ChainStepType::Segment:
-                // Segment steps don't affect rack traversal
+                // Only ever leads a path — it selects which of the track's FX
+                // lists to descend into, which is not a question that can be
+                // asked twice or part way down.
+                if (index != 0)
+                    return nullptr;
                 break;
         }
     }
@@ -2566,6 +2602,16 @@ void TrackManager::removeChainByPath(const ChainNodePath& chainPath) {
 
 ChainInfo* TrackManager::getChainByPath(const ChainNodePath& chainPath) {
     if (chainPath.steps.empty() || chainPath.steps.back().type != ChainStepType::Chain)
+        return nullptr;
+
+    // A chain hangs directly off a rack, so the step before it has to be one.
+    // Checking the prefix through `getRackByPath` is not enough on its own: for
+    // `rack > chain1 > chain2` the prefix `rack > chain1` is a perfectly legal
+    // route, and the search below would then find `chain2` sitting beside
+    // `chain1` in that same rack — a sibling reached by a path that never
+    // descended into anything.
+    if (chainPath.steps.size() < 2 ||
+        chainPath.steps[chainPath.steps.size() - 2].type != ChainStepType::Rack)
         return nullptr;
 
     const ChainId chainId = chainPath.steps.back().id;
