@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -171,6 +172,125 @@ TEST_CASE("Toggles set from a value and flip without one", "[osc][router]") {
 }
 
 // ============================================================================
+// Hostile and malformed arguments
+// ============================================================================
+
+TEST_CASE("Non-finite arguments never reach the model", "[osc][router]") {
+    // A float32 argument is free to be NaN or an infinity, and jlimit
+    // propagates NaN rather than clamping it. This is an unauthenticated UDP
+    // port, so one stray packet must not put NaN into a fader or the playhead.
+    HeldRouter r;
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+
+    REQUIRE_FALSE(r.router->handleMessage(juce::OSCMessage("/magda/track/1/volume", nan)));
+    REQUIRE_FALSE(r.router->handleMessage(juce::OSCMessage("/magda/track/1/pan", inf)));
+    REQUIRE_FALSE(r.router->handleMessage(juce::OSCMessage("/magda/master/volume", -inf)));
+    REQUIRE_FALSE(r.router->handleMessage(juce::OSCMessage("/magda/transport/position", nan)));
+    REQUIRE_FALSE(r.router->handleMessage(juce::OSCMessage("/magda/transport/tempo", inf)));
+    REQUIRE_FALSE(r.router->handleMessage(juce::OSCMessage("/magda/focused/macro/1", nan)));
+    r.drain();
+
+    REQUIRE(r.applied().empty());
+}
+
+TEST_CASE("An argument we cannot read is not the same as none", "[osc][router]") {
+    // For a toggle, the *absence* of an argument is the request — flip. So a
+    // message carrying something unreadable must be ignored rather than read as
+    // bare, or a surface speaking an unknown dialect flips mutes.
+    HeldRouter r;
+    REQUIRE_FALSE(
+        r.router->handleMessage(juce::OSCMessage("/magda/track/1/mute", juce::String("on"))));
+    REQUIRE_FALSE(
+        r.router->handleMessage(juce::OSCMessage("/magda/transport/record", juce::String("go"))));
+    REQUIRE_FALSE(r.router->handleMessage(
+        juce::OSCMessage("/magda/track/1/mute", std::numeric_limits<float>::quiet_NaN())));
+    r.drain();
+
+    REQUIRE(r.applied().empty());
+}
+
+// ============================================================================
+// Edges keep their order
+// ============================================================================
+
+TEST_CASE("Two flips of one toggle cancel", "[osc][router]") {
+    // A toggle is an edge, not a value. Latest-value-wins would collapse these
+    // into one flip and leave the track muted.
+    HeldRouter r;
+    r.send(juce::OSCMessage("/magda/track/1/mute"));
+    r.send(juce::OSCMessage("/magda/track/1/mute"));
+    r.drain();
+
+    REQUIRE(r.applied().size() == 2);
+    REQUIRE(r.applied()[0].value == Approx(kOscToggleRequest));
+    REQUIRE(r.applied()[1].value == Approx(kOscToggleRequest));
+}
+
+TEST_CASE("A set followed by a flip keeps both", "[osc][router]") {
+    HeldRouter r;
+    r.send(juce::OSCMessage("/magda/track/1/mute", 1.0f));
+    r.send(juce::OSCMessage("/magda/track/1/mute"));
+    r.drain();
+
+    REQUIRE(r.applied().size() == 2);
+    REQUIRE(r.applied()[0].value == Approx(1.0f));
+    REQUIRE(r.applied()[1].value == Approx(kOscToggleRequest));
+}
+
+TEST_CASE("A stop-locate-play cue lands playing at the new position", "[osc][router]") {
+    // The show-control shape: one bundle, delivered atomically into one drain.
+    // Play and stop are two addresses over one state, so resolving them by slot
+    // number rather than arrival would make this land stopped whatever the
+    // sender intended.
+    HeldRouter r;
+    r.send(juce::OSCMessage("/magda/transport/stop"));
+    r.send(juce::OSCMessage("/magda/transport/position", 64.0f));
+    r.send(juce::OSCMessage("/magda/transport/play"));
+    r.drain();
+
+    REQUIRE(r.applied().size() == 3);
+    // The locate first, so the transport rolls from where the cue put it...
+    REQUIRE(r.applied()[0].command.kind == OscCommandKind::TransportPosition);
+    REQUIRE(r.applied()[0].value == Approx(64.0f));
+    // ...then the edges, in the order they were sent.
+    REQUIRE(r.applied()[1].command.kind == OscCommandKind::TransportStop);
+    REQUIRE(r.applied()[2].command.kind == OscCommandKind::TransportPlay);
+}
+
+TEST_CASE("Play then stop lands stopped, and stop then play lands playing", "[osc][router]") {
+    {
+        HeldRouter r;
+        r.send(juce::OSCMessage("/magda/transport/play"));
+        r.send(juce::OSCMessage("/magda/transport/stop"));
+        r.drain();
+        REQUIRE(r.applied().size() == 2);
+        REQUIRE(r.applied()[1].command.kind == OscCommandKind::TransportStop);
+    }
+    {
+        HeldRouter r;
+        r.send(juce::OSCMessage("/magda/transport/stop"));
+        r.send(juce::OSCMessage("/magda/transport/play"));
+        r.drain();
+        REQUIRE(r.applied().size() == 2);
+        REQUIRE(r.applied()[1].command.kind == OscCommandKind::TransportPlay);
+    }
+}
+
+TEST_CASE("A flood of presses is bounded and counted", "[osc][router]") {
+    // Unbounded ordering would be unbounded memory on an unauthenticated port.
+    HeldRouter r;
+    for (int i = 0; i < 5000; ++i)
+        r.send(juce::OSCMessage("/magda/track/1/mute"));
+
+    REQUIRE(r.router->droppedCommandCount() > 0);
+    r.drain();
+    // What survived is bounded, and every drain makes room for more.
+    REQUIRE(r.applied().size() <= 5000);
+    REQUIRE_FALSE(r.applied().empty());
+}
+
+// ============================================================================
 // Coalescing
 // ============================================================================
 
@@ -295,4 +415,7 @@ TEST_CASE("Every fixed-namespace address survives a round trip", "[osc][router]"
 
     r.drain();
     REQUIRE(static_cast<int>(r.applied().size()) == sent);
+    // Every discrete address pressed at once has to fit: this is the state dump
+    // a surface sends on connect, not a flood.
+    REQUIRE(r.router->droppedCommandCount() == 0);
 }

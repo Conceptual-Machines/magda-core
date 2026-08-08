@@ -4,6 +4,61 @@ namespace magda::osc {
 
 namespace {
 
+/// The deepest address in the namespace is `/magda/track/{n}/send/{m}`.
+constexpr int kMaxSegments = 5;
+
+/**
+ * @brief One '/'-delimited component, pointing into the caller's address.
+ *
+ * A view rather than a copy: parsing runs on the receive thread for every
+ * datagram, and splitting into `juce::String`s would allocate once per
+ * component per message — a per-packet cost paid to look at a handful of bytes.
+ */
+struct Segment {
+    const char* data = nullptr;
+    int length = 0;
+
+    bool equals(const char* literal) const {
+        int i = 0;
+        for (; i < length; ++i)
+            if (literal[i] == '\0' || literal[i] != data[i])
+                return false;
+        return literal[i] == '\0';
+    }
+};
+
+/**
+ * @brief Split an address into its components without allocating.
+ *
+ * @return the number of components, -1 when the address is not well formed
+ *         (OSC addresses begin with '/'), or a count above `kMaxSegments` when
+ *         it is deeper than anything in the namespace.
+ *
+ * Bytes are compared raw. A multi-byte UTF-8 sequence matches no literal here
+ * and parses as no digit, which is the answer we want for it anyway.
+ */
+int splitAddress(juce::StringRef address, Segment* out) {
+    const char* cursor = address.text.getAddress();
+    if (cursor == nullptr || *cursor != '/')
+        return -1;
+    ++cursor;
+
+    int count = 0;
+    const char* segmentStart = cursor;
+    for (;; ++cursor) {
+        if (*cursor != '/' && *cursor != '\0')
+            continue;
+        if (count == kMaxSegments)
+            return kMaxSegments + 1;
+        out[count].data = segmentStart;
+        out[count].length = static_cast<int>(cursor - segmentStart);
+        ++count;
+        if (*cursor == '\0')
+            return count;
+        segmentStart = cursor + 1;
+    }
+}
+
 /**
  * @brief Parse a strictly decimal 1-based index, or 0 if it is not one.
  *
@@ -13,18 +68,18 @@ namespace {
  * rejected too, so one address means one thing: "/magda/track/03/volume" is not
  * a second spelling of track 3.
  */
-int parseIndex(const juce::String& token, int maxValue) {
-    if (token.isEmpty() || token.length() > 3)
+int parseIndex(const Segment& token, int maxValue) {
+    if (token.length <= 0 || token.length > 3)
         return 0;
-    if (token[0] == '0')  // covers "0" itself and any leading-zero spelling
+    if (token.data[0] == '0')  // covers "0" itself and any leading-zero spelling
         return 0;
 
     int value = 0;
-    for (int i = 0; i < token.length(); ++i) {
-        const auto c = token[i];
+    for (int i = 0; i < token.length; ++i) {
+        const char c = token.data[i];
         if (c < '0' || c > '9')
             return 0;
-        value = value * 10 + (c - '0');
+        value = (value * 10) + (c - '0');
     }
     return value <= maxValue ? value : 0;
 }
@@ -69,77 +124,75 @@ OscArgKind argKindFor(OscCommandKind kind) {
 // ============================================================================
 
 std::optional<OscCommand> parseOscAddress(juce::StringRef address) {
-    // Split rather than match incrementally: the grammar is three to five
-    // components deep and every branch needs the component count anyway.
-    auto parts = juce::StringArray::fromTokens(juce::String(address), "/", "");
-    // A well-formed OSC address starts with '/', so the first token is empty.
-    if (parts.size() < 3 || parts[0].isNotEmpty())
+    Segment parts[kMaxSegments];
+    const int count = splitAddress(address, parts);
+    if (count < 2 || count > kMaxSegments)
         return std::nullopt;
-    if (parts[1] != "magda")
+    if (!parts[0].equals("magda"))
         return std::nullopt;
 
-    const auto& section = parts[2];
+    const auto& section = parts[1];
 
-    if (section == "transport") {
-        if (parts.size() != 4)
+    if (section.equals("transport")) {
+        if (count != 3)
             return std::nullopt;
-        const auto& leaf = parts[3];
-        if (leaf == "play")
+        const auto& leaf = parts[2];
+        if (leaf.equals("play"))
             return unindexed(OscCommandKind::TransportPlay);
-        if (leaf == "stop")
+        if (leaf.equals("stop"))
             return unindexed(OscCommandKind::TransportStop);
-        if (leaf == "record")
+        if (leaf.equals("record"))
             return unindexed(OscCommandKind::TransportRecord);
-        if (leaf == "loop")
+        if (leaf.equals("loop"))
             return unindexed(OscCommandKind::TransportLoop);
-        if (leaf == "tempo")
+        if (leaf.equals("tempo"))
             return unindexed(OscCommandKind::TransportTempo);
-        if (leaf == "position")
+        if (leaf.equals("position"))
             return unindexed(OscCommandKind::TransportPosition);
         return std::nullopt;
     }
 
-    if (section == "master") {
-        if (parts.size() != 4)
+    if (section.equals("master")) {
+        if (count != 3)
             return std::nullopt;
-        if (parts[3] == "volume")
+        if (parts[2].equals("volume"))
             return unindexed(OscCommandKind::MasterVolume);
-        if (parts[3] == "pan")
+        if (parts[2].equals("pan"))
             return unindexed(OscCommandKind::MasterPan);
         return std::nullopt;
     }
 
-    if (section == "focused") {
+    if (section.equals("focused")) {
         // Only macros today. A second focused address would branch here.
-        if (parts.size() != 5 || parts[3] != "macro")
+        if (count != 4 || !parts[2].equals("macro"))
             return std::nullopt;
-        const int macro = parseIndex(parts[4], kMaxMacroNumber);
+        const int macro = parseIndex(parts[3], kMaxMacroNumber);
         return macro > 0 ? std::optional(OscCommand{OscCommandKind::FocusedMacro, macro, 0})
                          : std::nullopt;
     }
 
-    if (section == "track") {
-        if (parts.size() < 5)
+    if (section.equals("track")) {
+        if (count < 4)
             return std::nullopt;
-        const int track = parseIndex(parts[3], kMaxTrackNumber);
+        const int track = parseIndex(parts[2], kMaxTrackNumber);
         if (track == 0)
             return std::nullopt;
 
-        const auto& leaf = parts[4];
-        if (parts.size() == 5) {
-            if (leaf == "volume")
+        const auto& leaf = parts[3];
+        if (count == 4) {
+            if (leaf.equals("volume"))
                 return OscCommand{OscCommandKind::TrackVolume, track, 0};
-            if (leaf == "pan")
+            if (leaf.equals("pan"))
                 return OscCommand{OscCommandKind::TrackPan, track, 0};
-            if (leaf == "mute")
+            if (leaf.equals("mute"))
                 return OscCommand{OscCommandKind::TrackMute, track, 0};
-            if (leaf == "solo")
+            if (leaf.equals("solo"))
                 return OscCommand{OscCommandKind::TrackSolo, track, 0};
             return std::nullopt;
         }
 
-        if (parts.size() == 6 && leaf == "send") {
-            const int send = parseIndex(parts[5], kMaxSendNumber);
+        if (count == 5 && leaf.equals("send")) {
+            const int send = parseIndex(parts[4], kMaxSendNumber);
             return send > 0 ? std::optional(OscCommand{OscCommandKind::TrackSend, track, send})
                             : std::nullopt;
         }

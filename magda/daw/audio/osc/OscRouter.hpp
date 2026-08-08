@@ -62,7 +62,7 @@ std::optional<float> oscValueFor(const OscCommand& command, const juce::OSCMessa
 /**
  * @brief Turns a stream of OSC messages into message-thread parameter writes.
  *
- * ## Why this coalesces
+ * ## Two kinds of traffic, two paths
  *
  * A tablet mixer sends continuously while a finger is down — a fader stream at
  * 100 Hz per control is the normal case, not the adversarial one, and eight
@@ -71,25 +71,45 @@ std::optional<float> oscValueFor(const OscCommand& command, const juce::OSCMessa
  * and posting each one *in order* would mean the user's last fader position
  * waiting behind several hundred stale ones.
  *
- * So the receive thread does not post messages; it publishes values. Every
- * address in the fixed namespace owns a slot (`oscSlotIndex`), a store into
- * that slot overwrites whatever had not been applied yet, and the message
- * thread drains the whole table at once. What lands is the most recent value
- * per address, at whatever rate the message thread can absorb, and the cost of
- * a faster surface is finer resolution rather than a longer queue.
+ * So a **continuous value** — a level, a tempo, a beat position — is not
+ * posted, it is published. Every address in the fixed namespace owns a slot
+ * (`oscSlotIndex`), a store into that slot overwrites whatever had not been
+ * applied yet, and the message thread drains the whole table at once. What
+ * lands is the most recent value per address, at whatever rate the message
+ * thread can absorb, and the cost of a faster surface is finer resolution
+ * rather than a longer queue.
  *
- * The consequence worth knowing is that values are not applied in arrival
- * order across different addresses — a drain walks slots. Within one address
- * order is preserved trivially, because only the latest value exists. This is
- * the standard control-surface tradeoff and it is why the namespace carries
- * levels and states rather than anything sequenced.
+ * A **discrete command** — a trigger or a toggle — cannot be treated that way,
+ * because it is an edge rather than a value and latest-value-wins is the wrong
+ * algebra for edges. Two bare mute messages are two flips and should cancel;
+ * collapsing them into one slot leaves the track muted. Worse, `play` and
+ * `stop` are two addresses over one state, so resolving them by slot order
+ * rather than arrival order makes a bundle of `[stop, position, play]` — an
+ * ordinary show-control cue, delivered atomically into a single drain — land
+ * stopped. So triggers and toggles go into a small bounded ring in arrival
+ * order instead, which is affordable precisely because they come from fingers
+ * and buttons rather than from a fader stream.
+ *
+ * The drain applies the coalesced values first and the ordered commands after.
+ * That is the useful order for the cue above: the locate lands, then the
+ * transport acts on it, rather than rolling from the old position and jumping.
+ *
+ * What remains is that two *continuous* addresses are not applied in arrival
+ * order relative to each other — a drain walks slots. Within one address order
+ * is preserved trivially, because only the latest value exists. That is the
+ * standard control-surface tradeoff, and with edges moved off this path there
+ * is no longer a pair of addresses whose relative order changes the outcome.
  *
  * ## Threading
  *
- * `handleMessage` runs on the OSC receive thread. It allocates nothing, takes
- * no lock, and touches only atomics — a slow or blocked message thread makes
- * MAGDA coarser, never the network thread slower. At most one drain is ever
- * outstanding, whatever the message rate.
+ * `handleMessage` runs on the OSC receive thread. It takes no lock and, apart
+ * from the one `callAsync` that carries a drain to the message thread, it
+ * allocates nothing: parsing is a scan over the address bytes, and publishing
+ * is a store plus an atomic bit. Because at most one drain is outstanding at a
+ * time, that single allocation is bounded by the drain rate rather than by the
+ * message rate — a surface sending faster cannot make the receive thread
+ * allocate more. A slow or blocked message thread makes MAGDA coarser, never
+ * the network thread slower.
  *
  * Nothing here touches the audio thread; parameter writes reach it through the
  * same host-write path the MIDI control surfaces use.
@@ -144,13 +164,38 @@ class OscRouter {
     /// will not talk to MAGDA raises.
     std::uint64_t acceptedMessageCount() const;
 
+    /// Discrete commands dropped because the ordered ring was full. Non-zero
+    /// means a sender outran the message thread with buttons, which no surface
+    /// driven by fingers can do — so it reads as a flood rather than as use.
+    std::uint64_t droppedCommandCount() const;
+
   private:
     /// 64 slots per word, rounded up.
     static constexpr int kDirtyWords = (kOscSlotCount + 63) / 64;
 
+    /// Depth of the ordered ring, a power of two so the wrap is a mask.
+    ///
+    /// Sized above the whole discrete address space — every track's mute and
+    /// solo, plus the transport's four — so a surface can state-dump every
+    /// button it owns in one bundle and lose none of it. That is the realistic
+    /// worst case; past it, a sender is outrunning the message thread with
+    /// buttons, which fingers cannot do. Bounded so that costs a fixed amount
+    /// of memory and some dropped presses rather than unbounded growth.
+    static constexpr std::uint32_t kOrderedCapacity = 512;
+    static_assert(kOrderedCapacity > (kMaxTrackNumber * 2) + 4,
+                  "the ring must hold one press of every discrete address at once");
+
+    /// Applied in arrival order, ahead of nothing and behind the value table.
+    struct OrderedCommand {
+        OscCommand command;
+        float value = 0.0f;
+    };
+
     void submit(const OscCommand& command, float value);
     void scheduleDrain();
     void postDrain();
+    bool pushOrdered(const OscCommand& command, float value);
+    void drainOrdered();
 
     std::unique_ptr<OscCommandSink> sink_;
     std::function<void()> scheduler_;
@@ -171,7 +216,15 @@ class OscRouter {
     /// surface happened to move again.
     std::atomic<bool> drainScheduled_{false};
 
+    /// Triggers and toggles, in the order they arrived. Single-producer: one
+    /// `OSCReceiver` owns one receive thread, and `handleMessage` is documented
+    /// as that thread's entry point. Single-consumer: the drain.
+    std::array<OrderedCommand, kOrderedCapacity> ordered_{};
+    std::atomic<std::uint32_t> orderedWrite_{0};
+    std::atomic<std::uint32_t> orderedRead_{0};
+
     std::atomic<std::uint64_t> accepted_{0};
+    std::atomic<std::uint64_t> dropped_{0};
 
     /// Cleared before the object dies so a drain still sitting in the message
     /// queue completes without touching it.
