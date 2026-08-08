@@ -300,20 +300,20 @@ TEST_CASE("Both transports attribute a request to the name the client declared",
     MockMagdaApi api;
     RemoteApiService service(api);
     RemoteClientRegistry registry;
-    RemoteAuditLog log;
-    service.setAuditLog(&log);
+    auto log = std::make_shared<RemoteAuditLog>();
+    service.setAuditLog(log);
 
     RemoteWebSocketServer::Options wsOptions;
     wsOptions.bearerToken = kToken;
     wsOptions.clients = &registry;
-    wsOptions.audit = &log;
+    wsOptions.audit = log;
     RemoteWebSocketServer wsServer(service, wsOptions);
     REQUIRE(wsServer.start());
 
     RemoteMcpServer::Options mcpOptions;
     mcpOptions.bearerToken = kToken;
     mcpOptions.clients = &registry;
-    mcpOptions.audit = &log;
+    mcpOptions.audit = log;
     RemoteMcpServer mcpServer(service, mcpOptions);
     REQUIRE(mcpServer.start());
 
@@ -336,7 +336,7 @@ TEST_CASE("Both transports attribute a request to the name the client declared",
 
     // And both transports named it the same way in the record.
     juce::StringArray transports;
-    for (const auto& entry : log.forClient(kClient))
+    for (const auto& entry : log->forClient(kClient))
         transports.addIfNotAlreadyThere(entry.transport);
     REQUIRE(transports.contains(TRANSPORT_WEBSOCKET));
     REQUIRE(transports.contains(TRANSPORT_MCP));
@@ -596,7 +596,7 @@ TEST_CASE("A refused connection is recorded without its credential",
     MockMagdaApi api;
     RemoteApiService service(api);
     RemoteClientRegistry registry;
-    RemoteAuditLog log;
+    auto log = std::make_shared<RemoteAuditLog>();
 
     forgetAllRemoteSecrets();
     registerRemoteSecret(kToken);
@@ -604,7 +604,7 @@ TEST_CASE("A refused connection is recorded without its credential",
     RemoteWebSocketServer::Options wsOptions;
     wsOptions.bearerToken = kToken;
     wsOptions.clients = &registry;
-    wsOptions.audit = &log;
+    wsOptions.audit = log;
     RemoteWebSocketServer server(service, wsOptions);
     REQUIRE(server.start());
 
@@ -615,7 +615,7 @@ TEST_CASE("A refused connection is recorded without its credential",
     }
 
     bool sawRejection = false;
-    for (const auto& entry : log.entries()) {
+    for (const auto& entry : log->entries()) {
         if (entry.outcome != AuditOutcome::Rejected)
             continue;
         sawRejection = true;
@@ -642,8 +642,8 @@ TEST_CASE("Permission decisions hold up under concurrent load",
     api.project_.info.tempo = 120.0;
     RemoteApiService service(api);
     RemoteClientRegistry registry;
-    RemoteAuditLog log;
-    service.setAuditLog(&log);
+    auto log = std::make_shared<RemoteAuditLog>();
+    service.setAuditLog(log);
 
     constexpr int kClients = 4;
     constexpr int kGrantedRound = 15;
@@ -655,7 +655,7 @@ TEST_CASE("Permission decisions hold up under concurrent load",
     RemoteWebSocketServer::Options options;
     options.bearerToken = kToken;
     options.clients = &registry;
-    options.audit = &log;
+    options.audit = log;
     options.maxConnections = kClients + 2;
     // Above what the rounds below can generate, so a refusal here would be the
     // rate limiter rather than the permission model — a different test.
@@ -795,21 +795,54 @@ TEST_CASE("Permission decisions hold up under concurrent load",
 
     // Round 2 ran entirely without it.
     REQUIRE(rounds.allParked(kClients));
+
+    // Round 3 is the actual concurrency: the grant has to be moving *while* the
+    // requests run. Releasing the workers and then starting to toggle on this
+    // thread does not achieve that — if this thread is descheduled at the
+    // handover, the workers can finish the whole round before a single write
+    // lands, and the test passes having exercised nothing.
+    //
+    // So the flipper is its own thread, started first, and the workers are not
+    // released until it has demonstrably flipped at least once.
+    std::atomic<bool> flipping{true};
+    std::atomic<int> flips{0};
+    std::thread flipper([&] {
+        while (flipping.load()) {
+            registry.setScopes(kClient, ScopeSet{Scope::Read, Scope::Edit});
+            registry.setScopes(kClient, defaultClientScopes());
+            flips.fetch_add(1);
+            // Yielding rather than spinning flat out: on a two-core runner this
+            // would otherwise compete with the workers it exists to interfere
+            // with, which is the opposite of the point.
+            std::this_thread::yield();
+        }
+    });
+    // Joined however this test leaves, for the same reason the workers are.
+    struct FlipperGuard {
+        std::atomic<bool>& flipping;
+        std::thread& thread;
+        ~FlipperGuard() {
+            flipping.store(false);
+            if (thread.joinable())
+                thread.join();
+        }
+    } flipperGuard{flipping, flipper};
+
+    const auto flipDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (flips.load() == 0 && std::chrono::steady_clock::now() < flipDeadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    REQUIRE(flips.load() > 0);
+
+    const auto flipsBefore = flips.load();
     rounds.openRound(2);
 
-    // Round 3 is the actual concurrency: the grant moves continuously while the
-    // requests run. It contributes to neither bound below — its whole job is to
-    // exercise the per-request lookup racing a writer, and to fail loudly if
-    // that produces anything other than one of the two valid answers.
-    const auto racingDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
-    while (allowed.load() + denied.load() + unexpected.load() < kTotal &&
-           std::chrono::steady_clock::now() < racingDeadline) {
-        registry.setScopes(kClient, ScopeSet{Scope::Read, Scope::Edit});
-        registry.setScopes(kClient, defaultClientScopes());
-        // Yielding rather than spinning flat out: on a two-core runner this
-        // thread would otherwise compete with the workers it is waiting for.
-        std::this_thread::yield();
-    }
+    // Every worker parks again at the end of the round, so this returns only
+    // once the racing requests are done — with the flipper still running
+    // throughout, rather than stopped early by a counter this thread was racing.
+    REQUIRE(rounds.allParked(kClients));
+    // The flipper kept working for the whole round, so the requests in it really
+    // did run against a moving grant.
+    REQUIRE(flips.load() > flipsBefore);
     rounds.openRound(3);
 
     for (auto& thread : pool.threads)
@@ -823,7 +856,7 @@ TEST_CASE("Permission decisions hold up under concurrent load",
     REQUIRE(denied.load() >= kClients * kRevokedRound);
 
     // Every one of them is in the record, and none of them carries a payload.
-    const auto entries = log.forClient(kClient);
+    const auto entries = log->forClient(kClient);
     REQUIRE(entries.size() >= static_cast<std::size_t>(kClients * kRequestsEach));
     for (const auto& entry : entries)
         REQUIRE_FALSE(entry.detail.contains("130"));

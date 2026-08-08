@@ -213,10 +213,15 @@ class RemoteApiHost {
     // service's change source, and the bridge writes into the service. Each has
     // to outlive the thing that talks to it.
     //
-    // The audit log and the client registry come first because both transports
-    // hold raw pointers to them and the dispatcher holds one to the log — so
-    // they have to be the last two standing.
-    std::unique_ptr<RemoteAuditLog> audit_;
+    // The client registry comes first because both transports hold a raw
+    // pointer to it, so it has to outlive them.
+    //
+    // The audit log is a `shared_ptr` rather than a `unique_ptr` because
+    // declaration order is not enough for it: a dispatch completion carrying it
+    // can still be queued on the message thread when this whole object is
+    // destroyed, and ordering members only decides what happens *inside* the
+    // destructor. Whoever still holds a share keeps it alive.
+    std::shared_ptr<RemoteAuditLog> audit_;
     std::unique_ptr<RemoteClientRegistry> clients_;
     std::unique_ptr<RemoteApiService> service_;
     std::unique_ptr<ModelChangeBridge> bridge_;

@@ -244,10 +244,13 @@ class RemoteWebSocketServer {
          */
         RemoteClientRegistry* clients = nullptr;
 
-        /// Where connections and refusals are recorded. Null disables auditing
-        /// for this transport; the dispatcher's own record is separate. Must
-        /// outlive this server.
-        RemoteAuditLog* audit = nullptr;
+        /// Where connections and refusals are recorded. Empty disables auditing
+        /// for this transport; the dispatcher's own record is separate.
+        ///
+        /// Shared ownership, because a subscription completion carries it onto
+        /// the message thread and can run after this server — and after the
+        /// whole host — is gone.
+        std::shared_ptr<RemoteAuditLog> audit;
     };
 
     /// `subscriptions` is optional: without one the four `subscriptions.*`

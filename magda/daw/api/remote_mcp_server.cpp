@@ -557,6 +557,9 @@ struct RemoteMcpServer::Impl {
                const juce::String& detail = {}) const {
         if (options.audit == nullptr)
             return;
+        // Every MCP audit happens on a pool thread inside a live request, so
+        // this one needs no ownership dance — the shared_ptr in `options` is
+        // what keeps the log alive, and nothing here outlives the server.
         AuditEntry entry;
         entry.client = clientName;
         entry.connectionId = connectionId;

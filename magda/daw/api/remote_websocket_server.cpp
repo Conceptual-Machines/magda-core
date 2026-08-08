@@ -459,13 +459,14 @@ namespace {
  * That is the same shape `RemoteApiService` completions have, and the same
  * reason they carry the log by value.
  *
- * `connection` is a `shared_ptr`, so the client fields stay valid regardless.
- * The log's lifetime is `RemoteApiHost`'s to guarantee: it declares the log
- * before both transports, so it is destroyed after them.
+ * `connection` is a `shared_ptr` so the client fields stay valid regardless,
+ * and the log is one too: declaration order inside the host would only order
+ * destruction *within* it, which is no help to a completion that runs after the
+ * whole host has gone. Owning a share keeps the log alive exactly that long.
  */
-void recordAudit(RemoteAuditLog* log, const std::shared_ptr<Connection>& connection,
-                 const juce::String& operation, const juce::String& requestId, AuditOutcome outcome,
-                 const juce::String& detail) {
+void recordAudit(const std::shared_ptr<RemoteAuditLog>& log,
+                 const std::shared_ptr<Connection>& connection, const juce::String& operation,
+                 const juce::String& requestId, AuditOutcome outcome, const juce::String& detail) {
     if (log == nullptr)
         return;
     AuditEntry entry;

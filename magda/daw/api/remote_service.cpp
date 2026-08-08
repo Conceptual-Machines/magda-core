@@ -167,12 +167,12 @@ void RemoteApiService::dispatch(const juce::String& operationName, const juce::v
     // Wrapping rather than calling `record` at each `return` also keeps the
     // exactly-once callback promise: there is one place that completes.
     //
-    // The log pointer is captured by value and `this` is not captured at all.
-    // This wrapper travels into work queued on the message thread and runs
-    // *outside* the execution lock — deliberately, so a callback may re-dispatch
-    // — which means it can outlive the service the way any queued completion
-    // can. Reaching back through `this` for the log would be the one place that
-    // survives `shutdown()` and then dereferences a destroyed dispatcher.
+    // The log is captured as an owning `shared_ptr` and `this` is not captured
+    // at all. This wrapper travels into work queued on the message thread and
+    // runs *outside* the execution lock — deliberately, so a callback may
+    // re-dispatch — which means it can outlive not just this service but the
+    // whole host. A borrowed pointer would be dangling by then; ownership is
+    // what makes the write safe rather than merely likely to be.
     onComplete = [log = auditLog(), operationName, context,
                   inner = std::move(onComplete)](Response response) mutable {
         recordAudit(log, operationName, context, response);
@@ -503,16 +503,19 @@ const ChangeSource& RemoteApiService::changes() const {
     return changes_;
 }
 
-void RemoteApiService::setAuditLog(RemoteAuditLog* log) {
-    audit_.store(log, std::memory_order_release);
+void RemoteApiService::setAuditLog(std::shared_ptr<RemoteAuditLog> log) {
+    const std::lock_guard<std::mutex> lock(auditMutex_);
+    audit_ = std::move(log);
 }
 
-RemoteAuditLog* RemoteApiService::auditLog() const {
-    return audit_.load(std::memory_order_acquire);
+std::shared_ptr<RemoteAuditLog> RemoteApiService::auditLog() const {
+    const std::lock_guard<std::mutex> lock(auditMutex_);
+    return audit_;
 }
 
-void RemoteApiService::recordAudit(RemoteAuditLog* log, const juce::String& operationName,
-                                   const RequestContext& context, const Response& response) {
+void RemoteApiService::recordAudit(const std::shared_ptr<RemoteAuditLog>& log,
+                                   const juce::String& operationName, const RequestContext& context,
+                                   const Response& response) {
     if (log == nullptr)
         return;
 

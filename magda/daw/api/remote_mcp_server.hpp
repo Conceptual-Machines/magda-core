@@ -176,9 +176,10 @@ class RemoteMcpServer {
          */
         RemoteClientRegistry* clients = nullptr;
 
-        /// Where connections and refusals are recorded. Null disables auditing
-        /// for this transport. Must outlive this server.
-        RemoteAuditLog* audit = nullptr;
+        /// Where connections and refusals are recorded. Empty disables auditing
+        /// for this transport. Shared ownership, for the same reason the
+        /// WebSocket transport holds it that way.
+        std::shared_ptr<RemoteAuditLog> audit;
     };
 
     /// `subscriptions` is optional: without one the server does not advertise

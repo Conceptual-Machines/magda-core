@@ -177,7 +177,7 @@ RemoteApiHost* activeHost() {
 }
 
 RemoteApiHost::RemoteApiHost(MagdaApi& api, AudioEngine* engine)
-    : audit_(std::make_unique<RemoteAuditLog>()),
+    : audit_(std::make_shared<RemoteAuditLog>()),
       clients_(std::make_unique<RemoteClientRegistry>()),
       service_(std::make_unique<RemoteApiService>(api)),
       bridge_(std::make_unique<ModelChangeBridge>(*service_)),
@@ -185,7 +185,7 @@ RemoteApiHost::RemoteApiHost(MagdaApi& api, AudioEngine* engine)
     if (engine != nullptr)
         subscriptions_->setMeterSource(makeLiveMeterSource(*engine));
 
-    service_->setAuditLog(audit_.get());
+    service_->setAuditLog(audit_);
 
     // Grants are restored before the change handler is installed, so loading
     // them does not immediately write them back out again.
@@ -215,14 +215,22 @@ RemoteApiHost::~RemoteApiHost() {
 }
 
 void RemoteApiHost::persistGrants() {
-    // Read before taking the writer's lock: `grantsToJson` takes the registry's,
-    // and holding two is worth avoiding even where the order happens to be safe.
-    auto grants = clients_->grantsToJson();
-
     auto writer = grantWriter_;
     {
         const std::lock_guard<std::mutex> lock(writer->mutex);
-        writer->latest = std::move(grants);
+        // Snapshotted *under* this lock, not before it. Reading first and
+        // storing second leaves the same reordering one level down: a thread
+        // can read A, be preempted while another reads B and stores it, then
+        // resume and overwrite `latest` with the older A — and, seeing a write
+        // already posted, return. The task then persists A and the revocation
+        // that produced B is undone.
+        //
+        // Serialising the read with the store is what makes `latest` actually
+        // the latest. It costs holding the registry's lock inside this one,
+        // which is safe in this order and only this order: the registry always
+        // notifies after releasing its own lock, so nothing ever takes these two
+        // the other way round.
+        writer->latest = clients_->grantsToJson();
         // Already a write on its way. It reads `latest` when it runs, so it will
         // carry this change too — and posting a second task would be how the
         // older of two snapshots ends up applied last.
@@ -311,7 +319,7 @@ bool RemoteApiHost::start() {
     options.bearerToken = token_;
     options.port = config.getRemoteApiPort();
     options.clients = clients_.get();
-    options.audit = audit_.get();
+    options.audit = audit_;
     for (const auto& origin : config.getRemoteApiAllowedOrigins())
         options.allowedOrigins.push_back(juce::String::fromUTF8(origin.c_str()));
 
@@ -333,7 +341,7 @@ bool RemoteApiHost::start() {
     mcpOptions.port = config.getRemoteApiMcpPort();
     mcpOptions.allowedOrigins = options.allowedOrigins;
     mcpOptions.clients = clients_.get();
-    mcpOptions.audit = audit_.get();
+    mcpOptions.audit = audit_;
 
     mcpServer_ = std::make_unique<RemoteMcpServer>(*service_, mcpOptions, subscriptions_.get());
     if (!mcpServer_->start()) {

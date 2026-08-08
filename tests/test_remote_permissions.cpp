@@ -481,15 +481,15 @@ TEST_CASE("A dispatched request is recorded with its outcome", "[remote][permiss
     const MessageThreadRelaxation relaxation;
     MockMagdaApi api;
     RemoteApiService service(api);
-    RemoteAuditLog log;
-    service.setAuditLog(&log);
+    auto log = std::make_shared<RemoteAuditLog>();
+    service.setAuditLog(log);
 
     auto context = contextWith(defaultClientScopes(), "cursor");
     context.requestId = "req-7";
     run(service, "project.get", emptyInput(), context);
     run(service, "project.setTempo", object({{"tempo", 140.0}}), context);
 
-    const auto entries = log.entries();
+    const auto entries = log->entries();
     REQUIRE(entries.size() == 2);
 
     REQUIRE(entries[0].client == "cursor");
@@ -513,13 +513,13 @@ TEST_CASE("A failure is recorded by code, never by message", "[remote][permissio
     const MessageThreadRelaxation relaxation;
     MockMagdaApi api;
     RemoteApiService service(api);
-    RemoteAuditLog log;
-    service.setAuditLog(&log);
+    auto log = std::make_shared<RemoteAuditLog>();
+    service.setAuditLog(log);
 
     run(service, "project.setTempo", object({{"tempo", "not-a-number"}}),
         contextWith(ScopeSet{Scope::Read, Scope::Edit}, "cursor"));
 
-    const auto entries = log.entries();
+    const auto entries = log->entries();
     REQUIRE(entries.size() == 1);
     REQUIRE(entries[0].outcome == AuditOutcome::Failed);
     REQUIRE(entries[0].detail == "validation_failed");
@@ -532,47 +532,47 @@ TEST_CASE("In-process callers are not audited", "[remote][permissions][audit]") 
     const MessageThreadRelaxation relaxation;
     MockMagdaApi api;
     RemoteApiService service(api);
-    RemoteAuditLog log;
-    service.setAuditLog(&log);
+    auto log = std::make_shared<RemoteAuditLog>();
+    service.setAuditLog(log);
 
     run(service, "project.get", emptyInput(), magda::test::fullyGrantedContext());
-    REQUIRE(log.entries().empty());
+    REQUIRE(log->entries().empty());
 }
 
 TEST_CASE("The audit log is bounded and says when it lost entries",
           "[remote][permissions][audit]") {
-    RemoteAuditLog log(4);
+    auto log = std::make_shared<RemoteAuditLog>(4);
     for (int index = 0; index < 10; ++index) {
         AuditEntry entry;
         entry.client = "cursor";
         entry.operation = "project.get";
         entry.detail = juce::String(index);
-        log.record(entry);
+        log->record(entry);
     }
 
-    REQUIRE(log.size() == 4);
-    REQUIRE(log.totalRecorded() == 10);
+    REQUIRE(log->size() == 4);
+    REQUIRE(log->totalRecorded() == 10);
     // Oldest dropped, newest kept.
-    REQUIRE(log.entries().front().detail == "6");
-    REQUIRE(log.entries().back().detail == "9");
+    REQUIRE(log->entries().front().detail == "6");
+    REQUIRE(log->entries().back().detail == "9");
 
-    REQUIRE(log.recent(2).size() == 2);
-    REQUIRE(log.recent(2).back().detail == "9");
+    REQUIRE(log->recent(2).size() == 2);
+    REQUIRE(log->recent(2).back().detail == "9");
     // Asking for more than there is returns what there is.
-    REQUIRE(log.recent(100).size() == 4);
+    REQUIRE(log->recent(100).size() == 4);
 }
 
 TEST_CASE("Entries can be read back for one client", "[remote][permissions][audit]") {
-    RemoteAuditLog log;
+    auto log = std::make_shared<RemoteAuditLog>();
     for (const auto* name : {"cursor", "monitor", "cursor"}) {
         AuditEntry entry;
         entry.client = name;
         entry.operation = "project.get";
-        log.record(entry);
+        log->record(entry);
     }
-    REQUIRE(log.forClient("cursor").size() == 2);
-    REQUIRE(log.forClient("monitor").size() == 1);
-    REQUIRE(log.forClient("nobody").empty());
+    REQUIRE(log->forClient("cursor").size() == 2);
+    REQUIRE(log->forClient("monitor").size() == 1);
+    REQUIRE(log->forClient("nobody").empty());
 }
 
 // ===========================================================================
@@ -633,14 +633,14 @@ TEST_CASE("An audit detail is redacted on the way in", "[remote][permissions][re
     const juce::String token = "abcdef0123456789";
     registerRemoteSecret(token);
 
-    RemoteAuditLog log;
+    auto log = std::make_shared<RemoteAuditLog>();
     AuditEntry entry;
     entry.client = "cursor";
     entry.operation = "connection.rejected";
     entry.detail = "token " + token + " refused";
-    log.record(entry);
+    log->record(entry);
 
-    REQUIRE_FALSE(log.entries().front().detail.contains(token));
+    REQUIRE_FALSE(log->entries().front().detail.contains(token));
     forgetAllRemoteSecrets();
 }
 
