@@ -510,6 +510,7 @@ set(MAGDA_JUCE_STACK
     juce::juce_audio_utils
     juce::juce_gui_basics
     juce::juce_gui_extra
+    juce::juce_osc  # OSC control surfaces (#1757); ships with JUCE, no new dependency
     tracktion::tracktion_engine
     juce_llm
 )

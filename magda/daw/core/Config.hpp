@@ -493,6 +493,45 @@ class Config {
         remoteApiClients = std::move(clients);
     }
 
+    // OSC control surfaces (issue #1757). Off by default, for the same reason
+    // the remote API is: a DAW should not start listening because it was
+    // installed. Unlike the remote API there is no token to check — OSC is
+    // unauthenticated UDP by design — so the bind address is the whole of the
+    // access control and is a setting rather than a constant.
+    bool getOscEnabled() const {
+        return oscEnabled;
+    }
+    void setOscEnabled(bool enabled) {
+        oscEnabled = enabled;
+    }
+    /// The UDP port MAGDA listens on. 9000 is the TouchOSC / Open Stage Control
+    /// default, so a stock template needs no configuration at either end.
+    int getOscReceivePort() const {
+        return oscReceivePort;
+    }
+    void setOscReceivePort(int port) {
+        oscReceivePort = port;
+    }
+    /**
+     * Which local interface to bind. Two values are meaningful:
+     *
+     *  - `0.0.0.0` — every interface, so a tablet on the same Wi-Fi can reach
+     *    MAGDA. The default, because a phone or tablet running TouchOSC is the
+     *    point of the feature and localhost-only would make it useless.
+     *  - `127.0.0.1` — loopback only, for a bridge or show-control process on
+     *    this machine.
+     *
+     * Anything the OS will bind is accepted; these two are what the settings UI
+     * offers. Bound as-is rather than validated here, so a user with a specific
+     * interface address can name it.
+     */
+    const std::string& getOscBindAddress() const {
+        return oscBindAddress;
+    }
+    void setOscBindAddress(const std::string& address) {
+        oscBindAddress = address;
+    }
+
     // Browser filter settings
     bool getBrowserFilterAudio() const {
         return browserFilterAudio;
@@ -1381,6 +1420,12 @@ class Config {
     /// until something writes one, which reads as "no client has been granted
     /// anything yet".
     juce::var remoteApiClients;
+
+    // OSC control surfaces (#1757). Off, and reachable from the network when
+    // switched on — see the accessors for why the bind default is not loopback.
+    bool oscEnabled = false;
+    int oscReceivePort = 9000;
+    std::string oscBindAddress = "0.0.0.0";
 
     // Export audio settings
     std::string exportFormat = "WAV24";  // WAV16, WAV24, WAV32, FLAC
