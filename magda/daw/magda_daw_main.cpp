@@ -14,6 +14,7 @@
 #include "../../magda/agents/llm_presets.hpp"
 #include "api/magda_api_live.hpp"
 #include "api/remote_api_host.hpp"
+#include "api/remote_audit.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/AppPaths.hpp"
@@ -354,9 +355,13 @@ class MagdaDAWApplication : public JUCEApplication {
         // remote API touches it.
         remoteApi_ = std::make_unique<magda::remote::RemoteApiHost>(daw_engine_->getMagdaApi(),
                                                                     daw_engine_.get());
-        if (remoteApi_->start())
+        if (remoteApi_->start()) {
+            // The file's name, not its path (#1860). This line goes to the app
+            // log, which users paste into bug reports, and the directory it
+            // lives in is their home directory.
             juce::Logger::writeToLog("Remote API token written to " +
-                                     remoteApi_->tokenFile().getFullPathName());
+                                     magda::remote::redactedFileName(remoteApi_->tokenFile()));
+        }
 
         // 5. Dismiss splash screen
         splashScreen_.reset();

@@ -121,6 +121,11 @@ inline constexpr int MCP_INTERNAL_ERROR = -32603;
 inline constexpr int MCP_HEADER_MISMATCH = -32020;
 inline constexpr int MCP_MISSING_CLIENT_CAPABILITY = -32021;
 inline constexpr int MCP_UNSUPPORTED_PROTOCOL_VERSION = -32022;
+/// A resource read the client's grant does not cover (#1860). Implementation-
+/// defined because MCP has no permission code of its own, and deliberately not
+/// `-32602`: "you may not read this" and "you asked for this wrongly" send a
+/// client to two different places, and only one of them is the settings dialog.
+inline constexpr int MCP_PERMISSION_DENIED = -32023;
 
 // ---------------------------------------------------------------------------
 // Reserved `_meta` keys
@@ -247,6 +252,26 @@ class McpEndpoint {
         McpEra era = McpEra::Modern;
         juce::String protocolVersion;
         juce::String clientId;
+        /**
+         * What the client says it is, normalised — the key its grant is stored
+         * under (#1860).
+         *
+         * This is `clientInfo.name`, and using it at all needs saying, because
+         * the comment above says the specification tells servers not to act on
+         * `clientInfo`. That rule is about *authorisation*: a server must not
+         * decide who may connect from a field the client wrote. It does not,
+         * and here it cannot — admission was the bearer token, before this
+         * struct existed. What the name decides is which of the user's own
+         * grants applies to a caller that is already inside, which is the only
+         * way a user can say "my editor may edit, my monitoring script may not"
+         * about two processes that present the same token.
+         *
+         * `clientId` remains the transport's identifier and is never this.
+         */
+        juce::String clientName;
+        /// What that grant covers, as of this request. Resolved per call by the
+        /// transport, so a revocation applies to the next one.
+        ScopeSet scopes;
         /// Scopes the idempotency key so two clients cannot collide in it. Empty
         /// disables caching for this call — see `requestContext`.
         juce::String idempotencyScope;

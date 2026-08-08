@@ -36,6 +36,46 @@ there is nothing to look up.
 
 Everything below is what that page is doing, for anyone wiring it by hand.
 
+### Letting it do more than read
+
+A client that connects for the first time can **read only**. If your host reports
+that it cannot create a track or start playback, that is not a bug — nothing has
+been granted yet.
+
+**AI Settings → Clients** lists everything that has connected, by the name it
+gave. Tick what you want it to be able to do:
+
+| Permission | Lets the client |
+|---|---|
+| `read` | Inspect the project. Always on. |
+| `edit` | Change tempo, tracks, clips, notes, devices, and automation. |
+| `transport` | Play, stop, record-arm, loop, and seek. |
+| `session` | Launch and stop session clips and scenes. |
+| `hardware-midi` | Reach physical MIDI ports. Nothing uses it yet. |
+
+Changes apply to the client's next request — there is nothing to restart and no
+need to reconnect. The same page shows what each client has been doing, so a
+refusal and the checkbox that fixes it are on one screen, and lets you disconnect
+a client or forget its permissions entirely.
+
+Grants are remembered between launches, keyed by the name the client reports —
+`clientInfo.name` for an MCP host. Two clients that report the same name are one
+entry. A client that reports nothing is listed as `unknown`, shares one
+read-only entry with every other anonymous caller, and can be granted like any
+other.
+
+Worth knowing what this is: the permissions record *your* intent about a named
+client, so one you trusted to read cannot quietly start editing. They are not a
+sandbox. Anything that can read your home directory can read the token file and
+reach the API — see
+[remote-api-permissions.md](architecture/remote-api-permissions.md) for the
+threat model in full.
+
+**Rotate token** on the Remote page throws the current credential away and
+disconnects everything using it. The bridge re-reads the discovery record on
+every request, so an MCP host configured through it survives rotation without
+noticing.
+
 ### Where the bridge lives
 
 The build stages `magda-mcp` beside the MAGDA executable, which is the one

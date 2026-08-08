@@ -18,6 +18,9 @@ target_sources(magda_daw PRIVATE
     remote_api.cpp
     remote_api_projection.cpp
     remote_handlers.cpp
+    remote_scopes.cpp
+    remote_clients.cpp
+    remote_audit.cpp
     remote_service.cpp
     remote_changes.cpp
     remote_model_bridge_live.cpp
@@ -58,6 +61,9 @@ target_sources(magda_daw PRIVATE
     groove_api_live.hpp
     remote_api.hpp
     remote_handlers.hpp
+    remote_scopes.hpp
+    remote_clients.hpp
+    remote_audit.hpp
     remote_service.hpp
     remote_changes.hpp
     remote_model_bridge.hpp

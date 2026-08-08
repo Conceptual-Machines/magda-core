@@ -195,6 +195,8 @@ set(TEST_SOURCES
     # Lua bindings tests (issue #30 — bind MagdaApi)
     test_magda_api_lua_bindings.cpp
     test_remote_api_contract.cpp
+    test_remote_permissions.cpp
+    test_remote_permission_conformance.cpp
     test_remote_service.cpp
     test_remote_changes.cpp
     test_remote_subscriptions.cpp

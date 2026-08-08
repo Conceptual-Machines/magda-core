@@ -5,6 +5,7 @@
 #include <limits>
 #include <utility>
 
+#include "remote_clients.hpp"
 #include "remote_service.hpp"
 #include "remote_subscriptions.hpp"
 
@@ -140,6 +141,19 @@ juce::var idInput(const char* field, int id) {
  * resource that is not there — `-32002` said that in earlier revisions and is
  * now forbidden to emit — and `-32603` for anything internal.
  */
+/**
+ * @brief Whether a method is answered from the catalogue rather than dispatched.
+ *
+ * These three describe the API surface: what tools exist, what resources exist,
+ * and what their schemas are. They never touch the model, which is why they
+ * return before a `RequestContext` is ever built — and why the scope they need
+ * has to be checked at that point rather than downstream.
+ */
+bool isCatalogueMethod(const juce::String& method) {
+    return method == "tools/list" || method == "resources/list" ||
+           method == "resources/templates/list";
+}
+
 int resourceReadCodeFor(ErrorCode code) {
     switch (code) {
         case ErrorCode::NotFound:
@@ -147,6 +161,8 @@ int resourceReadCodeFor(ErrorCode code) {
         case ErrorCode::InvalidRequest:
         case ErrorCode::UnknownOperation:
             return MCP_INVALID_PARAMS;
+        case ErrorCode::PermissionDenied:
+            return MCP_PERMISSION_DENIED;
         case ErrorCode::Conflict:
         case ErrorCode::Timeout:
         case ErrorCode::Cancelled:
@@ -601,6 +617,24 @@ void McpEndpoint::handle(const Call& call, Completion onComplete) {
         return;
     }
 
+    // The catalogue methods answer from this object without ever reaching
+    // `requestContext` or the dispatcher, so nothing downstream would check a
+    // scope for them (#1860). Without this they stayed readable with no registry
+    // configured at all, which contradicts the fail-closed rule the rest of the
+    // permission model is built on — and lets a client that may do nothing
+    // enumerate the whole operation surface and its schemas.
+    //
+    // `server/discover` and `initialize` above are deliberately not gated: they
+    // are how a client learns this endpoint exists and negotiates a protocol
+    // version, they carry no catalogue and no project data, and a client that
+    // could not complete a handshake could not be told why it was refused.
+    if (isCatalogueMethod(call.method) && !call.scopes.has(Scope::Read)) {
+        onComplete(McpReply::fail(MCP_PERMISSION_DENIED,
+                                  call.method + " requires the 'read' permission, which this "
+                                                "client has not been granted"));
+        return;
+    }
+
     if (call.method == "tools/list") {
         juce::Array<juce::var> tools;
         for (const auto& tool : tools_)
@@ -820,6 +854,9 @@ void McpEndpoint::readResource(const Call& call, Completion onComplete) {
 std::optional<RequestContext> McpEndpoint::requestContext(const Call& call, McpError& error) const {
     RequestContext context;
     context.clientId = call.clientId;
+    context.clientName = call.clientName;
+    context.transport = TRANSPORT_MCP;
+    context.scopes = call.scopes;
     context.deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(options_.defaultDeadlineMs);
 

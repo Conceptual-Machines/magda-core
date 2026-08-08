@@ -472,6 +472,26 @@ class Config {
     void setRemoteApiAllowedOrigins(const std::vector<std::string>& origins) {
         remoteApiAllowedOrigins = origins;
     }
+    /**
+     * Per-client permission grants (issue #1860), as the JSON array
+     * `RemoteClientRegistry` reads and writes.
+     *
+     * Stored opaquely rather than as typed fields, because the shape belongs to
+     * the registry and the scope vocabulary is its to extend. Config's job here
+     * is to persist and return it unchanged.
+     *
+     * A missing entry is not a permission — it is the absence of one, and a
+     * client MAGDA has not seen starts read-only. So there is nothing dangerous
+     * about this array being absent, hand-edited, or copied between machines:
+     * the worst it can do is grant a name the user already chose to grant, and
+     * the token that lets anyone use it is not in here.
+     */
+    const juce::var& getRemoteApiClients() const {
+        return remoteApiClients;
+    }
+    void setRemoteApiClients(juce::var clients) {
+        remoteApiClients = std::move(clients);
+    }
 
     // Browser filter settings
     bool getBrowserFilterAudio() const {
@@ -1357,6 +1377,10 @@ class Config {
     int remoteApiPort = 0;     // 0 = ephemeral; the token file carries the real one
     int remoteApiMcpPort = 0;  // likewise, for the MCP endpoint (#1858)
     std::vector<std::string> remoteApiAllowedOrigins;
+    /// Array of `{name, scopes, firstSeenMs, lastSeenMs}` — see #1860. Void
+    /// until something writes one, which reads as "no client has been granted
+    /// anything yet".
+    juce::var remoteApiClients;
 
     // Export audio settings
     std::string exportFormat = "WAV24";  // WAV16, WAV24, WAV32, FLAC

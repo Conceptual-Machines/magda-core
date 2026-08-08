@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "magda/daw/api/magda_api_live.hpp"
+#include "magda/daw/api/remote_clients.hpp"
 #include "magda/daw/api/remote_model_bridge.hpp"
 #include "magda/daw/api/remote_service.hpp"
 #include "magda/daw/api/remote_subscriptions.hpp"
@@ -216,6 +217,11 @@ class RemoteWebSocketLiveTest final : public juce::UnitTest {
         RemoteApiService service{api};
         std::unique_ptr<ModelChangeBridge> bridge;
         std::unique_ptr<SubscriptionHub> subscriptions;
+        /// Declared before `server`, which holds a pointer to it. Without a
+        /// registry the transport refuses everything, subscribing included
+        /// (#1860), and these tests are about live model behaviour rather than
+        /// about who is allowed to watch it.
+        RemoteClientRegistry clients;
         std::unique_ptr<RemoteWebSocketServer> server;
 
         Fixture() {
@@ -229,8 +235,12 @@ class RemoteWebSocketLiveTest final : public juce::UnitTest {
             hubOptions.samplingIntervalMs = 10;
             subscriptions = std::make_unique<SubscriptionHub>(api, service, hubOptions);
 
+            // These clients send no `?client=`, so they are all `unknown`.
+            clients.setScopes(ANONYMOUS_CLIENT, allScopes());
+
             RemoteWebSocketServer::Options options;
             options.bearerToken = kToken;
+            options.clients = &clients;
             server = std::make_unique<RemoteWebSocketServer>(service, options, subscriptions.get());
             server->start();
         }

@@ -803,6 +803,8 @@ juce::String toString(ErrorCode code) {
             return "invalid_request";
         case ErrorCode::UnknownOperation:
             return "unknown_operation";
+        case ErrorCode::PermissionDenied:
+            return "permission_denied";
         case ErrorCode::ValidationFailed:
             return "validation_failed";
         case ErrorCode::NotFound:
@@ -1385,8 +1387,10 @@ OperationRegistry::OperationRegistry() {
         // schema, which has to stay valid for anything the model can hold.
         input = input.clone();
         applyRequestLimits(input);
-        operations_.push_back({juce::String(name), juce::String(summary), access, std::move(input),
-                               std::move(output), handler});
+        // `requiredScope` is deliberately left at its `read` default here and
+        // set from the policy table below, not passed in. See the comment there.
+        operations_.push_back({juce::String(name), juce::String(summary), access, Scope::Read,
+                               std::move(input), std::move(output), handler});
     };
 
     add("system.describe", "List the API version and every available operation",
@@ -1663,8 +1667,10 @@ OperationRegistry::OperationRegistry() {
                                      juce::var output) {
         input = input.clone();
         applyRequestLimits(input);
+        // `read`, like any other read: subscribing pushes the same projections
+        // the read operations return, so it cannot need less.
         operations_.push_back({juce::String(name), juce::String(summary), OperationAccess::Read,
-                               std::move(input), std::move(output), nullptr, true});
+                               Scope::Read, std::move(input), std::move(output), nullptr, true});
     };
 
     addTransportScoped(
@@ -1680,16 +1686,104 @@ OperationRegistry::OperationRegistry() {
                        "Re-send a complete snapshot for the subscribed topics",
                        topicSelectionSchema(), subscriptionResultSchema(true));
 
+    // -----------------------------------------------------------------------
+    // Permission policy (#1860)
+    //
+    // One table rather than an argument on forty multi-line `add` calls,
+    // because the thing a reviewer needs to check is not "does this operation
+    // declare a scope" but "is the *whole* division of the API into scopes the
+    // one we meant" — and that is a question you can only answer by reading the
+    // policy contiguously. `docs/remote-api-permissions.md` mirrors this list,
+    // and the conformance test compares the two.
+    //
+    // Reads are absent by design: `read` is the descriptor default and every
+    // client has it, so listing fifteen operations to say "yes, readable" would
+    // bury the fifteen decisions that actually matter. Writes are never absent —
+    // one that is keeps the `read` default, which the check below turns into a
+    // startup failure rather than a client discovering it can edit.
+    // -----------------------------------------------------------------------
+    struct ScopePolicy {
+        const char* operation;
+        Scope scope;
+    };
+    static constexpr ScopePolicy kWriteScopes[] = {
+        // Project content. Selection is here rather than in a scope of its own:
+        // it changes what the user is looking at and what their next keystroke
+        // acts on, which is not something a read-only client should reach.
+        {"project.setTempo", Scope::Edit},
+        {"project.setTimeSignature", Scope::Edit},
+        {"tracks.create", Scope::Edit},
+        {"tracks.update", Scope::Edit},
+        {"tracks.delete", Scope::Edit},
+        {"clips.createMidi", Scope::Edit},
+        {"clips.addMidiNote", Scope::Edit},
+        {"clips.delete", Scope::Edit},
+        {"racks.create", Scope::Edit},
+        {"racks.remove", Scope::Edit},
+        {"racks.setBypassed", Scope::Edit},
+        {"selection.set", Scope::Edit},
+        {"automation.createLane", Scope::Edit},
+        {"automation.addPoint", Scope::Edit},
+        {"automation.clearLane", Scope::Edit},
+
+        // The timeline. Separable from editing because a remote that only
+        // starts and stops playback is a thing people actually want, and it
+        // must not also be able to delete a track.
+        {"transport.play", Scope::Transport},
+        {"transport.stop", Scope::Transport},
+        {"transport.setRecording", Scope::Transport},
+        {"transport.setLoopEnabled", Scope::Transport},
+        {"transport.seek", Scope::Transport},
+
+        // Clip launching. Neither editing nor the timeline transport: a
+        // performance controller firing scenes changes no project content and
+        // does not move the playhead.
+        {"session.launchClip", Scope::Session},
+        {"session.stopClip", Scope::Session},
+        {"session.stopTrack", Scope::Session},
+        {"session.stopAll", Scope::Session},
+        {"session.launchScene", Scope::Session},
+    };
+
+    for (const auto& [name, scope] : kWriteScopes) {
+        const auto found =
+            std::find_if(operations_.begin(), operations_.end(),
+                         [&](const OperationDescriptor& op) { return op.name == name; });
+        // A policy entry naming an operation that does not exist is a rename
+        // that updated one side. Silently ignoring it would leave the renamed
+        // operation on the `read` default, which the check below catches — but
+        // this says which end is wrong.
+        if (found == operations_.end()) {
+            jassertfalse;
+            juce::Logger::writeToLog(juce::String("Remote API scope policy names an unknown "
+                                                  "operation: ") +
+                                     name);
+            continue;
+        }
+        found->requiredScope = scope;
+    }
+
     // A declared operation with no implementation is a startup failure, not a
     // runtime surprise. Before handlers lived on the descriptor there was
     // nothing to catch it, and the registry advertised 36 operations that
     // `system.describe` would happily list and no transport could execute. A
     // transport-scoped operation is the one legitimate exception: its
     // implementation lives in the adapter, so there is nothing to point at here.
+    //
+    // The scope check beside it is the same kind of guarantee for the same kind
+    // of mistake: a write that never reached the policy table above would be
+    // callable by every read-only client, and nothing else in the system would
+    // notice.
     for (const auto& operation : operations_) {
         jassert(operation.transportScoped == (operation.handler == nullptr));
         if (!operation.transportScoped && operation.handler == nullptr)
             juce::Logger::writeToLog("Remote API operation has no handler: " + operation.name);
+
+        const bool writeNeedsMoreThanRead =
+            operation.access == OperationAccess::Read || operation.requiredScope != Scope::Read;
+        jassert(writeNeedsMoreThanRead);
+        if (!writeNeedsMoreThanRead)
+            juce::Logger::writeToLog("Remote API write operation has no scope: " + operation.name);
     }
 }
 
@@ -1717,6 +1811,10 @@ juce::var OperationRegistry::describe() const {
         object->setProperty("name", operation.name);
         object->setProperty("summary", operation.summary);
         object->setProperty("access", operation.access == OperationAccess::Read ? "read" : "write");
+        // The scope a caller needs, so a client can tell "I may not do this"
+        // apart from "this does not exist" before it tries, and can present the
+        // user with what to grant rather than with a refusal.
+        object->setProperty("requiredScope", scopeName(operation.requiredScope));
         object->setProperty("inputSchema", operation.inputSchema.clone());
         object->setProperty("outputSchema", operation.outputSchema.clone());
         // Always present rather than only when true: a client deciding whether

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "remote_api.hpp"
+#include "remote_audit.hpp"
 #include "remote_changes.hpp"
 
 namespace magda {
@@ -172,6 +173,30 @@ class RemoteApiService {
     /// Idempotency cache capacity, in completed write responses.
     void setIdempotencyCacheCapacity(std::size_t capacity);
 
+    /**
+     * @brief Where every dispatched request is recorded (#1860).
+     *
+     * Optional and empty by default, so a test or a headless host pays nothing
+     * for it. Set once, by `RemoteApiHost`, before any transport starts.
+     *
+     * Shared ownership rather than a borrowed pointer, and that is not
+     * defensive: a dispatch completion carries the log and runs on the message
+     * thread, so it can still be queued when the host is destroyed and run
+     * afterwards. Declaring the log before the service only orders destruction
+     * *within* the host — it cannot help work that outlives the whole
+     * destructor. Holding a `shared_ptr` keeps the log alive for exactly as long
+     * as something might still write to it.
+     *
+     * Auditing here rather than in each adapter is the same argument as
+     * enforcing scopes here: two transports would otherwise produce two
+     * differently-shaped records of the same operation, and a third would
+     * produce none until someone noticed. What the adapters do record is what
+     * this cannot see — connections opening, closing, and being refused before
+     * they became requests.
+     */
+    void setAuditLog(std::shared_ptr<RemoteAuditLog> log);
+    std::shared_ptr<RemoteAuditLog> auditLog() const;
+
   private:
     struct CachedResponse {
         juce::String key;
@@ -205,6 +230,22 @@ class RemoteApiService {
     Response execute(const OperationDescriptor& operation, const juce::var& input,
                      const RequestContext& context);
 
+    /**
+     * @brief One audit line for a completed dispatch.
+     *
+     * Records nothing when `log` is null, and nothing about the request's input
+     * or its result either way.
+     *
+     * Static, and takes the log rather than reading `audit_`, because the
+     * completion that calls it can outlive this object: it is invoked outside
+     * the execution lock, from work that may still be sitting in the message
+     * queue after `shutdown()`. Touching a member from there is the one way an
+     * audit line could dereference a destroyed dispatcher.
+     */
+    static void recordAudit(const std::shared_ptr<RemoteAuditLog>& log,
+                            const juce::String& operationName, const RequestContext& context,
+                            const Response& response);
+
     std::shared_ptr<ExecutionState> currentState() const;
     void retireState();
 
@@ -237,6 +278,12 @@ class RemoteApiService {
     mutable std::mutex cacheMutex_;
     std::vector<CachedResponse> cache_;
     std::size_t cacheCapacity_ = 256;
+
+    /// Set before the transports start and cleared on the way out. Guarded
+    /// rather than atomic because it is a `shared_ptr`: the point is that a
+    /// reader takes an owning copy, which an atomic pointer cannot give it.
+    mutable std::mutex auditMutex_;
+    std::shared_ptr<RemoteAuditLog> audit_;
 };
 
 }  // namespace remote

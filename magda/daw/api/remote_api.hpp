@@ -11,6 +11,7 @@
 #include "../core/ChainNodePath.hpp"
 #include "../core/ClipTypes.hpp"
 #include "../core/TypeIds.hpp"
+#include "remote_scopes.hpp"
 
 namespace magda {
 
@@ -35,6 +36,17 @@ inline constexpr std::string_view API_VERSION = "1.0";
 enum class ErrorCode {
     InvalidRequest,
     UnknownOperation,
+    /**
+     * The operation is real and the request is well formed, but this client's
+     * grant does not cover it (#1860).
+     *
+     * Distinct from `UnknownOperation` on purpose. Hiding an operation a client
+     * may not call would be security through obscurity over a socket that
+     * already required a bearer token to reach, and it would make the failure
+     * indistinguishable from a typo — so a client that asks for something beyond
+     * its grant is told exactly that, and which scope would have allowed it.
+     */
+    PermissionDenied,
     ValidationFailed,
     NotFound,
     Conflict,
@@ -325,20 +337,54 @@ struct AutomationLaneDto {
 enum class OperationAccess { Read, Write };
 
 /**
- * @brief Per-request identity, limits, and concurrency expectations.
+ * @brief Per-request identity, permission, limits, and concurrency expectations.
  *
  * Populated by the transport adapter and passed unchanged through dispatch to
- * the handler. Scopes are carried but not enforced here — enforcement is #1860;
- * recording them now means adapters do not change shape when it lands.
+ * the handler.
  */
 struct RequestContext {
+    /**
+     * The transport's own handle for the caller — `ws:3:7`, `mcp:sess-…`.
+     *
+     * Unique per connection, issued by the transport, and never anything the
+     * client asserted about itself. It scopes the idempotency cache, so two
+     * clients that both number their requests from 1 cannot replay each other's
+     * writes.
+     */
     juce::String clientId;
+    /**
+     * What the client says it is: `cursor`, `claude-code`. Normalised, and the
+     * key its grant is stored under (#1860).
+     *
+     * Self-declared, which is exactly as much as it sounds like. It records the
+     * user's intent about a named client so a well-behaved one cannot exceed it
+     * by accident; it is not proof of anything, because the bearer token that
+     * admitted this request is readable by every process running as the user.
+     * `clientId` is the transport's identifier and this is the client's claim,
+     * and they are kept apart so nothing conflates the two.
+     */
+    juce::String clientName;
+    /// `websocket` or `mcp`, for the audit record.
+    juce::String transport;
     /// Idempotency key. Repeating a completed write with the same id returns
     /// the first response instead of applying the mutation twice.
     juce::String requestId;
     /// Optimistic concurrency: reject the write if the project has moved on.
     std::optional<Revision> expectedRevision;
-    std::vector<juce::String> scopes;
+    /**
+     * What this caller may reach. Empty by default, which denies everything.
+     *
+     * Fail-closed is the point: a transport that forgot to fill this in refuses
+     * every request loudly on its first test run, where one that defaulted to
+     * full access would hand out the project silently and pass. Both adapters
+     * populate it per request from `RemoteClientRegistry`, which is what makes
+     * revoking a grant take effect on the next request rather than the next
+     * restart.
+     *
+     * In-process callers that are not a remote client at all — the subscription
+     * hub's snapshot projections, tests — set it explicitly.
+     */
+    ScopeSet scopes;
     /// Absolute deadline. Work still queued when it passes fails with Timeout
     /// rather than executing late.
     std::optional<std::chrono::steady_clock::time_point> deadline;
@@ -396,6 +442,22 @@ struct OperationDescriptor {
     juce::String name;
     juce::String summary;
     OperationAccess access = OperationAccess::Read;
+    /**
+     * The one scope a client needs to call this (#1860).
+     *
+     * One rather than a set, because every operation this API has belongs to
+     * exactly one thing the user would decide about, and a set would invite
+     * combinations nobody can reason about from a settings checkbox. It sits on
+     * the descriptor for the same reason `handler` does: a transport cannot
+     * reach a different permission than the one declared, and there is one place
+     * to look.
+     *
+     * Defaults to `Read`, which is the safe default only because it is paired
+     * with a registry-wide assertion that every write declares something else —
+     * a new write operation that forgets this is caught at startup rather than
+     * by a client discovering it can edit.
+     */
+    Scope requiredScope = Scope::Read;
     juce::var inputSchema;
     juce::var outputSchema;
     /**

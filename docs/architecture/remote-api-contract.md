@@ -28,15 +28,30 @@ must satisfy the range in the operation's JSON Schema. Responses use one of:
 }
 ```
 
-`system.describe` exposes the version, operation catalogue, access mode, and
-shared input/output schemas. A transport may add its own correlation or
-framing metadata outside these envelopes, but it must not change the contract
-payload.
+`system.describe` exposes the version, operation catalogue, access mode,
+required scope, and shared input/output schemas. A transport may add its own
+correlation or framing metadata outside these envelopes, but it must not change
+the contract payload.
+
+Every operation declares one of five scopes — `read`, `edit`, `transport`,
+`session`, `hardware-midi` — and a client that has not been granted it is
+refused with `permission_denied` before its input is even validated. The default
+for a client MAGDA has not seen is `read` alone. What that model does and does
+not protect against is
+[remote-api-permissions.md](remote-api-permissions.md); adding an operation
+means adding it to the scope table there, and the registry refuses to start with
+a write that has not been.
 
 Two transports carry this today. WebSocket wraps it in JSON-RPC over a socket;
 MCP projects operations into tools and read operations into `magda://` resources
 — see [remote-api-mcp.md](remote-api-mcp.md). Both consume this registry, and
 neither declares an operation or a schema of its own.
+
+Both also want to know who is calling, so the user can grant them different
+things. A WebSocket client names itself in the upgrade's query string
+(`ws://127.0.0.1:51734/rpc?client=my-tool`); an MCP client uses
+`clientInfo.name`. Sending nothing is allowed and means anonymous, which is
+read-only.
 
 ## Subscriptions
 
@@ -104,6 +119,11 @@ Subscribing to `meters` or `playhead` costs nothing until asked for: nothing
 samples them otherwise.
 
 ## Deliberately excluded data
+
+Two separate mechanisms keep data out of the remote API, and they answer
+different questions. Scopes decide *who may ask*; the exclusions below decide
+*what exists to be asked for* — they hold for every client, at every scope, and
+there is no permission that reveals them.
 
 DTO fields are allow-listed. In particular, the remote API does not expose:
 

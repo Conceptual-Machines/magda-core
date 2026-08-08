@@ -18,6 +18,8 @@
 #include "../../../agents/model_downloader.hpp"
 #include "../../../agents/openai_url.hpp"
 #include "../../api/remote_api_host.hpp"
+#include "../../api/remote_audit.hpp"
+#include "../../api/remote_clients.hpp"
 #include "../../core/AppPaths.hpp"
 #include "../../core/Config.hpp"
 #include "../../media_db/MediaDbContext.hpp"
@@ -2500,6 +2502,16 @@ class AISettingsDialog::RemoteApiPage : public juce::Component, private juce::Ti
         styleLabel(statusLabel_, 11.0f);
         addAndMakeVisible(statusLabel_);
 
+        // Rotation is not a routine action, so it asks first and says what it
+        // costs. Every connected client was admitted by the credential being
+        // thrown away, so every one of them is dropped — a well-behaved client
+        // re-reads the discovery record and reconnects on its own, but a user
+        // who pressed this by accident would otherwise watch their session
+        // silently disconnect with no explanation.
+        rotateButton_.setButtonText("Rotate token");
+        rotateButton_.onClick = [this]() { confirmRotate(); };
+        addAndMakeVisible(rotateButton_);
+
         configCaption_.setText("MCP host configuration", juce::dontSendNotification);
         styleLabel(configCaption_);
         addAndMakeVisible(configCaption_);
@@ -2548,7 +2560,9 @@ class AISettingsDialog::RemoteApiPage : public juce::Component, private juce::Ti
         blurbLabel_.setBounds(bounds.removeFromTop(56));
         bounds.removeFromTop(8);
 
-        enableToggle_.setBounds(bounds.removeFromTop(rowH));
+        auto toggleRow = bounds.removeFromTop(rowH);
+        rotateButton_.setBounds(toggleRow.removeFromRight(110).reduced(0, 1));
+        enableToggle_.setBounds(toggleRow);
         bounds.removeFromTop(2);
         statusLabel_.setBounds(bounds.removeFromTop(18));
         bounds.removeFromTop(12);
@@ -2582,6 +2596,42 @@ class AISettingsDialog::RemoteApiPage : public juce::Component, private juce::Ti
             copiedAt_ = juce::Time();
         }
         refresh();
+    }
+
+    void confirmRotate() {
+        auto* host = magda::remote::activeHost();
+        if (host == nullptr || !host->isRunning())
+            return;
+
+        const auto connected = host->clients().connectionCount();
+        auto message =
+            juce::String("A new token is generated and the old one stops working immediately.");
+        if (connected > 0) {
+            message += juce::String::fromUTF8(" ") +
+                       (connected == 1 ? juce::String("One client is connected and will be "
+                                                      "disconnected.")
+                                       : juce::String(connected) +
+                                             " clients are connected and will be disconnected.");
+        }
+        message += " Clients that read the token file find the new one by themselves.";
+
+        juce::AlertWindow::showAsync(juce::MessageBoxOptions()
+                                         .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                                         .withTitle("Rotate the remote API token?")
+                                         .withMessage(message)
+                                         .withButton("Rotate")
+                                         .withButton("Cancel"),
+                                     [this](int result) {
+                                         if (result != 1)
+                                             return;
+                                         // Re-fetched rather than captured: this callback runs
+                                         // after the dialog returns, and the host can be gone by
+                                         // then — the user may have switched the feature off while
+                                         // the box was up.
+                                         if (auto* live = magda::remote::activeHost())
+                                             live->rotateToken();
+                                         refresh();
+                                     });
     }
 
     void applyEnabled(bool enabled) {
@@ -2729,16 +2779,361 @@ class AISettingsDialog::RemoteApiPage : public juce::Component, private juce::Ti
 
         // Nothing worth copying when the path is a placeholder.
         copyButton_.setEnabled(haveBridge);
+
+        // Nothing to rotate when nothing is listening: there is no live
+        // credential, and minting one would publish a record for a closed port.
+        rotateButton_.setEnabled(running);
     }
 
     juce::Label blurbLabel_;
     juce::ToggleButton enableToggle_;
+    juce::TextButton rotateButton_;
     juce::Label statusLabel_;
     juce::Label configCaption_;
     juce::TextEditor configField_;
     juce::TextButton copyButton_;
     juce::Label hintLabel_;
     juce::Time copiedAt_;
+};
+
+// ============================================================================
+// RemoteClientsPage — who may do what, and what they have done (#1860)
+//
+// The permission model is only worth having if the user can see and change it,
+// and this is the only place that is true. Two halves: a row per client MAGDA
+// has heard from, with a checkbox per scope; and a tail of the audit log
+// underneath, so "why did my assistant say it could not do that" has an answer
+// on the same screen as the checkbox that fixes it.
+//
+// Everything here reads live state through `activeHost()` and refreshes on a
+// timer rather than on notifications, because the things it displays change on
+// transport threads and a UI that repainted from those would need a hop per
+// event for no benefit at one second's resolution.
+// ============================================================================
+
+class AISettingsDialog::RemoteClientsPage : public juce::Component, private juce::Timer {
+  public:
+    RemoteClientsPage() {
+        blurbLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        blurbLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        blurbLabel_.setJustificationType(juce::Justification::topLeft);
+        blurbLabel_.setText(
+            "A client that connects for the first time can only read. Tick what you want it to be "
+            "able to do; changes apply to its next request, with nothing to restart.",
+            juce::dontSendNotification);
+        addAndMakeVisible(blurbLabel_);
+
+        clientsViewport_.setViewedComponent(&clientsHolder_, false);
+        clientsViewport_.setScrollBarsShown(true, false);
+        addAndMakeVisible(clientsViewport_);
+
+        emptyLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+        emptyLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        emptyLabel_.setJustificationType(juce::Justification::centred);
+        emptyLabel_.setText("No client has connected yet.", juce::dontSendNotification);
+        addAndMakeVisible(emptyLabel_);
+
+        activityCaption_.setText("Recent activity", juce::dontSendNotification);
+        styleLabel(activityCaption_);
+        addAndMakeVisible(activityCaption_);
+
+        activityView_.setMultiLine(true, false);
+        activityView_.setReadOnly(true);
+        activityView_.setFont(juce::Font(juce::FontOptions(
+            juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain)));
+        styleEditor(activityView_, "");
+        addAndMakeVisible(activityView_);
+
+        rebuild();
+        startTimer(1000);
+    }
+
+    ~RemoteClientsPage() override {
+        stopTimer();
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(12);
+        blurbLabel_.setBounds(bounds.removeFromTop(40));
+        bounds.removeFromTop(8);
+
+        // The activity tail takes a fixed share off the bottom; the client list
+        // gets whatever is left, which is the part that grows with use.
+        auto activity = bounds.removeFromBottom(juce::jmin(140, bounds.getHeight() / 2));
+        activityView_.setBounds(activity);
+        bounds.removeFromBottom(4);
+        activityCaption_.setBounds(bounds.removeFromBottom(20));
+        bounds.removeFromBottom(8);
+
+        clientsViewport_.setBounds(bounds);
+        emptyLabel_.setBounds(bounds);
+        layoutRows();
+    }
+
+  private:
+    /// One client: its name, whether it is connected, and a checkbox per scope.
+    class ClientRow : public juce::Component {
+      public:
+        static constexpr int HEIGHT = 46;
+
+        explicit ClientRow(juce::String clientName) : name_(std::move(clientName)) {
+            nameLabel_.setText(name_, juce::dontSendNotification);
+            nameLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+            nameLabel_.setColour(juce::Label::textColourId,
+                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            addAndMakeVisible(nameLabel_);
+
+            statusLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+            statusLabel_.setColour(juce::Label::textColourId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            addAndMakeVisible(statusLabel_);
+
+            for (const auto scope : magda::remote::allScopeValues()) {
+                auto toggle = std::make_unique<juce::ToggleButton>();
+                toggle->setButtonText(magda::remote::scopeName(scope));
+                toggle->setColour(juce::ToggleButton::textColourId,
+                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                toggle->setColour(juce::ToggleButton::tickColourId,
+                                  DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                // `read` is what being admitted means, so it is shown ticked
+                // and cannot be cleared — a row granting nothing at all would
+                // be indistinguishable from a client that was never granted,
+                // while still being one that can connect.
+                if (scope == magda::remote::Scope::Read) {
+                    toggle->setToggleState(true, juce::dontSendNotification);
+                    toggle->setEnabled(false);
+                } else {
+                    toggle->onClick = [this]() { commitScopes(); };
+                }
+                addAndMakeVisible(*toggle);
+                toggles_.push_back(std::move(toggle));
+            }
+
+            disconnectButton_.setButtonText("Disconnect");
+            disconnectButton_.onClick = [this]() {
+                if (auto* host = magda::remote::activeHost())
+                    host->clients().disconnectClient(name_);
+            };
+            addAndMakeVisible(disconnectButton_);
+
+            forgetButton_.setButtonText("Forget");
+            forgetButton_.onClick = [this]() {
+                if (auto* host = magda::remote::activeHost())
+                    host->clients().forget(name_);
+            };
+            addAndMakeVisible(forgetButton_);
+        }
+
+        const juce::String& clientName() const {
+            return name_;
+        }
+
+        /// Push current state in. Called every tick, so it must not fight the
+        /// user: a toggle is only written when it actually differs.
+        void update(magda::remote::ScopeSet scopes, int connections,
+                    const juce::String& transports) {
+            const auto& values = magda::remote::allScopeValues();
+            for (std::size_t index = 0; index < toggles_.size() && index < values.size(); ++index) {
+                const auto granted = scopes.has(values[index]);
+                if (toggles_[index]->getToggleState() != granted)
+                    toggles_[index]->setToggleState(granted, juce::dontSendNotification);
+            }
+
+            const auto connected = connections > 0;
+            statusLabel_.setText(connected ? juce::String::fromUTF8("Connected — ") + transports
+                                           : juce::String("Not connected"),
+                                 juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId,
+                                   connected ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
+                                             : DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            disconnectButton_.setEnabled(connected);
+        }
+
+        void resized() override {
+            auto bounds = getLocalBounds().reduced(6, 4);
+
+            auto header = bounds.removeFromTop(18);
+            forgetButton_.setBounds(header.removeFromRight(64).reduced(0, 1));
+            header.removeFromRight(4);
+            disconnectButton_.setBounds(header.removeFromRight(84).reduced(0, 1));
+            header.removeFromRight(8);
+            nameLabel_.setBounds(header.removeFromLeft(juce::jmin(160, header.getWidth() / 2)));
+            statusLabel_.setBounds(header);
+
+            bounds.removeFromTop(2);
+            auto row = bounds.removeFromTop(18);
+            const auto each =
+                toggles_.empty() ? 0 : row.getWidth() / static_cast<int>(toggles_.size());
+            for (auto& toggle : toggles_)
+                toggle->setBounds(row.removeFromLeft(each));
+        }
+
+        void paint(juce::Graphics& g) override {
+            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+            g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 3.0f);
+        }
+
+      private:
+        void commitScopes() {
+            auto* host = magda::remote::activeHost();
+            if (host == nullptr)
+                return;
+
+            magda::remote::ScopeSet scopes;
+            const auto& values = magda::remote::allScopeValues();
+            for (std::size_t index = 0; index < toggles_.size() && index < values.size(); ++index)
+                scopes.set(values[index], toggles_[index]->getToggleState());
+            // `setScopes` forces `read` back on and persists, so this is the
+            // whole of applying a change — there is no separate save step, and
+            // the next request the client makes reads the new grant.
+            host->clients().setScopes(name_, scopes);
+        }
+
+        const juce::String name_;
+        juce::Label nameLabel_;
+        juce::Label statusLabel_;
+        std::vector<std::unique_ptr<juce::ToggleButton>> toggles_;
+        juce::TextButton disconnectButton_;
+        juce::TextButton forgetButton_;
+    };
+
+    void timerCallback() override {
+        rebuild();
+    }
+
+    /**
+     * @brief Reconcile the rows with the registry, and refresh the activity tail.
+     *
+     * Rows are rebuilt only when the *set* of client names changes, not on every
+     * tick: recreating a row under the pointer would swallow the click that was
+     * about to land on one of its checkboxes.
+     */
+    void rebuild() {
+        auto* host = magda::remote::activeHost();
+        if (host == nullptr) {
+            if (!rows_.empty()) {
+                rows_.clear();
+                clientsHolder_.removeAllChildren();
+            }
+            emptyLabel_.setText("The remote API is not available in this session.",
+                                juce::dontSendNotification);
+            emptyLabel_.setVisible(true);
+            return;
+        }
+
+        const auto grants = host->clients().grants();
+        const auto connections = host->clients().connections();
+
+        // The union of the two, not just the grants. `forget()` drops a grant
+        // without disconnecting — deliberately, since the client reverts to
+        // read-only rather than being cut off — and a list built from grants
+        // alone would make that row vanish while its client was still
+        // connected, leaving no way to disconnect it until it happened to ask
+        // for something and recreate its entry.
+        juce::StringArray names;
+        for (const auto& grant : grants)
+            names.addIfNotAlreadyThere(grant.name);
+        for (const auto& connection : connections)
+            names.addIfNotAlreadyThere(connection.name);
+        names.sort(false);
+
+        if (names != rowNames_) {
+            rowNames_ = names;
+            rows_.clear();
+            clientsHolder_.removeAllChildren();
+            for (const auto& name : rowNames_) {
+                auto row = std::make_unique<ClientRow>(name);
+                clientsHolder_.addAndMakeVisible(*row);
+                rows_.push_back(std::move(row));
+            }
+            layoutRows();
+        }
+
+        emptyLabel_.setVisible(rows_.empty());
+        emptyLabel_.setText("No client has connected yet.", juce::dontSendNotification);
+
+        // Driven by the rows rather than by the grants, because a row can exist
+        // without one: a client that was forgotten while still connected keeps
+        // its row until it disconnects. It shows the read-only default, which is
+        // what it will actually get on its next request.
+        for (const auto& row : rows_) {
+            const auto& name = row->clientName();
+
+            auto scopes = magda::remote::defaultClientScopes();
+            for (const auto& grant : grants) {
+                if (grant.name == name) {
+                    scopes = grant.scopes;
+                    break;
+                }
+            }
+
+            int count = 0;
+            juce::StringArray transports;
+            for (const auto& connection : connections) {
+                if (connection.name != name)
+                    continue;
+                ++count;
+                transports.addIfNotAlreadyThere(connection.transport);
+            }
+            row->update(scopes, count, transports.joinIntoString(", "));
+        }
+
+        refreshActivity(host->audit());
+    }
+
+    ClientRow* rowFor(const juce::String& name) {
+        for (auto& row : rows_) {
+            if (row->clientName() == name)
+                return row.get();
+        }
+        return nullptr;
+    }
+
+    void layoutRows() {
+        const auto width = juce::jmax(0, clientsViewport_.getMaximumVisibleWidth());
+        int y = 0;
+        for (auto& row : rows_) {
+            row->setBounds(0, y, width, ClientRow::HEIGHT);
+            y += ClientRow::HEIGHT + 4;
+        }
+        clientsHolder_.setSize(width, y);
+    }
+
+    void refreshActivity(const magda::remote::RemoteAuditLog& log) {
+        // Cheap change detection: the counter only moves when something was
+        // recorded, so a quiet session never rebuilds this string.
+        const auto recorded = log.totalRecorded();
+        if (recorded == shownActivity_)
+            return;
+        shownActivity_ = recorded;
+
+        juce::StringArray lines;
+        for (const auto& entry : log.recent(kActivityLines)) {
+            const auto time = juce::Time(entry.timestampMs).toString(false, true, false, true);
+            auto line = time + "  " + entry.client + "  " + entry.operation + "  " +
+                        magda::remote::toString(entry.outcome);
+            if (entry.detail.isNotEmpty())
+                line += " (" + entry.detail + ")";
+            lines.add(line);
+        }
+
+        activityView_.setText(lines.joinIntoString("\n"), juce::dontSendNotification);
+        // Newest last, so show the end.
+        activityView_.moveCaretToEnd();
+    }
+
+    static constexpr std::size_t kActivityLines = 200;
+
+    juce::Label blurbLabel_;
+    juce::Viewport clientsViewport_;
+    juce::Component clientsHolder_;
+    juce::Label emptyLabel_;
+    std::vector<std::unique_ptr<ClientRow>> rows_;
+    juce::StringArray rowNames_;
+
+    juce::Label activityCaption_;
+    juce::TextEditor activityView_;
+    std::uint64_t shownActivity_ = 0;
 };
 
 // ============================================================================
@@ -2765,6 +3160,7 @@ AISettingsDialog::AISettingsDialog() {
     modelDownloadsPage_ = std::make_unique<ModelDownloadsPage>(
         *localPage_, samplePage_.get(), stemsPage_.get(), commandModelPage_.get());
     remoteApiPage_ = std::make_unique<RemoteApiPage>();
+    remoteClientsPage_ = std::make_unique<RemoteClientsPage>();
 
     // Wire config page to sibling pages
     configPage_->cloudPage = cloudPage_.get();
@@ -2775,6 +3171,10 @@ AISettingsDialog::AISettingsDialog() {
     tabbedComponent_.addTab("Config", tabBg, configPage_.get(), false);
     tabbedComponent_.addTab("Models", tabBg, modelDownloadsPage_.get(), false);
     tabbedComponent_.addTab("Remote", tabBg, remoteApiPage_.get(), false);
+    // Beside "Remote" rather than inside it: turning the endpoint on and saying
+    // what a client may do are separate decisions, made at different times, and
+    // the second one grows a row per client while the first stays one switch.
+    tabbedComponent_.addTab("Clients", tabBg, remoteClientsPage_.get(), false);
 
     // Refresh config combos when switching to Config tab
     tabbedComponent_.onTabChanged = [this](int tabIndex) {

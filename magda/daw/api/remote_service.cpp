@@ -162,6 +162,23 @@ void RemoteApiService::dispatch(const juce::String& operationName, const juce::v
     jassert(onComplete != nullptr);
     const auto revision = currentRevision();
 
+    // Every exit from here on is audited, so the record cannot be missing the
+    // requests that failed — which are the ones anybody actually reads it for.
+    // Wrapping rather than calling `record` at each `return` also keeps the
+    // exactly-once callback promise: there is one place that completes.
+    //
+    // The log is captured as an owning `shared_ptr` and `this` is not captured
+    // at all. This wrapper travels into work queued on the message thread and
+    // runs *outside* the execution lock — deliberately, so a callback may
+    // re-dispatch — which means it can outlive not just this service but the
+    // whole host. A borrowed pointer would be dangling by then; ownership is
+    // what makes the write safe rather than merely likely to be.
+    onComplete = [log = auditLog(), operationName, context,
+                  inner = std::move(onComplete)](Response response) mutable {
+        recordAudit(log, operationName, context, response);
+        inner(std::move(response));
+    };
+
     if (shutdown_.load(std::memory_order_acquire)) {
         onComplete(
             Response::failure(ErrorCode::Cancelled, "remote API service is shut down", revision));
@@ -184,6 +201,24 @@ void RemoteApiService::dispatch(const juce::String& operationName, const juce::v
                                      operationName +
                                          " is handled by the transport, and this transport "
                                          "does not support subscriptions",
+                                     revision));
+        return;
+    }
+
+    // Permission before validation, and before the idempotency cache (#1860).
+    //
+    // Before validation because a client that may not call something has no
+    // business learning the shape of its input — a refusal that varied with
+    // whether the payload was well formed would be an oracle for the schema.
+    //
+    // Before the cache because a cached response is a previous *success*, and
+    // replaying one to a client whose grant has since been revoked would be the
+    // single case where revocation did not take effect immediately.
+    if (!context.scopes.has(operation->requiredScope)) {
+        onComplete(Response::failure(ErrorCode::PermissionDenied,
+                                     operationName + " requires the '" +
+                                         scopeName(operation->requiredScope) +
+                                         "' permission, which this client has not been granted",
                                      revision));
         return;
     }
@@ -466,6 +501,55 @@ ChangeSource& RemoteApiService::changes() {
 
 const ChangeSource& RemoteApiService::changes() const {
     return changes_;
+}
+
+void RemoteApiService::setAuditLog(std::shared_ptr<RemoteAuditLog> log) {
+    const std::lock_guard<std::mutex> lock(auditMutex_);
+    audit_ = std::move(log);
+}
+
+std::shared_ptr<RemoteAuditLog> RemoteApiService::auditLog() const {
+    const std::lock_guard<std::mutex> lock(auditMutex_);
+    return audit_;
+}
+
+void RemoteApiService::recordAudit(const std::shared_ptr<RemoteAuditLog>& log,
+                                   const juce::String& operationName, const RequestContext& context,
+                                   const Response& response) {
+    if (log == nullptr)
+        return;
+
+    // A request with no declared client is an in-process caller — the
+    // subscription hub projecting a snapshot, or a test. Recording those would
+    // bury the remote traffic the log exists to show under MAGDA talking to
+    // itself.
+    if (context.clientName.isEmpty())
+        return;
+
+    AuditEntry entry;
+    entry.client = context.clientName;
+    entry.connectionId = context.clientId;
+    entry.transport = context.transport;
+    entry.operation = operationName;
+    entry.requestId = context.requestId;
+
+    if (response.ok) {
+        entry.outcome = AuditOutcome::Ok;
+    } else if (response.error.code == ErrorCode::PermissionDenied) {
+        entry.outcome = AuditOutcome::Denied;
+        // The scope that would have allowed it, and nothing else. The client
+        // gets a sentence; the log gets the one word the user would act on.
+        if (const auto* operation = OperationRegistry::instance().find(operationName))
+            entry.detail = scopeName(operation->requiredScope);
+    } else {
+        entry.outcome = AuditOutcome::Failed;
+        // The code, never `response.error.message`: a validation failure's
+        // message quotes the offending value, which is client input and may be
+        // anything at all.
+        entry.detail = toString(response.error.code);
+    }
+
+    log->record(std::move(entry));
 }
 
 void RemoteApiService::setIdempotencyCacheCapacity(std::size_t capacity) {

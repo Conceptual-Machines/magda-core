@@ -4,10 +4,14 @@
 #include <httplib.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
 #include <string>
+#include <thread>
 
 #include "MockMagdaApi.hpp"
+#include "RemoteTestScopes.hpp"
 #include "magda/daw/api/remote_api_host.hpp"
+#include "magda/daw/api/remote_clients.hpp"
 #include "magda/daw/api/remote_service.hpp"
 #include "magda/daw/core/Config.hpp"
 
@@ -18,6 +22,7 @@
 
 using namespace magda;
 using namespace magda::remote;
+using magda::test::fullyGrantedContext;
 using magda::test::MockMagdaApi;
 
 namespace {
@@ -34,27 +39,47 @@ struct ScopedRemoteApiConfig {
         wasEnabled_ = config.getRemoteApiEnabled();
         previousPort_ = config.getRemoteApiPort();
         previousMcpPort_ = config.getRemoteApiMcpPort();
+        // Grants too (#1860): a host persists them on every change, so a test
+        // that connects a client would otherwise leave its grant behind in the
+        // developer's real config file.
+        previousClients_ = config.getRemoteApiClients();
         config.setRemoteApiEnabled(enabled);
         config.setRemoteApiPort(0);
         config.setRemoteApiMcpPort(0);
+        config.setRemoteApiClients({});
     }
     ~ScopedRemoteApiConfig() {
         auto& config = Config::getInstance();
         config.setRemoteApiEnabled(wasEnabled_);
         config.setRemoteApiPort(previousPort_);
         config.setRemoteApiMcpPort(previousMcpPort_);
+        config.setRemoteApiClients(previousClients_);
     }
 
   private:
     bool wasEnabled_ = false;
     int previousPort_ = 0;
     int previousMcpPort_ = 0;
+    juce::var previousClients_;
 };
 
 juce::var readTokenFile(const juce::File& file) {
     juce::var parsed;
     REQUIRE(juce::JSON::parse(file.loadFileAsString(), parsed).wasOk());
     return parsed;
+}
+
+/// Poll until `predicate` holds, or give up. For state a connection's own
+/// thread publishes shortly after the client sees the handshake succeed.
+template <typename Predicate>
+bool waitFor(Predicate predicate, std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (predicate())
+            return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return predicate();
 }
 
 }  // namespace
@@ -243,7 +268,7 @@ TEST_CASE("Turning the remote API off and on again leaves it working",
     // distinction.
     REQUIRE_FALSE(host.service().isShutdown());
     const auto response = host.service().dispatchSync(
-        "project.get", juce::var(new juce::DynamicObject()), RequestContext{});
+        "project.get", juce::var(new juce::DynamicObject()), fullyGrantedContext());
     REQUIRE(response.ok);
 
     // And a fresh credential, because the old one was withdrawn.
@@ -259,6 +284,13 @@ TEST_CASE("Restarting the listeners voids cached request identities", "[remote][
     api.project_.info.tempo = 120.0;
     RemoteApiHost host(api);
     REQUIRE(host.start());
+
+    // A client MAGDA has not seen is read-only (#1860), and these clients send
+    // no `?client=`, so they are all `unknown`. Granting edit up front is what
+    // the user would have done in the settings dialog; without it every write
+    // below would come back `permission_denied` and the test would be measuring
+    // the permission model rather than identity reuse.
+    host.clients().setScopes(ANONYMOUS_CLIENT, allScopes());
 
     // Driven through real sockets, because the identity under test is the one
     // the transport builds. A hand-written context would assert whatever shape
@@ -314,7 +346,7 @@ TEST_CASE("A client-supplied idempotency key still dedupes across a restart",
     // restart: that is what makes a retry safe when the endpoint went away
     // mid-request. Clearing the shared cache on restart would have broken this
     // — the retry would apply the write a second time.
-    RequestContext context;
+    auto context = fullyGrantedContext();
     context.clientId = "mcp:stateless";
     context.requestId = "mcp::0f7c1a2b-3d4e-5f60-8a9b-cbd0e1f23456";
 
@@ -393,7 +425,7 @@ TEST_CASE("The token file is readable only by its owner", "[remote][host][auth]"
     RemoteApiHost host(api);
     REQUIRE(host.start());
 
-    struct stat info {};
+    struct stat info{};
     REQUIRE(stat(host.tokenFile().getFullPathName().toRawUTF8(), &info) == 0);
 
     // A credential every account on the machine can read is not a credential.
@@ -447,4 +479,148 @@ TEST_CASE("Each run generates its own token", "[remote][host][auth]") {
     // Per run, not per install: a token that survived a restart would outlive
     // the reason anyone was trusted with it.
     REQUIRE(readTokenFile(second.tokenFile())["token"].toString() != first);
+}
+
+// ===========================================================================
+// Permissions, at the level the application actually assembles them (#1860)
+// ===========================================================================
+
+TEST_CASE("A brand-new client reaches a real host read-only", "[remote][host][permissions]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    api.project_.info.tempo = 120.0;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+
+    const auto token = readTokenFile(host.tokenFile())["token"].toString();
+    const auto endpoint =
+        "ws://127.0.0.1:" + juce::String(host.boundPort()).toStdString() + "/rpc?client=probe";
+
+    const auto send = [&](httplib::ws::WebSocketClient& client, const juce::String& method,
+                          juce::var params) {
+        auto* request = new juce::DynamicObject();
+        request->setProperty("jsonrpc", "2.0");
+        request->setProperty("id", 1);
+        request->setProperty("method", method);
+        request->setProperty("params", params);
+        REQUIRE(client.send(juce::JSON::toString(juce::var(request), true).toStdString()));
+        std::string reply;
+        REQUIRE(client.read(reply) == httplib::ws::ReadResult::Text);
+        juce::var parsed;
+        REQUIRE(juce::JSON::parse(juce::String(reply), parsed).wasOk());
+        return parsed;
+    };
+
+    httplib::ws::WebSocketClient client(endpoint,
+                                        {{"Authorization", "Bearer " + token.toStdString()}});
+    REQUIRE(client.connect());
+
+    // Reads work out of the box, so a client is useful the moment it connects.
+    const auto read = send(client, "project.get", juce::var(new juce::DynamicObject()));
+    REQUIRE(read["error"].isVoid());
+
+    // Writes do not, and say which permission is missing.
+    //
+    // Held as a `var`, not as the raw pointer: `juce::var` takes ownership of a
+    // `DynamicObject*` by reference count, so wrapping the same pointer twice
+    // frees it after the first request and sends whatever lands in that memory
+    // next with the second.
+    juce::var params(new juce::DynamicObject());
+    params.getDynamicObject()->setProperty("tempo", 140.0);
+    const auto write = send(client, "project.setTempo", params);
+    REQUIRE(write["error"]["data"]["code"].toString() == "permission_denied");
+    REQUIRE(api.project_.info.tempo == 120.0);
+
+    // It is listed and connected, so the user has something to grant.
+    REQUIRE(host.clients().peekScopes("probe").has_value());
+    REQUIRE(host.clients().connectionCount() == 1);
+
+    // Granting applies to the next request on the socket it is already holding.
+    host.clients().setScopes("probe", ScopeSet{Scope::Read, Scope::Edit});
+    const auto granted = send(client, "project.setTempo", params);
+    REQUIRE(granted["error"].isVoid());
+    REQUIRE(api.project_.info.tempo == 140.0);
+}
+
+TEST_CASE("Grants outlive the host that recorded them", "[remote][host][permissions]") {
+    // The user's decision about a client is not per-run state: a toggle they set
+    // once must not be forgotten because MAGDA restarted, or the permission
+    // prompt becomes something they learn to click through.
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    {
+        RemoteApiHost host(api);
+        host.clients().setScopes("cursor", ScopeSet{Scope::Read, Scope::Transport});
+    }
+
+    // The grant reached config on the way out…
+    REQUIRE(Config::getInstance().getRemoteApiClients().isArray());
+
+    // …and a fresh host loads it rather than starting the client over.
+    RemoteApiHost restored(api);
+    REQUIRE(restored.clients().scopesFor("cursor") == ScopeSet{Scope::Read, Scope::Transport});
+    REQUIRE(restored.clients().scopesFor("someone-else") == defaultClientScopes());
+}
+
+TEST_CASE("Rotating the token invalidates the old one and drops its clients",
+          "[remote][host][permissions]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+
+    const auto before = readTokenFile(host.tokenFile())["token"].toString();
+    const auto endpointFor = [&] {
+        return "ws://127.0.0.1:" + juce::String(host.boundPort()).toStdString() + "/rpc";
+    };
+
+    {
+        httplib::ws::WebSocketClient client(endpointFor(),
+                                            {{"Authorization", "Bearer " + before.toStdString()}});
+        REQUIRE(client.connect());
+        // `connect()` returns once the 101 is written, which is a moment before
+        // the server's own thread has registered the connection. Waiting for
+        // the registry rather than asserting on it immediately is the
+        // difference between testing rotation and testing that race.
+        REQUIRE(waitFor([&] { return host.clients().connectionCount() == 1; }));
+
+        REQUIRE(host.rotateToken());
+    }
+
+    // A new credential, published where a client will look for it.
+    const auto after = readTokenFile(host.tokenFile())["token"].toString();
+    REQUIRE(after.isNotEmpty());
+    REQUIRE(after != before);
+    REQUIRE(host.isRunning());
+
+    // Nothing admitted by the old one is still connected — a token that left its
+    // own sessions running would not have been revoked.
+    REQUIRE(host.clients().connectionCount() == 0);
+
+    // And the old one no longer opens anything.
+    httplib::ws::WebSocketClient stale(endpointFor(),
+                                       {{"Authorization", "Bearer " + before.toStdString()}});
+    REQUIRE_FALSE(stale.connect());
+
+    httplib::ws::WebSocketClient fresh(endpointFor(),
+                                       {{"Authorization", "Bearer " + after.toStdString()}});
+    REQUIRE(fresh.connect());
+}
+
+TEST_CASE("Rotation is refused when nothing is listening", "[remote][host][permissions]") {
+    // There is no credential to rotate, and minting one would publish a record
+    // for a port nobody is answering on.
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(false);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+    REQUIRE_FALSE(host.rotateToken());
+    REQUIRE_FALSE(host.tokenFile().existsAsFile());
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 
 #include "remote_api.hpp"
 
@@ -13,6 +14,8 @@ namespace remote {
 
 class ModelChangeBridge;
 class RemoteApiService;
+class RemoteAuditLog;
+class RemoteClientRegistry;
 class RemoteMcpServer;
 class RemoteWebSocketServer;
 class SubscriptionHub;
@@ -121,6 +124,23 @@ class RemoteApiHost {
      */
     void stopListening();
 
+    /**
+     * @brief Throw the current credential away and issue a new one (#1860).
+     *
+     * Every connected client is disconnected, because that is what rotation
+     * means: a token that still admitted the sessions it was replacing would
+     * not have been revoked. Clients reconnect by re-reading the discovery
+     * record, which this rewrites before returning — so a well-behaved one
+     * recovers on its own and a stale copy of the old token never works again.
+     *
+     * A no-op returning false when nothing is listening: there is no credential
+     * to rotate, and minting one without a listener would publish a record for
+     * a port nobody is answering on.
+     *
+     * Message thread only, like `start()`.
+     */
+    bool rotateToken();
+
     bool isRunning() const;
 
     /// The WebSocket port actually bound, or 0 when not running.
@@ -143,11 +163,72 @@ class RemoteApiHost {
     /// not two.
     SubscriptionHub& subscriptions();
 
+    /**
+     * @brief Who may do what, and who is connected right now (#1860).
+     *
+     * Shared by both transports and edited by the settings dialog. Outlives the
+     * listeners deliberately: a grant is the user's decision about a client, and
+     * switching the feature off and on again must not silently forget it.
+     */
+    RemoteClientRegistry& clients();
+
+    /// What remote clients have done this run. Bounded and in memory only.
+    RemoteAuditLog& audit();
+
   private:
+    /**
+     * @brief Mirror the registry's grants into the config file.
+     *
+     * Wired as the registry's change handler, so a grant made in the settings
+     * dialog and one created by a client connecting for the first time are
+     * persisted by the same path — which means this is called from transport
+     * threads as well as the message thread.
+     */
+    void persistGrants();
+
+    /**
+     * @brief The pending config write, shared by every thread that asks for one.
+     *
+     * A slot rather than a value captured per call, because the writes have to
+     * be ordered and there is more than one writer. A transport thread can
+     * snapshot the grants, the user can then revoke a scope and have that saved,
+     * and the transport's older snapshot would otherwise land last and restore
+     * what was just revoked — in the file the next launch reads.
+     *
+     * Whoever finds `posted` false owns the hop; everyone after simply replaces
+     * `latest`, which the pending task re-reads when it runs. So the newest
+     * state always wins and a burst of changes costs one write.
+     *
+     * Held by `shared_ptr` so a queued write can outlive this host without
+     * reaching into it.
+     */
+    struct GrantWriter {
+        /// Guards `latest` and `posted`. Held briefly, never across I/O.
+        std::mutex mutex;
+        /// Serialises the config write itself. Separate from `mutex` so a
+        /// transport thread recording a newer grant is never blocked behind a
+        /// file save — it leaves `latest` for whoever is inside the write to
+        /// pick up. Always taken before `mutex`, never after.
+        std::mutex applyMutex;
+        juce::var latest;
+        bool posted = false;
+    };
+    std::shared_ptr<GrantWriter> grantWriter_ = std::make_shared<GrantWriter>();
     // Declaration order is destruction order reversed, and it is load-bearing:
     // a transport's connections deregister from the hub, the hub listens to the
     // service's change source, and the bridge writes into the service. Each has
     // to outlive the thing that talks to it.
+    //
+    // The client registry comes first because both transports hold a raw
+    // pointer to it, so it has to outlive them.
+    //
+    // The audit log is a `shared_ptr` rather than a `unique_ptr` because
+    // declaration order is not enough for it: a dispatch completion carrying it
+    // can still be queued on the message thread when this whole object is
+    // destroyed, and ordering members only decides what happens *inside* the
+    // destructor. Whoever still holds a share keeps it alive.
+    std::shared_ptr<RemoteAuditLog> audit_;
+    std::unique_ptr<RemoteClientRegistry> clients_;
     std::unique_ptr<RemoteApiService> service_;
     std::unique_ptr<ModelChangeBridge> bridge_;
     std::unique_ptr<SubscriptionHub> subscriptions_;

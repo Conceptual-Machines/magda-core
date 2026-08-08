@@ -34,6 +34,7 @@ about the document rather than about its quality.
 | [tracktion-parameter-writes.md](architecture/tracktion-parameter-writes.md) | why host parameter writes go through `setParameterFromHost` |
 | [remote-api-contract.md](architecture/remote-api-contract.md) | the remote API's surface |
 | [remote-api-transport.md](architecture/remote-api-transport.md) | the WebSocket transport behind it |
+| [remote-api-permissions.md](architecture/remote-api-permissions.md) | what a remote client may do, and what is recorded about it |
 | [dual-mode-system.md](architecture/dual-mode-system.md) | arrangement and session, and what switches between them |
 | [chord-suggestion-pipeline.md](architecture/chord-suggestion-pipeline.md) | how a chord suggestion is arrived at |
 | [beat-migration-remaining.md](architecture/beat-migration-remaining.md) | beats as the authoritative domain, and what still holds seconds |
