@@ -223,7 +223,7 @@ TEST_CASE("An unresolvable path yields nothing rather than the wrong node",
     // chain's parent. Pinned because it is surprising, and because the live
     // test caught the mock disagreeing with `TrackManager` about it — not
     // because it is obviously the right rule. Tightening it would change
-    // long-standing behaviour well outside this facade.
+    // long-standing behaviour well outside this facade — tracked as #2057.
     REQUIRE(api.tracks().getRackByPath(top.chainPath()) ==
             api.tracks().getRackByPath(top.rackPath()));
 

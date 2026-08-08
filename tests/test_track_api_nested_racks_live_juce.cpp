@@ -151,7 +151,7 @@ class TrackApiNestedRacksLiveTest final : public juce::UnitTest {
             // path answers with that chain's parent rack. Long-standing
             // `TrackManager` behaviour, pinned here because it is surprising —
             // this test is what caught the mock disagreeing about it, and
-            // tightening it would reach well beyond this facade.
+            // tightening it would reach well beyond this facade. Tracked as #2057.
             expect(api.getRackByPath(chainPath) == api.getRackByPath(rackPath));
 
             api.setChainName(ChainNodePath::chain(track, rackId, 9999), "Nowhere");
