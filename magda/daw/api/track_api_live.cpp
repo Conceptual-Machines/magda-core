@@ -70,70 +70,151 @@ DeviceId TrackApiLive::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
 
 DeviceId TrackApiLive::addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
                                         const DeviceInfo& device) {
-    return TrackManager::getInstance().addDeviceToChain(trackId, rackId, chainId, device);
+    return addDeviceToChainByPath(ChainNodePath::chain(trackId, rackId, chainId), device);
 }
 
+// ---------------------------------------------------------------------------
+// Path-addressed racks and chains (#1993)
+//
+// Straight forwards to the `TrackManager` methods the UI already uses. Nothing
+// is implemented here that was not reachable before — the model always
+// supported arbitrary nesting; it was only the facade that could not name it.
+// ---------------------------------------------------------------------------
+
+RackId TrackApiLive::addRackToChainByPath(const ChainNodePath& chainPath,
+                                          const juce::String& name) {
+    return TrackManager::getInstance().addRackToChainByPath(chainPath, name);
+}
+
+void TrackApiLive::removeRackFromChainByPath(const ChainNodePath& rackPath) {
+    TrackManager::getInstance().removeRackFromChainByPath(rackPath);
+}
+
+const RackInfo* TrackApiLive::getRackByPath(const ChainNodePath& rackPath) const {
+    return TrackManager::getInstance().getRackByPath(rackPath);
+}
+
+void TrackApiLive::setRackBypassedByPath(const ChainNodePath& rackPath, bool bypassed) {
+    TrackManager::getInstance().setRackBypassedByPath(rackPath, bypassed);
+}
+
+void TrackApiLive::setRackVolume(const ChainNodePath& rackPath, float volumeDb) {
+    TrackManager::getInstance().setRackVolume(rackPath, volumeDb);
+}
+
+ChainId TrackApiLive::addChainToRack(const ChainNodePath& rackPath, const juce::String& name) {
+    return TrackManager::getInstance().addChainToRack(rackPath, name);
+}
+
+void TrackApiLive::removeChainByPath(const ChainNodePath& chainPath) {
+    TrackManager::getInstance().removeChainByPath(chainPath);
+}
+
+const ChainInfo* TrackApiLive::getChainByPath(const ChainNodePath& chainPath) const {
+    return TrackManager::getInstance().getChainByPath(chainPath);
+}
+
+void TrackApiLive::setChainOutput(const ChainNodePath& chainPath, int outputIndex) {
+    TrackManager::getInstance().setChainOutput(chainPath, outputIndex);
+}
+
+void TrackApiLive::setChainMuted(const ChainNodePath& chainPath, bool muted) {
+    TrackManager::getInstance().setChainMuted(chainPath, muted);
+}
+
+void TrackApiLive::setChainBypassed(const ChainNodePath& chainPath, bool bypassed) {
+    TrackManager::getInstance().setChainBypassed(chainPath, bypassed);
+}
+
+void TrackApiLive::setChainSolo(const ChainNodePath& chainPath, bool solo) {
+    TrackManager::getInstance().setChainSolo(chainPath, solo);
+}
+
+void TrackApiLive::setChainVolume(const ChainNodePath& chainPath, float volumeDb) {
+    TrackManager::getInstance().setChainVolume(chainPath, volumeDb);
+}
+
+void TrackApiLive::setChainPan(const ChainNodePath& chainPath, float pan) {
+    TrackManager::getInstance().setChainPan(chainPath, pan);
+}
+
+void TrackApiLive::setChainName(const ChainNodePath& chainPath, const juce::String& name) {
+    TrackManager::getInstance().setChainName(chainPath, name);
+}
+
+DeviceId TrackApiLive::addDeviceToChainByPath(const ChainNodePath& chainPath,
+                                              const DeviceInfo& device) {
+    return TrackManager::getInstance().addDeviceToChainByPath(chainPath, device);
+}
+
+// ---------------------------------------------------------------------------
+// Triple-addressed surface — shims over the path form, at depth one
+// ---------------------------------------------------------------------------
+
 RackId TrackApiLive::addRackToTrack(TrackId trackId, const juce::String& name) {
+    // Not a shim: a *top-level* rack lives in the track's own FX chain rather
+    // than inside another rack's chain, so there is no chain path to add it to.
+    // `addRackToChainByPath` is how you nest one; this is how you start.
     return TrackManager::getInstance().addRackToTrack(trackId, name);
 }
 
 void TrackApiLive::removeRackFromTrack(TrackId trackId, RackId rackId) {
-    TrackManager::getInstance().removeRackFromTrack(trackId, rackId);
+    removeRackFromChainByPath(ChainNodePath::rack(trackId, rackId));
 }
 
 const RackInfo* TrackApiLive::getRack(TrackId trackId, RackId rackId) const {
-    return TrackManager::getInstance().getRack(trackId, rackId);
+    return getRackByPath(ChainNodePath::rack(trackId, rackId));
 }
 
 void TrackApiLive::setRackBypassed(TrackId trackId, RackId rackId, bool bypassed) {
-    TrackManager::getInstance().setRackBypassed(trackId, rackId, bypassed);
+    setRackBypassedByPath(ChainNodePath::rack(trackId, rackId), bypassed);
 }
 
 void TrackApiLive::setRackVolume(TrackId trackId, RackId rackId, float volumeDb) {
-    TrackManager::getInstance().setRackVolume(trackId, rackId, volumeDb);
+    setRackVolume(ChainNodePath::rack(trackId, rackId), volumeDb);
 }
 
 ChainId TrackApiLive::addChainToRack(TrackId trackId, RackId rackId, const juce::String& name) {
-    return TrackManager::getInstance().addChainToRack(ChainNodePath::rack(trackId, rackId), name);
+    return addChainToRack(ChainNodePath::rack(trackId, rackId), name);
 }
 
 void TrackApiLive::removeChainFromRack(TrackId trackId, RackId rackId, ChainId chainId) {
-    TrackManager::getInstance().removeChainFromRack(trackId, rackId, chainId);
+    removeChainByPath(ChainNodePath::chain(trackId, rackId, chainId));
 }
 
 const ChainInfo* TrackApiLive::getChain(TrackId trackId, RackId rackId, ChainId chainId) const {
-    return TrackManager::getInstance().getChain(trackId, rackId, chainId);
+    return getChainByPath(ChainNodePath::chain(trackId, rackId, chainId));
 }
 
 void TrackApiLive::setChainOutput(TrackId trackId, RackId rackId, ChainId chainId,
                                   int outputIndex) {
-    TrackManager::getInstance().setChainOutput(trackId, rackId, chainId, outputIndex);
+    setChainOutput(ChainNodePath::chain(trackId, rackId, chainId), outputIndex);
 }
 
 void TrackApiLive::setChainMuted(TrackId trackId, RackId rackId, ChainId chainId, bool muted) {
-    TrackManager::getInstance().setChainMuted(trackId, rackId, chainId, muted);
+    setChainMuted(ChainNodePath::chain(trackId, rackId, chainId), muted);
 }
 
 void TrackApiLive::setChainBypassed(TrackId trackId, RackId rackId, ChainId chainId,
                                     bool bypassed) {
-    TrackManager::getInstance().setChainBypassed(trackId, rackId, chainId, bypassed);
+    setChainBypassed(ChainNodePath::chain(trackId, rackId, chainId), bypassed);
 }
 
 void TrackApiLive::setChainSolo(TrackId trackId, RackId rackId, ChainId chainId, bool solo) {
-    TrackManager::getInstance().setChainSolo(trackId, rackId, chainId, solo);
+    setChainSolo(ChainNodePath::chain(trackId, rackId, chainId), solo);
 }
 
 void TrackApiLive::setChainVolume(TrackId trackId, RackId rackId, ChainId chainId, float volumeDb) {
-    TrackManager::getInstance().setChainVolume(trackId, rackId, chainId, volumeDb);
+    setChainVolume(ChainNodePath::chain(trackId, rackId, chainId), volumeDb);
 }
 
 void TrackApiLive::setChainPan(TrackId trackId, RackId rackId, ChainId chainId, float pan) {
-    TrackManager::getInstance().setChainPan(trackId, rackId, chainId, pan);
+    setChainPan(ChainNodePath::chain(trackId, rackId, chainId), pan);
 }
 
 void TrackApiLive::setChainName(TrackId trackId, RackId rackId, ChainId chainId,
                                 const juce::String& name) {
-    TrackManager::getInstance().setChainName(trackId, rackId, chainId, name);
+    setChainName(ChainNodePath::chain(trackId, rackId, chainId), name);
 }
 
 const DeviceInfo* TrackApiLive::getPrimaryInstrument(TrackId trackId) const {

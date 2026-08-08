@@ -406,32 +406,309 @@ class MockTrackApi : public TrackApi {
         deviceWrites.push_back({trackId, device});
         return nextDeviceId++;
     }
-    DeviceId addDeviceToChain(TrackId, RackId, ChainId, const DeviceInfo&) override {
-        return INVALID_DEVICE_ID;
+    // -----------------------------------------------------------------------
+    // Racks and chains
+    //
+    // A real nested tree, held in `TrackInfo::chain.fxChainElements` exactly
+    // as `TrackManager` holds it, resolved by walking `ChainNodePath` the same
+    // way `getRackByPath` does.
+    //
+    // Every one of these used to return `INVALID_*_ID` or nullptr. That made
+    // the mock agree with a facade that could not address nested racks (#1993)
+    // — it had nothing to disagree with — so the gap was invisible from the
+    // tests. Modelling it properly is what stops it coming back: a facade that
+    // silently loses depth now fails here rather than in a bug report.
+    // -----------------------------------------------------------------------
+
+    RackId nextRackId = 1;
+    ChainId nextChainId = 1;
+
+    RackInfo* resolveRack(const ChainNodePath& rackPath) {
+        auto* track = getTrack(rackPath.trackId);
+        if (track == nullptr)
+            return nullptr;
+        if (rackPath.isTrackLevel || rackPath.topLevelDeviceId != INVALID_DEVICE_ID)
+            return nullptr;
+
+        // Mirrors `TrackManager::getRackByPath` step for step, including its
+        // structural rules: a route alternates `Rack > Chain > Rack > Chain`,
+        // a Device is a leaf, and a Segment only ever leads. Two consecutive
+        // steps of the same kind move sideways through the tree on ids that all
+        // exist, which is a route the model cannot express — see the long note
+        // on the model's copy for the shapes that used to resolve.
+        RackInfo* rack = nullptr;
+        ChainInfo* chain = nullptr;
+        for (std::size_t index = 0; index < rackPath.steps.size(); ++index) {
+            const auto& step = rackPath.steps[index];
+            const bool isLast = index + 1 == rackPath.steps.size();
+
+            if (step.type == ChainStepType::Rack) {
+                if (rack != nullptr && chain == nullptr)
+                    return nullptr;
+                // A rack sits either directly in the track's FX list or inside
+                // the chain reached by the previous step.
+                auto& elements = chain != nullptr ? chain->elements : track->chain.fxChainElements;
+                RackInfo* found = nullptr;
+                for (auto& element : elements) {
+                    if (magda::isRack(element) && magda::getRack(element).id == step.id) {
+                        found = &magda::getRack(element);
+                        break;
+                    }
+                }
+                if (found == nullptr)
+                    return nullptr;
+                rack = found;
+                chain = nullptr;
+            } else if (step.type == ChainStepType::Chain) {
+                if (rack == nullptr || chain != nullptr)
+                    return nullptr;
+                ChainInfo* found = nullptr;
+                for (auto& candidate : rack->chains) {
+                    if (candidate.id == step.id) {
+                        found = &candidate;
+                        break;
+                    }
+                }
+                if (found == nullptr)
+                    return nullptr;
+                chain = found;
+            } else if (step.type == ChainStepType::Device) {
+                if (!isLast || chain == nullptr)
+                    return nullptr;
+                const auto found = std::find_if(chain->elements.begin(), chain->elements.end(),
+                                                [&step](const ChainElement& element) {
+                                                    return magda::isDevice(element) &&
+                                                           magda::getDevice(element).id == step.id;
+                                                });
+                if (found == chain->elements.end())
+                    return nullptr;
+            } else if (step.type == ChainStepType::Segment) {
+                return nullptr;
+            }
+        }
+        // The deepest rack traversed, whatever the last step was — so a *chain*
+        // path answers with that chain's parent rack rather than with nothing.
+        //
+        // That is `TrackManager::getRackByPath`'s behaviour, and matching it is
+        // the point of this mock. Guarding on the last step type here instead
+        // read better and was wrong: the two resolvers then disagreed, and a
+        // test written against the mock encoded the mock's opinion rather than
+        // the model's. Whether the real one *should* be this lenient is a
+        // separate question from whether the mock should lie about it.
+        return rack;
     }
-    RackId addRackToTrack(TrackId, const juce::String&) override {
-        return INVALID_RACK_ID;
-    }
-    void removeRackFromTrack(TrackId, RackId) override {}
-    const RackInfo* getRack(TrackId, RackId) const override {
+
+    ChainInfo* resolveChain(const ChainNodePath& chainPath) {
+        if (chainPath.steps.empty() || chainPath.steps.back().type != ChainStepType::Chain)
+            return nullptr;
+        // A chain hangs directly off a rack. Resolving the prefix is not enough
+        // by itself — for `rack > chain1 > chain2` the prefix is legal, and the
+        // search below would find `chain2` beside `chain1` in the same rack.
+        // Mirrors the same guard in `TrackManager::getChainByPath`.
+        if (chainPath.steps.size() < 2 ||
+            chainPath.steps[chainPath.steps.size() - 2].type != ChainStepType::Rack)
+            return nullptr;
+        auto* rack = resolveRack(chainPath.parent());
+        if (rack == nullptr)
+            return nullptr;
+        for (auto& chain : rack->chains) {
+            if (chain.id == chainPath.steps.back().id)
+                return &chain;
+        }
         return nullptr;
     }
-    void setRackBypassed(TrackId, RackId, bool) override {}
-    void setRackVolume(TrackId, RackId, float) override {}
-    ChainId addChainToRack(TrackId, RackId, const juce::String&) override {
-        return INVALID_CHAIN_ID;
+
+    RackId addRackToChainByPath(const ChainNodePath& chainPath, const juce::String& name) override {
+        auto* chain = resolveChain(chainPath);
+        if (chain == nullptr)
+            return INVALID_RACK_ID;
+        RackInfo rack;
+        rack.id = nextRackId++;
+        rack.name = name;
+        // A new rack comes with one chain, like the real thing — otherwise a
+        // test that nests two racks has nowhere to put the second.
+        ChainInfo defaultChain;
+        defaultChain.id = nextChainId++;
+        defaultChain.name = "Chain 1";
+        rack.chains.push_back(std::move(defaultChain));
+        const auto id = rack.id;
+        chain->elements.push_back(makeRackElement(std::move(rack)));
+        return id;
     }
-    void removeChainFromRack(TrackId, RackId, ChainId) override {}
-    const ChainInfo* getChain(TrackId, RackId, ChainId) const override {
-        return nullptr;
+
+    void removeRackFromChainByPath(const ChainNodePath& rackPath) override {
+        if (rackPath.steps.empty() || rackPath.steps.back().type != ChainStepType::Rack)
+            return;
+        const auto rackId = rackPath.steps.back().id;
+        const auto parent = rackPath.parent();
+
+        std::vector<ChainElement>* elements = nullptr;
+        if (parent.steps.empty()) {
+            if (auto* track = getTrack(parent.trackId))
+                elements = &track->chain.fxChainElements;
+        } else if (auto* chain = resolveChain(parent)) {
+            elements = &chain->elements;
+        }
+        if (elements == nullptr)
+            return;
+
+        elements->erase(std::remove_if(elements->begin(), elements->end(),
+                                       [rackId](const ChainElement& element) {
+                                           return magda::isRack(element) &&
+                                                  magda::getRack(element).id == rackId;
+                                       }),
+                        elements->end());
     }
-    void setChainOutput(TrackId, RackId, ChainId, int) override {}
-    void setChainMuted(TrackId, RackId, ChainId, bool) override {}
-    void setChainBypassed(TrackId, RackId, ChainId, bool) override {}
-    void setChainSolo(TrackId, RackId, ChainId, bool) override {}
-    void setChainVolume(TrackId, RackId, ChainId, float) override {}
-    void setChainPan(TrackId, RackId, ChainId, float) override {}
-    void setChainName(TrackId, RackId, ChainId, const juce::String&) override {}
+
+    const RackInfo* getRackByPath(const ChainNodePath& rackPath) const override {
+        return const_cast<MockTrackApi*>(this)->resolveRack(rackPath);
+    }
+
+    void setRackBypassedByPath(const ChainNodePath& rackPath, bool bypassed) override {
+        if (auto* rack = resolveRack(rackPath))
+            rack->bypassed = bypassed;
+    }
+
+    void setRackVolume(const ChainNodePath& rackPath, float volumeDb) override {
+        if (auto* rack = resolveRack(rackPath))
+            rack->volume = volumeDb;
+    }
+
+    ChainId addChainToRack(const ChainNodePath& rackPath, const juce::String& name) override {
+        auto* rack = resolveRack(rackPath);
+        if (rack == nullptr)
+            return INVALID_CHAIN_ID;
+        ChainInfo chain;
+        chain.id = nextChainId++;
+        chain.name = name;
+        const auto id = chain.id;
+        rack->chains.push_back(std::move(chain));
+        return id;
+    }
+
+    void removeChainByPath(const ChainNodePath& chainPath) override {
+        if (chainPath.steps.empty() || chainPath.steps.back().type != ChainStepType::Chain)
+            return;
+        const auto chainId = chainPath.steps.back().id;
+        if (auto* rack = resolveRack(chainPath.parent())) {
+            auto& chains = rack->chains;
+            chains.erase(std::remove_if(chains.begin(), chains.end(),
+                                        [chainId](const ChainInfo& c) { return c.id == chainId; }),
+                         chains.end());
+        }
+    }
+
+    const ChainInfo* getChainByPath(const ChainNodePath& chainPath) const override {
+        return const_cast<MockTrackApi*>(this)->resolveChain(chainPath);
+    }
+
+    void setChainOutput(const ChainNodePath& chainPath, int outputIndex) override {
+        if (auto* chain = resolveChain(chainPath))
+            chain->outputIndex = outputIndex;
+    }
+    void setChainMuted(const ChainNodePath& chainPath, bool muted) override {
+        if (auto* chain = resolveChain(chainPath))
+            chain->muted = muted;
+    }
+    void setChainBypassed(const ChainNodePath& chainPath, bool bypassed) override {
+        if (auto* chain = resolveChain(chainPath))
+            chain->bypassed = bypassed;
+    }
+    void setChainSolo(const ChainNodePath& chainPath, bool solo) override {
+        if (auto* chain = resolveChain(chainPath))
+            chain->solo = solo;
+    }
+    void setChainVolume(const ChainNodePath& chainPath, float volumeDb) override {
+        if (auto* chain = resolveChain(chainPath))
+            chain->volume = volumeDb;
+    }
+    void setChainPan(const ChainNodePath& chainPath, float pan) override {
+        if (auto* chain = resolveChain(chainPath))
+            chain->pan = pan;
+    }
+    void setChainName(const ChainNodePath& chainPath, const juce::String& name) override {
+        if (auto* chain = resolveChain(chainPath))
+            chain->name = name;
+    }
+
+    DeviceId addDeviceToChainByPath(const ChainNodePath& chainPath,
+                                    const DeviceInfo& device) override {
+        auto* chain = resolveChain(chainPath);
+        if (chain == nullptr)
+            return INVALID_DEVICE_ID;
+        DeviceInfo copy = device;
+        copy.id = nextDeviceId++;
+        const auto id = copy.id;
+        chain->elements.push_back(ChainElement{std::move(copy)});
+        return id;
+    }
+
+    RackId addRackToTrack(TrackId trackId, const juce::String& name) override {
+        auto* track = getTrack(trackId);
+        if (track == nullptr)
+            return INVALID_RACK_ID;
+        RackInfo rack;
+        rack.id = nextRackId++;
+        rack.name = name;
+        ChainInfo defaultChain;
+        defaultChain.id = nextChainId++;
+        defaultChain.name = "Chain 1";
+        rack.chains.push_back(std::move(defaultChain));
+        const auto id = rack.id;
+        track->chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+        return id;
+    }
+
+    // The triple-based surface, as shims — the same shape `TrackApiLive` uses,
+    // so a test driving either form exercises one model.
+    DeviceId addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
+                              const DeviceInfo& device) override {
+        return addDeviceToChainByPath(ChainNodePath::chain(trackId, rackId, chainId), device);
+    }
+    void removeRackFromTrack(TrackId trackId, RackId rackId) override {
+        removeRackFromChainByPath(ChainNodePath::rack(trackId, rackId));
+    }
+    const RackInfo* getRack(TrackId trackId, RackId rackId) const override {
+        return getRackByPath(ChainNodePath::rack(trackId, rackId));
+    }
+    void setRackBypassed(TrackId trackId, RackId rackId, bool bypassed) override {
+        setRackBypassedByPath(ChainNodePath::rack(trackId, rackId), bypassed);
+    }
+    void setRackVolume(TrackId trackId, RackId rackId, float volumeDb) override {
+        setRackVolume(ChainNodePath::rack(trackId, rackId), volumeDb);
+    }
+    ChainId addChainToRack(TrackId trackId, RackId rackId, const juce::String& name) override {
+        return addChainToRack(ChainNodePath::rack(trackId, rackId), name);
+    }
+    void removeChainFromRack(TrackId trackId, RackId rackId, ChainId chainId) override {
+        removeChainByPath(ChainNodePath::chain(trackId, rackId, chainId));
+    }
+    const ChainInfo* getChain(TrackId trackId, RackId rackId, ChainId chainId) const override {
+        return getChainByPath(ChainNodePath::chain(trackId, rackId, chainId));
+    }
+    void setChainOutput(TrackId trackId, RackId rackId, ChainId chainId, int outputIndex) override {
+        setChainOutput(ChainNodePath::chain(trackId, rackId, chainId), outputIndex);
+    }
+    void setChainMuted(TrackId trackId, RackId rackId, ChainId chainId, bool muted) override {
+        setChainMuted(ChainNodePath::chain(trackId, rackId, chainId), muted);
+    }
+    void setChainBypassed(TrackId trackId, RackId rackId, ChainId chainId, bool bypassed) override {
+        setChainBypassed(ChainNodePath::chain(trackId, rackId, chainId), bypassed);
+    }
+    void setChainSolo(TrackId trackId, RackId rackId, ChainId chainId, bool solo) override {
+        setChainSolo(ChainNodePath::chain(trackId, rackId, chainId), solo);
+    }
+    void setChainVolume(TrackId trackId, RackId rackId, ChainId chainId, float volumeDb) override {
+        setChainVolume(ChainNodePath::chain(trackId, rackId, chainId), volumeDb);
+    }
+    void setChainPan(TrackId trackId, RackId rackId, ChainId chainId, float pan) override {
+        setChainPan(ChainNodePath::chain(trackId, rackId, chainId), pan);
+    }
+    void setChainName(TrackId trackId, RackId rackId, ChainId chainId,
+                      const juce::String& name) override {
+        setChainName(ChainNodePath::chain(trackId, rackId, chainId), name);
+    }
+
     const DeviceInfo* getPrimaryInstrument(TrackId) const override {
         return nullptr;
     }
