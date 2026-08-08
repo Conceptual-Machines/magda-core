@@ -535,6 +535,9 @@ TEST_CASE("Permission decisions hold up under concurrent load",
     std::atomic<int> allowed{0};
     std::atomic<int> denied{0};
     std::atomic<int> unexpected{0};
+    /// Requests finished, of any outcome. What the grant flipping below is
+    /// paced against, so the test does not depend on how fast the machine is.
+    std::atomic<int> completed{0};
 
     std::vector<std::thread> workers;
     workers.reserve(kClients);
@@ -560,27 +563,60 @@ TEST_CASE("Permission decisions hold up under concurrent load",
                     // means the load itself broke something, which is exactly
                     // what this is watching for.
                     unexpected.fetch_add(1);
+                completed.fetch_add(1);
             }
         });
     }
 
-    // Flip the grant back and forth underneath them. Every request must land on
-    // one side or the other, never in between.
-    for (int flip = 0; flip < 20; ++flip) {
-        registry.setScopes(kClient, (flip % 2) == 0 ? defaultClientScopes()
-                                                    : ScopeSet{Scope::Read, Scope::Edit});
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    // Flip the grant underneath them, anchored on their observed progress rather
+    // than on a sleep.
+    //
+    // The first version of this slept between flips and then asserted that both
+    // outcomes had occurred — which is a coincidence, not a property. On a
+    // machine where the requests outran the flipping, every one of them saw the
+    // same grant and the assertion failed with nothing wrong. Waiting for a
+    // quarter of the work to finish before revoking makes both halves
+    // guaranteed: those requests were allowed, and the three quarters that start
+    // afterwards cannot have been.
+    const auto total = kClients * kRequestsEach;
+    const auto waitForProgress = [&](int target) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        while (completed.load() < target && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        return completed.load() >= target;
+    };
+
+    REQUIRE(waitForProgress(total / 4));
+    registry.setScopes(kClient, defaultClientScopes());
+
+    // Hold it revoked until another quarter has gone through, so those requests
+    // are provably denied rather than probably denied.
+    REQUIRE(waitForProgress(total / 2));
+
+    // Only then start moving it, so the concurrent read-vs-write race on the
+    // grant is exercised too rather than only the two steady states. Bounded by
+    // the same deadline: a stalled worker should fail this test, not hang it.
+    const auto flipUntil = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (completed.load() < total && std::chrono::steady_clock::now() < flipUntil) {
+        registry.setScopes(kClient, ScopeSet{Scope::Read, Scope::Edit});
+        registry.setScopes(kClient, defaultClientScopes());
+        // Yielding rather than spinning flat out: on a two-core runner this
+        // thread would otherwise compete with the workers it is waiting for.
+        // The loop's exit is progress-based, so this cannot affect the outcome.
+        std::this_thread::yield();
     }
-    registry.setScopes(kClient, ScopeSet{Scope::Read, Scope::Edit});
 
     for (auto& worker : workers)
         worker.join();
 
     REQUIRE(unexpected.load() == 0);
-    REQUIRE(allowed.load() + denied.load() == kClients * kRequestsEach);
-    // Both outcomes actually occurred, or the flipping above proved nothing.
-    REQUIRE(allowed.load() > 0);
-    REQUIRE(denied.load() > 0);
+    REQUIRE(allowed.load() + denied.load() == total);
+    // Both outcomes provably occurred rather than probably: the first quarter
+    // ran with the grant in place and the second with it withdrawn, and each
+    // was waited for rather than slept through. The margin absorbs the handful
+    // of requests already in flight when a flip lands.
+    REQUIRE(allowed.load() >= (total / 4) - kClients);
+    REQUIRE(denied.load() >= (total / 4) - kClients);
 
     // Every one of them is in the record, and none of them carries a payload.
     const auto entries = log.forClient(kClient);
