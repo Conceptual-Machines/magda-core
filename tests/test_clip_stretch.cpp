@@ -974,10 +974,14 @@ TEST_CASE("SoundTouch runs the whole rate range without growing a buffer under a
     // rates from a sixth to the ceiling, a pitch shift so the rate transposer is
     // in the chain too, auto tempo so the rate moves block to block, and locates
     // in both directions so priming runs again over material the reader has to
-    // seek for. Verified against a counter on the vendored ensureCapacity, which
-    // stays at zero throughout and is what caught the first version of the
-    // warm-up, where a clip playing at nine could still allocate after a warm-up
-    // that ran at ten.
+    // seek for.
+    //
+    // Verified against a counter on the vendored ensureCapacity, over eighty two
+    // rate and mode combinations rather than the seven kept here, where it stays
+    // at zero throughout. That counter is what caught the two versions of this
+    // that did not work: one where a clip playing at nine allocated after a
+    // warm-up that had run at ten, and one where the buffers behind the front of
+    // the pipe grew at a tempo the warm-up had stepped over.
     for (const auto which : {mode::kSoundTouchNormal, mode::kSoundTouchBetter}) {
         for (const auto ratio : {0.15, 0.5, 1.7, 2.0, 4.3, 9.0, 9.97}) {
             Rig rig;

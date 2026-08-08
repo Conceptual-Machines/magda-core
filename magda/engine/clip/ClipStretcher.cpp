@@ -196,15 +196,52 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         // that particular rate happened to leave between batches, which is why
         // a warm-up that ran at ten and a clip that played at nine could still
         // meet an allocation.
+        //
+        // Two pushes, and both are cheap, because what is being settled is
+        // capacity rather than sound. The input side is settled where the
+        // sequence is longest, and the output side at the other end of the
+        // range, where the fewest input samples make the most output: a handful
+        // of samples at a tenth speed reaches the same capacity that grinding a
+        // whole pre-roll through would. This runs inside a provisioning round,
+        // beside opening files, and a round that took as long as the DSP would
+        // have publishes clips after they were due.
+        // Two shapes of warm-up, because the pipe has two kinds of buffer in it
+        // and they answer to different things.
+        //
+        // What a callback hands in goes to the front of the pipe, and that
+        // capacity is settled by one push of the worst case, done where the
+        // sequence is longest. It is done at the top of the rate range on
+        // purpose: what a push costs to process is what comes out of it, and at
+        // the top of the range that is a tenth of what went in.
         const auto worst = worstCase(setup);
 
-        for (const auto rate : {kMaxStretchRate, kMinStretchRate,
-                                std::clamp(setup.nominalRate, kMinStretchRate, kMaxStretchRate)}) {
-            touch_.setTempo(rate);
-            pushSilence(worst);
+        touch_.setTempo(worst.atTempo);
+        pushSilence(worst.input);
+        drainAll();
 
-            while (touch_.numSamples() > 0)
-                touch_.receiveSamples(touch_.numSamples());
+        // Everything behind that front buffer works in batches whose size moves
+        // with the tempo, and a batch is not something this can predict from the
+        // outside: it is the sequence length, the overlap, the seek window and
+        // whether the rate transposer sits before or after the stretcher. So
+        // they are grown by being used, one batch at a time, which is what a
+        // batch costs and no more. Pushing the worst case at every tempo instead
+        // would grind a pre-roll through at a tenth speed, ten times its length
+        // in output, and a provisioning round that took that long would publish
+        // clips after they were due.
+        //
+        // Six tempos rather than a fine scan, and they are the six that bound
+        // it. Every length behind this is a clamped straight line in the tempo
+        // (TDStretch::calcSeqParameters), so between any two of the points below
+        // each of them is monotonic and cannot exceed what the two ends of that
+        // interval already reached. kAutoSequenceLow and kAutoSequenceTop are
+        // where those lines flatten out; the ends of the rate range and the rate
+        // this clip will actually run at are the rest.
+        for (const auto rate :
+             {kMinStretchRate, kAutoSequenceLow, 1.0, kAutoSequenceTop, kMaxStretchRate,
+              std::clamp(setup.nominalRate, kMinStretchRate, kMaxStretchRate)}) {
+            touch_.setTempo(rate);
+            pushSilence(touch_.getSetting(SETTING_NOMINAL_INPUT_SEQUENCE) + 1);
+            drainAll();
         }
 
         touch_.setTempo(std::clamp(setup.nominalRate, kMinStretchRate, kMaxStretchRate));
@@ -238,13 +275,28 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         if (count <= 0)
             return;
 
-        writeAll(before, count);
-
-        // Everything the pre-roll will eventually come back out as. Discarding
-        // it is what puts the output at the first sample meant to be heard;
-        // draining happens as it becomes available, over however many blocks
-        // that takes, because the pipe cannot be made to answer sooner.
+        // Everything the pre-roll will come back out as belongs before the first
+        // sample to be heard, so all of it is discarded. What is left owing when
+        // this returns is drained over the blocks that follow, because a pipe
+        // cannot be made to answer sooner than it will.
         discard_ = static_cast<int>(std::llround(count / std::max(rate, kMinStretchRate)));
+
+        // Fed in pieces and drained as it goes, rather than pushed in whole and
+        // drained afterwards. A pre-roll is thousands of samples and comes back
+        // out as thousands more, and a pipe left holding all of it at once would
+        // have to have been grown to hold all of it: that growth is an
+        // allocation, and moving it off the audio thread then means processing
+        // the whole worst case before the clip can play. Draining as it fills
+        // keeps what is pending down to a batch, here and in the warm-up both.
+        const auto stride =
+            static_cast<int>(interleaved_.size() / static_cast<std::size_t>(channels_));
+
+        for (auto done = 0; done < count;) {
+            const auto run = std::min(stride, count - done);
+            write(before, done, run);
+            drainDiscarded();
+            done += run;
+        }
     }
 
     void process(juce::dsp::AudioBlock<const float> input, double, double,
@@ -260,9 +312,7 @@ class SoundTouchClipStretcher final : public ClipStretcher {
             writeAll(input, in);
         }
 
-        if (discard_ > 0)
-            discard_ -=
-                static_cast<int>(touch_.receiveSamples(static_cast<unsigned int>(discard_)));
+        drainDiscarded();
 
         const auto ready = discard_ > 0
                                ? 0
@@ -287,26 +337,42 @@ class SoundTouchClipStretcher final : public ClipStretcher {
     }
 
   private:
+    /// The most the front of the pipe can ever be holding, and the tempo where
+    /// that is true.
+    struct WorstCase {
+        int input = 0;
+        double atTempo = kMaxStretchRate;
+    };
+
     /**
-     * @brief The most this pipe can ever be holding at once.
+     * @brief What this has to have room for before a callback asks.
      *
-     * What it keeps back between batches, plus the largest single push a
-     * callback can hand it. The first is the sequence length it asks for, which
-     * moves with the tempo, so the range is scanned for the longest one: that is
-     * arithmetic rather than processing, because setTempo recalculates the
-     * lengths and getSetting reports them without a sample going through.
-     *
-     * The second is whichever is larger of a block's reading and a pre-roll.
-     * Both are bounded before the callback: the reading by the rate ceiling, the
+     * The input side is what it keeps back between batches plus the largest
+     * single push a callback can hand it. The sequence it keeps back moves with
+     * the tempo, so the range is scanned for the longest one, and the largest
+     * push is whichever is larger of a block's reading and a pre-roll: both are
+     * bounded before the callback, the reading by the rate ceiling and the
      * pre-roll by the buffer it is read into.
+     *
+     * The scan is arithmetic rather than processing: setTempo recalculates the
+     * lengths and getSetting reports them without a sample going through. What
+     * comes back is the tempo to push at as well as the size, because pushing
+     * where the sequence is longest is what settles it in one call.
      */
-    int worstCase(const StretchSetup& setup) {
+    WorstCase worstCase(const StretchSetup& setup) {
         auto sequence = 0;
+        auto atTempo = kMaxStretchRate;
 
         for (auto step = 0; step <= kWarmUpSteps; ++step) {
             const auto through = static_cast<double>(step) / kWarmUpSteps;
-            touch_.setTempo(kMinStretchRate + (kMaxStretchRate - kMinStretchRate) * through);
-            sequence = std::max(sequence, touch_.getSetting(SETTING_NOMINAL_INPUT_SEQUENCE));
+            const auto rate = kMinStretchRate + (kMaxStretchRate - kMinStretchRate) * through;
+            touch_.setTempo(rate);
+
+            if (const auto asked = touch_.getSetting(SETTING_NOMINAL_INPUT_SEQUENCE);
+                asked > sequence) {
+                sequence = asked;
+                atTempo = rate;
+            }
         }
 
         touch_.setTempo(std::clamp(setup.nominalRate, kMinStretchRate, kMaxStretchRate));
@@ -315,7 +381,25 @@ class SoundTouchClipStretcher final : public ClipStretcher {
             maxReadingSamples(maxBlockSamples_),
             static_cast<int>(std::ceil(preRollSamples(setup.nominalRate) * kPreRollHeadroom)));
 
-        return sequence + handed;
+        return WorstCase{sequence + handed, atTempo};
+    }
+
+    /// Take back everything ready, discarding it. Off the audio thread, in the
+    /// warm-up, where what came out is silence anyway.
+    void drainAll() {
+        while (touch_.numSamples() > 0)
+            touch_.receiveSamples(touch_.numSamples());
+    }
+
+    /// Give back what still belongs to a pre-roll, as much of it as is ready.
+    void drainDiscarded() {
+        if (discard_ <= 0)
+            return;
+
+        const auto ready =
+            std::min<unsigned int>(static_cast<unsigned int>(discard_), touch_.numSamples());
+        if (ready > 0)
+            discard_ -= static_cast<int>(touch_.receiveSamples(ready));
     }
 
     /// @p count samples of silence, in one call, so that the pipe grows to hold
@@ -352,10 +436,18 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         touch_.putSamples(interleaved_.data(), static_cast<unsigned int>(count));
     }
 
-    /// Tempos the range is scanned at for the longest sequence. The lengths are
-    /// a clamped straight line in the tempo (TDStretch::calcSeqParameters), so
-    /// this is a fine sieve over a smooth curve rather than a hopeful sample.
+    /// Tempos the range is scanned at for the longest sequence. Arithmetic
+    /// rather than processing, so it can afford to be fine.
     static constexpr int kWarmUpSteps = 64;
+
+    /// Where SoundTouch's automatic sequence and seek-window lengths stop moving
+    /// with the tempo (AUTOSEQ_TEMPO_LOW and AUTOSEQ_TEMPO_TOP in TDStretch.cpp).
+    /// Named here because the warm-up has to visit them: they are the corners of
+    /// the piecewise-linear curve every buffer size behind the front of the pipe
+    /// is derived from, and a corner is where a maximum can hide from a sieve
+    /// that only looked at the ends.
+    static constexpr double kAutoSequenceLow = 0.5;
+    static constexpr double kAutoSequenceTop = 2.0;
 
     int channels_ = 2;
     int maxBlockSamples_ = 512;
