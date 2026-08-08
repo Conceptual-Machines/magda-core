@@ -13,6 +13,8 @@ namespace remote {
 
 class ModelChangeBridge;
 class RemoteApiService;
+class RemoteAuditLog;
+class RemoteClientRegistry;
 class RemoteMcpServer;
 class RemoteWebSocketServer;
 class SubscriptionHub;
@@ -121,6 +123,23 @@ class RemoteApiHost {
      */
     void stopListening();
 
+    /**
+     * @brief Throw the current credential away and issue a new one (#1860).
+     *
+     * Every connected client is disconnected, because that is what rotation
+     * means: a token that still admitted the sessions it was replacing would
+     * not have been revoked. Clients reconnect by re-reading the discovery
+     * record, which this rewrites before returning — so a well-behaved one
+     * recovers on its own and a stale copy of the old token never works again.
+     *
+     * A no-op returning false when nothing is listening: there is no credential
+     * to rotate, and minting one without a listener would publish a record for
+     * a port nobody is answering on.
+     *
+     * Message thread only, like `start()`.
+     */
+    bool rotateToken();
+
     bool isRunning() const;
 
     /// The WebSocket port actually bound, or 0 when not running.
@@ -143,11 +162,34 @@ class RemoteApiHost {
     /// not two.
     SubscriptionHub& subscriptions();
 
+    /**
+     * @brief Who may do what, and who is connected right now (#1860).
+     *
+     * Shared by both transports and edited by the settings dialog. Outlives the
+     * listeners deliberately: a grant is the user's decision about a client, and
+     * switching the feature off and on again must not silently forget it.
+     */
+    RemoteClientRegistry& clients();
+
+    /// What remote clients have done this run. Bounded and in memory only.
+    RemoteAuditLog& audit();
+
   private:
+    /// Mirror the registry's grants into the config file. Wired as the
+    /// registry's change handler, so a grant made in the settings dialog and one
+    /// created by a client connecting for the first time are persisted by the
+    /// same path.
+    void persistGrants();
     // Declaration order is destruction order reversed, and it is load-bearing:
     // a transport's connections deregister from the hub, the hub listens to the
     // service's change source, and the bridge writes into the service. Each has
     // to outlive the thing that talks to it.
+    //
+    // The audit log and the client registry come first because both transports
+    // hold raw pointers to them and the dispatcher holds one to the log — so
+    // they have to be the last two standing.
+    std::unique_ptr<RemoteAuditLog> audit_;
+    std::unique_ptr<RemoteClientRegistry> clients_;
     std::unique_ptr<RemoteApiService> service_;
     std::unique_ptr<ModelChangeBridge> bridge_;
     std::unique_ptr<SubscriptionHub> subscriptions_;

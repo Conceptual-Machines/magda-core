@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 
+#include "RemoteTestScopes.hpp"
 #include "magda/daw/api/magda_api_live.hpp"
 #include "magda/daw/api/remote_model_bridge.hpp"
 #include "magda/daw/api/remote_service.hpp"
@@ -24,6 +25,7 @@ namespace {
 
 using namespace magda;
 using namespace magda::remote;
+using magda::test::fullyGrantedContext;
 
 juce::var object(std::initializer_list<std::pair<const char*, juce::var>> fields) {
     auto* result = new juce::DynamicObject();
@@ -299,7 +301,7 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             expect(
                 fixture.run("tracks.create", object({{"name", "Moved on"}, {"type", "audio"}})).ok);
 
-            RequestContext context;
+            auto context = fullyGrantedContext();
             context.expectedRevision = stale;
             // A read is safe at any revision; only writes are gated.
             const auto response = fixture.run("tracks.list", object({}), context);
@@ -337,7 +339,7 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
         }
 
         Response run(const juce::String& name, const juce::var& input,
-                     RequestContext context = {}) {
+                     RequestContext context = fullyGrantedContext()) {
             Response captured;
             service.dispatch(name, input, context,
                              [&captured](Response response) { captured = std::move(response); });

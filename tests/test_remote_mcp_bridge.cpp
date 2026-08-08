@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "MockMagdaApi.hpp"
+#include "RemoteTestScopes.hpp"
 #include "magda/daw/api/remote_mcp_server.hpp"
 #include "magda/daw/api/remote_service.hpp"
 #include "magda/daw/api/remote_subscriptions.hpp"
@@ -196,6 +197,10 @@ void writeRecord(const juce::File& dataDir, int port, const juce::String& token)
 RemoteMcpServer::Options serverOptions() {
     RemoteMcpServer::Options options;
     options.bearerToken = kToken;
+    // Without a registry the endpoint refuses everything, reads included
+    // (#1860), and these tests are about whether the bridge relays a call at
+    // all rather than about who may make it.
+    options.clients = &magda::test::permissiveRegistry();
     return options;
 }
 

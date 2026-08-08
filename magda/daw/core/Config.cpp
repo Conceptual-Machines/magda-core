@@ -228,6 +228,11 @@ void Config::save() {
         for (const auto& origin : remoteApiAllowedOrigins)
             originArray.add(toJuceString(origin));
         remoteObj->setProperty("allowedOrigins", originArray);
+        // Per-client grants (#1860). Written only once something has been
+        // granted, so an install that never used the remote API keeps a config
+        // file without an empty array in it.
+        if (remoteApiClients.isArray() && remoteApiClients.getArray()->size() > 0)
+            remoteObj->setProperty("clients", remoteApiClients);
         root->setProperty("remoteApi", juce::var(remoteObj));
     }
 
@@ -700,6 +705,9 @@ void Config::load() {
             if (const auto* origins = remoteObj->getProperty("allowedOrigins").getArray())
                 for (const auto& origin : *origins)
                     remoteApiAllowedOrigins.push_back(origin.toString().toStdString());
+            // Passed through untouched; `RemoteClientRegistry` owns the shape
+            // and drops anything it does not recognise.
+            remoteApiClients = remoteObj->getProperty("clients");
         }
     }
     recentProjects = getStringArray("recentProjects");

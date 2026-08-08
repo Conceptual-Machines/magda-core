@@ -1,9 +1,13 @@
 #include "remote_api_host.hpp"
 
+#include <juce_events/juce_events.h>
+
 #include <random>
 
 #include "AppPaths.hpp"
 #include "Config.hpp"
+#include "remote_audit.hpp"
+#include "remote_clients.hpp"
 #include "remote_mcp_server.hpp"
 #include "remote_model_bridge.hpp"
 #include "remote_service.hpp"
@@ -173,21 +177,68 @@ RemoteApiHost* activeHost() {
 }
 
 RemoteApiHost::RemoteApiHost(MagdaApi& api, AudioEngine* engine)
-    : service_(std::make_unique<RemoteApiService>(api)),
+    : audit_(std::make_unique<RemoteAuditLog>()),
+      clients_(std::make_unique<RemoteClientRegistry>()),
+      service_(std::make_unique<RemoteApiService>(api)),
       bridge_(std::make_unique<ModelChangeBridge>(*service_)),
       subscriptions_(std::make_unique<SubscriptionHub>(api, *service_)) {
     if (engine != nullptr)
         subscriptions_->setMeterSource(makeLiveMeterSource(*engine));
+
+    service_->setAuditLog(audit_.get());
+
+    // Grants are restored before the change handler is installed, so loading
+    // them does not immediately write them back out again.
+    clients_->loadGrantsFromJson(Config::getInstance().getRemoteApiClients());
+    clients_->setChangeHandler([this] { persistGrants(); });
+
     activeHostInstance = this;
 }
 
 RemoteApiHost::~RemoteApiHost() {
     stop();
+
+    // Before the members go: the handler captures `this` and the registry is
+    // free to notify from a transport thread, so leaving it installed while the
+    // object unwinds is a call into a half-destroyed host. `stop()` has already
+    // joined the transports, so nothing can be mid-notification here.
+    if (clients_ != nullptr)
+        clients_->setChangeHandler(nullptr);
+    if (service_ != nullptr)
+        service_->setAuditLog(nullptr);
+
     // Only if we are still the registered one. Tests construct hosts in
     // sequence, and an earlier one destructing after a later one was registered
     // must not clear the later one's registration.
     if (activeHostInstance == this)
         activeHostInstance = nullptr;
+}
+
+void RemoteApiHost::persistGrants() {
+    // Snapshotted here, applied possibly later, and deliberately capturing no
+    // `this`: the host may be destroyed between the two, and the queued write
+    // needs nothing from it.
+    auto grants = clients_->grantsToJson();
+    auto apply = [grants = std::move(grants)] {
+        auto& config = Config::getInstance();
+        config.setRemoteApiClients(grants);
+        config.save();
+    };
+
+    // `Config` is a singleton with no internal locking, and `save()` reads every
+    // member of it while the settings pages write them. This is reached from a
+    // transport thread whenever a client MAGDA has not seen registers itself, so
+    // writing from here would race the UI over the whole config file — for a
+    // change that is not urgent by any measure.
+    //
+    // Inline when there is no message loop to post to, which is the headless
+    // case: a test or a console host, where nothing else is writing config.
+    if (juce::MessageManager::existsAndIsCurrentThread() ||
+        juce::MessageManager::getInstanceWithoutCreating() == nullptr) {
+        apply();
+        return;
+    }
+    juce::MessageManager::callAsync(std::move(apply));
 }
 
 bool RemoteApiHost::start() {
@@ -217,15 +268,23 @@ bool RemoteApiHost::start() {
         return false;
     }
 
+    // The token is a credential that will appear in headers this process logs
+    // around. Registering it means any line that quotes one is masked before it
+    // reaches the audit log or the app log.
+    registerRemoteSecret(token_);
+
     RemoteWebSocketServer::Options options;
     options.bearerToken = token_;
     options.port = config.getRemoteApiPort();
+    options.clients = clients_.get();
+    options.audit = audit_.get();
     for (const auto& origin : config.getRemoteApiAllowedOrigins())
         options.allowedOrigins.push_back(juce::String::fromUTF8(origin.c_str()));
 
     server_ = std::make_unique<RemoteWebSocketServer>(*service_, options, subscriptions_.get());
     if (!server_->start()) {
         server_.reset();
+        forgetRemoteSecret(token_);
         token_ = {};
         return false;
     }
@@ -239,6 +298,8 @@ bool RemoteApiHost::start() {
     mcpOptions.bearerToken = token_;
     mcpOptions.port = config.getRemoteApiMcpPort();
     mcpOptions.allowedOrigins = options.allowedOrigins;
+    mcpOptions.clients = clients_.get();
+    mcpOptions.audit = audit_.get();
 
     mcpServer_ = std::make_unique<RemoteMcpServer>(*service_, mcpOptions, subscriptions_.get());
     if (!mcpServer_->start()) {
@@ -249,13 +310,16 @@ bool RemoteApiHost::start() {
     // A running listener whose token nobody can read is useless and still a
     // listener, so a failure to publish takes the servers down with it.
     if (!writeTokenFile(tokenFile(), token_, server_->boundPort(), mcpPort())) {
-        DBG("RemoteApiHost: could not write " + tokenFile().getFullPathName());
+        // The name, not the path. This line goes to the app log, which users
+        // paste into bug reports, and the directory is their home directory.
+        DBG("RemoteApiHost: could not write " + redactedFileName(tokenFile()));
         if (mcpServer_ != nullptr) {
             mcpServer_->stop();
             mcpServer_.reset();
         }
         server_->stop();
         server_.reset();
+        forgetRemoteSecret(token_);
         token_ = {};
         return false;
     }
@@ -285,7 +349,32 @@ void RemoteApiHost::stopListening() {
     // would advertise a port that is no longer listening and a credential that
     // no longer works.
     tokenFile().deleteFile();
+    forgetRemoteSecret(token_);
     token_ = {};
+
+    // Connections were tracked by the servers that have just gone. Anything
+    // still listed refers to a socket that no longer exists — a settings table
+    // showing phantom clients, with a disconnect button that would answer
+    // false. Grants are untouched: those are the user's decisions, not
+    // per-run state.
+    if (clients_ != nullptr) {
+        for (const auto& client : clients_->connections())
+            clients_->noteDisconnected(client.connectionId);
+    }
+}
+
+bool RemoteApiHost::rotateToken() {
+    if (!isRunning())
+        return false;
+
+    // A restart rather than a swap of the credential in place. Both servers
+    // read `bearerToken` from an immutable Options copy taken at construction,
+    // and making it mutable would mean a live comparison against a value
+    // changing under the comparing thread — for the one operation where being
+    // half-applied is worst. Rebuilding is what guarantees every existing
+    // connection is gone: they were admitted by a token that no longer exists.
+    stopListening();
+    return start();
 }
 
 void RemoteApiHost::stop() {
@@ -328,6 +417,14 @@ RemoteApiService& RemoteApiHost::service() {
 
 SubscriptionHub& RemoteApiHost::subscriptions() {
     return *subscriptions_;
+}
+
+RemoteClientRegistry& RemoteApiHost::clients() {
+    return *clients_;
+}
+
+RemoteAuditLog& RemoteApiHost::audit() {
+    return *audit_;
 }
 
 }  // namespace remote

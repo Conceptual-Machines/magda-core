@@ -33,6 +33,8 @@
 #include <thread>
 #include <utility>
 
+#include "remote_audit.hpp"
+#include "remote_clients.hpp"
 #include "remote_http_auth.hpp"
 #include "remote_service.hpp"
 #include "remote_subscriptions.hpp"
@@ -94,6 +96,10 @@ constexpr int kConflict = -32002;
 constexpr int kTimeout = -32003;
 constexpr int kCancelled = -32004;
 constexpr int kTooManyRequests = -32005;
+/// Refused by the client's grant (#1860). Its own code rather than one of the
+/// standard four, because a client should be able to tell "ask the user to grant
+/// this" apart from "I sent something wrong" without parsing a message.
+constexpr int kPermissionDenied = -32006;
 
 /**
  * MAGDA's error taxonomy onto JSON-RPC's.
@@ -110,6 +116,8 @@ int jsonRpcCodeFor(ErrorCode code) {
             return kInvalidRequest;
         case ErrorCode::UnknownOperation:
             return kMethodNotFound;
+        case ErrorCode::PermissionDenied:
+            return kPermissionDenied;
         case ErrorCode::ValidationFailed:
             return kInvalidParams;
         case ErrorCode::NotFound:
@@ -244,10 +252,12 @@ juce::String idempotencyKeyFor(const juce::var& id) {
  * its payload rather than reaching for a stack frame that has returned.
  */
 struct Connection {
-    Connection(httplib::ws::WebSocket& webSocket, int identifier, int maxQueued, int maxEvents,
-               double burst)
+    Connection(httplib::ws::WebSocket& webSocket, int identifier, juce::String handleId,
+               juce::String declaredName, int maxQueued, int maxEvents, double burst)
         : socket(webSocket),
           id(identifier),
+          handle(std::move(handleId)),
+          clientName(std::move(declaredName)),
           maxQueuedReplies(maxQueued),
           maxQueuedEvents(maxEvents),
           tokens(burst),
@@ -255,6 +265,13 @@ struct Connection {
 
     httplib::ws::WebSocket& socket;
     const int id;
+    /// `ws:<generation>:<id>` — this connection's name in the idempotency
+    /// cache, the client registry, and the audit log. Computed once so those
+    /// three cannot drift apart.
+    const juce::String handle;
+    /// Normalised, from the upgrade query string. Never empty: an absent or
+    /// unusable name becomes `unknown`.
+    const juce::String clientName;
     const int maxQueuedReplies;
     const int maxQueuedEvents;
 
@@ -458,6 +475,62 @@ struct RemoteWebSocketServer::Impl {
         return static_cast<int>(live.size());
     }
 
+    /// One audit line about a connection. The dispatcher records the operations
+    /// it ran; this records what it never saw — refusals, and the subscription
+    /// methods the hub answers without going through it.
+    void audit(const std::shared_ptr<Connection>& connection, const juce::String& operation,
+               const juce::String& requestId, AuditOutcome outcome,
+               const juce::String& detail = {}) const {
+        if (options.audit == nullptr)
+            return;
+        AuditEntry entry;
+        entry.client = connection != nullptr ? connection->clientName : juce::String();
+        entry.connectionId = connection != nullptr ? connection->handle : juce::String();
+        entry.transport = TRANSPORT_WEBSOCKET;
+        entry.operation = operation;
+        entry.requestId = requestId;
+        entry.outcome = outcome;
+        entry.detail = detail;
+        options.audit->record(std::move(entry));
+    }
+
+    /// A refusal that happened before there was a connection to attribute it to.
+    void auditRefusal(const juce::String& reason) const {
+        if (options.audit == nullptr)
+            return;
+        AuditEntry entry;
+        entry.transport = TRANSPORT_WEBSOCKET;
+        entry.operation = AUDIT_CONNECTION_REJECTED;
+        entry.outcome = AuditOutcome::Rejected;
+        entry.detail = reason;
+        options.audit->record(std::move(entry));
+    }
+
+    /**
+     * @brief Close one connection by handle, for the settings UI's disconnect.
+     *
+     * Marking is all that is available and all that is needed. The reader owns
+     * the socket, so no other thread may close it; but `markClosed` empties the
+     * outbox and the read loop tests it after every read, so from this instant
+     * no further request from that client executes. The socket itself goes
+     * within one read timeout.
+     */
+    bool disconnectByHandle(const juce::String& handle) {
+        std::shared_ptr<Connection> target;
+        {
+            const std::lock_guard<std::mutex> lock(liveMutex);
+            const auto found =
+                std::find_if(live.begin(), live.end(), [&](const std::shared_ptr<Connection>& c) {
+                    return c->handle == handle;
+                });
+            if (found == live.end())
+                return false;
+            target = *found;
+        }
+        target->markClosed();
+        return true;
+    }
+
     /**
      * @brief Claim a slot and register, or refuse — as one indivisible step.
      *
@@ -496,6 +569,10 @@ struct RemoteWebSocketServer::Impl {
                                                httplib::Response& response) {
         if (!isAuthorised(juce::String(request.get_header_value("Authorization")),
                           options.bearerToken)) {
+            // The reason, never the credential. `redactSecrets` would mask a
+            // `Bearer …` value anyway; not building the string in the first
+            // place is the version that cannot be got wrong later.
+            auditRefusal("invalid or missing bearer token");
             response.status = httplib::StatusCode::Unauthorized_401;
             return httplib::Server::HandlerResponse::Handled;
         }
@@ -506,6 +583,7 @@ struct RemoteWebSocketServer::Impl {
         if (!isOriginAllowed(request.has_header("Origin"),
                              juce::String(request.get_header_value("Origin")),
                              options.allowedOrigins)) {
+            auditRefusal("origin not allowed");
             response.status = httplib::StatusCode::Forbidden_403;
             return httplib::Server::HandlerResponse::Handled;
         }
@@ -516,6 +594,7 @@ struct RemoteWebSocketServer::Impl {
         // leaked. Reserving here would mean handing a slot to a request that
         // several cpp-httplib paths never deliver to a handler.
         if (connectionCount() >= options.maxConnections) {
+            auditRefusal("connection limit reached");
             response.status = httplib::StatusCode::ServiceUnavailable_503;
             return httplib::Server::HandlerResponse::Handled;
         }
@@ -604,12 +683,33 @@ struct RemoteWebSocketServer::Impl {
             return;
         }
 
+        // Looked up per request, never cached on the connection. That is the
+        // whole of "revoking a client takes effect without restart": there is no
+        // copy of the grant to go stale between here and the settings dialog.
+        const auto scopes = options.clients != nullptr
+                                ? options.clients->scopesFor(connection->clientName)
+                                : ScopeSet{};
+
         // Answered here rather than by the dispatcher: what a connection watches
         // is state only the connection has. The names and schemas still come
         // from the shared registry, which the hub validates against. The hub
         // makes its own hop to the message thread for the part that reads the
         // model, so this completes the same way a dispatch does.
         if (SubscriptionHub::isSubscriptionMethod(method)) {
+            // Checked here because the hub is reached without going through the
+            // dispatcher, so nothing else would check it. A subscription pushes
+            // the same projections the read operations return, and it would be a
+            // strange permission model where a client denied `tracks.list` could
+            // subscribe to `tracks` and be sent the answer anyway.
+            if (!scopes.has(Scope::Read)) {
+                audit(connection, method, idKey, AuditOutcome::Denied, scopeName(Scope::Read));
+                connection->complete(replyFor(
+                    id, Response::failure(ErrorCode::PermissionDenied,
+                                          method + " requires the 'read' permission, which this "
+                                                   "client has not been granted",
+                                          service.currentRevision())));
+                return;
+            }
             if (subscriptions == nullptr) {
                 connection->complete(
                     replyFor(id, Response::failure(ErrorCode::InvalidRequest,
@@ -618,15 +718,21 @@ struct RemoteWebSocketServer::Impl {
                 return;
             }
             subscriptions->handle(connection->subscriber, method, params,
-                                  [connection, id](Response response) {
+                                  [this, connection, id, method, idKey](Response response) {
+                                      audit(connection, method, idKey,
+                                            response.ok ? AuditOutcome::Ok : AuditOutcome::Failed,
+                                            response.ok ? juce::String()
+                                                        : toString(response.error.code));
                                       connection->complete(replyFor(id, response));
                                   });
             return;
         }
 
         RequestContext context;
-        context.clientId =
-            "ws:" + juce::String(listenerGeneration) + ":" + juce::String(connection->id);
+        context.clientId = connection->handle;
+        context.clientName = connection->clientName;
+        context.transport = TRANSPORT_WEBSOCKET;
+        context.scopes = scopes;
         // Scoped by connection so two clients reusing id 1 do not collide in the
         // dispatcher's idempotency cache, and typed so that one client's numeric
         // 1 and string "1" — different requests under JSON-RPC — cannot either.
@@ -677,17 +783,36 @@ struct RemoteWebSocketServer::Impl {
      * Runs on a thread cpp-httplib owns. The writer thread it starts is joined
      * before this returns, because `socket` lives on this stack frame.
      */
-    void runConnection(httplib::ws::WebSocket& socket) {
+    void runConnection(httplib::ws::WebSocket& socket, const juce::String& declaredName) {
+        const auto identifier = nextConnectionId.fetch_add(1);
+        const auto handle =
+            "ws:" + juce::String(listenerGeneration) + ":" + juce::String(identifier);
+
         auto connection = std::make_shared<Connection>(
-            socket, nextConnectionId.fetch_add(1), options.maxQueuedRepliesPerConnection,
-            options.maxQueuedEventsPerConnection, options.maxInFlightPerConnection);
+            socket, identifier, handle, normaliseClientName(declaredName),
+            options.maxQueuedRepliesPerConnection, options.maxQueuedEventsPerConnection,
+            options.maxInFlightPerConnection);
 
         if (!registerConnection(connection)) {
             // Lost a race for the last slot. Closing from here is safe because
             // this is the connection's own thread, the only one allowed to read.
+            auditRefusal("connection limit reached");
             socket.close(httplib::ws::CloseStatus::PolicyViolation, "connection limit reached");
             return;
         }
+
+        if (options.clients != nullptr) {
+            ConnectedClient record;
+            record.connectionId = connection->handle;
+            record.name = connection->clientName;
+            record.transport = TRANSPORT_WEBSOCKET;
+            // Registers the client if this is the first MAGDA has heard of it,
+            // so it appears in the settings list — read-only — the moment it
+            // connects rather than only once it asks for something.
+            record.scopesAtConnect = options.clients->scopesFor(connection->clientName);
+            options.clients->noteConnected(std::move(record));
+        }
+        audit(connection, AUDIT_CONNECTION_OPEN, {}, AuditOutcome::Connected);
 
         // The hub holds the connection alive for as long as it is registered,
         // which costs nothing: `Connection` refers to the socket but never
@@ -767,6 +892,10 @@ struct RemoteWebSocketServer::Impl {
             const std::lock_guard<std::mutex> lock(liveMutex);
             live.erase(std::remove(live.begin(), live.end(), connection), live.end());
         }
+
+        if (options.clients != nullptr)
+            options.clients->noteDisconnected(connection->handle);
+        audit(connection, AUDIT_CONNECTION_CLOSE, {}, AuditOutcome::Disconnected);
     }
 };
 
@@ -807,9 +936,23 @@ bool RemoteWebSocketServer::start() {
     // this design exists to avoid. A dead peer is caught by the read timeout.
     impl_->server.set_websocket_ping_interval(kPingIntervalSeconds);
 
-    impl_->server.WebSocket(kEndpoint, [this](const httplib::Request&, httplib::ws::WebSocket& ws) {
-        impl_->runConnection(ws);
-    });
+    // `?client=<name>` is how a client says who it is (#1860). Read here rather
+    // than from a first message so the connection can be listed and attributed
+    // from the moment it opens — including one that connects and then says
+    // nothing, which is exactly the connection a user wants to see and be able
+    // to drop.
+    impl_->server.WebSocket(
+        kEndpoint, [this](const httplib::Request& request, httplib::ws::WebSocket& ws) {
+            impl_->runConnection(ws, juce::String(request.get_param_value("client")));
+        });
+
+    // Registered before the listener opens and cleared in stop(), so the
+    // settings UI can never route a disconnect to a server that has gone away.
+    if (impl_->options.clients != nullptr) {
+        impl_->options.clients->setDisconnectHandler(
+            TRANSPORT_WEBSOCKET,
+            [this](const juce::String& handle) { return impl_->disconnectByHandle(handle); });
+    }
 
     // Two different calls, and they are easy to confuse: bind_to_any_port's
     // second parameter is socket flags, not a port, so passing a configured port
@@ -841,6 +984,11 @@ bool RemoteWebSocketServer::start() {
 void RemoteWebSocketServer::stop() {
     if (!impl_->running.exchange(false))
         return;
+
+    // First, so nothing can route a disconnect into a server that is tearing
+    // its connections down.
+    if (impl_->options.clients != nullptr)
+        impl_->options.clients->setDisconnectHandler(TRANSPORT_WEBSOCKET, nullptr);
 
     // Only mark the connections; do not touch their sockets. `close()` writes a
     // Close frame and then reads, waiting for the peer's echo, so calling it

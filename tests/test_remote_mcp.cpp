@@ -33,6 +33,26 @@ juce::var object(std::initializer_list<std::pair<const char*, juce::var>> fields
     return result;
 }
 
+/**
+ * @brief The fields every call here shares.
+ *
+ * Assigned by name rather than positionally. `Call` is a plain aggregate, so a
+ * braced list silently re-maps when a field is inserted — which is exactly what
+ * happened when `clientName` and `scopes` landed in the middle of it (#1860) and
+ * `idempotencyScope` quietly became the client's name.
+ *
+ * `scopes` is every scope: these tests are about how operations project into
+ * tools and resources, not about who may call them. The permission behaviour has
+ * its own files.
+ */
+void fillCommon(McpEndpoint::Call& call, const juce::String& method, juce::var params) {
+    call.method = method;
+    call.params = std::move(params);
+    call.clientId = "mcp-test";
+    call.clientName = "mcp-test";
+    call.scopes = allScopes();
+}
+
 /// A modern-era call carrying the `_meta` every 2026-07-28 request must have.
 McpEndpoint::Call modernCall(const juce::String& method, juce::var params = {}) {
     if (params.getDynamicObject() == nullptr)
@@ -43,13 +63,24 @@ McpEndpoint::Call modernCall(const juce::String& method, juce::var params = {}) 
                        {MCP_META_CLIENT_CAPABILITIES, juce::var(new juce::DynamicObject())}});
         params.getDynamicObject()->setProperty("_meta", meta);
     }
-    return {method, params, McpEra::Modern, "2026-07-28", "mcp-test", {}};
+
+    McpEndpoint::Call call;
+    fillCommon(call, method, std::move(params));
+    call.era = McpEra::Modern;
+    call.protocolVersion = "2026-07-28";
+    return call;
 }
 
 McpEndpoint::Call legacyCall(const juce::String& method, juce::var params = {}) {
     if (params.getDynamicObject() == nullptr)
         params = juce::var(new juce::DynamicObject());
-    return {method, params, McpEra::Legacy, "2025-11-25", "mcp-test", "session-1"};
+
+    McpEndpoint::Call call;
+    fillCommon(call, method, std::move(params));
+    call.era = McpEra::Legacy;
+    call.protocolVersion = "2025-11-25";
+    call.idempotencyScope = "session-1";
+    return call;
 }
 
 /// Runs one call to completion. Dispatch is inline here, so this is synchronous.

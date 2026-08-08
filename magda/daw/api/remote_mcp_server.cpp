@@ -33,6 +33,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include "remote_audit.hpp"
+#include "remote_clients.hpp"
 #include "remote_http_auth.hpp"
 #include "remote_service.hpp"
 #include "remote_subscriptions.hpp"
@@ -159,13 +161,22 @@ juce::String generateSessionId() {
  * resource.
  */
 struct EventStream {
-    EventStream(int outboxCapacity, juce::var streamSubscriptionId)
-        : capacity(outboxCapacity), subscriptionId(std::move(streamSubscriptionId)) {}
+    EventStream(int outboxCapacity, juce::var streamSubscriptionId, juce::String streamHandle,
+                juce::String streamClientName)
+        : capacity(outboxCapacity),
+          subscriptionId(std::move(streamSubscriptionId)),
+          handle(std::move(streamHandle)),
+          clientName(std::move(streamClientName)) {}
 
     enum class Take { Frame, KeepAlive, Closed };
 
     const int capacity;
     const juce::var subscriptionId;
+    /// `mcp:stream:<n>` — what the settings UI disconnects, and what this
+    /// stream is called in the client registry and the audit log.
+    const juce::String handle;
+    /// Normalised declared name of whoever opened it.
+    const juce::String clientName;
 
     mutable std::mutex mutex;
     std::condition_variable ready;
@@ -294,6 +305,11 @@ struct EventStream {
 struct Session {
     juce::String id;
     juce::String protocolVersion;
+    /// Normalised `clientInfo.name` from the `initialize` that created this
+    /// session. Recorded once and reused, because a legacy client sends
+    /// `clientInfo` only in the handshake — re-reading it per request would
+    /// leave every later one anonymous.
+    juce::String clientName;
     std::chrono::steady_clock::time_point lastSeen;
     /// URIs the client has subscribed to, whether or not a stream is attached.
     std::vector<juce::String> subscribedUris;
@@ -328,6 +344,9 @@ struct RemoteMcpServer::Impl {
     std::atomic<int> port{0};
 
     std::atomic<int> inFlight{0};
+    /// Names streams uniquely for this server's lifetime, so the settings UI's
+    /// disconnect cannot address a stream that has already been replaced.
+    std::atomic<juce::uint64> nextStreamId{1};
 
     mutable std::mutex streamMutex;
     std::vector<std::shared_ptr<EventStream>> streams;
@@ -376,6 +395,8 @@ struct RemoteMcpServer::Impl {
                                                httplib::Response& response) {
         if (!isAuthorised(juce::String(request.get_header_value("Authorization")),
                           options.bearerToken)) {
+            // The reason, never the credential.
+            auditRefusal("invalid or missing bearer token");
             response.status = httplib::StatusCode::Unauthorized_401;
             return httplib::Server::HandlerResponse::Handled;
         }
@@ -383,6 +404,7 @@ struct RemoteMcpServer::Impl {
         if (!isOriginAllowed(request.has_header("Origin"),
                              juce::String(request.get_header_value("Origin")),
                              options.allowedOrigins)) {
+            auditRefusal("origin not allowed");
             // The spec allows a JSON-RPC error body with no id here, and one is
             // more use to a developer than a bare 403.
             writeJson(response, httplib::StatusCode::Forbidden_403,
@@ -399,73 +421,200 @@ struct RemoteMcpServer::Impl {
 
     /// Drop sessions nobody has touched. A client is told to DELETE when it is
     /// done; one that crashes never does, and a session holds a subscription.
-    void collectIdleSessionsLocked() {
+    /// Collected ids are returned rather than dropped, so the caller can
+    /// deregister them from the client registry outside the session lock.
+    void collectIdleSessionsLocked(std::vector<juce::String>& collected) {
         const auto now = std::chrono::steady_clock::now();
         const auto limit = std::chrono::seconds(options.sessionIdleSeconds);
         for (auto it = sessions.begin(); it != sessions.end();) {
             const auto attached = it->second.stream != nullptr && !it->second.stream->isClosed();
-            if (!attached && now - it->second.lastSeen > limit)
+            if (!attached && now - it->second.lastSeen > limit) {
+                collected.push_back(it->second.id);
                 it = sessions.erase(it);
-            else
+            } else {
                 ++it;
+            }
         }
     }
 
-    std::optional<juce::String> createSession(const juce::String& version) {
-        const std::lock_guard<std::mutex> lock(sessionMutex);
-        collectIdleSessionsLocked();
-        if (static_cast<int>(sessions.size()) >= options.maxSessions)
-            return std::nullopt;
+    std::optional<juce::String> createSession(const juce::String& version,
+                                              const juce::String& clientName) {
+        std::vector<juce::String> collected;
+        juce::String id;
+        {
+            const std::lock_guard<std::mutex> lock(sessionMutex);
+            collectIdleSessionsLocked(collected);
+            if (static_cast<int>(sessions.size()) >= options.maxSessions) {
+                // Still report the sessions that were just collected, or the
+                // settings list keeps showing connections that have gone.
+                noteSessionsClosed(collected);
+                return std::nullopt;
+            }
 
-        Session session;
-        session.id = generateSessionId();
-        session.protocolVersion = version;
-        session.lastSeen = std::chrono::steady_clock::now();
-        const auto id = session.id;
-        sessions.emplace(id.toStdString(), std::move(session));
+            Session session;
+            session.id = generateSessionId();
+            session.protocolVersion = version;
+            session.clientName = clientName;
+            session.lastSeen = std::chrono::steady_clock::now();
+            id = session.id;
+            sessions.emplace(id.toStdString(), std::move(session));
+        }
+
+        noteSessionsClosed(collected);
+        noteSessionOpen(id, clientName);
         return id;
     }
 
-    /// The negotiated version for a live session, touching its idle clock.
-    std::optional<juce::String> touchSession(const juce::String& id) {
+    /// A live session's negotiated version and client, touching its idle clock.
+    struct SessionState {
+        juce::String protocolVersion;
+        juce::String clientName;
+    };
+
+    std::optional<SessionState> touchSession(const juce::String& id) {
         const std::lock_guard<std::mutex> lock(sessionMutex);
         const auto it = sessions.find(id.toStdString());
         if (it == sessions.end())
             return std::nullopt;
         it->second.lastSeen = std::chrono::steady_clock::now();
-        return it->second.protocolVersion;
+        return SessionState{it->second.protocolVersion, it->second.clientName};
     }
 
     bool deleteSession(const juce::String& id) {
         std::shared_ptr<EventStream> stream;
+        juce::String clientName;
         {
             const std::lock_guard<std::mutex> lock(sessionMutex);
             const auto it = sessions.find(id.toStdString());
             if (it == sessions.end())
                 return false;
             stream = it->second.stream;
+            clientName = it->second.clientName;
             sessions.erase(it);
         }
         // Outside the lock: closing wakes the provider thread, which may be in
         // the middle of taking a frame.
         if (stream != nullptr)
             releaseStream(stream);
+        noteSessionClosed(id, clientName);
         return true;
+    }
+
+    // -----------------------------------------------------------------------
+    // Client registry and audit
+    // -----------------------------------------------------------------------
+
+    /// `mcp:<sessionId>` — the same string `Call::clientId` carries, so the
+    /// audit log, the idempotency cache, and the disconnect button all name a
+    /// session the same way.
+    static juce::String handleForSession(const juce::String& sessionId) {
+        return "mcp:" + sessionId;
+    }
+
+    void noteSessionOpen(const juce::String& sessionId, const juce::String& clientName) {
+        if (options.clients != nullptr) {
+            ConnectedClient record;
+            record.connectionId = handleForSession(sessionId);
+            record.name = clientName;
+            record.transport = TRANSPORT_MCP;
+            record.scopesAtConnect = options.clients->scopesFor(clientName);
+            options.clients->noteConnected(std::move(record));
+        }
+        audit(clientName, handleForSession(sessionId), AUDIT_CONNECTION_OPEN,
+              AuditOutcome::Connected, "session");
+    }
+
+    void noteSessionClosed(const juce::String& sessionId, const juce::String& clientName) {
+        if (options.clients != nullptr)
+            options.clients->noteDisconnected(handleForSession(sessionId));
+        audit(clientName, handleForSession(sessionId), AUDIT_CONNECTION_CLOSE,
+              AuditOutcome::Disconnected, "session");
+    }
+
+    /// Idle collection has no client name to hand — the session is already
+    /// gone — so these are reported without one.
+    void noteSessionsClosed(const std::vector<juce::String>& sessionIds) {
+        for (const auto& id : sessionIds)
+            noteSessionClosed(id, {});
+    }
+
+    void audit(const juce::String& clientName, const juce::String& connectionId,
+               const juce::String& operation, AuditOutcome outcome,
+               const juce::String& detail = {}) const {
+        if (options.audit == nullptr)
+            return;
+        AuditEntry entry;
+        entry.client = clientName;
+        entry.connectionId = connectionId;
+        entry.transport = TRANSPORT_MCP;
+        entry.operation = operation;
+        entry.outcome = outcome;
+        entry.detail = detail;
+        options.audit->record(std::move(entry));
+    }
+
+    void auditRefusal(const juce::String& reason) const {
+        audit({}, {}, AUDIT_CONNECTION_REJECTED, AuditOutcome::Rejected, reason);
+    }
+
+    /**
+     * @brief Close one MCP connection by handle, for the settings UI.
+     *
+     * A session handle drops the session and its stream; a stream handle closes
+     * the stream. Both are prompt — unlike the WebSocket, there is no reader
+     * blocked in a socket to wait for.
+     */
+    bool disconnectByHandle(const juce::String& handle) {
+        std::shared_ptr<EventStream> target;
+        {
+            const std::lock_guard<std::mutex> lock(streamMutex);
+            const auto found = std::find_if(
+                streams.begin(), streams.end(),
+                [&](const std::shared_ptr<EventStream>& s) { return s->handle == handle; });
+            if (found != streams.end())
+                target = *found;
+        }
+        if (target != nullptr) {
+            releaseStream(target);
+            return true;
+        }
+
+        // Not a stream, so it is a session — whose id is the handle minus the
+        // prefix `handleForSession` added.
+        if (!handle.startsWith("mcp:"))
+            return false;
+        return deleteSession(handle.substring(4));
     }
 
     // -----------------------------------------------------------------------
     // Streams
     // -----------------------------------------------------------------------
 
-    std::shared_ptr<EventStream> claimStream(const juce::var& subscriptionId) {
-        const std::lock_guard<std::mutex> lock(streamMutex);
-        if (static_cast<int>(streams.size()) >= options.maxStreams)
-            return nullptr;
-        // Sized against the connection's own reading. Each entry is one short
-        // "re-read this URI" line, so the cap is about how far behind a client
-        // may fall rather than about memory.
-        auto stream = std::make_shared<EventStream>(64, subscriptionId);
-        streams.push_back(stream);
+    std::shared_ptr<EventStream> claimStream(const juce::var& subscriptionId,
+                                             const juce::String& clientName) {
+        std::shared_ptr<EventStream> stream;
+        {
+            const std::lock_guard<std::mutex> lock(streamMutex);
+            if (static_cast<int>(streams.size()) >= options.maxStreams)
+                return nullptr;
+            // Sized against the connection's own reading. Each entry is one
+            // short "re-read this URI" line, so the cap is about how far behind
+            // a client may fall rather than about memory.
+            stream = std::make_shared<EventStream>(
+                64, subscriptionId, "mcp:stream:" + juce::String(nextStreamId.fetch_add(1)),
+                clientName);
+            streams.push_back(stream);
+        }
+
+        if (options.clients != nullptr) {
+            ConnectedClient record;
+            record.connectionId = stream->handle;
+            record.name = clientName;
+            record.transport = TRANSPORT_MCP;
+            record.scopesAtConnect = options.clients->scopesFor(clientName);
+            options.clients->noteConnected(std::move(record));
+        }
+        audit(clientName, stream->handle, AUDIT_CONNECTION_OPEN, AuditOutcome::Connected, "stream");
         return stream;
     }
 
@@ -551,8 +700,15 @@ struct RemoteMcpServer::Impl {
         }
         stream->close();
 
-        const std::lock_guard<std::mutex> lock(streamMutex);
-        streams.erase(std::remove(streams.begin(), streams.end(), stream), streams.end());
+        {
+            const std::lock_guard<std::mutex> lock(streamMutex);
+            streams.erase(std::remove(streams.begin(), streams.end(), stream), streams.end());
+        }
+
+        if (options.clients != nullptr)
+            options.clients->noteDisconnected(stream->handle);
+        audit(stream->clientName, stream->handle, AUDIT_CONNECTION_CLOSE,
+              AuditOutcome::Disconnected, "stream");
     }
 
     /// Attach the response's chunked body to a stream and drain it until the
@@ -608,10 +764,28 @@ struct RemoteMcpServer::Impl {
         McpEra era = McpEra::Modern;
         juce::String version;
         juce::String sessionId;
+        /// Normalised declared name: from `_meta` for a modern request, from
+        /// the session for a legacy one. Never empty — `normaliseClientName`
+        /// answers `unknown` for a caller that said nothing.
+        juce::String clientName;
         /// True when this request created the session, which is the one response
         /// that has to carry `Mcp-Session-Id`.
         bool mintedSession = false;
     };
+
+    /**
+     * @brief The name a modern request declares, from `_meta`.
+     *
+     * Optional in the specification and optional here: a request without it is
+     * `unknown`, which is a client entry like any other rather than a refusal.
+     * Refusing would break every conforming host that simply does not send it.
+     */
+    static juce::String modernClientName(const juce::var& params) {
+        const auto meta = params["_meta"];
+        if (meta.getDynamicObject() == nullptr)
+            return normaliseClientName({});
+        return normaliseClientName(meta[MCP_META_CLIENT_INFO]["name"].toString());
+    }
 
     /**
      * @brief Decide which revision of the protocol this request is speaking.
@@ -635,6 +809,7 @@ struct RemoteMcpServer::Impl {
             if (eraForVersion(declared) == McpEra::Modern) {
                 resolution.era = McpEra::Modern;
                 resolution.version = declared;
+                resolution.clientName = modernClientName(params);
                 return std::nullopt;
             }
             // A legacy version named in `_meta` is a client mixing the two
@@ -645,8 +820,13 @@ struct RemoteMcpServer::Impl {
         if (method == "initialize") {
             resolution.era = McpEra::Legacy;
             resolution.version = negotiateLegacyVersion(params);
-            const auto minted = createSession(resolution.version);
+            // The legacy handshake carries `clientInfo` at the top of `params`
+            // rather than in `_meta`, and carries it exactly once — which is
+            // why the session keeps it.
+            resolution.clientName = normaliseClientName(params["clientInfo"]["name"].toString());
+            const auto minted = createSession(resolution.version, resolution.clientName);
             if (!minted) {
+                auditRefusal("too many open sessions");
                 return McpError{MCP_INTERNAL_ERROR,
                                 "too many open sessions",
                                 {},
@@ -669,7 +849,8 @@ struct RemoteMcpServer::Impl {
                                 httplib::StatusCode::NotFound_404};
             }
             resolution.era = McpEra::Legacy;
-            resolution.version = *known;
+            resolution.version = known->protocolVersion;
+            resolution.clientName = known->clientName;
             resolution.sessionId = header;
             return std::nullopt;
         }
@@ -822,8 +1003,22 @@ struct RemoteMcpServer::Impl {
             return;
         }
 
+        // A stream pushes the same projections the read operations return, so
+        // opening one cannot need less than reading does. Checked here because
+        // this path never reaches the dispatcher.
+        if (!call.scopes.has(Scope::Read)) {
+            audit(call.clientName, call.clientId, call.method, AuditOutcome::Denied,
+                  scopeName(Scope::Read));
+            writeJson(response, httplib::StatusCode::OK_200,
+                      jsonRpcError(id, McpError{MCP_PERMISSION_DENIED,
+                                                "subscriptions/listen requires the 'read' "
+                                                "permission, which this client has not been "
+                                                "granted"}));
+            return;
+        }
+
         const auto filter = endpoint.parseListenFilter(call.params);
-        auto stream = claimStream(id);
+        auto stream = claimStream(id, call.clientName);
         if (stream == nullptr) {
             writeJson(response, httplib::StatusCode::ServiceUnavailable_503,
                       jsonRpcError(id, McpError{MCP_INTERNAL_ERROR,
@@ -909,6 +1104,7 @@ struct RemoteMcpServer::Impl {
 
     void handlePost(const httplib::Request& request, httplib::Response& response) {
         if (!admit()) {
+            auditRefusal("rate limit exceeded");
             writeJson(response, httplib::StatusCode::TooManyRequests_429,
                       jsonRpcError({}, McpError{MCP_INVALID_REQUEST, "Rate limit exceeded"}));
             return;
@@ -1017,11 +1213,18 @@ struct RemoteMcpServer::Impl {
         call.params = params;
         call.era = resolution.era;
         call.protocolVersion = resolution.version;
-        // The transport's own name for the caller. Never `clientInfo`, which is
-        // self-reported and which the specification says not to act on.
-        call.clientId = resolution.sessionId.isNotEmpty() ? "mcp:" + resolution.sessionId
+        // The transport's own name for the caller — never `clientInfo`, which
+        // the specification says not to authorise on, and which this does not:
+        // admission was the bearer token, before any of this ran.
+        call.clientId = resolution.sessionId.isNotEmpty() ? handleForSession(resolution.sessionId)
                                                           : juce::String("mcp:stateless");
         call.idempotencyScope = resolution.sessionId;
+        // The client's own claim, kept separate from the id above, and used for
+        // one thing: choosing which of the user's grants applies (#1860).
+        // Resolved per request so revoking one takes effect on the next.
+        call.clientName = resolution.clientName;
+        call.scopes =
+            options.clients != nullptr ? options.clients->scopesFor(call.clientName) : ScopeSet{};
 
         switch (routeFor(method, resolution.era)) {
             case McpRouting::Stream:
@@ -1054,12 +1257,26 @@ struct RemoteMcpServer::Impl {
             response.status = httplib::StatusCode::MethodNotAllowed_405;
             return;
         }
-        if (!touchSession(sessionId)) {
+        const auto session = touchSession(sessionId);
+        if (!session) {
             response.status = httplib::StatusCode::NotFound_404;
             return;
         }
 
-        auto stream = claimStream({});
+        // The same read gate the modern `subscriptions/listen` path applies. A
+        // bare GET carries no body to answer with, so a client denied here sees
+        // a 403 rather than a JSON-RPC error.
+        const auto scopes = options.clients != nullptr
+                                ? options.clients->scopesFor(session->clientName)
+                                : ScopeSet{};
+        if (!scopes.has(Scope::Read)) {
+            audit(session->clientName, handleForSession(sessionId), "resources.stream",
+                  AuditOutcome::Denied, scopeName(Scope::Read));
+            response.status = httplib::StatusCode::Forbidden_403;
+            return;
+        }
+
+        auto stream = claimStream({}, session->clientName);
         if (stream == nullptr) {
             response.status = httplib::StatusCode::ServiceUnavailable_503;
             return;
@@ -1183,6 +1400,14 @@ bool RemoteMcpServer::start() {
                              impl_->handleDelete(request, response);
                          });
 
+    // Registered before the listener opens and cleared in stop(), so the
+    // settings UI can never route a disconnect to a server that has gone away.
+    if (impl_->options.clients != nullptr) {
+        impl_->options.clients->setDisconnectHandler(
+            TRANSPORT_MCP,
+            [this](const juce::String& handle) { return impl_->disconnectByHandle(handle); });
+    }
+
     // Two different calls, and they are easy to confuse: bind_to_any_port's
     // second parameter is socket flags, not a port.
     const auto address = impl_->options.address.toStdString();
@@ -1213,6 +1438,11 @@ void RemoteMcpServer::stop() {
     if (!impl_->running.exchange(false))
         return;
 
+    // First, so nothing can route a disconnect into a server that is tearing
+    // its streams and sessions down.
+    if (impl_->options.clients != nullptr)
+        impl_->options.clients->setDisconnectHandler(TRANSPORT_MCP, nullptr);
+
     // Streams first. Each is a pool thread parked in its content provider, and
     // closing the outbox is what wakes it — `server.stop()` alone would leave
     // them waiting on a condition variable nobody was going to notify.
@@ -1221,12 +1451,22 @@ void RemoteMcpServer::stop() {
         const std::lock_guard<std::mutex> lock(impl_->streamMutex);
         live = impl_->streams;
     }
+    // `releaseStream` deregisters each from the client registry, so the
+    // settings list empties as the streams close rather than keeping rows for
+    // connections that no longer exist.
     for (const auto& stream : live)
         impl_->releaseStream(stream);
 
     {
-        const std::lock_guard<std::mutex> lock(impl_->sessionMutex);
-        impl_->sessions.clear();
+        std::vector<juce::String> closed;
+        {
+            const std::lock_guard<std::mutex> lock(impl_->sessionMutex);
+            closed.reserve(impl_->sessions.size());
+            for (const auto& [key, session] : impl_->sessions)
+                closed.push_back(session.id);
+            impl_->sessions.clear();
+        }
+        impl_->noteSessionsClosed(closed);
     }
 
     impl_->server.stop();

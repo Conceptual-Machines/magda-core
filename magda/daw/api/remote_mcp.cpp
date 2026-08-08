@@ -5,6 +5,7 @@
 #include <limits>
 #include <utility>
 
+#include "remote_clients.hpp"
 #include "remote_service.hpp"
 #include "remote_subscriptions.hpp"
 
@@ -147,6 +148,8 @@ int resourceReadCodeFor(ErrorCode code) {
         case ErrorCode::InvalidRequest:
         case ErrorCode::UnknownOperation:
             return MCP_INVALID_PARAMS;
+        case ErrorCode::PermissionDenied:
+            return MCP_PERMISSION_DENIED;
         case ErrorCode::Conflict:
         case ErrorCode::Timeout:
         case ErrorCode::Cancelled:
@@ -820,6 +823,9 @@ void McpEndpoint::readResource(const Call& call, Completion onComplete) {
 std::optional<RequestContext> McpEndpoint::requestContext(const Call& call, McpError& error) const {
     RequestContext context;
     context.clientId = call.clientId;
+    context.clientName = call.clientName;
+    context.transport = TRANSPORT_MCP;
+    context.scopes = call.scopes;
     context.deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(options_.defaultDeadlineMs);
 

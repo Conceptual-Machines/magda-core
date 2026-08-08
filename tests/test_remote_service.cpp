@@ -5,10 +5,12 @@
 #include <vector>
 
 #include "MockMagdaApi.hpp"
+#include "RemoteTestScopes.hpp"
 #include "magda/daw/api/remote_service.hpp"
 
 using namespace magda;
 using namespace magda::remote;
+using magda::test::fullyGrantedContext;
 using magda::test::MockMagdaApi;
 
 namespace {
@@ -34,7 +36,7 @@ juce::var object(std::initializer_list<std::pair<const char*, juce::var>> fields
 /// Runs one operation to completion and returns the response. Dispatch executes
 /// inline when there is no message thread to hop to, so this is synchronous.
 Response run(RemoteApiService& service, const juce::String& name, const juce::var& input,
-             RequestContext context = {}) {
+             RequestContext context = fullyGrantedContext()) {
     Response captured;
     int completions = 0;
     service.dispatch(name, input, context, [&](Response response) {
@@ -186,7 +188,7 @@ TEST_CASE("A stale expected revision is rejected as a conflict", "[remote][servi
 
     REQUIRE(run(service, "project.setTempo", object({{"tempo", 90.0}})).ok);
 
-    RequestContext stale;
+    auto stale = fullyGrantedContext();
     stale.expectedRevision = INITIAL_REVISION;  // what the client saw before the write above
     const auto response = run(service, "project.setTempo", object({{"tempo", 140.0}}), stale);
 
@@ -195,7 +197,7 @@ TEST_CASE("A stale expected revision is rejected as a conflict", "[remote][servi
     REQUIRE(api.project_.info.tempo == 90.0);
 
     // The matching revision succeeds, so a client can recover by re-reading.
-    RequestContext current;
+    auto current = fullyGrantedContext();
     current.expectedRevision = service.currentRevision();
     REQUIRE(run(service, "project.setTempo", object({{"tempo", 140.0}}), current).ok);
     REQUIRE(api.project_.info.tempo == 140.0);
@@ -206,7 +208,7 @@ TEST_CASE("Retrying a completed write does not apply it twice", "[remote][servic
     MockMagdaApi api;
     RemoteApiService service(api);
 
-    RequestContext context;
+    auto context = fullyGrantedContext();
     context.clientId = "client-a";
     context.requestId = "req-1";
 
@@ -232,10 +234,10 @@ TEST_CASE("Idempotency keys are scoped per client", "[remote][service][idempoten
     MockMagdaApi api;
     RemoteApiService service(api);
 
-    RequestContext first;
+    auto first = fullyGrantedContext();
     first.clientId = "client-a";
     first.requestId = "req-1";
-    RequestContext second;
+    auto second = fullyGrantedContext();
     second.clientId = "client-b";
     second.requestId = "req-1";  // same id, different client
 
@@ -253,7 +255,7 @@ TEST_CASE("Reads are not served from the idempotency cache", "[remote][service][
     api.project_.info.tempo = 120.0;
     RemoteApiService service(api);
 
-    RequestContext context;
+    auto context = fullyGrantedContext();
     context.clientId = "client-a";
     context.requestId = "req-read";
 
@@ -274,7 +276,7 @@ TEST_CASE("The idempotency cache is bounded", "[remote][service][idempotency]") 
     service.setIdempotencyCacheCapacity(2);
 
     const auto writeWithId = [&](const juce::String& requestId, double tempo) {
-        RequestContext context;
+        auto context = fullyGrantedContext();
         context.clientId = "client-a";
         context.requestId = requestId;
         return run(service, "project.setTempo", object({{"tempo", tempo}}), context);
@@ -314,7 +316,7 @@ TEST_CASE("Concurrent retries of one request id apply the mutation once",
     workers.reserve(threadCount);
     for (int worker = 0; worker < threadCount; ++worker) {
         workers.emplace_back([&] {
-            RequestContext context;
+            auto context = fullyGrantedContext();
             context.clientId = "client-a";
             context.requestId = "req-1";
             service.dispatch("project.setTempo", object({{"tempo", 90.0}}), context,
@@ -396,7 +398,7 @@ TEST_CASE("An expired deadline fails with timeout instead of executing late",
     MockMagdaApi api;
     RemoteApiService service(api);
 
-    RequestContext context;
+    auto context = fullyGrantedContext();
     context.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
 
     const auto response = run(service, "project.setTempo", object({{"tempo", 90.0}}), context);
@@ -441,7 +443,7 @@ TEST_CASE("Replacing the project invalidates outstanding revisions",
 
     // A client holding the pre-swap revision is now stale by construction,
     // rather than writing into a project that no longer exists.
-    RequestContext context;
+    auto context = fullyGrantedContext();
     context.expectedRevision = before;
     const auto response = run(service, "project.setTempo", object({{"tempo", 90.0}}), context);
     REQUIRE_FALSE(response.ok);
@@ -453,7 +455,7 @@ TEST_CASE("Replacing the project clears the idempotency cache", "[remote][servic
     MockMagdaApi api;
     RemoteApiService service(api);
 
-    RequestContext context;
+    auto context = fullyGrantedContext();
     context.clientId = "client-a";
     context.requestId = "req-1";
     REQUIRE(run(service, "project.setTempo", object({{"tempo", 90.0}}), context).ok);
@@ -508,7 +510,7 @@ TEST_CASE("dispatchSync returns the response directly", "[remote][service]") {
     api.project_.info.tempo = 111.0;
     RemoteApiService service(api);
 
-    const auto response = service.dispatchSync("project.get", emptyInput(), {});
+    const auto response = service.dispatchSync("project.get", emptyInput(), fullyGrantedContext());
 
     REQUIRE(response.ok);
     REQUIRE(static_cast<double>(response.result["tempo"]) == 111.0);
@@ -553,7 +555,7 @@ TEST_CASE("Continuous motion notifies without bumping the revision", "[remote][s
 
     // And a write with the pre-motion revision still succeeds, which is the
     // property that makes remote control usable during playback.
-    RequestContext context;
+    auto context = fullyGrantedContext();
     context.expectedRevision = INITIAL_REVISION;
     const ScopedMessageThreadAssertionDisabler disabler;
     REQUIRE(run(service, "project.setTempo", object({{"tempo", 90.0}}), context).ok);
@@ -614,7 +616,7 @@ TEST_CASE("Concurrent dispatch from many threads keeps revisions unique",
     for (int worker = 0; worker < threadCount; ++worker) {
         workers.emplace_back([&, worker] {
             for (int index = 0; index < perThread; ++index) {
-                RequestContext context;
+                auto context = fullyGrantedContext();
                 context.clientId = "client-" + juce::String(worker);
                 context.requestId = juce::String(index);
                 service.dispatch("project.setTempo", object({{"tempo", 100.0}}), context,

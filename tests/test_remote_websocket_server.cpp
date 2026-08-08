@@ -15,6 +15,8 @@
 #include <vector>
 
 #include "MockMagdaApi.hpp"
+#include "RemoteTestScopes.hpp"
+#include "magda/daw/api/remote_clients.hpp"
 #include "magda/daw/api/remote_service.hpp"
 #include "magda/daw/api/remote_subscriptions.hpp"
 #include "magda/daw/api/remote_websocket_server.hpp"
@@ -37,10 +39,15 @@ struct MessageThreadRelaxation {
     ScopedMessageThreadAssertionDisabler disabler;
 };
 
-RemoteWebSocketServer::Options testOptions() {
+/// `clients` defaults to the shared permissive registry: without one, every
+/// request is refused before it reaches the transport behaviour these tests are
+/// about (#1860). The permission tests pass their own.
+RemoteWebSocketServer::Options testOptions(
+    RemoteClientRegistry& clients = magda::test::permissiveRegistry()) {
     RemoteWebSocketServer::Options options;
     options.bearerToken = kToken;
     options.allowedOrigins = {kOrigin};
+    options.clients = &clients;
     return options;
 }
 

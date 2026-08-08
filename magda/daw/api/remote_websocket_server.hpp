@@ -10,6 +10,8 @@ namespace magda {
 namespace remote {
 
 class RemoteApiService;
+class RemoteAuditLog;
+class RemoteClientRegistry;
 class SubscriptionHub;
 
 /**
@@ -76,6 +78,27 @@ class SubscriptionHub;
  * Events share the reply queue, so a mutation's reply and the event describing
  * it arrive in the order they were produced, but they hold a separate budget:
  * see `Options::maxQueuedEventsPerConnection`.
+ *
+ * ## Who is connecting
+ *
+ * A client names itself in the upgrade request's query string:
+ *
+ *     ws://127.0.0.1:51734/rpc?client=cursor
+ *
+ * The name is normalised and becomes the key its permissions are stored under
+ * (#1860). A client that sends none is `unknown`, which is a real entry rather
+ * than a rejection — it collects every anonymous caller and stays read-only
+ * until the user says otherwise.
+ *
+ * The query string, rather than a header or a first message: it survives every
+ * WebSocket client library without one needing to support custom headers on the
+ * handshake, it is available before the 101 so the connection can be listed the
+ * moment it opens, and it costs a client one URL parameter.
+ *
+ * This is a claim, not a credential. Admission is the bearer token; the name
+ * only decides which of the user's grants applies. A caller holding the token
+ * can claim any name, which is not a hole this transport could close — the token
+ * is in a file every process running as the user can read.
  *
  * ## Threading
  *
@@ -206,6 +229,25 @@ class RemoteWebSocketServer {
         /// How long a request may wait before the dispatcher abandons it. A
         /// client may ask for less via `meta.deadlineMs`, never for more.
         int defaultDeadlineMs = 10'000;
+
+        /**
+         * Where per-client grants are looked up, and where live connections are
+         * listed for the settings UI (#1860).
+         *
+         * Null means no permission model, which is *not* the same as full
+         * access: `RequestContext::scopes` defaults to empty, so a server
+         * configured without a registry refuses every operation. That is the
+         * intended reading of "disabled means disabled" — a transport with
+         * nothing to consult cannot be the one that decides to allow.
+         *
+         * Must outlive this server.
+         */
+        RemoteClientRegistry* clients = nullptr;
+
+        /// Where connections and refusals are recorded. Null disables auditing
+        /// for this transport; the dispatcher's own record is separate. Must
+        /// outlive this server.
+        RemoteAuditLog* audit = nullptr;
     };
 
     /// `subscriptions` is optional: without one the four `subscriptions.*`

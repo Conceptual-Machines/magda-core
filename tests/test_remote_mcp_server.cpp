@@ -20,12 +20,15 @@
 #include <vector>
 
 #include "MockMagdaApi.hpp"
+#include "RemoteTestScopes.hpp"
+#include "magda/daw/api/remote_clients.hpp"
 #include "magda/daw/api/remote_mcp_server.hpp"
 #include "magda/daw/api/remote_service.hpp"
 #include "magda/daw/api/remote_subscriptions.hpp"
 
 using namespace magda;
 using namespace magda::remote;
+using magda::test::fullyGrantedContext;
 using magda::test::MockMagdaApi;
 
 namespace {
@@ -43,13 +46,18 @@ struct MessageThreadRelaxation {
     ScopedMessageThreadAssertionDisabler disabler;
 };
 
-RemoteMcpServer::Options testOptions() {
+/// `clients` defaults to the shared permissive registry: without one, every
+/// request is refused before it reaches the protocol behaviour these tests are
+/// about (#1860). The permission tests pass their own.
+RemoteMcpServer::Options testOptions(
+    RemoteClientRegistry& clients = magda::test::permissiveRegistry()) {
     RemoteMcpServer::Options options;
     options.bearerToken = kToken;
     options.allowedOrigins = {kOrigin};
     // Short enough that a stream test does not sit waiting for one, long enough
     // that comments do not swamp the events being asserted.
     options.keepAliveIntervalMs = 250;
+    options.clients = &clients;
     return options;
 }
 
@@ -481,8 +489,8 @@ TEST_CASE("A tool call and a resource read return the same projection",
 
     // And the same operation dispatched directly, which is what the WebSocket
     // transport puts in its `result`.
-    const auto direct =
-        service.dispatchSync("project.get", juce::var(new juce::DynamicObject()), RequestContext{});
+    const auto direct = service.dispatchSync("project.get", juce::var(new juce::DynamicObject()),
+                                             fullyGrantedContext());
     REQUIRE(direct.ok);
     REQUIRE(juce::JSON::toString(direct.result, true) ==
             juce::JSON::toString(viaTool.json["result"]["structuredContent"], true));

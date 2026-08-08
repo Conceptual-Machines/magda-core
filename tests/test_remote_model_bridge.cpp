@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "MockMagdaApi.hpp"
+#include "RemoteTestScopes.hpp"
 #include "magda/daw/api/remote_model_bridge.hpp"
 #include "magda/daw/api/remote_service.hpp"
 #include "magda/daw/core/ClipManager.hpp"
@@ -12,6 +13,7 @@
 
 using namespace magda;
 using namespace magda::remote;
+using magda::test::fullyGrantedContext;
 using magda::test::MockMagdaApi;
 
 namespace {
@@ -69,7 +71,7 @@ TEST_CASE("A locally committed change makes a client's expected revision stale",
     const auto clientView = fixture.service.currentRevision();
     TrackManager::getInstance().createTrack("Meanwhile", TrackType::Audio);
 
-    RequestContext context;
+    auto context = fullyGrantedContext();
     context.expectedRevision = clientView;
     Response response;
     fixture.service.dispatch(

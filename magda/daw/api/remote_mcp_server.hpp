@@ -10,6 +10,8 @@ namespace magda {
 namespace remote {
 
 class RemoteApiService;
+class RemoteAuditLog;
+class RemoteClientRegistry;
 class SubscriptionHub;
 
 /**
@@ -71,6 +73,21 @@ class SubscriptionHub;
  * Closing the stream is the cancellation. `Last-Event-ID` resumption is not
  * offered and event ids are not emitted, because a stream of "re-read this URI"
  * has nothing to replay.
+ *
+ * ## Who is connecting
+ *
+ * The client names itself in `clientInfo.name` — in `params._meta` for a modern
+ * request, or in the `initialize` params for a legacy one, where it is recorded
+ * on the session and reused for every later request on it. Normalised, that name
+ * is the key its permissions are stored under (#1860); a request that carries
+ * none is `unknown` and read-only.
+ *
+ * What "connected" means here is narrower than it is over WebSocket, and it has
+ * to be: modern MCP is stateless, so a client that POSTs one tool call has no
+ * connection to list or to disconnect. What the settings UI shows is therefore
+ * the two things that genuinely persist — legacy sessions and open notification
+ * streams. A stateless caller still appears in the client list, with its grant,
+ * because that list is keyed by name rather than by connection.
  *
  * ## Threading
  *
@@ -149,6 +166,19 @@ class RemoteMcpServer {
 
         /// Reported in `server/discover` and `initialize`.
         juce::String serverVersion{"1.0"};
+
+        /**
+         * Where per-client grants are looked up (#1860).
+         *
+         * Null means no permission model, which refuses everything rather than
+         * allowing it: `RequestContext::scopes` defaults to empty. Must outlive
+         * this server.
+         */
+        RemoteClientRegistry* clients = nullptr;
+
+        /// Where connections and refusals are recorded. Null disables auditing
+        /// for this transport. Must outlive this server.
+        RemoteAuditLog* audit = nullptr;
     };
 
     /// `subscriptions` is optional: without one the server does not advertise
