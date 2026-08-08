@@ -17,8 +17,11 @@
 
 #include <httplib.h>
 
+#include <atomic>
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "MockMagdaApi.hpp"
@@ -495,4 +498,93 @@ TEST_CASE("A refused connection is recorded without its credential",
     REQUIRE(sawRejection);
 
     forgetAllRemoteSecrets();
+}
+
+TEST_CASE("Permission decisions hold up under concurrent load",
+          "[remote][permissions][conformance][load]") {
+    // Enforcement reads a grant on every request from every connection at once,
+    // while the settings dialog may be rewriting that grant from another thread.
+    // The property under test is not throughput — the dispatcher serialises
+    // handlers anyway — but that the answer is always one of the two correct
+    // ones, and that a revocation is never overtaken by a request that started
+    // before it.
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.project_.info.tempo = 120.0;
+    RemoteApiService service(api);
+    RemoteClientRegistry registry;
+    RemoteAuditLog log;
+    service.setAuditLog(&log);
+
+    constexpr int kClients = 4;
+    constexpr int kRequestsEach = 40;
+
+    RemoteWebSocketServer::Options options;
+    options.bearerToken = kToken;
+    options.clients = &registry;
+    options.audit = &log;
+    options.maxConnections = kClients + 2;
+    // Above what the loop below can generate, so a refusal here would be the
+    // rate limiter rather than the permission model — a different test.
+    options.maxRequestsPerSecond = 10'000.0;
+    RemoteWebSocketServer server(service, options);
+    REQUIRE(server.start());
+
+    registry.setScopes(kClient, ScopeSet{Scope::Read, Scope::Edit});
+
+    std::atomic<int> allowed{0};
+    std::atomic<int> denied{0};
+    std::atomic<int> unexpected{0};
+
+    std::vector<std::thread> workers;
+    workers.reserve(kClients);
+    for (int worker = 0; worker < kClients; ++worker) {
+        workers.emplace_back([&] {
+            httplib::ws::WebSocketClient client(
+                wsEndpoint(server), {{"Authorization", std::string("Bearer ") + kToken}});
+            if (!client.connect()) {
+                unexpected.fetch_add(1);
+                return;
+            }
+
+            const Vector write{"write", "project.setTempo", object({{"tempo", 130.0}}),
+                               ScopeSet{Scope::Read, Scope::Edit}, true};
+            for (int index = 0; index < kRequestsEach; ++index) {
+                const auto outcome = runOverWebSocket(client, write);
+                if (outcome.allowed)
+                    allowed.fetch_add(1);
+                else if (outcome.errorCode == "permission_denied")
+                    denied.fetch_add(1);
+                else
+                    // Anything else — a timeout, a conflict, a dropped reply —
+                    // means the load itself broke something, which is exactly
+                    // what this is watching for.
+                    unexpected.fetch_add(1);
+            }
+        });
+    }
+
+    // Flip the grant back and forth underneath them. Every request must land on
+    // one side or the other, never in between.
+    for (int flip = 0; flip < 20; ++flip) {
+        registry.setScopes(kClient, (flip % 2) == 0 ? defaultClientScopes()
+                                                    : ScopeSet{Scope::Read, Scope::Edit});
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    registry.setScopes(kClient, ScopeSet{Scope::Read, Scope::Edit});
+
+    for (auto& worker : workers)
+        worker.join();
+
+    REQUIRE(unexpected.load() == 0);
+    REQUIRE(allowed.load() + denied.load() == kClients * kRequestsEach);
+    // Both outcomes actually occurred, or the flipping above proved nothing.
+    REQUIRE(allowed.load() > 0);
+    REQUIRE(denied.load() > 0);
+
+    // Every one of them is in the record, and none of them carries a payload.
+    const auto entries = log.forClient(kClient);
+    REQUIRE(entries.size() >= static_cast<std::size_t>(kClients * kRequestsEach));
+    for (const auto& entry : entries)
+        REQUIRE_FALSE(entry.detail.contains("130"));
 }
