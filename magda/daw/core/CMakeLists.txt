@@ -7,6 +7,7 @@ target_sources(magda_daw PRIVATE
     AppPaths.cpp
     ChainNodePath.cpp
     ControlTarget.cpp
+    MixerStripOrder.cpp
     UIScale.cpp
     UpdateChecker.cpp
     ViewModeController.cpp

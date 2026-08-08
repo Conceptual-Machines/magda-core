@@ -157,6 +157,56 @@ TEST_CASE("Tracks hidden in the mixer take no position", "[osc][sink]") {
     REQUIRE(f.writer->writes[0].target.devicePath.trackId == visible);
 }
 
+TEST_CASE("Aux returns take no position among the strips", "[osc][sink]") {
+    // The mixer draws aux returns in their own section, so an aux mid-list must
+    // not consume a fader — otherwise every strip after it drives the track one
+    // to the left of the one the user is looking at.
+    Fixture f;
+    f.addTrack("Drums");
+    auto& aux = f.api.tracks_.tracks.emplace_back();
+    aux.id = f.nextId++;
+    aux.name = "Reverb";
+    aux.type = TrackType::Aux;
+    aux.viewSettings.setVisible(ViewMode::Mix, true);
+    const auto keys = f.addTrack("Keys");
+
+    f.apply(OscCommandKind::TrackVolume, 2, 0.5f);
+
+    REQUIRE(f.writer->writes.size() == 1);
+    REQUIRE(f.writer->writes[0].target.devicePath.trackId == keys);
+}
+
+TEST_CASE("Children of a collapsed group take no position", "[osc][sink]") {
+    // The mixer is not drawing them, so a fader landing on one is the "appears
+    // to do nothing" case this addressing exists to avoid.
+    Fixture f;
+    const auto group = f.addTrack("Bus");
+    f.track(group)->type = TrackType::Group;
+    f.track(group)->viewSettings.setCollapsed(ViewMode::Mix, true);
+
+    const auto child = f.addTrack("Kick");
+    f.track(child)->parentId = group;
+    f.track(group)->childIds.push_back(child);
+
+    const auto after = f.addTrack("Keys");
+
+    // Strip 1 is the group itself; strip 2 skips its hidden child.
+    f.apply(OscCommandKind::TrackVolume, 1, 0.5f);
+    f.apply(OscCommandKind::TrackVolume, 2, 0.5f);
+
+    REQUIRE(f.writer->writes.size() == 2);
+    REQUIRE(f.writer->writes[0].target.devicePath.trackId == group);
+    REQUIRE(f.writer->writes[1].target.devicePath.trackId == after);
+
+    // Expanded, the child is a strip again and everything after it shifts.
+    f.writer->writes.clear();
+    f.track(group)->viewSettings.setCollapsed(ViewMode::Mix, false);
+    f.apply(OscCommandKind::TrackVolume, 2, 0.5f);
+
+    REQUIRE(f.writer->writes.size() == 1);
+    REQUIRE(f.writer->writes[0].target.devicePath.trackId == child);
+}
+
 TEST_CASE("A position with no track behind it is ignored", "[osc][sink]") {
     // A sixteen-strip template pointed at a two-track project drives two
     // faders rather than failing.

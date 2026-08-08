@@ -2,6 +2,7 @@
 
 #include "../audio/controllers/ControllerParamWriter.hpp"
 #include "../core/ControlTarget.hpp"
+#include "../core/MixerStripOrder.hpp"
 #include "../core/TrackInfo.hpp"
 #include "focused_api.hpp"
 #include "magda_api.hpp"
@@ -26,23 +27,16 @@ OscCommandSinkLive::~OscCommandSinkLive() = default;
 // ============================================================================
 
 TrackId OscCommandSinkLive::trackAtPosition(int position) const {
-    if (position < 1)
-        return INVALID_TRACK_ID;
-
-    // Mixer visibility rather than the raw track list: the strips the user can
-    // see are the ones a mixer template is counting, and a hidden track would
-    // otherwise consume a fader that appears to do nothing. This is the same
-    // filter `TrackManager::getVisibleTracks` applies, walked through the
-    // facade so the sink has no second route into the model — and so it stops
-    // at the strip it wants rather than building the whole list to index once.
-    int seen = 0;
-    for (const auto& track : api_.tracks().getTracks()) {
-        if (!track.isVisibleIn(ViewMode::Mix))
-            continue;
-        if (++seen == position)
-            return track.id;
-    }
-    return INVALID_TRACK_ID;
+    // The mixer's own rule for what a strip is, not a second approximation of
+    // it: a hidden track, an aux return, or the child of a collapsed group all
+    // take no position, and getting any of them wrong lands a fader on the
+    // strip beside the one the user is looking at.
+    //
+    // Always ViewMode::Mix, even when the user is looking at another view. A
+    // surface's fader 3 must not become a different track because someone
+    // switched to the arrangement — the numbering a template was built against
+    // is the mixer's.
+    return mixerStripAtPosition(api_.tracks().getTracks(), ViewMode::Mix, position);
 }
 
 int OscCommandSinkLive::sendBusForPosition(TrackId trackId, int position) const {
