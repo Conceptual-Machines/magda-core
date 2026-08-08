@@ -2635,12 +2635,16 @@ const ChainInfo* TrackManager::getChain(TrackId trackId, RackId rackId, ChainId 
     return nullptr;
 }
 
+void TrackManager::setChainOutput(const ChainNodePath& chainPath, int outputIndex) {
+    if (auto* chain = getChainByPath(chainPath)) {
+        chain->outputIndex = outputIndex;
+        notifyTrackDevicesChanged(chainPath.trackId);
+    }
+}
+
 void TrackManager::setChainOutput(TrackId trackId, RackId rackId, ChainId chainId,
                                   int outputIndex) {
-    if (auto* chain = getChain(trackId, rackId, chainId)) {
-        chain->outputIndex = outputIndex;
-        notifyTrackDevicesChanged(trackId);
-    }
+    setChainOutput(ChainNodePath::chain(trackId, rackId, chainId), outputIndex);
 }
 
 void TrackManager::setChainMuted(TrackId trackId, RackId rackId, ChainId chainId, bool muted) {
@@ -2679,15 +2683,19 @@ void TrackManager::setChainPan(TrackId trackId, RackId rackId, ChainId chainId, 
     }
 }
 
-void TrackManager::setChainName(TrackId trackId, RackId rackId, ChainId chainId,
-                                const juce::String& name) {
-    if (auto* chain = getChain(trackId, rackId, chainId)) {
+void TrackManager::setChainName(const ChainNodePath& chainPath, const juce::String& name) {
+    if (auto* chain = getChainByPath(chainPath)) {
         auto trimmed = name.trim();
         if (trimmed.isEmpty() || trimmed == chain->name)
             return;
         chain->name = trimmed;
-        notifyTrackPropertyChanged(trackId);
+        notifyTrackPropertyChanged(chainPath.trackId);
     }
+}
+
+void TrackManager::setChainName(TrackId trackId, RackId rackId, ChainId chainId,
+                                const juce::String& name) {
+    setChainName(ChainNodePath::chain(trackId, rackId, chainId), name);
 }
 
 void TrackManager::setRackVolume(TrackId trackId, RackId rackId, float volume) {
