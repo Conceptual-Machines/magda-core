@@ -427,6 +427,8 @@ class MockTrackApi : public TrackApi {
         auto* track = getTrack(rackPath.trackId);
         if (track == nullptr)
             return nullptr;
+        if (rackPath.isTrackLevel || rackPath.topLevelDeviceId != INVALID_DEVICE_ID)
+            return nullptr;
 
         // Mirrors `TrackManager::getRackByPath` step for step, including its
         // structural rules: a route alternates `Rack > Chain > Rack > Chain`,
@@ -471,11 +473,17 @@ class MockTrackApi : public TrackApi {
                     return nullptr;
                 chain = found;
             } else if (step.type == ChainStepType::Device) {
-                if (!isLast)
+                if (!isLast || chain == nullptr)
+                    return nullptr;
+                const auto found = std::find_if(chain->elements.begin(), chain->elements.end(),
+                                                [&step](const ChainElement& element) {
+                                                    return magda::isDevice(element) &&
+                                                           magda::getDevice(element).id == step.id;
+                                                });
+                if (found == chain->elements.end())
                     return nullptr;
             } else if (step.type == ChainStepType::Segment) {
-                if (index != 0)
-                    return nullptr;
+                return nullptr;
             }
         }
         // The deepest rack traversed, whatever the last step was — so a *chain*

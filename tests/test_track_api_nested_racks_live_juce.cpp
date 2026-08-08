@@ -228,22 +228,39 @@ class TrackApiNestedRacksLiveTest final : public juce::UnitTest {
             device.name = "Leaf";
             const auto deviceId = api.addDeviceToChainByPath(pathA.withChain(chain1), device);
             expect(deviceId != INVALID_DEVICE_ID);
+            const auto validDevicePath = pathA.withChain(chain1).withDevice(deviceId);
+            expect(api.getRackByPath(validDevicePath) == api.getRackByPath(pathA));
+            const auto missingDevicePath = pathA.withChain(chain1).withDevice(9999);
+            expect(api.getRackByPath(missingDevicePath) == nullptr);
+            expect(api.getRackByPath(pathA.withDevice(deviceId)) == nullptr);
             expect(api.getRackByPath(
                        pathA.withChain(chain1).withDevice(deviceId).withRack(rackB)) == nullptr);
+
+            // An explicit Segment selects a flat section, so it cannot lead to
+            // a rack in the main FX list even when that rack id exists.
+            auto segmentedRack = pathA;
+            segmentedRack.steps.insert(
+                segmentedRack.steps.begin(),
+                {ChainStepType::Segment, static_cast<int>(ChainSegment::PostFx)});
+            expect(api.getRackByPath(segmentedRack) == nullptr);
 
             // And the writes that resolve through it leave both racks alone,
             // rather than landing on the sibling the route wandered into.
             const auto volumeB = api.getRackByPath(pathB)->volume;
             const auto chainsB = api.getRackByPath(pathB)->chains.size();
+            const auto volumeA = api.getRackByPath(pathA)->volume;
             api.setRackVolume(pathA.withRack(rackB), -24.0f);
             api.setRackBypassedByPath(pathA.withRack(rackB), true);
             api.addChainToRack(pathA.withRack(rackB), "Should not appear");
+            api.setRackVolume(missingDevicePath, -24.0f);
+            api.setRackVolume(segmentedRack, -24.0f);
 
             const auto* afterB = api.getRackByPath(pathB);
             expect(afterB != nullptr);
             expectWithinAbsoluteError(afterB->volume, volumeB, 0.001f);
             expect(!afterB->bypassed);
             expect(afterB->chains.size() == chainsB);
+            expectWithinAbsoluteError(api.getRackByPath(pathA)->volume, volumeA, 0.001f);
         }
 
         beginTest("A device is not reachable through a sideways route either");

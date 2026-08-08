@@ -274,14 +274,24 @@ TEST_CASE("A structurally impossible route is refused, even with real ids",
     DeviceInfo device;
     device.name = "Leaf";
     const auto deviceId = api.tracks().addDeviceToChainByPath(top.chainPath(), device);
+    const auto validDevicePath = top.chainPath().withDevice(deviceId);
+    REQUIRE(api.tracks().getRackByPath(validDevicePath) ==
+            api.tracks().getRackByPath(top.rackPath()));
+    REQUIRE(api.tracks().getRackByPath(top.chainPath().withDevice(9999)) == nullptr);
+    REQUIRE(api.tracks().getRackByPath(top.rackPath().withDevice(deviceId)) == nullptr);
     REQUIRE(api.tracks().getRackByPath(top.chainPath().withDevice(deviceId).withRack(rackB)) ==
             nullptr);
 
-    // A Segment only ever leads a path.
+    // A Segment selects a flat section that cannot contain racks. It is invalid
+    // both after a rack and before a real main-FX rack.
     auto trailingSegment = top.rackPath();
     trailingSegment.steps.push_back(
         {ChainStepType::Segment, static_cast<int>(ChainSegment::PostFx)});
     REQUIRE(api.tracks().getRackByPath(trailingSegment) == nullptr);
+    auto segmentedRack = top.rackPath();
+    segmentedRack.steps.insert(segmentedRack.steps.begin(),
+                               {ChainStepType::Segment, static_cast<int>(ChainSegment::PostFx)});
+    REQUIRE(api.tracks().getRackByPath(segmentedRack) == nullptr);
 
     // And the sideways write lands nowhere.
     const auto* siblingBefore = api.tracks().getRackByPath(ChainNodePath::rack(top.track, rackB));
@@ -290,4 +300,9 @@ TEST_CASE("A structurally impossible route is refused, even with real ids",
     api.tracks().setRackVolume(top.rackPath().withRack(rackB), -24.0f);
     REQUIRE(api.tracks().getRackByPath(ChainNodePath::rack(top.track, rackB))->volume ==
             volumeBefore);
+
+    const auto outerVolume = api.tracks().getRackByPath(top.rackPath())->volume;
+    api.tracks().setRackVolume(top.chainPath().withDevice(9999), -24.0f);
+    api.tracks().setRackVolume(segmentedRack, -24.0f);
+    REQUIRE(api.tracks().getRackByPath(top.rackPath())->volume == outerVolume);
 }

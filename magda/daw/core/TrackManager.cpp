@@ -2428,6 +2428,12 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
         return nullptr;
     }
 
+    // Track-level and legacy top-level-device paths cannot name an enclosing
+    // rack. Reject contradictory paths too (for example, a top-level device id
+    // combined with rack steps) instead of silently ignoring one representation.
+    if (rackPath.isTrackLevel || rackPath.topLevelDeviceId != INVALID_DEVICE_ID)
+        return nullptr;
+
     RackInfo* currentRack = nullptr;
     ChainInfo* currentChain = nullptr;
 
@@ -2463,9 +2469,11 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
     // node on the other side of the tree from the one the caller named.
     //
     // Deliberately unchanged: a path that resolves *completely* but ends on a
-    // Chain or Device step still returns the enclosing rack rather than
+    // Chain or nested Device step still returns the enclosing rack rather than
     // nothing. That is a terminal-type leniency on a route that does exist,
-    // which is a different question — #2057.
+    // which is a different question — #2057. A Device step therefore still has
+    // to name a real device in the current chain before this lookup may return
+    // that enclosing rack.
     for (std::size_t index = 0; index < rackPath.steps.size(); ++index) {
         const auto& step = rackPath.steps[index];
         const bool isLast = index + 1 == rackPath.steps.size();
@@ -2512,18 +2520,26 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
                 currentChain = found;
                 break;
             }
-            case ChainStepType::Device:
-                // A leaf. Devices contain nothing, so nothing may follow one.
-                if (!isLast)
+            case ChainStepType::Device: {
+                // A nested device is a leaf directly inside the current chain.
+                // Validate both the parent and the id before preserving the
+                // #2057 behavior of returning its enclosing rack.
+                if (!isLast || currentChain == nullptr)
+                    return nullptr;
+                const auto found = std::find_if(
+                    currentChain->elements.begin(), currentChain->elements.end(),
+                    [&step](const ChainElement& element) {
+                        return magda::isDevice(element) && magda::getDevice(element).id == step.id;
+                    });
+                if (found == currentChain->elements.end())
                     return nullptr;
                 break;
+            }
             case ChainStepType::Segment:
-                // Only ever leads a path — it selects which of the track's FX
-                // lists to descend into, which is not a question that can be
-                // asked twice or part way down.
-                if (index != 0)
-                    return nullptr;
-                break;
+                // Explicit segments select the flat post-fx or mixer-analysis
+                // lists (the main FX segment is implicit). None can contain a
+                // rack, so a segmented path has no answer in this resolver.
+                return nullptr;
         }
     }
 
