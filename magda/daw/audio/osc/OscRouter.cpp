@@ -234,7 +234,41 @@ void OscRouter::drainOrdered() {
     // than leaving those commands until the surface is touched again.
     if (orderedRead_.load(std::memory_order_relaxed) !=
         orderedWrite_.load(std::memory_order_acquire))
-        scheduleDrain();
+        requestFollowUpDrain();
+}
+
+void OscRouter::requestFollowUpDrain() {
+    bool expected = false;
+    if (!drainScheduled_.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+        return;  // a drain is already posted and will pick this up
+
+    // Deliberately not `scheduleDrain`, which would run the configured
+    // scheduler — and the default one applies inline when it is already on the
+    // message thread, which here it always is. That would re-enter
+    // `drainPending` one stack level per batch without ever returning to the
+    // event loop, so a sender that keeps the ring non-empty would hold the
+    // message thread and grow the stack: precisely the failure the per-drain
+    // cap exists to prevent. The cap only bounds anything if the remainder
+    // waits its turn behind other events, which means going through the queue.
+    //
+    // Reachable only across threads, and not by much: a producer publishes its
+    // write index before it calls `scheduleDrain`, so a drain that reads the
+    // index inside that gap finds work pending with the scheduled flag still
+    // clear. Rare is not the same as impossible, and stack safety should not
+    // rest on that ordering happening to hold.
+    //
+    // With no message loop there is nothing to post to. A headless host drives
+    // drains itself, so the remainder waits for the next explicit one rather
+    // than recursing here.
+    if (juce::MessageManager::getInstanceWithoutCreating() == nullptr) {
+        drainScheduled_.store(false, std::memory_order_release);
+        return;
+    }
+
+    juce::MessageManager::callAsync([this, alive = alive_]() {
+        if (alive->load(std::memory_order_acquire))
+            drainPending();
+    });
 }
 
 void OscRouter::setSink(std::unique_ptr<OscCommandSink> sink) {

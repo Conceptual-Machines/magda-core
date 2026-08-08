@@ -125,6 +125,13 @@ class OscRouter {
     /**
      * @brief Receive-thread entry point.
      *
+     * **One caller at a time.** The ordered ring below is single-producer, and
+     * this is the only thing that writes to it. That holds today because a
+     * service owns one `OSCReceiver` and therefore one receive thread, and
+     * because rebinding stops the old thread before the new one starts — but
+     * it is an invariant of this method rather than an accident of the caller,
+     * and a second concurrent caller would corrupt the ring silently.
+     *
      * @return true when the address was in the fixed namespace and the message
      *         was accepted. False means the message was not ours — an unknown
      *         address, or a known one carrying nothing usable — which is
@@ -169,11 +176,10 @@ class OscRouter {
     /// driven by fingers can do — so it reads as a flood rather than as use.
     std::uint64_t droppedCommandCount() const;
 
-  private:
-    /// 64 slots per word, rounded up.
-    static constexpr int kDirtyWords = (kOscSlotCount + 63) / 64;
-
-    /// Depth of the ordered ring, a power of two so the wrap is a mask.
+    /// Depth of the ordered ring, and the most discrete commands one drain
+    /// applies before yielding. Public because it is a characteristic of the
+    /// class rather than an implementation detail: it bounds both how much a
+    /// burst can carry and how long the message thread stays inside a drain.
     ///
     /// Sized above the whole discrete address space — every track's mute and
     /// solo, plus the transport's four — so a surface can state-dump every
@@ -185,6 +191,10 @@ class OscRouter {
     static_assert(kOrderedCapacity > (kMaxTrackNumber * 2) + 4,
                   "the ring must hold one press of every discrete address at once");
 
+  private:
+    /// 64 slots per word, rounded up.
+    static constexpr int kDirtyWords = (kOscSlotCount + 63) / 64;
+
     /// Applied in arrival order, ahead of nothing and behind the value table.
     struct OrderedCommand {
         OscCommand command;
@@ -194,6 +204,7 @@ class OscRouter {
     void submit(const OscCommand& command, float value);
     void scheduleDrain();
     void postDrain();
+    void requestFollowUpDrain();
     bool pushOrdered(const OscCommand& command, float value);
     void drainOrdered();
 

@@ -277,6 +277,48 @@ TEST_CASE("Play then stop lands stopped, and stop then play lands playing", "[os
     }
 }
 
+TEST_CASE("A drain yields even while commands keep arriving", "[osc][router]") {
+    // The per-drain cap is what stops a sender holding the message thread
+    // inside one drain by pushing as fast as it is consumed. A sink that
+    // re-sends on every apply is that sender, deterministically: without the
+    // cap the loop below never terminates.
+    //
+    // The cap is also why the follow-up drain must be posted rather than run
+    // through the configured scheduler — the default one applies inline when
+    // already on the message thread, which would recurse a stack level per
+    // batch instead of yielding. That path needs two threads to reach, so it
+    // is not reproducible here; what is testable is the bound it protects.
+    class ResendingSink : public OscCommandSink {
+      public:
+        void apply(const OscCommand& command, float value) override {
+            ++applied;
+            if (router != nullptr)
+                router->handleMessage(juce::OSCMessage("/magda/track/1/mute"));
+            juce::ignoreUnused(command, value);
+        }
+
+        OscRouter* router = nullptr;
+        int applied = 0;
+    };
+
+    auto owned = std::make_unique<ResendingSink>();
+    auto* sink = owned.get();
+    OscRouter router(std::move(owned));
+    sink->router = &router;
+    router.setDrainScheduler([]() {});
+
+    router.handleMessage(juce::OSCMessage("/magda/track/1/mute"));
+    router.drainPending();
+
+    // One drain, one batch: it stopped and handed the thread back.
+    REQUIRE(sink->applied == static_cast<int>(OscRouter::kOrderedCapacity));
+
+    // And the remainder the sink queued is still there for the next one.
+    sink->applied = 0;
+    router.drainPending();
+    REQUIRE(sink->applied > 0);
+}
+
 TEST_CASE("A flood of presses is bounded and counted", "[osc][router]") {
     // Unbounded ordering would be unbounded memory on an unauthenticated port.
     HeldRouter r;
