@@ -430,6 +430,10 @@ target_sources(magda_daw PRIVATE
     # Controller routing (issue #1050 -- Phase C)
     controllers/ControllerParamWriter.cpp
     controllers/ControllerRouter.cpp
+    # OSC control surfaces (issue #1757)
+    osc/OscAddress.cpp
+    osc/OscRouter.cpp
+    osc/OscService.cpp
     # Headers (listed for IDE visibility)
     AudioBridge.hpp
     session/SessionClipScheduler.hpp

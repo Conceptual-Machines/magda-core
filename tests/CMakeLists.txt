@@ -172,6 +172,10 @@ set(TEST_SOURCES
     test_automation_alias_targets.cpp
     # Controller data model tests (issue #1050 -- Phase A)
     test_binding_transform.cpp
+    # OSC control surfaces (issue #1757)
+    test_osc_address.cpp
+    test_osc_router.cpp
+    test_osc_command_sink.cpp
     # Controller registry tests (issue #1050 -- Phase B)
     test_controller_registry.cpp
     test_binding_registry.cpp
@@ -377,6 +381,8 @@ target_sources(magda_juce_tests PRIVATE
     test_session_slot_recording_juce.cpp
     test_input_monitor_track_routing_juce.cpp
     test_controller_track_level_write_juce.cpp
+    # OSC control surfaces (issue #1757): a live receive thread and real packets
+    test_osc_service_juce.cpp
     test_track_midi_recording_preview_juce.cpp
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp

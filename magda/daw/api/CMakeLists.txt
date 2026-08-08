@@ -15,6 +15,7 @@ target_sources(magda_daw PRIVATE
     plugin_api_live.cpp
     device_api_live.cpp
     groove_api_live.cpp
+    osc_command_sink_live.cpp
     remote_api.cpp
     remote_api_projection.cpp
     remote_handlers.cpp

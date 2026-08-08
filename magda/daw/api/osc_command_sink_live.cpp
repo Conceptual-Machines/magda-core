@@ -1,0 +1,148 @@
+#include "osc_command_sink_live.hpp"
+
+#include "../audio/controllers/ControllerParamWriter.hpp"
+#include "../core/ControlTarget.hpp"
+#include "../core/TrackInfo.hpp"
+#include "focused_api.hpp"
+#include "magda_api.hpp"
+#include "project_api.hpp"
+#include "track_api.hpp"
+#include "transport_api.hpp"
+
+namespace magda {
+
+using osc::OscCommand;
+using osc::OscCommandKind;
+
+OscCommandSinkLive::OscCommandSinkLive(MagdaApi& api, std::unique_ptr<ControllerParamWriter> writer)
+    : api_(api), writer_(std::move(writer)) {
+    jassert(writer_ != nullptr);
+}
+
+OscCommandSinkLive::~OscCommandSinkLive() = default;
+
+// ============================================================================
+// Addressing
+// ============================================================================
+
+TrackId OscCommandSinkLive::trackAtPosition(int position) const {
+    if (position < 1)
+        return INVALID_TRACK_ID;
+
+    // Mixer visibility rather than the raw track list: the strips the user can
+    // see are the ones a mixer template is counting, and a hidden track would
+    // otherwise consume a fader that appears to do nothing. This is the same
+    // filter `TrackManager::getVisibleTracks` applies, walked through the
+    // facade so the sink has no second route into the model — and so it stops
+    // at the strip it wants rather than building the whole list to index once.
+    int seen = 0;
+    for (const auto& track : api_.tracks().getTracks()) {
+        if (!track.isVisibleIn(ViewMode::Mix))
+            continue;
+        if (++seen == position)
+            return track.id;
+    }
+    return INVALID_TRACK_ID;
+}
+
+int OscCommandSinkLive::sendBusForPosition(TrackId trackId, int position) const {
+    const auto* track = api_.tracks().getTrack(trackId);
+    if (track == nullptr || position < 1 || position > static_cast<int>(track->sends.size()))
+        return -1;
+    return track->sends[static_cast<size_t>(position - 1)].busIndex;
+}
+
+bool OscCommandSinkLive::resolveToggle(float value, bool current) {
+    return value == osc::kOscToggleRequest ? !current : value != 0.0f;
+}
+
+void OscCommandSinkLive::writeLevel(const ControlTarget& target, float value) {
+    // The writer takes a resolved target; these are already concrete, so there
+    // is nothing for the alias/resolver machinery to do first.
+    ResolveResult resolved;
+    resolved.target = target;
+    resolved.resolved = true;
+    writer_->write(resolved, value);
+}
+
+// ============================================================================
+// Applying
+// ============================================================================
+
+void OscCommandSinkLive::apply(const OscCommand& command, float value) {
+    switch (command.kind) {
+        case OscCommandKind::TransportPlay:
+            api_.transport().play();
+            return;
+        case OscCommandKind::TransportStop:
+            api_.transport().stop();
+            return;
+        case OscCommandKind::TransportRecord:
+            api_.transport().setRecording(resolveToggle(value, api_.transport().isRecording()));
+            return;
+        case OscCommandKind::TransportLoop:
+            api_.transport().setLoopEnabled(resolveToggle(value, api_.transport().isLoopEnabled()));
+            return;
+        case OscCommandKind::TransportTempo:
+            // The facade clamps against the project's real tempo range; a
+            // surface sending 0 or 5000 is not this layer's to reinterpret.
+            api_.project().setTempo(value);
+            return;
+        case OscCommandKind::TransportPosition:
+            api_.transport().setPositionBeats(value);
+            return;
+
+        case OscCommandKind::MasterVolume:
+            writeLevel(ControlTarget::trackVolume(MASTER_TRACK_ID), value);
+            return;
+        case OscCommandKind::MasterPan:
+            writeLevel(ControlTarget::trackPan(MASTER_TRACK_ID), value);
+            return;
+
+        case OscCommandKind::FocusedMacro:
+            // OSC numbers macros from 1, the macro array from 0. With nothing
+            // focused this is a no-op inside the facade, which is the right
+            // answer for a knob the user has not pointed at anything yet.
+            api_.focused().setMacroValue(command.index - 1, value);
+            return;
+
+        case OscCommandKind::TrackVolume:
+        case OscCommandKind::TrackPan:
+        case OscCommandKind::TrackMute:
+        case OscCommandKind::TrackSolo:
+        case OscCommandKind::TrackSend:
+            break;  // handled below, once the position has a track behind it
+    }
+
+    const TrackId trackId = trackAtPosition(command.index);
+    if (trackId == INVALID_TRACK_ID)
+        return;  // a template with more strips than the project has tracks
+
+    switch (command.kind) {
+        case OscCommandKind::TrackVolume:
+            writeLevel(ControlTarget::trackVolume(trackId), value);
+            return;
+        case OscCommandKind::TrackPan:
+            writeLevel(ControlTarget::trackPan(trackId), value);
+            return;
+        case OscCommandKind::TrackMute:
+            if (const auto* track = api_.tracks().getTrack(trackId))
+                api_.tracks().setTrackMuted(trackId, resolveToggle(value, track->muted));
+            return;
+        case OscCommandKind::TrackSolo:
+            if (const auto* track = api_.tracks().getTrack(trackId))
+                api_.tracks().setTrackSoloed(trackId, resolveToggle(value, track->soloed));
+            return;
+        case OscCommandKind::TrackSend: {
+            const int bus = sendBusForPosition(trackId, command.subIndex);
+            if (bus >= 0)
+                writeLevel(ControlTarget::sendLevel(trackId, bus), value);
+            return;
+        }
+        default:
+            jassertfalse;  // the first switch returned for every other kind
+            return;
+    }
+}
+
+}  // namespace magda
