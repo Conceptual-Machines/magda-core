@@ -98,27 +98,23 @@ WarpCompileResult compileWarpMap(const std::vector<WarpMarker>& markers) {
     // function of. Storage order is not guaranteed either way
     // (AudioEvent::warpedSourceSeconds says so), so this is a sort rather than
     // a check.
+    //
+    // Ties on the warp side DESCENDING, which is the whole trick below. Two
+    // markers on one instant of the file cannot both be kept -- the source side
+    // has to increase strictly too, or a segment has no span and an infinite
+    // rate -- and ordering such a pair backwards is what makes a plain
+    // increasing subsequence unable to take both of them. So the second
+    // dimension is enforced by the sort rather than by a pass of its own, and
+    // the sort is fully determined: nothing here depends on what order the
+    // model happened to store two coincident markers in.
     std::sort(sorted.begin(), sorted.end(), [](const WarpMap::Point& a, const WarpMap::Point& b) {
-        return a.sourceSeconds < b.sourceSeconds;
+        if (a.sourceSeconds != b.sourceSeconds)
+            return a.sourceSeconds < b.sourceSeconds;
+
+        return a.warpSeconds > b.warpSeconds;
     });
 
-    // Coincident on the source side first. Two markers on one instant of the
-    // file are a segment with no span, which is an infinite rate; the earlier
-    // one is kept so that which survives does not depend on the order they were
-    // stored in.
-    std::vector<WarpMap::Point> distinct;
-    distinct.reserve(sorted.size());
-
-    for (const auto& point : sorted) {
-        if (!distinct.empty() && point.sourceSeconds <= distinct.back().sourceSeconds) {
-            ++result.droppedMarkers;
-            continue;
-        }
-
-        distinct.push_back(point);
-    }
-
-    // Then the largest set of them that runs forwards on the warp side too.
+    // The largest set of them that runs forwards on the warp side.
     //
     // Largest, rather than whatever a single forward pass happens to keep. A
     // greedy pass anchors on whatever it saw first, so one marker dragged far
@@ -128,17 +124,22 @@ WarpCompileResult compileWarpMap(const std::vector<WarpMarker>& markers) {
     // offending marker costs should be itself, and that is a longest increasing
     // subsequence.
     //
-    // Deterministic: ties resolve towards the subsequence with the smallest
-    // tail, so two compiles of one marker list keep the same markers.
+    // Over everything rather than over a deduplicated list, and that is not
+    // tidiness. Collapsing coincident markers first means guessing which of a
+    // pair to keep before knowing what either can chain to, and neither guess
+    // is safe: for markers at (0,5), (1,50), (1,2), (2,60), keeping the smaller
+    // warp strands both neighbours and yields two points where keeping the
+    // larger yields three. The descending tie above lets the subsequence choose
+    // for itself, and what it chooses is optimal.
     constexpr auto kNone = std::numeric_limits<std::size_t>::max();
 
     std::vector<std::size_t> tails;  // tails[k]: index ending the best run of length k+1
-    std::vector<std::size_t> previous(distinct.size(), kNone);
+    std::vector<std::size_t> previous(sorted.size(), kNone);
 
-    for (std::size_t i = 0; i < distinct.size(); ++i) {
-        const auto at = std::lower_bound(tails.begin(), tails.end(), distinct[i].warpSeconds,
+    for (std::size_t i = 0; i < sorted.size(); ++i) {
+        const auto at = std::lower_bound(tails.begin(), tails.end(), sorted[i].warpSeconds,
                                          [&](std::size_t candidate, double value) {
-                                             return distinct[candidate].warpSeconds < value;
+                                             return sorted[candidate].warpSeconds < value;
                                          });
 
         const auto length = static_cast<std::size_t>(at - tails.begin());
@@ -157,9 +158,9 @@ WarpCompileResult compileWarpMap(const std::vector<WarpMarker>& markers) {
 
     for (auto index = tails.empty() ? kNone : tails.back(), slot = tails.size(); index != kNone;
          index = previous[index])
-        points[--slot] = distinct[index];
+        points[--slot] = sorted[index];
 
-    result.droppedMarkers += static_cast<int>(distinct.size() - points.size());
+    result.droppedMarkers += static_cast<int>(sorted.size() - points.size());
 
     return result;
 }

@@ -103,14 +103,17 @@ struct WarpCompileResult {
 /**
  * @brief Compile @p markers into an invertible map.
  *
- * Sorts by source time, collapses markers sharing an instant of the file, and
- * keeps the largest set of what is left that runs forwards on the warp side.
+ * Sorts by source time and keeps the largest set of markers that runs forwards
+ * on both sides at once.
  *
  * Largest rather than first-come. A marker the user dragged past its
  * neighbours should cost itself, and a single forward pass does not deliver
  * that: it anchors on whatever it saw first, so one marker flung far ahead
  * survives and every marker behind it is dropped. What is kept here is a
  * longest increasing subsequence, so the offending marker is the one that goes.
+ *
+ * Which markers those are does not depend on the order the model stored them
+ * in, including for two markers sharing one instant of the file.
  *
  * The whole map is never refused. The markers that remain still describe
  * something, and a clip that loses its timing entirely is a worse answer than

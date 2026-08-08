@@ -39,6 +39,15 @@ std::optional<int> positiveIntOf(const juce::StringPairArray& metadata, const ch
     return std::nullopt;
 }
 
+/// @p key's value whatever it is, for the one field that has something else
+/// saying whether it means anything.
+std::optional<int> intOf(const juce::StringPairArray& metadata, const char* key) {
+    if (const auto value = valueOf(metadata, key))
+        return value->getIntValue();
+
+    return std::nullopt;
+}
+
 }  // namespace
 
 SourceLoopInfo loopInfoFrom(const juce::StringPairArray& metadata, double sampleRate,
@@ -57,9 +66,11 @@ SourceLoopInfo loopInfoFrom(const juce::StringPairArray& metadata, double sample
 
     // The chunk carries a root note and a flag saying whether it means
     // anything. A note that has not been marked as set is not a note, which is
-    // the chunk's own rule rather than a caution taken here.
+    // the chunk's own rule rather than a caution taken here -- and the flag is
+    // the whole of the rule, so a marked-as-set zero is note 0 rather than a
+    // silence. Raw here for that reason, where every other field filters.
     if (metadata[juce::WavAudioFormat::acidRootSet] == "1")
-        info.rootNote = positiveIntOf(metadata, juce::WavAudioFormat::acidRootNote);
+        info.rootNote = intOf(metadata, juce::WavAudioFormat::acidRootNote);
 
     // ---- The plainer keys AIFF and the fork's own files use -----------------
 

@@ -117,6 +117,17 @@ TEST_CASE("A root note counts only when the file marked it as set", "[engine][io
         REQUIRE(*info.rootNote == 60);
     }
 
+    SECTION("a marked-as-set zero is note zero, not a silence") {
+        // The flag is the whole of the chunk's rule, and 0 is a legal note.
+        metadata.set(juce::WavAudioFormat::acidRootSet, "1");
+        metadata.set(juce::WavAudioFormat::acidRootNote, "0");
+
+        const auto info = loopInfoFrom(metadata, kSampleRate, kTwoSeconds);
+
+        REQUIRE(info.rootNote.has_value());
+        REQUIRE(*info.rootNote == 0);
+    }
+
     SECTION("a file with no acid chunk falls back to its sampler chunk") {
         juce::StringPairArray sampler;
         sampler.set("MidiUnityNote", "48");

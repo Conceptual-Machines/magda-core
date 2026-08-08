@@ -186,6 +186,39 @@ TEST_CASE("Compiling refuses what it cannot invert", "[engine][clip][warp]") {
         REQUIRE(flung.map.points.back().warpSeconds == approx(3.0));
     }
 
+    SECTION("which of two markers on one instant survives is whichever chains") {
+        // Coincident on the source side, so at most one can be kept: keeping
+        // both would be a segment with no span and an infinite rate. Which one
+        // is not a guess that can be made before knowing what either reaches.
+        //
+        // Here the larger warp is the one that chains, and collapsing to the
+        // smaller first would strand both its neighbours and keep two points
+        // where three are available.
+        const auto pair =
+            magda::engine::compileWarpMap({{0.0, 5.0}, {1.0, 50.0}, {1.0, 2.0}, {2.0, 60.0}});
+
+        REQUIRE(pair.droppedMarkers == 1);
+        REQUIRE(pair.map.points.size() == 3);
+        REQUIRE(pair.map.points[1].warpSeconds == approx(50.0));
+
+        // And the other way round, where the smaller is the one that chains.
+        const auto other =
+            magda::engine::compileWarpMap({{0.0, 1.0}, {1.0, 50.0}, {1.0, 2.0}, {2.0, 3.0}});
+
+        REQUIRE(other.droppedMarkers == 1);
+        REQUIRE(other.map.points.size() == 3);
+        REQUIRE(other.map.points[1].warpSeconds == approx(2.0));
+    }
+
+    SECTION("and does not depend on the order they were stored in") {
+        const auto forwards =
+            magda::engine::compileWarpMap({{0.0, 5.0}, {1.0, 50.0}, {1.0, 2.0}, {2.0, 60.0}});
+        const auto backwards =
+            magda::engine::compileWarpMap({{2.0, 60.0}, {1.0, 2.0}, {1.0, 50.0}, {0.0, 5.0}});
+
+        REQUIRE(forwards.map == backwards.map);
+    }
+
     SECTION("compiling one list twice keeps the same markers") {
         const std::vector<magda::WarpMarker> awkward{
             {0.0, 0.0}, {1.0, 100.0}, {2.0, 1.0}, {3.0, 2.0}, {4.0, 3.0}};
