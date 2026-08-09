@@ -213,6 +213,8 @@ set(TEST_SOURCES
     test_remote_websocket_server.cpp
     test_remote_api_host.cpp
     test_device_api.cpp
+    # Rack and chain addressing at depth through the facade (issue #1993)
+    test_track_api_nested_racks.cpp
     test_automation_api_surface.cpp
     # Lua controller tests (issue #592 — MIDI dispatch)
     test_lua_controller.cpp
@@ -279,6 +281,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_clip_voice.cpp)
     list(APPEND TEST_SOURCES test_clip_voice_pool.cpp)
     list(APPEND TEST_SOURCES test_clip_stretch.cpp)
+    list(APPEND TEST_SOURCES test_clip_warp.cpp)
+    list(APPEND TEST_SOURCES test_transient_detector.cpp)
+    list(APPEND TEST_SOURCES test_source_loop_info.cpp)
 endif()
 
 # Create test executable
@@ -396,6 +401,8 @@ target_sources(magda_juce_tests PRIVATE
     test_midi_bridge_note_events_juce.cpp
     test_section_scoped_device_ids_juce.cpp
     test_remote_service_live_juce.cpp
+    # Path-addressed racks/chains against the real TrackManager (issue #1993)
+    test_track_api_nested_racks_live_juce.cpp
     test_remote_websocket_live_juce.cpp
     test_clip_inspector_juce.cpp
     test_multi_clip_resize_preview_juce.cpp
@@ -564,6 +571,10 @@ add_test(NAME convolution_device_juce
 # an initialised message system to be valid.
 add_test(NAME remote_service_live_juce
          COMMAND magda_juce_tests "Remote Service Live")
+
+# The facade's path-addressed rack/chain surface against the real TrackManager.
+add_test(NAME track_api_nested_racks_live_juce
+         COMMAND magda_juce_tests "Track API Nested Racks Live")
 
 # Both test executables link magda_daw, which links ONNX Runtime. On Windows the
 # loader only searches the exe's directory, the cwd, and PATH, so without a copy

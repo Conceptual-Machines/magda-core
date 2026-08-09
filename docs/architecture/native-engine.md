@@ -28,7 +28,7 @@ is. When the two disagree, the headers are right and this file is stale.
 | Retire stock TE plugin wrappers | [#1888](https://github.com/Conceptual-Machines/magda-core/issues/1888) | done |
 | Clip model: container from content | [#1901](https://github.com/Conceptual-Machines/magda-core/issues/1901) | done |
 | **Engine core: plan, executor, PDC** | [#1889](https://github.com/Conceptual-Machines/magda-core/issues/1889) | **all 10 slices done** |
-| **Arranger clip playback** | [#1890](https://github.com/Conceptual-Machines/magda-core/issues/1890) | **slices 1 to 4 of 7** |
+| **Arranger clip playback** | [#1890](https://github.com/Conceptual-Machines/magda-core/issues/1890) | **slices 1 to 5 of 7** |
 | Parameters, modifiers, macros, automation | [#1891](https://github.com/Conceptual-Machines/magda-core/issues/1891) | not started |
 | Rack graph: pins, summing, multi-out, nesting | [#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892) | not started |
 | External plugin hosting and hardware inserts | [#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893) | not started |
@@ -51,9 +51,9 @@ crossfading a plan swap ([#2019](https://github.com/Conceptual-Machines/magda-co
 Clips, slice by slice: the snapshot ([#2034](https://github.com/Conceptual-Machines/magda-core/issues/2034)),
 voices, spans and fades ([#2035](https://github.com/Conceptual-Machines/magda-core/issues/2035)),
 rate conversion, looping and reverse ([#2036](https://github.com/Conceptual-Machines/magda-core/issues/2036)),
-stretch and pitch ([#2037](https://github.com/Conceptual-Machines/magda-core/issues/2037)).
-Still open: warp ([#2038](https://github.com/Conceptual-Machines/magda-core/issues/2038)),
-MIDI clips ([#2039](https://github.com/Conceptual-Machines/magda-core/issues/2039)),
+stretch and pitch ([#2037](https://github.com/Conceptual-Machines/magda-core/issues/2037)),
+warp, beat detection and loop info ([#2038](https://github.com/Conceptual-Machines/magda-core/issues/2038)).
+Still open: MIDI clips ([#2039](https://github.com/Conceptual-Machines/magda-core/issues/2039)),
 null-diff corpus ([#2040](https://github.com/Conceptual-Machines/magda-core/issues/2040)).
 
 ---
@@ -375,7 +375,7 @@ differently:
 | auto tempo | advances by the beats that have passed, times a beat of the file |
 | analog pitch | advances by the ratio the model already folded the pitch into, with no stretcher |
 | a speed ramp fade | the moment itself is warped near the clip's edge, and the rate with it |
-| warp ([#2038](https://github.com/Conceptual-Machines/magda-core/issues/2038)) | another answer from the same place |
+| warp markers | advances through a compiled map whose rate changes at every marker |
 
 Auto tempo is the one worth reading twice. Its ratio is the project's tempo over the file's own
 and moves with the tempo curve, so it cannot be resolved to seconds ahead of a block. What saves
@@ -383,6 +383,46 @@ it is that the integral of that ratio is beats: the material an instant has cons
 beats have passed since the event began, times what a beat of the file is worth. That is why the
 clock publishes both faces of one instant, and why there is no second tempo map on the audio
 thread.
+
+### Warp
+
+Slice 5 ([#2038](https://github.com/Conceptual-Machines/magda-core/issues/2038)), and it added
+no machinery at all below the position map: the voice, the stretchers and the reading chain are
+untouched by it. A block already asks `readingPositionAt` at both its ends and hands the
+difference to the stretcher, so a ratio that changes at every marker costs nothing that a moving
+auto-tempo ratio did not already cost.
+
+The model holds warp as `(sourceTime, warpTime)` pairs, piecewise linear, slope 1 outside the
+marker range. That direction answers where a bit of file lands musically, which is what the
+editors ask. Playback asks the inverse, so `clip/WarpMap.hpp` compiles one: sorted, strictly
+increasing on both sides, and with whatever could not be part of a monotonic map dropped at
+compile time with a diagnostic rather than divided by on the audio thread.
+
+Three things compose with it, and each is decided in one place:
+
+- **Reverse** stays a coordinate change, as it is everywhere else in this layer. The map is not
+  mirrored; a reversed event walks it backwards from the far end of what it reads and mirrors the
+  answer. Mirroring the map instead would need the length of the region the event reads, which is
+  itself an answer from the map. The incumbent cannot do reverse and warp together at all -- it
+  bakes warp into a rendered proxy file and can only bake one thing per clip, so
+  `WaveAudioClip::createRenderJob` returns the reverse job and the markers are silently lost.
+- **Looping** is the one case where the reading chain cannot do its own tiling. Folding below the
+  stream works because the reading advances linearly, and under warp it does not: a position that
+  had already been through the map would fold in the wrong domain and every pass after the first
+  would play straight. So a warped loop folds in warp time, above the map, and the tiling below is
+  switched off. The reading then saws back at each wrap rather than climbing, which costs one seek
+  per pass.
+- **Stretcher sizing** reads the map's steepest segment rather than its average. A warped event
+  has no single rate, and the pre-roll has to cover the fastest stretch of it.
+
+Where the markers come from when the user has not placed them is the other half of the slice.
+`analysis/TransientDetector.hpp` is the incumbent's detector reproduced coefficient for
+coefficient -- envelope followers, a differentiator, a threshold from the sensitivity, a spacing
+rule -- because a detector that found different transients would move every auto-detected marker
+in every project that already has one. `io/SourceLoopInfo.hpp` is the third piece and is not an
+analysis at all: a file's own tempo and beat count are an acid chunk that JUCE already parses, so
+what the model seeds its interpretation from is a parse over a metadata map, testable without a
+file.
 
 A block then reads exactly `round(P(end)) - round(P(start))` samples and hands them to the
 stretcher to come back as the block's own length, so the ratio a block runs at is whatever its
@@ -433,9 +473,11 @@ Worth knowing before reading the code and wondering where something is:
   A `Device` op resolves to whatever the host hands the store. Nothing hosts VST3 yet.
 - **Launcher and recording** ([#1894](https://github.com/Conceptual-Machines/magda-core/issues/1894),
   [#1895](https://github.com/Conceptual-Machines/magda-core/issues/1895)).
-- **Warp and MIDI clips** ([#2038](https://github.com/Conceptual-Machines/magda-core/issues/2038),
-  [#2039](https://github.com/Conceptual-Machines/magda-core/issues/2039)). Speed, pitch and auto
-  tempo play; warp markers are carried in the snapshot and nothing reads them yet.
+- **MIDI clips** ([#2039](https://github.com/Conceptual-Machines/magda-core/issues/2039)). Audio
+  clips play; a `ClipMidi` op is compiled and produces nothing yet.
+- **Wiring the two analyses to the model.** The native transient detector and loop-info parse
+  exist and are tested; `WarpMarkerManager` and the clip model still get both from Tracktion.
+  Swapping them over belongs with switching the engine on rather than with implementing it.
 - **The null-diff harness** ([#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896)),
   which is what decides the engine is right rather than merely tested: render the same project
   through both engines and assert a near-null difference.

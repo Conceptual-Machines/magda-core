@@ -18,6 +18,7 @@ add_library(magda_engine STATIC
     clip/ClipVoicePool.cpp
     clip/EventPlacement.cpp
     clip/FadeCurves.cpp
+    clip/WarpMap.cpp
     clip/ClipSnapshot.hpp
     clip/ClipSnapshotCompiler.hpp
     clip/ClipSnapshotDump.hpp
@@ -29,6 +30,7 @@ add_library(magda_engine STATIC
     clip/ClipVoicePool.hpp
     clip/EventPlacement.hpp
     clip/FadeCurves.hpp
+    clip/WarpMap.hpp
     plan/RenderPlan.cpp
     plan/PlanCompiler.cpp
     plan/PlanDiff.cpp
@@ -66,7 +68,11 @@ add_library(magda_engine STATIC
     transport/TransportState.hpp
     transport/TransportClock.hpp
     transport/ClickGenerator.hpp
+    analysis/TransientDetector.cpp
+    analysis/TransientDetector.hpp
     io/AudioFileReader.cpp
+    io/SourceLoopInfo.cpp
+    io/SourceLoopInfo.hpp
     io/PrefetchStream.cpp
     io/PrefetchThread.cpp
     io/SourceReaders.cpp
@@ -137,7 +143,8 @@ endforeach()
 # Engine. Quoted includes may only reach the model layer ("core/...") or the
 # engine's own headers.
 
-set(MAGDA_ENGINE_ALLOWED_QUOTED_PREFIXES "core/" "clip/" "plan/" "exec/" "transport/" "io/" "tap/")
+set(MAGDA_ENGINE_ALLOWED_QUOTED_PREFIXES
+    "core/" "clip/" "plan/" "exec/" "transport/" "io/" "tap/" "analysis/")
 
 file(GLOB_RECURSE MAGDA_ENGINE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"

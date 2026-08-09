@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <unordered_map>
 
+#include "clip/ClipStretcher.hpp"
 #include "core/ClipFades.hpp"
 #include "core/ClipOcclusion.hpp"
 
@@ -230,8 +231,40 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
                 playback.speedRatio = event.speedRatio;
                 playback.timeStretchMode = event.getEffectiveTimeStretchMode();
                 playback.analogPitch = event.isAnalogPitchActive();
+                // Inverted, and known to be invertible before anything plays it
+                // (WarpMap.hpp). Nothing here mirrors it for a reversed event:
+                // reverse stays a read-time coordinate change in
+                // EventPlacement.hpp. A marker that cannot be part of a
+                // monotonic map is dropped here; saying how many is the
+                // difference between a clip whose timing is not what its editor
+                // shows and one that says so.
+                //
+                // The flag travels beside the map because an event that warps
+                // with no markers is still a warped event: identity as a map,
+                // and on the beat face with a stretcher as an interpretation.
                 playback.warpEnabled = event.warpEnabled;
-                playback.warpMarkers = event.warpMarkers;
+
+                if (event.warpEnabled) {
+                    auto warp = compileWarpMap(event.warpMarkers);
+                    playback.warp = std::move(warp.map);
+
+                    if (warp.droppedMarkers > 0)
+                        snapshot.diagnostics.push_back(
+                            label + "event " + std::to_string(event.id) + " has " +
+                            std::to_string(warp.droppedMarkers) +
+                            " warp marker(s) that do not run forwards, so they are dropped and "
+                            "that stretch of the clip plays at its neighbours' rate");
+
+                    // The steepest segment is what the clip actually asks to be
+                    // played at somewhere inside it, and a stretcher will not go
+                    // there (ClipStretcher.hpp). The average the pre-roll is
+                    // sized against would not notice.
+                    if (playback.warp.maxSourcePerWarp() > kMaxStretchRate)
+                        snapshot.diagnostics.push_back(
+                            label + "event " + std::to_string(event.id) +
+                            " has warp markers asking for a rate past what a stretcher will run "
+                            "at, so that stretch of it plays at the limit instead");
+                }
 
                 playback.autoPitch = event.autoPitch;
                 playback.autoPitchMode = event.autoPitchMode;

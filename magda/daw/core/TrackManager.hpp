@@ -486,6 +486,13 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setChainSolo(const ChainNodePath& chainPath, bool solo);
     void setChainVolume(const ChainNodePath& chainPath, float volume);
     void setChainPan(const ChainNodePath& chainPath, float pan);
+    // These two completed the set (#1993). Every other chain setter already had
+    // a path form; without them the facade could reach a nested chain's mute and
+    // volume but not its name or output, which is not a line anyone would have
+    // drawn on purpose. The triple-based forms above now delegate here, so there
+    // is one body rather than two that can drift.
+    void setChainOutput(const ChainNodePath& chainPath, int outputIndex);
+    void setChainName(const ChainNodePath& chainPath, const juce::String& name);
     void setChainExpanded(TrackId trackId, RackId rackId, ChainId chainId, bool expanded);
     void setRackVolume(TrackId trackId, RackId rackId, float volume);
     void setRackVolume(const ChainNodePath& rackPath, float volume);
