@@ -7,6 +7,10 @@ namespace magda {
 // ============================================================================
 
 bool BindingSource::operator==(const BindingSource& other) const {
+    if (kind != other.kind)
+        return false;
+    if (kind == BindingSourceKind::Osc)
+        return oscAddress == other.oscAddress && oscArgIndex == other.oscArgIndex;
     return portKey == other.portKey && controllerId == other.controllerId &&
            msgType == other.msgType && channel == other.channel && number == other.number;
 }
@@ -16,10 +20,19 @@ bool BindingSource::operator==(const BindingSource& other) const {
 // ============================================================================
 
 bool Binding::isValid() const {
-    // A source needs an addressable key: a port (Learn-created) or a
+    if (id.isNull())
+        return false;
+
+    if (source.isOsc()) {
+        // The address is the whole identity, and an OSC address begins with a
+        // slash. A stored address that does not is not something any surface
+        // can send, so it would be a binding that never fires.
+        return source.oscAddress.startsWithChar('/') && source.oscArgIndex >= 0;
+    }
+
+    // A MIDI source needs an addressable key: a port (Learn-created) or a
     // registered Controller (scripted-surface-created).
-    const bool hasAddress = source.portKey.isNotEmpty() || !source.controllerId.isNull();
-    return !id.isNull() && hasAddress;
+    return source.portKey.isNotEmpty() || !source.controllerId.isNull();
 }
 
 // ============================================================================
@@ -114,14 +127,22 @@ juce::var encodeBinding(const Binding& b) {
     auto* obj = new juce::DynamicObject();
     obj->setProperty("id", b.id.toDashedString());
 
-    // Source
+    // Source. The MIDI shape is written unchanged and without a "kind", so a
+    // config saved by this build still loads in an older one — the OSC fields
+    // are the only thing that needs the discriminator.
     auto* srcObj = new juce::DynamicObject();
-    if (b.source.portKey.isNotEmpty())
-        srcObj->setProperty("portKey", b.source.portKey);
-    srcObj->setProperty("controllerId", b.source.controllerId.toDashedString());
-    srcObj->setProperty("msgType", msgTypeToString(b.source.msgType));
-    srcObj->setProperty("channel", b.source.channel);
-    srcObj->setProperty("number", b.source.number);
+    if (b.source.isOsc()) {
+        srcObj->setProperty("kind", "osc");
+        srcObj->setProperty("oscAddress", b.source.oscAddress);
+        srcObj->setProperty("oscArgIndex", b.source.oscArgIndex);
+    } else {
+        if (b.source.portKey.isNotEmpty())
+            srcObj->setProperty("portKey", b.source.portKey);
+        srcObj->setProperty("controllerId", b.source.controllerId.toDashedString());
+        srcObj->setProperty("msgType", msgTypeToString(b.source.msgType));
+        srcObj->setProperty("channel", b.source.channel);
+        srcObj->setProperty("number", b.source.number);
+    }
     obj->setProperty("source", juce::var(srcObj));
 
     // Target (encode to JSON string, store as string)
@@ -166,12 +187,21 @@ std::optional<Binding> decodeBinding(const juce::var& v) {
     if (!srcObj)
         return std::nullopt;
 
-    if (srcObj->hasProperty("portKey"))
-        b.source.portKey = srcObj->getProperty("portKey").toString();
-    b.source.controllerId = juce::Uuid(srcObj->getProperty("controllerId").toString());
-    b.source.msgType = msgTypeFromString(srcObj->getProperty("msgType").toString());
-    b.source.channel = static_cast<int>(srcObj->getProperty("channel"));
-    b.source.number = static_cast<int>(srcObj->getProperty("number"));
+    // Absent "kind" means a binding written before OSC existed, which was
+    // always MIDI.
+    if (srcObj->getProperty("kind").toString() == "osc") {
+        b.source.kind = BindingSourceKind::Osc;
+        b.source.oscAddress = srcObj->getProperty("oscAddress").toString();
+        if (srcObj->hasProperty("oscArgIndex"))
+            b.source.oscArgIndex = static_cast<int>(srcObj->getProperty("oscArgIndex"));
+    } else {
+        if (srcObj->hasProperty("portKey"))
+            b.source.portKey = srcObj->getProperty("portKey").toString();
+        b.source.controllerId = juce::Uuid(srcObj->getProperty("controllerId").toString());
+        b.source.msgType = msgTypeFromString(srcObj->getProperty("msgType").toString());
+        b.source.channel = static_cast<int>(srcObj->getProperty("channel"));
+        b.source.number = static_cast<int>(srcObj->getProperty("number"));
+    }
 
     // Target
     auto targetOpt = decodeTarget(obj->getProperty("target").toString());

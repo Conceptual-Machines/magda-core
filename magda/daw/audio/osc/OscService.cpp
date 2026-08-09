@@ -11,13 +11,35 @@ constexpr int kMaxBundleDepth = 8;
 
 }  // namespace
 
-OscService::OscService(std::unique_ptr<OscRouter> router) : router_(std::move(router)) {
+OscService::OscService(std::unique_ptr<OscRouter> router, RegistryAttachment attach)
+    : router_(std::move(router)), attachToRegistry_(attach == RegistryAttachment::Attach) {
     jassert(router_ != nullptr);
+    if (attachToRegistry_) {
+        BindingRegistry::getInstance().addListener(this);
+        refreshBindings();
+    }
 }
 
 OscService::~OscService() {
     Config::getInstance().removeListener(this);
+    if (attachToRegistry_)
+        BindingRegistry::getInstance().removeListener(this);
     close();
+}
+
+void OscService::refreshBindings() {
+    auto& registry = BindingRegistry::getInstance();
+    auto bindings = registry.bindings(BindingScope::Global);
+    auto project = registry.bindings(BindingScope::Project);
+    bindings.insert(bindings.end(), project.begin(), project.end());
+    router_->updateBindings(bindings);
+}
+
+void OscService::bindingRegistryChanged(BindingScope /*scope*/) {
+    // Both scopes feed one route table, so which one moved does not matter —
+    // and rebuilding the whole thing is what keeps a removed binding from
+    // outliving its row.
+    refreshBindings();
 }
 
 // ============================================================================

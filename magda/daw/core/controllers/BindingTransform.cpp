@@ -112,4 +112,24 @@ float applyToggle(int rawValue, ToggleState& state) {
     return state.on ? 1.0f : 0.0f;
 }
 
+// ============================================================================
+// applyModeNormalized
+// ============================================================================
+
+TransformOutput applyModeNormalized(BindingMode mode, float normalized, ToggleState& state) {
+    const float clamped = juce::jlimit(0.0f, 1.0f, normalized);
+
+    if (mode == BindingMode::Toggle) {
+        // Reuses the MIDI edge logic rather than restating it, by handing it a
+        // value on the same side of its threshold. Toggle only asks which side
+        // of half-way the control is, so nothing is lost in the conversion and
+        // the two paths cannot drift apart.
+        return {true, applyToggle(clamped >= 0.5f ? 127 : 0, state)};
+    }
+
+    // Absolute, and the relative modes with it — see the header for why a
+    // value that arrives normalized has no delta to decode.
+    return {true, clamped};
+}
+
 }  // namespace magda

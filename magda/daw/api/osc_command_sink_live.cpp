@@ -4,6 +4,10 @@
 #include "../core/ControlTarget.hpp"
 #include "../core/MixerStripOrder.hpp"
 #include "../core/TrackInfo.hpp"
+#include "../core/aliases/AliasRegistry.hpp"
+#include "../core/aliases/ChainContext.hpp"
+#include "../core/aliases/ResolverRegistry.hpp"
+#include "../core/aliases/TargetResolver.hpp"
 #include "focused_api.hpp"
 #include "magda_api.hpp"
 #include "project_api.hpp"
@@ -137,6 +141,42 @@ void OscCommandSinkLive::apply(const OscCommand& command, float value) {
             jassertfalse;  // the first switch returned for every other kind
             return;
     }
+}
+
+// ============================================================================
+// OscBindingSinkLive
+// ============================================================================
+
+OscBindingSinkLive::OscBindingSinkLive(std::unique_ptr<ControllerParamWriter> writer)
+    : writer_(std::move(writer)) {
+    jassert(writer_ != nullptr);
+}
+
+OscBindingSinkLive::~OscBindingSinkLive() = default;
+
+void OscBindingSinkLive::apply(const Binding& binding, float value) {
+    if (writer_ == nullptr)
+        return;
+
+    auto& state = toggleState_[binding.id.toDashedString()];
+
+    // The value arrives already normalized, so it takes the float entry point
+    // rather than being quantised through the 7-bit one.
+    const auto out = applyModeNormalized(binding.mode, value, state);
+    const float curved = applyCurve(binding.range.curve, out.value);
+    const float finalValue = applyRange(binding.range, curved);
+
+    DefaultChainContext ctx;
+    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
+    const auto resolved = resolver.resolve(binding.target);
+    if (!resolved.ok()) {
+        // An alias or resolver that names nothing right now — a device that has
+        // been removed, a focused-device target with nothing focused. Not an
+        // error: the binding is still valid and will resolve again.
+        return;
+    }
+
+    writer_->write(resolved, finalValue);
 }
 
 }  // namespace magda

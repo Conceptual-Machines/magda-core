@@ -4,11 +4,15 @@
 
 #include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <utility>
+#include <vector>
 
+#include "../../core/controllers/Binding.hpp"
 #include "osc/OscAddress.hpp"
 
 namespace magda::osc {
@@ -36,6 +40,86 @@ class OscCommandSink {
      *                 1 for a trigger that fired.
      */
     virtual void apply(const OscCommand& command, float value) = 0;
+};
+
+// ============================================================================
+// OscBindingSink
+// ============================================================================
+
+/**
+ * @brief Where a bound OSC value is applied.
+ *
+ * Separate from `OscCommandSink` because a binding carries its own mode,
+ * range and curve, and resolves through the alias/resolver machinery — none of
+ * which the fixed namespace has. Both are called on the message thread.
+ */
+class OscBindingSink {
+  public:
+    virtual ~OscBindingSink() = default;
+
+    /// @param value The surface's value, normalized and clamped to [0,1],
+    ///              before the binding's own mode / curve / range are applied.
+    virtual void apply(const Binding& binding, float value) = 0;
+};
+
+// ============================================================================
+// OscLearnCapture
+// ============================================================================
+
+/**
+ * @brief The control a learn gesture caught, ready to become a binding source.
+ *
+ * The OSC counterpart of `LearnCapture`. Produced on the receive thread and
+ * delivered on the message thread, same as the MIDI one.
+ */
+struct OscLearnCapture {
+    juce::String address;
+    int argIndex = 0;    ///< Which argument carried the value.
+    float value = 0.0f;  ///< What it was at the moment of capture.
+};
+
+// ============================================================================
+// OscBindingRoutes
+// ============================================================================
+
+/**
+ * @brief The OSC bindings in force, with a pending value for each.
+ *
+ * Built on the message thread whenever the binding registry changes, then
+ * published whole. The receive thread takes a `shared_ptr` copy — a reference
+ * count bump, no lock and no allocation — and reads through it.
+ *
+ * The pending values live *in here* rather than in the router, and that is the
+ * point. A slot index only means anything relative to the list it was resolved
+ * against, so an index and its value have to be interpreted against the same
+ * snapshot or a re-bind could land one control's value on another's parameter.
+ * Keeping both together makes that impossible to express: a value written into
+ * a snapshot that has since been replaced is simply dropped along with it,
+ * which for a fader mid-gesture is one lost update at the moment the user
+ * edited their bindings.
+ */
+struct OscBindingRoutes {
+    struct Entry {
+        juce::String address;
+        int argIndex = 0;
+        Binding binding;
+    };
+
+    /// Sorted by address, so a lookup is a binary search and the bindings
+    /// sharing one address are a contiguous run.
+    std::vector<Entry> entries;
+
+    /// Latest unapplied value per entry, and which entries have one.
+    std::unique_ptr<std::atomic<float>[]> values;
+    std::unique_ptr<std::atomic<std::uint64_t>[]> dirty;
+    std::size_t dirtyWords = 0;
+
+    /// Build from the bindings in force. Anything that is not a valid OSC
+    /// source is skipped rather than rejected — the registry holds both kinds.
+    static std::shared_ptr<OscBindingRoutes> build(const std::vector<Binding>& bindings);
+
+    /// The half-open range of entries matching `address`, or an empty range.
+    std::pair<std::size_t, std::size_t> findRange(juce::StringRef address) const;
 };
 
 // ============================================================================
@@ -102,14 +186,16 @@ std::optional<float> oscValueFor(const OscCommand& command, const juce::OSCMessa
  *
  * ## Threading
  *
- * `handleMessage` runs on the OSC receive thread. It takes no lock and, apart
- * from the one `callAsync` that carries a drain to the message thread, it
- * allocates nothing: parsing is a scan over the address bytes, and publishing
- * is a store plus an atomic bit. Because at most one drain is outstanding at a
- * time, that single allocation is bounded by the drain rate rather than by the
- * message rate — a surface sending faster cannot make the receive thread
- * allocate more. A slow or blocked message thread makes MAGDA coarser, never
- * the network thread slower.
+ * `handleMessage` runs on the OSC receive thread. Ordinary routing takes no
+ * lock and, apart from the one `callAsync` that carries a drain to the message
+ * thread, it allocates nothing: parsing is a scan over the address bytes, and
+ * publishing is a store plus an atomic bit. An armed learn session briefly
+ * locks while claiming its one capture so cancellation can safely happen from
+ * another thread. Because at most one drain is outstanding at a time, the
+ * drain allocation is bounded by the drain rate rather than by the message
+ * rate — a surface sending faster cannot make the receive thread allocate
+ * more. A slow or blocked message thread makes MAGDA coarser, never the network
+ * thread slower.
  *
  * Nothing here touches the audio thread; parameter writes reach it through the
  * same host-write path the MIDI control surfaces use.
@@ -132,11 +218,10 @@ class OscRouter {
      * it is an invariant of this method rather than an accident of the caller,
      * and a second concurrent caller would corrupt the ring silently.
      *
-     * @return true when the address was in the fixed namespace and the message
-     *         was accepted. False means the message was not ours — an unknown
-     *         address, or a known one carrying nothing usable — which is
-     *         information for a caller that wants to offer it to bindings, not
-     *         an error.
+     * @return true when the message was accepted. False means either that its
+     *         address was unknown or that a reserved fixed-namespace address
+     *         carried no usable value. Reserved addresses are never offered to
+     *         learn or bindings, regardless of this return value.
      */
     bool handleMessage(const juce::OSCMessage& message);
 
@@ -151,6 +236,51 @@ class OscRouter {
 
     /** Replace the sink. Message thread only, and not while a drain is running. */
     void setSink(std::unique_ptr<OscCommandSink> sink);
+
+    /** Where bound values are applied. Message thread only, as above. */
+    void setBindingSink(std::unique_ptr<OscBindingSink> sink);
+
+    /**
+     * @brief Publish the OSC bindings now in force.
+     *
+     * Message thread only. Called whenever the binding registry changes; the
+     * receive thread picks the new set up on its next message without
+     * synchronising with anything.
+     *
+     * Bindings are consulted only for addresses the fixed namespace declines,
+     * so `/magda/…` cannot be shadowed by one. That is deliberate: those
+     * addresses are a documented contract, and a binding that quietly took one
+     * over would make a stock template stop working with no way to see why.
+     */
+    void updateBindings(const std::vector<Binding>& bindings);
+
+    // ========================================================================
+    // Learn
+    // ========================================================================
+
+    using LearnCallback = std::function<void(const OscLearnCapture&)>;
+
+    /**
+     * @brief Capture the next control a surface moves.
+     *
+     * Any session in progress is cancelled first. The next message carrying a
+     * readable number fires `onCaptured` on the message thread, and is consumed
+     * rather than routed — wiggling a fader to learn it should not also move
+     * whatever it is currently bound to.
+     *
+     * Addresses in the fixed namespace are not captured. They already do
+     * something, that something is a documented contract, and binding one would
+     * mean the same gesture both moving a track fader and driving a parameter.
+     * A surface whose controls sit on `/magda/…` is already mapped.
+     *
+     * May be called from any thread.
+     */
+    void beginLearnSession(LearnCallback onCaptured);
+
+    /** Cancel without firing the callback. Safe when nothing is active. */
+    void cancelLearnSession();
+
+    bool isLearning() const;
 
     /**
      * @brief How a pending drain reaches the message thread.
@@ -208,8 +338,33 @@ class OscRouter {
     bool pushOrdered(const OscCommand& command, float value);
     void drainOrdered();
 
+    /// nullopt when the address is outside the fixed namespace; otherwise the
+    /// bool says whether its payload was accepted. A recognized address with an
+    /// unusable payload is still reserved and must not fall through to learn or
+    /// bindings.
+    std::optional<bool> handleFixedNamespace(const juce::OSCMessage& message);
+    bool handleBindings(const juce::OSCMessage& message);
+    bool handleLearn(const juce::OSCMessage& message);
+    void drainBindings();
+
+    struct LearnState {
+        LearnCallback callback;
+    };
+
+    std::unique_ptr<LearnState> learn_;
+    /// Fast-path flag: ordinary routing avoids taking `learnLock_` when no
+    /// learn session is armed.
+    std::atomic<bool> learning_{false};
+    /// Guards the lifetime and callback held by `learn_`.
+    juce::CriticalSection learnLock_;
+
     std::unique_ptr<OscCommandSink> sink_;
+    std::unique_ptr<OscBindingSink> bindingSink_;
     std::function<void()> scheduler_;
+
+    /// Swapped whole on the message thread, read through a shared_ptr copy on
+    /// the receive thread. Null until bindings are first published.
+    std::shared_ptr<OscBindingRoutes> bindingRoutes_;
 
     /// Latest unapplied value per address. Written by the receive thread, read
     /// by the drain; a torn read is impossible and a stale one is corrected by

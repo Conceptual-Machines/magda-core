@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "../../core/Config.hpp"
+#include "../../core/controllers/BindingRegistry.hpp"
 #include "osc/OscRouter.hpp"
 
 namespace magda::osc {
@@ -40,9 +41,22 @@ namespace magda::osc {
  * rather than dropping every connected surface.
  */
 class OscService : private ConfigListener,
+                   private BindingRegistryListener,
                    private juce::OSCReceiver::Listener<juce::OSCReceiver::RealtimeCallback> {
   public:
-    explicit OscService(std::unique_ptr<OscRouter> router);
+    /**
+     * @brief Whether this service tracks the global binding registry.
+     *
+     * The application wants `Attach`: bindings live in one registry shared with
+     * the MIDI surfaces, and the router has to follow it. A test usually wants
+     * `Detach` and to drive `OscRouter::updateBindings` itself, so it is not
+     * reading and writing a process-wide singleton to say something about one
+     * address.
+     */
+    enum class RegistryAttachment : std::uint8_t { Attach, Detach };
+
+    explicit OscService(std::unique_ptr<OscRouter> router,
+                        RegistryAttachment attach = RegistryAttachment::Attach);
     ~OscService() override;
 
     OscService(const OscService&) = delete;
@@ -79,8 +93,19 @@ class OscService : private ConfigListener,
         return *router_;
     }
 
+    /**
+     * @brief Re-read the OSC bindings from the registry and hand them to the
+     *        router.
+     *
+     * Message thread only. Called on every registry change, and once when the
+     * service starts so a project's saved bindings are live before the first
+     * message arrives.
+     */
+    void refreshBindings();
+
   private:
     void configChanged() override;
+    void bindingRegistryChanged(BindingScope scope) override;
 
     // Realtime callbacks: these run on the receive thread, not the message
     // thread. Everything they touch is in OscRouter and lock-free by design.
@@ -116,6 +141,7 @@ class OscService : private ConfigListener,
     int requestedPort_ = 0;
     int boundPort_ = 0;
     juce::String boundAddress_;
+    bool attachToRegistry_ = true;
 };
 
 }  // namespace magda::osc

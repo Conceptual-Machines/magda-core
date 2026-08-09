@@ -80,7 +80,10 @@ struct Harness {
         router = ownedRouter.get();
         // Hold the drains so the test decides when they run, on its own thread.
         router->setDrainScheduler([]() {});
-        service = std::make_unique<OscService>(std::move(ownedRouter));
+        // Detached from the binding registry: these tests are about the socket,
+        // and the registry is a process-wide singleton other tests share.
+        service = std::make_unique<OscService>(std::move(ownedRouter),
+                                               OscService::RegistryAttachment::Detach);
     }
 
     /// UDP on loopback is effectively immediate; the deadline exists so a

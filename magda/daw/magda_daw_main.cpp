@@ -378,8 +378,12 @@ class MagdaDAWApplication : public JUCEApplication {
             auto sink = std::make_unique<magda::OscCommandSinkLive>(
                 daw_engine_->getMagdaApi(),
                 std::make_unique<magda::DefaultControllerParamWriter>(*audioBridge));
-            oscService_ = std::make_unique<magda::osc::OscService>(
-                std::make_unique<magda::osc::OscRouter>(std::move(sink)));
+            auto router = std::make_unique<magda::osc::OscRouter>(std::move(sink));
+            // Bound addresses go through the same writer, so a parameter driven
+            // from an OSC fader lands exactly where a MIDI knob would.
+            router->setBindingSink(std::make_unique<magda::OscBindingSinkLive>(
+                std::make_unique<magda::DefaultControllerParamWriter>(*audioBridge)));
+            oscService_ = std::make_unique<magda::osc::OscService>(std::move(router));
             if (oscService_->applyConfig())
                 juce::Logger::writeToLog("OSC listening on " + oscService_->boundAddress() + ":" +
                                          juce::String(oscService_->boundPort()));

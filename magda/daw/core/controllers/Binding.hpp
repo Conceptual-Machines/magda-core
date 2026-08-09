@@ -40,9 +40,19 @@ enum class BindingCurve {
 // ============================================================================
 
 /**
- * @brief Identifies which MIDI message on which controller triggers a binding.
+ * @brief Which transport a source speaks.
  *
- * A source can be addressed two ways:
+ * One `Binding` type rather than two parallel ones, because everything past
+ * the source is shared: the same targets, the same mode / range / curve, the
+ * same two persistence scopes, the same learn gesture. Only the question "what
+ * event triggers this" differs, and that is exactly what this selects.
+ */
+enum class BindingSourceKind : std::uint8_t { Midi, Osc };
+
+/**
+ * @brief Identifies which incoming event triggers a binding.
+ *
+ * A MIDI source can be addressed two ways:
  *
  *  - portKey: a live MIDI input identifier or display name (matched via
  *    magda::midi::matches). Used by MIDI Learn — project-scoped bindings
@@ -57,13 +67,31 @@ enum class BindingCurve {
  * surfaces that also want a port-specific fallback.
  *
  * channel: 1..16, or 0 = any channel.
+ *
+ * An OSC source is addressed by the literal address the surface sends, plus
+ * which of the message's arguments carries the value. There is no port and no
+ * controller: OSC arrives on one socket from whoever is pointed at it, so the
+ * address is the whole of the identity. It is matched exactly rather than as
+ * an OSC address *pattern* — a learn gesture captures one control, and a
+ * stored wildcard would silently bind every control that happened to match it.
  */
 struct BindingSource {
+    BindingSourceKind kind = BindingSourceKind::Midi;
+
+    // ---- MIDI ----
     juce::String portKey;  // live MIDI identifier or display name (Learn path)
     ControllerId controllerId;
     BindingMsgType msgType = BindingMsgType::CC;
     int channel = 0;  // 1..16, 0 = any
     int number = 0;   // CC number, note number, or NRPN number
+
+    // ---- OSC ----
+    juce::String oscAddress;  // e.g. "/1/fader3", exactly as the surface sends it
+    int oscArgIndex = 0;      // which argument carries the value
+
+    bool isOsc() const {
+        return kind == BindingSourceKind::Osc;
+    }
 
     bool operator==(const BindingSource& other) const;
     bool operator!=(const BindingSource& other) const {
