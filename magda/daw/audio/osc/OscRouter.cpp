@@ -181,41 +181,44 @@ bool OscRouter::handleMessage(const juce::OSCMessage& message) {
     // over and leave a stock template mysteriously half-working. It also comes
     // before learn, so a control already carrying a meaning cannot be captured
     // as if it were free.
-    if (handleFixedNamespace(message))
-        return true;
+    if (const auto fixed = handleFixedNamespace(message); fixed.has_value())
+        return *fixed;
     if (handleLearn(message))
         return true;
     return handleBindings(message);
 }
 
 bool OscRouter::handleLearn(const juce::OSCMessage& message) {
-    if (learn_ == nullptr || !learn_->active.load(std::memory_order_acquire))
+    // Keep the common path lock-free. Once armed, take the lock before touching
+    // `learn_`: begin/cancel may replace that pointer from the message thread.
+    if (!learning_.load(std::memory_order_acquire))
         return false;
 
     OscLearnCapture capture;
-    capture.address = message.getAddressPattern().toString();
-
-    // The first argument we can read is the one the control is sending. A
-    // surface that sends several down one address — an XY pad — is captured on
-    // its first axis, and the other can be learned by moving it alone.
-    bool found = false;
-    for (int i = 0; i < message.size(); ++i) {
-        if (const auto value = boundArgument(message, i)) {
-            capture.argIndex = i;
-            capture.value = *value;
-            found = true;
-            break;
-        }
-    }
-    if (!found)
-        return false;  // stay armed: this said nothing a binding could use
-
     LearnCallback callback;
     {
         const juce::ScopedLock lock(learnLock_);
-        if (learn_ == nullptr)
+        if (!learning_.load(std::memory_order_relaxed) || learn_ == nullptr)
             return false;
-        learn_->active.store(false, std::memory_order_release);
+
+        capture.address = message.getAddressPattern().toString();
+
+        // The first argument we can read is the one the control is sending. A
+        // surface that sends several down one address — an XY pad — is captured
+        // on its first axis, and the other can be learned by moving it alone.
+        bool found = false;
+        for (int i = 0; i < message.size(); ++i) {
+            if (const auto value = boundArgument(message, i)) {
+                capture.argIndex = i;
+                capture.value = *value;
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            return false;  // stay armed: this said nothing a binding could use
+
+        learning_.store(false, std::memory_order_release);
         callback = std::move(learn_->callback);
         learn_.reset();
     }
@@ -238,21 +241,20 @@ void OscRouter::beginLearnSession(LearnCallback onCaptured) {
     const juce::ScopedLock lock(learnLock_);
     learn_ = std::make_unique<LearnState>();
     learn_->callback = std::move(onCaptured);
-    learn_->active.store(true, std::memory_order_release);
+    learning_.store(true, std::memory_order_release);
 }
 
 void OscRouter::cancelLearnSession() {
     const juce::ScopedLock lock(learnLock_);
-    if (learn_ != nullptr)
-        learn_->active.store(false, std::memory_order_release);
+    learning_.store(false, std::memory_order_release);
     learn_.reset();
 }
 
 bool OscRouter::isLearning() const {
-    return learn_ != nullptr && learn_->active.load(std::memory_order_acquire);
+    return learning_.load(std::memory_order_acquire);
 }
 
-bool OscRouter::handleFixedNamespace(const juce::OSCMessage& message) {
+std::optional<bool> OscRouter::handleFixedNamespace(const juce::OSCMessage& message) {
     // Named rather than inlined into the call: the parser reads through the
     // StringRef into this buffer, so it has to outlive the parse. Copying a
     // juce::String is a reference-count bump, so this costs no allocation.
@@ -260,10 +262,12 @@ bool OscRouter::handleFixedNamespace(const juce::OSCMessage& message) {
 
     const auto command = parseOscAddress(address);
     if (!command.has_value())
-        return false;
+        return std::nullopt;
 
     const auto value = oscValueFor(*command, message);
     if (!value.has_value())
+        // The payload is unusable, but the address is still reserved. Returning
+        // a present false prevents it from leaking into learn or bindings.
         return false;
 
     accepted_.fetch_add(1, std::memory_order_relaxed);

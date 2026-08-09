@@ -1,8 +1,10 @@
+#include <atomic>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <vector>
 
 #include "../magda/daw/audio/osc/OscRouter.hpp"
@@ -175,6 +177,15 @@ TEST_CASE("The fixed namespace cannot be bound over", "[osc][bindings]") {
 
     REQUIRE(h.commands->applied == 1);
     REQUIRE(h.bindings->applied.empty());
+
+    // A malformed payload does not make the address available to a binding
+    // that reads a different argument.
+    h.router->updateBindings({oscBinding("/magda/track/1/volume", /*argIndex*/ 1)});
+    REQUIRE_FALSE(h.router->handleMessage(
+        juce::OSCMessage("/magda/track/1/volume", juce::String("bad"), 0.8f)));
+    h.router->drainPending();
+    REQUIRE(h.commands->applied == 1);
+    REQUIRE(h.bindings->applied.empty());
 }
 
 TEST_CASE("Several bindings can share one address", "[osc][bindings]") {
@@ -320,6 +331,13 @@ TEST_CASE("Learn ignores the fixed namespace", "[osc][bindings][learn]") {
     REQUIRE_FALSE(captured.has_value());
     REQUIRE(h.router->isLearning());
 
+    // The address stays reserved even when its fixed command rejects the
+    // payload; learn must not capture a later numeric argument.
+    REQUIRE_FALSE(h.router->handleMessage(
+        juce::OSCMessage("/magda/track/1/volume", juce::String("bad"), 0.75f)));
+    REQUIRE_FALSE(captured.has_value());
+    REQUIRE(h.router->isLearning());
+
     // …and stays armed for a control that is genuinely free.
     REQUIRE(h.router->handleMessage(juce::OSCMessage("/1/fader1", 0.5f)));
     REQUIRE(captured.has_value());
@@ -371,4 +389,28 @@ TEST_CASE("Starting a learn session cancels the one in progress", "[osc][binding
     REQUIRE(h.router->handleMessage(juce::OSCMessage("/1/fader1", 0.5f)));
     REQUIRE_FALSE(firstFired);
     REQUIRE(secondFired);
+}
+
+TEST_CASE("Learn can be cancelled while OSC messages arrive", "[osc][bindings][learn]") {
+    Harness h;
+    std::atomic<bool> running{true};
+    auto captures = std::make_shared<std::atomic<int>>(0);
+
+    std::thread receiver([&]() {
+        while (running.load(std::memory_order_acquire))
+            h.router->handleMessage(juce::OSCMessage("/1/fader1", 0.5f));
+    });
+
+    // begin/cancel owns the session on this thread while handleMessage tries to
+    // claim it on the receive thread. Under TSAN this exercises the lifetime
+    // boundary that used to read and free `learn_` without common locking.
+    for (int i = 0; i < 1000; ++i) {
+        h.router->beginLearnSession([captures](const OscLearnCapture&) { captures->fetch_add(1); });
+        h.router->cancelLearnSession();
+    }
+
+    running.store(false, std::memory_order_release);
+    receiver.join();
+    h.router->cancelLearnSession();
+    REQUIRE_FALSE(h.router->isLearning());
 }

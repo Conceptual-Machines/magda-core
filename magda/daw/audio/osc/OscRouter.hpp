@@ -186,14 +186,16 @@ std::optional<float> oscValueFor(const OscCommand& command, const juce::OSCMessa
  *
  * ## Threading
  *
- * `handleMessage` runs on the OSC receive thread. It takes no lock and, apart
- * from the one `callAsync` that carries a drain to the message thread, it
- * allocates nothing: parsing is a scan over the address bytes, and publishing
- * is a store plus an atomic bit. Because at most one drain is outstanding at a
- * time, that single allocation is bounded by the drain rate rather than by the
- * message rate — a surface sending faster cannot make the receive thread
- * allocate more. A slow or blocked message thread makes MAGDA coarser, never
- * the network thread slower.
+ * `handleMessage` runs on the OSC receive thread. Ordinary routing takes no
+ * lock and, apart from the one `callAsync` that carries a drain to the message
+ * thread, it allocates nothing: parsing is a scan over the address bytes, and
+ * publishing is a store plus an atomic bit. An armed learn session briefly
+ * locks while claiming its one capture so cancellation can safely happen from
+ * another thread. Because at most one drain is outstanding at a time, the
+ * drain allocation is bounded by the drain rate rather than by the message
+ * rate — a surface sending faster cannot make the receive thread allocate
+ * more. A slow or blocked message thread makes MAGDA coarser, never the network
+ * thread slower.
  *
  * Nothing here touches the audio thread; parameter writes reach it through the
  * same host-write path the MIDI control surfaces use.
@@ -216,11 +218,10 @@ class OscRouter {
      * it is an invariant of this method rather than an accident of the caller,
      * and a second concurrent caller would corrupt the ring silently.
      *
-     * @return true when the address was in the fixed namespace and the message
-     *         was accepted. False means the message was not ours — an unknown
-     *         address, or a known one carrying nothing usable — which is
-     *         information for a caller that wants to offer it to bindings, not
-     *         an error.
+     * @return true when the message was accepted. False means either that its
+     *         address was unknown or that a reserved fixed-namespace address
+     *         carried no usable value. Reserved addresses are never offered to
+     *         learn or bindings, regardless of this return value.
      */
     bool handleMessage(const juce::OSCMessage& message);
 
@@ -337,20 +338,24 @@ class OscRouter {
     bool pushOrdered(const OscCommand& command, float value);
     void drainOrdered();
 
-    /// True when the message was in the fixed namespace, false when it was not
-    /// and the bindings should be offered it.
-    bool handleFixedNamespace(const juce::OSCMessage& message);
+    /// nullopt when the address is outside the fixed namespace; otherwise the
+    /// bool says whether its payload was accepted. A recognized address with an
+    /// unusable payload is still reserved and must not fall through to learn or
+    /// bindings.
+    std::optional<bool> handleFixedNamespace(const juce::OSCMessage& message);
     bool handleBindings(const juce::OSCMessage& message);
     bool handleLearn(const juce::OSCMessage& message);
     void drainBindings();
 
     struct LearnState {
         LearnCallback callback;
-        std::atomic<bool> active{false};
     };
 
     std::unique_ptr<LearnState> learn_;
-    /// Guards the `learn_` pointer swap, not the capture itself.
+    /// Fast-path flag: ordinary routing avoids taking `learnLock_` when no
+    /// learn session is armed.
+    std::atomic<bool> learning_{false};
+    /// Guards the lifetime and callback held by `learn_`.
     juce::CriticalSection learnLock_;
 
     std::unique_ptr<OscCommandSink> sink_;
