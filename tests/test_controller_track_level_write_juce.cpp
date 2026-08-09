@@ -48,6 +48,7 @@ class ControllerTrackLevelWriteTest final : public juce::UnitTest {
             testMasterVolumeWrite();
             testMasterPanWrite();
             testTrackVolumeWrite();
+            testSendLevelWrite();
             testFullScaleAndSilence();
         });
     }
@@ -137,6 +138,46 @@ class ControllerTrackLevelWriteTest final : public juce::UnitTest {
         expect(after->volume > 0.0f, "the write must land on the track");
         expect(tm.getMasterChannel().volume == masterBefore,
                "a track write must not disturb the master channel");
+    }
+
+    void testSendLevelWrite() {
+        beginTest("A send-level write reaches the send (#1757)");
+
+        // SendLevel used to fall through the same bare `break` this file was
+        // written about. OSC is its first caller, and a control surface with a
+        // send fader that silently did nothing would be the same bug again.
+        auto& wrapper = magda::test::getSharedEngine();
+        auto* bridge = wrapper.getAudioBridge();
+        if (bridge == nullptr)
+            return;
+
+        auto& tm = TrackManager::getInstance();
+        const auto source = tm.createTrack("Send Source");
+        const auto destination = tm.createTrack("Reverb Bus");
+        bridge->createAudioTrack(source, "Send Source");
+        bridge->createAudioTrack(destination, "Reverb Bus");
+        tm.addSend(source, destination);
+
+        const auto* withSend = tm.getTrack(source);
+        expect(withSend != nullptr && !withSend->sends.empty(), "the send must have been created");
+        if (withSend == nullptr || withSend->sends.empty())
+            return;
+        const int busIndex = withSend->sends[0].busIndex;
+
+        DefaultControllerParamWriter writer{*bridge};
+        ResolveResult resolved;
+        resolved.target = ControlTarget::sendLevel(source, busIndex);
+        resolved.resolved = true;
+        expect(resolved.ok(), "the send target must resolve");
+
+        writer.write(resolved, 0.25f);
+        const float atQuarter = tm.getTrack(source)->sends[0].level;
+
+        writer.write(resolved, 0.9f);
+        const float atNine = tm.getTrack(source)->sends[0].level;
+
+        expect(atNine > atQuarter, "a higher controller value must raise the send level");
+        expect(atQuarter >= 0.0f, "a send level must never go negative");
     }
 
     void testFullScaleAndSilence() {

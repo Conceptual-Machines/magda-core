@@ -236,6 +236,15 @@ void Config::save() {
         root->setProperty("remoteApi", juce::var(remoteObj));
     }
 
+    // OSC control surfaces — nested "osc" object (#1757).
+    {
+        auto* oscObj = new juce::DynamicObject();
+        oscObj->setProperty("enabled", oscEnabled);
+        oscObj->setProperty("receivePort", oscReceivePort);
+        oscObj->setProperty("bindAddress", toJuceString(oscBindAddress));
+        root->setProperty("osc", juce::var(oscObj));
+    }
+
     // Recent projects
     juce::Array<juce::var> recentArray;
     for (const auto& r : recentProjects)
@@ -708,6 +717,23 @@ void Config::load() {
             // Passed through untouched; `RemoteClientRegistry` owns the shape
             // and drops anything it does not recognise.
             remoteApiClients = remoteObj->getProperty("clients");
+        }
+    }
+
+    // OSC — absent means the defaults, which open no socket.
+    if (obj->hasProperty("osc")) {
+        if (auto* oscObj = obj->getProperty("osc").getDynamicObject()) {
+            if (oscObj->hasProperty("enabled"))
+                oscEnabled = oscObj->getProperty("enabled");
+            if (oscObj->hasProperty("receivePort"))
+                oscReceivePort = oscObj->getProperty("receivePort");
+            // An empty stored address would bind nothing at all, so it falls
+            // back to the default rather than silently disabling the listener.
+            if (oscObj->hasProperty("bindAddress")) {
+                auto address = oscObj->getProperty("bindAddress").toString();
+                if (address.isNotEmpty())
+                    oscBindAddress = address.toStdString();
+            }
         }
     }
     recentProjects = getStringArray("recentProjects");
