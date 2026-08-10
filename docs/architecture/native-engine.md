@@ -28,7 +28,7 @@ is. When the two disagree, the headers are right and this file is stale.
 | Retire stock TE plugin wrappers | [#1888](https://github.com/Conceptual-Machines/magda-core/issues/1888) | done |
 | Clip model: container from content | [#1901](https://github.com/Conceptual-Machines/magda-core/issues/1901) | done |
 | **Engine core: plan, executor, PDC** | [#1889](https://github.com/Conceptual-Machines/magda-core/issues/1889) | **all 10 slices done** |
-| **Arranger clip playback** | [#1890](https://github.com/Conceptual-Machines/magda-core/issues/1890) | **slices 1 to 5 of 7** |
+| **Arranger clip playback** | [#1890](https://github.com/Conceptual-Machines/magda-core/issues/1890) | **slices 1 to 6 of 7** |
 | Parameters, modifiers, macros, automation | [#1891](https://github.com/Conceptual-Machines/magda-core/issues/1891) | not started |
 | Rack graph: pins, summing, multi-out, nesting | [#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892) | not started |
 | External plugin hosting and hardware inserts | [#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893) | not started |
@@ -52,9 +52,9 @@ Clips, slice by slice: the snapshot ([#2034](https://github.com/Conceptual-Machi
 voices, spans and fades ([#2035](https://github.com/Conceptual-Machines/magda-core/issues/2035)),
 rate conversion, looping and reverse ([#2036](https://github.com/Conceptual-Machines/magda-core/issues/2036)),
 stretch and pitch ([#2037](https://github.com/Conceptual-Machines/magda-core/issues/2037)),
-warp, beat detection and loop info ([#2038](https://github.com/Conceptual-Machines/magda-core/issues/2038)).
-Still open: MIDI clips ([#2039](https://github.com/Conceptual-Machines/magda-core/issues/2039)),
-null-diff corpus ([#2040](https://github.com/Conceptual-Machines/magda-core/issues/2040)).
+warp, beat detection and loop info ([#2038](https://github.com/Conceptual-Machines/magda-core/issues/2038)),
+MIDI clips ([#2039](https://github.com/Conceptual-Machines/magda-core/issues/2039)).
+Still open: the null-diff corpus ([#2040](https://github.com/Conceptual-Machines/magda-core/issues/2040)).
 
 ---
 
@@ -455,6 +455,67 @@ sessions saved with them have to play as they were made). A clip that resamples 
 stretching uses the same cubic curve the rate converter below the stream uses, so a file at
 another rate and a clip playing fast are not two different sounds.
 
+### MIDI clips
+
+Slice 6 ([#2039](https://github.com/Conceptual-Machines/magda-core/issues/2039)). Audio and MIDI
+share the snapshot, the span and the interior silences, and share nothing below that:
+`clip/ClipMidiSource.hpp` has no file, no reader, no stretcher and no pool. What it has instead
+is a question audio never has to answer.
+
+**The invariant.** A note-off is never emitted for a note the source did not start, and never
+withheld from one it did. `clip/ActiveNoteList.hpp` is what makes that structural rather than
+careful, and it outlives every clip, block and plan that passes through the source because a
+note does too. Five things end a note and only the first falls out of the material: a loop pass
+running out or a clip's span ending; a locate or a wrap; a stop; a snapshot swap that moved or
+deleted what was sounding; and destruction, which needs nothing, because a source dies with its
+track and its output port goes with it.
+
+**Compiled, not carried.** `clip/MidiEventList.hpp` is one sorted array of short messages in
+content beats. The curve densification, the MPE channel assignment, the same-pitch overlap rule
+and the two offsets resolve once, off the audio thread, exactly as an event's warp markers do.
+The fork arrives at the same place by a longer road, building a playback sequence per clip; the
+difference is that its sequence lives inside `te::MidiClip`, so editing a curve rebuilds it, the
+TreeWatcher sees the tree change and playback restarts under a rolling transport.
+
+**A loop is a coordinate change, not a copy.** The fork unrolls, writing one copy of the
+sequence per repetition. A block here is a beat range, and folding it through the loop gives a
+handful of sub-ranges over the one list. The per-pass clipping rule is kept exactly, because it
+is what puts every note's off in the same pass as its on. Nothing reads a loop as a length
+either, so `MidiClip::disableLooping` truncating a clip to one loop length has no counterpart
+here: the span is the length.
+
+**Groove is the one thing not resolved at compile time**, and it cannot be. It is anchored to
+the project grid, so a clip whose loop length is not a whole multiple of the template's period
+grooves each pass differently, which is what the fork delivers by re-timing its sequence to
+`clipRange.start + loopIndex * loopLength` once per pass and grooving it there. So the table is
+compiled with the clip's strength folded in and the lookup runs per pass, at emit time. The
+block's event search widens by the table's own worst-case displacement, which it knows exactly.
+
+**The chase is exact rather than nearly right**, and that follows from how curves densify.
+Locating leaves every controller at the value its curve is at, which is the last event before
+the instant. Because a message is emitted only when the quantised value changes, nothing emitted
+since means nothing changed since, so the last event *is* the current value. Under a fixed grid
+it would be up to a grid step stale and the synth would sit on the stale value until the next
+point arrived.
+
+**Two deliberate divergences**, beside the Signalsmith priming one above.
+
+Controller density is the larger. Messages go out on every change of the quantised value and no
+closer together than about a millisecond, rather than on the sync layer's 1/16-beat grid. That
+grid is anchored to the wrong axis, which makes it both too dense and too sparse: a ramp of one
+unit over eight bars is 512 near-identical messages on it and two here, while a pitch-bend dive
+over a hundred milliseconds gets three grid points at 120 BPM and about a hundred here. It also
+moves with tempo, running at 8 Hz at 30 BPM and 128 Hz at 480 for the same drawn curve, when
+smoothness is a wall-clock property. The floor is what bounds the cost, and it bounds it where
+the 1/16 grid was aimed: about ten messages per block per controller, in wall-clock rather than
+in beats, so #1193 stays shut. Because this alters the controller stream feeding an arbitrary
+synth, the null-diff corpus grows a channel rather than a tolerance: MIDI event streams are
+compared as their own artifact, where the difference is exact and event-addressable, and
+curve-driven audio comes out of the near-null audio assertion instead of loosening it.
+
+The smaller: `midiOffset` applies to a clip that does not loop. The fork's arranger path drops it
+there while its session path applies it, which is a gap in the sync layer rather than a semantic.
+
 ---
 
 ## 7. What is not built yet
@@ -473,11 +534,11 @@ Worth knowing before reading the code and wondering where something is:
   A `Device` op resolves to whatever the host hands the store. Nothing hosts VST3 yet.
 - **Launcher and recording** ([#1894](https://github.com/Conceptual-Machines/magda-core/issues/1894),
   [#1895](https://github.com/Conceptual-Machines/magda-core/issues/1895)).
-- **MIDI clips** ([#2039](https://github.com/Conceptual-Machines/magda-core/issues/2039)). Audio
-  clips play; a `ClipMidi` op is compiled and produces nothing yet.
-- **Wiring the two analyses to the model.** The native transient detector and loop-info parse
-  exist and are tested; `WarpMarkerManager` and the clip model still get both from Tracktion.
-  Swapping them over belongs with switching the engine on rather than with implementing it.
+- **Wiring the ports to the model.** The native transient detector, the loop-info parse and the
+  groove template all exist and are tested; `WarpMarkerManager`, the clip model and the clip
+  inspector still get theirs from Tracktion, and `compileClipSnapshot` takes an empty
+  `GrooveTemplateSet` until something fills it. Swapping them over belongs with switching the
+  engine on rather than with implementing it.
 - **The null-diff harness** ([#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896)),
   which is what decides the engine is right rather than merely tested: render the same project
   through both engines and assert a near-null difference.
@@ -490,7 +551,7 @@ Worth knowing before reading the code and wondering where something is:
 | --- | --- |
 | `plan/` | the IR, the compiler, the differ, the crossfade pass, the canonical dump |
 | `exec/` | the two executors, the value table, the layout pass, the runtime store, the session, offline render |
-| `clip/` | the clip snapshot and its compiler, the voice pool, the voices, the feeds |
+| `clip/` | the clip snapshot and its compiler, the voice pool, the voices, the MIDI source, the feeds |
 | `io/` | file readers, the prefetch stream and its thread, the reading chain, the placement mapping |
 | `transport/` | the tempo map, the sample clock, the metronome |
 | `tap/` | what a meter writes and the UI reads |

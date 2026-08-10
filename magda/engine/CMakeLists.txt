@@ -12,6 +12,10 @@ add_library(magda_engine STATIC
     clip/ClipSnapshotCompiler.cpp
     clip/ClipSnapshotDump.cpp
     clip/ClipAudioSource.cpp
+    clip/ClipMidiSource.cpp
+    clip/GrooveTemplate.cpp
+    clip/MidiClipCompiler.cpp
+    clip/MidiEventList.cpp
     clip/ClipStreamFeed.cpp
     clip/ClipStretcher.cpp
     clip/ClipVoice.cpp
@@ -24,6 +28,11 @@ add_library(magda_engine STATIC
     clip/ClipSnapshotDump.hpp
     clip/ClipSnapshotFeed.hpp
     clip/ClipAudioSource.hpp
+    clip/ClipMidiSource.hpp
+    clip/ActiveNoteList.hpp
+    clip/GrooveTemplate.hpp
+    clip/MidiClipCompiler.hpp
+    clip/MidiEventList.hpp
     clip/ClipStreamFeed.hpp
     clip/ClipStretcher.hpp
     clip/ClipVoice.hpp

@@ -4,6 +4,7 @@
 #include <unordered_map>
 
 #include "clip/ClipStretcher.hpp"
+#include "clip/MidiClipCompiler.hpp"
 #include "core/ClipFades.hpp"
 #include "core/ClipOcclusion.hpp"
 
@@ -39,7 +40,7 @@ SnapshotSpan spanFromBeats(double startBeat, double endBeat, const TempoMap& tem
 
 ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
                                  const std::vector<ClipSourceInfo>& sources,
-                                 const TempoMap& tempoMap) {
+                                 const TempoMap& tempoMap, const GrooveTemplateSet& grooves) {
     ClipSnapshot snapshot;
     snapshot.tempoFingerprint = tempoMap.fingerprint();
 
@@ -105,16 +106,33 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
                 midi.clipId = clip.id;
                 midi.span = span;
                 midi.silenced = std::move(silenced);
-                midi.notes = clip.midiNotes;
-                midi.cc = clip.midiCCData;
-                midi.pitchBend = clip.midiPitchBendData;
-                midi.loopEnabled = clip.loopEnabled;
-                midi.loopStartBeats = clip.loopStartBeats;
-                midi.loopLengthBeats = clip.loopLengthBeats;
-                midi.offsetBeats = clip.midiOffset;
-                midi.trimOffsetBeats = clip.midiTrimOffset;
-                midi.grooveTemplate = clip.grooveTemplate.toStdString();
-                midi.grooveStrength = clip.grooveStrength;
+
+                midi.fold.clipStartBeat = clip.placement.startBeat;
+                midi.fold.trimOffsetBeats = std::max(0.0, clip.midiTrimOffset);
+                midi.fold.offsetBeats = clip.midiOffset;
+                midi.fold.loopEnabled = clip.loopEnabled && clip.loopLengthBeats > 0.0;
+                midi.fold.loopStartBeats = clip.loopStartBeats;
+                midi.fold.loopLengthBeats = clip.loopLengthBeats;
+
+                // The floor between two points of one densified curve, in this
+                // clip's own domain. Seconds is what it means, because
+                // smoothness is a wall-clock property and a beat-anchored floor
+                // would run at eight hertz at thirty BPM.
+                const auto bpm = tempoMap.bpmAt(clip.placement.startBeat);
+                midi.events = compileMidiEvents(clip, kCurveFloorSeconds * bpm / 60.0);
+
+                const auto grooveName = clip.grooveTemplate.toStdString();
+                if (!grooveName.empty() && !grooves.contains(grooveName))
+                    snapshot.diagnostics.push_back(label + "asks for groove '" + grooveName +
+                                                   "', which this installation does not have");
+
+                midi.groove = grooves.compile(grooveName, clip.grooveStrength);
+
+                // An empty MIDI clip is carried rather than dropped, unlike an
+                // audio clip with no events. A clip with no notes yet is an
+                // ordinary thing to have on a lane and it still covers what is
+                // under it, whereas an audio clip with nothing to read is a clip
+                // that cannot exist.
                 track.midi.push_back(std::move(midi));
                 continue;
             }

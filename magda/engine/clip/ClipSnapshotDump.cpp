@@ -115,19 +115,36 @@ void dumpAudioClip(std::ostringstream& out, const AudioClipPlayback& clip) {
 }
 
 void dumpMidiClip(std::ostringstream& out, const MidiClipPlayback& clip) {
-    out << "  midi clip=" << clip.clipId << " span=" << spanText(clip.span)
-        << " notes=" << clip.notes.size() << " cc=" << clip.cc.size()
-        << " pb=" << clip.pitchBend.size();
+    // The compiled list rather than the model's, because that is what plays:
+    // notes are already note-on/note-off pairs and curves are already the
+    // messages they send, so a count here is a count of what reaches a synth.
+    auto noteOns = 0;
+    auto noteOffs = 0;
+    for (const auto& event : clip.events.events) {
+        if (event.isNoteOn())
+            ++noteOns;
+        else if (event.isNoteOff())
+            ++noteOffs;
+    }
 
-    if (clip.loopEnabled)
-        out << " loop=" << fixed(clip.loopStartBeats, 3) << "+" << fixed(clip.loopLengthBeats, 3);
+    out << "  midi clip=" << clip.clipId << " span=" << spanText(clip.span)
+        << " events=" << clip.events.events.size() << " on=" << noteOns << " off=" << noteOffs
+        << " ctl=" << clip.events.controllers.size();
+
+    if (clip.events.mpe)
+        out << " mpe";
+
+    if (clip.fold.loopEnabled)
+        out << " loop=" << fixed(clip.fold.loopStartBeats, 3) << "+"
+            << fixed(clip.fold.loopLengthBeats, 3);
     else
         out << " loop=off";
 
-    out << " offset=" << fixed(clip.offsetBeats, 3) << " trim=" << fixed(clip.trimOffsetBeats, 3);
+    out << " offset=" << fixed(clip.fold.offsetBeats, 3)
+        << " trim=" << fixed(clip.fold.trimOffsetBeats, 3);
 
-    if (!clip.grooveTemplate.empty())
-        out << " groove=" << clip.grooveTemplate << "@" << fixed(clip.grooveStrength, 2);
+    if (!clip.groove.empty())
+        out << " groove=" << fixed(clip.groove.maxDisplacementBeats(), 4);
 
     out << "\n";
     dumpHoles(out, clip.silenced);

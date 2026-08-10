@@ -89,8 +89,8 @@ const std::string kGoldenDump =
     "behaviour=0/0 gain=0.0 pan=0.00 launch=256\n"
     "    event 1 src=7 file=loop.wav rate=48000 span=6.000..14.000b 3.000..7.000s anchor=0 "
     "loop=off stretch=0 speed=1.000 bpm=120.0 reversed\n"
-    "  midi clip=3 span=0.000..4.000b 0.000..2.000s notes=1 cc=0 pb=0 loop=off offset=0.000 "
-    "trim=0.000\n";
+    "  midi clip=3 span=0.000..4.000b 0.000..2.000s events=2 on=1 off=1 ctl=0 loop=off "
+    "offset=0.000 trim=0.000\n";
 
 const magda::engine::AudioClipPlayback* audioClip(const ClipSnapshot& snapshot, magda::ClipId id) {
     const auto* track = snapshot.find(kTrack);
@@ -478,13 +478,19 @@ TEST_CASE("A MIDI clip carries its events, its loop and its groove", "[engine][c
     REQUIRE(track->midi.size() == 1);
 
     const auto& midi = track->midi.front();
-    CHECK(midi.notes.size() == 2);
-    CHECK(midi.loopEnabled);
-    CHECK(midi.loopLengthBeats == Approx(4.0));
-    CHECK(midi.offsetBeats == Approx(0.5));
-    CHECK(midi.trimOffsetBeats == Approx(0.25));
-    CHECK(midi.grooveTemplate == "Swing 16");
-    CHECK(midi.grooveStrength == Approx(0.6f));
+    // Two notes are four messages: the model's lists are compiled into what
+    // they play rather than carried for the audio thread to interpret.
+    CHECK(midi.events.events.size() == 4);
+    CHECK(midi.fold.loopEnabled);
+    CHECK(midi.fold.loopLengthBeats == Approx(4.0));
+    CHECK(midi.fold.offsetBeats == Approx(0.5));
+    CHECK(midi.fold.trimOffsetBeats == Approx(0.25));
+
+    // The groove is named but this installation has none, which is an ordinary
+    // answer and a diagnostic rather than a failure.
+    CHECK(midi.groove.empty());
+    REQUIRE(snapshot.diagnostics.size() == 1);
+    CHECK(snapshot.diagnostics.front().find("Swing 16") != std::string::npos);
     CHECK(track->audio.empty());
 }
 
