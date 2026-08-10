@@ -22,23 +22,6 @@ std::size_t MidiEventList::lowerBound(double beat) const {
     return static_cast<std::size_t>(std::distance(events.begin(), found));
 }
 
-void MidiEventList::controllerStateAt(double beat, std::vector<std::int32_t>& out) const {
-    for (const auto& stream : controllers) {
-        // Strictly before, never at: an event sitting exactly on the instant is
-        // about to be walked by the block itself, and chasing it as well would
-        // send it twice.
-        const auto found = std::lower_bound(
-            stream.events.begin(), stream.events.end(), beat, [this](std::int32_t index, double b) {
-                return events[static_cast<std::size_t>(index)].beat < b;
-            });
-
-        if (found == stream.events.begin())
-            continue;  // nothing before the instant, so no value to chase to
-
-        out.push_back(*std::prev(found));
-    }
-}
-
 void MidiEventList::notesSoundingAt(double beat, double widen,
                                     std::vector<std::int32_t>& out) const {
     if (longestNoteBeats <= 0.0)

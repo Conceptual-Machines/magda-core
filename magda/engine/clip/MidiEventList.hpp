@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -173,10 +174,39 @@ struct MidiEventList {
     /// The first event at or after @p beat. Binary search; the list is sorted.
     std::size_t lowerBound(double beat) const;
 
-    /// The value of every controller as of @p beat, as event indices, appended
-    /// to @p out. Empty entries are skipped: a stream with nothing before the
-    /// instant has no value to chase to.
-    void controllerStateAt(double beat, std::vector<std::int32_t>& out) const;
+    /**
+     * @brief The value of every controller as of @p beat, into @p out.
+     *
+     * Event indices. A stream with nothing before the instant has no value to
+     * chase to and contributes nothing.
+     *
+     * @p allowed vetoes an event the caller knows never sounded, and the walk
+     * then keeps going back through that stream rather than giving up: what a
+     * synth is holding is the last value that actually reached it. A clip hole
+     * suppresses controllers during playback, so chasing one from inside a hole
+     * would set a value the listener never got.
+     */
+    template <typename Allowed>
+    void controllerStateAt(double beat, Allowed&& allowed, std::vector<std::int32_t>& out) const {
+        for (const auto& stream : controllers) {
+            // Strictly before, never at: an event sitting exactly on the instant
+            // is about to be walked by the block itself, and chasing it as well
+            // would send it twice.
+            auto found =
+                std::lower_bound(stream.events.begin(), stream.events.end(), beat,
+                                 [this](std::int32_t index, double b) {
+                                     return events[static_cast<std::size_t>(index)].beat < b;
+                                 });
+
+            while (found != stream.events.begin()) {
+                --found;
+                if (allowed(*found)) {
+                    out.push_back(*found);
+                    break;
+                }
+            }
+        }
+    }
 
     /**
      * @brief Note-ons before @p beat whose note ends after it, into @p out.

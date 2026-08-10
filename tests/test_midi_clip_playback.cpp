@@ -987,6 +987,86 @@ TEST_CASE("A reused MPE channel does not inherit the last note's bend", "[engine
     CHECK(wheel == 8192);
 }
 
+TEST_CASE("A locate past a hole chases the value that survived it", "[engine][clip][midi]") {
+    // Playback suppresses a controller inside a silenced stretch, so what the
+    // synth is holding past the hole is the value from before it. Chasing the
+    // last event outright would set one the listener never got.
+    auto under = makeMidiClip(1, 0.0, 16.0);
+    under.midiCCData.push_back(MidiCCData{74, 10, 1.0, MidiCurveType::Step, 0.0, {}, {}});
+    under.midiCCData.push_back(MidiCCData{74, 100, 5.0, MidiCurveType::Step, 0.0, {}, {}});
+
+    auto over = makeMidiClip(2, 4.0, 4.0);  // covers the second event
+    over.stackOrder = 1;
+
+    Rig rig;
+    rig.publish({under, over});
+
+    Recorder recorder;
+    rig.locate(blockOf(9.0), recorder);
+
+    REQUIRE(recorder.controllers().size() == 1);
+    CHECK(recorder.controllers().front().message.getControllerValue() == 10);
+}
+
+TEST_CASE("A locate does not resurrect a note whose onset a hole swallowed",
+          "[engine][clip][midi]") {
+    auto under = makeMidiClip(1, 0.0, 16.0);
+    under.midiNotes.push_back(note(60, 5.0, 5.0));  // starts inside the hole, ends past it
+
+    auto over = makeMidiClip(2, 4.0, 4.0);
+    over.stackOrder = 1;
+
+    Rig rig;
+    rig.publish({under, over});
+
+    Recorder recorder;
+    // Past the hole, but still inside the note. It never sounded, so it is not
+    // sounding now: startNote tests the instant it is asked about, which is the
+    // locate's position here rather than the onset.
+    rig.locate(blockOf(9.0), recorder);
+
+    CHECK(recorder.noteOns().empty());
+
+    rig.roll(blockOf(9.0) + 1, blockOf(12.0), recorder);
+    CHECK(recorder.hanging().empty());
+}
+
+TEST_CASE("A reused MPE channel still drops the earlier same-pitch note-off",
+          "[engine][clip][midi]") {
+    // The overlap rule asks which channel a later note will land on, so the
+    // channels have to be assigned before it runs. Reading them mid-assignment
+    // saw the default and never fired, which only bites once more than fifteen
+    // overlapping notes force a member channel to be reused.
+    auto clip = makeMidiClip(1, 0.0, 16.0);
+
+    auto expressive = note(60, 0.0, 1.0);
+    expressive.pitchExpression = {MidiPitchExpressionPoint{0.0, 0.0},
+                                  MidiPitchExpressionPoint{1.0, 1.0}};
+    clip.midiNotes.push_back(expressive);  // the shortest, so it frees first
+
+    for (auto i = 0; i < 14; ++i)
+        clip.midiNotes.push_back(note(70 + i, 0.0, 8.0));
+
+    // Every member channel is busy when this starts, so it takes the one that
+    // frees earliest, which is the first note's, and it is the same pitch.
+    clip.midiNotes.push_back(note(60, 0.5, 6.0));
+
+    const auto list = compileMidiEvents(clip, 0.001 * 120.0 / 60.0);
+    REQUIRE(list.mpe);
+
+    auto ons = 0;
+    auto offs = 0;
+    for (const auto& event : list.events) {
+        if (event.data1 != 60)
+            continue;
+        ons += event.isNoteOn() ? 1 : 0;
+        offs += event.isNoteOff() ? 1 : 0;
+    }
+
+    REQUIRE(ons == 2);
+    CHECK(offs == 1);
+}
+
 TEST_CASE("Locating into a hole strikes nothing", "[engine][clip][midi]") {
     auto under = makeMidiClip(1, 0.0, 16.0);
     under.midiNotes.push_back(note(60, 0.0, 10.0));

@@ -237,16 +237,25 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
     std::array<MpeChannel, kMpeLastMemberChannel - kMpeFirstMemberChannel + 1> mpeChannels{};
     std::vector<int> channelOf(notes.size(), 1);
 
+    // Every channel decided before any event is built, because the overlap rule
+    // below asks which channel a LATER note will land on. Assigning as we went
+    // read those as the default, so under MPE the rule never fired: harmless
+    // while every overlapping note gets its own channel, and wrong the moment
+    // more than fifteen of them force one to be reused, where the earlier note's
+    // off would then cut the note that replaced it.
+    if (list.mpe)
+        for (std::size_t i = 0; i < notes.size(); ++i)
+            if (notes[i].lengthBeats > 0.0)
+                channelOf[i] = assignMpeChannel(mpeChannels, notes[i].startBeat,
+                                                notes[i].startBeat + notes[i].lengthBeats,
+                                                notes[i].noteNumber);
+
     for (std::size_t i = 0; i < notes.size(); ++i) {
         const auto& note = notes[i];
         if (note.lengthBeats <= 0.0)
             continue;
 
-        const auto channel =
-            list.mpe ? assignMpeChannel(mpeChannels, note.startBeat,
-                                        note.startBeat + note.lengthBeats, note.noteNumber)
-                     : 1;
-        channelOf[i] = channel;
+        const auto channel = channelOf[i];
 
         const auto number = static_cast<std::uint8_t>(std::clamp(note.noteNumber, 0, 127));
         // A note-on of velocity zero reads as a note-off, so the floor is one.

@@ -160,8 +160,19 @@ void ClipMidiSource::chaseClip(juce::MidiBuffer& out, const BlockInfo& block,
     const auto sample = block.sampleForBeat(timelineBeat);
 
     // Controllers first, so a note struck below lands on a configured synth.
+    //
+    // Never one a hole swallowed. Playback suppresses a controller inside a
+    // silenced stretch, so what the synth is holding is the last value that
+    // actually reached it, and chasing from inside the hole would set a value
+    // the listener never got. The walk goes further back instead of giving up.
     scratch_.clear();
-    clip.events.controllerStateAt(contentBeat, scratch_);
+    clip.events.controllerStateAt(
+        contentBeat,
+        [&](std::int32_t index) {
+            const auto& event = clip.events.events[static_cast<std::size_t>(index)];
+            return !inHole(clip, pass.timelineOfContentZero + event.beat);
+        },
+        scratch_);
 
     // By index rather than by iterator, and never through a copy: startNote and
     // endNote do not touch the scratch, and copying a reserved vector on the
@@ -207,6 +218,13 @@ void ClipMidiSource::gatherSounding(const MidiClipPlayback& clip, const MidiFold
         const auto offBeat = clip.groove.groovyBeat(pass.timelineOfContentZero + event.endBeat);
 
         if (onBeat > timelineBeat || offBeat <= timelineBeat)
+            continue;
+
+        // Its onset was swallowed by a hole, so it never sounded and is not
+        // sounding now. startNote tests the instant being asked about, which is
+        // the onset during the walk and the locate's position here, so this is
+        // the check the two cases do not share.
+        if (inHole(clip, onBeat))
             continue;
 
         scratch_[kept++] = index;
