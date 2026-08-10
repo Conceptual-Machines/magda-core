@@ -263,7 +263,7 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
                 pending.push_back(PendingEvent{
                     MidiClipEvent{note.startBeat, statusFor(kPitchWheel, channel),
                                   static_cast<std::uint8_t>(kPitchWheelRest & 0x7f),
-                                  static_cast<std::uint8_t>((kPitchWheelRest >> 7) & 0x7f), -1},
+                                  static_cast<std::uint8_t>((kPitchWheelRest >> 7) & 0x7f), 0.0},
                     -1});
                 state.lastWheel = kPitchWheelRest;
             }
@@ -273,25 +273,33 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
         // dropped, because emitting it would cut the second note short. The
         // fork's `useNoteUp = false`. What ends such a note is the pass or the
         // span it sits in.
+        //
+        // It goes on SOUNDING until the retrigger replaces it, though, so that
+        // is where its end beat is. Reading a dropped note-off as "no end" would
+        // make a locate inside that stretch find nothing and play silence where
+        // playback would have been holding the note.
+        auto endBeat = note.startBeat + note.lengthBeats;
         auto endedBySelf = true;
+
         for (std::size_t j = i + 1; j < notes.size(); ++j) {
             if (notes[j].startBeat >= note.startBeat + note.lengthBeats)
                 break;
             if (notes[j].noteNumber == note.noteNumber && notes[j].lengthBeats > 0.0 &&
                 (!list.mpe || channelOf[j] == channel)) {
                 endedBySelf = false;
+                endBeat = notes[j].startBeat;
                 break;
             }
         }
 
         pending.push_back(PendingEvent{
-            MidiClipEvent{note.startBeat, statusFor(kNoteOn, channel), number, velocity, -1},
+            MidiClipEvent{note.startBeat, statusFor(kNoteOn, channel), number, velocity, endBeat},
             pairId});
 
         if (endedBySelf)
             pending.push_back(
                 PendingEvent{MidiClipEvent{note.startBeat + note.lengthBeats,
-                                           statusFor(kNoteOff, channel), number, 0, -1},
+                                           statusFor(kNoteOff, channel), number, 0, 0.0},
                              pairId});
 
         list.longestNoteBeats = std::max(list.longestNoteBeats, note.lengthBeats);
@@ -338,7 +346,7 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
                 pending.push_back(PendingEvent{
                     MidiClipEvent{note.startBeat + relativeBeat, statusFor(kPitchWheel, channel),
                                   static_cast<std::uint8_t>(value & 0x7f),
-                                  static_cast<std::uint8_t>((value >> 7) & 0x7f), -1},
+                                  static_cast<std::uint8_t>((value >> 7) & 0x7f), 0.0},
                     -1});
                 lastValue = value;
                 lastBeat = relativeBeat;
@@ -380,7 +388,7 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
             densify(std::move(events), 127, curveFloorBeats, [&](double beat, int value) {
                 pending.push_back(
                     PendingEvent{MidiClipEvent{beat, statusFor(kControlChange, 1), number,
-                                               static_cast<std::uint8_t>(value), -1},
+                                               static_cast<std::uint8_t>(value), 0.0},
                                  -1});
             });
         }
@@ -399,7 +407,7 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
                 pending.push_back(
                     PendingEvent{MidiClipEvent{beat, statusFor(kPitchWheel, 1),
                                                static_cast<std::uint8_t>(value & 0x7f),
-                                               static_cast<std::uint8_t>((value >> 7) & 0x7f), -1},
+                                               static_cast<std::uint8_t>((value >> 7) & 0x7f), 0.0},
                                  -1});
             });
         }
@@ -417,19 +425,6 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
     list.events.reserve(pending.size());
     for (const auto& entry : pending)
         list.events.push_back(entry.event);
-
-    std::map<int, std::int32_t> noteOffOf;
-    for (std::size_t i = 0; i < pending.size(); ++i)
-        if (pending[i].pairId >= 0 && list.events[i].isNoteOff())
-            noteOffOf[pending[i].pairId] = static_cast<std::int32_t>(i);
-
-    for (std::size_t i = 0; i < pending.size(); ++i) {
-        if (pending[i].pairId < 0 || !list.events[i].isNoteOn())
-            continue;
-
-        const auto found = noteOffOf.find(pending[i].pairId);
-        list.events[i].endsAt = found == noteOffOf.end() ? -1 : found->second;
-    }
 
     // ---- Index the controllers ----------------------------------------------
 

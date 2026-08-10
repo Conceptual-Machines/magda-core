@@ -50,18 +50,21 @@ struct MidiClipEvent {
     std::uint8_t data1 = 0;
     std::uint8_t data2 = 0;
 
-    /// Note-ons only: the index of the note-off that ends this note, or -1 for
-    /// a note nothing ends.
+    /// Note-ons only: the beat this note stops sounding at.
     ///
     /// The only field with no counterpart in the model, and what makes "which
     /// notes are sounding at this instant" answerable without a scan of
     /// unbounded length. That question is asked on every locate.
     ///
-    /// -1 is reachable and ordinary: a note whose pitch is struck again before
-    /// it ends has its note-off dropped at compile time, because emitting it
-    /// would cut the second note short (the fork's `useNoteUp = false`). Such a
-    /// note is ended by the pass or the span it sits in rather than by itself.
-    std::int32_t endsAt = -1;
+    /// Where it STOPS sounding, which is not always where its own note-off is,
+    /// and the difference matters to exactly one caller. A note whose pitch is
+    /// struck again before it ends has its note-off dropped at compile time,
+    /// because emitting it would cut the second note short (the fork's
+    /// `useNoteUp = false`). Such a note still sounds from its onset until the
+    /// retrigger replaces it, so this is the retrigger's beat: a locate landing
+    /// in that stretch has to hear it, and reading a dropped note-off as "never
+    /// sounding" would give silence instead.
+    double endBeat = 0.0;
 
     unsigned kind() const {
         return status & 0xf0u;

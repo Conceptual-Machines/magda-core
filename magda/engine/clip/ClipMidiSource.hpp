@@ -109,6 +109,12 @@ class ClipMidiSource final : public EngineMidiSource {
     void endAll(juce::MidiBuffer& out, int sample);
     void endClip(juce::MidiBuffer& out, int sample, ClipId clipId);
 
+    /// The notes of @p clip actually sounding at @p timelineBeat, into @ref
+    /// scratch_. Grooved edges, not written ones, and one implementation for
+    /// both the chase and the snapshot reconcile.
+    void gatherSounding(const MidiClipPlayback& clip, const MidiFoldPass& pass,
+                        double timelineBeat);
+
     /// The controller state and the notes hanging over @p beat, for one clip.
     void chaseClip(juce::MidiBuffer& out, const BlockInfo& block, const MidiClipPlayback& clip,
                    const MidiFoldPass& pass, double timelineBeat);

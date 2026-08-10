@@ -54,10 +54,10 @@ void MidiEventList::notesSoundingAt(double beat, double widen,
 
     for (; index < end; ++index) {
         const auto& event = events[index];
-        if (!event.isNoteOn() || event.endsAt < 0)
+        if (!event.isNoteOn())
             continue;
 
-        if (events[static_cast<std::size_t>(event.endsAt)].beat > beat - widen)
+        if (event.endBeat > beat - widen)
             out.push_back(static_cast<std::int32_t>(index));
     }
 }

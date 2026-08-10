@@ -249,7 +249,7 @@ TEST_CASE("Notes compile to paired edges", "[engine][clip][midi]") {
 
     CHECK(list.events[0].isNoteOn());
     CHECK(list.events[0].data1 == 60);
-    CHECK(list.events[0].endsAt == 1);
+    CHECK(list.events[0].endBeat == Approx(1.0));
     CHECK(list.events[1].isNoteOff());
     CHECK(list.events[1].beat == Approx(1.0));
 
@@ -275,7 +275,10 @@ TEST_CASE("A pitch struck again before it ends loses the first note-off", "[engi
 
     CHECK(ons == 2);
     CHECK(offs == 1);
-    CHECK(list.events[0].endsAt == -1);
+
+    // The first note has no note-off of its own, and it still sounds until the
+    // second one replaces it: a locate inside that stretch has to hear it.
+    CHECK(list.events[0].endBeat == Approx(1.0));
 }
 
 TEST_CASE("Controllers land before notes at the same instant", "[engine][clip][midi]") {
@@ -690,6 +693,107 @@ TEST_CASE("A note grooved past its loop pass does not outlive it", "[engine][cli
         CHECK(sounding <= 1);
     }
 
+    CHECK(recorder.hanging().empty());
+}
+
+TEST_CASE("A note-off grooved past its loop pass is held back to the wrap",
+          "[engine][clip][midi]") {
+    // The mirror of the note-on case. Emitting the off past the wrap clears the
+    // active entry, so the pass-end cleanup finds nothing to end: the note rings
+    // into the next pass and the stray off is left to cut whatever starts there.
+    // Same reason the loop length is not a whole number of blocks.
+    auto clip = makeMidiClip(1, 0.0, 6.0);
+    clip.midiNotes.push_back(note(60, 1.0, 0.35));  // ends at 1.35, grooves past 1.4
+    clip.loopEnabled = true;
+    clip.loopStartBeats = 0.0;
+    clip.loopLengthBeats = 1.4;
+    clip.grooveTemplate = "Swing";
+    clip.grooveStrength = 1.0f;
+
+    Rig rig;
+    rig.publish({clip}, swingSet());
+
+    Recorder recorder;
+    rig.roll(0, blockOf(6.0) - 1, recorder);
+
+    // Never two notes at once, and never an off before its on.
+    auto sounding = 0;
+    for (const auto& entry : recorder.captured) {
+        if (entry.message.isNoteOn())
+            ++sounding;
+        else if (entry.message.isNoteOff())
+            --sounding;
+
+        CHECK(sounding >= 0);
+        CHECK(sounding <= 1);
+    }
+
+    // Every note begins and ends inside one pass, which is what the pass-end
+    // cleanup is owed and what emitting the off past the wrap would break.
+    const auto ons = recorder.noteOns();
+    const auto offs = recorder.noteOffs();
+    REQUIRE(ons.size() == offs.size());
+
+    for (std::size_t i = 0; i < ons.size(); ++i) {
+        const auto pass = std::floor(ons[i].beat() / 1.4);
+        CHECK(offs[i].beat() > ons[i].beat());
+        CHECK(offs[i].beat() <= Approx((pass + 1.0) * 1.4).margin(1e-9));
+    }
+
+    CHECK(recorder.hanging().empty());
+}
+
+TEST_CASE("A swap that hands a sounding pitch to another clip does not hang it",
+          "[engine][clip][midi]") {
+    // The reconcile agrees on the owner as well as the pitch. A bare
+    // (channel, note) mask calls this settled, leaves the note registered to the
+    // clip that is gone, and the new clip's own note-off is then rejected for
+    // coming from the wrong owner.
+    auto first = makeMidiClip(1, 0.0, 8.0);
+    first.midiNotes.push_back(note(60, 0.0, 6.0));
+
+    Rig rig;
+    rig.publish({first});
+
+    Recorder recorder;
+    rig.roll(0, blockOf(2.0), recorder);
+    REQUIRE(recorder.noteOns().size() == 1);
+
+    // Same pitch, same instant, a different clip.
+    auto second = makeMidiClip(2, 0.0, 8.0);
+    second.midiNotes.push_back(note(60, 0.0, 6.0));
+    rig.publish({second});
+
+    // Past the note's own end, so the assertion is about the second clip's own
+    // note-off being accepted rather than about a stop cleaning up after it.
+    rig.roll(blockOf(2.0) + 1, blockOf(6.0), recorder);
+
+    // Handed over: the first clip's note ended, the second clip's started, and
+    // the second clip's own off was legal when it came.
+    CHECK(recorder.noteOns().size() == 2);
+    CHECK(recorder.noteOffs().size() == 2);
+    CHECK(recorder.hanging().empty());
+}
+
+TEST_CASE("Locating into a note whose off was dropped still hears it", "[engine][clip][midi]") {
+    // A note whose pitch is struck again before it ends has its note-off dropped
+    // at compile time, and it goes on sounding until the retrigger replaces it.
+    // Treating the missing off as "never sounding" plays silence where playback
+    // would have been holding the note.
+    auto clip = makeMidiClip(1, 0.0, 8.0);
+    clip.midiNotes.push_back(note(60, 0.0, 4.0));
+    clip.midiNotes.push_back(note(60, 3.0, 2.0));  // retriggers the first at 3
+
+    Rig rig;
+    rig.publish({clip});
+
+    Recorder recorder;
+    rig.locate(blockOf(1.5), recorder);
+
+    REQUIRE(recorder.noteOns().size() == 1);
+    CHECK(recorder.noteOns().front().message.getNoteNumber() == 60);
+
+    rig.roll(blockOf(1.5) + 1, blockOf(8.0), recorder);
     CHECK(recorder.hanging().empty());
 }
 

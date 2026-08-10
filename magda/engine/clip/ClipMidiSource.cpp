@@ -174,31 +174,45 @@ void ClipMidiSource::chaseClip(juce::MidiBuffer& out, const BlockInfo& block,
         emit(out, sample, clip.events.events[static_cast<std::size_t>(scratch_[i])]);
     }
 
-    // Then the notes this instant is inside, which is a question about where
-    // they SOUND rather than where they were written: the groove moves both
-    // edges independently, so the raw list is only a candidate set. Widened by
-    // what the groove can move and then filtered on the grooved edges, so a
+    // Then the notes this instant is inside.
+    gatherSounding(clip, pass, timelineBeat);
+
+    for (std::size_t i = 0; i < scratch_.size(); ++i)
+        startNote(out, block, clip, scratch_[i], timelineBeat);
+}
+
+void ClipMidiSource::gatherSounding(const MidiClipPlayback& clip, const MidiFoldPass& pass,
+                                    double timelineBeat) {
+    // Where they SOUND rather than where they were written: the groove moves
+    // both edges independently, so the raw list is only a candidate set. Widened
+    // by what the groove can move and then settled on the grooved edges, so a
     // locate between a note's written onset and its swung one does not start it
     // early, and the inverse miss cannot happen either.
+    //
+    // One implementation for both callers. The chase asks this, and so does the
+    // snapshot reconcile, and two derivations of "is it sounding" would be two
+    // things to keep in step.
     const auto widen = clip.groove.maxDisplacementBeats();
+    const auto contentBeat = timelineBeat - pass.timelineOfContentZero;
 
     scratch_.clear();
     clip.events.notesSoundingAt(contentBeat, widen, scratch_);
 
+    std::size_t kept = 0;
     for (std::size_t i = 0; i < scratch_.size(); ++i) {
         const auto index = scratch_[i];
         const auto& event = clip.events.events[static_cast<std::size_t>(index)];
 
         const auto onBeat = clip.groove.groovyBeat(pass.timelineOfContentZero + event.beat);
-        const auto offBeat =
-            clip.groove.groovyBeat(pass.timelineOfContentZero +
-                                   clip.events.events[static_cast<std::size_t>(event.endsAt)].beat);
+        const auto offBeat = clip.groove.groovyBeat(pass.timelineOfContentZero + event.endBeat);
 
         if (onBeat > timelineBeat || offBeat <= timelineBeat)
             continue;
 
-        startNote(out, block, clip, index, timelineBeat);
+        scratch_[kept++] = index;
     }
+
+    scratch_.resize(kept);
 }
 
 void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
@@ -280,16 +294,23 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
 
                 if (isOff) {
                     // Only for a note this source started, and never suppressed
-                    // by a hole. Both edges are grooved independently, so an off
-                    // can land before its own on: it is held back to it rather
-                    // than sent early.
+                    // by a hole.
                     if (!active_.active(channel, note) ||
                         active_.owner(channel, note) != clip.clipId)
                         continue;
 
+                    // Held inside its own note and inside its own pass. Both
+                    // edges groove independently, so an off can land before its
+                    // own on, which is held back to it rather than sent early;
+                    // and a positive groove can push it past the wrap, where
+                    // emitting it would clear the active entry, leave the
+                    // pass-end cleanup below with nothing to end, and ring the
+                    // note into the next pass with a stray off waiting to cut
+                    // whatever starts there.
                     const auto onBeat = active_.startBeat(channel, note);
-                    endNote(out, block.sampleForBeat(std::max(timelineBeat, onBeat)), channel,
-                            note);
+                    const auto at = std::clamp(timelineBeat, onBeat, passEndBeat);
+
+                    endNote(out, block.sampleForBeat(at), channel, note);
                     continue;
                 }
 
@@ -356,6 +377,13 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
         // snapshot agrees should be sounding here is left alone; the rest is
         // ended. The fork's shouldSendNoteOffsForNotesNoLongerPlaying, and it
         // costs one pointer comparison on every block that is not a swap.
+        //
+        // Agreement is about the owner as well as the pitch. A bare
+        // (channel, note) mask would call it settled when one clip is deleted
+        // and another starts sounding the same pitch, and the note would stay
+        // registered to the clip that is gone: a continuous block chases
+        // nothing, so the new clip's own note-off is later rejected for coming
+        // from the wrong owner and the note hangs until the transport stops.
         NoteMask expected;
 
         for (const auto& clip : track->midi) {
@@ -367,13 +395,27 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
             if (foldBlock(clip.fold, from, block.endBeat, clip.span.endBeat, passes) == 0)
                 continue;
 
-            scratch_.clear();
-            clip.events.notesSoundingAt(passes[0].contentStart, clip.groove.maxDisplacementBeats(),
-                                        scratch_);
+            gatherSounding(clip, passes[0], from);
 
-            for (const auto index : scratch_) {
+            for (std::size_t i = 0; i < scratch_.size(); ++i) {
+                const auto index = scratch_[i];
                 const auto& event = clip.events.events[static_cast<std::size_t>(index)];
-                expected.set(event.channel(), static_cast<int>(event.data1));
+                const auto channel = event.channel();
+                const auto note = static_cast<int>(event.data1);
+
+                expected.set(channel, note);
+
+                if (!active_.active(channel, note))
+                    continue;  // nobody is holding it, and a swap does not chase
+                if (active_.owner(channel, note) == clip.clipId)
+                    continue;  // already sounding, from the clip that should own it
+
+                // The wrong clip is holding this pitch. Hand it over rather than
+                // leaving it: ending first keeps the receiver's count right, and
+                // striking it again is what makes the new clip's own note-off
+                // legal when it arrives instead of rejected for the wrong owner.
+                endNote(out, 0, channel, note);
+                startNote(out, block, clip, index, from);
             }
         }
 
