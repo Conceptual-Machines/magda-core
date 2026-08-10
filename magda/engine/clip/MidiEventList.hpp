@@ -185,8 +185,12 @@ struct MidiEventList {
      * what ended it was a boundary rather than itself.
      *
      * Bounded by @ref longestNoteBeats rather than walked from the top.
+     *
+     * @p widen is what a groove can move an edge by. With one in force these are
+     * candidates rather than an answer, because where a note sounds is not where
+     * it was written, and the caller settles it on the grooved edges.
      */
-    void notesSoundingAt(double beat, std::vector<std::int32_t>& out) const;
+    void notesSoundingAt(double beat, double widen, std::vector<std::int32_t>& out) const;
 };
 
 /**
@@ -214,9 +218,6 @@ struct MidiFold {
     bool loopEnabled = false;
     double loopStartBeats = 0.0;
     double loopLengthBeats = 0.0;
-
-    /// The content beat sounding at timeline beat @p beat.
-    double contentAt(double beat) const;
 };
 
 /// How many passes of one clip's loop a single block may cover. A loop shorter

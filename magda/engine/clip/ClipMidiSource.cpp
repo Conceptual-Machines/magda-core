@@ -133,6 +133,14 @@ void ClipMidiSource::startNote(juce::MidiBuffer& out, const BlockInfo& block,
     // note-on when a discontinuous block lands exactly on a loop pass boundary:
     // the chase strikes what the instant is inside, and the pass start strikes
     // what hangs over it. They are the same note and it is struck once.
+    //
+    // The exact equality is load-bearing and the two sides reach it by different
+    // arithmetic, so do not "simplify" either: the outer chase is handed the
+    // block's cropped start and the pass chase computes contentZero plus the
+    // window start, and they cancel to the same bits at a wrap. If they ever
+    // differ by an ulp the cost is a duplicate note-on at one sample, which a
+    // receiver reads as one note, so this is a tidiness guard rather than the
+    // invariant's.
     if (active_.active(channel, note) && active_.owner(channel, note) == clip.clipId &&
         active_.startBeat(channel, note) == timelineBeat)
         return;
@@ -155,22 +163,42 @@ void ClipMidiSource::chaseClip(juce::MidiBuffer& out, const BlockInfo& block,
     scratch_.clear();
     clip.events.controllerStateAt(contentBeat, scratch_);
 
-    for (const auto index : scratch_) {
+    // By index rather than by iterator, and never through a copy: startNote and
+    // endNote do not touch the scratch, and copying a reserved vector on the
+    // audio thread would allocate, which is the one thing this class may not do.
+    for (std::size_t i = 0; i < scratch_.size(); ++i) {
         if (!fits(kMidiShortMessageBytes)) {
             dropped_.fetch_add(1, std::memory_order_relaxed);
             continue;
         }
-        emit(out, sample, clip.events.events[static_cast<std::size_t>(index)]);
+        emit(out, sample, clip.events.events[static_cast<std::size_t>(scratch_[i])]);
     }
 
-    // Then the notes this instant is inside. Gathered into a second pass over
-    // the scratch because startNote uses it.
-    scratch_.clear();
-    clip.events.notesSoundingAt(contentBeat, scratch_);
+    // Then the notes this instant is inside, which is a question about where
+    // they SOUND rather than where they were written: the groove moves both
+    // edges independently, so the raw list is only a candidate set. Widened by
+    // what the groove can move and then filtered on the grooved edges, so a
+    // locate between a note's written onset and its swung one does not start it
+    // early, and the inverse miss cannot happen either.
+    const auto widen = clip.groove.maxDisplacementBeats();
 
-    const auto sounding = scratch_;
-    for (const auto index : sounding)
+    scratch_.clear();
+    clip.events.notesSoundingAt(contentBeat, widen, scratch_);
+
+    for (std::size_t i = 0; i < scratch_.size(); ++i) {
+        const auto index = scratch_[i];
+        const auto& event = clip.events.events[static_cast<std::size_t>(index)];
+
+        const auto onBeat = clip.groove.groovyBeat(pass.timelineOfContentZero + event.beat);
+        const auto offBeat =
+            clip.groove.groovyBeat(pass.timelineOfContentZero +
+                                   clip.events.events[static_cast<std::size_t>(event.endsAt)].beat);
+
+        if (onBeat > timelineBeat || offBeat <= timelineBeat)
+            continue;
+
         startNote(out, block, clip, index, timelineBeat);
+    }
 }
 
 void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
@@ -202,18 +230,27 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
         const auto first = list.lowerBound(searchFrom);
         const auto last = list.lowerBound(searchTo);
 
-        // Three ordered walks rather than a scratch sort. juce::MidiBuffer
-        // inserts by sample and keeps insertion order for ties, so walking
-        // controllers, then note-offs, then note-ons gives the compile's own
-        // ordering at every sample for free, groove or no groove.
-        for (auto phase = 0; phase < 3; ++phase) {
+        // Two walks rather than a scratch sort. juce::MidiBuffer inserts by
+        // sample and keeps insertion order for ties, so the output lands in the
+        // compile's own order at every sample without one.
+        //
+        // The split is controllers from note edges, and NOT note-offs from
+        // note-ons. Separating those would put a note's off before its on
+        // whenever both fall in one callback, and the off would then find
+        // nothing active, be skipped, and leave the note sounding until a
+        // boundary: MidiBuffer can sort the output, it cannot repair @ref
+        // active_. So note edges are walked in list order, which is beat order
+        // with the compile's off-before-on tie-break, and a note's own on
+        // therefore always precedes its own off however the groove moves either.
+        const auto passEndBeat = pass.timelineOfContentZero + pass.windowEnd;
+
+        for (auto phase = 0; phase < 2; ++phase) {
             for (auto i = first; i < last; ++i) {
                 const auto& event = list.events[i];
 
                 const auto isOff = event.isNoteOff();
                 const auto isOn = event.isNoteOn();
-                const auto phaseOf = isOn ? 2 : (isOff ? 1 : 0);
-                if (phaseOf != phase)
+                if ((isOn || isOff) != (phase == 1))
                     continue;
 
                 auto timelineBeat = pass.timelineOfContentZero + event.beat;
@@ -224,6 +261,16 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
                     continue;
 
                 if (isOn) {
+                    // Grooved out of its own pass. The pass end below has
+                    // already ended everything the pass started, and MidiBuffer
+                    // orders by sample, so emitting this would put the off
+                    // before the on and leave a note sounding that nothing here
+                    // knows about. The fork drops the same event by clipping its
+                    // re-timed sequence to the pass (clipSequenceToRange); the
+                    // reason is the invariant rather than the mechanism.
+                    if (timelineBeat >= passEndBeat)
+                        continue;
+
                     startNote(out, block, clip, static_cast<std::int32_t>(i), timelineBeat);
                     continue;
                 }
@@ -321,7 +368,8 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
                 continue;
 
             scratch_.clear();
-            clip.events.notesSoundingAt(passes[0].contentStart, scratch_);
+            clip.events.notesSoundingAt(passes[0].contentStart, clip.groove.maxDisplacementBeats(),
+                                        scratch_);
 
             for (const auto index : scratch_) {
                 const auto& event = clip.events.events[static_cast<std::size_t>(index)];
@@ -329,15 +377,16 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
             }
         }
 
+        // Gathered before anything is emitted because endNote mutates the list,
+        // then walked by index: copying the scratch would allocate here.
         scratch_.clear();
         active_.forEach([this, &expected](int channel, int note) {
             if (!expected.test(channel, note))
                 scratch_.push_back(static_cast<std::int32_t>(channel * 1000 + note));
         });
 
-        const auto stale = scratch_;
-        for (const auto packed : stale)
-            endNote(out, 0, packed / 1000, packed % 1000);
+        for (std::size_t i = 0; i < scratch_.size(); ++i)
+            endNote(out, 0, scratch_[i] / 1000, scratch_[i] % 1000);
 
         lastSnapshot_ = live;
     }

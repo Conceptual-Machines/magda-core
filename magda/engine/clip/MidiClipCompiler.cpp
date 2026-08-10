@@ -158,6 +158,13 @@ void densify(std::vector<EventType> sorted, int maxValue, double floorBeats, Emi
 struct MpeChannel {
     double freeAtBeat = -std::numeric_limits<double>::max();
     int lastNoteNumber = -1;
+
+    /// The last wheel value written to this channel. Once any note in the clip
+    /// has expression every note takes a member channel, so a plain note can
+    /// land on one an expressive note left bent, and would inherit that bend for
+    /// its whole length. Tracked so the bend can be reset exactly when it is not
+    /// already centred, rather than a centre message before every note.
+    int lastWheel = kPitchWheelRest;
 };
 
 /// A channel for a note starting at @p startBeat, preferring one that is free
@@ -247,6 +254,21 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
 
         const auto pairId = static_cast<int>(i);
 
+        // A member channel this clip left bent, about to carry a note that says
+        // nothing about pitch. Centre it first: at equal beats a wheel sorts
+        // before a note-on, so the note starts in tune.
+        if (list.mpe && !note.hasPitchExpression()) {
+            auto& state = mpeChannels[static_cast<std::size_t>(channel - kMpeFirstMemberChannel)];
+            if (state.lastWheel != kPitchWheelRest) {
+                pending.push_back(PendingEvent{
+                    MidiClipEvent{note.startBeat, statusFor(kPitchWheel, channel),
+                                  static_cast<std::uint8_t>(kPitchWheelRest & 0x7f),
+                                  static_cast<std::uint8_t>((kPitchWheelRest >> 7) & 0x7f), -1},
+                    -1});
+                state.lastWheel = kPitchWheelRest;
+            }
+        }
+
         // Its own pitch struck again before this note ends: the note-off is
         // dropped, because emitting it would cut the second note short. The
         // fork's `useNoteUp = false`. What ends such a note is the pass or the
@@ -320,6 +342,8 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
                     -1});
                 lastValue = value;
                 lastBeat = relativeBeat;
+                mpeChannels[static_cast<std::size_t>(channel - kMpeFirstMemberChannel)].lastWheel =
+                    value;
             };
 
             // The value at the note's own start, so playback begins on the

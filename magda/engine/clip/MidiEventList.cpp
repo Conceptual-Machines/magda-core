@@ -39,33 +39,27 @@ void MidiEventList::controllerStateAt(double beat, std::vector<std::int32_t>& ou
     }
 }
 
-void MidiEventList::notesSoundingAt(double beat, std::vector<std::int32_t>& out) const {
+void MidiEventList::notesSoundingAt(double beat, double widen,
+                                    std::vector<std::int32_t>& out) const {
     if (longestNoteBeats <= 0.0)
         return;
 
     // No note-on further back than the longest note can still be sounding, so
     // the walk is bounded by the material rather than by the clip's length.
-    auto index = lowerBound(beat - longestNoteBeats);
-    const auto end = lowerBound(beat);
+    // @p widen is what a groove can move an edge by: with one in force these are
+    // candidates and the caller decides on the grooved edges, so the window has
+    // to cover a note the groove has not moved into it yet.
+    auto index = lowerBound(beat - longestNoteBeats - widen);
+    const auto end = lowerBound(beat + widen);
 
     for (; index < end; ++index) {
         const auto& event = events[index];
         if (!event.isNoteOn() || event.endsAt < 0)
             continue;
 
-        if (events[static_cast<std::size_t>(event.endsAt)].beat > beat)
+        if (events[static_cast<std::size_t>(event.endsAt)].beat > beat - widen)
             out.push_back(static_cast<std::int32_t>(index));
     }
-}
-
-double MidiFold::contentAt(double beat) const {
-    const auto elapsed = beat - clipStartBeat + offsetBeats;
-
-    if (!loopEnabled || loopLengthBeats <= 0.0)
-        return elapsed + trimOffsetBeats;
-
-    const auto pass = floorDiv(elapsed, loopLengthBeats);
-    return loopStartBeats + (elapsed - pass * loopLengthBeats);
 }
 
 int foldBlock(const MidiFold& fold, double startBeat, double endBeat, double clipEndBeat,

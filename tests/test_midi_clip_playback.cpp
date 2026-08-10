@@ -220,6 +220,14 @@ class Rig {
     bool rolling_ = false;
 };
 
+/// The fork's own "Basic 8th Swing", which displaces an off-beat by half of
+/// 0.66 over a two-per-beat grid: 0.165 beats.
+GrooveTemplateSet swingSet() {
+    GrooveTemplateSet set;
+    set.add(GrooveTemplateSet::Entry{"Swing", {0.0f, 0.66f}, 2, 2, true});
+    return set;
+}
+
 /// The blocks one beat spans.
 int blockOf(double beat) {
     return static_cast<int>(beat / kBeatsPerBlock);
@@ -622,6 +630,69 @@ TEST_CASE("Nothing is left hanging by anything the transport does", "[engine][cl
     CHECK(recorder.hanging().empty());
 }
 
+TEST_CASE("A note that begins and ends inside one block is ended by its own off",
+          "[engine][clip][midi]") {
+    // Walking note-offs as a separate phase from note-ons put a note's off
+    // before its own on whenever both fell in one callback: the off found
+    // nothing active, was skipped, and the note stayed sounding until a
+    // boundary. MidiBuffer can sort the output; it cannot repair the active
+    // list. So note edges are walked in list order.
+    auto clip = makeMidiClip(1, 0.0, 4.0);
+    clip.midiNotes.push_back(note(60, 0.5, 0.05));  // a fifth of a block long
+
+    Rig rig;
+    rig.publish({clip});
+
+    Recorder recorder;
+    // Only as far as the note, so a span end cannot cover for a missing off.
+    rig.roll(0, blockOf(1.0), recorder);
+
+    REQUIRE(recorder.noteOns().size() == 1);
+    REQUIRE(recorder.noteOffs().size() == 1);
+    CHECK(recorder.noteOffs().front().beat() > recorder.noteOns().front().beat());
+    CHECK(recorder.hanging().empty());
+}
+
+TEST_CASE("A note grooved past its loop pass does not outlive it", "[engine][clip][midi]") {
+    // The walk's own filter is the block, not the pass, so a note near the
+    // window end whose groove pushes it past the wrap would be emitted after the
+    // pass-end note-offs had already run. In sample order the off precedes the
+    // on and the receiver keeps a note the active list has forgotten.
+    // The loop length is deliberately not a whole number of blocks, so the wrap
+    // falls inside a block rather than on its edge: with the wrap on a boundary
+    // the block's own range filter hides the escape, and the bug does not
+    // reproduce. The note is then within the swing's reach of that wrap, and
+    // 1.35 grooves to about 1.466, past the pass end at 1.4.
+    auto clip = makeMidiClip(1, 0.0, 6.0);
+    clip.midiNotes.push_back(note(60, 1.35, 0.02));
+    clip.loopEnabled = true;
+    clip.loopStartBeats = 0.0;
+    clip.loopLengthBeats = 1.4;
+    clip.grooveTemplate = "Swing";
+    clip.grooveStrength = 1.0f;
+
+    Rig rig;
+    rig.publish({clip}, swingSet());
+
+    Recorder recorder;
+    rig.roll(0, blockOf(6.0) - 1, recorder);
+
+    // On message order rather than on the bitset, because a looped clip
+    // re-strikes the same pitch next pass and the bitset would resolve.
+    auto sounding = 0;
+    for (const auto& entry : recorder.captured) {
+        if (entry.message.isNoteOn())
+            ++sounding;
+        else if (entry.message.isNoteOff())
+            --sounding;
+
+        CHECK(sounding >= 0);
+        CHECK(sounding <= 1);
+    }
+
+    CHECK(recorder.hanging().empty());
+}
+
 TEST_CASE("A clip covered in the middle ends its notes at the hole's edge",
           "[engine][clip][midi]") {
     auto under = makeMidiClip(1, 0.0, 16.0);
@@ -716,6 +787,102 @@ TEST_CASE("Locating past a controller sets it", "[engine][clip][midi]") {
           Approx(63.0).margin(2.0));
 }
 
+TEST_CASE("Locating into an expressive note reconstructs its bend on its own channel",
+          "[engine][clip][midi]") {
+    auto clip = makeMidiClip(1, 0.0, 8.0);
+    auto expressive = note(60, 0.0, 6.0);
+    expressive.pitchExpression = {MidiPitchExpressionPoint{0.0, 0.0},
+                                  MidiPitchExpressionPoint{6.0, 12.0}};
+    clip.midiNotes.push_back(expressive);
+
+    Rig rig;
+    rig.publish({clip});
+
+    Recorder recorder;
+    rig.locate(blockOf(3.0), recorder);
+
+    REQUIRE(recorder.noteOns().size() == 1);
+    const auto channel = recorder.noteOns().front().message.getChannel();
+    CHECK(channel >= 2);  // a member channel, not the master
+
+    // The bend is a controller stream like any other, so the chase delivers it
+    // structurally: halfway up a six-beat glide to twelve semitones is six, and
+    // the wheel is centre plus half of TE's fixed 48-semitone range times that.
+    const auto bends = recorder.pitchBends();
+    REQUIRE(!bends.empty());
+    CHECK(bends.front().message.getChannel() == channel);
+    CHECK(bends.front().message.getPitchWheelValue() ==
+          Approx(8192.0 + 8191.0 * 6.0 / 48.0).margin(64.0));
+
+    rig.roll(blockOf(3.0) + 1, blockOf(8.0), recorder);
+    CHECK(recorder.hanging().empty());
+}
+
+TEST_CASE("A locate asks where a note sounds, not where it was written", "[engine][clip][midi]") {
+    // notesSoundingAt reads raw beats while playback grooves both edges, so a
+    // locate landing between a note's written onset and its swung one would
+    // start it early.
+    auto clip = makeMidiClip(1, 0.0, 8.0);
+    clip.midiNotes.push_back(note(60, 0.5, 2.0));
+    clip.grooveTemplate = "Swing";
+    clip.grooveStrength = 1.0f;
+
+    Rig rig;
+    rig.publish({clip}, swingSet());
+
+    Recorder recorder;
+    // Onto the written onset, which the swing has already moved off. The chase
+    // runs at the block's start and the walk covers the rest of it, so reading
+    // raw beats would strike the note twice: once at 0.5 because the raw list
+    // says it is sounding, and once at its swung 0.665.
+    rig.locate(blockOf(0.5), recorder);
+
+    REQUIRE(recorder.noteOns().size() == 1);
+    CHECK(recorder.noteOns().front().beat() ==
+          Approx(0.5 + 0.5 * 0.66 / 2.0).margin(kBeatsPerBlock / kBlockSize + 1e-9));
+
+    rig.roll(blockOf(0.5) + 1, blockOf(8.0), recorder);
+    CHECK(recorder.hanging().empty());
+}
+
+TEST_CASE("A reused MPE channel does not inherit the last note's bend", "[engine][clip][midi]") {
+    // Once any note has expression every note takes a member channel, so a plain
+    // note can land on one an expressive note left bent. Fifteen expressive
+    // notes first, because there are fifteen member channels and reuse only
+    // begins once every one of them has been used.
+    auto clip = makeMidiClip(1, 0.0, 64.0);
+
+    for (auto i = 0; i < 15; ++i) {
+        auto bent = note(40 + i, i * 1.0, 0.5);
+        bent.pitchExpression = {MidiPitchExpressionPoint{0.0, 0.0},
+                                MidiPitchExpressionPoint{0.5, 12.0}};
+        clip.midiNotes.push_back(bent);
+    }
+
+    clip.midiNotes.push_back(note(64, 20.0, 1.0));  // plain, onto a channel left bent
+
+    const auto list = compileMidiEvents(clip, 0.001 * 120.0 / 60.0);
+    REQUIRE(list.mpe);
+
+    // Find the plain note's on, and the last wheel written to its channel before
+    // it. It has to be centre, or the note plays a whole tone sharp.
+    std::size_t plainOn = 0;
+    for (std::size_t i = 0; i < list.events.size(); ++i)
+        if (list.events[i].isNoteOn() && list.events[i].data1 == 64)
+            plainOn = i;
+
+    REQUIRE(plainOn > 0);
+
+    auto wheel = -1;
+    for (std::size_t i = 0; i < plainOn; ++i) {
+        const auto& event = list.events[i];
+        if (event.kind() == 0xe0u && event.channel() == list.events[plainOn].channel())
+            wheel = event.data1 | (event.data2 << 7);
+    }
+
+    CHECK(wheel == 8192);
+}
+
 TEST_CASE("Locating into a hole strikes nothing", "[engine][clip][midi]") {
     auto under = makeMidiClip(1, 0.0, 16.0);
     under.midiNotes.push_back(note(60, 0.0, 10.0));
@@ -736,16 +903,6 @@ TEST_CASE("Locating into a hole strikes nothing", "[engine][clip][midi]") {
 // =============================================================================
 // Groove
 // =============================================================================
-
-namespace {
-
-GrooveTemplateSet swingSet() {
-    GrooveTemplateSet set;
-    set.add(GrooveTemplateSet::Entry{"Swing", {0.0f, 0.66f}, 2, 2, true});
-    return set;
-}
-
-}  // namespace
 
 TEST_CASE("Groove moves a note and leaves a controller alone", "[engine][clip][midi]") {
     auto clip = makeMidiClip(1, 0.0, 4.0);
