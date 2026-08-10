@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "clip/GrooveTemplate.hpp"
+#include "clip/MidiEventList.hpp"
 #include "clip/WarpMap.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/TypeIds.hpp"
@@ -233,9 +235,11 @@ struct AudioClipPlayback {
 /**
  * @brief One MIDI clip, as it plays.
  *
- * The events are the clip's authoritative lists, which is what a fronted take
- * or an assembled comp has already been written into: choosing between takes
- * happens in the model, never here.
+ * The events are the clip's authoritative lists resolved into the messages they
+ * play (MidiEventList.hpp), which is what a fronted take or an assembled comp
+ * has already been written into: choosing between takes happens in the model,
+ * never here, and turning a note into a note-on happens at compile time, never
+ * on the audio thread.
  */
 struct MidiClipPlayback {
     ClipId clipId = INVALID_CLIP_ID;
@@ -246,21 +250,23 @@ struct MidiClipPlayback {
     /// hole rather than being cut by it.
     std::vector<SnapshotSpan> silenced;
 
-    std::vector<MidiNote> notes;
-    std::vector<MidiCCData> cc;
-    std::vector<MidiPitchBendData> pitchBend;
+    /// Compiled, never the model's own lists: the curve densification, the MPE
+    /// channel assignment, the same-pitch overlap rule and the two offsets all
+    /// resolve once, in the compiler that already owns the rest of the
+    /// resolution.
+    MidiEventList events;
 
-    /// Clip beats, not source samples: a MIDI clip's loop is musical on both
-    /// sides, so it has no seconds face to derive.
-    bool loopEnabled = false;
-    double loopStartBeats = 0.0;
-    double loopLengthBeats = 0.0;
+    /// How the clip's content maps onto the timeline: its loop, its phase and
+    /// its content origin, which is the only interpretation left for the block
+    /// to do.
+    MidiFold fold;
 
-    double offsetBeats = 0.0;      ///< ClipInfo::midiOffset
-    double trimOffsetBeats = 0.0;  ///< ClipInfo::midiTrimOffset
-
-    std::string grooveTemplate;
-    float grooveStrength = 0.0f;
+    /// Compiled against this clip's own strength, and the one thing here the
+    /// audio thread evaluates rather than reads: groove is anchored to the
+    /// project grid, so a looped clip grooves each pass differently whenever its
+    /// loop length is not a whole multiple of the template's period. Empty is
+    /// the identity.
+    GrooveTemplate groove;
 };
 
 /** Everything one track plays. */
