@@ -121,6 +121,17 @@ struct Case {
     /// clip, so every note of such a clip lands offset.
     double declaredMidiShiftBeats = 0.0;
 
+    /// A fixed sub-sample offset between the two renders, applied before
+    /// comparing, with its mechanism in `mechanism`.
+    ///
+    /// This is not a tolerance and it is not fitted. It is a constant the
+    /// corpus measured, declared here, and then aligned by: if the offset were
+    /// anything other than constant, aligning by one number would not bring the
+    /// case to the floor, so the null after alignment is the evidence that the
+    /// mechanism is what it is claimed to be. Measured, mechanized, then
+    /// nulled.
+    double declaredFractionalShiftSamples = 0.0;
+
     /// How much earlier the fork ends every note, in seconds.
     ///
     /// Its own constant: MidiNote::getPlaybackTime nudges every note-off back

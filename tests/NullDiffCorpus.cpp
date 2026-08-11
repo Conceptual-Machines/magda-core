@@ -342,6 +342,19 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         // Lagrange here and JUCE's five-point in the fork, and at a few hundred
         // hertz both curves are the same curve to far below the floor, while a
         // wrong position or a dropped sample is as loud as it ever was.
+        //
+        // The residual here is timing shaped: the two renders sit -0.852 of a
+        // sample apart, which is the size a difference between two
+        // interpolation kernels would be.
+        //
+        // That reading has been tried and does not hold. Aligning by the
+        // measured offset makes the case worse rather than better (-32.2 dB to
+        // -28.5 dB), and a fixed offset is precisely the thing one number can
+        // undo. So whatever separates these two is not a constant delay, and
+        // the case stays under calibration rather than carrying a mechanism its
+        // own evidence contradicts. The next reading to try is a difference in
+        // the mapping itself, where the offset varies with position rather than
+        // sitting still.
         corpus.push_back(std::move(value));
     }
 
