@@ -763,30 +763,69 @@ MidiComparison compareMidi(const MidiStream& native, const MidiStream& incumbent
         note.offSample -= options.noteShiftSamples;
     }
 
-    // Everything neither side's comparison reaches, counted. The fork sends
-    // channel pressure with every MPE note; dropping that in silence is how a
-    // difference nobody counted becomes indistinguishable from no difference.
-    const auto countUncompared = [](const MidiStream& stream) {
-        auto uncompared = 0;
+    const auto tolerance = static_cast<std::int64_t>(options.noteToleranceSamples);
+
+    // Everything the note and controller comparisons do not reach, compared
+    // rather than counted. Counting was not enough: equal counts of channel
+    // pressure would pass whatever channel, value or instant they carried, and
+    // an MPE note opens with one, so this is a stream the corpus really is
+    // asserting on rather than a tally it prints.
+    const auto others = [](const MidiStream& stream, std::int64_t shift) {
+        std::vector<MidiEvent> out;
         for (const auto& event : stream) {
             const auto type = event.type();
-            if (type != kNoteOn && type != kNoteOff && type != kControlChange && type != kPitchBend)
-                ++uncompared;
+            if (type == kNoteOn || type == kNoteOff || type == kControlChange || type == kPitchBend)
+                continue;
+
+            auto moved = event;
+            moved.sample -= shift;
+            out.push_back(moved);
         }
-        return uncompared;
+
+        std::stable_sort(out.begin(), out.end(), [](const MidiEvent& a, const MidiEvent& b) {
+            if (a.sample != b.sample)
+                return a.sample < b.sample;
+            if (a.status != b.status)
+                return a.status < b.status;
+            return a.data1 < b.data1;
+        });
+        return out;
     };
 
-    result.nativeUncompared = countUncompared(native);
-    result.incumbentUncompared = countUncompared(incumbent);
+    const auto nativeOthers = others(native, 0);
+    const auto incumbentOthers = others(incumbent, options.noteShiftSamples);
 
-    if (result.nativeUncompared != result.incumbentUncompared)
+    result.nativeUncompared = static_cast<int>(nativeOthers.size());
+    result.incumbentUncompared = static_cast<int>(incumbentOthers.size());
+
+    auto othersMatch = nativeOthers.size() == incumbentOthers.size();
+    if (!othersMatch)
         result.problems.push_back("messages outside notes, controllers and pitch bend: " +
                                   std::to_string(result.nativeUncompared) +
                                   " in the native render against " +
                                   std::to_string(result.incumbentUncompared) + " in the incumbent");
 
+    for (std::size_t i = 0; othersMatch && i < nativeOthers.size(); ++i) {
+        const auto& a = nativeOthers[i];
+        const auto& b = incumbentOthers[i];
+
+        if (a.status == b.status && a.data1 == b.data1 && a.data2 == b.data2 &&
+            std::abs(a.sample - b.sample) <= tolerance)
+            continue;
+
+        othersMatch = false;
+        result.problems.push_back("a message outside notes and controllers differs at " +
+                                  sampleAddress(a.sample, options.sampleRate) + ": status " +
+                                  std::to_string(static_cast<int>(a.status)) + " value " +
+                                  std::to_string(static_cast<int>(a.data1)) + " against status " +
+                                  std::to_string(static_cast<int>(b.status)) + " value " +
+                                  std::to_string(static_cast<int>(b.data1)) + " at " +
+                                  sampleAddress(b.sample, options.sampleRate));
+    }
+
+    result.otherMessagesMatch = othersMatch;
+
     std::vector<char> matched(incumbentLifetime.notes.size(), 0);
-    const auto tolerance = static_cast<std::int64_t>(options.noteToleranceSamples);
     const auto endEarly = static_cast<std::int64_t>(options.incumbentNoteEndEarlySamples);
 
     for (const auto& note : nativeLifetime.notes) {
@@ -845,6 +884,8 @@ MidiComparison compareMidi(const MidiStream& native, const MidiStream& incumbent
                                       sampleAddress(note.onSample, options.sampleRate) +
                                       " is not in the native render");
     }
+
+    result.otherMessagesMatch = othersMatch;
 
     result.notesMatch = result.notesOnlyInNative == 0 && result.notesOnlyInIncumbent == 0 &&
                         result.notesMismatched == 0 && nativeLifetime.hanging == 0 &&

@@ -78,6 +78,53 @@ TEST_CASE("Every case renders through the native engine", "[nulldiff][native]") 
     }
 }
 
+TEST_CASE("A stretched clip survives a block shorter than a cell", "[nulldiff][native]") {
+    // A device at 64 samples still drives whole 128-sample cells through the
+    // stretcher, so everything sized against one has to be sized against the
+    // cell rather than the block. Sized against the block, SoundTouch fills
+    // half a cell and zero-fills the rest, and the reading clamp truncates
+    // every cell's read: alternating material and silence, at exactly the block
+    // sizes a low-latency interface uses, and no error anywhere.
+    for (const auto& value : buildCorpus(scratch())) {
+        if (value.capturesMidi() || value.name.rfind("stretch", 0) != 0)
+            continue;
+
+        INFO(value.name);
+
+        auto small = value;
+        small.blockSize = 64;
+        const auto rendered = renderNative(small);
+
+        REQUIRE(rendered.failure.empty());
+        CHECK(rendered.diagnostics.empty());
+        CHECK(peakOf(rendered.audio) > 0.01);
+
+        // The failure this exists for is not silence everywhere, it is silence
+        // every other cell. So the material is checked in cell-sized pieces
+        // across a stretch of the clip rather than as one peak.
+        // From a second in, past the priming a stretcher needs before it has
+        // anything to give: that opening quiet is the engine working, and
+        // counting it here would measure latency rather than the hole this is
+        // looking for.
+        const auto from = static_cast<int>(value.sampleRate);
+        auto quietCells = 0;
+        const auto cells = std::min(64, std::max(0, (rendered.audio.getNumSamples() - from) / 128));
+        REQUIRE(cells > 0);
+
+        for (auto cell = 0; cell < cells; ++cell) {
+            auto peak = 0.0f;
+            for (auto sample = 0; sample < 128; ++sample)
+                peak = std::max(peak,
+                                std::abs(rendered.audio.getSample(0, from + cell * 128 + sample)));
+            if (peak < 1.0e-6f)
+                ++quietCells;
+        }
+
+        INFO(quietCells << " of " << cells << " cells were silent");
+        CHECK(quietCells == 0);
+    }
+}
+
 TEST_CASE("The native leg renders the same at any block size", "[nulldiff][native]") {
     // What RenderContext requires of every op, now over real material rather
     // than over a test device: block size is an I/O batching concept and never
@@ -102,7 +149,20 @@ TEST_CASE("The native leg renders the same at any block size", "[nulldiff][nativ
     // internal to that mode rather than to how it is fed, and it is worth its
     // own issue rather than a guess here.
     const std::set<std::string> knownDependent{
-        "stretch.soundtouch.normal",
+        // A cell that straddles a step tempo change takes its far end's beat
+        // from the producing block's own slope. BlockInfo::beatAtTime is a lerp
+        // over that block's endpoints, exact inside one tempo region and
+        // extrapolated outside it, and a cell regularly outlives its block. So
+        // the cell's ratio is briefly wrong across every tempo step, on exactly
+        // the auto-tempo material this case plays.
+        //
+        // Invisible at 128 and 1024, where the grid coincides with the blocks;
+        // the misaligned sizes below are what surfaced it. The fix is to cut a
+        // callback at a tempo change the way it is already cut at a loop wrap,
+        // so that every cell lives inside one region where the lerp is exact.
+        // That is a change to the clock rather than to the voice, and it is
+        // why tempo.auto is still under calibration in the corpus.
+        "tempo.auto",
     };
 
     std::set<std::string> failed;
@@ -113,10 +173,15 @@ TEST_CASE("The native leg renders the same at any block size", "[nulldiff][nativ
 
         INFO(value.name);
 
+        // Deliberately not multiples of the cell size. At 128 and 1024 the
+        // event-anchored grid coincides with the block grid, so the holdover
+        // buffer, the head-drop and the mid-cell resume never run and the
+        // invariance claim would be weakest exactly where the machinery does
+        // the most work.
         auto small = value;
-        small.blockSize = 128;
+        small.blockSize = 96;
         auto large = value;
-        large.blockSize = 1024;
+        large.blockSize = 480;
 
         const auto first = renderNative(small);
         const auto second = renderNative(large);

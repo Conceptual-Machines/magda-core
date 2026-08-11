@@ -3,6 +3,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 
@@ -227,8 +228,33 @@ constexpr double kMaxStretchRate = 10.0;
  * the way one with a ratio past the ceiling already does, rather than writing
  * where it should not.
  */
+/**
+ * @brief How much output a stretcher is driven in at a time.
+ *
+ * A voice feeds a stretcher on a fixed grid rather than a block at a time, so
+ * that what it receives follows position on the timeline and not how the
+ * callback was cut up (ClipVoice::renderThroughCells). This is that grid, and
+ * it lives here rather than with the voice because everything sized against a
+ * stretcher has to be sized against it: a device running 64-sample blocks still
+ * drives whole 128-sample cells through, and a capacity derived from the block
+ * would be half of what one cell needs.
+ */
+constexpr int kStretchCellSamples = 128;
+
+/**
+ * @brief The most output a stretcher can be asked for in one go.
+ *
+ * The block, or one cell, whichever is larger. Below the cell size the block
+ * stops being the unit anything is driven in, and sizing from it would leave a
+ * stretcher writing half a cell and zero-filling the rest, which is audible as
+ * alternating material and silence rather than as an error anybody sees.
+ */
+inline int stretchWorkSamples(int maxBlockSamples) {
+    return std::max(maxBlockSamples, kStretchCellSamples);
+}
+
 inline int maxReadingSamples(int maxBlockSamples) {
-    return static_cast<int>(maxBlockSamples * kMaxStretchRate) + 1;
+    return static_cast<int>(stretchWorkSamples(maxBlockSamples) * kMaxStretchRate) + 1;
 }
 
 /**
@@ -238,7 +264,7 @@ inline int maxReadingSamples(int maxBlockSamples) {
  * consume.
  */
 inline int stretchScratchSamples(int maxBlockSamples) {
-    return maxBlockSamples + maxReadingSamples(maxBlockSamples);
+    return stretchWorkSamples(maxBlockSamples) + maxReadingSamples(maxBlockSamples);
 }
 
 }  // namespace magda::engine

@@ -515,7 +515,7 @@ class NullDiffCorpusTests : public juce::UnitTest {
 
         switch (value.verdict) {
             case Verdict::Null:
-                report.passed = report.audio.withinFloor() && report.audio.refusal.empty();
+                report.passed = report.audio.nulled();
                 break;
 
             case Verdict::Shift:

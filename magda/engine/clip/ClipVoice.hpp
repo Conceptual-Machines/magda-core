@@ -130,22 +130,18 @@ class ClipVoice {
                    const BlockInfo& block, double startSeconds, double endSeconds, FadeCurve curve,
                    bool rising) const;
 
-    /**
-     * @brief How much timeline one cell covers.
-     *
-     * Small enough that a curved rate is still nearly straight across one, and
-     * that is the only thing it has to be: it is not a latency, because a cell
-     * is produced when it is wanted rather than ahead of time, and it is not a
-     * block, because the reader is asked for exactly what the cell consumes.
-     * A power of two so that a block size which is one lines up with it and
-     * nothing is held over.
-     */
-    static constexpr int kCellSamples = 128;
+    /// How much timeline one cell covers. Small enough that a curved rate is
+    /// still nearly straight across one, and that is the only thing it has to
+    /// be. It lives beside the stretcher because everything sized against one
+    /// is sized against this (ClipStretcher.hpp).
+    static constexpr int kCellSamples = kStretchCellSamples;
 
     double sampleRate_ = 44100.0;
 
-    /// Where in the scratch the reading starts: past the longest block this
-    /// voice can be asked to render, because both live in the one buffer.
+    /// Where in the scratch the reading starts, and the most output anything is
+    /// driven in at once: the longest block, or one cell, whichever is larger.
+    /// Both live in the one buffer, and a device below the cell size still
+    /// drives whole cells through (ClipStretcher.hpp).
     int maxBlockSamples_ = 512;
 
     ClipId clipId_ = INVALID_CLIP_ID;

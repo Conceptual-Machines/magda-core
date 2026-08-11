@@ -693,3 +693,66 @@ TEST_CASE("Magnitude agrees where phase does not", "[nulldiff][compare][spectral
         CHECK(spectral.percentile95Db > 3.0);
     }
 }
+
+TEST_CASE("A short render is not a null however well its prefix agrees", "[nulldiff][compare]") {
+    // The residual is measured over what both renders cover, so a leg that came
+    // back short with a bit-identical prefix would otherwise be certified as a
+    // null while being exactly what this file calls a bug in a leg.
+    const auto native = impulses(2.0);
+
+    juce::AudioBuffer<float> truncated(native.getNumChannels(), native.getNumSamples() / 2);
+    for (auto channel = 0; channel < truncated.getNumChannels(); ++channel)
+        truncated.copyFrom(channel, 0, native, channel, 0, truncated.getNumSamples());
+
+    const auto result = compareAudio(native, truncated);
+
+    // The overlap really is identical, which is what makes this the trap it is.
+    CHECK(result.withinFloor());
+    CHECK(result.lengthDifference == native.getNumSamples() - truncated.getNumSamples());
+    CHECK_FALSE(result.nulled());
+}
+
+TEST_CASE("Messages outside notes and controllers are compared, not counted",
+          "[nulldiff][compare][midi]") {
+    // An MPE note opens with a channel pressure, so this is a stream the corpus
+    // asserts on. Equal counts used to be enough, which passed whatever channel,
+    // value or instant they carried.
+    const auto pressure = [](int channel, int value, double seconds) {
+        return MidiEvent{samplesAt(seconds), static_cast<std::uint8_t>(0xD0 | (channel - 1)),
+                         static_cast<std::uint8_t>(value), 0};
+    };
+
+    MidiStream native;
+    native.push_back(pressure(2, 0, 0.0));
+    native.push_back(noteOn(2, 60, 100, 0.0));
+    native.push_back(noteOff(2, 60, 0.5));
+
+    SECTION("the same message passes") {
+        CHECK(compareMidi(native, native, midiOptions()).passed());
+    }
+
+    SECTION("a different value fails") {
+        auto incumbent = native;
+        incumbent[0] = pressure(2, 64, 0.0);
+        const auto result = compareMidi(native, incumbent, midiOptions());
+        CHECK_FALSE(result.otherMessagesMatch);
+        CHECK_FALSE(result.passed());
+    }
+
+    SECTION("a different channel fails") {
+        auto incumbent = native;
+        incumbent[0] = pressure(3, 0, 0.0);
+        CHECK_FALSE(compareMidi(native, incumbent, midiOptions()).passed());
+    }
+
+    SECTION("a different instant fails") {
+        auto incumbent = native;
+        incumbent[0] = pressure(2, 0, 0.25);
+        CHECK_FALSE(compareMidi(native, incumbent, midiOptions()).passed());
+    }
+
+    SECTION("a missing message fails") {
+        MidiStream incumbent{native[1], native[2]};
+        CHECK_FALSE(compareMidi(native, incumbent, midiOptions()).passed());
+    }
+}

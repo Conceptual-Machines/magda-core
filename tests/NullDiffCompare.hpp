@@ -110,6 +110,14 @@ struct AudioComparison {
         return peakDb <= floorUsed;
     }
 
+    /// A null is the whole render agreeing, not the part both happened to
+    /// cover. The residual is measured over the overlap, so a short incumbent
+    /// with an identical prefix would otherwise be certified as a null while
+    /// being exactly what this file calls a bug in a leg.
+    bool nulled() const {
+        return refusal.empty() && lengthDifference == 0 && withinFloor();
+    }
+
     double floorUsed = -120.0;
 };
 
@@ -340,13 +348,18 @@ struct MidiComparison {
     int nativeUncompared = 0;
     int incumbentUncompared = 0;
 
+    /// Whether those messages agree, message for message, in status, value and
+    /// instant. Counting them was not enough: equal counts would pass whatever
+    /// they carried, and an MPE note opens with a channel pressure.
+    bool otherMessagesMatch = false;
+
     /// Every disagreement, addressed: which note, which controller, which
     /// instant. A parity failure that says "the streams differ" is a day of
     /// somebody's life.
     std::vector<std::string> problems;
 
     bool passed() const {
-        return notesMatch && controllersMatch;
+        return notesMatch && controllersMatch && otherMessagesMatch;
     }
 };
 

@@ -11,7 +11,7 @@ namespace magda::engine {
 
 void ClipVoice::prepare(const RenderContext& context) {
     sampleRate_ = context.sampleRate;
-    maxBlockSamples_ = context.maxBlockSize;
+    maxBlockSamples_ = stretchWorkSamples(context.maxBlockSize);
 
     // One cell of output, off the callback. What a cell produces beyond the
     // block that asked for it waits here.
