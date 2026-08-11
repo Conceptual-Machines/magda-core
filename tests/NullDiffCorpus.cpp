@@ -143,6 +143,16 @@ MaterialSpec tone(double sampleRate = kRate, double frequency = 220.0) {
     return spec;
 }
 
+/// A tone with a slow swell in it, for the cases judged on their envelope.
+MaterialSpec pulsedTone() {
+    MaterialSpec spec;
+    spec.kind = MaterialKind::PulsedTone;
+    spec.sampleRate = kRate;
+    spec.durationSeconds = kSourceSeconds;
+    spec.frequency = 220.0;
+    return spec;
+}
+
 MaterialSpec noise() {
     MaterialSpec spec;
     spec.kind = MaterialKind::Noise;
@@ -380,7 +390,7 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
 
     {
         auto value = newCase("tempo.auto", "auto tempo across a step tempo change", plainTrack());
-        const auto source = writeSource(scratchDirectory, "autotempo", tone());
+        const auto source = writeSource(scratchDirectory, "autotempo", pulsedTone());
         value.sources.push_back(source);
 
         auto clip = audioClip(100, 0.0, 12.0, source);
@@ -421,7 +431,7 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
           StretchCase{"stretch.soundtouch.better", "kSoundTouchBetter",
                       time_stretch_mode::kSoundTouchBetter}}) {
         auto value = newCase(stretch.name, stretch.covers, plainTrack());
-        const auto source = writeSource(scratchDirectory, juce::String(stretch.name), tone());
+        const auto source = writeSource(scratchDirectory, juce::String(stretch.name), pulsedTone());
         value.sources.push_back(source);
 
         auto clip = audioClip(110, 0.0, 8.0, source);
@@ -465,7 +475,7 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         // limited and the case carries the priming shift.
         auto value =
             newCase("warp.audio", "a warped clip actually read through the map", plainTrack());
-        const auto source = writeSource(scratchDirectory, "warp", tone());
+        const auto source = writeSource(scratchDirectory, "warp", pulsedTone());
         value.sources.push_back(source);
 
         auto clip = audioClip(130, 0.0, 8.0, source);

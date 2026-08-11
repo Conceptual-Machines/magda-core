@@ -58,6 +58,13 @@ enum class MaterialKind {
     /// an interpolator or a stretcher in it.
     Tone,
 
+    /// A tone under a slow raised-cosine tremolo. For the cases judged on their
+    /// envelope: a steady tone has none worth correlating, so an envelope test
+    /// over one measures nothing and reports whatever the noise floor prefers.
+    /// The modulation is a few hertz, which puts its sidebands beside the
+    /// carrier and leaves the material as band limited as it was.
+    PulsedTone,
+
     /// White noise from a fixed generator. One case, which measures rather than
     /// asserts.
     Noise,
@@ -69,8 +76,11 @@ struct MaterialSpec {
     double durationSeconds = 8.0;
     int channels = 1;
 
-    /// Tone only.
+    /// Tone and PulsedTone.
     double frequency = 220.0;
+
+    /// PulsedTone only: how often the level swells, in hertz.
+    double pulseHz = 3.0;
 
     /// Impulses and Steps: how often one lands.
     double intervalSeconds = 0.25;

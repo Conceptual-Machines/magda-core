@@ -293,6 +293,82 @@ class NullDiffCorpusTests : public juce::UnitTest {
     }
 
   private:
+    /**
+     * @brief A stretched case, on the three things that can be asserted of one.
+     *
+     * Not a waveform null, and not because the bar was lowered. Two vocoders
+     * primed differently never converge on one waveform: priming sets the
+     * initial phase state, phase in a vocoder is memory, and the two legs prime
+     * from different material. Magnitude is what framing leaves intact.
+     *
+     * Magnitude alone would let a wrong ratio, a misplaced clip or a dropped
+     * block through, so it is one of three rather than a replacement:
+     *
+     *  - the pinned shift, measured by cross correlation and checked against
+     *    what the stretcher says it primes with, so an offset that appeared
+     *    because a clip moved is not quietly absorbed;
+     *  - envelope timing after that shift, which is what keeps a placement bug
+     *    visible when the waveform cannot be compared;
+     *  - the magnitude spectrogram, window and hop stated, bound declared by
+     *    the case with its mechanism.
+     */
+    bool judgeStretched(const Case& value, const NativeRender& native,
+                        const IncumbentRender& incumbent, CaseReport& report) {
+        report.hasSpectral = true;
+
+        // The alignment comes from the envelopes, not from the waveforms. Two
+        // vocoders never correlate as waveforms however well aligned they are,
+        // so requiring that here would fail every stretched case for being what
+        // it was predicted to be. The envelope is what survives the phase
+        // difference, and the material these cases play has one to correlate.
+        if (report.shiftCorrelationEnvelope < 0.98) {
+            logMessage("  " + juce::String(value.name) + ": the envelopes do not correlate (" +
+                       juce::String(report.shiftCorrelationEnvelope, 3) + ") at any offset");
+            return false;
+        }
+
+        const auto shift = static_cast<int>(std::llround(report.measuredShift));
+
+        report.envelope = compareEnvelopes(native.audio, incumbent.audio, shift, value.sampleRate);
+        report.spectra = compareSpectra(native.audio, incumbent.audio, shift);
+
+        auto held = true;
+
+        // The shift against the prediction. The engine reports what its own
+        // stretcher primes with, and the fork is late by its own copy of the
+        // same library, so the two figures are the same figure.
+        if (value.expectedShiftSamples != 0) {
+            const auto allowed =
+                std::max(64.0, std::abs(value.expectedShiftSamples) * value.shiftTolerance);
+            if (std::abs(report.measuredShift - value.expectedShiftSamples) > allowed) {
+                logMessage("  " + juce::String(value.name) + ": shift " +
+                           juce::String(report.measuredShift, 1) + " against a predicted " +
+                           juce::String(value.expectedShiftSamples));
+                held = false;
+            }
+        }
+
+        if (std::abs(report.envelope.lagSamples) > value.envelopeToleranceSamples) {
+            logMessage("  " + juce::String(value.name) + ": the envelopes are " +
+                       juce::String(report.envelope.lagSamples, 2) +
+                       " samples apart after the shift");
+            held = false;
+        }
+
+        if (report.spectra.frames == 0) {
+            logMessage("  " + juce::String(value.name) + ": nothing to compare spectrally");
+            held = false;
+        } else if (value.spectralPercentile95Db > 0.0 &&
+                   report.spectra.percentile95Db > value.spectralPercentile95Db) {
+            logMessage("  " + juce::String(value.name) + ": spectral p95 " +
+                       juce::String(report.spectra.percentile95Db, 2) + " dB against a bound of " +
+                       juce::String(value.spectralPercentile95Db, 2));
+            held = false;
+        }
+
+        return held;
+    }
+
     CaseReport run(const Case& value) {
         CaseReport report;
         report.name = value.name;
@@ -342,6 +418,25 @@ class NullDiffCorpusTests : public juce::UnitTest {
             return report;
         }
 
+        // Measured on every audio case, applied only where one is declared. An
+        // offset that is not applied is still the first thing worth knowing
+        // about a case that will not null, and measuring it is what turns "the
+        // residual is -32 dB" into "the two are three quarters of a sample
+        // apart", which is a different conversation.
+        // A narrow search where no shift is expected: it is a diagnosis rather
+        // than an alignment, and the answer to "how far apart are these" is a
+        // sample or two or it is not the question.
+        const auto searchRange = value.verdict == Verdict::Shift ? value.maxShiftSamples : 256;
+        const auto estimate = estimateShift(native.audio, incumbent.audio, searchRange);
+        report.hasMeasuredShift = estimate.found;
+        report.shiftCorrelation = estimate.correlation;
+        report.shiftCorrelationEnvelope = estimate.envelopeCorrelation;
+
+        // A stretched case takes the envelope's answer, everything else the
+        // waveform's, because those are the two things each can be aligned by.
+        report.measuredShift =
+            value.verdict == Verdict::Shift ? estimate.envelopeSamples : estimate.fractionalSamples;
+
         AudioCompareOptions options;
         options.floorDb = value.floorDb;
         options.sampleRate = value.sampleRate;
@@ -357,14 +452,7 @@ class NullDiffCorpusTests : public juce::UnitTest {
                 break;
 
             case Verdict::Shift:
-                // A shift is measured, and then it is checked against what the
-                // engine predicts. Measuring alone would fit any offset,
-                // including one that appeared because a clip moved; predicting
-                // alone would not notice the day the fork stops priming late.
-                report.passed = report.audio.withinFloor() && !report.audio.shiftNotFound;
-                if (value.expectedShiftSamples != 0)
-                    report.passed = report.passed && std::abs(report.audio.shiftSamples -
-                                                              value.expectedShiftSamples) <= 1;
+                report.passed = judgeStretched(value, native, incumbent, report);
                 break;
 
             case Verdict::ReportOnly:

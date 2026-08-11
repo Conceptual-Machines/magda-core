@@ -97,6 +97,22 @@ struct Case {
     /// passes.
     int expectedShiftSamples = 0;
 
+    /// How far the measured shift may sit from the expected one, as a
+    /// proportion. The prediction is the stretcher's own priming latency scaled
+    /// by the ratio it runs at, which is a figure the library reports rather
+    /// than one anybody measured, so the allowance is for the rounding between
+    /// the two and not for a clip in the wrong place.
+    double shiftTolerance = 0.15;
+
+    /// A stretched case is judged on its envelope and its magnitude spectrum
+    /// rather than its waveform, because two vocoders primed differently never
+    /// converge on one waveform: priming sets the initial phase state and phase
+    /// in a vocoder is memory. These are the two bounds that replace the null,
+    /// and each is taken from the first run with its mechanism named on the
+    /// case.
+    double envelopeToleranceSamples = 1.0;
+    double spectralPercentile95Db = 0.0;
+
     /// How far the search may look for that shift.
     int maxShiftSamples = 8192;
 

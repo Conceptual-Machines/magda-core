@@ -267,6 +267,16 @@ NativeRender renderNative(const Case& value) {
 
     result.audio = std::move(sink.buffer);
 
+    // What the pool primed each stretcher with, read back after the render so
+    // that every entry it provisioned has been through it.
+    {
+        const ClipStreamFeed::Reader table(voices.feed());
+        if (table)
+            for (const auto& entry : table->entries)
+                if (entry.stretcher != nullptr)
+                    result.primingSamples = std::max(result.primingSamples, entry.preRollSamples);
+    }
+
     for (const auto& [trackId, source] : audioSources)
         result.starvedVoices += source->starvedVoices();
     for (const auto& [trackId, source] : midiSources)

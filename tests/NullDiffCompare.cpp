@@ -1,6 +1,9 @@
 #include "NullDiffCompare.hpp"
 
+#include <juce_dsp/juce_dsp.h>
+
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <deque>
@@ -195,56 +198,405 @@ ShiftEstimate estimateShift(const juce::AudioBuffer<float>& native,
     const auto onset = std::min(onsetOf(native), onsetOf(incumbent));
 
     // Wide enough that a wrong lag cannot correlate as well as the right one by
-    // accident, which for periodic material means several periods.
+    // accident, which for periodic material means many periods. Narrowing this
+    // is tempting and wrong: an eighth of a second of tone correlates with an
+    // eighth of a second of noise at some lag, and the search would then name a
+    // fiction rather than decline.
     const auto available = std::min(native.getNumSamples(), incumbent.getNumSamples()) - onset;
     const auto window = std::min(std::max(4 * maxShiftSamples, 4096), std::max(0, available));
     if (window <= 0)
         return estimate;
 
-    auto best = -1.0;
-    auto bestLag = 0;
+    // Searching every lag at full rate over a window that wide is tens of
+    // millions of multiplies per case, which is the difference between a corpus
+    // anybody runs and one nobody does. So the sweep happens on a decimated
+    // pair, which costs the square of the factor, and the answer is then
+    // refined at full rate around what it found. Decimation keeps the window's
+    // whole length, so the strength that makes a false peak unlikely is kept
+    // too; what it gives up is resolution, which is exactly what the second
+    // pass puts back.
+    constexpr int kDecimation = 8;
 
-    for (auto lag = -maxShiftSamples; lag <= maxShiftSamples; ++lag) {
-        double dot = 0.0;
-        double nativeEnergy = 0.0;
-        double incumbentEnergy = 0.0;
+    // The coarse pass runs on a peak envelope rather than on the waveform, and
+    // that is what makes the answer unique. Periodic material correlates just
+    // as well a whole period away: a 220 Hz tone repeats every 200 samples, so
+    // a waveform sweep cannot tell 1024 from 423 and whichever it picks is
+    // arithmetic rather than an answer. An envelope has no period, so it says
+    // which of those neighbourhoods the offset is in, and the waveform pass
+    // then says where in that neighbourhood it is.
+    const auto envelope = [&](const juce::AudioBuffer<float>& buffer, int from, int count) {
+        std::vector<double> out(static_cast<std::size_t>(count / kDecimation), 0.0);
+        for (std::size_t i = 0; i < out.size(); ++i) {
+            auto peak = 0.0;
+            for (auto k = 0; k < kDecimation; ++k) {
+                const auto index = from + static_cast<int>(i) * kDecimation + k;
+                if (index >= 0 && index < buffer.getNumSamples())
+                    peak = std::max(peak, std::abs(summed(buffer, index)));
+            }
+            out[i] = peak;
+        }
+        return out;
+    };
 
-        for (auto index = 0; index < window; ++index) {
-            const auto nativeIndex = onset + index;
-            const auto incumbentIndex = nativeIndex + lag;
-            if (nativeIndex >= native.getNumSamples())
-                break;
-            if (incumbentIndex < 0 || incumbentIndex >= incumbent.getNumSamples())
+    /// Normalised correlation of the two at @p lag, in whatever domain the
+    /// caller decimated to.
+    const auto score = [](const std::vector<double>& a, const std::vector<double>& b, int lag,
+                          int guard) {
+        auto dot = 0.0;
+        auto energyA = 0.0;
+        auto energyB = 0.0;
+
+        for (auto index = guard; index + guard < static_cast<int>(a.size()); ++index) {
+            const auto other = index + lag;
+            if (other < 0 || other >= static_cast<int>(b.size()))
                 continue;
 
-            const auto a = summed(native, nativeIndex);
-            const auto b = summed(incumbent, incumbentIndex);
-            dot += a * b;
-            nativeEnergy += a * a;
-            incumbentEnergy += b * b;
+            const auto x = a[static_cast<std::size_t>(index)];
+            const auto y = b[static_cast<std::size_t>(other)];
+            dot += x * y;
+            energyA += x * x;
+            energyB += y * y;
         }
 
-        if (nativeEnergy <= 0.0 || incumbentEnergy <= 0.0)
-            continue;
+        if (energyA <= 0.0 || energyB <= 0.0)
+            return -1.0;
+        return dot / std::sqrt(energyA * energyB);
+    };
 
-        const auto correlation = dot / std::sqrt(nativeEnergy * incumbentEnergy);
-        if (correlation > best) {
-            best = correlation;
+    // The pair, from the onset, with room either side for the lag.
+    const auto span = window + 2 * maxShiftSamples;
+    const auto from = std::max(0, onset - maxShiftSamples);
+
+    auto coarseA = envelope(native, from, span);
+    auto coarseB = envelope(incumbent, from, span);
+    const auto coarseGuard = maxShiftSamples / kDecimation;
+
+    // With the mean left in, a level that does not change scores near one at
+    // every lag and the peak lands wherever the arithmetic noise puts it. Taken
+    // out, a flat envelope carries no energy and therefore no opinion, which is
+    // the honest answer for material that is the same all the way through: the
+    // waveform pass then works from zero rather than from a fiction.
+    const auto centreOn = [](std::vector<double>& values) {
+        auto total = 0.0;
+        for (const auto value : values)
+            total += value;
+        const auto mean = values.empty() ? 0.0 : total / static_cast<double>(values.size());
+        for (auto& value : values)
+            value -= mean;
+    };
+
+    centreOn(coarseA);
+    centreOn(coarseB);
+
+    // Correlated across the whole envelope rather than inside a guard. The
+    // guard is there to keep a lag from running off the end, and score already
+    // skips what falls outside; what a guard would exclude here is the onset,
+    // which for material that is level all the way through is the only feature
+    // the envelope has. Excluding it leaves a flat window with no opinion, and
+    // the peak then lands wherever the arithmetic noise puts it.
+    auto bestCoarse = -1.0;
+    auto bestCoarseLag = 0;
+    for (auto lag = -coarseGuard; lag <= coarseGuard; ++lag) {
+        const auto value = score(coarseA, coarseB, lag, 0);
+        if (value > bestCoarse) {
+            bestCoarse = value;
+            bestCoarseLag = lag;
+        }
+    }
+
+    // Full rate, around what the sweep found, wide enough to cover the samples
+    // the decimation could not tell apart.
+    std::vector<double> fineA(static_cast<std::size_t>(span), 0.0);
+    std::vector<double> fineB(static_cast<std::size_t>(span), 0.0);
+    for (auto i = 0; i < span; ++i) {
+        const auto index = from + i;
+        if (index < native.getNumSamples())
+            fineA[static_cast<std::size_t>(i)] = summed(native, index);
+        if (index < incumbent.getNumSamples())
+            fineB[static_cast<std::size_t>(i)] = summed(incumbent, index);
+    }
+
+    estimate.envelopeSamples = static_cast<double>(bestCoarseLag * kDecimation);
+    estimate.envelopeCorrelation = bestCoarse;
+
+    const auto centre = bestCoarseLag * kDecimation;
+
+    // Wide enough to cover what the envelope could not resolve, which is the
+    // decimation either side plus the smoothing the envelope itself is.
+    const auto reach = 4 * kDecimation;
+
+    auto best = -1.0;
+    auto bestLag = centre;
+    std::vector<double> scores(static_cast<std::size_t>(2 * reach + 1), -1.0);
+
+    for (auto offset = -reach; offset <= reach; ++offset) {
+        const auto lag = centre + offset;
+        const auto value = score(fineA, fineB, lag, maxShiftSamples);
+        scores[static_cast<std::size_t>(offset + reach)] = value;
+
+        if (value > best) {
+            best = value;
             bestLag = lag;
         }
     }
 
     estimate.correlation = best;
     estimate.samples = bestLag;
+    estimate.fractionalSamples = static_cast<double>(bestLag);
+
+    // A parabola through the peak and its neighbours. A whole-sample answer is
+    // not enough for band limited material: at 220 Hz one sample of
+    // misalignment is a residual around -30 dB, so a case can be a fraction of
+    // a sample out and look like a difference in the material rather than what
+    // it is, which is a difference in the timing.
+    const auto index = static_cast<std::size_t>(bestLag - centre + reach);
+    if (index > 0 && index + 1 < scores.size()) {
+        const auto left = scores[index - 1];
+        const auto centreScore = scores[index];
+        const auto right = scores[index + 1];
+        const auto denominator = left - 2.0 * centreScore + right;
+        if (left >= 0.0 && right >= 0.0 && std::abs(denominator) > 1.0e-12)
+            estimate.fractionalSamples += 0.5 * (left - right) / denominator;
+    }
 
     // A comparator that slides until something matches will always find
     // something. What it finds on a pair that differs in content is a fiction
     // that makes the case pass, so a weak best lag is no lag at all.
     estimate.found = best >= 0.98;
-    if (!estimate.found)
+    if (!estimate.found) {
         estimate.samples = 0;
+        estimate.fractionalSamples = 0.0;
+    }
 
     return estimate;
+}
+
+juce::AudioBuffer<float> delayFractionally(const juce::AudioBuffer<float>& source,
+                                           double delaySamples) {
+    juce::AudioBuffer<float> result(source.getNumChannels(), source.getNumSamples());
+    result.clear();
+
+    const auto whole = static_cast<int>(std::floor(delaySamples));
+    const auto fraction = delaySamples - static_cast<double>(whole);
+
+    // Wide enough that the window's own error is far below the floor on
+    // anything band limited.
+    constexpr int kHalf = 32;
+
+    std::array<double, 2 * kHalf + 1> taps{};
+    auto sum = 0.0;
+    for (auto k = -kHalf; k <= kHalf; ++k) {
+        const auto x = static_cast<double>(k) - fraction;
+        const auto sinc = std::abs(x) < 1.0e-9 ? 1.0
+                                               : std::sin(juce::MathConstants<double>::pi * x) /
+                                                     (juce::MathConstants<double>::pi * x);
+
+        const auto phase = juce::MathConstants<double>::twoPi *
+                           (static_cast<double>(k + kHalf) / static_cast<double>(2 * kHalf));
+        const auto window = 0.42 - 0.5 * std::cos(phase) + 0.08 * std::cos(2.0 * phase);
+
+        taps[static_cast<std::size_t>(k + kHalf)] = sinc * window;
+        sum += sinc * window;
+    }
+
+    if (sum != 0.0)
+        for (auto& tap : taps)
+            tap /= sum;
+
+    for (auto channel = 0; channel < source.getNumChannels(); ++channel) {
+        const auto* in = source.getReadPointer(channel);
+        auto* out = result.getWritePointer(channel);
+
+        for (auto sample = 0; sample < source.getNumSamples(); ++sample) {
+            auto value = 0.0;
+            for (auto k = -kHalf; k <= kHalf; ++k) {
+                const auto index = sample - whole - k;
+                if (index < 0 || index >= source.getNumSamples())
+                    continue;
+                value += taps[static_cast<std::size_t>(k + kHalf)] * static_cast<double>(in[index]);
+            }
+            out[sample] = static_cast<float>(value);
+        }
+    }
+
+    return result;
+}
+
+EnvelopeAgreement compareEnvelopes(const juce::AudioBuffer<float>& native,
+                                   const juce::AudioBuffer<float>& incumbent, int shiftSamples,
+                                   double sampleRate, double followerHz) {
+    EnvelopeAgreement result;
+
+    const auto begin = std::max(0, -shiftSamples);
+    const auto end = std::min(native.getNumSamples(), incumbent.getNumSamples() - shiftSamples);
+    const auto length = end - begin;
+    if (length <= 0)
+        return result;
+
+    // Rectified and smoothed. What a listener calls the timing of a sound, and
+    // it survives the phase difference that makes the waveforms incomparable.
+    const auto follow = [&](const juce::AudioBuffer<float>& buffer, int offset) {
+        std::vector<double> envelope(static_cast<std::size_t>(length), 0.0);
+        const auto coefficient =
+            std::exp(-juce::MathConstants<double>::twoPi * followerHz / sampleRate);
+
+        auto state = 0.0;
+        for (auto index = 0; index < length; ++index) {
+            auto peak = 0.0;
+            for (auto channel = 0; channel < buffer.getNumChannels(); ++channel)
+                peak = std::max(
+                    peak, std::abs(static_cast<double>(buffer.getSample(channel, offset + index))));
+
+            state = peak + coefficient * (state - peak);
+            envelope[static_cast<std::size_t>(index)] = state;
+        }
+        return envelope;
+    };
+
+    const auto a = follow(native, begin);
+    const auto b = follow(incumbent, begin + shiftSamples);
+
+    const auto mean = [](const std::vector<double>& values) {
+        auto total = 0.0;
+        for (const auto value : values)
+            total += value;
+        return values.empty() ? 0.0 : total / static_cast<double>(values.size());
+    };
+
+    const auto meanA = mean(a);
+    const auto meanB = mean(b);
+
+    // A lag window of a few milliseconds: this runs after the pinned shift, so
+    // what is left should be nothing, and anything past this is not a lag.
+    const auto maxLag = std::min(static_cast<int>(sampleRate * 0.01), length / 4);
+
+    // Over a stretch of the envelope rather than all of it. An envelope is a
+    // slow signal, so a couple of seconds says everything a whole take would,
+    // and correlating every lag against every sample of a long render is how a
+    // corpus stops being something anybody runs.
+    const auto span = std::min(length - 2 * maxLag, static_cast<int>(sampleRate * 2.0));
+    if (span <= 0)
+        return result;
+
+    auto best = -2.0;
+    auto bestLag = 0;
+    std::vector<double> scores(static_cast<std::size_t>(2 * maxLag + 1), 0.0);
+
+    for (auto lag = -maxLag; lag <= maxLag; ++lag) {
+        auto dot = 0.0;
+        auto energyA = 0.0;
+        auto energyB = 0.0;
+
+        for (auto index = maxLag; index < maxLag + span; ++index) {
+            const auto x = a[static_cast<std::size_t>(index)] - meanA;
+            const auto y = b[static_cast<std::size_t>(index + lag)] - meanB;
+            dot += x * y;
+            energyA += x * x;
+            energyB += y * y;
+        }
+
+        const auto value =
+            (energyA > 0.0 && energyB > 0.0) ? dot / std::sqrt(energyA * energyB) : 0.0;
+        scores[static_cast<std::size_t>(lag + maxLag)] = value;
+
+        if (value > best) {
+            best = value;
+            bestLag = lag;
+        }
+    }
+
+    result.correlation = best;
+    result.lagSamples = static_cast<double>(bestLag);
+
+    // Refined below a sample, the same way the shift is.
+    const auto index = static_cast<std::size_t>(bestLag + maxLag);
+    if (index > 0 && index + 1 < scores.size()) {
+        const auto left = scores[index - 1];
+        const auto centre = scores[index];
+        const auto right = scores[index + 1];
+        const auto denominator = left - 2.0 * centre + right;
+        if (std::abs(denominator) > 1.0e-12)
+            result.lagSamples += 0.5 * (left - right) / denominator;
+    }
+
+    return result;
+}
+
+SpectralAgreement compareSpectra(const juce::AudioBuffer<float>& native,
+                                 const juce::AudioBuffer<float>& incumbent, int shiftSamples,
+                                 double floorDb) {
+    SpectralAgreement result;
+
+    const auto begin = std::max(0, -shiftSamples);
+    const auto end = std::min(native.getNumSamples(), incumbent.getNumSamples() - shiftSamples);
+    if (end - begin < kSpectralWindow)
+        return result;
+
+    juce::dsp::FFT fft(static_cast<int>(std::log2(kSpectralWindow)));
+
+    std::vector<float> window(kSpectralWindow);
+    for (auto i = 0; i < kSpectralWindow; ++i)
+        window[static_cast<std::size_t>(i)] = static_cast<float>(
+            0.5 - 0.5 * std::cos(juce::MathConstants<double>::twoPi * i / (kSpectralWindow - 1)));
+
+    std::vector<double> differences;
+
+    const auto spectrumAt = [&](const juce::AudioBuffer<float>& buffer, int offset) {
+        std::vector<float> data(static_cast<std::size_t>(2 * kSpectralWindow), 0.0f);
+        for (auto i = 0; i < kSpectralWindow; ++i) {
+            auto sum = 0.0f;
+            for (auto channel = 0; channel < buffer.getNumChannels(); ++channel)
+                sum += buffer.getSample(channel, offset + i);
+            data[static_cast<std::size_t>(i)] = sum * window[static_cast<std::size_t>(i)];
+        }
+        fft.performFrequencyOnlyForwardTransform(data.data());
+        data.resize(static_cast<std::size_t>(kSpectralWindow / 2));
+        return data;
+    };
+
+    for (auto frame = begin; frame + kSpectralWindow <= end; frame += kSpectralHop) {
+        const auto a = spectrumAt(native, frame);
+        const auto b = spectrumAt(incumbent, frame + shiftSamples);
+
+        auto peak = 0.0f;
+        for (std::size_t bin = 0; bin < a.size(); ++bin)
+            peak = std::max({peak, a[bin], b[bin]});
+
+        if (peak <= 0.0f)
+            continue;
+
+        ++result.frames;
+
+        // Only bins that carry something. Comparing the noise floor of two
+        // vocoders is comparing their dither.
+        const auto binFloor = static_cast<double>(peak) * fromDb(floorDb);
+
+        for (std::size_t bin = 0; bin < a.size(); ++bin) {
+            const auto left = static_cast<double>(a[bin]);
+            const auto right = static_cast<double>(b[bin]);
+            if (left < binFloor && right < binFloor)
+                continue;
+
+            // Both clamped to the floor rather than to something far below it.
+            // A bin that is silent in one render and merely quiet in the other
+            // is a difference of whatever the clamp allows, and letting that be
+            // unbounded means the 95th percentile measures the quietest corner
+            // of the spectrum instead of the sound.
+            differences.push_back(
+                std::abs(toDb(std::max(left, binFloor)) - toDb(std::max(right, binFloor))));
+        }
+    }
+
+    result.binsCompared = static_cast<int>(differences.size());
+    if (differences.empty())
+        return result;
+
+    std::sort(differences.begin(), differences.end());
+    result.medianDb = differences[differences.size() / 2];
+    result.percentile95Db = differences[std::min(
+        differences.size() - 1, static_cast<std::size_t>(differences.size() * 95 / 100))];
+
+    return result;
 }
 
 AudioComparison compareAudio(const juce::AudioBuffer<float>& native,
@@ -657,11 +1009,18 @@ std::string formatReport(const std::vector<CaseReport>& cases, double sampleRate
             std::snprintf(line, sizeof(line), "notes=%d%s cc=%s", midi.notesCompared,
                           midi.notesMatch ? "" : "!", midi.controllersMatch ? "ok" : "differs");
             out << line;
+        } else if (report.hasSpectral) {
+            std::snprintf(line, sizeof(line),
+                          "shift=%-8.2f envelope=%-6.2f median=%-5.2f p95=%.2f dB",
+                          report.measuredShift, report.envelope.lagSamples, report.spectra.medianDb,
+                          report.spectra.percentile95Db);
+            out << line;
         } else if (report.hasAudio) {
             const auto& audio = report.audio;
-            std::snprintf(line, sizeof(line), "peak=%-9s rms=%-9s shift=%d",
+            std::snprintf(line, sizeof(line), "peak=%-9s rms=%-9s shift=%.3f",
                           formatDb(audio.peakDb).c_str(), formatDb(audio.rmsDb).c_str(),
-                          audio.shiftSamples);
+                          report.hasMeasuredShift ? report.measuredShift
+                                                  : static_cast<double>(audio.shiftSamples));
             out << line;
             if (!audio.refusal.empty())
                 out << " refused: " << audio.refusal;

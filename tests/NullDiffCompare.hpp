@@ -136,12 +136,107 @@ AudioComparison compareAudio(const juce::AudioBuffer<float>& native,
  */
 struct ShiftEstimate {
     int samples = 0;
+
+    /// The peak refined below a sample, by a parabola through the correlation
+    /// either side of it. A whole-sample answer is not enough for a band
+    /// limited tone: at 220 Hz one sample of misalignment is a residual around
+    /// -30 dB, so a case can be a full sample out and look like a bug in the
+    /// material rather than a bug in the timing.
+    double fractionalSamples = 0.0;
+
     double correlation = 0.0;
     bool found = false;
+
+    /// The same alignment as the envelopes see it, and how well they agree
+    /// there. This is the only answer available for stretched material: two
+    /// vocoders never correlate as waveforms, so `found` is false for them by
+    /// construction, and the envelope is what survives the phase difference.
+    /// Resolved to the decimation rather than to a sample, which is ample for
+    /// an offset measured in thousands.
+    double envelopeSamples = 0.0;
+    double envelopeCorrelation = 0.0;
 };
 
 ShiftEstimate estimateShift(const juce::AudioBuffer<float>& native,
                             const juce::AudioBuffer<float>& incumbent, int maxShiftSamples);
+
+/**
+ * @brief @p source delayed by @p delaySamples, which may be fractional.
+ *
+ * A windowed sinc, wide enough that its own error sits far below the floor on
+ * anything band limited. Deliberately not the engine's four-point cubic: this
+ * is used to align a case before measuring what is left, and aligning with the
+ * kernel under test would fold the thing being measured into the measurement.
+ */
+juce::AudioBuffer<float> delayFractionally(const juce::AudioBuffer<float>& source,
+                                           double delaySamples);
+
+// =============================================================================
+// Stretched audio, where a waveform comparison is the wrong question
+// =============================================================================
+
+/**
+ * Two vocoders fed the same material do not converge on the same waveform, and
+ * no amount of aligning makes them. Priming sets the initial phase state, phase
+ * in a vocoder is memory, and the two legs prime differently: the fork with the
+ * material at the clip's start, the engine with the material before it. From
+ * there the outputs stay a fixed distance apart in phase for ever, even with
+ * identical libraries and identical input afterwards.
+ *
+ * Magnitude is what framing leaves intact, so that is what is compared. But
+ * magnitude alone would let a wrong ratio, a misplaced clip or a dropped block
+ * through, so a stretched case is three assertions rather than one:
+ *
+ *  - the pinned shift, measured by cross correlation and asserted against what
+ *    the engine says its stretcher primes with;
+ *  - envelope timing after that shift, which is what keeps a placement bug
+ *    visible when the waveform cannot be compared;
+ *  - the magnitude spectrogram, which is what "the same material at the same
+ *    rate and the same pitch" means when the phase is allowed to differ.
+ */
+
+struct EnvelopeAgreement {
+    /// Where the two amplitude envelopes line up best, in samples, refined
+    /// below a sample. Zero is what a correctly placed clip gives.
+    double lagSamples = 0.0;
+
+    /// How well they line up there. A low peak means the two are not the same
+    /// shape at all, which no lag can fix.
+    double correlation = 0.0;
+};
+
+/// Rectified and smoothed at @p followerHz, then cross correlated. The envelope
+/// is what a listener would call the timing of a sound, and it survives the
+/// phase difference that makes the waveforms incomparable.
+EnvelopeAgreement compareEnvelopes(const juce::AudioBuffer<float>& native,
+                                   const juce::AudioBuffer<float>& incumbent, int shiftSamples,
+                                   double sampleRate, double followerHz = 40.0);
+
+struct SpectralAgreement {
+    /// Per-bin magnitude difference in dB, across every frame and bin loud
+    /// enough to mean anything. The median says whether they are the same
+    /// sound; the 95th percentile is what a case asserts on, because a
+    /// difference concentrated in a few frames is exactly what a dropped block
+    /// looks like.
+    double medianDb = 0.0;
+    double percentile95Db = 0.0;
+
+    int frames = 0;
+    int binsCompared = 0;
+};
+
+/// Window and hop are stated rather than tuned: 2048 at 44.1 kHz is about 46 ms,
+/// long enough to resolve a 220 Hz tone into a few bins, and a quarter-window
+/// hop is the usual overlap for a Hann.
+constexpr int kSpectralWindow = 2048;
+constexpr int kSpectralHop = 512;
+
+/// Magnitude spectrogram agreement. Bins below @p floorDb of the frame's own
+/// peak are skipped: comparing the noise floor of two vocoders is comparing
+/// their dither.
+SpectralAgreement compareSpectra(const juce::AudioBuffer<float>& native,
+                                 const juce::AudioBuffer<float>& incumbent, int shiftSamples,
+                                 double floorDb = -60.0);
 
 // =============================================================================
 // MIDI
@@ -302,6 +397,20 @@ struct CaseReport {
 
     bool hasMidi = false;
     MidiComparison midi;
+
+    /// What the two legs are offset by, measured even where the case does not
+    /// align by it. Printed on every run: an offset that is not applied is
+    /// still the first thing worth knowing about a case that will not null.
+    bool hasMeasuredShift = false;
+    double measuredShift = 0.0;
+    double shiftCorrelation = 0.0;
+    double shiftCorrelationEnvelope = 0.0;
+
+    /// Set on a stretched case, where a waveform comparison is the wrong
+    /// question and these two are the right ones.
+    bool hasSpectral = false;
+    EnvelopeAgreement envelope;
+    SpectralAgreement spectra;
 
     /// Set when the case could not be measured at all: a proxy that never
     /// arrived, a leg that returned nothing. Never reported as a residual,

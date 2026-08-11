@@ -85,6 +85,27 @@ juce::AudioBuffer<float> renderMaterial(const MaterialSpec& spec) {
             break;
         }
 
+        case MaterialKind::PulsedTone: {
+            const auto increment =
+                spec.frequency * juce::MathConstants<double>::twoPi / spec.sampleRate;
+            const auto pulse = spec.pulseHz * juce::MathConstants<double>::twoPi / spec.sampleRate;
+
+            for (auto sample = 0; sample < numSamples; ++sample) {
+                const auto carrier = std::sin(increment * static_cast<double>(sample));
+
+                // Never quite to silence: a gap would give the envelope nothing
+                // to correlate through, and a stretcher fed silence is a
+                // different question from a stretcher fed a swell.
+                const auto envelope =
+                    0.15 + 0.85 * (0.5 - 0.5 * std::cos(pulse * static_cast<double>(sample)));
+
+                for (auto channel = 0; channel < buffer.getNumChannels(); ++channel)
+                    buffer.setSample(channel, sample,
+                                     spec.level * static_cast<float>(carrier * envelope));
+            }
+            break;
+        }
+
         case MaterialKind::Noise: {
             for (auto channel = 0; channel < buffer.getNumChannels(); ++channel) {
                 Lcg random(spec.seed + static_cast<unsigned int>(channel) * 0x85EBCA6Bu);

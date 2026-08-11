@@ -47,6 +47,17 @@ struct NativeRender {
     /// so both are read back and reported.
     int starvedVoices = 0;
     int droppedMidiEvents = 0;
+
+    /// The most material any of this case's stretchers is primed with, in
+    /// samples of the reading.
+    ///
+    /// This is what a stretched case predicts its shift from, and it comes from
+    /// the engine rather than from a number written down here: the fork primes
+    /// with the material AT a clip's start where the engine primes with the
+    /// material BEFORE it, and both use the same library at the same preset, so
+    /// what the engine reads back is what the fork is late by. A constant in the
+    /// corpus would go stale the moment either side changed its preset.
+    int primingSamples = 0;
 };
 
 /// Render @p value through the native engine, over its own beat range.

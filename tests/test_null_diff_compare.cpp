@@ -584,3 +584,112 @@ TEST_CASE("An unmeasurable case is not a residual", "[nulldiff][compare][report]
     CHECK(text.find("unmeasurable: proxy not ready") != std::string::npos);
     CHECK(text.find("peak=") == std::string::npos);
 }
+
+// =============================================================================
+// Sub-sample alignment, and the stretched-case assertions
+// =============================================================================
+
+TEST_CASE("The shift search resolves below a sample", "[nulldiff][compare][shift]") {
+    // A whole-sample answer is not enough for band-limited material: at 220 Hz
+    // one sample of misalignment is a residual around -30 dB, so a case can be
+    // a fraction of a sample out and look like a difference in the material
+    // rather than what it is, which is a difference in the timing.
+    const auto native = tone(2.0);
+
+    for (const auto delay : {0.25, 0.5, 1.75, 3.5}) {
+        const auto incumbent = delayFractionally(native, delay);
+        const auto estimate = estimateShift(native, incumbent, 512);
+
+        INFO("delay " << delay << " measured " << estimate.fractionalSamples);
+        REQUIRE(estimate.found);
+        CHECK(std::abs(estimate.fractionalSamples - delay) < 0.05);
+    }
+}
+
+TEST_CASE("A fractional delay is undone by aligning fractionally", "[nulldiff][compare][shift]") {
+    // What a case does once the offset has a mechanism: align by it, then
+    // require the null at the floor rather than accepting the residual.
+    const auto native = tone(2.0);
+    const auto incumbent = delayFractionally(native, 0.6);
+
+    const auto before = compareAudio(native, incumbent);
+    CHECK_FALSE(before.withinFloor());
+
+    const auto aligned = delayFractionally(native, 0.6);
+    const auto after = compareAudio(aligned, incumbent);
+
+    INFO("peak " << formatDb(after.peakDb));
+    CHECK(after.peakDb < -100.0);
+}
+
+TEST_CASE("Envelope timing catches a placement error the spectrum would not",
+          "[nulldiff][compare][envelope]") {
+    // The assertion that keeps a placement bug visible once waveforms cannot be
+    // compared. Two bursts of the same tone, one later than the other: their
+    // magnitude spectra are near enough identical and their envelopes are not.
+    const auto burst = [](double startSeconds) {
+        MaterialSpec spec;
+        spec.kind = MaterialKind::Tone;
+        spec.sampleRate = kSampleRate;
+        spec.durationSeconds = 0.5;
+        auto tone = renderMaterial(spec);
+
+        juce::AudioBuffer<float> out(1, static_cast<int>(kSampleRate * 2.0));
+        out.clear();
+        const auto at = static_cast<int>(startSeconds * kSampleRate);
+        out.copyFrom(0, at, tone, 0, 0, tone.getNumSamples());
+        return out;
+    };
+
+    const auto native = burst(0.5);
+
+    SECTION("aligned") {
+        const auto agreement = compareEnvelopes(native, native, 0, kSampleRate);
+        CHECK(std::abs(agreement.lagSamples) <= 1.0);
+        CHECK(agreement.correlation > 0.99);
+    }
+
+    SECTION("a burst in the wrong place") {
+        const auto agreement = compareEnvelopes(native, burst(0.52), 0, kSampleRate);
+        CHECK(std::abs(agreement.lagSamples) > 1.0);
+    }
+}
+
+TEST_CASE("Magnitude agrees where phase does not", "[nulldiff][compare][spectral]") {
+    // The claim a stretched case makes. Two signals with the same magnitude
+    // spectrum and different phase are the same sound, and that is exactly the
+    // pair two vocoders produce.
+    const auto native = tone(2.0, 440.0);
+
+    SECTION("the same sound at another phase") {
+        // Half a period at 440 Hz, which inverts the waveform and leaves the
+        // spectrum alone.
+        const auto shifted = delayFractionally(native, kSampleRate / 440.0 / 2.0);
+
+        const auto waveform = compareAudio(native, shifted);
+        CHECK_FALSE(waveform.withinFloor());
+
+        const auto spectral = compareSpectra(native, shifted, 0);
+        INFO("median " << spectral.medianDb << " p95 " << spectral.percentile95Db);
+        REQUIRE(spectral.frames > 0);
+        CHECK(spectral.percentile95Db < 1.0);
+    }
+
+    SECTION("a different pitch is a different sound") {
+        const auto other = tone(2.0, 466.0);
+        const auto spectral = compareSpectra(native, other, 0);
+
+        REQUIRE(spectral.frames > 0);
+        CHECK(spectral.percentile95Db > 3.0);
+    }
+
+    SECTION("material that stops early is a different sound") {
+        auto truncated = tone(2.0, 440.0);
+        truncated.clear(truncated.getNumSamples() / 2, truncated.getNumSamples() / 2);
+
+        const auto spectral = compareSpectra(native, truncated, 0);
+
+        REQUIRE(spectral.frames > 0);
+        CHECK(spectral.percentile95Db > 3.0);
+    }
+}
