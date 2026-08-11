@@ -5,6 +5,7 @@
 
 #include "clip/ClipSnapshot.hpp"
 #include "clip/ClipStretcher.hpp"
+#include "clip/FadeCurves.hpp"
 #include "exec/RenderContext.hpp"
 #include "io/PrefetchStream.hpp"
 
@@ -95,11 +96,51 @@ class ClipVoice {
                 juce::dsp::AudioBlock<float> out);
 
   private:
+    /**
+     * @brief Render @p count samples of a clip that consumes its reading at a
+     *        rate, feeding the stretcher on a fixed grid.
+     *
+     * Why a grid at all. A stretcher is a stateful thing whose output follows
+     * the sequence of sizes it was handed, and a rate that varies within a
+     * block used to be resolved from that block's own two ends. Both make the
+     * result a function of how the callback was cut up, which RenderContext.hpp
+     * forbids: block size is an I/O batching concept and never a precision one.
+     * A bounce at 1024 samples a block that disagrees with playback at 128 is
+     * the audible form of the same thing.
+     *
+     * So the timeline is divided into cells anchored to where the event begins,
+     * the ratio is resolved per cell from the same readingPositionAt, and the
+     * stretcher is fed one whole cell at a time. What it receives is then a
+     * function of position on the timeline and of nothing else. Cells rarely
+     * line up with blocks, so what a cell produces beyond the block that asked
+     * for it is held here until the next one.
+     *
+     * @return whether every cell got the reading it asked for. The region is
+     *         filled either way.
+     */
+    bool renderThroughCells(const AudioClipPlayback& clip, const AudioEventPlayback& event,
+                            const BlockInfo& block, PrefetchStream& stream,
+                            ClipStretcher& stretcher, int preRoll,
+                            juce::dsp::AudioBlock<float> scratch,
+                            juce::dsp::AudioBlock<float> region, double windowStart, int count);
+
     /// Multiply the part of @p region inside [@p startSeconds, @p endSeconds)
     /// by a curve running across it, rising or falling.
     void applyFade(juce::dsp::AudioBlock<float> region, int regionFirstSample,
                    const BlockInfo& block, double startSeconds, double endSeconds, FadeCurve curve,
                    bool rising) const;
+
+    /**
+     * @brief How much timeline one cell covers.
+     *
+     * Small enough that a curved rate is still nearly straight across one, and
+     * that is the only thing it has to be: it is not a latency, because a cell
+     * is produced when it is wanted rather than ahead of time, and it is not a
+     * block, because the reader is asked for exactly what the cell consumes.
+     * A power of two so that a block size which is one lines up with it and
+     * nothing is held over.
+     */
+    static constexpr int kCellSamples = 128;
 
     double sampleRate_ = 44100.0;
 
@@ -114,6 +155,27 @@ class ClipVoice {
     /// voice that is beginning from one that is carrying on, which is the
     /// difference the launch ramp is for.
     bool sounded_ = false;
+
+    /// The launch ramp in progress, which outlives the block that started it.
+    /// A ramp is 256 samples by default and a block can be shorter than that,
+    /// so a ramp that lived inside one block would be a different length at
+    /// every block size (FadeCurves.hpp).
+    StartDeClick deClick_;
+
+    /// One cell's output, and how much of it a block has taken. Allocated in
+    /// prepare(), never on the callback.
+    juce::AudioBuffer<float> held_;
+    int pendingCount_ = 0;
+    int pendingRead_ = 0;
+
+    /// Whether the grid is running at all, and where its next cell begins, in
+    /// samples of the timeline.
+    bool pending_ = false;
+    std::int64_t nextCell_ = 0;
+
+    /// Samples of the first cell that lie before where playback resumed, and
+    /// are produced only to be dropped. Never more than a cell.
+    int skip_ = 0;
 
     /// The stretcher this voice primed, or null for one that has not primed
     /// anything. An identity rather than a flag, because the pool replaces a

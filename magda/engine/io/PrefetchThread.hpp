@@ -27,7 +27,22 @@ namespace magda::engine {
 
 class PrefetchThread final : private juce::Thread {
   public:
-    PrefetchThread();
+    /**
+     * @brief A reader, with or without the thread behind it.
+     *
+     * Playback wants the thread: nothing else can wait for a disk on its
+     * behalf. An offline render wants it off, and not as an optimisation. A
+     * render goes as fast as the machine will let it, so a second of timeline
+     * can pass in ten milliseconds of wall clock, and whether a clip's chunks
+     * arrived before the block that wanted them would come down to how the
+     * scheduler felt. Every underrun that produced would look exactly like a
+     * clip playing silence.
+     *
+     * With it off, @ref fillOnce is the caller's to drive and the reading
+     * happens in step with the render. Only one thing may drive it either way:
+     * two threads inside fill() is a race over one stream's cursor.
+     */
+    explicit PrefetchThread(bool runInBackground = true);
     ~PrefetchThread() override;
 
     PrefetchThread(const PrefetchThread&) = delete;
@@ -51,8 +66,15 @@ class PrefetchThread final : private juce::Thread {
     std::size_t streamCount() const;
 
     /// One round of filling, without the thread. For tests, which want to say
-    /// exactly how far ahead the reader got before the callback ran.
+    /// exactly how far ahead the reader got before the callback ran, and for an
+    /// offline render, which drives its own reading.
     bool fillOnce();
+
+    /// Whether anything is filling behind the caller's back. What an offline
+    /// render checks before driving fillOnce itself.
+    bool runsInBackground() const {
+        return runsInBackground_;
+    }
 
   private:
     void run() override;
@@ -64,6 +86,7 @@ class PrefetchThread final : private juce::Thread {
 
     mutable std::mutex lock_;
     std::vector<PrefetchStream*> streams_;
+    bool runsInBackground_ = true;
 };
 
 }  // namespace magda::engine

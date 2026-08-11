@@ -1,0 +1,145 @@
+#pragma once
+
+#include <juce_core/juce_core.h>
+
+#include <string>
+#include <vector>
+
+#include "NullDiffCompare.hpp"
+#include "core/ClipInfo.hpp"
+#include "core/TrackInfo.hpp"
+#include "core/TypeIds.hpp"
+
+/**
+ * @file NullDiffCase.hpp
+ * @brief One project, as model values, plus what it claims about the two
+ *        engines rendering it (#2040).
+ *
+ * Model values and nothing else. Both legs are handed the same case and build
+ * their own world from it: the incumbent leg installs the clips in ClipManager
+ * and syncs them into a te::Edit, the native leg compiles them into a plan and
+ * a snapshot. Neither is allowed a private opinion about what the project is,
+ * which is the whole reason a case is data rather than a pair of setup
+ * functions.
+ *
+ * A case is built in code rather than loaded from a .mgd. A load produces the
+ * model and both legs consume the model, so a file on disk would add a step
+ * neither leg is testing and a binary to the repository. What it would buy is
+ * covered by the project-load tests already.
+ */
+
+namespace magda::nulldiff {
+
+/// A tempo change, as both legs need to see it. Step changes only, and that is
+/// deliberate: the two engines resolve a ramped tempo differently (the engine
+/// subdivides because there is no closed form across a curve, the fork
+/// integrates its own way), so a render case with a ramp in it would report a
+/// tempo disagreement as a clip bug. Ramps are pinned where the answer is a
+/// number, in the tempo-map comparison.
+struct TempoPoint {
+    double beat = 0.0;
+    double bpm = 120.0;
+};
+
+/// What a case wrote to disk and told the source pool about. Carried on the
+/// case so that a leg never has to probe a file to find out what it is.
+struct SourceFact {
+    SourceId id = INVALID_SOURCE_ID;
+    juce::String path;
+    double sampleRate = 44100.0;
+    double durationSeconds = 0.0;
+};
+
+struct Case {
+    std::string name;
+
+    /// What this case is for, in a phrase. Printed beside a failure, because
+    /// "placement.trims failed" is only useful to whoever wrote it.
+    std::string covers;
+
+    Verdict verdict = Verdict::Null;
+
+    /// Peak residual at or below this is a null. A case that raises it carries
+    /// the mechanism below, and a raised floor with no mechanism does not
+    /// belong in the corpus.
+    double floorDb = -120.0;
+
+    /// Why this case is not a plain null: what the divergence is and why it is
+    /// pinned rather than tolerated. Empty for a Null verdict.
+    std::string mechanism;
+
+    // --- the project ---------------------------------------------------------
+
+    std::vector<TrackInfo> tracks;
+    TrackInfo master;
+    std::vector<ClipInfo> clips;
+    std::vector<SourceFact> sources;
+    std::vector<TempoPoint> tempo{{0.0, 120.0}};
+
+    /// The groove templates the clips may name, as the fork keeps them: a
+    /// <GROOVETEMPLATES> document. One string feeds both legs, which is what
+    /// makes "the same groove" a fact rather than two parsers agreeing.
+    juce::String grooveXml;
+
+    // --- what to render ------------------------------------------------------
+
+    double startBeat = 0.0;
+    double endBeat = 16.0;
+    double sampleRate = 44100.0;
+    int blockSize = 512;
+    int channels = 2;
+
+    // --- what is allowed for -------------------------------------------------
+
+    /// The shift a Shift verdict expects, in samples, or zero to measure one
+    /// and assert nothing about its size. Measured at the start either way:
+    /// re-fitting per region would turn a clip that drifts into a clip that
+    /// passes.
+    int expectedShiftSamples = 0;
+
+    /// How far the search may look for that shift.
+    int maxShiftSamples = 8192;
+
+    /// Notes the incumbent is expected to be late by, in beats. Non-zero for
+    /// exactly one thing: the fork drops midiOffset on an unlooped arranger
+    /// clip, so every note of such a clip lands offset.
+    double declaredMidiShiftBeats = 0.0;
+
+    /// How much earlier the fork ends every note, in seconds.
+    ///
+    /// Its own constant: MidiNote::getPlaybackTime nudges every note-off back
+    /// by 0.0001 s "to make sure the ordering is correct", which is how it
+    /// keeps an off ahead of an on at the same instant. The engine orders
+    /// events at compile time instead and keeps the length the note was drawn
+    /// at. Written here as the number it is, so that the day the fork changes
+    /// it the corpus says so rather than absorbing it.
+    double incumbentNoteEndEarlySeconds = 0.0001;
+
+    double startBpm() const {
+        return tempo.empty() ? 120.0 : tempo.front().bpm;
+    }
+
+    bool capturesMidi() const {
+        return verdict == Verdict::Midi;
+    }
+};
+
+/**
+ * @brief Every case, with its material written into @p scratchDirectory.
+ *
+ * Material is generated here rather than checked in, and the choice of it per
+ * case is what makes a residual mean something: impulses and steps where the
+ * engines must agree sample for sample, a band-limited tone wherever an
+ * interpolator or a stretcher stands between them. See NullDiffMaterial.hpp.
+ *
+ * Seeds the source pool as it goes, because both legs read a file's rate and
+ * duration from there and a case that let them probe separately would have two
+ * answers to one question.
+ */
+std::vector<Case> buildCorpus(const juce::File& scratchDirectory);
+
+/// The groove template every grooving case names, and the one the runner
+/// installs in both engines.
+extern const char* const kGrooveName;
+
+}  // namespace magda::nulldiff

@@ -13,7 +13,15 @@ namespace {
 constexpr std::uint8_t kNoteOn = 0x90;
 constexpr std::uint8_t kNoteOff = 0x80;
 constexpr std::uint8_t kControlChange = 0xb0;
+constexpr std::uint8_t kChannelPressure = 0xd0;
 constexpr std::uint8_t kPitchWheel = 0xe0;
+
+/// The MPE timbre dimension, and the two values a note opens with. Timbre rests
+/// at the centre of its range and pressure at the bottom of its, which is what
+/// the fork writes for a note carrying neither.
+constexpr std::uint8_t kMpeTimbreController = 74;
+constexpr std::uint8_t kMpeTimbreRest = 64;
+constexpr std::uint8_t kMpePressureRest = 0;
 
 /// The wheel at rest. A clip whose every pitch-bend event sits here is skipped
 /// whole: a stream of no-op wheel messages is pointless and deadlocks fragile
@@ -36,12 +44,14 @@ int rankOf(std::uint8_t status) {
     switch (status & 0xf0u) {
         case kControlChange:
             return 0;
-        case kPitchWheel:
+        case kChannelPressure:
             return 1;
-        case kNoteOff:
+        case kPitchWheel:
             return 2;
-        default:
+        case kNoteOff:
             return 3;
+        default:
+            return 4;
     }
 }
 
@@ -299,6 +309,33 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
                 endBeat = notes[j].startBeat;
                 break;
             }
+        }
+
+        // ---- The MPE dimensions a note opens with --------------------------
+        //
+        // The specification asks for timbre before the note-on and pressure
+        // beside it, and the fork sends both for every note it puts on a member
+        // channel. A synth that never receives them is left holding whatever
+        // the last note on that channel set, which under a round-robin is
+        // another note's expression: the channel is reused, so the state is
+        // inherited rather than fresh.
+        //
+        // At their resting values, because the model carries neither dimension:
+        // per-note expression here is pitch, and nothing in the clip can move
+        // timbre or pressure. Sending them at rest is what makes the channel
+        // mean the same thing to a synth as it does in the fork.
+        //
+        // Ordered before the note-on by the same rule as everything else at one
+        // instant: controllers, then pitch bend, then offs, then ons.
+        if (list.mpe) {
+            pending.push_back(
+                PendingEvent{MidiClipEvent{note.startBeat, statusFor(kControlChange, channel),
+                                           kMpeTimbreController, kMpeTimbreRest, 0.0},
+                             pairId});
+            pending.push_back(
+                PendingEvent{MidiClipEvent{note.startBeat, statusFor(kChannelPressure, channel),
+                                           kMpePressureRest, 0, 0.0},
+                             pairId});
         }
 
         pending.push_back(PendingEvent{

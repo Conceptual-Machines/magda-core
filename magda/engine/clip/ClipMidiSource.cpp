@@ -60,7 +60,21 @@ bool ClipMidiSource::fits(int bytes) const {
 }
 
 void ClipMidiSource::emit(juce::MidiBuffer& out, int sample, const MidiClipEvent& event) {
-    out.addEvent(juce::MidiMessage(event.status, event.data1, event.data2), sample);
+    // Two bytes or three, by status. Program change and channel pressure carry
+    // one data byte, and building them as three makes a message whose length
+    // disagrees with its status: JUCE would hand a synth a byte nobody sent.
+    // MPE is where this stopped being hypothetical, because a note opens with a
+    // channel pressure (MidiClipCompiler.cpp).
+    const auto kind = event.status & 0xf0;
+    const auto message = (kind == 0xc0 || kind == 0xd0)
+                             ? juce::MidiMessage(event.status, event.data1)
+                             : juce::MidiMessage(event.status, event.data1, event.data2);
+
+    out.addEvent(message, sample);
+
+    // Charged as a short message either way. The budget is a ceiling, and one
+    // byte of slack per two-byte message spends it slightly early rather than
+    // slightly late, which is the direction a ceiling should err in.
     bytesUsed_ += kMidiShortMessageBytes;
 }
 

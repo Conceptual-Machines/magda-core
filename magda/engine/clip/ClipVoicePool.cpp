@@ -211,6 +211,23 @@ std::size_t ClipVoicePool::streamCount() const {
     return streams_.size();
 }
 
+void ClipVoicePool::fillNow() {
+    if (reader_.runsInBackground()) {
+        jassertfalse;  // see the header: this is a race, not a slow path
+        return;
+    }
+
+    // Until nothing has room left, which is bounded by the chunks a pool holds
+    // times the streams there are: fill() takes one chunk per stream per round
+    // and says whether it did anything. The count is a backstop against a
+    // reader that answers true for ever rather than a real limit, and it is far
+    // above what a full pool can need.
+    constexpr int kMaxRounds = 4096;
+    for (auto round = 0; round < kMaxRounds; ++round)
+        if (!reader_.fillOnce())
+            return;
+}
+
 std::int64_t ClipVoicePool::cueFor(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                                    double seconds, const Reader& reader) const {
     const auto position =

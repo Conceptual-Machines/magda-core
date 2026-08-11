@@ -186,6 +186,23 @@ class ClipVoicePool {
      */
     void service();
 
+    /**
+     * @brief Read every provisioned stream up to capacity, here and now.
+     *
+     * For a caller with no callback to starve, which in practice means an
+     * offline render. Servicing alone only opens files and points readers at
+     * them; what a voice actually copies out of is what the prefetch thread has
+     * managed to fetch, and a render moving a second of timeline every ten
+     * milliseconds outruns any thread. Doing the reading in step makes the
+     * render a function of the material rather than of the scheduler.
+     *
+     * Refuses when the reader has a thread of its own, because two things
+     * inside one stream's fill is a race over its cursor rather than a slow
+     * path. A host that wants this builds its PrefetchThread with the thread
+     * switched off.
+     */
+    void fillNow();
+
     /// Streams provisioned right now, for tests and diagnostics.
     std::size_t streamCount() const;
 

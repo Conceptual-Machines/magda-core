@@ -286,6 +286,18 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_groove_template.cpp)
     list(APPEND TEST_SOURCES test_transient_detector.cpp)
     list(APPEND TEST_SOURCES test_source_loop_info.cpp)
+
+    # The null-diff corpus (#2040). The comparator and the material it plays are
+    # model-only and live here, where they can be tested against known-bad pairs
+    # on their own; the two legs and the runner need a te::Edit and so live in
+    # magda_juce_tests.
+    list(APPEND TEST_SOURCES NullDiffMaterial.cpp)
+    list(APPEND TEST_SOURCES NullDiffCompare.cpp)
+    list(APPEND TEST_SOURCES NullDiffCorpus.cpp)
+    list(APPEND TEST_SOURCES NullDiffNativeLeg.cpp)
+    list(APPEND TEST_SOURCES test_null_diff_compare.cpp)
+    list(APPEND TEST_SOURCES test_null_diff_corpus.cpp)
+    list(APPEND TEST_SOURCES test_null_diff_native_leg.cpp)
 endif()
 
 # Create test executable
@@ -469,6 +481,21 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/chain/slot/StepSequencerClipExport.cpp
 )
 
+# The null-diff corpus (#2040). It lives here rather than in magda_tests because
+# the incumbent leg is a te::Edit, and Edits in that target take later tests down
+# with them. The comparator, the material and the corpus itself are model-only
+# and are compiled into both, so they can also be tested on their own.
+if(MAGDA_BUILD_NATIVE_ENGINE)
+    target_sources(magda_juce_tests PRIVATE
+        NullDiffMaterial.cpp
+        NullDiffCompare.cpp
+        NullDiffCorpus.cpp
+        NullDiffNativeLeg.cpp
+        NullDiffTeLeg.cpp
+        test_null_diff_juce.cpp
+    )
+endif()
+
 # Link required libraries for JUCE tests
 target_link_libraries(magda_juce_tests
     PRIVATE
@@ -488,6 +515,13 @@ target_link_libraries(magda_juce_tests
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
 )
+
+# The native engine, for the null-diff corpus (#2040). This is the one target
+# that links both it and Tracktion, which is the whole point of it: the corpus
+# renders one project through each and compares.
+if(MAGDA_BUILD_NATIVE_ENGINE)
+    target_link_libraries(magda_juce_tests PRIVATE magda_engine)
+endif()
 
 target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
     MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1
@@ -537,6 +571,17 @@ add_test(NAME syntax_highlighting_juce
 
 add_test(NAME tempo_map_juce
          COMMAND magda_juce_tests "Tempo Map Tests")
+
+# The null-diff corpus (#2040): every case rendered through both engines. Two
+# entries because they fail for different reasons and one of them is much
+# cheaper: a mapping disagreement moves every clip in every project, so it is
+# worth seeing on its own before any waveform is compared.
+if(MAGDA_BUILD_NATIVE_ENGINE)
+    add_test(NAME null_diff_maps_juce
+             COMMAND magda_juce_tests "Null Diff Maps")
+    add_test(NAME null_diff_corpus_juce
+             COMMAND magda_juce_tests "Null Diff Corpus")
+endif()
 
 add_test(NAME tempo_lane_bridge_juce
          COMMAND magda_juce_tests "Tempo Lane Bridge Tests")
