@@ -781,3 +781,39 @@ TEST_CASE("A short render is not a shift pass either", "[nulldiff][compare]") {
     CHECK(result.lengthDifference != 0);
     CHECK_FALSE(result.nulled());
 }
+
+TEST_CASE("Garbage is refused rather than certified", "[nulldiff][compare]") {
+    // The adversarial case, and the one a comparator must never get wrong:
+    // every comparison against a NaN is false, so a NaN residual never beats
+    // the running peak. Left alone, the peak stays at zero, the level reads as
+    // -inf and the pair is reported as a perfect null.
+    const auto native = tone(0.5);
+
+    const auto poisoned = [&native](float value, int at) {
+        auto copy = native;
+        copy.setSample(0, at, value);
+        return copy;
+    };
+
+    const auto nan = std::numeric_limits<float>::quiet_NaN();
+    const auto infinity = std::numeric_limits<float>::infinity();
+
+    SECTION("a NaN in the incumbent") {
+        const auto result = compareAudio(native, poisoned(nan, 100));
+        CHECK_FALSE(result.refusal.empty());
+        CHECK_FALSE(result.nulled());
+        CHECK_FALSE(result.peakDb == -std::numeric_limits<double>::infinity());
+    }
+
+    SECTION("a NaN in the native render") {
+        const auto result = compareAudio(poisoned(nan, 100), native);
+        CHECK_FALSE(result.refusal.empty());
+        CHECK_FALSE(result.nulled());
+    }
+
+    SECTION("an infinity in both, which would otherwise cancel") {
+        const auto result = compareAudio(poisoned(infinity, 100), poisoned(infinity, 100));
+        CHECK_FALSE(result.refusal.empty());
+        CHECK_FALSE(result.nulled());
+    }
+}

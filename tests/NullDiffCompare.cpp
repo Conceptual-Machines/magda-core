@@ -642,8 +642,28 @@ AudioComparison compareAudio(const juce::AudioBuffer<float>& native,
         const auto* b = incumbent.getReadPointer(channel);
 
         for (auto index = begin; index < end; ++index) {
-            const auto residual =
-                static_cast<double>(a[index]) - static_cast<double>(b[index + shift]);
+            const auto left = static_cast<double>(a[index]);
+            const auto right = static_cast<double>(b[index + shift]);
+
+            // A comparator that silently certifies garbage is worse than no
+            // comparator. Every comparison against a NaN is false, so a NaN
+            // residual never beats the running peak: the peak stays at zero,
+            // the level reads as -inf, and the case is reported as a perfect
+            // null. Caught here rather than trusted, on the inputs rather than
+            // on the residual, so an infinity that cancels itself is caught
+            // too.
+            if (!std::isfinite(left) || !std::isfinite(right)) {
+                result.refusal = "a non-finite sample at " +
+                                 sampleAddress(index, options.sampleRate) + " (" +
+                                 (std::isfinite(left) ? "incumbent" : "native render") + ")";
+                result.peakDb = 0.0;
+                result.rmsDb = 0.0;
+                result.firstDivergence = index;
+                result.comparedSamples = 0;
+                return result;
+            }
+
+            const auto residual = left - right;
             const auto magnitude = std::abs(residual);
 
             if (magnitude > peak)
