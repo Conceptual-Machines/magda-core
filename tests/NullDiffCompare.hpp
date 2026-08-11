@@ -419,6 +419,11 @@ struct CaseReport {
     double shiftCorrelation = 0.0;
     double shiftCorrelationEnvelope = 0.0;
 
+    /// What the engine primed its stretcher with, printed beside the measured
+    /// offset so the two can be read against each other. That relationship is
+    /// what a Shift case's prediction has to be written from.
+    int primingSamples = 0;
+
     /// Set on a stretched case, where a waveform comparison is the wrong
     /// question and these two are the right ones.
     bool hasSpectral = false;

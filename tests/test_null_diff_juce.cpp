@@ -373,6 +373,7 @@ class NullDiffCorpusTests : public juce::UnitTest {
     bool judgeStretched(const Case& value, const NativeRender& native,
                         const IncumbentRender& incumbent, CaseReport& report) {
         report.hasSpectral = true;
+        report.primingSamples = native.primingSamples;
 
         // Before any of the three: the same two things a null demands. Both
         // metrics below trim to the overlap, so a correctly aligned render that
@@ -408,10 +409,25 @@ class NullDiffCorpusTests : public juce::UnitTest {
 
         auto held = true;
 
+        // A shift nobody predicted is not a shift the corpus can certify. The
+        // alignment is measured from the material, so without something to
+        // check it against it would absorb a clip in the wrong place and the
+        // envelope and spectrum would then agree about the wrong thing
+        // perfectly well.
+        if (value.expectedShiftSamples == 0) {
+            logMessage("  " + juce::String(value.name) +
+                       ": no predicted shift is declared, so the measured " +
+                       juce::String(report.measuredShift, 0) +
+                       " cannot be told from a clip in the wrong place. The engine primed its "
+                       "stretcher with " +
+                       juce::String(native.primingSamples) + " samples.");
+            return false;
+        }
+
         // The shift against the prediction. The engine reports what its own
         // stretcher primes with, and the fork is late by its own copy of the
         // same library, so the two figures are the same figure.
-        if (value.expectedShiftSamples != 0) {
+        {
             const auto allowed =
                 std::max(64.0, std::abs(value.expectedShiftSamples) * value.shiftTolerance);
             if (std::abs(report.measuredShift - value.expectedShiftSamples) > allowed) {

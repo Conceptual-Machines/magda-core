@@ -91,10 +91,14 @@ struct Case {
 
     // --- what is allowed for -------------------------------------------------
 
-    /// The shift a Shift verdict expects, in samples, or zero to measure one
-    /// and assert nothing about its size. Measured at the start either way:
-    /// re-fitting per region would turn a clip that drifts into a clip that
-    /// passes.
+    /// What a Shift verdict expects the offset to be, in samples.
+    ///
+    /// Required rather than optional. Zero means nobody has declared one, and a
+    /// Shift case with no declaration is refused rather than measured: the
+    /// whole point of pinning a shift is that a clip in the wrong place cannot
+    /// be absorbed into the alignment, and an alignment checked against nothing
+    /// absorbs anything. The engine reports what its own stretcher primes with
+    /// (NativeRender::primingSamples), which is the figure to declare here.
     int expectedShiftSamples = 0;
 
     /// How far the measured shift may sit from the expected one, as a

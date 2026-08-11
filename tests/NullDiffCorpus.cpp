@@ -221,8 +221,13 @@ Case newCase(const char* name, const char* covers, TrackInfo track) {
 
 /// A stretched case: the fork primes its stretcher with the material at the
 /// clip's start rather than before it, so its clip begins about a window late.
-/// Measured at the start and asserted against what the engine predicts, never
-/// re-fitted per region.
+///
+/// The expected size is left unset here on purpose, and a Shift case with no
+/// declared expectation is refused rather than measured. The figure to put here
+/// is what the engine says its own stretcher primes with, which the corpus
+/// prints beside the measured offset for every one of these; until somebody has
+/// read those two against each other and written the relationship down, the
+/// corpus should not be certifying an alignment it has nothing to check.
 void expectsPrimingShift(Case& value) {
     value.verdict = Verdict::Shift;
     value.mechanism =
