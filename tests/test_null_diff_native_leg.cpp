@@ -148,22 +148,17 @@ TEST_CASE("The native leg renders the same at any block size", "[nulldiff][nativ
     // the same feed, holds; so does Signalsmith. Whatever is left in there is
     // internal to that mode rather than to how it is fed, and it is worth its
     // own issue rather than a guess here.
-    const std::set<std::string> knownDependent{
-        // A cell that straddles a step tempo change takes its far end's beat
-        // from the producing block's own slope. BlockInfo::beatAtTime is a lerp
-        // over that block's endpoints, exact inside one tempo region and
-        // extrapolated outside it, and a cell regularly outlives its block. So
-        // the cell's ratio is briefly wrong across every tempo step, on exactly
-        // the auto-tempo material this case plays.
-        //
-        // Invisible at 128 and 1024, where the grid coincides with the blocks;
-        // the misaligned sizes below are what surfaced it. The fix is to cut a
-        // callback at a tempo change the way it is already cut at a loop wrap,
-        // so that every cell lives inside one region where the lerp is exact.
-        // That is a change to the clock rather than to the voice, and it is
-        // why tempo.auto is still under calibration in the corpus.
-        "tempo.auto",
-    };
+    // Empty, and it took three fixes to get there. A rate that varies within a
+    // block was resolved from that block's own two ends; a stretcher framed
+    // whatever sizes it was handed; and a cell reading past its block's end got
+    // its beats from a straight line through that block rather than from the
+    // tempo map, so a cell straddling a step tempo change ran at the wrong
+    // ratio. The first two were the cell grid, the third was the block's beat
+    // mapping (RenderContext.hpp).
+    //
+    // Asserted in both directions, so this cannot silently refill and a case
+    // that comes off has to be taken off by somebody.
+    const std::set<std::string> knownDependent{};
 
     std::set<std::string> failed;
 

@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "transport/TempoMap.hpp"
+
 /**
  * @file RenderContext.hpp
  * @brief What the executor renders into, and what it is asked to render now.
@@ -156,12 +158,28 @@ struct BlockInfo {
      * is what spans and fades are in, and then has to be asked about in beats.
      */
     double beatAtTime(double seconds) const {
+        // The map itself where there is one, which matters for the moments that
+        // are not inside this block. A block's own two ends make a straight
+        // line, and that line is exact only while the tempo does not change
+        // along it: anything reading past the block's end, or across a step
+        // inside it, gets the slope this block happened to have rather than the
+        // one the map has there. A clip whose rate follows the tempo is read at
+        // instants beyond the block that produced them (ClipVoice's cells), so
+        // it is exactly the caller that cannot afford the straight line.
+        if (tempo != nullptr)
+            return tempo->timeToBeat(seconds);
+
         if (endSeconds <= startSeconds)
             return startBeat;
 
         const auto position = (seconds - startSeconds) / (endSeconds - startSeconds);
         return startBeat + position * (endBeat - startBeat);
     }
+
+    /// The map this block was cut from, or null for a caller that assembles a
+    /// block by hand. Not owned, and it outlives the block: what publishes a
+    /// transport keeps it alive for as long as the callback reading it runs.
+    const TempoMap* tempo = nullptr;
 };
 
 }  // namespace magda::engine

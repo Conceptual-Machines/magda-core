@@ -756,3 +756,28 @@ TEST_CASE("Messages outside notes and controllers are compared, not counted",
         CHECK_FALSE(compareMidi(native, incumbent, midiOptions()).passed());
     }
 }
+
+TEST_CASE("A short render is not a shift pass either", "[nulldiff][compare]") {
+    // The stretched metrics both trim to the overlap, so the length has to be
+    // checked before them rather than by them: aligned and short still agrees
+    // everywhere it is looked at.
+    const auto native = tone(2.0);
+
+    juce::AudioBuffer<float> truncated(native.getNumChannels(), native.getNumSamples() / 2);
+    for (auto channel = 0; channel < truncated.getNumChannels(); ++channel)
+        truncated.copyFrom(channel, 0, native, channel, 0, truncated.getNumSamples());
+
+    // Every metric a stretched case applies is happy with the pair.
+    const auto envelope = compareEnvelopes(native, truncated, 0, kSampleRate);
+    CHECK(std::abs(envelope.lagSamples) <= 1.0);
+
+    const auto spectra = compareSpectra(native, truncated, 0);
+    CHECK(spectra.frames > 0);
+    CHECK(spectra.percentile95Db < 1.0);
+
+    // The length is the only thing that says otherwise, which is why a
+    // stretched verdict has to ask before it applies them.
+    const auto result = compareAudio(native, truncated);
+    CHECK(result.lengthDifference != 0);
+    CHECK_FALSE(result.nulled());
+}
