@@ -992,6 +992,17 @@ TEST_CASE("Locating into an expressive note reconstructs its bend on its own cha
     CHECK(bends.front().message.getPitchWheelValue() ==
           Approx(8192.0 + 8191.0 * 6.0 / 48.0).margin(64.0));
 
+    // And its pressure, which a synth holds per channel exactly as it holds the
+    // wheel. A member channel is reused round robin, so a note located into on
+    // a channel still carrying another note's pressure inherits it: the same
+    // staleness the compile emits a resting value at every note start to avoid,
+    // arriving by the one door that did not check.
+    const auto pressures =
+        recorder.ofKind([](const juce::MidiMessage& m) { return m.isChannelPressure(); });
+    REQUIRE(!pressures.empty());
+    CHECK(pressures.front().message.getChannel() == channel);
+    CHECK(pressures.front().message.getChannelPressureValue() == 0);
+
     rig.roll(blockOf(3.0) + 1, blockOf(8.0), recorder);
     CHECK(recorder.hanging().empty());
 }

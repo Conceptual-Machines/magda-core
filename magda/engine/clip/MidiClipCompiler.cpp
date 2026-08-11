@@ -477,11 +477,18 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
     for (std::size_t i = 0; i < list.events.size(); ++i) {
         const auto& event = list.events[i];
         const auto kind = event.kind();
-        if (kind != kControlChange && kind != kPitchWheel)
+        if (kind != kControlChange && kind != kPitchWheel && kind != kChannelPressure)
             continue;
 
-        const auto controller =
-            kind == kPitchWheel ? MidiControllerStream::kPitchBend : static_cast<int>(event.data1);
+        // Channel pressure is indexed with the rest. It is per-channel state a
+        // synth holds exactly as it holds a controller, so a locate has to
+        // restore it: an MPE member channel is reused round robin, and a note
+        // located into on a channel still carrying another note's pressure is
+        // the same staleness the compile emits a resting value at every note
+        // start to avoid.
+        const auto controller = kind == kPitchWheel        ? MidiControllerStream::kPitchBend
+                                : kind == kChannelPressure ? MidiControllerStream::kChannelPressure
+                                                           : static_cast<int>(event.data1);
 
         auto found = std::find_if(list.controllers.begin(), list.controllers.end(),
                                   [&](const MidiControllerStream& stream) {
