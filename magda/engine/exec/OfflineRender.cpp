@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "clip/ClipVoicePool.hpp"
 #include "transport/TransportState.hpp"
 
 namespace magda::engine {
@@ -19,6 +20,7 @@ std::int64_t samplesBetween(double startSeconds, double endSeconds, double sampl
 OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& values,
                                   const RenderContext& context, const TempoMap& tempo,
                                   const OfflineRenderRequest& request, OfflineRenderSink& sink,
+                                  ClipVoicePool* voices,
                                   const std::function<bool()>& shouldContinue) {
     OfflineRenderResult result;
 
@@ -100,6 +102,19 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
                 juce::AudioBuffer<float> piece(buffer.getArrayOfWritePointers(),
                                                buffer.getNumChannels(), segment.startSample,
                                                segment.block.numSamples);
+
+                // Where the render has got to, and then the round that acts on
+                // it, both before the block rather than after. Playback stores
+                // the position here and leaves the opening to a thread; a
+                // render outruns any thread, so it does the opening itself and
+                // waits for the disk, which is exactly what it is allowed to
+                // do and playback is not.
+                if (voices != nullptr) {
+                    voices->setPosition(segment.block.startSeconds);
+                    voices->service();
+                    voices->fillNow();
+                }
+
                 executor.process(values, segment.block, piece);
             }
 

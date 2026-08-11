@@ -122,6 +122,7 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.startSeconds = seconds;
         segment.block.endSeconds = seconds;
         segment.block.continuous = continuous_;
+        segment.block.tempo = &tempo;
         segment.startSample = 0;
         segment.countingIn = false;
 
@@ -196,6 +197,7 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.startSeconds = secondsAfter(samplesSinceAnchor_);
         segment.block.endSeconds = secondsAfter(samplesSinceAnchor_ + samples);
         segment.block.continuous = continuous_;
+        segment.block.tempo = &tempo;
         segment.startSample = offset;
         segment.countingIn = countingIn_;
 

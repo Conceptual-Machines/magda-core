@@ -3,6 +3,9 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include <array>
+#include <cstddef>
+
 #include "core/ClipInfo.hpp"
 
 /**
@@ -51,11 +54,11 @@ float fadeGain(FadeCurve curve, float alpha);
 double fadeRampPosition(FadeCurve curve, double alpha, bool rising);
 
 /**
- * @brief Return the start of @p audio to zero without fading what follows it.
+ * @brief Return the start of a voice to zero without fading what follows it.
  *
  * The launch ramp (ClipInfo::launchFadeSamples), and deliberately not a fade:
  * it subtracts the offset the first sample starts at, decaying that correction
- * over @p fadeSamples, so a transient sitting on top of the offset survives
+ * over the ramp's length, so a transient sitting on top of the offset survives
  * intact. A gain fade would flatten the transient along with the step.
  *
  * What it is for is the discontinuity of starting mid-material: a locate into
@@ -64,9 +67,50 @@ double fadeRampPosition(FadeCurve curve, double alpha, bool rising);
  * offset to remove and this costs it nothing, which is why it can be applied
  * wherever a voice begins rather than only where somebody decided it clicks.
  *
- * @p fadeSamples of 0 does nothing at all, which is how the leading transient
- * is preserved exactly.
+ * It carries across blocks, which is why it is a small object rather than a
+ * function. A ramp that stopped at the end of the block it started in would
+ * decay over min(length, block) samples, so the same clip would come out
+ * differently at 128 samples a block and at 1024, and an offline render at one
+ * block size would disagree with playback at another. Block size is an I/O
+ * batching concept and never a precision one (RenderContext.hpp), and this is
+ * the state that keeps that true here.
+ *
+ * A length of 0 does nothing at all, which is how the leading transient is
+ * preserved exactly.
  */
-void applyStartDeClick(juce::dsp::AudioBlock<float> audio, int fadeSamples);
+class StartDeClick {
+  public:
+    /// The most channels one voice renders. Two today; sized for a little more
+    /// so that a wider clip is a compile-time decision rather than a heap
+    /// allocation on the audio thread.
+    static constexpr std::size_t kMaxChannels = 8;
+
+    /// Take the step out of @p audio, and remember enough to go on doing it in
+    /// the blocks after this one. The offset is read from the first sample of
+    /// each channel, once, here.
+    void begin(juce::dsp::AudioBlock<float> audio, int fadeSamples);
+
+    /// Carry on. Does nothing once the ramp has run out, so a caller can ask
+    /// every block without checking.
+    void advance(juce::dsp::AudioBlock<float> audio);
+
+    /// Whether there is any correction left to apply.
+    bool active() const {
+        return done_ < length_;
+    }
+
+    /// Forget the ramp, for a voice that is starting over.
+    void reset() {
+        length_ = 0;
+        done_ = 0;
+    }
+
+  private:
+    void applyFrom(juce::dsp::AudioBlock<float> audio, int alreadyDone);
+
+    std::array<float, kMaxChannels> offsets_{};
+    int length_ = 0;
+    int done_ = 0;
+};
 
 }  // namespace magda::engine

@@ -11,7 +11,12 @@ namespace magda::engine {
 
 void ClipVoice::prepare(const RenderContext& context) {
     sampleRate_ = context.sampleRate;
-    maxBlockSamples_ = context.maxBlockSize;
+    maxBlockSamples_ = stretchWorkSamples(context.maxBlockSize);
+
+    // One cell of output, off the callback. What a cell produces beyond the
+    // block that asked for it waits here.
+    held_.setSize(std::max(1, context.numChannels), kCellSamples, false, true, false);
+
     release();
 }
 
@@ -20,6 +25,126 @@ void ClipVoice::release() {
     eventId_ = INVALID_EVENT_ID;
     sounded_ = false;
     primed_ = nullptr;
+    deClick_.reset();
+    pending_ = false;
+    pendingCount_ = 0;
+    pendingRead_ = 0;
+    skip_ = 0;
+}
+
+bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEventPlayback& event,
+                                   const BlockInfo& block, PrefetchStream& stream,
+                                   ClipStretcher& stretcher, int preRoll,
+                                   juce::dsp::AudioBlock<float> scratch,
+                                   juce::dsp::AudioBlock<float> region, double windowStart,
+                                   int count) {
+    // The grid, in samples of the timeline, anchored to where the event begins
+    // rather than to where this block does. That anchor is the whole point: two
+    // renders that cut the timeline into different blocks still divide it into
+    // the same cells, so the stretcher is handed the same input in the same
+    // order both times and gives back the same samples.
+    const auto eventStartSample =
+        static_cast<std::int64_t>(std::llround(event.span.startSeconds * sampleRate_));
+    const auto windowStartSample =
+        static_cast<std::int64_t>(std::llround(windowStart * sampleRate_));
+
+    // Beginning rather than carrying on: the first block of a voice, the first
+    // after the timeline jumped, and one whose stretcher the pool has replaced.
+    // Not after an underrun, deliberately, and that is the difference between a
+    // reader catching up and one that never does: priming reads behind the
+    // position wanted, so a stream that came back short and was primed again
+    // would be sent backwards every block.
+    auto needsPrime = primed_ != &stretcher || !block.continuous || !pending_;
+
+    if (needsPrime) {
+        // Back to the cell boundary at or before where playback resumes, and
+        // the head of that cell is produced and dropped. Resuming mid-cell
+        // would anchor the grid to wherever the transport happened to land,
+        // which is the block dependency again wearing a locate's clothes.
+        const auto offset = windowStartSample - eventStartSample;
+        const auto index = static_cast<std::int64_t>(
+            std::floor(static_cast<double>(offset) / static_cast<double>(kCellSamples)));
+
+        nextCell_ = eventStartSample + index * kCellSamples;
+        pendingCount_ = 0;
+        pendingRead_ = 0;
+        skip_ = static_cast<int>(windowStartSample - nextCell_);
+
+        stretcher.reset();
+        primed_ = &stretcher;
+        pending_ = true;
+    }
+
+    auto produced = 0;
+    auto full = true;
+
+    while (produced < count) {
+        if (pendingRead_ < pendingCount_) {
+            const auto take = std::min(pendingCount_ - pendingRead_, count - produced);
+            for (std::size_t channel = 0; channel < region.getNumChannels(); ++channel) {
+                const auto* source = held_.getReadPointer(static_cast<int>(
+                    std::min(channel, static_cast<std::size_t>(held_.getNumChannels() - 1))));
+                auto* destination = region.getChannelPointer(channel);
+                std::copy(source + pendingRead_, source + pendingRead_ + take,
+                          destination + produced);
+            }
+
+            pendingRead_ += take;
+            produced += take;
+            continue;
+        }
+
+        // One whole cell, at its own two ends. The ratio a cell runs at is what
+        // its own boundaries say, exactly as a block's used to be, and the
+        // boundaries no longer move.
+        const auto cellStartSeconds = static_cast<double>(nextCell_) / sampleRate_;
+        const auto cellEndSeconds = static_cast<double>(nextCell_ + kCellSamples) / sampleRate_;
+
+        const auto opens = readingPositionAt(clip, event, cellStartSeconds,
+                                             block.beatAtTime(cellStartSeconds), sampleRate_);
+        const auto closes = readingPositionAt(clip, event, cellEndSeconds,
+                                              block.beatAtTime(cellEndSeconds), sampleRate_);
+        const auto step = (closes - opens) / kCellSamples;
+
+        const auto ahead = stretcher.readAheadSamples();
+        const auto readFrom = static_cast<std::int64_t>(std::llround(opens)) + ahead;
+        const auto readTo = static_cast<std::int64_t>(std::llround(closes)) + ahead;
+        const auto wanted = static_cast<int>(
+            std::clamp<std::int64_t>(readTo - readFrom, 0, maxReadingSamples(maxBlockSamples_)));
+
+        if (needsPrime) {
+            // At the cell's own boundary rather than at the block's, so what
+            // the stretcher is primed with is the material leading up to a
+            // fixed instant. Read out of the same stream in the same pass, so
+            // the cell's own read continues it rather than seeking again.
+            stretcher.prime(stream, readFrom, preRoll, step);
+            needsPrime = false;
+        }
+
+        auto reading = scratch.getSubBlock(static_cast<std::size_t>(maxBlockSamples_),
+                                           static_cast<std::size_t>(wanted));
+        const auto delivered = stream.read(readFrom, reading, wanted);
+
+        juce::dsp::AudioBlock<float> cell(held_);
+        auto cellOut = cell.getSubBlock(0, static_cast<std::size_t>(kCellSamples));
+        stretcher.process(reading, opens - static_cast<double>(readFrom), step, cellOut);
+
+        nextCell_ += kCellSamples;
+        pendingCount_ = kCellSamples;
+        pendingRead_ = std::min(skip_, kCellSamples);
+        skip_ = std::max(0, skip_ - kCellSamples);
+
+        // A cell the reader could not fill is a cell that ends in silence, and
+        // the voice is no longer carrying on from anywhere. Said rather than
+        // acted on: the block is still filled to its end, exactly as the plain
+        // path fills it, because stopping here would leave the rest of the
+        // region holding whatever the scratch held last and would put the voice
+        // a block behind for the rest of the take.
+        if (delivered < wanted)
+            full = false;
+    }
+
+    return full;
 }
 
 void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, int regionFirstSample,
@@ -67,6 +192,7 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
         eventId_ = event.eventId;
         sounded_ = false;
         primed_ = nullptr;
+        deClick_.reset();
     }
 
     const auto nothing = [this] {
@@ -151,31 +277,21 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
                                              static_cast<std::size_t>(wanted))
                        : region;
 
-    // Beginning rather than carrying on: the first block of a voice, and the
-    // first after the timeline jumped. Whatever the stretcher was holding is for
-    // somewhere else, and what replaces it is the material leading up to here,
-    // read out of the same stream in the same pass so that the block's own read
-    // continues it rather than seeking again.
+    // A clip that consumes its reading at a rate is fed on a grid of its own
+    // rather than a block at a time, so that what the stretcher is handed is a
+    // function of where the timeline is and never of how the callback was cut
+    // up (renderThroughCells). Everything else here is the plain path: one
+    // sample of reading per sample of output, where a block boundary already
+    // changes nothing.
     //
-    // Not after an underrun, deliberately, and this is the difference between a
-    // reader catching up and one that never does. Priming reads behind the
-    // position the block wants, so a stream that came back short and was primed
-    // again for it would be sent backwards every block, and every one of those
-    // is a seek that guarantees the next block is short too. A stretcher handed
-    // silence and then material has a discontinuity in what it is playing, which
-    // is what a loop wrap is as well, and neither needs anything said about it.
-    // A stretcher this voice has not primed is either its first or one the pool
-    // has just put in place of the last, and both need the same thing.
-    if (stretcher != nullptr && (primed_ != stretcher || !block.continuous)) {
-        stretcher->reset();
-        stretcher->prime(stream, readFrom, preRoll, step);
-        primed_ = stretcher;
-    }
-
-    const auto delivered = stream.read(readFrom, reading, wanted);
-
-    if (stretcher != nullptr)
-        stretcher->process(reading, opens - static_cast<double>(readFrom), step, region);
+    // Both answer the same question, which is whether this voice got everything
+    // it asked for. What "everything" counts in differs: the plain path asks
+    // the reader for a block's worth of samples, and the grid asks it for
+    // whatever a cell consumes and then measures what it produced.
+    const auto full = stretcher != nullptr
+                          ? renderThroughCells(clip, event, block, stream, *stretcher, preRoll,
+                                               scratch, region, windowStart, count)
+                          : stream.read(readFrom, reading, wanted) == wanted;
 
     // The holes, cleared out of what was read rather than skipped over.
     for (const auto& hole : clip.silenced) {
@@ -253,8 +369,30 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // Beginning rather than carrying on: the first block of a voice, the first
     // after the timeline jumped, and the first after the reader came back from
     // an underrun. All three start the material wherever it happens to be.
-    if (!sounded_ || !block.continuous)
-        applyStartDeClick(region, clip.launchFadeSamples);
+    //
+    // Except one, and it is the whole reason this is a condition rather than a
+    // call. A voice starting at the beginning of what it plays is not starting
+    // mid-material: there is nothing before it to be discontinuous with, and
+    // what looks like a step is the material's own attack. De-clicking there
+    // subtracts the attack and decays the correction over the ramp, so a clip
+    // whose first sample is a transient loses it and gains 256 samples of tail.
+    // The corpus found exactly that on an impulse sitting on a clip edge
+    // (#2040), and the incumbent does not do it.
+    //
+    // A ramp longer than the block it starts in goes on into the next one. It
+    // has to: clamping it to the block would make the same clip come out
+    // differently at 128 samples a block and at 1024, and an offline render at
+    // one size disagree with playback at another.
+    const auto beginsAtItsOwnStart = windowStart <= event.span.startSeconds + (0.5 / sampleRate_);
+
+    if (!sounded_ || !block.continuous) {
+        if (beginsAtItsOwnStart)
+            deClick_.reset();
+        else
+            deClick_.begin(region, clip.launchFadeSamples);
+    } else {
+        deClick_.advance(region);
+    }
 
     out.getSubBlock(static_cast<std::size_t>(first), static_cast<std::size_t>(count)).add(region);
 
@@ -266,7 +404,7 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // Against what was asked for rather than against the block: a stretched clip
     // consumes a different amount of reading than it renders, and a full block
     // built out of a short read is exactly the case this has to catch.
-    sounded_ = delivered == wanted;
+    sounded_ = full;
     return true;
 }
 

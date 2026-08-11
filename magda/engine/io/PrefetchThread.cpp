@@ -4,10 +4,12 @@
 
 namespace magda::engine {
 
-PrefetchThread::PrefetchThread() : juce::Thread("MAGDA prefetch") {
+PrefetchThread::PrefetchThread(bool runInBackground)
+    : juce::Thread("MAGDA prefetch"), runsInBackground_(runInBackground) {
     // Above the interface, below the callback. A reader that lost to a redraw
     // is what an underrun sounds like.
-    startThread(juce::Thread::Priority::high);
+    if (runsInBackground_)
+        startThread(juce::Thread::Priority::high);
 }
 
 PrefetchThread::~PrefetchThread() {

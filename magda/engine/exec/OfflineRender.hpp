@@ -29,6 +29,10 @@
 
 namespace magda::engine {
 
+/// Only named here, and only used from the .cpp, so an includer of this does
+/// not take a prefetch thread and a stream pool with it.
+class ClipVoicePool;
+
 /** What to render, and how much of the machine to hand it. */
 struct OfflineRenderRequest {
     /// The stretch of timeline to render, in beats, half-open. Beats because
@@ -113,6 +117,19 @@ class OfflineRenderSink {
  * does not change during a render: an offline render is one pass over a
  * timeline whose tempo track is whatever it was when the render started.
  *
+ * @p voices provisions the readers a track's clips play through, and is null
+ * for a render with no arrangement audio in it. It is driven here rather than
+ * by a thread, and that is the whole difference between an offline render and
+ * playback: a pool serviced from a 10 ms round would be left behind instantly
+ * by a render going a hundred times faster than realtime, and every clip would
+ * arrive with no reader and play silence. Nothing here has a callback to
+ * starve, so the render can open the files it is about to need and wait for
+ * them, in step, before the block that needs them.
+ *
+ * A caller that hands one over must not also be running a ClipVoiceThread on
+ * it. Two things provisioning one pool is a race over which readers exist,
+ * which is what the pool's own threading contract already says.
+ *
  * @p shouldContinue is asked once per block and may be empty. A render of a
  * long range is the one thing in the engine a user is left waiting for, so it
  * is interruptible from the start rather than once someone complains.
@@ -123,6 +140,7 @@ class OfflineRenderSink {
 OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& values,
                                   const RenderContext& context, const TempoMap& tempo,
                                   const OfflineRenderRequest& request, OfflineRenderSink& sink,
+                                  ClipVoicePool* voices = nullptr,
                                   const std::function<bool()>& shouldContinue = {});
 
 }  // namespace magda::engine

@@ -152,7 +152,8 @@ class SignalsmithClipStretcher final : public ClipStretcher {
 class SoundTouchClipStretcher final : public ClipStretcher {
   public:
     explicit SoundTouchClipStretcher(const StretchSetup& setup)
-        : channels_(setup.numChannels), maxBlockSamples_(setup.maxBlockSamples) {
+        : channels_(setup.numChannels),
+          maxBlockSamples_(stretchWorkSamples(setup.maxBlockSamples)) {
         touch_.setChannels(static_cast<unsigned int>(channels_));
         touch_.setSampleRate(static_cast<unsigned int>(setup.sampleRate));
 
@@ -173,7 +174,8 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         // Grown here, on the thread that made this, and never again.
         const auto frames = maxReadingSamples(setup.maxBlockSamples);
         interleaved_.resize(static_cast<std::size_t>(frames * channels_));
-        deinterleaved_.resize(static_cast<std::size_t>(setup.maxBlockSamples * channels_));
+        deinterleaved_.resize(
+            static_cast<std::size_t>(stretchWorkSamples(setup.maxBlockSamples) * channels_));
 
         allocatePreRoll(channels_, static_cast<int>(std::ceil(preRollSamples(setup.nominalRate) *
                                                               kPreRollHeadroom)));

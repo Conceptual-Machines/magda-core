@@ -102,13 +102,20 @@ struct MidiControllerStream {
     /// 1 to 16.
     int channel = 1;
 
-    /// The controller number, or @ref kPitchBend.
+    /// The controller number, or @ref kPitchBend, or @ref kChannelPressure.
     int controller = 0;
 
     /// Indices into MidiEventList::events, ascending.
     std::vector<std::int32_t> events;
 
     static constexpr int kPitchBend = 256;
+
+    /// Channel pressure. Per-channel state a synth holds exactly as it holds a
+    /// controller, so it is chased like one: under MPE a member channel is
+    /// reused round robin, and a note located into on a channel carrying
+    /// another note's pressure is the same staleness the compile takes care to
+    /// avoid at a note's start.
+    static constexpr int kChannelPressure = 257;
 };
 
 /**

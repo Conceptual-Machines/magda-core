@@ -1,0 +1,166 @@
+#include <catch2/catch_test_macros.hpp>
+#include <set>
+
+#include "NullDiffCase.hpp"
+
+/**
+ * The corpus's own declarations (#2040).
+ *
+ * The runner asserts what each case claims. What nothing else asserts is that
+ * the claims are honest, and one of them in particular: a case may raise its
+ * floor or ask for a shift only with a mechanism written beside it. Without
+ * this, the way to make a failing case pass is to widen its bound and say
+ * nothing, which is the failure mode the whole slice is arranged against.
+ *
+ * These run in the model-only target because the corpus is model values. What
+ * the two engines make of them is the runner's business.
+ */
+
+using namespace magda;
+using namespace magda::nulldiff;
+
+namespace {
+
+juce::File scratch() {
+    auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("magda_null_diff_corpus_test");
+    root.createDirectory();
+    return root;
+}
+
+}  // namespace
+
+TEST_CASE("The corpus builds and covers what the slice claims", "[nulldiff][corpus]") {
+    const auto corpus = buildCorpus(scratch());
+
+    REQUIRE(corpus.size() == 21);
+
+    std::set<std::string> names;
+    for (const auto& value : corpus)
+        CHECK(names.insert(value.name).second);
+
+    // The coverage the issue asks for, case by case. Named rather than counted,
+    // so that removing one is a decision rather than an accident.
+    for (const auto* expected : {"placement.grid",
+                                 "placement.trims",
+                                 "fades.curves",
+                                 "fades.speedramp",
+                                 "loop.tiling",
+                                 "rate.48k",
+                                 "reverse.plain",
+                                 "speed.ratio",
+                                 "pitch.analog",
+                                 "tempo.auto",
+                                 "stretch.signalsmith",
+                                 "stretch.soundtouch.normal",
+                                 "stretch.soundtouch.better",
+                                 "stretch.broadband",
+                                 "warp.audio",
+                                 "takes.comp",
+                                 "midi.notes",
+                                 "midi.cc",
+                                 "midi.mpe",
+                                 "midi.fold",
+                                 "midi.offset"})
+        CHECK(names.count(expected) == 1);
+}
+
+TEST_CASE("Every allowance carries a mechanism", "[nulldiff][corpus]") {
+    // The rule the corpus lives by: change the shape of the comparison, never
+    // the size of the allowance. An allowance with no mechanism beside it is
+    // how a real bug ends up inside an expected difference.
+    for (const auto& value : buildCorpus(scratch())) {
+        INFO(value.name);
+
+        // What counts as an allowance is something the corpus lets the two
+        // engines differ by: a shift applied before comparing, a floor raised
+        // above the arithmetic one, a case that measures instead of asserting,
+        // or notes expected to land offset.
+        //
+        // A Midi verdict on its own is not one of those. It says where the case
+        // is judged rather than how much it may differ by, and it is not a
+        // choice either: a MIDI track here carries a capture device instead of
+        // a synth, so neither engine produces any audio to compare.
+        const auto allows = value.verdict == Verdict::Shift ||
+                            value.verdict == Verdict::ReportOnly || value.floorDb > -120.0 ||
+                            value.declaredMidiShiftBeats != 0.0;
+
+        if (allows)
+            CHECK_FALSE(value.mechanism.empty());
+        else
+            CHECK(value.floorDb <= -120.0);
+    }
+}
+
+TEST_CASE("Every case says what it covers and what it plays", "[nulldiff][corpus]") {
+    for (const auto& value : buildCorpus(scratch())) {
+        INFO(value.name);
+
+        CHECK_FALSE(value.covers.empty());
+        CHECK(value.endBeat > value.startBeat);
+        CHECK(value.sampleRate > 0.0);
+        CHECK_FALSE(value.clips.empty());
+        CHECK(value.master.id == MASTER_TRACK_ID);
+        REQUIRE(value.tracks.size() == 1);
+
+        // Every audio clip's source was written and pooled, and every case that
+        // captures MIDI has something to capture through: a plan compiles no
+        // ClipMidi op for a track whose chain consumes no MIDI, so a MIDI case
+        // without a device would compare two silences and pass.
+        auto audioClips = 0;
+        for (const auto& clip : value.clips)
+            if (clip.isAudio())
+                ++audioClips;
+
+        if (audioClips > 0)
+            CHECK_FALSE(value.sources.empty());
+
+        for (const auto& source : value.sources) {
+            CHECK(source.id != INVALID_SOURCE_ID);
+            CHECK(juce::File(source.path).existsAsFile());
+            CHECK(source.sampleRate > 0.0);
+            CHECK(source.durationSeconds > 0.0);
+        }
+
+        if (value.capturesMidi())
+            CHECK_FALSE(value.tracks.front().chain.fxChainElements.empty());
+    }
+}
+
+TEST_CASE("Render cases change tempo in steps rather than ramps", "[nulldiff][corpus]") {
+    // A ramped tempo is the one place the two tempo maps are known to be able
+    // to disagree, because the engine subdivides where the fork integrates. A
+    // render case built on one would report that as a clip bug. Ramps are
+    // pinned in the tempo-map comparison, where the answer is a number.
+    for (const auto& value : buildCorpus(scratch())) {
+        INFO(value.name);
+        REQUIRE_FALSE(value.tempo.empty());
+        CHECK(value.tempo.front().beat == 0.0);
+
+        for (std::size_t index = 1; index < value.tempo.size(); ++index)
+            CHECK(value.tempo[index].beat > value.tempo[index - 1].beat);
+    }
+}
+
+TEST_CASE("A grooving case carries the template both engines will read", "[nulldiff][corpus]") {
+    // One XML string feeds both legs, which is what makes "the same groove" a
+    // fact rather than two parsers agreeing.
+    for (const auto& value : buildCorpus(scratch())) {
+        auto namesAGroove = false;
+        for (const auto& clip : value.clips)
+            if (clip.grooveTemplate.isNotEmpty())
+                namesAGroove = true;
+
+        INFO(value.name);
+        CHECK(namesAGroove == value.grooveXml.isNotEmpty());
+
+        if (!namesAGroove)
+            continue;
+
+        const auto document = juce::parseXML(value.grooveXml);
+        REQUIRE(document != nullptr);
+        CHECK(document->getChildByName("GROOVETEMPLATE") != nullptr);
+        CHECK(document->getChildByName("GROOVETEMPLATE")->getStringAttribute("name") ==
+              juce::String(kGrooveName));
+    }
+}

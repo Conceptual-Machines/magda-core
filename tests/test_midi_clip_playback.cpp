@@ -4,6 +4,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -400,6 +401,79 @@ TEST_CASE("A pitch-bend list entirely at rest is skipped", "[engine][clip][midi]
 // =============================================================================
 // MPE
 // =============================================================================
+
+TEST_CASE("An MPE note opens with the dimensions the specification asks for",
+          "[engine][clip][midi]") {
+    // Timbre before the note-on and pressure beside it. The specification asks
+    // for them and the fork sends both, and a synth that never receives them is
+    // left holding whatever the last note on that channel set: a member channel
+    // is reused round-robin, so the state would be inherited from another note
+    // rather than fresh. Found by the null-diff corpus (#2040), which caught the
+    // fork sending three messages the engine did not.
+    auto clip = makeMidiClip(1, 0.0, 4.0);
+
+    auto expressive = note(60, 1.0, 1.0);
+    expressive.pitchExpression = {MidiPitchExpressionPoint{0.0, 0.0},
+                                  MidiPitchExpressionPoint{1.0, 2.0}};
+    clip.midiNotes.push_back(expressive);
+
+    const auto list = compileMidiEvents(clip, 0.0);
+    REQUIRE(list.mpe);
+
+    std::optional<std::size_t> timbre;
+    std::optional<std::size_t> pressure;
+    std::optional<std::size_t> noteOn;
+
+    for (std::size_t i = 0; i < list.events.size(); ++i) {
+        const auto& event = list.events[i];
+        if (event.beat > 1.0 + 1.0e-9 || event.beat < 1.0 - 1.0e-9)
+            continue;
+        const auto kind = event.status & 0xf0;
+        if (kind == 0xb0 && event.data1 == 74)
+            timbre = i;
+        if (kind == 0xd0)
+            pressure = i;
+        if (event.isNoteOn())
+            noteOn = i;
+    }
+
+    REQUIRE(timbre.has_value());
+    REQUIRE(pressure.has_value());
+    REQUIRE(noteOn.has_value());
+
+    // Ordered ahead of the note-on, which is what "before" means when both land
+    // on one beat.
+    CHECK(*timbre < *noteOn);
+    CHECK(*pressure < *noteOn);
+
+    // At rest, because the model carries neither dimension: expression here is
+    // pitch, and nothing in a clip can move timbre or pressure.
+    CHECK(static_cast<int>(list.events[*timbre].data2) == 64);
+    CHECK(static_cast<int>(list.events[*pressure].data1) == 0);
+
+    // On the note's own member channel. On the master's they would configure the
+    // zone instead of the note.
+    const auto memberChannel = list.events[*noteOn].channel();
+    CHECK(list.events[*timbre].channel() == memberChannel);
+    CHECK(list.events[*pressure].channel() == memberChannel);
+    CHECK(memberChannel >= 2);
+}
+
+TEST_CASE("A clip with no expression opens no MPE dimensions", "[engine][clip][midi]") {
+    // They belong to MPE. A clip that is not MPE plays on channel 1, where the
+    // same two messages would be zone configuration rather than note state.
+    auto clip = makeMidiClip(1, 0.0, 4.0);
+    clip.midiNotes.push_back(note(60, 0.0, 1.0));
+
+    const auto list = compileMidiEvents(clip, 0.0);
+    REQUIRE_FALSE(list.mpe);
+
+    for (const auto& event : list.events) {
+        const auto kind = event.status & 0xf0;
+        CHECK(kind != 0xd0);
+        CHECK_FALSE((kind == 0xb0 && event.data1 == 74));
+    }
+}
 
 TEST_CASE("Overlapping expressive notes get their own channels", "[engine][clip][midi]") {
     auto clip = makeMidiClip(1, 0.0, 4.0);
@@ -917,6 +991,17 @@ TEST_CASE("Locating into an expressive note reconstructs its bend on its own cha
     CHECK(bends.front().message.getChannel() == channel);
     CHECK(bends.front().message.getPitchWheelValue() ==
           Approx(8192.0 + 8191.0 * 6.0 / 48.0).margin(64.0));
+
+    // And its pressure, which a synth holds per channel exactly as it holds the
+    // wheel. A member channel is reused round robin, so a note located into on
+    // a channel still carrying another note's pressure inherits it: the same
+    // staleness the compile emits a resting value at every note start to avoid,
+    // arriving by the one door that did not check.
+    const auto pressures =
+        recorder.ofKind([](const juce::MidiMessage& m) { return m.isChannelPressure(); });
+    REQUIRE(!pressures.empty());
+    CHECK(pressures.front().message.getChannel() == channel);
+    CHECK(pressures.front().message.getChannelPressureValue() == 0);
 
     rig.roll(blockOf(3.0) + 1, blockOf(8.0), recorder);
     CHECK(recorder.hanging().empty());

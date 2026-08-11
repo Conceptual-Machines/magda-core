@@ -58,32 +58,66 @@ double fadeRampPosition(FadeCurve curve, double alpha, bool rising) {
     return rising ? (alpha * alpha * 0.5) + 0.5 : ((-(alpha - 1.0) * (alpha - 1.0)) * 0.5) + 0.5;
 }
 
-void applyStartDeClick(juce::dsp::AudioBlock<float> audio, int fadeSamples) {
-    const auto length = std::min(static_cast<std::size_t>(std::max(0, fadeSamples)),
-                                 static_cast<std::size_t>(audio.getNumSamples()));
-    if (length == 0)
+void StartDeClick::begin(juce::dsp::AudioBlock<float> audio, int fadeSamples) {
+    reset();
+
+    length_ = std::max(0, fadeSamples);
+    if (length_ == 0 || audio.getNumSamples() == 0)
         return;
 
-    for (std::size_t channel = 0; channel < audio.getNumChannels(); ++channel) {
-        auto* samples = audio.getChannelPointer(channel);
-        const auto discontinuity = samples[0];
+    // The step, read once, from the first sample of each channel. Once rather
+    // than per block, because the correction that follows is a decay of THIS
+    // number: re-reading it in the next block would take the step out of
+    // whatever the material happened to be doing there instead.
+    const auto channels = std::min(audio.getNumChannels(), kMaxChannels);
+    for (std::size_t channel = 0; channel < channels; ++channel)
+        offsets_[channel] = audio.getChannelPointer(channel)[0];
+
+    applyFrom(audio, 0);
+}
+
+void StartDeClick::advance(juce::dsp::AudioBlock<float> audio) {
+    if (!active())
+        return;
+
+    applyFrom(audio, done_);
+}
+
+void StartDeClick::applyFrom(juce::dsp::AudioBlock<float> audio, int alreadyDone) {
+    const auto remaining = length_ - alreadyDone;
+    if (remaining <= 0)
+        return;
+
+    const auto count = std::min(static_cast<std::size_t>(remaining), audio.getNumSamples());
+    const auto channels = std::min(audio.getNumChannels(), kMaxChannels);
+
+    for (std::size_t channel = 0; channel < channels; ++channel) {
+        const auto discontinuity = offsets_[channel];
 
         // Nothing to step down from. A voice that begins on a zero crossing,
         // and every voice that begins with a fade in, lands here.
         if (discontinuity == 0.0f)
             continue;
 
-        if (length == 1) {
-            samples[0] = 0.0f;
+        auto* samples = audio.getChannelPointer(channel);
+
+        if (length_ == 1) {
+            samples[0] -= discontinuity;
             continue;
         }
 
-        for (std::size_t i = 0; i < length; ++i) {
-            const auto phase = static_cast<float>(i) / static_cast<float>(length - 1);
+        for (std::size_t i = 0; i < count; ++i) {
+            // Phase runs across the whole ramp rather than across this block,
+            // which is the whole point of carrying the progress: the same clip
+            // has to come out the same however the render was cut up.
+            const auto phase = static_cast<float>(alreadyDone + static_cast<int>(i)) /
+                               static_cast<float>(length_ - 1);
             const auto correction = 0.5f * (1.0f + std::cos(kPi * phase));
             samples[i] -= discontinuity * correction;
         }
     }
+
+    done_ = alreadyDone + static_cast<int>(count);
 }
 
 }  // namespace magda::engine
