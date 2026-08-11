@@ -28,13 +28,13 @@ is. When the two disagree, the headers are right and this file is stale.
 | Retire stock TE plugin wrappers | [#1888](https://github.com/Conceptual-Machines/magda-core/issues/1888) | done |
 | Clip model: container from content | [#1901](https://github.com/Conceptual-Machines/magda-core/issues/1901) | done |
 | **Engine core: plan, executor, PDC** | [#1889](https://github.com/Conceptual-Machines/magda-core/issues/1889) | **all 10 slices done** |
-| **Arranger clip playback** | [#1890](https://github.com/Conceptual-Machines/magda-core/issues/1890) | **slices 1 to 6 of 7** |
+| **Arranger clip playback** | [#1890](https://github.com/Conceptual-Machines/magda-core/issues/1890) | **all 7 slices done** |
 | Parameters, modifiers, macros, automation | [#1891](https://github.com/Conceptual-Machines/magda-core/issues/1891) | not started |
 | Rack graph: pins, summing, multi-out, nesting | [#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892) | not started |
 | External plugin hosting and hardware inserts | [#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893) | not started |
 | Clip launcher and session playback | [#1894](https://github.com/Conceptual-Machines/magda-core/issues/1894) | not started |
 | Live input, monitoring, recording | [#1895](https://github.com/Conceptual-Machines/magda-core/issues/1895) | not started |
-| Null-diff validation harness | [#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896) | not started |
+| Null-diff validation harness | [#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896) | rig built, 8 slices open |
 | Cutover: bridge rewrite, dual-engine release | [#1897](https://github.com/Conceptual-Machines/magda-core/issues/1897) | not started |
 
 Engine core, slice by slice: plan IR and compiler ([#2010](https://github.com/Conceptual-Machines/magda-core/issues/2010)),
@@ -53,8 +53,20 @@ voices, spans and fades ([#2035](https://github.com/Conceptual-Machines/magda-co
 rate conversion, looping and reverse ([#2036](https://github.com/Conceptual-Machines/magda-core/issues/2036)),
 stretch and pitch ([#2037](https://github.com/Conceptual-Machines/magda-core/issues/2037)),
 warp, beat detection and loop info ([#2038](https://github.com/Conceptual-Machines/magda-core/issues/2038)),
-MIDI clips ([#2039](https://github.com/Conceptual-Machines/magda-core/issues/2039)).
-Still open: the null-diff corpus ([#2040](https://github.com/Conceptual-Machines/magda-core/issues/2040)).
+MIDI clips ([#2039](https://github.com/Conceptual-Machines/magda-core/issues/2039)),
+the null-diff corpus ([#2040](https://github.com/Conceptual-Machines/magda-core/issues/2040)).
+
+Validation, slice by slice, all open: whole-project cases and the tiered oracle
+([#2075](https://github.com/Conceptual-Machines/magda-core/issues/2075)),
+plan goldens ([#2076](https://github.com/Conceptual-Machines/magda-core/issues/2076)),
+differ property tests ([#2077](https://github.com/Conceptual-Machines/magda-core/issues/2077)),
+the block-size gate ([#2078](https://github.com/Conceptual-Machines/magda-core/issues/2078)),
+migrators ([#2079](https://github.com/Conceptual-Machines/magda-core/issues/2079)),
+the DAWproject cross-check ([#2080](https://github.com/Conceptual-Machines/magda-core/issues/2080)),
+the real-project corpus ([#2081](https://github.com/Conceptual-Machines/magda-core/issues/2081)),
+the parity envelope suite ([#2082](https://github.com/Conceptual-Machines/magda-core/issues/2082)).
+Parity cases for a feature live with the feature, so #1891 through #1895 each carry their own,
+the way #2040 was the last slice of #1890.
 
 ---
 
@@ -444,9 +456,10 @@ so a voice's first read is one contiguous read that begins with the priming samp
 `ClipAudio` op therefore reports no latency at all and stretched voices stay aligned with
 unstretched ones on the same track. One deliberate divergence from the fork: its Signalsmith
 wrapper primes with the material *at* the start rather than before it, so it begins every
-stretched clip about a window late. The null-diff corpus
-([#2040](https://github.com/Conceptual-Machines/magda-core/issues/2040)) will show that as a
-fixed offset, and the engine is the one that is right.
+stretched clip about a window late, and the engine is the one that is right. The corpus pins
+that offset rather than tolerating it: measured by cross correlation, and required to equal the
+stretcher's own reported priming latency scaled by the ratio it runs at. A shift nobody
+predicted is a clip in the wrong place, and the case is refused rather than aligned.
 
 The engines are `third_party/signalsmith-stretch` (MIT, the default, and what the pinned mode
 `kSignalsmith` names) and `third_party/soundtouch` (LGPL-2.1, its own replaceable static target,
@@ -518,7 +531,56 @@ there while its session path applies it, which is a gap in the sync layer rather
 
 ---
 
-## 7. What is not built yet
+## 7. How parity is checked
+
+Six of the clip slices were judged by tests written beside them, and a test asserts what its
+author believed the rule was. The corpus
+([#2040](https://github.com/Conceptual-Machines/magda-core/issues/2040)) is the one thing here
+that cannot: twenty-one projects, each built as model values and handed to both engines, neither
+of which gets a say in what the other produces. It lives in `tests/NullDiff*` and runs in
+`magda_juce_tests`, because the incumbent leg is a `te::Edit`.
+
+**Nothing is golden.** A checked-in reference render would freeze the fork at the moment it was
+recorded, so the day the fork changes the corpus would report an engine that broke. Both legs
+render on every run.
+
+**The material is chosen per case, never the tolerance.** Where the engines must agree sample
+for sample, which is placement, trims, fades, loop tiling, reverse and comping, the material is
+impulses and steps and the floor is -120 dBFS peak. Where an interpolator or a stretcher stands
+between them, the material is band limited well below Nyquist, so interpolation error falls far
+below the floor while a wrong position or a dropped sample stays as loud as it was. The rule the
+calibration run established: change the shape of the comparison, never the size of the
+allowance.
+
+**Three divergences are pinned as numbers with their mechanisms**, rather than absorbed:
+Signalsmith priming above, controller density in section 6, and `midiOffset` on an unlooped
+arranger clip. Each is asserted at exactly the size it was declared to be, so the day one of
+them changes, a case fails.
+
+**The maps are compared as functions, not through a render.** `TempoMap::beatToTime` against
+`te::TempoSequence` and `WarpMap::sourceSecondsAt` against `WarpTimeManager`, sampled densely and
+asserted to the microsecond, before any case renders. A mapping disagreement then fails once
+with a number instead of twenty-one times as a waveform.
+
+The corpus found five engine bugs on its first runs, all of them invisible to the slice tests
+that passed: an offline render that provisioned no readers and produced silence, a launch ramp
+clamped to the first block, that same ramp firing on a voice with nothing before it to be
+discontinuous with, a rate resolved from a block's own two ends, and an MPE note opened with
+neither timbre nor pressure.
+
+It also falsified a prediction. The stretch cases do not null after their shift: priming sets a
+vocoder's initial phase, phase in a vocoder is memory, so two differently primed stretchers never
+reconverge even on identical libraries. Those cases are judged on envelope timing within a
+sample and a magnitude bound with its window and hop stated, which is what survives framing.
+
+What the rig does not yet cover is the whole of
+[#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896): a case is clip model
+values rather than a project, the tiers for external plugins and for interactive paths have no
+cases in them, and none of the migration half exists.
+
+---
+
+## 8. What is not built yet
 
 Worth knowing before reading the code and wondering where something is:
 
@@ -539,13 +601,16 @@ Worth knowing before reading the code and wondering where something is:
   inspector still get theirs from Tracktion, and `compileClipSnapshot` takes an empty
   `GrooveTemplateSet` until something fills it. Swapping them over belongs with switching the
   engine on rather than with implementing it.
-- **The null-diff harness** ([#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896)),
-  which is what decides the engine is right rather than merely tested: render the same project
-  through both engines and assert a near-null difference.
+- **The rest of the validation harness**
+  ([#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896)). The rig exists and
+  section 7 describes it. Missing: whole-project cases and the tiers above them (#2075), plan
+  goldens (#2076), differ property tests (#2077), the block-size gate (#2078), the migrators
+  (#2079), the DAWproject cross-check (#2080), a real-project corpus (#2081), and the parity
+  envelope suite that gates cutover (#2082).
 
 ---
 
-## 8. Where the code lives
+## 9. Where the code lives
 
 | Directory | What is in it |
 | --- | --- |
@@ -561,7 +626,7 @@ code; most of them answer the question you are about to ask.
 
 ---
 
-## 9. Building and testing it
+## 10. Building and testing it
 
 The engine target is on by default, so a normal build already builds it:
 
