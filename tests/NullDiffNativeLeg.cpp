@@ -252,6 +252,21 @@ NativeRender renderNative(const Case& value) {
 
     // --- render --------------------------------------------------------------
 
+    // What the pool primes this case's stretchers with, read where it is
+    // actually true: the entries are provisioned as the transport approaches
+    // them and retired once they have passed, so asking after the render is
+    // asking an empty table. Positioning the pool at the range's start and
+    // servicing it once is what a render's first block does anyway.
+    voices.setPosition(tempo.beatToTime(value.startBeat));
+    voices.service();
+    {
+        const ClipStreamFeed::Reader table(voices.feed());
+        if (table)
+            for (const auto& entry : table->entries)
+                if (entry.stretcher != nullptr)
+                    result.primingSamples = std::max(result.primingSamples, entry.preRollSamples);
+    }
+
     OfflineRenderRequest request;
     request.startBeat = value.startBeat;
     request.endBeat = value.endBeat;
@@ -269,14 +284,6 @@ NativeRender renderNative(const Case& value) {
 
     // What the pool primed each stretcher with, read back after the render so
     // that every entry it provisioned has been through it.
-    {
-        const ClipStreamFeed::Reader table(voices.feed());
-        if (table)
-            for (const auto& entry : table->entries)
-                if (entry.stretcher != nullptr)
-                    result.primingSamples = std::max(result.primingSamples, entry.preRollSamples);
-    }
-
     for (const auto& [trackId, source] : audioSources)
         result.starvedVoices += source->starvedVoices();
     for (const auto& [trackId, source] : midiSources)

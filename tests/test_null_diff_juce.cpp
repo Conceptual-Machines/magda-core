@@ -375,22 +375,6 @@ class NullDiffCorpusTests : public juce::UnitTest {
         report.hasSpectral = true;
         report.primingSamples = native.primingSamples;
 
-        // Before any of the three: the same two things a null demands. Both
-        // metrics below trim to the overlap, so a correctly aligned render that
-        // stopped early would satisfy every one of them while being exactly
-        // what the comparator calls a bug in a leg.
-        if (!report.audio.refusal.empty()) {
-            logMessage("  " + juce::String(value.name) + ": " + report.audio.refusal);
-            return false;
-        }
-
-        if (report.audio.lengthDifference != 0) {
-            logMessage("  " + juce::String(value.name) + ": the renders are " +
-                       juce::String(static_cast<double>(report.audio.lengthDifference), 0) +
-                       " samples different in length");
-            return false;
-        }
-
         // The alignment comes from the envelopes, not from the waveforms. Two
         // vocoders never correlate as waveforms however well aligned they are,
         // so requiring that here would fail every stretched case for being what
@@ -545,6 +529,25 @@ class NullDiffCorpusTests : public juce::UnitTest {
         report.hasAudio = true;
         report.audio = compareAudio(aligned, incumbent.audio, options);
 
+        // Before any verdict, and the same two questions for all of them. Every
+        // measurement below is taken over what the two renders both cover, so a
+        // leg that came back short agrees everywhere anybody looks: a null sees
+        // an identical prefix, and the stretched metrics trim to the same
+        // overlap. The length is the only thing that says otherwise, and a
+        // render that came back short is a bug in a leg whatever the case was
+        // asking about.
+        if (!report.audio.refusal.empty()) {
+            report.unmeasurable = report.audio.refusal;
+            return report;
+        }
+
+        if (report.audio.lengthDifference != 0) {
+            report.unmeasurable =
+                "the renders differ in length by " +
+                std::to_string(static_cast<long long>(report.audio.lengthDifference)) + " samples";
+            return report;
+        }
+
         switch (value.verdict) {
             case Verdict::Null:
                 report.passed = report.audio.nulled();
@@ -558,7 +561,11 @@ class NullDiffCorpusTests : public juce::UnitTest {
                 // Measured and printed. What it says is how far apart the two
                 // stretchers are on material that has everything in it, which
                 // is a number worth watching and not a claim about playback.
-                report.passed = report.audio.refusal.empty();
+                //
+                // That it was measurable at all is asked above, with the same
+                // two questions every other verdict gets, so this really is the
+                // only thing left for it to decide.
+                report.passed = true;
                 break;
 
             case Verdict::Midi:

@@ -1090,9 +1090,9 @@ std::string formatReport(const std::vector<CaseReport>& cases, double sampleRate
             out << line;
         } else if (report.hasSpectral) {
             std::snprintf(line, sizeof(line),
-                          "shift=%-8.2f envelope=%-6.2f median=%-5.2f p95=%.2f dB",
-                          report.measuredShift, report.envelope.lagSamples, report.spectra.medianDb,
-                          report.spectra.percentile95Db);
+                          "shift=%-8.2f primed=%-6d envelope=%-6.2f median=%-5.2f p95=%.2f dB",
+                          report.measuredShift, report.primingSamples, report.envelope.lagSamples,
+                          report.spectra.medianDb, report.spectra.percentile95Db);
             out << line;
         } else if (report.hasAudio) {
             const auto& audio = report.audio;
