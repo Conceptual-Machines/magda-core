@@ -817,3 +817,24 @@ TEST_CASE("Garbage is refused rather than certified", "[nulldiff][compare]") {
         CHECK_FALSE(result.nulled());
     }
 }
+
+TEST_CASE("Garbage outside the aligned overlap is refused too", "[nulldiff][compare][shift]") {
+    // A shift excludes a margin at each end, and the envelope and spectral
+    // comparisons trim the same margins. Garbage that lands in one of those is
+    // read by nothing, so validating the overlap alone would let a stretched
+    // case pass a render with a NaN in it.
+    const auto native = tone(2.0);
+    auto incumbent = delayed(native, 1024);
+
+    // Inside the incumbent's leading margin: with the alignment applied, no
+    // comparison ever reads this sample.
+    incumbent.setSample(0, 10, std::numeric_limits<float>::quiet_NaN());
+
+    AudioCompareOptions options;
+    options.measureShift = true;
+    const auto result = compareAudio(native, incumbent, options);
+
+    INFO(result.refusal);
+    CHECK_FALSE(result.refusal.empty());
+    CHECK_FALSE(result.nulled());
+}

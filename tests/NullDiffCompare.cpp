@@ -617,6 +617,42 @@ AudioComparison compareAudio(const juce::AudioBuffer<float>& native,
         return result;
     }
 
+    // Both buffers whole, and before the alignment is even estimated. A
+    // comparator that silently certifies garbage is worse than no comparator,
+    // and every comparison against a NaN is false: a NaN residual never beats
+    // the running peak, so the peak stays at zero, the level reads as -inf and
+    // the pair is reported as a perfect null.
+    //
+    // Whole rather than over the overlap, because a shift excludes a margin at
+    // each end and the envelope and spectral comparisons trim the same margins.
+    // Garbage that lands in one of those is read by nothing and would sail
+    // through every check a stretched case makes. Whole rather than over the
+    // residual as well, so that two infinities cancelling to a finite
+    // difference are caught.
+    const auto firstNonFinite = [](const juce::AudioBuffer<float>& buffer) {
+        for (auto channel = 0; channel < buffer.getNumChannels(); ++channel) {
+            const auto* samples = buffer.getReadPointer(channel);
+            for (auto sample = 0; sample < buffer.getNumSamples(); ++sample)
+                if (!std::isfinite(samples[sample]))
+                    return static_cast<std::int64_t>(sample);
+        }
+        return static_cast<std::int64_t>(-1);
+    };
+
+    for (const auto& [buffer, whose] :
+         {std::pair{&native, "native render"}, std::pair{&incumbent, "incumbent"}}) {
+        const auto at = firstNonFinite(*buffer);
+        if (at < 0)
+            continue;
+
+        result.refusal = "a non-finite sample in the " + std::string(whose) + " at " +
+                         sampleAddress(at, options.sampleRate);
+        result.peakDb = 0.0;
+        result.rmsDb = 0.0;
+        result.firstDivergence = at;
+        return result;
+    }
+
     if (options.measureShift) {
         const auto estimate = estimateShift(native, incumbent, options.maxShiftSamples);
         result.shiftSamples = estimate.samples;
@@ -644,24 +680,6 @@ AudioComparison compareAudio(const juce::AudioBuffer<float>& native,
         for (auto index = begin; index < end; ++index) {
             const auto left = static_cast<double>(a[index]);
             const auto right = static_cast<double>(b[index + shift]);
-
-            // A comparator that silently certifies garbage is worse than no
-            // comparator. Every comparison against a NaN is false, so a NaN
-            // residual never beats the running peak: the peak stays at zero,
-            // the level reads as -inf, and the case is reported as a perfect
-            // null. Caught here rather than trusted, on the inputs rather than
-            // on the residual, so an infinity that cancels itself is caught
-            // too.
-            if (!std::isfinite(left) || !std::isfinite(right)) {
-                result.refusal = "a non-finite sample at " +
-                                 sampleAddress(index, options.sampleRate) + " (" +
-                                 (std::isfinite(left) ? "incumbent" : "native render") + ")";
-                result.peakDb = 0.0;
-                result.rmsDb = 0.0;
-                result.firstDivergence = index;
-                result.comparedSamples = 0;
-                return result;
-            }
 
             const auto residual = left - right;
             const auto magnitude = std::abs(residual);
