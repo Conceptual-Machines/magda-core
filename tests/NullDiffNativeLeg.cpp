@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <map>
 #include <memory>
+#include <set>
 
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipMidiSource.hpp"
@@ -206,8 +207,10 @@ NativeRender renderNative(const Case& value) {
 
     // Which track each capture stands on, so the streams can be compared where
     // they were received rather than only in aggregate. The plan's own op key
-    // is the answer: a Device op names both.
+    // is the answer: a Device op names both. Only the first device on a track
+    // appears here; see the Device case below for why.
     std::map<DeviceId, TrackId> captureTracks;
+    std::set<TrackId> recordedDevice;
 
     PlanBindings bindings;
 
@@ -234,7 +237,24 @@ NativeRender renderNative(const Case& value) {
                 auto device = std::make_unique<MidiCapture>(value.sampleRate);
                 device->prepare(context);
                 bindings.devices[op.key.deviceId] = device.get();
-                captureTracks[op.key.deviceId] = op.key.trackId;
+
+                // Every Device op needs something bound to it or the executor
+                // refuses the plan, but only the first device on a track is a
+                // comparison point. The incumbent inserts one capture at the
+                // head of the track's plugin list, so that is what it records:
+                // the MIDI arriving at the chain, once.
+                //
+                // Reading every device instead would compare a different thing
+                // and get the wrong answer for it. A chain whose MIDI survives
+                // its first device hands the same notes to the second, and
+                // emitDevice preserves signal.midi unless a device replaces it,
+                // so a two-instrument track would report each note twice
+                // against the incumbent's once.
+                if (!recordedDevice.contains(op.key.trackId)) {
+                    recordedDevice.insert(op.key.trackId);
+                    captureTracks[op.key.deviceId] = op.key.trackId;
+                }
+
                 captures[op.key.deviceId] = std::move(device);
                 break;
             }
@@ -297,7 +317,11 @@ NativeRender renderNative(const Case& value) {
         result.droppedMidiEvents += source->droppedEvents();
 
     for (const auto& [deviceId, capture] : captures) {
-        auto& perTrack = result.midiByTrack[captureTracks[deviceId]];
+        const auto recorded = captureTracks.find(deviceId);
+        if (recorded == captureTracks.end())
+            continue;
+
+        auto& perTrack = result.midiByTrack[recorded->second];
         for (const auto& event : capture->captured) {
             perTrack.push_back(event);
             result.midi.push_back(event);

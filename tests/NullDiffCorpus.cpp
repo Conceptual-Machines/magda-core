@@ -87,6 +87,24 @@ TrackInfo instrumentTrack() {
     return instrumentTrackOn(kTrack, kInstrument, "Null Diff");
 }
 
+/// A second MIDI-consuming device behind the first.
+///
+/// The chain's MIDI survives a device that does not replace it, so both devices
+/// receive the same notes. That makes the number of devices on a track a thing
+/// the two legs can disagree about: the incumbent records once, at the head of
+/// the plugin list, and a native leg reading every Device op would record the
+/// same note once per device. Only a track with two of them can say which
+/// happened.
+void addSecondInstrument(TrackInfo& track, DeviceId id) {
+    DeviceInfo device;
+    device.id = id;
+    device.name = "Capture 2";
+    device.deviceType = DeviceType::Instrument;
+    device.isInstrument = true;
+    device.canReceiveMidi = true;
+    track.chain.fxChainElements.emplace_back(std::move(device));
+}
+
 TrackInfo masterTrack() {
     TrackInfo master;
     master.id = MASTER_TRACK_ID;
@@ -802,9 +820,16 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         // streams are therefore compared per track, which is where that identity
         // still exists, and the pitches are only there to make the failure
         // readable when it happens.
-        auto value = newMixCase("project.mixed", "an audio track beside two instrument tracks",
-                                {mixTrack(1, "Audio"), instrumentTrackOn(2, 901, "Synth A"),
-                                 instrumentTrackOn(3, 902, "Synth B")});
+        // Synth A carries two MIDI-consuming devices, which is the only way to
+        // tell the two legs' comparison points apart: the incumbent records at
+        // the head of the plugin list, once, and a native leg reading every
+        // Device op would report each of that track's notes twice.
+        auto synthA = instrumentTrackOn(2, 901, "Synth A");
+        addSecondInstrument(synthA, 903);
+
+        auto value = newMixCase(
+            "project.mixed", "an audio track beside two instrument tracks",
+            {mixTrack(1, "Audio"), std::move(synthA), instrumentTrackOn(3, 902, "Synth B")});
 
         const auto source = writeSource(scratchDirectory, "mixed", impulses(0.25));
         value.sources.push_back(source);
