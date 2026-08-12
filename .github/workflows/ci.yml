@@ -810,6 +810,22 @@ jobs:
     # recompiled (that ~10 min build only happens on the very first run / after a
     # pin bump). On GitHub-hosted runners the VM is ephemeral, so clone into
     # RUNNER_TEMP and let actions/cache carry the binary cache between runs.
+    # vcpkg.exe comes from a GitHub release, fetched by vcpkg's own bootstrap
+    # over WinHttp, and that fetch has failed this job outright: "the server
+    # returned an invalid or unrecognized response". It is the same shape as the
+    # asset failures on macOS, where CMake's downloader came back empty from
+    # GitHub while curl never did.
+    #
+    # A hosted runner keeps nothing between runs, so the tool is fetched again
+    # every time and every run gets another chance to lose. Cached, it is fetched
+    # once per pinned vcpkg commit and the bootstrap is skipped from then on.
+    - name: Cache the vcpkg tool
+      if: runner.environment == 'github-hosted'
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.temp }}\vcpkg-tool
+        key: ${{ runner.os }}-vcpkg-tool-${{ env.VCPKG_COMMIT }}
+
     - name: Setup vcpkg
       shell: powershell
       run: |
@@ -827,9 +843,41 @@ jobs:
         git -C $vcpkgRoot cat-file -e "$($env:VCPKG_COMMIT)^{commit}"
         if ($LASTEXITCODE -ne 0) { git -C $vcpkgRoot fetch origin }
         git -C $vcpkgRoot checkout $env:VCPKG_COMMIT
-        if (-not (Test-Path "$vcpkgRoot\vcpkg.exe")) {
-          & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+        # The tool this runner already fetched, put back before anything asks to
+        # download it again. See "Cache the vcpkg tool" above.
+        $toolCache = Join-Path $env:RUNNER_TEMP 'vcpkg-tool'
+        if ((-not (Test-Path "$vcpkgRoot\vcpkg.exe")) -and (Test-Path "$toolCache\vcpkg.exe")) {
+          Copy-Item "$toolCache\vcpkg.exe" "$vcpkgRoot\vcpkg.exe" -Force
+          Write-Host "vcpkg.exe restored from the tool cache"
         }
+
+        if (-not (Test-Path "$vcpkgRoot\vcpkg.exe")) {
+          # Retried, because the download inside it is the flaky part and a
+          # second attempt half a minute later is usually enough. The test is
+          # whether the tool is there afterwards rather than what the batch file
+          # returned: bootstrap reports its failure by throwing inside a nested
+          # PowerShell, and what reaches here is only an exit code.
+          $bootstrapped = $false
+          foreach ($attempt in 1..3) {
+            try {
+              & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+            } catch {
+              Write-Host "vcpkg bootstrap threw: $_"
+            }
+
+            if (Test-Path "$vcpkgRoot\vcpkg.exe") { $bootstrapped = $true; break }
+
+            Write-Host "vcpkg bootstrap attempt $attempt produced no vcpkg.exe, retrying in 20s"
+            Start-Sleep -Seconds 20
+          }
+
+          if (-not $bootstrapped) { throw 'vcpkg bootstrap failed after 3 attempts' }
+        }
+
+        # Kept for the next run on this runner.
+        New-Item -ItemType Directory -Force -Path $toolCache | Out-Null
+        Copy-Item "$vcpkgRoot\vcpkg.exe" "$toolCache\vcpkg.exe" -Force
+
         New-Item -ItemType Directory -Force -Path $binCache | Out-Null
         "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         "VCPKG_DEFAULT_BINARY_CACHE=$binCache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
