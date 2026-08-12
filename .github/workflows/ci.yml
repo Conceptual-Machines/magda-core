@@ -861,6 +861,18 @@ jobs:
           }
         }
 
+        # An executable already at the root is trusted only once it has run.
+        # That path survives every run on the self-hosted machine, including one
+        # where the last bootstrap attempt left a partial download there before
+        # this step gave up, so a file that merely exists would skip the cache
+        # restore and the retry loop both, and get copied into the tool cache on
+        # its way to failing at vcpkg install instead.
+        if ((Test-Path "$vcpkgRoot\vcpkg.exe") -and
+            (-not (Test-VcpkgTool "$vcpkgRoot\vcpkg.exe"))) {
+          Write-Host "the vcpkg.exe already present does not run, discarding it"
+          Remove-Item "$vcpkgRoot\vcpkg.exe" -Force -ErrorAction SilentlyContinue
+        }
+
         # The tool this runner already fetched, put back before anything asks to
         # download it again. See "Cache the vcpkg tool" above.
         $toolCache = Join-Path $env:RUNNER_TEMP 'vcpkg-tool'
@@ -900,7 +912,12 @@ jobs:
             if ($attempt -lt 3) { Start-Sleep -Seconds 20 }
           }
 
-          if (-not $bootstrapped) { throw 'vcpkg bootstrap failed after 3 attempts' }
+          if (-not $bootstrapped) {
+            # So the next run starts from nothing rather than from whatever the
+            # last attempt managed to write.
+            Remove-Item "$vcpkgRoot\vcpkg.exe" -Force -ErrorAction SilentlyContinue
+            throw 'vcpkg bootstrap failed after 3 attempts'
+          }
         }
 
         # Kept for the next run on this runner, and only once it has run here.
