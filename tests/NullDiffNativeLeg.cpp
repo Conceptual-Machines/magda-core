@@ -226,6 +226,18 @@ NativeRender renderNative(const Case& value) {
     std::set<TrackId> recordedDevice;
     std::vector<std::unique_ptr<Passthrough>> passthroughs;
 
+    // The tracks the incumbent will put a capture on, asked through the same
+    // predicate it asks. A connected MIDI slot is not the same question and
+    // cannot stand in for this one: emitTrack also compiles a ClipMidi op for a
+    // track whose MIDI another track routes from, so a source track carrying
+    // nothing but an audio effect has chain MIDI for its devices to be wired to
+    // while consuming none itself. The incumbent skips it; without this, the
+    // engine would hand back an entry for a track the incumbent never captured.
+    std::set<TrackId> midiTracks;
+    for (const auto& track : value.tracks)
+        if (chainConsumesMidi(track))
+            midiTracks.insert(track.id);
+
     PlanBindings bindings;
 
     for (const auto& op : plan.ops) {
@@ -269,14 +281,13 @@ NativeRender renderNative(const Case& value) {
                 // nothing, so it passes signal rather than recording or
                 // clearing it.
                 //
-                // That one test is also what keeps a track the incumbent never
-                // captures from getting an entry here. A track whose chain
-                // consumes no MIDI compiles no ClipMidi op, so there is no chain
-                // MIDI for any of its devices to be wired to, and an audio track
-                // carrying an effect is skipped without having to ask the model
-                // a second question about it.
+                // Both tests are needed and neither implies the other. A wired
+                // slot without eligibility is a routed MIDI source; eligibility
+                // without a wired slot is a track that consumes MIDI and has no
+                // clip to feed it.
                 const auto readsChainMidi = op.inputs.size() > 1 && op.inputs[1].valid();
-                const auto isTap = readsChainMidi && !recordedDevice.contains(op.key.trackId);
+                const auto isTap = readsChainMidi && midiTracks.contains(op.key.trackId) &&
+                                   !recordedDevice.contains(op.key.trackId);
 
                 if (isTap) {
                     recordedDevice.insert(op.key.trackId);

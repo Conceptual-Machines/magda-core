@@ -203,3 +203,94 @@ TEST_CASE("The native leg renders the same at any block size", "[nulldiff][nativ
     // than absorbed.
     CHECK(failed == knownDependent);
 }
+
+TEST_CASE("A routed MIDI source is not captured", "[nulldiff][native]") {
+    // The one place a connected MIDI slot and a MIDI-consuming chain part
+    // company. emitTrack compiles a ClipMidi op for a track whose MIDI another
+    // track routes from, even when nothing on that track consumes MIDI, and
+    // every device is wired to whatever chain MIDI exists. So a source track
+    // carrying only an audio effect has a device with a live MIDI input while
+    // consuming none itself.
+    //
+    // The incumbent asks the other question, and skips it. A tap chosen on the
+    // wiring alone would hand back a stream for a track the incumbent never
+    // captured, and the runner would report it as captured by one leg only.
+    Case value;
+    value.name = "routed.source";
+    value.covers = "a track whose MIDI another track reads";
+    value.endBeat = 4.0;
+
+    TrackInfo source;
+    source.id = 1;
+    source.type = TrackType::Audio;
+    source.name = "Source";
+    source.audioOutputDevice = "master";
+    {
+        DeviceInfo effect;
+        effect.id = 800;
+        effect.name = "Effect";
+        effect.deviceType = DeviceType::Effect;
+        effect.isInstrument = false;
+        effect.canReceiveMidi = false;
+        source.chain.fxChainElements.emplace_back(std::move(effect));
+    }
+
+    TrackInfo destination;
+    destination.id = 2;
+    destination.type = TrackType::Audio;
+    destination.name = "Synth";
+    destination.audioOutputDevice = "master";
+    // What makes the source a source: an internal MIDI route, live only while
+    // the destination is monitoring its input.
+    destination.midiInputDevice = "track:1";
+    destination.inputMonitor = InputMonitorMode::In;
+    {
+        DeviceInfo instrument;
+        instrument.id = 801;
+        instrument.name = "Capture";
+        instrument.deviceType = DeviceType::Instrument;
+        instrument.isInstrument = true;
+        instrument.canReceiveMidi = true;
+        destination.chain.fxChainElements.emplace_back(std::move(instrument));
+    }
+
+    value.tracks = {source, destination};
+    value.master = [] {
+        TrackInfo master;
+        master.id = MASTER_TRACK_ID;
+        master.type = TrackType::Master;
+        master.name = "Master";
+        return master;
+    }();
+
+    const auto midiClip = [](ClipId id, TrackId trackId, int pitch) {
+        ClipInfo clip;
+        clip.id = id;
+        clip.trackId = trackId;
+        clip.name = "midi";
+        clip.view = ClipView::Arrangement;
+        clip.setMidiContent();
+        clip.setPlacementBeats(0.0, 4.0);
+        clip.deriveTimesFromBeats(120.0);
+
+        MidiNote note;
+        note.noteNumber = pitch;
+        note.velocity = 100;
+        note.startBeat = 0.0;
+        note.lengthBeats = 1.0;
+        clip.midiNotes.push_back(note);
+        return clip;
+    };
+
+    value.clips = {midiClip(1, 1, 48), midiClip(2, 2, 60)};
+    value.compareMidiStreams = true;
+
+    const auto rendered = renderNative(value);
+    REQUIRE(rendered.failure.empty());
+
+    // The destination is captured, because its chain consumes MIDI.
+    CHECK(rendered.midiByTrack.count(2) == 1);
+
+    // The source is not, however its devices are wired.
+    CHECK(rendered.midiByTrack.count(1) == 0);
+}
