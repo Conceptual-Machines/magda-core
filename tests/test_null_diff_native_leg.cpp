@@ -294,3 +294,76 @@ TEST_CASE("A routed MIDI source is not captured", "[nulldiff][native]") {
     // The source is not, however its devices are wired.
     CHECK(rendered.midiByTrack.count(1) == 0);
 }
+
+TEST_CASE("An eligible track with nothing to play is still captured", "[nulldiff][native]") {
+    // The mirror of the routed source. This track consumes MIDI, so the
+    // incumbent puts a capture on it and indexes the result by track whether
+    // that capture heard anything or not. It has no clip, so no ClipMidi op is
+    // compiled and none of its devices has a MIDI input to be nominated by.
+    //
+    // Without an entry the two legs disagree about which tracks exist rather
+    // than about what they received, and the runner reports a track only one leg
+    // saw. It is not a corpus case because that would want a fourth track in
+    // project.mixed, and four audio tracks in one Edit trip the fork's
+    // node-identity assertion (#2085).
+    Case value;
+    value.name = "eligible.empty";
+    value.covers = "an instrument track with no clip beside one with";
+    value.endBeat = 4.0;
+
+    const auto instrumentTrack = [](TrackId trackId, DeviceId deviceId, const char* name) {
+        TrackInfo track;
+        track.id = trackId;
+        track.type = TrackType::Audio;
+        track.name = name;
+        track.audioOutputDevice = "master";
+
+        DeviceInfo device;
+        device.id = deviceId;
+        device.name = "Capture";
+        device.deviceType = DeviceType::Instrument;
+        device.isInstrument = true;
+        device.canReceiveMidi = true;
+        track.chain.fxChainElements.emplace_back(std::move(device));
+        return track;
+    };
+
+    value.tracks = {instrumentTrack(1, 810, "Playing"), instrumentTrack(2, 811, "Silent")};
+    value.master = [] {
+        TrackInfo master;
+        master.id = MASTER_TRACK_ID;
+        master.type = TrackType::Master;
+        master.name = "Master";
+        return master;
+    }();
+
+    ClipInfo clip;
+    clip.id = 1;
+    clip.trackId = 1;
+    clip.name = "midi";
+    clip.view = ClipView::Arrangement;
+    clip.setMidiContent();
+    clip.setPlacementBeats(0.0, 4.0);
+    clip.deriveTimesFromBeats(120.0);
+
+    MidiNote note;
+    note.noteNumber = 60;
+    note.velocity = 100;
+    note.startBeat = 0.0;
+    note.lengthBeats = 1.0;
+    clip.midiNotes.push_back(note);
+
+    value.clips = {clip};
+    value.compareMidiStreams = true;
+
+    const auto rendered = renderNative(value);
+    REQUIRE(rendered.failure.empty());
+
+    REQUIRE(rendered.midiByTrack.count(1) == 1);
+    CHECK_FALSE(rendered.midiByTrack.at(1).empty());
+
+    // Present, and empty. Both halves matter: the entry is what the incumbent
+    // has, and its being empty is what says nothing was invented to fill it.
+    REQUIRE(rendered.midiByTrack.count(2) == 1);
+    CHECK(rendered.midiByTrack.at(2).empty());
+}

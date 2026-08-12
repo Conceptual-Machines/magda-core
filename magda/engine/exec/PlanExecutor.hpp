@@ -447,6 +447,10 @@ class PlanExecutor {
     /// once here so the audio thread never looks a key up.
     std::vector<LevelTap*> meterForOp_;
     int boundMeterCount_ = 0;
+
+    /// Where a MergeMidi op publishes what reached it, or nullptr. See
+    /// PlanBindings::midiTaps.
+    std::vector<MidiTap*> midiTapForOp_;
 };
 
 }  // namespace magda::engine

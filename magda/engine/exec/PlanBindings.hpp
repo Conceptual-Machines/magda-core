@@ -7,6 +7,7 @@
 #include "exec/EngineDevice.hpp"
 #include "plan/RenderPlan.hpp"
 #include "tap/LevelTap.hpp"
+#include "tap/MidiTap.hpp"
 
 namespace magda::engine {
 
@@ -51,6 +52,19 @@ struct PlanBindings {
      * what is.
      */
     std::map<OpKey, LevelTap*> meters;
+
+    /**
+     * @brief Where a merged-MIDI op publishes what reached it.
+     *
+     * Keyed by OpKey for the same reason the meters are: this names a place in
+     * the signal, not a thing in the project. The place worth binding is a
+     * track's TrackMidiInput op, which is everything feeding its chain before
+     * any device sees it.
+     *
+     * Optional exactly like a meter. Nothing binds these in a render nobody is
+     * observing, and an unbound op is not reported.
+     */
+    std::map<OpKey, MidiTap*> midiTaps;
 };
 
 }  // namespace magda::engine

@@ -47,31 +47,35 @@ class WavFactory final : public AudioFileReaderFactory {
     juce::AudioFormatManager formats_;
 };
 
-/// Stands where a synth would, and records what reaches it. The comparison
-/// point for every MIDI case, and the reason a MIDI case has a device at all:
-/// a plan compiles no ClipMidi op for a track whose chain consumes no MIDI.
-class MidiCapture final : public EngineDevice {
+/// Records what reaches a track's chain, which is what the corpus compares.
+///
+/// Bound to the track's TrackMidiInput op: the merge of its clips, its live
+/// input and anything routed in, before any device sees it. That is a property
+/// of the track, so nothing about which devices are installed, how many there
+/// are, whether they consume MIDI, or whether the chain is bypassed can change
+/// where this reads.
+///
+/// It replaces a stand-in device that used to do this job. Reading a device
+/// meant the harness had to work out which device stood for the track, and that
+/// question has no good answer: two instruments record the same notes twice, an
+/// audio effect at the head records the wrong thing or nothing, a track whose
+/// MIDI is only routed elsewhere has a wired device that the incumbent never
+/// captures. Those were all one mistake, which was observing the graph at a
+/// point that belongs to the project rather than at the point being compared.
+class ChainMidiTap final : public MidiTap {
   public:
-    explicit MidiCapture(double sampleRate) : sampleRate_(sampleRate) {}
+    explicit ChainMidiTap(double sampleRate) : sampleRate_(sampleRate) {}
 
-    void process(DeviceBlock& block) override {
-        // Silence out. What a synth would make of these messages is not what is
-        // being compared, and printing anything would only invite somebody to
-        // compare it.
-        block.audio.clear();
-
-        if (block.midiIn == nullptr)
-            return;
-
+    void write(const juce::MidiBuffer& midi, const BlockInfo& block) override {
         // Where the block sits on the timeline, so a captured message carries a
         // position in the render rather than one inside a callback. Taken from
         // the block's own seconds, which the clock derives from a sample count
         // rather than accumulating, so this recovers that count exactly and
         // keeps doing so through the tail, where the timeline stands still.
         const auto blockStart =
-            static_cast<std::int64_t>(std::llround(block.block.startSeconds * sampleRate_));
+            static_cast<std::int64_t>(std::llround(block.startSeconds * sampleRate_));
 
-        for (const auto message : *block.midiIn) {
+        for (const auto message : midi) {
             const auto data = message.getMessage();
             if (data.getRawDataSize() < 2 || data.getRawDataSize() > 3)
                 continue;
@@ -216,27 +220,18 @@ NativeRender renderNative(const Case& value) {
 
     std::map<TrackId, std::unique_ptr<ClipAudioSource>> audioSources;
     std::map<TrackId, std::unique_ptr<ClipMidiSource>> midiSources;
-    std::map<DeviceId, std::unique_ptr<MidiCapture>> captures;
-
-    // Which track each capture stands on, so the streams can be compared where
-    // they were received rather than only in aggregate. The plan's own op key
-    // is the answer: a Device op names both. Only the first device on a track
-    // appears here; see the Device case below for why.
-    std::map<DeviceId, TrackId> captureTracks;
-    std::set<TrackId> recordedDevice;
     std::vector<std::unique_ptr<Passthrough>> passthroughs;
 
-    // The tracks the incumbent will put a capture on, asked through the same
-    // predicate it asks. A connected MIDI slot is not the same question and
-    // cannot stand in for this one: emitTrack also compiles a ClipMidi op for a
-    // track whose MIDI another track routes from, so a source track carrying
-    // nothing but an audio effect has chain MIDI for its devices to be wired to
-    // while consuming none itself. The incumbent skips it; without this, the
-    // engine would hand back an entry for a track the incumbent never captured.
+    // The tracks the corpus compares MIDI for, which is the same question the
+    // incumbent asks when it decides where to put a capture. Asked once, of the
+    // model, through the compiler's own predicate, rather than inferred from the
+    // graph afterwards.
     std::set<TrackId> midiTracks;
     for (const auto& track : value.tracks)
         if (chainConsumesMidi(track))
             midiTracks.insert(track.id);
+
+    std::map<TrackId, std::unique_ptr<ChainMidiTap>> taps;
 
     PlanBindings bindings;
 
@@ -260,46 +255,12 @@ NativeRender renderNative(const Case& value) {
             }
 
             case OpKind::Device: {
-                // Every Device op needs something bound to it or the executor
-                // refuses the plan, but only the first device on a track is a
-                // comparison point. The incumbent inserts one capture at the
-                // head of the track's plugin list, so that is what it records:
-                // the MIDI arriving at the chain, once.
-                //
-                // Reading every device instead would compare a different thing
-                // and get the wrong answer for it. A chain whose MIDI survives
-                // its first device hands the same notes to the second, and
-                // emitDevice preserves signal.midi unless a device replaces it,
-                // so a two-instrument track would report each note twice
-                // against the incumbent's once.
-                // Exactly one device per MIDI-consuming track stands where the
-                // incumbent's capture plugin stands: the first one wired to the
-                // chain's MIDI. Slot 1 of a Device op is that input, and it is
-                // left unconnected where there is no MIDI to read.
-                //
-                // Everything else on the track stands where the incumbent has
-                // nothing, so it passes signal rather than recording or
-                // clearing it.
-                //
-                // Both tests are needed and neither implies the other. A wired
-                // slot without eligibility is a routed MIDI source; eligibility
-                // without a wired slot is a track that consumes MIDI and has no
-                // clip to feed it.
-                const auto readsChainMidi = op.inputs.size() > 1 && op.inputs[1].valid();
-                const auto isTap = readsChainMidi && midiTracks.contains(op.key.trackId) &&
-                                   !recordedDevice.contains(op.key.trackId);
-
-                if (isTap) {
-                    recordedDevice.insert(op.key.trackId);
-
-                    auto device = std::make_unique<MidiCapture>(value.sampleRate);
-                    device->prepare(context);
-                    bindings.devices[op.key.deviceId] = device.get();
-                    captureTracks[op.key.deviceId] = op.key.trackId;
-                    captures[op.key.deviceId] = std::move(device);
-                    break;
-                }
-
+                // Transparent, always. A device stand-in exists because the
+                // executor refuses a plan with an unbound Device op, not because
+                // the corpus wants to hear what a device would do, and it no
+                // longer decides anything about where MIDI is observed. The
+                // incumbent instantiates none of the model's devices either, so
+                // passing signal is also what it does.
                 auto device = std::make_unique<Passthrough>();
                 device->prepare(context);
                 bindings.devices[op.key.deviceId] = device.get();
@@ -311,6 +272,19 @@ NativeRender renderNative(const Case& value) {
                 break;
         }
     }
+
+    // One tap per eligible track, at the op that is the track's chain input.
+    // Bound by name rather than found by walking the plan: the key is the same
+    // one the compiler emits, so this asks for a place rather than searching for
+    // whatever happens to be standing in it.
+    if (value.capturesMidi())
+        for (const auto trackId : midiTracks) {
+            auto tap = std::make_unique<ChainMidiTap>(value.sampleRate);
+            const OpKey key{trackId,           INVALID_RACK_ID,        INVALID_CHAIN_ID,
+                            INVALID_DEVICE_ID, OpRole::TrackMidiInput, 0};
+            bindings.midiTaps[key] = tap.get();
+            taps[trackId] = std::move(tap);
+        }
 
     PlanValues values;
     for (const auto& diagnostic : resolvePlanValues(plan, value.tracks, value.master, values))
@@ -364,13 +338,13 @@ NativeRender renderNative(const Case& value) {
     for (const auto& [trackId, source] : midiSources)
         result.droppedMidiEvents += source->droppedEvents();
 
-    for (const auto& [deviceId, capture] : captures) {
-        const auto recorded = captureTracks.find(deviceId);
-        if (recorded == captureTracks.end())
-            continue;
-
-        auto& perTrack = result.midiByTrack[recorded->second];
-        for (const auto& event : capture->captured) {
+    // Every eligible track gets an entry, including one whose tap never fired.
+    // The incumbent puts a capture on every MIDI-consuming track and indexes the
+    // result by track whether it heard anything or not, so a track with no clip
+    // yet is an empty stream on both sides rather than a track only one leg saw.
+    for (const auto& [trackId, tap] : taps) {
+        auto& perTrack = result.midiByTrack[trackId];
+        for (const auto& event : tap->captured) {
             perTrack.push_back(event);
             result.midi.push_back(event);
         }
