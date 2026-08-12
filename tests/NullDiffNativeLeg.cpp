@@ -90,6 +90,19 @@ class MidiCapture final : public EngineDevice {
     double sampleRate_ = 44100.0;
 };
 
+/// Stands where the incumbent has no plugin at all.
+///
+/// The native leg has to bind something to every Device op or the executor
+/// refuses the plan, but the incumbent instantiates none of the model's devices:
+/// it inserts one capture on a MIDI-consuming track and nothing anywhere else.
+/// A stand-in that cleared the buffer would therefore silence an audio track
+/// that merely carries an effect, and the two legs would differ over a device
+/// neither of them is really running. Doing nothing is what the incumbent does.
+class Passthrough final : public EngineDevice {
+  public:
+    void process(DeviceBlock&) override {}
+};
+
 engine::TempoMap tempoMapFor(const Case& value) {
     // Consecutive changes ramp: the tempo travels from one to the next across
     // the beats between them. A step is two changes at the same beat, which is
@@ -211,6 +224,7 @@ NativeRender renderNative(const Case& value) {
     // appears here; see the Device case below for why.
     std::map<DeviceId, TrackId> captureTracks;
     std::set<TrackId> recordedDevice;
+    std::vector<std::unique_ptr<Passthrough>> passthroughs;
 
     PlanBindings bindings;
 
@@ -234,10 +248,6 @@ NativeRender renderNative(const Case& value) {
             }
 
             case OpKind::Device: {
-                auto device = std::make_unique<MidiCapture>(value.sampleRate);
-                device->prepare(context);
-                bindings.devices[op.key.deviceId] = device.get();
-
                 // Every Device op needs something bound to it or the executor
                 // refuses the plan, but only the first device on a track is a
                 // comparison point. The incumbent inserts one capture at the
@@ -250,12 +260,39 @@ NativeRender renderNative(const Case& value) {
                 // emitDevice preserves signal.midi unless a device replaces it,
                 // so a two-instrument track would report each note twice
                 // against the incumbent's once.
-                if (!recordedDevice.contains(op.key.trackId)) {
+                // Exactly one device per MIDI-consuming track stands where the
+                // incumbent's capture plugin stands: the first one wired to the
+                // chain's MIDI. Slot 1 of a Device op is that input, and it is
+                // left unconnected where there is no MIDI to read.
+                //
+                // Everything else on the track stands where the incumbent has
+                // nothing, so it passes signal rather than recording or
+                // clearing it.
+                //
+                // That one test is also what keeps a track the incumbent never
+                // captures from getting an entry here. A track whose chain
+                // consumes no MIDI compiles no ClipMidi op, so there is no chain
+                // MIDI for any of its devices to be wired to, and an audio track
+                // carrying an effect is skipped without having to ask the model
+                // a second question about it.
+                const auto readsChainMidi = op.inputs.size() > 1 && op.inputs[1].valid();
+                const auto isTap = readsChainMidi && !recordedDevice.contains(op.key.trackId);
+
+                if (isTap) {
                     recordedDevice.insert(op.key.trackId);
+
+                    auto device = std::make_unique<MidiCapture>(value.sampleRate);
+                    device->prepare(context);
+                    bindings.devices[op.key.deviceId] = device.get();
                     captureTracks[op.key.deviceId] = op.key.trackId;
+                    captures[op.key.deviceId] = std::move(device);
+                    break;
                 }
 
-                captures[op.key.deviceId] = std::move(device);
+                auto device = std::make_unique<Passthrough>();
+                device->prepare(context);
+                bindings.devices[op.key.deviceId] = device.get();
+                passthroughs.push_back(std::move(device));
                 break;
             }
 

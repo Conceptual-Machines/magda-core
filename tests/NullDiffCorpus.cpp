@@ -105,6 +105,31 @@ void addSecondInstrument(TrackInfo& track, DeviceId id) {
     track.chain.fxChainElements.emplace_back(std::move(device));
 }
 
+/// An audio effect, which consumes no MIDI as far as the compiler is concerned.
+///
+/// Two different things follow from that, and only one of them is about this
+/// device's own MIDI input. Every device is wired to the chain's MIDI
+/// (makeRoutingNode sets MidiInputPolicy::Chain for all of them), so an effect
+/// sitting ahead of an instrument still receives the same notes and taking it as
+/// the tap would read the right stream anyway.
+///
+/// What it does change is the track. chainConsumesMidi asks whether any device
+/// is an instrument or accepts MIDI, so a track carrying only this one consumes
+/// none: the plan compiles no ClipMidi op for it and the incumbent puts no
+/// capture on it. A harness that nominated a tap for every track with a device
+/// would hand back an empty stream for that track against the incumbent's
+/// nothing at all, and the runner would report it as captured by one leg only.
+void addEffect(TrackInfo& track, DeviceId id) {
+    DeviceInfo device;
+    device.id = id;
+    device.name = "Effect";
+    device.deviceType = DeviceType::Effect;
+    device.isInstrument = false;
+    device.canReceiveMidi = false;
+
+    track.chain.fxChainElements.emplace_back(std::move(device));
+}
+
 TrackInfo masterTrack() {
     TrackInfo master;
     master.id = MASTER_TRACK_ID;
@@ -827,9 +852,23 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         auto synthA = instrumentTrackOn(2, 901, "Synth A");
         addSecondInstrument(synthA, 903);
 
-        auto value = newMixCase(
-            "project.mixed", "an audio track beside two instrument tracks",
-            {mixTrack(1, "Audio"), std::move(synthA), instrumentTrackOn(3, 902, "Synth B")});
+        // Synth B opens with an audio effect, so the device that reads the
+        // chain's MIDI is not the first one on its track.
+        auto synthB = instrumentTrackOn(3, 902, "Synth B");
+        addEffect(synthB, 904);
+        std::rotate(synthB.chain.fxChainElements.begin(), synthB.chain.fxChainElements.end() - 1,
+                    synthB.chain.fxChainElements.end());
+
+        // The audio track carries a device too, and deliberately one that
+        // consumes no MIDI. It is what makes this project able to tell a tap
+        // chosen per MIDI-consuming track from a tap chosen per track that
+        // happens to have a device: the incumbent captures nothing here, so
+        // anything captured on this side is a track only one leg saw.
+        auto audio = mixTrack(1, "Audio");
+        addEffect(audio, 905);
+
+        auto value = newMixCase("project.mixed", "an audio track beside two instrument tracks",
+                                {std::move(audio), std::move(synthA), std::move(synthB)});
 
         const auto source = writeSource(scratchDirectory, "mixed", impulses(0.25));
         value.sources.push_back(source);
