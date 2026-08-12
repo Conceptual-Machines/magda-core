@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <mutex>
 #include <set>
 #include <string>
 
@@ -75,6 +76,7 @@ class AssertionWatch final : public juce::Logger {
 
     /// What fired since the last call, and forgets it.
     std::vector<juce::String> take() {
+        const std::lock_guard<std::mutex> lock(mutex_);
         auto taken = std::move(assertions_);
         assertions_.clear();
         return taken;
@@ -87,8 +89,16 @@ class AssertionWatch final : public juce::Logger {
         // passes through it too: a substring match reads the line that says a
         // case asserted as another assertion, and every case after the first
         // inherits the one before it.
-        if (message.startsWith("JUCE Assertion failure"))
+        //
+        // Locked because juce::Logger is process-wide and an assertion can fire
+        // on whatever thread reached it: a proxy render on the background pool,
+        // or the engine's own. Appending here while the test thread is taking
+        // the list is a race, and what it would corrupt or drop is precisely
+        // the assertion this exists to surface.
+        if (message.startsWith("JUCE Assertion failure")) {
+            const std::lock_guard<std::mutex> lock(mutex_);
             assertions_.push_back(message);
+        }
 
         // Everything still reaches the console. A watch that swallowed the log
         // would take away the one thing that says which line asserted. Written
@@ -99,6 +109,7 @@ class AssertionWatch final : public juce::Logger {
     }
 
     juce::Logger* previous_ = nullptr;
+    std::mutex mutex_;
     std::vector<juce::String> assertions_;
 };
 

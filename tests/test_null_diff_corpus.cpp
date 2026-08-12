@@ -3,6 +3,7 @@
 #include <set>
 
 #include "NullDiffCase.hpp"
+#include "plan/PlanCompiler.hpp"
 
 /**
  * The corpus's own declarations (#2040).
@@ -161,8 +162,17 @@ TEST_CASE("Every case says what it covers and what it plays", "[nulldiff][corpus
             CHECK(source.durationSeconds > 0.0);
         }
 
+        // Any track, not the first one. Both legs put a capture on every track
+        // whose chain consumes MIDI, so an instrument sitting behind an audio
+        // track is a project they handle; a check that looked only at the front
+        // would fail it here before either leg got the chance to render it.
+        //
+        // Asked through the compiler's own predicate for the same reason the
+        // incumbent leg asks through it: what consumes MIDI has one definition.
         if (value.capturesMidi())
-            CHECK_FALSE(value.tracks.front().chain.fxChainElements.empty());
+            CHECK(std::any_of(value.tracks.begin(), value.tracks.end(), [](const TrackInfo& track) {
+                return magda::engine::chainConsumesMidi(track);
+            }));
     }
 }
 
