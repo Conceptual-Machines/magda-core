@@ -635,6 +635,29 @@ TEST_CASE("A case that rendered somewhere else says so", "[nulldiff][compare][re
     CHECK(deviatingLines == 1);
 }
 
+TEST_CASE("A case that asserts both prints both", "[nulldiff][compare][report]") {
+    // The point of separating the audio tier from the MIDI comparison is that a
+    // project can do both. An exclusive chain would print the notes and drop the
+    // residual, so the number that moves would go missing from exactly the mixed
+    // cases the separation exists to allow.
+    CaseReport both;
+    both.name = "project.instrument";
+    both.tier = AudioTier::Exact;
+    both.environment = standardEnvironment();
+    both.hasAudio = true;
+    both.audio = compareAudio(impulses(0.5), impulses(0.5));
+    both.hasMidi = true;
+    both.midi.notesMatch = true;
+    both.midi.controllersMatch = true;
+    both.midi.notesCompared = 12;
+    both.passed = true;
+
+    const auto text = formatReport({both}, standardEnvironment());
+
+    CHECK(text.find("peak=") != std::string::npos);
+    CHECK(text.find("notes=12") != std::string::npos);
+}
+
 TEST_CASE("An unmeasurable case is not a residual", "[nulldiff][compare][report]") {
     // A proxy that never arrived reported as a parity failure costs somebody a
     // day inside the engine looking for a bug that is not there.

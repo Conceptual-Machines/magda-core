@@ -1,5 +1,6 @@
 #include <array>
 #include <cmath>
+#include <map>
 
 #include "NullDiffCase.hpp"
 #include "NullDiffMaterial.hpp"
@@ -225,7 +226,7 @@ MidiNote note(int pitch, double startBeat, double lengthBeats, int velocity = 10
 
 // --- the case shells ---------------------------------------------------------
 
-Case newMixCase(const char* name, const char* covers, std::vector<TrackInfo> tracks) {
+Case newTrackCase(const char* name, const char* covers, std::vector<TrackInfo> tracks) {
     Case value;
     value.name = name;
     value.covers = covers;
@@ -237,10 +238,26 @@ Case newMixCase(const char* name, const char* covers, std::vector<TrackInfo> tra
     return value;
 }
 
+Case newMixCase(const char* name, const char* covers, std::vector<TrackInfo> tracks) {
+    auto value = newTrackCase(name, covers, std::move(tracks));
+
+    // Two bars rather than four. What a mixer case asserts is a constant gain,
+    // and a constant covers itself in two bars as well as in four; every case
+    // is also rendered twice by the block-size test, so its length is paid for
+    // three times. The rule the budget follows is #2040's: when the corpus will
+    // not fit, cases get shorter rather than fewer.
+    //
+    // Only the mixer cases. Everything above plays material whose length is part
+    // of what it covers: a loop has to tile, a stretched clip has to hold its
+    // ratio, and a folding groove needs the bars to fold over.
+    value.endBeat = 8.0;
+    return value;
+}
+
 Case newCase(const char* name, const char* covers, TrackInfo track) {
     std::vector<TrackInfo> tracks;
     tracks.push_back(std::move(track));
-    return newMixCase(name, covers, std::move(tracks));
+    return newTrackCase(name, covers, std::move(tracks));
 }
 
 /// A stretched case: the fork primes its stretcher with the material at the
@@ -587,7 +604,7 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
                                             impulses(intervals[static_cast<std::size_t>(index)]));
             value.sources.push_back(source);
             value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
-                                              static_cast<ClipId>(200 + index), 0.0, 8.0, source));
+                                              static_cast<ClipId>(200 + index), 0.0, 4.0, source));
         }
 
         corpus.push_back(std::move(value));
@@ -612,7 +629,7 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
             const auto source = writeSource(scratchDirectory, "vol" + juce::String(index), steps());
             value.sources.push_back(source);
             value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
-                                              static_cast<ClipId>(210 + index), 0.0, 8.0, source));
+                                              static_cast<ClipId>(210 + index), 0.0, 4.0, source));
         }
 
         corpus.push_back(std::move(value));
@@ -636,7 +653,7 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
             const auto source = writeSource(scratchDirectory, "pan" + juce::String(index), steps());
             value.sources.push_back(source);
             value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
-                                              static_cast<ClipId>(220 + index), 0.0, 8.0, source));
+                                              static_cast<ClipId>(220 + index), 0.0, 4.0, source));
         }
 
         corpus.push_back(std::move(value));
@@ -652,7 +669,7 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
                                             impulses(index == 0 ? 0.25 : 0.3));
             value.sources.push_back(source);
             value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
-                                              static_cast<ClipId>(230 + index), 0.0, 8.0, source));
+                                              static_cast<ClipId>(230 + index), 0.0, 4.0, source));
         }
 
         corpus.push_back(std::move(value));
@@ -668,7 +685,7 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
                                             impulses(0.25 + 0.05 * index));
             value.sources.push_back(source);
             value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
-                                              static_cast<ClipId>(240 + index), 0.0, 8.0, source));
+                                              static_cast<ClipId>(240 + index), 0.0, 4.0, source));
         }
 
         corpus.push_back(std::move(value));
@@ -688,7 +705,7 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
                                             impulses(index == 0 ? 0.25 : 0.4));
             value.sources.push_back(source);
             value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
-                                              static_cast<ClipId>(250 + index), 0.0, 8.0, source));
+                                              static_cast<ClipId>(250 + index), 0.0, 4.0, source));
         }
 
         corpus.push_back(std::move(value));
@@ -822,6 +839,16 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     }
 
     return corpus;
+}
+
+const std::vector<Case>& sharedCorpus(const juce::File& scratchDirectory) {
+    static std::map<juce::String, std::vector<Case>> built;
+
+    const auto key = scratchDirectory.getFullPathName();
+    if (const auto found = built.find(key); found != built.end())
+        return found->second;
+
+    return built.emplace(key, buildCorpus(scratchDirectory)).first->second;
 }
 
 }  // namespace magda::nulldiff

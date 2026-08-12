@@ -368,6 +368,12 @@ rebuild: clean debug
 # commit hook puts the file back on its way in, and the pair churn forever
 # against each other. One pinned binary, one set of files, used by this target,
 # by the hook and by CI.
+#
+# One behaviour worth knowing: --all-files means all *tracked* files, so a new
+# file that has not been git added yet is skipped here where the old find would
+# have formatted it. The commit hook catches it the moment it is staged, so
+# nothing reaches a commit unformatted; "make format did nothing to my new file"
+# is this, and not a bug.
 format:
 	@echo "🎨 Formatting code..."
 	@if command -v pre-commit >/dev/null 2>&1; then \

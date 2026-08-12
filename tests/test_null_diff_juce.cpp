@@ -274,7 +274,7 @@ class NullDiffCorpusTests : public juce::UnitTest {
     void runTest() override {
         beginTest("Every case, through both engines");
 
-        const auto corpus = buildCorpus(scratchDirectory());
+        const auto corpus = sharedCorpus(scratchDirectory());
         std::vector<CaseReport> reports;
 
         for (const auto& value : corpus)

@@ -208,6 +208,21 @@ struct Case {
  */
 std::vector<Case> buildCorpus(const juce::File& scratchDirectory);
 
+/**
+ * @brief The corpus, built once per process.
+ *
+ * Every call to buildCorpus writes every case's material again, which is forty
+ * odd files of twelve seconds each. That was affordable when it happened a
+ * handful of times; it is what a test binary should do once. Eight call sites
+ * across two files meant the same bytes were written eight times, and on a
+ * machine whose filesystem is slower than this one that is minutes rather than
+ * seconds.
+ *
+ * Keyed on the directory, so a binary that asks for two different scratch
+ * directories gets two different corpora rather than the first one twice.
+ */
+const std::vector<Case>& sharedCorpus(const juce::File& scratchDirectory);
+
 /// The groove template every grooving case names, and the one the runner
 /// installs in both engines.
 extern const char* const kGrooveName;

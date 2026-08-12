@@ -289,13 +289,13 @@ jobs:
         submodules: recursive
         lfs: true
 
-    - name: Cache apt packages
+    - name: Cache the pre-commit environment
       uses: actions/cache@v6
       with:
-        path: /var/cache/apt/archives
-        key: ${{ runner.os }}-apt-clang-${{ hashFiles('.github/workflows/ci.yml') }}
+        path: ~/.cache/pre-commit
+        key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
         restore-keys: |
-          ${{ runner.os }}-apt-clang-
+          ${{ runner.os }}-pre-commit-
 
     # Formatting is checked with the clang-format version pinned in
     # .pre-commit-config.yaml, which is the same one the commit hook and
@@ -1027,8 +1027,13 @@ jobs:
       if: always()
       run: ccache -s
 
+    # A timeout is here to catch a hang, not to enforce a performance budget.
+    # At five minutes it was doing the second job badly: the last green run on
+    # dev finished this step in 4:53, so any test added anywhere in the suite
+    # failed Windows and nowhere else, with a timeout for a message. Fifteen
+    # still catches a hang and stops the gate going red over seven seconds.
     - name: Run tests
-      timeout-minutes: 5
+      timeout-minutes: 15
       run: |
         $testExe = Get-ChildItem -Path build-debug -Recurse -Filter "magda_tests.exe" | Select-Object -First 1
         if ($testExe) {

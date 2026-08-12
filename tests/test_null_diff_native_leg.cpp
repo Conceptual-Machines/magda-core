@@ -40,7 +40,7 @@ double peakOf(const juce::AudioBuffer<float>& buffer) {
 }  // namespace
 
 TEST_CASE("Every case renders through the native engine", "[nulldiff][native]") {
-    for (const auto& value : buildCorpus(scratch())) {
+    for (const auto& value : sharedCorpus(scratch())) {
         INFO(value.name);
 
         const auto rendered = renderNative(value);
@@ -85,7 +85,7 @@ TEST_CASE("A stretched clip survives a block shorter than a cell", "[nulldiff][n
     // half a cell and zero-fills the rest, and the reading clamp truncates
     // every cell's read: alternating material and silence, at exactly the block
     // sizes a low-latency interface uses, and no error anywhere.
-    for (const auto& value : buildCorpus(scratch())) {
+    for (const auto& value : sharedCorpus(scratch())) {
         if (value.capturesMidi() || value.name.rfind("stretch", 0) != 0)
             continue;
 
@@ -162,7 +162,7 @@ TEST_CASE("The native leg renders the same at any block size", "[nulldiff][nativ
 
     std::set<std::string> failed;
 
-    for (const auto& value : buildCorpus(scratch())) {
+    for (const auto& value : sharedCorpus(scratch())) {
         if (value.capturesMidi())
             continue;
 

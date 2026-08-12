@@ -588,13 +588,19 @@ and audio tracks asserts both.
 | `Invariants` | finite, equal length, bounded step, decayed tail | a plugin that owes nobody a sample |
 | `Measured` | measured and printed, asserted only to be finite | `stretch.broadband` |
 
-`Aligned` and `Invariants` have no corpus case yet and are implemented and tested anyway.
-`Invariants` is what [#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893)
-needs, since an external plugin has no null to give, and its checks are also what
+`Aligned` and `Invariants` have no corpus case yet, and they are not equally ready.
+`Invariants` is implemented and tested against known-bad pairs: a NaN, a length difference, a
+step past the bound and a tail that never decays are each fed to it and each has to be reported.
+It is what [#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893) needs, since an
+external plugin has no null to give, and its checks are also what
 [#2077](https://github.com/Conceptual-Machines/magda-core/issues/2077) asserts outside a changed
-graph region. Neither can be declared loosely: a case in `Invariants` without a discontinuity
-bound is refused rather than passed, the same rule a `Spectral` case with no predicted shift
-lives by.
+graph region. `Aligned` is one line of judgement over two pieces that are tested separately, the
+fractional alignment and the null, but nothing yet constructs a case in that tier, so the
+runner's branch for it has never executed. The declaration rule is asserted where it will bite
+first: the corpus-shape tests refuse a case that names a tier without the figure that tier needs,
+so the day somebody writes an `Aligned` case with no offset, or an `Invariants` case with no
+discontinuity bound, that is a failure at declaration rather than a comparison that quietly
+allowed anything.
 
 The issue's fifth class, scripted interactive checks, is deliberately not a tier. A launcher or
 a monitoring case is not an offline render of a range, so it needs a different runner rather

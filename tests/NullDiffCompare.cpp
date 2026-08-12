@@ -795,7 +795,7 @@ InvariantComparison compareInvariants(const juce::AudioBuffer<float>& native,
         result.problems.push_back(
             "a step of " +
             formatDb(toDb(std::max(result.worstStepNative, result.worstStepIncumbent))) +
-            " dBFS at sample " + std::to_string(result.worstStepAt) + " passes the bound of " +
+            " dBFS at sample " + std::to_string(result.worstStepAt) + " exceeds the bound of " +
             formatDb(toDb(options.maxStepPerSample)) + " dBFS");
 
     // The tail, which is where a device left running past its material shows up.
@@ -1218,40 +1218,52 @@ std::string formatReport(const std::vector<CaseReport>& cases, const CaseEnviron
                       toString(report.tier));
         out << line;
 
+        // The audio segment and the MIDI segment are printed independently,
+        // because the case's two assertions are independent. An exclusive chain
+        // was right while a case was either audio or MIDI; the first project
+        // with an instrument track and audio tracks would print its notes and
+        // silently drop its residual, which is the number that moves going
+        // missing from exactly the cases this slice exists to enable.
         if (!report.unmeasurable.empty()) {
             out << "unmeasurable: " << report.unmeasurable;
-        } else if (report.hasInvariants) {
-            const auto& invariants = report.invariants;
-            std::snprintf(
-                line, sizeof(line), "step=%-9s tail=%-9s length=%s",
-                formatDb(toDb(std::max(invariants.worstStepNative, invariants.worstStepIncumbent)))
-                    .c_str(),
-                formatDb(std::max(invariants.tailPeakNativeDb, invariants.tailPeakIncumbentDb))
-                    .c_str(),
-                invariants.lengthsMatch ? "ok" : "differs");
-            out << line;
-            if (!invariants.refusal.empty())
-                out << " refused: " << invariants.refusal;
-        } else if (report.hasMidi) {
-            const auto& midi = report.midi;
-            std::snprintf(line, sizeof(line), "notes=%d%s cc=%s", midi.notesCompared,
-                          midi.notesMatch ? "" : "!", midi.controllersMatch ? "ok" : "differs");
-            out << line;
-        } else if (report.hasSpectral) {
-            std::snprintf(line, sizeof(line),
-                          "shift=%-8.2f primed=%-6d envelope=%-6.2f median=%-5.2f p95=%.2f dB",
-                          report.measuredShift, report.primingSamples, report.envelope.lagSamples,
-                          report.spectra.medianDb, report.spectra.percentile95Db);
-            out << line;
-        } else if (report.hasAudio) {
-            const auto& audio = report.audio;
-            std::snprintf(line, sizeof(line), "peak=%-9s rms=%-9s shift=%.3f",
-                          formatDb(audio.peakDb).c_str(), formatDb(audio.rmsDb).c_str(),
-                          report.hasMeasuredShift ? report.measuredShift
-                                                  : static_cast<double>(audio.shiftSamples));
-            out << line;
-            if (!audio.refusal.empty())
-                out << " refused: " << audio.refusal;
+        } else {
+            if (report.hasInvariants) {
+                const auto& invariants = report.invariants;
+                std::snprintf(
+                    line, sizeof(line), "step=%-9s tail=%-9s length=%-8s",
+                    formatDb(
+                        toDb(std::max(invariants.worstStepNative, invariants.worstStepIncumbent)))
+                        .c_str(),
+                    formatDb(std::max(invariants.tailPeakNativeDb, invariants.tailPeakIncumbentDb))
+                        .c_str(),
+                    invariants.lengthsMatch ? "ok" : "differs");
+                out << line;
+                if (!invariants.refusal.empty())
+                    out << " refused: " << invariants.refusal << " ";
+            } else if (report.hasSpectral) {
+                std::snprintf(line, sizeof(line),
+                              "shift=%-8.2f primed=%-6d envelope=%-6.2f median=%-5.2f p95=%-6.2f",
+                              report.measuredShift, report.primingSamples,
+                              report.envelope.lagSamples, report.spectra.medianDb,
+                              report.spectra.percentile95Db);
+                out << line;
+            } else if (report.hasAudio) {
+                const auto& audio = report.audio;
+                std::snprintf(line, sizeof(line), "peak=%-9s rms=%-9s shift=%-8.3f",
+                              formatDb(audio.peakDb).c_str(), formatDb(audio.rmsDb).c_str(),
+                              report.hasMeasuredShift ? report.measuredShift
+                                                      : static_cast<double>(audio.shiftSamples));
+                out << line;
+                if (!audio.refusal.empty())
+                    out << " refused: " << audio.refusal << " ";
+            }
+
+            if (report.hasMidi) {
+                const auto& midi = report.midi;
+                std::snprintf(line, sizeof(line), "notes=%d%s cc=%s", midi.notesCompared,
+                              midi.notesMatch ? "" : "!", midi.controllersMatch ? "ok" : "differs");
+                out << line;
+            }
         }
 
         out << (report.passed ? "  ok" : "  FAIL");

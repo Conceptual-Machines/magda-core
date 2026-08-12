@@ -32,7 +32,7 @@ juce::File scratch() {
 }  // namespace
 
 TEST_CASE("The corpus builds and covers what the slice claims", "[nulldiff][corpus]") {
-    const auto corpus = buildCorpus(scratch());
+    const auto corpus = sharedCorpus(scratch());
 
     REQUIRE(corpus.size() == 27);
 
@@ -76,7 +76,7 @@ TEST_CASE("Every allowance carries a mechanism", "[nulldiff][corpus]") {
     // The rule the corpus lives by: change the shape of the comparison, never
     // the size of the allowance. An allowance with no mechanism beside it is
     // how a real bug ends up inside an expected difference.
-    for (const auto& value : buildCorpus(scratch())) {
+    for (const auto& value : sharedCorpus(scratch())) {
         INFO(value.name);
 
         // What counts as an allowance is something the corpus lets the two
@@ -101,8 +101,26 @@ TEST_CASE("Every allowance carries a mechanism", "[nulldiff][corpus]") {
     }
 }
 
+TEST_CASE("A tier without the figure it needs is refused", "[nulldiff][corpus]") {
+    // Two tiers cannot be judged from the render alone: Aligned undoes an offset
+    // the case declares, and Invariants has no residual to fall back on, so it
+    // needs a discontinuity bound. Declared as a corpus rule rather than only as
+    // a runner branch, because the runner's branch first executes on the day
+    // somebody writes such a case, which is exactly the wrong day to discover
+    // that the figure is missing.
+    for (const auto& value : sharedCorpus(scratch())) {
+        INFO(value.name);
+
+        if (value.tier == AudioTier::Aligned)
+            CHECK(value.declaredFractionalShiftSamples != 0.0);
+
+        if (value.tier == AudioTier::Invariants)
+            CHECK(value.maxStepPerSample > 0.0);
+    }
+}
+
 TEST_CASE("Every case says what it covers and what it plays", "[nulldiff][corpus]") {
-    for (const auto& value : buildCorpus(scratch())) {
+    for (const auto& value : sharedCorpus(scratch())) {
         INFO(value.name);
 
         CHECK_FALSE(value.covers.empty());
@@ -152,7 +170,7 @@ TEST_CASE("Render cases change tempo in steps rather than ramps", "[nulldiff][co
     // to disagree, because the engine subdivides where the fork integrates. A
     // render case built on one would report that as a clip bug. Ramps are
     // pinned in the tempo-map comparison, where the answer is a number.
-    for (const auto& value : buildCorpus(scratch())) {
+    for (const auto& value : sharedCorpus(scratch())) {
         INFO(value.name);
         REQUIRE_FALSE(value.tempo.empty());
         CHECK(value.tempo.front().beat == 0.0);
@@ -165,7 +183,7 @@ TEST_CASE("Render cases change tempo in steps rather than ramps", "[nulldiff][co
 TEST_CASE("A grooving case carries the template both engines will read", "[nulldiff][corpus]") {
     // One XML string feeds both legs, which is what makes "the same groove" a
     // fact rather than two parsers agreeing.
-    for (const auto& value : buildCorpus(scratch())) {
+    for (const auto& value : sharedCorpus(scratch())) {
         auto namesAGroove = false;
         for (const auto& clip : value.clips)
             if (clip.grooveTemplate.isNotEmpty())
