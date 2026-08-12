@@ -253,6 +253,35 @@ IncumbentRender renderIncumbent(const Case& value) {
     for (const auto& track : value.tracks)
         trackController.ensureTrackMapping(track.id, track.name);
 
+    // --- the mixer ------------------------------------------------------------
+    //
+    // The same four calls AudioBridge::trackPropertyChanged makes, in the order
+    // it makes them. Mute and solo go straight to the te::AudioTrack there, and
+    // volume and pan through AudioBridgeMixer, which is a pass-through to these
+    // exact TrackController functions. Not a second mixer written for the
+    // harness: the sync layer is part of what is being validated, and a fader
+    // that reaches Tracktion wrong is wrong for the same user.
+
+    for (const auto& track : value.tracks) {
+        if (auto* audioTrack = trackController.getAudioTrack(track.id)) {
+            audioTrack->setMute(track.muted);
+            audioTrack->setSolo(track.soloed);
+        }
+
+        trackController.setTrackVolume(track.id, track.volume);
+        trackController.setTrackPan(track.id, track.pan);
+    }
+
+    // Master, resolved the way AudioBridge::masterChannelChanged resolves it: a
+    // muted master is a volume of zero rather than a flag of its own, and a
+    // volume of zero is -100 dB rather than silence, because that is where the
+    // plugin's own range floors.
+    if (auto masterPlugin = edit->getMasterVolumePlugin()) {
+        const auto volume = value.master.muted ? 0.0f : value.master.volume;
+        masterPlugin->setVolumeDb(volume > 0.0f ? juce::Decibels::gainToDecibels(volume) : -100.0f);
+        masterPlugin->setPan(value.master.pan);
+    }
+
     // The capture device, where the plan on the other side has one. Inserted
     // straight into the track's list: the model device stands for a synth, and
     // what is compared is what would reach it.

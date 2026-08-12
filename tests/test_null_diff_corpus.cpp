@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <set>
 
@@ -33,7 +34,7 @@ juce::File scratch() {
 TEST_CASE("The corpus builds and covers what the slice claims", "[nulldiff][corpus]") {
     const auto corpus = buildCorpus(scratch());
 
-    REQUIRE(corpus.size() == 21);
+    REQUIRE(corpus.size() == 27);
 
     std::set<std::string> names;
     for (const auto& value : corpus)
@@ -57,6 +58,12 @@ TEST_CASE("The corpus builds and covers what the slice claims", "[nulldiff][corp
                                  "stretch.broadband",
                                  "warp.audio",
                                  "takes.comp",
+                                 "mix.summing",
+                                 "mix.volume",
+                                 "mix.pan",
+                                 "mix.mute",
+                                 "mix.solo",
+                                 "mix.master",
                                  "midi.notes",
                                  "midi.cc",
                                  "midi.mpe",
@@ -77,12 +84,14 @@ TEST_CASE("Every allowance carries a mechanism", "[nulldiff][corpus]") {
         // above the arithmetic one, a case that measures instead of asserting,
         // or notes expected to land offset.
         //
-        // A Midi verdict on its own is not one of those. It says where the case
-        // is judged rather than how much it may differ by, and it is not a
-        // choice either: a MIDI track here carries a capture device instead of
-        // a synth, so neither engine produces any audio to compare.
-        const auto allows = value.verdict == Verdict::Shift ||
-                            value.verdict == Verdict::ReportOnly || value.floorDb > -120.0 ||
+        // A None tier on its own is not one of those. It says where the case is
+        // judged rather than how much it may differ by, and it is not a choice
+        // either: a MIDI track here carries a capture device instead of a
+        // synth, so neither engine produces any audio to compare.
+        const auto allows = value.tier == AudioTier::Spectral || value.tier == AudioTier::Aligned ||
+                            value.tier == AudioTier::Measured ||
+                            value.tier == AudioTier::Invariants || value.floorDb > -120.0 ||
+                            value.declaredFractionalShiftSamples != 0.0 ||
                             value.declaredMidiShiftBeats != 0.0;
 
         if (allows)
@@ -101,7 +110,18 @@ TEST_CASE("Every case says what it covers and what it plays", "[nulldiff][corpus
         CHECK(value.sampleRate > 0.0);
         CHECK_FALSE(value.clips.empty());
         CHECK(value.master.id == MASTER_TRACK_ID);
-        REQUIRE(value.tracks.size() == 1);
+        REQUIRE_FALSE(value.tracks.empty());
+
+        // Every clip lands on a track the case declares. A clip pointing at a
+        // track that is not there would be dropped by the snapshot and skipped
+        // by the sync, so both legs would render the same silence and the case
+        // would pass by covering nothing.
+        for (const auto& clip : value.clips) {
+            const auto known =
+                std::any_of(value.tracks.begin(), value.tracks.end(),
+                            [&](const TrackInfo& track) { return track.id == clip.trackId; });
+            CHECK(known);
+        }
 
         // Every audio clip's source was written and pooled, and every case that
         // captures MIDI has something to capture through: a plan compiles no

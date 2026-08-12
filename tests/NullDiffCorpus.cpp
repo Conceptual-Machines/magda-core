@@ -1,3 +1,4 @@
+#include <array>
 #include <cmath>
 
 #include "NullDiffCase.hpp"
@@ -47,10 +48,6 @@ constexpr DeviceId kInstrument = 900;
 /// them cost a second of disk.
 constexpr double kSourceSeconds = 12.0;
 
-double beatSeconds(double beats, double bpm = kBpm) {
-    return beats * 60.0 / bpm;
-}
-
 // --- tracks ------------------------------------------------------------------
 
 TrackInfo plainTrack() {
@@ -87,6 +84,22 @@ TrackInfo masterTrack() {
     master.type = TrackType::Master;
     master.name = "Master";
     return master;
+}
+
+/// One of several tracks in a mixer case, all feeding master.
+///
+/// The mixer cases are the first in the corpus with more than one track, and
+/// that is the point of them: a fader, a pan law, a mute and a solo are all
+/// resolved by the value layer and none of it has ever been compared against
+/// the incumbent. They are arithmetic, so nothing interpolates between the two
+/// engines and the ordinary floor applies.
+TrackInfo mixTrack(TrackId id, const char* name) {
+    TrackInfo track;
+    track.id = id;
+    track.type = TrackType::Audio;
+    track.name = name;
+    track.audioOutputDevice = "master";
+    return track;
 }
 
 // --- material ----------------------------------------------------------------
@@ -163,10 +176,11 @@ MaterialSpec noise() {
 
 // --- clips -------------------------------------------------------------------
 
-ClipInfo audioClip(ClipId id, double startBeat, double lengthBeats, const SourceFact& source) {
+ClipInfo audioClipOn(TrackId trackId, ClipId id, double startBeat, double lengthBeats,
+                     const SourceFact& source) {
     ClipInfo clip;
     clip.id = id;
-    clip.trackId = kTrack;
+    clip.trackId = trackId;
     clip.name = "clip " + juce::String(id);
     clip.view = ClipView::Arrangement;
     clip.setAudioContent();
@@ -178,6 +192,10 @@ ClipInfo audioClip(ClipId id, double startBeat, double lengthBeats, const Source
     clip.setPlacementBeats(startBeat, lengthBeats);
     clip.deriveTimesFromBeats(kBpm);
     return clip;
+}
+
+ClipInfo audioClip(ClipId id, double startBeat, double lengthBeats, const SourceFact& source) {
+    return audioClipOn(kTrack, id, startBeat, lengthBeats, source);
 }
 
 AudioEvent& eventOf(ClipInfo& clip) {
@@ -207,11 +225,11 @@ MidiNote note(int pitch, double startBeat, double lengthBeats, int velocity = 10
 
 // --- the case shells ---------------------------------------------------------
 
-Case newCase(const char* name, const char* covers, TrackInfo track) {
+Case newMixCase(const char* name, const char* covers, std::vector<TrackInfo> tracks) {
     Case value;
     value.name = name;
     value.covers = covers;
-    value.tracks.push_back(std::move(track));
+    value.tracks = std::move(tracks);
     value.master = masterTrack();
     value.sampleRate = kRate;
     value.startBeat = 0.0;
@@ -219,17 +237,23 @@ Case newCase(const char* name, const char* covers, TrackInfo track) {
     return value;
 }
 
+Case newCase(const char* name, const char* covers, TrackInfo track) {
+    std::vector<TrackInfo> tracks;
+    tracks.push_back(std::move(track));
+    return newMixCase(name, covers, std::move(tracks));
+}
+
 /// A stretched case: the fork primes its stretcher with the material at the
 /// clip's start rather than before it, so its clip begins about a window late.
 ///
-/// The expected size is left unset here on purpose, and a Shift case with no
+/// The expected size is left unset here on purpose, and a Spectral case with no
 /// declared expectation is refused rather than measured. The figure to put here
 /// is what the engine says its own stretcher primes with, which the corpus
 /// prints beside the measured offset for every one of these; until somebody has
 /// read those two against each other and written the relationship down, the
 /// corpus should not be certifying an alignment it has nothing to check.
 void expectsPrimingShift(Case& value) {
-    value.verdict = Verdict::Shift;
+    value.tier = AudioTier::Spectral;
     value.mechanism =
         "the fork primes its stretcher with the material at the clip's start rather than "
         "before it, so its render begins about a window late";
@@ -477,7 +501,8 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         event.timeStretchMode = time_stretch_mode::kSignalsmith;
         value.clips.push_back(std::move(clip));
 
-        value.verdict = Verdict::ReportOnly;
+        value.tier = AudioTier::Measured;
+        value.seed = noise().seed;
         value.mechanism =
             "two phase vocoders fed material with everything in it, framed differently by "
             "each engine's own reading; measured and printed rather than asserted";
@@ -531,6 +556,144 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         corpus.push_back(std::move(value));
     }
 
+    // --- the mixer ------------------------------------------------------------
+    //
+    // The first cases in the corpus with more than one track, and the first that
+    // touch the value layer at all. Everything above renders at unity through a
+    // default master, so the fader law, the pan law, mute inheritance and
+    // solo-through-destination have never been compared against the incumbent.
+    //
+    // All arithmetic. Nothing interpolates between the two engines on these
+    // paths, so the material is impulses and steps and the ordinary floor
+    // applies: a fader law that differs in the fourth decimal shows up.
+    //
+    // Sends are absent on purpose. The native leg could render one today, and
+    // the incumbent's live on te::AuxSendPlugin instances that PluginManagerSync
+    // creates from a PluginManager and the device layer behind it. Writing those
+    // plugins straight into the leg would be the second sync this corpus refuses
+    // to have. They belong with the rest of the routing graph, in #1892.
+
+    {
+        auto value = newMixCase("mix.summing", "three tracks summed into master",
+                                {mixTrack(1, "One"), mixTrack(2, "Two"), mixTrack(3, "Three")});
+
+        // Three different impulse grids rather than three copies of one. Equal
+        // values sum exactly whatever order they are added in, so identical
+        // sources would agree by arithmetic rather than by the two engines
+        // summing the same things.
+        const std::array<double, 3> intervals{0.25, 0.3, 0.5};
+        for (auto index = 0; index < 3; ++index) {
+            const auto source = writeSource(scratchDirectory, "sum" + juce::String(index),
+                                            impulses(intervals[static_cast<std::size_t>(index)]));
+            value.sources.push_back(source);
+            value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
+                                              static_cast<ClipId>(200 + index), 0.0, 8.0, source));
+        }
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The fader across its range, which is a slider position rather than a
+        // gain: unity, six down, and the top of the range, which is six up
+        // rather than twice. Silence is in here too, and it is the interesting
+        // one: the position floors at -100 dB, so whether that is zero or merely
+        // very quiet is a thing the two engines can disagree about at a level
+        // the floor would catch.
+        auto value = newMixCase(
+            "mix.volume", "the fader law: unity, attenuation, the top of the range, and silence",
+            {mixTrack(1, "Unity"), mixTrack(2, "Down"), mixTrack(3, "Up"), mixTrack(4, "Silent")});
+
+        const std::array<float, 4> volumes{1.0f, 0.5f, 2.0f, 0.0f};
+        for (auto index = 0; index < 4; ++index) {
+            value.tracks[static_cast<std::size_t>(index)].volume =
+                volumes[static_cast<std::size_t>(index)];
+
+            const auto source = writeSource(scratchDirectory, "vol" + juce::String(index), steps());
+            value.sources.push_back(source);
+            value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
+                                              static_cast<ClipId>(210 + index), 0.0, 8.0, source));
+        }
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The linear pan law, at the ends and in between. MAGDA boosts the near
+        // side rather than attenuating the far one, so hard left is (2, 0) and
+        // centre is unity: a pad through a constant-power law would sit 3 dB
+        // quieter than the same signal on a track, and this is the case that
+        // would say so.
+        auto value = newMixCase("mix.pan", "the linear pan law across its range",
+                                {mixTrack(1, "Left"), mixTrack(2, "Centre"), mixTrack(3, "Right"),
+                                 mixTrack(4, "Part")});
+
+        const std::array<float, 4> pans{-1.0f, 0.0f, 1.0f, 0.4f};
+        for (auto index = 0; index < 4; ++index) {
+            value.tracks[static_cast<std::size_t>(index)].pan =
+                pans[static_cast<std::size_t>(index)];
+
+            const auto source = writeSource(scratchDirectory, "pan" + juce::String(index), steps());
+            value.sources.push_back(source);
+            value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
+                                              static_cast<ClipId>(220 + index), 0.0, 8.0, source));
+        }
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        auto value = newMixCase("mix.mute", "a muted track contributes nothing",
+                                {mixTrack(1, "Heard"), mixTrack(2, "Muted")});
+        value.tracks[1].muted = true;
+
+        for (auto index = 0; index < 2; ++index) {
+            const auto source = writeSource(scratchDirectory, "mute" + juce::String(index),
+                                            impulses(index == 0 ? 0.25 : 0.3));
+            value.sources.push_back(source);
+            value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
+                                              static_cast<ClipId>(230 + index), 0.0, 8.0, source));
+        }
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        auto value = newMixCase("mix.solo", "a soloed track silences its siblings",
+                                {mixTrack(1, "Solo"), mixTrack(2, "Other"), mixTrack(3, "Third")});
+        value.tracks[0].soloed = true;
+
+        for (auto index = 0; index < 3; ++index) {
+            const auto source = writeSource(scratchDirectory, "solo" + juce::String(index),
+                                            impulses(0.25 + 0.05 * index));
+            value.sources.push_back(source);
+            value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
+                                              static_cast<ClipId>(240 + index), 0.0, 8.0, source));
+        }
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The master's own fader and pan, applied once to the sum. Two tracks
+        // rather than one, so that a master gain applied per track instead of
+        // once to the mix would be a different number rather than the same one.
+        auto value = newMixCase("mix.master", "master volume and pan, applied once",
+                                {mixTrack(1, "One"), mixTrack(2, "Two")});
+        value.master.volume = 0.5f;
+        value.master.pan = 0.3f;
+
+        for (auto index = 0; index < 2; ++index) {
+            const auto source = writeSource(scratchDirectory, "master" + juce::String(index),
+                                            impulses(index == 0 ? 0.25 : 0.4));
+            value.sources.push_back(source);
+            value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
+                                              static_cast<ClipId>(250 + index), 0.0, 8.0, source));
+        }
+
+        corpus.push_back(std::move(value));
+    }
+
     // --- MIDI ----------------------------------------------------------------
 
     {
@@ -540,7 +703,8 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
             clip.midiNotes.push_back(note(60 + index, static_cast<double>(index),
                                           index % 2 == 0 ? 0.75 : 0.5, 40 + index * 10));
         value.clips.push_back(std::move(clip));
-        value.verdict = Verdict::Midi;
+        value.tier = AudioTier::None;
+        value.compareMidiStreams = true;
         corpus.push_back(std::move(value));
     }
 
@@ -568,7 +732,8 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         }
 
         value.clips.push_back(std::move(clip));
-        value.verdict = Verdict::Midi;
+        value.tier = AudioTier::None;
+        value.compareMidiStreams = true;
         corpus.push_back(std::move(value));
     }
 
@@ -583,7 +748,8 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         }
 
         value.clips.push_back(std::move(clip));
-        value.verdict = Verdict::Midi;
+        value.tier = AudioTier::None;
+        value.compareMidiStreams = true;
         corpus.push_back(std::move(value));
     }
 
@@ -617,7 +783,8 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
             "</GROOVETEMPLATE>"
             "</GROOVETEMPLATES>";
 
-        value.verdict = Verdict::Midi;
+        value.tier = AudioTier::None;
+        value.compareMidiStreams = true;
         corpus.push_back(std::move(value));
     }
 
@@ -636,7 +803,8 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
                 note(60 + index * 3, 1.0 + static_cast<double>(index) * 2.0, 1.0));
         value.clips.push_back(std::move(clip));
 
-        value.verdict = Verdict::Midi;
+        value.tier = AudioTier::None;
+        value.compareMidiStreams = true;
 
         // The fork's arranger path drops midiOffset while its session path
         // applies it, which is a gap in the sync layer rather than a semantic.

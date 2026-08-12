@@ -704,6 +704,132 @@ AudioComparison compareAudio(const juce::AudioBuffer<float>& native,
 }
 
 // =============================================================================
+// Invariants
+// =============================================================================
+
+InvariantComparison compareInvariants(const juce::AudioBuffer<float>& native,
+                                      const juce::AudioBuffer<float>& incumbent,
+                                      const InvariantOptions& options) {
+    InvariantComparison result;
+
+    if (native.getNumChannels() != incumbent.getNumChannels()) {
+        result.refusal = "different channel counts";
+        return result;
+    }
+
+    if (native.getNumSamples() == 0 || incumbent.getNumSamples() == 0) {
+        result.refusal = "nothing to compare";
+        return result;
+    }
+
+    // A bound nobody declared would be a bound nobody chose. Refusing is the
+    // only honest answer: passing would certify a check that never ran, and the
+    // whole tier exists because there is no residual to fall back on.
+    if (!(options.maxStepPerSample > 0.0)) {
+        result.refusal = "no discontinuity bound declared";
+        return result;
+    }
+
+    result.lengthsMatch = native.getNumSamples() == incumbent.getNumSamples();
+    if (!result.lengthsMatch)
+        result.problems.push_back("lengths differ: native " +
+                                  std::to_string(native.getNumSamples()) + ", incumbent " +
+                                  std::to_string(incumbent.getNumSamples()));
+
+    // Finite first, because everything below it is arithmetic on these samples
+    // and a NaN would propagate into a worst step of NaN and a peak of NaN,
+    // which compare false against every bound and would be reported as four
+    // failures with one cause.
+    auto finite = true;
+    const auto checkFinite = [&](const juce::AudioBuffer<float>& buffer, const char* side) {
+        for (auto channel = 0; channel < buffer.getNumChannels(); ++channel) {
+            const auto* samples = buffer.getReadPointer(channel);
+            for (auto index = 0; index < buffer.getNumSamples(); ++index) {
+                if (!std::isfinite(samples[index])) {
+                    finite = false;
+                    result.problems.push_back(std::string(side) + " is not finite at sample " +
+                                              std::to_string(index) + " on channel " +
+                                              std::to_string(channel));
+                    return;
+                }
+            }
+        }
+    };
+    checkFinite(native, "native");
+    checkFinite(incumbent, "incumbent");
+    result.finite = finite;
+
+    if (!result.finite)
+        return result;
+
+    // The largest step either side takes between one sample and the next. A
+    // click is a step, and a step is what a graph transition leaves behind when
+    // something was swapped without a ramp: the one failure that survives an
+    // engine which otherwise agrees with itself.
+    const auto worstStep = [](const juce::AudioBuffer<float>& buffer, std::int64_t& at) {
+        auto worst = 0.0;
+        for (auto channel = 0; channel < buffer.getNumChannels(); ++channel) {
+            const auto* samples = buffer.getReadPointer(channel);
+            for (auto index = 1; index < buffer.getNumSamples(); ++index) {
+                const auto step = std::abs(static_cast<double>(samples[index]) -
+                                           static_cast<double>(samples[index - 1]));
+                if (step > worst) {
+                    worst = step;
+                    at = index;
+                }
+            }
+        }
+        return worst;
+    };
+
+    std::int64_t nativeAt = -1;
+    std::int64_t incumbentAt = -1;
+    result.worstStepNative = worstStep(native, nativeAt);
+    result.worstStepIncumbent = worstStep(incumbent, incumbentAt);
+    result.worstStepAt =
+        result.worstStepNative >= result.worstStepIncumbent ? nativeAt : incumbentAt;
+
+    result.continuous = result.worstStepNative <= options.maxStepPerSample &&
+                        result.worstStepIncumbent <= options.maxStepPerSample;
+    if (!result.continuous)
+        result.problems.push_back(
+            "a step of " +
+            formatDb(toDb(std::max(result.worstStepNative, result.worstStepIncumbent))) +
+            " dBFS at sample " + std::to_string(result.worstStepAt) + " passes the bound of " +
+            formatDb(toDb(options.maxStepPerSample)) + " dBFS");
+
+    // The tail, which is where a device left running past its material shows up.
+    // Both sides are asked independently: two engines leaking alike would cancel
+    // in a residual and be reported as agreement.
+    const auto tailPeak = [&](const juce::AudioBuffer<float>& buffer) {
+        const auto samples =
+            std::min(static_cast<std::int64_t>(buffer.getNumSamples()),
+                     static_cast<std::int64_t>(options.tailSeconds * options.sampleRate));
+        if (samples <= 0)
+            return -std::numeric_limits<double>::infinity();
+
+        const auto begin = static_cast<int>(buffer.getNumSamples() - samples);
+        auto peak = 0.0;
+        for (auto channel = 0; channel < buffer.getNumChannels(); ++channel)
+            peak = std::max(peak, static_cast<double>(buffer.getMagnitude(
+                                      channel, begin, static_cast<int>(samples))));
+        return toDb(peak);
+    };
+
+    result.tailPeakNativeDb = tailPeak(native);
+    result.tailPeakIncumbentDb = tailPeak(incumbent);
+    result.tailDecays = result.tailPeakNativeDb <= options.tailFloorDb &&
+                        result.tailPeakIncumbentDb <= options.tailFloorDb;
+    if (!result.tailDecays)
+        result.problems.push_back("the tail has not decayed: native " +
+                                  formatDb(result.tailPeakNativeDb) + " dBFS, incumbent " +
+                                  formatDb(result.tailPeakIncumbentDb) + " dBFS, bound " +
+                                  formatDb(options.tailFloorDb) + " dBFS");
+
+    return result;
+}
+
+// =============================================================================
 // MIDI
 // =============================================================================
 
@@ -1044,16 +1170,20 @@ MidiComparison compareMidi(const MidiStream& native, const MidiStream& incumbent
 // The report
 // =============================================================================
 
-const char* toString(Verdict verdict) {
-    switch (verdict) {
-        case Verdict::Null:
-            return "null";
-        case Verdict::Shift:
-            return "shift";
-        case Verdict::Midi:
+const char* toString(AudioTier tier) {
+    switch (tier) {
+        case AudioTier::None:
             return "midi";
-        case Verdict::ReportOnly:
-            return "report";
+        case AudioTier::Exact:
+            return "exact";
+        case AudioTier::Aligned:
+            return "aligned";
+        case AudioTier::Spectral:
+            return "spectral";
+        case AudioTier::Invariants:
+            return "invariant";
+        case AudioTier::Measured:
+            return "measured";
     }
     return "?";
 }
@@ -1067,22 +1197,41 @@ std::string formatDb(double db) {
     return text;
 }
 
-std::string formatReport(const std::vector<CaseReport>& cases, double sampleRate, int blockSize) {
+std::string formatReport(const std::vector<CaseReport>& cases, const CaseEnvironment& standard) {
     std::ostringstream out;
 
-    out << "magda-null-diff v1\n";
-    out << "cases=" << cases.size() << " rate=" << static_cast<long long>(sampleRate)
-        << " blockSize=" << blockSize << "\n";
+    const auto describe = [](const CaseEnvironment& environment) {
+        char text[96];
+        std::snprintf(text, sizeof(text), "rate=%lld blockSize=%d channels=%d seed=%u",
+                      static_cast<long long>(environment.sampleRate), environment.blockSize,
+                      environment.channels, environment.seed);
+        return std::string(text);
+    };
+
+    out << "magda-null-diff v2\n";
+    out << "cases=" << cases.size() << " " << describe(standard) << "\n";
 
     auto index = 0;
     for (const auto& report : cases) {
         char line[256];
-        std::snprintf(line, sizeof(line), "[%2d] %-28s %-8s ", ++index, report.name.c_str(),
-                      toString(report.verdict));
+        std::snprintf(line, sizeof(line), "[%2d] %-28s %-9s ", ++index, report.name.c_str(),
+                      toString(report.tier));
         out << line;
 
         if (!report.unmeasurable.empty()) {
             out << "unmeasurable: " << report.unmeasurable;
+        } else if (report.hasInvariants) {
+            const auto& invariants = report.invariants;
+            std::snprintf(
+                line, sizeof(line), "step=%-9s tail=%-9s length=%s",
+                formatDb(toDb(std::max(invariants.worstStepNative, invariants.worstStepIncumbent)))
+                    .c_str(),
+                formatDb(std::max(invariants.tailPeakNativeDb, invariants.tailPeakIncumbentDb))
+                    .c_str(),
+                invariants.lengthsMatch ? "ok" : "differs");
+            out << line;
+            if (!invariants.refusal.empty())
+                out << " refused: " << invariants.refusal;
         } else if (report.hasMidi) {
             const auto& midi = report.midi;
             std::snprintf(line, sizeof(line), "notes=%d%s cc=%s", midi.notesCompared,
@@ -1105,7 +1254,16 @@ std::string formatReport(const std::vector<CaseReport>& cases, double sampleRate
                 out << " refused: " << audio.refusal;
         }
 
-        out << (report.passed ? "  ok" : "  FAIL") << "\n";
+        out << (report.passed ? "  ok" : "  FAIL");
+
+        // Only where it deviates. A number measured at another rate, another
+        // block size or another seed is a number about a different render, and
+        // a report that left that off the line would invite it to be read as a
+        // number about this one.
+        if (!(report.environment == standard))
+            out << "  [" << describe(report.environment) << "]";
+
+        out << "\n";
     }
 
     return out.str();

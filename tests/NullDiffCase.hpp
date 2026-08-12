@@ -57,7 +57,18 @@ struct Case {
     /// "placement.trims failed" is only useful to whoever wrote it.
     std::string covers;
 
-    Verdict verdict = Verdict::Null;
+    /// What stands between the two engines on this case's paths, which decides
+    /// what can be asserted of the audio. Not a per-case preference: a tier is
+    /// declared because of what the signal goes through, and the mechanism
+    /// below says what that is.
+    AudioTier tier = AudioTier::Exact;
+
+    /// Whether the captured MIDI streams are compared.
+    ///
+    /// Independent of the tier, because they are independent questions. A
+    /// project with an instrument track and audio tracks asserts both, and the
+    /// four MIDI-only cases assert this one with the audio tier at None.
+    bool compareMidiStreams = false;
 
     /// Peak residual at or below this is a null. A case that raises it carries
     /// the mechanism below, and a raised floor with no mechanism does not
@@ -85,9 +96,27 @@ struct Case {
 
     double startBeat = 0.0;
     double endBeat = 16.0;
+
+    // --- the environment -----------------------------------------------------
+    //
+    // Recorded on the case rather than assumed by the runner, and printed
+    // beside the case's numbers wherever it deviates from the corpus default.
+    // A residual that is really a fixture difference is the worst failure a
+    // parity corpus can have, because it does not look like a bug in the
+    // harness: it looks like a bug in the engine.
+    //
+    // Plugin versions belong in this block and are not here. Nothing hosts a
+    // plugin yet, so the field would have no value to record; it goes in with
+    // #1893, which is also the first thing that will need it.
+
     double sampleRate = 44100.0;
     int blockSize = 512;
     int channels = 2;
+
+    /// What generated this case's material. Zero for the cases whose material
+    /// is deterministic by construction, which is all of them but the one that
+    /// plays noise.
+    std::uint32_t seed = 0;
 
     // --- what is allowed for -------------------------------------------------
 
@@ -146,12 +175,22 @@ struct Case {
     /// it the corpus says so rather than absorbing it.
     double incumbentNoteEndEarlySeconds = 0.0001;
 
+    /// The largest step this case's material may take from one sample to the
+    /// next, for a case in the Invariants tier. Required there and refused
+    /// without, because the tier has no residual to fall back on: a bound
+    /// nobody declared would certify a check that never ran.
+    double maxStepPerSample = 0.0;
+
     double startBpm() const {
         return tempo.empty() ? 120.0 : tempo.front().bpm;
     }
 
     bool capturesMidi() const {
-        return verdict == Verdict::Midi;
+        return compareMidiStreams;
+    }
+
+    CaseEnvironment environment() const {
+        return {sampleRate, blockSize, channels, seed};
     }
 };
 

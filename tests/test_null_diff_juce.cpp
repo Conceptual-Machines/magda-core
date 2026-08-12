@@ -284,9 +284,8 @@ class NullDiffCorpusTests : public juce::UnitTest {
         // are the point: a corpus that stays quiet cannot show a residual
         // creeping from -138 dB to -122 dB, which is what an engine going
         // subtly wrong looks like before it goes audibly wrong.
-        const auto report =
-            formatReport(reports, corpus.empty() ? 44100.0 : corpus.front().sampleRate,
-                         corpus.empty() ? 512 : corpus.front().blockSize);
+        const auto report = formatReport(reports, corpus.empty() ? CaseEnvironment{}
+                                                                 : corpus.front().environment());
         logMessage(report);
         std::cout << report << std::endl;
 
@@ -446,7 +445,8 @@ class NullDiffCorpusTests : public juce::UnitTest {
     CaseReport run(const Case& value) {
         CaseReport report;
         report.name = value.name;
-        report.verdict = value.verdict;
+        report.tier = value.tier;
+        report.environment = value.environment();
 
         const auto native = renderNative(value);
         const auto incumbent = renderIncumbent(value);
@@ -472,6 +472,11 @@ class NullDiffCorpusTests : public juce::UnitTest {
             return report;
         }
 
+        // The two questions, asked independently. A project with an instrument
+        // track and audio tracks answers both, and a case that answers neither
+        // is refused below rather than passing by having claimed nothing.
+        auto midiHeld = true;
+
         if (value.capturesMidi()) {
             MidiCompareOptions options;
             options.sampleRate = value.sampleRate;
@@ -483,12 +488,20 @@ class NullDiffCorpusTests : public juce::UnitTest {
 
             report.hasMidi = true;
             report.midi = compareMidi(native.midi, incumbent.midi, options);
-            report.passed = report.midi.passed();
+            midiHeld = report.midi.passed();
 
-            if (!report.passed)
+            if (!midiHeld)
                 for (const auto& problem : report.midi.problems)
                     logMessage("  " + juce::String(value.name) + ": " + problem);
+        }
 
+        if (value.tier == AudioTier::None) {
+            if (!value.capturesMidi()) {
+                report.unmeasurable = "the case asserts nothing: no audio tier and no MIDI";
+                return report;
+            }
+
+            report.passed = midiHeld;
             return report;
         }
 
@@ -500,7 +513,7 @@ class NullDiffCorpusTests : public juce::UnitTest {
         // A narrow search where no shift is expected: it is a diagnosis rather
         // than an alignment, and the answer to "how far apart are these" is a
         // sample or two or it is not the question.
-        const auto searchRange = value.verdict == Verdict::Shift ? value.maxShiftSamples : 256;
+        const auto searchRange = value.tier == AudioTier::Spectral ? value.maxShiftSamples : 256;
         const auto estimate = estimateShift(native.audio, incumbent.audio, searchRange);
         report.hasMeasuredShift = estimate.found;
         report.shiftCorrelation = estimate.correlation;
@@ -508,8 +521,8 @@ class NullDiffCorpusTests : public juce::UnitTest {
 
         // A stretched case takes the envelope's answer, everything else the
         // waveform's, because those are the two things each can be aligned by.
-        report.measuredShift =
-            value.verdict == Verdict::Shift ? estimate.envelopeSamples : estimate.fractionalSamples;
+        report.measuredShift = value.tier == AudioTier::Spectral ? estimate.envelopeSamples
+                                                                 : estimate.fractionalSamples;
 
         // A declared sub-sample offset is undone before anything is measured.
         // Not a tolerance: if the offset were not the fixed thing the case
@@ -520,10 +533,33 @@ class NullDiffCorpusTests : public juce::UnitTest {
                 ? delayFractionally(native.audio, -value.declaredFractionalShiftSamples)
                 : native.audio;
 
+        // The invariants tier never asks for a residual, so it never asks for an
+        // alignment either: what it checks is a property of each render on its
+        // own, and sliding one against the other would change neither answer.
+        if (value.tier == AudioTier::Invariants) {
+            InvariantOptions options;
+            options.sampleRate = value.sampleRate;
+            options.maxStepPerSample = value.maxStepPerSample;
+
+            report.hasInvariants = true;
+            report.invariants = compareInvariants(native.audio, incumbent.audio, options);
+            report.passed = report.invariants.passed() && midiHeld;
+
+            if (!report.invariants.passed()) {
+                if (!report.invariants.refusal.empty())
+                    report.unmeasurable = report.invariants.refusal;
+                for (const auto& problem : report.invariants.problems)
+                    logMessage("  " + juce::String(value.name) + ": " + problem);
+                writeArtefacts(value.name, native.audio, incumbent.audio, value.sampleRate);
+            }
+
+            return report;
+        }
+
         AudioCompareOptions options;
         options.floorDb = value.floorDb;
         options.sampleRate = value.sampleRate;
-        options.measureShift = value.verdict == Verdict::Shift;
+        options.measureShift = value.tier == AudioTier::Spectral;
         options.maxShiftSamples = value.maxShiftSamples;
 
         report.hasAudio = true;
@@ -548,29 +584,47 @@ class NullDiffCorpusTests : public juce::UnitTest {
             return report;
         }
 
-        switch (value.verdict) {
-            case Verdict::Null:
+        switch (value.tier) {
+            case AudioTier::Exact:
                 report.passed = report.audio.nulled();
                 break;
 
-            case Verdict::Shift:
+            case AudioTier::Aligned:
+                // One pinned offset, then the same null everything else is held
+                // to. The offset is declared rather than fitted, and undone
+                // above before anything was measured, so the null arriving is
+                // the evidence that the mechanism is the fixed thing the case
+                // says it is. A case that declared no offset has aligned by
+                // nothing and is refused rather than quietly judged as Exact.
+                if (value.declaredFractionalShiftSamples == 0.0) {
+                    report.unmeasurable = "an aligned case with no declared offset";
+                    return report;
+                }
+                report.passed = report.audio.nulled();
+                break;
+
+            case AudioTier::Spectral:
                 report.passed = judgeStretched(value, native, incumbent, report);
                 break;
 
-            case Verdict::ReportOnly:
+            case AudioTier::Measured:
                 // Measured and printed. What it says is how far apart the two
                 // stretchers are on material that has everything in it, which
                 // is a number worth watching and not a claim about playback.
                 //
                 // That it was measurable at all is asked above, with the same
-                // two questions every other verdict gets, so this really is the
+                // two questions every other tier gets, so this really is the
                 // only thing left for it to decide.
                 report.passed = true;
                 break;
 
-            case Verdict::Midi:
+            case AudioTier::Invariants:
+            case AudioTier::None:
+                // Both returned above.
                 break;
         }
+
+        report.passed = report.passed && midiHeld;
 
         if (!report.passed)
             writeArtefacts(value.name, native.audio, incumbent.audio, value.sampleRate);

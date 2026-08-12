@@ -573,10 +573,52 @@ vocoder's initial phase, phase in a vocoder is memory, so two differently primed
 reconverge even on identical libraries. Those cases are judged on envelope timing within a
 sample and a magnitude bound with its window and hop stated, which is what survives framing.
 
-What the rig does not yet cover is the whole of
-[#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896): a case is clip model
-values rather than a project, the tiers for external plugins and for interactive paths have no
-cases in them, and none of the migration half exists.
+**What a case declares** is two independent things, because they are two independent questions
+and a project answers both. The audio tier is a determinism class rather than a per-case
+preference: it follows from what stands between the two engines on that case's paths. Whether
+the captured MIDI streams are compared is its own flag, so a project with an instrument track
+and audio tracks asserts both.
+
+| Tier | What it asserts | Where it applies |
+| --- | --- | --- |
+| `None` | nothing; the MIDI comparison carries the case | the four `midi.*` |
+| `Exact` | residual under the floor, nothing allowed for | deterministic DSP, routing, the mixer |
+| `Aligned` | one declared offset, undone, then `Exact` | anything whose whole effect is a delay |
+| `Spectral` | pinned shift, envelope timing, magnitude bound | a phase vocoder in the path |
+| `Invariants` | finite, equal length, bounded step, decayed tail | a plugin that owes nobody a sample |
+| `Measured` | measured and printed, asserted only to be finite | `stretch.broadband` |
+
+`Aligned` and `Invariants` have no corpus case yet and are implemented and tested anyway.
+`Invariants` is what [#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893)
+needs, since an external plugin has no null to give, and its checks are also what
+[#2077](https://github.com/Conceptual-Machines/magda-core/issues/2077) asserts outside a changed
+graph region. Neither can be declared loosely: a case in `Invariants` without a discontinuity
+bound is refused rather than passed, the same rule a `Spectral` case with no predicted shift
+lives by.
+
+The issue's fifth class, scripted interactive checks, is deliberately not a tier. A launcher or
+a monitoring case is not an offline render of a range, so it needs a different runner rather
+than a different verdict.
+
+**The mixer** is where the corpus first has more than one track. `resolvePlanValues` implements
+the fader law, the linear pan law, mute inheritance and solo through destination routing, and
+until [#2075](https://github.com/Conceptual-Machines/magda-core/issues/2075) none of it had been
+compared against the incumbent at all. Six cases now do: summing, the fader across its range
+including silence, the pan law at its ends, mute, solo, and the master's own fader and pan. The
+incumbent leg drives them through the same four calls `AudioBridge::trackPropertyChanged`
+makes.
+
+Sends are the one routing dimension left out, and not because they are hard to model: the
+compiler emits `SendTap` pre and post fader and the value layer resolves the levels already.
+The incumbent's sends live on `te::AuxSendPlugin` instances that `PluginManagerSync` creates,
+which wants a `PluginManager` and the device layer behind it, and writing those plugins straight
+into the leg would be the second sync the corpus refuses to have. They belong with the rest of
+the routing graph, in [#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892).
+
+What the rig still does not cover is the rest of
+[#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896): no case carries a real
+device, because nothing yet runs one under both engines; the interactive paths have no runner;
+and none of the migration half exists.
 
 ---
 
