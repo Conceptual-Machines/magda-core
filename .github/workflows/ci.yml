@@ -230,7 +230,7 @@ jobs:
     # sccache binary installed, failing every compile; -DVAR= overrides them.
     - name: Configure CMake
       run: |
-        cmake -B build -G Ninja \
+        "$GITHUB_WORKSPACE/scripts/ci-retry.sh" cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
           -DMAGDA_BUILD_TESTS=ON \
@@ -587,7 +587,7 @@ jobs:
 
     - name: Configure CMake (Debug)
       run: |
-        cmake -B build-debug -G Ninja \
+        "$GITHUB_WORKSPACE/scripts/ci-retry.sh" cmake -B build-debug -G Ninja \
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
           -DMAGDA_BUILD_TESTS=ON \
@@ -632,7 +632,7 @@ jobs:
 
     - name: Configure CMake (Release)
       run: |
-        cmake -B build-release -G Ninja \
+        "$GITHUB_WORKSPACE/scripts/ci-retry.sh" cmake -B build-release -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
           -DMAGDA_BUILD_TESTS=OFF \
           ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} \
@@ -788,8 +788,12 @@ jobs:
         git -C $vcpkgRoot cat-file -e "$($env:VCPKG_COMMIT)^{commit}"
         if ($LASTEXITCODE -ne 0) { git -C $vcpkgRoot fetch origin }
         git -C $vcpkgRoot checkout $env:VCPKG_COMMIT
+        # Retried: the bootstrap downloads vcpkg.exe from a GitHub release, and
+        # a WinHttp error there has failed this job for reasons that had nothing
+        # to do with the build. See scripts/ci-retry.ps1.
         if (-not (Test-Path "$vcpkgRoot\vcpkg.exe")) {
-          & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+          & "$env:GITHUB_WORKSPACE\scripts\ci-retry.ps1" `
+            "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
         }
         New-Item -ItemType Directory -Force -Path $binCache | Out-Null
         "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -994,7 +998,7 @@ jobs:
 
     - name: Configure CMake (Debug)
       run: |
-        cmake -B build-debug -G Ninja `
+        & "$env:GITHUB_WORKSPACE/scripts/ci-retry.ps1" cmake -B build-debug -G Ninja `
           -DCMAKE_BUILD_TYPE=Debug `
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON `
           -DMAGDA_BUILD_TESTS=ON `
@@ -1060,7 +1064,7 @@ jobs:
     - name: Configure CMake (Release)
       if: github.ref == 'refs/heads/main' && github.event_name == 'push' && runner.environment == 'self-hosted'
       run: |
-        cmake -B build-release -G Ninja `
+        & "$env:GITHUB_WORKSPACE/scripts/ci-retry.ps1" cmake -B build-release -G Ninja `
           -DCMAKE_BUILD_TYPE=Release `
           -DMAGDA_BUILD_TESTS=OFF `
           ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} `
