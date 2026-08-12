@@ -59,15 +59,29 @@ juce::File scratchDirectory() {
  *
  * A case under calibration is *expected* to fail its comparison, and the
  * membership check is asserted in both directions so that neither a new failure
- * nor a fixed one can happen quietly. An assertion is not a comparison result
- * and the calibration list has no authority over it: a calibrating case that
- * asserts would otherwise meet its expectation by the wrong means, and the
- * invalid graph the watch exists to catch would stay green across a third of the
- * corpus. So assertions are counted on their own, before any of that.
+ * nor a fixed one can happen quietly.
+ *
+ * What the list forgives is precisely one thing: a comparison result that has a
+ * number but not yet a bound with a mechanism behind it. It does not forgive not
+ * having measured. Two outcomes therefore sit outside it entirely, because both
+ * would otherwise meet the expected-failure membership by producing no
+ * comparison at all:
+ *
+ *  - **An assertion.** The engine objecting to its own graph is not a residual,
+ *    and a calibrating case that asserted would look exactly like one that
+ *    failed the way it was forgiven for.
+ *  - **Anything unmeasurable.** A leg that would not render, a proxy that never
+ *    arrived, a fixed-point read-back, a comparator refusal, a length mismatch.
+ *    Every one of them leaves `passed` false with nothing measured, and a
+ *    calibrating case would swallow it.
  */
 struct SuiteComplaints {
     /// Asserted while rendering. Any case, calibrating or not.
     std::vector<std::string> asserted;
+
+    /// Produced no comparison at all. Any case, calibrating or not. Excludes
+    /// the ones that asserted, which are the same failure named better.
+    std::vector<std::string> unmeasurable;
 
     /// Failed its comparison and was not expected to.
     std::vector<std::string> unexpectedFailures;
@@ -76,16 +90,22 @@ struct SuiteComplaints {
     std::vector<std::string> nowHolding;
 
     bool empty() const {
-        return asserted.empty() && unexpectedFailures.empty() && nowHolding.empty();
+        return asserted.empty() && unmeasurable.empty() && unexpectedFailures.empty() &&
+               nowHolding.empty();
     }
 };
 
 SuiteComplaints judgeSuite(const std::set<std::string>& asserted,
+                           const std::set<std::string>& unmeasurable,
                            const std::set<std::string>& failing,
                            const std::set<std::string>& underCalibration) {
     SuiteComplaints complaints;
 
     complaints.asserted.assign(asserted.begin(), asserted.end());
+
+    for (const auto& name : unmeasurable)
+        if (asserted.count(name) == 0)
+            complaints.unmeasurable.push_back(name);
 
     for (const auto& name : failing)
         if (underCalibration.count(name) == 0)
@@ -417,11 +437,15 @@ class NullDiffCorpusTests : public juce::UnitTest {
         };
 
         std::set<std::string> failing;
-        for (const auto& value : reports)
+        std::set<std::string> unmeasurable;
+        for (const auto& value : reports) {
             if (!value.passed)
                 failing.insert(value.name);
+            if (!value.unmeasurable.empty())
+                unmeasurable.insert(value.name);
+        }
 
-        const auto complaints = judgeSuite(asserted, failing, underCalibration);
+        const auto complaints = judgeSuite(asserted, unmeasurable, failing, underCalibration);
 
         const auto join = [](const std::vector<std::string>& names) {
             juce::StringArray parts;
@@ -445,6 +469,14 @@ class NullDiffCorpusTests : public juce::UnitTest {
         expect(complaints.asserted.empty(),
                "asserted while rendering, which is never a result the calibration list forgives: " +
                    join(complaints.asserted));
+
+        // The same rule, for the other way a case can produce no number: the
+        // list forgives a comparison without a bound, never an inability to
+        // measure one.
+        expect(
+            complaints.unmeasurable.empty(),
+            "could not be measured at all, which the calibration list does not forgive either: " +
+                join(complaints.unmeasurable));
 
         expect(complaints.unexpectedFailures.empty(),
                "did not hold: " + join(complaints.unexpectedFailures));
@@ -766,10 +798,29 @@ class NullDiffSuiteRuleTests : public juce::UnitTest {
             // It is failing, which is what the list expects of it, so the
             // membership check is satisfied and says nothing. The assertion has
             // to be what fails the suite, on its own.
-            const auto complaints =
-                judgeSuite({"tempo.auto"}, {"tempo.auto", "warp.audio"}, calibrating);
+            const auto complaints = judgeSuite({"tempo.auto"}, {"tempo.auto"},
+                                               {"tempo.auto", "warp.audio"}, calibrating);
 
             expect(complaints.asserted == std::vector<std::string>{"tempo.auto"});
+            expect(complaints.unmeasurable.empty(),
+                   "an assertion is that same failure, named better");
+            expect(complaints.unexpectedFailures.empty(), "it is on the list, so not unexpected");
+            expect(complaints.nowHolding.empty(), "both are still failing");
+            expect(!complaints.empty(), "the suite has to complain about something");
+        }
+
+        beginTest("A calibrating case that could not be measured still fails the suite");
+        {
+            // A proxy that never arrived, a leg that would not render, a
+            // read-back that was not float, a comparator refusal, a length
+            // mismatch. Every one leaves the case failing with nothing measured,
+            // which is what the expected-failure membership would otherwise
+            // swallow. The list forgives a comparison without a bound, never the
+            // absence of a comparison.
+            const auto complaints =
+                judgeSuite({}, {"tempo.auto"}, {"tempo.auto", "warp.audio"}, calibrating);
+
+            expect(complaints.unmeasurable == std::vector<std::string>{"tempo.auto"});
             expect(complaints.unexpectedFailures.empty(), "it is on the list, so not unexpected");
             expect(complaints.nowHolding.empty(), "both are still failing");
             expect(!complaints.empty(), "the suite has to complain about something");
@@ -777,14 +828,14 @@ class NullDiffSuiteRuleTests : public juce::UnitTest {
 
         beginTest("A calibrating case that merely fails says nothing");
         {
-            const auto complaints = judgeSuite({}, {"tempo.auto", "warp.audio"}, calibrating);
+            const auto complaints = judgeSuite({}, {}, {"tempo.auto", "warp.audio"}, calibrating);
             expect(complaints.empty(), "the run everybody expects");
         }
 
         beginTest("A case that asserts outside the list fails too");
         {
-            const auto complaints =
-                judgeSuite({"mix.pan"}, {"mix.pan", "tempo.auto", "warp.audio"}, calibrating);
+            const auto complaints = judgeSuite(
+                {"mix.pan"}, {"mix.pan"}, {"mix.pan", "tempo.auto", "warp.audio"}, calibrating);
 
             expect(complaints.asserted == std::vector<std::string>{"mix.pan"});
             expect(complaints.unexpectedFailures == std::vector<std::string>{"mix.pan"});
@@ -792,7 +843,7 @@ class NullDiffSuiteRuleTests : public juce::UnitTest {
 
         beginTest("A calibrating case that starts holding has to come off the list");
         {
-            const auto complaints = judgeSuite({}, {"warp.audio"}, calibrating);
+            const auto complaints = judgeSuite({}, {}, {"warp.audio"}, calibrating);
             expect(complaints.nowHolding == std::vector<std::string>{"tempo.auto"});
         }
     }
