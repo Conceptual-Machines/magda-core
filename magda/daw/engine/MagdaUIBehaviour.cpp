@@ -156,8 +156,7 @@ PluginEditorWindow::PluginEditorWindow(tracktion::Plugin& plugin,
             // another title-bar height -- the "ext UI window keeps shrinking on
             // repeated clicks" bug. Only fall back to a default when the editor
             // reports no size of its own.
-            if (getContentComponent()->getWidth() <= 0 ||
-                getContentComponent()->getHeight() <= 0) {
+            if (getContentComponent()->getWidth() <= 0 || getContentComponent()->getHeight() <= 0) {
                 setSize(400, 300);  // Default size for editors with no intrinsic size
             }
 

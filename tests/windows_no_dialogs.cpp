@@ -77,12 +77,11 @@ void printStackTrace() {
                                    GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                                reinterpret_cast<LPCSTR>(address), &module) != 0 &&
             GetModuleFileNameA(module, moduleName, MAX_PATH) != 0) {
-            std::fprintf(stderr, "  %2u: %s+0x%llx\n", i, moduleName,
-                         static_cast<unsigned long long>(
-                             address - reinterpret_cast<DWORD64>(module)));
+            std::fprintf(
+                stderr, "  %2u: %s+0x%llx\n", i, moduleName,
+                static_cast<unsigned long long>(address - reinterpret_cast<DWORD64>(module)));
         } else {
-            std::fprintf(stderr, "  %2u: 0x%llx\n", i,
-                         static_cast<unsigned long long>(address));
+            std::fprintf(stderr, "  %2u: 0x%llx\n", i, static_cast<unsigned long long>(address));
         }
     }
     std::fputs("--- end stack ---\n", stderr);

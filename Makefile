@@ -362,13 +362,20 @@ rebuild: clean debug
 
 # Format code
 .PHONY: format
+# Formatting goes through pre-commit, which pins the clang-format version in
+# .pre-commit-config.yaml. That pin is the point. Running whatever clang-format
+# happens to be on PATH means every developer formats to their own version, the
+# commit hook puts the file back on its way in, and the pair churn forever
+# against each other. One pinned binary, one set of files, used by this target,
+# by the hook and by CI.
 format:
 	@echo "🎨 Formatting code..."
-	@if command -v clang-format >/dev/null 2>&1; then \
-		find magda tests \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) | xargs clang-format -i; \
+	@if command -v pre-commit >/dev/null 2>&1; then \
+		pre-commit run clang-format --all-files || true; \
 		echo "✅ Code formatting complete"; \
 	else \
-		echo "❌ clang-format not found. Please install it first."; \
+		echo "❌ pre-commit not found. Install it with: pip install pre-commit"; \
+		exit 1; \
 	fi
 
 # Lint code with clang-tidy (analyze all source files)

@@ -7,13 +7,11 @@
 #include <memory>
 #include <unordered_map>
 
-
 namespace magda::daw::audio {
 class IFaustEditorModel;
 }
 
 namespace magda::daw::ui {
-
 
 /**
  * @brief Base class for per-DSP custom views inside FaustUI.

@@ -297,31 +297,21 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-apt-clang-
 
-    - name: Install clang-format
-      run: |
-        # Hosted runners occasionally ship a stale Chrome apt source that can
-        # fail unrelated package installs with a hash mismatch.
-        sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google.list
-        sudo apt-get clean
-        sudo rm -rf /var/lib/apt/lists/*
-        sudo apt-get update -o Acquire::Retries=3
-        sudo apt-get install -y clang-format
+    # Formatting is checked with the clang-format version pinned in
+    # .pre-commit-config.yaml, which is the same one the commit hook and
+    # 'make format' now use. Installing the runner's own clang-format made this
+    # job a third opinion: a different version over a narrower set of
+    # directories than either of the other two, so it passed files the hook
+    # would rewrite and never looked at magda/engine or magda/music at all.
+    - name: Install pre-commit
+      run: pipx install pre-commit
 
     - name: Check code formatting
       run: |
-        echo "Checking code formatting with clang-format..."
-        echo "Running: find + clang-format --dry-run --Werror"
-
-        # Run clang-format check and capture output
-        # --Werror makes formatting issues return non-zero exit code
-        if find magda/daw magda/agents tests -name "*.cpp" -o -name "*.hpp" -o -name "*.h" 2>/dev/null | \
-          xargs clang-format --dry-run --Werror 2>&1 | tee format-check.log; then
-          echo "✅ Format check passed!"
+        echo "Checking code formatting with the pinned clang-format..."
+        if pre-commit run clang-format --all-files --show-diff-on-failure; then
+          echo "Format check passed!"
         else
-          echo ""
-          echo "❌ Format check found issues"
-          echo "Files with formatting problems:"
-          cat format-check.log
           echo ""
           echo "To fix these issues, run: make format"
           exit 1

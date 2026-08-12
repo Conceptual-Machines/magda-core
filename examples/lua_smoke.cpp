@@ -8,19 +8,19 @@
 // to end without a real DAW. Reads return seeded mock state, writes log
 // what the binding called. Useful for #29 and #30 verification.
 
-#include "magda/scripting/LuaRuntime.hpp"
-#include "magda/scripting/MagdaApiLuaBindings.hpp"
-#include "tests/MockMagdaApi.hpp"
-
 #include <juce_core/juce_core.h>
 
 #include <iostream>
 #include <string>
 
+#include "magda/scripting/LuaRuntime.hpp"
+#include "magda/scripting/MagdaApiLuaBindings.hpp"
+#include "tests/MockMagdaApi.hpp"
+
 namespace {
 
 class StdoutLogger : public juce::Logger {
-public:
+  public:
     void logMessage(const juce::String& message) override {
         std::cout << message.toRawUTF8() << '\n';
     }
@@ -67,15 +67,14 @@ int main(int argc, char** argv) {
         return ok ? 0 : 1;
     }
 
-    std::cout
-        << "MAGDA Lua smoke REPL — Lua 5.4 with sandbox + magda.* bindings.\n"
-           "Mock DAW state pre-seeded: 2 tracks (Drums, Bass), 1 active session clip.\n"
-           "  for _, t in ipairs(magda.tracks.list()) do print(t.id, t.name) end\n"
-           "  magda.tracks.set_volume(1, 0.5)\n"
-           "  print(magda.selection.track())\n"
-           "  print(magda.project.info().tempo)\n"
-           "  magda.session.launch_clip(101)\n"
-           "  Blank line or EOF to quit.\n";
+    std::cout << "MAGDA Lua smoke REPL — Lua 5.4 with sandbox + magda.* bindings.\n"
+                 "Mock DAW state pre-seeded: 2 tracks (Drums, Bass), 1 active session clip.\n"
+                 "  for _, t in ipairs(magda.tracks.list()) do print(t.id, t.name) end\n"
+                 "  magda.tracks.set_volume(1, 0.5)\n"
+                 "  print(magda.selection.track())\n"
+                 "  print(magda.project.info().tempo)\n"
+                 "  magda.session.launch_clip(101)\n"
+                 "  Blank line or EOF to quit.\n";
 
     std::string line;
     for (;;) {
