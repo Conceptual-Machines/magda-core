@@ -707,6 +707,13 @@ jobs:
           GH_TOKEN: ${{ secrets.RUNNER_STATUS_PAT }}
         run: |
           set -euo pipefail
+
+          # TEMPORARY: forced to windows-latest while the magda-luca machine is
+          # not reachable. Delete this block to restore the pick below.
+          echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
+          echo "Pinned to windows-latest: self-hosted selection is temporarily disabled"
+          exit 0
+
           if [ -z "${GH_TOKEN:-}" ]; then
             echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
             echo "No RUNNER_STATUS_PAT available in this context (e.g. Dependabot PRs do not see repo secrets); falling back to windows-latest"
