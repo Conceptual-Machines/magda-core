@@ -66,12 +66,20 @@ juce::File scratchDirectory() {
  */
 class AssertionWatch final : public juce::Logger {
   public:
-    AssertionWatch() : previous_(juce::Logger::getCurrentLogger()) {
-        juce::Logger::setCurrentLogger(this);
-    }
-
-    ~AssertionWatch() override {
-        juce::Logger::setCurrentLogger(previous_);
+    /// The one watch, installed on first use and never taken down.
+    ///
+    /// Not a scoped object, and the difference matters. juce::Logger keeps the
+    /// current logger in an unsynchronised raw pointer: a thread reads it, is
+    /// descheduled, and calls through it whenever it next runs. A destructor
+    /// that restored the previous logger would therefore be handing out a
+    /// dangling pointer to whichever engine or pool thread was mid-read, and no
+    /// lock on this side closes that window because the read happens inside
+    /// JUCE. So the watch outlives the process. It costs one object in a test
+    /// binary, and it is the only way to be sure a callback never lands on a
+    /// destroyed logger.
+    static AssertionWatch& instance() {
+        static auto* watch = new AssertionWatch();
+        return *watch;
     }
 
     /// What fired since the last call, and forgets it.
@@ -83,6 +91,14 @@ class AssertionWatch final : public juce::Logger {
     }
 
   private:
+    AssertionWatch() {
+        juce::Logger::setCurrentLogger(this);
+    }
+
+    // Never runs. Declared so that nobody can stack-allocate one and reintroduce
+    // the teardown this type exists to avoid.
+    ~AssertionWatch() override = default;
+
     void logMessage(const juce::String& message) override {
         // The exact prefix JUCE writes, not a substring match. This logger is
         // the current one while the corpus runs, so the runner's own reporting
@@ -101,14 +117,11 @@ class AssertionWatch final : public juce::Logger {
         }
 
         // Everything still reaches the console. A watch that swallowed the log
-        // would take away the one thing that says which line asserted. Written
-        // here rather than forwarded to the logger that was installed before,
-        // because Logger::logMessage is protected and only the owner of a logger
-        // may call it; the default logger does exactly this.
+        // would take away the one thing that says which line asserted, and this
+        // is what JUCE's own default logger does with it.
         std::cout << message << std::endl;
     }
 
-    juce::Logger* previous_ = nullptr;
     std::mutex mutex_;
     std::vector<juce::String> assertions_;
 };
@@ -341,9 +354,11 @@ class NullDiffCorpusTests : public juce::UnitTest {
         const auto corpus = sharedCorpus(scratchDirectory());
         std::vector<CaseReport> reports;
 
-        // Installed for the whole walk and read per case, so an assertion is
-        // attributed to the case that provoked it rather than to the run.
-        AssertionWatch watch;
+        // Read per case, so an assertion is attributed to the case that
+        // provoked it rather than to the run. Taken once before the walk begins
+        // to drop anything logged on the way in, which belongs to whatever ran
+        // before this test rather than to its first case.
+        auto& watch = AssertionWatch::instance();
         watch.take();
 
         for (const auto& value : corpus) {
