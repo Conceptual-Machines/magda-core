@@ -536,9 +536,10 @@ there while its session path applies it, which is a gap in the sync layer rather
 Six of the clip slices were judged by tests written beside them, and a test asserts what its
 author believed the rule was. The corpus
 ([#2040](https://github.com/Conceptual-Machines/magda-core/issues/2040)) is the one thing here
-that cannot: twenty-one projects, each built as model values and handed to both engines, neither
-of which gets a say in what the other produces. It lives in `tests/NullDiff*` and runs in
-`magda_juce_tests`, because the incumbent leg is a `te::Edit`.
+that cannot: twenty-eight projects, each built as model values and handed to both engines,
+neither of which gets a say in what the other produces. It lives in `tests/NullDiff*` and runs in
+`magda_juce_tests`, because the incumbent leg is a `te::Edit`. The canonical report it prints
+names the count, so `cases=28` at the top of a run is the figure this paragraph has to match.
 
 **Nothing is golden.** A checked-in reference render would freeze the fork at the moment it was
 recorded, so the day the fork changes the corpus would report an engine that broke. Both legs
@@ -560,7 +561,7 @@ them changes, a case fails.
 **The maps are compared as functions, not through a render.** `TempoMap::beatToTime` against
 `te::TempoSequence` and `WarpMap::sourceSecondsAt` against `WarpTimeManager`, sampled densely and
 asserted to the microsecond, before any case renders. A mapping disagreement then fails once
-with a number instead of twenty-one times as a waveform.
+with a number instead of once per case as a waveform.
 
 The corpus found five engine bugs on its first runs, all of them invisible to the slice tests
 that passed: an offline render that provisioned no readers and produced silence, a launch ramp
@@ -609,10 +610,17 @@ than a different verdict.
 **The mixer** is where the corpus first has more than one track. `resolvePlanValues` implements
 the fader law, the linear pan law, mute inheritance and solo through destination routing, and
 until [#2075](https://github.com/Conceptual-Machines/magda-core/issues/2075) none of it had been
-compared against the incumbent at all. Six cases now do: summing, the fader across its range
-including silence, the pan law at its ends, mute, solo, and the master's own fader and pan. The
-incumbent leg drives them through the same four calls `AudioBridge::trackPropertyChanged`
-makes.
+compared against the incumbent at all. Seven `mix.*` cases now do: summing, the fader across its
+range, the bottom of that range on its own, the pan law at its ends, mute, solo, and the master's
+own fader and pan. The incumbent leg drives them through the same four calls
+`AudioBridge::trackPropertyChanged` makes.
+
+None of them has more than three tracks, and that is a constraint rather than a preference. Four
+audio tracks in one Edit collide in the fork's node-identity hash, so the graph's uniqueness
+assertion fires; it reproduces on four tracks carrying one impulse clip each, which is nothing to
+do with the mixer. The runner refuses to certify a case that provoked an assertion, so this is a
+failure rather than a quiet pass, and the collision is
+[#2085](https://github.com/Conceptual-Machines/magda-core/issues/2085).
 
 Sends are the one routing dimension left out, and not because they are hard to model: the
 compiler emits `SendTap` pre and post fader and the value layer resolves the levels already.
