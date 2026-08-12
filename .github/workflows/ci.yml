@@ -542,8 +542,9 @@ jobs:
 
           mkdir -p "$work/extracted"
           case "$archive" in
-            *.zip) unzip -q "$work/$archive" -d "$work/extracted" ;;
-            *)     tar -xzf "$work/$archive" -C "$work/extracted" ;;
+            *.zip)    unzip -q "$work/$archive" -d "$work/extracted" ;;
+            *.tar.xz) tar -xJf "$work/$archive" -C "$work/extracted" ;;
+            *)        tar -xzf "$work/$archive" -C "$work/extracted" ;;
           esac
 
           # FetchContent hands its caller what is inside the archive rather
@@ -583,6 +584,40 @@ jobs:
           https://www.sqlite.org/2026/sqlite-amalgamation-3530100.zip \
           && echo "sqlite_dir=$SQLITE_DIR" >> "$GITHUB_OUTPUT"
 
+        # wasmtime, and it is here for a sharper reason than saving a download.
+        #
+        # CMake's own downloader fails intermittently on this asset from this
+        # machine: file(DOWNLOAD) gets "Server returned nothing (no headers, no
+        # data)" following GitHub's redirect to release-assets.githubusercontent
+        # .com, measured at roughly one attempt in five and much worse in bursts,
+        # while curl fetches the same URL every time from the same shell a second
+        # later. Retrying configure does not help when the burst outlasts the
+        # attempts, and it cost this branch three red macOS runs.
+        #
+        # So the archive comes down through curl, which is reliable here, and
+        # CMake is handed the unpacked tree instead of a URL.
+        WASMTIME_VERSION=v47.0.2
+        WASMTIME_ASSET=aarch64-macos-c-api
+        WASMTIME_DIR="$CACHE_ROOT/wasmtime-$WASMTIME_VERSION-$WASMTIME_ASSET"
+
+        seed "$WASMTIME_DIR" \
+          c013fe243fd6e13cd63f13dcfa88c3aff5664e356181a2e1bda2c3bf8381fde0 \
+          "wasmtime-$WASMTIME_VERSION-$WASMTIME_ASSET.tar.xz" \
+          "https://github.com/bytecodealliance/wasmtime/releases/download/$WASMTIME_VERSION/wasmtime-$WASMTIME_VERSION-$WASMTIME_ASSET.tar.xz" \
+          && echo "wasmtime_dir=$WASMTIME_DIR" >> "$GITHUB_OUTPUT"
+
+        # The ONNX Runtime, for the same reason: it is the other release asset
+        # CMake fetches on this runner, and it failed the same way on the same
+        # afternoon.
+        ORT_VERSION=1.26.0
+        ORT_DIR="$CACHE_ROOT/onnxruntime-osx-arm64-$ORT_VERSION"
+
+        seed "$ORT_DIR" \
+          7a1280bbb1701ea514f71828765237e7896e0f2e1cd332f1f70dbd5c3e33aca3 \
+          "onnxruntime-osx-arm64-$ORT_VERSION.tgz" \
+          "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/onnxruntime-osx-arm64-$ORT_VERSION.tgz" \
+          && echo "onnxruntime_dir=$ORT_DIR" >> "$GITHUB_OUTPUT"
+
         exit 0
 
     - name: Configure CMake (Debug)
@@ -593,6 +628,8 @@ jobs:
           -DMAGDA_BUILD_TESTS=ON \
           ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} \
           ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.wasmtime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_WASMTIME={0}', steps.deps-cache.outputs.wasmtime_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.onnxruntime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_ONNXRUNTIME={0}', steps.deps-cache.outputs.onnxruntime_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.faust_debug_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.faust_debug_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.mutable_debug_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.mutable_debug_dir) || '' }}
 
@@ -637,6 +674,8 @@ jobs:
           -DMAGDA_BUILD_TESTS=OFF \
           ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} \
           ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.wasmtime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_WASMTIME={0}', steps.deps-cache.outputs.wasmtime_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.onnxruntime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_ONNXRUNTIME={0}', steps.deps-cache.outputs.onnxruntime_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.faust_release_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.faust_release_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.mutable_release_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.mutable_release_dir) || '' }}
 
