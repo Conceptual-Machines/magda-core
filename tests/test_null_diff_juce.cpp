@@ -624,12 +624,67 @@ class NullDiffCorpusTests : public juce::UnitTest {
                 std::llround(value.incumbentNoteEndEarlySeconds * value.sampleRate));
 
             report.hasMidi = true;
-            report.midi = compareMidi(native.midi, incumbent.midi, options);
-            midiHeld = report.midi.passed();
 
-            if (!midiHeld)
-                for (const auto& problem : report.midi.problems)
-                    logMessage("  " + juce::String(value.name) + ": " + problem);
+            // Start true and narrow, since the printed line is the conjunction
+            // over the tracks. The struct's own defaults are false, which is the
+            // right answer for a comparison nobody ran and the wrong start for
+            // one being accumulated.
+            report.midi.notesMatch = true;
+            report.midi.controllersMatch = true;
+            report.midi.otherMessagesMatch = true;
+
+            // Compared per track, not as one aggregate. A MidiEvent carries
+            // nothing but its bytes and its position, so two instrument tracks
+            // that received each other's notes produce the same flat stream as
+            // two that received their own: comparing the aggregate would certify
+            // a capture landing on the wrong track. The report still prints one
+            // note count, because that is what a reader wants; the judgement is
+            // made where the identity survives.
+            std::set<TrackId> tracks;
+            for (const auto& [trackId, stream] : native.midiByTrack)
+                tracks.insert(trackId);
+            for (const auto& [trackId, stream] : incumbent.midiByTrack)
+                tracks.insert(trackId);
+
+            midiHeld = !tracks.empty();
+
+            for (const auto trackId : tracks) {
+                const auto nativeStream = native.midiByTrack.find(trackId);
+                const auto incumbentStream = incumbent.midiByTrack.find(trackId);
+
+                // A track one leg captured and the other did not is the failure
+                // this split exists to see, and comparing against an empty
+                // stream would report it as every note missing rather than as
+                // the capture that was never placed.
+                if (nativeStream == native.midiByTrack.end() ||
+                    incumbentStream == incumbent.midiByTrack.end()) {
+                    midiHeld = false;
+                    logMessage("  " + juce::String(value.name) + ": track " +
+                               juce::String(trackId) + " was captured by " +
+                               (nativeStream == native.midiByTrack.end() ? "the incumbent"
+                                                                         : "the engine") +
+                               " only");
+                    continue;
+                }
+
+                const auto compared =
+                    compareMidi(nativeStream->second, incumbentStream->second, options);
+
+                // Accumulated so the printed line covers the whole project.
+                report.midi.notesCompared += compared.notesCompared;
+                report.midi.notesMatch = report.midi.notesMatch && compared.notesMatch;
+                report.midi.controllersMatch =
+                    report.midi.controllersMatch && compared.controllersMatch;
+                report.midi.otherMessagesMatch =
+                    report.midi.otherMessagesMatch && compared.otherMessagesMatch;
+
+                if (!compared.passed()) {
+                    midiHeld = false;
+                    for (const auto& problem : compared.problems)
+                        logMessage("  " + juce::String(value.name) + ": track " +
+                                   juce::String(trackId) + ": " + problem);
+                }
+            }
         }
 
         if (value.tier == AudioTier::None) {

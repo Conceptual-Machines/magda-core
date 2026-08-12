@@ -301,7 +301,9 @@ IncumbentRender renderIncumbent(const Case& value) {
     // Which tracks those are is the compiler's own answer (chainConsumesMidi)
     // rather than a second opinion written here. Deciding it separately is how
     // the two would drift the first time a device type was added.
-    std::vector<MidiCapturePlugin*> captures;
+    // Paired with the track each stands on, so the streams can be compared where
+    // they were received rather than only in aggregate.
+    std::vector<std::pair<TrackId, MidiCapturePlugin*>> captures;
     if (value.capturesMidi()) {
         if (!captureDeviceRegistered) {
             result.failure = "the capture device could not be registered";
@@ -323,7 +325,7 @@ IncumbentRender renderIncumbent(const Case& value) {
             auto plugin = edit->getPluginCache().createNewPlugin(state);
             if (auto* capture = dynamic_cast<MidiCapturePlugin*>(plugin.get())) {
                 audioTrack->pluginList.insertPlugin(plugin, 0, nullptr);
-                captures.push_back(capture);
+                captures.emplace_back(track.id, capture);
             }
         }
 
@@ -436,8 +438,11 @@ IncumbentRender renderIncumbent(const Case& value) {
     // aggregates its own. Sorted rather than concatenated: two instrument tracks
     // would otherwise hand over one track's whole timeline followed by the
     // other's, and the comparison reads a stream as a function of time.
-    for (const auto* capture : captures)
+    for (const auto& [trackId, capture] : captures) {
+        auto& perTrack = result.midiByTrack[trackId];
+        perTrack.insert(perTrack.end(), capture->captured.begin(), capture->captured.end());
         result.midi.insert(result.midi.end(), capture->captured.begin(), capture->captured.end());
+    }
 
     std::stable_sort(result.midi.begin(), result.midi.end(),
                      [](const MidiEvent& a, const MidiEvent& b) { return a.sample < b.sample; });

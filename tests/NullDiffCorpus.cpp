@@ -794,12 +794,14 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         // the point of the pair: one capture read where two exist compares half
         // a project against all of it.
         //
-        // The two instruments play different pitches at different instants, so a
-        // stream attributed to the wrong track, or one of the two dropped, is a
-        // finding rather than a rearrangement nobody can see. Both go out on
-        // channel 1, because a note carries no channel of its own in the model
-        // and the aggregate is keyed on channel and pitch: an octave apart is
-        // what keeps them apart.
+        // The two instruments play an octave apart at staggered instants, which
+        // is what makes a dropped stream visible. It is not what makes a
+        // misattributed one visible: a MidiEvent carries nothing but its bytes
+        // and its position, so two synths that received each other's notes
+        // produce the same flat stream as two that received their own. The
+        // streams are therefore compared per track, which is where that identity
+        // still exists, and the pitches are only there to make the failure
+        // readable when it happens.
         auto value = newMixCase("project.mixed", "an audio track beside two instrument tracks",
                                 {mixTrack(1, "Audio"), instrumentTrackOn(2, 901, "Synth A"),
                                  instrumentTrackOn(3, 902, "Synth B")});

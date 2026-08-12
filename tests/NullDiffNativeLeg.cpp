@@ -2,6 +2,7 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <algorithm>
 #include <map>
 #include <memory>
 
@@ -203,6 +204,11 @@ NativeRender renderNative(const Case& value) {
     std::map<TrackId, std::unique_ptr<ClipMidiSource>> midiSources;
     std::map<DeviceId, std::unique_ptr<MidiCapture>> captures;
 
+    // Which track each capture stands on, so the streams can be compared where
+    // they were received rather than only in aggregate. The plan's own op key
+    // is the answer: a Device op names both.
+    std::map<DeviceId, TrackId> captureTracks;
+
     PlanBindings bindings;
 
     for (const auto& op : plan.ops) {
@@ -228,6 +234,7 @@ NativeRender renderNative(const Case& value) {
                 auto device = std::make_unique<MidiCapture>(value.sampleRate);
                 device->prepare(context);
                 bindings.devices[op.key.deviceId] = device.get();
+                captureTracks[op.key.deviceId] = op.key.trackId;
                 captures[op.key.deviceId] = std::move(device);
                 break;
             }
@@ -289,9 +296,18 @@ NativeRender renderNative(const Case& value) {
     for (const auto& [trackId, source] : midiSources)
         result.droppedMidiEvents += source->droppedEvents();
 
-    for (const auto& [deviceId, capture] : captures)
-        for (const auto& event : capture->captured)
+    for (const auto& [deviceId, capture] : captures) {
+        auto& perTrack = result.midiByTrack[captureTracks[deviceId]];
+        for (const auto& event : capture->captured) {
+            perTrack.push_back(event);
             result.midi.push_back(event);
+        }
+    }
+
+    // The flat stream is what the report prints, so it reads as a function of
+    // time rather than as one track's timeline followed by another's.
+    std::stable_sort(result.midi.begin(), result.midi.end(),
+                     [](const MidiEvent& a, const MidiEvent& b) { return a.sample < b.sample; });
 
     return result;
 }

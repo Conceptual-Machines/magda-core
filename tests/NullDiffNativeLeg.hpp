@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -31,7 +32,19 @@ namespace magda::nulldiff {
 
 struct NativeRender {
     juce::AudioBuffer<float> audio;
+
+    /// Every capture's events, in timeline order. What the report prints.
     MidiStream midi;
+
+    /// The same events, kept apart by the track that received them.
+    ///
+    /// A flat stream cannot answer the question a project with two instruments
+    /// asks. A MidiEvent carries no identity beyond its bytes and its position,
+    /// so two synths that received each other's notes produce the same aggregate
+    /// as two that received their own: comparing the flat stream would certify
+    /// the capture landing on the wrong track. Compared per track, that is the
+    /// finding it should be.
+    std::map<TrackId, MidiStream> midiByTrack;
 
     /// Set when the case could not be rendered at all, which is never reported
     /// as a residual.
