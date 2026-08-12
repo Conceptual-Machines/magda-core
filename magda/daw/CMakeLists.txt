@@ -682,6 +682,18 @@ target_compile_definitions(magda_daw
     # JUCE test exe fails to link it. Off for release (MAGDA_BUILD_TESTS=OFF), so
     # the hook is never shipped.
     $<$<BOOL:${MAGDA_BUILD_TESTS}>:MAGDA_ENABLE_TEST_HOOKS=1>
+    # Route jassert through juce::Logger rather than straight to stderr, so a
+    # test can read the engine's own assertions as a result instead of as
+    # console noise. It has to be set here because this is where Tracktion is
+    # compiled, and an assertion's logging is decided where the macro expands,
+    # not where the test that wants to see it lives.
+    #
+    # What it buys: an assertion is not fatal, so a graph Tracktion objects to
+    # renders anyway and produces a buffer that compares perfectly well. The
+    # null-diff runner watches per case and refuses to certify one that
+    # provoked an assertion. Test builds only, on the same gate as the hook
+    # above, so nothing about a shipping build changes.
+    $<$<BOOL:${MAGDA_BUILD_TESTS}>:JUCE_LOG_ASSERTIONS=1>
 )
 
 target_link_libraries(magda_daw_app

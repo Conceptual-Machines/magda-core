@@ -525,6 +525,10 @@ endif()
 
 target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
     MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1
+    # JUCE_LOG_ASSERTIONS is set on magda_daw instead, gated on MAGDA_BUILD_TESTS:
+    # that is where Tracktion is compiled, and an assertion's logging is decided
+    # where the macro expands rather than where the test that wants to read it
+    # lives. Setting it here reaches nothing.
     # Frozen device parameter order (#1887) lives in the source tree so an
     # intentional change shows up as a reviewable diff.
     MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt")

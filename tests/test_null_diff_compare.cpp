@@ -202,6 +202,25 @@ TEST_CASE("The shift search finds a known shift", "[nulldiff][compare][shift]") 
     CHECK(result.withinFloor());
 }
 
+TEST_CASE("Two identical renders are not offset from each other", "[nulldiff][compare][shift]") {
+    // The offset is measured on every audio case and printed whether or not it
+    // is applied, so a number here that is not zero reads, on a case that nulled
+    // bit for bit, as a case that is thirty samples out. Periodic material is
+    // where a search can talk itself into one: a square wave correlates with
+    // itself at more lags than nature intended.
+    MaterialSpec spec;
+    spec.kind = MaterialKind::Steps;
+    spec.sampleRate = kSampleRate;
+    spec.durationSeconds = 2.0;
+    spec.intervalSeconds = 0.5;
+    const auto square = renderMaterial(spec);
+
+    const auto estimate = estimateShift(square, square, 256);
+
+    CHECK(estimate.samples == 0);
+    CHECK(std::abs(estimate.fractionalSamples) < 1.0e-6);
+}
+
 TEST_CASE("The shift search declines a pair that differs in content",
           "[nulldiff][compare][shift]") {
     // A comparator that slides until something matches will always find

@@ -49,6 +49,59 @@ juce::File scratchDirectory() {
     return root;
 }
 
+/**
+ * @brief Counts the engine's own assertions while a case runs.
+ *
+ * A jassert is not fatal, so an invalid graph renders anyway and produces a
+ * buffer that compares perfectly well. Tracktion asserting that two of its nodes
+ * share an identity, and the corpus then certifying that case as a null, is the
+ * worst pairing available: a project the engine itself objects to, signed off as
+ * parity.
+ *
+ * So the assertions are read as a result rather than as console noise. JUCE
+ * routes them through Logger::writeToLog in a debug build, which is what makes
+ * this possible at all; a release build asserts nothing and this counts nothing,
+ * which is the right answer for a build where the claim was never made.
+ */
+class AssertionWatch final : public juce::Logger {
+  public:
+    AssertionWatch() : previous_(juce::Logger::getCurrentLogger()) {
+        juce::Logger::setCurrentLogger(this);
+    }
+
+    ~AssertionWatch() override {
+        juce::Logger::setCurrentLogger(previous_);
+    }
+
+    /// What fired since the last call, and forgets it.
+    std::vector<juce::String> take() {
+        auto taken = std::move(assertions_);
+        assertions_.clear();
+        return taken;
+    }
+
+  private:
+    void logMessage(const juce::String& message) override {
+        // The exact prefix JUCE writes, not a substring match. This logger is
+        // the current one while the corpus runs, so the runner's own reporting
+        // passes through it too: a substring match reads the line that says a
+        // case asserted as another assertion, and every case after the first
+        // inherits the one before it.
+        if (message.startsWith("JUCE Assertion failure"))
+            assertions_.push_back(message);
+
+        // Everything still reaches the console. A watch that swallowed the log
+        // would take away the one thing that says which line asserted. Written
+        // here rather than forwarded to the logger that was installed before,
+        // because Logger::logMessage is protected and only the owner of a logger
+        // may call it; the default logger does exactly this.
+        std::cout << message << std::endl;
+    }
+
+    juce::Logger* previous_ = nullptr;
+    std::vector<juce::String> assertions_;
+};
+
 /// Where the artefacts of a failing case go. A parity failure is diagnosed by
 /// listening and by looking, and a test that only says "expected 1e-12, got
 /// 0.3" makes that the reader's problem.
@@ -277,8 +330,31 @@ class NullDiffCorpusTests : public juce::UnitTest {
         const auto corpus = sharedCorpus(scratchDirectory());
         std::vector<CaseReport> reports;
 
-        for (const auto& value : corpus)
-            reports.push_back(run(value));
+        // Installed for the whole walk and read per case, so an assertion is
+        // attributed to the case that provoked it rather than to the run.
+        AssertionWatch watch;
+        watch.take();
+
+        for (const auto& value : corpus) {
+            auto report = run(value);
+
+            // An engine that objects to its own graph has not produced a render
+            // worth comparing, whatever the residual says. Reported as
+            // unmeasurable rather than as a residual, for the same reason a
+            // proxy that never arrived is: the number would be about something
+            // other than parity, and it would look like a parity failure.
+            if (auto fired = watch.take(); !fired.empty()) {
+                report.passed = false;
+                report.unmeasurable =
+                    "the engine asserted while rendering: " + fired.front().toStdString() +
+                    (fired.size() > 1 ? " (and " + std::to_string(fired.size() - 1) + " more)"
+                                      : "");
+                for (const auto& assertion : fired)
+                    logMessage("  " + juce::String(value.name) + ": " + assertion);
+            }
+
+            reports.push_back(std::move(report));
+        }
 
         // Printed on every run rather than only on failure. Numbers that move
         // are the point: a corpus that stays quiet cannot show a residual

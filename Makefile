@@ -376,11 +376,21 @@ rebuild: clean debug
 # is this, and not a bug.
 format:
 	@echo "🎨 Formatting code..."
-	@if command -v pre-commit >/dev/null 2>&1; then \
-		pre-commit run clang-format --all-files || true; \
+	@if ! command -v pre-commit >/dev/null 2>&1; then \
+		echo "❌ pre-commit not found. Install it with: pip install pre-commit"; \
+		exit 1; \
+	fi
+	@# Twice on purpose. The first pass rewrites files and exits non-zero for
+	@# saying so, which is why its status cannot be trusted; the second has
+	@# nothing left to rewrite, so anything but success there is a real failure -
+	@# a broken hook environment, a download that did not arrive, a config that
+	@# does not parse. Swallowing the first status alone would report success for
+	@# all of those while formatting nothing.
+	@pre-commit run clang-format --all-files >/dev/null 2>&1 || true
+	@if pre-commit run clang-format --all-files; then \
 		echo "✅ Code formatting complete"; \
 	else \
-		echo "❌ pre-commit not found. Install it with: pip install pre-commit"; \
+		echo "❌ Formatting failed for a reason other than rewriting files"; \
 		exit 1; \
 	fi
 

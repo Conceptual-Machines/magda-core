@@ -37,4 +37,20 @@ struct CompileOptions {
 RenderPlan compileRenderPlan(const std::vector<TrackInfo>& tracks, const TrackInfo& master,
                              const CompileOptions& options = {});
 
+/**
+ * @brief Whether anything the compiler will emit for @p track consumes MIDI.
+ *
+ * The rule behind "no consumer, no source": a track whose live chain reads no
+ * MIDI gets no ClipMidi op, because nothing downstream would read it. Bypass and
+ * chain power are part of the answer, so a bypassed instrument does not keep a
+ * MIDI source alive with nothing to feed.
+ *
+ * Exposed because the null-diff harness has to put its capture device on exactly
+ * the tracks this returns true for. Deciding that separately would be a second
+ * opinion about what consumes MIDI, and the two would drift the first time a
+ * device type was added: the incumbent leg would capture on tracks the plan
+ * emits nothing for, or miss ones it does.
+ */
+bool chainConsumesMidi(const TrackInfo& track);
+
 }  // namespace magda::engine

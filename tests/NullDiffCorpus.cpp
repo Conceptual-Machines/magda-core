@@ -139,13 +139,17 @@ MaterialSpec impulses(double intervalSeconds = 0.25) {
     return spec;
 }
 
-MaterialSpec steps() {
+MaterialSpec stepsEvery(double intervalSeconds) {
     MaterialSpec spec;
     spec.kind = MaterialKind::Steps;
     spec.sampleRate = kRate;
     spec.durationSeconds = kSourceSeconds;
-    spec.intervalSeconds = 0.5;
+    spec.intervalSeconds = intervalSeconds;
     return spec;
+}
+
+MaterialSpec steps() {
+    return stepsEvery(0.5);
 }
 
 MaterialSpec tone(double sampleRate = kRate, double frequency = 220.0) {
@@ -584,6 +588,27 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     // paths, so the material is impulses and steps and the ordinary floor
     // applies: a fader law that differs in the fourth decimal shows up.
     //
+    // **Every track plays something different**, and that is load bearing rather
+    // than decorative. Give two tracks the same waveform at the same instant and
+    // the case stops being able to tell which track a value was applied to:
+    // swapping the fader values between two of them leaves the sum identical and
+    // the case passes with the mapping wrong. It also makes the two renders
+    // ambiguous to the shift search, which then reports an offset that is really
+    // the material repeating. Tracktion has its own reason to object: a node's
+    // identity is a hash of what it plays and where, so two tracks playing the
+    // same file at the same position produce colliding node IDs and trip the
+    // graph's uniqueness assertion.
+    //
+    // No case here has more than three tracks, and that is a constraint rather
+    // than a preference. Four audio tracks in one Edit collide in the fork's
+    // node-identity hash: two ArrangerLauncherSwitchingNodes come out with the
+    // same id and the graph's uniqueness assertion fires. It reproduces on four
+    // tracks carrying one impulse clip each, so it is nothing to do with what
+    // these cases play or what their faders are set to. The runner refuses to
+    // certify a case that provoked an assertion, so this would be a failure
+    // rather than a quiet pass; the cases stay under the limit and the collision
+    // is #2085.
+    //
     // Sends are absent on purpose. The native leg could render one today, and
     // the incumbent's live on te::AuxSendPlugin instances that PluginManagerSync
     // creates from a PluginManager and the device layer behind it. Writing those
@@ -613,20 +638,20 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     {
         // The fader across its range, which is a slider position rather than a
         // gain: unity, six down, and the top of the range, which is six up
-        // rather than twice. Silence is in here too, and it is the interesting
-        // one: the position floors at -100 dB, so whether that is zero or merely
-        // very quiet is a thing the two engines can disagree about at a level
-        // the floor would catch.
-        auto value = newMixCase(
-            "mix.volume", "the fader law: unity, attenuation, the top of the range, and silence",
-            {mixTrack(1, "Unity"), mixTrack(2, "Down"), mixTrack(3, "Up"), mixTrack(4, "Silent")});
+        // rather than twice. The law is a curve, so points on it have to be
+        // taken rather than derived, which is why this is three cases' worth of
+        // track and mix.pan is not.
+        auto value =
+            newMixCase("mix.volume", "the fader law: unity, attenuation and the top of the range",
+                       {mixTrack(1, "Unity"), mixTrack(2, "Down"), mixTrack(3, "Up")});
 
-        const std::array<float, 4> volumes{1.0f, 0.5f, 2.0f, 0.0f};
-        for (auto index = 0; index < 4; ++index) {
+        const std::array<float, 3> volumes{1.0f, 0.5f, 2.0f};
+        for (auto index = 0; index < 3; ++index) {
             value.tracks[static_cast<std::size_t>(index)].volume =
                 volumes[static_cast<std::size_t>(index)];
 
-            const auto source = writeSource(scratchDirectory, "vol" + juce::String(index), steps());
+            const auto source = writeSource(scratchDirectory, "vol" + juce::String(index),
+                                            stepsEvery(0.5 + 0.125 * index));
             value.sources.push_back(source);
             value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
                                               static_cast<ClipId>(210 + index), 0.0, 4.0, source));
@@ -641,19 +666,42 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         // centre is unity: a pad through a constant-power law would sit 3 dB
         // quieter than the same signal on a track, and this is the case that
         // would say so.
+        // Three points rather than four: the law is linear in the pan position,
+        // so its ends and its centre determine it and a partial pan would be a
+        // fourth reading of a line already fixed by three.
         auto value = newMixCase("mix.pan", "the linear pan law across its range",
-                                {mixTrack(1, "Left"), mixTrack(2, "Centre"), mixTrack(3, "Right"),
-                                 mixTrack(4, "Part")});
+                                {mixTrack(1, "Left"), mixTrack(2, "Centre"), mixTrack(3, "Right")});
 
-        const std::array<float, 4> pans{-1.0f, 0.0f, 1.0f, 0.4f};
-        for (auto index = 0; index < 4; ++index) {
+        const std::array<float, 3> pans{-1.0f, 0.0f, 1.0f};
+        for (auto index = 0; index < 3; ++index) {
             value.tracks[static_cast<std::size_t>(index)].pan =
                 pans[static_cast<std::size_t>(index)];
 
-            const auto source = writeSource(scratchDirectory, "pan" + juce::String(index), steps());
+            const auto source = writeSource(scratchDirectory, "pan" + juce::String(index),
+                                            stepsEvery(0.5 + 0.125 * index));
             value.sources.push_back(source);
             value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
                                               static_cast<ClipId>(220 + index), 0.0, 4.0, source));
+        }
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The bottom of the fader, which is its own question rather than a
+        // fourth point on the curve above: the position floors at -100 dB, so
+        // whether a fader at zero is silence or merely very quiet is something
+        // the two engines can disagree about at a level the floor would catch.
+        auto value = newMixCase("mix.volume.silent", "a fader at the bottom of its range",
+                                {mixTrack(1, "Unity"), mixTrack(2, "Silent")});
+        value.tracks[1].volume = 0.0f;
+
+        for (auto index = 0; index < 2; ++index) {
+            const auto source = writeSource(scratchDirectory, "silent" + juce::String(index),
+                                            stepsEvery(0.5 + 0.125 * index));
+            value.sources.push_back(source);
+            value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
+                                              static_cast<ClipId>(215 + index), 0.0, 4.0, source));
         }
 
         corpus.push_back(std::move(value));
@@ -692,10 +740,16 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     }
 
     {
-        // The master's own fader and pan, applied once to the sum. Two tracks
-        // rather than one, so that a master gain applied per track instead of
-        // once to the mix would be a different number rather than the same one.
-        auto value = newMixCase("mix.master", "master volume and pan, applied once",
+        // The master's own fader and pan, on a sum rather than on one track.
+        //
+        // What this does not claim, and cannot: that the master matrix is
+        // applied once. Gain and the linear pan law both distribute over
+        // addition, so M(a + b) and M(a) + M(b) are the same samples, and no
+        // render of a linear graph can tell the two apart. Where the master
+        // stage sits is a question for the plan goldens (#2076), which compare
+        // structure; what this case pins is that the two engines agree about the
+        // master's law and its values, which is the half a render can answer.
+        auto value = newMixCase("mix.master", "the master fader and pan over a sum",
                                 {mixTrack(1, "One"), mixTrack(2, "Two")});
         value.master.volume = 0.5f;
         value.master.pan = 0.3f;

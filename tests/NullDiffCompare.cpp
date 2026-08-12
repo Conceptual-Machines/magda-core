@@ -294,11 +294,24 @@ ShiftEstimate estimateShift(const juce::AudioBuffer<float>& native,
     // which for material that is level all the way through is the only feature
     // the envelope has. Excluding it leaves a flat window with no opinion, and
     // the peak then lands wherever the arithmetic noise puts it.
+    // Ties go to the smaller offset, here and in the fine pass below. Material
+    // that is level across the search window scores identically at every lag,
+    // and a strict > then keeps whichever lag happened to be tried first, which
+    // is the most negative one: two identical renders come back tens of samples
+    // apart. When nothing distinguishes the lags, the honest answer is that
+    // there is no offset, not that there is the largest one the loop started
+    // with.
+    const auto better = [](double value, double best, int lag, int bestLag) {
+        if (value > best)
+            return true;
+        return value == best && std::abs(lag) < std::abs(bestLag);
+    };
+
     auto bestCoarse = -1.0;
     auto bestCoarseLag = 0;
     for (auto lag = -coarseGuard; lag <= coarseGuard; ++lag) {
         const auto value = score(coarseA, coarseB, lag, 0);
-        if (value > bestCoarse) {
+        if (better(value, bestCoarse, lag, bestCoarseLag)) {
             bestCoarse = value;
             bestCoarseLag = lag;
         }
@@ -334,7 +347,7 @@ ShiftEstimate estimateShift(const juce::AudioBuffer<float>& native,
         const auto value = score(fineA, fineB, lag, maxShiftSamples);
         scores[static_cast<std::size_t>(offset + reach)] = value;
 
-        if (value > best) {
+        if (better(value, best, lag, bestLag)) {
             best = value;
             bestLag = lag;
         }
