@@ -394,6 +394,7 @@ target_sources(magda_juce_tests PRIVATE
     test_offline_render_device_power_juce.cpp
     test_tracktion_engine_wrapper_refactoring_juce.cpp
     # test_export_no_assertion_juce.cpp  # Disabled - see issue #611 (generator device export)
+    test_assertion_watch_juce.cpp
     test_midi_recording_juce.cpp
     test_clip_sync_integration_juce.cpp
     test_signalsmith_loop_juce.cpp

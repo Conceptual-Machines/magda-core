@@ -144,3 +144,7 @@ mix-analysis-*.txt
 
 # Local app export artifact
 MAGDA.zip
+
+# Local working notes for a slice, not part of the repository.
+PLAN-*.md
+HANDOFF-*.md

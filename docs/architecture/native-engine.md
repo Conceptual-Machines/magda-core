@@ -581,7 +581,7 @@ and audio tracks asserts both.
 
 | Tier | What it asserts | Where it applies |
 | --- | --- | --- |
-| `None` | nothing; the MIDI comparison carries the case | the four `midi.*` |
+| `None` | nothing; the MIDI comparison carries the case | the five `midi.*` |
 | `Exact` | residual under the floor, nothing allowed for | deterministic DSP, routing, the mixer |
 | `Aligned` | one declared offset, undone, then `Exact` | anything whose whole effect is a delay |
 | `Spectral` | pinned shift, envelope timing, magnitude bound | a phase vocoder in the path |
