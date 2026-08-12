@@ -2,10 +2,10 @@
 
 #include <cmath>
 #include <iostream>
-#include <mutex>
 #include <set>
 #include <string>
 
+#include "AssertionWatch.hpp"
 #include "NullDiffCompare.hpp"
 #include "NullDiffNativeLeg.hpp"
 #include "NullDiffTeLeg.hpp"
@@ -49,82 +49,6 @@ juce::File scratchDirectory() {
     root.createDirectory();
     return root;
 }
-
-/**
- * @brief Counts the engine's own assertions while a case runs.
- *
- * A jassert is not fatal, so an invalid graph renders anyway and produces a
- * buffer that compares perfectly well. Tracktion asserting that two of its nodes
- * share an identity, and the corpus then certifying that case as a null, is the
- * worst pairing available: a project the engine itself objects to, signed off as
- * parity.
- *
- * So the assertions are read as a result rather than as console noise. JUCE
- * routes them through Logger::writeToLog in a debug build, which is what makes
- * this possible at all; a release build asserts nothing and this counts nothing,
- * which is the right answer for a build where the claim was never made.
- */
-class AssertionWatch final : public juce::Logger {
-  public:
-    /// The one watch, installed on first use and never taken down.
-    ///
-    /// Not a scoped object, and the difference matters. juce::Logger keeps the
-    /// current logger in an unsynchronised raw pointer: a thread reads it, is
-    /// descheduled, and calls through it whenever it next runs. A destructor
-    /// that restored the previous logger would therefore be handing out a
-    /// dangling pointer to whichever engine or pool thread was mid-read, and no
-    /// lock on this side closes that window because the read happens inside
-    /// JUCE. So the watch outlives the process. It costs one object in a test
-    /// binary, and it is the only way to be sure a callback never lands on a
-    /// destroyed logger.
-    static AssertionWatch& instance() {
-        static auto* watch = new AssertionWatch();
-        return *watch;
-    }
-
-    /// What fired since the last call, and forgets it.
-    std::vector<juce::String> take() {
-        const std::lock_guard<std::mutex> lock(mutex_);
-        auto taken = std::move(assertions_);
-        assertions_.clear();
-        return taken;
-    }
-
-  private:
-    AssertionWatch() {
-        juce::Logger::setCurrentLogger(this);
-    }
-
-    // Never runs. Declared so that nobody can stack-allocate one and reintroduce
-    // the teardown this type exists to avoid.
-    ~AssertionWatch() override = default;
-
-    void logMessage(const juce::String& message) override {
-        // The exact prefix JUCE writes, not a substring match. This logger is
-        // the current one while the corpus runs, so the runner's own reporting
-        // passes through it too: a substring match reads the line that says a
-        // case asserted as another assertion, and every case after the first
-        // inherits the one before it.
-        //
-        // Locked because juce::Logger is process-wide and an assertion can fire
-        // on whatever thread reached it: a proxy render on the background pool,
-        // or the engine's own. Appending here while the test thread is taking
-        // the list is a race, and what it would corrupt or drop is precisely
-        // the assertion this exists to surface.
-        if (message.startsWith("JUCE Assertion failure")) {
-            const std::lock_guard<std::mutex> lock(mutex_);
-            assertions_.push_back(message);
-        }
-
-        // Everything still reaches the console. A watch that swallowed the log
-        // would take away the one thing that says which line asserted, and this
-        // is what JUCE's own default logger does with it.
-        std::cout << message << std::endl;
-    }
-
-    std::mutex mutex_;
-    std::vector<juce::String> assertions_;
-};
 
 /// Where the artefacts of a failing case go. A parity failure is diagnosed by
 /// listening and by looking, and a test that only says "expected 1e-12, got
@@ -358,7 +282,7 @@ class NullDiffCorpusTests : public juce::UnitTest {
         // provoked it rather than to the run. Taken once before the walk begins
         // to drop anything logged on the way in, which belongs to whatever ran
         // before this test rather than to its first case.
-        auto& watch = AssertionWatch::instance();
+        auto& watch = magda::test::AssertionWatch::instance();
         watch.take();
 
         for (const auto& value : corpus) {

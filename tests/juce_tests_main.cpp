@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <iostream>
 
+#include "AssertionWatch.hpp"
 #include "JuceTestStateGuard.hpp"
 
 /**
@@ -15,6 +16,16 @@
  */
 
 int main(int argc, char* argv[]) {
+    // Before anything else, and before anything can have started a thread.
+    //
+    // This installs the process-wide logger that lets a test read the engine's
+    // own assertions as a result rather than as console noise. juce::Logger
+    // keeps the current logger in an unsynchronised raw pointer, so writing it
+    // once here, ahead of the JUCE initialiser and of any engine thread an
+    // earlier suite could have started, is what keeps that write from racing a
+    // read. It is never taken down. See AssertionWatch.hpp.
+    magda::test::AssertionWatch::instance();
+
     // Initialize JUCE GUI subsystem - required for message loop, timers, async updaters, etc.
     // This must be alive for the entire test run to avoid SIGSEGV from singleton cleanup issues
     juce::ScopedJuceInitialiser_GUI juceInit;
