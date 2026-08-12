@@ -50,6 +50,54 @@ juce::File scratchDirectory() {
     return root;
 }
 
+/**
+ * @brief What the suite has to complain about, given a run.
+ *
+ * Separated from the runner so the rule can be tested without rendering
+ * anything, because one part of it is easy to get wrong in a way nothing would
+ * notice.
+ *
+ * A case under calibration is *expected* to fail its comparison, and the
+ * membership check is asserted in both directions so that neither a new failure
+ * nor a fixed one can happen quietly. An assertion is not a comparison result
+ * and the calibration list has no authority over it: a calibrating case that
+ * asserts would otherwise meet its expectation by the wrong means, and the
+ * invalid graph the watch exists to catch would stay green across a third of the
+ * corpus. So assertions are counted on their own, before any of that.
+ */
+struct SuiteComplaints {
+    /// Asserted while rendering. Any case, calibrating or not.
+    std::vector<std::string> asserted;
+
+    /// Failed its comparison and was not expected to.
+    std::vector<std::string> unexpectedFailures;
+
+    /// Expected to fail and no longer does, so it should come off the list.
+    std::vector<std::string> nowHolding;
+
+    bool empty() const {
+        return asserted.empty() && unexpectedFailures.empty() && nowHolding.empty();
+    }
+};
+
+SuiteComplaints judgeSuite(const std::set<std::string>& asserted,
+                           const std::set<std::string>& failing,
+                           const std::set<std::string>& underCalibration) {
+    SuiteComplaints complaints;
+
+    complaints.asserted.assign(asserted.begin(), asserted.end());
+
+    for (const auto& name : failing)
+        if (underCalibration.count(name) == 0)
+            complaints.unexpectedFailures.push_back(name);
+
+    for (const auto& name : underCalibration)
+        if (failing.count(name) == 0)
+            complaints.nowHolding.push_back(name);
+
+    return complaints;
+}
+
 /// Where the artefacts of a failing case go. A parity failure is diagnosed by
 /// listening and by looking, and a test that only says "expected 1e-12, got
 /// 0.3" makes that the reader's problem.
@@ -285,6 +333,11 @@ class NullDiffCorpusTests : public juce::UnitTest {
         auto& watch = magda::test::AssertionWatch::instance();
         watch.take();
 
+        // Kept apart from pass and fail on purpose. A case under calibration is
+        // expected to fail, so an assertion inside one would be indistinguishable
+        // from the failure it was already forgiven for.
+        std::set<std::string> asserted;
+
         for (const auto& value : corpus) {
             auto report = run(value);
 
@@ -299,6 +352,8 @@ class NullDiffCorpusTests : public juce::UnitTest {
                     "the engine asserted while rendering: " + fired.front().toStdString() +
                     (fired.size() > 1 ? " (and " + std::to_string(fired.size() - 1) + " more)"
                                       : "");
+                asserted.insert(value.name);
+
                 for (const auto& assertion : fired)
                     logMessage("  " + juce::String(value.name) + ": " + assertion);
             }
@@ -366,13 +421,37 @@ class NullDiffCorpusTests : public juce::UnitTest {
             if (!value.passed)
                 failing.insert(value.name);
 
-        for (const auto& value : reports)
-            if (underCalibration.count(value.name) == 0)
-                expect(value.passed, juce::String(value.name) + " did not hold");
+        const auto complaints = judgeSuite(asserted, failing, underCalibration);
 
-        for (const auto& name : underCalibration)
-            expect(failing.count(name) == 1,
-                   juce::String(name) + " now holds and should come off the calibration list");
+        const auto join = [](const std::vector<std::string>& names) {
+            juce::StringArray parts;
+            for (const auto& name : names)
+                parts.add(juce::String(name));
+            return parts.joinIntoString(", ");
+        };
+
+        // Every case reached a verdict. Asserted positively rather than left
+        // implied, because the three checks below all pass on an empty run, and
+        // a corpus that rendered nothing would otherwise look exactly like a
+        // corpus that agreed about everything.
+        expect(reports.size() == corpus.size(), "expected " + juce::String((int)corpus.size()) +
+                                                    " reports, got " +
+                                                    juce::String((int)reports.size()));
+
+        // Assertions first, and outside the calibration list entirely. A case
+        // that is expected to fail would otherwise satisfy that expectation by
+        // asserting, and the invalid graph this exists to catch would be green
+        // across the eight names above.
+        expect(complaints.asserted.empty(),
+               "asserted while rendering, which is never a result the calibration list forgives: " +
+                   join(complaints.asserted));
+
+        expect(complaints.unexpectedFailures.empty(),
+               "did not hold: " + join(complaints.unexpectedFailures));
+
+        expect(complaints.nowHolding.empty(),
+               "now holds and should come off the calibration list: " +
+                   join(complaints.nowHolding));
     }
 
   private:
@@ -660,3 +739,63 @@ class NullDiffCorpusTests : public juce::UnitTest {
 };
 
 static NullDiffCorpusTests nullDiffCorpusTests;
+
+// =============================================================================
+// What the suite is held to
+// =============================================================================
+
+/**
+ * The calibration list forgives a comparison, never an assertion.
+ *
+ * Eight cases are expected to fail today, and the expectation is asserted in
+ * both directions so neither a new failure nor a fixed one passes quietly. That
+ * arrangement has one hole worth a test of its own: an assertion inside one of
+ * those eight satisfies the same expectation as the comparison failure it was
+ * forgiven for, so the invalid graph the watch was added to catch would be green
+ * across a third of the corpus.
+ */
+class NullDiffSuiteRuleTests : public juce::UnitTest {
+  public:
+    NullDiffSuiteRuleTests() : juce::UnitTest("Null Diff Suite Rules", "magda") {}
+
+    void runTest() override {
+        const std::set<std::string> calibrating{"tempo.auto", "warp.audio"};
+
+        beginTest("A calibrating case that asserts still fails the suite");
+        {
+            // It is failing, which is what the list expects of it, so the
+            // membership check is satisfied and says nothing. The assertion has
+            // to be what fails the suite, on its own.
+            const auto complaints =
+                judgeSuite({"tempo.auto"}, {"tempo.auto", "warp.audio"}, calibrating);
+
+            expect(complaints.asserted == std::vector<std::string>{"tempo.auto"});
+            expect(complaints.unexpectedFailures.empty(), "it is on the list, so not unexpected");
+            expect(complaints.nowHolding.empty(), "both are still failing");
+            expect(!complaints.empty(), "the suite has to complain about something");
+        }
+
+        beginTest("A calibrating case that merely fails says nothing");
+        {
+            const auto complaints = judgeSuite({}, {"tempo.auto", "warp.audio"}, calibrating);
+            expect(complaints.empty(), "the run everybody expects");
+        }
+
+        beginTest("A case that asserts outside the list fails too");
+        {
+            const auto complaints =
+                judgeSuite({"mix.pan"}, {"mix.pan", "tempo.auto", "warp.audio"}, calibrating);
+
+            expect(complaints.asserted == std::vector<std::string>{"mix.pan"});
+            expect(complaints.unexpectedFailures == std::vector<std::string>{"mix.pan"});
+        }
+
+        beginTest("A calibrating case that starts holding has to come off the list");
+        {
+            const auto complaints = judgeSuite({}, {"warp.audio"}, calibrating);
+            expect(complaints.nowHolding == std::vector<std::string>{"tempo.auto"});
+        }
+    }
+};
+
+static NullDiffSuiteRuleTests nullDiffSuiteRuleTests;
