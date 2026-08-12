@@ -65,11 +65,15 @@ TrackInfo plainTrack() {
 /// a MIDI clip would be playing, and in both legs it is replaced by something
 /// that records what arrives instead of making a sound. That is the comparison
 /// point, and the only one that means anything: what a synth receives.
-TrackInfo instrumentTrack() {
-    auto track = plainTrack();
+TrackInfo instrumentTrackOn(TrackId trackId, DeviceId deviceId, const char* name) {
+    TrackInfo track;
+    track.id = trackId;
+    track.type = TrackType::Audio;
+    track.name = name;
+    track.audioOutputDevice = "master";
 
     DeviceInfo device;
-    device.id = kInstrument;
+    device.id = deviceId;
     device.name = "Capture";
     device.deviceType = DeviceType::Instrument;
     device.isInstrument = true;
@@ -77,6 +81,10 @@ TrackInfo instrumentTrack() {
     track.chain.fxChainElements.emplace_back(std::move(device));
 
     return track;
+}
+
+TrackInfo instrumentTrack() {
+    return instrumentTrackOn(kTrack, kInstrument, "Null Diff");
 }
 
 TrackInfo masterTrack() {
@@ -207,16 +215,20 @@ AudioEvent& eventOf(ClipInfo& clip) {
     return *clip.primaryEvent();
 }
 
-ClipInfo midiClip(ClipId id, double startBeat, double lengthBeats) {
+ClipInfo midiClipOn(TrackId trackId, ClipId id, double startBeat, double lengthBeats) {
     ClipInfo clip;
     clip.id = id;
-    clip.trackId = kTrack;
+    clip.trackId = trackId;
     clip.name = "midi " + juce::String(id);
     clip.view = ClipView::Arrangement;
     clip.setMidiContent();
     clip.setPlacementBeats(startBeat, lengthBeats);
     clip.deriveTimesFromBeats(kBpm);
     return clip;
+}
+
+ClipInfo midiClip(ClipId id, double startBeat, double lengthBeats) {
+    return midiClipOn(kTrack, id, startBeat, lengthBeats);
 }
 
 MidiNote note(int pitch, double startBeat, double lengthBeats, int velocity = 100) {
@@ -762,6 +774,56 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
                                               static_cast<ClipId>(250 + index), 0.0, 4.0, source));
         }
 
+        corpus.push_back(std::move(value));
+    }
+
+    // --- a project that asserts both -------------------------------------------
+
+    {
+        // The case this slice exists for, and until it was written nothing ran
+        // the redesign end to end. Every MIDI case above sets the audio tier to
+        // None and every audio case leaves the MIDI flag off, so the two
+        // assertions had never both been made about one project: the capture
+        // placed on a track that is not the first, the aggregation of more than
+        // one capture, and a verdict that is the audio AND the MIDI could all
+        // have regressed with every case still green.
+        //
+        // An audio track first, then two instrument tracks. The order is the
+        // point of the first: a leg that put its capture on tracks.front() would
+        // hand back an empty stream against a full one. The second instrument is
+        // the point of the pair: one capture read where two exist compares half
+        // a project against all of it.
+        //
+        // The two instruments play different pitches at different instants, so a
+        // stream attributed to the wrong track, or one of the two dropped, is a
+        // finding rather than a rearrangement nobody can see. Both go out on
+        // channel 1, because a note carries no channel of its own in the model
+        // and the aggregate is keyed on channel and pitch: an octave apart is
+        // what keeps them apart.
+        auto value = newMixCase("project.mixed", "an audio track beside two instrument tracks",
+                                {mixTrack(1, "Audio"), instrumentTrackOn(2, 901, "Synth A"),
+                                 instrumentTrackOn(3, 902, "Synth B")});
+
+        const auto source = writeSource(scratchDirectory, "mixed", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClipOn(1, 260, 0.0, 4.0, source));
+
+        auto first = midiClipOn(2, 261, 0.0, 8.0);
+        for (auto index = 0; index < 4; ++index)
+            first.midiNotes.push_back(note(60 + index, static_cast<double>(index) * 2.0, 0.75));
+        value.clips.push_back(std::move(first));
+
+        auto second = midiClipOn(3, 262, 0.0, 8.0);
+        for (auto index = 0; index < 4; ++index)
+            second.midiNotes.push_back(
+                note(72 + index, static_cast<double>(index) * 2.0 + 1.0, 0.5, 90));
+        value.clips.push_back(std::move(second));
+
+        // Both, which is the whole point. The audio tier judges the impulse
+        // track, which the two capture devices contribute silence to, and the
+        // MIDI comparison judges what the two of them received.
+        value.tier = AudioTier::Exact;
+        value.compareMidiStreams = true;
         corpus.push_back(std::move(value));
     }
 

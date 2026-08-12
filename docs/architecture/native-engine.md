@@ -536,10 +536,10 @@ there while its session path applies it, which is a gap in the sync layer rather
 Six of the clip slices were judged by tests written beside them, and a test asserts what its
 author believed the rule was. The corpus
 ([#2040](https://github.com/Conceptual-Machines/magda-core/issues/2040)) is the one thing here
-that cannot: twenty-eight projects, each built as model values and handed to both engines,
+that cannot: twenty-nine projects, each built as model values and handed to both engines,
 neither of which gets a say in what the other produces. It lives in `tests/NullDiff*` and runs in
 `magda_juce_tests`, because the incumbent leg is a `te::Edit`. The canonical report it prints
-names the count, so `cases=28` at the top of a run is the figure this paragraph has to match.
+names the count, so `cases=29` at the top of a run is the figure this paragraph has to match.
 
 **Nothing is golden.** A checked-in reference render would freeze the fork at the moment it was
 recorded, so the day the fork changes the corpus would report an engine that broke. Both legs
@@ -579,6 +579,13 @@ and a project answers both. The audio tier is a determinism class rather than a 
 preference: it follows from what stands between the two engines on that case's paths. Whether
 the captured MIDI streams are compared is its own flag, so a project with an instrument track
 and audio tracks asserts both.
+
+`project.mixed` is the case that does it: an audio track first, two instrument tracks behind it,
+judged as `Exact` audio and as a MIDI stream at once. It exists because the redesign is otherwise
+unexercised. A capture placed on a track that is not the first, more than one capture aggregated,
+and a verdict that is the audio and the MIDI together could all have regressed with every case
+still green, since every other MIDI case sets the audio tier to `None` and every audio case
+leaves the flag off.
 
 | Tier | What it asserts | Where it applies |
 | --- | --- | --- |
