@@ -2,21 +2,13 @@
 
 #include <sstream>
 
+#include "plan/DumpFormat.hpp"
+
 namespace magda::engine {
 namespace {
 
-std::string padded(std::string text, std::size_t width) {
-    if (text.size() < width)
-        text.append(width - text.size(), ' ');
-    return text;
-}
-
-std::string rightAligned(int value, std::size_t width) {
-    auto text = std::to_string(value);
-    if (text.size() < width)
-        text.insert(text.begin(), static_cast<long>(width - text.size()), ' ');
-    return text;
-}
+using dump_format::padded;
+using dump_format::rightAligned;
 
 std::string describeInputs(const PlanOp& op) {
     if (op.inputs.empty())

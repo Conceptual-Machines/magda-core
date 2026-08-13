@@ -353,11 +353,16 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         if (const auto* device = deviceForOp_[i]; device != nullptr)
             deviceLatency[i] = device->latencySamples();
 
-    portOffsets_ = portOffsetsOf(plan);
-    const auto latency = resolvePlanLatency(plan, portOffsets_, deviceLatency);
-    latencySamples_ = latency.outputLatency;
+    // Through resolveLayout rather than the three passes inline, because the
+    // plan goldens (#2076) pin what a prepare resolves and have to be resolving
+    // it the same way. Two callers running the same three lines is how a step
+    // added to one of them silently stops being pinned by the other.
+    const auto prepared = resolveLayout(plan, deviceLatency);
+    const auto& latency = prepared.latency;
+    const auto& layout = prepared.buffers;
 
-    const auto layout = assignBuffers(plan, portOffsets_, latency.delaySamples);
+    portOffsets_ = prepared.portOffsets;
+    latencySamples_ = latency.outputLatency;
     portSlots_ = layout.portSlots;
     writesInPlace_ = layout.writesInPlace;
 

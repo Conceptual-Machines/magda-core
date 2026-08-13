@@ -1,0 +1,59 @@
+# cascaded-latency
+# latency accumulating along a chain, and a send arriving carrying it
+#
+# Generated. See tests/test_plan_goldens.cpp to regenerate.
+
+== plan ==
+magda-render-plan v1
+ops=23 outputs=1
+[  0] ClipAudio   det   T1:clipAudio                   in=-                out=audio       deps=0
+[  1] MixAudio    det   T1:trackAudioInput             in=0:0              out=audio       deps=1
+[  2] Device      det   T1/D7:deviceProcess            in=1:0,-,-          out=audio       deps=1
+[  3] Gain        det   T1/D7:deviceGain               in=2:0              out=audio       deps=1
+[  4] Device      det   T1/D8:deviceProcess            in=3:0,-,-          out=audio       deps=1
+[  5] Gain        det   T1/D8:deviceGain               in=4:0              out=audio       deps=1
+[  6] Fader       det   T1:trackFader                  in=5:0,-            out=audio       deps=1
+[  7] SendTap     det   T1:sendTap                     in=6:0              out=audio       deps=1
+[  8] Meter       det   T1:trackMeter                  in=6:0              out=audio       deps=1
+[  9] Gain        det   T1:trackMute                   in=8:0              out=audio       deps=1
+[ 10] MixAudio    det   T2:trackAudioInput             in=7:0              out=audio       deps=1
+[ 11] Device      det   T2/D9:deviceProcess            in=10:0,-,-         out=audio       deps=1
+[ 12] Gain        det   T2/D9:deviceGain               in=11:0             out=audio       deps=1
+[ 13] Fader       det   T2:trackFader                  in=12:0,-           out=audio       deps=1
+[ 14] Meter       det   T2:trackMeter                  in=13:0             out=audio       deps=1
+[ 15] Gain        det   T2:trackMute                   in=14:0             out=audio       deps=1
+[ 16] Delay       det   T-2:mixInputDelay              in=9:0              out=audio       deps=1
+[ 17] Delay       det   T-2:mixInputDelay#1            in=15:0             out=audio       deps=1
+[ 18] MixAudio    det   T-2:trackAudioInput            in=16:0,17:0        out=audio       deps=2
+[ 19] Fader       det   T-2:trackFader                 in=18:0,-           out=audio       deps=1
+[ 20] Meter       det   T-2:trackMeter                 in=19:0             out=audio       deps=1
+[ 21] Gain        det   T-2:trackMute                  in=20:0             out=audio       deps=1
+[ 22] Output      det   T-2:hardwareOutput             in=21:0             out=-           deps=1
+ready=0
+
+== layout ==
+magda-plan-layout v1
+audioSlots=3 midiSlots=0 outputLatency=176
+[  0] ClipAudio   T1:clipAudio                   lat=0       ports=a0
+[  1] MixAudio    T1:trackAudioInput             lat=0       ports=a0          inplace
+[  2] Device      T1/D7:deviceProcess            lat=32      ports=a0          inplace
+[  3] Gain        T1/D7:deviceGain               lat=32      ports=a0          inplace
+[  4] Device      T1/D8:deviceProcess            lat=160     ports=a0          inplace
+[  5] Gain        T1/D8:deviceGain               lat=160     ports=a0          inplace
+[  6] Fader       T1:trackFader                  lat=160     ports=a0          inplace
+[  7] SendTap     T1:sendTap                     lat=160     ports=a1
+[  8] Meter       T1:trackMeter                  lat=160     ports=a2
+[  9] Gain        T1:trackMute                   lat=160     ports=a2          inplace
+[ 10] MixAudio    T2:trackAudioInput             lat=160     ports=a1          inplace
+[ 11] Device      T2/D9:deviceProcess            lat=176     ports=a1          inplace
+[ 12] Gain        T2/D9:deviceGain               lat=176     ports=a1          inplace
+[ 13] Fader       T2:trackFader                  lat=176     ports=a1          inplace
+[ 14] Meter       T2:trackMeter                  lat=176     ports=a1          inplace
+[ 15] Gain        T2:trackMute                   lat=176     ports=a1          inplace
+[ 16] Delay       T-2:mixInputDelay              lat=176     ports=a2          hold=16 inplace
+[ 17] Delay       T-2:mixInputDelay#1            lat=176     ports=a1          hold=0 elided
+[ 18] MixAudio    T-2:trackAudioInput            lat=176     ports=a2          inplace
+[ 19] Fader       T-2:trackFader                 lat=176     ports=a2          inplace
+[ 20] Meter       T-2:trackMeter                 lat=176     ports=a2          inplace
+[ 21] Gain        T-2:trackMute                  lat=176     ports=a2          inplace
+[ 22] Output      T-2:hardwareOutput             lat=-       ports=-

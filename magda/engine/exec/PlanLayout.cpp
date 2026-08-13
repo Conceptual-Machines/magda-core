@@ -315,4 +315,12 @@ BufferLayout assignBuffers(const RenderPlan& plan, const std::vector<int>& portO
     return layout;
 }
 
+PreparedLayout resolveLayout(const RenderPlan& plan, const std::vector<int>& deviceLatency) {
+    PreparedLayout prepared;
+    prepared.portOffsets = portOffsetsOf(plan);
+    prepared.latency = resolvePlanLatency(plan, prepared.portOffsets, deviceLatency);
+    prepared.buffers = assignBuffers(plan, prepared.portOffsets, prepared.latency.delaySamples);
+    return prepared;
+}
+
 }  // namespace magda::engine

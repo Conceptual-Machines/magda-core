@@ -268,6 +268,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_plan_layout.cpp)
     list(APPEND TEST_SOURCES test_plan_diff.cpp)
     list(APPEND TEST_SOURCES test_plan_crossfade.cpp)
+    # Plan goldens (#2076). Fixtures and runner both reach into magda_engine.
+    list(APPEND TEST_SOURCES PlanGoldenFixtures.cpp)
+    list(APPEND TEST_SOURCES test_plan_goldens.cpp)
     list(APPEND TEST_SOURCES test_engine_session.cpp)
     list(APPEND TEST_SOURCES test_tempo_map.cpp)
     list(APPEND TEST_SOURCES test_transport_clock.cpp)
@@ -340,6 +343,10 @@ target_compile_definitions(magda_tests
     PRIVATE
     MAGDA_REPO_ROOT="${CMAKE_SOURCE_DIR}"
     MAGDA_AUDIO_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/audio"
+    # Plan goldens (#2076) live in the source tree, so an intended change to
+    # the compiler shows up as a reviewable diff rather than a rewritten
+    # build artefact.
+    MAGDA_PLAN_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/goldens/plan"
     # The shared test engine must NOT auto-wire the live Tempo lane sync: it
     # attaches to the AutomationManager singleton and would perturb other tests.
     # TempoLaneSync is tested directly in test_tempo_lane_sync_juce.cpp instead.
