@@ -23,8 +23,14 @@ struct ChainSignal {
 };
 
 /// Where a chain element lives, for op keys. Only the innermost rack and chain
-/// are recorded: device ids are project-unique, so deeper nesting needs no
-/// further qualification.
+/// are recorded, on the assumption that device ids are project-unique.
+///
+/// They are not. TrackManager allocates them per section (nextFxDeviceId_,
+/// nextPostFxDeviceId_, nextMixerAnalysisDeviceId_), so one track's FX and
+/// post-FX chains can both hold id 3, and both compile to the same OpKey.
+/// validatePlan rejects the result rather than letting the differ carry one
+/// device's state into the other, so it fails loudly; it still fails. What is
+/// missing is a section discriminator here and in OpKey.
 struct ChainSite {
     TrackId trackId = INVALID_TRACK_ID;
     RackId rackId = INVALID_RACK_ID;

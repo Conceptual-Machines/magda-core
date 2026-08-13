@@ -1399,15 +1399,26 @@ TEST_CASE("validatePlan enforces liveness provenance", "[engine][plan][validate]
     }
 }
 
-TEST_CASE("Device ids are project-unique, and the plan says so when they are not",
+TEST_CASE("Section-local device ids compile to a plan the differ cannot key",
           "[engine][plan][compiler]") {
-    // The compiler's ChainSite records only the innermost rack and chain,
-    // explicitly because device ids are project-unique; nothing in an op key
-    // says which section a device sat in. So the invariant has to hold, and
-    // this is the test that it is caught rather than assumed: two sections of
-    // one track reusing an id produce two ops the differ cannot tell apart,
-    // and carrying one op's runtime state into another is exactly the failure
-    // OpKey exists to prevent.
+    // A known incompatibility between the app's model and the engine's op
+    // identity, pinned here so it is measured rather than assumed either way.
+    //
+    // TrackManager allocates device ids per section: nextFxDeviceId_,
+    // nextPostFxDeviceId_ and nextMixerAnalysisDeviceId_ are separate spaces,
+    // so id 3 legitimately exists on one track's FX chain and its post-FX
+    // chain at once. The compiler's ChainSite records only the innermost rack
+    // and chain, on the assumption that device ids are project-unique, so both
+    // devices compile to the same OpKey.
+    //
+    // validatePlan catches it, which is the one good thing here: the differ
+    // hash-joins old and new plans on OpKey, and a duplicate would carry one
+    // device's runtime state into another. So this is a rejected plan rather
+    // than a silently wrong one, and the app can build the model that causes
+    // it today.
+    //
+    // The fix is a section discriminator in ChainSite and OpKey, and it
+    // belongs with the engine migration rather than here.
     std::vector<TrackInfo> tracks{makeTrack(1)};
     tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(3)));
     tracks[0].chain.postFxChainElements.push_back(PostFxChainElement{makeEffect(3)});
