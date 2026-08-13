@@ -1,9 +1,13 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <iosfwd>
 #include <string>
+#include <tuple>
 #include <vector>
 
+#include "core/ChainNodePath.hpp"
 #include "core/TypeIds.hpp"
 
 /**
@@ -192,6 +196,42 @@ constexpr int crossfadeSlot(int index) {
 enum class LivenessDomain : std::uint8_t { Deterministic, Live };
 
 /**
+ * @brief Stable identity of one device instance in the project model.
+ *
+ * DeviceId is allocated independently for the main FX, post-FX and mixer-
+ * analysis sections. It is unique inside one section, across tracks and rack
+ * chains, but the same integer may name one device in each section. Runtime
+ * ownership therefore needs the section as well as the integer.
+ */
+struct DeviceKey {
+    ChainSegment segment = ChainSegment::Fx;
+    DeviceId deviceId = INVALID_DEVICE_ID;
+
+    DeviceKey() = default;
+    // Keeps the overwhelmingly common main-FX call sites compact.
+    DeviceKey(DeviceId id) : deviceId(id) {}
+    DeviceKey(ChainSegment section, DeviceId id) : segment(section), deviceId(id) {}
+
+    bool operator==(const DeviceKey& o) const {
+        return segment == o.segment && deviceId == o.deviceId;
+    }
+    bool operator!=(const DeviceKey& o) const {
+        return !(*this == o);
+    }
+    bool operator<(const DeviceKey& o) const {
+        return std::tie(segment, deviceId) < std::tie(o.segment, o.deviceId);
+    }
+};
+
+struct DeviceKeyHash {
+    std::size_t operator()(const DeviceKey& key) const noexcept {
+        const auto section = static_cast<std::size_t>(key.segment);
+        const auto device = static_cast<std::size_t>(key.deviceId);
+        return (section << (sizeof(std::size_t) * 4U)) ^ device;
+    }
+};
+
+/**
  * @brief An op's identity across plan swaps.
  *
  * The differ hash-joins old and new plans on this key. It is a flat value type
@@ -207,10 +247,16 @@ struct OpKey {
     OpRole role = OpRole::TrackAudioInput;
     /// Disambiguates repeats of the same role at the same location (send slot).
     int index = 0;
+    /// Which independently allocated device-id space this location belongs to.
+    ChainSegment segment = ChainSegment::Fx;
+
+    DeviceKey deviceKey() const {
+        return DeviceKey{segment, deviceId};
+    }
 
     bool operator==(const OpKey& o) const {
         return trackId == o.trackId && rackId == o.rackId && chainId == o.chainId &&
-               deviceId == o.deviceId && role == o.role && index == o.index;
+               deviceId == o.deviceId && role == o.role && index == o.index && segment == o.segment;
     }
     bool operator!=(const OpKey& o) const {
         return !(*this == o);
@@ -370,7 +416,11 @@ const char* toString(OpRole role);
 const char* toString(SignalKind kind);
 const char* toString(LivenessDomain domain);
 
-/** Canonical key text, e.g. "T1/R4/C5/D7:deviceProcess" or "T-2:trackFader". */
+/** Canonical device identity text, e.g. "D7", "PostFx/D7". */
+std::string toString(const DeviceKey& key);
+std::ostream& operator<<(std::ostream& out, const DeviceKey& key);
+
+/** Canonical key text, e.g. "T1/R4/C5/D7:deviceProcess" or "T1/PF/D7:deviceProcess". */
 std::string toString(const OpKey& key);
 
 }  // namespace magda::engine

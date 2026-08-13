@@ -38,9 +38,8 @@ struct Fixture {
     ///
     /// The whole key rather than the device id alone, because a device id does
     /// not identify a device: TrackManager allocates them per section, so one
-    /// track's FX and post-FX chains can both hold id 3. Op keys do not carry
-    /// a section either, which is its own problem and not this file's, but a
-    /// fixture that states where it means is at least not adding to it.
+    /// track's FX and post-FX chains can both hold id 3. OpKey carries that
+    /// section, so a fixture can state which of those devices reports latency.
     ///
     /// The runner requires each entry to match exactly one Device op, which is
     /// what turns a mistyped location into a failure instead of a golden

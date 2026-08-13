@@ -21,9 +21,9 @@ struct TrackInfo;
  * A plan is topology and nothing else, so it cannot own a plugin instance or a
  * file reader: it is rebuilt every time a device moves, and rebuilding an
  * instrument because a fader was reordered above it is the rebuild-click
- * problem in miniature. The store owns them instead, keyed by model ID the way
- * OpKey is, so the same edit that recompiles the plan leaves the objects it
- * names untouched.
+ * problem in miniature. The store owns them instead, keyed by section-aware
+ * model identity the way OpKey is, so the same edit that recompiles the plan
+ * leaves the objects it names untouched.
  *
  * Everything here runs off the audio thread.
  */
@@ -34,15 +34,15 @@ namespace magda::engine {
  * @brief Makes the runtime objects a plan asks for.
  *
  * Implemented by the host, because the engine has no idea what a device is: it
- * knows a DeviceId, and the host knows which plugin that is. Returning nullptr
- * is allowed and means the object does not exist; the executor reports the
- * op as unbound rather than pretending otherwise.
+ * knows a section-aware DeviceKey, and the host knows which plugin that is.
+ * Returning nullptr is allowed and means the object does not exist; the
+ * executor reports the op as unbound rather than pretending otherwise.
  */
 class RuntimeStateFactory {
   public:
     virtual ~RuntimeStateFactory() = default;
 
-    virtual std::unique_ptr<EngineDevice> createDevice(DeviceId) {
+    virtual std::unique_ptr<EngineDevice> createDevice(DeviceKey) {
         return nullptr;
     }
     virtual std::unique_ptr<EngineAudioSource> createClipAudioSource(TrackId) {
@@ -88,7 +88,7 @@ class RuntimeStateFactory {
  * deletion from the model destroys anything.
  */
 struct RuntimeStateIds {
-    std::set<DeviceId> devices;
+    std::set<DeviceKey> devices;
     std::set<TrackId> tracks;
 };
 
@@ -167,7 +167,7 @@ class RuntimeStateStore {
     RenderContext context_;
     bool hasContext_ = false;
 
-    std::unordered_map<DeviceId, std::unique_ptr<EngineDevice>> devices_;
+    std::unordered_map<DeviceKey, std::unique_ptr<EngineDevice>, DeviceKeyHash> devices_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> clipAudio_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> clipMidi_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> audioInputs_;
@@ -176,7 +176,7 @@ class RuntimeStateStore {
     /// Keyed by the op's whole key, and retained by the model IDs that key
     /// names: a meter is kept while the track or device it reads exists, which
     /// is the same rule everything else here follows read through the one
-    /// binding whose identity is not a bare model ID.
+    /// binding whose identity is the whole op rather than a DeviceKey or TrackId.
     std::map<OpKey, std::unique_ptr<LevelTap>> meters_;
 };
 

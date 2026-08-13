@@ -35,17 +35,18 @@ template <typename Map> void prepareAll(Map& map, const RenderContext& context) 
         object->prepare(context);
 }
 
-void collectDeviceIds(const std::vector<ChainElement>& elements, std::set<DeviceId>& out);
+void collectDeviceIds(const std::vector<ChainElement>& elements, std::set<DeviceKey>& out);
 
-void collectDeviceIds(const std::vector<PostFxChainElement>& elements, std::set<DeviceId>& out) {
+void collectDeviceIds(const std::vector<PostFxChainElement>& elements, ChainSegment segment,
+                      std::set<DeviceKey>& out) {
     for (const auto& element : elements)
-        out.insert(element.device.id);
+        out.emplace(segment, element.device.id);
 }
 
-void collectDeviceIds(const std::vector<ChainElement>& elements, std::set<DeviceId>& out) {
+void collectDeviceIds(const std::vector<ChainElement>& elements, std::set<DeviceKey>& out) {
     for (const auto& element : elements) {
         if (isDevice(element)) {
-            out.insert(getDevice(element).id);
+            out.emplace(ChainSegment::Fx, getDevice(element).id);
         } else if (isRack(element)) {
             for (const auto& chain : getRack(element).chains)
                 collectDeviceIds(chain.elements, out);
@@ -59,7 +60,7 @@ void collectDeviceIds(const std::vector<ChainElement>& elements, std::set<Device
 /// those two places.
 bool isNamed(const OpKey& key, const RuntimeStateIds& ids) {
     if (key.deviceId != INVALID_DEVICE_ID)
-        return ids.devices.contains(key.deviceId);
+        return ids.devices.contains(key.deviceKey());
     return ids.tracks.contains(key.trackId);
 }
 
@@ -101,9 +102,9 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
         switch (op.kind) {
             case OpKind::Device:
                 if (auto* device =
-                        realiseOne(devices_, op.key.deviceId, context,
-                                   [this](DeviceId id) { return factory_.createDevice(id); }))
-                    bindings.devices[op.key.deviceId] = device;
+                        realiseOne(devices_, op.key.deviceKey(), context,
+                                   [this](DeviceKey key) { return factory_.createDevice(key); }))
+                    bindings.devices[op.key.deviceKey()] = device;
                 break;
 
             case OpKind::ClipAudio:
@@ -173,7 +174,7 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
     for (const auto& op : livePlan.ops) {
         switch (op.kind) {
             case OpKind::Device:
-                keep.devices.insert(op.key.deviceId);
+                keep.devices.insert(op.key.deviceKey());
                 break;
             case OpKind::ClipAudio:
             case OpKind::ClipMidi:
@@ -186,7 +187,7 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
                 // names: the executor holds a pointer to this tap and the audio
                 // thread is writing through it right now.
                 if (op.key.deviceId != INVALID_DEVICE_ID)
-                    keep.devices.insert(op.key.deviceId);
+                    keep.devices.insert(op.key.deviceKey());
                 else
                     keep.tracks.insert(op.key.trackId);
                 break;
@@ -221,8 +222,9 @@ RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
         // Every section, and bypass is not consulted anywhere here: a bypassed
         // device is still a device the user owns.
         collectDeviceIds(track.chain.fxChainElements, ids.devices);
-        collectDeviceIds(track.chain.postFxChainElements, ids.devices);
-        collectDeviceIds(track.chain.mixerAnalysisElements, ids.devices);
+        collectDeviceIds(track.chain.postFxChainElements, ChainSegment::PostFx, ids.devices);
+        collectDeviceIds(track.chain.mixerAnalysisElements, ChainSegment::MixerAnalysis,
+                         ids.devices);
     };
 
     for (const auto& track : tracks)

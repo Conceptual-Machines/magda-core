@@ -205,12 +205,19 @@ class Resolver {
 
 const DeviceInfo* Resolver::findDevice(const TrackInfo& track, const OpKey& key) const {
     if (key.rackId == INVALID_RACK_ID) {
-        if (const auto* device = findDeviceIn(track.chain.fxChainElements, key.deviceId))
-            return device;
-        if (const auto* device = findDeviceIn(track.chain.postFxChainElements, key.deviceId))
-            return device;
-        return findDeviceIn(track.chain.mixerAnalysisElements, key.deviceId);
+        switch (key.segment) {
+            case ChainSegment::Fx:
+                return findDeviceIn(track.chain.fxChainElements, key.deviceId);
+            case ChainSegment::PostFx:
+                return findDeviceIn(track.chain.postFxChainElements, key.deviceId);
+            case ChainSegment::MixerAnalysis:
+                return findDeviceIn(track.chain.mixerAnalysisElements, key.deviceId);
+        }
+        return nullptr;
     }
+
+    if (key.segment != ChainSegment::Fx)
+        return nullptr;
 
     const auto* rack = findRack(track, key.rackId);
     if (rack == nullptr)

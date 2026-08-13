@@ -1060,7 +1060,7 @@ TEST_CASE("Unbound ops are reported and render silence", "[engine][exec]") {
 
     REQUIRE(messages.size() == 2);
     CHECK(messages[0].find("no clip audio source bound for track 1") != std::string::npos);
-    CHECK(messages[1].find("no device bound for device 7") != std::string::npos);
+    CHECK(messages[1].find("no device bound for device D7") != std::string::npos);
 
     harness.render();
     CHECK(harness.outputSample() == approx(0.0f));

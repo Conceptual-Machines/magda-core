@@ -294,14 +294,13 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 break;
 
             case OpKind::Device: {
-                const auto found = bindings.devices.find(op.key.deviceId);
+                const auto found = bindings.devices.find(op.key.deviceKey());
                 if (found == bindings.devices.end() || found->second == nullptr) {
                     // Passing audio through is what the current engine does
                     // with a plugin that failed to load, and it keeps the rest
                     // of the chain testable instead of silencing the track.
                     messages.push_back(describe(i) + "no device bound for device " +
-                                       std::to_string(op.key.deviceId) +
-                                       ", it passes audio through");
+                                       toString(op.key.deviceKey()) + ", it passes audio through");
                     break;
                 }
                 deviceForOp_[i] = found->second;

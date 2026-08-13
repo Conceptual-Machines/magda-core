@@ -2,13 +2,14 @@
 
 #include <algorithm>
 #include <map>
+#include <ostream>
 #include <tuple>
 
 namespace magda::engine {
 
 bool OpKey::operator<(const OpKey& o) const {
-    return std::tie(trackId, rackId, chainId, deviceId, role, index) <
-           std::tie(o.trackId, o.rackId, o.chainId, o.deviceId, o.role, o.index);
+    return std::tie(trackId, rackId, chainId, segment, deviceId, role, index) <
+           std::tie(o.trackId, o.rackId, o.chainId, o.segment, o.deviceId, o.role, o.index);
 }
 
 int arityOf(OpKind kind) {
@@ -141,8 +142,13 @@ std::string toString(const OpKey& key) {
         out += "/R" + std::to_string(key.rackId);
     if (key.chainId != INVALID_CHAIN_ID)
         out += "/C" + std::to_string(key.chainId);
-    if (key.deviceId != INVALID_DEVICE_ID)
+    if (key.deviceId != INVALID_DEVICE_ID) {
+        if (key.segment == ChainSegment::PostFx)
+            out += "/PF";
+        else if (key.segment == ChainSegment::MixerAnalysis)
+            out += "/MA";
         out += "/D" + std::to_string(key.deviceId);
+    }
     out += ":";
     out += toString(key.role);
 
@@ -166,6 +172,20 @@ std::string toString(const OpKey& key) {
     if (key.index != 0)
         out += "#" + std::to_string(key.index);
     return out;
+}
+
+std::string toString(const DeviceKey& key) {
+    std::string out;
+    if (key.segment == ChainSegment::PostFx)
+        out = "PostFx/";
+    else if (key.segment == ChainSegment::MixerAnalysis)
+        out = "MixerAnalysis/";
+    out += "D" + std::to_string(key.deviceId);
+    return out;
+}
+
+std::ostream& operator<<(std::ostream& out, const DeviceKey& key) {
+    return out << toString(key);
 }
 
 namespace {
@@ -269,6 +289,7 @@ std::uint64_t planFingerprint(const RenderPlan& plan) {
         mix(static_cast<std::uint64_t>(op.key.trackId));
         mix(static_cast<std::uint64_t>(op.key.rackId));
         mix(static_cast<std::uint64_t>(op.key.chainId));
+        mix(static_cast<std::uint64_t>(op.key.segment));
         mix(static_cast<std::uint64_t>(op.key.deviceId));
         mix(static_cast<std::uint64_t>(op.key.role));
         mix(static_cast<std::uint64_t>(op.key.index));

@@ -159,7 +159,7 @@ struct Harness {
             device->prepare(context);
             decay = device.get();
             devices.push_back(std::move(device));
-            bindings.devices[op.key.deviceId] = decay;
+            bindings.devices[op.key.deviceKey()] = decay;
         }
 
         valueMessages = magda::engine::resolvePlanValues(plan, tracks, master, values);

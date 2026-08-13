@@ -57,13 +57,15 @@ DeviceInfo instrument(DeviceId id) {
 /// requires it to match one op exactly, so a fixture cannot name a location
 /// that does not exist and get silence instead of a failure.
 engine::OpKey deviceAt(TrackId trackId, DeviceId deviceId, RackId rackId = INVALID_RACK_ID,
-                       ChainId chainId = INVALID_CHAIN_ID) {
+                       ChainId chainId = INVALID_CHAIN_ID,
+                       ChainSegment segment = ChainSegment::Fx) {
     engine::OpKey key;
     key.trackId = trackId;
     key.rackId = rackId;
     key.chainId = chainId;
     key.deviceId = deviceId;
     key.role = engine::OpRole::DeviceProcess;
+    key.segment = segment;
     return key;
 }
 
@@ -184,6 +186,28 @@ Fixture sidechain() {
     return value;
 }
 
+Fixture sectionLocalDeviceIds() {
+    Fixture value;
+    value.name = "section-local-device-ids";
+    value.covers = "the same device id in FX, post-FX and mixer analysis stays three identities";
+    value.tracks = {track(1)};
+    value.tracks[0].chain.fxChainElements.push_back(makeDeviceElement(effect(3)));
+    value.tracks[0].chain.postFxChainElements.push_back(PostFxChainElement{effect(3)});
+
+    auto analysis = effect(3);
+    analysis.deviceType = DeviceType::Analysis;
+    value.tracks[0].chain.mixerAnalysisElements.push_back(PostFxChainElement{analysis});
+
+    value.master = master();
+    value.options = withoutMeters();
+    value.deviceLatency = {
+        {deviceAt(1, 3), 16},
+        {deviceAt(1, 3, INVALID_RACK_ID, INVALID_CHAIN_ID, ChainSegment::PostFx), 32},
+        {deviceAt(1, 3, INVALID_RACK_ID, INVALID_CHAIN_ID, ChainSegment::MixerAnalysis), 64},
+    };
+    return value;
+}
+
 Fixture groupRouting() {
     Fixture value;
     value.name = "group-routing";
@@ -264,6 +288,7 @@ std::vector<Fixture> planFixtures() {
     fixtures.push_back(cascadedLatency());
     fixtures.push_back(rackChains());
     fixtures.push_back(sidechain());
+    fixtures.push_back(sectionLocalDeviceIds());
     fixtures.push_back(groupRouting());
     fixtures.push_back(insertDevice());
     fixtures.push_back(removeDevice());

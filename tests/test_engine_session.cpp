@@ -16,6 +16,7 @@
 using namespace magda;
 using magda::engine::BlockInfo;
 using magda::engine::DeviceBlock;
+using magda::engine::DeviceKey;
 using magda::engine::EngineAudioSource;
 using magda::engine::EngineDevice;
 using magda::engine::EngineSession;
@@ -121,16 +122,16 @@ class TestFactory final : public RuntimeStateFactory {
   public:
     explicit TestFactory(Ledger& ledger) : ledger_(ledger) {}
 
-    std::unique_ptr<EngineDevice> createDevice(DeviceId id) override {
-        auto device = std::make_unique<LedgerDevice>(ledger_, id);
-        device->latency = latencyFor.count(id) != 0 ? latencyFor[id] : 0;
+    std::unique_ptr<EngineDevice> createDevice(DeviceKey key) override {
+        auto device = std::make_unique<LedgerDevice>(ledger_, key.deviceId);
+        device->latency = latencyFor.count(key) != 0 ? latencyFor[key] : 0;
         lastDevice = device.get();
-        devicesById[id] = device.get();
+        devicesById[key] = device.get();
         return device;
     }
 
-    /// What a device reports once it is loaded, per device ID.
-    std::map<DeviceId, int> latencyFor;
+    /// What a device reports once it is loaded, per section-aware identity.
+    std::map<DeviceKey, int> latencyFor;
 
     std::unique_ptr<EngineAudioSource> createClipAudioSource(TrackId) override {
         ++ledger_.sourcesCreated;
@@ -154,7 +155,7 @@ class TestFactory final : public RuntimeStateFactory {
     std::map<magda::engine::OpKey, magda::engine::LevelTap*> metersByKey;
 
     LedgerDevice* lastDevice = nullptr;
-    std::map<DeviceId, LedgerDevice*> devicesById;
+    std::map<DeviceKey, LedgerDevice*> devicesById;
 
   private:
     Ledger& ledger_;
@@ -564,6 +565,73 @@ TEST_CASE("A swap carries runtime state that the new plan still names", "[engine
     juce::AudioBuffer<float> output(2, kBlockSize);
     session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(0.25f));
+}
+
+TEST_CASE("Section-local device ids keep distinct values, instances and lifetimes",
+          "[engine][session][device-identity]") {
+    Ledger ledger;
+    TestFactory factory(ledger);
+    EngineSession session(factory);
+
+    auto track = makeTrack(1);
+    auto fx = makeEffect(3);
+    fx.gainValue = 0.5f;
+    track.chain.fxChainElements.push_back(makeDeviceElement(fx));
+
+    auto postFx = makeEffect(3);
+    postFx.gainValue = 0.25f;
+    track.chain.postFxChainElements.push_back(PostFxChainElement{postFx});
+
+    auto analysis = makeEffect(3);
+    analysis.deviceType = DeviceType::Analysis;
+    track.chain.mixerAnalysisElements.push_back(PostFxChainElement{analysis});
+
+    std::vector<TrackInfo> tracks{track};
+    const auto plan = compile(tracks);
+    const auto values = resolve(*plan, tracks);
+
+    // Value lookup follows the same section discriminator as compilation.
+    std::map<ChainSegment, float> gains;
+    for (std::size_t i = 0; i < plan->ops.size(); ++i)
+        if (plan->ops[i].key.role == magda::engine::OpRole::DeviceGain)
+            gains[plan->ops[i].key.segment] = values.ops[i].gainLeft;
+    CHECK(gains[ChainSegment::Fx] == approx(0.5f));
+    CHECK(gains[ChainSegment::PostFx] == approx(0.25f));
+    CHECK_FALSE(gains.contains(ChainSegment::MixerAnalysis));
+
+    REQUIRE(publish(session, plan, tracks).published);
+    CHECK(ledger.devicesCreated == 3);
+
+    const DeviceKey fxKey{ChainSegment::Fx, 3};
+    const DeviceKey postFxKey{ChainSegment::PostFx, 3};
+    const DeviceKey analysisKey{ChainSegment::MixerAnalysis, 3};
+    auto* const fxInstance = factory.devicesById[fxKey];
+    auto* const postFxInstance = factory.devicesById[postFxKey];
+    auto* const analysisInstance = factory.devicesById[analysisKey];
+    REQUIRE(fxInstance != nullptr);
+    REQUIRE(postFxInstance != nullptr);
+    REQUIRE(analysisInstance != nullptr);
+    CHECK(fxInstance != postFxInstance);
+    CHECK(fxInstance != analysisInstance);
+    CHECK(postFxInstance != analysisInstance);
+
+    session.publishValues(values);
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    session.process(kBlockSize, output);
+    // Each test device halves the signal, then the independently resolved FX
+    // and post-FX slot gains apply. Analysis devices have no slot gain.
+    CHECK(output.getSample(0, 0) == approx(1.0f / 64.0f));
+
+    tracks[0].chain.postFxChainElements.clear();
+    REQUIRE(publish(session, compile(tracks), tracks).published);
+    CHECK(ledger.devicesDestroyed == 1);
+    CHECK(factory.devicesById[fxKey] == fxInstance);
+    CHECK(factory.devicesById[analysisKey] == analysisInstance);
+
+    tracks[0].chain.fxChainElements.clear();
+    tracks[0].chain.mixerAnalysisElements.clear();
+    REQUIRE(publish(session, compile(tracks), tracks).published);
+    CHECK(ledger.devicesDestroyed == 3);
 }
 
 TEST_CASE("What a swap drops is destroyed on the publishing thread", "[engine][session]") {
