@@ -299,7 +299,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                     // Passing audio through is what the current engine does
                     // with a plugin that failed to load, and it keeps the rest
                     // of the chain testable instead of silencing the track.
-                    messages.push_back(describe(i) + "no device bound for device " +
+                    messages.push_back(describe(i) + "no device bound for " +
                                        toString(op.key.deviceKey()) + ", it passes audio through");
                     break;
                 }

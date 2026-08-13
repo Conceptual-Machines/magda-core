@@ -29,6 +29,7 @@
 using namespace magda;
 using magda::engine::BlockInfo;
 using magda::engine::DeviceBlock;
+using magda::engine::DeviceKey;
 using magda::engine::EngineAudioSource;
 using magda::engine::EngineDevice;
 using magda::engine::insertCrossfades;
@@ -165,7 +166,7 @@ struct Bench {
     void bindDevice(DeviceId id, float gain, int latency = 0) {
         owned.push_back(std::make_unique<GainDevice>(gain, latency));
         owned.back()->prepare(context);
-        bindings.devices[id] = owned.back().get();
+        bindings.devices[DeviceKey{id}] = owned.back().get();
     }
 
     RenderPlan compile() const {
@@ -705,7 +706,7 @@ TEST_CASE("A fade produces the latency of the side it is becoming", "[engine][pl
     PlanBindings bindings;
     bindings.clipAudio[1] = &one;
     bindings.clipAudio[2] = &two;
-    bindings.devices[7] = &latent;
+    bindings.devices[DeviceKey{7}] = &latent;
 
     PlanExecutor executor;
     for (const auto& message : executor.prepare(plan, bindings, context))

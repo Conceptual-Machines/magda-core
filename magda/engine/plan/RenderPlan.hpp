@@ -2,12 +2,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iosfwd>
 #include <string>
 #include <tuple>
 #include <vector>
 
-#include "core/ChainNodePath.hpp"
 #include "core/TypeIds.hpp"
 
 /**
@@ -208,8 +208,7 @@ struct DeviceKey {
     DeviceId deviceId = INVALID_DEVICE_ID;
 
     DeviceKey() = default;
-    // Keeps the overwhelmingly common main-FX call sites compact.
-    DeviceKey(DeviceId id) : deviceId(id) {}
+    explicit DeviceKey(DeviceId id) : deviceId(id) {}
     DeviceKey(ChainSegment section, DeviceId id) : segment(section), deviceId(id) {}
 
     bool operator==(const DeviceKey& o) const {
@@ -225,9 +224,10 @@ struct DeviceKey {
 
 struct DeviceKeyHash {
     std::size_t operator()(const DeviceKey& key) const noexcept {
-        const auto section = static_cast<std::size_t>(key.segment);
-        const auto device = static_cast<std::size_t>(key.deviceId);
-        return (section << (sizeof(std::size_t) * 4U)) ^ device;
+        auto seed = std::hash<DeviceId>{}(key.deviceId);
+        const auto segment = std::hash<unsigned>{}(static_cast<unsigned>(key.segment));
+        seed ^= segment + static_cast<std::size_t>(0x9e3779b9U) + (seed << 6U) + (seed >> 2U);
+        return seed;
     }
 };
 

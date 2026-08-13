@@ -9,15 +9,6 @@
 namespace magda {
 
 /**
- * @brief Which of a track's two FX lists a path descends into.
- *
- * Encoded as the id of a leading ChainStepType::Segment step. Fx is the
- * implicit default (paths with no Segment step address the main FX chain);
- * post-fx paths carry an explicit Segment(PostFx) step as their first step.
- */
-enum class ChainSegment { Fx, PostFx, MixerAnalysis };
-
-/**
  * @brief Type of element in a chain path step
  *
  * Segment is appended last so the persisted integer values of Rack/Chain/

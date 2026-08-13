@@ -35,7 +35,8 @@ template <typename Map> void prepareAll(Map& map, const RenderContext& context) 
         object->prepare(context);
 }
 
-void collectDeviceIds(const std::vector<ChainElement>& elements, std::set<DeviceKey>& out);
+void collectDeviceIds(const std::vector<ChainElement>& elements, ChainSegment segment,
+                      std::set<DeviceKey>& out);
 
 void collectDeviceIds(const std::vector<PostFxChainElement>& elements, ChainSegment segment,
                       std::set<DeviceKey>& out) {
@@ -43,13 +44,14 @@ void collectDeviceIds(const std::vector<PostFxChainElement>& elements, ChainSegm
         out.emplace(segment, element.device.id);
 }
 
-void collectDeviceIds(const std::vector<ChainElement>& elements, std::set<DeviceKey>& out) {
+void collectDeviceIds(const std::vector<ChainElement>& elements, ChainSegment segment,
+                      std::set<DeviceKey>& out) {
     for (const auto& element : elements) {
         if (isDevice(element)) {
-            out.emplace(ChainSegment::Fx, getDevice(element).id);
+            out.emplace(segment, getDevice(element).id);
         } else if (isRack(element)) {
             for (const auto& chain : getRack(element).chains)
-                collectDeviceIds(chain.elements, out);
+                collectDeviceIds(chain.elements, segment, out);
         }
     }
 }
@@ -221,7 +223,7 @@ RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
         ids.tracks.insert(track.id);
         // Every section, and bypass is not consulted anywhere here: a bypassed
         // device is still a device the user owns.
-        collectDeviceIds(track.chain.fxChainElements, ids.devices);
+        collectDeviceIds(track.chain.fxChainElements, ChainSegment::Fx, ids.devices);
         collectDeviceIds(track.chain.postFxChainElements, ChainSegment::PostFx, ids.devices);
         collectDeviceIds(track.chain.mixerAnalysisElements, ChainSegment::MixerAnalysis,
                          ids.devices);
