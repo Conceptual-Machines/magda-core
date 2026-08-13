@@ -654,15 +654,12 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     // same file at the same position produce colliding node IDs and trip the
     // graph's uniqueness assertion.
     //
-    // No case here has more than three tracks, and that is a constraint rather
-    // than a preference. Four audio tracks in one Edit collide in the fork's
-    // node-identity hash: two ArrangerLauncherSwitchingNodes come out with the
-    // same id and the graph's uniqueness assertion fires. It reproduces on four
-    // tracks carrying one impulse clip each, so it is nothing to do with what
-    // these cases play or what their faders are set to. The runner refuses to
-    // certify a case that provoked an assertion, so this would be a failure
-    // rather than a quiet pass; the cases stay under the limit and the collision
-    // is #2085.
+    // These cases used to be capped at three tracks, because a fourth collided
+    // in the fork's node-identity hash and tripped the graph's uniqueness
+    // assertion. That was #2085: tracktion::hash_combine did not avalanche, so
+    // every node id in an Edit agreed in its top thirty-odd bits. The cap is
+    // gone with it, and
+    // mix.summing carries a fourth track to keep the case that found it.
     //
     // Sends are absent on purpose. The native leg could render one today, and
     // the incumbent's live on te::AuxSendPlugin instances that PluginManagerSync
@@ -671,15 +668,20 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     // to have. They belong with the rest of the routing graph, in #1892.
 
     {
-        auto value = newMixCase("mix.summing", "three tracks summed into master",
-                                {mixTrack(1, "One"), mixTrack(2, "Two"), mixTrack(3, "Three")});
+        // Four tracks, which is where the node-identity collision in #2085 used
+        // to fire. A three-track sum covers the arithmetic just as well; the
+        // fourth is here so that the case which found the collision keeps
+        // looking for it.
+        auto value = newMixCase(
+            "mix.summing", "four tracks summed into master",
+            {mixTrack(1, "One"), mixTrack(2, "Two"), mixTrack(3, "Three"), mixTrack(4, "Four")});
 
-        // Three different impulse grids rather than three copies of one. Equal
+        // Four different impulse grids rather than four copies of one. Equal
         // values sum exactly whatever order they are added in, so identical
         // sources would agree by arithmetic rather than by the two engines
         // summing the same things.
-        const std::array<double, 3> intervals{0.25, 0.3, 0.5};
-        for (auto index = 0; index < 3; ++index) {
+        const std::array<double, 4> intervals{0.25, 0.3, 0.5, 0.7};
+        for (auto index = 0; index < 4; ++index) {
             const auto source = writeSource(scratchDirectory, "sum" + juce::String(index),
                                             impulses(intervals[static_cast<std::size_t>(index)]));
             value.sources.push_back(source);
