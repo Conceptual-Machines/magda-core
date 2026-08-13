@@ -2,21 +2,14 @@
 
 #include <sstream>
 
+#include "plan/DumpFormat.hpp"
+
 namespace magda::engine {
 namespace {
 
-std::string padded(std::string text, std::size_t width) {
-    if (text.size() < width)
-        text.append(width - text.size(), ' ');
-    return text;
-}
-
-std::string rightAligned(int value, std::size_t width) {
-    auto text = std::to_string(value);
-    if (text.size() < width)
-        text.insert(text.begin(), static_cast<long>(width - text.size()), ' ');
-    return text;
-}
+using dump_format::padded;
+using dump_format::rightAligned;
+using dump_format::writeLine;
 
 }  // namespace
 
@@ -38,13 +31,7 @@ std::string dumpPlanDiff(const RenderPlan& oldPlan, const RenderPlan& newPlan,
         if (from != INVALID_OP_ID)
             line << " from=" << toString(oldPlan.ops[static_cast<std::size_t>(from)].key);
 
-        // Trailing spaces would not survive the repo's whitespace hook, which
-        // would rewrite every golden the first time one was committed.
-        auto text = line.str();
-        while (!text.empty() && text.back() == ' ')
-            text.pop_back();
-
-        out << text << "\n";
+        writeLine(out, line.str());
     }
 
     for (const auto op : diff.retired)

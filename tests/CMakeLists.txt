@@ -70,8 +70,6 @@ set(TEST_SOURCES
     test_momentary_param_button.cpp
     test_delta_solo.cpp
     test_hash_combine.cpp
-    PlanGoldenFixtures.cpp
-    test_plan_goldens.cpp
     test_waveform_editor_absolute_mode.cpp
     test_clip_batch_edit.cpp
     test_clip_commands.cpp
@@ -270,6 +268,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_plan_layout.cpp)
     list(APPEND TEST_SOURCES test_plan_diff.cpp)
     list(APPEND TEST_SOURCES test_plan_crossfade.cpp)
+    # Plan goldens (#2076). Fixtures and runner both reach into magda_engine.
+    list(APPEND TEST_SOURCES PlanGoldenFixtures.cpp)
+    list(APPEND TEST_SOURCES test_plan_goldens.cpp)
     list(APPEND TEST_SOURCES test_engine_session.cpp)
     list(APPEND TEST_SOURCES test_tempo_map.cpp)
     list(APPEND TEST_SOURCES test_transport_clock.cpp)

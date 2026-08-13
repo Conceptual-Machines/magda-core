@@ -95,4 +95,26 @@ struct BufferLayout {
 BufferLayout assignBuffers(const RenderPlan& plan, const std::vector<int>& portOffsets,
                            const std::vector<int>& delaySamples);
 
+/**
+ * @brief Everything a prepare resolves, in the order it has to be resolved.
+ *
+ * The three passes above run one after another and each takes the one before
+ * it, so every caller ran the same three lines. Two of them doing it
+ * separately is how a step added here reaches the executor and not the golden
+ * that is supposed to be pinning it.
+ */
+struct PreparedLayout {
+    std::vector<int> portOffsets;
+    PlanLatency latency;
+    BufferLayout buffers;
+};
+
+/**
+ * @brief Resolve @p plan against the latency its bound instances report.
+ *
+ * @param deviceLatency  per op: what a Device op's bound instance reports, and
+ *                       zero everywhere else.
+ */
+PreparedLayout resolveLayout(const RenderPlan& plan, const std::vector<int>& deviceLatency);
+
 }  // namespace magda::engine

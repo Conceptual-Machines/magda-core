@@ -65,23 +65,31 @@ juce::File goldenFile(const std::string& name) {
     return juce::File(kGoldenDir).getChildFile(juce::String(name) + ".txt");
 }
 
-/// Device latency per op, which is what the layout pass takes. The fixture
-/// names devices; only Device ops carry one, and everything else is zero.
+/// Device latency per op, which is what the layout pass takes.
+///
+/// Each entry has to match exactly one op. A fixture names a device by where
+/// it sits, and a location that matches nothing is a fixture describing a
+/// project it did not build: it would compile fine, print a golden with no
+/// delays in it, and pin the wrong graph forever.
 std::vector<int> deviceLatencyPerOp(const RenderPlan& plan,
-                                    const std::vector<std::pair<DeviceId, int>>& byDevice) {
-    std::map<DeviceId, int> lookup;
-    for (const auto& [device, samples] : byDevice)
-        lookup[device] = samples;
-
+                                    const std::vector<std::pair<engine::OpKey, int>>& byLocation) {
     std::vector<int> latency(plan.ops.size(), 0);
-    for (std::size_t i = 0; i < plan.ops.size(); ++i) {
-        if (plan.ops[i].kind != magda::engine::OpKind::Device)
-            continue;
 
-        const auto found = lookup.find(plan.ops[i].key.deviceId);
-        if (found != lookup.end())
-            latency[i] = found->second;
+    for (const auto& [key, samples] : byLocation) {
+        int matches = 0;
+
+        for (std::size_t i = 0; i < plan.ops.size(); ++i) {
+            if (plan.ops[i].kind != engine::OpKind::Device || plan.ops[i].key != key)
+                continue;
+
+            latency[i] = samples;
+            ++matches;
+        }
+
+        INFO("device latency for " << engine::toString(key));
+        REQUIRE(matches == 1);
     }
+
     return latency;
 }
 

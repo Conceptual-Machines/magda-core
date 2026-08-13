@@ -1,1 +1,6 @@
 assets/fonts/NotoSansCJKsc-Regular.otf filter=lfs diff=lfs merge=lfs -text
+
+# Plan goldens (#2076) are compared byte for byte against text the test
+# generates with LF endings. A checkout that translated them to CRLF would fail
+# every fixture on its first line, so they are never translated.
+tests/goldens/plan/*.txt text eol=lf

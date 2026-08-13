@@ -53,6 +53,20 @@ DeviceInfo instrument(DeviceId id) {
     return device;
 }
 
+/// Where a device sits, as the key its process op will carry. The runner
+/// requires it to match one op exactly, so a fixture cannot name a location
+/// that does not exist and get silence.
+engine::OpKey deviceAt(TrackId trackId, DeviceId deviceId, RackId rackId = INVALID_RACK_ID,
+                       ChainId chainId = INVALID_CHAIN_ID) {
+    engine::OpKey key;
+    key.trackId = trackId;
+    key.rackId = rackId;
+    key.chainId = chainId;
+    key.deviceId = deviceId;
+    key.role = engine::OpRole::DeviceProcess;
+    return key;
+}
+
 /// Device meters off unless a fixture is about them: they are three ops per
 /// slot and they bury everything else in the dump.
 engine::CompileOptions withoutMeters() {
@@ -107,7 +121,7 @@ Fixture fanIn() {
 
     // The unequal path the delays exist for. Only the device on track 1
     // reports latency, so track 2 is the one that has to be held back.
-    value.deviceLatency = {{7, 64}};
+    value.deviceLatency = {{deviceAt(1, 7), 64}};
     return value;
 }
 
@@ -126,7 +140,7 @@ Fixture cascadedLatency() {
 
     // Three different numbers, so a dump that summed them in the wrong order
     // would not land on the right total by luck.
-    value.deviceLatency = {{7, 32}, {8, 128}, {9, 16}};
+    value.deviceLatency = {{deviceAt(1, 7), 32}, {deviceAt(1, 8), 128}, {deviceAt(2, 9), 16}};
     return value;
 }
 
@@ -150,7 +164,7 @@ Fixture rackChains() {
     value.options = withoutMeters();
 
     // Unequal chains, so the rack's own mix has something to align.
-    value.deviceLatency = {{10, 48}};
+    value.deviceLatency = {{deviceAt(1, 10, 5, 10), 48}};
     return value;
 }
 

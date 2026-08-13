@@ -15,11 +15,11 @@ namespace magda::goldens {
  * how, belongs to the runner: a fixture that knew about its own golden file
  * would be a fixture that could be written to make one pass.
  *
- * `deviceLatency` is per device id rather than per op, because a fixture is
- * written before the plan exists and op indices are the compiler's answer, not
- * the fixture's question. Anything not named here reports zero, so a fixture
- * that is not about latency writes nothing and gets a plan with no delays that
- * hold anything.
+ * `deviceLatency` is keyed by where a device sits rather than by op index,
+ * because a fixture is written before the plan exists and op indices are the
+ * compiler's answer, not the fixture's question. Anything not named here
+ * reports zero, so a fixture that is not about latency writes nothing and gets
+ * a plan with no delays that hold anything.
  */
 struct Fixture {
     /// Names the golden file, so it has to be unique and stable. Renaming one
@@ -34,8 +34,15 @@ struct Fixture {
     TrackInfo master;
     engine::CompileOptions options;
 
-    /// Device latencies in samples, as `{deviceId, samples}`.
-    std::vector<std::pair<DeviceId, int>> deviceLatency;
+    /// Device latencies in samples, keyed by the device's whole location.
+    ///
+    /// A DeviceId alone does not say which device: it is allocated per
+    /// section, so the same one can appear on an FX slot and a post-FX slot,
+    /// and a fixture keyed on it would quietly give both the same latency and
+    /// pin a golden for a graph it did not describe. The runner requires each
+    /// entry to match exactly one Device op, so a location that names nothing
+    /// fails rather than contributing nothing.
+    std::vector<std::pair<engine::OpKey, int>> deviceLatency;
 
     /// A second project, compiled and diffed against the first. Empty where
     /// the fixture is not about what survives an edit.
