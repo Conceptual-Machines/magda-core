@@ -72,13 +72,6 @@ bool sectionConsumesMidi(const std::vector<PostFxChainElement>& section) {
     });
 }
 
-bool chainConsumesMidi(const TrackInfo& track) {
-    // Chain power gates the insert chain; the flat sections sit outside it.
-    return (track.chain.enabled && elementsConsumeMidi(track.chain.fxChainElements)) ||
-           sectionConsumesMidi(track.chain.postFxChainElements) ||
-           sectionConsumesMidi(track.chain.mixerAnalysisElements);
-}
-
 /// Tracks whose signal a device in `elements` reads as a sidechain input.
 /// `type` narrows the search to audio or MIDI sidechains; nullopt takes both.
 ///
@@ -883,6 +876,13 @@ RenderPlan Compiler::run() {
 RenderPlan compileRenderPlan(const std::vector<TrackInfo>& tracks, const TrackInfo& master,
                              const CompileOptions& options) {
     return Compiler(tracks, master, options).run();
+}
+
+bool chainConsumesMidi(const TrackInfo& track) {
+    // Chain power gates the insert chain; the flat sections sit outside it.
+    return (track.chain.enabled && elementsConsumeMidi(track.chain.fxChainElements)) ||
+           sectionConsumesMidi(track.chain.postFxChainElements) ||
+           sectionConsumesMidi(track.chain.mixerAnalysisElements);
 }
 
 }  // namespace magda::engine

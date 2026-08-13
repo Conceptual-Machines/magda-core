@@ -1,7 +1,9 @@
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <set>
 
 #include "NullDiffCase.hpp"
+#include "plan/PlanCompiler.hpp"
 
 /**
  * The corpus's own declarations (#2040).
@@ -31,9 +33,9 @@ juce::File scratch() {
 }  // namespace
 
 TEST_CASE("The corpus builds and covers what the slice claims", "[nulldiff][corpus]") {
-    const auto corpus = buildCorpus(scratch());
+    const auto corpus = sharedCorpus(scratch());
 
-    REQUIRE(corpus.size() == 21);
+    REQUIRE(corpus.size() == 29);
 
     std::set<std::string> names;
     for (const auto& value : corpus)
@@ -57,6 +59,14 @@ TEST_CASE("The corpus builds and covers what the slice claims", "[nulldiff][corp
                                  "stretch.broadband",
                                  "warp.audio",
                                  "takes.comp",
+                                 "mix.summing",
+                                 "mix.volume",
+                                 "mix.volume.silent",
+                                 "mix.pan",
+                                 "mix.mute",
+                                 "mix.solo",
+                                 "mix.master",
+                                 "project.mixed",
                                  "midi.notes",
                                  "midi.cc",
                                  "midi.mpe",
@@ -69,7 +79,7 @@ TEST_CASE("Every allowance carries a mechanism", "[nulldiff][corpus]") {
     // The rule the corpus lives by: change the shape of the comparison, never
     // the size of the allowance. An allowance with no mechanism beside it is
     // how a real bug ends up inside an expected difference.
-    for (const auto& value : buildCorpus(scratch())) {
+    for (const auto& value : sharedCorpus(scratch())) {
         INFO(value.name);
 
         // What counts as an allowance is something the corpus lets the two
@@ -77,12 +87,14 @@ TEST_CASE("Every allowance carries a mechanism", "[nulldiff][corpus]") {
         // above the arithmetic one, a case that measures instead of asserting,
         // or notes expected to land offset.
         //
-        // A Midi verdict on its own is not one of those. It says where the case
-        // is judged rather than how much it may differ by, and it is not a
-        // choice either: a MIDI track here carries a capture device instead of
-        // a synth, so neither engine produces any audio to compare.
-        const auto allows = value.verdict == Verdict::Shift ||
-                            value.verdict == Verdict::ReportOnly || value.floorDb > -120.0 ||
+        // A None tier on its own is not one of those. It says where the case is
+        // judged rather than how much it may differ by, and it is not a choice
+        // either: a MIDI track here carries a capture device instead of a
+        // synth, so neither engine produces any audio to compare.
+        const auto allows = value.tier == AudioTier::Spectral || value.tier == AudioTier::Aligned ||
+                            value.tier == AudioTier::Measured ||
+                            value.tier == AudioTier::Invariants || value.floorDb > -120.0 ||
+                            value.declaredFractionalShiftSamples != 0.0 ||
                             value.declaredMidiShiftBeats != 0.0;
 
         if (allows)
@@ -92,8 +104,26 @@ TEST_CASE("Every allowance carries a mechanism", "[nulldiff][corpus]") {
     }
 }
 
+TEST_CASE("A tier without the figure it needs is refused", "[nulldiff][corpus]") {
+    // Two tiers cannot be judged from the render alone: Aligned undoes an offset
+    // the case declares, and Invariants has no residual to fall back on, so it
+    // needs a discontinuity bound. Declared as a corpus rule rather than only as
+    // a runner branch, because the runner's branch first executes on the day
+    // somebody writes such a case, which is exactly the wrong day to discover
+    // that the figure is missing.
+    for (const auto& value : sharedCorpus(scratch())) {
+        INFO(value.name);
+
+        if (value.tier == AudioTier::Aligned)
+            CHECK(value.declaredFractionalShiftSamples != 0.0);
+
+        if (value.tier == AudioTier::Invariants)
+            CHECK(value.maxStepPerSample > 0.0);
+    }
+}
+
 TEST_CASE("Every case says what it covers and what it plays", "[nulldiff][corpus]") {
-    for (const auto& value : buildCorpus(scratch())) {
+    for (const auto& value : sharedCorpus(scratch())) {
         INFO(value.name);
 
         CHECK_FALSE(value.covers.empty());
@@ -101,7 +131,18 @@ TEST_CASE("Every case says what it covers and what it plays", "[nulldiff][corpus
         CHECK(value.sampleRate > 0.0);
         CHECK_FALSE(value.clips.empty());
         CHECK(value.master.id == MASTER_TRACK_ID);
-        REQUIRE(value.tracks.size() == 1);
+        REQUIRE_FALSE(value.tracks.empty());
+
+        // Every clip lands on a track the case declares. A clip pointing at a
+        // track that is not there would be dropped by the snapshot and skipped
+        // by the sync, so both legs would render the same silence and the case
+        // would pass by covering nothing.
+        for (const auto& clip : value.clips) {
+            const auto known =
+                std::any_of(value.tracks.begin(), value.tracks.end(),
+                            [&](const TrackInfo& track) { return track.id == clip.trackId; });
+            CHECK(known);
+        }
 
         // Every audio clip's source was written and pooled, and every case that
         // captures MIDI has something to capture through: a plan compiles no
@@ -122,8 +163,17 @@ TEST_CASE("Every case says what it covers and what it plays", "[nulldiff][corpus
             CHECK(source.durationSeconds > 0.0);
         }
 
+        // Any track, not the first one. Both legs put a capture on every track
+        // whose chain consumes MIDI, so an instrument sitting behind an audio
+        // track is a project they handle; a check that looked only at the front
+        // would fail it here before either leg got the chance to render it.
+        //
+        // Asked through the compiler's own predicate for the same reason the
+        // incumbent leg asks through it: what consumes MIDI has one definition.
         if (value.capturesMidi())
-            CHECK_FALSE(value.tracks.front().chain.fxChainElements.empty());
+            CHECK(std::any_of(value.tracks.begin(), value.tracks.end(), [](const TrackInfo& track) {
+                return magda::engine::chainConsumesMidi(track);
+            }));
     }
 }
 
@@ -132,7 +182,7 @@ TEST_CASE("Render cases change tempo in steps rather than ramps", "[nulldiff][co
     // to disagree, because the engine subdivides where the fork integrates. A
     // render case built on one would report that as a clip bug. Ramps are
     // pinned in the tempo-map comparison, where the answer is a number.
-    for (const auto& value : buildCorpus(scratch())) {
+    for (const auto& value : sharedCorpus(scratch())) {
         INFO(value.name);
         REQUIRE_FALSE(value.tempo.empty());
         CHECK(value.tempo.front().beat == 0.0);
@@ -145,7 +195,7 @@ TEST_CASE("Render cases change tempo in steps rather than ramps", "[nulldiff][co
 TEST_CASE("A grooving case carries the template both engines will read", "[nulldiff][corpus]") {
     // One XML string feeds both legs, which is what makes "the same groove" a
     // fact rather than two parsers agreeing.
-    for (const auto& value : buildCorpus(scratch())) {
+    for (const auto& value : sharedCorpus(scratch())) {
         auto namesAGroove = false;
         for (const auto& clip : value.clips)
             if (clip.grooveTemplate.isNotEmpty())

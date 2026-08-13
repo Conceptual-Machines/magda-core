@@ -1,5 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
+#include <limits>
+#include <string>
+#include <vector>
 
 #include "NullDiffCompare.hpp"
 #include "NullDiffMaterial.hpp"
@@ -197,6 +200,25 @@ TEST_CASE("The shift search finds a known shift", "[nulldiff][compare][shift]") 
 
     CHECK(result.shiftSamples == 1024);
     CHECK(result.withinFloor());
+}
+
+TEST_CASE("Two identical renders are not offset from each other", "[nulldiff][compare][shift]") {
+    // The offset is measured on every audio case and printed whether or not it
+    // is applied, so a number here that is not zero reads, on a case that nulled
+    // bit for bit, as a case that is thirty samples out. Periodic material is
+    // where a search can talk itself into one: a square wave correlates with
+    // itself at more lags than nature intended.
+    MaterialSpec spec;
+    spec.kind = MaterialKind::Steps;
+    spec.sampleRate = kSampleRate;
+    spec.durationSeconds = 2.0;
+    spec.intervalSeconds = 0.5;
+    const auto square = renderMaterial(spec);
+
+    const auto estimate = estimateShift(square, square, 256);
+
+    CHECK(estimate.samples == 0);
+    CHECK(std::abs(estimate.fractionalSamples) < 1.0e-6);
 }
 
 TEST_CASE("The shift search declines a pair that differs in content",
@@ -544,30 +566,115 @@ TEST_CASE("Pitch bend is compared at its own resolution",
 // The report
 // =============================================================================
 
+namespace {
+
+CaseEnvironment standardEnvironment() {
+    CaseEnvironment environment;
+    environment.sampleRate = kSampleRate;
+    environment.blockSize = 512;
+    return environment;
+}
+
+}  // namespace
+
 TEST_CASE("The report is canonical", "[nulldiff][compare][report]") {
     CaseReport first;
     first.name = "placement.grid";
-    first.verdict = Verdict::Null;
+    first.tier = AudioTier::Exact;
+    first.environment = standardEnvironment();
     first.hasAudio = true;
     first.audio = compareAudio(impulses(0.5), impulses(0.5));
     first.passed = true;
 
     CaseReport second;
     second.name = "midi.notes";
-    second.verdict = Verdict::Midi;
+    second.tier = AudioTier::None;
+    second.environment = standardEnvironment();
     second.hasMidi = true;
     second.midi.notesMatch = true;
     second.midi.controllersMatch = true;
     second.midi.notesCompared = 8;
     second.passed = true;
 
-    const auto once = formatReport({first, second}, kSampleRate, 512);
-    const auto again = formatReport({first, second}, kSampleRate, 512);
+    const auto once = formatReport({first, second}, standardEnvironment());
+    const auto again = formatReport({first, second}, standardEnvironment());
 
     CHECK(once == again);
-    CHECK(once.find("magda-null-diff v1") != std::string::npos);
+    CHECK(once.find("magda-null-diff v2") != std::string::npos);
     CHECK(once.find("placement.grid") != std::string::npos);
     CHECK(once.find("notes=8") != std::string::npos);
+}
+
+TEST_CASE("A case that rendered somewhere else says so", "[nulldiff][compare][report]") {
+    // The failure this prevents: a residual measured at another rate, another
+    // block size or another seed read as a residual measured here. Without the
+    // environment beside it, a number about a different render is
+    // indistinguishable from a number about this one.
+    CaseReport standard;
+    standard.name = "placement.grid";
+    standard.environment = standardEnvironment();
+    standard.hasAudio = true;
+    standard.passed = true;
+
+    CaseReport elsewhere;
+    elsewhere.name = "rate.96k";
+    elsewhere.environment = standardEnvironment();
+    elsewhere.environment.sampleRate = 96000.0;
+    elsewhere.hasAudio = true;
+    elsewhere.passed = true;
+
+    const auto text = formatReport({standard, elsewhere}, standardEnvironment());
+
+    // On the deviating case's line, and on no other. Read line by line rather
+    // than by offset, because "the environment appears somewhere after this
+    // name" is true of every line that follows it.
+    std::vector<std::string> lines;
+    for (std::size_t begin = 0; begin < text.size();) {
+        const auto end = text.find('\n', begin);
+        lines.push_back(text.substr(begin, end - begin));
+        if (end == std::string::npos)
+            break;
+        begin = end + 1;
+    }
+
+    auto standardLines = 0;
+    auto deviatingLines = 0;
+    for (const auto& line : lines) {
+        if (line.find("placement.grid") != std::string::npos) {
+            ++standardLines;
+            CHECK(line.find("[rate=") == std::string::npos);
+        }
+        if (line.find("rate.96k") != std::string::npos) {
+            ++deviatingLines;
+            CHECK(line.find("[rate=96000") != std::string::npos);
+        }
+    }
+
+    CHECK(standardLines == 1);
+    CHECK(deviatingLines == 1);
+}
+
+TEST_CASE("A case that asserts both prints both", "[nulldiff][compare][report]") {
+    // The point of separating the audio tier from the MIDI comparison is that a
+    // project can do both. An exclusive chain would print the notes and drop the
+    // residual, so the number that moves would go missing from exactly the mixed
+    // cases the separation exists to allow.
+    CaseReport both;
+    both.name = "project.instrument";
+    both.tier = AudioTier::Exact;
+    both.environment = standardEnvironment();
+    both.hasAudio = true;
+    both.audio = compareAudio(impulses(0.5), impulses(0.5));
+    both.hasMidi = true;
+    both.midi.notesMatch = true;
+    both.midi.controllersMatch = true;
+    both.midi.notesCompared = 12;
+    both.passed = true;
+
+    const auto text = formatReport({both}, standardEnvironment());
+
+    CHECK(text.find("peak=") != std::string::npos);
+    CHECK(text.find("notes=12") != std::string::npos);
 }
 
 TEST_CASE("An unmeasurable case is not a residual", "[nulldiff][compare][report]") {
@@ -575,14 +682,135 @@ TEST_CASE("An unmeasurable case is not a residual", "[nulldiff][compare][report]
     // day inside the engine looking for a bug that is not there.
     CaseReport report;
     report.name = "stretch.signalsmith";
-    report.verdict = Verdict::Shift;
+    report.tier = AudioTier::Spectral;
+    report.environment = standardEnvironment();
     report.unmeasurable = "proxy not ready";
     report.passed = false;
 
-    const auto text = formatReport({report}, kSampleRate, 512);
+    const auto text = formatReport({report}, standardEnvironment());
 
     CHECK(text.find("unmeasurable: proxy not ready") != std::string::npos);
     CHECK(text.find("peak=") == std::string::npos);
+}
+
+// =============================================================================
+// The invariants tier
+// =============================================================================
+
+namespace {
+
+InvariantOptions invariantOptions(double maxStep = 0.5) {
+    InvariantOptions options;
+    options.sampleRate = kSampleRate;
+    options.maxStepPerSample = maxStep;
+    options.tailSeconds = 0.05;
+    options.tailFloorDb = -60.0;
+    return options;
+}
+
+/// A tone that fades out, which is what a well-behaved render looks like to
+/// this tier: continuous throughout and silent by the end.
+juce::AudioBuffer<float> decayingTone(double frequency = 220.0, int samples = 8192,
+                                      double phase = 0.0) {
+    juce::AudioBuffer<float> buffer(1, samples);
+    auto* data = buffer.getWritePointer(0);
+    for (auto index = 0; index < samples; ++index) {
+        const auto position = static_cast<double>(index) / static_cast<double>(samples);
+        const auto envelope = std::exp(-16.0 * position);
+        data[index] =
+            static_cast<float>(0.5 * envelope *
+                               std::sin(2.0 * juce::MathConstants<double>::pi * frequency *
+                                            static_cast<double>(index) / kSampleRate +
+                                        phase));
+    }
+    return buffer;
+}
+
+}  // namespace
+
+TEST_CASE("A pair that will never null can still be judged", "[nulldiff][compare][invariants]") {
+    // The case this tier exists for: two renders of the same material that
+    // differ in phase, which is what a plugin holding its own state between
+    // calls produces. A residual comparison reports full scale; the invariants
+    // report that both renders are well formed, which is the true answer.
+    const auto native = decayingTone();
+    const auto incumbent = decayingTone(220.0, 8192, 0.9);
+
+    CHECK_FALSE(compareAudio(native, incumbent).nulled());
+
+    const auto invariants = compareInvariants(native, incumbent, invariantOptions());
+    CHECK(invariants.passed());
+    CHECK(invariants.problems.empty());
+}
+
+TEST_CASE("The invariants tier refuses a case that declared no bound",
+          "[nulldiff][compare][invariants]") {
+    // A bound nobody declared would certify a check that never ran, and this
+    // tier has no residual to fall back on. Refusing is the only honest answer.
+    const auto tone = decayingTone();
+
+    const auto invariants = compareInvariants(tone, tone, invariantOptions(0.0));
+
+    CHECK_FALSE(invariants.passed());
+    CHECK(invariants.refusal == "no discontinuity bound declared");
+}
+
+TEST_CASE("A render that is not finite is never certified", "[nulldiff][compare][invariants]") {
+    auto native = decayingTone();
+    native.getWritePointer(0)[1000] = std::numeric_limits<float>::quiet_NaN();
+
+    const auto invariants = compareInvariants(native, decayingTone(), invariantOptions());
+
+    CHECK_FALSE(invariants.finite);
+    CHECK_FALSE(invariants.passed());
+    REQUIRE_FALSE(invariants.problems.empty());
+    CHECK(invariants.problems.front().find("not finite") != std::string::npos);
+}
+
+TEST_CASE("A click past the bound is reported", "[nulldiff][compare][invariants]") {
+    // The failure that survives an engine agreeing with itself: something swapped
+    // without a ramp, which is a step in one render and audible as a click.
+    auto native = decayingTone();
+    native.getWritePointer(0)[2000] = 0.9f;
+    native.getWritePointer(0)[2001] = -0.9f;
+
+    const auto invariants = compareInvariants(native, decayingTone(), invariantOptions());
+
+    CHECK(invariants.finite);
+    CHECK_FALSE(invariants.continuous);
+    CHECK(invariants.worstStepNative > 1.0);
+    CHECK(invariants.worstStepAt == 2001);
+    CHECK_FALSE(invariants.passed());
+}
+
+TEST_CASE("A tail that never decays is reported", "[nulldiff][compare][invariants]") {
+    // A device left running past the end of its material. Both sides are asked
+    // on their own, because two engines leaking alike would cancel in a residual
+    // and be reported as agreement.
+    juce::AudioBuffer<float> ringing(1, 8192);
+    auto* data = ringing.getWritePointer(0);
+    for (auto index = 0; index < ringing.getNumSamples(); ++index)
+        data[index] =
+            static_cast<float>(0.5 * std::sin(2.0 * juce::MathConstants<double>::pi * 220.0 *
+                                              static_cast<double>(index) / kSampleRate));
+
+    const auto invariants = compareInvariants(ringing, ringing, invariantOptions());
+
+    CHECK(invariants.continuous);
+    CHECK_FALSE(invariants.tailDecays);
+    CHECK_FALSE(invariants.passed());
+    CHECK(invariants.tailPeakNativeDb > -60.0);
+}
+
+TEST_CASE("Renders of different lengths are reported rather than trimmed",
+          "[nulldiff][compare][invariants]") {
+    const auto native = decayingTone(220.0, 8192);
+    const auto incumbent = decayingTone(220.0, 8000);
+
+    const auto invariants = compareInvariants(native, incumbent, invariantOptions());
+
+    CHECK_FALSE(invariants.lengthsMatch);
+    CHECK_FALSE(invariants.passed());
 }
 
 // =============================================================================

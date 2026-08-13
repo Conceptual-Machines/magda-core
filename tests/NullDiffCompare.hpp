@@ -247,6 +247,79 @@ SpectralAgreement compareSpectra(const juce::AudioBuffer<float>& native,
                                  double floorDb = -60.0);
 
 // =============================================================================
+// Invariants, where there is no null to be had
+// =============================================================================
+
+/**
+ * What can still be asserted of a pair that will never null.
+ *
+ * An external plugin is the case this exists for. It may dither, it may hold
+ * internal state from however it was last called, and two hosts calling it are
+ * not obliged to agree on a sample. Comparing residuals there produces a number
+ * that is about the plugin rather than about either engine, and a tolerance wide
+ * enough to pass it is wide enough to pass anything.
+ *
+ * So the questions change rather than the bar moving. Each of these is a
+ * property of one render, checked on both, and a claim about the pair that does
+ * not depend on them agreeing sample for sample.
+ *
+ * Event order and latency belong to this tier too and are not here: the MIDI
+ * comparison below already compares streams in order, and latency is asserted
+ * where it is answered, which is the plan rather than the render.
+ */
+struct InvariantOptions {
+    double sampleRate = 44100.0;
+
+    /// The largest step either render may take between one sample and the next.
+    ///
+    /// Required rather than defaulted, and the corpus refuses a case in this
+    /// tier without one. A default would be a number nobody chose applied to
+    /// material nobody looked at: impulse material steps by full scale in one
+    /// sample legitimately, so a bound that suits a synth pad would fail it, and
+    /// a bound loose enough for an impulse would pass the click this check
+    /// exists to catch.
+    double maxStepPerSample = 0.0;
+
+    /// The tail is the last @p tailSeconds of the render, and it has to have
+    /// decayed below @p tailFloorDb. A device left running past the end of its
+    /// material is how a graph transition leaks, and a residual comparison would
+    /// not see it if both engines leaked alike.
+    double tailSeconds = 0.05;
+    double tailFloorDb = -60.0;
+};
+
+struct InvariantComparison {
+    bool finite = false;
+    bool lengthsMatch = false;
+    bool continuous = false;
+    bool tailDecays = false;
+
+    /// The worst step found, and where, per side. Printed whether or not the
+    /// bound held: a step creeping towards the bound is worth seeing before it
+    /// crosses it.
+    double worstStepNative = 0.0;
+    double worstStepIncumbent = 0.0;
+    std::int64_t worstStepAt = -1;
+
+    double tailPeakNativeDb = -std::numeric_limits<double>::infinity();
+    double tailPeakIncumbentDb = -std::numeric_limits<double>::infinity();
+
+    /// Set when the pair could not be checked at all, as distinct from failing
+    /// a check. A refusal is never reported as a passed invariant.
+    std::string refusal;
+
+    std::vector<std::string> problems;
+
+    bool passed() const {
+        return refusal.empty() && finite && lengthsMatch && continuous && tailDecays;
+    }
+};
+
+InvariantComparison compareInvariants(const juce::AudioBuffer<float>& native,
+                                      const juce::AudioBuffer<float>& incumbent,
+                                      const InvariantOptions& options);
+
+// =============================================================================
 // MIDI
 // =============================================================================
 
@@ -382,28 +455,67 @@ MidiComparison compareMidi(const MidiStream& native, const MidiStream& incumbent
 // The report
 // =============================================================================
 
-/// What a case claims. The corpus declares it; the runner asserts it.
-enum class Verdict {
-    /// Sample for sample, with nothing allowed for.
-    Null,
+/**
+ * @brief What can be true of two engines rendering the same audio.
+ *
+ * A determinism class rather than a per-case preference, which is the whole
+ * point of naming them: a case does not choose how strictly it is judged, it
+ * declares what stands between the two engines, and the tier follows from that.
+ * A tier is never a way to make a failing case pass. The rule the corpus was
+ * calibrated under still holds: change the shape of the comparison, never the
+ * size of the allowance.
+ *
+ * `Scripted` from the issue's list is deliberately absent. A launcher, a
+ * monitoring or a recording case is not an offline render of a range, so it
+ * needs a different runner rather than a different verdict, and a value here
+ * would be a promise this one does not keep.
+ */
+enum class AudioTier {
+    /// No audio assertion at all. The MIDI comparison carries the case.
+    None,
 
-    /// Sample for sample after one pinned shift, measured at the start and
-    /// asserted against what the engine predicts.
-    Shift,
+    /// Sample for sample, with nothing allowed for. Deterministic internal DSP
+    /// and simple routing, where nothing interpolates between the two.
+    Exact,
 
-    /// No audio assertion. The MIDI channel carries the case.
-    Midi,
+    /// Sample for sample after one pinned offset, measured at the start and
+    /// asserted against what the engine predicts. Latency, priming, and
+    /// anything else whose whole effect is a delay.
+    Aligned,
+
+    /// The pinned shift, envelope timing, and a magnitude bound. What is left to
+    /// ask when a phase vocoder stands between the two and the waveforms can
+    /// never converge.
+    Spectral,
+
+    /// Finite, equal length, bounded discontinuity, decayed tail. What is left
+    /// to ask of a nondeterministic external plugin, which owes nobody a sample.
+    Invariants,
 
     /// Measured and printed, asserted only to be finite. One case, which exists
     /// to say how far apart the two stretchers are on broadband material.
-    ReportOnly,
+    Measured,
 };
 
-const char* toString(Verdict verdict);
+const char* toString(AudioTier tier);
+
+/// What a case rendered under, printed wherever it differs from the corpus
+/// default. A residual that is really a fixture difference is the failure this
+/// exists to prevent: without the environment beside the number, a case at
+/// another rate looks like an engine that went wrong at one.
+struct CaseEnvironment {
+    double sampleRate = 44100.0;
+    int blockSize = 512;
+    int channels = 2;
+    std::uint32_t seed = 0;
+
+    bool operator==(const CaseEnvironment&) const = default;
+};
 
 struct CaseReport {
     std::string name;
-    Verdict verdict = Verdict::Null;
+    AudioTier tier = AudioTier::Exact;
+    CaseEnvironment environment;
 
     bool hasAudio = false;
     AudioComparison audio;
@@ -430,6 +542,11 @@ struct CaseReport {
     EnvelopeAgreement envelope;
     SpectralAgreement spectra;
 
+    /// Set on a case in the Invariants tier, where there is no null to be had
+    /// and the questions change instead of the bar moving.
+    bool hasInvariants = false;
+    InvariantComparison invariants;
+
     /// Set when the case could not be measured at all: a proxy that never
     /// arrived, a leg that returned nothing. Never reported as a residual,
     /// because a race reported as a parity failure costs somebody a day inside
@@ -445,8 +562,13 @@ struct CaseReport {
  * Numbers that move are the point. A corpus that only prints when it fails
  * cannot show a residual creeping from -138 dB to -122 dB, which is what an
  * engine going subtly wrong looks like before it goes audibly wrong.
+ *
+ * @p standard is what most of the corpus renders under, printed once in the
+ * header. A case that deviates prints its own environment on its own line, so
+ * that a number measured somewhere else can never be read as a number measured
+ * here.
  */
-std::string formatReport(const std::vector<CaseReport>& cases, double sampleRate, int blockSize);
+std::string formatReport(const std::vector<CaseReport>& cases, const CaseEnvironment& standard);
 
 /// dBFS from a linear amplitude, with a printable answer for silence.
 std::string formatDb(double db);

@@ -218,6 +218,7 @@ void PlanExecutor::reset() {
     midiSourceForOp_.clear();
     meterForOp_.clear();
     boundMeterCount_ = 0;
+    midiTapForOp_.clear();
 }
 
 std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const PlanBindings& bindings,
@@ -243,6 +244,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     audioSourceForOp_.assign(numOps, nullptr);
     midiSourceForOp_.assign(numOps, nullptr);
     meterForOp_.assign(numOps, nullptr);
+    midiTapForOp_.assign(numOps, nullptr);
 
     const auto describe = [&plan](std::size_t index) {
         return "op " + std::to_string(index) + " (" + toString(plan.ops[index].kind) + " " +
@@ -319,6 +321,18 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                     break;
                 meterForOp_[i] = found->second;
                 ++boundMeterCount_;
+                break;
+            }
+
+            case OpKind::MergeMidi: {
+                // Optional for the same reason a meter is, and silent for the
+                // same reason: an observation point nobody is watching is the
+                // ordinary case, and reporting one would put a line per track in
+                // front of every render that is not being observed.
+                const auto found = bindings.midiTaps.find(op.key);
+                if (found == bindings.midiTaps.end() || found->second == nullptr)
+                    break;
+                midiTapForOp_[i] = found->second;
                 break;
             }
 
@@ -733,11 +747,17 @@ void PlanExecutor::renderOp(OpId id, const OpValue& value, const BlockInfo& bloc
         case OpKind::MergeMidi: {
             auto& out = midiOut(id, 0);
             out.clear();
-            if (value.silent)
-                break;
-            for (const auto& input : op.inputs)
-                if (input.valid())
-                    out.addEvents(midiIn(input), 0, numSamples, 0);
+            if (!value.silent)
+                for (const auto& input : op.inputs)
+                    if (input.valid())
+                        out.addEvents(midiIn(input), 0, numSamples, 0);
+
+            // After the merge and on silent blocks too, so a tap reads what the
+            // chain reads rather than what the executor felt like reporting: a
+            // gated chain receives nothing, and that is a fact about the block
+            // rather than an absence of one.
+            if (auto* tap = midiTapForOp_[i]; tap != nullptr)
+                tap->write(out, block);
             break;
         }
 

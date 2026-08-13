@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -40,7 +41,14 @@ namespace magda::nulldiff {
 
 struct IncumbentRender {
     juce::AudioBuffer<float> audio;
+
+    /// Every capture's events, in timeline order. What the report prints.
     MidiStream midi;
+
+    /// The same events, kept apart by the track that received them, so that a
+    /// capture landing on the wrong track is a finding rather than an aggregate
+    /// that happens to contain the same bytes. See NullDiffNativeLeg.hpp.
+    std::map<TrackId, MidiStream> midiByTrack;
 
     /// Set when the case could not be rendered at all. Never reported as a
     /// residual: a race described as a parity failure costs somebody a day

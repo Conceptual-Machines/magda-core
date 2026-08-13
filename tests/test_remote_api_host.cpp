@@ -425,7 +425,7 @@ TEST_CASE("The token file is readable only by its owner", "[remote][host][auth]"
     RemoteApiHost host(api);
     REQUIRE(host.start());
 
-    struct stat info{};
+    struct stat info {};
     REQUIRE(stat(host.tokenFile().getFullPathName().toRawUTF8(), &info) == 0);
 
     // A credential every account on the machine can read is not a credential.

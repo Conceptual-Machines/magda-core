@@ -362,13 +362,36 @@ rebuild: clean debug
 
 # Format code
 .PHONY: format
+# Formatting goes through pre-commit, which pins the clang-format version in
+# .pre-commit-config.yaml. That pin is the point. Running whatever clang-format
+# happens to be on PATH means every developer formats to their own version, the
+# commit hook puts the file back on its way in, and the pair churn forever
+# against each other. One pinned binary, one set of files, used by this target,
+# by the hook and by CI.
+#
+# One behaviour worth knowing: --all-files means all *tracked* files, so a new
+# file that has not been git added yet is skipped here where the old find would
+# have formatted it. The commit hook catches it the moment it is staged, so
+# nothing reaches a commit unformatted; "make format did nothing to my new file"
+# is this, and not a bug.
 format:
 	@echo "🎨 Formatting code..."
-	@if command -v clang-format >/dev/null 2>&1; then \
-		find magda tests \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) | xargs clang-format -i; \
+	@if ! command -v pre-commit >/dev/null 2>&1; then \
+		echo "❌ pre-commit not found. Install it with: pip install pre-commit"; \
+		exit 1; \
+	fi
+	@# Twice on purpose. The first pass rewrites files and exits non-zero for
+	@# saying so, which is why its status cannot be trusted; the second has
+	@# nothing left to rewrite, so anything but success there is a real failure -
+	@# a broken hook environment, a download that did not arrive, a config that
+	@# does not parse. Swallowing the first status alone would report success for
+	@# all of those while formatting nothing.
+	@pre-commit run clang-format --all-files >/dev/null 2>&1 || true
+	@if pre-commit run clang-format --all-files; then \
 		echo "✅ Code formatting complete"; \
 	else \
-		echo "❌ clang-format not found. Please install it first."; \
+		echo "❌ Formatting failed for a reason other than rewriting files"; \
+		exit 1; \
 	fi
 
 # Lint code with clang-tidy (analyze all source files)

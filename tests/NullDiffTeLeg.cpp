@@ -3,8 +3,10 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
+#include <vector>
 
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/TrackController.hpp"
@@ -15,6 +17,7 @@
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/engine/OfflineRenderHelper.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
+#include "plan/PlanCompiler.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
 namespace magda::nulldiff {
@@ -253,10 +256,54 @@ IncumbentRender renderIncumbent(const Case& value) {
     for (const auto& track : value.tracks)
         trackController.ensureTrackMapping(track.id, track.name);
 
-    // The capture device, where the plan on the other side has one. Inserted
-    // straight into the track's list: the model device stands for a synth, and
+    // --- the mixer ------------------------------------------------------------
+    //
+    // The same four calls AudioBridge::trackPropertyChanged makes, in the order
+    // it makes them. Mute and solo go straight to the te::AudioTrack there, and
+    // volume and pan through AudioBridgeMixer, which is a pass-through to these
+    // exact TrackController functions. Not a second mixer written for the
+    // harness: the sync layer is part of what is being validated, and a fader
+    // that reaches Tracktion wrong is wrong for the same user.
+
+    for (const auto& track : value.tracks) {
+        if (auto* audioTrack = trackController.getAudioTrack(track.id)) {
+            audioTrack->setMute(track.muted);
+            audioTrack->setSolo(track.soloed);
+        }
+
+        trackController.setTrackVolume(track.id, track.volume);
+        trackController.setTrackPan(track.id, track.pan);
+    }
+
+    // Master, resolved the way AudioBridge::masterChannelChanged resolves it: a
+    // muted master is a volume of zero rather than a flag of its own, and a
+    // volume of zero is -100 dB rather than silence, because that is where the
+    // plugin's own range floors.
+    if (auto masterPlugin = edit->getMasterVolumePlugin()) {
+        const auto volume = value.master.muted ? 0.0f : value.master.volume;
+        masterPlugin->setVolumeDb(volume > 0.0f ? juce::Decibels::gainToDecibels(volume) : -100.0f);
+        masterPlugin->setPan(value.master.pan);
+    }
+
+    // The capture devices, where the plan on the other side has them. Inserted
+    // straight into each track's list: the model device stands for a synth, and
     // what is compared is what would reach it.
-    MidiCapturePlugin* capture = nullptr;
+    //
+    // One per track that consumes MIDI, not one on the first track. The native
+    // leg binds a capture to every Device op the plan emits and aggregates them
+    // all, so anything less here is asymmetric: an instrument on the second
+    // track would give the incumbent an empty stream against a full one, and a
+    // project with two instrument tracks would compare one against both. That
+    // was invisible while a case was either MIDI or audio and every MIDI case
+    // had one track; it stops being invisible the moment a project has an
+    // instrument track beside audio tracks, which is what this slice enables.
+    //
+    // Which tracks those are is the compiler's own answer (chainConsumesMidi)
+    // rather than a second opinion written here. Deciding it separately is how
+    // the two would drift the first time a device type was added.
+    // Paired with the track each stands on, so the streams can be compared where
+    // they were received rather than only in aggregate.
+    std::vector<std::pair<TrackId, MidiCapturePlugin*>> captures;
     if (value.capturesMidi()) {
         if (!captureDeviceRegistered) {
             result.failure = "the capture device could not be registered";
@@ -264,18 +311,26 @@ IncumbentRender renderIncumbent(const Case& value) {
             return result;
         }
 
-        if (auto* audioTrack = trackController.getAudioTrack(value.tracks.front().id)) {
+        for (const auto& track : value.tracks) {
+            if (!magda::engine::chainConsumesMidi(track))
+                continue;
+
+            auto* audioTrack = trackController.getAudioTrack(track.id);
+            if (audioTrack == nullptr)
+                continue;
+
             juce::ValueTree state(te::IDs::PLUGIN);
             state.setProperty(te::IDs::type, kCapturePluginId, nullptr);
 
             auto plugin = edit->getPluginCache().createNewPlugin(state);
-            capture = dynamic_cast<MidiCapturePlugin*>(plugin.get());
-            if (capture != nullptr)
+            if (auto* capture = dynamic_cast<MidiCapturePlugin*>(plugin.get())) {
                 audioTrack->pluginList.insertPlugin(plugin, 0, nullptr);
+                captures.emplace_back(track.id, capture);
+            }
         }
 
-        if (capture == nullptr) {
-            result.failure = "the capture device could not be placed on the track";
+        if (captures.empty()) {
+            result.failure = "no capture device could be placed on a MIDI-consuming track";
             ProjectManager::getInstance().setTempo(previousTempo);
             return result;
         }
@@ -379,8 +434,18 @@ IncumbentRender renderIncumbent(const Case& value) {
         }
     }
 
-    if (capture != nullptr)
-        result.midi = capture->captured;
+    // Every capture's stream, in timeline order, which is how the native leg
+    // aggregates its own. Sorted rather than concatenated: two instrument tracks
+    // would otherwise hand over one track's whole timeline followed by the
+    // other's, and the comparison reads a stream as a function of time.
+    for (const auto& [trackId, capture] : captures) {
+        auto& perTrack = result.midiByTrack[trackId];
+        perTrack.insert(perTrack.end(), capture->captured.begin(), capture->captured.end());
+        result.midi.insert(result.midi.end(), capture->captured.begin(), capture->captured.end());
+    }
+
+    std::stable_sort(result.midi.begin(), result.midi.end(),
+                     [](const MidiEvent& a, const MidiEvent& b) { return a.sample < b.sample; });
 
     // --- put the process back the way it was ---------------------------------
     //

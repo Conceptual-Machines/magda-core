@@ -5,6 +5,7 @@
 #include <set>
 #include <string>
 
+#include "AssertionWatch.hpp"
 #include "NullDiffCompare.hpp"
 #include "NullDiffNativeLeg.hpp"
 #include "NullDiffTeLeg.hpp"
@@ -47,6 +48,74 @@ juce::File scratchDirectory() {
         juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("magda_null_diff");
     root.createDirectory();
     return root;
+}
+
+/**
+ * @brief What the suite has to complain about, given a run.
+ *
+ * Separated from the runner so the rule can be tested without rendering
+ * anything, because one part of it is easy to get wrong in a way nothing would
+ * notice.
+ *
+ * A case under calibration is *expected* to fail its comparison, and the
+ * membership check is asserted in both directions so that neither a new failure
+ * nor a fixed one can happen quietly.
+ *
+ * What the list forgives is precisely one thing: a comparison result that has a
+ * number but not yet a bound with a mechanism behind it. It does not forgive not
+ * having measured. Two outcomes therefore sit outside it entirely, because both
+ * would otherwise meet the expected-failure membership by producing no
+ * comparison at all:
+ *
+ *  - **An assertion.** The engine objecting to its own graph is not a residual,
+ *    and a calibrating case that asserted would look exactly like one that
+ *    failed the way it was forgiven for.
+ *  - **Anything unmeasurable.** A leg that would not render, a proxy that never
+ *    arrived, a fixed-point read-back, a comparator refusal, a length mismatch.
+ *    Every one of them leaves `passed` false with nothing measured, and a
+ *    calibrating case would swallow it.
+ */
+struct SuiteComplaints {
+    /// Asserted while rendering. Any case, calibrating or not.
+    std::vector<std::string> asserted;
+
+    /// Produced no comparison at all. Any case, calibrating or not. Excludes
+    /// the ones that asserted, which are the same failure named better.
+    std::vector<std::string> unmeasurable;
+
+    /// Failed its comparison and was not expected to.
+    std::vector<std::string> unexpectedFailures;
+
+    /// Expected to fail and no longer does, so it should come off the list.
+    std::vector<std::string> nowHolding;
+
+    bool empty() const {
+        return asserted.empty() && unmeasurable.empty() && unexpectedFailures.empty() &&
+               nowHolding.empty();
+    }
+};
+
+SuiteComplaints judgeSuite(const std::set<std::string>& asserted,
+                           const std::set<std::string>& unmeasurable,
+                           const std::set<std::string>& failing,
+                           const std::set<std::string>& underCalibration) {
+    SuiteComplaints complaints;
+
+    complaints.asserted.assign(asserted.begin(), asserted.end());
+
+    for (const auto& name : unmeasurable)
+        if (asserted.count(name) == 0)
+            complaints.unmeasurable.push_back(name);
+
+    for (const auto& name : failing)
+        if (underCalibration.count(name) == 0)
+            complaints.unexpectedFailures.push_back(name);
+
+    for (const auto& name : underCalibration)
+        if (failing.count(name) == 0)
+            complaints.nowHolding.push_back(name);
+
+    return complaints;
 }
 
 /// Where the artefacts of a failing case go. A parity failure is diagnosed by
@@ -274,19 +343,50 @@ class NullDiffCorpusTests : public juce::UnitTest {
     void runTest() override {
         beginTest("Every case, through both engines");
 
-        const auto corpus = buildCorpus(scratchDirectory());
+        const auto corpus = sharedCorpus(scratchDirectory());
         std::vector<CaseReport> reports;
 
-        for (const auto& value : corpus)
-            reports.push_back(run(value));
+        // Read per case, so an assertion is attributed to the case that
+        // provoked it rather than to the run. Taken once before the walk begins
+        // to drop anything logged on the way in, which belongs to whatever ran
+        // before this test rather than to its first case.
+        auto& watch = magda::test::AssertionWatch::instance();
+        watch.take();
+
+        // Kept apart from pass and fail on purpose. A case under calibration is
+        // expected to fail, so an assertion inside one would be indistinguishable
+        // from the failure it was already forgiven for.
+        std::set<std::string> asserted;
+
+        for (const auto& value : corpus) {
+            auto report = run(value);
+
+            // An engine that objects to its own graph has not produced a render
+            // worth comparing, whatever the residual says. Reported as
+            // unmeasurable rather than as a residual, for the same reason a
+            // proxy that never arrived is: the number would be about something
+            // other than parity, and it would look like a parity failure.
+            if (auto fired = watch.take(); !fired.empty()) {
+                report.passed = false;
+                report.unmeasurable =
+                    "the engine asserted while rendering: " + fired.front().toStdString() +
+                    (fired.size() > 1 ? " (and " + std::to_string(fired.size() - 1) + " more)"
+                                      : "");
+                asserted.insert(value.name);
+
+                for (const auto& assertion : fired)
+                    logMessage("  " + juce::String(value.name) + ": " + assertion);
+            }
+
+            reports.push_back(std::move(report));
+        }
 
         // Printed on every run rather than only on failure. Numbers that move
         // are the point: a corpus that stays quiet cannot show a residual
         // creeping from -138 dB to -122 dB, which is what an engine going
         // subtly wrong looks like before it goes audibly wrong.
-        const auto report =
-            formatReport(reports, corpus.empty() ? 44100.0 : corpus.front().sampleRate,
-                         corpus.empty() ? 512 : corpus.front().blockSize);
+        const auto report = formatReport(reports, corpus.empty() ? CaseEnvironment{}
+                                                                 : corpus.front().environment());
         logMessage(report);
         std::cout << report << std::endl;
 
@@ -337,17 +437,53 @@ class NullDiffCorpusTests : public juce::UnitTest {
         };
 
         std::set<std::string> failing;
-        for (const auto& value : reports)
+        std::set<std::string> unmeasurable;
+        for (const auto& value : reports) {
             if (!value.passed)
                 failing.insert(value.name);
+            if (!value.unmeasurable.empty())
+                unmeasurable.insert(value.name);
+        }
 
-        for (const auto& value : reports)
-            if (underCalibration.count(value.name) == 0)
-                expect(value.passed, juce::String(value.name) + " did not hold");
+        const auto complaints = judgeSuite(asserted, unmeasurable, failing, underCalibration);
 
-        for (const auto& name : underCalibration)
-            expect(failing.count(name) == 1,
-                   juce::String(name) + " now holds and should come off the calibration list");
+        const auto join = [](const std::vector<std::string>& names) {
+            juce::StringArray parts;
+            for (const auto& name : names)
+                parts.add(juce::String(name));
+            return parts.joinIntoString(", ");
+        };
+
+        // Every case reached a verdict. Asserted positively rather than left
+        // implied, because the three checks below all pass on an empty run, and
+        // a corpus that rendered nothing would otherwise look exactly like a
+        // corpus that agreed about everything.
+        expect(reports.size() == corpus.size(), "expected " + juce::String((int)corpus.size()) +
+                                                    " reports, got " +
+                                                    juce::String((int)reports.size()));
+
+        // Assertions first, and outside the calibration list entirely. A case
+        // that is expected to fail would otherwise satisfy that expectation by
+        // asserting, and the invalid graph this exists to catch would be green
+        // across the eight names above.
+        expect(complaints.asserted.empty(),
+               "asserted while rendering, which is never a result the calibration list forgives: " +
+                   join(complaints.asserted));
+
+        // The same rule, for the other way a case can produce no number: the
+        // list forgives a comparison without a bound, never an inability to
+        // measure one.
+        expect(
+            complaints.unmeasurable.empty(),
+            "could not be measured at all, which the calibration list does not forgive either: " +
+                join(complaints.unmeasurable));
+
+        expect(complaints.unexpectedFailures.empty(),
+               "did not hold: " + join(complaints.unexpectedFailures));
+
+        expect(complaints.nowHolding.empty(),
+               "now holds and should come off the calibration list: " +
+                   join(complaints.nowHolding));
     }
 
   private:
@@ -446,7 +582,8 @@ class NullDiffCorpusTests : public juce::UnitTest {
     CaseReport run(const Case& value) {
         CaseReport report;
         report.name = value.name;
-        report.verdict = value.verdict;
+        report.tier = value.tier;
+        report.environment = value.environment();
 
         const auto native = renderNative(value);
         const auto incumbent = renderIncumbent(value);
@@ -472,6 +609,11 @@ class NullDiffCorpusTests : public juce::UnitTest {
             return report;
         }
 
+        // The two questions, asked independently. A project with an instrument
+        // track and audio tracks answers both, and a case that answers neither
+        // is refused below rather than passing by having claimed nothing.
+        auto midiHeld = true;
+
         if (value.capturesMidi()) {
             MidiCompareOptions options;
             options.sampleRate = value.sampleRate;
@@ -482,13 +624,76 @@ class NullDiffCorpusTests : public juce::UnitTest {
                 std::llround(value.incumbentNoteEndEarlySeconds * value.sampleRate));
 
             report.hasMidi = true;
-            report.midi = compareMidi(native.midi, incumbent.midi, options);
-            report.passed = report.midi.passed();
 
-            if (!report.passed)
-                for (const auto& problem : report.midi.problems)
-                    logMessage("  " + juce::String(value.name) + ": " + problem);
+            // Start true and narrow, since the printed line is the conjunction
+            // over the tracks. The struct's own defaults are false, which is the
+            // right answer for a comparison nobody ran and the wrong start for
+            // one being accumulated.
+            report.midi.notesMatch = true;
+            report.midi.controllersMatch = true;
+            report.midi.otherMessagesMatch = true;
 
+            // Compared per track, not as one aggregate. A MidiEvent carries
+            // nothing but its bytes and its position, so two instrument tracks
+            // that received each other's notes produce the same flat stream as
+            // two that received their own: comparing the aggregate would certify
+            // a capture landing on the wrong track. The report still prints one
+            // note count, because that is what a reader wants; the judgement is
+            // made where the identity survives.
+            std::set<TrackId> tracks;
+            for (const auto& [trackId, stream] : native.midiByTrack)
+                tracks.insert(trackId);
+            for (const auto& [trackId, stream] : incumbent.midiByTrack)
+                tracks.insert(trackId);
+
+            midiHeld = !tracks.empty();
+
+            for (const auto trackId : tracks) {
+                const auto nativeStream = native.midiByTrack.find(trackId);
+                const auto incumbentStream = incumbent.midiByTrack.find(trackId);
+
+                // A track one leg captured and the other did not is the failure
+                // this split exists to see, and comparing against an empty
+                // stream would report it as every note missing rather than as
+                // the capture that was never placed.
+                if (nativeStream == native.midiByTrack.end() ||
+                    incumbentStream == incumbent.midiByTrack.end()) {
+                    midiHeld = false;
+                    logMessage("  " + juce::String(value.name) + ": track " +
+                               juce::String(trackId) + " was captured by " +
+                               (nativeStream == native.midiByTrack.end() ? "the incumbent"
+                                                                         : "the engine") +
+                               " only");
+                    continue;
+                }
+
+                const auto compared =
+                    compareMidi(nativeStream->second, incumbentStream->second, options);
+
+                // Accumulated so the printed line covers the whole project.
+                report.midi.notesCompared += compared.notesCompared;
+                report.midi.notesMatch = report.midi.notesMatch && compared.notesMatch;
+                report.midi.controllersMatch =
+                    report.midi.controllersMatch && compared.controllersMatch;
+                report.midi.otherMessagesMatch =
+                    report.midi.otherMessagesMatch && compared.otherMessagesMatch;
+
+                if (!compared.passed()) {
+                    midiHeld = false;
+                    for (const auto& problem : compared.problems)
+                        logMessage("  " + juce::String(value.name) + ": track " +
+                                   juce::String(trackId) + ": " + problem);
+                }
+            }
+        }
+
+        if (value.tier == AudioTier::None) {
+            if (!value.capturesMidi()) {
+                report.unmeasurable = "the case asserts nothing: no audio tier and no MIDI";
+                return report;
+            }
+
+            report.passed = midiHeld;
             return report;
         }
 
@@ -500,7 +705,7 @@ class NullDiffCorpusTests : public juce::UnitTest {
         // A narrow search where no shift is expected: it is a diagnosis rather
         // than an alignment, and the answer to "how far apart are these" is a
         // sample or two or it is not the question.
-        const auto searchRange = value.verdict == Verdict::Shift ? value.maxShiftSamples : 256;
+        const auto searchRange = value.tier == AudioTier::Spectral ? value.maxShiftSamples : 256;
         const auto estimate = estimateShift(native.audio, incumbent.audio, searchRange);
         report.hasMeasuredShift = estimate.found;
         report.shiftCorrelation = estimate.correlation;
@@ -508,8 +713,8 @@ class NullDiffCorpusTests : public juce::UnitTest {
 
         // A stretched case takes the envelope's answer, everything else the
         // waveform's, because those are the two things each can be aligned by.
-        report.measuredShift =
-            value.verdict == Verdict::Shift ? estimate.envelopeSamples : estimate.fractionalSamples;
+        report.measuredShift = value.tier == AudioTier::Spectral ? estimate.envelopeSamples
+                                                                 : estimate.fractionalSamples;
 
         // A declared sub-sample offset is undone before anything is measured.
         // Not a tolerance: if the offset were not the fixed thing the case
@@ -520,10 +725,33 @@ class NullDiffCorpusTests : public juce::UnitTest {
                 ? delayFractionally(native.audio, -value.declaredFractionalShiftSamples)
                 : native.audio;
 
+        // The invariants tier never asks for a residual, so it never asks for an
+        // alignment either: what it checks is a property of each render on its
+        // own, and sliding one against the other would change neither answer.
+        if (value.tier == AudioTier::Invariants) {
+            InvariantOptions options;
+            options.sampleRate = value.sampleRate;
+            options.maxStepPerSample = value.maxStepPerSample;
+
+            report.hasInvariants = true;
+            report.invariants = compareInvariants(native.audio, incumbent.audio, options);
+            report.passed = report.invariants.passed() && midiHeld;
+
+            if (!report.invariants.passed()) {
+                if (!report.invariants.refusal.empty())
+                    report.unmeasurable = report.invariants.refusal;
+                for (const auto& problem : report.invariants.problems)
+                    logMessage("  " + juce::String(value.name) + ": " + problem);
+                writeArtefacts(value.name, native.audio, incumbent.audio, value.sampleRate);
+            }
+
+            return report;
+        }
+
         AudioCompareOptions options;
         options.floorDb = value.floorDb;
         options.sampleRate = value.sampleRate;
-        options.measureShift = value.verdict == Verdict::Shift;
+        options.measureShift = value.tier == AudioTier::Spectral;
         options.maxShiftSamples = value.maxShiftSamples;
 
         report.hasAudio = true;
@@ -548,29 +776,47 @@ class NullDiffCorpusTests : public juce::UnitTest {
             return report;
         }
 
-        switch (value.verdict) {
-            case Verdict::Null:
+        switch (value.tier) {
+            case AudioTier::Exact:
                 report.passed = report.audio.nulled();
                 break;
 
-            case Verdict::Shift:
+            case AudioTier::Aligned:
+                // One pinned offset, then the same null everything else is held
+                // to. The offset is declared rather than fitted, and undone
+                // above before anything was measured, so the null arriving is
+                // the evidence that the mechanism is the fixed thing the case
+                // says it is. A case that declared no offset has aligned by
+                // nothing and is refused rather than quietly judged as Exact.
+                if (value.declaredFractionalShiftSamples == 0.0) {
+                    report.unmeasurable = "an aligned case with no declared offset";
+                    return report;
+                }
+                report.passed = report.audio.nulled();
+                break;
+
+            case AudioTier::Spectral:
                 report.passed = judgeStretched(value, native, incumbent, report);
                 break;
 
-            case Verdict::ReportOnly:
+            case AudioTier::Measured:
                 // Measured and printed. What it says is how far apart the two
                 // stretchers are on material that has everything in it, which
                 // is a number worth watching and not a claim about playback.
                 //
                 // That it was measurable at all is asked above, with the same
-                // two questions every other verdict gets, so this really is the
+                // two questions every other tier gets, so this really is the
                 // only thing left for it to decide.
                 report.passed = true;
                 break;
 
-            case Verdict::Midi:
+            case AudioTier::Invariants:
+            case AudioTier::None:
+                // Both returned above.
                 break;
         }
+
+        report.passed = report.passed && midiHeld;
 
         if (!report.passed)
             writeArtefacts(value.name, native.audio, incumbent.audio, value.sampleRate);
@@ -580,3 +826,82 @@ class NullDiffCorpusTests : public juce::UnitTest {
 };
 
 static NullDiffCorpusTests nullDiffCorpusTests;
+
+// =============================================================================
+// What the suite is held to
+// =============================================================================
+
+/**
+ * The calibration list forgives a comparison, never an assertion.
+ *
+ * Eight cases are expected to fail today, and the expectation is asserted in
+ * both directions so neither a new failure nor a fixed one passes quietly. That
+ * arrangement has one hole worth a test of its own: an assertion inside one of
+ * those eight satisfies the same expectation as the comparison failure it was
+ * forgiven for, so the invalid graph the watch was added to catch would be green
+ * across a third of the corpus.
+ */
+class NullDiffSuiteRuleTests : public juce::UnitTest {
+  public:
+    NullDiffSuiteRuleTests() : juce::UnitTest("Null Diff Suite Rules", "magda") {}
+
+    void runTest() override {
+        const std::set<std::string> calibrating{"tempo.auto", "warp.audio"};
+
+        beginTest("A calibrating case that asserts still fails the suite");
+        {
+            // It is failing, which is what the list expects of it, so the
+            // membership check is satisfied and says nothing. The assertion has
+            // to be what fails the suite, on its own.
+            const auto complaints = judgeSuite({"tempo.auto"}, {"tempo.auto"},
+                                               {"tempo.auto", "warp.audio"}, calibrating);
+
+            expect(complaints.asserted == std::vector<std::string>{"tempo.auto"});
+            expect(complaints.unmeasurable.empty(),
+                   "an assertion is that same failure, named better");
+            expect(complaints.unexpectedFailures.empty(), "it is on the list, so not unexpected");
+            expect(complaints.nowHolding.empty(), "both are still failing");
+            expect(!complaints.empty(), "the suite has to complain about something");
+        }
+
+        beginTest("A calibrating case that could not be measured still fails the suite");
+        {
+            // A proxy that never arrived, a leg that would not render, a
+            // read-back that was not float, a comparator refusal, a length
+            // mismatch. Every one leaves the case failing with nothing measured,
+            // which is what the expected-failure membership would otherwise
+            // swallow. The list forgives a comparison without a bound, never the
+            // absence of a comparison.
+            const auto complaints =
+                judgeSuite({}, {"tempo.auto"}, {"tempo.auto", "warp.audio"}, calibrating);
+
+            expect(complaints.unmeasurable == std::vector<std::string>{"tempo.auto"});
+            expect(complaints.unexpectedFailures.empty(), "it is on the list, so not unexpected");
+            expect(complaints.nowHolding.empty(), "both are still failing");
+            expect(!complaints.empty(), "the suite has to complain about something");
+        }
+
+        beginTest("A calibrating case that merely fails says nothing");
+        {
+            const auto complaints = judgeSuite({}, {}, {"tempo.auto", "warp.audio"}, calibrating);
+            expect(complaints.empty(), "the run everybody expects");
+        }
+
+        beginTest("A case that asserts outside the list fails too");
+        {
+            const auto complaints = judgeSuite(
+                {"mix.pan"}, {"mix.pan"}, {"mix.pan", "tempo.auto", "warp.audio"}, calibrating);
+
+            expect(complaints.asserted == std::vector<std::string>{"mix.pan"});
+            expect(complaints.unexpectedFailures == std::vector<std::string>{"mix.pan"});
+        }
+
+        beginTest("A calibrating case that starts holding has to come off the list");
+        {
+            const auto complaints = judgeSuite({}, {}, {"warp.audio"}, calibrating);
+            expect(complaints.nowHolding == std::vector<std::string>{"tempo.auto"});
+        }
+    }
+};
+
+static NullDiffSuiteRuleTests nullDiffSuiteRuleTests;

@@ -394,6 +394,7 @@ target_sources(magda_juce_tests PRIVATE
     test_offline_render_device_power_juce.cpp
     test_tracktion_engine_wrapper_refactoring_juce.cpp
     # test_export_no_assertion_juce.cpp  # Disabled - see issue #611 (generator device export)
+    test_assertion_watch_juce.cpp
     test_midi_recording_juce.cpp
     test_clip_sync_integration_juce.cpp
     test_signalsmith_loop_juce.cpp
@@ -525,6 +526,10 @@ endif()
 
 target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
     MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1
+    # JUCE_LOG_ASSERTIONS is set on magda_daw instead, gated on MAGDA_BUILD_TESTS:
+    # that is where Tracktion is compiled, and an assertion's logging is decided
+    # where the macro expands rather than where the test that wants to read it
+    # lives. Setting it here reaches nothing.
     # Frozen device parameter order (#1887) lives in the source tree so an
     # intentional change shows up as a reviewable diff.
     MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt")

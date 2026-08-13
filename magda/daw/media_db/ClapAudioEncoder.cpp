@@ -2,15 +2,15 @@
 
 #if defined(MAGDA_HAVE_CLAP) && MAGDA_HAVE_CLAP
 
-#include <onnxruntime_cxx_api.h>
+    #include <onnxruntime_cxx_api.h>
 
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <cstdint>
-#include <vector>
+    #include <algorithm>
+    #include <array>
+    #include <cmath>
+    #include <cstdint>
+    #include <vector>
 
-#include "MelSpectrogram.hpp"
+    #include "MelSpectrogram.hpp"
 
 namespace magda::media {
 
@@ -181,8 +181,12 @@ ClapAudioEncoder::~ClapAudioEncoder() = default;
 ClapAudioEncoder::ClapAudioEncoder(ClapAudioEncoder&&) noexcept = default;
 ClapAudioEncoder& ClapAudioEncoder::operator=(ClapAudioEncoder&&) noexcept = default;
 
-int ClapAudioEncoder::dim() const noexcept { return 512; }
-int ClapAudioEncoder::sampleRate() const noexcept { return 48000; }
+int ClapAudioEncoder::dim() const noexcept {
+    return 512;
+}
+int ClapAudioEncoder::sampleRate() const noexcept {
+    return 48000;
+}
 
 const std::string& ClapAudioEncoder::modelId() const noexcept {
     static const std::string kEmpty;

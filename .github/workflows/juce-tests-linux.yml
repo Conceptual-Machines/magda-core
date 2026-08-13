@@ -134,7 +134,7 @@ jobs:
 
     - name: Configure CMake
       run: |
-        cmake -B build-juce -G Ninja \
+        "$GITHUB_WORKSPACE/scripts/ci-retry.sh" cmake -B build-juce -G Ninja \
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
           -DMAGDA_BUILD_TESTS=ON \

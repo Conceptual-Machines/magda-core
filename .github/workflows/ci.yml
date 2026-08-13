@@ -230,7 +230,7 @@ jobs:
     # sccache binary installed, failing every compile; -DVAR= overrides them.
     - name: Configure CMake
       run: |
-        cmake -B build -G Ninja \
+        "$GITHUB_WORKSPACE/scripts/ci-retry.sh" cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
           -DMAGDA_BUILD_TESTS=ON \
@@ -289,39 +289,29 @@ jobs:
         submodules: recursive
         lfs: true
 
-    - name: Cache apt packages
+    - name: Cache the pre-commit environment
       uses: actions/cache@v6
       with:
-        path: /var/cache/apt/archives
-        key: ${{ runner.os }}-apt-clang-${{ hashFiles('.github/workflows/ci.yml') }}
+        path: ~/.cache/pre-commit
+        key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
         restore-keys: |
-          ${{ runner.os }}-apt-clang-
+          ${{ runner.os }}-pre-commit-
 
-    - name: Install clang-format
-      run: |
-        # Hosted runners occasionally ship a stale Chrome apt source that can
-        # fail unrelated package installs with a hash mismatch.
-        sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google.list
-        sudo apt-get clean
-        sudo rm -rf /var/lib/apt/lists/*
-        sudo apt-get update -o Acquire::Retries=3
-        sudo apt-get install -y clang-format
+    # Formatting is checked with the clang-format version pinned in
+    # .pre-commit-config.yaml, which is the same one the commit hook and
+    # 'make format' now use. Installing the runner's own clang-format made this
+    # job a third opinion: a different version over a narrower set of
+    # directories than either of the other two, so it passed files the hook
+    # would rewrite and never looked at magda/engine or magda/music at all.
+    - name: Install pre-commit
+      run: pipx install pre-commit
 
     - name: Check code formatting
       run: |
-        echo "Checking code formatting with clang-format..."
-        echo "Running: find + clang-format --dry-run --Werror"
-
-        # Run clang-format check and capture output
-        # --Werror makes formatting issues return non-zero exit code
-        if find magda/daw magda/agents tests -name "*.cpp" -o -name "*.hpp" -o -name "*.h" 2>/dev/null | \
-          xargs clang-format --dry-run --Werror 2>&1 | tee format-check.log; then
-          echo "✅ Format check passed!"
+        echo "Checking code formatting with the pinned clang-format..."
+        if pre-commit run clang-format --all-files --show-diff-on-failure; then
+          echo "Format check passed!"
         else
-          echo ""
-          echo "❌ Format check found issues"
-          echo "Files with formatting problems:"
-          cat format-check.log
           echo ""
           echo "To fix these issues, run: make format"
           exit 1
@@ -552,8 +542,9 @@ jobs:
 
           mkdir -p "$work/extracted"
           case "$archive" in
-            *.zip) unzip -q "$work/$archive" -d "$work/extracted" ;;
-            *)     tar -xzf "$work/$archive" -C "$work/extracted" ;;
+            *.zip)    unzip -q "$work/$archive" -d "$work/extracted" ;;
+            *.tar.xz) tar -xJf "$work/$archive" -C "$work/extracted" ;;
+            *)        tar -xzf "$work/$archive" -C "$work/extracted" ;;
           esac
 
           # FetchContent hands its caller what is inside the archive rather
@@ -593,16 +584,52 @@ jobs:
           https://www.sqlite.org/2026/sqlite-amalgamation-3530100.zip \
           && echo "sqlite_dir=$SQLITE_DIR" >> "$GITHUB_OUTPUT"
 
+        # wasmtime, and it is here for a sharper reason than saving a download.
+        #
+        # CMake's own downloader fails intermittently on this asset from this
+        # machine: file(DOWNLOAD) gets "Server returned nothing (no headers, no
+        # data)" following GitHub's redirect to release-assets.githubusercontent
+        # .com, measured at roughly one attempt in five and much worse in bursts,
+        # while curl fetches the same URL every time from the same shell a second
+        # later. Retrying configure does not help when the burst outlasts the
+        # attempts, and it cost this branch three red macOS runs.
+        #
+        # So the archive comes down through curl, which is reliable here, and
+        # CMake is handed the unpacked tree instead of a URL.
+        WASMTIME_VERSION=v47.0.2
+        WASMTIME_ASSET=aarch64-macos-c-api
+        WASMTIME_DIR="$CACHE_ROOT/wasmtime-$WASMTIME_VERSION-$WASMTIME_ASSET"
+
+        seed "$WASMTIME_DIR" \
+          c013fe243fd6e13cd63f13dcfa88c3aff5664e356181a2e1bda2c3bf8381fde0 \
+          "wasmtime-$WASMTIME_VERSION-$WASMTIME_ASSET.tar.xz" \
+          "https://github.com/bytecodealliance/wasmtime/releases/download/$WASMTIME_VERSION/wasmtime-$WASMTIME_VERSION-$WASMTIME_ASSET.tar.xz" \
+          && echo "wasmtime_dir=$WASMTIME_DIR" >> "$GITHUB_OUTPUT"
+
+        # The ONNX Runtime, for the same reason: it is the other release asset
+        # CMake fetches on this runner, and it failed the same way on the same
+        # afternoon.
+        ORT_VERSION=1.26.0
+        ORT_DIR="$CACHE_ROOT/onnxruntime-osx-arm64-$ORT_VERSION"
+
+        seed "$ORT_DIR" \
+          7a1280bbb1701ea514f71828765237e7896e0f2e1cd332f1f70dbd5c3e33aca3 \
+          "onnxruntime-osx-arm64-$ORT_VERSION.tgz" \
+          "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/onnxruntime-osx-arm64-$ORT_VERSION.tgz" \
+          && echo "onnxruntime_dir=$ORT_DIR" >> "$GITHUB_OUTPUT"
+
         exit 0
 
     - name: Configure CMake (Debug)
       run: |
-        cmake -B build-debug -G Ninja \
+        "$GITHUB_WORKSPACE/scripts/ci-retry.sh" cmake -B build-debug -G Ninja \
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
           -DMAGDA_BUILD_TESTS=ON \
           ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} \
           ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.wasmtime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_WASMTIME={0}', steps.deps-cache.outputs.wasmtime_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.onnxruntime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_ONNXRUNTIME={0}', steps.deps-cache.outputs.onnxruntime_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.faust_debug_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.faust_debug_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.mutable_debug_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.mutable_debug_dir) || '' }}
 
@@ -642,11 +669,13 @@ jobs:
 
     - name: Configure CMake (Release)
       run: |
-        cmake -B build-release -G Ninja \
+        "$GITHUB_WORKSPACE/scripts/ci-retry.sh" cmake -B build-release -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
           -DMAGDA_BUILD_TESTS=OFF \
           ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} \
           ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.wasmtime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_WASMTIME={0}', steps.deps-cache.outputs.wasmtime_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.onnxruntime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_ONNXRUNTIME={0}', steps.deps-cache.outputs.onnxruntime_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.faust_release_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.faust_release_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.mutable_release_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.mutable_release_dir) || '' }}
 
@@ -717,6 +746,13 @@ jobs:
           GH_TOKEN: ${{ secrets.RUNNER_STATUS_PAT }}
         run: |
           set -euo pipefail
+
+          # TEMPORARY: forced to windows-latest while the magda-luca machine is
+          # not reachable. Delete this block to restore the pick below.
+          echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
+          echo "Pinned to windows-latest: self-hosted selection is temporarily disabled"
+          exit 0
+
           if [ -z "${GH_TOKEN:-}" ]; then
             echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
             echo "No RUNNER_STATUS_PAT available in this context (e.g. Dependabot PRs do not see repo secrets); falling back to windows-latest"
@@ -774,6 +810,22 @@ jobs:
     # recompiled (that ~10 min build only happens on the very first run / after a
     # pin bump). On GitHub-hosted runners the VM is ephemeral, so clone into
     # RUNNER_TEMP and let actions/cache carry the binary cache between runs.
+    # vcpkg.exe comes from a GitHub release, fetched by vcpkg's own bootstrap
+    # over WinHttp, and that fetch has failed this job outright: "the server
+    # returned an invalid or unrecognized response". It is the same shape as the
+    # asset failures on macOS, where CMake's downloader came back empty from
+    # GitHub while curl never did.
+    #
+    # A hosted runner keeps nothing between runs, so the tool is fetched again
+    # every time and every run gets another chance to lose. Cached, it is fetched
+    # once per pinned vcpkg commit and the bootstrap is skipped from then on.
+    - name: Cache the vcpkg tool
+      if: runner.environment == 'github-hosted'
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.temp }}\vcpkg-tool
+        key: ${{ runner.os }}-vcpkg-tool-${{ env.VCPKG_COMMIT }}
+
     - name: Setup vcpkg
       shell: powershell
       run: |
@@ -791,9 +843,87 @@ jobs:
         git -C $vcpkgRoot cat-file -e "$($env:VCPKG_COMMIT)^{commit}"
         if ($LASTEXITCODE -ne 0) { git -C $vcpkgRoot fetch origin }
         git -C $vcpkgRoot checkout $env:VCPKG_COMMIT
-        if (-not (Test-Path "$vcpkgRoot\vcpkg.exe")) {
-          & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+        # Whether there is a working tool at this path, which is not the same
+        # question as whether the path exists. bootstrap downloads straight to
+        # its destination, so an interrupted transfer leaves a prefix of an
+        # executable behind, and every later check that only looks for the file
+        # would accept it: the retry would stop early, and the cache would keep
+        # it for every run on this key from then on. Running it is the cheapest
+        # thing that cannot be fooled that way, and it is what bootstrap itself
+        # finishes with.
+        function Test-VcpkgTool($exe) {
+          if (-not (Test-Path $exe)) { return $false }
+          try {
+            & $exe version --disable-metrics | Out-Null
+            return ($LASTEXITCODE -eq 0)
+          } catch {
+            return $false
+          }
         }
+
+        # An executable already at the root is trusted only once it has run.
+        # That path survives every run on the self-hosted machine, including one
+        # where the last bootstrap attempt left a partial download there before
+        # this step gave up, so a file that merely exists would skip the cache
+        # restore and the retry loop both, and get copied into the tool cache on
+        # its way to failing at vcpkg install instead.
+        if ((Test-Path "$vcpkgRoot\vcpkg.exe") -and
+            (-not (Test-VcpkgTool "$vcpkgRoot\vcpkg.exe"))) {
+          Write-Host "the vcpkg.exe already present does not run, discarding it"
+          Remove-Item "$vcpkgRoot\vcpkg.exe" -Force -ErrorAction SilentlyContinue
+        }
+
+        # The tool this runner already fetched, put back before anything asks to
+        # download it again. See "Cache the vcpkg tool" above.
+        $toolCache = Join-Path $env:RUNNER_TEMP 'vcpkg-tool'
+        if ((-not (Test-Path "$vcpkgRoot\vcpkg.exe")) -and (Test-Path "$toolCache\vcpkg.exe")) {
+          Copy-Item "$toolCache\vcpkg.exe" "$vcpkgRoot\vcpkg.exe" -Force
+          if (Test-VcpkgTool "$vcpkgRoot\vcpkg.exe") {
+            Write-Host "vcpkg.exe restored from the tool cache"
+          } else {
+            Write-Host "the cached vcpkg.exe does not run, bootstrapping instead"
+            Remove-Item "$vcpkgRoot\vcpkg.exe" -Force -ErrorAction SilentlyContinue
+          }
+        }
+
+        if (-not (Test-Path "$vcpkgRoot\vcpkg.exe")) {
+          # Retried, because the download inside it is the flaky part and a
+          # second attempt half a minute later is usually enough.
+          $bootstrapped = $false
+          foreach ($attempt in 1..3) {
+            # Cleared first, so a half-written file from the attempt before
+            # cannot be inherited and mistaken for this one succeeding.
+            Remove-Item "$vcpkgRoot\vcpkg.exe" -Force -ErrorAction SilentlyContinue
+
+            $status = 1
+            try {
+              & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+              $status = $LASTEXITCODE
+            } catch {
+              Write-Host "vcpkg bootstrap threw: $_"
+            }
+
+            if ($status -eq 0 -and (Test-VcpkgTool "$vcpkgRoot\vcpkg.exe")) {
+              $bootstrapped = $true
+              break
+            }
+
+            Write-Host "vcpkg bootstrap attempt $attempt failed (exit $status)"
+            if ($attempt -lt 3) { Start-Sleep -Seconds 20 }
+          }
+
+          if (-not $bootstrapped) {
+            # So the next run starts from nothing rather than from whatever the
+            # last attempt managed to write.
+            Remove-Item "$vcpkgRoot\vcpkg.exe" -Force -ErrorAction SilentlyContinue
+            throw 'vcpkg bootstrap failed after 3 attempts'
+          }
+        }
+
+        # Kept for the next run on this runner, and only once it has run here.
+        New-Item -ItemType Directory -Force -Path $toolCache | Out-Null
+        Copy-Item "$vcpkgRoot\vcpkg.exe" "$toolCache\vcpkg.exe" -Force
+
         New-Item -ItemType Directory -Force -Path $binCache | Out-Null
         "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         "VCPKG_DEFAULT_BINARY_CACHE=$binCache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -1037,8 +1167,13 @@ jobs:
       if: always()
       run: ccache -s
 
+    # A timeout is here to catch a hang, not to enforce a performance budget.
+    # At five minutes it was doing the second job badly: the last green run on
+    # dev finished this step in 4:53, so any test added anywhere in the suite
+    # failed Windows and nowhere else, with a timeout for a message. Fifteen
+    # still catches a hang and stops the gate going red over seven seconds.
     - name: Run tests
-      timeout-minutes: 5
+      timeout-minutes: 15
       run: |
         $testExe = Get-ChildItem -Path build-debug -Recurse -Filter "magda_tests.exe" | Select-Object -First 1
         if ($testExe) {
