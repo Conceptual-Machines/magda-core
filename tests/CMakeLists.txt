@@ -69,6 +69,7 @@ set(TEST_SOURCES
     ../magda/daw/ui/components/chain/ChainNodePathDrag.cpp
     test_momentary_param_button.cpp
     test_delta_solo.cpp
+    test_hash_combine.cpp
     test_waveform_editor_absolute_mode.cpp
     test_clip_batch_edit.cpp
     test_clip_commands.cpp
@@ -399,6 +400,7 @@ target_sources(magda_juce_tests PRIVATE
     test_clip_sync_integration_juce.cpp
     test_signalsmith_loop_juce.cpp
     test_arranger_launcher_switching_juce.cpp
+    test_node_id_collision_juce.cpp
     test_session_slot_recording_juce.cpp
     test_input_monitor_track_routing_juce.cpp
     test_controller_track_level_write_juce.cpp
