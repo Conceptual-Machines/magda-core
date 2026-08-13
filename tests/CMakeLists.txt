@@ -70,6 +70,8 @@ set(TEST_SOURCES
     test_momentary_param_button.cpp
     test_delta_solo.cpp
     test_hash_combine.cpp
+    PlanGoldenFixtures.cpp
+    test_plan_goldens.cpp
     test_waveform_editor_absolute_mode.cpp
     test_clip_batch_edit.cpp
     test_clip_commands.cpp
@@ -340,6 +342,10 @@ target_compile_definitions(magda_tests
     PRIVATE
     MAGDA_REPO_ROOT="${CMAKE_SOURCE_DIR}"
     MAGDA_AUDIO_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/audio"
+    # Plan goldens (#2076) live in the source tree, so an intended change to
+    # the compiler shows up as a reviewable diff rather than a rewritten
+    # build artefact.
+    MAGDA_PLAN_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/goldens/plan"
     # The shared test engine must NOT auto-wire the live Tempo lane sync: it
     # attaches to the AutomationManager singleton and would perturb other tests.
     # TempoLaneSync is tested directly in test_tempo_lane_sync_juce.cpp instead.

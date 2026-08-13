@@ -1,0 +1,141 @@
+# edit-insert-device
+# op identity across an insert: what carries when indices all move
+#
+# Generated. See tests/test_plan_goldens.cpp to regenerate.
+
+== plan ==
+magda-render-plan v1
+ops=21 outputs=1
+[  0] ClipAudio   det   T1:clipAudio                   in=-                out=audio       deps=0
+[  1] MixAudio    det   T1:trackAudioInput             in=0:0              out=audio       deps=1
+[  2] Device      det   T1/D7:deviceProcess            in=1:0,-,-          out=audio       deps=1
+[  3] Gain        det   T1/D7:deviceGain               in=2:0              out=audio       deps=1
+[  4] Fader       det   T1:trackFader                  in=3:0,-            out=audio       deps=1
+[  5] Meter       det   T1:trackMeter                  in=4:0              out=audio       deps=1
+[  6] Gain        det   T1:trackMute                   in=5:0              out=audio       deps=1
+[  7] ClipAudio   det   T2:clipAudio                   in=-                out=audio       deps=0
+[  8] MixAudio    det   T2:trackAudioInput             in=7:0              out=audio       deps=1
+[  9] Device      det   T2/D8:deviceProcess            in=8:0,-,-          out=audio       deps=1
+[ 10] Gain        det   T2/D8:deviceGain               in=9:0              out=audio       deps=1
+[ 11] Fader       det   T2:trackFader                  in=10:0,-           out=audio       deps=1
+[ 12] Meter       det   T2:trackMeter                  in=11:0             out=audio       deps=1
+[ 13] Gain        det   T2:trackMute                   in=12:0             out=audio       deps=1
+[ 14] Delay       det   T-2:mixInputDelay              in=6:0              out=audio       deps=1
+[ 15] Delay       det   T-2:mixInputDelay#1            in=13:0             out=audio       deps=1
+[ 16] MixAudio    det   T-2:trackAudioInput            in=14:0,15:0        out=audio       deps=2
+[ 17] Fader       det   T-2:trackFader                 in=16:0,-           out=audio       deps=1
+[ 18] Meter       det   T-2:trackMeter                 in=17:0             out=audio       deps=1
+[ 19] Gain        det   T-2:trackMute                  in=18:0             out=audio       deps=1
+[ 20] Output      det   T-2:hardwareOutput             in=19:0             out=-           deps=1
+ready=0,7
+
+== layout ==
+magda-plan-layout v1
+audioSlots=2 midiSlots=0 outputLatency=0
+[  0] ClipAudio   T1:clipAudio                   lat=0       ports=a0
+[  1] MixAudio    T1:trackAudioInput             lat=0       ports=a0          inplace
+[  2] Device      T1/D7:deviceProcess            lat=0       ports=a0          inplace
+[  3] Gain        T1/D7:deviceGain               lat=0       ports=a0          inplace
+[  4] Fader       T1:trackFader                  lat=0       ports=a0          inplace
+[  5] Meter       T1:trackMeter                  lat=0       ports=a0          inplace
+[  6] Gain        T1:trackMute                   lat=0       ports=a0          inplace
+[  7] ClipAudio   T2:clipAudio                   lat=0       ports=a1
+[  8] MixAudio    T2:trackAudioInput             lat=0       ports=a1          inplace
+[  9] Device      T2/D8:deviceProcess            lat=0       ports=a1          inplace
+[ 10] Gain        T2/D8:deviceGain               lat=0       ports=a1          inplace
+[ 11] Fader       T2:trackFader                  lat=0       ports=a1          inplace
+[ 12] Meter       T2:trackMeter                  lat=0       ports=a1          inplace
+[ 13] Gain        T2:trackMute                   lat=0       ports=a1          inplace
+[ 14] Delay       T-2:mixInputDelay              lat=0       ports=a0          hold=0 elided
+[ 15] Delay       T-2:mixInputDelay#1            lat=0       ports=a1          hold=0 elided
+[ 16] MixAudio    T-2:trackAudioInput            lat=0       ports=a0          inplace
+[ 17] Fader       T-2:trackFader                 lat=0       ports=a0          inplace
+[ 18] Meter       T-2:trackMeter                 lat=0       ports=a0          inplace
+[ 19] Gain        T-2:trackMute                  lat=0       ports=a0          inplace
+[ 20] Output      T-2:hardwareOutput             lat=-       ports=-
+
+== edited plan ==
+magda-render-plan v1
+ops=23 outputs=1
+[  0] ClipAudio   det   T1:clipAudio                   in=-                out=audio       deps=0
+[  1] MixAudio    det   T1:trackAudioInput             in=0:0              out=audio       deps=1
+[  2] Device      det   T1/D9:deviceProcess            in=1:0,-,-          out=audio       deps=1
+[  3] Gain        det   T1/D9:deviceGain               in=2:0              out=audio       deps=1
+[  4] Device      det   T1/D7:deviceProcess            in=3:0,-,-          out=audio       deps=1
+[  5] Gain        det   T1/D7:deviceGain               in=4:0              out=audio       deps=1
+[  6] Fader       det   T1:trackFader                  in=5:0,-            out=audio       deps=1
+[  7] Meter       det   T1:trackMeter                  in=6:0              out=audio       deps=1
+[  8] Gain        det   T1:trackMute                   in=7:0              out=audio       deps=1
+[  9] ClipAudio   det   T2:clipAudio                   in=-                out=audio       deps=0
+[ 10] MixAudio    det   T2:trackAudioInput             in=9:0              out=audio       deps=1
+[ 11] Device      det   T2/D8:deviceProcess            in=10:0,-,-         out=audio       deps=1
+[ 12] Gain        det   T2/D8:deviceGain               in=11:0             out=audio       deps=1
+[ 13] Fader       det   T2:trackFader                  in=12:0,-           out=audio       deps=1
+[ 14] Meter       det   T2:trackMeter                  in=13:0             out=audio       deps=1
+[ 15] Gain        det   T2:trackMute                   in=14:0             out=audio       deps=1
+[ 16] Delay       det   T-2:mixInputDelay              in=8:0              out=audio       deps=1
+[ 17] Delay       det   T-2:mixInputDelay#1            in=15:0             out=audio       deps=1
+[ 18] MixAudio    det   T-2:trackAudioInput            in=16:0,17:0        out=audio       deps=2
+[ 19] Fader       det   T-2:trackFader                 in=18:0,-           out=audio       deps=1
+[ 20] Meter       det   T-2:trackMeter                 in=19:0             out=audio       deps=1
+[ 21] Gain        det   T-2:trackMute                  in=20:0             out=audio       deps=1
+[ 22] Output      det   T-2:hardwareOutput             in=21:0             out=-           deps=1
+ready=0,9
+
+== diff ==
+magda-plan-diff v1
+ops=23 carried=20 retired=1
+[  0] carry   T1:clipAudio                   from=T1:clipAudio
+[  1] carry   T1:trackAudioInput             from=T1:trackAudioInput
+[  2] new     T1/D9:deviceProcess
+[  3] new     T1/D9:deviceGain
+[  4] new     T1/D7:deviceProcess
+[  5] carry   T1/D7:deviceGain               from=T1/D7:deviceGain
+[  6] carry   T1:trackFader                  from=T1:trackFader
+[  7] carry   T1:trackMeter                  from=T1:trackMeter
+[  8] carry   T1:trackMute                   from=T1:trackMute
+[  9] carry   T2:clipAudio                   from=T2:clipAudio
+[ 10] carry   T2:trackAudioInput             from=T2:trackAudioInput
+[ 11] carry   T2/D8:deviceProcess            from=T2/D8:deviceProcess
+[ 12] carry   T2/D8:deviceGain               from=T2/D8:deviceGain
+[ 13] carry   T2:trackFader                  from=T2:trackFader
+[ 14] carry   T2:trackMeter                  from=T2:trackMeter
+[ 15] carry   T2:trackMute                   from=T2:trackMute
+[ 16] carry   T-2:mixInputDelay              from=T-2:mixInputDelay
+[ 17] carry   T-2:mixInputDelay#1            from=T-2:mixInputDelay#1
+[ 18] carry   T-2:trackAudioInput            from=T-2:trackAudioInput
+[ 19] carry   T-2:trackFader                 from=T-2:trackFader
+[ 20] carry   T-2:trackMeter                 from=T-2:trackMeter
+[ 21] carry   T-2:trackMute                  from=T-2:trackMute
+[ 22] carry   T-2:hardwareOutput             from=T-2:hardwareOutput
+retired T1/D7:deviceProcess
+
+== crossfaded ==
+inserted=1 unfaded=0
+magda-render-plan v1
+ops=24 outputs=1
+[  0] ClipAudio   det   T1:clipAudio                   in=-                out=audio       deps=0
+[  1] MixAudio    det   T1:trackAudioInput             in=0:0              out=audio       deps=1
+[  2] Device      det   T1/D9:deviceProcess            in=1:0,-,-          out=audio       deps=1
+[  3] Gain        det   T1/D9:deviceGain               in=2:0              out=audio       deps=1
+[  4] Crossfade   det   T1/D7:edgeCrossfade(deviceProcess slot 0) in=1:0,3:0          out=audio       deps=2
+[  5] Device      det   T1/D7:deviceProcess            in=4:0,-,-          out=audio       deps=1
+[  6] Gain        det   T1/D7:deviceGain               in=5:0              out=audio       deps=1
+[  7] Fader       det   T1:trackFader                  in=6:0,-            out=audio       deps=1
+[  8] Meter       det   T1:trackMeter                  in=7:0              out=audio       deps=1
+[  9] Gain        det   T1:trackMute                   in=8:0              out=audio       deps=1
+[ 10] ClipAudio   det   T2:clipAudio                   in=-                out=audio       deps=0
+[ 11] MixAudio    det   T2:trackAudioInput             in=10:0             out=audio       deps=1
+[ 12] Device      det   T2/D8:deviceProcess            in=11:0,-,-         out=audio       deps=1
+[ 13] Gain        det   T2/D8:deviceGain               in=12:0             out=audio       deps=1
+[ 14] Fader       det   T2:trackFader                  in=13:0,-           out=audio       deps=1
+[ 15] Meter       det   T2:trackMeter                  in=14:0             out=audio       deps=1
+[ 16] Gain        det   T2:trackMute                   in=15:0             out=audio       deps=1
+[ 17] Delay       det   T-2:mixInputDelay              in=9:0              out=audio       deps=1
+[ 18] Delay       det   T-2:mixInputDelay#1            in=16:0             out=audio       deps=1
+[ 19] MixAudio    det   T-2:trackAudioInput            in=17:0,18:0        out=audio       deps=2
+[ 20] Fader       det   T-2:trackFader                 in=19:0,-           out=audio       deps=1
+[ 21] Meter       det   T-2:trackMeter                 in=20:0             out=audio       deps=1
+[ 22] Gain        det   T-2:trackMute                  in=21:0             out=audio       deps=1
+[ 23] Output      det   T-2:hardwareOutput             in=22:0             out=-           deps=1
+ready=0,10

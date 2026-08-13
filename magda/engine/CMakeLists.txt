@@ -45,22 +45,26 @@ add_library(magda_engine STATIC
     plan/PlanDiff.cpp
     plan/PlanCrossfade.cpp
     plan/PlanDump.cpp
+    plan/PlanDiffDump.cpp
     plan/RenderPlan.hpp
     plan/PlanCompiler.hpp
     plan/PlanDiff.hpp
     plan/PlanCrossfade.hpp
     plan/PlanDump.hpp
+    plan/PlanDiffDump.hpp
     plan/TrackRouting.hpp
     exec/PlanExecutor.cpp
     exec/ParallelPlanExecutor.cpp
     exec/RenderThreadPool.cpp
     exec/PlanLayout.cpp
+    exec/PlanLayoutDump.cpp
     exec/PlanValues.cpp
     exec/RuntimeStateStore.cpp
     exec/EngineSession.cpp
     exec/OfflineRender.cpp
     exec/PlanExecutor.hpp
     exec/PlanLayout.hpp
+    exec/PlanLayoutDump.hpp
     exec/PlanValues.hpp
     exec/PlanBindings.hpp
     exec/EngineDevice.hpp
