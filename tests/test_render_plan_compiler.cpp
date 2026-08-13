@@ -1398,3 +1398,23 @@ TEST_CASE("validatePlan enforces liveness provenance", "[engine][plan][validate]
         CHECK(magda::engine::validatePlan(plan).empty());
     }
 }
+
+TEST_CASE("Device ids are project-unique, and the plan says so when they are not",
+          "[engine][plan][compiler]") {
+    // The compiler's ChainSite records only the innermost rack and chain,
+    // explicitly because device ids are project-unique; nothing in an op key
+    // says which section a device sat in. So the invariant has to hold, and
+    // this is the test that it is caught rather than assumed: two sections of
+    // one track reusing an id produce two ops the differ cannot tell apart,
+    // and carrying one op's runtime state into another is exactly the failure
+    // OpKey exists to prevent.
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(3)));
+    tracks[0].chain.postFxChainElements.push_back(PostFxChainElement{makeEffect(3)});
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    const auto problems = magda::engine::validatePlan(plan);
+
+    INFO(magda::engine::dumpPlan(plan));
+    CHECK_FALSE(problems.empty());
+}

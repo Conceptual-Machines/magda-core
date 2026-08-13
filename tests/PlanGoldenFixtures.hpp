@@ -34,14 +34,14 @@ struct Fixture {
     TrackInfo master;
     engine::CompileOptions options;
 
-    /// Device latencies in samples, keyed by the device's whole location.
+    /// Device latencies in samples, keyed by the op the latency belongs to.
     ///
-    /// A DeviceId alone does not say which device: it is allocated per
-    /// section, so the same one can appear on an FX slot and a post-FX slot,
-    /// and a fixture keyed on it would quietly give both the same latency and
-    /// pin a golden for a graph it did not describe. The runner requires each
-    /// entry to match exactly one Device op, so a location that names nothing
-    /// fails rather than contributing nothing.
+    /// The whole key rather than the device id alone. Device ids are
+    /// project-unique, so the id would in fact be enough today, but a fixture
+    /// stating where it means makes that an assumption the fixture does not
+    /// depend on. The runner requires each entry to match exactly one Device
+    /// op, which is what turns a mistyped location into a failure instead of a
+    /// golden quietly pinned with no delays in it.
     std::vector<std::pair<engine::OpKey, int>> deviceLatency;
 
     /// A second project, compiled and diffed against the first. Empty where

@@ -55,7 +55,7 @@ DeviceInfo instrument(DeviceId id) {
 
 /// Where a device sits, as the key its process op will carry. The runner
 /// requires it to match one op exactly, so a fixture cannot name a location
-/// that does not exist and get silence.
+/// that does not exist and get silence instead of a failure.
 engine::OpKey deviceAt(TrackId trackId, DeviceId deviceId, RackId rackId = INVALID_RACK_ID,
                        ChainId chainId = INVALID_CHAIN_ID) {
     engine::OpKey key;
