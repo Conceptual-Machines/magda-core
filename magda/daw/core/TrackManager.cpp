@@ -2301,6 +2301,23 @@ void TrackManager::setChainEnabled(TrackId trackId, bool enabled) {
     notifyTrackDevicesChanged(trackId);
 }
 
+void TrackManager::setPostFxPostFader(TrackId trackId, bool postFader) {
+    auto* track = getTrack(trackId);
+    if (!track || track->chain.postFxPostFader == postFader)
+        return;
+    track->chain.postFxPostFader = postFader;
+
+    // A devices-changed notification rather than a property one: this moves
+    // plugins across the fader, which is a change to the shape of the chain and
+    // is what PluginManager's reorder pass keys off.
+    notifyTrackDevicesChanged(trackId);
+}
+
+bool TrackManager::isPostFxPostFader(TrackId trackId) const {
+    const auto* track = getTrack(trackId);
+    return track == nullptr ? true : track->chain.postFxPostFader;
+}
+
 DeviceInfo* TrackManager::getDevice(TrackId trackId, DeviceId deviceId) {
     if (auto* track = getTrack(trackId)) {
         for (auto& element : track->chain.fxChainElements) {

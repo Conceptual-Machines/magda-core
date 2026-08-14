@@ -831,9 +831,11 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         removeSidechainMonitor(trackId);
 
     // Create TE plugins for post-FX devices (flat list, no racks/instruments).
-    // Inserted at -1 (append); the reorder pass below places them after the fx
-    // tree and ensureVolumePluginPosition keeps the fader after them, so the
-    // final order is [fx..., postFx..., mixerAnalysis..., VolumeAndPan, LevelMeter].
+    // Inserted at -1 (append); the reorder pass below sequences them, and which
+    // side of VolumeAndPan they land on is TrackChain::postFxPostFader (#2087):
+    //
+    //   post-fader: [fx..., VolumeAndPan, postFx..., mixerAnalysis..., LevelMeter]
+    //   pre-fader:  [fx..., postFx..., mixerAnalysis..., VolumeAndPan, LevelMeter]
     auto loadFlatSection = [&](const std::vector<PostFxChainElement>& section, auto pathBuilder) {
         for (const auto& elem : section) {
             const auto& device = elem.device;
@@ -967,7 +969,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 
     // Ensure VolumeAndPan is near the end of the chain (before LevelMeter)
     // This is the track's fader control - it should come AFTER audio sources
-    ensureVolumePluginPosition(teTrack);
+    ensureVolumePluginPosition(trackId, teTrack);
 
     // Ensure LevelMeter is at the end of the plugin chain for metering
     addLevelMeterToTrack(trackId);
@@ -1430,7 +1432,7 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plu
     });
 }
 
-void PluginManager::ensureVolumePluginPosition(te::AudioTrack* track) const {
+void PluginManager::ensureVolumePluginPosition(TrackId trackId, te::AudioTrack* track) const {
     if (!track)
         return;
 
@@ -1466,26 +1468,91 @@ void PluginManager::ensureVolumePluginPosition(te::AudioTrack* track) const {
     if (volPanIndex < 0)
         return;
 
-    // Check if there are any non-utility plugins after VolumeAndPan.
-    // VolumeAndPan is the track fader — it must come AFTER all audio-producing
-    // plugins (instruments, racks, FX, sends) and only before LevelMeter.
-    bool needsMove = false;
-    for (int i = volPanIndex + 1; i < plugins.size(); ++i) {
-        if (!dynamic_cast<te::LevelMeterPlugin*>(plugins[i])) {
-            needsMove = true;
+    // What legitimately belongs after the fader (#2087). Until now the answer
+    // was "only LevelMeter", which is why the fader was hoisted past everything
+    // else and why the post-FX stage could never actually be post-fader.
+    const auto postFaderPlugins = collectPostFaderPlugins(trackId);
+
+    // Where the fader goes: immediately before the first plugin that belongs
+    // after it, or at the end when nothing does.
+    int firstPostFader = -1;
+    for (int i = 0; i < plugins.size(); ++i) {
+        if (plugins[i] == volPanRaw)
+            continue;
+        if (postFaderPlugins.count(plugins[i]) != 0) {
+            firstPostFader = i;
             break;
         }
     }
 
-    if (!needsMove)
-        return;
+    if (firstPostFader < 0) {
+        // Nothing post-fader: the fader is last but for the meter, which is the
+        // rule this function has always enforced.
+        bool needsMove = false;
+        for (int i = volPanIndex + 1; i < plugins.size(); ++i) {
+            if (!dynamic_cast<te::LevelMeterPlugin*>(plugins[i])) {
+                needsMove = true;
+                break;
+            }
+        }
+        if (!needsMove)
+            return;
 
-    // Move VolumeAndPan to the end of the list.
-    // addLevelMeterToTrack() runs right after this and ensures LevelMeter
-    // is always the very last plugin, so the final order will be:
-    // [instruments, FX, sends, ..., VolumeAndPan, LevelMeter]
+        // addLevelMeterToTrack() runs right after this and ensures LevelMeter is
+        // always the very last plugin, so the final order will be:
+        // [instruments, FX, sends, ..., VolumeAndPan, LevelMeter]
+        volPanPlugin->removeFromParent();
+        plugins.insertPlugin(volPanPlugin, -1, nullptr);
+        return;
+    }
+
+    if (volPanIndex == firstPostFader - 1)
+        return;  // already immediately before the post-fader run
+
+    // Recompute the anchor after the removal rather than adjusting the index by
+    // hand: removing the fader shifts everything after it down by one only when
+    // the fader was earlier in the list, and getting that wrong puts the fader
+    // one slot inside its own post-fader run.
+    auto* anchor = plugins[firstPostFader];
     volPanPlugin->removeFromParent();
-    plugins.insertPlugin(volPanPlugin, -1, nullptr);
+    const int insertAt = plugins.indexOf(anchor);
+    plugins.insertPlugin(volPanPlugin, insertAt, nullptr);
+}
+
+std::unordered_set<te::Plugin*> PluginManager::collectPostFaderPlugins(TrackId trackId) const {
+    std::unordered_set<te::Plugin*> result;
+
+    const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (trackInfo == nullptr)
+        return result;
+
+    // The always-on measurement tap, which the mixing agent and MixAnalysisService
+    // read. PluginManagerMeasurement appends it last and says "Post-fader" while
+    // doing so; before this it was hoisted above the fader on the next chain sync,
+    // so both of those were reading pre-fader audio. Included here rather than
+    // left to the post-FX flag because it is post-fader unconditionally and its
+    // placement should not depend on whether the user happens to own a post-FX
+    // device.
+    if (auto tap = trackMeasurementTaps_.find(trackId); tap != trackMeasurementTaps_.end()) {
+        if (tap->second)
+            result.insert(tap->second.get());
+    }
+
+    if (!trackInfo->chain.postFxPostFader)
+        return result;
+
+    auto addSection = [&](const std::vector<PostFxChainElement>& section, auto pathBuilder) {
+        for (const auto& elem : section) {
+            juce::ScopedLock lock(pluginLock_);
+            auto it = findSyncedDevice(pathBuilder(trackId, elem.device.id));
+            if (it != syncedDevices_.end() && it->second.plugin)
+                result.insert(it->second.plugin.get());
+        }
+    };
+    addSection(trackInfo->chain.postFxChainElements, &ChainNodePath::postFxDevice);
+    addSection(trackInfo->chain.mixerAnalysisElements, &ChainNodePath::mixerAnalysisDevice);
+
+    return result;
 }
 
 // =============================================================================
@@ -1742,7 +1809,7 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
     }
 
     // Ensure VolumeAndPan and LevelMeter are present
-    ensureVolumePluginPosition(teTrack);
+    ensureVolumePluginPosition(trackId, teTrack);
     addLevelMeterToTrack(trackId);
 
     if (pluginOrderChanged)

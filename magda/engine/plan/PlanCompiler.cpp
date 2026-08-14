@@ -756,14 +756,25 @@ void Compiler::emitTrack(const TrackInfo& track) {
     if (track.chain.enabled)
         signal = emitElements(track.chain.fxChainElements, fxSite, signal);
 
-    const ChainSite postFxSite{track.id, INVALID_RACK_ID, INVALID_CHAIN_ID, ChainSegment::PostFx};
-    for (const auto& element : track.chain.postFxChainElements)
-        signal = emitDevice(element.device, postFxSite, signal);
+    // The post-FX stage and the mixer-analysis rail sit on whichever side of the
+    // fader the chain says (#2087). Emitted through one lambda called from one
+    // of two places rather than duplicated, so the two sides cannot drift into
+    // meaning different things.
+    auto emitPostFx = [&](ChainSignal in) {
+        const ChainSite postFxSite{track.id, INVALID_RACK_ID, INVALID_CHAIN_ID,
+                                   ChainSegment::PostFx};
+        for (const auto& element : track.chain.postFxChainElements)
+            in = emitDevice(element.device, postFxSite, in);
 
-    const ChainSite analysisSite{track.id, INVALID_RACK_ID, INVALID_CHAIN_ID,
-                                 ChainSegment::MixerAnalysis};
-    for (const auto& element : track.chain.mixerAnalysisElements)
-        signal = emitDevice(element.device, analysisSite, signal);
+        const ChainSite analysisSite{track.id, INVALID_RACK_ID, INVALID_CHAIN_ID,
+                                     ChainSegment::MixerAnalysis};
+        for (const auto& element : track.chain.mixerAnalysisElements)
+            in = emitDevice(element.device, analysisSite, in);
+        return in;
+    };
+
+    if (!track.chain.postFxPostFader)
+        signal = emitPostFx(signal);
 
     // --- fader, sends, meter, mute ---
     //
@@ -807,6 +818,17 @@ void Compiler::emitTrack(const TrackInfo& track) {
     const OpKey faderKey{track.id,          INVALID_RACK_ID,    INVALID_CHAIN_ID,
                          INVALID_DEVICE_ID, OpRole::TrackFader, 0};
     PortRef out{addOp(OpKind::Fader, faderKey, {signal.audio, noInput()}, {SignalKind::Audio}), 0};
+
+    // Post-fader, the stage runs between the fader and the post-fader sends, so
+    // a send tapped after the fader carries the post-FX processing with it and a
+    // meter dropped in here reads what leaves the track. The sidechain tap and
+    // the mute stay downstream of it either way, which is what keeps this from
+    // changing where a compressor keyed off this track listens.
+    if (track.chain.postFxPostFader) {
+        signal.audio = out;
+        signal = emitPostFx(signal);
+        out = signal.audio;
+    }
 
     emitSends(false, out);
 
