@@ -760,6 +760,15 @@ void Compiler::emitTrack(const TrackInfo& track) {
     // fader the chain says (#2087). Emitted through one lambda called from one
     // of two places rather than duplicated, so the two sides cannot drift into
     // meaning different things.
+    // The master is pre-fader in both engines whatever the flag says, because
+    // Tracktion cannot represent anything else: `createMasterPluginNode` builds
+    // the whole of `getMasterPluginList()` and only then wraps it in
+    // `getMasterVolumePlugin()`, so a plugin after the master fader would need a
+    // change to TE's own graph builder. Honouring the flag here and not there
+    // would make the master the one place the two engines disagree, which is the
+    // failure this whole contract exists to prevent. See #2087.
+    const bool stagePostFader = track.chain.postFxPostFader && !isMaster;
+
     auto emitPostFx = [&](ChainSignal in) {
         const ChainSite postFxSite{track.id, INVALID_RACK_ID, INVALID_CHAIN_ID,
                                    ChainSegment::PostFx};
@@ -773,7 +782,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
         return in;
     };
 
-    if (!track.chain.postFxPostFader)
+    if (!stagePostFader)
         signal = emitPostFx(signal);
 
     // --- fader, sends, meter, mute ---
@@ -824,7 +833,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
     // meter dropped in here reads what leaves the track. The sidechain tap and
     // the mute stay downstream of it either way, which is what keeps this from
     // changing where a compressor keyed off this track listens.
-    if (track.chain.postFxPostFader) {
+    if (stagePostFader) {
         signal.audio = out;
         signal = emitPostFx(signal);
         out = signal.audio;

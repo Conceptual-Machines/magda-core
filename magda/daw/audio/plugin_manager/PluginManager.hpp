@@ -183,6 +183,12 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
      * @brief Ensure VolumeAndPanPlugin is at the correct position (near end of chain)
      * @param track The Tracktion Engine audio track
      */
+    /// Append everything after the fx tree to `desiredOrder`, grouped so that
+    /// every pre-fader plugin precedes every post-fader one. Shared by the
+    /// ordinary and multi-out sync paths, which each used to carry their own.
+    void appendStripOrder(TrackId trackId, const TrackInfo& trackInfo, te::AudioTrack& track,
+                          std::vector<te::Plugin*>& desiredOrder) const;
+
     void ensureVolumePluginPosition(TrackId trackId, te::AudioTrack* track) const;
 
     /// The plugins on `trackId` that belong after the track fader: the post-FX

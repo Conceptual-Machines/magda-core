@@ -1499,6 +1499,27 @@ TEST_CASE("The post-FX stage sits on the side of the fader the chain says",
         CHECK(inputOp(plan, taps.front(), 0) != deviceOutput(plan, 8));
     }
 
+    SECTION("the master stays pre-fader whatever the flag says") {
+        // Tracktion cannot represent a post-fader master stage:
+        // createMasterPluginNode builds the whole of getMasterPluginList() and
+        // only then wraps it in getMasterVolumePlugin(). Honouring the flag here
+        // and not there would make the master the one place the engines
+        // disagree, which is the failure this contract exists to prevent.
+        auto master = makeMaster();
+        master.chain.postFxPostFader = true;
+        master.chain.postFxChainElements.push_back(PostFxChainElement{makeEffect(11)});
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        const auto plan = magda::engine::compileRenderPlan(tracks, master, withoutDeviceMeters());
+        requireWellFormed(plan);
+
+        // Two faders: track 1's, then the master's. The master's post-FX device
+        // must feed the second, not read from it.
+        const auto faders = opsWithRole(plan, OpRole::TrackFader);
+        REQUIRE(faders.size() == 2);
+        CHECK(inputOp(plan, faders.back(), 0) == deviceOutput(plan, 11));
+    }
+
     SECTION("the mixer-analysis rail follows the post-FX stage") {
         std::vector<TrackInfo> tracks{makeTrack(1)};
         auto analysis = makeEffect(9);
