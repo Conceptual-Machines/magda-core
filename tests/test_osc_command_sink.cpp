@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -314,4 +315,38 @@ TEST_CASE("Focused macros are numbered from 1 on the wire", "[osc][sink]") {
     REQUIRE(f.api.focused_.macroWrites[0].idx == 0);
     REQUIRE(f.api.focused_.macroWrites[0].value == Approx(0.4f));
     REQUIRE(f.api.focused_.macroWrites[1].idx == 15);
+}
+
+TEST_CASE("A seek argument no bar count can hold is bounded, not wrapped", "[osc][sink]") {
+    // OSC is unauthenticated UDP, so the argument is whatever a packet says.
+    // A float reaches 3.4e38 and llround is a domain error past about 9.2e18 —
+    // unspecified, and LLONG_MIN for either sign on x86 and ARM, which would
+    // send a huge *forward* seek to the start of the project.
+    Fixture f;
+    f.api.transport_.positionBeats = 64.0;
+    f.api.transport_.beatsPerBar = 4.0;
+
+    f.apply(OscCommandKind::TransportSeekBars, 0, 1.0e30f);
+    REQUIRE(f.api.transport_.lastBarOffset == magda::TransportApi::kMaxBarOffset);
+    REQUIRE(f.api.transport_.positionBeats > 64.0);
+
+    f.api.transport_.positionBeats = 64.0;
+    f.apply(OscCommandKind::TransportSeekBars, 0, -1.0e30f);
+    REQUIRE(f.api.transport_.lastBarOffset == -magda::TransportApi::kMaxBarOffset);
+    REQUIRE(f.api.transport_.positionBeats == Approx(0.0));
+}
+
+TEST_CASE("A non-finite seek argument moves nothing", "[osc][sink]") {
+    // A clamp cannot catch NaN — every comparison against it is false, so it
+    // would reach the same domain error the clamp exists to prevent.
+    Fixture f;
+    f.api.transport_.positionBeats = 32.0;
+
+    for (const auto value :
+         {std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity(),
+          -std::numeric_limits<float>::infinity()}) {
+        f.apply(OscCommandKind::TransportSeekBars, 0, value);
+        f.apply(OscCommandKind::TransportSeekBeats, 0, value);
+        REQUIRE(f.api.transport_.positionBeats == Approx(32.0));
+    }
 }

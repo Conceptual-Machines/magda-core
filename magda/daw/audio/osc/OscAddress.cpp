@@ -108,6 +108,9 @@ OscArgKind argKindFor(OscCommandKind kind) {
             return OscArgKind::Bpm;
         case OscCommandKind::TransportPosition:
             return OscArgKind::Beats;
+        case OscCommandKind::TransportSeekBeats:
+        case OscCommandKind::TransportSeekBars:
+            return OscArgKind::Delta;
         case OscCommandKind::MasterVolume:
         case OscCommandKind::MasterPan:
         case OscCommandKind::FocusedMacro:
@@ -134,6 +137,15 @@ std::optional<OscCommand> parseOscAddress(juce::StringRef address) {
     const auto& section = parts[1];
 
     if (section.equals("transport")) {
+        // The one transport address with a component of its own: bars are a
+        // different unit rather than a different command, so they hang off
+        // seek instead of taking a leaf name that has to be read as one word.
+        if (count == 4) {
+            if (parts[2].equals("seek") && parts[3].equals("bars"))
+                return unindexed(OscCommandKind::TransportSeekBars);
+            return std::nullopt;
+        }
+
         if (count != 3)
             return std::nullopt;
         const auto& leaf = parts[2];
@@ -149,6 +161,8 @@ std::optional<OscCommand> parseOscAddress(juce::StringRef address) {
             return unindexed(OscCommandKind::TransportTempo);
         if (leaf.equals("position"))
             return unindexed(OscCommandKind::TransportPosition);
+        if (leaf.equals("seek"))
+            return unindexed(OscCommandKind::TransportSeekBeats);
         return std::nullopt;
     }
 

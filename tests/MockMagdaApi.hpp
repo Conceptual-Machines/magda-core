@@ -1007,6 +1007,20 @@ class MockTransportApi : public TransportApi {
     void setPositionBeats(double b) override {
         positionBeats = b;
     }
+
+    /// A fixed meter, so a test that seeks by bars gets an arithmetic answer.
+    /// Set it to something else to check that seeking follows the meter rather
+    /// than assuming four.
+    double beatsPerBar = 4.0;
+
+    /// The last offset seekBars passed down, so a test can see what the
+    /// facade's clamp did to an out-of-range one.
+    mutable int lastBarOffset = 0;
+
+    double beatsAtBarOffset(double beats, int deltaBars) const override {
+        lastBarOffset = deltaBars;
+        return beats + (beatsPerBar * deltaBars);
+    }
 };
 
 class MockMidiApi : public MidiApi {

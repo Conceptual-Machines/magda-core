@@ -181,3 +181,20 @@ TEST_CASE("Every address owns a distinct slot", "[osc][address]") {
     // nothing addressable left outside it.
     REQUIRE(static_cast<int>(used.size()) == kOscSlotCount);
 }
+
+TEST_CASE("The relative seek addresses parse", "[osc][address]") {
+    REQUIRE(parsed("/magda/transport/seek").kind == OscCommandKind::TransportSeekBeats);
+    REQUIRE(parsed("/magda/transport/seek/bars").kind == OscCommandKind::TransportSeekBars);
+
+    // A distance, not a position, and that is what keeps it off the coalescing
+    // table: two presses of a rewind button are two bars.
+    REQUIRE(argKindFor(OscCommandKind::TransportSeekBeats) == OscArgKind::Delta);
+    REQUIRE(argKindFor(OscCommandKind::TransportSeekBars) == OscArgKind::Delta);
+
+    // `bars` is a unit hanging off seek rather than a leaf of its own, so
+    // neither half of it stands alone and no other transport address takes a
+    // fourth component.
+    REQUIRE_FALSE(parseOscAddress("/magda/transport/bars").has_value());
+    REQUIRE_FALSE(parseOscAddress("/magda/transport/seek/beats").has_value());
+    REQUIRE_FALSE(parseOscAddress("/magda/transport/position/bars").has_value());
+}

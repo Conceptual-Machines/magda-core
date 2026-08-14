@@ -64,6 +64,7 @@ HandlerResult transportStop(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult transportSetRecording(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult transportSetLoopEnabled(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult transportSeek(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult transportSeekRelative(MagdaApi&, const juce::var&, const RequestContext&);
 
 // Session
 HandlerResult sessionGet(MagdaApi&, const juce::var&, const RequestContext&);

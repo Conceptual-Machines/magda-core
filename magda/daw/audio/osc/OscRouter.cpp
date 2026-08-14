@@ -151,6 +151,16 @@ std::optional<float> oscValueFor(const OscCommand& command, const juce::OSCMessa
                 return std::nullopt;
             return juce::jlimit(0.0f, 1.0f, argument.value);
 
+        case OscArgKind::Delta:
+            // A distance, and a zero one is a no-op rather than a release
+            // edge: nothing here is momentary. Sent bare it says nothing about
+            // how far, so there is nothing to do.
+            if (argument.state != ArgumentState::Present)
+                return std::nullopt;
+            if (argument.value == 0.0f || !std::isfinite(argument.value))
+                return std::nullopt;
+            return argument.value;
+
         case OscArgKind::Bpm:
         case OscArgKind::Beats:
             // Ranges belong to the model, which clamps against the project's
@@ -315,9 +325,17 @@ void OscRouter::updateBindings(const std::vector<Binding>& bindings) {
 
 void OscRouter::submit(const OscCommand& command, float value) {
     const auto argKind = argKindFor(command.kind);
-    if (argKind == OscArgKind::Trigger || argKind == OscArgKind::Toggle) {
+    if (argKind == OscArgKind::Trigger || argKind == OscArgKind::Toggle ||
+        argKind == OscArgKind::Delta) {
         // An edge, not a value. Two flips of one toggle have to stay two, and
         // play and stop have to resolve by arrival rather than by slot number.
+        //
+        // A relative seek is the same shape for a different reason: it says
+        // how far to move rather than where to be, so two presses of a rewind
+        // button are two bars and coalescing them into one slot would silently
+        // make them one. It also has to land relative to the position a locate
+        // in the same bundle just set, which arrival order gives it and a slot
+        // walk does not.
         pushOrdered(command, value);
         scheduleDrain();
         return;
