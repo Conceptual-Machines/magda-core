@@ -14,11 +14,15 @@
 #include "../../magda/agents/llm_presets.hpp"
 #include "api/magda_api_live.hpp"
 #include "api/osc_command_sink_live.hpp"
+#include "api/osc_feedback_live.hpp"
 #include "api/remote_api_host.hpp"
 #include "api/remote_audit.hpp"
+#include "api/remote_service.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "audio/controllers/ControllerParamReader.hpp"
 #include "audio/controllers/ControllerParamWriter.hpp"
+#include "audio/controllers/ControllerRouter.hpp"
 #include "audio/osc/OscService.hpp"
 #include "core/AppPaths.hpp"
 #include "core/ClipManager.hpp"
@@ -35,6 +39,7 @@
 #include "magda/scripting/LuaController.hpp"
 #include "magda/scripting/LuaScriptStore.hpp"
 #include "media_db/MediaDbContext.hpp"
+#include "osc_app.hpp"
 #include "project/ProjectManager.hpp"
 #include "scripting_app.hpp"
 #include "ui/dialogs/SplashScreen.hpp"
@@ -98,6 +103,9 @@ class MagdaDAWApplication : public JUCEApplication {
     // Owned here for the same reason as the remote API — it holds a socket
     // whose receive thread posts work against the model.
     std::unique_ptr<magda::osc::OscService> oscService_;
+    // OSC feedback (#2091): the answering half. Declared after the service so
+    // it is destroyed before it — it holds a tap on the service's router.
+    std::unique_ptr<magda::OscFeedbackProjector> oscFeedback_;
     // Latches true once the deferred startup auto-load has fired. The
     // engine's onMidiDevicesReady callback runs on every device-list
     // change, but we only want to auto-load the active script once.
@@ -127,6 +135,16 @@ class MagdaDAWApplication : public JUCEApplication {
     void unloadLuaScript();
     juce::String activeLuaScriptName() const;
     void revealLuaScriptsFolder();
+
+    /// Handles for the OSC section of ControllersDialog (osc_app.hpp), which
+    /// only reads through them. Null before deferred init has run, and after
+    /// shutdown has torn them down.
+    magda::osc::OscService* oscService() noexcept {
+        return oscService_.get();
+    }
+    magda::OscFeedbackProjector* oscFeedback() noexcept {
+        return oscFeedback_.get();
+    }
 
   private:
     // Cancellable deferred init timer — destroyed in shutdown() to prevent
@@ -387,6 +405,25 @@ class MagdaDAWApplication : public JUCEApplication {
             if (oscService_->applyConfig())
                 juce::Logger::writeToLog("OSC listening on " + oscService_->boundAddress() + ":" +
                                          juce::String(oscService_->boundPort()));
+
+            // 4d. OSC feedback (#2091). Built on the remote API's change source,
+            // which is live whether or not the remote API is listening — the
+            // host constructs its dispatcher and model bridge unconditionally
+            // and only `start()` is gated on config. So a surface hears back
+            // from MAGDA with the WebSocket transport switched off.
+            oscFeedback_ = std::make_unique<magda::OscFeedbackProjector>(
+                daw_engine_->getMagdaApi(), remoteApi_->service().changes(), oscService_->router(),
+                std::make_unique<magda::DefaultControllerParamReader>(*audioBridge));
+            if (oscFeedback_->applyConfig())
+                juce::Logger::writeToLog(
+                    "OSC feedback to " +
+                    juce::String(magda::Config::getInstance().getOscFeedbackHost()) + ":" +
+                    juce::String(magda::Config::getInstance().getOscFeedbackPort()));
+
+            // A parameter written by any control surface reaches the OSC
+            // bindings that address the same target.
+            magda::ControllerRouter::getInstance().setFeedbackSink(
+                oscFeedback_->makeControllerFeedbackSink());
         }
 
         // 5. Dismiss splash screen
@@ -505,6 +542,13 @@ class MagdaDAWApplication : public JUCEApplication {
             modelLoadThread_.join();
         if (sampleTaggerLoadThread_.joinable())
             sampleTaggerLoadThread_.join();
+
+        // Feedback first of all: it holds a tap on the OSC router, a listener
+        // on the remote API's change source and a sink on the controller
+        // router, and every one of those outlives it below.
+        DBG("[0] OSC feedback shutdown...");
+        magda::ControllerRouter::getInstance().setFeedbackSink(std::make_unique<magda::NullSink>());
+        oscFeedback_.reset();
 
         // Close the remote API before anything else goes away: it holds live
         // sockets whose threads are calling into the dispatcher, and its model
@@ -878,6 +922,50 @@ void revealLuaScriptsFolder() {
 }
 
 }  // namespace magda::scripting_app
+
+// =============================================================================
+// osc_app.hpp — read-only handles onto the OSC stack for the settings UI
+// =============================================================================
+
+namespace magda::osc_app {
+
+bool isListening() {
+    auto* app = MagdaDAWApplication::getMagdaInstance();
+    auto* service = app != nullptr ? app->oscService() : nullptr;
+    return service != nullptr && service->isListening();
+}
+
+juce::String boundAddress() {
+    auto* app = MagdaDAWApplication::getMagdaInstance();
+    auto* service = app != nullptr ? app->oscService() : nullptr;
+    return service != nullptr ? service->boundAddress() : juce::String();
+}
+
+int boundPort() {
+    auto* app = MagdaDAWApplication::getMagdaInstance();
+    auto* service = app != nullptr ? app->oscService() : nullptr;
+    return service != nullptr ? service->boundPort() : 0;
+}
+
+std::uint64_t acceptedMessageCount() {
+    auto* app = MagdaDAWApplication::getMagdaInstance();
+    auto* service = app != nullptr ? app->oscService() : nullptr;
+    return service != nullptr ? service->router().acceptedMessageCount() : 0;
+}
+
+bool feedbackIsSending() {
+    auto* app = MagdaDAWApplication::getMagdaInstance();
+    auto* feedback = app != nullptr ? app->oscFeedback() : nullptr;
+    return feedback != nullptr && feedback->isSending();
+}
+
+std::uint64_t feedbackSentMessageCount() {
+    auto* app = MagdaDAWApplication::getMagdaInstance();
+    auto* feedback = app != nullptr ? app->oscFeedback() : nullptr;
+    return feedback != nullptr ? feedback->feedback().sentMessageCount() : 0;
+}
+
+}  // namespace magda::osc_app
 
 // JUCE application startup
 START_JUCE_APPLICATION(MagdaDAWApplication)

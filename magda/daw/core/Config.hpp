@@ -531,6 +531,31 @@ class Config {
     void setOscBindAddress(const std::string& address) {
         oscBindAddress = address;
     }
+    /**
+     * Where feedback goes (issue #2091), and whether it goes anywhere: an empty
+     * host means MAGDA answers nobody, which is the default.
+     *
+     * A destination rather than a reply-to, because there is nothing to reply
+     * to. `juce::OSCReceiver` hands a listener a parsed message and drops the
+     * datagram's source address inside its own receive loop, so the surface that
+     * sent something is not observable without reimplementing JUCE's OSC parser.
+     * The user names the surface instead, which is also what a TouchOSC template
+     * asks of them at the other end.
+     */
+    const std::string& getOscFeedbackHost() const {
+        return oscFeedbackHost;
+    }
+    void setOscFeedbackHost(const std::string& host) {
+        oscFeedbackHost = host;
+    }
+    /// The port on that host. 9001 is TouchOSC's default receive port, the
+    /// companion of the 9000 above.
+    int getOscFeedbackPort() const {
+        return oscFeedbackPort;
+    }
+    void setOscFeedbackPort(int port) {
+        oscFeedbackPort = port;
+    }
 
     // Browser filter settings
     bool getBrowserFilterAudio() const {
@@ -1426,6 +1451,8 @@ class Config {
     bool oscEnabled = false;
     int oscReceivePort = 9000;
     std::string oscBindAddress = "0.0.0.0";
+    std::string oscFeedbackHost;
+    int oscFeedbackPort = 9001;
 
     // Export audio settings
     std::string exportFormat = "WAV24";  // WAV16, WAV24, WAV32, FLAC

@@ -428,10 +428,12 @@ target_sources(magda_daw PRIVATE
     insert_capture/InsertRenderCaptureService.cpp
     ExternalInsertDeviceEnablement.cpp
     # Controller routing (issue #1050 -- Phase C)
+    controllers/ControllerParamReader.cpp
     controllers/ControllerParamWriter.cpp
     controllers/ControllerRouter.cpp
     # OSC control surfaces (issue #1757)
     osc/OscAddress.cpp
+    osc/OscFeedback.cpp
     osc/OscRouter.cpp
     osc/OscService.cpp
     # Headers (listed for IDE visibility)

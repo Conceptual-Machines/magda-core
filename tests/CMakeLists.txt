@@ -178,6 +178,7 @@ set(TEST_SOURCES
     test_osc_router.cpp
     test_osc_command_sink.cpp
     test_osc_bindings.cpp
+    test_osc_feedback.cpp
     # Relative transport seek (#1987)
     test_transport_seek.cpp
     # Controller registry tests (issue #1050 -- Phase B)

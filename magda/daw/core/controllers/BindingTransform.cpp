@@ -96,6 +96,44 @@ float applyRange(const BindingRange& range, float normalizedAfterCurve) {
 }
 
 // ============================================================================
+// Inverses
+// ============================================================================
+
+float invertCurve(BindingCurve curve, float y) {
+    y = y < 0.0f ? 0.0f : (y > 1.0f ? 1.0f : y);
+
+    switch (curve) {
+        case BindingCurve::Linear:
+            return y;
+
+        case BindingCurve::Log:
+            // The inverse of log1p(x * (e - 1)), which is the Exp curve itself.
+            return std::expm1(y) / kEMinus1;
+
+        case BindingCurve::Exp:
+            // And its mirror: Exp and Log are each other's inverse.
+            return std::log1p(y * kEMinus1);
+
+        case BindingCurve::SCurve: {
+            // Smoothstep is the cubic 3x^2 - 2x^3, whose one real root in [0,1]
+            // has this closed form. Cheaper and exact where a Newton iteration
+            // would be neither, and it lands exactly on 0, 0.5 and 1.
+            const float clamped = juce::jlimit(-1.0f, 1.0f, 1.0f - 2.0f * y);
+            return 0.5f - std::sin(std::asin(clamped) / 3.0f);
+        }
+    }
+
+    return y;
+}
+
+float invertRange(const BindingRange& range, float ranged) {
+    const float span = range.max - range.min;
+    if (span == 0.0f)
+        return 0.0f;
+    return juce::jlimit(0.0f, 1.0f, (ranged - range.min) / span);
+}
+
+// ============================================================================
 // applyToggle
 // ============================================================================
 

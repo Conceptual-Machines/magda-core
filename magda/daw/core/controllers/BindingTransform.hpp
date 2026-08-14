@@ -51,6 +51,32 @@ float applyCurve(BindingCurve curve, float normalized);
 float applyRange(const BindingRange& range, float normalizedAfterCurve);
 
 // ============================================================================
+// Inverses
+// ============================================================================
+
+/**
+ * @brief Recover the position a control must be at to produce `curved`.
+ *
+ * `invertCurve(c, applyCurve(c, x)) == x` for every curve and every x in
+ * [0,1]. OSC feedback (#2091) needs it: a bound address echoes where the
+ * surface's fader should sit, and what the model holds is the value at the far
+ * end of the curve.
+ *
+ * Every curve here is monotonic on [0,1], so each has one inverse and this is
+ * total rather than a best effort.
+ */
+float invertCurve(BindingCurve curve, float curved);
+
+/**
+ * @brief Recover the normalized-after-curve value that `applyRange` produced.
+ *
+ * A degenerate range — min equal to max — maps every position onto one value
+ * and therefore inverts to none of them. It answers 0, which is the position a
+ * fader sits at when nothing it can do changes anything.
+ */
+float invertRange(const BindingRange& range, float ranged);
+
+// ============================================================================
 // ToggleState
 // ============================================================================
 

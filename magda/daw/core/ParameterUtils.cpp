@@ -106,6 +106,15 @@ float normalizedToReal(float normalized, const ParameterInfo& info) {
     }
 }
 
+float gainFromNormalized(float normalized, const ParameterInfo& info) {
+    return std::pow(10.0f, normalizedToReal(normalized, info) / 20.0f);
+}
+
+float normalizedFromGain(float gain, const ParameterInfo& info) {
+    const float dB = gain > 0.0f ? 20.0f * std::log10(gain) : info.minValue;
+    return realToNormalized(dB, info);
+}
+
 float realToNormalized(float real, const ParameterInfo& info) {
     switch (info.scale) {
         case ParameterScale::Linear: {

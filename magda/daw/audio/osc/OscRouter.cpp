@@ -405,8 +405,10 @@ void OscRouter::drainPending() {
         while (bits != 0) {
             const int slot = (word * 64) + std::countr_zero(bits);
             bits &= bits - 1;
-            sink_->apply(oscCommandForSlot(slot),
-                         values_[static_cast<size_t>(slot)].load(std::memory_order_relaxed));
+            const auto value = values_[static_cast<size_t>(slot)].load(std::memory_order_relaxed);
+            sink_->apply(oscCommandForSlot(slot), value);
+            if (feedbackTap_)
+                feedbackTap_(slot, value);
         }
     }
 
@@ -434,8 +436,11 @@ void OscRouter::drainBindings() {
         while (bits != 0) {
             const auto index = (word * 64) + static_cast<std::size_t>(std::countr_zero(bits));
             bits &= bits - 1;
-            bindingSink_->apply(routes->entries[index].binding,
-                                routes->values[index].load(std::memory_order_relaxed));
+            const auto& entry = routes->entries[index];
+            const auto value = routes->values[index].load(std::memory_order_relaxed);
+            bindingSink_->apply(entry.binding, value);
+            if (bindingFeedbackTap_)
+                bindingFeedbackTap_(entry.address, value);
         }
     }
 }
@@ -451,6 +456,14 @@ void OscRouter::drainOrdered() {
         const auto entry = ordered_[read & (kOrderedCapacity - 1)];
         orderedRead_.store(read + 1, std::memory_order_release);
         sink_->apply(entry.command, entry.value);
+
+        // A flip request names no state, so the surface that sent it does not
+        // know what it produced and has to hear the answer. A delta has no
+        // state at all. Everything else here is a button that sent the value it
+        // is now showing.
+        if (feedbackTap_ && entry.value != kOscToggleRequest &&
+            argKindFor(entry.command.kind) != OscArgKind::Delta)
+            feedbackTap_(oscSlotIndex(entry.command), entry.value);
     }
 
     // Hit the cap with work still queued. Whoever pushed the remainder may have
@@ -503,6 +516,14 @@ void OscRouter::setSink(std::unique_ptr<OscCommandSink> sink) {
 
 void OscRouter::setBindingSink(std::unique_ptr<OscBindingSink> sink) {
     bindingSink_ = std::move(sink);
+}
+
+void OscRouter::setFeedbackTap(FeedbackTap tap) {
+    feedbackTap_ = std::move(tap);
+}
+
+void OscRouter::setBindingFeedbackTap(BindingFeedbackTap tap) {
+    bindingFeedbackTap_ = std::move(tap);
 }
 
 void OscRouter::setDrainScheduler(std::function<void()> scheduler) {

@@ -38,6 +38,26 @@ float normalizedToReal(float normalized, const ParameterInfo& info);
 float realToNormalized(float real, const ParameterInfo& info);
 
 /**
+ * @brief A normalized fader position as the linear gain `TrackManager` stores.
+ *
+ * `TrackInfo::volume` and `SendInfo::level` are linear gains, while the fader
+ * that drives them is a dB scale, so every writer of one from the other does
+ * `pow(10, dB / 20)` after `normalizedToReal`. This is that pair, in one place,
+ * because it had grown four copies: the controller writer, its reader, the OSC
+ * feedback projection, and the automation playback writeback. An inverse only
+ * stays an inverse while both halves are read together.
+ */
+float gainFromNormalized(float normalized, const ParameterInfo& info);
+
+/**
+ * @brief The linear gain as the normalized fader position that produces it.
+ *
+ * Silence has no dB, so a gain of zero answers the bottom of the parameter's
+ * range, which is where a fader at no gain sits.
+ */
+float normalizedFromGain(float gain, const ParameterInfo& info);
+
+/**
  * @brief True when ParameterInfo real/display range matches the value range
  *        stored by the owning Tracktion AutomatableParameter.
  */

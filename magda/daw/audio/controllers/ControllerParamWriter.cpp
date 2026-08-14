@@ -64,14 +64,14 @@ void DefaultControllerParamWriter::writeTrackLevel(const ControlTarget& target, 
     // Same normalized -> real conversion the automation engine applies, so a
     // controller fader and an automation curve resolve to identical values.
     const ParameterInfo info = getParameterInfoForTarget(target);
-    const float real = ParameterUtils::normalizedToReal(clamped, info);
 
     auto& trackMgr = TrackManager::getInstance();
     if (target.kind == ControlTarget::Kind::TrackVolume) {
-        // The fader range is in dB; TrackManager expects linear gain.
-        trackMgr.setTrackVolume(trackId, std::pow(10.0f, real / 20.0f));
+        // The fader range is in dB; TrackManager expects linear gain. One home
+        // for that pair, shared with the reader that inverts it.
+        trackMgr.setTrackVolume(trackId, ParameterUtils::gainFromNormalized(clamped, info));
     } else {
-        trackMgr.setTrackPan(trackId, real);
+        trackMgr.setTrackPan(trackId, ParameterUtils::normalizedToReal(clamped, info));
     }
 }
 
@@ -86,9 +86,8 @@ void DefaultControllerParamWriter::writeSendLevel(const ControlTarget& target, f
         return;
 
     const ParameterInfo info = getParameterInfoForTarget(target);
-    const float real = ParameterUtils::normalizedToReal(clamped, info);
     TrackManager::getInstance().setSendLevel(trackId, target.sendBusIndex,
-                                             std::pow(10.0f, real / 20.0f));
+                                             ParameterUtils::gainFromNormalized(clamped, info));
 }
 
 void DefaultControllerParamWriter::writePluginParam(const ControlTarget& target, float clamped) {

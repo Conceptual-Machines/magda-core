@@ -217,6 +217,50 @@ std::optional<OscCommand> parseOscAddress(juce::StringRef address) {
 }
 
 // ============================================================================
+// Formatting
+// ============================================================================
+
+juce::String formatOscAddress(const OscCommand& command) {
+    switch (command.kind) {
+        case OscCommandKind::TransportPlay:
+            return "/magda/transport/play";
+        case OscCommandKind::TransportStop:
+            return "/magda/transport/stop";
+        case OscCommandKind::TransportRecord:
+            return "/magda/transport/record";
+        case OscCommandKind::TransportLoop:
+            return "/magda/transport/loop";
+        case OscCommandKind::TransportTempo:
+            return "/magda/transport/tempo";
+        case OscCommandKind::TransportPosition:
+            return "/magda/transport/position";
+        case OscCommandKind::TransportSeekBeats:
+            return "/magda/transport/seek";
+        case OscCommandKind::TransportSeekBars:
+            return "/magda/transport/seek/bars";
+        case OscCommandKind::MasterVolume:
+            return "/magda/master/volume";
+        case OscCommandKind::MasterPan:
+            return "/magda/master/pan";
+        case OscCommandKind::FocusedMacro:
+            return "/magda/focused/macro/" + juce::String(command.index);
+        case OscCommandKind::TrackVolume:
+            return "/magda/track/" + juce::String(command.index) + "/volume";
+        case OscCommandKind::TrackPan:
+            return "/magda/track/" + juce::String(command.index) + "/pan";
+        case OscCommandKind::TrackMute:
+            return "/magda/track/" + juce::String(command.index) + "/mute";
+        case OscCommandKind::TrackSolo:
+            return "/magda/track/" + juce::String(command.index) + "/solo";
+        case OscCommandKind::TrackSend:
+            return "/magda/track/" + juce::String(command.index) + "/send/" +
+                   juce::String(command.subIndex);
+    }
+    jassertfalse;  // every kind is covered above
+    return {};
+}
+
+// ============================================================================
 // Slot mapping
 // ============================================================================
 
