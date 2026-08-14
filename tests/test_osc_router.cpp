@@ -37,8 +37,8 @@ struct HeldRouter {
         router->setDrainScheduler([this]() { ++drainsRequested; });
     }
 
-    void send(const juce::OSCMessage& message) {
-        router->handleMessage(message);
+    bool send(const juce::OSCMessage& message) {
+        return router->handleMessage(message);
     }
 
     void drain() {
@@ -460,4 +460,52 @@ TEST_CASE("Every fixed-namespace address survives a round trip", "[osc][router]"
     // Every discrete address pressed at once has to fit: this is the state dump
     // a surface sends on connect, not a flood.
     REQUIRE(r.router->droppedCommandCount() == 0);
+}
+
+TEST_CASE("Repeated seeks all survive the drain", "[osc][router]") {
+    // The reason a relative seek is not a coalesced value. Three presses of a
+    // rewind button are three bars; latest-value-wins would keep one of them
+    // and the playhead would move a third of the way the user asked for.
+    //
+    // A locate in the same breath is the opposite: it says where to be, so
+    // only the last one matters and it is still coalesced.
+    HeldRouter r;
+    r.send(juce::OSCMessage("/magda/transport/seek/bars", -1.0f));
+    r.send(juce::OSCMessage("/magda/transport/seek/bars", -1.0f));
+    r.send(juce::OSCMessage("/magda/transport/seek/bars", -1.0f));
+    r.drain();
+
+    REQUIRE(r.applied().size() == 3);
+    for (const auto& entry : r.applied()) {
+        REQUIRE(entry.command.kind == OscCommandKind::TransportSeekBars);
+        REQUIRE(entry.value == Approx(-1.0f));
+    }
+}
+
+TEST_CASE("A seek lands after the locate it was sent with", "[osc][router]") {
+    // Both in one bundle: the locate is a position and the seek is a distance
+    // from wherever the playhead ended up, so the seek has to see the locate's
+    // result. The drain applies coalesced values before ordered ones, which is
+    // what puts them in that order.
+    HeldRouter r;
+    r.send(juce::OSCMessage("/magda/transport/seek", 2.5f));
+    r.send(juce::OSCMessage("/magda/transport/position", 64.0f));
+    r.drain();
+
+    REQUIRE(r.applied().size() == 2);
+    REQUIRE(r.applied()[0].command.kind == OscCommandKind::TransportPosition);
+    REQUIRE(r.applied()[1].command.kind == OscCommandKind::TransportSeekBeats);
+    REQUIRE(r.applied()[1].value == Approx(2.5f));
+}
+
+TEST_CASE("A seek with nothing to carry is declined", "[osc][router]") {
+    // A bare address says nothing about how far, and a zero delta says to move
+    // nowhere. Neither is a release edge to be swallowed silently — there is
+    // simply nothing to do, and applying either would be inventing a distance.
+    HeldRouter r;
+    REQUIRE_FALSE(r.send(juce::OSCMessage("/magda/transport/seek")));
+    REQUIRE_FALSE(r.send(juce::OSCMessage("/magda/transport/seek/bars", 0.0f)));
+    r.drain();
+
+    REQUIRE(r.applied().empty());
 }

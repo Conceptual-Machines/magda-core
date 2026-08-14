@@ -1582,6 +1582,14 @@ OperationRegistry::OperationRegistry() {
             "required":["positionBeats"],"additionalProperties":false
         })json"),
         transportSchema());
+    add("transport.seekRelative", "Move the transport by beats or bars, clamped at zero",
+        OperationAccess::Write, &handlers::transportSeekRelative, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{"deltaBeats":{"type":"number"},"deltaBars":{"type":"integer"}},
+            "oneOf":[{"required":["deltaBeats"]},{"required":["deltaBars"]}],
+            "additionalProperties":false
+        })json"),
+        transportSchema());
 
     add("session.get", "Get occupied session slots and play states", OperationAccess::Read,
         &handlers::sessionGet, emptyObjectSchema(), sessionSchema());
@@ -1734,6 +1742,7 @@ OperationRegistry::OperationRegistry() {
         {"transport.setRecording", Scope::Transport},
         {"transport.setLoopEnabled", Scope::Transport},
         {"transport.seek", Scope::Transport},
+        {"transport.seekRelative", Scope::Transport},
 
         // Clip launching. Neither editing nor the timeline transport: a
         // performance controller firing scenes changes no project content and

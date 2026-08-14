@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 namespace magda {
 
 /**
@@ -35,6 +37,38 @@ class TransportApi {
     /** Edit position in beats. Returns 0 if no edit is loaded. */
     virtual double getPositionBeats() const = 0;
     virtual void setPositionBeats(double beats) = 0;
+
+    /**
+     * The beat position `deltaBars` bars from `beats`, keeping the offset
+     * within the bar and following any meter changes in between.
+     *
+     * The one thing relative seeking needs that absolute positioning does not:
+     * how long a bar is, which is a property of the project rather than of the
+     * caller. Implementations answer it; `seekBars` below is written once on
+     * top. Returns `beats` unchanged when there is no edit to ask.
+     */
+    virtual double beatsAtBarOffset(double beats, int deltaBars) const = 0;
+
+    // ------------------------------------------------------------------
+    // Relative seeking (#1987)
+    //
+    // Concrete rather than virtual, and here rather than in any one caller.
+    // Rewind and fast-forward buttons are relative by nature, and three
+    // surfaces need them — Lua scripts, the remote API's transport
+    // operations, and the OSC namespace. Written as read-modify-write at each
+    // of those, the clamp at zero and the bar length get re-derived three
+    // times and drift three ways.
+    // ------------------------------------------------------------------
+
+    /** Move the playhead `delta` beats, clamped at zero. */
+    void seekBeats(double delta) {
+        setPositionBeats(std::max(0.0, getPositionBeats() + delta));
+    }
+
+    /** Move the playhead `deltaBars` bars, meter-aware, clamped at zero. */
+    void seekBars(int deltaBars) {
+        setPositionBeats(std::max(0.0, beatsAtBarOffset(getPositionBeats(), deltaBars)));
+    }
 };
 
 }  // namespace magda

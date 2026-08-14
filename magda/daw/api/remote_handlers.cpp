@@ -608,6 +608,20 @@ HandlerResult transportSeek(MagdaApi& api, const juce::var& input, const Request
     return HandlerResult::ok(toJson(makeTransportDto(api)));
 }
 
+// Relative seeking (#1987). One operation rather than two, because a caller
+// binding a rewind button wants "back one bar" or "back a beat and a half" and
+// the difference is which field it sends, not which endpoint it calls. Both
+// clamp at zero and the bar form follows the meter, because TransportApi does
+// that once for every surface.
+HandlerResult transportSeekRelative(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    if (input.hasProperty("deltaBars"))
+        api.transport().seekBars(static_cast<int>(input["deltaBars"]));
+    else
+        api.transport().seekBeats(static_cast<double>(input["deltaBeats"]));
+
+    return HandlerResult::ok(toJson(makeTransportDto(api)));
+}
+
 // ===========================================================================
 // Session
 // ===========================================================================

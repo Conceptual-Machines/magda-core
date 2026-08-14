@@ -1,5 +1,7 @@
 #include "osc_command_sink_live.hpp"
 
+#include <cmath>
+
 #include "../audio/controllers/ControllerParamWriter.hpp"
 #include "../core/ControlTarget.hpp"
 #include "../core/MixerStripOrder.hpp"
@@ -88,6 +90,14 @@ void OscCommandSinkLive::apply(const OscCommand& command, float value) {
             return;
         case OscCommandKind::TransportPosition:
             api_.transport().setPositionBeats(value);
+            return;
+        case OscCommandKind::TransportSeekBeats:
+            api_.transport().seekBeats(value);
+            return;
+        case OscCommandKind::TransportSeekBars:
+            // Rounded rather than truncated, so a surface that sends its
+            // integers as floats and lands on 0.999999 still moves a bar.
+            api_.transport().seekBars(static_cast<int>(std::lround(value)));
             return;
 
         case OscCommandKind::MasterVolume:

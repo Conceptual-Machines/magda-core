@@ -28,6 +28,8 @@ namespace magda::osc {
  * | `/magda/transport/loop`    | 0/1, or none     | loop on/off, or flip       |
  * | `/magda/transport/tempo`   | float BPM        | set tempo                  |
  * | `/magda/transport/position`| float beats      | locate                     |
+ * | `/magda/transport/seek`    | float beats      | move by, clamped at zero   |
+ * | `/magda/transport/seek/bars`| int bars        | move by, meter-aware       |
  * | `/magda/track/{n}/volume`  | float 0–1        | track fader                |
  * | `/magda/track/{n}/pan`     | float 0–1        | pan, 0.5 centre            |
  * | `/magda/track/{n}/mute`    | 0/1, or none     | mute on/off, or flip       |
@@ -72,6 +74,8 @@ enum class OscCommandKind : std::uint8_t {
     TransportLoop,
     TransportTempo,
     TransportPosition,
+    TransportSeekBeats,
+    TransportSeekBars,
     MasterVolume,
     MasterPan,
     FocusedMacro,
@@ -104,6 +108,12 @@ enum class OscArgKind : std::uint8_t {
     Bpm,
     /// A float position in beats — MAGDA's timeline unit everywhere.
     Beats,
+    /// A distance rather than a position: how far to move from wherever the
+    /// playhead is. Unlike every other value here it must not be coalesced,
+    /// because two rewind presses are two bars and latest-value-wins would
+    /// make them one. It rides the ordered ring with the triggers and toggles
+    /// for that reason — an edge that happens to carry a magnitude.
+    Delta,
 };
 
 /**
@@ -164,9 +174,13 @@ int oscSlotIndex(const OscCommand& command);
  */
 OscCommand oscCommandForSlot(int slot);
 
-/// The six transport kinds and the two master kinds are the first eight
-/// entries of `OscCommandKind`, and take the first eight slots in that order.
-inline constexpr int kOscUnindexedSlots = 8;
+/// The eight transport kinds and the two master kinds are the first ten
+/// entries of `OscCommandKind`, and take the first ten slots in that order.
+///
+/// The two seek kinds never publish into their slots -- they are `Delta` and
+/// go to the ordered ring -- but they keep them anyway, so that "a kind's slot
+/// is its ordinal" stays true of the whole enum rather than of most of it.
+inline constexpr int kOscUnindexedSlots = 10;
 /// Then the focused device's macros, then one block per addressable track:
 /// volume, pan, mute, solo, and one slot per send.
 inline constexpr int kOscTrackSlotBase = kOscUnindexedSlots + kMaxMacroNumber;

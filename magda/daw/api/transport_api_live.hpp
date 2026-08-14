@@ -60,6 +60,7 @@ class TransportApiLive : public TransportApi {
     void setLoopEnabled(bool enabled) override;
     double getPositionBeats() const override;
     void setPositionBeats(double beats) override;
+    double beatsAtBarOffset(double beats, int deltaBars) const override;
 
   private:
     tracktion::Edit* edit() const {
