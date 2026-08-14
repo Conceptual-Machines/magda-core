@@ -250,6 +250,13 @@ void OscFeedbackProjector::onChanges(const std::vector<remote::ChangeSource::Cha
                 // rate still costs one binding pass per tick.
                 bindingsDirty_ = true;
                 break;
+            case remote::Topic::Transport:
+                // Nothing to mark dirty, and not an oversight. The transport is
+                // the sampled half: every tick reads it, because nothing marks
+                // this topic when the user presses Play in MAGDA — only a remote
+                // API request named `transport.*` does. Acting on it would be a
+                // second path to the same five reads the tick has already done
+                // by the time this arrives.
             case remote::Topic::Clips:
             case remote::Topic::Session:
             case remote::Topic::Meters:
