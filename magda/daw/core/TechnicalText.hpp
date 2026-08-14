@@ -39,6 +39,7 @@ enum class TechnicalTextToken {
     Rgb,
     Hex,
     Lua,
+    Osc,
 };
 
 inline juce::String technicalText(TechnicalTextToken token) {
@@ -108,6 +109,8 @@ inline juce::String technicalText(TechnicalTextToken token) {
             return "Hex";
         case TechnicalTextToken::Lua:
             return "Lua";
+        case TechnicalTextToken::Osc:
+            return "OSC";
     }
 
     return {};

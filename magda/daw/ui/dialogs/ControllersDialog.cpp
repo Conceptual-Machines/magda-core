@@ -13,6 +13,7 @@
 #include "core/controllers/ControllerActivation.hpp"
 #include "core/controllers/ControllerProfileRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
+#include "osc_app.hpp"
 #include "scripting_app.hpp"
 
 namespace magda {
@@ -958,6 +959,191 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
 }
 
 // =============================================================================
+// OscSurfacesPage (#1757 §4, #2091)
+// =============================================================================
+
+/**
+ * The OSC settings, and the first UI any of them have had: everything below was
+ * reachable only by hand-editing the config file, which made a shipped feature
+ * effectively unavailable.
+ *
+ * Nothing here reconfigures the OSC stack directly. `Config::save` notifies its
+ * listeners, and both `OscService` and `OscFeedbackProjector` are among them, so
+ * a field that loses focus rebinds the socket or re-aims the sender without this
+ * page knowing either exists. What it does know is how to ask them what
+ * happened, through `osc_app`, which is what the status line reports.
+ */
+class OscSurfacesPage : public juce::Component, private juce::Timer {
+  public:
+    OscSurfacesPage() {
+        auto& config = Config::getInstance();
+
+        enable_.setButtonText(tr("controllers.osc.enable"));
+        enable_.setToggleState(config.getOscEnabled(), juce::dontSendNotification);
+        enable_.onClick = [this] {
+            Config::getInstance().setOscEnabled(enable_.getToggleState());
+            commit();
+        };
+        addAndMakeVisible(enable_);
+
+        // The two addresses that mean something are offered, and the field stays
+        // editable: a user with a specific interface can name it.
+        bindAddress_.setEditableText(true);
+        bindAddress_.addItem("0.0.0.0", 1);
+        bindAddress_.addItem("127.0.0.1", 2);
+        bindAddress_.setText(juce::String(config.getOscBindAddress()), juce::dontSendNotification);
+        bindAddress_.onChange = [this] {
+            Config::getInstance().setOscBindAddress(bindAddress_.getText().trim().toStdString());
+            commit();
+        };
+        addAndMakeVisible(bindAddress_);
+        addLabel(bindLabel_, tr("controllers.osc.bind_address"));
+
+        setUpPortField(receivePort_, config.getOscReceivePort(),
+                       [](int port) { Config::getInstance().setOscReceivePort(port); });
+        addLabel(receiveLabel_, tr("controllers.osc.receive_port"));
+
+        feedbackHost_.setTextToShowWhenEmpty(tr("controllers.osc.feedback_host_empty"),
+                                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        feedbackHost_.setText(juce::String(config.getOscFeedbackHost()),
+                              juce::dontSendNotification);
+        feedbackHost_.onFocusLost = [this] {
+            Config::getInstance().setOscFeedbackHost(feedbackHost_.getText().trim().toStdString());
+            commit();
+        };
+        feedbackHost_.onReturnKey = [this] { feedbackHost_.giveAwayKeyboardFocus(); };
+        addAndMakeVisible(feedbackHost_);
+        addLabel(feedbackHostLabel_, tr("controllers.osc.feedback_host"));
+
+        setUpPortField(feedbackPort_, config.getOscFeedbackPort(),
+                       [](int port) { Config::getInstance().setOscFeedbackPort(port); });
+        addLabel(feedbackPortLabel_, tr("controllers.osc.feedback_port"));
+
+        status_.setJustificationType(juce::Justification::topLeft);
+        status_.setColour(juce::Label::textColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        addAndMakeVisible(status_);
+
+        refreshStatus();
+        startTimer(kStatusIntervalMs);
+    }
+
+    ~OscSurfacesPage() override {
+        stopTimer();
+    }
+
+    void resized() override {
+        auto area = getLocalBounds().reduced(12);
+
+        enable_.setBounds(area.removeFromTop(kRowHeight));
+        area.removeFromTop(kGap);
+
+        layoutRow(area, bindLabel_, bindAddress_);
+        layoutRow(area, receiveLabel_, receivePort_);
+        area.removeFromTop(kGap);
+        layoutRow(area, feedbackHostLabel_, feedbackHost_);
+        layoutRow(area, feedbackPortLabel_, feedbackPort_);
+
+        area.removeFromTop(kGap * 2);
+        status_.setBounds(area);
+    }
+
+  private:
+    static constexpr int kRowHeight = 24;
+    static constexpr int kGap = 8;
+    static constexpr int kLabelWidth = 150;
+    static constexpr int kFieldWidth = 200;
+    static constexpr int kStatusIntervalMs = 1000;
+
+    void addLabel(juce::Label& label, const juce::String& text) {
+        label.setText(text, juce::dontSendNotification);
+        label.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(label);
+    }
+
+    void layoutRow(juce::Rectangle<int>& area, juce::Label& label, juce::Component& field) {
+        auto row = area.removeFromTop(kRowHeight);
+        label.setBounds(row.removeFromLeft(kLabelWidth));
+        field.setBounds(row.removeFromLeft(kFieldWidth));
+        area.removeFromTop(4);
+    }
+
+    /// A port field, with the same rule at both: a number the OS could bind, or
+    /// the stored value put back. Committing on focus loss rather than on every
+    /// keystroke, so typing "9" on the way to "9001" does not rebind the socket
+    /// to port 9.
+    void setUpPortField(juce::TextEditor& field, int initial, std::function<void(int)> store) {
+        field.setInputRestrictions(5, "0123456789");
+        field.setText(juce::String(initial), juce::dontSendNotification);
+        field.onFocusLost = [this, &field, store = std::move(store)] {
+            const int port = field.getText().getIntValue();
+            if (port > 0 && port <= 65535) {
+                store(port);
+                commit();
+            } else {
+                refreshFields();
+            }
+        };
+        field.onReturnKey = [&field] { field.giveAwayKeyboardFocus(); };
+        addAndMakeVisible(field);
+    }
+
+    /// Persist, which is also what reconfigures: `Config::save` notifies the
+    /// listeners, and the OSC service and the feedback projector are two of them.
+    void commit() {
+        Config::getInstance().save();
+        refreshStatus();
+    }
+
+    void refreshFields() {
+        auto& config = Config::getInstance();
+        receivePort_.setText(juce::String(config.getOscReceivePort()), juce::dontSendNotification);
+        feedbackPort_.setText(juce::String(config.getOscFeedbackPort()),
+                              juce::dontSendNotification);
+    }
+
+    void timerCallback() override {
+        refreshStatus();
+    }
+
+    void refreshStatus() {
+        juce::String text;
+
+        if (osc_app::isListening()) {
+            text << tr("controllers.osc.status_listening")
+                        .replace("{0}", osc_app::boundAddress())
+                        .replace("{1}", juce::String(osc_app::boundPort()))
+                 << "\n"
+                 << tr("controllers.osc.status_received")
+                        .replace("{0}", juce::String(osc_app::acceptedMessageCount()));
+        } else if (Config::getInstance().getOscEnabled()) {
+            // Enabled and not listening means the port was taken, which is the
+            // one failure a user can act on and the one they cannot see.
+            text << tr("controllers.osc.status_bind_failed");
+        } else {
+            text << tr("controllers.osc.status_off");
+        }
+
+        text << "\n\n";
+        if (osc_app::feedbackIsSending())
+            text << tr("controllers.osc.status_feedback_sent")
+                        .replace("{0}", juce::String(osc_app::feedbackSentMessageCount()));
+        else
+            text << tr("controllers.osc.status_feedback_off");
+
+        status_.setText(text, juce::dontSendNotification);
+    }
+
+    juce::ToggleButton enable_;
+    juce::Label bindLabel_, receiveLabel_, feedbackHostLabel_, feedbackPortLabel_;
+    juce::ComboBox bindAddress_;
+    juce::TextEditor receivePort_, feedbackHost_, feedbackPort_;
+    juce::Label status_;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscSurfacesPage)
+};
+
+// =============================================================================
 // ControllersDialog
 // =============================================================================
 
@@ -966,6 +1152,7 @@ ControllersDialog::ControllersDialog() {
 
     profilesPage_ = std::make_unique<ControllerProfilesPage>();
     scriptsPage_ = std::make_unique<LuaScriptsPage>();
+    oscPage_ = std::make_unique<OscSurfacesPage>();
 
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
     tabbedComponent_.addTab(
@@ -976,6 +1163,8 @@ ControllersDialog::ControllersDialog() {
         tr("controllers.tab.scripts")
             .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Lua)),
         tabBg, scriptsPage_.get(), false);
+    tabbedComponent_.addTab(magda::technicalText(magda::TechnicalTextToken::Osc), tabBg,
+                            oscPage_.get(), false);
     addAndMakeVisible(tabbedComponent_);
 
     setSize(560, 512);

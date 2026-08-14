@@ -283,6 +283,38 @@ class OscRouter {
     bool isLearning() const;
 
     /**
+     * @brief Watch the fixed-namespace values this router applies (#2091).
+     *
+     * Called from `drainPending` with the slot and the value that landed, so
+     * feedback can tell its own echo from a change the user made in MAGDA. On
+     * the message thread, inside the drain, once per applied address.
+     *
+     * A toggle sent with no argument is not reported: it asks for a flip rather
+     * than naming a state, so the surface does not know what it produced and has
+     * to be told. Delta addresses are not reported for the same reason they are
+     * never echoed — there is no state behind them.
+     *
+     * Set before any message is handled, and cleared by passing `{}`.
+     */
+    using FeedbackTap = std::function<void(int slot, float value)>;
+    void setFeedbackTap(FeedbackTap tap);
+
+    /**
+     * @brief The same watch, for bound addresses (#2091).
+     *
+     * Separate because a binding is not a slot: it is addressed by the string
+     * the surface sends, and the value reported is the surface's own position
+     * before the binding's mode, curve and range are applied — which is the
+     * quantity feedback has to compare against, since that is what it would
+     * send back.
+     *
+     * Called from `drainPending`, on the message thread, once per applied
+     * binding value.
+     */
+    using BindingFeedbackTap = std::function<void(const juce::String& address, float value)>;
+    void setBindingFeedbackTap(BindingFeedbackTap tap);
+
+    /**
      * @brief How a pending drain reaches the message thread.
      *
      * Defaults to posting one, or running it inline when the caller is already
@@ -361,6 +393,8 @@ class OscRouter {
     std::unique_ptr<OscCommandSink> sink_;
     std::unique_ptr<OscBindingSink> bindingSink_;
     std::function<void()> scheduler_;
+    FeedbackTap feedbackTap_;
+    BindingFeedbackTap bindingFeedbackTap_;
 
     /// Swapped whole on the message thread, read through a shared_ptr copy on
     /// the receive thread. Null until bindings are first published.

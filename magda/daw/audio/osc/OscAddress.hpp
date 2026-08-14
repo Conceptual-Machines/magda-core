@@ -146,6 +146,20 @@ OscArgKind argKindFor(OscCommandKind kind);
  */
 std::optional<OscCommand> parseOscAddress(juce::StringRef address);
 
+/**
+ * @brief The address a command is spelled with. The inverse of the parser.
+ *
+ * Feedback (#2091) sends on the address a value is received on, so the spelling
+ * has to come from the same place the grammar does rather than from a second
+ * list of string literals that agrees with it today. `parseOscAddress` of the
+ * result is `command` again, for every command the parser can produce, which is
+ * what the round-trip test asserts over the whole slot space.
+ *
+ * Called on the message thread, once per address that actually changed, so it
+ * builds a `juce::String` rather than writing into a caller's buffer.
+ */
+juce::String formatOscAddress(const OscCommand& command);
+
 // ============================================================================
 // Coalescing slots
 // ============================================================================

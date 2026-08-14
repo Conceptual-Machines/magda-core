@@ -242,6 +242,8 @@ void Config::save() {
         oscObj->setProperty("enabled", oscEnabled);
         oscObj->setProperty("receivePort", oscReceivePort);
         oscObj->setProperty("bindAddress", toJuceString(oscBindAddress));
+        oscObj->setProperty("feedbackHost", toJuceString(oscFeedbackHost));
+        oscObj->setProperty("feedbackPort", oscFeedbackPort);
         root->setProperty("osc", juce::var(oscObj));
     }
 
@@ -734,6 +736,14 @@ void Config::load() {
                 if (address.isNotEmpty())
                     oscBindAddress = address.toStdString();
             }
+            // The feedback host takes an empty value as written, unlike the
+            // bind address above: empty is what "answer nobody" is spelled as,
+            // so falling back to a default would turn feedback on for a user
+            // who had turned it off.
+            if (oscObj->hasProperty("feedbackHost"))
+                oscFeedbackHost = oscObj->getProperty("feedbackHost").toString().toStdString();
+            if (oscObj->hasProperty("feedbackPort"))
+                oscFeedbackPort = oscObj->getProperty("feedbackPort");
         }
     }
     recentProjects = getStringArray("recentProjects");

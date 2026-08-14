@@ -477,6 +477,18 @@
     "upload_overwrite": "A profile with id \"{0}\" already exists. Replace it?",
     "upload_copy_failed": "Couldn't copy the profile into your controllers folder.",
     "upload_create_dir_failed": "Couldn't create the controllers folder:\n{0}",
-    "upload_success": "Imported profile \"{0}\"."
+    "upload_success": "Imported profile \"{0}\".",
+    "osc.enable": "Listen for OSC",
+    "osc.bind_address": "Listen on",
+    "osc.receive_port": "Receive port",
+    "osc.feedback_host": "Send feedback to",
+    "osc.feedback_port": "Feedback port",
+    "osc.feedback_host_empty": "No feedback",
+    "osc.status_off": "Not listening.",
+    "osc.status_listening": "Listening on {0}:{1}.",
+    "osc.status_bind_failed": "Couldn't open the port. Another application may be using it.",
+    "osc.status_received": "{0} messages received.",
+    "osc.status_feedback_off": "Feedback off. Enter a host to send MAGDA's state back to your surface.",
+    "osc.status_feedback_sent": "{0} feedback messages sent."
   }
 }
