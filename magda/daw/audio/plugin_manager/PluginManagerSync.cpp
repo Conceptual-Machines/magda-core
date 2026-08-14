@@ -729,62 +729,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         }
     }
 
-    // Sync sends: ensure AuxSendPlugins match TrackInfo::sends
-    {
-        // Collect existing AuxSendPlugin bus numbers
-        std::vector<int> existingSendBuses;
-        for (int i = 0; i < teTrack->pluginList.size(); ++i) {
-            if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(teTrack->pluginList[i])) {
-                existingSendBuses.push_back(auxSend->getBusNumber());
-            }
-        }
-
-        // Collect desired bus numbers from TrackInfo
-        std::vector<int> desiredBuses;
-        for (const auto& send : trackInfo->sends) {
-            desiredBuses.push_back(send.busIndex);
-        }
-
-        // Remove AuxSendPlugins that are no longer needed
-        for (int i = teTrack->pluginList.size() - 1; i >= 0; --i) {
-            if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(teTrack->pluginList[i])) {
-                int bus = auxSend->getBusNumber();
-                if (std::find(desiredBuses.begin(), desiredBuses.end(), bus) ==
-                    desiredBuses.end()) {
-                    auxSend->deleteFromParent();
-                }
-            }
-        }
-
-        // Add missing AuxSendPlugins
-        for (const auto& send : trackInfo->sends) {
-            bool exists = std::find(existingSendBuses.begin(), existingSendBuses.end(),
-                                    send.busIndex) != existingSendBuses.end();
-            if (!exists) {
-                auto sendPlugin =
-                    edit_.getPluginCache().createNewPlugin(te::AuxSendPlugin::xmlTypeName, {});
-                if (sendPlugin) {
-                    if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(sendPlugin.get())) {
-                        auxSend->busNumber = send.busIndex;
-                        auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
-                    }
-                    teTrack->pluginList.insertPlugin(sendPlugin, -1, nullptr);
-                }
-            }
-        }
-
-        // Update send levels for existing sends
-        for (const auto& send : trackInfo->sends) {
-            for (int i = 0; i < teTrack->pluginList.size(); ++i) {
-                if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(teTrack->pluginList[i])) {
-                    if (auxSend->getBusNumber() == send.busIndex) {
-                        auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
-                        break;
-                    }
-                }
-            }
-        }
-    }
+    reconcileSends(*trackInfo, *teTrack);
 
     // Register DrumGrid pad plugins in syncedDevices_ before macro/mod sync.
     // Drum Grid device macros can target pad samplers, and those targets must
@@ -1417,6 +1362,63 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plu
     });
 }
 
+void PluginManager::reconcileSends(const TrackInfo& trackInfo, te::AudioTrack& track) {
+    // Make the track's AuxSendPlugins match TrackInfo::sends: drop the buses
+    // that went away, create the ones that appeared, and refresh the levels.
+    //
+    // Shared with syncMultiOutTrack, which returns from syncTrackPlugins long
+    // before this used to run. A multi-out track therefore had no send plugins
+    // at all while the native compiler emitted its sends from the same model,
+    // so the two engines disagreed about whether the sends existed - which
+    // appendStripOrder could not show, because it can only order plugins that
+    // are already there.
+    std::vector<int> existingSendBuses;
+    for (int i = 0; i < track.pluginList.size(); ++i)
+        if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(track.pluginList[i]))
+            existingSendBuses.push_back(auxSend->getBusNumber());
+
+    std::vector<int> desiredBuses;
+    desiredBuses.reserve(trackInfo.sends.size());
+    for (const auto& send : trackInfo.sends)
+        desiredBuses.push_back(send.busIndex);
+
+    for (int i = track.pluginList.size() - 1; i >= 0; --i) {
+        if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(track.pluginList[i])) {
+            const int bus = auxSend->getBusNumber();
+            if (std::find(desiredBuses.begin(), desiredBuses.end(), bus) == desiredBuses.end())
+                auxSend->deleteFromParent();
+        }
+    }
+
+    for (const auto& send : trackInfo.sends) {
+        const bool exists = std::find(existingSendBuses.begin(), existingSendBuses.end(),
+                                      send.busIndex) != existingSendBuses.end();
+        if (exists)
+            continue;
+        auto sendPlugin =
+            edit_.getPluginCache().createNewPlugin(te::AuxSendPlugin::xmlTypeName, {});
+        if (!sendPlugin)
+            continue;
+        if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(sendPlugin.get())) {
+            auxSend->busNumber = send.busIndex;
+            auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
+        }
+        // Appended; appendStripOrder sequences it onto the right side of the
+        // fader afterwards.
+        track.pluginList.insertPlugin(sendPlugin, -1, nullptr);
+    }
+
+    for (const auto& send : trackInfo.sends) {
+        for (int i = 0; i < track.pluginList.size(); ++i) {
+            if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(track.pluginList[i]);
+                auxSend != nullptr && auxSend->getBusNumber() == send.busIndex) {
+                auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
+                break;
+            }
+        }
+    }
+}
+
 void PluginManager::appendStripOrder(TrackId trackId, const TrackInfo& trackInfo,
                                      te::AudioTrack& track,
                                      std::vector<te::Plugin*>& desiredOrder) const {
@@ -1697,41 +1699,44 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
             pluginsToDelete[i]->deleteFromParent();
     }
 
-    // Look up the output pair's actual pin mapping
-    auto* device = TrackManager::getInstance().getDevice(link.sourceTrackId, link.sourceDeviceId);
-    if (!device || !device->multiOut.isMultiOut)
-        return;
+    // The output pair's rack instance is what carries the multi-out routing.
+    // A guarded block rather than the three early returns it used to be: none of
+    // the sync below depends on the instance, so returning here gated a child
+    // track's fx devices, post-FX stage, sends, ordering and fader placement on
+    // multi-out plumbing that has nothing to do with any of them. A source
+    // device that has not finished loading is enough to hit it, and the track
+    // then had none of its chain (#2087 review).
+    //
+    // Declared out here because the ordering pass below anchors the first user
+    // plugin after it when there is one.
+    te::Plugin::Ptr rackInstance;
+    if (auto* device =
+            TrackManager::getInstance().getDevice(link.sourceTrackId, link.sourceDeviceId);
+        device != nullptr && device->multiOut.isMultiOut && link.outputPairIndex >= 0 &&
+        link.outputPairIndex < static_cast<int>(device->multiOut.outputPairs.size())) {
+        auto& outPair = device->multiOut.outputPairs[static_cast<size_t>(link.outputPairIndex)];
 
-    if (link.outputPairIndex < 0 ||
-        link.outputPairIndex >= static_cast<int>(device->multiOut.outputPairs.size()))
-        return;
-
-    auto& outPair = device->multiOut.outputPairs[static_cast<size_t>(link.outputPairIndex)];
-
-    // Restore pair state from the existing multi-out track (needed after project load,
-    // since the async plugin callback rebuilds pairs with active=false before tracks are restored)
-    if (!outPair.active || outPair.trackId != trackId) {
-        outPair.active = true;
-        outPair.trackId = trackId;
-    }
-
-    // Get or create the RackInstance for this output pair
-    auto rackInstance = instrumentRackManager_.createOutputInstance(
-        link.sourceDeviceId, link.outputPairIndex, outPair.firstPin, outPair.numChannels);
-    if (!rackInstance)
-        return;
-
-    // Check if rack instance is already on the track
-    bool alreadyOnTrack = false;
-    for (int i = 0; i < teTrack->pluginList.size(); ++i) {
-        if (teTrack->pluginList[i] == rackInstance.get()) {
-            alreadyOnTrack = true;
-            break;
+        // Restore pair state from the existing multi-out track (needed after project load,
+        // since the async plugin callback rebuilds pairs with active=false before tracks are
+        // restored)
+        if (!outPair.active || outPair.trackId != trackId) {
+            outPair.active = true;
+            outPair.trackId = trackId;
         }
-    }
 
-    if (!alreadyOnTrack) {
-        teTrack->pluginList.insertPlugin(rackInstance, -1, nullptr);
+        rackInstance = instrumentRackManager_.createOutputInstance(
+            link.sourceDeviceId, link.outputPairIndex, outPair.firstPin, outPair.numChannels);
+        if (rackInstance) {
+            bool alreadyOnTrack = false;
+            for (int i = 0; i < teTrack->pluginList.size(); ++i) {
+                if (teTrack->pluginList[i] == rackInstance.get()) {
+                    alreadyOnTrack = true;
+                    break;
+                }
+            }
+            if (!alreadyOnTrack)
+                teTrack->pluginList.insertPlugin(rackInstance, -1, nullptr);
+        }
     }
 
     // Sync user-added FX devices from chainElements (same as normal track path)
@@ -1799,6 +1804,10 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
     };
     loadFlatSection(trackInfo.chain.postFxChainElements, &ChainNodePath::postFxDevice);
     loadFlatSection(trackInfo.chain.mixerAnalysisElements, &ChainNodePath::mixerAnalysisDevice);
+
+    // Sends, on the same terms as an ordinary track. Before ordering, because
+    // appendStripOrder can only place plugins that already exist.
+    reconcileSends(trackInfo, *teTrack);
 
     // Reorder TE plugins to match the MAGDA chain element order (same as syncTrackPlugins)
     bool pluginOrderChanged = false;

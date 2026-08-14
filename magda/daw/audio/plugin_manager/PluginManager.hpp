@@ -183,6 +183,11 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
      * @brief Ensure VolumeAndPanPlugin is at the correct position (near end of chain)
      * @param track The Tracktion Engine audio track
      */
+    /// Bring the track's AuxSendPlugins into line with `TrackInfo::sends`.
+    /// Shared by the ordinary and multi-out sync paths; the multi-out one used
+    /// to return before this ran and so never created a send at all.
+    void reconcileSends(const TrackInfo& trackInfo, te::AudioTrack& track);
+
     /// Append everything after the fx tree to `desiredOrder`, grouped so that
     /// every pre-fader plugin precedes every post-fader one. Shared by the
     /// ordinary and multi-out sync paths, which each used to carry their own.

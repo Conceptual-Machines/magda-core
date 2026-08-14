@@ -80,6 +80,7 @@ class PostFxFaderOrderTest final : public juce::UnitTest {
             testTogglingMovesTheStage();
             testTheFaderReachesAPostFaderMeter();
             testSendsSitOnTheSideTheirFlagNames();
+            testMultiOutTrackGetsItsSendsToo();
         });
     }
 
@@ -375,6 +376,83 @@ class PostFxFaderOrderTest final : public juce::UnitTest {
         const int faderWithStage = faderIndex(*teTrack);
         expect(sendIndex(0) < faderWithStage, "a pre-fader send stays above the fader");
         expect(faderWithStage < sendIndex(1), "a post-fader send stays below it");
+    }
+
+    /// A multi-out track takes its own sync path, which returned from
+    /// syncTrackPlugins long before the send reconciliation ran. It therefore
+    /// had no AuxSendPlugins at all, while the native compiler emitted its sends
+    /// from the same model: the two engines disagreed about whether the sends
+    /// existed, not merely about where they sat. Ordering could not surface that,
+    /// because it can only place plugins that are already there.
+    void testMultiOutTrackGetsItsSendsToo() {
+        beginTest("A multi-out track's sends exist and straddle the fader");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        auto* bridge = wrapper.getAudioBridge();
+        if (bridge == nullptr)
+            return;
+
+        auto& tm = TrackManager::getInstance();
+
+        // A real multi-out child, built the way the model builds one: the source
+        // instrument declares its output pairs and activating one creates the
+        // child track and its link. A hand-made link is not enough — the sync
+        // path resolves the source device and returns early without it.
+        const auto sourceId = tm.createTrack("Source", TrackType::Audio);
+        DeviceInfo instrument;
+        instrument.name = "MultiOutSynth";
+        instrument.format = PluginFormat::Internal;
+        instrument.pluginId = "multisynth";
+        instrument.isInstrument = true;
+        instrument.multiOut.isMultiOut = true;
+        instrument.multiOut.totalOutputChannels = 4;
+        instrument.multiOut.outputPairs = {
+            {0, "Main 1-2", false, INVALID_TRACK_ID, 1, 2},
+            {1, "Out 3-4", false, INVALID_TRACK_ID, 3, 2},
+        };
+        const auto deviceId = tm.addDeviceToTrack(sourceId, instrument);
+        const auto trackId = tm.activateMultiOutPair(sourceId, deviceId, 1);
+        expect(trackId != INVALID_TRACK_ID, "the multi-out child must be created");
+        if (trackId == INVALID_TRACK_ID)
+            return;
+
+        auto* trackInfo = tm.getTrack(trackId);
+        expect(trackInfo != nullptr, "the child must exist in the model");
+        if (trackInfo == nullptr)
+            return;
+        expect(trackInfo->type == TrackType::MultiOut, "the child must take the multi-out path");
+
+        SendInfo pre;
+        pre.busIndex = 0;
+        pre.preFader = true;
+        SendInfo post;
+        post.busIndex = 1;
+        post.preFader = false;
+        trackInfo->sends.push_back(pre);
+        trackInfo->sends.push_back(post);
+
+        bridge->syncTrackPlugins(trackId);
+        auto* teTrack = bridge->getAudioTrack(trackId);
+        expect(teTrack != nullptr, "the track must reach the engine");
+        if (teTrack == nullptr)
+            return;
+
+        auto sendIndex = [&](int busIndex) {
+            for (int i = 0; i < teTrack->pluginList.size(); ++i)
+                if (auto* aux =
+                        dynamic_cast<tracktion::engine::AuxSendPlugin*>(teTrack->pluginList[i]);
+                    aux != nullptr && aux->getBusNumber() == busIndex)
+                    return i;
+            return -1;
+        };
+
+        expect(sendIndex(0) >= 0, "the pre-fader send must exist on a multi-out track");
+        expect(sendIndex(1) >= 0, "the post-fader send must exist on a multi-out track");
+
+        const int fader = faderIndex(*teTrack);
+        expect(fader >= 0, "the track must have a fader");
+        expect(sendIndex(0) < fader, "a pre-fader send taps above the fader");
+        expect(fader < sendIndex(1), "a post-fader send taps below it");
     }
 };
 
