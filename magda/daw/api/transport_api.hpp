@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 
 namespace magda {
 
@@ -60,8 +61,19 @@ class TransportApi {
     // times and drift three ways.
     // ------------------------------------------------------------------
 
-    /** Move the playhead `delta` beats, clamped at zero. */
+    /**
+     * Move the playhead `delta` beats, clamped at zero.
+     *
+     * A non-finite delta moves nothing. The clamp cannot catch one: every
+     * comparison against NaN is false, so `std::max(0.0, NaN)` is 0 and a
+     * single bad number would send the playhead to the start of the project.
+     * Every surface takes its delta from outside MAGDA — a Lua number, a JSON
+     * number, an OSC float — so it is refused here rather than at each of them.
+     */
     void seekBeats(double delta) {
+        if (!std::isfinite(delta))
+            return;
+
         setPositionBeats(std::max(0.0, getPositionBeats() + delta));
     }
 
@@ -88,7 +100,11 @@ class TransportApi {
         const auto bounded = static_cast<int>(std::clamp<long long>(
             deltaBars, -static_cast<long long>(kMaxBarOffset), kMaxBarOffset));
 
-        setPositionBeats(std::max(0.0, beatsAtBarOffset(getPositionBeats(), bounded)));
+        const auto target = beatsAtBarOffset(getPositionBeats(), bounded);
+        if (!std::isfinite(target))
+            return;
+
+        setPositionBeats(std::max(0.0, target));
     }
 };
 

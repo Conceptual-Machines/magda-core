@@ -1,5 +1,6 @@
 #include "osc_command_sink_live.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "../audio/controllers/ControllerParamWriter.hpp"
@@ -20,6 +21,14 @@ namespace magda {
 
 using osc::OscCommand;
 using osc::OscCommandKind;
+
+namespace {
+
+/// TransportApi's bound, as a float, so an OSC argument can be clamped before
+/// it is rounded rather than after.
+constexpr float kMaxSeekBars = static_cast<float>(TransportApi::kMaxBarOffset);
+
+}  // namespace
 
 OscCommandSinkLive::OscCommandSinkLive(MagdaApi& api, std::unique_ptr<ControllerParamWriter> writer)
     : api_(api), writer_(std::move(writer)) {
@@ -95,12 +104,23 @@ void OscCommandSinkLive::apply(const OscCommand& command, float value) {
             api_.transport().seekBeats(value);
             return;
         case OscCommandKind::TransportSeekBars:
+            // Clamped before it is rounded, not after. A float reaches 3.4e38
+            // and llround is a domain error past about 9.2e18: the result is
+            // unspecified, and on x86 and ARM it is LLONG_MIN for either sign,
+            // so a huge *positive* delta would seek to the start of the
+            // project. That is reachable from the network, since OSC is
+            // unauthenticated UDP. Clamping first makes the facade's own bound
+            // the thing that decides, on every platform.
+            //
             // Rounded rather than truncated, so a surface that sends its
             // integers as floats and lands on 0.999999 still moves a bar.
-            // llround rather than lround, and no narrowing: the facade bounds
-            // the count, so a surface sending 1e30 gets one end of the project
-            // rather than whatever the conversion happened to produce.
-            api_.transport().seekBars(std::llround(value));
+            //
+            // NaN first, because a clamp does not catch it: every comparison
+            // against it is false, so it would pass straight through to the
+            // same domain error the clamp is here to prevent.
+            if (!std::isfinite(value))
+                return;
+            api_.transport().seekBars(std::llround(std::clamp(value, -kMaxSeekBars, kMaxSeekBars)));
             return;
 
         case OscCommandKind::MasterVolume:

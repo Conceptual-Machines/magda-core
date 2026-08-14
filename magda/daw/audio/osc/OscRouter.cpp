@@ -157,7 +157,7 @@ std::optional<float> oscValueFor(const OscCommand& command, const juce::OSCMessa
             // how far, so there is nothing to do.
             if (argument.state != ArgumentState::Present)
                 return std::nullopt;
-            if (argument.value == 0.0f)
+            if (argument.value == 0.0f || !std::isfinite(argument.value))
                 return std::nullopt;
             return argument.value;
 

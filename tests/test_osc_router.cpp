@@ -509,3 +509,16 @@ TEST_CASE("A seek with nothing to carry is declined", "[osc][router]") {
 
     REQUIRE(r.applied().empty());
 }
+
+TEST_CASE("A non-finite seek is declined at the router", "[osc][router]") {
+    // Refused where the packet is read, so nothing downstream has to hold a
+    // value that cannot be rounded.
+    HeldRouter r;
+    REQUIRE_FALSE(
+        r.send(juce::OSCMessage("/magda/transport/seek", std::numeric_limits<float>::quiet_NaN())));
+    REQUIRE_FALSE(r.send(
+        juce::OSCMessage("/magda/transport/seek/bars", std::numeric_limits<float>::infinity())));
+    r.drain();
+
+    REQUIRE(r.applied().empty());
+}

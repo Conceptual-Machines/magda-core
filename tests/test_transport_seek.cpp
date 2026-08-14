@@ -119,3 +119,18 @@ TEST_CASE("An out-of-range bar offset is bounded before it is narrowed", "[trans
     // Bounded on the way in, and still clamped at zero on the way out.
     CHECK(transport.positionBeats == Approx(0.0));
 }
+
+TEST_CASE("A non-finite delta moves nothing", "[transport][seek][api]") {
+    // The clamp at zero cannot catch it: every comparison against NaN is
+    // false, so std::max(0.0, NaN) is 0 and one bad number from any surface
+    // would send the playhead to the start of the project.
+    MockTransportApi transport;
+    transport.positionBeats = 32.0;
+
+    for (const auto delta :
+         {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(),
+          -std::numeric_limits<double>::infinity()}) {
+        transport.seekBeats(delta);
+        CHECK(transport.positionBeats == Approx(32.0));
+    }
+}
