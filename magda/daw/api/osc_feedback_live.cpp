@@ -39,13 +39,6 @@ OscCommand unindexed(OscCommandKind kind) {
     return OscCommand{kind, 0, 0};
 }
 
-/// Linear gain to the normalized fader position, the inverse of what
-/// `DefaultControllerParamWriter::writeTrackLevel` did on the way in.
-float normalizedFromGain(float gain, const ParameterInfo& info) {
-    const float dB = gain > 0.0f ? 20.0f * std::log10(gain) : info.minValue;
-    return ParameterUtils::realToNormalized(dB, info);
-}
-
 }  // namespace
 
 // ============================================================================
@@ -125,10 +118,12 @@ OscFeedbackProjector::OscFeedbackProjector(MagdaApi& api, remote::ChangeSource& 
         [this](const std::vector<remote::ChangeSource::Change>& changed) { onChanges(changed); });
 
     Config::getInstance().addListener(this);
+    BindingRegistry::getInstance().addListener(this);
 }
 
 OscFeedbackProjector::~OscFeedbackProjector() {
     alive_->store(false);
+    BindingRegistry::getInstance().removeListener(this);
     Config::getInstance().removeListener(this);
     tick_.reset();
     changes_.removeListener(changeToken_);
@@ -138,6 +133,14 @@ OscFeedbackProjector::~OscFeedbackProjector() {
 
 void OscFeedbackProjector::configChanged() {
     applyConfig();
+}
+
+void OscFeedbackProjector::bindingRegistryChanged(BindingScope /*scope*/) {
+    // Both scopes feed one pass, so which one moved does not matter, and
+    // dropping the remembered values is what keeps a re-pointed address from
+    // being diffed against the target it used to name.
+    bound_.clear();
+    bindingsDirty_ = true;
 }
 
 std::unique_ptr<ControllerFeedbackSink> OscFeedbackProjector::makeControllerFeedbackSink() {
@@ -236,9 +239,19 @@ void OscFeedbackProjector::onChanges(const std::vector<remote::ChangeSource::Cha
                 // user pressed save.
                 mixerDirty_ = macrosDirty_ = bindingsDirty_ = true;
                 break;
+            case remote::Topic::Automation:
+                // A curve moving a plain plugin parameter reaches nothing else.
+                // `AutomationPlaybackEngine::currentValueChanged` writes track
+                // levels, macros and mod rates back through `TrackManager` — so
+                // those arrive as Tracks or Devices — but a `PluginParam` has no
+                // such branch, and only the lane is notified. Without this a
+                // bound fader never follows an automated parameter. The tick's
+                // own cadence is the coalescing, so a curve running at block
+                // rate still costs one binding pass per tick.
+                bindingsDirty_ = true;
+                break;
             case remote::Topic::Clips:
             case remote::Topic::Session:
-            case remote::Topic::Automation:
             case remote::Topic::Meters:
             case remote::Topic::Playhead:
                 break;
@@ -256,7 +269,12 @@ void OscFeedbackProjector::tick() {
     const auto accepted = router_.acceptedMessageCount();
     if (accepted != lastAcceptedCount_) {
         const auto now = juce::Time::currentTimeMillis();
-        if (lastInboundMs_ != 0 && now - lastInboundMs_ >= kResyncSilenceMs)
+        // The first packet counts as a resync as much as one after a gap does,
+        // and for a stronger reason: the snapshot sent when the destination was
+        // configured went to a UDP address with nobody behind it yet, and there
+        // is no delivery to have failed. A surface that starts afterwards and
+        // sends its first message is a surface that has been told nothing.
+        if (lastInboundMs_ == 0 || now - lastInboundMs_ >= kResyncSilenceMs)
             requestSnapshot();
         lastInboundMs_ = now;
         lastAcceptedCount_ = accepted;
@@ -308,7 +326,7 @@ void OscFeedbackProjector::projectMixer() {
             getParameterInfoForTarget(ControlTarget::trackVolume(MASTER_TRACK_ID));
         const auto panInfo = getParameterInfoForTarget(ControlTarget::trackPan(MASTER_TRACK_ID));
         feedback_->publish(unindexed(OscCommandKind::MasterVolume),
-                           normalizedFromGain(master->volume, volumeInfo));
+                           ParameterUtils::normalizedFromGain(master->volume, volumeInfo));
         feedback_->publish(unindexed(OscCommandKind::MasterPan),
                            ParameterUtils::realToNormalized(master->pan, panInfo));
     }
@@ -332,7 +350,7 @@ void OscFeedbackProjector::projectStrip(int position, TrackId trackId) {
     const auto panInfo = getParameterInfoForTarget(ControlTarget::trackPan(trackId));
 
     feedback_->publish(OscCommand{OscCommandKind::TrackVolume, position, 0},
-                       normalizedFromGain(track->volume, volumeInfo));
+                       ParameterUtils::normalizedFromGain(track->volume, volumeInfo));
     feedback_->publish(OscCommand{OscCommandKind::TrackPan, position, 0},
                        ParameterUtils::realToNormalized(track->pan, panInfo));
     feedback_->publish(OscCommand{OscCommandKind::TrackMute, position, 0},
@@ -351,9 +369,9 @@ void OscFeedbackProjector::projectStrip(int position, TrackId trackId) {
             continue;
         }
         const auto& info = track->sends[static_cast<size_t>(send - 1)];
-        feedback_->publish(
-            command,
-            normalizedFromGain(info.level, getParameterInfoForTarget(
+        feedback_->publish(command,
+                           ParameterUtils::normalizedFromGain(
+                               info.level, getParameterInfoForTarget(
                                                ControlTarget::sendLevel(trackId, info.busIndex))));
     }
 }

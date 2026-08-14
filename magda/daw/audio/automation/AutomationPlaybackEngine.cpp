@@ -723,22 +723,27 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
         target.kind == ControlTarget::Kind::TrackPan ||
         target.kind == ControlTarget::Kind::SendLevel) {
         ParameterInfo info = getParameterInfoForTarget(target);
-        float real = ParameterUtils::normalizedToReal(static_cast<float>(normalized), info);
+        const auto position = static_cast<float>(normalized);
 
         auto& trackMgr = TrackManager::getInstance();
         // Scope the re-entrancy flag so AudioBridge can distinguish this
         // automation-driven writeback from user-initiated fader/pan edits.
         AutomationManager::AutomationWriteScope writeScope;
         if (target.kind == ControlTarget::Kind::TrackVolume) {
-            // Target param range is in dB; convert back to linear gain.
-            float gain = std::pow(10.0f, real / 20.0f);
-            trackMgr.setTrackVolume(target.devicePath.trackId, gain, /*fromAutomation=*/true);
+            // Target param range is in dB; TrackManager holds linear gain. The
+            // same shared pair the controller writer and reader use, so a curve
+            // and a fader at one position resolve to one gain.
+            trackMgr.setTrackVolume(target.devicePath.trackId,
+                                    ParameterUtils::gainFromNormalized(position, info),
+                                    /*fromAutomation=*/true);
         } else if (target.kind == ControlTarget::Kind::TrackPan) {
-            trackMgr.setTrackPan(target.devicePath.trackId, real, /*fromAutomation=*/true);
+            trackMgr.setTrackPan(target.devicePath.trackId,
+                                 ParameterUtils::normalizedToReal(position, info),
+                                 /*fromAutomation=*/true);
         } else {
-            // SendLevel: same fader-dB → linear-gain mapping as TrackVolume.
-            float gain = std::pow(10.0f, real / 20.0f);
-            trackMgr.setSendLevel(target.devicePath.trackId, target.sendBusIndex, gain,
+            // SendLevel: same fader-dB to linear-gain mapping as TrackVolume.
+            trackMgr.setSendLevel(target.devicePath.trackId, target.sendBusIndex,
+                                  ParameterUtils::gainFromNormalized(position, info),
                                   /*fromAutomation=*/true);
         }
     } else if (target.kind == ControlTarget::Kind::DeviceMacro) {

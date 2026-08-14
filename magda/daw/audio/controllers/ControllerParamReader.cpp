@@ -9,20 +9,6 @@
 
 namespace magda {
 
-namespace {
-
-/// Linear gain back to the normalized position that produced it: the inverse of
-/// `DefaultControllerParamWriter::writeTrackLevel`'s `pow(10, dB/20)`.
-///
-/// Silence has no dB, so it answers the bottom of the fader's range rather than
-/// negative infinity. That is where a fader at zero gain sits.
-float normalizedFromGain(float gain, const ParameterInfo& info) {
-    const float dB = gain > 0.0f ? 20.0f * std::log10(gain) : info.minValue;
-    return ParameterUtils::realToNormalized(dB, info);
-}
-
-}  // namespace
-
 std::optional<float> DefaultControllerParamReader::read(const ResolveResult& resolved) {
     if (!resolved.ok())
         return std::nullopt;
@@ -61,7 +47,7 @@ std::optional<float> DefaultControllerParamReader::readTrackLevel(const ControlT
 
     const ParameterInfo info = getParameterInfoForTarget(target);
     if (target.kind == ControlTarget::Kind::TrackVolume)
-        return normalizedFromGain(track->volume, info);
+        return ParameterUtils::normalizedFromGain(track->volume, info);
     return ParameterUtils::realToNormalized(track->pan, info);
 }
 
@@ -76,7 +62,8 @@ std::optional<float> DefaultControllerParamReader::readSendLevel(const ControlTa
 
     for (const auto& send : track->sends)
         if (send.busIndex == target.sendBusIndex)
-            return normalizedFromGain(send.level, getParameterInfoForTarget(target));
+            return ParameterUtils::normalizedFromGain(send.level,
+                                                      getParameterInfoForTarget(target));
 
     return std::nullopt;
 }

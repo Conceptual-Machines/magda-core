@@ -11,6 +11,7 @@
 #include "magda/daw/audio/osc/OscRouter.hpp"
 #include "magda/daw/core/ParameterInfo.hpp"
 #include "magda/daw/core/ParameterUtils.hpp"
+#include "magda/daw/core/controllers/BindingRegistry.hpp"
 #include "magda/daw/core/controllers/BindingTransform.hpp"
 
 using namespace magda::osc;
@@ -539,6 +540,123 @@ TEST_CASE("The focused device's macros go out, and stop when focus goes", "[osc]
     rig.projector->requestSnapshot();
     rig.projector->tick();
     REQUIRE(rig.sink->find("/magda/focused/macro/1") == nullptr);
+}
+
+TEST_CASE("A surface that starts late is caught up by its first message", "[osc][feedback]") {
+    // The snapshot sent when the destination was configured went to a UDP
+    // address with nobody behind it. Nothing failed and nothing can be
+    // retried, so the first packet from a surface is the first evidence that
+    // there is a surface, and it is owed everything.
+    ProjectorRig rig;
+    rig.addTrack("Drums");
+    rig.markTracksChanged();
+    rig.projector->tick();
+    rig.sink->clear();
+
+    // Nothing has moved, so an ordinary tick says nothing.
+    rig.projector->tick();
+    REQUIRE(rig.sink->messages.empty());
+
+    rig.router->handleMessage(juce::OSCMessage("/magda/track/1/pan", 0.5f));
+    rig.projector->tick();
+
+    REQUIRE(rig.sink->find("/magda/track/1/volume") != nullptr);
+    REQUIRE(rig.sink->find("/magda/transport/play") != nullptr);
+}
+
+TEST_CASE("Steady inbound traffic does not keep resnapshotting", "[osc][feedback]") {
+    ProjectorRig rig;
+    rig.addTrack("Drums");
+    rig.markTracksChanged();
+    rig.router->handleMessage(juce::OSCMessage("/magda/track/1/pan", 0.5f));
+    rig.projector->tick();
+    rig.sink->clear();
+
+    // A second message inside the silence window is a gesture continuing, not
+    // a surface arriving.
+    rig.router->handleMessage(juce::OSCMessage("/magda/track/1/pan", 0.5f));
+    rig.projector->tick();
+    REQUIRE(rig.sink->find("/magda/track/1/volume") == nullptr);
+}
+
+namespace {
+
+/// Stands in for the engine behind a bound target. The reader's own inversions
+/// are covered where the reader is; what these cases are about is *when* the
+/// projector goes looking.
+class StubParamReader : public magda::ControllerParamReader {
+  public:
+    std::optional<float> read(const magda::ResolveResult&) override {
+        return value;
+    }
+
+    float value = 0.0f;
+};
+
+/// A registry the test owns for the length of one case. The registry is a
+/// singleton shared with every other test in the binary, so what a case adds it
+/// takes away again.
+struct ScopedGlobalBinding {
+    explicit ScopedGlobalBinding(const juce::String& address) {
+        binding.id = juce::Uuid();
+        binding.source.kind = magda::BindingSourceKind::Osc;
+        binding.source.oscAddress = address;
+        binding.target = magda::ControlTarget::trackVolume(1);
+        magda::BindingRegistry::getInstance().add(magda::BindingScope::Global, binding);
+    }
+
+    ~ScopedGlobalBinding() {
+        magda::BindingRegistry::getInstance().remove(magda::BindingScope::Global, binding.id);
+    }
+
+    magda::Binding binding;
+};
+
+}  // namespace
+
+TEST_CASE("A binding added after the last tick is projected on the next one", "[osc][feedback]") {
+    // The gap this closes: OscService listens to the registry so the input goes
+    // live, and without the same listener here the address it comes from stays
+    // blank until an unrelated edit happens to dirty the pass. OSC learn is the
+    // sharpest case, since its capture is consumed rather than applied.
+    auto owned = std::make_unique<StubParamReader>();
+    auto* reader = owned.get();
+
+    auto sinkOwned = std::make_unique<CapturingSink>();
+    auto* sink = sinkOwned.get();
+    magda::test::MockMagdaApi api;
+    magda::remote::ChangeSource changes;
+    OscRouter router{std::make_unique<DiscardingCommandSink>()};
+    magda::OscFeedbackProjector projector{api, changes, router, std::move(owned),
+                                          std::move(sinkOwned)};
+
+    reader->value = 0.4f;
+    projector.tick();
+    sink->clear();
+
+    // Nothing is dirty, so an ordinary tick says nothing.
+    projector.tick();
+    REQUIRE(sink->find("/x/fader") == nullptr);
+
+    ScopedGlobalBinding bound{"/x/fader"};
+    projector.tick();
+
+    const auto* message = sink->find("/x/fader");
+    REQUIRE(message != nullptr);
+    REQUIRE(message->value == Approx(0.4f));
+
+    // And it holds still once the surface has been told.
+    sink->clear();
+    projector.tick();
+    REQUIRE(sink->find("/x/fader") == nullptr);
+
+    // A move of the target does reach it.
+    reader->value = 0.9f;
+    changes.markChanged(magda::remote::Topic::Automation, 2);
+    changes.flush();
+    projector.tick();
+    REQUIRE(sink->find("/x/fader") != nullptr);
+    REQUIRE(sink->find("/x/fader")->value == Approx(0.9f));
 }
 
 TEST_CASE("A value the surface set is not projected back at it", "[osc][feedback]") {

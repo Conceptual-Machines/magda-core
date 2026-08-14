@@ -12,6 +12,7 @@
 #include "../core/Config.hpp"
 #include "../core/TypeIds.hpp"
 #include "../core/controllers/Binding.hpp"
+#include "../core/controllers/BindingRegistry.hpp"
 #include "remote_changes.hpp"
 
 namespace magda {
@@ -72,7 +73,7 @@ class OscRouter;
  * message loop to drive it. Owning it means a projector with no destination
  * costs nothing and a headless one costs nothing at all.
  */
-class OscFeedbackProjector : private ConfigListener {
+class OscFeedbackProjector : private ConfigListener, private BindingRegistryListener {
   public:
     /**
      * @param api       The facade. Must outlive this.
@@ -159,6 +160,22 @@ class OscFeedbackProjector : private ConfigListener {
     /// Config changed: the destination may have. Reapplying is idempotent, so
     /// an unrelated save leaves a connected surface alone.
     void configChanged() override;
+
+    /**
+     * @brief The bindings in force changed, so what each address shows may have.
+     *
+     * `OscService` already listens for this to rebuild the inbound routes;
+     * without the same listener here, a binding added or learned after the last
+     * tick would drive its target while the address it drives it from stayed
+     * blank until some unrelated edit happened to dirty the pass. OSC learn is
+     * the sharpest case, because its capture is consumed rather than applied, so
+     * nothing moves to notify anyone.
+     *
+     * The remembered values go with it: an address whose binding was re-pointed
+     * is showing the old target's position, and there is nothing to diff a new
+     * target against.
+     */
+    void bindingRegistryChanged(BindingScope scope) override;
 
     void onChanges(const std::vector<remote::ChangeSource::Change>& changes);
 
