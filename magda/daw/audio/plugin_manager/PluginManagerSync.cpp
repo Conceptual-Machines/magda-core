@@ -892,22 +892,58 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
             }
         }
 
-        // Post-FX devices come after the fx tree but before the fader; mixer-
-        // analysis devices come after post-FX. Append both groups so the move
-        // below sequences them last (the fader and meter are then pushed past
-        // them by ensureVolumePluginPosition).
+        // The rest of the strip, in the order the native compiler emits it:
+        //
+        //   fx -> [postFx, mixerAnalysis if pre-fader] -> preFaderSends
+        //      -> fader -> [postFx, mixerAnalysis if post-fader] -> postFaderSends
+        //
+        // The fader is not in this list; ensureVolumePluginPosition slots it in
+        // afterwards, immediately before the first plugin that belongs after it.
+        // That only lands correctly if everything pre-fader precedes everything
+        // post-fader here, which is what the two groups below are for.
         auto appendSection = [&](const std::vector<PostFxChainElement>& section, auto pathBuilder) {
+            juce::ScopedLock lock(pluginLock_);
             for (const auto& elem : section) {
-                const auto devicePath = pathBuilder(trackId, elem.device.id);
-                juce::ScopedLock lock(pluginLock_);
-                auto it = findSyncedDevice(devicePath);
+                auto it = findSyncedDevice(pathBuilder(trackId, elem.device.id));
                 if (it != syncedDevices_.end() && it->second.plugin &&
                     teTrack->pluginList.indexOf(it->second.plugin.get()) >= 0)
                     desiredOrder.push_back(it->second.plugin.get());
             }
         };
-        appendSection(trackInfo->chain.postFxChainElements, &ChainNodePath::postFxDevice);
-        appendSection(trackInfo->chain.mixerAnalysisElements, &ChainNodePath::mixerAnalysisDevice);
+        auto appendStage = [&] {
+            appendSection(trackInfo->chain.postFxChainElements, &ChainNodePath::postFxDevice);
+            appendSection(trackInfo->chain.mixerAnalysisElements,
+                          &ChainNodePath::mixerAnalysisDevice);
+        };
+
+        // Sends are sequenced here for the first time. They used to be appended
+        // and left alone, which was harmless only because the fader was hoisted
+        // past everything: every send ended up above it whatever SendInfo::preFader
+        // said, so TE has never honoured that flag while the native compiler has
+        // always split on it. Leaving them unsequenced now would be worse than
+        // inconsistent — the fader lands before the first post-fader plugin, so
+        // whether a send sat above or below it would depend on whether the track
+        // happened to own a post-FX device.
+        auto appendSends = [&](bool preFader) {
+            for (const auto& send : trackInfo->sends) {
+                if (send.preFader != preFader)
+                    continue;
+                for (int i = 0; i < teTrack->pluginList.size(); ++i) {
+                    if (auto* aux = dynamic_cast<te::AuxSendPlugin*>(teTrack->pluginList[i]);
+                        aux != nullptr && aux->getBusNumber() == send.busIndex) {
+                        desiredOrder.push_back(aux);
+                        break;
+                    }
+                }
+            }
+        };
+
+        if (!trackInfo->chain.postFxPostFader)
+            appendStage();
+        appendSends(/*preFader=*/true);
+        if (trackInfo->chain.postFxPostFader)
+            appendStage();
+        appendSends(/*preFader=*/false);
 
         // Walk the desired order and move each plugin to its correct position
         // using ValueTree::moveChild on the plugin list's state.
@@ -1471,7 +1507,7 @@ void PluginManager::ensureVolumePluginPosition(TrackId trackId, te::AudioTrack* 
     // What legitimately belongs after the fader (#2087). Until now the answer
     // was "only LevelMeter", which is why the fader was hoisted past everything
     // else and why the post-FX stage could never actually be post-fader.
-    const auto postFaderPlugins = collectPostFaderPlugins(trackId);
+    const auto postFaderPlugins = collectPostFaderPlugins(trackId, *track);
 
     // Where the fader goes: immediately before the first plugin that belongs
     // after it, or at the end when nothing does.
@@ -1519,7 +1555,8 @@ void PluginManager::ensureVolumePluginPosition(TrackId trackId, te::AudioTrack* 
     plugins.insertPlugin(volPanPlugin, insertAt, nullptr);
 }
 
-std::unordered_set<te::Plugin*> PluginManager::collectPostFaderPlugins(TrackId trackId) const {
+std::unordered_set<te::Plugin*> PluginManager::collectPostFaderPlugins(
+    TrackId trackId, te::AudioTrack& track) const {
     std::unordered_set<te::Plugin*> result;
 
     const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
@@ -1533,17 +1570,34 @@ std::unordered_set<te::Plugin*> PluginManager::collectPostFaderPlugins(TrackId t
     // left to the post-FX flag because it is post-fader unconditionally and its
     // placement should not depend on whether the user happens to own a post-FX
     // device.
+    //
+    // Unlocked, like every other access to this map: it is written and read on
+    // the message thread only (see PluginManagerMeasurement.cpp). The lock below
+    // is for syncedDevices_, which the async plugin-load path also touches.
     if (auto tap = trackMeasurementTaps_.find(trackId); tap != trackMeasurementTaps_.end()) {
         if (tap->second)
             result.insert(tap->second.get());
     }
 
+    // A post-fader send taps the fader's output, which is what "post-fader"
+    // means and what the native compiler has always done. TE never honoured the
+    // flag because the fader was hoisted past every send regardless; it does now.
+    for (const auto& send : trackInfo->sends) {
+        if (send.preFader)
+            continue;
+        for (int i = 0; i < track.pluginList.size(); ++i)
+            if (auto* aux = dynamic_cast<te::AuxSendPlugin*>(track.pluginList[i]);
+                aux != nullptr && aux->getBusNumber() == send.busIndex)
+                result.insert(aux);
+    }
+
     if (!trackInfo->chain.postFxPostFader)
         return result;
 
+    // One critical section for the whole walk rather than one per device.
+    const juce::ScopedLock lock(pluginLock_);
     auto addSection = [&](const std::vector<PostFxChainElement>& section, auto pathBuilder) {
         for (const auto& elem : section) {
-            juce::ScopedLock lock(pluginLock_);
             auto it = findSyncedDevice(pathBuilder(trackId, elem.device.id));
             if (it != syncedDevices_.end() && it->second.plugin)
                 result.insert(it->second.plugin.get());

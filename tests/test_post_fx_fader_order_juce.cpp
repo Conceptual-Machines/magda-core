@@ -79,6 +79,7 @@ class PostFxFaderOrderTest final : public juce::UnitTest {
             testPreFaderPlacesTheStageBeforeTheFader();
             testTogglingMovesTheStage();
             testTheFaderReachesAPostFaderMeter();
+            testSendsSitOnTheSideTheirFlagNames();
         });
     }
 
@@ -304,6 +305,76 @@ class PostFxFaderOrderTest final : public juce::UnitTest {
         expect(preFaderAtSilence.bufferPeak < 0.01f, "the fader still silences the track output");
         expect(preFaderAtSilence.meterDb > preFaderAtUnity.meterDb - 1.0f,
                "a pre-fader meter reads the same whatever the fader does");
+    }
+
+    /// Sends are sequenced across the fader by their own flag now. They used to
+    /// be appended and never moved, which only looked consistent because the
+    /// fader was hoisted past everything: every send ended up above it whatever
+    /// SendInfo::preFader said, while the native compiler has always split on it.
+    ///
+    /// Pinned because a send crossing the fader is as audible as the meter fix
+    /// this PR is about, and because without the sequencing the side a send
+    /// lands on depends on whether the track owns a post-FX device.
+    void testSendsSitOnTheSideTheirFlagNames() {
+        beginTest("A send sits on the side of the fader its flag names");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        auto* bridge = wrapper.getAudioBridge();
+        if (bridge == nullptr)
+            return;
+
+        auto& tm = TrackManager::getInstance();
+        const auto trackId = tm.createTrack("Sends", TrackType::Audio);
+
+        SendInfo pre;
+        pre.busIndex = 0;
+        pre.preFader = true;
+        SendInfo post;
+        post.busIndex = 1;
+        post.preFader = false;
+
+        auto* trackInfo = tm.getTrack(trackId);
+        expect(trackInfo != nullptr, "the track must exist in the model");
+        if (trackInfo == nullptr)
+            return;
+        trackInfo->sends.push_back(pre);
+        trackInfo->sends.push_back(post);
+
+        bridge->syncTrackPlugins(trackId);
+        auto* teTrack = bridge->getAudioTrack(trackId);
+        expect(teTrack != nullptr, "the track must reach the engine");
+        if (teTrack == nullptr)
+            return;
+
+        auto sendIndex = [&](int busIndex) {
+            for (int i = 0; i < teTrack->pluginList.size(); ++i)
+                if (auto* aux =
+                        dynamic_cast<tracktion::engine::AuxSendPlugin*>(teTrack->pluginList[i]);
+                    aux != nullptr && aux->getBusNumber() == busIndex)
+                    return i;
+            return -1;
+        };
+
+        const int fader = faderIndex(*teTrack);
+        expect(fader >= 0, "the track must have a fader");
+        expect(sendIndex(0) >= 0 && sendIndex(1) >= 0, "both sends must reach the plugin list");
+        expect(sendIndex(0) < fader, "a pre-fader send taps above the fader");
+        expect(fader < sendIndex(1), "a post-fader send taps below it");
+
+        // And the side must not depend on the post-FX stage being occupied,
+        // which is the failure mode the sequencing exists to rule out.
+        DeviceInfo levels;
+        levels.name = "Levels";
+        levels.manufacturer = "MAGDA";
+        levels.pluginId = daw::audio::LevelsPlugin::xmlTypeName;
+        levels.deviceType = DeviceType::Analysis;
+        levels.format = PluginFormat::Internal;
+        tm.addDeviceToPostFx(trackId, levels);
+        bridge->syncTrackPlugins(trackId);
+
+        const int faderWithStage = faderIndex(*teTrack);
+        expect(sendIndex(0) < faderWithStage, "a pre-fader send stays above the fader");
+        expect(faderWithStage < sendIndex(1), "a post-fader send stays below it");
     }
 };
 
