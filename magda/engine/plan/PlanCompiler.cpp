@@ -22,19 +22,14 @@ struct ChainSignal {
     PortRef midi;
 };
 
-/// Where a chain element lives, for op keys. Only the innermost rack and chain
-/// are recorded, on the assumption that device ids are project-unique.
-///
-/// They are not. TrackManager allocates them per section (nextFxDeviceId_,
-/// nextPostFxDeviceId_, nextMixerAnalysisDeviceId_), so one track's FX and
-/// post-FX chains can both hold id 3, and both compile to the same OpKey.
-/// validatePlan rejects the result rather than letting the differ carry one
-/// device's state into the other, so it fails loudly; it still fails. What is
-/// missing is a section discriminator here and in OpKey.
+/// Where a chain element lives, for op keys. Device ids are unique within one
+/// section, not across the three independently allocated section id spaces, so
+/// the section travels with the innermost rack and chain.
 struct ChainSite {
     TrackId trackId = INVALID_TRACK_ID;
     RackId rackId = INVALID_RACK_ID;
     ChainId chainId = INVALID_CHAIN_ID;
+    ChainSegment segment = ChainSegment::Fx;
 };
 
 /// Analysis devices are transparent passthroughs with no gain trim and no
@@ -476,7 +471,8 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     if (producesMidi)
         outputs.push_back(SignalKind::Midi);
 
-    OpKey key{site.trackId, site.rackId, site.chainId, device.id, OpRole::DeviceProcess, 0};
+    OpKey key{site.trackId,          site.rackId, site.chainId, device.id,
+              OpRole::DeviceProcess, 0,           site.segment};
     const auto processOp = addOp(
         OpKind::Device, key, alignInputs(key, OpKind::Device, {signal.audio, midiIn, sidechainIn}),
         std::move(outputs));
@@ -544,8 +540,8 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     // dry path, which skips those gains entirely. A rack whose chains all go to
     // aux outputs does render silence on the main output, in the engine too.)
     if (rack.chains.empty()) {
-        const OpKey faderKey{site.trackId,      rack.id,           INVALID_CHAIN_ID,
-                             INVALID_DEVICE_ID, OpRole::RackFader, 0};
+        const OpKey faderKey{site.trackId,      rack.id, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
+                             OpRole::RackFader, 0,       site.segment};
         return {
             PortRef{addOp(OpKind::Fader, faderKey, {signal.audio, noInput()}, {SignalKind::Audio}),
                     0},
@@ -566,7 +562,7 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
             continue;
         }
 
-        const ChainSite chainSite{site.trackId, rack.id, chain.id};
+        const ChainSite chainSite{site.trackId, rack.id, chain.id, site.segment};
 
         auto chainSignal = signal;
         if (!chain.bypassed)
@@ -582,8 +578,8 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
         // have to go together. Routing MIDI around the fader would leave
         // whatever a rack nested in this chain generates with no gate at all,
         // because those ops key on the nested rack rather than on this chain.
-        const OpKey faderKey{site.trackId,           rack.id, chain.id, INVALID_DEVICE_ID,
-                             OpRole::RackChainFader, 0};
+        const OpKey faderKey{site.trackId,           rack.id, chain.id,    INVALID_DEVICE_ID,
+                             OpRole::RackChainFader, 0,       site.segment};
         std::vector<SignalKind> faderOutputs{SignalKind::Audio};
         if (generatesMidi)
             faderOutputs.push_back(SignalKind::Midi);
@@ -600,12 +596,12 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     }
 
     ChainSignal out;
-    const OpKey mixKey{site.trackId,      rack.id,         INVALID_CHAIN_ID,
-                       INVALID_DEVICE_ID, OpRole::RackMix, 0};
+    const OpKey mixKey{site.trackId,    rack.id, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
+                       OpRole::RackMix, 0,       site.segment};
     const auto mixed = emitMix(mixKey, chainAudio);
 
-    const OpKey faderKey{site.trackId,      rack.id,           INVALID_CHAIN_ID,
-                         INVALID_DEVICE_ID, OpRole::RackFader, 0};
+    const OpKey faderKey{site.trackId,      rack.id, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
+                         OpRole::RackFader, 0,       site.segment};
     out.audio = PortRef{addOp(OpKind::Fader, faderKey, {mixed, noInput()}, {SignalKind::Audio}), 0};
 
     if (chainMidi.empty()) {
@@ -614,7 +610,7 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
         out.midi = chainMidi.front();
     } else {
         const OpKey midiKey{site.trackId,        rack.id, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
-                            OpRole::RackMidiMix, 0};
+                            OpRole::RackMidiMix, 0,       site.segment};
         out.midi =
             PortRef{addOp(OpKind::MergeMidi, midiKey,
                           alignInputs(midiKey, OpKind::MergeMidi, chainMidi), {SignalKind::Midi}),
@@ -637,7 +633,7 @@ ChainSignal Compiler::emitElements(const std::vector<ChainElement>& elements, co
 
 void Compiler::emitTrack(const TrackInfo& track) {
     const auto isMaster = track.id == master_.id;
-    const ChainSite site{track.id, INVALID_RACK_ID, INVALID_CHAIN_ID};
+    const ChainSite fxSite{track.id, INVALID_RACK_ID, INVALID_CHAIN_ID, ChainSegment::Fx};
 
     // --- chain head ---
 
@@ -758,12 +754,16 @@ void Compiler::emitTrack(const TrackInfo& track) {
     // Chain power gates the whole insert chain without touching the devices'
     // own bypass flags. Post-FX and mixer analysis sit outside it.
     if (track.chain.enabled)
-        signal = emitElements(track.chain.fxChainElements, site, signal);
+        signal = emitElements(track.chain.fxChainElements, fxSite, signal);
 
+    const ChainSite postFxSite{track.id, INVALID_RACK_ID, INVALID_CHAIN_ID, ChainSegment::PostFx};
     for (const auto& element : track.chain.postFxChainElements)
-        signal = emitDevice(element.device, site, signal);
+        signal = emitDevice(element.device, postFxSite, signal);
+
+    const ChainSite analysisSite{track.id, INVALID_RACK_ID, INVALID_CHAIN_ID,
+                                 ChainSegment::MixerAnalysis};
     for (const auto& element : track.chain.mixerAnalysisElements)
-        signal = emitDevice(element.device, site, signal);
+        signal = emitDevice(element.device, analysisSite, signal);
 
     // --- fader, sends, meter, mute ---
     //

@@ -263,7 +263,7 @@ NativeRender renderNative(const Case& value) {
                 // passing signal is also what it does.
                 auto device = std::make_unique<Passthrough>();
                 device->prepare(context);
-                bindings.devices[op.key.deviceId] = device.get();
+                bindings.devices[op.key.deviceKey()] = device.get();
                 passthroughs.push_back(std::move(device));
                 break;
             }

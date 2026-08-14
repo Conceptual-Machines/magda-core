@@ -17,6 +17,7 @@
 using namespace magda;
 using magda::engine::BlockInfo;
 using magda::engine::DeviceBlock;
+using magda::engine::DeviceKey;
 using magda::engine::EngineAudioSource;
 using magda::engine::EngineDevice;
 using magda::engine::EngineMidiSource;
@@ -469,7 +470,7 @@ TEST_CASE("A source renders through a device into the master output", "[engine][
     ConstantSource source(0.5f);
     GainDevice device(0.5f);
     harness.bindings.clipAudio[1] = &source;
-    harness.bindings.devices[7] = &device;
+    harness.bindings.devices[DeviceKey{7}] = &device;
 
     harness.prepareCleanly();
     harness.render();
@@ -522,7 +523,7 @@ TEST_CASE("A device's gain trim scales its output", "[engine][exec]") {
     ConstantSource source(1.0f);
     GainDevice device(1.0f);
     harness.bindings.clipAudio[1] = &source;
-    harness.bindings.devices[7] = &device;
+    harness.bindings.devices[DeviceKey{7}] = &device;
 
     harness.prepareCleanly();
     harness.render();
@@ -776,7 +777,7 @@ TEST_CASE("A rack chain out of the mix contributes neither audio nor MIDI", "[en
         Harness harness({track}, makeMaster());
         harness.bindings.clipAudio[1] = &source;
         harness.bindings.clipMidi[1] = &notes;
-        harness.bindings.devices[8] = &instrument;
+        harness.bindings.devices[DeviceKey{8}] = &instrument;
 
         harness.prepareCleanly();
         harness.render();
@@ -790,7 +791,7 @@ TEST_CASE("A rack chain out of the mix contributes neither audio nor MIDI", "[en
         Harness harness({muted}, makeMaster());
         harness.bindings.clipAudio[1] = &source;
         harness.bindings.clipMidi[1] = &notes;
-        harness.bindings.devices[8] = &instrument;
+        harness.bindings.devices[DeviceKey{8}] = &instrument;
 
         harness.prepareCleanly();
         harness.render();
@@ -808,7 +809,7 @@ TEST_CASE("A rack chain out of the mix contributes neither audio nor MIDI", "[en
         Harness harness({soloed}, makeMaster());
         harness.bindings.clipAudio[1] = &source;
         harness.bindings.clipMidi[1] = &notes;
-        harness.bindings.devices[8] = &instrument;
+        harness.bindings.devices[DeviceKey{8}] = &instrument;
 
         harness.prepareCleanly();
         harness.render();
@@ -872,7 +873,7 @@ TEST_CASE("A rack inside a chain out of the mix stops processing", "[engine][exe
     ConstantSource source(1.0f);
     GainDevice nested(1.0f);
     harness.bindings.clipAudio[1] = &source;
-    harness.bindings.devices[7] = &nested;
+    harness.bindings.devices[DeviceKey{7}] = &nested;
 
     harness.prepareCleanly();
     harness.render();
@@ -897,7 +898,7 @@ TEST_CASE("Values resolved for another plan are not applied", "[engine][exec]") 
     ConstantSource source(1.0f);
     GainDevice device(1.0f);
     harness.bindings.clipAudio[1] = &source;
-    harness.bindings.devices[7] = &device;
+    harness.bindings.devices[DeviceKey{7}] = &device;
     harness.prepareCleanly();
 
     const std::vector<TrackInfo> otherTracks{replaced};
@@ -924,7 +925,7 @@ TEST_CASE("An instrument turns the track's MIDI into audio", "[engine][exec]") {
     NoteToDcInstrument instrument;
     harness.bindings.clipAudio[1] = &audio;
     harness.bindings.clipMidi[1] = &notes;
-    harness.bindings.devices[8] = &instrument;
+    harness.bindings.devices[DeviceKey{8}] = &instrument;
 
     harness.prepareCleanly();
     harness.render();
@@ -950,8 +951,8 @@ TEST_CASE("A MIDI-producing device's output reaches the device after it", "[engi
     NoteToDcInstrument instrument;
     harness.bindings.clipAudio[1] = &audio;
     harness.bindings.clipMidi[1] = &notes;
-    harness.bindings.devices[7] = &arpDevice;
-    harness.bindings.devices[8] = &instrument;
+    harness.bindings.devices[DeviceKey{7}] = &arpDevice;
+    harness.bindings.devices[DeviceKey{8}] = &instrument;
 
     harness.prepareCleanly();
     harness.render();
@@ -1006,7 +1007,7 @@ TEST_CASE("A merge carries everything that reaches it", "[engine][exec]") {
     harness.bindings.clipAudio[1] = &audio;
     harness.bindings.clipMidi[1] = &clips;
     harness.bindings.midiInputs[1] = &live;
-    harness.bindings.devices[8] = &counter;
+    harness.bindings.devices[DeviceKey{8}] = &counter;
 
     harness.prepareCleanly();
     harness.render();
@@ -1042,7 +1043,7 @@ TEST_CASE("An audio sidechain reaches the device that asked for it", "[engine][e
     SidechainProbe probe;
     harness.bindings.clipAudio[2] = &key;
     harness.bindings.clipAudio[1] = &main;
-    harness.bindings.devices[7] = &probe;
+    harness.bindings.devices[DeviceKey{7}] = &probe;
 
     harness.prepareCleanly();
     harness.render();
@@ -1060,7 +1061,7 @@ TEST_CASE("Unbound ops are reported and render silence", "[engine][exec]") {
 
     REQUIRE(messages.size() == 2);
     CHECK(messages[0].find("no clip audio source bound for track 1") != std::string::npos);
-    CHECK(messages[1].find("no device bound for device 7") != std::string::npos);
+    CHECK(messages[1].find("no device bound for D7") != std::string::npos);
 
     harness.render();
     CHECK(harness.outputSample() == approx(0.0f));
@@ -1074,7 +1075,7 @@ TEST_CASE("A device's latency becomes the plan's latency", "[engine][exec][pdc]"
     ImpulseSource source(0.5f);
     LatentDevice device(80);
     harness.bindings.clipAudio[1] = &source;
-    harness.bindings.devices[7] = &device;
+    harness.bindings.devices[DeviceKey{7}] = &device;
 
     harness.prepareCleanly();
     CHECK(harness.executor.latencySamples() == 80);
@@ -1104,7 +1105,7 @@ TEST_CASE("Paths that meet are aligned to the longest of them", "[engine][exec][
         Harness harness({latentTrack, makeTrack(2)}, makeMaster());
         harness.bindings.clipAudio[1] = &loud;
         harness.bindings.clipAudio[2] = &quiet;
-        harness.bindings.devices[7] = &latent;
+        harness.bindings.devices[DeviceKey{7}] = &latent;
 
         harness.prepareCleanly();
         const auto sounding = soundingSamples(renderStream(harness, 3));
@@ -1125,7 +1126,7 @@ TEST_CASE("Paths that meet are aligned to the longest of them", "[engine][exec][
         Harness harness({latentTrack, cleanTrack, makeTrack(3, TrackType::Group)}, makeMaster());
         harness.bindings.clipAudio[1] = &loud;
         harness.bindings.clipAudio[2] = &quiet;
-        harness.bindings.devices[7] = &latent;
+        harness.bindings.devices[DeviceKey{7}] = &latent;
 
         harness.prepareCleanly();
         const auto sounding = soundingSamples(renderStream(harness, 3));
@@ -1143,7 +1144,7 @@ TEST_CASE("Paths that meet are aligned to the longest of them", "[engine][exec][
         Harness harness({latentTrack, makeTrack(2)}, makeMaster());
         harness.bindings.clipAudio[1] = &loud;
         harness.bindings.clipAudio[2] = &quiet;
-        harness.bindings.devices[7] = &latent;
+        harness.bindings.devices[DeviceKey{7}] = &latent;
 
         harness.prepareCleanly();
         const auto sounding = soundingSamples(renderStream(harness, 3));
@@ -1169,8 +1170,8 @@ TEST_CASE("Paths that meet are aligned to the longest of them", "[engine][exec][
         SidechainSumDevice sum;
         harness.bindings.clipAudio[1] = &loud;
         harness.bindings.clipAudio[2] = &quiet;
-        harness.bindings.devices[7] = &sum;
-        harness.bindings.devices[8] = &latent;
+        harness.bindings.devices[DeviceKey{7}] = &sum;
+        harness.bindings.devices[DeviceKey{8}] = &latent;
 
         harness.prepareCleanly();
         const auto sounding = soundingSamples(renderStream(harness, 3));
@@ -1200,7 +1201,7 @@ TEST_CASE("Paths that meet are aligned to the longest of them", "[engine][exec][
 
         Harness harness({track}, makeMaster());
         harness.bindings.clipAudio[1] = &loud;
-        harness.bindings.devices[7] = &latent;
+        harness.bindings.devices[DeviceKey{7}] = &latent;
 
         harness.prepareCleanly();
         const auto sounding = soundingSamples(renderStream(harness, 3));
@@ -1237,8 +1238,8 @@ TEST_CASE("MIDI is aligned against the audio it travels with", "[engine][exec][p
     MidiPositionProbe probe;
     harness.bindings.clipAudio[1] = &audio;
     harness.bindings.clipMidi[1] = &notes;
-    harness.bindings.devices[7] = &latentArp;
-    harness.bindings.devices[8] = &probe;
+    harness.bindings.devices[DeviceKey{7}] = &latentArp;
+    harness.bindings.devices[DeviceKey{8}] = &probe;
 
     harness.prepareCleanly();
     renderStream(harness, 4);
@@ -1281,7 +1282,7 @@ TEST_CASE("Block size does not change what is rendered", "[engine][exec]") {
         RampSource source;
         GainDevice device(0.9f);
         harness.bindings.clipAudio[1] = &source;
-        harness.bindings.devices[7] = &device;
+        harness.bindings.devices[DeviceKey{7}] = &device;
         harness.prepareCleanly();
 
         harness.render(firstBlock, 0);
@@ -1306,7 +1307,7 @@ TEST_CASE("Block size does not change what is rendered", "[engine][exec]") {
         LatentDevice device(37);
         harness.bindings.clipAudio[1] = &ramp;
         harness.bindings.clipAudio[2] = &steady;
-        harness.bindings.devices[7] = &device;
+        harness.bindings.devices[DeviceKey{7}] = &device;
         harness.prepareCleanly();
 
         harness.render(firstBlock, 0);
@@ -1358,8 +1359,8 @@ TEST_CASE("Block size does not change where delayed MIDI lands", "[engine][exec]
         MidiPositionProbe probe;
         harness.bindings.clipAudio[1] = &audio;
         harness.bindings.clipMidi[1] = &notes;
-        harness.bindings.devices[7] = &latent;
-        harness.bindings.devices[8] = &probe;
+        harness.bindings.devices[DeviceKey{7}] = &latent;
+        harness.bindings.devices[DeviceKey{8}] = &probe;
         harness.prepareCleanly();
 
         std::int64_t timelineSample = 0;
@@ -1403,8 +1404,8 @@ TEST_CASE("Block size does not change where delayed MIDI lands", "[engine][exec]
         MidiPositionProbe probe;
         harness.bindings.clipAudio[1] = &audio;
         harness.bindings.clipMidi[1] = &notes;
-        harness.bindings.devices[7] = &latent;
-        harness.bindings.devices[8] = &probe;
+        harness.bindings.devices[DeviceKey{7}] = &latent;
+        harness.bindings.devices[DeviceKey{8}] = &probe;
         harness.prepareCleanly();
 
         std::int64_t timelineSample = 0;
@@ -1447,7 +1448,7 @@ TEST_CASE("What is in flight survives the plan being replaced", "[engine][exec][
     PlanBindings bindings;
     bindings.clipAudio[1] = &silent;
     bindings.clipAudio[2] = &impulse;
-    bindings.devices[7] = &latent;
+    bindings.devices[DeviceKey{7}] = &latent;
 
     const RenderContext context{44100.0, kBlockSize, 2};
     prepareBindings(bindings, context);
@@ -1486,7 +1487,7 @@ TEST_CASE("What is in flight survives the plan being replaced", "[engine][exec][
         // audio in the wrong place; starting again is a few milliseconds of
         // silence, and only one of those is recoverable.
         LatentDevice deeper(120);
-        bindings.devices[7] = &deeper;
+        bindings.devices[DeviceKey{7}] = &deeper;
 
         REQUIRE(second.prepare(plan, bindings, context, &first).empty());
         CHECK(second.carriedDelayLines() == 0);
@@ -1537,8 +1538,8 @@ TEST_CASE("A chain out of the mix silences a nested rack's MIDI too", "[engine][
         Harness harness({build(false)}, makeMaster());
         harness.bindings.clipAudio[1] = &audio;
         harness.bindings.clipMidi[1] = &notes;
-        harness.bindings.devices[7] = &arpDevice;
-        harness.bindings.devices[8] = &instrument;
+        harness.bindings.devices[DeviceKey{7}] = &arpDevice;
+        harness.bindings.devices[DeviceKey{8}] = &instrument;
 
         harness.prepareCleanly();
         harness.render();
@@ -1549,8 +1550,8 @@ TEST_CASE("A chain out of the mix silences a nested rack's MIDI too", "[engine][
         Harness harness({build(true)}, makeMaster());
         harness.bindings.clipAudio[1] = &audio;
         harness.bindings.clipMidi[1] = &notes;
-        harness.bindings.devices[7] = &arpDevice;
-        harness.bindings.devices[8] = &instrument;
+        harness.bindings.devices[DeviceKey{7}] = &arpDevice;
+        harness.bindings.devices[DeviceKey{8}] = &instrument;
 
         harness.prepareCleanly();
         harness.render();

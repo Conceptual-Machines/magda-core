@@ -9,11 +9,11 @@
  * @file EngineDevice.hpp
  * @brief The runtime objects a plan's leaf ops stand for.
  *
- * The plan is pure topology: a Device op names a DeviceId, it does not own a
- * plugin, and a ClipAudio op names a track, not a file reader. The host binds
- * the objects and outlives the plans that reference them, which is what lets
- * the differ carry a live instrument across a structural change instead of
- * rebuilding it.
+ * The plan is pure topology: a Device op names a section-aware device identity,
+ * it does not own a plugin, and a ClipAudio op names a track, not a file reader.
+ * The host binds the objects and outlives the plans that reference them, which
+ * is what lets the differ carry a live instrument across a structural change
+ * instead of rebuilding it.
  */
 
 namespace magda::engine {
@@ -86,8 +86,8 @@ struct DeviceBlock {
 /**
  * @brief One device instance behind a Device op.
  *
- * Bound by DeviceId, owned by the host. process() runs on the audio thread:
- * no allocation, no locks, no file or GUI work.
+ * Bound by DeviceKey, owned by the host. process() runs on the audio thread: no
+ * allocation, no locks, no file or GUI work.
  */
 class EngineDevice {
   public:

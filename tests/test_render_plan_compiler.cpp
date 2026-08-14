@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -1399,33 +1400,32 @@ TEST_CASE("validatePlan enforces liveness provenance", "[engine][plan][validate]
     }
 }
 
-TEST_CASE("Section-local device ids compile to a plan the differ cannot key",
-          "[engine][plan][compiler]") {
-    // A known incompatibility between the app's model and the engine's op
-    // identity, pinned here so it is measured rather than assumed either way.
-    //
-    // TrackManager allocates device ids per section: nextFxDeviceId_,
-    // nextPostFxDeviceId_ and nextMixerAnalysisDeviceId_ are separate spaces,
-    // so id 3 legitimately exists on one track's FX chain and its post-FX
-    // chain at once. The compiler's ChainSite records only the innermost rack
-    // and chain, on the assumption that device ids are project-unique, so both
-    // devices compile to the same OpKey.
-    //
-    // validatePlan catches it, which is the one good thing here: the differ
-    // hash-joins old and new plans on OpKey, and a duplicate would carry one
-    // device's runtime state into another. So this is a rejected plan rather
-    // than a silently wrong one, and the app can build the model that causes
-    // it today.
-    //
-    // The fix is a section discriminator in ChainSite and OpKey, and it
-    // belongs with the engine migration rather than here.
+TEST_CASE("Section-local device ids have distinct plan identities",
+          "[engine][plan][compiler][device-identity]") {
+    // TrackManager allocates one id space per section. The same integer in all
+    // three sections is therefore an ordinary project, and every process op
+    // must still have the unique key the differ requires.
     std::vector<TrackInfo> tracks{makeTrack(1)};
     tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(3)));
     tracks[0].chain.postFxChainElements.push_back(PostFxChainElement{makeEffect(3)});
+    auto analysis = makeEffect(3);
+    analysis.deviceType = DeviceType::Analysis;
+    tracks[0].chain.mixerAnalysisElements.push_back(PostFxChainElement{analysis});
 
     const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
     const auto problems = magda::engine::validatePlan(plan);
 
     INFO(magda::engine::dumpPlan(plan));
-    CHECK_FALSE(problems.empty());
+    REQUIRE(problems.empty());
+
+    std::set<magda::engine::DeviceKey> devices;
+    for (const auto& op : plan.ops)
+        if (op.kind == OpKind::Device)
+            devices.insert(op.key.deviceKey());
+
+    CHECK(devices == std::set<magda::engine::DeviceKey>{
+                         {ChainSegment::Fx, 3},
+                         {ChainSegment::PostFx, 3},
+                         {ChainSegment::MixerAnalysis, 3},
+                     });
 }

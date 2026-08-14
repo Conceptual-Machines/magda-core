@@ -16,6 +16,7 @@
 using namespace magda;
 using magda::engine::BlockInfo;
 using magda::engine::DeviceBlock;
+using magda::engine::DeviceKey;
 using magda::engine::EngineAudioSource;
 using magda::engine::EngineDevice;
 using magda::engine::EngineSession;
@@ -121,16 +122,16 @@ class TestFactory final : public RuntimeStateFactory {
   public:
     explicit TestFactory(Ledger& ledger) : ledger_(ledger) {}
 
-    std::unique_ptr<EngineDevice> createDevice(DeviceId id) override {
-        auto device = std::make_unique<LedgerDevice>(ledger_, id);
-        device->latency = latencyFor.count(id) != 0 ? latencyFor[id] : 0;
+    std::unique_ptr<EngineDevice> createDevice(DeviceKey key) override {
+        auto device = std::make_unique<LedgerDevice>(ledger_, key.deviceId);
+        device->latency = latencyFor.count(key) != 0 ? latencyFor[key] : 0;
         lastDevice = device.get();
-        devicesById[id] = device.get();
+        devicesById[key] = device.get();
         return device;
     }
 
-    /// What a device reports once it is loaded, per device ID.
-    std::map<DeviceId, int> latencyFor;
+    /// What a device reports once it is loaded, per section-aware identity.
+    std::map<DeviceKey, int> latencyFor;
 
     std::unique_ptr<EngineAudioSource> createClipAudioSource(TrackId) override {
         ++ledger_.sourcesCreated;
@@ -154,7 +155,7 @@ class TestFactory final : public RuntimeStateFactory {
     std::map<magda::engine::OpKey, magda::engine::LevelTap*> metersByKey;
 
     LedgerDevice* lastDevice = nullptr;
-    std::map<DeviceId, LedgerDevice*> devicesById;
+    std::map<DeviceKey, LedgerDevice*> devicesById;
 
   private:
     Ledger& ledger_;
@@ -360,7 +361,7 @@ TEST_CASE("A latency change re-prepares the plan rather than recompiling it",
     session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(1.5f));
 
-    auto* device = factory.devicesById[7];
+    auto* device = factory.devicesById[DeviceKey{7}];
     REQUIRE(device != nullptr);
     const auto devicesCreated = ledger.devicesCreated.load();
     device->latency = 16;
@@ -369,7 +370,7 @@ TEST_CASE("A latency change re-prepares the plan rather than recompiling it",
 
     CHECK(session.livePlan() == plan);
     CHECK(ledger.devicesCreated.load() == devicesCreated);
-    CHECK(factory.devicesById[7] == device);
+    CHECK(factory.devicesById[DeviceKey{7}] == device);
 
     // Track 2 now waits for the track the device is on, so the first sixteen
     // samples are the latent track alone and the rest are both.
@@ -473,7 +474,7 @@ TEST_CASE("An object that is already playing is never prepared again", "[engine]
     auto tracks = trackWithEffect(7);
     publish(session, compile(tracks), tracks);
 
-    auto* device = factory.devicesById[7];
+    auto* device = factory.devicesById[DeviceKey{7}];
     REQUIRE(device != nullptr);
     CHECK(device->prepareCalls == 1);
 
@@ -489,7 +490,7 @@ TEST_CASE("An object that is already playing is never prepared again", "[engine]
     CHECK(device->blocksProcessed == 1);
 
     // The one that is new is prepared, exactly once, before it plays anything.
-    auto* added = factory.devicesById[8];
+    auto* added = factory.devicesById[DeviceKey{8}];
     REQUIRE(added != nullptr);
     CHECK(added->prepareCalls == 1);
     CHECK(added->blocksProcessed == 0);
@@ -502,7 +503,7 @@ TEST_CASE("A structural edit does not cut what is in flight", "[engine][session]
     // it over rather than the new one starting it empty.
     Ledger ledger;
     TestFactory factory(ledger);
-    factory.latencyFor[7] = 16;
+    factory.latencyFor[DeviceKey{7}] = 16;
     EngineSession session(factory);
 
     auto tracks = trackWithEffect(7);
@@ -543,7 +544,7 @@ TEST_CASE("A swap carries runtime state that the new plan still names", "[engine
     publish(session, firstPlan, first);
     session.publishValues(resolve(*firstPlan, first));
 
-    auto* device = factory.devicesById[7];
+    auto* device = factory.devicesById[DeviceKey{7}];
     REQUIRE(device != nullptr);
     CHECK(ledger.devicesCreated == 1);
 
@@ -559,11 +560,78 @@ TEST_CASE("A swap carries runtime state that the new plan still names", "[engine
 
     CHECK(ledger.devicesCreated == 2);
     CHECK(ledger.devicesDestroyed == 0);
-    CHECK(factory.devicesById[7] == device);
+    CHECK(factory.devicesById[DeviceKey{7}] == device);
 
     juce::AudioBuffer<float> output(2, kBlockSize);
     session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(0.25f));
+}
+
+TEST_CASE("Section-local device ids keep distinct values, instances and lifetimes",
+          "[engine][session][device-identity]") {
+    Ledger ledger;
+    TestFactory factory(ledger);
+    EngineSession session(factory);
+
+    auto track = makeTrack(1);
+    auto fx = makeEffect(3);
+    fx.gainValue = 0.5f;
+    track.chain.fxChainElements.push_back(makeDeviceElement(fx));
+
+    auto postFx = makeEffect(3);
+    postFx.gainValue = 0.25f;
+    track.chain.postFxChainElements.push_back(PostFxChainElement{postFx});
+
+    auto analysis = makeEffect(3);
+    analysis.deviceType = DeviceType::Analysis;
+    track.chain.mixerAnalysisElements.push_back(PostFxChainElement{analysis});
+
+    std::vector<TrackInfo> tracks{track};
+    const auto plan = compile(tracks);
+    const auto values = resolve(*plan, tracks);
+
+    // Value lookup follows the same section discriminator as compilation.
+    std::map<ChainSegment, float> gains;
+    for (std::size_t i = 0; i < plan->ops.size(); ++i)
+        if (plan->ops[i].key.role == magda::engine::OpRole::DeviceGain)
+            gains[plan->ops[i].key.segment] = values.ops[i].gainLeft;
+    CHECK(gains[ChainSegment::Fx] == approx(0.5f));
+    CHECK(gains[ChainSegment::PostFx] == approx(0.25f));
+    CHECK_FALSE(gains.contains(ChainSegment::MixerAnalysis));
+
+    REQUIRE(publish(session, plan, tracks).published);
+    CHECK(ledger.devicesCreated == 3);
+
+    const DeviceKey fxKey{ChainSegment::Fx, 3};
+    const DeviceKey postFxKey{ChainSegment::PostFx, 3};
+    const DeviceKey analysisKey{ChainSegment::MixerAnalysis, 3};
+    auto* const fxInstance = factory.devicesById[fxKey];
+    auto* const postFxInstance = factory.devicesById[postFxKey];
+    auto* const analysisInstance = factory.devicesById[analysisKey];
+    REQUIRE(fxInstance != nullptr);
+    REQUIRE(postFxInstance != nullptr);
+    REQUIRE(analysisInstance != nullptr);
+    CHECK(fxInstance != postFxInstance);
+    CHECK(fxInstance != analysisInstance);
+    CHECK(postFxInstance != analysisInstance);
+
+    session.publishValues(values);
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    session.process(kBlockSize, output);
+    // Each test device halves the signal, then the independently resolved FX
+    // and post-FX slot gains apply. Analysis devices have no slot gain.
+    CHECK(output.getSample(0, 0) == approx(1.0f / 64.0f));
+
+    tracks[0].chain.postFxChainElements.clear();
+    REQUIRE(publish(session, compile(tracks), tracks).published);
+    CHECK(ledger.devicesDestroyed == 1);
+    CHECK(factory.devicesById[fxKey] == fxInstance);
+    CHECK(factory.devicesById[analysisKey] == analysisInstance);
+
+    tracks[0].chain.fxChainElements.clear();
+    tracks[0].chain.mixerAnalysisElements.clear();
+    REQUIRE(publish(session, compile(tracks), tracks).published);
+    CHECK(ledger.devicesDestroyed == 3);
 }
 
 TEST_CASE("What a swap drops is destroyed on the publishing thread", "[engine][session]") {
@@ -607,7 +675,7 @@ TEST_CASE("Bypass and chain power keep the device, deletion destroys it", "[engi
     auto tracks = trackWithEffect(7);
     const auto first = compile(tracks);
     publish(session, first, tracks);
-    auto* device = factory.devicesById[7];
+    auto* device = factory.devicesById[DeviceKey{7}];
     REQUIRE(device != nullptr);
 
     SECTION("bypassed") {
@@ -616,11 +684,11 @@ TEST_CASE("Bypass and chain power keep the device, deletion destroys it", "[engi
         publish(session, compile(bypassed), bypassed);
 
         CHECK(ledger.devicesDestroyed == 0);
-        CHECK(factory.devicesById[7] == device);
+        CHECK(factory.devicesById[DeviceKey{7}] == device);
 
         publish(session, compile(tracks), tracks);
         CHECK(ledger.devicesCreated == 1);
-        CHECK(factory.devicesById[7] == device);
+        CHECK(factory.devicesById[DeviceKey{7}] == device);
     }
 
     SECTION("chain power off") {
@@ -633,7 +701,7 @@ TEST_CASE("Bypass and chain power keep the device, deletion destroys it", "[engi
         powered[0].chain.enabled = true;
         publish(session, compile(powered), powered);
         CHECK(ledger.devicesCreated == 1);
-        CHECK(factory.devicesById[7] == device);
+        CHECK(factory.devicesById[DeviceKey{7}] == device);
     }
 
     SECTION("deleted from the model") {
@@ -665,7 +733,7 @@ TEST_CASE("Model IDs that have moved on cannot retire what the live plan uses",
     session.publishValues(resolve(*plan, tracks));
 
     CHECK(ledger.devicesDestroyed == 0);
-    REQUIRE(factory.devicesById[7] != nullptr);
+    REQUIRE(factory.devicesById[DeviceKey{7}] != nullptr);
 
     juce::AudioBuffer<float> output(2, kBlockSize);
     session.process(kBlockSize, output);
@@ -841,7 +909,7 @@ TEST_CASE("Swapping under a running audio thread never tears", "[engine][session
     CHECK(badBlocks == 0);
     // Device 8 came and went a hundred times; device 7 was named throughout.
     CHECK(ledger.devicesDestroyed > 0);
-    CHECK(factory.devicesById[7] != nullptr);
+    CHECK(factory.devicesById[DeviceKey{7}] != nullptr);
     CHECK(ledger.lastDestroyingThread.load() == std::this_thread::get_id());
 }
 
@@ -1076,7 +1144,7 @@ TEST_CASE("A session on a thread pool renders what a session without one renders
     const auto render = [](magda::engine::RenderThreadPool* pool) {
         Ledger ledger;
         TestFactory factory(ledger);
-        factory.latencyFor[7] = 53;
+        factory.latencyFor[DeviceKey{7}] = 53;
         EngineSession session(factory, pool);
 
         auto tracks = trackWithEffect(7);

@@ -35,6 +35,7 @@
 using namespace magda;
 using magda::engine::BlockInfo;
 using magda::engine::DeviceBlock;
+using magda::engine::DeviceKey;
 using magda::engine::EngineAudioSource;
 using magda::engine::EngineDevice;
 using magda::engine::EngineMidiSource;
@@ -442,8 +443,8 @@ Scene chainScene() {
     scene.tracks.push_back(track);
 
     scene.bindings.clipAudio[1] = scene.own(std::make_unique<RampSource>(3));
-    scene.bindings.devices[7] = scene.own(std::make_unique<GainDevice>(0.5f));
-    scene.bindings.devices[8] = scene.own(std::make_unique<TallyDevice>());
+    scene.bindings.devices[DeviceKey{7}] = scene.own(std::make_unique<GainDevice>(0.5f));
+    scene.bindings.devices[DeviceKey{8}] = scene.own(std::make_unique<TallyDevice>());
     return scene;
 }
 
@@ -459,7 +460,7 @@ Scene wideScene() {
         scene.tracks.push_back(track);
 
         scene.bindings.clipAudio[id] = scene.own(std::make_unique<RampSource>(id * 7));
-        scene.bindings.devices[100 + id] =
+        scene.bindings.devices[DeviceKey{100 + id}] =
             scene.own(std::make_unique<GainDevice>(0.9f - 0.05f * static_cast<float>(id)));
     }
     return scene;
@@ -481,7 +482,7 @@ Scene sendScene() {
     }
 
     scene.tracks.push_back(aux);
-    scene.bindings.devices[200] = scene.own(std::make_unique<GainDevice>(0.6f));
+    scene.bindings.devices[DeviceKey{200}] = scene.own(std::make_unique<GainDevice>(0.6f));
     return scene;
 }
 
@@ -500,7 +501,7 @@ Scene rackScene() {
         chain.elements.push_back(makeDeviceElement(makeEffect(300 + index)));
         rack->chains.push_back(std::move(chain));
 
-        scene.bindings.devices[300 + index] =
+        scene.bindings.devices[DeviceKey{300 + index}] =
             scene.own(std::make_unique<GainDevice>(0.3f + 0.2f * static_cast<float>(index)));
     }
 
@@ -533,8 +534,8 @@ Scene latencyScene() {
     scene.bindings.clipAudio[1] = scene.own(std::make_unique<RampSource>(11));
     scene.bindings.clipAudio[2] = scene.own(std::make_unique<RampSource>(23));
     scene.bindings.clipAudio[3] = scene.own(std::make_unique<RampSource>(37));
-    scene.bindings.devices[400] = scene.own(std::make_unique<LatentDevice>(37));
-    scene.bindings.devices[401] = scene.own(std::make_unique<LatentDevice>(96));
+    scene.bindings.devices[DeviceKey{400}] = scene.own(std::make_unique<LatentDevice>(37));
+    scene.bindings.devices[DeviceKey{401}] = scene.own(std::make_unique<LatentDevice>(96));
     return scene;
 }
 
@@ -551,8 +552,10 @@ Scene midiScene() {
         scene.bindings.clipAudio[id] = scene.own(std::make_unique<RampSource>(id * 3));
         scene.bindings.clipMidi[id] =
             scene.own(std::make_unique<TimelineNoteSource>(48 + 5 * id, 37 + id));
-        scene.bindings.devices[500 + id] = scene.own(std::make_unique<NoteToDcInstrument>());
-        scene.bindings.devices[600 + id] = scene.own(std::make_unique<GainDevice>(0.75f));
+        scene.bindings.devices[DeviceKey{500 + id}] =
+            scene.own(std::make_unique<NoteToDcInstrument>());
+        scene.bindings.devices[DeviceKey{600 + id}] =
+            scene.own(std::make_unique<GainDevice>(0.75f));
     }
 
     // MIDI out and the raw input passed on with it, so the chain merges two
@@ -567,8 +570,8 @@ Scene midiScene() {
 
     scene.bindings.clipAudio[4] = scene.own(std::make_unique<RampSource>(17));
     scene.bindings.clipMidi[4] = scene.own(std::make_unique<TimelineNoteSource>(72, 29));
-    scene.bindings.devices[700] = scene.own(std::make_unique<ArpDevice>(60));
-    scene.bindings.devices[701] = scene.own(std::make_unique<NoteToDcInstrument>());
+    scene.bindings.devices[DeviceKey{700}] = scene.own(std::make_unique<ArpDevice>(60));
+    scene.bindings.devices[DeviceKey{701}] = scene.own(std::make_unique<NoteToDcInstrument>());
     return scene;
 }
 
@@ -587,11 +590,11 @@ Scene groupScene() {
         scene.tracks.push_back(track);
 
         scene.bindings.clipAudio[id] = scene.own(std::make_unique<RampSource>(id * 29));
-        scene.bindings.devices[810 + id] = scene.own(std::make_unique<TallyDevice>());
+        scene.bindings.devices[DeviceKey{810 + id}] = scene.own(std::make_unique<TallyDevice>());
     }
 
     scene.bindings.clipAudio[5] = scene.own(std::make_unique<RampSource>(53));
-    scene.bindings.devices[800] = scene.own(std::make_unique<GainDevice>(0.8f));
+    scene.bindings.devices[DeviceKey{800}] = scene.own(std::make_unique<GainDevice>(0.8f));
     return scene;
 }
 
@@ -698,7 +701,7 @@ TEST_CASE("Ops on independent branches really do run at the same time",
         scene.tracks.push_back(track);
 
         scene.bindings.clipAudio[id] = scene.own(std::make_unique<RampSource>(id));
-        scene.bindings.devices[900 + id] =
+        scene.bindings.devices[DeviceKey{900 + id}] =
             scene.own(std::make_unique<RendezvousDevice>(meeting, 2));
     }
 
@@ -1008,7 +1011,8 @@ TEST_CASE("How a heavy graph scales across threads", "[.][bench]") {
             for (int slot = 0; slot < kDevicesPerTrack; ++slot) {
                 const DeviceId device = id * 100 + slot;
                 track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(device)));
-                scene.bindings.devices[device] = scene.own(std::make_unique<BusyDevice>());
+                scene.bindings.devices[DeviceKey{device}] =
+                    scene.own(std::make_unique<BusyDevice>());
             }
             scene.tracks.push_back(track);
             scene.bindings.clipAudio[id] = scene.own(std::make_unique<RampSource>(id));
