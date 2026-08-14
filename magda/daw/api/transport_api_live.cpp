@@ -2,6 +2,9 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <algorithm>
+#include <limits>
+
 namespace magda {
 
 namespace te = tracktion;
@@ -93,13 +96,21 @@ double TransportApiLive::beatsAtBarOffset(double beats, int deltaBars) const {
     // the offset within the bar is carried across untouched.
     const auto here = e->tempoSequence.toTime(te::BeatPosition::fromBeats(beats));
     auto barsAndBeats = e->tempoSequence.toBarsAndBeats(here);
-    barsAndBeats.bars += deltaBars;
+
+    // Widened for the addition. `deltaBars` is bounded by seekBars, but the bar
+    // number it lands on comes from the playhead, so this is where two numbers
+    // MAGDA did not choose together meet — and int + int is the one place that
+    // is undefined rather than merely wrong.
+    const auto target = static_cast<long long>(barsAndBeats.bars) + deltaBars;
 
     // Before the start of the timeline there are no bars to count, and the
     // sequence has nothing to answer with. The caller clamps at zero anyway;
     // this keeps the conversion from being asked a question with no answer.
-    if (barsAndBeats.bars < 0)
+    if (target < 0)
         return 0.0;
+
+    barsAndBeats.bars =
+        static_cast<int>(std::min(target, static_cast<long long>(std::numeric_limits<int>::max())));
 
     return e->tempoSequence.toBeats(barsAndBeats).inBeats();
 }

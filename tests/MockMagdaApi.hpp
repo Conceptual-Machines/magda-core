@@ -1013,7 +1013,12 @@ class MockTransportApi : public TransportApi {
     /// than assuming four.
     double beatsPerBar = 4.0;
 
+    /// The last offset seekBars passed down, so a test can see what the
+    /// facade's clamp did to an out-of-range one.
+    mutable int lastBarOffset = 0;
+
     double beatsAtBarOffset(double beats, int deltaBars) const override {
+        lastBarOffset = deltaBars;
         return beats + (beatsPerBar * deltaBars);
     }
 };

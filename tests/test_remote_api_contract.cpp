@@ -221,6 +221,41 @@ TEST_CASE("Remote API input validation returns structured issues",
         REQUIRE(error->issues.front().code == "unknown_field");
     }
 
+    SECTION("exactly one of deltaBeats and deltaBars") {
+        // transport.seekRelative is the first schema to use oneOf, and the
+        // validator ignores keywords it does not implement — so an advertised
+        // constraint that is not enforced would let both of these through to
+        // the handler, where "neither" is a silent no-op and "both" silently
+        // prefers one.
+        const auto* operation = registry.find("transport.seekRelative");
+        REQUIRE(operation != nullptr);
+
+        REQUIRE_FALSE(
+            validateOperationInput(*operation, object({{"deltaBeats", 2.5}})).has_value());
+        REQUIRE_FALSE(validateOperationInput(*operation, object({{"deltaBars", -1}})).has_value());
+
+        const auto neither = validateOperationInput(*operation, object({}));
+        REQUIRE(neither.has_value());
+        REQUIRE(neither->issues.front().code == "one_of");
+
+        const auto both =
+            validateOperationInput(*operation, object({{"deltaBeats", 2.5}, {"deltaBars", -1}}));
+        REQUIRE(both.has_value());
+        REQUIRE(both->issues.front().code == "one_of");
+    }
+
+    SECTION("bar offsets are bounded") {
+        // The count is narrowed on the way to the tempo sequence, so a value
+        // no project can mean is refused at the edge rather than clamped
+        // silently somewhere behind it.
+        const auto* operation = registry.find("transport.seekRelative");
+        REQUIRE(operation != nullptr);
+
+        const auto error = validateOperationInput(*operation, object({{"deltaBars", 2000000000}}));
+        REQUIRE(error.has_value());
+        REQUIRE(error->issues.front().code == "maximum");
+    }
+
     SECTION("NaN and Infinity") {
         const auto* operation = registry.find("transport.seek");
         REQUIRE(operation != nullptr);

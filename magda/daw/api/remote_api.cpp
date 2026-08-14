@@ -54,9 +54,10 @@ void applyIntegerBounds(juce::var schema, const juce::String& propertyName = {})
     if (!items.isVoid())
         applyIntegerBounds(items, propertyName);
 
-    if (auto* alternatives = object->getProperty("anyOf").getArray())
-        for (auto& alternative : *alternatives)
-            applyIntegerBounds(alternative, propertyName);
+    for (const char* keyword : {"anyOf", "oneOf"})
+        if (auto* alternatives = object->getProperty(keyword).getArray())
+            for (auto& alternative : *alternatives)
+                applyIntegerBounds(alternative, propertyName);
 }
 
 // Blanket DoS caps for request payloads. Response schemas must stay valid for
@@ -81,9 +82,10 @@ void applyRequestLimits(juce::var schema) {
     if (!items.isVoid())
         applyRequestLimits(items);
 
-    if (auto* alternatives = object->getProperty("anyOf").getArray())
-        for (auto& alternative : *alternatives)
-            applyRequestLimits(alternative);
+    for (const char* keyword : {"anyOf", "oneOf"})
+        if (auto* alternatives = object->getProperty(keyword).getArray())
+            for (auto& alternative : *alternatives)
+                applyRequestLimits(alternative);
 }
 
 juce::var parseSchema(const char* json) {
@@ -632,6 +634,43 @@ void validateValue(const juce::var& value, const juce::var& schema, const juce::
         addIssue(issues, path, "any_of", "Value does not match any allowed schema");
         issues.insert(issues.end(), branchIssues.begin(), branchIssues.end());
         return;
+    }
+
+    // Exactly one branch, where anyOf wants at least one. Implemented rather
+    // than ignored: an unknown keyword is silently dropped here, so a schema
+    // that declared oneOf would advertise a constraint nothing enforced, and
+    // both "neither field" and "both fields" would reach the handler.
+    if (auto* alternatives = schemaObject->getProperty("oneOf").getArray()) {
+        int matches = 0;
+        std::vector<ValidationIssue> branchIssues;
+
+        for (int index = 0; index < alternatives->size(); ++index) {
+            std::vector<ValidationIssue> candidateIssues;
+            validateValue(value, (*alternatives)[index],
+                          path + "<oneOf:" + juce::String(index) + ">", candidateIssues);
+            if (candidateIssues.empty())
+                ++matches;
+            else
+                branchIssues.insert(branchIssues.end(), candidateIssues.begin(),
+                                    candidateIssues.end());
+        }
+
+        // Only a failure ends validation here. Unlike anyOf, whose branches
+        // stand for the whole schema, oneOf sits beside properties, required
+        // and additionalProperties on the same object -- returning on success
+        // would skip every one of them, so the exclusivity would be enforced
+        // and the field bounds silently would not.
+        if (matches != 1) {
+            if (matches == 0) {
+                addIssue(issues, path, "one_of", "Value does not match any allowed schema");
+                issues.insert(issues.end(), branchIssues.begin(), branchIssues.end());
+            } else {
+                addIssue(issues, path, "one_of",
+                         "Value matches " + juce::String(matches) +
+                             " allowed schemas, but must match exactly one");
+            }
+            return;
+        }
     }
 
     const auto declaredType = schemaObject->getProperty("type");
@@ -1585,7 +1624,10 @@ OperationRegistry::OperationRegistry() {
     add("transport.seekRelative", "Move the transport by beats or bars, clamped at zero",
         OperationAccess::Write, &handlers::transportSeekRelative, operationInputSchema(R"json({
             "type":"object",
-            "properties":{"deltaBeats":{"type":"number"},"deltaBars":{"type":"integer"}},
+            "properties":{
+                "deltaBeats":{"type":"number"},
+                "deltaBars":{"type":"integer","minimum":-1000000,"maximum":1000000}
+            },
             "oneOf":[{"required":["deltaBeats"]},{"required":["deltaBars"]}],
             "additionalProperties":false
         })json"),

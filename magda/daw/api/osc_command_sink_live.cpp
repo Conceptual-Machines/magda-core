@@ -97,7 +97,10 @@ void OscCommandSinkLive::apply(const OscCommand& command, float value) {
         case OscCommandKind::TransportSeekBars:
             // Rounded rather than truncated, so a surface that sends its
             // integers as floats and lands on 0.999999 still moves a bar.
-            api_.transport().seekBars(static_cast<int>(std::lround(value)));
+            // llround rather than lround, and no narrowing: the facade bounds
+            // the count, so a surface sending 1e30 gets one end of the project
+            // rather than whatever the conversion happened to produce.
+            api_.transport().seekBars(std::llround(value));
             return;
 
         case OscCommandKind::MasterVolume:

@@ -85,8 +85,8 @@ Every function below lives under the global `magda` table. All are message-threa
 `seek_beats` and `seek_bars` are the relative pair. They exist because a
 transport button is relative by nature: it says "back one bar", not "go to bar
 seven". Written with `set_position_beats` instead, every script re-derives the
-same two things — the clamp at the start of the project, and how many beats a
-bar is, which in 7/8 is not four.
+same two things — the clamp at the start of the project, and how long a bar
+is, which stops being four beats the moment the project is not in four.
 
 ```lua
 function on_midi(event)

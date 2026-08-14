@@ -65,9 +65,30 @@ class TransportApi {
         setPositionBeats(std::max(0.0, getPositionBeats() + delta));
     }
 
-    /** Move the playhead `deltaBars` bars, meter-aware, clamped at zero. */
-    void seekBars(int deltaBars) {
-        setPositionBeats(std::max(0.0, beatsAtBarOffset(getPositionBeats(), deltaBars)));
+    /**
+     * The furthest one seek moves, in bars.
+     *
+     * Past any real project by a wide margin — a million bars of 4/4 is about
+     * thirty days of music at 120 bpm — and small enough that adding it to a
+     * bar number cannot overflow an int.
+     */
+    static constexpr int kMaxBarOffset = 1000000;
+
+    /**
+     * Move the playhead `deltaBars` bars, meter-aware, clamped at zero.
+     *
+     * Takes a 64-bit count and bounds it here rather than at each caller.
+     * Every surface reads its number from somewhere outside MAGDA — a Lua
+     * integer, a JSON number, an OSC float — and narrowing to int at three
+     * different edges is three chances to do it wrong. Anything past the
+     * bound is a seek to one end of the project or the other, which is what
+     * clamping gives.
+     */
+    void seekBars(long long deltaBars) {
+        const auto bounded = static_cast<int>(std::clamp<long long>(
+            deltaBars, -static_cast<long long>(kMaxBarOffset), kMaxBarOffset));
+
+        setPositionBeats(std::max(0.0, beatsAtBarOffset(getPositionBeats(), bounded)));
     }
 };
 

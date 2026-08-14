@@ -893,7 +893,7 @@ int lua_transport_seek_beats(lua_State* L) {
 }
 
 int lua_transport_seek_bars(lua_State* L) {
-    getApi(L)->transport().seekBars(static_cast<int>(luaL_checkinteger(L, 1)));
+    getApi(L)->transport().seekBars(static_cast<long long>(luaL_checkinteger(L, 1)));
     return 0;
 }
 

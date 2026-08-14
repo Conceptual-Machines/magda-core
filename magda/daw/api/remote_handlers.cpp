@@ -615,7 +615,7 @@ HandlerResult transportSeek(MagdaApi& api, const juce::var& input, const Request
 // that once for every surface.
 HandlerResult transportSeekRelative(MagdaApi& api, const juce::var& input, const RequestContext&) {
     if (input.hasProperty("deltaBars"))
-        api.transport().seekBars(static_cast<int>(input["deltaBars"]));
+        api.transport().seekBars(static_cast<juce::int64>(input["deltaBars"]));
     else
         api.transport().seekBeats(static_cast<double>(input["deltaBeats"]));
 
