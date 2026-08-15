@@ -238,10 +238,10 @@ void OscFeedbackProjector::syncSurfaces() {
         });
     };
 
-    // The host is compared as well as the id, because an id is a slot in a
-    // bounded table: a peer evicted and another accepted in its place reuses the
-    // number, and answering the new surface out of the old one's diff would
-    // leave it showing whatever the old one had been told.
+    // The host is compared as well as the id. The id alone is enough, since ids
+    // are never reused, so this is the assertion that they are not: a surface
+    // whose id still matches under a different host would mean the whole echo
+    // story had come apart.
     for (auto it = surfaces_.begin(); it != surfaces_.end();) {
         if (stillThere(*it)) {
             ++it;

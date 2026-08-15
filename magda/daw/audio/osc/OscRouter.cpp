@@ -100,7 +100,7 @@ std::shared_ptr<OscBindingRoutes> OscBindingRoutes::build(const std::vector<Bind
 
     const auto count = routes->entries.size();
     routes->values = std::make_unique<std::atomic<float>[]>(count);
-    routes->peers = std::make_unique<std::atomic<std::int8_t>[]>(count);
+    routes->peers = std::make_unique<std::atomic<OscPeerId>[]>(count);
     routes->dirtyWords = (count + 63) / 64;
     routes->dirty = std::make_unique<std::atomic<std::uint64_t>[]>(routes->dirtyWords);
     for (std::size_t i = 0; i < routes->dirtyWords; ++i)
@@ -312,7 +312,7 @@ bool OscRouter::handleBindings(const OscMessageView& message, OscPeerId peer) {
         // Same publish order as the fixed namespace: value and peer, then the
         // bit that advertises them.
         routes->values[i].store(*value, std::memory_order_relaxed);
-        routes->peers[i].store(static_cast<std::int8_t>(peer), std::memory_order_relaxed);
+        routes->peers[i].store(peer, std::memory_order_relaxed);
         routes->dirty[i / 64].fetch_or(1ULL << (i % 64), std::memory_order_release);
         accepted = true;
     }
@@ -354,8 +354,7 @@ void OscRouter::submit(const OscCommand& command, float value, OscPeerId peer) {
     // observes the bit is guaranteed to observe at least this value, and a
     // store it misses leaves the bit set for the next one.
     values_[static_cast<size_t>(slot)].store(value, std::memory_order_relaxed);
-    valuePeers_[static_cast<size_t>(slot)].store(static_cast<std::int8_t>(peer),
-                                                 std::memory_order_relaxed);
+    valuePeers_[static_cast<size_t>(slot)].store(peer, std::memory_order_relaxed);
     dirty_[static_cast<size_t>(slot / 64)].fetch_or(1ULL << (slot % 64), std::memory_order_release);
     scheduleDrain();
 }
@@ -414,8 +413,8 @@ void OscRouter::drainPending() {
             const int slot = (word * 64) + std::countr_zero(bits);
             bits &= bits - 1;
             const auto value = values_[static_cast<size_t>(slot)].load(std::memory_order_relaxed);
-            const auto peer = static_cast<OscPeerId>(
-                valuePeers_[static_cast<size_t>(slot)].load(std::memory_order_relaxed));
+            const auto peer =
+                valuePeers_[static_cast<size_t>(slot)].load(std::memory_order_relaxed);
             sink_->apply(oscCommandForSlot(slot), value);
             if (feedbackTap_)
                 feedbackTap_(peer, slot, value);
@@ -448,8 +447,7 @@ void OscRouter::drainBindings() {
             bits &= bits - 1;
             const auto& entry = routes->entries[index];
             const auto value = routes->values[index].load(std::memory_order_relaxed);
-            const auto peer =
-                static_cast<OscPeerId>(routes->peers[index].load(std::memory_order_relaxed));
+            const auto peer = routes->peers[index].load(std::memory_order_relaxed);
             bindingSink_->apply(entry.binding, value);
             if (bindingFeedbackTap_)
                 bindingFeedbackTap_(peer, entry.address, value);

@@ -9,9 +9,18 @@
 
 namespace magda::osc {
 
-/// A peer's identity as it travels through the router: an index into `OscPeers`
-/// rather than a string, so a slot table, a ring entry and a binding row can
-/// each carry one in a byte.
+/// A peer's identity as it travels through the router: a small integer rather
+/// than a string, so a slot table, a ring entry and a binding row can each
+/// carry one cheaply.
+///
+/// **Unique for the life of the process, and never a slot index.** The table
+/// below is bounded and reuses storage, but a value already published into the
+/// router's queues names the peer that published it and has to keep naming it
+/// until it drains. Handing an evicted host's number to whoever took its slot
+/// would let a held binding value from the old peer be recorded as the echo of
+/// the new one, so the new surface's first update would be suppressed while it
+/// still showed its pre-drain snapshot. An id that is never reused makes a
+/// stale one match nothing, which is exactly what should happen to it.
 using OscPeerId = int;
 
 /// No peer: a message that did not come off a socket. Tests submit these, and
@@ -78,7 +87,6 @@ inline constexpr OscPeerId kNoOscPeer = -1;
 class OscPeers {
   public:
     static constexpr int kMaxPeers = 8;
-    static_assert(kMaxPeers <= 127, "a peer id has to fit the byte the router carries it in");
 
     struct Peer {
         OscPeerId id = kNoOscPeer;
@@ -157,12 +165,18 @@ class OscPeers {
 
   private:
     struct Entry {
-        bool used = false;
+        /// `kNoOscPeer` when the slot is free. The id belongs to the host, not
+        /// to the slot, so it changes every time the slot is taken over.
+        OscPeerId id = kNoOscPeer;
         bool answerable = false;
         juce::String host;
         juce::int64 firstSeenMs = 0;
         juce::int64 lastSeenMs = 0;
         std::uint64_t datagrams = 0;
+
+        bool used() const {
+            return id != kNoOscPeer;
+        }
     };
 
     /// A free slot, else the least recently heard entry that is not being
@@ -170,6 +184,8 @@ class OscPeers {
     int slotForUnvalidatedHost() const;
 
     std::array<Entry, kMaxPeers> entries_;
+    /// Never reset, not even by `clear` — see `OscPeerId`.
+    OscPeerId nextId_ = 0;
     std::atomic<std::uint64_t> generation_{0};
     mutable juce::CriticalSection lock_;
 };

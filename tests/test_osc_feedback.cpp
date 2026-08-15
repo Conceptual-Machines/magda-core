@@ -737,11 +737,16 @@ TEST_CASE("A ninth surface that proves itself does take the quietest slot", "[os
     for (int i = 2; i <= OscPeers::kMaxPeers; ++i)
         rig.router->peers().admit("10.0.0." + juce::String(i), 1000 + i);
 
-    // The rig's own peer was admitted at 1000, so it is the quietest.
+    // The rig's own peer was admitted at 1000, so it is the quietest and it is
+    // the one displaced.
     const auto ninth = rig.router->peers().admit("10.0.0.99", 9000);
-    REQUIRE(ninth == rig.peer);
     REQUIRE(rig.router->peers().count() == OscPeers::kMaxPeers);
     REQUIRE(rig.router->peers().hostFor(ninth) == "10.0.0.99");
+
+    // Its slot was reused; its id was not. An id names a host for the life of
+    // the process, so the number the displaced peer had now names nobody.
+    REQUIRE(ninth != rig.peer);
+    REQUIRE(rig.router->peers().hostFor(rig.peer).isEmpty());
 }
 
 TEST_CASE("A sink that fails to open is tried again on the next tick", "[osc][feedback]") {
@@ -898,4 +903,64 @@ TEST_CASE("A value the surface set is not projected back at it", "[osc][feedback
     rig.markTracksChanged();
     rig.projector->tick();
     REQUIRE(rig.sink().find("/magda/track/1/volume") != nullptr);
+}
+
+TEST_CASE("Work queued by a peer that has gone is not the echo of its replacement",
+          "[osc][feedback]") {
+    // Peer ids used to be slot indices, so a host taking a slot over inherited
+    // the number of the one it displaced. A binding value still sitting in the
+    // router's queue from the old peer would then be recorded as the new
+    // surface's own echo, and `publishBinding` would suppress its first real
+    // update while it was still showing the pre-drain snapshot.
+    auto owned = std::make_unique<StubParamReader>();
+    auto* reader = owned.get();
+
+    SinkFleet fleet;
+    magda::test::MockMagdaApi api;
+    magda::remote::ChangeSource changes;
+    OscRouter router{std::make_unique<DiscardingCommandSink>()};
+    // The test decides when the drain runs, which is the whole point: the queued
+    // value has to still be in flight when the peer behind it goes away.
+    router.setDrainScheduler([]() {});
+    const auto departing = router.peers().admit(kSurfaceHost, 1000);
+
+    magda::OscFeedbackProjector projector{api, changes, router, std::move(owned), fleet.factory()};
+
+    ScopedGlobalBinding bound{"/x/fader"};
+    // The registry feeds the router through OscService in the app; a bare router
+    // has to be told.
+    router.updateBindings(
+        magda::BindingRegistry::getInstance().bindings(magda::BindingScope::Global));
+
+    reader->value = 0.4f;
+    projector.tick();
+    REQUIRE(fleet[kSurfaceHost] != nullptr);
+    REQUIRE(fleet[kSurfaceHost]->find("/x/fader") != nullptr);
+
+    // A move on the departing surface, queued and not yet applied.
+    REQUIRE(router.handleMessage(juce::OSCMessage("/x/fader", 0.9f), departing));
+
+    // That surface goes, and another takes its slot.
+    router.peers().clear();
+    const auto arriving = router.peers().admit("10.0.0.42", 2000);
+    REQUIRE(arriving != departing);
+    projector.tick();
+
+    auto* replacement = fleet["10.0.0.42"];
+    REQUIRE(replacement != nullptr);
+    REQUIRE(replacement->find("/x/fader") != nullptr);  // snapshotted at 0.4
+    replacement->clear();
+
+    // Now the queued value lands. It belongs to a peer that no longer exists, so
+    // it must not be recorded against the surface that replaced it.
+    router.drainPending();
+
+    reader->value = 0.9f;
+    changes.markChanged(magda::remote::Topic::Automation, 2);
+    changes.flush();
+    projector.tick();
+
+    const auto* update = replacement->find("/x/fader");
+    REQUIRE(update != nullptr);
+    REQUIRE(update->value == Approx(0.9f));
 }

@@ -114,7 +114,7 @@ struct OscBindingRoutes {
     /// Latest unapplied value per entry, who sent it, and which entries have
     /// one.
     std::unique_ptr<std::atomic<float>[]> values;
-    std::unique_ptr<std::atomic<std::int8_t>[]> peers;
+    std::unique_ptr<std::atomic<OscPeerId>[]> peers;
     std::unique_ptr<std::atomic<std::uint64_t>[]> dirty;
     std::size_t dirtyWords = 0;
 
@@ -458,7 +458,11 @@ class OscRouter {
     /// Who wrote the value in the slot beside it. Never read without the dirty
     /// bit, and the bit is only set after both stores, so there is no "unset"
     /// state to initialise this to.
-    std::array<std::atomic<std::int8_t>, kOscSlotCount> valuePeers_{};
+    ///
+    /// A full id rather than a byte: ids are unique for the session precisely so
+    /// that one sitting here when its peer goes away resolves to nobody rather
+    /// than to whoever took its place.
+    std::array<std::atomic<OscPeerId>, kOscSlotCount> valuePeers_{};
 
     /// Which slots have something to apply. A bitmap rather than a queue so the
     /// receive thread's publish is one `fetch_or` and repeated writes to one
