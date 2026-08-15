@@ -416,8 +416,7 @@ class MagdaDAWApplication : public JUCEApplication {
                 std::make_unique<magda::DefaultControllerParamReader>(*audioBridge));
             if (oscFeedback_->applyConfig())
                 juce::Logger::writeToLog(
-                    "OSC feedback to " +
-                    juce::String(magda::Config::getInstance().getOscFeedbackHost()) + ":" +
+                    "OSC feedback will answer surfaces on port " +
                     juce::String(magda::Config::getInstance().getOscFeedbackPort()));
 
             // A parameter written by any control surface reaches the OSC
@@ -953,16 +952,23 @@ std::uint64_t acceptedMessageCount() {
     return service != nullptr ? service->router().acceptedMessageCount() : 0;
 }
 
-bool feedbackIsSending() {
+std::vector<Surface> surfaces() {
     auto* app = MagdaDAWApplication::getMagdaInstance();
-    auto* feedback = app != nullptr ? app->oscFeedback() : nullptr;
-    return feedback != nullptr && feedback->isSending();
-}
+    auto* service = app != nullptr ? app->oscService() : nullptr;
+    if (service == nullptr)
+        return {};
 
-std::uint64_t feedbackSentMessageCount() {
-    auto* app = MagdaDAWApplication::getMagdaInstance();
-    auto* feedback = app != nullptr ? app->oscFeedback() : nullptr;
-    return feedback != nullptr ? feedback->feedback().sentMessageCount() : 0;
+    // The peer table is what has been heard from; the projector is what has been
+    // said back. They are joined by peer id rather than by host, because the id
+    // is what both of them key on.
+    auto* feedback = app->oscFeedback();
+
+    std::vector<Surface> result;
+    for (const auto& peer : service->router().peers().snapshot())
+        result.push_back(Surface{peer.host, peer.datagrams,
+                                 feedback != nullptr ? feedback->sentTo(peer.id) : 0,
+                                 peer.lastSeenMs});
+    return result;
 }
 
 }  // namespace magda::osc_app

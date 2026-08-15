@@ -3,12 +3,14 @@
 #include <juce_events/juce_events.h>
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <vector>
 
 #include "../audio/controllers/ControllerFeedback.hpp"
 #include "../audio/controllers/ControllerParamReader.hpp"
 #include "../audio/osc/OscFeedback.hpp"
+#include "../audio/osc/OscPeers.hpp"
 #include "../core/Config.hpp"
 #include "../core/TypeIds.hpp"
 #include "../core/controllers/Binding.hpp"
@@ -24,12 +26,30 @@ class OscRouter;
 }
 
 /**
- * @brief Projects MAGDA's state onto the OSC fixed namespace (#2091).
+ * @brief Projects MAGDA's state onto the OSC fixed namespace (#2091, #2096).
  *
  * The answering half of #1757. Everything below is a projection: it reads the
  * model, hands the values to `OscFeedback`, and lets the diff there decide what
  * is actually worth a datagram. Nothing here decides *when* to send, only what
  * is currently true.
+ *
+ * ## One surface per peer
+ *
+ * MAGDA reads its own datagrams (#2096), so it knows which host a value came
+ * from. That is what makes this a fan-out rather than a single destination:
+ * each peer gets its own `OscFeedback` — its own diff, its own echo bits, its
+ * own sender aimed at that host and the configured feedback port.
+ *
+ * The alternative, one table with one destination, is wrong in a way that only
+ * shows up with two surfaces: a fader moved on surface A would be suppressed as
+ * an echo to surface B as well, so B would sit showing a value nobody holds.
+ *
+ * What is *not* per surface is the expensive part. Resolving a binding's target
+ * — the alias machinery, the parameter read — happens once per tick and the
+ * answer is handed to every surface. Per surface there is an array compare.
+ *
+ * A surface appearing is exactly observable now, so the snapshot that catches
+ * it up is too: a new peer gets one, and nobody else does.
  *
  * ## Two halves, published and sampled
  *
@@ -63,75 +83,83 @@ class OscRouter;
  * ## Threading
  *
  * Message thread throughout. The `ChangeSource` listener is called there, the
- * timer runs there, and `OscRouter`'s drain — which is where `noteReceived`
- * comes from — is there too, so `OscFeedback` needs no synchronisation at all.
+ * timer runs there, and `OscRouter`'s drain — which is where the feedback taps
+ * come from — is there too, so none of this needs synchronisation. The one
+ * thing that crosses a thread boundary is `OscPeers`, which carries its own.
  *
  * The tick is an owned object rather than a base class, the same shape
  * `SubscriptionHub` gives its sampler. `juce::Timer` holds a
  * `SharedResourcePointer<TimerThread>`, so *inheriting* one starts JUCE's timer
  * thread the moment a projector exists — including in a process that has no
- * message loop to drive it. Owning it means a projector with no destination
- * costs nothing and a headless one costs nothing at all.
+ * message loop to drive it. Owning it means a MAGDA with OSC off costs nothing
+ * and a headless one costs nothing at all.
  */
 class OscFeedbackProjector : private ConfigListener, private BindingRegistryListener {
   public:
     /**
-     * @param api       The facade. Must outlive this.
-     * @param changes   The shared change source (#1857). Must outlive this.
-     * @param router    The router whose applied values are this projector's own
-     *                  echo, and whose message count says when a surface has
-     *                  started talking. Must outlive this.
-     * @param reader    Where a bound target's current value comes from. Null is
-     *                  legal and means the fixed namespace only, which is the
-     *                  headless case: bindings resolve against an engine.
-     * @param sink      Where finished messages go. Null — the application's
-     *                  case — builds an `OscSenderSink` and makes
-     *                  `setDestination` mean what it says. Supplying one instead
-     *                  is how a test observes the projection without opening a
-     *                  socket, and it makes the projector permanently "sending",
-     *                  since there is no destination to configure.
+     * @brief Where a surface's messages go once it has been heard from.
+     *
+     * Called once per peer, with the host it is talking from and the configured
+     * feedback port. Defaulted, and the default is an `OscSenderSink` — which is
+     * the whole of the application's case. A test supplies one to observe the
+     * projection without opening a socket, and gets one sink per surface, which
+     * is what makes the per-peer rules observable at all.
+     */
+    using SinkFactory =
+        std::function<std::unique_ptr<osc::OscMessageSink>(const juce::String& host, int port)>;
+
+    /**
+     * @param api      The facade. Must outlive this.
+     * @param changes  The shared change source (#1857). Must outlive this.
+     * @param router   The router whose peers these surfaces are and whose
+     *                 applied values are their own echo. Must outlive this.
+     * @param reader   Where a bound target's current value comes from. Null is
+     *                 legal and means the fixed namespace only, which is the
+     *                 headless case: bindings resolve against an engine.
+     * @param factory  See `SinkFactory`.
      */
     OscFeedbackProjector(MagdaApi& api, remote::ChangeSource& changes, osc::OscRouter& router,
-                         std::unique_ptr<ControllerParamReader> reader,
-                         std::unique_ptr<osc::OscMessageSink> sink = nullptr);
+                         std::unique_ptr<ControllerParamReader> reader, SinkFactory factory = {});
     ~OscFeedbackProjector() override;
-
-    /// Whether the tick is running. False with no destination configured, which
-    /// is also when this costs nothing.
-    bool isTicking() const {
-        return tick_ != nullptr;
-    }
 
     OscFeedbackProjector(const OscFeedbackProjector&) = delete;
     OscFeedbackProjector& operator=(const OscFeedbackProjector&) = delete;
+
+    /// Whether the tick is running. False with OSC off, which is also when this
+    /// costs nothing.
+    bool isTicking() const {
+        return tick_ != nullptr;
+    }
 
     /// Matches `ChangeSource`'s own flush cadence, which is the rate at which
     /// the published half can produce anything new.
     static constexpr int kTickIntervalMs = 33;
 
-    /// Inbound silence long enough that traffic resuming is more likely a
-    /// surface that has just connected than a pause in a gesture. The best
-    /// proxy available for "a new peer appeared", since JUCE does not report
-    /// who sent a datagram.
-    static constexpr int kResyncSilenceMs = 5000;
-
     /**
-     * @brief Point feedback at a destination and start, or stop it.
+     * @brief Start or stop the tick, and re-aim the surfaces if the port moved.
      *
-     * An empty host stops the timer and disconnects, so a MAGDA with feedback
-     * off does no per-tick work at all. A change of destination is a new surface
-     * by definition, so it takes a full snapshot.
+     * There is no feedback enable to read, and that is the point of #2096: a
+     * peer exists only because `OscService` bound a socket, which happens only
+     * when OSC is on, so "is there anyone to answer" is already the answer to
+     * "should MAGDA answer". What is left is the port, and a change to it is
+     * every surface being answered somewhere else — so they are rebuilt, and
+     * snapshotted, rather than re-pointed.
      *
-     * @return true when a destination is connected afterwards.
+     * @return true when the tick is running afterwards.
      */
-    bool setDestination(const juce::String& host, int port);
-
-    /// Bring the destination into line with `Config`. Safe to call repeatedly.
     bool applyConfig();
 
-    bool isSending() const;
+    /// How many surfaces are being answered.
+    int surfaceCount() const {
+        return static_cast<int>(surfaces_.size());
+    }
 
-    /// Send everything the surface could care about on the next tick.
+    /// Feedback messages sent to the surface at `peer`, or 0 when it is not one.
+    std::uint64_t sentTo(osc::OscPeerId peer) const;
+
+    /// Send everything every surface could care about on the next tick. A
+    /// surface that has just appeared gets this on its own; this is the whole
+    /// fleet, for a caller that has invalidated what they were all told.
     void requestSnapshot();
 
     /**
@@ -149,16 +177,31 @@ class OscFeedbackProjector : private ConfigListener, private BindingRegistryList
     /// to the router; it holds a pointer back here and must not outlive this.
     std::unique_ptr<ControllerFeedbackSink> makeControllerFeedbackSink();
 
-    osc::OscFeedback& feedback() {
-        return *feedback_;
-    }
-
   private:
     class ControllerSink;
     class Tick;
 
-    /// Config changed: the destination may have. Reapplying is idempotent, so
-    /// an unrelated save leaves a connected surface alone.
+    /// Bound addresses are not slots, so they carry their own copy of what the
+    /// slot table holds: what was last sent, and what arrived from the surface.
+    /// `echoed` is the same bit for the same reason — see `OscFeedback`.
+    struct BoundAddress {
+        juce::String address;
+        float lastSent = 0.0f;
+        float lastReceived = 0.0f;
+        bool hasSent = false;
+        bool echoed = false;
+    };
+
+    /// One peer, and everything that is true of it alone.
+    struct Surface {
+        osc::OscPeerId peer = osc::kNoOscPeer;
+        juce::String host;
+        std::unique_ptr<osc::OscFeedback> feedback;
+        std::vector<BoundAddress> bound;
+    };
+
+    /// Config changed: the feedback port may have. Reapplying is idempotent, so
+    /// an unrelated save leaves the surfaces alone.
     void configChanged() override;
 
     /**
@@ -179,6 +222,19 @@ class OscFeedbackProjector : private ConfigListener, private BindingRegistryList
 
     void onChanges(const std::vector<remote::ChangeSource::Change>& changes);
 
+    /**
+     * @brief Bring the surfaces into line with the peers the router has heard.
+     *
+     * Cheap when nothing changed — one atomic read of the peer generation — so
+     * it runs at the top of every tick, and again from a feedback tap that
+     * names a peer with no surface yet. That second call is not belt and braces:
+     * the first drain of a first gesture lands before the tick that would have
+     * built the surface, and without it the echo bit for that gesture is lost.
+     */
+    void syncSurfaces();
+
+    Surface* surfaceFor(osc::OscPeerId peer);
+
     /// Track and master strips: volume, pan, mute, solo, sends.
     void projectMixer();
     /// The focused device's sixteen macros, or nothing when nothing is focused.
@@ -196,17 +252,37 @@ class OscFeedbackProjector : private ConfigListener, private BindingRegistryList
     /// snapshot.
     void retirePositionsFrom(int firstUnused);
 
-    /// Feed a binding's address, given the value its target currently holds.
-    void publishBinding(const Binding& binding, float targetValue);
+    /// One address across every surface. The projection reads the model once and
+    /// the diff is what is per-surface.
+    void publishAll(const osc::OscCommand& command, float value);
+    void retireAll(const osc::OscCommand& command);
+
+    /// Feed one surface's copy of a bound address, given the position its target
+    /// currently implies.
+    void publishBinding(Surface& surface, const juce::String& address, float position);
+
+    /// The entry for `address` on `surface`, created if this is the first time
+    /// it has been seen. Linear: bindings number in the tens, and an OSC address
+    /// is a short string, so a map would cost more in allocation than the scan
+    /// does in comparisons.
+    static BoundAddress& boundEntryFor(Surface& surface, const juce::String& address);
 
     MagdaApi& api_;
     remote::ChangeSource& changes_;
     osc::OscRouter& router_;
 
     std::unique_ptr<ControllerParamReader> reader_;
-    std::unique_ptr<osc::OscFeedback> feedback_;
-    osc::OscSenderSink* sender_ = nullptr;  ///< Owned by `feedback_`.
+    SinkFactory factory_;
     std::unique_ptr<Tick> tick_;
+
+    std::vector<Surface> surfaces_;
+    std::uint64_t peersGeneration_ = 0;
+    bool surfacesStale_ = true;
+
+    /// What the surfaces are aimed at. Read from `Config` at construction so a
+    /// projector driven directly — a headless host, a test — is aimed the same
+    /// way one that has had `applyConfig` called is.
+    int feedbackPort_ = 0;
 
     int changeToken_ = 0;
 
@@ -219,26 +295,13 @@ class OscFeedbackProjector : private ConfigListener, private BindingRegistryList
     /// project retires what it left behind.
     int highestPosition_ = 0;
 
-    /// Bound addresses are not slots, so they carry their own copy of what the
-    /// slot table holds: what was last sent, and what arrived from the surface.
-    /// `echoed` is the same bit for the same reason — see `OscFeedback`.
-    struct BoundAddress {
+    /// One pass's worth of resolved binding positions, reused so the pass does
+    /// not allocate per tick.
+    struct BoundValue {
         juce::String address;
-        float lastSent = 0.0f;
-        float lastReceived = 0.0f;
-        bool hasSent = false;
-        bool echoed = false;
+        float position = 0.0f;
     };
-    std::vector<BoundAddress> bound_;
-
-    /// The entry for `address`, created if this is the first time it has been
-    /// seen. Linear: bindings number in the tens, and an OSC address is a short
-    /// string, so a map would cost more in allocation than the scan does in
-    /// comparisons.
-    BoundAddress& boundEntryFor(const juce::String& address);
-
-    std::uint64_t lastAcceptedCount_ = 0;
-    juce::int64 lastInboundMs_ = 0;
+    std::vector<BoundValue> boundValues_;
 
     /// Cleared before the object dies, so a `ControllerFeedbackSink` still
     /// installed on the router singleton stops reaching in here rather than

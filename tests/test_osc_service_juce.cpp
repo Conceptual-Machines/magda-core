@@ -128,6 +128,8 @@ class OscServiceTest final : public juce::UnitTest {
         testDatagramReachesSink();
         testBundlesAreUnpacked();
         testForeignAddressIsIgnored();
+        testSenderBecomesAPeer();
+        testClosingForgetsThePeers();
         testCloseUnderTraffic();
     }
 
@@ -234,9 +236,8 @@ class OscServiceTest final : public juce::UnitTest {
     void testBundlesAreUnpacked() {
         beginTest("Bundled messages are unpacked");
 
-        // JUCE hands realtime listeners the bundle rather than its messages, so
-        // a service that implemented only the message callback would go silent
-        // against any surface that bundles — and many do by default.
+        // Surfaces bundle by default, so a reader that only handled bare
+        // messages would go silent against many of them.
         const ScopedOscConfig config(true, 0);
         Harness h;
         expect(h.service->applyConfig());
@@ -278,6 +279,56 @@ class OscServiceTest final : public juce::UnitTest {
         expect(applied.size() == 1, "only the address we own may be applied");
         if (applied.size() == 1)
             expect(applied[0].first.kind == OscCommandKind::MasterVolume);
+    }
+
+    void testSenderBecomesAPeer() {
+        beginTest("A surface that sends becomes a peer with the host it sent from");
+
+        // The whole of #2096 in one assertion: JUCE's receive loop read this
+        // address into a local and dropped it, so feedback had to be aimed at a
+        // host the user typed in.
+        const ScopedOscConfig config(true, 0);
+        Harness h;
+        expect(h.service->applyConfig());
+        expect(h.router->peers().count() == 0, "nothing has talked to it yet");
+
+        juce::OSCSender sender;
+        expect(sender.connect("127.0.0.1", h.service->boundPort()));
+        expect(sender.send(juce::OSCMessage("/magda/track/1/volume", 0.5f)));
+        expect(h.waitForAccepted(1));
+
+        const auto peers = h.router->peers().snapshot();
+        expect(peers.size() == 1, "one sender is one peer");
+        if (peers.size() == 1) {
+            expect(peers[0].host == "127.0.0.1", "the peer is the host it sent from");
+            expect(peers[0].datagrams >= 1);
+            expect(h.router->peers().hostFor(peers[0].id) == "127.0.0.1");
+        }
+
+        // A second datagram from the same socket is the same surface, not a new
+        // one: identity is the host, so an ephemeral port cannot mint peers.
+        expect(sender.send(juce::OSCMessage("/magda/track/1/volume", 0.6f)));
+        expect(h.waitForAccepted(2));
+        expect(h.router->peers().count() == 1, "the same host must stay one peer");
+    }
+
+    void testClosingForgetsThePeers() {
+        beginTest("Closing the socket forgets who was talking to it");
+
+        // A rebind is a new listener. Whoever was talking to the old one has to
+        // be heard again before MAGDA starts answering them.
+        const ScopedOscConfig config(true, 0);
+        Harness h;
+        expect(h.service->applyConfig());
+
+        juce::OSCSender sender;
+        expect(sender.connect("127.0.0.1", h.service->boundPort()));
+        expect(sender.send(juce::OSCMessage("/magda/master/volume", 0.5f)));
+        expect(h.waitForAccepted(1));
+        expect(h.router->peers().count() == 1);
+
+        h.service->stop();
+        expect(h.router->peers().count() == 0, "a closed socket has no peers");
     }
 
     void testCloseUnderTraffic() {

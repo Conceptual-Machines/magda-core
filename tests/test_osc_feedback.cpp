@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -380,13 +381,45 @@ class DiscardingCommandSink : public OscCommandSink {
     void apply(const OscCommand&, float) override {}
 };
 
+/// Hands out one capturing sink per surface and keeps them all, which is what
+/// makes the per-peer rules observable: a value suppressed to one surface has to
+/// be visible arriving at the other.
+struct SinkFleet {
+    magda::OscFeedbackProjector::SinkFactory factory() {
+        return [this](const juce::String& host, int) -> std::unique_ptr<OscMessageSink> {
+            auto owned = std::make_unique<CapturingSink>();
+            byHost[host] = owned.get();
+            return owned;
+        };
+    }
+
+    CapturingSink* operator[](const juce::String& host) const {
+        const auto found = byHost.find(host);
+        return found == byHost.end() ? nullptr : found->second;
+    }
+
+    std::map<juce::String, CapturingSink*> byHost;
+};
+
+/// One surface, on loopback. Interned directly rather than through a socket:
+/// the peer table is what the projector reads, and how a datagram got into it is
+/// `OscService`'s business, tested where that is.
+constexpr const char* kSurfaceHost = "127.0.0.1";
+
 struct ProjectorRig {
     ProjectorRig() {
-        auto owned = std::make_unique<CapturingSink>();
-        sink = owned.get();
         router = std::make_unique<OscRouter>(std::make_unique<DiscardingCommandSink>());
+        peer = router->peers().intern(kSurfaceHost, 1000);
         projector = std::make_unique<magda::OscFeedbackProjector>(api, changes, *router, nullptr,
-                                                                  std::move(owned));
+                                                                  fleet.factory());
+    }
+
+    /// The surface is built by the first tick, so this is only valid after one —
+    /// which every case below does before it looks at what was sent.
+    CapturingSink& sink() const {
+        auto* found = fleet[kSurfaceHost];
+        REQUIRE(found != nullptr);
+        return *found;
     }
 
     /// A track at the end of the mixer, visible, at unity gain and centre.
@@ -417,7 +450,8 @@ struct ProjectorRig {
 
     magda::test::MockMagdaApi api;
     magda::remote::ChangeSource changes;
-    CapturingSink* sink = nullptr;
+    SinkFleet fleet;
+    magda::osc::OscPeerId peer = magda::osc::kNoOscPeer;
     std::unique_ptr<OscRouter> router;
     std::unique_ptr<magda::OscFeedbackProjector> projector;
     magda::TrackId nextId = 1;
@@ -447,16 +481,16 @@ TEST_CASE("A mixer strip's members reach the addresses that name them", "[osc][f
     rig.markTracksChanged();
     rig.projector->tick();
 
-    REQUIRE(rig.sink->find("/magda/track/1/volume") != nullptr);
-    REQUIRE(rig.sink->find("/magda/track/1/volume")->value ==
+    REQUIRE(rig.sink().find("/magda/track/1/volume") != nullptr);
+    REQUIRE(rig.sink().find("/magda/track/1/volume")->value ==
             Approx(expectedFaderPosition(0.5f)).margin(1.0e-5));
-    REQUIRE(rig.sink->find("/magda/track/1/pan")->value == Approx(0.0f).margin(1.0e-5));
-    REQUIRE(rig.sink->find("/magda/track/1/mute")->value == Approx(1.0f));
-    REQUIRE(rig.sink->find("/magda/track/1/solo")->value == Approx(0.0f));
-    REQUIRE(rig.sink->find("/magda/track/2/volume") != nullptr);
+    REQUIRE(rig.sink().find("/magda/track/1/pan")->value == Approx(0.0f).margin(1.0e-5));
+    REQUIRE(rig.sink().find("/magda/track/1/mute")->value == Approx(1.0f));
+    REQUIRE(rig.sink().find("/magda/track/1/solo")->value == Approx(0.0f));
+    REQUIRE(rig.sink().find("/magda/track/2/volume") != nullptr);
 
     // A position with no track behind it is silent rather than zeroed.
-    REQUIRE(rig.sink->find("/magda/track/3/volume") == nullptr);
+    REQUIRE(rig.sink().find("/magda/track/3/volume") == nullptr);
 }
 
 TEST_CASE("A strip's position is the mixer's, not the track's id", "[osc][feedback]") {
@@ -476,7 +510,7 @@ TEST_CASE("A strip's position is the mixer's, not the track's id", "[osc][feedba
     rig.markTracksChanged();
     rig.projector->tick();
 
-    REQUIRE(rig.sink->find("/magda/track/2/volume")->value ==
+    REQUIRE(rig.sink().find("/magda/track/2/volume")->value ==
             Approx(expectedFaderPosition(0.25f)).margin(1.0e-5));
 }
 
@@ -486,44 +520,44 @@ TEST_CASE("A shrinking project retires the strips it no longer has", "[osc][feed
     rig.addTrack("Two");
     rig.markTracksChanged();
     rig.projector->tick();
-    REQUIRE(rig.sink->find("/magda/track/2/volume") != nullptr);
+    REQUIRE(rig.sink().find("/magda/track/2/volume") != nullptr);
 
     rig.api.tracks_.tracks.pop_back();
-    rig.sink->clear();
+    rig.sink().clear();
     rig.projector->requestSnapshot();
     rig.projector->tick();
 
     // Strip 1 is resent by the snapshot; strip 2 no longer exists and is not.
-    REQUIRE(rig.sink->find("/magda/track/1/volume") != nullptr);
-    REQUIRE(rig.sink->find("/magda/track/2/volume") == nullptr);
+    REQUIRE(rig.sink().find("/magda/track/1/volume") != nullptr);
+    REQUIRE(rig.sink().find("/magda/track/2/volume") == nullptr);
 }
 
 TEST_CASE("Play and stop stay opposite", "[osc][feedback]") {
     ProjectorRig rig;
 
     rig.projector->tick();
-    REQUIRE(rig.sink->find("/magda/transport/play")->value == Approx(0.0f));
-    REQUIRE(rig.sink->find("/magda/transport/stop")->value == Approx(1.0f));
+    REQUIRE(rig.sink().find("/magda/transport/play")->value == Approx(0.0f));
+    REQUIRE(rig.sink().find("/magda/transport/stop")->value == Approx(1.0f));
 
-    rig.sink->clear();
+    rig.sink().clear();
     rig.api.transport_.playing = true;
     rig.projector->tick();
-    REQUIRE(rig.sink->find("/magda/transport/play")->value == Approx(1.0f));
-    REQUIRE(rig.sink->find("/magda/transport/stop")->value == Approx(0.0f));
+    REQUIRE(rig.sink().find("/magda/transport/play")->value == Approx(1.0f));
+    REQUIRE(rig.sink().find("/magda/transport/stop")->value == Approx(0.0f));
 }
 
 TEST_CASE("Transport values that did not move are not resent", "[osc][feedback]") {
     ProjectorRig rig;
     rig.projector->tick();
-    rig.sink->clear();
+    rig.sink().clear();
 
     rig.projector->tick();
-    REQUIRE(rig.sink->messages.empty());
+    REQUIRE(rig.sink().messages.empty());
 
     rig.api.transport_.positionBeats = 8.0;
     rig.projector->tick();
-    REQUIRE(rig.sink->countFor("/magda/transport/position") == 1);
-    REQUIRE(rig.sink->find("/magda/transport/position")->value == Approx(8.0f));
+    REQUIRE(rig.sink().countFor("/magda/transport/position") == 1);
+    REQUIRE(rig.sink().find("/magda/transport/position")->value == Approx(8.0f));
 }
 
 TEST_CASE("The focused device's macros go out, and stop when focus goes", "[osc][feedback]") {
@@ -532,51 +566,111 @@ TEST_CASE("The focused device's macros go out, and stop when focus goes", "[osc]
     rig.api.focused_.macroValues = {0.25f, 0.75f};
 
     rig.projector->tick();
-    REQUIRE(rig.sink->find("/magda/focused/macro/1")->value == Approx(0.25f));
-    REQUIRE(rig.sink->find("/magda/focused/macro/2")->value == Approx(0.75f));
+    REQUIRE(rig.sink().find("/magda/focused/macro/1")->value == Approx(0.25f));
+    REQUIRE(rig.sink().find("/magda/focused/macro/2")->value == Approx(0.75f));
 
     rig.api.focused_.focused = false;
-    rig.sink->clear();
+    rig.sink().clear();
     rig.projector->requestSnapshot();
     rig.projector->tick();
-    REQUIRE(rig.sink->find("/magda/focused/macro/1") == nullptr);
+    REQUIRE(rig.sink().find("/magda/focused/macro/1") == nullptr);
 }
 
-TEST_CASE("A surface that starts late is caught up by its first message", "[osc][feedback]") {
-    // The snapshot sent when the destination was configured went to a UDP
-    // address with nobody behind it. Nothing failed and nothing can be
-    // retried, so the first packet from a surface is the first evidence that
-    // there is a surface, and it is owed everything.
+// ============================================================================
+// A surface is a peer, and everything per-peer follows from that
+// ============================================================================
+
+TEST_CASE("A surface that appears is snapshotted, and the one already there is not",
+          "[osc][feedback]") {
+    // What #2091 could only approximate by watching for inbound traffic after a
+    // silence. A peer arriving *is* the event, so the surface that has just
+    // joined is caught up and the one mid-gesture is not interrupted.
     ProjectorRig rig;
     rig.addTrack("Drums");
     rig.markTracksChanged();
     rig.projector->tick();
-    rig.sink->clear();
+    rig.sink().clear();
 
-    // Nothing has moved, so an ordinary tick says nothing.
+    // Nothing has moved, so an ordinary tick says nothing to anybody.
     rig.projector->tick();
-    REQUIRE(rig.sink->messages.empty());
+    REQUIRE(rig.sink().messages.empty());
 
-    rig.router->handleMessage(juce::OSCMessage("/magda/track/1/pan", 0.5f));
+    const auto second = rig.router->peers().intern("10.0.0.5", 2000);
+    REQUIRE(second != rig.peer);
     rig.projector->tick();
 
-    REQUIRE(rig.sink->find("/magda/track/1/volume") != nullptr);
-    REQUIRE(rig.sink->find("/magda/transport/play") != nullptr);
+    auto* joined = rig.fleet["10.0.0.5"];
+    REQUIRE(joined != nullptr);
+    REQUIRE(joined->find("/magda/track/1/volume") != nullptr);
+    REQUIRE(joined->find("/magda/transport/play") != nullptr);
+
+    REQUIRE(rig.sink().messages.empty());
 }
 
-TEST_CASE("Steady inbound traffic does not keep resnapshotting", "[osc][feedback]") {
+TEST_CASE("A value from one surface is suppressed to it and sent to the other", "[osc][feedback]") {
+    // The case one shared table cannot express: with a single destination, a
+    // fader moved on A is read as an echo for everyone, so B sits showing a
+    // value nobody holds.
+    ProjectorRig rig;
+    const auto first = rig.addTrack("Drums");
+    rig.router->peers().intern("10.0.0.5", 2000);
+    rig.markTracksChanged();
+    rig.projector->tick();
+
+    auto* other = rig.fleet["10.0.0.5"];
+    REQUIRE(other != nullptr);
+    rig.sink().clear();
+    other->clear();
+
+    // A fader move that arrived from the first surface, and the model state it
+    // produced.
+    const float position = expectedFaderPosition(0.5f);
+    rig.router->handleMessage(juce::OSCMessage("/magda/track/1/volume", position), rig.peer);
+    rig.track(first)->volume = 0.5f;
+
+    rig.markTracksChanged();
+    rig.projector->tick();
+
+    REQUIRE(rig.sink().find("/magda/track/1/volume") == nullptr);
+    REQUIRE(other->find("/magda/track/1/volume") != nullptr);
+    REQUIRE(other->find("/magda/track/1/volume")->value == Approx(position).margin(1.0e-5));
+}
+
+TEST_CASE("A surface stops being answered when its peer goes", "[osc][feedback]") {
     ProjectorRig rig;
     rig.addTrack("Drums");
     rig.markTracksChanged();
-    rig.router->handleMessage(juce::OSCMessage("/magda/track/1/pan", 0.5f));
     rig.projector->tick();
-    rig.sink->clear();
+    REQUIRE(rig.projector->surfaceCount() == 1);
 
-    // A second message inside the silence window is a gesture continuing, not
-    // a surface arriving.
-    rig.router->handleMessage(juce::OSCMessage("/magda/track/1/pan", 0.5f));
+    // What a rebind does: the peers behind a socket that has closed are not
+    // peers of the one that replaces it.
+    rig.router->peers().clear();
+    rig.sink().clear();
     rig.projector->tick();
-    REQUIRE(rig.sink->find("/magda/track/1/volume") == nullptr);
+
+    REQUIRE(rig.projector->surfaceCount() == 0);
+    REQUIRE(rig.sink().messages.empty());
+}
+
+TEST_CASE("A gesture that lands before the first tick still counts as an echo", "[osc][feedback]") {
+    // The drain that carries a first message runs before the tick that would
+    // have built the surface, so the tap has to sync rather than drop the bit.
+    ProjectorRig rig;
+    const auto first = rig.addTrack("Drums");
+
+    const float position = expectedFaderPosition(0.5f);
+    rig.router->handleMessage(juce::OSCMessage("/magda/track/1/volume", position), rig.peer);
+    rig.track(first)->volume = 0.5f;
+    rig.markTracksChanged();
+    rig.projector->tick();
+
+    // The first tick is a snapshot, which is not suppressed by an echo — that is
+    // the point of a snapshot. What the bit has to survive is the tick after it.
+    rig.sink().clear();
+    rig.markTracksChanged();
+    rig.projector->tick();
+    REQUIRE(rig.sink().find("/magda/track/1/volume") == nullptr);
 }
 
 namespace {
@@ -622,16 +716,17 @@ TEST_CASE("A binding added after the last tick is projected on the next one", "[
     auto owned = std::make_unique<StubParamReader>();
     auto* reader = owned.get();
 
-    auto sinkOwned = std::make_unique<CapturingSink>();
-    auto* sink = sinkOwned.get();
+    SinkFleet fleet;
     magda::test::MockMagdaApi api;
     magda::remote::ChangeSource changes;
     OscRouter router{std::make_unique<DiscardingCommandSink>()};
-    magda::OscFeedbackProjector projector{api, changes, router, std::move(owned),
-                                          std::move(sinkOwned)};
+    router.peers().intern(kSurfaceHost, 1000);
+    magda::OscFeedbackProjector projector{api, changes, router, std::move(owned), fleet.factory()};
 
     reader->value = 0.4f;
     projector.tick();
+    auto* sink = fleet[kSurfaceHost];
+    REQUIRE(sink != nullptr);
     sink->clear();
 
     // Nothing is dirty, so an ordinary tick says nothing.
@@ -664,23 +759,22 @@ TEST_CASE("A value the surface set is not projected back at it", "[osc][feedback
     const auto first = rig.addTrack("Drums");
     rig.markTracksChanged();
     rig.projector->tick();
-    rig.sink->clear();
+    rig.sink().clear();
 
-    // What the router's drain reports after applying a fader move, and the model
-    // state that move produced.
+    // A fader move from that surface, applied through the router the way a real
+    // one is, and the model state it produced.
     const float position = expectedFaderPosition(0.5f);
-    rig.projector->feedback().noteReceived(
-        oscSlotIndex(OscCommand{OscCommandKind::TrackVolume, 1, 0}), position);
+    rig.router->handleMessage(juce::OSCMessage("/magda/track/1/volume", position), rig.peer);
     rig.track(first)->volume = 0.5f;
 
     rig.markTracksChanged();
     rig.projector->tick();
-    REQUIRE(rig.sink->find("/magda/track/1/volume") == nullptr);
+    REQUIRE(rig.sink().find("/magda/track/1/volume") == nullptr);
 
     // But a move MAGDA makes afterwards does reach the surface.
-    rig.sink->clear();
+    rig.sink().clear();
     rig.track(first)->volume = 1.0f;
     rig.markTracksChanged();
     rig.projector->tick();
-    REQUIRE(rig.sink->find("/magda/track/1/volume") != nullptr);
+    REQUIRE(rig.sink().find("/magda/track/1/volume") != nullptr);
 }

@@ -3,8 +3,9 @@
 #include <juce_core/juce_core.h>
 
 #include <cstdint>
+#include <vector>
 
-// App-level OSC wiring (#1757, #2091).
+// App-level OSC wiring (#1757, #2091, #2096).
 //
 // `OscService` and `OscFeedbackProjector` are owned by MagdaDAWApplication,
 // which nothing in the UI layer can see. These read-only accessors are how the
@@ -32,10 +33,18 @@ int boundPort();
 /// is the first thing worth knowing about one.
 std::uint64_t acceptedMessageCount();
 
-/// Whether feedback has a destination connected.
-bool feedbackIsSending();
+/// One surface MAGDA has heard from (#2096), and what has passed in each
+/// direction. The host is where feedback is being sent; the port is not shown,
+/// because it is the one the user configured and the same for all of them.
+struct Surface {
+    juce::String host;
+    std::uint64_t received = 0;  ///< Datagrams from it, parsed or not.
+    std::uint64_t sent = 0;      ///< Feedback messages to it.
+    juce::int64 lastSeenMs = 0;  ///< Wall clock, for "how long ago".
+};
 
-/// Feedback messages sent since launch.
-std::uint64_t feedbackSentMessageCount();
+/// Most recently heard from first. Empty when nothing has ever talked to MAGDA,
+/// which is what a silent surface's owner needs to be able to see.
+std::vector<Surface> surfaces();
 
 }  // namespace magda::osc_app

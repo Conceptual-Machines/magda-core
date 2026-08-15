@@ -39,12 +39,12 @@ class OscMessageSink {
 /**
  * @brief The sink backed by a real `juce::OSCSender`.
  *
- * One socket for the lifetime of the sink, aimed at one destination. There is
- * no per-peer routing because there is no way to learn a peer:
- * `juce::OSCReceiver` hands a realtime listener an `OSCMessage` and drops the
- * datagram's source address inside its own receive loop, and JUCE's OSC parser
- * is private to the module, so reading the sender would mean reimplementing it.
- * Feedback therefore goes where configuration says and nowhere else.
+ * One socket for the lifetime of the sink, aimed at one destination — which is
+ * one surface. Fanning out to several is not this class's job and never was:
+ * since #2096 the peer is observable, so `OscFeedbackProjector` builds one of
+ * these per peer and each keeps its own diff. That is what makes per-peer echo
+ * suppression expressible; a single sink shared between surfaces could not tell
+ * whose value it was sending back.
  */
 class OscSenderSink : public OscMessageSink {
   public:

@@ -959,7 +959,7 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
 }
 
 // =============================================================================
-// OscSurfacesPage (#1757 §4, #2091)
+// OscSurfacesPage (#1757 §4, #2091, #2096)
 // =============================================================================
 
 /**
@@ -969,9 +969,15 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
  *
  * Nothing here reconfigures the OSC stack directly. `Config::save` notifies its
  * listeners, and both `OscService` and `OscFeedbackProjector` are among them, so
- * a field that loses focus rebinds the socket or re-aims the sender without this
- * page knowing either exists. What it does know is how to ask them what
- * happened, through `osc_app`, which is what the status line reports.
+ * a field that loses focus rebinds the socket or re-aims the senders without
+ * this page knowing either exists. What it does know is how to ask them what
+ * happened, through `osc_app`, which is what the status area reports.
+ *
+ * There is no "send feedback to" field, and that is #2096: MAGDA reads its own
+ * datagrams, so it answers whoever is talking. What the status area shows
+ * instead is the surfaces it has heard from — which is the question anyone
+ * debugging a silent surface actually has, and one a message counter could
+ * never answer.
  */
 class OscSurfacesPage : public juce::Component, private juce::Timer {
   public:
@@ -1003,18 +1009,6 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
                        [](int port) { Config::getInstance().setOscReceivePort(port); });
         addLabel(receiveLabel_, tr("controllers.osc.receive_port"));
 
-        feedbackHost_.setTextToShowWhenEmpty(tr("controllers.osc.feedback_host_empty"),
-                                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        feedbackHost_.setText(juce::String(config.getOscFeedbackHost()),
-                              juce::dontSendNotification);
-        feedbackHost_.onFocusLost = [this] {
-            Config::getInstance().setOscFeedbackHost(feedbackHost_.getText().trim().toStdString());
-            commit();
-        };
-        feedbackHost_.onReturnKey = [this] { feedbackHost_.giveAwayKeyboardFocus(); };
-        addAndMakeVisible(feedbackHost_);
-        addLabel(feedbackHostLabel_, tr("controllers.osc.feedback_host"));
-
         setUpPortField(feedbackPort_, config.getOscFeedbackPort(),
                        [](int port) { Config::getInstance().setOscFeedbackPort(port); });
         addLabel(feedbackPortLabel_, tr("controllers.osc.feedback_port"));
@@ -1041,7 +1035,6 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
         layoutRow(area, bindLabel_, bindAddress_);
         layoutRow(area, receiveLabel_, receivePort_);
         area.removeFromTop(kGap);
-        layoutRow(area, feedbackHostLabel_, feedbackHost_);
         layoutRow(area, feedbackPortLabel_, feedbackPort_);
 
         area.removeFromTop(kGap * 2);
@@ -1124,20 +1117,43 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
             text << tr("controllers.osc.status_off");
         }
 
-        text << "\n\n";
-        if (osc_app::feedbackIsSending())
-            text << tr("controllers.osc.status_feedback_sent")
-                        .replace("{0}", juce::String(osc_app::feedbackSentMessageCount()));
-        else
-            text << tr("controllers.osc.status_feedback_off");
+        text << "\n\n" << tr("controllers.osc.surfaces") << "\n";
+
+        const auto surfaces = osc_app::surfaces();
+        if (surfaces.empty()) {
+            // The state a silent surface is actually in, and the one a message
+            // counter reading zero could never distinguish from a dropped
+            // packet: nothing has ever arrived, so there is nobody to answer.
+            text << tr("controllers.osc.surfaces_none");
+        } else {
+            const auto now = juce::Time::currentTimeMillis();
+            for (const auto& surface : surfaces)
+                text << tr("controllers.osc.surface_line")
+                            .replace("{0}", surface.host)
+                            .replace("{1}", juce::String(surface.received))
+                            .replace("{2}", juce::String(surface.sent))
+                            .replace("{3}", lastSeenText(now - surface.lastSeenMs))
+                     << "\n";
+        }
 
         status_.setText(text, juce::dontSendNotification);
     }
 
+    /// "just now" up to a few seconds, then whole seconds, then minutes. The
+    /// number matters only for telling "talking" from "went away", so it is not
+    /// worth a unit past that.
+    static juce::String lastSeenText(juce::int64 ageMs) {
+        if (ageMs < 3000)
+            return tr("controllers.osc.seen_now");
+        if (ageMs < 60000)
+            return tr("controllers.osc.seen_seconds").replace("{0}", juce::String(ageMs / 1000));
+        return tr("controllers.osc.seen_minutes").replace("{0}", juce::String(ageMs / 60000));
+    }
+
     juce::ToggleButton enable_;
-    juce::Label bindLabel_, receiveLabel_, feedbackHostLabel_, feedbackPortLabel_;
+    juce::Label bindLabel_, receiveLabel_, feedbackPortLabel_;
     juce::ComboBox bindAddress_;
-    juce::TextEditor receivePort_, feedbackHost_, feedbackPort_;
+    juce::TextEditor receivePort_, feedbackPort_;
     juce::Label status_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscSurfacesPage)

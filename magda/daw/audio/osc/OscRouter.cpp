@@ -40,7 +40,7 @@ struct MessageArgument {
  * it, and this is an unauthenticated UDP port — so without this check a single
  * stray packet writes NaN into a fader, a pan, a macro, or the playhead.
  */
-MessageArgument firstNumericArgument(const juce::OSCMessage& message) {
+MessageArgument firstNumericArgument(const OscMessageView& message) {
     if (message.isEmpty())
         return {ArgumentState::Absent, 0.0f};
 
@@ -61,7 +61,7 @@ MessageArgument firstNumericArgument(const juce::OSCMessage& message) {
 /// The value a binding takes from a message, if that argument is one we can
 /// read. Bound sources are always continuous positions, so the argument
 /// conventions of the fixed namespace — triggers, flips — do not apply here.
-std::optional<float> boundArgument(const juce::OSCMessage& message, int argIndex) {
+std::optional<float> boundArgument(const OscMessageView& message, int argIndex) {
     if (argIndex < 0 || argIndex >= message.size())
         return std::nullopt;
 
@@ -100,6 +100,7 @@ std::shared_ptr<OscBindingRoutes> OscBindingRoutes::build(const std::vector<Bind
 
     const auto count = routes->entries.size();
     routes->values = std::make_unique<std::atomic<float>[]>(count);
+    routes->peers = std::make_unique<std::atomic<std::int8_t>[]>(count);
     routes->dirtyWords = (count + 63) / 64;
     routes->dirty = std::make_unique<std::atomic<std::uint64_t>[]>(routes->dirtyWords);
     for (std::size_t i = 0; i < routes->dirtyWords; ++i)
@@ -126,7 +127,7 @@ std::pair<std::size_t, std::size_t> OscBindingRoutes::findRange(juce::StringRef 
 // Argument extraction
 // ============================================================================
 
-std::optional<float> oscValueFor(const OscCommand& command, const juce::OSCMessage& message) {
+std::optional<float> oscValueFor(const OscCommand& command, const OscMessageView& message) {
     const auto argument = firstNumericArgument(message);
 
     if (argument.state == ArgumentState::Unusable)
@@ -185,20 +186,27 @@ OscRouter::~OscRouter() {
     alive_->store(false, std::memory_order_release);
 }
 
-bool OscRouter::handleMessage(const juce::OSCMessage& message) {
+bool OscRouter::handleMessage(const OscMessageView& message, OscPeerId peer) {
     // The fixed namespace first, and it is not negotiable: `/magda/…` is a
     // documented contract, so a binding cannot take one of those addresses
     // over and leave a stock template mysteriously half-working. It also comes
     // before learn, so a control already carrying a meaning cannot be captured
     // as if it were free.
-    if (const auto fixed = handleFixedNamespace(message); fixed.has_value())
+    if (const auto fixed = handleFixedNamespace(message, peer); fixed.has_value())
         return *fixed;
     if (handleLearn(message))
         return true;
-    return handleBindings(message);
+    return handleBindings(message, peer);
 }
 
-bool OscRouter::handleLearn(const juce::OSCMessage& message) {
+bool OscRouter::handleMessage(const juce::OSCMessage& message, OscPeerId peer) {
+    // Named rather than inlined: the view reads the address through a
+    // StringRef, and `toString` returns a temporary.
+    const auto address = message.getAddressPattern().toString();
+    return handleMessage(OscMessageView::fromOscMessage(address, message), peer);
+}
+
+bool OscRouter::handleLearn(const OscMessageView& message) {
     // Keep the common path lock-free. Once armed, take the lock before touching
     // `learn_`: begin/cancel may replace that pointer from the message thread.
     if (!learning_.load(std::memory_order_acquire))
@@ -211,7 +219,10 @@ bool OscRouter::handleLearn(const juce::OSCMessage& message) {
         if (!learning_.load(std::memory_order_relaxed) || learn_ == nullptr)
             return false;
 
-        capture.address = message.getAddressPattern().toString();
+        // The one string this path does build. A learn capture outlives the
+        // datagram it came from — it travels to the message thread and becomes
+        // a binding — so the address has to be copied rather than viewed.
+        capture.address = juce::String(message.address());
 
         // The first argument we can read is the one the control is sending. A
         // surface that sends several down one address — an XY pad — is captured
@@ -264,13 +275,8 @@ bool OscRouter::isLearning() const {
     return learning_.load(std::memory_order_acquire);
 }
 
-std::optional<bool> OscRouter::handleFixedNamespace(const juce::OSCMessage& message) {
-    // Named rather than inlined into the call: the parser reads through the
-    // StringRef into this buffer, so it has to outlive the parse. Copying a
-    // juce::String is a reference-count bump, so this costs no allocation.
-    const auto address = message.getAddressPattern().toString();
-
-    const auto command = parseOscAddress(address);
+std::optional<bool> OscRouter::handleFixedNamespace(const OscMessageView& message, OscPeerId peer) {
+    const auto command = parseOscAddress(message.address());
     if (!command.has_value())
         return std::nullopt;
 
@@ -281,11 +287,11 @@ std::optional<bool> OscRouter::handleFixedNamespace(const juce::OSCMessage& mess
         return false;
 
     accepted_.fetch_add(1, std::memory_order_relaxed);
-    submit(*command, *value);
+    submit(*command, *value, peer);
     return true;
 }
 
-bool OscRouter::handleBindings(const juce::OSCMessage& message) {
+bool OscRouter::handleBindings(const OscMessageView& message, OscPeerId peer) {
     // A reference-count bump, not an allocation, and it pins the snapshot for
     // as long as we are reading and writing through it — which is what makes
     // an index and its value belong to the same list.
@@ -293,8 +299,7 @@ bool OscRouter::handleBindings(const juce::OSCMessage& message) {
     if (routes == nullptr || routes->entries.empty())
         return false;
 
-    const auto address = message.getAddressPattern().toString();
-    const auto [first, last] = routes->findRange(address);
+    const auto [first, last] = routes->findRange(message.address());
     if (first == last)
         return false;
 
@@ -304,9 +309,10 @@ bool OscRouter::handleBindings(const juce::OSCMessage& message) {
         if (!value.has_value())
             continue;  // this binding wanted an argument the message did not carry
 
-        // Same publish order as the fixed namespace: value, then the bit that
-        // advertises it.
+        // Same publish order as the fixed namespace: value and peer, then the
+        // bit that advertises them.
         routes->values[i].store(*value, std::memory_order_relaxed);
+        routes->peers[i].store(static_cast<std::int8_t>(peer), std::memory_order_relaxed);
         routes->dirty[i / 64].fetch_or(1ULL << (i % 64), std::memory_order_release);
         accepted = true;
     }
@@ -323,7 +329,7 @@ void OscRouter::updateBindings(const std::vector<Binding>& bindings) {
     std::atomic_store(&bindingRoutes_, OscBindingRoutes::build(bindings));
 }
 
-void OscRouter::submit(const OscCommand& command, float value) {
+void OscRouter::submit(const OscCommand& command, float value, OscPeerId peer) {
     const auto argKind = argKindFor(command.kind);
     if (argKind == OscArgKind::Trigger || argKind == OscArgKind::Toggle ||
         argKind == OscArgKind::Delta) {
@@ -336,7 +342,7 @@ void OscRouter::submit(const OscCommand& command, float value) {
         // make them one. It also has to land relative to the position a locate
         // in the same bundle just set, which arrival order gives it and a slot
         // walk does not.
-        pushOrdered(command, value);
+        pushOrdered(command, value, peer);
         scheduleDrain();
         return;
     }
@@ -344,15 +350,17 @@ void OscRouter::submit(const OscCommand& command, float value) {
     const int slot = oscSlotIndex(command);
     jassert(slot >= 0 && slot < kOscSlotCount);
 
-    // Value first, then the bit that advertises it: a drain that observes the
-    // bit is guaranteed to observe at least this value, and a store it misses
-    // leaves the bit set for the next one.
+    // Value and peer first, then the bit that advertises them: a drain that
+    // observes the bit is guaranteed to observe at least this value, and a
+    // store it misses leaves the bit set for the next one.
     values_[static_cast<size_t>(slot)].store(value, std::memory_order_relaxed);
+    valuePeers_[static_cast<size_t>(slot)].store(static_cast<std::int8_t>(peer),
+                                                 std::memory_order_relaxed);
     dirty_[static_cast<size_t>(slot / 64)].fetch_or(1ULL << (slot % 64), std::memory_order_release);
     scheduleDrain();
 }
 
-bool OscRouter::pushOrdered(const OscCommand& command, float value) {
+bool OscRouter::pushOrdered(const OscCommand& command, float value, OscPeerId peer) {
     const auto write = orderedWrite_.load(std::memory_order_relaxed);
     const auto read = orderedRead_.load(std::memory_order_acquire);
     if (write - read >= kOrderedCapacity) {
@@ -363,7 +371,7 @@ bool OscRouter::pushOrdered(const OscCommand& command, float value) {
         return false;
     }
 
-    ordered_[write & (kOrderedCapacity - 1)] = OrderedCommand{command, value};
+    ordered_[write & (kOrderedCapacity - 1)] = OrderedCommand{command, value, peer};
     // Publishes the entry along with the index that advertises it.
     orderedWrite_.store(write + 1, std::memory_order_release);
     return true;
@@ -406,9 +414,11 @@ void OscRouter::drainPending() {
             const int slot = (word * 64) + std::countr_zero(bits);
             bits &= bits - 1;
             const auto value = values_[static_cast<size_t>(slot)].load(std::memory_order_relaxed);
+            const auto peer = static_cast<OscPeerId>(
+                valuePeers_[static_cast<size_t>(slot)].load(std::memory_order_relaxed));
             sink_->apply(oscCommandForSlot(slot), value);
             if (feedbackTap_)
-                feedbackTap_(slot, value);
+                feedbackTap_(peer, slot, value);
         }
     }
 
@@ -438,9 +448,11 @@ void OscRouter::drainBindings() {
             bits &= bits - 1;
             const auto& entry = routes->entries[index];
             const auto value = routes->values[index].load(std::memory_order_relaxed);
+            const auto peer =
+                static_cast<OscPeerId>(routes->peers[index].load(std::memory_order_relaxed));
             bindingSink_->apply(entry.binding, value);
             if (bindingFeedbackTap_)
-                bindingFeedbackTap_(entry.address, value);
+                bindingFeedbackTap_(peer, entry.address, value);
         }
     }
 }
@@ -463,7 +475,7 @@ void OscRouter::drainOrdered() {
         // is now showing.
         if (feedbackTap_ && entry.value != kOscToggleRequest &&
             argKindFor(entry.command.kind) != OscArgKind::Delta)
-            feedbackTap_(oscSlotIndex(entry.command), entry.value);
+            feedbackTap_(entry.peer, oscSlotIndex(entry.command), entry.value);
     }
 
     // Hit the cap with work still queued. Whoever pushed the remainder may have

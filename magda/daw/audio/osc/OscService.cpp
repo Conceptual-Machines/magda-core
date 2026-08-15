@@ -1,15 +1,101 @@
 #include "osc/OscService.hpp"
 
+#include "osc/OscPacket.hpp"
+
 namespace magda::osc {
 
 namespace {
 
-/// How deep a nested bundle is followed before it is treated as hostile.
-/// Bundles legitimately nest one or two levels; a stream that nests further is
-/// either broken or trying to make the receive thread recurse for free.
-constexpr int kMaxBundleDepth = 8;
+/// The largest a UDP payload can be. Allocated once, when the thread starts.
+constexpr int kDatagramBufferSize = 65536;
+
+/// How long a poll waits before checking whether it has been asked to stop.
+constexpr int kPollIntervalMs = 100;
+
+/// A packet shorter than one four-byte word cannot be an address.
+constexpr int kMinDatagramSize = 4;
 
 }  // namespace
+
+// ============================================================================
+// ReceiveLoop
+// ============================================================================
+
+/**
+ * @brief The thread that reads the socket, and the reason #2096 exists.
+ *
+ * `juce::OSCReceiver` ran a loop shaped exactly like this one and called
+ * `socket->read (buffer, size, false)` — the overload with no sender. The
+ * overload used here reports it, which is the whole difference between "MAGDA
+ * answers a host the user typed in" and "MAGDA answers whoever is talking".
+ *
+ * Everything below the read is allocation-free: `parseOscPacket` builds views
+ * over this buffer, and `OscRouter::handleMessage` publishes into arrays. The
+ * one allocation left is JUCE's — `DatagramSocket::read` builds a `juce::String`
+ * for the sender's IP, and `juce::String` has no small-string optimisation — so
+ * this path costs one allocation per datagram against the several that came
+ * with building an `OSCMessage` per message.
+ */
+class OscService::ReceiveLoop final : public juce::Thread, private OscPacketReceiver {
+  public:
+    ReceiveLoop(juce::DatagramSocket& socket, OscRouter& router)
+        : juce::Thread("MAGDA OSC"), socket_(socket), router_(router) {}
+
+    ~ReceiveLoop() override {
+        // The socket is shut down by the owner before this runs, which is what
+        // unblocks a poll that is mid-wait.
+        stopThread(2000);
+    }
+
+    void run() override {
+        buffer_.malloc(kDatagramBufferSize);
+
+        while (!threadShouldExit()) {
+            const int ready = socket_.waitUntilReady(true, kPollIntervalMs);
+            if (ready < 0 || threadShouldExit())
+                return;
+            if (ready == 0)
+                continue;
+
+            juce::String senderHost;
+            // Read and deliberately unused. A surface sends from an ephemeral
+            // port and listens on a fixed one, so this number is not where a
+            // reply goes and not part of who a peer is — see `OscPeers`. It is
+            // here because the overload that reports the host reports both.
+            int senderPort = 0;
+            const int bytes =
+                socket_.read(buffer_.getData(), kDatagramBufferSize, false, senderHost, senderPort);
+            if (bytes < kMinDatagramSize)
+                continue;
+
+            // Interned before the parse rather than after, so a datagram that
+            // turns out to be malformed still counts as the surface being
+            // there. "Something is arriving and none of it parses" is a
+            // different problem from silence, and the settings UI should be
+            // able to tell them apart.
+            peer_ = router_.peers().intern(senderHost, juce::Time::currentTimeMillis());
+
+            parseOscPacket(buffer_.getData(), static_cast<std::size_t>(bytes), *this);
+        }
+    }
+
+  private:
+    void oscMessage(const OscMessageView& message) override {
+        router_.handleMessage(message, peer_);
+    }
+
+    juce::DatagramSocket& socket_;
+    OscRouter& router_;
+
+    /// Set before each packet is parsed and read only from `oscMessage`, which
+    /// the parse calls synchronously on this thread.
+    OscPeerId peer_ = kNoOscPeer;
+    juce::HeapBlock<char> buffer_;
+};
+
+// ============================================================================
+// OscService
+// ============================================================================
 
 OscService::OscService(std::unique_ptr<OscRouter> router, RegistryAttachment attach)
     : router_(std::move(router)), attachToRegistry_(attach == RegistryAttachment::Attach) {
@@ -85,7 +171,7 @@ void OscService::configChanged() {
 // ============================================================================
 
 bool OscService::open(int port, const juce::String& address) {
-    jassert(receiver_ == nullptr);
+    jassert(receive_ == nullptr);
 
     auto socket = std::make_unique<juce::DatagramSocket>(/*enableBroadcasting*/ false);
     const bool bound =
@@ -97,16 +183,14 @@ bool OscService::open(int port, const juce::String& address) {
         return false;
     }
 
-    auto receiver = std::make_unique<juce::OSCReceiver>("MAGDA OSC");
-    receiver->addListener(this);
-    if (!receiver->connectToSocket(*socket)) {
+    auto receive = std::make_unique<ReceiveLoop>(*socket, *router_);
+    if (!receive->startThread()) {
         DBG("OscService: could not start the receive thread on " << address << ":" << port);
-        receiver->removeListener(this);
         return false;
     }
 
     socket_ = std::move(socket);
-    receiver_ = std::move(receiver);
+    receive_ = std::move(receive);
     requestedPort_ = port;
     boundPort_ = socket_->getBoundPort();
     boundAddress_ = address;
@@ -114,13 +198,29 @@ bool OscService::open(int port, const juce::String& address) {
 }
 
 void OscService::close() {
-    if (receiver_ != nullptr) {
-        // Stop the thread before the socket it reads through disappears.
-        receiver_->disconnect();
-        receiver_->removeListener(this);
-        receiver_.reset();
+    const bool wasListening = receive_ != nullptr;
+
+    if (receive_ != nullptr) {
+        // Ask first, then shut the socket down: a poll sitting in
+        // `waitUntilReady` wakes on the shutdown rather than on the timeout, so
+        // this is immediate rather than up to one poll interval.
+        receive_->signalThreadShouldExit();
+        socket_->shutdown();
+        receive_.reset();  // joins
     }
     socket_.reset();
+
+    // The peers behind a socket that has closed are not peers of the one that
+    // replaces it: a rebind is a new listener, and whoever was talking to the
+    // old one has to be heard again before it is answered.
+    //
+    // Only when something was actually closed. `close` runs on the way to every
+    // rebind and on every unrelated config save, and clearing an already-empty
+    // table would still bump the generation, which is the signal the feedback
+    // projector rebuilds its surfaces on.
+    if (wasListening)
+        router_->peers().clear();
+
     requestedPort_ = 0;
     boundPort_ = 0;
     boundAddress_.clear();
@@ -132,30 +232,6 @@ void OscService::stop() {
 
 int OscService::boundPort() const {
     return isListening() ? boundPort_ : 0;
-}
-
-// ============================================================================
-// Receive thread
-// ============================================================================
-
-void OscService::oscMessageReceived(const juce::OSCMessage& message) {
-    router_->handleMessage(message);
-}
-
-void OscService::oscBundleReceived(const juce::OSCBundle& bundle) {
-    deliverBundle(bundle, 0);
-}
-
-void OscService::deliverBundle(const juce::OSCBundle& bundle, int depth) {
-    if (depth >= kMaxBundleDepth)
-        return;
-
-    for (const auto& element : bundle) {
-        if (element.isMessage())
-            router_->handleMessage(element.getMessage());
-        else if (element.isBundle())
-            deliverBundle(element.getBundle(), depth + 1);
-    }
 }
 
 }  // namespace magda::osc

@@ -14,6 +14,8 @@
 
 #include "../../core/controllers/Binding.hpp"
 #include "osc/OscAddress.hpp"
+#include "osc/OscPacket.hpp"
+#include "osc/OscPeers.hpp"
 
 namespace magda::osc {
 
@@ -109,8 +111,10 @@ struct OscBindingRoutes {
     /// sharing one address are a contiguous run.
     std::vector<Entry> entries;
 
-    /// Latest unapplied value per entry, and which entries have one.
+    /// Latest unapplied value per entry, who sent it, and which entries have
+    /// one.
     std::unique_ptr<std::atomic<float>[]> values;
+    std::unique_ptr<std::atomic<std::int8_t>[]> peers;
     std::unique_ptr<std::atomic<std::uint64_t>[]> dirty;
     std::size_t dirtyWords = 0;
 
@@ -137,7 +141,7 @@ struct OscBindingRoutes {
  * which to send for a button, and a template that works in TouchOSC should not
  * fail in Open Stage Control over the type tag of a 1.
  */
-std::optional<float> oscValueFor(const OscCommand& command, const juce::OSCMessage& message);
+std::optional<float> oscValueFor(const OscCommand& command, const OscMessageView& message);
 
 // ============================================================================
 // OscRouter
@@ -145,6 +149,21 @@ std::optional<float> oscValueFor(const OscCommand& command, const juce::OSCMessa
 
 /**
  * @brief Turns a stream of OSC messages into message-thread parameter writes.
+ *
+ * ## Every message carries who sent it
+ *
+ * MAGDA reads its own datagrams (#2096), so an `OscPeerId` travels with a
+ * message from the socket all the way to the feedback taps. That is what lets
+ * the answering half suppress the echo to the surface that produced a value
+ * without also suppressing it to the surface that did not. The peer table lives
+ * here rather than in `OscService` because the router is the layer that already
+ * knows what a message *was*, and because the feedback projector holds a router
+ * reference and nothing else.
+ *
+ * `kNoOscPeer` is legal and means "not from a socket" — a test, or anything
+ * driving the router directly. It names no surface, so the feedback taps report
+ * it and nothing answers, which is the right outcome: a value that came from
+ * nowhere is not an echo of anyone.
  *
  * ## Two kinds of traffic, two paths
  *
@@ -213,17 +232,40 @@ class OscRouter {
      *
      * **One caller at a time.** The ordered ring below is single-producer, and
      * this is the only thing that writes to it. That holds today because a
-     * service owns one `OSCReceiver` and therefore one receive thread, and
-     * because rebinding stops the old thread before the new one starts — but
-     * it is an invariant of this method rather than an accident of the caller,
-     * and a second concurrent caller would corrupt the ring silently.
+     * service owns one socket and therefore one receive loop, and because
+     * rebinding stops the old thread before the new one starts — but it is an
+     * invariant of this method rather than an accident of the caller, and a
+     * second concurrent caller would corrupt the ring silently.
+     *
+     * @param message A view over the datagram it was parsed from, so it is only
+     *                valid for the duration of this call.
+     * @param peer    Who sent it, from `peers()`. `kNoOscPeer` for a caller
+     *                that is not a socket.
      *
      * @return true when the message was accepted. False means either that its
      *         address was unknown or that a reserved fixed-namespace address
      *         carried no usable value. Reserved addresses are never offered to
      *         learn or bindings, regardless of this return value.
      */
-    bool handleMessage(const juce::OSCMessage& message);
+    bool handleMessage(const OscMessageView& message, OscPeerId peer = kNoOscPeer);
+
+    /**
+     * @brief The same, for a caller holding one of JUCE's messages.
+     *
+     * Tests, and anything that built a message rather than receiving one. The
+     * receive path does not come through here: it parses into a view directly,
+     * because building an `OSCMessage` is what allocates.
+     */
+    bool handleMessage(const juce::OSCMessage& message, OscPeerId peer = kNoOscPeer);
+
+    /// Who has been heard from. Written by the receive thread, read by the
+    /// feedback projector and the settings UI.
+    OscPeers& peers() {
+        return peers_;
+    }
+    const OscPeers& peers() const {
+        return peers_;
+    }
 
     /**
      * @brief Apply everything pending right now, on the calling thread.
@@ -295,8 +337,14 @@ class OscRouter {
      * never echoed — there is no state behind them.
      *
      * Set before any message is handled, and cleared by passing `{}`.
+     *
+     * The peer is the one whose value the drain applied. Where two surfaces
+     * wrote the same address between drains only the last is reported, which is
+     * the same latest-value-wins the slot itself is: the other surface is told
+     * the value, which is correct, because what it sent is no longer what MAGDA
+     * holds.
      */
-    using FeedbackTap = std::function<void(int slot, float value)>;
+    using FeedbackTap = std::function<void(OscPeerId peer, int slot, float value)>;
     void setFeedbackTap(FeedbackTap tap);
 
     /**
@@ -311,7 +359,8 @@ class OscRouter {
      * Called from `drainPending`, on the message thread, once per applied
      * binding value.
      */
-    using BindingFeedbackTap = std::function<void(const juce::String& address, float value)>;
+    using BindingFeedbackTap =
+        std::function<void(OscPeerId peer, const juce::String& address, float value)>;
     void setBindingFeedbackTap(BindingFeedbackTap tap);
 
     /**
@@ -361,22 +410,23 @@ class OscRouter {
     struct OrderedCommand {
         OscCommand command;
         float value = 0.0f;
+        OscPeerId peer = kNoOscPeer;
     };
 
-    void submit(const OscCommand& command, float value);
+    void submit(const OscCommand& command, float value, OscPeerId peer);
     void scheduleDrain();
     void postDrain();
     void requestFollowUpDrain();
-    bool pushOrdered(const OscCommand& command, float value);
+    bool pushOrdered(const OscCommand& command, float value, OscPeerId peer);
     void drainOrdered();
 
     /// nullopt when the address is outside the fixed namespace; otherwise the
     /// bool says whether its payload was accepted. A recognized address with an
     /// unusable payload is still reserved and must not fall through to learn or
     /// bindings.
-    std::optional<bool> handleFixedNamespace(const juce::OSCMessage& message);
-    bool handleBindings(const juce::OSCMessage& message);
-    bool handleLearn(const juce::OSCMessage& message);
+    std::optional<bool> handleFixedNamespace(const OscMessageView& message, OscPeerId peer);
+    bool handleBindings(const OscMessageView& message, OscPeerId peer);
+    bool handleLearn(const OscMessageView& message);
     void drainBindings();
 
     struct LearnState {
@@ -405,6 +455,11 @@ class OscRouter {
     /// the next store, which re-dirties the slot.
     std::array<std::atomic<float>, kOscSlotCount> values_{};
 
+    /// Who wrote the value in the slot beside it. Never read without the dirty
+    /// bit, and the bit is only set after both stores, so there is no "unset"
+    /// state to initialise this to.
+    std::array<std::atomic<std::int8_t>, kOscSlotCount> valuePeers_{};
+
     /// Which slots have something to apply. A bitmap rather than a queue so the
     /// receive thread's publish is one `fetch_or` and repeated writes to one
     /// address cost nothing extra.
@@ -417,14 +472,16 @@ class OscRouter {
     std::atomic<bool> drainScheduled_{false};
 
     /// Triggers and toggles, in the order they arrived. Single-producer: one
-    /// `OSCReceiver` owns one receive thread, and `handleMessage` is documented
-    /// as that thread's entry point. Single-consumer: the drain.
+    /// socket owns one receive loop, and `handleMessage` is documented as that
+    /// thread's entry point. Single-consumer: the drain.
     std::array<OrderedCommand, kOrderedCapacity> ordered_{};
     std::atomic<std::uint32_t> orderedWrite_{0};
     std::atomic<std::uint32_t> orderedRead_{0};
 
     std::atomic<std::uint64_t> accepted_{0};
     std::atomic<std::uint64_t> dropped_{0};
+
+    OscPeers peers_;
 
     /// Cleared before the object dies so a drain still sitting in the message
     /// queue completes without touching it.

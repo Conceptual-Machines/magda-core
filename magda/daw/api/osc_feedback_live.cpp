@@ -26,6 +26,7 @@ namespace magda {
 
 using osc::OscCommand;
 using osc::OscCommandKind;
+using osc::OscPeerId;
 
 namespace {
 
@@ -45,9 +46,9 @@ OscCommand unindexed(OscCommandKind kind) {
 // Tick and ControllerSink
 // ============================================================================
 
-/// The 30 Hz heartbeat, owned rather than inherited so that a projector with no
-/// destination — and a headless one, which has no message loop to drive a timer
-/// anyway — never brings JUCE's timer thread into existence.
+/// The 30 Hz heartbeat, owned rather than inherited so that a MAGDA with OSC off
+/// — and a headless one, which has no message loop to drive a timer anyway —
+/// never brings JUCE's timer thread into existence.
 class OscFeedbackProjector::Tick : public juce::Timer {
   public:
     Tick(OscFeedbackProjector& owner, int intervalMs) : owner_(owner) {
@@ -96,22 +97,34 @@ class OscFeedbackProjector::ControllerSink : public ControllerFeedbackSink {
 OscFeedbackProjector::OscFeedbackProjector(MagdaApi& api, remote::ChangeSource& changes,
                                            osc::OscRouter& router,
                                            std::unique_ptr<ControllerParamReader> reader,
-                                           std::unique_ptr<osc::OscMessageSink> sink)
-    : api_(api), changes_(changes), router_(router), reader_(std::move(reader)) {
-    if (sink == nullptr) {
-        auto sender = std::make_unique<osc::OscSenderSink>();
-        sender_ = sender.get();
-        sink = std::move(sender);
-    }
-    feedback_ = std::make_unique<osc::OscFeedback>(std::move(sink));
+                                           SinkFactory factory)
+    : api_(api),
+      changes_(changes),
+      router_(router),
+      reader_(std::move(reader)),
+      factory_(std::move(factory)) {
+    if (!factory_)
+        factory_ = [](const juce::String& host, int port) -> std::unique_ptr<osc::OscMessageSink> {
+            auto sender = std::make_unique<osc::OscSenderSink>();
+            if (!sender->connect(host, port))
+                return nullptr;
+            return sender;
+        };
+
+    feedbackPort_ = Config::getInstance().getOscFeedbackPort();
 
     // The router's drain is on the message thread, same as the tick, so both of
     // these reach straight into the tables with nothing in between.
-    router_.setFeedbackTap([this](int slot, float value) { feedback_->noteReceived(slot, value); });
-    router_.setBindingFeedbackTap([this](const juce::String& address, float value) {
-        auto& entry = boundEntryFor(address);
-        entry.lastReceived = value;
-        entry.echoed = true;
+    router_.setFeedbackTap([this](OscPeerId peer, int slot, float value) {
+        if (auto* surface = surfaceFor(peer))
+            surface->feedback->noteReceived(slot, value);
+    });
+    router_.setBindingFeedbackTap([this](OscPeerId peer, const juce::String& address, float value) {
+        if (auto* surface = surfaceFor(peer)) {
+            auto& entry = boundEntryFor(*surface, address);
+            entry.lastReceived = value;
+            entry.echoed = true;
+        }
     });
 
     changeToken_ = changes_.addListener(
@@ -139,7 +152,8 @@ void OscFeedbackProjector::bindingRegistryChanged(BindingScope /*scope*/) {
     // Both scopes feed one pass, so which one moved does not matter, and
     // dropping the remembered values is what keeps a re-pointed address from
     // being diffed against the target it used to name.
-    bound_.clear();
+    for (auto& surface : surfaces_)
+        surface.bound.clear();
     bindingsDirty_ = true;
 }
 
@@ -151,60 +165,145 @@ std::unique_ptr<ControllerFeedbackSink> OscFeedbackProjector::makeControllerFeed
 // Configuration
 // ============================================================================
 
-bool OscFeedbackProjector::setDestination(const juce::String& host, int port) {
-    if (sender_ == nullptr)
-        return true;  // a supplied sink is its own destination
+bool OscFeedbackProjector::applyConfig() {
+    auto& config = Config::getInstance();
 
-    const bool wasConnected = sender_->isConnected();
+    const int port = config.getOscFeedbackPort();
+    if (port != feedbackPort_) {
+        // Every surface is being answered somewhere else now. Rebuilt rather
+        // than re-pointed, because a sender aimed somewhere new has told its new
+        // destination nothing.
+        feedbackPort_ = port;
+        surfaces_.clear();
+        surfacesStale_ = true;
+    }
 
-    if (wasConnected && host == sender_->destinationHost() && port == sender_->destinationPort())
-        return true;
-
-    // Off, and asked to stay off. Reached on every unrelated config save, so it
-    // must not throw away a state it is not changing.
-    if (!wasConnected && host.isEmpty())
-        return false;
-
-    if (!sender_->connect(host, port)) {
+    // There is no feedback enable: a peer exists only because a socket is bound,
+    // and a socket is bound only when OSC is on. What the toggle controls here
+    // is whether the tick exists at all.
+    //
+    // The surfaces go with it rather than waiting for a tick to notice the peer
+    // table emptying, because with the tick gone there is no next tick — and a
+    // surface left behind is a UDP socket held open for a listener that has
+    // been switched off.
+    if (!config.getOscEnabled() || port <= 0 || port > 65535) {
         tick_.reset();
-        // What was last sent described a surface that is no longer being
-        // spoken to, so the next one to be configured starts from a snapshot
-        // rather than from a diff against someone else's state.
-        feedback_->reset();
+        surfaces_.clear();
+        surfacesStale_ = true;
         return false;
     }
 
-    // A different destination is a different surface by definition, and it has
-    // been told nothing.
-    feedback_->reset();
-    requestSnapshot();
-    mixerDirty_ = macrosDirty_ = bindingsDirty_ = true;
-    highestPosition_ = 0;
-    bound_.clear();
-    tick_ = std::make_unique<Tick>(*this, kTickIntervalMs);
+    if (tick_ == nullptr)
+        tick_ = std::make_unique<Tick>(*this, kTickIntervalMs);
     return true;
 }
 
-bool OscFeedbackProjector::applyConfig() {
-    auto& config = Config::getInstance();
-    // Feedback rides on the listener being on at all: MAGDA answering a surface
-    // it refuses to hear from is a state with no use and one more way for a
-    // socket to be open without the user asking.
-    if (!config.getOscEnabled())
-        return setDestination({}, 0);
-
-    return setDestination(juce::String(config.getOscFeedbackHost()), config.getOscFeedbackPort());
-}
-
-bool OscFeedbackProjector::isSending() const {
-    return sender_ == nullptr || sender_->isConnected();
+std::uint64_t OscFeedbackProjector::sentTo(osc::OscPeerId peer) const {
+    for (const auto& surface : surfaces_)
+        if (surface.peer == peer)
+            return surface.feedback->sentMessageCount();
+    return 0;
 }
 
 void OscFeedbackProjector::requestSnapshot() {
-    feedback_->requestSnapshot();
+    for (auto& surface : surfaces_) {
+        surface.feedback->requestSnapshot();
+        for (auto& entry : surface.bound)
+            entry.hasSent = false;
+    }
     mixerDirty_ = macrosDirty_ = bindingsDirty_ = true;
-    for (auto& entry : bound_)
-        entry.hasSent = false;
+}
+
+// ============================================================================
+// Surfaces
+// ============================================================================
+
+void OscFeedbackProjector::syncSurfaces() {
+    const auto generation = router_.peers().generation();
+    if (generation == peersGeneration_ && !surfacesStale_)
+        return;
+    peersGeneration_ = generation;
+    surfacesStale_ = false;
+
+    if (feedbackPort_ <= 0 || feedbackPort_ > 65535) {
+        surfaces_.clear();
+        return;
+    }
+
+    const auto peers = router_.peers().snapshot();
+
+    const auto stillThere = [&peers](const Surface& surface) {
+        return std::any_of(peers.begin(), peers.end(), [&surface](const osc::OscPeers::Peer& peer) {
+            return peer.id == surface.peer && peer.host == surface.host;
+        });
+    };
+
+    // The host is compared as well as the id, because an id is a slot in a
+    // bounded table: a peer evicted and another accepted in its place reuses the
+    // number, and answering the new surface out of the old one's diff would
+    // leave it showing whatever the old one had been told.
+    for (auto it = surfaces_.begin(); it != surfaces_.end();) {
+        if (stillThere(*it)) {
+            ++it;
+            continue;
+        }
+        it = surfaces_.erase(it);
+    }
+
+    for (const auto& peer : peers) {
+        const bool known =
+            std::any_of(surfaces_.begin(), surfaces_.end(), [&peer](const Surface& surface) {
+                return surface.peer == peer.id && surface.host == peer.host;
+            });
+        if (known)
+            continue;
+
+        auto sink = factory_(peer.host, feedbackPort_);
+        if (sink == nullptr)
+            continue;  // the socket would not open; the next sync tries again
+
+        Surface surface;
+        surface.peer = peer.id;
+        surface.host = peer.host;
+        surface.feedback = std::make_unique<osc::OscFeedback>(std::move(sink));
+        // A surface that has just been heard from has been told nothing, and
+        // this is the event #2091 could only guess at.
+        surface.feedback->requestSnapshot();
+        surfaces_.push_back(std::move(surface));
+
+        // A snapshot can only send what has been published, and the published
+        // half is only re-read when something moved. For a surface that just
+        // arrived nothing has, so this tick has to read it all again.
+        mixerDirty_ = macrosDirty_ = bindingsDirty_ = true;
+    }
+}
+
+OscFeedbackProjector::Surface* OscFeedbackProjector::surfaceFor(osc::OscPeerId peer) {
+    for (auto& surface : surfaces_)
+        if (surface.peer == peer)
+            return &surface;
+
+    // The first drain of a first gesture lands before the tick that would have
+    // built the surface. See the header: syncing here is what keeps that
+    // gesture's echo bit.
+    syncSurfaces();
+
+    for (auto& surface : surfaces_)
+        if (surface.peer == peer)
+            return &surface;
+    return nullptr;
+}
+
+void OscFeedbackProjector::publishAll(const OscCommand& command, float value) {
+    const int slot = oscSlotIndex(command);
+    for (auto& surface : surfaces_)
+        surface.feedback->publish(slot, value);
+}
+
+void OscFeedbackProjector::retireAll(const OscCommand& command) {
+    const int slot = oscSlotIndex(command);
+    for (auto& surface : surfaces_)
+        surface.feedback->retire(slot);
 }
 
 // ============================================================================
@@ -267,25 +366,11 @@ void OscFeedbackProjector::onChanges(const std::vector<remote::ChangeSource::Cha
 }
 
 void OscFeedbackProjector::tick() {
-    if (!isSending())
+    // One atomic read when nothing has changed, which is what makes it
+    // affordable to ask on every tick of a MAGDA nobody is talking to.
+    syncSurfaces();
+    if (surfaces_.empty())
         return;
-
-    // A surface that has just started talking after a silence is most likely a
-    // surface that has just connected, which is the closest thing to "a new
-    // peer" that is observable: JUCE does not report who sent a datagram.
-    const auto accepted = router_.acceptedMessageCount();
-    if (accepted != lastAcceptedCount_) {
-        const auto now = juce::Time::currentTimeMillis();
-        // The first packet counts as a resync as much as one after a gap does,
-        // and for a stronger reason: the snapshot sent when the destination was
-        // configured went to a UDP address with nobody behind it yet, and there
-        // is no delivery to have failed. A surface that starts afterwards and
-        // sends its first message is a surface that has been told nothing.
-        if (lastInboundMs_ == 0 || now - lastInboundMs_ >= kResyncSilenceMs)
-            requestSnapshot();
-        lastInboundMs_ = now;
-        lastAcceptedCount_ = accepted;
-    }
 
     if (mixerDirty_) {
         mixerDirty_ = false;
@@ -304,7 +389,8 @@ void OscFeedbackProjector::tick() {
     // telling anyone.
     projectTransport();
 
-    feedback_->flush();
+    for (auto& surface : surfaces_)
+        surface.feedback->flush();
 }
 
 // ============================================================================
@@ -332,10 +418,10 @@ void OscFeedbackProjector::projectMixer() {
         const auto volumeInfo =
             getParameterInfoForTarget(ControlTarget::trackVolume(MASTER_TRACK_ID));
         const auto panInfo = getParameterInfoForTarget(ControlTarget::trackPan(MASTER_TRACK_ID));
-        feedback_->publish(unindexed(OscCommandKind::MasterVolume),
-                           ParameterUtils::normalizedFromGain(master->volume, volumeInfo));
-        feedback_->publish(unindexed(OscCommandKind::MasterPan),
-                           ParameterUtils::realToNormalized(master->pan, panInfo));
+        publishAll(unindexed(OscCommandKind::MasterVolume),
+                   ParameterUtils::normalizedFromGain(master->volume, volumeInfo));
+        publishAll(unindexed(OscCommandKind::MasterPan),
+                   ParameterUtils::realToNormalized(master->pan, panInfo));
     }
 }
 
@@ -344,26 +430,24 @@ void OscFeedbackProjector::projectStrip(int position, TrackId trackId) {
     if (track == nullptr) {
         // A position in the order with nothing behind it should not exist, but
         // if it does the surface is better told nothing than told zero.
-        feedback_->retire(OscCommand{OscCommandKind::TrackVolume, position, 0});
-        feedback_->retire(OscCommand{OscCommandKind::TrackPan, position, 0});
-        feedback_->retire(OscCommand{OscCommandKind::TrackMute, position, 0});
-        feedback_->retire(OscCommand{OscCommandKind::TrackSolo, position, 0});
+        retireAll(OscCommand{OscCommandKind::TrackVolume, position, 0});
+        retireAll(OscCommand{OscCommandKind::TrackPan, position, 0});
+        retireAll(OscCommand{OscCommandKind::TrackMute, position, 0});
+        retireAll(OscCommand{OscCommandKind::TrackSolo, position, 0});
         for (int send = 1; send <= osc::kMaxSendNumber; ++send)
-            feedback_->retire(OscCommand{OscCommandKind::TrackSend, position, send});
+            retireAll(OscCommand{OscCommandKind::TrackSend, position, send});
         return;
     }
 
     const auto volumeInfo = getParameterInfoForTarget(ControlTarget::trackVolume(trackId));
     const auto panInfo = getParameterInfoForTarget(ControlTarget::trackPan(trackId));
 
-    feedback_->publish(OscCommand{OscCommandKind::TrackVolume, position, 0},
-                       ParameterUtils::normalizedFromGain(track->volume, volumeInfo));
-    feedback_->publish(OscCommand{OscCommandKind::TrackPan, position, 0},
-                       ParameterUtils::realToNormalized(track->pan, panInfo));
-    feedback_->publish(OscCommand{OscCommandKind::TrackMute, position, 0},
-                       track->muted ? 1.0f : 0.0f);
-    feedback_->publish(OscCommand{OscCommandKind::TrackSolo, position, 0},
-                       track->soloed ? 1.0f : 0.0f);
+    publishAll(OscCommand{OscCommandKind::TrackVolume, position, 0},
+               ParameterUtils::normalizedFromGain(track->volume, volumeInfo));
+    publishAll(OscCommand{OscCommandKind::TrackPan, position, 0},
+               ParameterUtils::realToNormalized(track->pan, panInfo));
+    publishAll(OscCommand{OscCommandKind::TrackMute, position, 0}, track->muted ? 1.0f : 0.0f);
+    publishAll(OscCommand{OscCommandKind::TrackSolo, position, 0}, track->soloed ? 1.0f : 0.0f);
 
     // Sends are addressed by position on the track, the way the input path
     // resolves them, so send 1 is the first one the track has whatever bus it
@@ -372,25 +456,24 @@ void OscFeedbackProjector::projectStrip(int position, TrackId trackId) {
     for (int send = 1; send <= osc::kMaxSendNumber; ++send) {
         const OscCommand command{OscCommandKind::TrackSend, position, send};
         if (send > sendCount) {
-            feedback_->retire(command);
+            retireAll(command);
             continue;
         }
         const auto& info = track->sends[static_cast<size_t>(send - 1)];
-        feedback_->publish(command,
-                           ParameterUtils::normalizedFromGain(
-                               info.level, getParameterInfoForTarget(
-                                               ControlTarget::sendLevel(trackId, info.busIndex))));
+        publishAll(command, ParameterUtils::normalizedFromGain(
+                                info.level, getParameterInfoForTarget(
+                                                ControlTarget::sendLevel(trackId, info.busIndex))));
     }
 }
 
 void OscFeedbackProjector::retirePositionsFrom(int firstUnused) {
     for (int position = firstUnused; position <= highestPosition_; ++position) {
-        feedback_->retire(OscCommand{OscCommandKind::TrackVolume, position, 0});
-        feedback_->retire(OscCommand{OscCommandKind::TrackPan, position, 0});
-        feedback_->retire(OscCommand{OscCommandKind::TrackMute, position, 0});
-        feedback_->retire(OscCommand{OscCommandKind::TrackSolo, position, 0});
+        retireAll(OscCommand{OscCommandKind::TrackVolume, position, 0});
+        retireAll(OscCommand{OscCommandKind::TrackPan, position, 0});
+        retireAll(OscCommand{OscCommandKind::TrackMute, position, 0});
+        retireAll(OscCommand{OscCommandKind::TrackSolo, position, 0});
         for (int send = 1; send <= osc::kMaxSendNumber; ++send)
-            feedback_->retire(OscCommand{OscCommandKind::TrackSend, position, send});
+            retireAll(OscCommand{OscCommandKind::TrackSend, position, send});
     }
 }
 
@@ -401,9 +484,9 @@ void OscFeedbackProjector::projectMacros() {
     for (int macro = 1; macro <= osc::kMaxMacroNumber; ++macro) {
         const OscCommand command{OscCommandKind::FocusedMacro, macro, 0};
         if (hasFocus)
-            feedback_->publish(command, focused.getMacroValue(macro - 1));
+            publishAll(command, focused.getMacroValue(macro - 1));
         else
-            feedback_->retire(command);
+            retireAll(command);
     }
 }
 
@@ -414,16 +497,14 @@ void OscFeedbackProjector::projectTransport() {
     // Play and stop are two addresses over one state. A surface with a lit Play
     // button and a lit Stop button expects exactly one of them on, so stop is
     // the complement rather than a second thing to track.
-    feedback_->publish(unindexed(OscCommandKind::TransportPlay), playing ? 1.0f : 0.0f);
-    feedback_->publish(unindexed(OscCommandKind::TransportStop), playing ? 0.0f : 1.0f);
-    feedback_->publish(unindexed(OscCommandKind::TransportRecord),
-                       transport.isRecording() ? 1.0f : 0.0f);
-    feedback_->publish(unindexed(OscCommandKind::TransportLoop),
-                       transport.isLoopEnabled() ? 1.0f : 0.0f);
-    feedback_->publish(unindexed(OscCommandKind::TransportTempo),
-                       static_cast<float>(api_.project().getCurrentProjectInfo().tempo));
-    feedback_->publish(unindexed(OscCommandKind::TransportPosition),
-                       static_cast<float>(transport.getPositionBeats()));
+    publishAll(unindexed(OscCommandKind::TransportPlay), playing ? 1.0f : 0.0f);
+    publishAll(unindexed(OscCommandKind::TransportStop), playing ? 0.0f : 1.0f);
+    publishAll(unindexed(OscCommandKind::TransportRecord), transport.isRecording() ? 1.0f : 0.0f);
+    publishAll(unindexed(OscCommandKind::TransportLoop), transport.isLoopEnabled() ? 1.0f : 0.0f);
+    publishAll(unindexed(OscCommandKind::TransportTempo),
+               static_cast<float>(api_.project().getCurrentProjectInfo().tempo));
+    publishAll(unindexed(OscCommandKind::TransportPosition),
+               static_cast<float>(transport.getPositionBeats()));
 
     // The two seek addresses are deltas. There is no state behind them to send,
     // which is why nothing publishes into their slots.
@@ -445,19 +526,26 @@ void OscFeedbackProjector::projectBindings() {
     DefaultChainContext ctx;
     TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
 
-    // One address, one value per pass. Several bindings may share an address —
-    // that is a supported shape on the way in, where one fader drives three
-    // parameters — but on the way out they would each want the address at their
-    // own target's position, and sending all three every tick is a permanent
-    // stream of contradictions. The first that resolves is the one the surface
-    // is shown, which is the same one the surface's own value is measured
-    // against.
-    juce::StringArray published;
+    // Resolved once for every surface. The alias lookup and the parameter read
+    // are what this pass costs; the diff below is an array compare.
+    //
+    // One address, one value. Several bindings may share an address — that is a
+    // supported shape on the way in, where one fader drives three parameters —
+    // but on the way out they would each want the address at their own target's
+    // position, and sending all three every tick is a permanent stream of
+    // contradictions. The first that resolves is the one the surface is shown,
+    // which is the same one the surface's own value is measured against.
+    boundValues_.clear();
 
     for (const auto& binding : bindings) {
         if (!binding.source.isOsc() || binding.source.oscAddress.isEmpty())
             continue;
-        if (published.contains(binding.source.oscAddress))
+
+        const bool seen = std::any_of(boundValues_.begin(), boundValues_.end(),
+                                      [&binding](const BoundValue& candidate) {
+                                          return candidate.address == binding.source.oscAddress;
+                                      });
+        if (seen)
             continue;
 
         const auto resolved = resolver.resolve(binding.target);
@@ -468,42 +556,47 @@ void OscFeedbackProjector::projectBindings() {
         if (!value)
             continue;  // a target with no reading — see ControllerParamReader
 
-        published.add(binding.source.oscAddress);
-        publishBinding(binding, *value);
+        // Back out through the binding's own shape, in the reverse of the order
+        // the input path applied it: range, then curve. What is left is where
+        // the surface's control has to sit for a move to produce the value the
+        // target already holds.
+        const float curved = invertRange(binding.range, *value);
+        boundValues_.push_back(
+            BoundValue{binding.source.oscAddress, invertCurve(binding.range.curve, curved)});
     }
 
-    // The echo bits belong to the pass that has just read them, exactly as the
-    // slot table's do. A drag that keeps sending keeps setting them; a finger
-    // that lifts leaves the next pass free to send the value once, which is what
-    // tells the surface what MAGDA rounded it to.
-    for (auto& entry : bound_)
-        entry.echoed = false;
+    for (auto& surface : surfaces_) {
+        for (const auto& bound : boundValues_)
+            publishBinding(surface, bound.address, bound.position);
+
+        // The echo bits belong to the pass that has just read them, exactly as
+        // the slot table's do. A drag that keeps sending keeps setting them; a
+        // finger that lifts leaves the next pass free to send the value once,
+        // which is what tells the surface what MAGDA rounded it to.
+        for (auto& entry : surface.bound)
+            entry.echoed = false;
+    }
 }
 
 OscFeedbackProjector::BoundAddress& OscFeedbackProjector::boundEntryFor(
-    const juce::String& address) {
-    for (auto& candidate : bound_)
+    Surface& surface, const juce::String& address) {
+    for (auto& candidate : surface.bound)
         if (candidate.address == address)
             return candidate;
 
-    bound_.push_back(BoundAddress{address, 0.0f, 0.0f, false, false});
-    return bound_.back();
+    surface.bound.push_back(BoundAddress{address, 0.0f, 0.0f, false, false});
+    return surface.bound.back();
 }
 
-void OscFeedbackProjector::publishBinding(const Binding& binding, float targetValue) {
-    // Back out through the binding's own shape, in the reverse of the order the
-    // input path applied it: range, then curve. What is left is where the
-    // surface's control has to sit for a move to produce the value the target
-    // already holds.
-    const float curved = invertRange(binding.range, targetValue);
-    const float position = invertCurve(binding.range.curve, curved);
-
-    auto& entry = boundEntryFor(binding.source.oscAddress);
+void OscFeedbackProjector::publishBinding(Surface& surface, const juce::String& address,
+                                          float position) {
+    auto& entry = boundEntryFor(surface, address);
 
     // The bound half of the echo rule, and the same rule: a value the surface
-    // just sent is a value it already shows. Without this, a bound fader under
-    // a finger would have its own position sent back to it on every tick of the
-    // drag, which is the chase in its purest form.
+    // just sent is a value it already shows. Without this, a bound fader under a
+    // finger would have its own position sent back to it on every tick of the
+    // drag, which is the chase in its purest form. Per surface, so the fader
+    // under a finger on one tablet still reaches the other.
     if (entry.echoed && std::abs(entry.lastReceived - position) <= kBoundEpsilon) {
         entry.lastSent = position;
         entry.hasSent = true;
@@ -513,7 +606,7 @@ void OscFeedbackProjector::publishBinding(const Binding& binding, float targetVa
     if (entry.hasSent && std::abs(entry.lastSent - position) <= kBoundEpsilon)
         return;
 
-    if (!feedback_->sink().send(entry.address, position))
+    if (!surface.feedback->sink().send(address, position))
         return;
 
     entry.lastSent = position;
