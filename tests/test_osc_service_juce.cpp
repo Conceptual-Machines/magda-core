@@ -10,6 +10,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_osc/juce_osc.h>
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -131,6 +132,7 @@ class OscServiceTest final : public juce::UnitTest {
         testSenderBecomesAPeer();
         testUnansweredSenderIsNotASurface();
         testFirstAcceptedPacketCarriesItsPeer();
+        testFirstAcceptedPacketAppliesOnce();
         testClosingForgetsThePeers();
         testCloseUnderTraffic();
     }
@@ -390,6 +392,34 @@ class OscServiceTest final : public juce::UnitTest {
         }
 
         h.router->setFeedbackTap({});
+    }
+
+    void testFirstAcceptedPacketAppliesOnce() {
+        beginTest("An ordered command in the first accepted packet is applied once");
+
+        // The preflight pass decides and must change nothing. A coalescing slot
+        // forgives being written twice, so a fader would hide this; the ordered
+        // ring does not. A bare mute asks for a flip, and two flips are none.
+        const ScopedOscConfig config(true, 0);
+        Harness h;
+        expect(h.service->applyConfig());
+
+        juce::OSCSender sender;
+        expect(sender.connect("127.0.0.1", h.service->boundPort()));
+        expect(sender.send(juce::OSCMessage("/magda/track/1/mute")));
+        // A second, different message from the same host. By the time it is
+        // accepted the first packet is finished, and this host is admitted, so
+        // exactly two acceptances is the settled state.
+        expect(sender.send(juce::OSCMessage("/magda/master/volume", 0.5f)));
+        expect(h.waitForAccepted(2));
+        h.router->drainPending();
+
+        const auto applied = h.sink->taken();
+        const auto mutes = std::count_if(applied.begin(), applied.end(), [](const auto& entry) {
+            return entry.first.kind == OscCommandKind::TrackMute;
+        });
+        expect(mutes == 1, "the flip must be queued once, not once per pass");
+        expect(h.router->acceptedMessageCount() == 2, "and counted once per message");
     }
 
     void testClosingForgetsThePeers() {

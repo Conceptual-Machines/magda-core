@@ -299,6 +299,14 @@ std::optional<bool> OscRouter::handleFixedNamespace(const OscMessageView& messag
         // a present false prevents it from leaking into learn or bindings.
         return false;
 
+    // Everything above is a question about the message; everything below acts on
+    // it. The line between them is what `Preflight` means, and the ordered ring
+    // is why it has to be here rather than one call up: a coalescing slot
+    // forgives being written twice, a toggle pushed twice cancels itself and a
+    // delta pushed twice moves twice as far.
+    if (dispatch == Dispatch::Preflight)
+        return true;
+
     accepted_.fetch_add(1, std::memory_order_relaxed);
     submit(*command, *value, peer);
     return true;
