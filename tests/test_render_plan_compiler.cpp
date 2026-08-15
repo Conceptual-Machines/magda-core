@@ -87,6 +87,30 @@ magda::engine::OpId rawInputOp(const RenderPlan& plan, magda::engine::OpId op, s
     return slot >= inputs.size() ? magda::engine::INVALID_OP_ID : inputs[slot].op;
 }
 
+/// The op a device's audio actually leaves by. A non-transparent device emits a
+/// process op and then its wet/dry gain, so the next stage reads the gain;
+/// a transparent tap (analysis devices) emits the process op alone.
+magda::engine::OpId deviceOutput(const RenderPlan& plan, DeviceId deviceId) {
+    auto found = magda::engine::INVALID_OP_ID;
+    for (std::size_t i = 0; i < plan.ops.size(); ++i) {
+        const auto& key = plan.ops[i].key;
+        if (key.deviceId == deviceId &&
+            (key.role == OpRole::DeviceProcess || key.role == OpRole::DeviceGain))
+            found = static_cast<magda::engine::OpId>(i);
+    }
+    return found;
+}
+
+/// The op feeding a device's audio input.
+magda::engine::OpId deviceInput(const RenderPlan& plan, DeviceId deviceId) {
+    for (std::size_t i = 0; i < plan.ops.size(); ++i) {
+        const auto& key = plan.ops[i].key;
+        if (key.deviceId == deviceId && key.role == OpRole::DeviceProcess)
+            return inputOp(plan, static_cast<magda::engine::OpId>(i), 0);
+    }
+    return magda::engine::INVALID_OP_ID;
+}
+
 /// Every fixture must compile to a structurally sound plan; this is asserted
 /// alongside whatever each test is actually about.
 void requireWellFormed(const RenderPlan& plan) {
@@ -1397,6 +1421,117 @@ TEST_CASE("validatePlan enforces liveness provenance", "[engine][plan][validate]
         plan.ops.push_back(input);
 
         CHECK(magda::engine::validatePlan(plan).empty());
+    }
+}
+
+TEST_CASE("The post-FX stage sits on the side of the fader the chain says",
+          "[engine][plan][compiler][postfx]") {
+    // The routing contract behind #2087, asserted as reachability rather than as
+    // op indices: what matters is which signal each stage reads, not where the
+    // compiler happened to emit it.
+    auto build = [](bool postFader) {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.postFxPostFader = postFader;
+        tracks[0].chain.postFxChainElements.push_back(PostFxChainElement{makeEffect(8)});
+        return magda::engine::compileRenderPlan(tracks, makeMaster(), withoutDeviceMeters());
+    };
+
+    SECTION("post-fader by default: the fader feeds the post-FX device") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        CHECK(tracks[0].chain.postFxPostFader);
+    }
+
+    SECTION("post-fader: the device reads the fader, and the meter reads the device") {
+        const auto plan = build(true);
+        requireWellFormed(plan);
+
+        // Track 1's fader is the first; the master has one too.
+        const auto trackFader = opsWithRole(plan, OpRole::TrackFader).front();
+        const auto meter = opsWithRole(plan, OpRole::TrackMeter).front();
+
+        CHECK(deviceInput(plan, 8) == trackFader);
+        CHECK(inputOp(plan, meter, 0) == deviceOutput(plan, 8));
+    }
+
+    SECTION("pre-fader: the device feeds the fader instead") {
+        const auto plan = build(false);
+        requireWellFormed(plan);
+
+        const auto trackFader = opsWithRole(plan, OpRole::TrackFader).front();
+        CHECK(inputOp(plan, trackFader, 0) == deviceOutput(plan, 8));
+    }
+
+    SECTION("post-fader: a post-fader send carries the post-FX processing") {
+        // "Post-fader" has to mean after everything in the channel strip, or a
+        // send and the track output disagree about what the track sounds like.
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+        tracks[0].chain.postFxChainElements.push_back(PostFxChainElement{makeEffect(8)});
+        SendInfo send;
+        send.busIndex = 0;
+        send.preFader = false;
+        send.destTrackId = 2;
+        tracks[0].sends.push_back(send);
+
+        const auto plan =
+            magda::engine::compileRenderPlan(tracks, makeMaster(), withoutDeviceMeters());
+        requireWellFormed(plan);
+
+        const auto taps = opsWithRole(plan, OpRole::SendTap);
+        REQUIRE(taps.size() == 1);
+        CHECK(inputOp(plan, taps.front(), 0) == deviceOutput(plan, 8));
+    }
+
+    SECTION("post-fader: a pre-fader send does not") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+        tracks[0].chain.postFxChainElements.push_back(PostFxChainElement{makeEffect(8)});
+        SendInfo send;
+        send.busIndex = 0;
+        send.preFader = true;
+        send.destTrackId = 2;
+        tracks[0].sends.push_back(send);
+
+        const auto plan =
+            magda::engine::compileRenderPlan(tracks, makeMaster(), withoutDeviceMeters());
+        requireWellFormed(plan);
+
+        const auto taps = opsWithRole(plan, OpRole::SendTap);
+        REQUIRE(taps.size() == 1);
+        CHECK(inputOp(plan, taps.front(), 0) != deviceOutput(plan, 8));
+    }
+
+    SECTION("the master stays pre-fader whatever the flag says") {
+        // Tracktion cannot represent a post-fader master stage:
+        // createMasterPluginNode builds the whole of getMasterPluginList() and
+        // only then wraps it in getMasterVolumePlugin(). Honouring the flag here
+        // and not there would make the master the one place the engines
+        // disagree, which is the failure this contract exists to prevent.
+        auto master = makeMaster();
+        master.chain.postFxPostFader = true;
+        master.chain.postFxChainElements.push_back(PostFxChainElement{makeEffect(11)});
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        const auto plan = magda::engine::compileRenderPlan(tracks, master, withoutDeviceMeters());
+        requireWellFormed(plan);
+
+        // Two faders: track 1's, then the master's. The master's post-FX device
+        // must feed the second, not read from it.
+        const auto faders = opsWithRole(plan, OpRole::TrackFader);
+        REQUIRE(faders.size() == 2);
+        CHECK(inputOp(plan, faders.back(), 0) == deviceOutput(plan, 11));
+    }
+
+    SECTION("the mixer-analysis rail follows the post-FX stage") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        auto analysis = makeEffect(9);
+        analysis.deviceType = DeviceType::Analysis;
+        tracks[0].chain.mixerAnalysisElements.push_back(PostFxChainElement{analysis});
+
+        const auto plan =
+            magda::engine::compileRenderPlan(tracks, makeMaster(), withoutDeviceMeters());
+        requireWellFormed(plan);
+
+        const auto trackFader = opsWithRole(plan, OpRole::TrackFader).front();
+        CHECK(deviceInput(plan, 9) == trackFader);
     }
 }
 

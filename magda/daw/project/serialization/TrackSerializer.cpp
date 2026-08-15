@@ -136,6 +136,7 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
         postFxArray.add(serializeDeviceInfo(element.device));
     }
     obj->setProperty("postFxChainElements", juce::var(postFxArray));
+    obj->setProperty("postFxPostFader", track.chain.postFxPostFader);
 
     // Mixer-analysis section: rail-managed mini oscilloscope / spectrum devices.
     // Persist their per-device pluginState so UI settings (e.g. trace colour)
@@ -289,6 +290,15 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     // Missing in projects saved before the chain power flag -> default true
     if (!obj->getProperty("chainEnabled").isVoid())
         outTrack.chain.enabled = static_cast<bool>(obj->getProperty("chainEnabled"));
+
+    // Missing in projects saved before the fader boundary existed (#2087) ->
+    // default post-fader, same as a new track. Those projects were compiled
+    // pre-fader, so a post-FX processor in one moves below the fader on load and
+    // the track sounds different. That is the fix rather than a regression: the
+    // section is post-fader now, and the switch below is how a project says
+    // otherwise.
+    if (!obj->getProperty("postFxPostFader").isVoid())
+        outTrack.chain.postFxPostFader = static_cast<bool>(obj->getProperty("postFxPostFader"));
 
     auto chainVar = obj->getProperty("chainElements");
     if (chainVar.isArray()) {

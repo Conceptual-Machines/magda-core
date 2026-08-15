@@ -417,6 +417,7 @@ target_sources(magda_juce_tests PRIVATE
     test_controller_track_level_write_juce.cpp
     # OSC control surfaces (issue #1757): a live receive thread and real packets
     test_osc_service_juce.cpp
+    test_post_fx_fader_order_juce.cpp
     test_track_midi_recording_preview_juce.cpp
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp

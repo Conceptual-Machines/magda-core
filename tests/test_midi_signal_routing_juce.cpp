@@ -969,8 +969,13 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         expect(faderIdx >= 0, "VolumeAndPan fader must be on the track");
         expect(meterIdx >= 0, "LevelMeter must be on the track");
         expect(fxIdx < postFxIdx, "FX must come before post-FX");
-        expect(postFxIdx < faderIdx, "Post-FX must come before the fader");
-        expect(faderIdx < meterIdx, "Fader must come before the meter");
+        // Post-fader by default since #2087, which is the fader boundary
+        // de7a0b7c deferred. Which side the stage sits on is now
+        // TrackChain::postFxPostFader; both placements are covered in
+        // test_post_fx_fader_order_juce.cpp, and the native engine's half of the
+        // same contract in test_render_plan_compiler.cpp.
+        expect(faderIdx < postFxIdx, "Post-FX must come after the fader");
+        expect(postFxIdx < meterIdx, "The meter stays last");
 
         // Removing the post-FX device must drop its TE plugin.
         trackManager.removeDeviceFromChainByPath(postFxPath);

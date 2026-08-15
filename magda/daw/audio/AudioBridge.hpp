@@ -288,7 +288,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @brief Ensure VolumeAndPanPlugin is at the correct position (near end of chain)
      * @param track The Tracktion Engine audio track
      */
-    void ensureVolumePluginPosition(te::AudioTrack* track) const;
+    void ensureVolumePluginPosition(TrackId trackId, te::AudioTrack* track) const;
 
     // =========================================================================
     // Track Mapping

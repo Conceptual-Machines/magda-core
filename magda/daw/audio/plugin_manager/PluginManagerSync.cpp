@@ -729,62 +729,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         }
     }
 
-    // Sync sends: ensure AuxSendPlugins match TrackInfo::sends
-    {
-        // Collect existing AuxSendPlugin bus numbers
-        std::vector<int> existingSendBuses;
-        for (int i = 0; i < teTrack->pluginList.size(); ++i) {
-            if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(teTrack->pluginList[i])) {
-                existingSendBuses.push_back(auxSend->getBusNumber());
-            }
-        }
-
-        // Collect desired bus numbers from TrackInfo
-        std::vector<int> desiredBuses;
-        for (const auto& send : trackInfo->sends) {
-            desiredBuses.push_back(send.busIndex);
-        }
-
-        // Remove AuxSendPlugins that are no longer needed
-        for (int i = teTrack->pluginList.size() - 1; i >= 0; --i) {
-            if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(teTrack->pluginList[i])) {
-                int bus = auxSend->getBusNumber();
-                if (std::find(desiredBuses.begin(), desiredBuses.end(), bus) ==
-                    desiredBuses.end()) {
-                    auxSend->deleteFromParent();
-                }
-            }
-        }
-
-        // Add missing AuxSendPlugins
-        for (const auto& send : trackInfo->sends) {
-            bool exists = std::find(existingSendBuses.begin(), existingSendBuses.end(),
-                                    send.busIndex) != existingSendBuses.end();
-            if (!exists) {
-                auto sendPlugin =
-                    edit_.getPluginCache().createNewPlugin(te::AuxSendPlugin::xmlTypeName, {});
-                if (sendPlugin) {
-                    if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(sendPlugin.get())) {
-                        auxSend->busNumber = send.busIndex;
-                        auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
-                    }
-                    teTrack->pluginList.insertPlugin(sendPlugin, -1, nullptr);
-                }
-            }
-        }
-
-        // Update send levels for existing sends
-        for (const auto& send : trackInfo->sends) {
-            for (int i = 0; i < teTrack->pluginList.size(); ++i) {
-                if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(teTrack->pluginList[i])) {
-                    if (auxSend->getBusNumber() == send.busIndex) {
-                        auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
-                        break;
-                    }
-                }
-            }
-        }
-    }
+    reconcileSends(*trackInfo, *teTrack);
 
     // Register DrumGrid pad plugins in syncedDevices_ before macro/mod sync.
     // Drum Grid device macros can target pad samplers, and those targets must
@@ -831,9 +776,11 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         removeSidechainMonitor(trackId);
 
     // Create TE plugins for post-FX devices (flat list, no racks/instruments).
-    // Inserted at -1 (append); the reorder pass below places them after the fx
-    // tree and ensureVolumePluginPosition keeps the fader after them, so the
-    // final order is [fx..., postFx..., mixerAnalysis..., VolumeAndPan, LevelMeter].
+    // Inserted at -1 (append); the reorder pass below sequences them, and which
+    // side of VolumeAndPan they land on is TrackChain::postFxPostFader (#2087):
+    //
+    //   post-fader: [fx..., VolumeAndPan, postFx..., mixerAnalysis..., LevelMeter]
+    //   pre-fader:  [fx..., postFx..., mixerAnalysis..., VolumeAndPan, LevelMeter]
     auto loadFlatSection = [&](const std::vector<PostFxChainElement>& section, auto pathBuilder) {
         for (const auto& elem : section) {
             const auto& device = elem.device;
@@ -890,22 +837,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
             }
         }
 
-        // Post-FX devices come after the fx tree but before the fader; mixer-
-        // analysis devices come after post-FX. Append both groups so the move
-        // below sequences them last (the fader and meter are then pushed past
-        // them by ensureVolumePluginPosition).
-        auto appendSection = [&](const std::vector<PostFxChainElement>& section, auto pathBuilder) {
-            for (const auto& elem : section) {
-                const auto devicePath = pathBuilder(trackId, elem.device.id);
-                juce::ScopedLock lock(pluginLock_);
-                auto it = findSyncedDevice(devicePath);
-                if (it != syncedDevices_.end() && it->second.plugin &&
-                    teTrack->pluginList.indexOf(it->second.plugin.get()) >= 0)
-                    desiredOrder.push_back(it->second.plugin.get());
-            }
-        };
-        appendSection(trackInfo->chain.postFxChainElements, &ChainNodePath::postFxDevice);
-        appendSection(trackInfo->chain.mixerAnalysisElements, &ChainNodePath::mixerAnalysisDevice);
+        appendStripOrder(trackId, *trackInfo, *teTrack, desiredOrder);
 
         // Walk the desired order and move each plugin to its correct position
         // using ValueTree::moveChild on the plugin list's state.
@@ -967,7 +899,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 
     // Ensure VolumeAndPan is near the end of the chain (before LevelMeter)
     // This is the track's fader control - it should come AFTER audio sources
-    ensureVolumePluginPosition(teTrack);
+    ensureVolumePluginPosition(trackId, teTrack);
 
     // Ensure LevelMeter is at the end of the plugin chain for metering
     addLevelMeterToTrack(trackId);
@@ -1430,7 +1362,122 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plu
     });
 }
 
-void PluginManager::ensureVolumePluginPosition(te::AudioTrack* track) const {
+void PluginManager::reconcileSends(const TrackInfo& trackInfo, te::AudioTrack& track) {
+    // Make the track's AuxSendPlugins match TrackInfo::sends: drop the buses
+    // that went away, create the ones that appeared, and refresh the levels.
+    //
+    // Shared with syncMultiOutTrack, which returns from syncTrackPlugins long
+    // before this used to run. A multi-out track therefore had no send plugins
+    // at all while the native compiler emitted its sends from the same model,
+    // so the two engines disagreed about whether the sends existed - which
+    // appendStripOrder could not show, because it can only order plugins that
+    // are already there.
+    std::vector<int> existingSendBuses;
+    for (int i = 0; i < track.pluginList.size(); ++i)
+        if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(track.pluginList[i]))
+            existingSendBuses.push_back(auxSend->getBusNumber());
+
+    std::vector<int> desiredBuses;
+    desiredBuses.reserve(trackInfo.sends.size());
+    for (const auto& send : trackInfo.sends)
+        desiredBuses.push_back(send.busIndex);
+
+    for (int i = track.pluginList.size() - 1; i >= 0; --i) {
+        if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(track.pluginList[i])) {
+            const int bus = auxSend->getBusNumber();
+            if (std::find(desiredBuses.begin(), desiredBuses.end(), bus) == desiredBuses.end())
+                auxSend->deleteFromParent();
+        }
+    }
+
+    for (const auto& send : trackInfo.sends) {
+        const bool exists = std::find(existingSendBuses.begin(), existingSendBuses.end(),
+                                      send.busIndex) != existingSendBuses.end();
+        if (exists)
+            continue;
+        auto sendPlugin =
+            edit_.getPluginCache().createNewPlugin(te::AuxSendPlugin::xmlTypeName, {});
+        if (!sendPlugin)
+            continue;
+        if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(sendPlugin.get())) {
+            auxSend->busNumber = send.busIndex;
+            auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
+        }
+        // Appended; appendStripOrder sequences it onto the right side of the
+        // fader afterwards.
+        track.pluginList.insertPlugin(sendPlugin, -1, nullptr);
+    }
+
+    for (const auto& send : trackInfo.sends) {
+        for (int i = 0; i < track.pluginList.size(); ++i) {
+            if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(track.pluginList[i]);
+                auxSend != nullptr && auxSend->getBusNumber() == send.busIndex) {
+                auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
+                break;
+            }
+        }
+    }
+}
+
+void PluginManager::appendStripOrder(TrackId trackId, const TrackInfo& trackInfo,
+                                     te::AudioTrack& track,
+                                     std::vector<te::Plugin*>& desiredOrder) const {
+    // Everything after the fx tree, in the order the native compiler emits it:
+    //
+    //   fx -> [postFx, mixerAnalysis if pre-fader] -> preFaderSends
+    //      -> fader -> [postFx, mixerAnalysis if post-fader] -> postFaderSends
+    //
+    // The fader is not in this list; ensureVolumePluginPosition slots it in
+    // afterwards, immediately before the first plugin that belongs after it.
+    // That only lands correctly if everything pre-fader precedes everything
+    // post-fader here, which is what the grouping below is for.
+    //
+    // Shared by syncTrackPlugins and syncMultiOutTrack because it was not:
+    // the multi-out path carried its own copy that sequenced the stage and
+    // nothing else, so a multi-out track got the fader placed against a set the
+    // ordering pass had never arranged for.
+    auto appendSection = [&](const std::vector<PostFxChainElement>& section, auto pathBuilder) {
+        const juce::ScopedLock lock(pluginLock_);
+        for (const auto& elem : section) {
+            auto it = findSyncedDevice(pathBuilder(trackId, elem.device.id));
+            if (it != syncedDevices_.end() && it->second.plugin &&
+                track.pluginList.indexOf(it->second.plugin.get()) >= 0)
+                desiredOrder.push_back(it->second.plugin.get());
+        }
+    };
+    auto appendStage = [&] {
+        appendSection(trackInfo.chain.postFxChainElements, &ChainNodePath::postFxDevice);
+        appendSection(trackInfo.chain.mixerAnalysisElements, &ChainNodePath::mixerAnalysisDevice);
+    };
+
+    // Sends are sequenced here for the first time. They used to be appended and
+    // left alone, which was harmless only because the fader was hoisted past
+    // everything: every send ended up above it whatever SendInfo::preFader said,
+    // so TE has never honoured that flag while the native compiler has always
+    // split on it.
+    auto appendSends = [&](bool preFader) {
+        for (const auto& send : trackInfo.sends) {
+            if (send.preFader != preFader)
+                continue;
+            for (int i = 0; i < track.pluginList.size(); ++i) {
+                if (auto* aux = dynamic_cast<te::AuxSendPlugin*>(track.pluginList[i]);
+                    aux != nullptr && aux->getBusNumber() == send.busIndex) {
+                    desiredOrder.push_back(aux);
+                    break;
+                }
+            }
+        }
+    };
+
+    if (!trackInfo.chain.postFxPostFader)
+        appendStage();
+    appendSends(/*preFader=*/true);
+    if (trackInfo.chain.postFxPostFader)
+        appendStage();
+    appendSends(/*preFader=*/false);
+}
+
+void PluginManager::ensureVolumePluginPosition(TrackId trackId, te::AudioTrack* track) const {
     if (!track)
         return;
 
@@ -1466,26 +1513,109 @@ void PluginManager::ensureVolumePluginPosition(te::AudioTrack* track) const {
     if (volPanIndex < 0)
         return;
 
-    // Check if there are any non-utility plugins after VolumeAndPan.
-    // VolumeAndPan is the track fader — it must come AFTER all audio-producing
-    // plugins (instruments, racks, FX, sends) and only before LevelMeter.
-    bool needsMove = false;
-    for (int i = volPanIndex + 1; i < plugins.size(); ++i) {
-        if (!dynamic_cast<te::LevelMeterPlugin*>(plugins[i])) {
-            needsMove = true;
+    // What legitimately belongs after the fader (#2087). Until now the answer
+    // was "only LevelMeter", which is why the fader was hoisted past everything
+    // else and why the post-FX stage could never actually be post-fader.
+    const auto postFaderPlugins = collectPostFaderPlugins(trackId, *track);
+
+    // Where the fader goes: immediately before the first plugin that belongs
+    // after it, or at the end when nothing does.
+    int firstPostFader = -1;
+    for (int i = 0; i < plugins.size(); ++i) {
+        if (plugins[i] == volPanRaw)
+            continue;
+        if (postFaderPlugins.count(plugins[i]) != 0) {
+            firstPostFader = i;
             break;
         }
     }
 
-    if (!needsMove)
-        return;
+    if (firstPostFader < 0) {
+        // Nothing post-fader: the fader is last but for the meter, which is the
+        // rule this function has always enforced.
+        bool needsMove = false;
+        for (int i = volPanIndex + 1; i < plugins.size(); ++i) {
+            if (!dynamic_cast<te::LevelMeterPlugin*>(plugins[i])) {
+                needsMove = true;
+                break;
+            }
+        }
+        if (!needsMove)
+            return;
 
-    // Move VolumeAndPan to the end of the list.
-    // addLevelMeterToTrack() runs right after this and ensures LevelMeter
-    // is always the very last plugin, so the final order will be:
-    // [instruments, FX, sends, ..., VolumeAndPan, LevelMeter]
+        // addLevelMeterToTrack() runs right after this and ensures LevelMeter is
+        // always the very last plugin, so the final order will be:
+        // [instruments, FX, sends, ..., VolumeAndPan, LevelMeter]
+        volPanPlugin->removeFromParent();
+        plugins.insertPlugin(volPanPlugin, -1, nullptr);
+        return;
+    }
+
+    if (volPanIndex == firstPostFader - 1)
+        return;  // already immediately before the post-fader run
+
+    // Recompute the anchor after the removal rather than adjusting the index by
+    // hand: removing the fader shifts everything after it down by one only when
+    // the fader was earlier in the list, and getting that wrong puts the fader
+    // one slot inside its own post-fader run.
+    auto* anchor = plugins[firstPostFader];
     volPanPlugin->removeFromParent();
-    plugins.insertPlugin(volPanPlugin, -1, nullptr);
+    const int insertAt = plugins.indexOf(anchor);
+    plugins.insertPlugin(volPanPlugin, insertAt, nullptr);
+}
+
+std::unordered_set<te::Plugin*> PluginManager::collectPostFaderPlugins(
+    TrackId trackId, te::AudioTrack& track) const {
+    std::unordered_set<te::Plugin*> result;
+
+    const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (trackInfo == nullptr)
+        return result;
+
+    // The always-on measurement tap, which the mixing agent and MixAnalysisService
+    // read. PluginManagerMeasurement appends it last and says "Post-fader" while
+    // doing so; before this it was hoisted above the fader on the next chain sync,
+    // so both of those were reading pre-fader audio. Included here rather than
+    // left to the post-FX flag because it is post-fader unconditionally and its
+    // placement should not depend on whether the user happens to own a post-FX
+    // device.
+    //
+    // Unlocked, like every other access to this map: it is written and read on
+    // the message thread only (see PluginManagerMeasurement.cpp). The lock below
+    // is for syncedDevices_, which the async plugin-load path also touches.
+    if (auto tap = trackMeasurementTaps_.find(trackId); tap != trackMeasurementTaps_.end()) {
+        if (tap->second)
+            result.insert(tap->second.get());
+    }
+
+    // A post-fader send taps the fader's output, which is what "post-fader"
+    // means and what the native compiler has always done. TE never honoured the
+    // flag because the fader was hoisted past every send regardless; it does now.
+    for (const auto& send : trackInfo->sends) {
+        if (send.preFader)
+            continue;
+        for (int i = 0; i < track.pluginList.size(); ++i)
+            if (auto* aux = dynamic_cast<te::AuxSendPlugin*>(track.pluginList[i]);
+                aux != nullptr && aux->getBusNumber() == send.busIndex)
+                result.insert(aux);
+    }
+
+    if (!trackInfo->chain.postFxPostFader)
+        return result;
+
+    // One critical section for the whole walk rather than one per device.
+    const juce::ScopedLock lock(pluginLock_);
+    auto addSection = [&](const std::vector<PostFxChainElement>& section, auto pathBuilder) {
+        for (const auto& elem : section) {
+            auto it = findSyncedDevice(pathBuilder(trackId, elem.device.id));
+            if (it != syncedDevices_.end() && it->second.plugin)
+                result.insert(it->second.plugin.get());
+        }
+    };
+    addSection(trackInfo->chain.postFxChainElements, &ChainNodePath::postFxDevice);
+    addSection(trackInfo->chain.mixerAnalysisElements, &ChainNodePath::mixerAnalysisDevice);
+
+    return result;
 }
 
 // =============================================================================
@@ -1569,41 +1699,44 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
             pluginsToDelete[i]->deleteFromParent();
     }
 
-    // Look up the output pair's actual pin mapping
-    auto* device = TrackManager::getInstance().getDevice(link.sourceTrackId, link.sourceDeviceId);
-    if (!device || !device->multiOut.isMultiOut)
-        return;
+    // The output pair's rack instance is what carries the multi-out routing.
+    // A guarded block rather than the three early returns it used to be: none of
+    // the sync below depends on the instance, so returning here gated a child
+    // track's fx devices, post-FX stage, sends, ordering and fader placement on
+    // multi-out plumbing that has nothing to do with any of them. A source
+    // device that has not finished loading is enough to hit it, and the track
+    // then had none of its chain (#2087 review).
+    //
+    // Declared out here because the ordering pass below anchors the first user
+    // plugin after it when there is one.
+    te::Plugin::Ptr rackInstance;
+    if (auto* device =
+            TrackManager::getInstance().getDevice(link.sourceTrackId, link.sourceDeviceId);
+        device != nullptr && device->multiOut.isMultiOut && link.outputPairIndex >= 0 &&
+        link.outputPairIndex < static_cast<int>(device->multiOut.outputPairs.size())) {
+        auto& outPair = device->multiOut.outputPairs[static_cast<size_t>(link.outputPairIndex)];
 
-    if (link.outputPairIndex < 0 ||
-        link.outputPairIndex >= static_cast<int>(device->multiOut.outputPairs.size()))
-        return;
-
-    auto& outPair = device->multiOut.outputPairs[static_cast<size_t>(link.outputPairIndex)];
-
-    // Restore pair state from the existing multi-out track (needed after project load,
-    // since the async plugin callback rebuilds pairs with active=false before tracks are restored)
-    if (!outPair.active || outPair.trackId != trackId) {
-        outPair.active = true;
-        outPair.trackId = trackId;
-    }
-
-    // Get or create the RackInstance for this output pair
-    auto rackInstance = instrumentRackManager_.createOutputInstance(
-        link.sourceDeviceId, link.outputPairIndex, outPair.firstPin, outPair.numChannels);
-    if (!rackInstance)
-        return;
-
-    // Check if rack instance is already on the track
-    bool alreadyOnTrack = false;
-    for (int i = 0; i < teTrack->pluginList.size(); ++i) {
-        if (teTrack->pluginList[i] == rackInstance.get()) {
-            alreadyOnTrack = true;
-            break;
+        // Restore pair state from the existing multi-out track (needed after project load,
+        // since the async plugin callback rebuilds pairs with active=false before tracks are
+        // restored)
+        if (!outPair.active || outPair.trackId != trackId) {
+            outPair.active = true;
+            outPair.trackId = trackId;
         }
-    }
 
-    if (!alreadyOnTrack) {
-        teTrack->pluginList.insertPlugin(rackInstance, -1, nullptr);
+        rackInstance = instrumentRackManager_.createOutputInstance(
+            link.sourceDeviceId, link.outputPairIndex, outPair.firstPin, outPair.numChannels);
+        if (rackInstance) {
+            bool alreadyOnTrack = false;
+            for (int i = 0; i < teTrack->pluginList.size(); ++i) {
+                if (teTrack->pluginList[i] == rackInstance.get()) {
+                    alreadyOnTrack = true;
+                    break;
+                }
+            }
+            if (!alreadyOnTrack)
+                teTrack->pluginList.insertPlugin(rackInstance, -1, nullptr);
+        }
     }
 
     // Sync user-added FX devices from chainElements (same as normal track path)
@@ -1672,6 +1805,10 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
     loadFlatSection(trackInfo.chain.postFxChainElements, &ChainNodePath::postFxDevice);
     loadFlatSection(trackInfo.chain.mixerAnalysisElements, &ChainNodePath::mixerAnalysisDevice);
 
+    // Sends, on the same terms as an ordinary track. Before ordering, because
+    // appendStripOrder can only place plugins that already exist.
+    reconcileSends(trackInfo, *teTrack);
+
     // Reorder TE plugins to match the MAGDA chain element order (same as syncTrackPlugins)
     bool pluginOrderChanged = false;
     {
@@ -1687,18 +1824,7 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
                 }
             }
         }
-        auto appendSection = [&](const std::vector<PostFxChainElement>& section, auto pathBuilder) {
-            for (const auto& elem : section) {
-                const auto devicePath = pathBuilder(trackId, elem.device.id);
-                juce::ScopedLock lock(pluginLock_);
-                auto it = findSyncedDevice(devicePath);
-                if (it != syncedDevices_.end() && it->second.plugin &&
-                    teTrack->pluginList.indexOf(it->second.plugin.get()) >= 0)
-                    desiredOrder.push_back(it->second.plugin.get());
-            }
-        };
-        appendSection(trackInfo.chain.postFxChainElements, &ChainNodePath::postFxDevice);
-        appendSection(trackInfo.chain.mixerAnalysisElements, &ChainNodePath::mixerAnalysisDevice);
+        appendStripOrder(trackId, trackInfo, *teTrack, desiredOrder);
 
         auto& listState = teTrack->pluginList.state;
         for (size_t i = 0; i < desiredOrder.size(); ++i) {
@@ -1742,7 +1868,7 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
     }
 
     // Ensure VolumeAndPan and LevelMeter are present
-    ensureVolumePluginPosition(teTrack);
+    ensureVolumePluginPosition(trackId, teTrack);
     addLevelMeterToTrack(trackId);
 
     if (pluginOrderChanged)

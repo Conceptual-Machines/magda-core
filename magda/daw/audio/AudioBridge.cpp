@@ -742,8 +742,8 @@ te::Plugin::Ptr AudioBridge::addLevelMeterToTrack(TrackId trackId) {
     return pluginManager_.addLevelMeterToTrack(trackId);
 }
 
-void AudioBridge::ensureVolumePluginPosition(te::AudioTrack* track) const {
-    pluginManager_.ensureVolumePluginPosition(track);
+void AudioBridge::ensureVolumePluginPosition(TrackId trackId, te::AudioTrack* track) const {
+    pluginManager_.ensureVolumePluginPosition(trackId, track);
 }
 
 // =============================================================================

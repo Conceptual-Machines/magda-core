@@ -468,6 +468,11 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     bool isChainEnabled(TrackId trackId) const;
     void setChainEnabled(TrackId trackId, bool enabled);
 
+    /// Which side of the fader the whole post-FX stage sits on (#2087). One
+    /// switch per chain; per-device placement is the v1 upgrade.
+    void setPostFxPostFader(TrackId trackId, bool postFader);
+    bool isPostFxPostFader(TrackId trackId) const;
+
     /** @brief A device's engine enablement: its own bypassed flag combined
         with the owning track's chain power (insert-chain devices only). */
     bool isDeviceEffectivelyEnabled(const ChainNodePath& devicePath,
