@@ -1001,8 +1001,13 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
         // An address that is neither, set by hand in the config file for a
         // machine with several interfaces, is added as a third entry and
         // selected, so opening this page does not quietly replace it.
-        bindAddress_.addItem(tr("controllers.osc.bind_all"), kBindAll);
-        bindAddress_.addItem(tr("controllers.osc.bind_loopback"), kBindLoopback);
+        // The addresses are substituted rather than written into the strings:
+        // they are protocol, not prose, and a translator has no reason to guess
+        // that the dots in 127.0.0.1 are load-bearing.
+        bindAddress_.addItem(tr("controllers.osc.bind_all").replace("{0}", kAllInterfacesAddress),
+                             kBindAll);
+        bindAddress_.addItem(tr("controllers.osc.bind_loopback").replace("{0}", kLoopbackAddress),
+                             kBindLoopback);
 
         const juce::String configured(config.getOscBindAddress());
         if (configured == kLoopbackAddress) {
