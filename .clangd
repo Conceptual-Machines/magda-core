@@ -2,6 +2,17 @@
 # Language server settings for IDE integration
 
 CompileFlags:
+  # The live compile database, written by `make debug`. Clangd only looks in the
+  # file's own directory, its ancestors, and a `build/` subdirectory of those, so
+  # without this it finds nothing here and falls back to guessing flags -- which
+  # is why every JUCE and standard-library include showed up as "file not found"
+  # in the editor while the same files compiled cleanly.
+  #
+  # A copy at the repo root would work until it went stale, and one had: it was
+  # months behind the build and every file added since was invisible to it.
+  # Pointing at the directory CMake writes means there is only ever one.
+  CompilationDatabase: cmake-build-debug
+
   # Treat all files as C++20
   Add:
     - -std=c++20
