@@ -9,9 +9,9 @@
 
 namespace magda::osc {
 
-/// A peer's identity as it travels through the router: a small integer rather
-/// than a string, so a slot table, a ring entry and a binding row can each
-/// carry one cheaply.
+/// A peer's identity as it travels through the router: a number rather than a
+/// string, so a slot table, a ring entry and a binding row can each carry one
+/// cheaply.
 ///
 /// **Unique for the life of the process, and never a slot index.** The table
 /// below is bounded and reuses storage, but a value already published into the
@@ -21,11 +21,19 @@ namespace magda::osc {
 /// the new one, so the new surface's first update would be suppressed while it
 /// still showed its pre-drain snapshot. An id that is never reused makes a
 /// stale one match nothing, which is exactly what should happen to it.
-using OscPeerId = int;
+///
+/// Unsigned and 64 bits wide because "never reused" has to survive an adversary
+/// as well as a session. Ids are minted only by `admit`, so a flood of spoofed
+/// junk cannot advance the counter at all; even a flood of *well-formed* OSC
+/// from spoofed hosts, at a million admissions a second, would take half a
+/// million years to exhaust it. A signed counter would have been undefined
+/// behaviour long before that and would have handed old ids back on the way.
+using OscPeerId = std::uint64_t;
 
-/// No peer: a message that did not come off a socket. Tests submit these, and
-/// so does anything driving the router directly.
-inline constexpr OscPeerId kNoOscPeer = -1;
+/// No peer: a message that did not come off a socket, or one from a host that
+/// has not said anything MAGDA understood yet. Reserved rather than allocated,
+/// which is why ids start at 1.
+inline constexpr OscPeerId kNoOscPeer = 0;
 
 /**
  * @brief Who is talking to MAGDA over OSC (#2096).
@@ -114,10 +122,14 @@ class OscPeers {
      *
      * Receive thread. Allocates only when a host is seen for the first time.
      *
+     * The id is `kNoOscPeer` either way: an unvalidated host is counted in the
+     * table so the settings list can show it, but it is not given a number,
+     * because a number is what a surface is answered by and what a spoofed
+     * flood would otherwise consume without limit.
+     *
      * **An unvalidated host never displaces a peer that is being answered.**
      * With every slot holding a real surface there is nowhere to put it, and
-     * `kNoOscPeer` is returned: the datagram is still routed, it simply has no
-     * peer until it has proved itself through `admit`. Evicting here instead
+     * the arrival is dropped entirely. Evicting here instead
      * would mean one spoofed packet could drop a live surface, and the surface
      * coming back would re-take the slot and be re-snapshotted — the same churn
      * the answerable bit exists to stop, just one level up.
@@ -165,16 +177,18 @@ class OscPeers {
 
   private:
     struct Entry {
-        /// `kNoOscPeer` when the slot is free. The id belongs to the host, not
-        /// to the slot, so it changes every time the slot is taken over.
+        bool used = false;
+        /// `kNoOscPeer` until the host is admitted. Being admitted and having an
+        /// id are the same thing: nothing that has not said something MAGDA
+        /// understood is worth a number, and not minting one is what keeps a
+        /// spoofed flood from advancing the counter.
         OscPeerId id = kNoOscPeer;
-        bool answerable = false;
         juce::String host;
         juce::int64 firstSeenMs = 0;
         juce::int64 lastSeenMs = 0;
         std::uint64_t datagrams = 0;
 
-        bool used() const {
+        bool answerable() const {
             return id != kNoOscPeer;
         }
     };
@@ -184,8 +198,9 @@ class OscPeers {
     int slotForUnvalidatedHost() const;
 
     std::array<Entry, kMaxPeers> entries_;
-    /// Never reset, not even by `clear` — see `OscPeerId`.
-    OscPeerId nextId_ = 0;
+    /// Never reset, not even by `clear` — see `OscPeerId`. Advanced only by
+    /// `admit`.
+    OscPeerId nextId_ = 1;
     std::atomic<std::uint64_t> generation_{0};
     mutable juce::CriticalSection lock_;
 };

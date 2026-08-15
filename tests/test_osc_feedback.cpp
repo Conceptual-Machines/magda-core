@@ -749,6 +749,23 @@ TEST_CASE("A ninth surface that proves itself does take the quietest slot", "[os
     REQUIRE(rig.router->peers().hostFor(rig.peer).isEmpty());
 }
 
+TEST_CASE("Unvalidated traffic never consumes a peer id", "[osc][feedback]") {
+    // Ids have to be unique for the life of the process, so what can mint one is
+    // what bounds the counter. Only `admit` does, which means a flood of spoofed
+    // hosts cannot advance it at all however long it runs.
+    OscPeers peers;
+    const auto first = peers.admit("10.0.0.1", 1000);
+    REQUIRE(first != kNoOscPeer);
+
+    // Far more distinct hosts than the table holds, none of them understood.
+    for (int i = 0; i < 500; ++i)
+        REQUIRE(peers.intern("203.0.113." + juce::String(i % 250), 2000 + i).id == kNoOscPeer);
+
+    const auto second = peers.admit("10.0.0.2", 3000);
+    REQUIRE(second == first + 1);
+    REQUIRE(peers.hostFor(first) == "10.0.0.1");  // and the real one is still there
+}
+
 TEST_CASE("A sink that fails to open is tried again on the next tick", "[osc][feedback]") {
     // The peer set has not changed, so the generation fast path would otherwise
     // never look at this peer again: one transient socket failure would disable
