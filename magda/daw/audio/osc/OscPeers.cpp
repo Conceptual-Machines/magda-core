@@ -56,7 +56,11 @@ std::vector<OscPeers::Peer> OscPeers::snapshot() const {
         const auto& entry = entries_[static_cast<std::size_t>(i)];
         if (!entry.used)
             continue;
-        peers.push_back(Peer{i, entry.host, entry.firstSeenMs, entry.lastSeenMs, entry.datagrams});
+        peers.push_back(Peer{.id = i,
+                             .host = entry.host,
+                             .firstSeenMs = entry.firstSeenMs,
+                             .lastSeenMs = entry.lastSeenMs,
+                             .datagrams = entry.datagrams});
     }
 
     std::sort(peers.begin(), peers.end(),

@@ -146,6 +146,40 @@ class Walker {
         }
     }
 
+    using ArgumentArray = std::array<OscArgument, OscMessageView::kMaxArguments>;
+
+    /// One argument per type tag, in order, with `pos` walking the payload. The
+    /// tags MAGDA does not read still take a slot, so argument indices stay the
+    /// ones the sender used: a binding on argument 1 of an XY pad that sends a
+    /// label first has to still mean argument 1.
+    bool readArguments(const char* tags, std::size_t tagCount, std::size_t& pos, std::size_t end,
+                       ArgumentArray& arguments, int& count) {
+        for (std::size_t i = 1; i < tagCount; ++i) {
+            const char tag = tags[i];
+
+            if (count >= OscMessageView::kMaxArguments)
+                return false;  // see OscMessageView: rejected, not truncated
+            auto& argument = arguments[static_cast<std::size_t>(count)];
+
+            if (tag == 'i' || tag == 'f') {
+                if (pos + 4 > end)
+                    return false;
+                if (tag == 'i')
+                    argument.intValue =
+                        static_cast<std::int32_t>(juce::ByteOrder::bigEndianInt(data_ + pos));
+                else
+                    argument.floatValue = floatFromBigEndian(data_ + pos);
+                pos += 4;
+            } else if (!skipArgument(tag, pos, end)) {
+                return false;
+            }
+
+            argument.typeTag = tag;
+            ++count;
+        }
+        return true;
+    }
+
     bool message(std::size_t begin, std::size_t end) {
         std::size_t pos = begin;
 
@@ -156,7 +190,7 @@ class Walker {
         if (addressLength == 0 || !isPrintableAscii(address, addressLength))
             return false;
 
-        std::array<OscArgument, OscMessageView::kMaxArguments> arguments{};
+        ArgumentArray arguments{};
         int count = 0;
 
         // A message with no type tag string at all is legal OSC 1.0 and means no
@@ -169,38 +203,8 @@ class Walker {
                 return false;
             if (tagCount == 0 || tags[0] != ',')
                 return false;
-
-            for (std::size_t i = 1; i < tagCount; ++i) {
-                const char tag = tags[i];
-
-                if (tag == 'i' || tag == 'f') {
-                    if (pos + 4 > end)
-                        return false;
-                    if (count >= OscMessageView::kMaxArguments)
-                        return false;  // see OscMessageView: rejected, not truncated
-                    auto& argument = arguments[static_cast<std::size_t>(count)];
-                    argument.typeTag = tag;
-                    if (tag == 'i')
-                        argument.intValue =
-                            static_cast<std::int32_t>(juce::ByteOrder::bigEndianInt(data_ + pos));
-                    else
-                        argument.floatValue = floatFromBigEndian(data_ + pos);
-                    ++count;
-                    pos += 4;
-                    continue;
-                }
-
-                if (!skipArgument(tag, pos, end))
-                    return false;
-
-                // Kept as a placeholder so argument indices stay the ones the
-                // sender used: a binding on argument 1 of an XY pad that sends
-                // a label first has to still mean argument 1.
-                if (count >= OscMessageView::kMaxArguments)
-                    return false;
-                arguments[static_cast<std::size_t>(count)].typeTag = tag;
-                ++count;
-            }
+            if (!readArguments(tags, tagCount, pos, end, arguments, count))
+                return false;
         }
 
         if (receiver_ != nullptr)
