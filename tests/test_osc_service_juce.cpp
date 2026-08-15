@@ -130,6 +130,7 @@ class OscServiceTest final : public juce::UnitTest {
         testForeignAddressIsIgnored();
         testSenderBecomesAPeer();
         testUnansweredSenderIsNotASurface();
+        testFirstAcceptedPacketCarriesItsPeer();
         testClosingForgetsThePeers();
         testCloseUnderTraffic();
     }
@@ -350,6 +351,45 @@ class OscServiceTest final : public juce::UnitTest {
             expect(peers[0].datagrams >= 3, "every datagram is counted, parsed or not");
             expect(peers[0].answerable, "the understood one makes it answerable");
         }
+    }
+
+    void testFirstAcceptedPacketCarriesItsPeer() {
+        beginTest("The first accepted packet is applied under the peer it creates");
+
+        // An unadmitted host has no id, so publishing the packet and admitting
+        // afterwards would put the whole of it into the router under
+        // `kNoOscPeer` -- and the first gesture a new surface makes would be
+        // echoed straight back at it. The receive loop reads such a packet
+        // twice: once to decide, then once to apply under the id it will keep.
+        const ScopedOscConfig config(true, 0);
+        Harness h;
+        expect(h.service->applyConfig());
+
+        // The tap is what feedback hangs off, so it is what has to see the id.
+        std::mutex tapped;
+        std::vector<OscPeerId> peersSeen;
+        h.router->setFeedbackTap([&tapped, &peersSeen](OscPeerId peer, int, float) {
+            const std::lock_guard<std::mutex> lock(tapped);
+            peersSeen.push_back(peer);
+        });
+
+        juce::OSCSender sender;
+        expect(sender.connect("127.0.0.1", h.service->boundPort()));
+        expect(sender.send(juce::OSCMessage("/magda/track/1/volume", 0.25f)));
+        expect(h.waitForAccepted(1));
+        h.router->drainPending();
+
+        const auto peers = h.router->peers().snapshot();
+        expect(peers.size() == 1);
+
+        const std::lock_guard<std::mutex> lock(tapped);
+        expect(peersSeen.size() == 1, "the value reached the tap exactly once");
+        if (peersSeen.size() == 1 && peers.size() == 1) {
+            expect(peersSeen[0] != kNoOscPeer, "and not as coming from nobody");
+            expect(peersSeen[0] == peers[0].id, "but as coming from the peer it created");
+        }
+
+        h.router->setFeedbackTap({});
     }
 
     void testClosingForgetsThePeers() {

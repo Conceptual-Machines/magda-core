@@ -228,6 +228,21 @@ class OscRouter {
     OscRouter& operator=(const OscRouter&) = delete;
 
     /**
+     * @brief Whether a call to `handleMessage` should act or only answer.
+     *
+     * `Preflight` decides acceptance and changes nothing: no value published,
+     * no drain scheduled, no learn session consumed, no counter advanced. It
+     * exists because the receive loop has to know whether a packet is worth
+     * anything *before* it publishes it — a peer that has not been admitted yet
+     * has no id, and publishing under `kNoOscPeer` would lose the first
+     * gesture's echo bit, which is exactly the gesture a new surface makes.
+     *
+     * Only paid on packets from a host that is not answerable yet, so it is
+     * once per surface rather than once per datagram.
+     */
+    enum class Dispatch : std::uint8_t { Preflight, Apply };
+
+    /**
      * @brief Receive-thread entry point.
      *
      * **One caller at a time.** The ordered ring below is single-producer, and
@@ -247,7 +262,8 @@ class OscRouter {
      *         carried no usable value. Reserved addresses are never offered to
      *         learn or bindings, regardless of this return value.
      */
-    bool handleMessage(const OscMessageView& message, OscPeerId peer = kNoOscPeer);
+    bool handleMessage(const OscMessageView& message, OscPeerId peer = kNoOscPeer,
+                       Dispatch dispatch = Dispatch::Apply);
 
     /**
      * @brief The same, for a caller holding one of JUCE's messages.
@@ -256,7 +272,8 @@ class OscRouter {
      * receive path does not come through here: it parses into a view directly,
      * because building an `OSCMessage` is what allocates.
      */
-    bool handleMessage(const juce::OSCMessage& message, OscPeerId peer = kNoOscPeer);
+    bool handleMessage(const juce::OSCMessage& message, OscPeerId peer = kNoOscPeer,
+                       Dispatch dispatch = Dispatch::Apply);
 
     /// Who has been heard from. Written by the receive thread, read by the
     /// feedback projector and the settings UI.
@@ -424,9 +441,10 @@ class OscRouter {
     /// bool says whether its payload was accepted. A recognized address with an
     /// unusable payload is still reserved and must not fall through to learn or
     /// bindings.
-    std::optional<bool> handleFixedNamespace(const OscMessageView& message, OscPeerId peer);
-    bool handleBindings(const OscMessageView& message, OscPeerId peer);
-    bool handleLearn(const OscMessageView& message);
+    std::optional<bool> handleFixedNamespace(const OscMessageView& message, OscPeerId peer,
+                                             Dispatch dispatch);
+    bool handleBindings(const OscMessageView& message, OscPeerId peer, Dispatch dispatch);
+    bool handleLearn(const OscMessageView& message, Dispatch dispatch);
     void drainBindings();
 
     struct LearnState {

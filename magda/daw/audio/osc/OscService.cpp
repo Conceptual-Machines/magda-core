@@ -85,20 +85,35 @@ class OscService::ReceiveLoop final : public juce::Thread, private OscPacketRece
             // router has accepted something from it, and only then can it take
             // a slot from a surface that is already being answered.
             //
-            // Skipped when this peer was already answerable, which is the case
-            // on every packet of a gesture: `admit` would be a second lock for
-            // nothing.
+            // Which is why an unadmitted host is read twice. The first pass
+            // decides acceptance and changes nothing; if the packet is worth
+            // something the host is admitted, and only then is it applied — with
+            // the id it will keep. Publishing first and admitting after would
+            // put the whole packet into the router under `kNoOscPeer`, so the
+            // first gesture a new surface makes would be echoed straight back
+            // at it, which is precisely the gesture the echo rule exists for.
+            //
+            // An established peer pays none of this: `intern` says it is already
+            // answerable and the packet goes straight to `Apply`.
+            if (!arrival.answerable) {
+                dispatch_ = OscRouter::Dispatch::Preflight;
+                accepted_ = false;
+                parseOscPacket(buffer_.getData(), static_cast<std::size_t>(bytes), *this);
+                if (!accepted_)
+                    continue;  // nothing here for MAGDA, so nothing to apply
+                peer_ = router_.peers().admit(senderHost, now);
+            }
+
+            dispatch_ = OscRouter::Dispatch::Apply;
             accepted_ = false;
             parseOscPacket(buffer_.getData(), static_cast<std::size_t>(bytes), *this);
-            if (accepted_ && !arrival.answerable)
-                router_.peers().admit(senderHost, now);
         }
     }
 
   private:
     void oscMessage(const OscMessageView& message) override {
         // Not short-circuited: every message in a bundle still has to be routed.
-        if (router_.handleMessage(message, peer_))
+        if (router_.handleMessage(message, peer_, dispatch_))
             accepted_ = true;
     }
 
@@ -110,6 +125,8 @@ class OscService::ReceiveLoop final : public juce::Thread, private OscPacketRece
     OscPeerId peer_ = kNoOscPeer;
     /// Whether this packet contained anything the router took.
     bool accepted_ = false;
+    /// Which of the two passes `oscMessage` is currently serving.
+    OscRouter::Dispatch dispatch_ = OscRouter::Dispatch::Apply;
     juce::HeapBlock<char> buffer_;
 };
 

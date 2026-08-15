@@ -186,31 +186,43 @@ OscRouter::~OscRouter() {
     alive_->store(false, std::memory_order_release);
 }
 
-bool OscRouter::handleMessage(const OscMessageView& message, OscPeerId peer) {
+bool OscRouter::handleMessage(const OscMessageView& message, OscPeerId peer, Dispatch dispatch) {
     // The fixed namespace first, and it is not negotiable: `/magda/…` is a
     // documented contract, so a binding cannot take one of those addresses
     // over and leave a stock template mysteriously half-working. It also comes
     // before learn, so a control already carrying a meaning cannot be captured
     // as if it were free.
-    if (const auto fixed = handleFixedNamespace(message, peer); fixed.has_value())
+    if (const auto fixed = handleFixedNamespace(message, peer, dispatch); fixed.has_value())
         return *fixed;
-    if (handleLearn(message))
+    if (handleLearn(message, dispatch))
         return true;
-    return handleBindings(message, peer);
+    return handleBindings(message, peer, dispatch);
 }
 
-bool OscRouter::handleMessage(const juce::OSCMessage& message, OscPeerId peer) {
+bool OscRouter::handleMessage(const juce::OSCMessage& message, OscPeerId peer, Dispatch dispatch) {
     // Named rather than inlined: the view reads the address through a
     // StringRef, and `toString` returns a temporary.
     const auto address = message.getAddressPattern().toString();
-    return handleMessage(OscMessageView::fromOscMessage(address, message), peer);
+    return handleMessage(OscMessageView::fromOscMessage(address, message), peer, dispatch);
 }
 
-bool OscRouter::handleLearn(const OscMessageView& message) {
+bool OscRouter::handleLearn(const OscMessageView& message, Dispatch dispatch) {
     // Keep the common path lock-free. Once armed, take the lock before touching
     // `learn_`: begin/cancel may replace that pointer from the message thread.
     if (!learning_.load(std::memory_order_acquire))
         return false;
+
+    if (dispatch == Dispatch::Preflight) {
+        // Would capture, without consuming the session. Reading `learning_`
+        // without the lock is a race either way; the two outcomes are a peer
+        // admitted that need not have been, and a learn gesture that arms
+        // between the two passes waiting for the next message. Both are fine,
+        // and neither can capture twice.
+        for (int i = 0; i < message.size(); ++i)
+            if (boundArgument(message, i))
+                return true;
+        return false;
+    }
 
     OscLearnCapture capture;
     LearnCallback callback;
@@ -275,7 +287,8 @@ bool OscRouter::isLearning() const {
     return learning_.load(std::memory_order_acquire);
 }
 
-std::optional<bool> OscRouter::handleFixedNamespace(const OscMessageView& message, OscPeerId peer) {
+std::optional<bool> OscRouter::handleFixedNamespace(const OscMessageView& message, OscPeerId peer,
+                                                    Dispatch dispatch) {
     const auto command = parseOscAddress(message.address());
     if (!command.has_value())
         return std::nullopt;
@@ -291,7 +304,7 @@ std::optional<bool> OscRouter::handleFixedNamespace(const OscMessageView& messag
     return true;
 }
 
-bool OscRouter::handleBindings(const OscMessageView& message, OscPeerId peer) {
+bool OscRouter::handleBindings(const OscMessageView& message, OscPeerId peer, Dispatch dispatch) {
     // A reference-count bump, not an allocation, and it pins the snapshot for
     // as long as we are reading and writing through it — which is what makes
     // an index and its value belong to the same list.
@@ -308,6 +321,9 @@ bool OscRouter::handleBindings(const OscMessageView& message, OscPeerId peer) {
         const auto value = boundArgument(message, routes->entries[i].argIndex);
         if (!value.has_value())
             continue;  // this binding wanted an argument the message did not carry
+
+        if (dispatch == Dispatch::Preflight)
+            return true;
 
         // Same publish order as the fixed namespace: value and peer, then the
         // bit that advertises them.
