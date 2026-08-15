@@ -4,9 +4,31 @@
 
 namespace magda::osc {
 
-OscPeerId OscPeers::intern(juce::StringRef host, juce::int64 nowMs) {
+int OscPeers::slotForUnvalidatedHost() const {
+    int chosen = -1;
+    juce::int64 oldest = 0;
+
+    for (int i = 0; i < kMaxPeers; ++i) {
+        const auto& entry = entries_[static_cast<std::size_t>(i)];
+        if (!entry.used)
+            return i;
+        // A peer being answered is off limits here. See the header: letting an
+        // unvalidated host take one means a single spoofed packet drops a live
+        // surface, and the surface coming back takes the slot again and is
+        // re-snapshotted, which is the churn repeated at a level up.
+        if (entry.answerable)
+            continue;
+        if (chosen < 0 || entry.lastSeenMs < oldest) {
+            chosen = i;
+            oldest = entry.lastSeenMs;
+        }
+    }
+    return chosen;
+}
+
+OscPeers::Arrival OscPeers::intern(juce::StringRef host, juce::int64 nowMs) {
     if (host.isEmpty())
-        return kNoOscPeer;
+        return {};
 
     const juce::ScopedLock lock(lock_);
 
@@ -15,71 +37,86 @@ OscPeerId OscPeers::intern(juce::StringRef host, juce::int64 nowMs) {
         if (entry.used && entry.host == host) {
             entry.lastSeenMs = nowMs;
             ++entry.datagrams;
-            return i;
+            return Arrival{.id = i, .answerable = entry.answerable};
         }
     }
 
-    // A free slot first; then the peer that has never said anything usable and
-    // has been quiet longest; and only if every slot holds a real surface, the
-    // quietest of those.
-    //
-    // The middle rule is the one that matters. Without it a flood of spoofed
-    // source addresses walks the table and pushes the user's tablet out of it,
-    // which drops its surface and re-snapshots it when the next real packet
-    // arrives. Sacrificing the peers that have only ever sent noise costs
-    // nothing but a line in the settings list.
-    int chosen = -1;
-    bool chosenAnswerable = true;
-    juce::int64 oldest = 0;
-
-    for (int i = 0; i < kMaxPeers; ++i) {
-        const auto& entry = entries_[static_cast<std::size_t>(i)];
-        if (!entry.used) {
-            chosen = i;
-            chosenAnswerable = false;
-            break;
-        }
-        const bool better = chosen < 0 || (chosenAnswerable && !entry.answerable) ||
-                            (chosenAnswerable == entry.answerable && entry.lastSeenMs < oldest);
-        if (better) {
-            chosen = i;
-            chosenAnswerable = entry.answerable;
-            oldest = entry.lastSeenMs;
-        }
-    }
+    const int chosen = slotForUnvalidatedHost();
+    if (chosen < 0)
+        return {};  // every slot is a surface; this host waits for `admit`
 
     auto& entry = entries_[static_cast<std::size_t>(chosen)];
-    // A surface is losing its slot, so whatever was being sent to it has to
-    // stop. Nothing else here moves the generation: see the header.
-    const bool displacedASurface = entry.used && entry.answerable;
-
     entry.used = true;
     entry.answerable = false;
-    entry.host = host;  // the one allocation, once per surface per session
+    entry.host = host;  // the one allocation, once per host per session
     entry.firstSeenMs = nowMs;
     entry.lastSeenMs = nowMs;
     entry.datagrams = 1;
 
-    if (displacedASurface)
-        generation_.fetch_add(1, std::memory_order_release);
-    return chosen;
+    // No generation bump: nothing that is answered has changed. One noise entry
+    // replacing another must not make the projector walk its fleet.
+    return Arrival{.id = chosen, .answerable = false};
 }
 
-void OscPeers::markAnswerable(OscPeerId id) {
-    if (id < 0 || id >= kMaxPeers)
-        return;
+OscPeerId OscPeers::admit(juce::StringRef host, juce::int64 nowMs) {
+    if (host.isEmpty())
+        return kNoOscPeer;
+
+    OscPeerId admitted = kNoOscPeer;
+    bool changed = false;
 
     {
         const juce::ScopedLock lock(lock_);
-        auto& entry = entries_[static_cast<std::size_t>(id)];
-        if (!entry.used || entry.answerable)
-            return;
-        entry.answerable = true;
+
+        for (int i = 0; i < kMaxPeers; ++i) {
+            auto& entry = entries_[static_cast<std::size_t>(i)];
+            if (!entry.used || entry.host != host)
+                continue;
+            entry.lastSeenMs = nowMs;
+            if (!entry.answerable) {
+                entry.answerable = true;
+                changed = true;
+            }
+            admitted = i;
+            break;
+        }
+
+        if (admitted == kNoOscPeer) {
+            // `intern` found nowhere to put this host, which means every slot is
+            // a surface. It has proved itself now, so it outranks the one that
+            // has been quiet longest — this is the only path that displaces a
+            // peer being answered.
+            int chosen = slotForUnvalidatedHost();
+            if (chosen < 0) {
+                juce::int64 oldest = 0;
+                for (int i = 0; i < kMaxPeers; ++i) {
+                    const auto& entry = entries_[static_cast<std::size_t>(i)];
+                    if (chosen < 0 || entry.lastSeenMs < oldest) {
+                        chosen = i;
+                        oldest = entry.lastSeenMs;
+                    }
+                }
+            }
+
+            // Whatever was here belonged to another host, so its count goes
+            // with it. This datagram is the first from the one taking over.
+            auto& entry = entries_[static_cast<std::size_t>(chosen)];
+            entry.used = true;
+            entry.answerable = true;
+            entry.host = host;
+            entry.firstSeenMs = nowMs;
+            entry.lastSeenMs = nowMs;
+            entry.datagrams = 1;
+            admitted = chosen;
+            changed = true;
+        }
     }
 
-    // The transition, and only the transition: a fader mid-gesture calls this on
-    // every packet, and the projector must not rebuild its fleet for each one.
-    generation_.fetch_add(1, std::memory_order_release);
+    // A surface appearing, or one being replaced by another. Either way the
+    // projector has a fleet to rebuild; anything short of that leaves it alone.
+    if (changed)
+        generation_.fetch_add(1, std::memory_order_release);
+    return admitted;
 }
 
 std::vector<OscPeers::Peer> OscPeers::snapshot() const {

@@ -93,23 +93,46 @@ class OscPeers {
         bool answerable = false;
     };
 
-    /**
-     * @brief The id for `host`, adding it if this is the first datagram from it.
-     *
-     * Receive thread. Allocates only when a host is seen for the first time,
-     * which is once per surface per session.
-     */
-    OscPeerId intern(juce::StringRef host, juce::int64 nowMs);
+    /// What a datagram's sender turned out to be. `answerable` is the peer's
+    /// state *before* this datagram, which is what lets the caller skip `admit`
+    /// on the hot path.
+    struct Arrival {
+        OscPeerId id = kNoOscPeer;
+        bool answerable = false;
+    };
 
     /**
-     * @brief Say that `id` sent something MAGDA understood.
+     * @brief The id for `host` on a datagram that has not been parsed yet.
      *
-     * Receive thread, once per datagram that the router accepted anything from.
-     * Idempotent, and only the first call per peer moves the generation — a
-     * surface mid-gesture must not make the projector rebuild its fleet on every
-     * packet.
+     * Receive thread. Allocates only when a host is seen for the first time.
+     *
+     * **An unvalidated host never displaces a peer that is being answered.**
+     * With every slot holding a real surface there is nowhere to put it, and
+     * `kNoOscPeer` is returned: the datagram is still routed, it simply has no
+     * peer until it has proved itself through `admit`. Evicting here instead
+     * would mean one spoofed packet could drop a live surface, and the surface
+     * coming back would re-take the slot and be re-snapshotted — the same churn
+     * the answerable bit exists to stop, just one level up.
+     *
+     * The cost is that the settings list stops counting new hosts once eight
+     * surfaces are connected. Losing a diagnostic line at that bound is a much
+     * better trade than losing a surface.
      */
-    void markAnswerable(OscPeerId id);
+    Arrival intern(juce::StringRef host, juce::int64 nowMs);
+
+    /**
+     * @brief Admit `host` as a peer worth answering.
+     *
+     * Receive thread, and only once the router has accepted something from this
+     * datagram. Marks an existing peer answerable, or takes a slot for a host
+     * `intern` had no room for — evicting the least recently heard peer if that
+     * is what it costs, because a surface that has proved itself outranks one
+     * that has been quiet longer.
+     *
+     * Idempotent, and only a transition moves the generation: a fader mid
+     * gesture must not make the projector rebuild its fleet on every packet.
+     */
+    OscPeerId admit(juce::StringRef host, juce::int64 nowMs);
 
     /// The peers currently known, most recently heard from first.
     std::vector<Peer> snapshot() const;
@@ -120,9 +143,10 @@ class OscPeers {
     int count() const;
 
     /// Bumped when a peer becomes answerable, when an answerable peer is
-    /// evicted, and by `clear`. Deliberately *not* bumped by a new peer that has
-    /// said nothing usable: a spoofed flood would otherwise make the projector
-    /// rebuild its fleet every tick without ever creating a surface.
+    /// displaced, and by `clear`. Deliberately *not* bumped by traffic from a
+    /// host that has said nothing usable: a spoofed flood would otherwise make
+    /// the projector rebuild its fleet every tick without ever creating a
+    /// surface.
     std::uint64_t generation() const {
         return generation_.load(std::memory_order_acquire);
     }
@@ -140,6 +164,10 @@ class OscPeers {
         juce::int64 lastSeenMs = 0;
         std::uint64_t datagrams = 0;
     };
+
+    /// A free slot, else the least recently heard entry that is not being
+    /// answered, else -1. Caller holds the lock.
+    int slotForUnvalidatedHost() const;
 
     std::array<Entry, kMaxPeers> entries_;
     std::atomic<std::uint64_t> generation_{0};

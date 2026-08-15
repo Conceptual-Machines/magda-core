@@ -432,11 +432,10 @@ constexpr const char* kSurfaceHost = "127.0.0.1";
 struct ProjectorRig {
     ProjectorRig() {
         router = std::make_unique<OscRouter>(std::make_unique<DiscardingCommandSink>());
-        peer = router->peers().intern(kSurfaceHost, 1000);
-        // What the receive loop does once the router has accepted something.
-        // Only answerable peers are surfaces, so without this there is nothing
-        // to project onto.
-        router->peers().markAnswerable(peer);
+        // `admit` is what the receive loop calls once the router has accepted
+        // something. Only answerable peers are surfaces, so interning alone
+        // leaves nothing to project onto.
+        peer = router->peers().admit(kSurfaceHost, 1000);
         projector = std::make_unique<magda::OscFeedbackProjector>(api, changes, *router, nullptr,
                                                                   fleet.factory());
     }
@@ -622,9 +621,8 @@ TEST_CASE("A surface that appears is snapshotted, and the one already there is n
     rig.projector->tick();
     REQUIRE(rig.sink().messages.empty());
 
-    const auto second = rig.router->peers().intern("10.0.0.5", 2000);
+    const auto second = rig.router->peers().admit("10.0.0.5", 2000);
     REQUIRE(second != rig.peer);
-    rig.router->peers().markAnswerable(second);
     rig.projector->tick();
 
     auto* joined = rig.fleet["10.0.0.5"];
@@ -641,7 +639,7 @@ TEST_CASE("A value from one surface is suppressed to it and sent to the other", 
     // value nobody holds.
     ProjectorRig rig;
     const auto first = rig.addTrack("Drums");
-    rig.router->peers().markAnswerable(rig.router->peers().intern("10.0.0.5", 2000));
+    rig.router->peers().admit("10.0.0.5", 2000);
     rig.markTracksChanged();
     rig.projector->tick();
 
@@ -698,10 +696,52 @@ TEST_CASE("A peer that has said nothing usable is never answered", "[osc][feedba
     REQUIRE(rig.fleet["203.0.113.9"] == nullptr);
 
     // And it becomes one the moment it says something MAGDA understands.
-    rig.router->peers().markAnswerable(rig.router->peers().intern("203.0.113.9", 2001));
+    rig.router->peers().admit("203.0.113.9", 2001);
     rig.projector->tick();
     REQUIRE(rig.projector->surfaceCount() == 2);
     REQUIRE(rig.fleet["203.0.113.9"] != nullptr);
+}
+
+TEST_CASE("A full table of surfaces cannot be churned by unvalidated traffic", "[osc][feedback]") {
+    // The hole the first pass left: preferring to evict a peer that has said
+    // nothing usable only helps once such a peer exists. With every slot holding
+    // a real surface, one spoofed junk packet would otherwise take the quietest
+    // one, drop its surface, and re-snapshot it the moment it spoke again --
+    // repeatable for as long as the flood lasts.
+    ProjectorRig rig;  // holds one surface already
+    for (int i = 2; i <= OscPeers::kMaxPeers; ++i)
+        rig.router->peers().admit("10.0.0." + juce::String(i), 1000 + i);
+    REQUIRE(rig.router->peers().count() == OscPeers::kMaxPeers);
+
+    rig.projector->tick();
+    REQUIRE(rig.projector->surfaceCount() == OscPeers::kMaxPeers);
+    const auto settled = rig.router->peers().generation();
+
+    // A host nobody has heard anything usable from, arriving at capacity.
+    for (int packet = 0; packet < 20; ++packet)
+        REQUIRE(rig.router->peers().intern("203.0.113.9", 5000 + packet).id == kNoOscPeer);
+
+    REQUIRE(rig.router->peers().count() == OscPeers::kMaxPeers);
+    REQUIRE(rig.router->peers().generation() == settled);
+    REQUIRE(rig.router->peers().hostFor(rig.peer) == kSurfaceHost);
+
+    rig.projector->tick();
+    REQUIRE(rig.projector->surfaceCount() == OscPeers::kMaxPeers);
+}
+
+TEST_CASE("A ninth surface that proves itself does take the quietest slot", "[osc][feedback]") {
+    // The other half of the same rule: refusing an unvalidated host must not
+    // become refusing a real one, or the table would freeze on whatever eight
+    // surfaces happened to connect first.
+    ProjectorRig rig;
+    for (int i = 2; i <= OscPeers::kMaxPeers; ++i)
+        rig.router->peers().admit("10.0.0." + juce::String(i), 1000 + i);
+
+    // The rig's own peer was admitted at 1000, so it is the quietest.
+    const auto ninth = rig.router->peers().admit("10.0.0.99", 9000);
+    REQUIRE(ninth == rig.peer);
+    REQUIRE(rig.router->peers().count() == OscPeers::kMaxPeers);
+    REQUIRE(rig.router->peers().hostFor(ninth) == "10.0.0.99");
 }
 
 TEST_CASE("A sink that fails to open is tried again on the next tick", "[osc][feedback]") {
@@ -711,7 +751,7 @@ TEST_CASE("A sink that fails to open is tried again on the next tick", "[osc][fe
     magda::test::MockMagdaApi api;
     magda::remote::ChangeSource changes;
     OscRouter router{std::make_unique<DiscardingCommandSink>()};
-    router.peers().markAnswerable(router.peers().intern(kSurfaceHost, 1000));
+    router.peers().admit(kSurfaceHost, 1000);
 
     bool refuse = true;
     CapturingSink* built = nullptr;
@@ -801,7 +841,7 @@ TEST_CASE("A binding added after the last tick is projected on the next one", "[
     magda::test::MockMagdaApi api;
     magda::remote::ChangeSource changes;
     OscRouter router{std::make_unique<DiscardingCommandSink>()};
-    router.peers().markAnswerable(router.peers().intern(kSurfaceHost, 1000));
+    router.peers().admit(kSurfaceHost, 1000);
     magda::OscFeedbackProjector projector{api, changes, router, std::move(owned), fleet.factory()};
 
     reader->value = 0.4f;

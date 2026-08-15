@@ -73,18 +73,25 @@ class OscService::ReceiveLoop final : public juce::Thread, private OscPacketRece
             // there. "Something is arriving and none of it parses" is a
             // different problem from silence, and the settings UI should be
             // able to tell them apart.
-            peer_ = router_.peers().intern(senderHost, juce::Time::currentTimeMillis());
+            const auto now = juce::Time::currentTimeMillis();
+            const auto arrival = router_.peers().intern(senderHost, now);
+            peer_ = arrival.id;
 
             // Being heard from is not being answered. Feedback opens a sender
             // and streams a whole project at a peer, so enrolling one on the
             // strength of four bytes of anything would make MAGDA a UDP
             // reflector: the source address is spoofable and the default bind
-            // is every interface. A peer becomes answerable only once the
-            // router has accepted something from it.
+            // is every interface. A host becomes answerable only once the
+            // router has accepted something from it, and only then can it take
+            // a slot from a surface that is already being answered.
+            //
+            // Skipped when this peer was already answerable, which is the case
+            // on every packet of a gesture: `admit` would be a second lock for
+            // nothing.
             accepted_ = false;
             parseOscPacket(buffer_.getData(), static_cast<std::size_t>(bytes), *this);
-            if (accepted_)
-                router_.peers().markAnswerable(peer_);
+            if (accepted_ && !arrival.answerable)
+                router_.peers().admit(senderHost, now);
         }
     }
 
