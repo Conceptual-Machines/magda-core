@@ -57,6 +57,17 @@ CLANG_TIDY ?= $(shell if [ -x /opt/homebrew/opt/llvm/bin/clang-tidy ]; then \
 		command -v clang-tidy 2>/dev/null; \
 	fi)
 
+# The compile database is written by Apple's /usr/bin/c++, which finds the macOS
+# SDK through xcrun and so records no -isysroot. Homebrew's clang-tidy has no
+# such fallback, and without the SDK it cannot find <vector> - which means the
+# translation unit stops parsing at the first standard header and the run
+# reports whatever it happened to see before that, rather than nothing. Empty on
+# Linux, where the compiler and the analyser share a sysroot.
+TIDY_SYSROOT := $(shell if [ "$$(uname)" = "Darwin" ]; then \
+		SDK=$$(xcrun --show-sdk-path 2>/dev/null); \
+		[ -n "$$SDK" ] && echo "--extra-arg=-isysroot --extra-arg=$$SDK"; \
+	fi)
+
 # Default target
 .PHONY: all
 all: debug
@@ -414,7 +425,7 @@ lint:
 		{} \
 		--config-file=.clang-tidy \
 		--format-style=file \
-		-p=$(BUILD_DIR) \
+		-p=$(BUILD_DIR) $(TIDY_SYSROOT) \
 		--quiet \;
 	@echo "✅ Code analysis complete"
 
@@ -440,7 +451,7 @@ lint-changed:
 				$$file \
 				--config-file=.clang-tidy \
 				--format-style=file \
-				-p=$(BUILD_DIR) \
+				-p=$(BUILD_DIR) $(TIDY_SYSROOT) \
 				--quiet; \
 		done; \
 	fi
@@ -468,7 +479,7 @@ lint-fix:
 				{} \
 				--config-file=.clang-tidy \
 				--format-style=file \
-				-p=$(BUILD_DIR) \
+				-p=$(BUILD_DIR) $(TIDY_SYSROOT) \
 				--fix \
 				--fix-errors \;; \
 			echo "✅ Fixes applied" ;; \
@@ -492,7 +503,7 @@ lint-file:
 		$(FILE) \
 		--config-file=.clang-tidy \
 		--format-style=file \
-		-p=$(BUILD_DIR)
+		-p=$(BUILD_DIR) $(TIDY_SYSROOT)
 	@echo "✅ Analysis complete"
 
 # Show help

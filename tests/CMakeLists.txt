@@ -175,6 +175,7 @@ set(TEST_SOURCES
     test_binding_transform.cpp
     # OSC control surfaces (issue #1757)
     test_osc_address.cpp
+    test_osc_packet.cpp
     test_osc_router.cpp
     test_osc_command_sink.cpp
     test_osc_bindings.cpp

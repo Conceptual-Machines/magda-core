@@ -434,6 +434,8 @@ target_sources(magda_daw PRIVATE
     # OSC control surfaces (issue #1757)
     osc/OscAddress.cpp
     osc/OscFeedback.cpp
+    osc/OscPacket.cpp
+    osc/OscPeers.cpp
     osc/OscRouter.cpp
     osc/OscService.cpp
     # Headers (listed for IDE visibility)

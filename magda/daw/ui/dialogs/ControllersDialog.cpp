@@ -959,7 +959,7 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
 }
 
 // =============================================================================
-// OscSurfacesPage (#1757 §4, #2091)
+// OscSurfacesPage (#1757 §4, #2091, #2096)
 // =============================================================================
 
 /**
@@ -969,9 +969,15 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
  *
  * Nothing here reconfigures the OSC stack directly. `Config::save` notifies its
  * listeners, and both `OscService` and `OscFeedbackProjector` are among them, so
- * a field that loses focus rebinds the socket or re-aims the sender without this
- * page knowing either exists. What it does know is how to ask them what
- * happened, through `osc_app`, which is what the status line reports.
+ * a field that loses focus rebinds the socket or re-aims the senders without
+ * this page knowing either exists. What it does know is how to ask them what
+ * happened, through `osc_app`, which is what the status area reports.
+ *
+ * There is no "send feedback to" field, and that is #2096: MAGDA reads its own
+ * datagrams, so it answers whoever is talking. What the status area shows
+ * instead is the surfaces it has heard from — which is the question anyone
+ * debugging a silent surface actually has, and one a message counter could
+ * never answer.
  */
 class OscSurfacesPage : public juce::Component, private juce::Timer {
   public:
@@ -986,14 +992,35 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
         };
         addAndMakeVisible(enable_);
 
-        // The two addresses that mean something are offered, and the field stays
-        // editable: a user with a specific interface can name it.
-        bindAddress_.setEditableText(true);
-        bindAddress_.addItem("0.0.0.0", 1);
-        bindAddress_.addItem("127.0.0.1", 2);
-        bindAddress_.setText(juce::String(config.getOscBindAddress()), juce::dontSendNotification);
+        // Which interfaces the socket answers on is the whole of OSC's access
+        // control — the protocol has no authentication — and there are exactly
+        // two answers worth offering. So this is a list and not free text: a
+        // typo in a hand-typed address fails closed, which looks like MAGDA
+        // being broken rather than like a typo.
+        //
+        // An address that is neither, set by hand in the config file for a
+        // machine with several interfaces, is added as a third entry and
+        // selected, so opening this page does not quietly replace it.
+        // The addresses are substituted rather than written into the strings:
+        // they are protocol, not prose, and a translator has no reason to guess
+        // that the dots in 127.0.0.1 are load-bearing.
+        bindAddress_.addItem(tr("controllers.osc.bind_all").replace("{0}", kAllInterfacesAddress),
+                             kBindAll);
+        bindAddress_.addItem(tr("controllers.osc.bind_loopback").replace("{0}", kLoopbackAddress),
+                             kBindLoopback);
+
+        const juce::String configured(config.getOscBindAddress());
+        if (configured == kLoopbackAddress) {
+            bindAddress_.setSelectedId(kBindLoopback, juce::dontSendNotification);
+        } else if (configured.isEmpty() || configured == kAllInterfacesAddress) {
+            bindAddress_.setSelectedId(kBindAll, juce::dontSendNotification);
+        } else {
+            bindAddress_.addItem(configured, kBindCustom);
+            bindAddress_.setSelectedId(kBindCustom, juce::dontSendNotification);
+        }
+
         bindAddress_.onChange = [this] {
-            Config::getInstance().setOscBindAddress(bindAddress_.getText().trim().toStdString());
+            Config::getInstance().setOscBindAddress(selectedBindAddress());
             commit();
         };
         addAndMakeVisible(bindAddress_);
@@ -1003,33 +1030,27 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
                        [](int port) { Config::getInstance().setOscReceivePort(port); });
         addLabel(receiveLabel_, tr("controllers.osc.receive_port"));
 
-        feedbackHost_.setTextToShowWhenEmpty(tr("controllers.osc.feedback_host_empty"),
-                                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        feedbackHost_.setText(juce::String(config.getOscFeedbackHost()),
-                              juce::dontSendNotification);
-        feedbackHost_.onFocusLost = [this] {
-            Config::getInstance().setOscFeedbackHost(feedbackHost_.getText().trim().toStdString());
-            commit();
-        };
-        feedbackHost_.onReturnKey = [this] { feedbackHost_.giveAwayKeyboardFocus(); };
-        addAndMakeVisible(feedbackHost_);
-        addLabel(feedbackHostLabel_, tr("controllers.osc.feedback_host"));
-
         setUpPortField(feedbackPort_, config.getOscFeedbackPort(),
                        [](int port) { Config::getInstance().setOscFeedbackPort(port); });
         addLabel(feedbackPortLabel_, tr("controllers.osc.feedback_port"));
 
         status_.setJustificationType(juce::Justification::topLeft);
-        status_.setColour(juce::Label::textColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         addAndMakeVisible(status_);
 
+        applyTheme();
         refreshStatus();
         startTimer(kStatusIntervalMs);
     }
 
     ~OscSurfacesPage() override {
         stopTimer();
+    }
+
+    /// Both a theme switch and a change of UI font family arrive here —
+    /// `MainWindow::refreshThemedLookAndFeels` sends a look-and-feel change for
+    /// each — so this is the one hook that keeps the page in step.
+    void lookAndFeelChanged() override {
+        applyTheme();
     }
 
     void resized() override {
@@ -1041,7 +1062,6 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
         layoutRow(area, bindLabel_, bindAddress_);
         layoutRow(area, receiveLabel_, receivePort_);
         area.removeFromTop(kGap);
-        layoutRow(area, feedbackHostLabel_, feedbackHost_);
         layoutRow(area, feedbackPortLabel_, feedbackPort_);
 
         area.removeFromTop(kGap * 2);
@@ -1054,6 +1074,56 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
     static constexpr int kLabelWidth = 150;
     static constexpr int kFieldWidth = 200;
     static constexpr int kStatusIntervalMs = 1000;
+
+    /// The size `DialogLookAndFeel` gives a combo box and a button, so the
+    /// labels and text fields beside them have to be told it: a `juce::Label`
+    /// left alone is 14, and a `juce::TextEditor` is whatever the platform
+    /// default font happens to be, which is not Inter at all.
+    static constexpr float kFieldFontSize = 13.0f;
+    static constexpr float kStatusFontSize = 12.0f;
+
+    static constexpr int kBindAll = 1;
+    static constexpr int kBindLoopback = 2;
+    static constexpr int kBindCustom = 3;
+    static constexpr const char* kAllInterfacesAddress = "0.0.0.0";
+    static constexpr const char* kLoopbackAddress = "127.0.0.1";
+
+    /**
+     * @brief Fonts, and the one colour this page caches.
+     *
+     * Called at construction and again on every look-and-feel change. A font or
+     * a colour taken once in a constructor is the standing bug in this
+     * codebase's dialogs: `setColour` on a component survives a look-and-feel
+     * change, so it goes stale exactly when the theme moves, and a `juce::Font`
+     * captured at construction ignores a change of UI font family.
+     */
+    void applyTheme() {
+        const auto fieldFont = FontManager::getInstance().getUIFont(kFieldFontSize);
+        for (auto* label : {&bindLabel_, &receiveLabel_, &feedbackPortLabel_})
+            label->setFont(fieldFont);
+        for (auto* editor : {&receivePort_, &feedbackPort_})
+            editor->applyFontToAllText(fieldFont);
+
+        status_.setFont(FontManager::getInstance().getUIFont(kStatusFontSize));
+        status_.setColour(juce::Label::textColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    }
+
+    /// The address behind the selected entry. The two presets are spelled out
+    /// in the item text for the user, so the address itself cannot be read back
+    /// out of it; the custom entry is the address, because that is what it was
+    /// built from.
+    std::string selectedBindAddress() const {
+        switch (bindAddress_.getSelectedId()) {
+            case kBindLoopback:
+                return kLoopbackAddress;
+            case kBindCustom:
+                return bindAddress_.getItemText(bindAddress_.indexOfItemId(kBindCustom))
+                    .toStdString();
+            default:
+                return kAllInterfacesAddress;
+        }
+    }
 
     void addLabel(juce::Label& label, const juce::String& text) {
         label.setText(text, juce::dontSendNotification);
@@ -1124,20 +1194,43 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
             text << tr("controllers.osc.status_off");
         }
 
-        text << "\n\n";
-        if (osc_app::feedbackIsSending())
-            text << tr("controllers.osc.status_feedback_sent")
-                        .replace("{0}", juce::String(osc_app::feedbackSentMessageCount()));
-        else
-            text << tr("controllers.osc.status_feedback_off");
+        text << "\n\n" << tr("controllers.osc.surfaces") << "\n";
+
+        const auto surfaces = osc_app::surfaces();
+        if (surfaces.empty()) {
+            // The state a silent surface is actually in, and the one a message
+            // counter reading zero could never distinguish from a dropped
+            // packet: nothing has ever arrived, so there is nobody to answer.
+            text << tr("controllers.osc.surfaces_none");
+        } else {
+            const auto now = juce::Time::currentTimeMillis();
+            for (const auto& surface : surfaces)
+                text << tr("controllers.osc.surface_line")
+                            .replace("{0}", surface.host)
+                            .replace("{1}", juce::String(surface.received))
+                            .replace("{2}", juce::String(surface.sent))
+                            .replace("{3}", lastSeenText(now - surface.lastSeenMs))
+                     << "\n";
+        }
 
         status_.setText(text, juce::dontSendNotification);
     }
 
+    /// "just now" up to a few seconds, then whole seconds, then minutes. The
+    /// number matters only for telling "talking" from "went away", so it is not
+    /// worth a unit past that.
+    static juce::String lastSeenText(juce::int64 ageMs) {
+        if (ageMs < 3000)
+            return tr("controllers.osc.seen_now");
+        if (ageMs < 60000)
+            return tr("controllers.osc.seen_seconds").replace("{0}", juce::String(ageMs / 1000));
+        return tr("controllers.osc.seen_minutes").replace("{0}", juce::String(ageMs / 60000));
+    }
+
     juce::ToggleButton enable_;
-    juce::Label bindLabel_, receiveLabel_, feedbackHostLabel_, feedbackPortLabel_;
+    juce::Label bindLabel_, receiveLabel_, feedbackPortLabel_;
     juce::ComboBox bindAddress_;
-    juce::TextEditor receivePort_, feedbackHost_, feedbackPort_;
+    juce::TextEditor receivePort_, feedbackPort_;
     juce::Label status_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscSurfacesPage)

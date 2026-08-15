@@ -532,24 +532,20 @@ class Config {
         oscBindAddress = address;
     }
     /**
-     * Where feedback goes (issue #2091), and whether it goes anywhere: an empty
-     * host means MAGDA answers nobody, which is the default.
+     * The port MAGDA answers a surface on (issues #2091, #2096).
      *
-     * A destination rather than a reply-to, because there is nothing to reply
-     * to. `juce::OSCReceiver` hands a listener a parsed message and drops the
-     * datagram's source address inside its own receive loop, so the surface that
-     * sent something is not observable without reimplementing JUCE's OSC parser.
-     * The user names the surface instead, which is also what a TouchOSC template
-     * asks of them at the other end.
+     * There is no host beside it and no separate enable, because there is
+     * nothing left for either to say. MAGDA reads its own datagrams, so it knows
+     * which host a surface is talking from and replies there; feedback is on
+     * whenever the listener is, since a MAGDA that can hear a surface and has
+     * nothing to answer it with is a state with no use.
+     *
+     * The port survives that because it is the one thing the sender does not
+     * tell us: a surface sends from an ephemeral port and listens on a fixed
+     * one, so the port to reply on cannot be inferred from the port a message
+     * came from. 9001 is TouchOSC's default receive port, the companion of the
+     * 9000 above.
      */
-    const std::string& getOscFeedbackHost() const {
-        return oscFeedbackHost;
-    }
-    void setOscFeedbackHost(const std::string& host) {
-        oscFeedbackHost = host;
-    }
-    /// The port on that host. 9001 is TouchOSC's default receive port, the
-    /// companion of the 9000 above.
     int getOscFeedbackPort() const {
         return oscFeedbackPort;
     }
@@ -1451,7 +1447,6 @@ class Config {
     bool oscEnabled = false;
     int oscReceivePort = 9000;
     std::string oscBindAddress = "0.0.0.0";
-    std::string oscFeedbackHost;
     int oscFeedbackPort = 9001;
 
     // Export audio settings

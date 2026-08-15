@@ -53,7 +53,24 @@ Checks: >-
   -readability-braces-around-statements,
   -hicpp-braces-around-statements,
   -google-readability-braces-around-statements,
-  -readability-function-cognitive-complexity
+  -readability-function-cognitive-complexity,
+  -performance-noexcept-move-constructor,
+  -cppcoreguidelines-noexcept-move-operations,
+  -hicpp-noexcept-move,
+  -bugprone-pointer-arithmetic-on-polymorphic-object,
+  -cert-ctr56-cpp
+
+# The five above are off because they crash rather than report. On Homebrew
+# LLVM 20.1.4, `performance-noexcept-move-constructor` dies with SIGILL and
+# `bugprone-pointer-arithmetic-on-polymorphic-object` with SIGSEGV, on any file
+# in this project, silently and with no backtrace. Their aliases are listed
+# separately because clang-tidy treats an alias as its own check name, so
+# disabling the primary does not disable the alias.
+#
+# `Checks: *` above is what pulled them in, and a crashing check takes the
+# whole run down — so with these enabled `make lint` and `make lint-changed`
+# exited 132/139 on every file and reported nothing at all. Worth re-testing
+# when the toolchain moves.
 
 # Warnings as errors (can be adjusted based on team preference)
 WarningsAsErrors: ''
