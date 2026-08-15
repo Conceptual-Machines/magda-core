@@ -53,9 +53,27 @@ inline constexpr OscPeerId kNoOscPeer = -1;
  * does not exist: the receive thread holds it for a scan of at most eight short
  * strings, and the message thread takes it once per tick.
  *
- * `generation` is the cheap question — it changes only when the *set* of peers
- * changes, so the projector can notice a surface appearing without comparing
- * strings on every tick. It is atomic so that question needs no lock at all.
+ * `generation` is the cheap question — it changes only when the set of peers
+ * *worth answering* changes, so the projector can notice a surface appearing
+ * without comparing strings on every tick. It is atomic so that question needs
+ * no lock at all.
+ *
+ * ## Being heard from is not being answered
+ *
+ * A peer exists as soon as a datagram arrives, because "something is arriving
+ * and none of it parses" is a different problem from silence and the settings
+ * UI has to be able to tell them apart. But a peer is only *answerable* once it
+ * has sent something MAGDA understood.
+ *
+ * That distinction is load-bearing rather than tidy. The bind address defaults
+ * to every interface, UDP source addresses are trivially spoofed, and a
+ * snapshot is hundreds of messages: without it, four bytes of garbage naming
+ * someone else as the sender would enrol a peer, and the next tick would open a
+ * sender to that host and stream a full project at it. Cycling more spoofed
+ * sources than the table holds would sustain that indefinitely and evict the
+ * real surface on the way past. Answering only peers that have said one
+ * well-formed thing closes it, and the eviction order below is what keeps the
+ * flood from pushing the real tablet out.
  */
 class OscPeers {
   public:
@@ -70,6 +88,9 @@ class OscPeers {
         /// Datagrams, not accepted messages: this counts what arrived from the
         /// peer, including what the router went on to reject.
         std::uint64_t datagrams = 0;
+        /// At least one message from this peer was understood. Only these are
+        /// answered — see the class comment.
+        bool answerable = false;
     };
 
     /**
@@ -80,6 +101,16 @@ class OscPeers {
      */
     OscPeerId intern(juce::StringRef host, juce::int64 nowMs);
 
+    /**
+     * @brief Say that `id` sent something MAGDA understood.
+     *
+     * Receive thread, once per datagram that the router accepted anything from.
+     * Idempotent, and only the first call per peer moves the generation — a
+     * surface mid-gesture must not make the projector rebuild its fleet on every
+     * packet.
+     */
+    void markAnswerable(OscPeerId id);
+
     /// The peers currently known, most recently heard from first.
     std::vector<Peer> snapshot() const;
 
@@ -88,8 +119,10 @@ class OscPeers {
 
     int count() const;
 
-    /// Bumped whenever a peer is added or evicted, and never for traffic from a
-    /// peer already known.
+    /// Bumped when a peer becomes answerable, when an answerable peer is
+    /// evicted, and by `clear`. Deliberately *not* bumped by a new peer that has
+    /// said nothing usable: a spoofed flood would otherwise make the projector
+    /// rebuild its fleet every tick without ever creating a surface.
     std::uint64_t generation() const {
         return generation_.load(std::memory_order_acquire);
     }
@@ -101,6 +134,7 @@ class OscPeers {
   private:
     struct Entry {
         bool used = false;
+        bool answerable = false;
         juce::String host;
         juce::int64 firstSeenMs = 0;
         juce::int64 lastSeenMs = 0;

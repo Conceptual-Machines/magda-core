@@ -75,13 +75,24 @@ class OscService::ReceiveLoop final : public juce::Thread, private OscPacketRece
             // able to tell them apart.
             peer_ = router_.peers().intern(senderHost, juce::Time::currentTimeMillis());
 
+            // Being heard from is not being answered. Feedback opens a sender
+            // and streams a whole project at a peer, so enrolling one on the
+            // strength of four bytes of anything would make MAGDA a UDP
+            // reflector: the source address is spoofable and the default bind
+            // is every interface. A peer becomes answerable only once the
+            // router has accepted something from it.
+            accepted_ = false;
             parseOscPacket(buffer_.getData(), static_cast<std::size_t>(bytes), *this);
+            if (accepted_)
+                router_.peers().markAnswerable(peer_);
         }
     }
 
   private:
     void oscMessage(const OscMessageView& message) override {
-        router_.handleMessage(message, peer_);
+        // Not short-circuited: every message in a bundle still has to be routed.
+        if (router_.handleMessage(message, peer_))
+            accepted_ = true;
     }
 
     juce::DatagramSocket& socket_;
@@ -90,6 +101,8 @@ class OscService::ReceiveLoop final : public juce::Thread, private OscPacketRece
     /// Set before each packet is parsed and read only from `oscMessage`, which
     /// the parse calls synchronously on this thread.
     OscPeerId peer_ = kNoOscPeer;
+    /// Whether this packet contained anything the router took.
+    bool accepted_ = false;
     juce::HeapBlock<char> buffer_;
 };
 

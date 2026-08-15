@@ -433,6 +433,10 @@ struct ProjectorRig {
     ProjectorRig() {
         router = std::make_unique<OscRouter>(std::make_unique<DiscardingCommandSink>());
         peer = router->peers().intern(kSurfaceHost, 1000);
+        // What the receive loop does once the router has accepted something.
+        // Only answerable peers are surfaces, so without this there is nothing
+        // to project onto.
+        router->peers().markAnswerable(peer);
         projector = std::make_unique<magda::OscFeedbackProjector>(api, changes, *router, nullptr,
                                                                   fleet.factory());
     }
@@ -620,6 +624,7 @@ TEST_CASE("A surface that appears is snapshotted, and the one already there is n
 
     const auto second = rig.router->peers().intern("10.0.0.5", 2000);
     REQUIRE(second != rig.peer);
+    rig.router->peers().markAnswerable(second);
     rig.projector->tick();
 
     auto* joined = rig.fleet["10.0.0.5"];
@@ -636,7 +641,7 @@ TEST_CASE("A value from one surface is suppressed to it and sent to the other", 
     // value nobody holds.
     ProjectorRig rig;
     const auto first = rig.addTrack("Drums");
-    rig.router->peers().intern("10.0.0.5", 2000);
+    rig.router->peers().markAnswerable(rig.router->peers().intern("10.0.0.5", 2000));
     rig.markTracksChanged();
     rig.projector->tick();
 
@@ -674,6 +679,59 @@ TEST_CASE("A surface stops being answered when its peer goes", "[osc][feedback]"
 
     REQUIRE(rig.projector->surfaceCount() == 0);
     REQUIRE(rig.sink().messages.empty());
+}
+
+TEST_CASE("A peer that has said nothing usable is never answered", "[osc][feedback]") {
+    // The reflector, closed. Four bytes of anything with a spoofed source
+    // address would otherwise mint a peer, and the next tick would open a sender
+    // to that host and stream a whole project at it.
+    ProjectorRig rig;
+    rig.addTrack("Drums");
+    rig.markTracksChanged();
+    rig.projector->tick();
+    REQUIRE(rig.projector->surfaceCount() == 1);
+
+    rig.router->peers().intern("203.0.113.9", 2000);  // heard from, never understood
+    rig.projector->tick();
+
+    REQUIRE(rig.projector->surfaceCount() == 1);
+    REQUIRE(rig.fleet["203.0.113.9"] == nullptr);
+
+    // And it becomes one the moment it says something MAGDA understands.
+    rig.router->peers().markAnswerable(rig.router->peers().intern("203.0.113.9", 2001));
+    rig.projector->tick();
+    REQUIRE(rig.projector->surfaceCount() == 2);
+    REQUIRE(rig.fleet["203.0.113.9"] != nullptr);
+}
+
+TEST_CASE("A sink that fails to open is tried again on the next tick", "[osc][feedback]") {
+    // The peer set has not changed, so the generation fast path would otherwise
+    // never look at this peer again: one transient socket failure would disable
+    // feedback for that surface for the rest of the session.
+    magda::test::MockMagdaApi api;
+    magda::remote::ChangeSource changes;
+    OscRouter router{std::make_unique<DiscardingCommandSink>()};
+    router.peers().markAnswerable(router.peers().intern(kSurfaceHost, 1000));
+
+    bool refuse = true;
+    CapturingSink* built = nullptr;
+    magda::OscFeedbackProjector projector{
+        api, changes, router, nullptr,
+        [&refuse, &built](const juce::String&, int) -> std::unique_ptr<OscMessageSink> {
+            if (refuse)
+                return nullptr;
+            auto owned = std::make_unique<CapturingSink>();
+            built = owned.get();
+            return owned;
+        }};
+
+    projector.tick();
+    REQUIRE(projector.surfaceCount() == 0);
+
+    refuse = false;
+    projector.tick();
+    REQUIRE(projector.surfaceCount() == 1);
+    REQUIRE(built != nullptr);
 }
 
 TEST_CASE("A gesture that lands before the first tick still counts as an echo", "[osc][feedback]") {
@@ -743,7 +801,7 @@ TEST_CASE("A binding added after the last tick is projected on the next one", "[
     magda::test::MockMagdaApi api;
     magda::remote::ChangeSource changes;
     OscRouter router{std::make_unique<DiscardingCommandSink>()};
-    router.peers().intern(kSurfaceHost, 1000);
+    router.peers().markAnswerable(router.peers().intern(kSurfaceHost, 1000));
     magda::OscFeedbackProjector projector{api, changes, router, std::move(owned), fleet.factory()};
 
     reader->value = 0.4f;

@@ -285,6 +285,30 @@ TEST_CASE("A packet that is not a whole number of words is rejected", "[osc][pac
     REQUIRE_FALSE(parseOscPacket(bytes.data(), bytes.size(), collector));
 }
 
+TEST_CASE("A message with bytes left over after its arguments is rejected", "[osc][packet]") {
+    // The type tag string says exactly how long the payload is, so a trailing
+    // aligned word is not part of the message. The "not a whole number of
+    // words" rule above only catches an unaligned suffix.
+    auto bytes = message("/thing", "f", {0.5f}, {});
+    appendInt32(bytes, 0);
+
+    Collector collector;
+    REQUIRE_FALSE(parseOscPacket(bytes.data(), bytes.size(), collector));
+    REQUIRE(collector.messages.empty());
+}
+
+TEST_CASE("A bundle element padded with junk runs none of its command", "[osc][packet]") {
+    // Otherwise an element could declare itself longer than the message it
+    // carries and still have that message applied, which is the whole-packet
+    // guarantee leaking one element at a time.
+    auto padded = message("/magda/transport/play", "", {}, {});
+    appendInt32(padded, 0);
+
+    Collector collector;
+    REQUIRE_FALSE(parse(bundle({message("/magda/transport/stop", "", {}, {}), padded}), collector));
+    REQUIRE(collector.messages.empty());
+}
+
 TEST_CASE("A bundle element whose size runs past the buffer is rejected", "[osc][packet]") {
     auto bytes = bundle({message("/a", "f", {1.0f}, {})});
     // Overwrite the element size with one larger than what follows it. The size

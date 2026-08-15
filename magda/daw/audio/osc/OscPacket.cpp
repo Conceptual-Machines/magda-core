@@ -207,6 +207,13 @@ class Walker {
                 return false;
         }
 
+        // The type tag string says exactly how long the payload is, so anything
+        // left over is not part of this message. Delivering it anyway would let
+        // a bundle element pad itself with junk and still run its command, which
+        // is the whole-packet guarantee leaking.
+        if (pos != end)
+            return false;
+
         if (receiver_ != nullptr)
             receiver_->oscMessage(
                 OscMessageView(juce::StringRef(address), arguments.data(), count));

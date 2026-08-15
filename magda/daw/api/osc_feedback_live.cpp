@@ -234,7 +234,7 @@ void OscFeedbackProjector::syncSurfaces() {
 
     const auto stillThere = [&peers](const Surface& surface) {
         return std::any_of(peers.begin(), peers.end(), [&surface](const osc::OscPeers::Peer& peer) {
-            return peer.id == surface.peer && peer.host == surface.host;
+            return peer.answerable && peer.id == surface.peer && peer.host == surface.host;
         });
     };
 
@@ -251,6 +251,12 @@ void OscFeedbackProjector::syncSurfaces() {
     }
 
     for (const auto& peer : peers) {
+        // A peer that has only ever sent noise is not answered. See `OscPeers`:
+        // opening a sender and streaming a project at whoever put four bytes on
+        // the port would make this a UDP reflector.
+        if (!peer.answerable)
+            continue;
+
         const bool known =
             std::any_of(surfaces_.begin(), surfaces_.end(), [&peer](const Surface& surface) {
                 return surface.peer == peer.id && surface.host == peer.host;
@@ -259,8 +265,15 @@ void OscFeedbackProjector::syncSurfaces() {
             continue;
 
         auto sink = factory_(peer.host, feedbackPort_);
-        if (sink == nullptr)
-            continue;  // the socket would not open; the next sync tries again
+        if (sink == nullptr) {
+            // The socket would not open. Staying stale is what makes the next
+            // tick try again: the peer set has not changed, so the generation
+            // fast path above would otherwise never look at this peer again and
+            // one transient failure would disable feedback for that surface for
+            // the rest of the session.
+            surfacesStale_ = true;
+            continue;
+        }
 
         Surface surface;
         surface.peer = peer.id;

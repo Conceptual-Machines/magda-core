@@ -129,6 +129,7 @@ class OscServiceTest final : public juce::UnitTest {
         testBundlesAreUnpacked();
         testForeignAddressIsIgnored();
         testSenderBecomesAPeer();
+        testUnansweredSenderIsNotASurface();
         testClosingForgetsThePeers();
         testCloseUnderTraffic();
     }
@@ -310,6 +311,45 @@ class OscServiceTest final : public juce::UnitTest {
         expect(sender.send(juce::OSCMessage("/magda/track/1/volume", 0.6f)));
         expect(h.waitForAccepted(2));
         expect(h.router->peers().count() == 1, "the same host must stay one peer");
+    }
+
+    void testUnansweredSenderIsNotASurface() {
+        beginTest("A sender MAGDA does not understand is heard but never answered");
+
+        // Feedback opens a sender and streams a whole project at a peer, and a
+        // UDP source address is spoofable with the default all-interfaces bind.
+        // So a datagram has to be understood before its sender is answerable,
+        // or four bytes of anything turns MAGDA into a reflector.
+        const ScopedOscConfig config(true, 0);
+        Harness h;
+        expect(h.service->applyConfig());
+
+        juce::DatagramSocket sender(false);
+        expect(sender.bindToPort(0, "127.0.0.1"));
+
+        // Not OSC at all, then valid OSC on an address MAGDA does not own.
+        const char junk[] = {'x', 'y', 'z', '\0'};
+        expect(sender.write("127.0.0.1", h.service->boundPort(), junk, sizeof(junk)) > 0);
+
+        juce::OSCSender foreign;
+        expect(foreign.connect("127.0.0.1", h.service->boundPort()));
+        expect(foreign.send(juce::OSCMessage("/someone/else/fader", 0.5f)));
+
+        // Then one we do understand from a *different* socket, so there is a
+        // point by which the first two must already have been processed.
+        juce::OSCSender ours;
+        expect(ours.connect("127.0.0.1", h.service->boundPort()));
+        expect(ours.send(juce::OSCMessage("/magda/master/volume", 0.5f)));
+        expect(h.waitForAccepted(1));
+
+        // All three came from loopback, so they are one peer by design — and
+        // that peer is answerable only because the third was understood.
+        const auto peers = h.router->peers().snapshot();
+        expect(peers.size() == 1);
+        if (peers.size() == 1) {
+            expect(peers[0].datagrams >= 3, "every datagram is counted, parsed or not");
+            expect(peers[0].answerable, "the understood one makes it answerable");
+        }
     }
 
     void testClosingForgetsThePeers() {
