@@ -384,21 +384,44 @@ class DiscardingCommandSink : public OscCommandSink {
 /// Hands out one capturing sink per surface and keeps them all, which is what
 /// makes the per-peer rules observable: a value suppressed to one surface has to
 /// be visible arriving at the other.
+///
+/// The sinks are owned *here* and the projector is handed a forwarder, because
+/// the projector destroys a surface's sink when its peer goes away -- and the
+/// case worth testing is exactly "and then nothing more was sent to it", which
+/// cannot be asserted through an object that has just been destroyed. A sink
+/// kept across a peer disappearing and coming back is also the right shape: it
+/// is the same surface, and the test can see everything it was ever told.
 struct SinkFleet {
     magda::OscFeedbackProjector::SinkFactory factory() {
         return [this](const juce::String& host, int) -> std::unique_ptr<OscMessageSink> {
-            auto owned = std::make_unique<CapturingSink>();
-            byHost[host] = owned.get();
-            return owned;
+            auto& captured = owned_[host];
+            if (captured == nullptr)
+                captured = std::make_unique<CapturingSink>();
+            return std::make_unique<Forwarder>(*captured);
         };
     }
 
     CapturingSink* operator[](const juce::String& host) const {
-        const auto found = byHost.find(host);
-        return found == byHost.end() ? nullptr : found->second;
+        const auto found = owned_.find(host);
+        return found == owned_.end() ? nullptr : found->second.get();
     }
 
-    std::map<juce::String, CapturingSink*> byHost;
+  private:
+    /// What the projector owns and destroys. Holds a reference to the capturing
+    /// sink rather than being one.
+    class Forwarder : public OscMessageSink {
+      public:
+        explicit Forwarder(CapturingSink& target) : target_(target) {}
+
+        bool send(const juce::String& address, float value) override {
+            return target_.send(address, value);
+        }
+
+      private:
+        CapturingSink& target_;
+    };
+
+    std::map<juce::String, std::unique_ptr<CapturingSink>> owned_;
 };
 
 /// One surface, on loopback. Interned directly rather than through a socket:
