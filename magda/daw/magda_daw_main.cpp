@@ -965,9 +965,10 @@ std::vector<Surface> surfaces() {
 
     std::vector<Surface> result;
     for (const auto& peer : service->router().peers().snapshot())
-        result.push_back(Surface{peer.host, peer.datagrams,
-                                 feedback != nullptr ? feedback->sentTo(peer.id) : 0,
-                                 peer.lastSeenMs});
+        result.push_back(Surface{.host = peer.host,
+                                 .received = peer.datagrams,
+                                 .sent = feedback != nullptr ? feedback->sentTo(peer.id) : 0,
+                                 .lastSeenMs = peer.lastSeenMs});
     return result;
 }
 

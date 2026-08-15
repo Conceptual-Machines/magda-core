@@ -992,14 +992,30 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
         };
         addAndMakeVisible(enable_);
 
-        // The two addresses that mean something are offered, and the field stays
-        // editable: a user with a specific interface can name it.
-        bindAddress_.setEditableText(true);
-        bindAddress_.addItem("0.0.0.0", 1);
-        bindAddress_.addItem("127.0.0.1", 2);
-        bindAddress_.setText(juce::String(config.getOscBindAddress()), juce::dontSendNotification);
+        // Which interfaces the socket answers on is the whole of OSC's access
+        // control — the protocol has no authentication — and there are exactly
+        // two answers worth offering. So this is a list and not free text: a
+        // typo in a hand-typed address fails closed, which looks like MAGDA
+        // being broken rather than like a typo.
+        //
+        // An address that is neither, set by hand in the config file for a
+        // machine with several interfaces, is added as a third entry and
+        // selected, so opening this page does not quietly replace it.
+        bindAddress_.addItem(tr("controllers.osc.bind_all"), kBindAll);
+        bindAddress_.addItem(tr("controllers.osc.bind_loopback"), kBindLoopback);
+
+        const juce::String configured(config.getOscBindAddress());
+        if (configured == kLoopbackAddress) {
+            bindAddress_.setSelectedId(kBindLoopback, juce::dontSendNotification);
+        } else if (configured.isEmpty() || configured == kAllInterfacesAddress) {
+            bindAddress_.setSelectedId(kBindAll, juce::dontSendNotification);
+        } else {
+            bindAddress_.addItem(configured, kBindCustom);
+            bindAddress_.setSelectedId(kBindCustom, juce::dontSendNotification);
+        }
+
         bindAddress_.onChange = [this] {
-            Config::getInstance().setOscBindAddress(bindAddress_.getText().trim().toStdString());
+            Config::getInstance().setOscBindAddress(selectedBindAddress());
             commit();
         };
         addAndMakeVisible(bindAddress_);
@@ -1014,16 +1030,22 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
         addLabel(feedbackPortLabel_, tr("controllers.osc.feedback_port"));
 
         status_.setJustificationType(juce::Justification::topLeft);
-        status_.setColour(juce::Label::textColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         addAndMakeVisible(status_);
 
+        applyTheme();
         refreshStatus();
         startTimer(kStatusIntervalMs);
     }
 
     ~OscSurfacesPage() override {
         stopTimer();
+    }
+
+    /// Both a theme switch and a change of UI font family arrive here —
+    /// `MainWindow::refreshThemedLookAndFeels` sends a look-and-feel change for
+    /// each — so this is the one hook that keeps the page in step.
+    void lookAndFeelChanged() override {
+        applyTheme();
     }
 
     void resized() override {
@@ -1047,6 +1069,56 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
     static constexpr int kLabelWidth = 150;
     static constexpr int kFieldWidth = 200;
     static constexpr int kStatusIntervalMs = 1000;
+
+    /// The size `DialogLookAndFeel` gives a combo box and a button, so the
+    /// labels and text fields beside them have to be told it: a `juce::Label`
+    /// left alone is 14, and a `juce::TextEditor` is whatever the platform
+    /// default font happens to be, which is not Inter at all.
+    static constexpr float kFieldFontSize = 13.0f;
+    static constexpr float kStatusFontSize = 12.0f;
+
+    static constexpr int kBindAll = 1;
+    static constexpr int kBindLoopback = 2;
+    static constexpr int kBindCustom = 3;
+    static constexpr const char* kAllInterfacesAddress = "0.0.0.0";
+    static constexpr const char* kLoopbackAddress = "127.0.0.1";
+
+    /**
+     * @brief Fonts, and the one colour this page caches.
+     *
+     * Called at construction and again on every look-and-feel change. A font or
+     * a colour taken once in a constructor is the standing bug in this
+     * codebase's dialogs: `setColour` on a component survives a look-and-feel
+     * change, so it goes stale exactly when the theme moves, and a `juce::Font`
+     * captured at construction ignores a change of UI font family.
+     */
+    void applyTheme() {
+        const auto fieldFont = FontManager::getInstance().getUIFont(kFieldFontSize);
+        for (auto* label : {&bindLabel_, &receiveLabel_, &feedbackPortLabel_})
+            label->setFont(fieldFont);
+        for (auto* editor : {&receivePort_, &feedbackPort_})
+            editor->applyFontToAllText(fieldFont);
+
+        status_.setFont(FontManager::getInstance().getUIFont(kStatusFontSize));
+        status_.setColour(juce::Label::textColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    }
+
+    /// The address behind the selected entry. The two presets are spelled out
+    /// in the item text for the user, so the address itself cannot be read back
+    /// out of it; the custom entry is the address, because that is what it was
+    /// built from.
+    std::string selectedBindAddress() const {
+        switch (bindAddress_.getSelectedId()) {
+            case kBindLoopback:
+                return kLoopbackAddress;
+            case kBindCustom:
+                return bindAddress_.getItemText(bindAddress_.indexOfItemId(kBindCustom))
+                    .toStdString();
+            default:
+                return kAllInterfacesAddress;
+        }
+    }
 
     void addLabel(juce::Label& label, const juce::String& text) {
         label.setText(text, juce::dontSendNotification);
