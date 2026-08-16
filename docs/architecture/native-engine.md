@@ -668,6 +668,13 @@ how the signal got there, never where it arrives. Where an edge was refused a fa
 line anywhere upstream starts flushed, the step is a declared divergence and the bound does not
 apply, which the property reads off the pass's own report rather than guessing.
 
+That exemption is also how the bound could quietly stop existing, so how often it is reached is
+counted rather than assumed, over the tracks the edit could reach and among those the ones where
+something moved: a track the edit cannot touch renders the constant it rendered before, and a
+flat window meets any bound at all. The deep sweep measures 7111 bounded transients on reached
+tracks, 1647 of them moving, against 10808 exempt, and the ordinary run asserts all three counts
+are non-zero.
+
 The ordinary run sweeps a few hundred sequences of fourteen edits in about eight seconds. The
 deep sweep behind `./magda_tests "[deep]"` is four thousand sequences of forty and takes eight
 minutes; it is what to reach for when the differ or the crossfade pass changes. Both were checked

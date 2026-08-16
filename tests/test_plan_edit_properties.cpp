@@ -170,13 +170,19 @@ struct Report {
     std::int64_t samplesCompared = 0;
     int steadyStatesCompared = 0;
 
-    /// Transients the step bound was actually measured over, and transients it
-    /// let through because the pass had refused an edge or something upstream
-    /// started flushed. Counted separately because the exemption is the whole
-    /// way the bound can quietly stop existing: one refused edge anywhere in a
-    /// plan exempts every track in it, so a regression that started reporting
-    /// one would disable the bound while every test stayed green.
+    /// Transients the step bound was measured over, those where the signal
+    /// really did move, and those the bound let through because the pass had
+    /// refused an edge or something upstream started flushed. All three count
+    /// only tracks the edit could reach, because that is the population the
+    /// bound is about: a track it could not reach renders what it rendered
+    /// before, and a flat window meets any bound at all.
+    ///
+    /// Counted because the exemption is how the bound can quietly stop
+    /// existing. One refused edge anywhere in a plan exempts every track in it,
+    /// so a regression that started reporting one per publish would disable the
+    /// whole discontinuity bound while every test stayed green.
     int transientsBounded = 0;
+    int transientsMoved = 0;
     int transientsExempt = 0;
 
     void print(const char* name) const {
@@ -189,7 +195,8 @@ struct Report {
                   << "  instances destroyed=" << instancesDestroyed
                   << " samples compared=" << samplesCompared
                   << " steady states compared=" << steadyStatesCompared << "\n"
-                  << "  transients bounded=" << transientsBounded << " exempt=" << transientsExempt
+                  << "  transients on reached tracks: bounded=" << transientsBounded
+                  << " of which moved=" << transientsMoved << ", exempt=" << transientsExempt
                   << std::endl;
     }
 };
@@ -821,8 +828,28 @@ constexpr float kRunawayLevel = 64.0f;
 /// step moves the whole distance between two samples.
 constexpr int kMaxFadeCascade = 8;
 
-std::optional<std::string> checkStepBounds(TrackId trackId, const std::vector<float>& window,
-                                           float before, bool faded, bool flushed, Report* report) {
+/// One window of one track after one edit, and whether that edit could reach it.
+///
+/// The reach is not a condition on the assertion, which is worth making
+/// everywhere: it is a condition on the counting. A track the edit cannot reach
+/// renders the same constant it rendered before, so its window is flat and the
+/// step loop passes over it without ever being asked a question. Counting those
+/// would let the coverage figure be satisfied entirely by tracks that could not
+/// have moved, while every track that did move was exempt.
+struct Transient {
+    TrackId trackId = INVALID_TRACK_ID;
+    const std::vector<float>* window = nullptr;
+    float before = 0.0f;
+    bool faded = false;
+    bool flushed = false;
+    bool reached = false;
+};
+
+std::optional<std::string> checkStepBounds(const Transient& transient, Report* report) {
+    const auto trackId = transient.trackId;
+    const auto& window = *transient.window;
+    const auto before = transient.before;
+
     if (window.empty())
         return std::nullopt;
 
@@ -838,14 +865,11 @@ std::optional<std::string> checkStepBounds(TrackId trackId, const std::vector<fl
     // A path that starts from silence steps by whatever it was carrying, and
     // an edge the pass refused steps by whatever it had left: both are declared
     // divergences rather than failures, and both are counted where they happen.
-    if (!faded || flushed) {
-        if (report != nullptr)
+    if (!transient.faded || transient.flushed) {
+        if (report != nullptr && transient.reached)
             ++report->transientsExempt;
         return std::nullopt;
     }
-
-    if (report != nullptr)
-        ++report->transientsBounded;
 
     // Measured against the distance the transient itself covers, so that no
     // level has to be known: a ramp spreads that distance over the fade and a
@@ -855,6 +879,16 @@ std::optional<std::string> checkStepBounds(TrackId trackId, const std::vector<fl
     for (const auto value : window) {
         low = std::min(low, value);
         high = std::max(high, value);
+    }
+
+    if (report != nullptr && transient.reached) {
+        ++report->transientsBounded;
+
+        // And of those, the ones where something actually moved. A window that
+        // did not move is a bound met by a signal that was never asked to
+        // change, which is not evidence that the bound holds where it matters.
+        if (high - low > kSteadyTolerance)
+            ++report->transientsMoved;
     }
 
     const auto allowance = ((high - low) * static_cast<float>(kMaxFadeCascade) /
@@ -897,7 +931,11 @@ std::optional<std::string> transientProperty(const std::vector<Edit>& edits, Rep
     }
 
     for (std::size_t step = 0; step < edits.size(); ++step) {
+        // Read before the edit lands, because that is where the object it
+        // names still is.
         const auto beforeTracks = project;
+        const auto touchedTracks = edits::touched(edits[step], project);
+
         if (!edits::apply(edits[step], project))
             continue;
 
@@ -945,9 +983,16 @@ std::optional<std::string> transientProperty(const std::vector<Edit>& edits, Rep
             auto upstream = edits::feeds(beforeTracks, trackId);
             upstream.merge(edits::feeds(project, trackId));
 
-            if (const auto problem =
-                    checkStepBounds(trackId, window, steady[trackId], published.faded.unfaded == 0,
-                                    pathStartsFlushed(upstream, before, published), report))
+            Transient transient;
+            transient.trackId = trackId;
+            transient.window = &window;
+            transient.before = steady[trackId];
+            transient.faded = published.faded.unfaded == 0;
+            transient.flushed = pathStartsFlushed(upstream, before, published);
+            transient.reached = std::ranges::any_of(
+                touchedTracks, [&upstream](TrackId touched) { return upstream.contains(touched); });
+
+            if (const auto problem = checkStepBounds(transient, report))
                 return where + *problem;
 
             if (!window.empty())
@@ -1132,8 +1177,10 @@ TEST_CASE("A swap leaves the track it changed inside its own bounds",
     CHECK(report.steadyStatesCompared > 0);
 
     // The bound is skipped wherever the pass refused an edge, which is most
-    // steps, so the one thing that says it still exists is that it was reached.
+    // steps, so the one thing that says it still exists is that it was reached
+    // on a track the edit could move, and reached there with something moving.
     CHECK(report.transientsBounded > 0);
+    CHECK(report.transientsMoved > 0);
 }
 
 TEST_CASE("The differ properties, swept deeply", "[.][deep][engine][plan][diff][property]") {
