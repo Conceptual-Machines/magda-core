@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "../../../utils/CurveLabelLayout.hpp"
 #include "audio/plugins/compiled/MagdaEqCompiledPlugin.hpp"
 #include "core/GestureRouter.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -412,7 +413,7 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.85f));
         g.drawFittedText(
             juce::String(b + 1),
-            juce::Rectangle<int>(static_cast<int>(dotX) - 5, static_cast<int>(dotY) - 16, 10, 12),
+            CurveLabelLayout::centredIn(plotArea_, dotX, dotY - 16.0f, 10.0f, 12.0f).toNearestInt(),
             juce::Justification::centred, 1);
 
         // Live readout above the dot for the active band — freq + gain (or
@@ -424,10 +425,11 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
                     : (juce::String(bandTypeShortName(band.type)) + "  " +
                        frequencyReadout(band.freq));
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.9f));
-            g.drawFittedText(label,
-                             juce::Rectangle<int>(static_cast<int>(dotX) - 60,
-                                                  static_cast<int>(plotArea_.getY()) + 2, 120, 14),
-                             juce::Justification::centred, 1);
+            g.drawFittedText(
+                label,
+                CurveLabelLayout::centredIn(plotArea_, dotX, plotArea_.getY() + 2.0f, 120.0f, 14.0f)
+                    .toNearestInt(),
+                juce::Justification::centred, 1);
         }
     }
 

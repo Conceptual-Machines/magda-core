@@ -118,6 +118,8 @@ set(TEST_SOURCES
     test_non_ascii_string_literals.cpp
     # Arrangement pointer hit tester (#1719)
     test_arrangement_hit_tester.cpp
+    # Curve-view readout stays inside the plot (#2072)
+    test_curve_label_layout.cpp
     # Keyboard clip nudging (#1957)
     test_clip_nudge.cpp
     test_mono_note_processor.cpp
