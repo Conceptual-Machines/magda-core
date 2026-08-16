@@ -34,7 +34,7 @@ is. When the two disagree, the headers are right and this file is stale.
 | External plugin hosting and hardware inserts | [#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893) | not started |
 | Clip launcher and session playback | [#1894](https://github.com/Conceptual-Machines/magda-core/issues/1894) | not started |
 | Live input, monitoring, recording | [#1895](https://github.com/Conceptual-Machines/magda-core/issues/1895) | not started |
-| Null-diff validation harness | [#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896) | rig built, 8 slices open |
+| Null-diff validation harness | [#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896) | rig built, 3 of 8 slices done |
 | Cutover: bridge rewrite, dual-engine release | [#1897](https://github.com/Conceptual-Machines/magda-core/issues/1897) | not started |
 
 Engine core, slice by slice: plan IR and compiler ([#2010](https://github.com/Conceptual-Machines/magda-core/issues/2010)),
@@ -56,11 +56,11 @@ warp, beat detection and loop info ([#2038](https://github.com/Conceptual-Machin
 MIDI clips ([#2039](https://github.com/Conceptual-Machines/magda-core/issues/2039)),
 the null-diff corpus ([#2040](https://github.com/Conceptual-Machines/magda-core/issues/2040)).
 
-Validation, slice by slice, all open: whole-project cases and the tiered oracle
+Validation, slice by slice. Done: whole-project cases and the tiered oracle
 ([#2075](https://github.com/Conceptual-Machines/magda-core/issues/2075)),
 plan goldens ([#2076](https://github.com/Conceptual-Machines/magda-core/issues/2076)),
-differ property tests ([#2077](https://github.com/Conceptual-Machines/magda-core/issues/2077)),
-the block-size gate ([#2078](https://github.com/Conceptual-Machines/magda-core/issues/2078)),
+differ property tests ([#2077](https://github.com/Conceptual-Machines/magda-core/issues/2077)).
+Open: the block-size gate ([#2078](https://github.com/Conceptual-Machines/magda-core/issues/2078)),
 migrators ([#2079](https://github.com/Conceptual-Machines/magda-core/issues/2079)),
 the DAWproject cross-check ([#2080](https://github.com/Conceptual-Machines/magda-core/issues/2080)),
 the real-project corpus ([#2081](https://github.com/Conceptual-Machines/magda-core/issues/2081)),
@@ -636,6 +636,47 @@ which wants a `PluginManager` and the device layer behind it, and writing those 
 into the leg would be the second sync the corpus refuses to have. They belong with the rest of
 the routing graph, in [#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892).
 
+**Properties over generated edits**
+([#2077](https://github.com/Conceptual-Machines/magda-core/issues/2077)) are the same argument
+turned on the differ. The corpus compares two engines over projects somebody wrote down; this
+generates the projects instead, because the differ's inputs are pairs of plans and the pairs that
+matter are the ones nobody thought to write. A vocabulary of the edits a user can perform, a
+seeded generator that strings them together against the project as it stands, and every edit
+addressed by the id of what it touches rather than by where that sits, so any subsequence of a
+failing sequence still runs and a failure is shrunk to the edits that caused it before it is
+printed. It lives in `tests/PlanEdit*` and runs in `magda_tests`, since none of it needs a
+`te::Edit`.
+
+Four properties. **Carry** is checked both ways against a signature built from the two plans
+alone, so a differ that carried nothing fails it as surely as one that carried too much, and the
+runtime half of the same decision is predicted from the plans and their layouts and required to
+match the delay lines and fade ramps the executor says it adopted. **Retirement** is that
+`carriedFrom` is a partial injection whose complement is exactly `retired`, and that the store
+destroys an instance only once neither the live plan nor the model names it. **Alignment** is
+that every fan-in has all its inputs arriving at one latency with at least one of them waiting
+for nothing, and that a track no edit reached reports the latency it did before. **The null** is
+the one that catches the most: every track carries an analysis device that keeps what passed
+through it, the sequence is rendered once whole and once with every edit that cannot reach a
+chosen track removed, and the two recordings of that track have to be equal sample for sample,
+across a different number of swaps and a different amount of state carried over them.
+
+What is asserted about the track an edit does change is a bound and a destination rather than a
+null. No sample may move by more than a fade's worth of the transient in one step where the pass
+reported it faded every edge it moved, and once the transient is over the session has to render
+exactly what a session that had just opened the same project renders: carried state may decide
+how the signal got there, never where it arrives. Where an edge was refused a fade, or a delay
+line anywhere upstream starts flushed, the step is a declared divergence and the bound does not
+apply, which the property reads off the pass's own report rather than guessing.
+
+The ordinary run sweeps a few hundred sequences of fourteen edits in about eight seconds. The
+deep sweep behind `./magda_tests "[deep]"` is four thousand sequences of forty and takes eight
+minutes; it is what to reach for when the differ or the crossfade pass changes. Both were checked
+against a broken engine before being believed: carrying an op whose inputs had moved, never
+carrying a delay line, one sample too much compensation on every edge, and a fade taking a
+changed op as its old side are each caught, three of them as a sequence of one or two edits.
+Neither sweep has found an engine bug. What they did find, twice, was the harness calling an edit
+unrelated when it was not.
+
 What the rig still does not cover is the rest of
 [#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896): no case carries a real
 device, because nothing yet runs one under both engines; the interactive paths have no runner;
@@ -666,10 +707,10 @@ Worth knowing before reading the code and wondering where something is:
   engine on rather than with implementing it.
 - **The rest of the validation harness**
   ([#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896)). The rig exists and
-  section 7 describes it. Missing: whole-project cases and the tiers above them (#2075), plan
-  goldens (#2076), differ property tests (#2077), the block-size gate (#2078), the migrators
-  (#2079), the DAWproject cross-check (#2080), a real-project corpus (#2081), and the parity
-  envelope suite that gates cutover (#2082).
+  section 7 describes it, whole-project cases and the tiers above them (#2075), the plan goldens
+  (#2076) and the differ properties (#2077) included. Missing: the block-size gate (#2078), the
+  migrators (#2079), the DAWproject cross-check (#2080), a real-project corpus (#2081), and the
+  parity envelope suite that gates cutover (#2082).
 
 ---
 

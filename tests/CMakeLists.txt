@@ -275,6 +275,12 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # Plan goldens (#2076). Fixtures and runner both reach into magda_engine.
     list(APPEND TEST_SOURCES PlanGoldenFixtures.cpp)
     list(APPEND TEST_SOURCES test_plan_goldens.cpp)
+    # Differ property tests over random edit sequences (#2077). The vocabulary
+    # and the session the properties publish into are model-only, so they build
+    # here beside the runner rather than needing a te::Edit.
+    list(APPEND TEST_SOURCES PlanEditSequence.cpp)
+    list(APPEND TEST_SOURCES PlanEditHarness.cpp)
+    list(APPEND TEST_SOURCES test_plan_edit_properties.cpp)
     list(APPEND TEST_SOURCES test_engine_session.cpp)
     list(APPEND TEST_SOURCES test_tempo_map.cpp)
     list(APPEND TEST_SOURCES test_transport_clock.cpp)
