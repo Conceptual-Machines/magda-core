@@ -132,8 +132,10 @@ class PostFxPanelContent::Container : public juce::Component, public juce::DragA
 //==============================================================================
 // FaderSideTag - the clickable state tag sitting below the "+" on the add
 // strip, mirroring the "POSTFX" watermark above it. Reads and toggles
-// TrackChain::postFxPostFader, which moves the whole post-FX section (and the
-// sends with it) across the track fader. Per-device placement is out of scope.
+// TrackChain::postFxPostFader, which moves the whole post-FX section (with the
+// mixer analysis rail) across the track fader. Sends are not affected: they sit
+// on whichever side their own SendInfo::preFader flag says. Per-device
+// placement is out of scope.
 //==============================================================================
 class PostFxPanelContent::FaderSideTag : public juce::Component, public juce::TooltipClient {
   public:
@@ -163,8 +165,10 @@ class PostFxPanelContent::FaderSideTag : public juce::Component, public juce::To
         repaint();
     }
 
-    void mouseDown(const juce::MouseEvent&) override {
-        if (owner_.trackId_ == magda::INVALID_TRACK_ID)
+    void mouseDown(const juce::MouseEvent& e) override {
+        // A right-click on a small control means "show me options", not "do the
+        // thing"; there is no menu here yet, so it should just do nothing.
+        if (owner_.trackId_ == magda::INVALID_TRACK_ID || e.mods.isPopupMenu())
             return;
         // The setter notifies trackDevicesChanged, which relays out and repaints.
         auto& trackManager = magda::TrackManager::getInstance();
@@ -173,10 +177,10 @@ class PostFxPanelContent::FaderSideTag : public juce::Component, public juce::To
     }
 
     juce::String getTooltip() override {
-        return isPostFader() ? "Post-FX and sends run after the track fader. Click to move them "
-                               "before the fader."
-                             : "Post-FX and sends run before the track fader. Click to move them "
-                               "after the fader.";
+        return isPostFader() ? "Post-FX runs after the track fader. Click to move it before the "
+                               "fader."
+                             : "Post-FX runs before the track fader. Click to move it after the "
+                               "fader.";
     }
 
   private:
