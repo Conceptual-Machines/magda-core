@@ -130,6 +130,67 @@ class PostFxPanelContent::Container : public juce::Component, public juce::DragA
 };
 
 //==============================================================================
+// FaderSideTag - the clickable state tag sitting below the "+" on the add
+// strip, mirroring the "POSTFX" watermark above it. Reads and toggles
+// TrackChain::postFxPostFader, which moves the whole post-FX section (and the
+// sends with it) across the track fader. Per-device placement is out of scope.
+//==============================================================================
+class PostFxPanelContent::FaderSideTag : public juce::Component, public juce::TooltipClient {
+  public:
+    explicit FaderSideTag(PostFxPanelContent& owner) : owner_(owner) {
+        setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    }
+
+    void paint(juce::Graphics& g) override {
+        // State, not decoration: full alpha, and accented while hovered.
+        g.setColour(hovered_ ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
+                             : DarkTheme::getSecondaryTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(9.5f));
+        const int lineH = getHeight() / 2;
+        g.drawText(isPostFader() ? "POST" : "PRE", juce::Rectangle<int>(0, 0, getWidth(), lineH),
+                   juce::Justification::centred);
+        g.drawText("FADER", juce::Rectangle<int>(0, lineH, getWidth(), getHeight() - lineH),
+                   juce::Justification::centred);
+    }
+
+    void mouseEnter(const juce::MouseEvent&) override {
+        hovered_ = true;
+        repaint();
+    }
+
+    void mouseExit(const juce::MouseEvent&) override {
+        hovered_ = false;
+        repaint();
+    }
+
+    void mouseDown(const juce::MouseEvent&) override {
+        if (owner_.trackId_ == magda::INVALID_TRACK_ID)
+            return;
+        // The setter notifies trackDevicesChanged, which relays out and repaints.
+        auto& trackManager = magda::TrackManager::getInstance();
+        trackManager.setPostFxPostFader(owner_.trackId_,
+                                        !trackManager.isPostFxPostFader(owner_.trackId_));
+    }
+
+    juce::String getTooltip() override {
+        return isPostFader() ? "Post-FX and sends run after the track fader. Click to move them "
+                               "before the fader."
+                             : "Post-FX and sends run before the track fader. Click to move them "
+                               "after the fader.";
+    }
+
+  private:
+    // Always read through the model - the tag caches no state of its own.
+    bool isPostFader() const {
+        return owner_.trackId_ != magda::INVALID_TRACK_ID &&
+               magda::TrackManager::getInstance().isPostFxPostFader(owner_.trackId_);
+    }
+
+    PostFxPanelContent& owner_;
+    bool hovered_ = false;
+};
+
+//==============================================================================
 // PostFxPanelContent
 //==============================================================================
 PostFxPanelContent::PostFxPanelContent() {
@@ -149,6 +210,9 @@ PostFxPanelContent::PostFxPanelContent() {
     addButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addButton_.onClick = [this]() { showAddDeviceMenu(); };
     container_->addAndMakeVisible(addButton_);
+
+    faderSideTag_ = std::make_unique<FaderSideTag>(*this);
+    container_->addAndMakeVisible(*faderSideTag_);
 
     magda::TrackManager::getInstance().addListener(this);
 }
@@ -182,7 +246,7 @@ void PostFxPanelContent::trackDevicesChanged(magda::TrackId trackId) {
         return;
     rebuildSlots();
     layoutSlots();
-    repaint();
+    repaint();  // covers the tag too: it is a child of the viewed container
 }
 
 void PostFxPanelContent::rebuildSlots() {
@@ -311,7 +375,7 @@ int PostFxPanelContent::appendZoneX() const {
 }
 
 void PostFxPanelContent::layoutSlots() {
-    if (!container_ || !viewport_)
+    if (!container_ || !viewport_ || !faderSideTag_)
         return;
 
     const bool dragActive = dragInsertIndex_ >= 0 || dropInsertIndex_ >= 0;
@@ -336,6 +400,23 @@ void PostFxPanelContent::layoutSlots() {
     addButton_.setBounds(appendX + juce::jmax(0, (APPEND_ZONE_WIDTH - buttonSize) / 2),
                          juce::jmax(0, (contentH - buttonSize) / 2), buttonSize, buttonSize);
     addButton_.toFront(false);
+
+    // Pre/post-fader tag, in the mirror position below the "+". Hidden on the
+    // master track: the native compiler pins the master post-FX stage pre-fader
+    // whatever the flag says, so a toggle there would lie. Dropped entirely when
+    // the strip is too short to hold it clear of the "+".
+    constexpr int tagHeight = 2 * TAG_LINE_HEIGHT;
+    const int stripBottom = contentH - 10;  // matches the strip's .reduced(6, 10)
+    const int roomBelowButton = stripBottom - addButton_.getBottom();
+    const bool showTag = trackId_ != magda::INVALID_TRACK_ID &&
+                         trackId_ != magda::MASTER_TRACK_ID && roomBelowButton >= tagHeight + 4;
+    faderSideTag_->setVisible(showTag);
+    if (showTag) {
+        faderSideTag_->setBounds(appendX,
+                                 addButton_.getBottom() + (roomBelowButton - tagHeight) / 2,
+                                 APPEND_ZONE_WIDTH, tagHeight);
+        faderSideTag_->toFront(false);
+    }
 }
 
 void PostFxPanelContent::paint(juce::Graphics& g) {
