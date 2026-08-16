@@ -226,6 +226,20 @@ constexpr float kHitRadiusPx = 12.0f;
 constexpr float kCollapseButtonSize = 18.0f;
 constexpr float kCollapseButtonMargin = 4.0f;
 
+// The active band's live readout owns a strip along the top of the plot. The
+// per-band number rides above its dot and must stay out of that strip, so both
+// are laid out from the same numbers.
+constexpr float kReadoutTopInset = 2.0f;
+constexpr float kReadoutHeight = 14.0f;
+constexpr float kReadoutWidth = 120.0f;
+constexpr float kBandNumberWidth = 10.0f;
+constexpr float kBandNumberHeight = 12.0f;
+constexpr float kBandNumberGap = 6.0f;
+
+float readoutStripBottom(juce::Rectangle<float> plotArea) {
+    return plotArea.getY() + kReadoutTopInset + kReadoutHeight;
+}
+
 bool bandGainAffectsCurve(magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType t) {
     using BandType = magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType;
     return t == BandType::Bell || t == BandType::LowShelf || t == BandType::HighShelf;
@@ -414,11 +428,16 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
             g.drawEllipse(dotX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f,
                           isActive ? 1.4f : 1.0f);
         }
+        // Band number, above the dot. The readout strip is only spoken for
+        // while the band is active, so an inactive band's number may use it.
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.85f));
-        g.drawFittedText(
-            juce::String(b + 1),
-            CurveLabelLayout::centredIn(plotArea_, dotX, dotY - 16.0f, 10.0f, 12.0f).toNearestInt(),
-            juce::Justification::centred, 1);
+        g.drawFittedText(juce::String(b + 1),
+                         CurveLabelLayout::aboveAnchor(plotArea_, dotX, dotY, kBandNumberWidth,
+                                                       kBandNumberHeight, kBandNumberGap,
+                                                       isActive ? readoutStripBottom(plotArea_)
+                                                                : plotArea_.getY())
+                             .toNearestInt(),
+                         juce::Justification::centred, 1);
 
         // Live readout above the dot for the active band — freq + gain (or
         // Q for the no-gain types). Keeps the user oriented while dragging.
@@ -429,11 +448,12 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
                     : (juce::String(bandTypeShortName(band.type)) + "  " +
                        frequencyReadout(band.freq));
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.9f));
-            g.drawFittedText(
-                label,
-                CurveLabelLayout::centredIn(plotArea_, dotX, plotArea_.getY() + 2.0f, 120.0f, 14.0f)
-                    .toNearestInt(),
-                juce::Justification::centred, 1);
+            g.drawFittedText(label,
+                             CurveLabelLayout::centredIn(plotArea_, dotX,
+                                                         plotArea_.getY() + kReadoutTopInset,
+                                                         kReadoutWidth, kReadoutHeight)
+                                 .toNearestInt(),
+                             juce::Justification::centred, 1);
         }
     }
 
