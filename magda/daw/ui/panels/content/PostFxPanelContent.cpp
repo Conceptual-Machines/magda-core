@@ -165,10 +165,18 @@ class PostFxPanelContent::FaderSideTag : public juce::Component, public juce::To
         repaint();
     }
 
+    // Click semantics a button would give: primary button only, so a right,
+    // middle or navigation click never changes live routing, and the commit
+    // lands on mouseUp so the click can still be cancelled by dragging off.
     void mouseDown(const juce::MouseEvent& e) override {
-        // A right-click on a small control means "show me options", not "do the
-        // thing"; there is no menu here yet, so it should just do nothing.
-        if (owner_.trackId_ == magda::INVALID_TRACK_ID || e.mods.isPopupMenu())
+        armed_ = e.mods.isLeftButtonDown() && !e.mods.isPopupMenu() &&
+                 owner_.trackId_ != magda::INVALID_TRACK_ID;
+    }
+
+    void mouseUp(const juce::MouseEvent& e) override {
+        const bool commit = armed_ && getLocalBounds().contains(e.getPosition());
+        armed_ = false;
+        if (!commit || owner_.trackId_ == magda::INVALID_TRACK_ID)
             return;
         // The setter notifies trackDevicesChanged, which relays out and repaints.
         auto& trackManager = magda::TrackManager::getInstance();
@@ -192,6 +200,7 @@ class PostFxPanelContent::FaderSideTag : public juce::Component, public juce::To
 
     PostFxPanelContent& owner_;
     bool hovered_ = false;
+    bool armed_ = false;  // a primary-button press landed on the tag
 };
 
 //==============================================================================
