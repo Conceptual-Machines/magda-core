@@ -396,6 +396,16 @@ class Config {
         autoCrossfadeByDefault = enabled;
     }
 
+    // Which side of the track fader a NEW track's post-FX stage (and its mixer
+    // analysis rail) starts on (#2094). Per track from then on, via the fader
+    // tag on the post-FX panel. The master track is always pre-fader.
+    bool getPostFxPostFaderByDefault() const {
+        return postFxPostFaderByDefault;
+    }
+    void setPostFxPostFaderByDefault(bool postFader) {
+        postFxPostFaderByDefault = postFader;
+    }
+
     // What NEW clips start with (#2003): whether they play through an overlap
     // rather than the stack silencing one side. Per clip from then on.
     void setClipOverlapPlaysBoth(bool playBoth) {
@@ -1390,6 +1400,9 @@ class Config {
     // New clips play through their overlaps instead of the clip on top owning
     // the span it covers (see #2003).
     bool clipOverlapPlaysBoth = false;
+
+    // New tracks run their post-FX stage after the track fader (see #2094).
+    bool postFxPostFaderByDefault = true;
 
     // Browser filter settings (media explorer)
     bool browserFilterAudio = true;    // Show audio files by default

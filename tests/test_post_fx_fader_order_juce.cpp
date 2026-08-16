@@ -25,6 +25,7 @@
 #include "magda/daw/audio/plugin_manager/PluginManager.hpp"
 #include "magda/daw/audio/plugins/LevelsPlugin.hpp"
 #include "magda/daw/core/ChainNodePath.hpp"
+#include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/engine/TracktionEngineWrapper.hpp"
 
@@ -74,6 +75,15 @@ class PostFxFaderOrderTest final : public juce::UnitTest {
     PostFxFaderOrderTest() : juce::UnitTest("Post-FX Fader Order Tests", "magda") {}
 
     void runTest() override {
+        // New tracks seed their fader side from the preference (#2094), which is
+        // read off the machine's own config file. Pin it so these engine-order
+        // tests do not depend on how the developer running them has it set.
+        const bool previousDefault = Config::getInstance().getPostFxPostFaderByDefault();
+        Config::getInstance().setPostFxPostFaderByDefault(true);
+        const juce::ScopeGuard restoreDefault{[previousDefault] {
+            Config::getInstance().setPostFxPostFaderByDefault(previousDefault);
+        }};
+
         magda::test::runWithCleanJuceState([this] {
             testPostFaderIsDefault();
             testPreFaderPlacesTheStageBeforeTheFader();

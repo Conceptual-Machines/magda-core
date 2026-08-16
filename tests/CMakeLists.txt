@@ -137,6 +137,8 @@ set(TEST_SOURCES
     test_midi_context.cpp
     test_llama_model_manager.cpp
     test_track_reorder.cpp
+    # New tracks take their post-FX fader side from the preference (#2094)
+    test_post_fx_fader_default.cpp
     test_automation_modes.cpp
     test_automation_stepped_targets.cpp
     test_automation_singleton.cpp

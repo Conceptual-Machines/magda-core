@@ -131,9 +131,15 @@ For an **External Instrument**, the track's own MIDI-out and audio-in selectors 
 
 ## Post-FX Section
 
-In addition to the main FX chain, every track and the master have a **post-FX area** — a stage that runs *after* the main chain and *before* the track fader. It is the natural home for meters and analyzers, but any effect can live there.
+In addition to the main FX chain, every track and the master have a **post-FX area**, a stage that runs *after* the main chain. It is the natural home for meters and analyzers, but any effect can live there.
 
 Toggle the post-FX area from the buttons in the track chain header, then drop an [Oscilloscope or Spectrum Analyzer](devices/analysis.md), or any effect, into it. The panel opens automatically when a track has post-FX devices.
+
+### Which side of the fader it runs on
+
+By default the post-FX area runs *after* the track fader, so a meter there reads the level you are actually sending on. The **PRE FADER** / **POST FADER** tag under the **+** button on the panel's add strip shows the current side and switches it for that track. The whole section moves together; sends keep their own pre/post-fader setting either way.
+
+Master is always pre-fader, so the tag does not appear there. To choose the side new tracks start on, use **New tracks run post-FX after the fader** in [Preferences](interface/preferences.md).
 
 !!! note
     Each analyzer kind is unique per track in the post-FX area — one Oscilloscope and one Spectrum Analyzer at most — while regular effects can repeat.
