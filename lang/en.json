@@ -390,6 +390,7 @@
     "toggle.chord_preview_default": "Preview chord track on playback by default",
     "toggle.auto_crossfade_default": "Auto-crossfade new audio clips",
     "toggle.clip_overlap_plays_both": "New clips play through overlaps",
+    "toggle.post_fx_post_fader_default": "New tracks run post-FX after the fader",
     "toggle.show_tooltips": "Show tooltips",
     "button.add_colour": "+ Add Colour",
     "button.browse": "Browse",

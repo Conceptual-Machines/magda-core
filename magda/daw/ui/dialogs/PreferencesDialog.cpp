@@ -228,6 +228,8 @@ class GeneralPage : public juce::Component {
                     tr("preferences.toggle.auto_crossfade_default"));
         setupToggle(*this, clipOverlapPlaysBothToggle,
                     tr("preferences.toggle.clip_overlap_plays_both"));
+        setupToggle(*this, postFxPostFaderDefaultToggle,
+                    tr("preferences.toggle.post_fx_post_fader_default"));
 
         setupSectionHeader(*this, languageHeader, tr("preferences.language.header"));
         setupComboLabel(*this, languageLabel, tr("preferences.language.label"));
@@ -324,6 +326,8 @@ class GeneralPage : public juce::Component {
                                                   juce::dontSendNotification);
         autoCrossfadeDefaultToggle.setToggleState(config.getAutoCrossfadeByDefault(),
                                                   juce::dontSendNotification);
+        postFxPostFaderDefaultToggle.setToggleState(config.getPostFxPostFaderByDefault(),
+                                                    juce::dontSendNotification);
 
         languageCombo.clear(juce::dontSendNotification);
         availableLanguages_.clear();
@@ -379,6 +383,10 @@ class GeneralPage : public juce::Component {
         // default above. Existing clips keep whatever they were set to.
         config.setClipOverlapPlaysBoth(clipOverlapPlaysBothToggle.getToggleState());
 
+        // Same shape again: the side of the fader a new track's post-FX stage
+        // starts on (#2094). Existing tracks keep the side they were set to.
+        config.setPostFxPostFaderByDefault(postFxPostFaderDefaultToggle.getToggleState());
+
         int selIdx = languageCombo.getSelectedId() - 1;
         if (selIdx >= 0 && selIdx < static_cast<int>(availableLanguages_.size())) {
             auto newLang = availableLanguages_[selIdx];
@@ -404,9 +412,10 @@ class GeneralPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
+        // The Behaviour block is 10 toggles with a 4px gap between them.
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
-               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 7) + 16 + secGap + headerH + 4 +
+               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 10) + 36 + secGap + headerH + 4 +
                rowH + 18 + 4 + rowH + padding;
     }
 
@@ -430,8 +439,8 @@ class GeneralPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        return padding + headerH + 4 + rowH + 4 + rowH   // Layout
-               + secGap + headerH + 4 + (rowH * 7) + 20  // Behaviour
+        return padding + headerH + 4 + rowH + 4 + rowH    // Layout
+               + secGap + headerH + 4 + (rowH * 10) + 36  // Behaviour: 10 toggles, 4px apart
                + padding;
     }
 
@@ -497,6 +506,8 @@ class GeneralPage : public juce::Component {
         autoCrossfadeDefaultToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         clipOverlapPlaysBothToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        postFxPostFaderDefaultToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(secGap);
 
         // Language
@@ -586,6 +597,8 @@ class GeneralPage : public juce::Component {
         autoCrossfadeDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
         clipOverlapPlaysBothToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
+        postFxPostFaderDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
     }
 
     juce::Label zoomHeader, timelineHeader, transportHeader, autoSaveHeader;
@@ -609,6 +622,7 @@ class GeneralPage : public juce::Component {
     juce::ToggleButton chordPreviewDefaultToggle;
     juce::ToggleButton autoCrossfadeDefaultToggle;
     juce::ToggleButton clipOverlapPlaysBothToggle;
+    juce::ToggleButton postFxPostFaderDefaultToggle;
     juce::Label languageLabel;
     juce::ComboBox languageCombo;
     juce::Label restartHint;

@@ -361,6 +361,11 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     if (type == TrackType::Chord)
         track.muted = !Config::getInstance().getChordPreviewOnByDefault();
 
+    // Which side of the fader the post-FX stage starts on. Per track from then
+    // on (the fader tag on the post-FX panel); the master track is pinned
+    // pre-fader by the compilers whatever this says.
+    track.chain.postFxPostFader = Config::getInstance().getPostFxPostFaderByDefault();
+
     // Set default routing
     track.audioOutputDevice = "master";  // Audio always routes to master
     track.audioInputDevice = "";         // Audio input disabled by default (enable via UI)

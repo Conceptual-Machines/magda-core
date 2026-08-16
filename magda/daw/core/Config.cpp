@@ -277,6 +277,7 @@ void Config::save() {
     root->setProperty("chordPreviewOnByDefault", chordPreviewOnByDefault);
     root->setProperty("autoCrossfadeByDefault", autoCrossfadeByDefault);
     root->setProperty("clipOverlapPlaysBoth", clipOverlapPlaysBoth);
+    root->setProperty("postFxPostFaderByDefault", postFxPostFaderByDefault);
 
     // Clip colour mode
     root->setProperty("clipColourMode", clipColourMode);
@@ -751,6 +752,7 @@ void Config::load() {
     chordPreviewOnByDefault = getBool("chordPreviewOnByDefault", chordPreviewOnByDefault);
     autoCrossfadeByDefault = getBool("autoCrossfadeByDefault", autoCrossfadeByDefault);
     clipOverlapPlaysBoth = getBool("clipOverlapPlaysBoth", clipOverlapPlaysBoth);
+    postFxPostFaderByDefault = getBool("postFxPostFaderByDefault", postFxPostFaderByDefault);
 
     clipColourMode = getInt("clipColourMode", clipColourMode);
 
