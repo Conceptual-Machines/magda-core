@@ -390,7 +390,7 @@ constexpr int kMaxSendsPerTrack = 3;
 int pickLatency(Rng& rng) {
     if (rng.chance(60))
         return 0;
-    return 1 + rng.below(96);
+    return 1 + rng.below(kMaxDeviceLatency);
 }
 
 }  // namespace

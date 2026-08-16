@@ -53,6 +53,22 @@ constexpr TrackId kFirstExtraTrack = kFirstBaseTrack + kNumBaseTracks;
 constexpr int kNumExtraTracks = 3;
 
 /**
+ * @brief The most a generated device may claim to delay its output by.
+ *
+ * Here rather than beside the device that honours it, because it is the one
+ * number both ends have to agree on and they are in different layers: the
+ * generator writes it into an edit, and whatever plays that edit has to be able
+ * to delay by it. A device that reported more than it delayed would leave the
+ * plan compensating for samples the signal never spent, which is a graph that
+ * is misaligned in fact while every latency assertion about it passes.
+ *
+ * It also bounds how long a render has to run before the last delay line has
+ * filled, which is what lets both legs of a comparison render the same fixed
+ * number of blocks. Raising it means raising that window too.
+ */
+constexpr int kMaxDeviceLatency = 32;
+
+/**
  * @brief The analysis device every track carries, and the id it carries it under.
  *
  * The render properties need to hear one track on its own, and a track's own

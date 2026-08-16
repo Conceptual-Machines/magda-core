@@ -43,9 +43,11 @@ std::string joined(const std::vector<std::string>& messages) {
 TestDevice::TestDevice(engine::DeviceKey key, float gain, Ledger& ledger)
     : key_(key), gain_(gain), ledger_(ledger) {
     ++ledger_.created;
+    ledger_.alive.insert(key_);
 }
 
 TestDevice::~TestDevice() {
+    ledger_.alive.erase(key_);
     ledger_.destroyed.push_back(key_);
     ledger_.lastDestroyingThread = std::this_thread::get_id();
 }
@@ -56,7 +58,7 @@ void TestDevice::prepare(const engine::RenderContext& context) {
     // re-prepares the plan, never the instance, so the instance has to be able
     // to honour the new number without being told again.
     rings_.assign(static_cast<std::size_t>(context.numChannels),
-                  std::vector<float>(static_cast<std::size_t>(kMaxDeviceLatency + 1), 0.0f));
+                  std::vector<float>(static_cast<std::size_t>(kDeviceRingSamples), 0.0f));
     cursor_ = 0;
 }
 
@@ -90,9 +92,11 @@ void TestDevice::process(engine::DeviceBlock& block) {
 
 CaptureDevice::CaptureDevice(engine::DeviceKey key, Ledger& ledger) : key_(key), ledger_(ledger) {
     ++ledger_.created;
+    ledger_.alive.insert(key_);
 }
 
 CaptureDevice::~CaptureDevice() {
+    ledger_.alive.erase(key_);
     ledger_.destroyed.push_back(key_);
     ledger_.lastDestroyingThread = std::this_thread::get_id();
 }
@@ -227,6 +231,16 @@ Published Harness::publish(const Project& project) {
     for (const auto& [key, device] : factory_.devices) {
         const auto found = project.deviceLatency.find(key);
         device->setLatency(found == project.deviceLatency.end() ? 0 : found->second);
+
+        // The claim this whole harness rests on, checked where it is made
+        // rather than assumed from a constant two files away.
+        if (!device->honoursItsLatency()) {
+            published.failure = "device " + engine::toString(key) + " reports " +
+                                std::to_string(device->latencySamples()) +
+                                " samples of latency and can delay by at most " +
+                                std::to_string(kDeviceRingSamples - 1);
+            return published;
+        }
     }
 
     published.layout = engine::resolveLayout(*plan, deviceLatencyPerOp(*plan, project));
@@ -252,7 +266,11 @@ Published Harness::publish(const Project& project) {
     values_ = std::move(values);
     live_ = std::move(executor);
 
-    store_.releaseDeleted(*plan, engine::collectRuntimeStateIds(project.tracks, project.master));
+    const auto modelIds = engine::collectRuntimeStateIds(project.tracks, project.master);
+    store_.releaseDeleted(*plan, modelIds);
+
+    published.modelDevices = modelIds.devices;
+    published.owned = ledger_.alive;
 
     for (auto i = destroyedBefore; i < ledger_.destroyed.size(); ++i)
         published.destroyed.push_back(ledger_.destroyed[i]);

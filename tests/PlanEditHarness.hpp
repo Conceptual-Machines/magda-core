@@ -53,16 +53,22 @@ constexpr double kSampleRate = 44100.0;
 constexpr int kBlockSize = 64;
 constexpr int kNumChannels = 2;
 
-/// The longest a generated device may claim, and the most a generated project
-/// may hold. Between them they bound how long a render has to run before the
-/// last delay line has filled, which is what lets both legs of a comparison
-/// render the same fixed number of blocks.
-constexpr int kMaxDeviceLatency = 32;
+/// What a device delays by when it claims the most a generated one may claim.
+/// The ring is sized from the same constant the generator draws from, so the
+/// number a device reports is always a number it can honour.
+constexpr int kDeviceRingSamples = kMaxDeviceLatency + 1;
 
-/// Where a device instance was destroyed, and which one. The store promises to
-/// destroy nothing the live plan or the model still names, and to do it on the
-/// thread that publishes; both are only checkable from outside the store.
+/// Which device instances exist, which were destroyed and where. The store
+/// promises to destroy nothing the live plan or the model still names, and to
+/// destroy everything neither of them does; the first half is a question about
+/// what it freed and the second is a question about what it did not, so the
+/// live set is kept as well as the list.
 struct Ledger {
+    /// Every instance alive right now, by the identity the store keys on.
+    /// Inserted where one is made and erased where one is destroyed, so the
+    /// store leaking an instance shows up as a key nothing names.
+    std::set<engine::DeviceKey> alive;
+
     std::vector<engine::DeviceKey> destroyed;
     std::thread::id lastDestroyingThread;
     int created = 0;
@@ -92,6 +98,16 @@ class TestDevice final : public engine::EngineDevice {
 
     void setLatency(int samples) {
         latency_ = samples;
+    }
+
+    /// Whether the number it reports is a number it can delay by. A device that
+    /// claimed more than its ring holds would have the plan compensating for
+    /// samples the signal never spent: the alignment properties would go on
+    /// passing, because they read the plan, while every render underneath them
+    /// ran on a graph that was misaligned in fact. The harness refuses to
+    /// publish when this is false rather than leaving it to be noticed.
+    bool honoursItsLatency() const {
+        return latency_ >= 0 && latency_ < kDeviceRingSamples;
     }
 
   private:
@@ -179,6 +195,16 @@ struct Published {
 
     /// Device instances the store destroyed on this publish.
     std::vector<engine::DeviceKey> destroyed;
+
+    /// Device instances the store still owns once the publish is through. What
+    /// it freed is only half the contract; the other half is that it froze
+    /// nothing it should have let go, and a leak is invisible in a list of
+    /// destructions.
+    std::set<engine::DeviceKey> owned;
+
+    /// The device half of the keep-set the store was handed, as the engine's
+    /// own walk of the model produced it rather than as the harness reads it.
+    std::set<engine::DeviceKey> modelDevices;
 };
 
 /**

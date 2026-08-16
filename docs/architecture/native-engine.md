@@ -673,9 +673,12 @@ deep sweep behind `./magda_tests "[deep]"` is four thousand sequences of forty a
 minutes; it is what to reach for when the differ or the crossfade pass changes. Both were checked
 against a broken engine before being believed: carrying an op whose inputs had moved, never
 carrying a delay line, one sample too much compensation on every edge, and a fade taking a
-changed op as its old side are each caught, three of them as a sequence of one or two edits.
-Neither sweep has found an engine bug. What they did find, twice, was the harness calling an edit
-unrelated when it was not.
+changed op as its old side are each caught, three of them as a sequence of one or two edits, and
+so are a store that leaks an instance nothing names and a device that reports more latency than
+it delays by. Neither sweep has found an engine bug. What they found instead, three times, was
+the harness: twice calling an edit unrelated when it was not, and once letting a generated device
+claim a latency its own ring could not honour, which would have left every render measuring a
+graph that was misaligned in fact while every latency assertion above it passed.
 
 What the rig still does not cover is the rest of
 [#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896): no case carries a real

@@ -170,6 +170,15 @@ struct Report {
     std::int64_t samplesCompared = 0;
     int steadyStatesCompared = 0;
 
+    /// Transients the step bound was actually measured over, and transients it
+    /// let through because the pass had refused an edge or something upstream
+    /// started flushed. Counted separately because the exemption is the whole
+    /// way the bound can quietly stop existing: one refused edge anywhere in a
+    /// plan exempts every track in it, so a regression that started reporting
+    /// one would disable the bound while every test stayed green.
+    int transientsBounded = 0;
+    int transientsExempt = 0;
+
     void print(const char* name) const {
         std::cout << "magda-differ-properties " << name << "\n"
                   << "  sequences=" << sequences << " publishes=" << publishes << "\n"
@@ -179,7 +188,9 @@ struct Report {
                   << "\n"
                   << "  instances destroyed=" << instancesDestroyed
                   << " samples compared=" << samplesCompared
-                  << " steady states compared=" << steadyStatesCompared << std::endl;
+                  << " steady states compared=" << steadyStatesCompared << "\n"
+                  << "  transients bounded=" << transientsBounded << " exempt=" << transientsExempt
+                  << std::endl;
     }
 };
 
@@ -432,24 +443,46 @@ AdoptionPrediction predictAdoptions(const RenderPlan& before, const PreparedLayo
 
 // --- the plan properties -----------------------------------------------------
 
-std::optional<std::string> checkRetirementLedger(const Published& published, const Project& project,
-                                                 const std::vector<engine::DeviceKey>& destroyed) {
-    if (destroyed.empty())
-        return std::nullopt;
-
-    const auto model = edits::deviceKeys(project);
+/// The whole of what the store owes, as three set relations.
+///
+/// A list of what it destroyed answers only the first of them. The second is
+/// what says it let go of anything at all: an instance neither keep-set names
+/// and that was never destroyed is a leak, and a leak looks exactly like a
+/// careful store from inside a list of destructions.
+std::optional<std::string> checkRetirementLedger(const Published& published,
+                                                 const Project& project) {
+    const auto& model = published.modelDevices;
 
     std::set<engine::DeviceKey> playing;
     for (const auto& op : published.faded.plan.ops)
         if (op.kind == engine::OpKind::Device)
             playing.insert(op.key.deviceKey());
 
-    for (const auto& key : destroyed) {
+    // Nothing reachable was destroyed.
+    for (const auto& key : published.destroyed) {
         if (model.contains(key))
             return "an instance the model still holds was destroyed: " + engine::toString(key);
         if (playing.contains(key))
             return "an instance the live plan still plays was destroyed: " + engine::toString(key);
     }
+
+    // Nothing unreachable was kept.
+    for (const auto& key : published.owned)
+        if (!model.contains(key) && !playing.contains(key))
+            return "an instance nothing names is still owned: " + engine::toString(key);
+
+    // And everything that plays is there to play.
+    for (const auto& key : playing)
+        if (!published.owned.contains(key))
+            return "the live plan plays an instance the store does not own: " +
+                   engine::toString(key);
+
+    // The keep-set the store was handed is the model's devices, and this is the
+    // other reading of the same walk. A disagreement here is not a retirement
+    // bug, but it would make every line above an assertion about the wrong set.
+    if (const auto walked = edits::deviceKeys(project); walked != model)
+        return "the engine's walk of the model and the harness's do not agree on which "
+               "devices exist";
 
     return std::nullopt;
 }
@@ -462,6 +495,8 @@ std::optional<std::string> planProperties(const std::vector<Edit>& edits, Report
     if (!published.failure.empty())
         return "step 0: " + published.failure;
     if (const auto problem = checkAlignment(published.faded.plan, published.layout))
+        return "step 0: " + *problem;
+    if (const auto problem = checkRetirementLedger(published, project))
         return "step 0: " + *problem;
 
     for (std::size_t step = 0; step < edits.size(); ++step) {
@@ -509,7 +544,7 @@ std::optional<std::string> planProperties(const std::vector<Edit>& edits, Report
             return where + "the executor adopted " + std::to_string(published.carriedCrossfades) +
                    " fade ramps and the plans say " + std::to_string(prediction.fadeRamps);
 
-        if (const auto problem = checkRetirementLedger(published, project, published.destroyed))
+        if (const auto problem = checkRetirementLedger(published, project))
             return where + *problem;
 
         if (harness.ledger().lastDestroyingThread != std::thread::id{} &&
@@ -787,7 +822,7 @@ constexpr float kRunawayLevel = 64.0f;
 constexpr int kMaxFadeCascade = 8;
 
 std::optional<std::string> checkStepBounds(TrackId trackId, const std::vector<float>& window,
-                                           float before, bool faded, bool flushed) {
+                                           float before, bool faded, bool flushed, Report* report) {
     if (window.empty())
         return std::nullopt;
 
@@ -803,8 +838,14 @@ std::optional<std::string> checkStepBounds(TrackId trackId, const std::vector<fl
     // A path that starts from silence steps by whatever it was carrying, and
     // an edge the pass refused steps by whatever it had left: both are declared
     // divergences rather than failures, and both are counted where they happen.
-    if (!faded || flushed)
+    if (!faded || flushed) {
+        if (report != nullptr)
+            ++report->transientsExempt;
         return std::nullopt;
+    }
+
+    if (report != nullptr)
+        ++report->transientsBounded;
 
     // Measured against the distance the transient itself covers, so that no
     // level has to be known: a ramp spreads that distance over the fade and a
@@ -906,7 +947,7 @@ std::optional<std::string> transientProperty(const std::vector<Edit>& edits, Rep
 
             if (const auto problem =
                     checkStepBounds(trackId, window, steady[trackId], published.faded.unfaded == 0,
-                                    pathStartsFlushed(upstream, before, published)))
+                                    pathStartsFlushed(upstream, before, published), report))
                 return where + *problem;
 
             if (!window.empty())
@@ -1089,6 +1130,10 @@ TEST_CASE("A swap leaves the track it changed inside its own bounds",
 
     CHECK(report.fadesInserted > 0);
     CHECK(report.steadyStatesCompared > 0);
+
+    // The bound is skipped wherever the pass refused an edge, which is most
+    // steps, so the one thing that says it still exists is that it was reached.
+    CHECK(report.transientsBounded > 0);
 }
 
 TEST_CASE("The differ properties, swept deeply", "[.][deep][engine][plan][diff][property]") {
@@ -1117,6 +1162,70 @@ TEST_CASE("The differ properties, swept deeply", "[.][deep][engine][plan][diff][
 // A property test that cannot fail looks exactly like one that passes, and a
 // generator that has drifted into producing nothing is the most likely way for
 // that to happen. These are what says the sweep above is measuring something.
+
+TEST_CASE("A generated device delays by exactly what it reports",
+          "[engine][plan][diff][property]") {
+    // The premise everything about latency here rests on. A device that
+    // reported more than it delayed would leave the plan compensating for
+    // samples the signal never spent: the alignment property would go on
+    // passing, because it reads the plan, and every render under it would be
+    // running on a graph misaligned in fact. Pinned at the largest latency the
+    // generator can hand out, and at nothing, because both ends of the range
+    // are where a ring gets its arithmetic wrong.
+    for (const auto latency : {0, 1, edits::kMaxDeviceLatency / 2, edits::kMaxDeviceLatency}) {
+        INFO("latency " << latency);
+
+        edits::Ledger ledger;
+        edits::TestDevice device(engine::DeviceKey{ChainSegment::Fx, 4}, 1.0f, ledger);
+        device.setLatency(latency);
+        REQUIRE(device.honoursItsLatency());
+        REQUIRE(device.latencySamples() == latency);
+
+        const engine::RenderContext context{edits::kSampleRate, edits::kBlockSize,
+                                            edits::kNumChannels};
+        device.prepare(context);
+
+        // An impulse, and then enough silence for it to come out however far it
+        // is held. Read across block boundaries, because a ring that wrapped
+        // wrong is a ring that is right for the first block only.
+        constexpr int kBlocks = 4;
+        std::vector<float> stream;
+        juce::AudioBuffer<float> buffer(edits::kNumChannels, edits::kBlockSize);
+
+        for (int block = 0; block < kBlocks; ++block) {
+            buffer.clear();
+            if (block == 0)
+                buffer.setSample(0, 0, 1.0f);
+
+            engine::DeviceBlock deviceBlock;
+            deviceBlock.block.numSamples = edits::kBlockSize;
+            deviceBlock.audio = juce::dsp::AudioBlock<float>(buffer);
+            device.process(deviceBlock);
+
+            for (int sample = 0; sample < edits::kBlockSize; ++sample)
+                stream.push_back(buffer.getSample(0, sample));
+        }
+
+        for (std::size_t sample = 0; sample < stream.size(); ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(stream[sample] == (sample == static_cast<std::size_t>(latency) ? 1.0f : 0.0f));
+        }
+    }
+}
+
+TEST_CASE("The generator never asks for a latency a device cannot honour",
+          "[engine][plan][diff][property]") {
+    // The other end of the same claim, and the one that catches the two
+    // constants drifting apart again: whatever the generator writes into an
+    // edit has to be a number the thing playing it can delay by.
+    for (int seed = 1; seed <= 64; ++seed)
+        for (const auto& edit :
+             edits::generate(static_cast<std::uint64_t>(seed), kSequenceLength)) {
+            INFO(edits::toString(edit));
+            REQUIRE(edit.latencySamples >= 0);
+            REQUIRE(edit.latencySamples <= edits::kMaxDeviceLatency);
+        }
+}
 
 TEST_CASE("The generator covers its own vocabulary", "[engine][plan][diff][property]") {
     std::set<int> kinds;
