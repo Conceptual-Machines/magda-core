@@ -265,14 +265,18 @@ void CompiledEqCurveView::resampleFromDevice() {
     using Eq = magda::daw::audio::compiled::MagdaEqCompiledPlugin;
 
     for (int band = 0; band < Eq::kBandCount; ++band) {
+        // Every slot falls back to what is already cached, never to a fixed
+        // default: a snapshot that omits a slot must leave the view showing
+        // the last known state rather than silently reading the band as
+        // disabled (or as a Bell).
         BandSnapshot snap;
-        snap.enabled =
-            valueForSlot(deviceSnapshot_, Eq::bandSlot(band, Eq::kBandEnabledOffset), 0.0f) >= 0.5f;
+        snap.enabled = valueForSlot(deviceSnapshot_, Eq::bandSlot(band, Eq::kBandEnabledOffset),
+                                    bands_[band].enabled ? 1.0f : 0.0f) >= 0.5f;
         const int typeIndex =
             juce::jlimit(0, Eq::kBandTypeCount - 1,
                          static_cast<int>(std::round(
                              valueForSlot(deviceSnapshot_, Eq::bandSlot(band, Eq::kBandTypeOffset),
-                                          static_cast<float>(BandType::Bell)))));
+                                          static_cast<float>(bands_[band].type)))));
         snap.type = static_cast<BandType>(typeIndex);
         snap.freq = valueForSlot(deviceSnapshot_, Eq::bandSlot(band, Eq::kBandFreqOffset),
                                  bands_[band].freq);

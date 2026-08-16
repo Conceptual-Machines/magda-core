@@ -447,6 +447,16 @@ target_sources(magda_juce_tests PRIVATE
     test_clip_paint_juce.cpp
     test_clip_nudge_juce.cpp
     test_multiband_curve_view_juce.cpp
+    # Boolean param cells follow value-only refreshes (#2072 follow-up).
+    # ParamSlotComponent builds into magda_daw_app, so the test target needs it
+    # and the param helpers it calls into compiled in directly.
+    test_param_slot_boolean_sync_juce.cpp
+    ../magda/daw/ui/components/chain/params/ParamSlotComponent.cpp
+    ../magda/daw/ui/components/chain/params/ParamWidgetSetup.cpp
+    ../magda/daw/ui/components/chain/params/ParamLinkResolver.cpp
+    ../magda/daw/ui/components/chain/params/ParamLinkMenu.cpp
+    ../magda/daw/ui/components/chain/params/ModulationBakeAction.cpp
+    ../magda/daw/ui/components/chain/params/ParamModulationPainter.cpp
     test_timeline_extreme_zoom_paint_juce.cpp
     test_repaint_invariance_juce.cpp
     test_arrange_beat_native_juce.cpp
@@ -581,6 +591,9 @@ add_test(NAME arrangement_transport_loop_juce
 
 add_test(NAME multiband_curve_view_juce
          COMMAND magda_juce_tests "Multiband Curve View Tests")
+
+add_test(NAME param_slot_boolean_sync_juce
+         COMMAND magda_juce_tests "Param Slot Boolean Sync Tests")
 
 add_test(NAME timeline_extreme_zoom_paint_juce
          COMMAND magda_juce_tests "Timeline Extreme Zoom Paint Tests")
