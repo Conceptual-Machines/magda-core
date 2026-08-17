@@ -23,6 +23,11 @@ void applyPersistedTabOrder(PanelState& panel, const std::vector<std::string>& s
     if (savedOrder.empty())
         return;
 
+    // activeTabIndex is a position, so it means something different once the
+    // tabs move under it. Remember what is actually in front and resolve the
+    // index again afterwards, the same way handleReorderTabs does.
+    const auto activeType = panel.getActiveContentType();
+
     std::vector<PanelContentType> ordered;
     ordered.reserve(panel.tabs.size());
 
@@ -40,6 +45,10 @@ void applyPersistedTabOrder(PanelState& panel, const std::vector<std::string>& s
     }
 
     panel.tabs = std::move(ordered);
+
+    panel.activeTabIndex = panel.getTabIndex(activeType);
+    if (panel.activeTabIndex < 0)
+        panel.activeTabIndex = 0;
 }
 
 void applyPersistedActiveTab(PanelState& panel, const std::string& savedActiveTab) {

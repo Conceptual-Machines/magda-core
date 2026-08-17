@@ -24,6 +24,17 @@ PanelState leftPanelDefaults() {
     return panel;
 }
 
+// The shipped bottom panel: Empty in front, then the clip editors. Its front
+// tab is deliberately never persisted, so a reorder must not shift it.
+PanelState bottomPanelDefaults() {
+    PanelState panel;
+    panel.location = magda::daw::ui::PanelLocation::Bottom;
+    panel.tabs = {PanelContentType::Empty, PanelContentType::PianoRoll,
+                  PanelContentType::DrumGridClipView, PanelContentType::TrackChain};
+    panel.activeTabIndex = 0;
+    return panel;
+}
+
 std::vector<std::string> idsOf(const PanelState& panel) {
     std::vector<std::string> ids;
     for (auto type : panel.tabs)
@@ -72,6 +83,32 @@ TEST_CASE("The front tab follows the tab it names, not the index it had", "[pane
     CHECK(panel.getActiveContentType() == PanelContentType::MediaExplorer);
 }
 
+TEST_CASE("Reordering carries the front tab with it, not the index it sat at", "[panels]") {
+    auto panel = leftPanelDefaults();
+    panel.activeTabIndex = 1;  // Samples in front
+
+    // No saved front tab to fall back on, so the reorder alone has to keep
+    // Samples in front rather than leaving index 1 pointing at Plugins.
+    applyPersistedTabOrder(panel, {"mediaExplorer", "pluginBrowser"});
+
+    CHECK(panel.getActiveContentType() == PanelContentType::MediaExplorer);
+    CHECK(panel.activeTabIndex == 0);
+}
+
+TEST_CASE("A reordered bottom panel still opens on Empty", "[panels]") {
+    auto panel = bottomPanelDefaults();
+
+    // The bottom panel's front tab is never persisted, so applyPersistedTabOrder
+    // is the only thing that runs on it. Moving Empty off index 0 must not
+    // leave an editor in front with nothing selected behind it.
+    applyPersistedTabOrder(panel, {"trackChain", "pianoRoll", "drumGridClipView", "empty"});
+
+    CHECK(idsOf(panel) ==
+          std::vector<std::string>{"trackChain", "pianoRoll", "drumGridClipView", "empty"});
+    CHECK(panel.getActiveContentType() == PanelContentType::Empty);
+    CHECK(panel.activeTabIndex == 3);
+}
+
 TEST_CASE("An unknown saved id is ignored rather than opening an empty panel", "[panels]") {
     auto panel = leftPanelDefaults();
 
@@ -80,9 +117,12 @@ TEST_CASE("An unknown saved id is ignored rather than opening an empty panel", "
     applyPersistedTabOrder(panel, {"somethingFromAnotherBuild", "pianoRoll", "mediaExplorer"});
     applyPersistedActiveTab(panel, "somethingFromAnotherBuild");
 
-    // Only the known, in-panel tab was honoured; the rest keep their defaults.
+    // Only the known, in-panel tab was honoured for the order. With no usable
+    // front tab to restore, the default one stays in front -- at its new
+    // position, not at the index it used to hold.
     CHECK(idsOf(panel) == std::vector<std::string>{"mediaExplorer", "pluginBrowser"});
-    CHECK(panel.getActiveContentType() == PanelContentType::MediaExplorer);
+    CHECK(panel.getActiveContentType() == PanelContentType::PluginBrowser);
+    CHECK(panel.activeTabIndex == 1);
 }
 
 TEST_CASE("A tab the saved order never mentions is kept, not dropped", "[panels]") {
