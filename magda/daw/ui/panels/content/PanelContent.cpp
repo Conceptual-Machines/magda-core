@@ -66,46 +66,79 @@ juce::String getContentTypeIcon(PanelContentType type) {
     return "Unknown";
 }
 
-namespace {
-// One row per content type. Ids are written to config.json, so they are frozen
-// once shipped: rename a PanelContentType and the id here has to stay put.
-struct ContentTypeIdEntry {
-    PanelContentType type;
-    const char* id;
-};
-
-constexpr std::array<ContentTypeIdEntry, 14> kContentTypeIds{{
-    {PanelContentType::Empty, "empty"},
-    {PanelContentType::PluginBrowser, "pluginBrowser"},
-    {PanelContentType::MediaExplorer, "mediaExplorer"},
-    {PanelContentType::PresetBrowser, "presetBrowser"},
-    {PanelContentType::Inspector, "inspector"},
-    {PanelContentType::AIChatConsole, "aiChatConsole"},
-    {PanelContentType::ScriptingConsole, "scriptingConsole"},
-    {PanelContentType::TrackChain, "trackChain"},
-    {PanelContentType::PianoRoll, "pianoRoll"},
-    {PanelContentType::WaveformEditor, "waveformEditor"},
-    {PanelContentType::DrumGridClipView, "drumGridClipView"},
-    {PanelContentType::ChordClipView, "chordClipView"},
-    {PanelContentType::AutomationClipEditor, "automationClipEditor"},
-    {PanelContentType::AudioClipProperties, "audioClipProperties"},
-}};
-}  // namespace
-
+// Ids are written to config.json, so they are frozen once shipped: renaming a
+// PanelContentType must not change the id it maps to here.
+//
+// Deliberately a switch with no default, so adding a content type without
+// giving it an id is a -Wswitch warning rather than a silent persistence hole.
+// An unmapped type would serialise as an empty id, which reads back as "tab
+// this build does not know" and quietly sorts to the end of the saved order.
 juce::String getContentTypeId(PanelContentType type) {
-    for (const auto& entry : kContentTypeIds) {
-        if (entry.type == type)
-            return entry.id;
+    switch (type) {
+        case PanelContentType::Empty:
+            return "empty";
+        case PanelContentType::PluginBrowser:
+            return "pluginBrowser";
+        case PanelContentType::MediaExplorer:
+            return "mediaExplorer";
+        case PanelContentType::PresetBrowser:
+            return "presetBrowser";
+        case PanelContentType::Inspector:
+            return "inspector";
+        case PanelContentType::AIChatConsole:
+            return "aiChatConsole";
+        case PanelContentType::ScriptingConsole:
+            return "scriptingConsole";
+        case PanelContentType::TrackChain:
+            return "trackChain";
+        case PanelContentType::PianoRoll:
+            return "pianoRoll";
+        case PanelContentType::WaveformEditor:
+            return "waveformEditor";
+        case PanelContentType::DrumGridClipView:
+            return "drumGridClipView";
+        case PanelContentType::ChordClipView:
+            return "chordClipView";
+        case PanelContentType::AutomationClipEditor:
+            return "automationClipEditor";
+        case PanelContentType::AudioClipProperties:
+            return "audioClipProperties";
     }
     return {};
 }
 
 std::optional<PanelContentType> contentTypeFromId(const juce::String& id) {
-    for (const auto& entry : kContentTypeIds) {
-        if (id == entry.id)
-            return entry.type;
+    if (id.isEmpty())
+        return std::nullopt;
+
+    // Reverse lookup runs through getContentTypeId, so the id strings have
+    // exactly one definition and the two directions cannot disagree. The list
+    // of types below is the one thing a new content type has to be added to
+    // here; forgetting it costs that tab its saved position (it reverts to the
+    // default one) rather than corrupting anything. test_panel_tab_persistence
+    // round-trips every entry.
+    for (auto type : allContentTypes()) {
+        if (id == getContentTypeId(type))
+            return type;
     }
     return std::nullopt;
+}
+
+std::array<PanelContentType, 14> allContentTypes() {
+    return {PanelContentType::Empty,
+            PanelContentType::PluginBrowser,
+            PanelContentType::MediaExplorer,
+            PanelContentType::PresetBrowser,
+            PanelContentType::Inspector,
+            PanelContentType::AIChatConsole,
+            PanelContentType::ScriptingConsole,
+            PanelContentType::TrackChain,
+            PanelContentType::PianoRoll,
+            PanelContentType::WaveformEditor,
+            PanelContentType::DrumGridClipView,
+            PanelContentType::ChordClipView,
+            PanelContentType::AutomationClipEditor,
+            PanelContentType::AudioClipProperties};
 }
 
 }  // namespace magda::daw::ui

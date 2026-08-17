@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
 #include <optional>
 
 namespace magda::daw::ui {
@@ -139,5 +140,9 @@ juce::String getContentTypeId(PanelContentType type);
  *  for an id this build does not know, so a config written by a different
  *  build degrades to the defaults instead of failing to open. */
 std::optional<PanelContentType> contentTypeFromId(const juce::String& id);
+
+/** Every PanelContentType, in declaration order. Backs the reverse id lookup;
+ *  a new content type belongs here as well as in getContentTypeId. */
+std::array<PanelContentType, 14> allContentTypes();
 
 }  // namespace magda::daw::ui

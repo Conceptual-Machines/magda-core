@@ -4,11 +4,14 @@
 // Pure state manipulation, no Config and no UI.
 
 #include <catch2/catch_test_macros.hpp>
+#include <set>
 
 #include "magda/daw/ui/panels/state/PanelController.hpp"
 
+using magda::daw::ui::allContentTypes;
 using magda::daw::ui::applyPersistedActiveTab;
 using magda::daw::ui::applyPersistedTabOrder;
+using magda::daw::ui::contentTypeFromId;
 using magda::daw::ui::getContentTypeId;
 using magda::daw::ui::PanelContentType;
 using magda::daw::ui::PanelState;
@@ -43,6 +46,25 @@ std::vector<std::string> idsOf(const PanelState& panel) {
 }
 
 }  // namespace
+
+TEST_CASE("Every content type has a unique id that round-trips", "[panels]") {
+    // The ids go to config.json, so a type that serialises to nothing, or two
+    // that collide, would silently lose a tab's saved position.
+    std::set<std::string> seen;
+
+    for (auto type : allContentTypes()) {
+        const auto id = getContentTypeId(type);
+        INFO("content type id: " << id);
+        CHECK(id.isNotEmpty());
+        CHECK(seen.insert(id.toStdString()).second);
+        CHECK(contentTypeFromId(id) == type);
+    }
+}
+
+TEST_CASE("An id no build ever wrote resolves to nothing", "[panels]") {
+    CHECK(contentTypeFromId("") == std::nullopt);
+    CHECK(contentTypeFromId("somethingFromAnotherBuild") == std::nullopt);
+}
 
 TEST_CASE("An empty saved layout leaves the panel defaults alone", "[panels]") {
     auto panel = leftPanelDefaults();
