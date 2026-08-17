@@ -33,6 +33,12 @@ class FaustAgent {
     /// Validate target-specific control conventions before MCP compilation.
     static bool validateSource(Target target, const std::string& source, std::string& errorOut);
 
+    /// The system prompt for a target. Public so tests can hold the worked
+    /// examples inside it to the same contract validateSource enforces: an
+    /// example that breaks the rules teaches every model to break them, and
+    /// smaller models copy the examples over the prose.
+    static const char* getSystemPrompt(Target target);
+
     // `conversation` carries the running multi-turn history (prior generated
     // DSP, fix attempts) so refinements edit the existing code rather than
     // starting blank. It is updated in place with the turns from this call.
@@ -48,7 +54,6 @@ class FaustAgent {
     }
 
   private:
-    static const char* getSystemPrompt(Target target);
     Result parseJson(const juce::String& text);
 
     // Compile through faust-mcp. A disabled server intentionally stages code
