@@ -54,6 +54,19 @@ GUIDELINES:
 - Use tasteful, playable defaults and sensible ranges.
 - Use stdfaust.lib oscillators, filters, envelopes and effects only.
 - Keep source short and readable with named helpers. The default must make sound after MIDI note-on.
+
+EXAMPLES (shape only, do not echo verbatim):
+
+User: "warm analogue pad with a filter sweep"
+{
+  "name": "Warm Pad",
+  "description": "Soft analogue pad with a resonant filter sweep.",
+  "source": "declare name \"Warm Pad\";\ndeclare description \"Soft analogue pad with a resonant filter sweep.\";\nimport(\"stdfaust.lib\");\nfreq = hslider(\"freq\", 440, 20, 20000, 0.01);\ngain = hslider(\"gain\", 0.5, 0, 1, 0.01);\ngate = button(\"gate\");\nattack = hslider(\"Attack [idx:0]\", 0.05, 0.001, 2, 0.001);\ndecay = hslider(\"Decay [idx:1]\", 0.2, 0.001, 2, 0.001);\nsustain = hslider(\"Sustain [idx:2]\", 0.7, 0, 1, 0.01);\nrelease = hslider(\"Release [idx:3]\", 0.4, 0.001, 5, 0.001);\ncutoff = hslider(\"Cutoff [idx:4]\", 2000, 100, 8000, 1);\nresonance = hslider(\"Resonance [idx:5]\", 1.5, 0.5, 10, 0.01);\nenv = en.adsr(attack, decay, sustain, release, gate);\nvoice = os.sawtooth(freq) : fi.resonlp(cutoff, resonance, 1) : *(env) : *(gain);\nprocess = voice <: _, _;"
+}
+
+Note in that example which labels carry [idx:N] and which do not: freq, gain and gate are
+plain, every other control is indexed. Copying the plain form onto user controls is the most
+common way to get this wrong.
 )PROMPT";
     }
     return R"PROMPT(You are a Faust DSP author. Given a user description of an audio effect or
@@ -379,6 +392,10 @@ FaustAgent::Result FaustAgent::runConversational(const std::string& message,
     const juce::String originalPrompt = juce::String::fromUTF8(message.c_str());
     juce::String userTurn = originalPrompt;
     std::string lastError;
+    // Which check rejected the last attempt, so the give-up message names the
+    // one that actually fired. Reporting a metadata rejection as a compile
+    // failure sends people looking at the Faust MCP, which never ran.
+    const char* lastStage = "generation";
 
     for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
         if (shouldStop_.load()) {
@@ -420,6 +437,7 @@ FaustAgent::Result FaustAgent::runConversational(const std::string& message,
         if (result.hasError) {
             // Not valid JSON — retry off the original context.
             lastError = result.error;
+            lastStage = "JSON parsing";
             userTurn = originalPrompt +
                        "\n\n(Your previous reply was not valid JSON. Output ONLY the JSON "
                        "object with fields name, description and source.)";
@@ -432,12 +450,19 @@ FaustAgent::Result FaustAgent::runConversational(const std::string& message,
         std::string metaErr;
         if (!validateSource(target_, result.source, metaErr)) {
             lastError = metaErr;
+            lastStage = "control metadata validation";
             if (onToken)
                 onToken(juce::String::fromUTF8("\n[metadata invalid, fixing...]\n"));
-            userTurn = originalPrompt +
-                       "\n\n(Your previous attempt had invalid control metadata:\n" + metaErr +
-                       "\nFix every target-specific control requirement and output the corrected "
-                       "JSON object.)";
+            // Hand back the source the complaints refer to, exactly as the
+            // compile-failure path below does. Without it the model cannot
+            // repair what it wrote, only re-roll the same prompt, so a
+            // systematic mistake reproduces on every attempt.
+            userTurn =
+                originalPrompt + "\n\n(Your previous attempt had invalid control metadata:\n";
+            userTurn += "```\n" + juce::String(result.source) + "\n```\nProblems:\n" +
+                        juce::String(metaErr) +
+                        "\nFix every listed problem, leave everything else as it is, and output "
+                        "the corrected JSON object.)";
             continue;
         }
 
@@ -458,6 +483,7 @@ FaustAgent::Result FaustAgent::runConversational(const std::string& message,
         // and the error inline, so failed attempts neither chain off each other
         // nor get persisted.
         lastError = compileErr;
+        lastStage = "the Faust compile check";
         if (onToken)
             onToken(juce::String::fromUTF8("\n[compile failed, fixing...]\n"));
         userTurn = originalPrompt + "\n\n(Your previous attempt failed to compile:\n```\n" +
@@ -467,8 +493,8 @@ FaustAgent::Result FaustAgent::runConversational(const std::string& message,
 
     result = Result{};
     result.hasError = true;
-    result.error = "Faust compilation still failing after " + std::to_string(kMaxAttempts) +
-                   " attempts:\n" + lastError;
+    result.error = "Faust generation gave up after " + std::to_string(kMaxAttempts) +
+                   " attempts; last rejected by " + lastStage + ":\n" + lastError;
     logFaustAgentResult(result);
     return result;
 }

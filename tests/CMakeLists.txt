@@ -109,6 +109,9 @@ set(TEST_SOURCES
     test_agent_device_catalog.cpp
     test_chord_agent.cpp
     test_faust_agent.cpp
+    # The prompts' worked examples must satisfy the validator (Faust instrument
+    # [idx:N] report)
+    test_faust_prompt_examples.cpp
     test_dsl_project_commands.cpp
     test_dsl_rack_commands.cpp
     test_scale_detection.cpp
