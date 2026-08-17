@@ -164,6 +164,16 @@ juce::File themesDir() {
 }
 
 juce::File configFile() {
+    // MAGDA_CONFIG_FILE redirects the settings file wholesale. This exists so a
+    // process that is not the user's DAW session -- the test binaries above all
+    // -- cannot write their in-memory Config over the developer's real
+    // settings. Config::save() persists the WHOLE singleton, so one save from a
+    // Config that was never load()ed replaces every preference with defaults.
+    //
+    // Read on every call rather than cached in the resolve() snapshot: config
+    // has to be readable before resolve() has run.
+    if (const auto override_ = envVar("MAGDA_CONFIG_FILE"); override_.isNotEmpty())
+        return juce::File(override_);
     return alwaysOSDefault().getChildFile("config.json");
 }
 

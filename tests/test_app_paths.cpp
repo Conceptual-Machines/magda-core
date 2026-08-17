@@ -29,15 +29,20 @@ void unsetEnv(const char* name) {
 
 struct EnvScope {
     EnvScope() {
-        // Snapshot the three knobs and restore on dtor so tests don't leak.
+        // Snapshot the knobs and restore on dtor so tests don't leak.
         snapshot("MAGDA_DATA_DIR", dataPrev);
         snapshot("MAGDA_PRESETS_DIR", presetsPrev);
         snapshot("MAGDA_RENDER_DIR", renderPrev);
+        // MAGDA_CONFIG_FILE is what keeps this binary off the developer's real
+        // config.json, so a test that changes it MUST put it back: leaking an
+        // unset here would leave every later test pointed at the real file.
+        snapshot("MAGDA_CONFIG_FILE", configFilePrev);
     }
     ~EnvScope() {
         restore("MAGDA_DATA_DIR", dataPrev);
         restore("MAGDA_PRESETS_DIR", presetsPrev);
         restore("MAGDA_RENDER_DIR", renderPrev);
+        restore("MAGDA_CONFIG_FILE", configFilePrev);
         // Also reset Config overrides so the next test starts clean.
         magda::Config::getInstance().setDataDir({});
         magda::Config::getInstance().setPresetsDir({});
@@ -59,6 +64,7 @@ struct EnvScope {
     juce::String dataPrev;
     juce::String presetsPrev;
     juce::String renderPrev;
+    juce::String configFilePrev;
 };
 
 }  // namespace
@@ -130,14 +136,29 @@ TEST_CASE("paths subpaths compose under dataDir", "[app_paths]") {
             juce::File("/tmp/magda-subpath-test/param_detector.log"));
 }
 
-TEST_CASE("paths::configFile is anchored to OS default regardless of override", "[app_paths]") {
+TEST_CASE("paths::configFile is anchored to OS default regardless of the data dir", "[app_paths]") {
     EnvScope scope;
+    // The test binary redirects config.json away from the developer's real one
+    // for its whole run; clear that here so this covers the data-dir anchoring
+    // it is actually about.
+    unsetEnv("MAGDA_CONFIG_FILE");
     setEnv("MAGDA_DATA_DIR", "/tmp/magda-anchor-test/data");
     paths::resolve();
 
     auto expected = paths::alwaysOSDefault().getChildFile("config.json");
     REQUIRE(paths::configFile() == expected);
     REQUIRE_FALSE(paths::configFile().getFullPathName().contains("magda-anchor-test"));
+}
+
+TEST_CASE("paths::configFile honours an explicit MAGDA_CONFIG_FILE override", "[app_paths]") {
+    // The one way to move config.json. Test binaries rely on it so a save from
+    // a Config they never loaded cannot replace the developer's settings.
+    EnvScope scope;
+    setEnv("MAGDA_CONFIG_FILE", "/tmp/magda-config-override/config.json");
+    paths::resolve();
+
+    REQUIRE(paths::configFile() == juce::File("/tmp/magda-config-override/config.json"));
+    REQUIRE(paths::configFile() != paths::alwaysOSDefault().getChildFile("config.json"));
 }
 
 TEST_CASE("paths::resolve picks up Config changes between calls", "[app_paths]") {

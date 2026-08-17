@@ -120,6 +120,10 @@ set(TEST_SOURCES
     test_arrangement_hit_tester.cpp
     # Curve-view readout stays inside the plot (#2072)
     test_curve_label_layout.cpp
+    # Keep test runs out of the developer's real config.json. The redirect must
+    # be linked into every test binary, and the guard test proves it took.
+    TestConfigRedirect.cpp
+    test_config_path_redirect.cpp
     # Keyboard clip nudging (#1957)
     test_clip_nudge.cpp
     test_mono_note_processor.cpp
@@ -449,6 +453,11 @@ target_sources(magda_juce_tests PRIVATE
     test_clip_paint_juce.cpp
     test_clip_nudge_juce.cpp
     test_multiband_curve_view_juce.cpp
+    # Keep test runs out of the developer's real config.json (see the copy in
+    # magda_tests): RemoteApiHost persists grants via Config::save(). The guard
+    # test is duplicated per target because each uses its own framework.
+    TestConfigRedirect.cpp
+    test_config_path_redirect_juce.cpp
     # Boolean param cells follow value-only refreshes (#2072 follow-up).
     # ParamSlotComponent builds into magda_daw_app, so the test target needs it
     # and the param helpers it calls into compiled in directly.
@@ -593,6 +602,9 @@ add_test(NAME arrangement_transport_loop_juce
 
 add_test(NAME multiband_curve_view_juce
          COMMAND magda_juce_tests "Multiband Curve View Tests")
+
+add_test(NAME config_path_redirect_juce
+         COMMAND magda_juce_tests "Config Path Redirect Tests")
 
 add_test(NAME param_slot_boolean_sync_juce
          COMMAND magda_juce_tests "Param Slot Boolean Sync Tests")
