@@ -1278,6 +1278,10 @@ class Config {
 
     ConfigFileStore::ReadStatus loadStatus_ = ConfigFileStore::ReadStatus::NoFile;
     juce::String loadMessage_;
+    // Latched by the first save of the session, which is the only one that
+    // refreshes the .bak. That keeps the backup holding the settings as they
+    // were at startup, out of reach of anything a later save gets wrong.
+    bool hasWrittenThisSession_ = false;
 
     // Timeline settings (in bars)
     int defaultTimelineLengthBars = 256;  // ~512 seconds at 120 BPM

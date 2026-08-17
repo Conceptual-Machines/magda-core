@@ -61,16 +61,23 @@ ReadResult read(const juce::File& file, const juce::String& stamp);
 bool mayWrite(ReadStatus status);
 
 /**
- * Write the settings file, atomically, keeping the previous contents as
- * `<name>.bak`.
+ * Write the settings file, atomically.
  *
  * The write goes to a temporary file in the same directory and is renamed over
  * the target, so an interrupted write cannot truncate the live file -- the
- * failure mode that produced the unreadable file in the first place.
+ * failure mode that produces an unreadable file in the first place.
  *
+ * @param backupPrevious Copy the file's current contents to `<name>.bak`
+ *                       first. Config passes true only for the first write of
+ *                       a session, so the backup holds the settings as they
+ *                       were at startup. Backing up on EVERY write would let
+ *                       one bad save roll the backup forward on top of the
+ *                       good copy, which is exactly how a real set of API keys
+ *                       was lost -- the backup has to be the thing a bad save
+ *                       cannot reach.
  * @return true if the file was written
  */
-bool write(const juce::File& file, const juce::String& json);
+bool write(const juce::File& file, const juce::String& json, bool backupPrevious);
 
 }  // namespace ConfigFileStore
 

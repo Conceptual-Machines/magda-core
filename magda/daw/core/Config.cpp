@@ -356,8 +356,11 @@ void Config::save() {
     if (!ConfigFileStore::mayWrite(loadStatus_)) {
         juce::Logger::writeToLog("[Config] refusing to overwrite unreadable " +
                                  configFile.getFullPathName());
-    } else if (!ConfigFileStore::write(configFile, juce::JSON::toString(juce::var(root.get())))) {
+    } else if (!ConfigFileStore::write(configFile, juce::JSON::toString(juce::var(root.get())),
+                                       !hasWrittenThisSession_)) {
         juce::Logger::writeToLog("[Config] failed to write " + configFile.getFullPathName());
+    } else {
+        hasWrittenThisSession_ = true;
     }
 
     auto listenersCopy = listeners_;

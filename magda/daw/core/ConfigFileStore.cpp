@@ -64,15 +64,13 @@ bool mayWrite(ReadStatus status) {
     return status != ReadStatus::Unreadable;
 }
 
-bool write(const juce::File& file, const juce::String& json) {
+bool write(const juce::File& file, const juce::String& json, bool backupPrevious) {
     // createDirectory() is a no-op that reports success when the directory is
     // already there.
     if (!file.getParentDirectory().createDirectory().wasOk())
         return false;
 
-    // Keep the previous contents as the last known good copy before replacing
-    // them.
-    if (file.existsAsFile()) {
+    if (backupPrevious && file.existsAsFile()) {
         auto backup = file.getSiblingFile(file.getFileName() + ".bak");
         backup.deleteFile();
         file.copyFileTo(backup);

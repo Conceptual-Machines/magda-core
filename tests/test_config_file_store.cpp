@@ -102,6 +102,17 @@ TEST_CASE("An unreadable settings file is preserved, not left to be overwritten"
         REQUIRE(store::mayWrite(result.status));
     }
 
+    SECTION("an empty file, the other shape a truncated write leaves") {
+        ScratchDir scratch;
+        scratch.configFile().replaceWithText("");
+
+        const auto result = store::read(scratch.configFile(), kStamp);
+
+        REQUIRE(result.status == Status::Quarantined);
+        REQUIRE_FALSE(scratch.configFile().existsAsFile());
+        REQUIRE(result.quarantinedAs.existsAsFile());
+    }
+
     SECTION("valid JSON that is not an object") {
         ScratchDir scratch;
         scratch.configFile().replaceWithText("[1, 2, 3]");
@@ -151,37 +162,66 @@ TEST_CASE("A file that could not be read and could not be moved is never written
     REQUIRE(store::mayWrite(Status::Quarantined));
 }
 
-TEST_CASE("Writing the settings file keeps the previous contents", "[config][config-store]") {
+TEST_CASE("Writing the settings file replaces it", "[config][config-store]") {
     ScratchDir scratch;
 
-    REQUIRE(store::write(scratch.configFile(), R"({"generation": 1})"));
+    REQUIRE(store::write(scratch.configFile(), R"({"generation": 1})", false));
     REQUIRE(scratch.configFile().loadFileAsString() == R"({"generation": 1})");
-    // Nothing to back up on the first write.
-    REQUIRE_FALSE(scratch.configFile().getSiblingFile("config.json.bak").existsAsFile());
 
-    REQUIRE(store::write(scratch.configFile(), R"({"generation": 2})"));
+    REQUIRE(store::write(scratch.configFile(), R"({"generation": 2})", false));
     REQUIRE(scratch.configFile().loadFileAsString() == R"({"generation": 2})");
+}
 
+TEST_CASE("The backup holds the state at session start, not the last write",
+          "[config][config-store]") {
+    // The point of the flag. A backup refreshed on every write is worthless
+    // exactly when it is needed: one bad save rolls it forward over the good
+    // copy. That is how a real set of API keys was lost -- the wrecked config
+    // was saved twice in the same second, and the second save's backup was the
+    // first save's damage.
+    ScratchDir scratch;
     const auto backup = scratch.configFile().getSiblingFile("config.json.bak");
+
+    // Settings as the session found them.
+    scratch.configFile().replaceWithText(R"({"keys": "precious"})");
+
+    // First save of the session takes the backup...
+    REQUIRE(store::write(scratch.configFile(), R"({"keys": "precious", "edited": 1})", true));
     REQUIRE(backup.existsAsFile());
-    REQUIRE(backup.loadFileAsString() == R"({"generation": 1})");
+    REQUIRE(backup.loadFileAsString() == R"({"keys": "precious"})");
+
+    // ...and no later save in the same session may touch it, however wrong it is.
+    REQUIRE(store::write(scratch.configFile(), R"({"wiped": true})", false));
+    REQUIRE(store::write(scratch.configFile(), R"({"wiped": true})", false));
+
+    REQUIRE(scratch.configFile().loadFileAsString() == R"({"wiped": true})");
+    REQUIRE(backup.loadFileAsString() == R"({"keys": "precious"})");
+}
+
+TEST_CASE("A first write with nothing on disk leaves no backup", "[config][config-store]") {
+    ScratchDir scratch;
+
+    REQUIRE(store::write(scratch.configFile(), R"({"generation": 1})", true));
+    REQUIRE_FALSE(scratch.configFile().getSiblingFile("config.json.bak").existsAsFile());
 }
 
 TEST_CASE("Writing the settings file leaves no stray temporaries", "[config][config-store]") {
     ScratchDir scratch;
 
-    REQUIRE(store::write(scratch.configFile(), R"({"a": 1})"));
-    REQUIRE(store::write(scratch.configFile(), R"({"a": 2})"));
+    REQUIRE(store::write(scratch.configFile(), R"({"a": 1})", true));
+    REQUIRE(store::write(scratch.configFile(), R"({"a": 2})", false));
+    REQUIRE(store::write(scratch.configFile(), R"({"a": 3})", false));
 
-    // Exactly config.json and config.json.bak, nothing half-written left over.
+    // Exactly config.json, nothing half-written left over. No .bak: the first
+    // write had nothing to copy.
     const auto files = filesMatching(scratch.dir(), "config.json");
-    REQUIRE(files.size() == 2);
+    REQUIRE(files.size() == 1);
 }
 
 TEST_CASE("A written settings file reads back", "[config][config-store]") {
     ScratchDir scratch;
 
-    REQUIRE(store::write(scratch.configFile(), R"({"uiScale": 2.0})"));
+    REQUIRE(store::write(scratch.configFile(), R"({"uiScale": 2.0})", false));
     const auto result = store::read(scratch.configFile(), kStamp);
 
     REQUIRE(result.status == Status::Loaded);
