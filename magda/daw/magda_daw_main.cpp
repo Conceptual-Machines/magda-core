@@ -240,6 +240,12 @@ class MagdaDAWApplication : public JUCEApplication {
             "Data dir: " + magda::paths::dataDir().getFullPathName() +
             (magda::paths::dataDirOverriddenByEnv() ? " (MAGDA_DATA_DIR override)" : ""));
 
+        // Config was read above, before this logger existed, so its outcome is
+        // reported here. A settings file that failed to parse used to be
+        // silently replaced by defaults on the next save (#2104); now it is
+        // preserved, and the reason lands in the log of a release build.
+        juce::Logger::writeToLog("Config: " + magda::Config::getInstance().getLoadMessage());
+
         // Install the terminate handler now that the file logger exists, so any
         // unhandled C++ exception logs its throw site + backtrace to magda.log
         // before aborting (otherwise the crash reporter shows only a bare

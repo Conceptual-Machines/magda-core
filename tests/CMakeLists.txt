@@ -124,6 +124,8 @@ set(TEST_SOURCES
     # be linked into every test binary, and the guard test proves it took.
     TestConfigRedirect.cpp
     test_config_path_redirect.cpp
+    # Settings file is never overwritten after a failed load (#2104)
+    test_config_file_store.cpp
     # Keyboard clip nudging (#1957)
     test_clip_nudge.cpp
     test_mono_note_processor.cpp

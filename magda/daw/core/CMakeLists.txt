@@ -4,6 +4,7 @@
 
 target_sources(magda_daw PRIVATE
     Config.cpp
+    ConfigFileStore.cpp
     AppPaths.cpp
     ChainNodePath.cpp
     ControlTarget.cpp

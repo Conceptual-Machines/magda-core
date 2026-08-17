@@ -349,15 +349,16 @@ void Config::save() {
         root->setProperty("analysisDefaults", juce::var(adObj));
     }
 
-    // Write to disk
+    // Write to disk. A settings file that failed to load is settings we could
+    // not read, not settings the user does not have: writing these defaults
+    // over it would destroy them (issue #2104).
     auto configFile = magda::paths::configFile();
-    configFile.getParentDirectory().createDirectory();
-
-    auto json = juce::JSON::toString(juce::var(root.get()));
-    if (!configFile.replaceWithText(json))
-        DBG("Config::save - failed to write " + configFile.getFullPathName());
-    else
-        DBG("Config::save - " + configFile.getFullPathName());
+    if (!ConfigFileStore::mayWrite(loadStatus_)) {
+        juce::Logger::writeToLog("[Config] refusing to overwrite unreadable " +
+                                 configFile.getFullPathName());
+    } else if (!ConfigFileStore::write(configFile, juce::JSON::toString(juce::var(root.get())))) {
+        juce::Logger::writeToLog("[Config] failed to write " + configFile.getFullPathName());
+    }
 
     auto listenersCopy = listeners_;
     for (auto* l : listenersCopy)
@@ -370,24 +371,19 @@ void Config::save() {
 // ---------------------------------------------------------------------------
 
 void Config::load() {
-    auto configFile = magda::paths::configFile();
-    if (!configFile.existsAsFile()) {
-        DBG("Config::load - file not found, using defaults: " + configFile.getFullPathName());
-        return;
-    }
+    // Config is loaded before the file logger exists, so the outcome is kept
+    // for the caller to log once it does. save() consults loadStatus_ so a file
+    // we failed to read is never overwritten with these defaults (#2104).
+    const auto stamp = juce::Time::getCurrentTime().formatted("%Y%m%d-%H%M%S");
+    auto read = ConfigFileStore::read(magda::paths::configFile(), stamp);
+    loadStatus_ = read.status;
+    loadMessage_ = read.message;
 
-    juce::var parsed;
-    auto result = juce::JSON::parse(configFile.loadFileAsString(), parsed);
-    if (result.failed()) {
-        DBG("Config::load - JSON parse error: " + result.getErrorMessage());
+    if (read.status != ConfigFileStore::ReadStatus::Loaded)
         return;
-    }
 
+    auto parsed = read.parsed;
     auto* obj = parsed.getDynamicObject();
-    if (obj == nullptr) {
-        DBG("Config::load - unexpected JSON root type");
-        return;
-    }
 
     auto getDouble = [&](const char* key, double fallback) -> double {
         if (!obj->hasProperty(key))
@@ -835,8 +831,6 @@ void Config::load() {
             }
         }
     }
-
-    DBG("Config::load - " + configFile.getFullPathName());
 }
 
 }  // namespace magda
