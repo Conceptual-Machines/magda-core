@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include "AppPaths.hpp"
+#include "ConfigFileStore.hpp"
 #include "LLMClientProvider.hpp"
 
 // ---------------------------------------------------------------------------
@@ -349,19 +350,16 @@ void Config::save() {
         root->setProperty("analysisDefaults", juce::var(adObj));
     }
 
-    // Write to disk. A settings file that failed to load is settings we could
-    // not read, not settings the user does not have: writing these defaults
-    // over it would destroy them (issue #2104).
+    // Write to disk. Atomically: replaceWithText() truncates the file before
+    // the new contents land, so a crash or a yanked volume in that window would
+    // leave a half-written settings file and take every preference in it with
+    // it (issue #2104).
     auto configFile = magda::paths::configFile();
-    if (!ConfigFileStore::mayWrite(loadStatus_)) {
-        juce::Logger::writeToLog("[Config] refusing to overwrite unreadable " +
-                                 configFile.getFullPathName());
-    } else if (!ConfigFileStore::write(configFile, juce::JSON::toString(juce::var(root.get())),
-                                       !hasWrittenThisSession_)) {
+    auto json = juce::JSON::toString(juce::var(root.get()));
+    if (!ConfigFileStore::write(configFile, json))
         juce::Logger::writeToLog("[Config] failed to write " + configFile.getFullPathName());
-    } else {
-        hasWrittenThisSession_ = true;
-    }
+    else
+        DBG("Config::save - " + configFile.getFullPathName());
 
     auto listenersCopy = listeners_;
     for (auto* l : listenersCopy)
@@ -374,19 +372,24 @@ void Config::save() {
 // ---------------------------------------------------------------------------
 
 void Config::load() {
-    // Config is loaded before the file logger exists, so the outcome is kept
-    // for the caller to log once it does. save() consults loadStatus_ so a file
-    // we failed to read is never overwritten with these defaults (#2104).
-    const auto stamp = juce::Time::getCurrentTime().formatted("%Y%m%d-%H%M%S");
-    auto read = ConfigFileStore::read(magda::paths::configFile(), stamp);
-    loadStatus_ = read.status;
-    loadMessage_ = read.message;
-
-    if (read.status != ConfigFileStore::ReadStatus::Loaded)
+    auto configFile = magda::paths::configFile();
+    if (!configFile.existsAsFile()) {
+        DBG("Config::load - file not found, using defaults: " + configFile.getFullPathName());
         return;
+    }
 
-    auto parsed = read.parsed;
+    juce::var parsed;
+    auto result = juce::JSON::parse(configFile.loadFileAsString(), parsed);
+    if (result.failed()) {
+        DBG("Config::load - JSON parse error: " + result.getErrorMessage());
+        return;
+    }
+
     auto* obj = parsed.getDynamicObject();
+    if (obj == nullptr) {
+        DBG("Config::load - unexpected JSON root type");
+        return;
+    }
 
     auto getDouble = [&](const char* key, double fallback) -> double {
         if (!obj->hasProperty(key))
@@ -834,6 +837,8 @@ void Config::load() {
             }
         }
     }
+
+    DBG("Config::load - " + configFile.getFullPathName());
 }
 
 }  // namespace magda

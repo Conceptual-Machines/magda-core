@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "ClipTypes.hpp"
-#include "ConfigFileStore.hpp"
 
 namespace magda {
 
@@ -1259,29 +1258,8 @@ class Config {
     void save();
     void load();
 
-    /// How the last load() went. save() refuses to overwrite a settings file
-    /// that could not be read, so defaults are never written over settings
-    /// this build failed to parse (issue #2104).
-    ConfigFileStore::ReadStatus getLoadStatus() const {
-        return loadStatus_;
-    }
-
-    /// One line describing the last load(), for the log. Config is loaded
-    /// before the file logger exists, so the caller emits this once the logger
-    /// is up rather than Config logging it itself.
-    const juce::String& getLoadMessage() const {
-        return loadMessage_;
-    }
-
   private:
     Config() = default;
-
-    ConfigFileStore::ReadStatus loadStatus_ = ConfigFileStore::ReadStatus::NoFile;
-    juce::String loadMessage_;
-    // Latched by the first save of the session, which is the only one that
-    // refreshes the .bak. That keeps the backup holding the settings as they
-    // were at startup, out of reach of anything a later save gets wrong.
-    bool hasWrittenThisSession_ = false;
 
     // Timeline settings (in bars)
     int defaultTimelineLengthBars = 256;  // ~512 seconds at 120 BPM
