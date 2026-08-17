@@ -1,15 +1,127 @@
 #include "PanelController.hpp"
 
 #include <algorithm>
+#include <string>
+
+#include "core/Config.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+
+std::vector<std::string> toContentTypeIds(const std::vector<PanelContentType>& tabs) {
+    std::vector<std::string> ids;
+    ids.reserve(tabs.size());
+    for (auto type : tabs)
+        ids.push_back(getContentTypeId(type).toStdString());
+    return ids;
+}
+
+}  // namespace
+
+void applyPersistedTabOrder(PanelState& panel, const std::vector<std::string>& savedOrder) {
+    if (savedOrder.empty())
+        return;
+
+    std::vector<PanelContentType> ordered;
+    ordered.reserve(panel.tabs.size());
+
+    for (const auto& id : savedOrder) {
+        auto type = contentTypeFromId(juce::String(id));
+        if (!type.has_value() || !panel.hasContentType(*type))
+            continue;
+        if (std::find(ordered.begin(), ordered.end(), *type) == ordered.end())
+            ordered.push_back(*type);
+    }
+
+    for (auto type : panel.tabs) {
+        if (std::find(ordered.begin(), ordered.end(), type) == ordered.end())
+            ordered.push_back(type);
+    }
+
+    panel.tabs = std::move(ordered);
+}
+
+void applyPersistedActiveTab(PanelState& panel, const std::string& savedActiveTab) {
+    if (savedActiveTab.empty())
+        return;
+
+    auto type = contentTypeFromId(juce::String(savedActiveTab));
+    if (!type.has_value())
+        return;
+
+    const int index = panel.getTabIndex(*type);
+    if (index >= 0)
+        panel.activeTabIndex = index;
+}
 
 PanelController& PanelController::getInstance() {
     static PanelController instance;
     return instance;
 }
 
-PanelController::PanelController() : state_(getDefaultPanelStates()) {}
+PanelController::PanelController() : state_(getDefaultPanelStates()) {
+    restoreFromConfig();
+}
+
+void PanelController::restoreFromConfig() {
+    const auto& config = magda::Config::getInstance();
+
+    applyPersistedTabOrder(state_.leftPanel, config.getLeftPanelTabs().tabOrder);
+    applyPersistedTabOrder(state_.rightPanel, config.getRightPanelTabs().tabOrder);
+    applyPersistedTabOrder(state_.bottomPanel, config.getBottomPanelTabs().tabOrder);
+
+    // Only the side panels restore a front tab. The bottom panel's active tab
+    // is derived from the selection (BottomPanel::updateEditorContent), so
+    // restoring one would put a clip editor in front with no clip behind it
+    // until the user next selects something.
+    applyPersistedActiveTab(state_.leftPanel, config.getLeftPanelTabs().activeTab);
+    applyPersistedActiveTab(state_.rightPanel, config.getRightPanelTabs().activeTab);
+}
+
+void PanelController::persistToConfig(PanelLocation location) {
+    auto& config = magda::Config::getInstance();
+    const auto& panel = state_.getPanel(location);
+
+    magda::Config::PanelTabsConfig tabs;
+    tabs.tabOrder = toContentTypeIds(panel.tabs);
+    // See restoreFromConfig: the bottom panel's front tab is not restored, so
+    // there is nothing worth writing for it either.
+    if (location != PanelLocation::Bottom)
+        tabs.activeTab = getContentTypeId(panel.getActiveContentType()).toStdString();
+
+    const auto& stored = [&]() -> const magda::Config::PanelTabsConfig& {
+        switch (location) {
+            case PanelLocation::Left:
+                return config.getLeftPanelTabs();
+            case PanelLocation::Right:
+                return config.getRightPanelTabs();
+            case PanelLocation::Bottom:
+                return config.getBottomPanelTabs();
+        }
+        return config.getLeftPanelTabs();  // Fallback
+    }();
+
+    // Collapse and resize also land here, and the bottom panel retargets its
+    // editor on every clip click. None of those change what is stored, and
+    // save() writes the whole settings file, so bail before touching disk.
+    if (stored.activeTab == tabs.activeTab && stored.tabOrder == tabs.tabOrder)
+        return;
+
+    switch (location) {
+        case PanelLocation::Left:
+            config.setLeftPanelTabs(std::move(tabs));
+            break;
+        case PanelLocation::Right:
+            config.setRightPanelTabs(std::move(tabs));
+            break;
+        case PanelLocation::Bottom:
+            config.setBottomPanelTabs(std::move(tabs));
+            break;
+    }
+
+    config.save();
+}
 
 void PanelController::dispatch(const PanelEvent& event) {
     std::visit(
@@ -70,6 +182,11 @@ void PanelController::removeListener(PanelStateListener* listener) {
 }
 
 void PanelController::notifyPanelChanged(PanelLocation location) {
+    // Every mutation funnels through here, so this is the one place that has
+    // to remember to write the layout back. persistToConfig ignores the calls
+    // that did not touch the tab order or the front tab.
+    persistToConfig(location);
+
     const auto& panelState = state_.getPanel(location);
     for (auto* listener : listeners_) {
         listener->panelStateChanged(location, panelState);

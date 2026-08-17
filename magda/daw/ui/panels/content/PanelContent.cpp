@@ -1,5 +1,7 @@
 #include "PanelContent.hpp"
 
+#include <array>
+
 #include "core/StringTable.hpp"
 
 namespace magda::daw::ui {
@@ -62,6 +64,48 @@ juce::String getContentTypeIcon(PanelContentType type) {
             return "Properties";
     }
     return "Unknown";
+}
+
+namespace {
+// One row per content type. Ids are written to config.json, so they are frozen
+// once shipped: rename a PanelContentType and the id here has to stay put.
+struct ContentTypeIdEntry {
+    PanelContentType type;
+    const char* id;
+};
+
+constexpr std::array<ContentTypeIdEntry, 14> kContentTypeIds{{
+    {PanelContentType::Empty, "empty"},
+    {PanelContentType::PluginBrowser, "pluginBrowser"},
+    {PanelContentType::MediaExplorer, "mediaExplorer"},
+    {PanelContentType::PresetBrowser, "presetBrowser"},
+    {PanelContentType::Inspector, "inspector"},
+    {PanelContentType::AIChatConsole, "aiChatConsole"},
+    {PanelContentType::ScriptingConsole, "scriptingConsole"},
+    {PanelContentType::TrackChain, "trackChain"},
+    {PanelContentType::PianoRoll, "pianoRoll"},
+    {PanelContentType::WaveformEditor, "waveformEditor"},
+    {PanelContentType::DrumGridClipView, "drumGridClipView"},
+    {PanelContentType::ChordClipView, "chordClipView"},
+    {PanelContentType::AutomationClipEditor, "automationClipEditor"},
+    {PanelContentType::AudioClipProperties, "audioClipProperties"},
+}};
+}  // namespace
+
+juce::String getContentTypeId(PanelContentType type) {
+    for (const auto& entry : kContentTypeIds) {
+        if (entry.type == type)
+            return entry.id;
+    }
+    return {};
+}
+
+std::optional<PanelContentType> contentTypeFromId(const juce::String& id) {
+    for (const auto& entry : kContentTypeIds) {
+        if (id == entry.id)
+            return entry.type;
+    }
+    return std::nullopt;
 }
 
 }  // namespace magda::daw::ui

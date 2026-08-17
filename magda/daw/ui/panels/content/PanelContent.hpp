@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <optional>
+
 namespace magda::daw::ui {
 
 /**
@@ -127,5 +129,15 @@ juce::String getContentTypeName(PanelContentType type);
 
 /** Get the icon name for a content type (not translated). */
 juce::String getContentTypeIcon(PanelContentType type);
+
+/** Stable id for a content type, used to persist panel layout in Config.
+ *  Never derived from the enum's numeric value, so reordering PanelContentType
+ *  cannot silently repoint a saved setting. */
+juce::String getContentTypeId(PanelContentType type);
+
+/** Resolve a stable content-type id back to its enum value. Returns nullopt
+ *  for an id this build does not know, so a config written by a different
+ *  build degrades to the defaults instead of failing to open. */
+std::optional<PanelContentType> contentTypeFromId(const juce::String& id);
 
 }  // namespace magda::daw::ui

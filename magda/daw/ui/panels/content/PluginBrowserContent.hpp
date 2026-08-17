@@ -116,6 +116,13 @@ class PluginBrowserContent : public PanelContent,
     };
     ViewMode currentViewMode_ = ViewMode::ByCategory;
 
+    // View mode persistence (#2103). Config stores a stable id per mode, not
+    // the combo box's item number, so reordering the menu later cannot
+    // repoint an existing setting.
+    static std::string viewModeId(ViewMode mode);
+    static ViewMode viewModeFromId(const std::string& id);
+    void saveViewMode() const;
+
     // Plugin data
     std::vector<PluginBrowserInfo> plugins_;
     magda::AudioEngine* engine_ = nullptr;  // For plugin scanning

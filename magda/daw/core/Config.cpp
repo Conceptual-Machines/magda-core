@@ -81,6 +81,25 @@ void Config::save() {
     root->setProperty("rightPanelWidth", rightPanelWidth);
     root->setProperty("bottomPanelHeight", bottomPanelHeight);
 
+    // Panel tab layout (front tab + left-to-right order, by content-type id)
+    {
+        auto writeTabs = [](const PanelTabsConfig& tabs) {
+            auto* panelObj = new juce::DynamicObject();
+            panelObj->setProperty("active", toJuceString(tabs.activeTab));
+            juce::Array<juce::var> orderArray;
+            for (const auto& id : tabs.tabOrder)
+                orderArray.add(toJuceString(id));
+            panelObj->setProperty("order", orderArray);
+            return juce::var(panelObj);
+        };
+
+        auto* panelTabsObj = new juce::DynamicObject();
+        panelTabsObj->setProperty("left", writeTabs(leftPanelTabs));
+        panelTabsObj->setProperty("right", writeTabs(rightPanelTabs));
+        panelTabsObj->setProperty("bottom", writeTabs(bottomPanelTabs));
+        root->setProperty("panelTabs", juce::var(panelTabsObj));
+    }
+
     // Language
     root->setProperty("language", toJuceString(language));
 
@@ -201,6 +220,7 @@ void Config::save() {
     root->setProperty("browserTreeView", browserTreeView);
     root->setProperty("browserDefaultDirectory", toJuceString(browserDefaultDirectory));
     root->setProperty("browserLastView", toJuceString(browserLastView));
+    root->setProperty("pluginBrowserViewMode", toJuceString(pluginBrowserViewMode));
     root->setProperty("sampleTaggerModelsDir", toJuceString(sampleTaggerModelsDir));
     root->setProperty("commandModelModelsDir", toJuceString(commandModelModelsDir));
     root->setProperty("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
@@ -447,6 +467,24 @@ void Config::load() {
     rightPanelWidth = getInt("rightPanelWidth", rightPanelWidth);
     bottomPanelHeight = getInt("bottomPanelHeight", bottomPanelHeight);
 
+    // Panel tab layout. Absent (a config written before this shipped) leaves
+    // the members empty, which PanelController reads as "use the defaults".
+    if (auto* panelTabsObj = obj->getProperty("panelTabs").getDynamicObject()) {
+        auto readTabs = [panelTabsObj](const char* key, PanelTabsConfig& out) {
+            auto* panelObj = panelTabsObj->getProperty(key).getDynamicObject();
+            if (panelObj == nullptr)
+                return;
+            out.activeTab = panelObj->getProperty("active").toString().toStdString();
+            out.tabOrder.clear();
+            if (const auto* orderArray = panelObj->getProperty("order").getArray())
+                for (const auto& id : *orderArray)
+                    out.tabOrder.push_back(id.toString().toStdString());
+        };
+        readTabs("left", leftPanelTabs);
+        readTabs("right", rightPanelTabs);
+        readTabs("bottom", bottomPanelTabs);
+    }
+
     language = getString("language", language);
     scrollbarOnLeft = getBool("scrollbarOnLeft", scrollbarOnLeft);
     arrangementScrollbarsAutoHide =
@@ -690,6 +728,7 @@ void Config::load() {
     browserTreeView = getBool("browserTreeView", browserTreeView);
     browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
     browserLastView = getString("browserLastView", browserLastView);
+    pluginBrowserViewMode = getString("pluginBrowserViewMode", pluginBrowserViewMode);
     sampleTaggerModelsDir = getString("sampleTaggerModelsDir", sampleTaggerModelsDir);
     commandModelModelsDir = getString("commandModelModelsDir", commandModelModelsDir);
     loadSampleTaggerOnStartup = getBool("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);

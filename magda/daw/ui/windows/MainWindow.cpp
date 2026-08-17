@@ -1316,7 +1316,10 @@ MainWindow::MainComponent::~MainComponent() {
     // Drop the menu bar's reference to our command manager before it dies.
     MenuManager::getInstance().setCommandManager(nullptr);
 
-    // Save panel collapse state and sizes to Config for persistence
+    // Save panel collapse state and sizes to Config for persistence. The
+    // save() is not optional: nothing else flushes Config on the way out, and
+    // the app ends in _exit(), so without it these writes only ever reached
+    // the in-memory singleton and every session started on the defaults.
     auto& config = Config::getInstance();
     config.setLeftPanelCollapsed(leftPanelCollapsed);
     config.setRightPanelCollapsed(rightPanelCollapsed);
@@ -1324,6 +1327,7 @@ MainWindow::MainComponent::~MainComponent() {
     config.setLeftPanelWidth(leftPanelWidth);
     config.setRightPanelWidth(rightPanelWidth);
     config.setBottomPanelHeight(bottomPanelHeight);
+    config.save();
 
     // Remove command manager key listener before destruction
     removeKeyListener(commandManager.getKeyMappings());
