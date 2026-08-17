@@ -120,6 +120,11 @@ set(TEST_SOURCES
     test_arrangement_hit_tester.cpp
     # Curve-view readout stays inside the plot (#2072)
     test_curve_label_layout.cpp
+    # Panel tab layout survives a restart (#2103). The panel sources live in
+    # magda_daw_app rather than the magda_daw library, so pull them in directly.
+    test_panel_tab_persistence.cpp
+    ../magda/daw/ui/panels/state/PanelController.cpp
+    ../magda/daw/ui/panels/content/PanelContent.cpp
     # Keep test runs out of the developer's real config.json. The redirect must
     # be linked into every test binary, and the guard test proves it took.
     TestConfigRedirect.cpp
@@ -510,6 +515,8 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/dialogs/AISettingsDialog.cpp
     ../magda/daw/ui/interaction/ArrangementCursorMap.cpp
     ../magda/daw/ui/panels/state/PanelController.cpp
+    # PanelController persists its tab layout by content-type id, which lives here
+    ../magda/daw/ui/panels/content/PanelContent.cpp
     ../magda/daw/ui/components/common/BarsBeatsTicksLabel.cpp
     ../magda/daw/ui/components/common/ValueLabelControl.cpp
     ../magda/daw/ui/components/common/DraggableValueLabel.cpp

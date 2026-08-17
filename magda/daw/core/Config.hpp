@@ -181,6 +181,37 @@ class Config {
         bottomPanelHeight = height;
     }
 
+    // Panel tab layout, restored by PanelController on startup. Content types
+    // are stable string ids ("pluginBrowser", "inspector", …) rather than tab
+    // indices, so changing the enum or the default tab list later cannot
+    // silently repoint a saved setting. An empty field means "use the
+    // built-in default", which is also what an unknown id falls back to.
+    struct PanelTabsConfig {
+        std::string activeTab;              // content-type id of the front tab
+        std::vector<std::string> tabOrder;  // content-type ids, left to right
+    };
+
+    const PanelTabsConfig& getLeftPanelTabs() const {
+        return leftPanelTabs;
+    }
+    void setLeftPanelTabs(PanelTabsConfig tabs) {
+        leftPanelTabs = std::move(tabs);
+    }
+
+    const PanelTabsConfig& getRightPanelTabs() const {
+        return rightPanelTabs;
+    }
+    void setRightPanelTabs(PanelTabsConfig tabs) {
+        rightPanelTabs = std::move(tabs);
+    }
+
+    const PanelTabsConfig& getBottomPanelTabs() const {
+        return bottomPanelTabs;
+    }
+    void setBottomPanelTabs(PanelTabsConfig tabs) {
+        bottomPanelTabs = std::move(tabs);
+    }
+
     // Layout Configuration
     bool getScrollbarOnLeft() const {
         return scrollbarOnLeft;
@@ -605,6 +636,18 @@ class Config {
     }
     void setBrowserLastView(const std::string& view) {
         browserLastView = view;
+    }
+
+    // Grouping the plugin browser restores on startup: "category",
+    // "manufacturer", "format", "favorites" or "folders". A stable id rather
+    // than the combo box's item number, so reordering that menu later cannot
+    // repoint an existing setting; an unrecognised value falls back to
+    // "category".
+    std::string getPluginBrowserViewMode() const {
+        return pluginBrowserViewMode;
+    }
+    void setPluginBrowserViewMode(const std::string& mode) {
+        pluginBrowserViewMode = mode;
     }
 
     // User-chosen location for the Sample Tagger ONNX bundle. Empty
@@ -1297,6 +1340,11 @@ class Config {
     int rightPanelWidth = 0;
     int bottomPanelHeight = 0;
 
+    // Panel tab layout (empty = use getDefaultPanelStates())
+    PanelTabsConfig leftPanelTabs;
+    PanelTabsConfig rightPanelTabs;
+    PanelTabsConfig bottomPanelTabs;
+
     // Track deletion settings
     bool confirmTrackDelete = true;  // Show confirmation dialog before deleting a track
 
@@ -1418,6 +1466,9 @@ class Config {
     // "filesystem" → file browser at browserDefaultDirectory.
     // "library"    → DB browser (sample library).
     std::string browserLastView = "filesystem";
+
+    // Which grouping the plugin browser should restore on startup (see accessor).
+    std::string pluginBrowserViewMode = "category";
 
     // Optional override for the Sample Tagger ONNX bundle location.
     // Empty = use the default dataDir/MediaDB/models.
