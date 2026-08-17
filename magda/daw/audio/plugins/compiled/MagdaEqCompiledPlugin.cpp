@@ -476,7 +476,8 @@ const CompiledPluginSpec& getMagdaEqSpec() {
         .displayName = "EQ",
         .browserCategory = "EQ",
         .description = "Built-in 8-band parametric equaliser. Per-band Enabled skips inactive "
-                       "biquads; Type selects "
+                       "biquads, and double-clicking a band's dot on the curve toggles it; "
+                       "Type selects "
                        "<b>HP</b>, <b>LowShelf</b>, <b>Bell</b>, <b>HighShelf</b>, "
                        "<b>LP</b>, or <b>Notch</b>. "
                        "MAGDA-owned RBJ biquads drive audio and share coefficient math with "

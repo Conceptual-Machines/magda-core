@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "../../../utils/CurveLabelLayout.hpp"
 #include "audio/plugins/compiled/MagdaEqCompiledPlugin.hpp"
 #include "core/GestureRouter.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -225,6 +226,20 @@ constexpr float kHitRadiusPx = 12.0f;
 constexpr float kCollapseButtonSize = 18.0f;
 constexpr float kCollapseButtonMargin = 4.0f;
 
+// The active band's live readout owns a strip along the top of the plot. The
+// per-band number rides above its dot and must stay out of that strip, so both
+// are laid out from the same numbers.
+constexpr float kReadoutTopInset = 2.0f;
+constexpr float kReadoutHeight = 14.0f;
+constexpr float kReadoutWidth = 120.0f;
+constexpr float kBandNumberWidth = 10.0f;
+constexpr float kBandNumberHeight = 12.0f;
+constexpr float kBandNumberGap = 6.0f;
+
+float readoutStripBottom(juce::Rectangle<float> plotArea) {
+    return plotArea.getY() + kReadoutTopInset + kReadoutHeight;
+}
+
 bool bandGainAffectsCurve(magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType t) {
     using BandType = magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType;
     return t == BandType::Bell || t == BandType::LowShelf || t == BandType::HighShelf;
@@ -264,14 +279,18 @@ void CompiledEqCurveView::resampleFromDevice() {
     using Eq = magda::daw::audio::compiled::MagdaEqCompiledPlugin;
 
     for (int band = 0; band < Eq::kBandCount; ++band) {
+        // Every slot falls back to what is already cached, never to a fixed
+        // default: a snapshot that omits a slot must leave the view showing
+        // the last known state rather than silently reading the band as
+        // disabled (or as a Bell).
         BandSnapshot snap;
-        snap.enabled =
-            valueForSlot(deviceSnapshot_, Eq::bandSlot(band, Eq::kBandEnabledOffset), 0.0f) >= 0.5f;
+        snap.enabled = valueForSlot(deviceSnapshot_, Eq::bandSlot(band, Eq::kBandEnabledOffset),
+                                    bands_[band].enabled ? 1.0f : 0.0f) >= 0.5f;
         const int typeIndex =
             juce::jlimit(0, Eq::kBandTypeCount - 1,
                          static_cast<int>(std::round(
                              valueForSlot(deviceSnapshot_, Eq::bandSlot(band, Eq::kBandTypeOffset),
-                                          static_cast<float>(BandType::Bell)))));
+                                          static_cast<float>(bands_[band].type)))));
         snap.type = static_cast<BandType>(typeIndex);
         snap.freq = valueForSlot(deviceSnapshot_, Eq::bandSlot(band, Eq::kBandFreqOffset),
                                  bands_[band].freq);
@@ -409,11 +428,16 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
             g.drawEllipse(dotX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f,
                           isActive ? 1.4f : 1.0f);
         }
+        // Band number, above the dot. The readout strip is only spoken for
+        // while the band is active, so an inactive band's number may use it.
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.85f));
-        g.drawFittedText(
-            juce::String(b + 1),
-            juce::Rectangle<int>(static_cast<int>(dotX) - 5, static_cast<int>(dotY) - 16, 10, 12),
-            juce::Justification::centred, 1);
+        g.drawFittedText(juce::String(b + 1),
+                         CurveLabelLayout::aboveAnchor(plotArea_, dotX, dotY, kBandNumberWidth,
+                                                       kBandNumberHeight, kBandNumberGap,
+                                                       isActive ? readoutStripBottom(plotArea_)
+                                                                : plotArea_.getY())
+                             .toNearestInt(),
+                         juce::Justification::centred, 1);
 
         // Live readout above the dot for the active band — freq + gain (or
         // Q for the no-gain types). Keeps the user oriented while dragging.
@@ -425,8 +449,10 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
                        frequencyReadout(band.freq));
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.9f));
             g.drawFittedText(label,
-                             juce::Rectangle<int>(static_cast<int>(dotX) - 60,
-                                                  static_cast<int>(plotArea_.getY()) + 2, 120, 14),
+                             CurveLabelLayout::centredIn(plotArea_, dotX,
+                                                         plotArea_.getY() + kReadoutTopInset,
+                                                         kReadoutWidth, kReadoutHeight)
+                                 .toNearestInt(),
                              juce::Justification::centred, 1);
         }
     }

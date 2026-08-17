@@ -463,6 +463,12 @@ void ParamSlotComponent::setParamValue(double value) {
     // selection is driven explicitly) showing a stale choice until the whole
     // parameter list is rebuilt.
     syncDiscreteSelection(value);
+    syncBooleanToggle(value);
+}
+
+void ParamSlotComponent::syncBooleanToggle(double value) {
+    if (boolToggle_ && boolToggle_->isVisible())
+        boolToggle_->setToggleState(value >= 0.5, juce::dontSendNotification);
 }
 
 void ParamSlotComponent::syncDiscreteSelection(double value) {
