@@ -23,7 +23,14 @@ struct RedirectConfigFile {
         // A name per process, not a shared one: two test binaries running at
         // once (ctest does that) must never see each other's settings if a test
         // ever starts reading config back.
-        const auto path = dir.getNonexistentChildFile("config", ".json").getFullPathName();
+        //
+        // A UUID rather than getNonexistentChildFile(): that only checks whether
+        // a candidate exists right now and does not reserve it, so two processes
+        // starting together would both pick the same free name. Nothing writes
+        // the file at this point, so there is no name to reserve -- uniqueness
+        // has to come from the name itself.
+        const auto path =
+            dir.getChildFile("config-" + juce::Uuid().toDashedString() + ".json").getFullPathName();
 
 #if JUCE_WINDOWS
         _putenv_s("MAGDA_CONFIG_FILE", path.toRawUTF8());
