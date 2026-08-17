@@ -20,7 +20,10 @@ struct RedirectConfigFile {
         auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
                        .getChildFile("magda-test-config");
         dir.createDirectory();
-        const auto path = dir.getChildFile("config.json").getFullPathName();
+        // A name per process, not a shared one: two test binaries running at
+        // once (ctest does that) must never see each other's settings if a test
+        // ever starts reading config back.
+        const auto path = dir.getNonexistentChildFile("config", ".json").getFullPathName();
 
 #if JUCE_WINDOWS
         _putenv_s("MAGDA_CONFIG_FILE", path.toRawUTF8());
