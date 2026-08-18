@@ -140,6 +140,14 @@ static_assert(static_cast<int>(ChainStepType::Chain) == 1);
 static_assert(static_cast<int>(ChainStepType::Device) == 2);
 static_assert(static_cast<int>(ChainStepType::Segment) == 3);
 
+// A Segment step carries the section in `ChainPathStep::id`, and
+// AutomationModSerializer writes that integer straight out. Pinning the step
+// TYPE without pinning the section would leave an insert here free to redirect
+// every saved post-FX and mixer-analysis path onto a different section.
+static_assert(static_cast<int>(ChainSegment::Fx) == 0);
+static_assert(static_cast<int>(ChainSegment::PostFx) == 1);
+static_assert(static_cast<int>(ChainSegment::MixerAnalysis) == 2);
+
 // --- Automation --------------------------------------------------------------
 
 static_assert(static_cast<int>(AutomationLaneType::Absolute) == 0);
@@ -318,6 +326,9 @@ std::vector<Pin> allPins() {
         PIN(ChainStepType, Chain, 1),
         PIN(ChainStepType, Device, 2),
         PIN(ChainStepType, Segment, 3),
+        PIN(ChainSegment, Fx, 0),
+        PIN(ChainSegment, PostFx, 1),
+        PIN(ChainSegment, MixerAnalysis, 2),
         PIN(AutomationLaneType, Absolute, 0),
         PIN(AutomationLaneType, ClipBased, 1),
         PIN(AutomationCurveType, Linear, 0),

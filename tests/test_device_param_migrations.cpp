@@ -236,6 +236,55 @@ TEST_CASE("A link into a device the migration does not name is untouched", "[mig
     CHECK(getDevice(tracks.front().chain.fxChainElements.front()).parameters.size() == 4);
 }
 
+TEST_CASE("A device id shared across sections does not migrate the wrong device",
+          "[migration][params]") {
+    const auto table = testTable();
+
+    constexpr TrackId kTrackId = 4;
+    // The main FX chain, the post-FX stage and the mixer-analysis rail allocate
+    // device ids from their own counters, so the same number addresses three
+    // different devices in one project. Only the FX-chain one is in the order
+    // the migration describes.
+    constexpr DeviceId kSharedId = 9;
+
+    std::vector<TrackInfo> tracks;
+    TrackInfo track;
+    track.id = kTrackId;
+    track.chain.fxChainElements.push_back(makeDevice(kSharedId));
+    track.chain.postFxChainElements.push_back({makeDevice(kSharedId, "magda_reverb")});
+    track.chain.mixerAnalysisElements.push_back({makeDevice(kSharedId, "oscilloscope")});
+
+    // A macro on the post-FX device, which must not be touched.
+    MacroLink postFxLink;
+    postFxLink.target =
+        ControlTarget::pluginParam(ChainNodePath::postFxDevice(kTrackId, kSharedId), 2);
+    track.macros[0].links.push_back(postFxLink);
+
+    // A macro on the FX-chain device with the same id, which must move.
+    MacroLink fxLink;
+    fxLink.target = targetFor(kTrackId, kSharedId, 0);
+    track.macros[1].links.push_back(fxLink);
+
+    tracks.push_back(std::move(track));
+
+    std::vector<AutomationLaneInfo> lanes;
+    std::vector<AutomationClipInfo> automationClips;
+    migrations::applyParamIndexMigrations(tracks, nullptr, lanes, automationClips, table);
+
+    auto& migrated = tracks.front();
+
+    // The FX-chain device migrated.
+    CHECK(getDevice(migrated.chain.fxChainElements.front()).parameters.size() == 3);
+    REQUIRE(migrated.macros[1].links.size() == 1);
+    CHECK(migrated.macros[1].links[0].target.paramIndex == 1);
+
+    // The other two sections' devices are untouched, parameters and links.
+    CHECK(migrated.chain.postFxChainElements.front().device.parameters.size() == 4);
+    CHECK(migrated.chain.mixerAnalysisElements.front().device.parameters.size() == 4);
+    REQUIRE(migrated.macros[0].links.size() == 1);
+    CHECK(migrated.macros[0].links[0].target.paramIndex == 2);
+}
+
 TEST_CASE("Devices inside a rack and on the master track migrate too", "[migration][params]") {
     const auto table = testTable();
 

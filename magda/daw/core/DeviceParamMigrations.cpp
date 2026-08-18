@@ -114,66 +114,90 @@ void migrateDeviceParameters(DeviceInfo& device, const ParamIndexMigration& migr
     migrateIndices(device.aiSoundDesignerParameters);
 }
 
-/// Which migration each device needs, collected BEFORE any of them run: a
-/// migration is matched on the saved parameter count, and migrating a device
-/// changes that count.
+/**
+ * Which migration each device needs, collected BEFORE any of them run: a
+ * migration is matched on the saved parameter count, and migrating a device
+ * changes that count.
+ *
+ * A project keys them by PATH. A `DeviceId` is not unique across a project: the
+ * main FX chain, the post-FX stage and the mixer-analysis rail each allocate
+ * from their own counter (`ensureDeviceIdAbove`, `ensurePostFxDeviceIdAbove`,
+ * `ensureMixerAnalysisDeviceIdAbove`), so one number can address three
+ * different devices in the same project. Keying by id would let one section's
+ * device be run through another section's migration - the exact silent
+ * repointing this file exists to prevent - and would let two entries overwrite
+ * each other in the map.
+ *
+ * A preset is a fragment with no project around it and one section in it, so
+ * its ids ARE unique inside it and it keys by id. `LegacyDeviceAliases` makes
+ * the same split, and a saved `ControlTarget` inside a preset is matched the
+ * same way.
+ */
+using MigrationsByPath = std::map<ChainNodePath, const ParamIndexMigration*>;
 using MigrationsById = std::map<DeviceId, const ParamIndexMigration*>;
 
-void collectElements(const std::vector<ChainElement>& elements, const MigrationTable& table,
-                     MigrationsById& found);
+/// A device and the path saved links address it by.
+using DeviceAtPath = std::pair<ChainNodePath, DeviceInfo*>;
 
-void collectRack(const RackInfo& rack, const MigrationTable& table, MigrationsById& found) {
-    for (const auto& chain : rack.chains)
-        collectElements(chain.elements, table, found);
+void collectElements(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
+                     TrackId trackId, std::vector<DeviceAtPath>& out);
+
+void collectRack(RackInfo& rack, const ChainNodePath& rackPath, TrackId trackId,
+                 std::vector<DeviceAtPath>& out) {
+    for (auto& chain : rack.chains)
+        collectElements(chain.elements, rackPath.withChain(chain.id), trackId, out);
 }
 
-void collectElements(const std::vector<ChainElement>& elements, const MigrationTable& table,
-                     MigrationsById& found) {
-    for (const auto& element : elements) {
+void collectElements(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
+                     TrackId trackId, std::vector<DeviceAtPath>& out) {
+    for (auto& element : elements) {
         if (isDevice(element)) {
-            const auto& device = getDevice(element);
-            if (const auto* migration = findMigration(device, table))
-                found[device.id] = migration;
+            auto& device = getDevice(element);
+            // A top-level device on a track keeps the legacy flat path shape,
+            // which is what the control graph stored for it.
+            out.emplace_back(parentPath.isTrackLevel
+                                 ? ChainNodePath::topLevelDevice(trackId, device.id)
+                                 : parentPath.withDevice(device.id),
+                             &device);
         } else if (isRack(element)) {
-            collectRack(getRack(element), table, found);
+            auto& rack = getRack(element);
+            const auto rackPath = parentPath.isTrackLevel ? ChainNodePath::rack(trackId, rack.id)
+                                                          : parentPath.withRack(rack.id);
+            collectRack(rack, rackPath, trackId, out);
         }
     }
 }
 
-void collectTrack(const TrackInfo& track, const MigrationTable& table, MigrationsById& found) {
-    collectElements(track.chain.fxChainElements, table, found);
-    for (const auto& element : track.chain.postFxChainElements)
-        if (const auto* migration = findMigration(element.device, table))
-            found[element.device.id] = migration;
-    for (const auto& element : track.chain.mixerAnalysisElements)
-        if (const auto* migration = findMigration(element.device, table))
-            found[element.device.id] = migration;
+/// Every device on a track, each with the path its links address it by.
+std::vector<DeviceAtPath> devicesInTrack(TrackInfo& track) {
+    std::vector<DeviceAtPath> devices;
+    collectElements(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id), track.id,
+                    devices);
+    for (auto& element : track.chain.postFxChainElements)
+        devices.emplace_back(ChainNodePath::postFxDevice(track.id, element.device.id),
+                             &element.device);
+    for (auto& element : track.chain.mixerAnalysisElements)
+        devices.emplace_back(ChainNodePath::mixerAnalysisDevice(track.id, element.device.id),
+                             &element.device);
+    return devices;
 }
 
-void forEachDeviceElements(std::vector<ChainElement>& elements,
-                           const std::function<void(DeviceInfo&)>& visit);
+// --- Fragments (presets), matched by id ------------------------------------
 
-void forEachDeviceRack(RackInfo& rack, const std::function<void(DeviceInfo&)>& visit) {
+void collectFragmentElements(std::vector<ChainElement>& elements, std::vector<DeviceInfo*>& out);
+
+void collectFragmentRack(RackInfo& rack, std::vector<DeviceInfo*>& out) {
     for (auto& chain : rack.chains)
-        forEachDeviceElements(chain.elements, visit);
+        collectFragmentElements(chain.elements, out);
 }
 
-void forEachDeviceElements(std::vector<ChainElement>& elements,
-                           const std::function<void(DeviceInfo&)>& visit) {
+void collectFragmentElements(std::vector<ChainElement>& elements, std::vector<DeviceInfo*>& out) {
     for (auto& element : elements) {
         if (isDevice(element))
-            visit(getDevice(element));
+            out.push_back(&getDevice(element));
         else if (isRack(element))
-            forEachDeviceRack(getRack(element), visit);
+            collectFragmentRack(getRack(element), out);
     }
-}
-
-void forEachDeviceInTrack(TrackInfo& track, const std::function<void(DeviceInfo&)>& visit) {
-    forEachDeviceElements(track.chain.fxChainElements, visit);
-    for (auto& element : track.chain.postFxChainElements)
-        visit(element.device);
-    for (auto& element : track.chain.mixerAnalysisElements)
-        visit(element.device);
 }
 
 void forEachLinkOwnerElements(std::vector<ChainElement>& elements,
@@ -204,26 +228,31 @@ void forEachLinkOwnerInTrack(TrackInfo& track,
     forEachLinkOwnerElements(track.chain.fxChainElements, visit);
     for (auto& element : track.chain.postFxChainElements)
         visit(element.device.macros, element.device.mods);
+    for (auto& element : track.chain.mixerAnalysisElements)
+        visit(element.device.macros, element.device.mods);
 }
 
-/// Nullopt when the link should be dropped; the index back when nothing applies.
-std::optional<int> migratedTargetIndex(const ControlTarget& target, const MigrationsById& found) {
+/// Nullopt when the link should be dropped; the index back when nothing
+/// applies. `lookup` answers with the migration for a target, or null.
+template <typename Lookup>
+std::optional<int> migratedTargetIndex(const ControlTarget& target, const Lookup& lookup) {
     if (target.kind != ControlTarget::Kind::PluginParam)
         return target.paramIndex;
 
-    const auto entry = found.find(target.devicePath.getDeviceId());
-    if (entry == found.end() || entry->second == nullptr)
+    const auto* migration = lookup(target);
+    if (migration == nullptr)
         return target.paramIndex;
 
-    return migratedParamIndex(*entry->second, target.paramIndex);
+    return migratedParamIndex(*migration, target.paramIndex);
 }
 
 /// Rewrite what still exists, drop what does not.
-template <typename LinkArray> void migrateLinkList(LinkArray& links, const MigrationsById& found) {
+template <typename LinkArray, typename Lookup>
+void migrateLinkList(LinkArray& links, const Lookup& lookup) {
     LinkArray kept;
     kept.reserve(links.size());
     for (auto& link : links) {
-        const auto mapped = migratedTargetIndex(link.target, found);
+        const auto mapped = migratedTargetIndex(link.target, lookup);
         if (!mapped)
             continue;
         link.target.paramIndex = *mapped;
@@ -232,11 +261,26 @@ template <typename LinkArray> void migrateLinkList(LinkArray& links, const Migra
     links = std::move(kept);
 }
 
-void migrateOwnerLinks(MacroArray& macros, ModArray& mods, const MigrationsById& found) {
+template <typename Lookup>
+void migrateOwnerLinks(MacroArray& macros, ModArray& mods, const Lookup& lookup) {
     for (auto& macro : macros)
-        migrateLinkList(macro.links, found);
+        migrateLinkList(macro.links, lookup);
     for (auto& mod : mods)
-        migrateLinkList(mod.links, found);
+        migrateLinkList(mod.links, lookup);
+}
+
+auto lookupByPath(const MigrationsByPath& found) {
+    return [&found](const ControlTarget& target) -> const ParamIndexMigration* {
+        const auto entry = found.find(target.devicePath);
+        return entry == found.end() ? nullptr : entry->second;
+    };
+}
+
+auto lookupById(const MigrationsById& found) {
+    return [&found](const ControlTarget& target) -> const ParamIndexMigration* {
+        const auto entry = found.find(target.devicePath.getDeviceId());
+        return entry == found.end() ? nullptr : entry->second;
+    };
 }
 
 }  // namespace
@@ -279,30 +323,38 @@ void applyParamIndexMigrations(std::vector<TrackInfo>& tracks, TrackInfo* master
     if (table.empty())
         return;
 
-    MigrationsById found;
-    for (const auto& track : tracks)
-        collectTrack(track, table, found);
-    if (masterTrack != nullptr)
-        collectTrack(*masterTrack, table, found);
+    // Collect every device with its path first: a migration is matched on the
+    // parameter count the file saved, so nothing may be migrated until the whole
+    // project has been read.
+    std::vector<DeviceAtPath> devices;
+    for (auto& track : tracks) {
+        auto onTrack = devicesInTrack(track);
+        devices.insert(devices.end(), onTrack.begin(), onTrack.end());
+    }
+    if (masterTrack != nullptr) {
+        auto onMaster = devicesInTrack(*masterTrack);
+        devices.insert(devices.end(), onMaster.begin(), onMaster.end());
+    }
+
+    MigrationsByPath found;
+    for (const auto& [path, device] : devices)
+        if (const auto* migration = findMigration(*device, table))
+            found[path] = migration;
 
     if (found.empty())
         return;
 
-    const auto migrateDevices = [&found](TrackInfo& track) {
-        forEachDeviceInTrack(track, [&found](DeviceInfo& device) {
-            const auto entry = found.find(device.id);
-            if (entry != found.end() && entry->second != nullptr)
-                migrateDeviceParameters(device, *entry->second);
-        });
-    };
-    for (auto& track : tracks)
-        migrateDevices(track);
-    if (masterTrack != nullptr)
-        migrateDevices(*masterTrack);
+    for (const auto& [path, device] : devices) {
+        const auto entry = found.find(path);
+        if (entry != found.end() && entry->second != nullptr)
+            migrateDeviceParameters(*device, *entry->second);
+    }
 
-    const auto migrateLinks = [&found](TrackInfo& track) {
-        forEachLinkOwnerInTrack(track, [&found](MacroArray& macros, ModArray& mods) {
-            migrateOwnerLinks(macros, mods, found);
+    const auto lookup = lookupByPath(found);
+
+    const auto migrateLinks = [&lookup](TrackInfo& track) {
+        forEachLinkOwnerInTrack(track, [&lookup](MacroArray& macros, ModArray& mods) {
+            migrateOwnerLinks(macros, mods, lookup);
         });
     };
     for (auto& track : tracks)
@@ -314,7 +366,7 @@ void applyParamIndexMigrations(std::vector<TrackInfo>& tracks, TrackInfo* master
     // would leave a curve writing to whatever now sits at that index.
     std::set<AutomationLaneId> droppedLanes;
     for (auto& lane : lanes) {
-        const auto mapped = migratedTargetIndex(lane.target, found);
+        const auto mapped = migratedTargetIndex(lane.target, lookup);
         if (!mapped) {
             droppedLanes.insert(lane.id);
             continue;
@@ -333,32 +385,51 @@ void applyParamIndexMigrations(std::vector<TrackInfo>& tracks, TrackInfo* master
     });
 }
 
-void migrateDevicePreset(DeviceInfo& device, const MigrationTable& table) {
-    const auto* migration = findMigration(device, table);
-    if (migration == nullptr)
+namespace {
+
+/// Migrate a preset fragment: its devices, then the links its own macros and
+/// mods hold. Matched by id, which is unique inside one fragment.
+void migrateFragment(const std::vector<DeviceInfo*>& devices, const MigrationTable& table,
+                     const std::function<void(const MigrationsById&)>& migrateLinks) {
+    MigrationsById found;
+    for (auto* device : devices)
+        if (const auto* migration = findMigration(*device, table))
+            found[device->id] = migration;
+
+    if (found.empty())
         return;
 
-    MigrationsById found{{device.id, migration}};
-    migrateDeviceParameters(device, *migration);
-    migrateOwnerLinks(device.macros, device.mods, found);
+    for (auto* device : devices) {
+        const auto entry = found.find(device->id);
+        if (entry != found.end() && entry->second != nullptr)
+            migrateDeviceParameters(*device, *entry->second);
+    }
+
+    migrateLinks(found);
+}
+
+}  // namespace
+
+void migrateDevicePreset(DeviceInfo& device, const MigrationTable& table) {
+    if (table.empty())
+        return;
+
+    migrateFragment({&device}, table, [&device](const MigrationsById& found) {
+        migrateOwnerLinks(device.macros, device.mods, lookupById(found));
+    });
 }
 
 void migrateChainPreset(std::vector<ChainElement>& elements, const MigrationTable& table) {
     if (table.empty())
         return;
 
-    MigrationsById found;
-    collectElements(elements, table, found);
-    if (found.empty())
-        return;
+    std::vector<DeviceInfo*> devices;
+    collectFragmentElements(elements, devices);
 
-    forEachDeviceElements(elements, [&found](DeviceInfo& device) {
-        const auto entry = found.find(device.id);
-        if (entry != found.end() && entry->second != nullptr)
-            migrateDeviceParameters(device, *entry->second);
-    });
-    forEachLinkOwnerElements(elements, [&found](MacroArray& macros, ModArray& mods) {
-        migrateOwnerLinks(macros, mods, found);
+    migrateFragment(devices, table, [&elements](const MigrationsById& found) {
+        forEachLinkOwnerElements(elements, [&found](MacroArray& macros, ModArray& mods) {
+            migrateOwnerLinks(macros, mods, lookupById(found));
+        });
     });
 }
 
@@ -366,18 +437,13 @@ void migrateRackPreset(RackInfo& rack, const MigrationTable& table) {
     if (table.empty())
         return;
 
-    MigrationsById found;
-    collectRack(rack, table, found);
-    if (found.empty())
-        return;
+    std::vector<DeviceInfo*> devices;
+    collectFragmentRack(rack, devices);
 
-    forEachDeviceRack(rack, [&found](DeviceInfo& device) {
-        const auto entry = found.find(device.id);
-        if (entry != found.end() && entry->second != nullptr)
-            migrateDeviceParameters(device, *entry->second);
-    });
-    forEachLinkOwnerRack(rack, [&found](MacroArray& macros, ModArray& mods) {
-        migrateOwnerLinks(macros, mods, found);
+    migrateFragment(devices, table, [&rack](const MigrationsById& found) {
+        forEachLinkOwnerRack(rack, [&found](MacroArray& macros, ModArray& mods) {
+            migrateOwnerLinks(macros, mods, lookupById(found));
+        });
     });
 }
 
