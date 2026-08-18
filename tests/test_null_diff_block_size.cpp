@@ -74,9 +74,17 @@
  * into a way to make a failing case pass.
  *
  * The corpus hosts no plugin today, so every case here is held to bit identity
- * and the external path is exercised by the two hand-built cases at the bottom.
+ * and the external path is exercised by the hand-built cases at the bottom.
  * That is deliberate: #1893 brings the first plugin, and it should find a gate
  * to land in rather than a gate to widen.
+ *
+ * One value is refused rather than judged, in both places it could arrive: an
+ * epsilon of positive infinity. It is not finite, so a rule written as "does
+ * this case declare a bound" reads it as no bound at all and asks for no
+ * mechanism; it is also greater than every residual, so the comparison reads it
+ * as a bound and passes anything. Left alone it would disable the declaration
+ * rule and the comparison together, each because the other looked like it had
+ * the case covered.
  *
  * It runs in the model-only target because the native engine needs no Edit, and
  * the incumbent is not party to this claim: Tracktion owes nobody block-size
@@ -149,6 +157,17 @@ GateResult gate(const Case& value) {
     const auto external = externalDevicesIn(value);
     const auto allowed = external.empty() ? kBitIdenticalDb : value.blockSizeEpsilonDb;
 
+    // A bound that is not a number is not a bound. Positive infinity admits
+    // every residual there is, and it is the one value that would slip past
+    // both halves of the rule at once: a finiteness test reads it as "no bound
+    // declared" and lets it by without a mechanism, while the comparison reads
+    // it as a bound and passes anything. Refused here by name, so neither half
+    // is left assuming the other caught it.
+    if (allowed != kBitIdenticalDb && !std::isfinite(allowed)) {
+        result.unmeasurable = "the declared block-size epsilon is not a bound";
+        return result;
+    }
+
     auto reference = value;
     reference.blockSize = kReferenceBlockSize;
     const auto rendered = renderNative(reference);
@@ -214,11 +233,20 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
     std::set<std::string> failed;
 
     for (const auto& value : sharedCorpus(scratch())) {
-        // A MIDI case renders no audio at all: the device standing in for a
-        // synth records what arrives instead of sounding. What block size does
-        // to a stream of captured events is the runner's question, asked of
-        // both engines, not this one's.
-        if (value.capturesMidi())
+        // A case that asserts nothing about its audio renders none to compare:
+        // the four MIDI-only cases carry a device that records what arrives
+        // instead of sounding. What block size does to a stream of captured
+        // events is the runner's question, asked of both engines, not this
+        // one's.
+        //
+        // Keyed on the tier and not on capturesMidi(), which answers a
+        // different question. Comparing MIDI streams and asserting nothing
+        // about the audio are independent by construction (#2075), and
+        // project.mixed is exactly the case that does both: an instrument track
+        // beside audio tracks, at AudioTier::Exact. Skipping on MIDI capture
+        // would have dropped the only multi-track mixed project in the corpus
+        // out of the gate, which is the last one worth losing.
+        if (value.tier == AudioTier::None)
             continue;
 
         INFO(value.name);
@@ -230,7 +258,13 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
         // the difference to, and a case that raises one over a project of
         // internal devices has nothing to point at.
         if (external.empty())
-            CHECK(value.blockSizeEpsilonDb == kBitIdenticalDb);
+            CHECK(value.demandsBitIdenticalBlocks());
+
+        // And a raised bound has to be a number. Asserted here as well as
+        // refused in the gate, because the two say different things: the gate
+        // declines to judge a case it cannot judge, and this says the case
+        // should never have been written.
+        CHECK((value.demandsBitIdenticalBlocks() || std::isfinite(value.blockSizeEpsilonDb)));
 
         const auto result = gate(value);
 

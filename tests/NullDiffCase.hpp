@@ -207,6 +207,20 @@ struct Case {
         return compareMidiStreams;
     }
 
+    /// Whether this case is held to bit identity across block sizes, which is
+    /// the default and what every project of internal devices owes (#2078).
+    ///
+    /// Asked as "is it still the default" rather than as "is the bound finite",
+    /// because those differ on exactly the value that matters. Positive infinity
+    /// is not finite, so a finiteness test lets it through as if it were the
+    /// strict default, while the gate reads it as a bound that admits every
+    /// residual there is: the declaration rule and the comparison would then
+    /// both be disabled by the same value, each because the other was assumed to
+    /// have caught it.
+    bool demandsBitIdenticalBlocks() const {
+        return blockSizeEpsilonDb == -std::numeric_limits<double>::infinity();
+    }
+
     CaseEnvironment environment() const {
         return {sampleRate, blockSize, channels, seed};
     }

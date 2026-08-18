@@ -104,7 +104,13 @@ TEST_CASE("Every allowance carries a mechanism", "[nulldiff][corpus]") {
                             // plugin to pin it on; this is the other half, so
                             // that a project which does host one still has to
                             // say what about it frames its own work.
-                            std::isfinite(value.blockSizeEpsilonDb);
+                            //
+                            // Asked as "has it moved off the default" rather
+                            // than as "is it finite": positive infinity is not
+                            // finite and admits every residual, so a finiteness
+                            // test would wave through the one value that
+                            // disables the gate outright.
+                            !value.demandsBitIdenticalBlocks();
 
         if (allows)
             CHECK_FALSE(value.mechanism.empty());
