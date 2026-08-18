@@ -1,6 +1,7 @@
 #include <algorithm>
 
 #include "../../audio/plugins/InternalPluginRegistry.hpp"
+#include "../../core/DeviceParamMigrations.hpp"
 #include "../../core/PluginCapabilities.hpp"
 #include "../../core/ViewModeState.hpp"
 #include "ProjectSerializer.hpp"
@@ -608,6 +609,14 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
             if (!deserializeParameterInfo(paramVar, param)) {
                 return false;
             }
+            // Builds before the version string was wired to the tag wrote every
+            // parameter with paramIndex -1: the index was its position in the
+            // array and was never stored. Restore it, or nothing that addresses
+            // a parameter by index on a device loaded from one of those files -
+            // saved automation, macro and mod links, the v2 state document -
+            // can match a parameter at all.
+            if (param.paramIndex < 0)
+                param.paramIndex = static_cast<int>(outDevice.parameters.size());
             outDevice.parameters.push_back(param);
         }
     }

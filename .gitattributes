@@ -4,3 +4,8 @@ assets/fonts/NotoSansCJKsc-Regular.otf filter=lfs diff=lfs merge=lfs -text
 # generates with LF endings. A checkout that translated them to CRLF would fail
 # every fixture on its first line, so they are never translated.
 tests/goldens/plan/*.txt text eol=lf
+
+# The legacy corpus (#2079) is real files saved by released versions, asserted
+# as they were written. Two presets carry CRLF endings from a Windows save;
+# normalizing them would hand the loader bytes no released version ever wrote.
+tests/corpus/** -text
