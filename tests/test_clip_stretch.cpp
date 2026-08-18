@@ -1008,3 +1008,159 @@ TEST_CASE("SoundTouch runs the whole rate range without growing a buffer under a
         }
     }
 }
+
+TEST_CASE("A stretcher is the same DSP whatever block size it was built for",
+          "[engine][clip][stretch]") {
+    // What the block-size gate asserts over the corpus (#2078), at the level the
+    // state that broke it actually lives.
+    //
+    // A stretcher is handed the block size so it can size its buffers, and a
+    // buffer size is the one thing it is entitled to take from there. What it
+    // must not take is any part of what it does: a voice drives every mode in
+    // fixed 128-sample cells however the host batches its callbacks
+    // (ClipVoice::renderThroughCells), so two stretchers built for different
+    // block sizes and then fed the same cells are being asked the same question
+    // and owe the same samples.
+    //
+    // SoundTouch did not, and the corpus caught it at 4096 while 64, 96 and 512
+    // agreed. Two block-derived figures reached the library rather than staying
+    // in the buffer sizing: the pre-roll cushion, and the size of the single
+    // push the warm-up settles capacity with. The second is the one that hides,
+    // because the warm-up ends in touch_.clear() and looks like it left nothing
+    // behind. It does not. TDStretch::skipFract is the fraction of a sample the
+    // last splice did not use, it is carried into the next one, and nothing
+    // resets it: not clear(), which clears the FIFOs and the overlap buffer, and
+    // not setTempo(), which recalculates the lengths around it. Only
+    // setParameters does, and the warm-up never calls it. So the block size
+    // decided how much silence went through, that decided the fraction left
+    // over, and playback started from it.
+    //
+    // Which is why this is asserted bit for bit rather than within a floor. The
+    // divergence it produces is not proportional to its cause: in Better mode
+    // the seek is a full correlation search, so a fraction of a sample moves
+    // which offset wins and the two renders come apart by tens of decibels or by
+    // nothing at all, depending on how near the tie was. A floor would have
+    // called the corpus green on one machine and red on another, which is
+    // exactly what happened before this was understood.
+    for (const auto which :
+         {mode::kSoundTouchNormal, mode::kSoundTouchBetter, mode::kSignalsmith}) {
+        constexpr auto kCell = magda::engine::kStretchCellSamples;
+        constexpr auto kCells = 160;
+        constexpr auto kRate = 1.37;
+
+        const auto readPerCell = static_cast<int>(std::llround(kCell * kRate));
+
+        // A tone rather than noise, and two channels that differ, so a stretcher
+        // that crossed them or lost one is visible here too.
+        juce::AudioBuffer<float> material(2, kCells * readPerCell + 64);
+        for (auto channel = 0; channel < 2; ++channel)
+            for (auto sample = 0; sample < material.getNumSamples(); ++sample)
+                material.setSample(
+                    channel, sample,
+                    static_cast<float>(0.4 *
+                                       std::sin(2.0 * juce::MathConstants<double>::pi *
+                                                (220.0 + 55.0 * channel) * sample / 44100.0)));
+
+        const auto renderAt = [&](int maxBlockSamples) {
+            StretchSetup setup;
+            setup.mode = which;
+            setup.numChannels = 2;
+            setup.sampleRate = 44100.0;
+            setup.maxBlockSamples = maxBlockSamples;
+            setup.nominalRate = kRate;
+
+            auto stretcher = magda::engine::makeStretcher(setup);
+
+            juce::AudioBuffer<float> rendered(2, kCells * kCell);
+            rendered.clear();
+
+            if (stretcher == nullptr)
+                return rendered;
+
+            for (auto cell = 0; cell < kCells; ++cell) {
+                juce::dsp::AudioBlock<const float> input(material);
+                juce::dsp::AudioBlock<float> output(rendered);
+
+                stretcher->process(input.getSubBlock(static_cast<std::size_t>(cell * readPerCell),
+                                                     static_cast<std::size_t>(readPerCell)),
+                                   0.0, kRate,
+                                   output.getSubBlock(static_cast<std::size_t>(cell * kCell),
+                                                      static_cast<std::size_t>(kCell)));
+            }
+
+            return rendered;
+        };
+
+        // 512 is what the corpus renders at; the other three are the gate's
+        // rungs. Each is compared against 512 rather than against its
+        // neighbour, so a failure names the size that drifted.
+        const auto reference = renderAt(512);
+        REQUIRE(reference.getMagnitude(0, reference.getNumSamples()) > 0.001f);
+
+        for (const auto blockSize : {64, 96, 4096}) {
+            const auto other = renderAt(blockSize);
+
+            INFO("mode " << which << " at block size " << blockSize);
+            REQUIRE(other.getNumSamples() == reference.getNumSamples());
+
+            auto worst = 0.0f;
+            auto worstAt = -1;
+            for (auto channel = 0; channel < 2; ++channel)
+                for (auto sample = 0; sample < reference.getNumSamples(); ++sample) {
+                    const auto difference = std::abs(other.getSample(channel, sample) -
+                                                     reference.getSample(channel, sample));
+                    if (difference > worst) {
+                        worst = difference;
+                        worstAt = sample;
+                    }
+                }
+
+            INFO("worst difference " << worst << " at sample " << worstAt);
+            CHECK(worst == 0.0f);
+        }
+    }
+}
+
+TEST_CASE("Nothing a stretcher pushes is derived from the block size", "[engine][clip][stretch]") {
+    // The invariant behind the test above, asserted as arithmetic rather than
+    // as audio (#2078).
+    //
+    // It is worth having both, because the audio one can only fail where the
+    // divergence happens to be audible. What SoundTouch does with a difference
+    // in its input is not proportional to the difference: in Better mode a
+    // fraction of a sample moves which offset a correlation search picks, so the
+    // same wrong state came apart by 36 dB on x86 and by nothing at all on ARM.
+    // A test that only compares renders is therefore a test that passes on the
+    // machine you happen to be holding. These two numbers are the cause, they
+    // are the same on every machine, and a block size must not appear in either.
+    //
+    // stretchPushSamples takes no block size, so it cannot vary; it is asserted
+    // anyway against the figure it has to agree with, since the whole point of
+    // it is being the same number the buffer sizing uses.
+    CHECK(magda::engine::stretchPushSamples() ==
+          magda::engine::maxReadingSamples(magda::engine::kStretchCellSamples));
+
+    for (const auto which :
+         {mode::kSoundTouchNormal, mode::kSoundTouchBetter, mode::kSignalsmith, mode::kDisabled}) {
+        for (const auto rate : {0.15, 0.5, 1.0, 1.37, 2.0, 9.97}) {
+            const auto preRollAt = [&](int maxBlockSamples) {
+                StretchSetup setup;
+                setup.mode = which;
+                setup.numChannels = 2;
+                setup.sampleRate = 44100.0;
+                setup.maxBlockSamples = maxBlockSamples;
+                setup.nominalRate = rate;
+
+                auto stretcher = magda::engine::makeStretcher(setup);
+                return stretcher != nullptr ? stretcher->preRollSamples(rate) : 0;
+            };
+
+            const auto reference = preRollAt(512);
+
+            for (const auto blockSize : {64, 96, 4096}) {
+                INFO("mode " << which << " rate " << rate << " at block size " << blockSize);
+                CHECK(preRollAt(blockSize) == reference);
+            }
+        }
+    }
+}

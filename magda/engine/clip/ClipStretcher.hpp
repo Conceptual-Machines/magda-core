@@ -267,4 +267,30 @@ inline int stretchScratchSamples(int maxBlockSamples) {
     return stretchWorkSamples(maxBlockSamples) + maxReadingSamples(maxBlockSamples);
 }
 
+/**
+ * @brief The largest run of input a stretcher is ever handed in one push.
+ *
+ * A cell's worth of reading, and it takes no block size at all. That is the
+ * point of it rather than an omission (#2078).
+ *
+ * The functions above answer "how much space does this need", and a block is a
+ * fair input to that question because a caller may ask for a whole block at
+ * once. This one answers a different question: how much material goes into the
+ * library in a single call. A voice drives every stretcher one cell at a time
+ * (ClipVoice::renderThroughCells), so a cell's reading is the true answer, and
+ * the block never enters it.
+ *
+ * The distinction is not academic and it is not about memory. A library given
+ * the same total in a different number of pushes is not guaranteed to be in the
+ * same state afterwards, and SoundTouch is not: TDStretch::skipFract carries the
+ * fraction of a sample a splice did not consume into the next one, and neither
+ * clear() nor setTempo() resets it. Feed it a warm-up sized from the block and
+ * playback inherits a different fraction at every block size, which is output as
+ * a function of how the callback was cut up. It cost a decibel on the corpus at
+ * 4096 and it was invisible at 512.
+ */
+inline int stretchPushSamples() {
+    return maxReadingSamples(kStretchCellSamples);
+}
+
 }  // namespace magda::engine
