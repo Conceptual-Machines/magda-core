@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -181,6 +182,23 @@ struct Case {
     /// nobody declared would certify a check that never ran.
     double maxStepPerSample = 0.0;
 
+    /// How far this project's renders at two different block sizes may sit
+    /// apart, as a peak level (#2078).
+    ///
+    /// Negative infinity is bit identity written as a level, and it is the
+    /// default because it is what RenderContext already requires: output is a
+    /// function of timeline position and block size is an I/O batching concept.
+    /// A project of internal devices differs nowhere at all, at 64, at 512 and
+    /// at 4096, or the engine is wrong.
+    ///
+    /// A case raises it only for a project that hosts an external plugin, which
+    /// owes nobody a sample and is entitled to frame its own work how it
+    /// likes. The gate does not take the raised number on trust: it refuses one
+    /// on a project with no external plugin in it, so the epsilon can only ever
+    /// be bought by something there is to attribute the difference to. That is
+    /// the difference between attributing it and absorbing it.
+    double blockSizeEpsilonDb = -std::numeric_limits<double>::infinity();
+
     double startBpm() const {
         return tempo.empty() ? 120.0 : tempo.front().bpm;
     }
@@ -222,6 +240,27 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory);
  * directories gets two different corpora rather than the first one twice.
  */
 const std::vector<Case>& sharedCorpus(const juce::File& scratchDirectory);
+
+/**
+ * @brief The external plugins @p value hosts, named, in chain order (#2078).
+ *
+ * Every device on every track and inside every rack, master included, whose
+ * format is not PluginFormat::Internal. Named rather than counted, because what
+ * this answers is "what could account for this difference", and a count answers
+ * nothing.
+ *
+ * This is what buys a project the epsilon in the block-size gate. A project of
+ * internal devices is held to bit identity at every block size and has nobody
+ * to blame if it is not; a project hosting a plugin is compared within the
+ * bound it declares, with these names printed beside the residual. The
+ * distinction has to come from the project rather than from the case's tier: a
+ * tier says what can be asserted against the incumbent, and an external plugin
+ * frames its own work whether or not the case chose to notice.
+ *
+ * Empty for the whole corpus today, because nothing hosts a plugin yet. It is
+ * written now so that #1893 has a gate to land in rather than a gate to widen.
+ */
+std::vector<std::string> externalDevicesIn(const Case& value);
 
 /// The groove template every grooving case names, and the one the runner
 /// installs in both engines.

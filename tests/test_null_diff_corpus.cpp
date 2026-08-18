@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 #include <set>
 
 #include "NullDiffCase.hpp"
@@ -95,7 +96,15 @@ TEST_CASE("Every allowance carries a mechanism", "[nulldiff][corpus]") {
                             value.tier == AudioTier::Measured ||
                             value.tier == AudioTier::Invariants || value.floorDb > -120.0 ||
                             value.declaredFractionalShiftSamples != 0.0 ||
-                            value.declaredMidiShiftBeats != 0.0;
+                            value.declaredMidiShiftBeats != 0.0 ||
+                            // A raised block-size epsilon is the same kind of
+                            // thing, against the engine's own second render
+                            // rather than against the incumbent (#2078). The
+                            // gate itself refuses one on a project with no
+                            // plugin to pin it on; this is the other half, so
+                            // that a project which does host one still has to
+                            // say what about it frames its own work.
+                            std::isfinite(value.blockSizeEpsilonDb);
 
         if (allows)
             CHECK_FALSE(value.mechanism.empty());

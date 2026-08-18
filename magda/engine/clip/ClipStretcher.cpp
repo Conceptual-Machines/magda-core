@@ -251,13 +251,28 @@ class SoundTouchClipStretcher final : public ClipStretcher {
     }
 
     int preRollSamples(double rate) const override {
-        // What the pipe holds before it will answer at all, plus a block's worth
-        // of surplus so that the block after priming is already there. Both are
+        // What the pipe holds before it will answer at all, plus a cell's worth
+        // of surplus so that the cell after priming is already there. Both are
         // input samples, so the surplus is counted at the rate it will be
         // consumed at.
+        //
+        // A cell and not a block, and that distinction is the whole of a bug the
+        // block-size gate caught (#2078). What this returns is how much material
+        // from before the clip the pipe is primed with, and priming is what sets
+        // a stretcher's phase state: prime with more and every sample afterwards
+        // differs. Sized from the block, the surplus was 512 samples at 512 and
+        // 4096 at 4096, so the same clip rendered a decibel apart at the two
+        // sizes -- output as a function of how the callback was cut up, which is
+        // exactly what RenderContext forbids.
+        //
+        // A block was never the right unit here anyway. A voice drives this in
+        // fixed 128-sample cells however the host batches its callbacks
+        // (ClipVoice::renderThroughCells), so a block's worth of surplus was
+        // covering a request that is never made. Signalsmith takes its pre-roll
+        // from the library's own seek length and has never had the problem.
         const auto latency = touch_.getSetting(SETTING_INITIAL_LATENCY);
         const auto batch = touch_.getSetting(SETTING_NOMINAL_OUTPUT_SEQUENCE);
-        const auto cushion = std::max(maxBlockSamples_, std::max(batch, 0));
+        const auto cushion = std::max(kStretchCellSamples, std::max(batch, 0));
 
         return latency + static_cast<int>(std::ceil(cushion * rate));
     }

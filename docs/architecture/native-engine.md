@@ -59,9 +59,10 @@ the null-diff corpus ([#2040](https://github.com/Conceptual-Machines/magda-core/
 Validation, slice by slice. Done: whole-project cases and the tiered oracle
 ([#2075](https://github.com/Conceptual-Machines/magda-core/issues/2075)),
 plan goldens ([#2076](https://github.com/Conceptual-Machines/magda-core/issues/2076)),
-differ property tests ([#2077](https://github.com/Conceptual-Machines/magda-core/issues/2077)).
-Open: the block-size gate ([#2078](https://github.com/Conceptual-Machines/magda-core/issues/2078)),
-migrators ([#2079](https://github.com/Conceptual-Machines/magda-core/issues/2079)),
+differ property tests ([#2077](https://github.com/Conceptual-Machines/magda-core/issues/2077)),
+the block-size invariance gate
+([#2078](https://github.com/Conceptual-Machines/magda-core/issues/2078)).
+Open: migrators ([#2079](https://github.com/Conceptual-Machines/magda-core/issues/2079)),
 the DAWproject cross-check ([#2080](https://github.com/Conceptual-Machines/magda-core/issues/2080)),
 the real-project corpus ([#2081](https://github.com/Conceptual-Machines/magda-core/issues/2081)),
 the parity envelope suite ([#2082](https://github.com/Conceptual-Machines/magda-core/issues/2082)).
@@ -687,6 +688,43 @@ the harness: twice calling an edit unrelated when it was not, and once letting a
 claim a latency its own ring could not honour, which would have left every render measuring a
 graph that was misaligned in fact while every latency assertion above it passed.
 
+**The block-size invariance gate**
+([#2078](https://github.com/Conceptual-Machines/magda-core/issues/2078)) asks one question of the
+corpus, and it is the question `RenderContext` already answers on paper: output is a function of
+timeline position and nothing else, so a project renders the same audio however the callback is
+cut up. Every non-MIDI case is rendered at 64, 96, 512 and 4096 samples and the other three are
+compared against 512. It lives in `tests/test_null_diff_block_size.cpp` and runs in `magda_tests`,
+because the claim is the native engine's alone: the incumbent owes nobody block-size invariance
+and could not be held to it here if it did.
+
+4096 is the size that carries the guarantee a user cashes in, which is a large-buffer bounce that
+sounds like the small-buffer one. 64 is where anything that assumed it had room to work fails. 96
+is not a power of two on purpose: a voice drives a stretcher in 128-sample cells anchored to where
+its event begins, so at 512 and 4096 every block boundary is also a cell boundary and the holdover
+buffer, the head-drop and the mid-cell resume never run for a clip that starts at zero, while 96
+rotates through every phase the cell grid has.
+
+A project of internal devices is held to bit identity rather than to a floor, since there is no
+mechanism by which a deterministic graph fed the same timeline produces anything else and a floor
+would let a real dependence hide under it until it grew. A project hosting an external plugin is
+compared within an epsilon it declares, with the plugins named beside the residual; the epsilon is
+refused outright on a project with no plugin in it, so it can only ever be bought by something
+there is to attribute the difference to. Nothing hosts a plugin yet, so every corpus case is on the
+strict side today and the external path is covered by hand-built cases, which is deliberate:
+[#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893) should find a gate to land
+in rather than a gate to widen.
+
+It has paid for itself four times. Three fixes came out of the first run at two sizes: a rate that
+varies within a block resolved from that block's own two ends, so a speed ramp, auto tempo across a
+tempo change and a warped clip approximated their curve differently at every block size; a
+stretcher that framed whatever sizes it was handed; and a cell reading past its block's end taking
+its beats from a straight line through that block rather than from the tempo map. Adding 4096 found
+the fourth on the first run, in a path that had been green at 64, 96 and 512 all along:
+`SoundTouchClipStretcher::preRollSamples` sized its cushion from the block, so the stretcher was
+primed with 4096 samples of surplus at 4096 where it had 512 at 512. Priming is what sets a phase
+vocoder's state, so the two renders of the same clip came out a decibel apart. The cushion is a
+cell now, which is the unit the voice actually drives it in.
+
 What the rig still does not cover is the rest of
 [#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896): no case carries a real
 device, because nothing yet runs one under both engines; the interactive paths have no runner;
@@ -718,7 +756,7 @@ Worth knowing before reading the code and wondering where something is:
 - **The rest of the validation harness**
   ([#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896)). The rig exists and
   section 7 describes it, whole-project cases and the tiers above them (#2075), the plan goldens
-  (#2076) and the differ properties (#2077) included. Missing: the block-size gate (#2078), the
+  (#2076), the differ properties (#2077) and the block-size gate (#2078) included. Missing: the
   migrators (#2079), the DAWproject cross-check (#2080), a real-project corpus (#2081), and the
   parity envelope suite that gates cutover (#2082).
 
@@ -758,6 +796,16 @@ Its tests are ordinary Catch2 model-level tests, tagged `[engine]`:
 Useful narrower tags while working on one part: `[plan]`, `[clip]`, `[exec]`, `[io]`,
 `[transport]`, `[session]`, `[tap]`, `[offline]`, and inside those `[compiler]`, `[diff]`,
 `[pdc]`, `[crossfade]`, `[voice]`, `[pool]`, `[stretch]`.
+
+The parity harness has two of its own. `[nulldiff]` is everything the model-only target holds:
+the comparators against known-bad pairs, the corpus's declarations, the native leg on its own,
+and `[blocksize]` inside it for the invariance gate, which renders the whole corpus four times
+and is the slowest thing in `magda_tests`. The two-engine runner is not here at all, since the
+incumbent leg needs a `te::Edit`:
+
+```
+make test-juce JUCE_TEST="Null Diff Corpus"
+```
 
 Two properties the tests lean on and that are worth preserving:
 

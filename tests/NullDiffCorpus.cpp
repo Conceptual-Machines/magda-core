@@ -1,5 +1,6 @@
 #include <array>
 #include <cmath>
+#include <functional>
 #include <map>
 
 #include "NullDiffCase.hpp"
@@ -78,6 +79,14 @@ TrackInfo instrumentTrackOn(TrackId trackId, DeviceId deviceId, const char* name
     device.deviceType = DeviceType::Instrument;
     device.isInstrument = true;
     device.canReceiveMidi = true;
+    // What it is, rather than what the struct defaults to. DeviceInfo::format
+    // starts at VST3, and nothing in either leg reads it, so the corpus has been
+    // declaring three external plugins it does not host. The block-size gate
+    // does read it (#2078): a project with a plugin in it is compared within an
+    // epsilon and one without is held to bit identity, so a stand-in device
+    // mislabelled as a VST3 would hand the whole corpus an allowance it has no
+    // use for and no right to.
+    device.format = PluginFormat::Internal;
     track.chain.fxChainElements.emplace_back(std::move(device));
 
     return track;
@@ -102,6 +111,7 @@ void addSecondInstrument(TrackInfo& track, DeviceId id) {
     device.deviceType = DeviceType::Instrument;
     device.isInstrument = true;
     device.canReceiveMidi = true;
+    device.format = PluginFormat::Internal;
     track.chain.fxChainElements.emplace_back(std::move(device));
 }
 
@@ -126,6 +136,7 @@ void addEffect(TrackInfo& track, DeviceId id) {
     device.deviceType = DeviceType::Effect;
     device.isInstrument = false;
     device.canReceiveMidi = false;
+    device.format = PluginFormat::Internal;
 
     track.chain.fxChainElements.emplace_back(std::move(device));
 }
@@ -302,9 +313,10 @@ Case newMixCase(const char* name, const char* covers, std::vector<TrackInfo> tra
 
     // Two bars rather than four. What a mixer case asserts is a constant gain,
     // and a constant covers itself in two bars as well as in four; every case
-    // is also rendered twice by the block-size test, so its length is paid for
-    // three times. The rule the budget follows is #2040's: when the corpus will
-    // not fit, cases get shorter rather than fewer.
+    // is also rendered at four block sizes by the invariance gate (#2078), so
+    // its length is paid for five times. The rule the budget follows is
+    // #2040's, restated by #2078: when the corpus will not fit, cases get
+    // shorter rather than sizes getting dropped.
     //
     // Only the mixer cases. Everything above plays material whose length is part
     // of what it covers: a loop has to tile, a stretched clip has to hold its
@@ -1023,6 +1035,51 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     }
 
     return corpus;
+}
+
+std::vector<std::string> externalDevicesIn(const Case& value) {
+    std::vector<std::string> external;
+
+    // Recursive, because a rack is a chain of chains and a plugin four levels
+    // down frames its own work exactly like one at the top. A walk that stopped
+    // at the first level would report a rack full of plugins as an internal
+    // project and hold it to bit identity, which is the one way this can be
+    // wrong in the direction nobody notices: the gate would fail, and the
+    // failure would name no cause.
+    const std::function<void(const std::vector<ChainElement>&)> walk =
+        [&](const std::vector<ChainElement>& elements) {
+            for (const auto& element : elements) {
+                if (isDevice(element)) {
+                    const auto& device = getDevice(element);
+                    if (device.format != PluginFormat::Internal)
+                        external.push_back(device.name.toStdString());
+                    continue;
+                }
+
+                for (const auto& chain : getRack(element).chains)
+                    walk(chain.elements);
+            }
+        };
+
+    // The post-FX stage and the mixer rail's analysis devices are as much of the
+    // project as the insert chain is, and a plugin in either one reaches the
+    // render the same way.
+    const auto walkTrack = [&](const TrackInfo& track) {
+        walk(track.chain.fxChainElements);
+
+        for (const auto* stage :
+             {&track.chain.postFxChainElements, &track.chain.mixerAnalysisElements})
+            for (const auto& element : *stage)
+                if (element.device.format != PluginFormat::Internal)
+                    external.push_back(element.device.name.toStdString());
+    };
+
+    for (const auto& track : value.tracks)
+        walkTrack(track);
+
+    walkTrack(value.master);
+
+    return external;
 }
 
 const std::vector<Case>& sharedCorpus(const juce::File& scratchDirectory) {
