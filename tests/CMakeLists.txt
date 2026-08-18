@@ -328,6 +328,12 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_null_diff_compare.cpp)
     list(APPEND TEST_SOURCES test_null_diff_corpus.cpp)
     list(APPEND TEST_SOURCES test_null_diff_native_leg.cpp)
+
+    # The block-size invariance gate (#2078). Model-only for the same reason the
+    # native leg is: the claim is the native engine's alone, and the incumbent
+    # owes nobody block-size invariance. In CI rather than in a nightly, because
+    # a gate that runs after the merge is a report rather than a gate.
+    list(APPEND TEST_SOURCES test_null_diff_block_size.cpp)
 endif()
 
 # Create test executable

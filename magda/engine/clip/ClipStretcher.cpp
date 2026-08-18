@@ -168,11 +168,16 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         touch_.setPitchSemiTones(setup.semitones);
         touch_.setTempo(std::clamp(setup.nominalRate, kMinStretchRate, kMaxStretchRate));
 
-        // Sized for the worst block this can be asked for, through the same
-        // function the voice bounds a block's reading with: two derivations of
-        // that number differing by a sample is a write past the end of this.
+        // Sized for the largest single push rather than for the largest block,
+        // and that is what makes it the stride below rather than merely the
+        // capacity. Everything that goes into the library goes through write(),
+        // in pieces this buffer's length decides, so a length taken from the
+        // block hands SoundTouch a different sequence of putSamples calls at
+        // every block size. See stretchPushSamples: the sequence is what has to
+        // be invariant, not just the room (#2078).
+        //
         // Grown here, on the thread that made this, and never again.
-        const auto frames = maxReadingSamples(setup.maxBlockSamples);
+        const auto frames = stretchPushSamples();
         interleaved_.resize(static_cast<std::size_t>(frames * channels_));
         deinterleaved_.resize(
             static_cast<std::size_t>(stretchWorkSamples(setup.maxBlockSamples) * channels_));
@@ -251,13 +256,28 @@ class SoundTouchClipStretcher final : public ClipStretcher {
     }
 
     int preRollSamples(double rate) const override {
-        // What the pipe holds before it will answer at all, plus a block's worth
-        // of surplus so that the block after priming is already there. Both are
+        // What the pipe holds before it will answer at all, plus a cell's worth
+        // of surplus so that the cell after priming is already there. Both are
         // input samples, so the surplus is counted at the rate it will be
         // consumed at.
+        //
+        // A cell and not a block, and that distinction is the whole of a bug the
+        // block-size gate caught (#2078). What this returns is how much material
+        // from before the clip the pipe is primed with, and priming is what sets
+        // a stretcher's phase state: prime with more and every sample afterwards
+        // differs. Sized from the block, the surplus was 512 samples at 512 and
+        // 4096 at 4096, so the same clip rendered a decibel apart at the two
+        // sizes -- output as a function of how the callback was cut up, which is
+        // exactly what RenderContext forbids.
+        //
+        // A block was never the right unit here anyway. A voice drives this in
+        // fixed 128-sample cells however the host batches its callbacks
+        // (ClipVoice::renderThroughCells), so a block's worth of surplus was
+        // covering a request that is never made. Signalsmith takes its pre-roll
+        // from the library's own seek length and has never had the problem.
         const auto latency = touch_.getSetting(SETTING_INITIAL_LATENCY);
         const auto batch = touch_.getSetting(SETTING_NOMINAL_OUTPUT_SEQUENCE);
-        const auto cushion = std::max(maxBlockSamples_, std::max(batch, 0));
+        const auto cushion = std::max(kStretchCellSamples, std::max(batch, 0));
 
         return latency + static_cast<int>(std::ceil(cushion * rate));
     }
@@ -379,8 +399,15 @@ class SoundTouchClipStretcher final : public ClipStretcher {
 
         touch_.setTempo(std::clamp(setup.nominalRate, kMinStretchRate, kMaxStretchRate));
 
+        // The largest single push, which is a cell's reading or a pre-roll, and
+        // neither of them is a block. Taking the block here is what left the
+        // warm-up pushing eight times as much silence at 4096 as at 512, and
+        // TDStretch::skipFract carried the difference past touch_.clear() into
+        // the first splice of playback (#2078). Everything the warm-up settles
+        // is settled by pushing what will actually be pushed later, so the
+        // figure has to be the same one write() cuts its pieces to.
         const auto handed = std::max(
-            maxReadingSamples(maxBlockSamples_),
+            stretchPushSamples(),
             static_cast<int>(std::ceil(preRollSamples(setup.nominalRate) * kPreRollHeadroom)));
 
         return WorstCase{sequence + handed, atTempo};
