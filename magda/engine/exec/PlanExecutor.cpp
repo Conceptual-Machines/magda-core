@@ -219,6 +219,10 @@ void PlanExecutor::reset() {
     meterForOp_.clear();
     boundMeterCount_ = 0;
     midiTapForOp_.clear();
+    paramWindowForOp_.clear();
+    paramScratch_.clear();
+    paramValues_.prepare(0);
+    paramLayout_ = 0;
 }
 
 std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const PlanBindings& bindings,
@@ -247,6 +251,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     meterForOp_.assign(numOps, nullptr);
     midiTapForOp_.assign(numOps, nullptr);
     paramWindowForOp_.assign(numOps, ParamTable::DeviceWindow{});
+    paramLayout_ = 0;
 
     // The parameters of the table this plan is published with (#2117). Sized
     // here, on this thread, so the block that resolves them allocates nothing,
@@ -254,6 +259,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     // published without a table renders devices with no parameters, which is
     // what every render did before there was a table at all.
     if (params != nullptr) {
+        paramLayout_ = params->layoutFingerprint;
         paramValues_.prepare(params->size());
         paramScratch_.assign(static_cast<std::size_t>(std::max(params->maxLinksPerParam, 0)),
                              ModContribution{});

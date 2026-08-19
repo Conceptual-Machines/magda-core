@@ -115,6 +115,23 @@ struct ParamTable {
     /// resolver needs to gather one parameter's contributions.
     int maxLinksPerParam = 0;
 
+    /**
+     * @brief Identity of the layout: which parameter is at which ParamId.
+     *
+     * What the plan's fingerprint is to the op values, one level down. A table
+     * is read by index, and by windows of indices, and two tables of the same
+     * size can still put different parameters at the same address: a macro that
+     * stopped being used in one scope and started being used in another leaves
+     * the count alone and moves every device window after it. Anything holding
+     * an index resolved against one table has to be able to tell that the other
+     * is not it.
+     *
+     * Over the keys in order, and nothing else. Values, links and the
+     * resolution order all change without moving a parameter, and a fingerprint
+     * that moved with them would turn every knob into a structural edit.
+     */
+    std::uint64_t layoutFingerprint = 0;
+
     /** Where one device's parameters sit in the table. */
     struct DeviceWindow {
         ParamId first = 0;
@@ -153,5 +170,15 @@ struct ParamTable {
         return found == deviceWindows.end() ? DeviceWindow{} : found->second;
     }
 };
+
+/**
+ * @brief The layout fingerprint of a sequence of keys.
+ *
+ * Exposed because the thing that has to agree about a layout is not always the
+ * thing that built it: an executor prepared against one table meets another,
+ * and the question it asks is whether the parameter at an index is still the
+ * parameter that index was resolved for.
+ */
+std::uint64_t paramLayoutFingerprint(const std::vector<ParamKey>& keys);
 
 }  // namespace magda::engine

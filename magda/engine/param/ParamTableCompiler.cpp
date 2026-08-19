@@ -566,6 +566,8 @@ ParamTable Builder::run(const RenderPlan& plan, const std::vector<magda::TrackIn
     orderAndBreakCycles();
     flattenLinks();
 
+    table_.layoutFingerprint = paramLayoutFingerprint(table_.keys);
+
     return std::move(table_);
 }
 

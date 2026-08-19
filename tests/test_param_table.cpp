@@ -589,3 +589,67 @@ TEST_CASE("A values publish that changes the parameter shape becomes a structura
     session.process(64, output);
     CHECK(device->firstValue == approx(100.0f));
 }
+
+TEST_CASE("A table of the same size at different addresses is a structural change",
+          "[engine][param][table]") {
+    // The shape that a count cannot see. Two tracks, each with a device and a
+    // macro; the macro that is used moves from the first track to the second.
+    // The table has the same number of parameters and the same widest link
+    // list, and every device window after the change has moved.
+    auto first = makeTrack(1);
+    first.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(7, 1)));
+    first.macros[0].value = 1.0f;
+    first.macros[0].links.push_back(
+        MacroLink{ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 7), 0), 1.0f, false});
+
+    auto second = makeTrack(2);
+    second.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(8, 1)));
+
+    std::vector<TrackInfo> tracks{first, second};
+    const auto master = makeMaster();
+    const auto plan =
+        std::make_shared<const magda::engine::RenderPlan>(compileRenderPlan(tracks, master));
+
+    magda::engine::PlanValues values;
+    magda::engine::resolvePlanValues(*plan, tracks, master, values);
+
+    RecordingFactory factory;
+    magda::engine::EngineSession session(factory);
+    const magda::engine::RenderContext context{44100.0, 64, 2};
+    REQUIRE(
+        session
+            .publish(plan, context, magda::engine::collectRuntimeStateIds(tracks, master), values)
+            .published);
+
+    juce::AudioBuffer<float> output(2, 64);
+    session.process(64, output);
+
+    auto* early = factory.devices[magda::engine::DeviceKey{ChainSegment::Fx, 7}];
+    auto* late = factory.devices[magda::engine::DeviceKey{ChainSegment::Fx, 8}];
+    REQUIRE(early != nullptr);
+    REQUIRE(late != nullptr);
+    CHECK(early->firstValue == approx(100.0f));
+    CHECK(late->firstValue == approx(0.0f));
+
+    tracks[0].macros[0].links.clear();
+    tracks[1].macros[0].value = 1.0f;
+    tracks[1].macros[0].links.push_back(
+        MacroLink{ControlTarget::pluginParam(ChainNodePath::topLevelDevice(2, 8), 0), 1.0f, false});
+
+    magda::engine::PlanValues moved;
+    magda::engine::resolvePlanValues(*plan, tracks, master, moved);
+    REQUIRE(moved.params->size() == values.params->size());
+    REQUIRE(moved.params->maxLinksPerParam == values.params->maxLinksPerParam);
+    REQUIRE(moved.params->layoutFingerprint != values.params->layoutFingerprint);
+
+    const auto result = session.publishValues(moved);
+    CHECK(result.published);
+    CHECK_FALSE(result.messages.empty());
+
+    session.process(64, output);
+
+    // Each device reads its own parameter rather than the one that used to sit
+    // at its index.
+    CHECK(early->firstValue == approx(0.0f));
+    CHECK(late->firstValue == approx(100.0f));
+}

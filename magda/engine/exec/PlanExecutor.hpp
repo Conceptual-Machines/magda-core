@@ -354,6 +354,35 @@ class PlanExecutor {
     }
 
     /**
+     * @brief Whether the table @p values carries fits what was prepared for it.
+     *
+     * The other half of applicable, and the half the plan's fingerprint cannot
+     * answer. A link edit changes no op and no plan, so a table that gained a
+     * parameter, moved one, or grew the room a block gathers contributions in
+     * travels on a values publish, matches the plan, and does not fit what was
+     * allocated for it.
+     *
+     * Three things, because there are three ways to not fit. The layout says
+     * the parameter at an index is still the one that index was resolved for,
+     * which a count cannot: a macro that stopped being used in one scope and
+     * started being used in another leaves the count alone and moves every
+     * device window after it, and the windows are cached here from the table
+     * the plan was prepared with. The count says the answers are the right size
+     * for it. The link width says a parameter's contributions all fit, since
+     * the block gathers them into room found before it started.
+     *
+     * Asked here so the publisher and the block get one answer: the publisher
+     * escalates such a publish into a structural one, and a block that meets
+     * one anyway renders empty rather than stale or half-applied.
+     */
+    bool fitsParameters(const PlanValues& values) const {
+        return values.params == nullptr ||
+               (values.params->layoutFingerprint == paramLayout_ &&
+                values.params->size() == paramValues_.size() &&
+                values.params->maxLinksPerParam <= static_cast<int>(paramScratch_.size()));
+    }
+
+    /**
      * @brief Whether process() would apply @p values rather than ignore them.
      *
      * The one definition of applicable, so that a caller deciding which table
@@ -364,23 +393,6 @@ class PlanExecutor {
      * Anything else renders at unity, which is why what publishes an epoch
      * checks this before letting it play rather than after.
      */
-    /**
-     * @brief Whether the table @p values carries fits what was prepared for it.
-     *
-     * The other half of applicable, and the half a fingerprint cannot answer.
-     * A link edit changes no op and no plan, so a table that gained a
-     * parameter or a link travels on a values publish, matches the plan, and
-     * does not fit the room allocated for it. Asked here so the publisher and
-     * the block get one answer: the publisher escalates such a publish into a
-     * structural one, and the block that meets one anyway renders empty rather
-     * than stale.
-     */
-    bool fitsParameters(const PlanValues& values) const {
-        return values.params == nullptr ||
-               (values.params->size() == paramValues_.size() &&
-                values.params->maxLinksPerParam <= static_cast<int>(paramScratch_.size()));
-    }
-
     bool appliesValues(const PlanValues& values) const {
         return plan_ != nullptr && values.planFingerprint == planFingerprint_ &&
                values.ops.size() == plan_->ops.size();
@@ -493,8 +505,14 @@ class PlanExecutor {
     std::vector<ModContribution> paramScratch_;
 
     /// Per op: the window of the table a Device op's device reads, resolved
-    /// once here so the audio thread never hashes a DeviceKey.
+    /// once here so the audio thread never hashes a DeviceKey. Cached from one
+    /// table's layout, which is what paramLayout_ below is for.
     std::vector<ParamTable::DeviceWindow> paramWindowForOp_;
+
+    /// Identity of the layout those windows were cached from. A table with
+    /// another one puts different parameters at the same indices, and the
+    /// windows would hand a device its neighbour's slots.
+    std::uint64_t paramLayout_ = 0;
 };
 
 }  // namespace magda::engine
