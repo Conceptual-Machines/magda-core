@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "core/AutomationInfo.hpp"
 #include "core/TrackInfo.hpp"
 #include "plan/PlanCompiler.hpp"
 
@@ -45,6 +46,11 @@ struct Fixture {
     /// what turns a mistyped location into a failure instead of a golden
     /// quietly pinned with no delays in it.
     std::vector<std::pair<engine::OpKey, int>> deviceLatency;
+
+    /// The automation the project is playing, and the clips its lanes name.
+    /// Empty where the fixture is not about automation (#2118).
+    std::vector<AutomationLaneInfo> lanes;
+    std::vector<AutomationClipInfo> clips;
 
     /// A second project, compiled and diffed against the first. Empty where
     /// the fixture is not about what survives an edit.

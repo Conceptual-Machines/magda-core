@@ -252,6 +252,22 @@ Fixture parameterLinks() {
     value.tracks[0].mods[0].links.push_back(ModLink{
         ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 7), 1), 0.5f, true, true});
 
+    // A lane over the device's first parameter, and one over the track fader,
+    // which is a parameter only because the lane reaches it (#2118).
+    AutomationLaneInfo cutoff;
+    cutoff.id = 1;
+    cutoff.target = ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 7), 0);
+    cutoff.authorityState = AutomationAuthorityState::Reading;
+    cutoff.absolutePoints = {{1, 0.0, 0.0}, {2, 4.0, 1.0}};
+
+    AutomationLaneInfo fader;
+    fader.id = 2;
+    fader.target = ControlTarget::trackVolume(1);
+    fader.authorityState = AutomationAuthorityState::Reading;
+    fader.absolutePoints = {{3, 0.0, 0.75}, {4, 8.0, 0.0}};
+
+    value.lanes = {cutoff, fader};
+
     value.master = master();
     value.options = withoutMeters();
     return value;

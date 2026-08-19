@@ -310,6 +310,8 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_param_lane.cpp)
     # The parameter table (#2117): addressing, the link graph and publication.
     list(APPEND TEST_SOURCES test_param_table.cpp)
+    # Automation lanes baked into the parameter lane (#2118).
+    list(APPEND TEST_SOURCES test_automation_bake.cpp)
     list(APPEND TEST_SOURCES test_tempo_map.cpp)
     list(APPEND TEST_SOURCES test_transport_clock.cpp)
     list(APPEND TEST_SOURCES test_click_generator.cpp)

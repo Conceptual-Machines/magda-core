@@ -261,6 +261,9 @@ juce_add_binary_data(MagdaAssets
 # include-boundary guard) lands with the device-library carve (#1834).
 add_library(magda_types STATIC
     core/ParameterUtils.cpp
+    # The shape of an automation lane, on its own, so the engine bakes a curve
+    # through the same function the editor draws it with (#2118).
+    core/AutomationCurve.cpp
     core/DeviceState.cpp
     # Clip placement rules (#2003). Pure, beat domain, no manager: they answer
     # against a lane of clips, which is what lets the arrangement ask about a
@@ -279,6 +282,8 @@ add_library(magda_types STATIC
     core/ControlTarget.hpp
     core/ParameterInfo.hpp
     core/ParameterUtils.hpp
+    core/AutomationCurve.hpp
+    core/AutomationInfo.hpp
     core/DeviceInfo.hpp
     core/DeviceState.hpp
     core/KitRow.hpp

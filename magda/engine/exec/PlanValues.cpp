@@ -51,13 +51,6 @@ float faderPositionToGain(float position) {
                : 0.0f;
 }
 
-/// Pan as the fader stores it: a small deadband around centre, then clamped.
-float faderPan(float pan) {
-    if (pan >= -0.005f && pan <= 0.005f)
-        pan = 0.0f;
-    return std::clamp(pan, -1.0f, 1.0f);
-}
-
 // --- model lookup ------------------------------------------------------------
 
 /// Depth cap for the parent and destination walks. Both are model-authored
@@ -339,7 +332,7 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
     switch (key.role) {
         case OpRole::TrackFader: {
             const auto gain = faderGainFromVolume(track->volume);
-            applyLinearPanLaw(gain, faderPan(track->pan), value.gainLeft, value.gainRight);
+            applyLinearPanLaw(gain, faderPanPosition(track->pan), value.gainLeft, value.gainRight);
             break;
         }
 
@@ -402,7 +395,7 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
                 break;
 
             const auto gain = faderGainFromDecibels(chain->volume);
-            applyLinearPanLaw(gain, faderPan(chain->pan), value.gainLeft, value.gainRight);
+            applyLinearPanLaw(gain, faderPanPosition(chain->pan), value.gainLeft, value.gainRight);
             break;
         }
 
@@ -464,6 +457,12 @@ std::vector<std::string> Resolver::run(PlanValues& values) {
 
 }  // namespace
 
+float faderPanPosition(float pan) {
+    if (pan >= -0.005f && pan <= 0.005f)
+        pan = 0.0f;
+    return std::clamp(pan, -1.0f, 1.0f);
+}
+
 float faderGainFromDecibels(float decibels) {
     return faderPositionToGain(std::clamp(decibelsToFaderPosition(decibels), 0.0f, 1.0f));
 }
@@ -480,7 +479,9 @@ void applyLinearPanLaw(float gain, float pan, float& left, float& right) {
 
 std::vector<std::string> resolvePlanValues(const RenderPlan& plan,
                                            const std::vector<TrackInfo>& tracks,
-                                           const TrackInfo& master, PlanValues& values) {
+                                           const TrackInfo& master, PlanValues& values,
+                                           std::span<const magda::AutomationLaneInfo> lanes,
+                                           std::span<const magda::AutomationClipInfo> clips) {
     auto messages = Resolver(plan, tracks, master).run(values);
 
     // The parameters travel with the values (#2117), so one call resolves the
@@ -488,7 +489,8 @@ std::vector<std::string> resolvePlanValues(const RenderPlan& plan,
     // of step with each other. Rebuilt whole rather than patched, the way the
     // op values are: a fader move re-resolves a project's parameters as well,
     // which is a vector and a topological sort off the audio thread.
-    auto params = std::make_shared<ParamTable>(compileParamTable(plan, tracks, master));
+    auto params =
+        std::make_shared<ParamTable>(compileParamTable(plan, tracks, master, lanes, clips));
 
     // Reported here as well as carried on the table, because the caller that
     // logs one of these is the caller that logs the other, and a diagnostic

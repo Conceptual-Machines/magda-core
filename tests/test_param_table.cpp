@@ -84,13 +84,27 @@ ParamTable tableFor(std::vector<TrackInfo> tracks, TrackInfo master = makeMaster
 }
 
 /// One block resolved out of a table, with the room the resolver needs.
-ResolvedParams resolved(const ParamTable& table, int numSamples = 64) {
+/// A block of @p numSamples starting where the transport is, which for most of
+/// these is the beginning and does not matter: a parameter with no curve reads
+/// the same wherever the block is.
+magda::engine::BlockInfo blockAt(double startBeat, int numSamples = 64, double beats = 1.0) {
+    magda::engine::BlockInfo block;
+    block.numSamples = numSamples;
+    block.playing = true;
+    block.startBeat = startBeat;
+    block.endBeat = startBeat + beats;
+    return block;
+}
+
+ResolvedParams resolved(const ParamTable& table, magda::engine::BlockInfo block = blockAt(0.0)) {
     ResolvedParams values;
     values.prepare(table.size());
 
-    std::vector<ModContribution> scratch(
+    std::vector<ModContribution> links(
         static_cast<std::size_t>(std::max(table.maxLinksPerParam, 1)));
-    resolveParams(table, values, scratch, numSamples);
+    std::vector<magda::engine::ParamSegment> segments(
+        static_cast<std::size_t>(values.segmentCapacity()));
+    resolveParams(table, values, links, segments, block);
     return values;
 }
 
@@ -269,8 +283,10 @@ TEST_CASE("Breaking a cycle costs the cycle and not what hangs off it", "[engine
 TEST_CASE("A link the table cannot carry is reported rather than dropped",
           "[engine][param][table]") {
     SECTION("a target this table does not resolve") {
+        // The tempo is the one target left that belongs somewhere else: it is
+        // the transport's, and no table of parameters carries it.
         auto track = makeTrack(1);
-        track.macros[0].links.push_back(MacroLink{ControlTarget::trackVolume(1), 1.0f, false});
+        track.macros[0].links.push_back(MacroLink{ControlTarget::tempo(), 1.0f, false});
 
         const auto table = tableFor({track});
         CHECK(mentions(table, "does not carry yet"));
@@ -387,9 +403,19 @@ TEST_CASE("A macro inside a rack addresses the device inside it", "[engine][para
 }
 
 TEST_CASE("An address the model cannot mean resolves to nothing", "[engine][param][table]") {
-    CHECK_FALSE(paramKeyFor(ControlTarget::trackVolume(1)).has_value());
-    CHECK_FALSE(paramKeyFor(ControlTarget::sendLevel(1, 0)).has_value());
     CHECK_FALSE(paramKeyFor(ControlTarget::tempo()).has_value());
+
+    // The mixer values are addresses this table carries (#2118), so they
+    // resolve; whether the project allocates one is a separate question.
+    const auto volume = paramKeyFor(ControlTarget::trackVolume(1));
+    REQUIRE(volume.has_value());
+    CHECK(volume->kind == ParamKey::Kind::TrackVolume);
+    CHECK(volume->trackId == 1);
+
+    const auto send = paramKeyFor(ControlTarget::sendLevel(1, 2));
+    REQUIRE(send.has_value());
+    CHECK(send->kind == ParamKey::Kind::SendLevel);
+    CHECK(send->index == 2);
 
     // A chain owns no macros and no modifiers: they live on tracks, racks and
     // devices, and a chain is what sits between two of them.
@@ -420,8 +446,10 @@ TEST_CASE("A table belongs to the plan it was resolved against", "[engine][param
     values.prepare(table.size() + 1);
     values.beginBlock(32);
 
-    std::vector<ModContribution> scratch(1);
-    resolveParams(table, values, scratch, 32);
+    std::vector<ModContribution> links(1);
+    std::vector<magda::engine::ParamSegment> segments(
+        static_cast<std::size_t>(values.segmentCapacity()));
+    resolveParams(table, values, links, segments, blockAt(0.0, 32));
     CHECK(values[0].empty());
 }
 
@@ -522,10 +550,12 @@ TEST_CASE("A refused table renders empty rather than stale", "[engine][param][ta
 
     ResolvedParams values;
     values.prepare(table.size());
-    std::vector<ModContribution> scratch(
+    std::vector<ModContribution> links(
         static_cast<std::size_t>(std::max(table.maxLinksPerParam, 1)));
+    std::vector<magda::engine::ParamSegment> segments(
+        static_cast<std::size_t>(values.segmentCapacity()));
 
-    resolveParams(table, values, scratch, 64);
+    resolveParams(table, values, links, segments, blockAt(0.0));
     REQUIRE_FALSE(values[0].empty());
 
     // A table of another shape is refused, and what the last block resolved
@@ -537,7 +567,7 @@ TEST_CASE("A refused table renders empty rather than stale", "[engine][param][ta
     other.base.resize(table.size() + 1, 0.0f);
     other.linkOffsets.assign(table.size() + 2, 0);
 
-    resolveParams(other, values, scratch, 64);
+    resolveParams(other, values, links, segments, blockAt(0.0));
     for (int param = 0; param < values.size(); ++param)
         CHECK(values[param].empty());
 }

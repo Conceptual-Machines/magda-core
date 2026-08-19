@@ -43,4 +43,16 @@ std::span<const ParamLink> ParamTable::linksFor(ParamId param) const {
     return std::span<const ParamLink>{links}.subspan(first, last - first);
 }
 
+std::span<const magda::AutomationPoint> ParamTable::curveFor(ParamId param) const {
+    if (param < 0 || param + 1 >= static_cast<ParamId>(curveOffsets.size()))
+        return {};
+
+    const auto first = static_cast<std::size_t>(curveOffsets[static_cast<std::size_t>(param)]);
+    const auto last = static_cast<std::size_t>(curveOffsets[static_cast<std::size_t>(param) + 1]);
+    if (last <= first || last > curvePoints.size())
+        return {};
+
+    return std::span<const magda::AutomationPoint>{curvePoints}.subspan(first, last - first);
+}
+
 }  // namespace magda::engine

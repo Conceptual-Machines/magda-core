@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "core/AutomationInfo.hpp"
 #include "param/ParamKey.hpp"
 #include "param/ParamSpec.hpp"
 
@@ -102,6 +103,27 @@ struct ParamTable {
     std::vector<ParamModifier> modifiers;
 
     /**
+     * @brief The lane playing over each parameter, in beats.
+     *
+     * Breakpoints, as the model draws them: curvePoints[curveOffsets[i],
+     * curveOffsets[i + 1]) is the curve over parameter i, and empty is a
+     * parameter with no lane, a lane with nothing on it, or a lane the model is
+     * not currently playing.
+     *
+     * Beats rather than samples, and not baked into segments here, because a
+     * block is what decides which part of a curve is being asked about and how
+     * long it lasts. A curve resolved into samples at publish time would be a
+     * curve that had to be republished every time the tempo moved.
+     *
+     * A clip-based lane arrives already flattened: its loops unrolled, its gaps
+     * held at the nearest clip edge, its overlaps resolved by the lane's own
+     * precedence. That is the model's answer to what the lane is (#1087), and
+     * the engine asks for it rather than working out a second one.
+     */
+    std::vector<magda::AutomationPoint> curvePoints;
+    std::vector<int> curveOffsets;
+
+    /**
      * @brief The order parameters resolve in.
      *
      * A permutation of every ParamId, arranged so that anything a parameter
@@ -163,6 +185,9 @@ struct ParamTable {
 
     /// The links reaching @p param, empty when nothing modulates it.
     std::span<const ParamLink> linksFor(ParamId param) const;
+
+    /// The lane playing over @p param, empty when none is.
+    std::span<const magda::AutomationPoint> curveFor(ParamId param) const;
 
     /// Where @p device's parameters are, or a window of nothing.
     DeviceWindow windowFor(const DeviceKey& device) const {

@@ -59,6 +59,8 @@ std::string dumpParamTable(const ParamTable& table) {
              << " " << padded(domainText(table.specs[index].domain), 16) << " "
              << "base=" << number(table.base[index]) << "  links=" << links.size();
 
+        if (!table.curveFor(param).empty())
+            line << " lane=" << table.curveFor(param).size();
         if (!table.specs[index].modulatable)
             line << " fixed";
         if (table.specs[index].segmentAccurate)

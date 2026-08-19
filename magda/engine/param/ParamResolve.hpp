@@ -2,6 +2,7 @@
 
 #include <span>
 
+#include "exec/RenderContext.hpp"
 #include "param/ParamBlock.hpp"
 #include "param/ParamSpec.hpp"
 #include "param/ParamTable.hpp"
@@ -109,6 +110,28 @@ void resolveParam(ResolvedParams& out, int param, const ParamSpec& spec,
                   const ParamSources& sources);
 
 /**
+ * @brief The stretch of an automation curve one block covers (#2118).
+ *
+ * Writes the block's sample domain: normalised values, sample offsets, ready to
+ * be handed to resolveParam as its automation lane. Returns how many segments
+ * it wrote, which is zero for a parameter with no curve.
+ *
+ * One segment for a parameter its device reads once per block, holding the
+ * value the curve has at the block's first sample. That is the whole shape of
+ * the port: the incumbent engine settles a parameter at the block boundary, and
+ * a curve read more finely than that would differ from it everywhere.
+ *
+ * A parameter that asked for segment accuracy gets a segment per breakpoint the
+ * block contains, running from one to the next. The bend between two
+ * breakpoints reads as a straight line inside a block: the curve is sampled at
+ * its breakpoints and interpolated between them, which over a few milliseconds
+ * is a difference no device has yet asked to hear. Subdividing a bent segment
+ * is what to do when one does.
+ */
+int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& spec,
+              const BlockInfo& block, std::span<ParamSegment> out);
+
+/**
  * @brief Resolve every parameter of @p table for one block (#2117).
  *
  * On the audio thread, once per block, before any device runs. Walks the
@@ -116,18 +139,22 @@ void resolveParam(ResolvedParams& out, int param, const ParamSpec& spec,
  * parameter needs no second pass: whatever a parameter reads has already been
  * resolved when it is reached.
  *
- * @p scratch is where one parameter's contributions are gathered, and it has to
- * hold ParamTable::maxLinksPerParam of them. Passed in rather than owned
- * because this runs on the audio thread and the room has to have been found
- * before the block started; a parameter with more links than there is room for
- * keeps the ones that fit, which cannot happen against a scratch sized from the
- * table it is used with.
+ * @p links is where one parameter's contributions are gathered, and it has to
+ * hold ParamTable::maxLinksPerParam of them. @p segments is where its curve is
+ * baked, and it has to hold as many as @p out has room for. Both are passed in
+ * rather than owned because this runs on the audio thread and the room has to
+ * have been found before the block started; a parameter with more links than
+ * there is room for keeps the ones that fit, which cannot happen against a
+ * scratch sized from the table it is used with.
+ *
+ * @p block is what says which stretch of every curve is being asked about, and
+ * how many samples that stretch lasts.
  *
  * A table whose size does not match what @p out was prepared for is refused
  * whole rather than resolved partly: the two are indexed by the same ParamId,
  * and a mismatch means they were prepared against different plans.
  */
-void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModContribution> scratch,
-                   int numSamples);
+void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModContribution> links,
+                   std::span<ParamSegment> segments, const BlockInfo& block);
 
 }  // namespace magda::engine

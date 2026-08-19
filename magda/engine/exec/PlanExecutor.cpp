@@ -220,7 +220,9 @@ void PlanExecutor::reset() {
     boundMeterCount_ = 0;
     midiTapForOp_.clear();
     paramWindowForOp_.clear();
+    mixerParamForOp_.clear();
     paramScratch_.clear();
+    paramSegments_.clear();
     paramValues_.prepare(0);
     paramLayout_ = 0;
 }
@@ -251,6 +253,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     meterForOp_.assign(numOps, nullptr);
     midiTapForOp_.assign(numOps, nullptr);
     paramWindowForOp_.assign(numOps, ParamTable::DeviceWindow{});
+    mixerParamForOp_.assign(numOps, OpMixerParams{});
     paramLayout_ = 0;
 
     // The parameters of the table this plan is published with (#2117). Sized
@@ -263,10 +266,34 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         paramValues_.prepare(params->size());
         paramScratch_.assign(static_cast<std::size_t>(std::max(params->maxLinksPerParam, 0)),
                              ModContribution{});
+        paramSegments_.assign(static_cast<std::size_t>(paramValues_.segmentCapacity()),
+                              ParamSegment{});
 
-        for (std::size_t i = 0; i < numOps; ++i)
-            if (plan.ops[i].kind == OpKind::Device)
-                paramWindowForOp_[i] = params->windowFor(plan.ops[i].key.deviceKey());
+        for (std::size_t i = 0; i < numOps; ++i) {
+            const auto& op = plan.ops[i];
+            if (op.kind == OpKind::Device) {
+                paramWindowForOp_[i] = params->windowFor(op.key.deviceKey());
+                continue;
+            }
+
+            // The two mixer ops a lane can play over. A rack chain's fader and
+            // a rack's output are not addressable in the model, so they keep
+            // the published value and are not looked up.
+            ParamKey key;
+            key.scope = ParamKey::Scope::Track;
+            key.trackId = op.key.trackId;
+
+            if (op.kind == OpKind::Fader && op.key.role == OpRole::TrackFader) {
+                key.kind = ParamKey::Kind::TrackVolume;
+                mixerParamForOp_[i].gain = params->find(key);
+                key.kind = ParamKey::Kind::TrackPan;
+                mixerParamForOp_[i].pan = params->find(key);
+            } else if (op.kind == OpKind::SendTap) {
+                key.kind = ParamKey::Kind::SendLevel;
+                key.index = op.key.index;
+                mixerParamForOp_[i].gain = params->find(key);
+            }
+        }
     }
 
     const auto describe = [&plan](std::size_t index) {
@@ -649,7 +676,7 @@ PlanExecutor::BlockStart PlanExecutor::beginBlock(const PlanValues& values,
     return start;
 }
 
-void PlanExecutor::resolveParameters(const PlanValues& values, int numSamples) {
+void PlanExecutor::resolveParameters(const PlanValues& values, const BlockInfo& block) {
     // Two shapes have to match, and neither is something appliesValues can
     // see: it compares the plan's fingerprint and its op count, and a link
     // edit changes neither. A macro gaining its first link grows the table by
@@ -663,17 +690,17 @@ void PlanExecutor::resolveParameters(const PlanValues& values, int numSamples) {
     // published, and the session escalates a publish of this shape into a
     // structural one so the emptiness lasts a block rather than for ever.
     if (!appliesValues(values) || values.params == nullptr || !fitsParameters(values)) {
-        paramValues_.beginBlock(numSamples);
+        paramValues_.beginBlock(block.numSamples);
         return;
     }
 
-    resolveParams(*values.params, paramValues_, paramScratch_, numSamples);
+    resolveParams(*values.params, paramValues_, paramScratch_, paramSegments_, block);
 }
 
 void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,
                            juce::AudioBuffer<float>& output) {
     const auto start = beginBlock(values, requestedBlock, output);
-    resolveParameters(values, start.block.numSamples);
+    resolveParameters(values, start.block);
     if (!start.render)
         return;
 
@@ -684,11 +711,39 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
                  output);
 }
 
-void PlanExecutor::renderOp(OpId id, const OpValue& value, const BlockInfo& block,
+OpValue PlanExecutor::mixerValueFor(std::size_t op, const OpValue& published) const {
+    const auto params = mixerParamForOp_[op];
+    if (params.gain == INVALID_PARAM_ID)
+        return published;
+
+    const auto level = paramValues_[params.gain];
+    if (level.empty())
+        return published;
+
+    // Silence is the published table's to say: mute and solo are not
+    // parameters, nothing plays a lane over them, and a fader that moved does
+    // not make a muted track audible.
+    OpValue value = published;
+
+    const auto gain = faderGainFromDecibels(level.value());
+    const auto pan = params.pan == INVALID_PARAM_ID ? ParamValues{} : paramValues_[params.pan];
+
+    if (pan.empty()) {
+        value.gainLeft = gain;
+        value.gainRight = gain;
+    } else {
+        applyLinearPanLaw(gain, faderPanPosition(pan.value()), value.gainLeft, value.gainRight);
+    }
+
+    return value;
+}
+
+void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& block,
                             juce::AudioBuffer<float>& output) {
     const auto i = static_cast<std::size_t>(id);
     const auto& op = plan_->ops[i];
     const auto numSamples = block.numSamples;
+    const auto value = mixerValueFor(i, published);
 
     switch (op.kind) {
         case OpKind::ClipAudio:

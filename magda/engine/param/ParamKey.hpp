@@ -37,6 +37,15 @@ struct ParamKey {
         DeviceParam,  ///< a device's own parameter, by its declared index
         Macro,        ///< a macro knob belonging to the scope named below
         ModParam,     ///< one parameter of a modifier belonging to that scope
+
+        // The mixer values, which are parameters for the same reason the rest
+        // are: a lane plays over them inside a block, and a table resolved by
+        // the publisher cannot move faster than a publish. They are carried
+        // only when something reaches them, so a project with no automation on
+        // its faders keeps the value table's answer and pays nothing (#2118).
+        TrackVolume,  ///< the track fader, in dB
+        TrackPan,     ///< the track pan, -1 to 1
+        SendLevel,    ///< one send slot's level, in dB, by its index
     };
 
     /// Who owns the macro or modifier. Always Device for a device parameter.

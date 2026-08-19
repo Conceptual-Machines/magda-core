@@ -4,6 +4,8 @@
 
 #include <algorithm>
 
+#include "core/AutomationCurve.hpp"
+
 namespace magda::engine {
 
 namespace {
@@ -147,8 +149,61 @@ void resolveParam(ResolvedParams& out, int param, const ParamSpec& spec,
     out.setSegmentCount(param, written);
 }
 
-void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModContribution> scratch,
-                   int numSamples) {
+int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& spec,
+              const BlockInfo& block, std::span<ParamSegment> out) {
+    if (curve.empty() || out.empty())
+        return 0;
+
+    const auto valueAt = [&curve](double beat) {
+        return static_cast<float>(magda::automation::valueAtBeat(curve, beat));
+    };
+
+    const float opening = valueAt(block.startBeat);
+
+    // One value for the block, held: the incumbent engine settles a parameter
+    // at the block boundary, and a device that did not ask for more is not the
+    // place to start differing from it. Also the whole answer for a block with
+    // no time in it, which is what a stopped transport renders.
+    if (!spec.segmentAccurate || block.numSamples <= 0 || block.endBeat <= block.startBeat) {
+        out[0] = ParamSegment{0, opening, opening};
+        return 1;
+    }
+
+    // A segment per breakpoint inside the block, from where the block opens to
+    // where it ends. The bend between two breakpoints reads as a straight line
+    // here; over a few milliseconds that is a difference no device has asked to
+    // hear, and subdividing is what to do when one does.
+    int written = 0;
+    int startSample = 0;
+    float startValue = opening;
+
+    for (const auto& point : curve) {
+        if (point.beatPosition <= block.startBeat)
+            continue;
+        if (point.beatPosition >= block.endBeat)
+            break;
+        if (written + 1 >= static_cast<int>(out.size()))
+            break;
+
+        const auto sample = block.sampleForBeat(point.beatPosition);
+        if (sample <= startSample)
+            continue;
+
+        const auto value = static_cast<float>(point.value);
+        out[static_cast<std::size_t>(written++)] = ParamSegment{startSample, startValue, value};
+        startSample = sample;
+        startValue = value;
+    }
+
+    out[static_cast<std::size_t>(written++)] =
+        ParamSegment{startSample, startValue, valueAt(block.endBeat)};
+    return written;
+}
+
+void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModContribution> links,
+                   std::span<ParamSegment> segments, const BlockInfo& block) {
+    const auto numSamples = block.numSamples;
+
     // Emptied first, and then refused. A table that does not fit is not a
     // reason to keep rendering last block's values: those were resolved for a
     // parameter set this one no longer has, and a device reading them would be
@@ -166,11 +221,11 @@ void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModCo
             continue;
 
         const auto index = static_cast<std::size_t>(param);
-        const auto links = table.linksFor(param);
+        const auto reaching = table.linksFor(param);
 
         std::size_t used = 0;
-        for (const auto& link : links) {
-            if (used >= scratch.size())
+        for (const auto& link : reaching) {
+            if (used >= links.size())
                 break;
 
             float value = 0.0f;
@@ -187,15 +242,18 @@ void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModCo
                     break;
             }
 
-            scratch[used++] = ModContribution{value, link.amount, link.bipolar};
+            links[used++] = ModContribution{value, link.amount, link.bipolar};
         }
+
+        const auto baked = bakeCurve(table.curveFor(param), table.specs[index], block, segments);
 
         ParamSources sources;
         sources.base = table.base[index];
-        sources.modulation = scratch.first(used);
+        sources.modulation = links.first(used);
+        sources.automation = std::span<const ParamSegment>{segments}.first(
+            static_cast<std::size_t>(std::max(baked, 0)));
+        sources.automationEnd = numSamples;
 
-        // No automation yet: the lanes are baked in #2118, and until they are
-        // every parameter is its base plus whatever is linked to it.
         resolveParam(out, param, table.specs[index], sources);
     }
 }
