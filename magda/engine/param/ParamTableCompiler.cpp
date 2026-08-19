@@ -364,36 +364,158 @@ void Builder::resolveLinks() {
     }
 }
 
+/// Strongly connected components of the link graph, by Tarjan, iteratively.
+///
+/// Iteratively because the depth is the length of a chain of macros driving
+/// macros, which is a number a project decides rather than the engine, and a
+/// recursion that deep is the model choosing how much stack the compiler uses.
+///
+/// Returns one component id per node. Two nodes share one exactly when each can
+/// reach the other, which is what a cycle is.
+std::vector<int> stronglyConnectedComponents(const std::vector<std::vector<int>>& edges) {
+    const auto count = edges.size();
+
+    std::vector<int> index(count, -1);
+    std::vector<int> lowlink(count, 0);
+    std::vector<char> onStack(count, 0);
+    std::vector<int> component(count, -1);
+    std::vector<int> stack;
+    std::vector<std::pair<std::size_t, std::size_t>> work;
+
+    int nextIndex = 0;
+    int nextComponent = 0;
+
+    for (std::size_t root = 0; root < count; ++root) {
+        if (index[root] >= 0)
+            continue;
+
+        work.push_back({root, 0});
+        while (!work.empty()) {
+            auto& [node, edge] = work.back();
+
+            if (edge == 0) {
+                index[node] = nextIndex;
+                lowlink[node] = nextIndex;
+                ++nextIndex;
+                stack.push_back(static_cast<int>(node));
+                onStack[node] = 1;
+            }
+
+            if (edge < edges[node].size()) {
+                const auto next = static_cast<std::size_t>(edges[node][edge]);
+                ++edge;
+
+                if (index[next] < 0) {
+                    work.push_back({next, 0});
+                } else if (onStack[next] != 0) {
+                    lowlink[node] = std::min(lowlink[node], index[next]);
+                }
+                continue;
+            }
+
+            // Every edge walked: this node is finished, and it closes a
+            // component when nothing under it reached back past it.
+            if (lowlink[node] == index[node]) {
+                while (true) {
+                    const auto member = static_cast<std::size_t>(stack.back());
+                    stack.pop_back();
+                    onStack[member] = 0;
+                    component[member] = nextComponent;
+                    if (member == node)
+                        break;
+                }
+                ++nextComponent;
+            }
+
+            const auto finished = node;
+            work.pop_back();
+            if (!work.empty())
+                lowlink[work.back().first] =
+                    std::min(lowlink[work.back().first], lowlink[finished]);
+        }
+    }
+
+    return component;
+}
+
 void Builder::orderAndBreakCycles() {
     const auto count = static_cast<std::size_t>(table_.size());
 
-    // What each parameter waits for, and who waits for it. A modifier source
-    // contributes the modifier's own parameters, which is nothing until they
-    // exist; the loop is written for what it will be rather than for what it is
-    // today, because the order it produces is the thing that has to stay right.
-    std::vector<int> waitingOn(count, 0);
-    std::vector<std::vector<ParamId>> consumers(count);
-
-    for (std::size_t target = 0; target < count; ++target) {
+    // What each parameter reads. A modifier source contributes the modifier's
+    // own parameters, which is nothing until they exist; the loop is written for
+    // what it will be rather than for what it is today, because the order it
+    // produces is the thing that has to stay right.
+    std::vector<std::vector<int>> consumers(count);
+    const auto forEachDependency = [&](std::size_t target, const auto& visit) {
         for (const auto& link : perParam_[target]) {
             if (link.source.kind != ParamSourceRef::Kind::Parameter)
                 continue;
             const auto source = static_cast<std::size_t>(link.source.index);
-            if (source >= count)
-                continue;
-
-            consumers[source].push_back(static_cast<ParamId>(target));
-            ++waitingOn[target];
+            if (source < count)
+                visit(source);
         }
+    };
+
+    for (std::size_t target = 0; target < count; ++target)
+        forEachDependency(target, [&](std::size_t source) {
+            consumers[source].push_back(static_cast<int>(target));
+        });
+
+    // A cycle is a component with more than one parameter in it, or a parameter
+    // that reads itself. Only the links inside such a component are dropped:
+    // everything hanging off a cycle waits on it too, and a parameter that
+    // merely reads a cycle member has done nothing wrong. Once the cycle's own
+    // links are gone its members resolve at their base, and the link that reads
+    // one of them is honoured against that.
+    const auto component = stronglyConnectedComponents(consumers);
+
+    std::vector<int> componentSize(count, 0);
+    for (const auto id : component)
+        if (id >= 0)
+            ++componentSize[static_cast<std::size_t>(id)];
+
+    for (std::size_t target = 0; target < count; ++target) {
+        auto& links = perParam_[target];
+        const auto removed = std::remove_if(links.begin(), links.end(), [&](const ParamLink& link) {
+            if (link.source.kind != ParamSourceRef::Kind::Parameter)
+                return false;
+
+            const auto source = static_cast<std::size_t>(link.source.index);
+            if (source >= count || component[source] != component[target])
+                return false;
+
+            return source == target ||
+                   componentSize[static_cast<std::size_t>(component[target])] > 1;
+        });
+
+        if (removed == links.end())
+            continue;
+
+        diagnose(toString(table_.keys[target]) +
+                 ": part of a modulation cycle; the links inside it are dropped");
+        links.erase(removed, links.end());
     }
 
-    // Ascending id among everything that is ready, so the order is a property
-    // of the model rather than of how the container happened to iterate.
+    // With the cycles broken there is an order, and it is the same walk either
+    // way: ascending id among everything that is ready, so the order is a
+    // property of the model rather than of how a container iterated.
+    std::vector<int> waitingOn(count, 0);
+    for (std::size_t target = 0; target < count; ++target)
+        forEachDependency(target, [&](std::size_t) { ++waitingOn[target]; });
+
+    for (auto& list : consumers)
+        list.clear();
+    for (std::size_t target = 0; target < count; ++target)
+        forEachDependency(target, [&](std::size_t source) {
+            consumers[source].push_back(static_cast<int>(target));
+        });
+
     std::priority_queue<ParamId, std::vector<ParamId>, std::greater<>> ready;
     for (std::size_t i = 0; i < count; ++i)
         if (waitingOn[i] == 0)
             ready.push(static_cast<ParamId>(i));
 
+    table_.order.clear();
     table_.order.reserve(count);
     while (!ready.empty()) {
         const auto id = ready.top();
@@ -408,34 +530,15 @@ void Builder::orderAndBreakCycles() {
     if (table_.order.size() == count)
         return;
 
-    // Whatever is left waits on something that is itself waiting: a cycle, and
-    // there is no order that satisfies it. The links that close it are the ones
-    // between the survivors, and dropping them is the only reading that leaves
-    // every parameter with a value. A parameter is worth more than the link
-    // that made it impossible.
-    std::vector<char> stuck(count, 0);
+    // Unreachable: every cycle was broken above, and a graph without one has a
+    // topological order. Reported and completed rather than asserted, because
+    // the alternative is a table whose order is missing parameters, which the
+    // block resolver would read as parameters nobody resolved.
     for (std::size_t i = 0; i < count; ++i)
-        stuck[i] = waitingOn[i] > 0 ? 1 : 0;
-
-    for (std::size_t target = 0; target < count; ++target) {
-        if (stuck[target] == 0)
-            continue;
-
-        auto& links = perParam_[target];
-        const auto removed = std::remove_if(links.begin(), links.end(), [&](const ParamLink& link) {
-            return link.source.kind == ParamSourceRef::Kind::Parameter &&
-                   static_cast<std::size_t>(link.source.index) < count &&
-                   stuck[static_cast<std::size_t>(link.source.index)] != 0;
-        });
-
-        if (removed != links.end()) {
-            diagnose(toString(table_.keys[target]) +
-                     ": part of a modulation cycle; the links inside it are dropped");
-            links.erase(removed, links.end());
+        if (waitingOn[i] > 0) {
+            diagnose(toString(table_.keys[i]) + ": still waits on something after the cycle pass");
+            table_.order.push_back(static_cast<ParamId>(i));
         }
-
-        table_.order.push_back(static_cast<ParamId>(target));
-    }
 }
 
 void Builder::flattenLinks() {

@@ -149,13 +149,17 @@ void resolveParam(ResolvedParams& out, int param, const ParamSpec& spec,
 
 void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModContribution> scratch,
                    int numSamples) {
+    // Emptied first, and then refused. A table that does not fit is not a
+    // reason to keep rendering last block's values: those were resolved for a
+    // parameter set this one no longer has, and a device reading them would be
+    // holding a frozen project rather than an unresolved one.
+    out.beginBlock(numSamples);
+
     // Indexed by the same ParamId, so a size that disagrees is two things
-    // prepared against different plans. Refused whole: half a table of
+    // prepared against different tables. Refused whole: half a table of
     // parameters is a project with some of its values from somewhere else.
     if (table.size() != out.size())
         return;
-
-    out.beginBlock(numSamples);
 
     for (const auto param : table.order) {
         if (param < 0 || param >= table.size())

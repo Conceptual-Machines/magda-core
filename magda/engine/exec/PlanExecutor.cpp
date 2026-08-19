@@ -644,10 +644,19 @@ PlanExecutor::BlockStart PlanExecutor::beginBlock(const PlanValues& values,
 }
 
 void PlanExecutor::resolveParameters(const PlanValues& values, int numSamples) {
-    if (!appliesValues(values) || values.params == nullptr) {
-        // Empty rather than stale: a device asking for a parameter gets a
-        // window of nothing, and nothing is what it had before a table was
-        // ever published.
+    // Two shapes have to match, and neither is something appliesValues can
+    // see: it compares the plan's fingerprint and its op count, and a link
+    // edit changes neither. A macro gaining its first link grows the table by
+    // a slot, and a link added to the parameter that already had the most
+    // widens the room one parameter's contributions are gathered in. Both
+    // arrive on a table that belongs to this plan and neither fits what was
+    // allocated for it.
+    //
+    // Empty rather than stale, and empty rather than partly applied: a device
+    // gets a window of nothing, which is what it had before a table was ever
+    // published, and the session escalates a publish of this shape into a
+    // structural one so the emptiness lasts a block rather than for ever.
+    if (!appliesValues(values) || values.params == nullptr || !fitsParameters(values)) {
         paramValues_.beginBlock(numSamples);
         return;
     }

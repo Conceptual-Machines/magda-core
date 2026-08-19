@@ -236,6 +236,36 @@ TEST_CASE("A modulation cycle is reported and broken", "[engine][param][table]")
     CHECK_FALSE(values[table.find(trackMacro(1, 0))].empty());
 }
 
+TEST_CASE("Breaking a cycle costs the cycle and not what hangs off it", "[engine][param][table]") {
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(7, 1)));
+
+    // Two macros driving each other, and one of them also driving a device
+    // parameter. The device parameter waits on the cycle without being in one:
+    // once the cycle's own links are gone, macro 1 sits at its stored value and
+    // the link reading it is perfectly answerable.
+    track.macros[0].value = 1.0f;
+    track.macros[0].links.push_back(
+        MacroLink{ControlTarget::deviceMacro(ChainNodePath::trackLevel(1), 1), 1.0f, false});
+    track.macros[1].value = 0.5f;
+    track.macros[1].links.push_back(
+        MacroLink{ControlTarget::deviceMacro(ChainNodePath::trackLevel(1), 0), 1.0f, false});
+    track.macros[1].links.push_back(
+        MacroLink{ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 7), 0), 1.0f, false});
+
+    const auto table = tableFor({track});
+
+    const auto param = table.find(deviceParam(1, 7, 0));
+    REQUIRE(param != INVALID_PARAM_ID);
+    CHECK(table.linksFor(param).size() == 1);
+    CHECK(resolved(table)[param].value() == approx(50.0f));
+
+    // And the diagnostic names the parameters that are actually in the cycle.
+    CHECK(mentions(table, "T1:macro0: part of a modulation cycle"));
+    CHECK(mentions(table, "T1:macro1: part of a modulation cycle"));
+    CHECK_FALSE(mentions(table, "T1/D7:param0: part of a modulation cycle"));
+}
+
 TEST_CASE("A link the table cannot carry is reported rather than dropped",
           "[engine][param][table]") {
     SECTION("a target this table does not resolve") {
@@ -479,4 +509,83 @@ TEST_CASE("A published table reaches the device that reads it", "[engine][param]
     // that reads 0 to 100, resolved on the audio thread out of a table that
     // travelled with the values.
     CHECK(device->firstValue == approx(50.0f));
+}
+
+TEST_CASE("A refused table renders empty rather than stale", "[engine][param][table]") {
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(7, 1)));
+    track.macros[0].value = 1.0f;
+    track.macros[0].links.push_back(
+        MacroLink{ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 7), 0), 1.0f, false});
+
+    const auto table = tableFor({track});
+
+    ResolvedParams values;
+    values.prepare(table.size());
+    std::vector<ModContribution> scratch(
+        static_cast<std::size_t>(std::max(table.maxLinksPerParam, 1)));
+
+    resolveParams(table, values, scratch, 64);
+    REQUIRE_FALSE(values[0].empty());
+
+    // A table of another shape is refused, and what the last block resolved
+    // goes with it: those values belong to a parameter set this table does not
+    // have, and a device reading them would be holding a frozen project.
+    ParamTable other;
+    other.keys.resize(table.size() + 1);
+    other.specs.resize(table.size() + 1);
+    other.base.resize(table.size() + 1, 0.0f);
+    other.linkOffsets.assign(table.size() + 2, 0);
+
+    resolveParams(other, values, scratch, 64);
+    for (int param = 0; param < values.size(); ++param)
+        CHECK(values[param].empty());
+}
+
+TEST_CASE("A values publish that changes the parameter shape becomes a structural one",
+          "[engine][param][table]") {
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(7, 1)));
+
+    std::vector<TrackInfo> tracks{track};
+    const auto master = makeMaster();
+    const auto plan =
+        std::make_shared<const magda::engine::RenderPlan>(compileRenderPlan(tracks, master));
+
+    magda::engine::PlanValues values;
+    magda::engine::resolvePlanValues(*plan, tracks, master, values);
+
+    RecordingFactory factory;
+    magda::engine::EngineSession session(factory);
+    const magda::engine::RenderContext context{44100.0, 64, 2};
+
+    REQUIRE(
+        session
+            .publish(plan, context, magda::engine::collectRuntimeStateIds(tracks, master), values)
+            .published);
+
+    juce::AudioBuffer<float> output(2, 64);
+    session.process(64, output);
+
+    auto* device = factory.devices[magda::engine::DeviceKey{ChainSegment::Fx, 7}];
+    REQUIRE(device != nullptr);
+    REQUIRE(device->firstValue == approx(0.0f));
+
+    // Linking a macro for the first time gives it a parameter. The plan does
+    // not change, so this is a values publish by every test the fingerprint can
+    // make, and the table it carries does not fit the room the epoch allocated.
+    tracks[0].macros[0].value = 1.0f;
+    tracks[0].macros[0].links.push_back(
+        MacroLink{ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 7), 0), 1.0f, false});
+
+    magda::engine::PlanValues linked;
+    magda::engine::resolvePlanValues(*plan, tracks, master, linked);
+    REQUIRE(linked.params->size() == values.params->size() + 1);
+
+    const auto result = session.publishValues(linked);
+    CHECK(result.published);
+    CHECK_FALSE(result.messages.empty());
+
+    session.process(64, output);
+    CHECK(device->firstValue == approx(100.0f));
 }

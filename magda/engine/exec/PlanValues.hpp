@@ -76,10 +76,17 @@ struct PlanValues {
      * audio thread against one plan, both are published whole, and a device
      * hearing one of them from a previous plan is the same bug either way.
      *
-     * Shared rather than owned, so a fader move that changed no parameter
-     * republishes the pointer it already had, and so a table outlives the
-     * publish that replaced it for exactly as long as the audio thread is still
-     * inside it.
+     * Shared rather than owned so that a table outlives the publish that
+     * replaced it for exactly as long as the audio thread is still inside it,
+     * and so that holding one costs a pointer wherever it is held.
+     *
+     * A fresh one per publish, for now: resolvePlanValues compiles the table
+     * every time it resolves the op values, so a fader move pays the model walk
+     * and the topological sort as well. That is a vector and a sort off the
+     * audio thread at the speed a mouse moves, which is affordable and not
+     * free. Reusing the previous table when the compile would be identical is
+     * what the shared pointer leaves room for; deciding that needs something
+     * that says the model has not changed, and nothing says it yet.
      *
      * Null for a plan resolved without one, which is every test that is not
      * about parameters and every render of a project that has none.

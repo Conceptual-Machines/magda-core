@@ -364,6 +364,23 @@ class PlanExecutor {
      * Anything else renders at unity, which is why what publishes an epoch
      * checks this before letting it play rather than after.
      */
+    /**
+     * @brief Whether the table @p values carries fits what was prepared for it.
+     *
+     * The other half of applicable, and the half a fingerprint cannot answer.
+     * A link edit changes no op and no plan, so a table that gained a
+     * parameter or a link travels on a values publish, matches the plan, and
+     * does not fit the room allocated for it. Asked here so the publisher and
+     * the block get one answer: the publisher escalates such a publish into a
+     * structural one, and the block that meets one anyway renders empty rather
+     * than stale.
+     */
+    bool fitsParameters(const PlanValues& values) const {
+        return values.params == nullptr ||
+               (values.params->size() == paramValues_.size() &&
+                values.params->maxLinksPerParam <= static_cast<int>(paramScratch_.size()));
+    }
+
     bool appliesValues(const PlanValues& values) const {
         return plan_ != nullptr && values.planFingerprint == planFingerprint_ &&
                values.ops.size() == plan_->ops.size();

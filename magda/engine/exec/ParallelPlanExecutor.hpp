@@ -91,6 +91,10 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
         return core_;
     }
 
+    bool fitsParameters(const PlanValues& values) const {
+        return core_.fitsParameters(values);
+    }
+
     int latencySamples() const {
         return core_.latencySamples();
     }
