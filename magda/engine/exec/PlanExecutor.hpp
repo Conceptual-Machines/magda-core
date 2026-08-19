@@ -12,6 +12,7 @@
 #include "exec/PlanLayout.hpp"
 #include "exec/PlanValues.hpp"
 #include "exec/RenderContext.hpp"
+#include "param/ParamResolve.hpp"
 #include "plan/PlanDiff.hpp"
 #include "plan/RenderPlan.hpp"
 
@@ -196,7 +197,8 @@ class PlanExecutor {
      */
     std::vector<std::string> prepare(const RenderPlan& plan, const PlanBindings& bindings,
                                      const RenderContext& context,
-                                     const PlanExecutor* previous = nullptr);
+                                     const PlanExecutor* previous = nullptr,
+                                     const ParamTable* params = nullptr);
 
     /// Forget the prepared plan and everything sized for it. Off the audio
     /// thread. Every prepare starts here, so a plan that is refused leaves
@@ -237,6 +239,21 @@ class PlanExecutor {
      */
     BlockStart beginBlock(const PlanValues& values, const BlockInfo& requested,
                           juce::AudioBuffer<float>& output) const;
+
+    /**
+     * @brief Resolve the block's parameters, before any op runs (#2117).
+     *
+     * On the audio thread, after beginBlock and before anything is rendered,
+     * from both executors: a device reads what its parameters are and the
+     * answer has to be there when it does.
+     *
+     * The table travels with the values, so what makes one applicable makes the
+     * other applicable. A table that does not belong to this plan leaves every
+     * parameter empty rather than resolved against the wrong addresses, and a
+     * device is handed a window of nothing, which is what it would have had
+     * before any table was published at all.
+     */
+    void resolveParameters(const PlanValues& values, int numSamples);
 
     /**
      * @brief Render one op of the prepared plan.
@@ -334,6 +351,35 @@ class PlanExecutor {
      */
     const RenderContext& preparedContext() const {
         return context_;
+    }
+
+    /**
+     * @brief Whether the table @p values carries fits what was prepared for it.
+     *
+     * The other half of applicable, and the half the plan's fingerprint cannot
+     * answer. A link edit changes no op and no plan, so a table that gained a
+     * parameter, moved one, or grew the room a block gathers contributions in
+     * travels on a values publish, matches the plan, and does not fit what was
+     * allocated for it.
+     *
+     * Three things, because there are three ways to not fit. The layout says
+     * the parameter at an index is still the one that index was resolved for,
+     * which a count cannot: a macro that stopped being used in one scope and
+     * started being used in another leaves the count alone and moves every
+     * device window after it, and the windows are cached here from the table
+     * the plan was prepared with. The count says the answers are the right size
+     * for it. The link width says a parameter's contributions all fit, since
+     * the block gathers them into room found before it started.
+     *
+     * Asked here so the publisher and the block get one answer: the publisher
+     * escalates such a publish into a structural one, and a block that meets
+     * one anyway renders empty rather than stale or half-applied.
+     */
+    bool fitsParameters(const PlanValues& values) const {
+        return values.params == nullptr ||
+               (values.params->layoutFingerprint == paramLayout_ &&
+                values.params->size() == paramValues_.size() &&
+                values.params->maxLinksPerParam <= static_cast<int>(paramScratch_.size()));
     }
 
     /**
@@ -451,6 +497,22 @@ class PlanExecutor {
     /// Where a MergeMidi op publishes what reached it, or nullptr. See
     /// PlanBindings::midiTaps.
     std::vector<MidiTap*> midiTapForOp_;
+
+    /// This block's parameter values, and the room the resolver gathers one
+    /// parameter's links in. Sized at prepare from the table the plan was
+    /// published with, so the block that fills them allocates nothing.
+    ResolvedParams paramValues_;
+    std::vector<ModContribution> paramScratch_;
+
+    /// Per op: the window of the table a Device op's device reads, resolved
+    /// once here so the audio thread never hashes a DeviceKey. Cached from one
+    /// table's layout, which is what paramLayout_ below is for.
+    std::vector<ParamTable::DeviceWindow> paramWindowForOp_;
+
+    /// Identity of the layout those windows were cached from. A table with
+    /// another one puts different parameters at the same indices, and the
+    /// windows would hand a device its neighbour's slots.
+    std::uint64_t paramLayout_ = 0;
 };
 
 }  // namespace magda::engine

@@ -43,6 +43,19 @@ DeviceInfo effect(DeviceId id) {
     return device;
 }
 
+/// An effect with parameters, for the fixture that pins the parameter table
+/// rather than the graph. Ranges that read 0 to 100 so a normalised position
+/// and the value a device is handed are not the same number in the golden.
+DeviceInfo effectWithParameters(DeviceId id, int numParameters) {
+    auto device = effect(id);
+    for (int index = 0; index < numParameters; ++index) {
+        ParameterInfo info(index, "P" + juce::String(index), "%", 0.0f, 100.0f, 0.0f);
+        info.currentValue = 25.0f * static_cast<float>(index);
+        device.parameters.push_back(info);
+    }
+    return device;
+}
+
 DeviceInfo instrument(DeviceId id) {
     DeviceInfo device;
     device.id = id;
@@ -208,6 +221,42 @@ Fixture sectionLocalDeviceIds() {
     return value;
 }
 
+/// The parameter table's own fixture (#2117). Everything the plan fixtures do
+/// not have: parameters with scales, a macro driving one, a modifier driving
+/// another, and a macro driving a macro, which is what the resolution order is
+/// for.
+Fixture parameterLinks() {
+    Fixture value;
+    value.name = "parameter-links";
+    value.covers = "macros, modifiers and the order a chain of them resolves in";
+
+    auto device = effectWithParameters(7, 3);
+    device.macros = createDefaultMacros(1);
+    device.macros[0].value = 0.25f;
+    device.macros[0].links.push_back(
+        MacroLink{ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 7), 2), 0.5f, true});
+
+    value.tracks = {track(1)};
+    value.tracks[0].chain.fxChainElements.push_back(makeDeviceElement(device));
+
+    value.tracks[0].macros = createDefaultMacros(2);
+    value.tracks[0].macros[0].value = 1.0f;
+    value.tracks[0].macros[0].links.push_back(
+        MacroLink{ControlTarget::deviceMacro(ChainNodePath::trackLevel(1), 1), 0.5f, false});
+    value.tracks[0].macros[1].value = 0.5f;
+    value.tracks[0].macros[1].links.push_back(
+        MacroLink{ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 7), 0), 1.0f, false});
+
+    value.tracks[0].mods = createDefaultMods(1);
+    value.tracks[0].mods[0].value = 0.75f;
+    value.tracks[0].mods[0].links.push_back(ModLink{
+        ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 7), 1), 0.5f, true, true});
+
+    value.master = master();
+    value.options = withoutMeters();
+    return value;
+}
+
 Fixture groupRouting() {
     Fixture value;
     value.name = "group-routing";
@@ -290,6 +339,7 @@ std::vector<Fixture> planFixtures() {
     fixtures.push_back(sidechain());
     fixtures.push_back(sectionLocalDeviceIds());
     fixtures.push_back(groupRouting());
+    fixtures.push_back(parameterLinks());
     fixtures.push_back(insertDevice());
     fixtures.push_back(removeDevice());
     fixtures.push_back(reorderDevices());

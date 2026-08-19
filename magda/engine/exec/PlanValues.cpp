@@ -7,6 +7,7 @@
 
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
+#include "param/ParamTableCompiler.hpp"
 #include "plan/TrackRouting.hpp"
 
 namespace magda::engine {
@@ -480,7 +481,22 @@ void applyLinearPanLaw(float gain, float pan, float& left, float& right) {
 std::vector<std::string> resolvePlanValues(const RenderPlan& plan,
                                            const std::vector<TrackInfo>& tracks,
                                            const TrackInfo& master, PlanValues& values) {
-    return Resolver(plan, tracks, master).run(values);
+    auto messages = Resolver(plan, tracks, master).run(values);
+
+    // The parameters travel with the values (#2117), so one call resolves the
+    // model into everything the plan reads and the two cannot be published out
+    // of step with each other. Rebuilt whole rather than patched, the way the
+    // op values are: a fader move re-resolves a project's parameters as well,
+    // which is a vector and a topological sort off the audio thread.
+    auto params = std::make_shared<ParamTable>(compileParamTable(plan, tracks, master));
+
+    // Reported here as well as carried on the table, because the caller that
+    // logs one of these is the caller that logs the other, and a diagnostic
+    // nobody prints is a diagnostic nobody reads.
+    messages.insert(messages.end(), params->diagnostics.begin(), params->diagnostics.end());
+
+    values.params = std::move(params);
+    return messages;
 }
 
 }  // namespace magda::engine

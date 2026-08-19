@@ -100,9 +100,31 @@ class EngineSession {
     Result publish(std::shared_ptr<const RenderPlan> plan, const RenderContext& context,
                    const RuntimeStateIds& modelIds, PlanValues values);
 
-    /// On the publishing thread. Values change at mixer speed rather than
-    /// structural speed, so they travel on their own.
-    void publishValues(PlanValues values);
+    /**
+     * @brief Newer values for the plan that is playing.
+     *
+     * On the publishing thread. Values change at mixer speed rather than
+     * structural speed, so they travel on their own.
+     *
+     * The parameter table rides along with them (#2117), and it can change
+     * shape without the plan changing at all: linking a macro for the first
+     * time gives it a parameter, and linking one more thing to the parameter
+     * that already had the most widens the room a block gathers contributions
+     * in. Neither is visible to the fingerprint, and neither fits what the live
+     * epoch allocated.
+     *
+     * So a publish of that shape is escalated here into a structural one, on
+     * the plan that is already playing. It costs a prepare and a swap, which is
+     * what a structural edit costs, and it is what a link edit is: rare, human
+     * speed, and not something to make a block pay for. The alternative is a
+     * table nothing can render and a project whose parameters quietly stop
+     * following the model.
+     *
+     * Values that belong to another plan are refused rather than escalated:
+     * republishing the live plan with them would refuse them a second time,
+     * one layer further in.
+     */
+    Result publishValues(PlanValues values);
 
     /**
      * @brief Tempo, loop, metronome and where the transport has been asked to
@@ -249,6 +271,12 @@ class EngineSession {
     /// which is a property of the session rather than of any plan, and a plan
     /// swap must not move it.
     TransportClock clock_;
+
+    /// What the model held at the last publish. Kept so a values publish that
+    /// has to become a structural one has the set to publish with: retention
+    /// only ever extends, so the worst a set from a moment ago can cost is a
+    /// dormant object its retirement.
+    RuntimeStateIds lastModelIds_;
 
     /// This thread's own handle on the epoch that is rendering. Held because
     /// the next publish prepares against it: the differ needs the plan it was

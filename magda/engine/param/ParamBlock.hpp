@@ -229,6 +229,20 @@ class ResolvedParams {
     /// parameter the table does not have.
     ParamValues operator[](int param) const;
 
+    /**
+     * @brief What a link reading @p param as its source gets.
+     *
+     * The position the parameter opens the block at, clamped into range: a
+     * macro is a source between nothing and everything whatever the arithmetic
+     * that produced it did, and a source is read once per block because that is
+     * what a modulation contribution is.
+     *
+     * Zero for a parameter that has not resolved yet, which the resolution
+     * order exists to make unreachable: a source is resolved before whatever
+     * reads it.
+     */
+    float sourceValue(int param) const;
+
     /// The window a device reads: @p count parameters from @p firstParam.
     DeviceParams device(int firstParam, int count) const;
 

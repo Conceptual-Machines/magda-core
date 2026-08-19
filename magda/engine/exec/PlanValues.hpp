@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "param/ParamTable.hpp"
 #include "plan/RenderPlan.hpp"
 
 namespace magda {
@@ -63,6 +65,33 @@ inline constexpr OpValue kUnityValue{};
 struct PlanValues {
     std::uint64_t planFingerprint = 0;
     std::vector<OpValue> ops;
+
+    /**
+     * @brief The parameters behind the same plan (#2117).
+     *
+     * The other half of what a plan reads out of the model, and it travels here
+     * rather than beside it because the two answer one question at two
+     * granularities: what a mixer move did to an op, and what a knob, a macro
+     * or a modifier did to a device's own parameters. Both are resolved off the
+     * audio thread against one plan, both are published whole, and a device
+     * hearing one of them from a previous plan is the same bug either way.
+     *
+     * Shared rather than owned so that a table outlives the publish that
+     * replaced it for exactly as long as the audio thread is still inside it,
+     * and so that holding one costs a pointer wherever it is held.
+     *
+     * A fresh one per publish, for now: resolvePlanValues compiles the table
+     * every time it resolves the op values, so a fader move pays the model walk
+     * and the topological sort as well. That is a vector and a sort off the
+     * audio thread at the speed a mouse moves, which is affordable and not
+     * free. Reusing the previous table when the compile would be identical is
+     * what the shared pointer leaves room for; deciding that needs something
+     * that says the model has not changed, and nothing says it yet.
+     *
+     * Null for a plan resolved without one, which is every test that is not
+     * about parameters and every render of a project that has none.
+     */
+    std::shared_ptr<const ParamTable> params;
 };
 
 /**

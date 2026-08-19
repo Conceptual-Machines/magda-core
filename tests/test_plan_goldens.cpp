@@ -10,6 +10,8 @@
 #include "PlanGoldenFixtures.hpp"
 #include "TextDifference.hpp"
 #include "exec/PlanLayoutDump.hpp"
+#include "param/ParamTableCompiler.hpp"
+#include "param/ParamTableDump.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanCrossfade.hpp"
 #include "plan/PlanDiff.hpp"
@@ -111,6 +113,14 @@ std::string renderGolden(const goldens::Fixture& fixture) {
     out << "== plan ==\n" << engine::dumpPlan(plan) << "\n";
     out << "== layout ==\n"
         << engine::dumpPlanLayout(plan, deviceLatencyPerOp(plan, fixture.deviceLatency)) << "\n";
+
+    // The parameters resolved against the same plan (#2117). Here rather than
+    // in a file of their own for the reason the layout is: a model change moves
+    // the graph and the parameters at once, and two files would make one
+    // decision look like two regressions.
+    out << "== params ==\n"
+        << engine::dumpParamTable(engine::compileParamTable(plan, fixture.tracks, fixture.master))
+        << "\n";
 
     if (fixture.editedTracks.empty())
         return out.str();

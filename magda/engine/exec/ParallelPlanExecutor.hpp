@@ -68,7 +68,8 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
      */
     std::vector<std::string> prepare(const RenderPlan& plan, const PlanBindings& bindings,
                                      const RenderContext& context,
-                                     const ParallelPlanExecutor* previous = nullptr);
+                                     const ParallelPlanExecutor* previous = nullptr,
+                                     const ParamTable* params = nullptr);
 
     /**
      * @brief Render one block into @p output. On the audio thread.
@@ -88,6 +89,10 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// so there is one answer to those questions rather than two.
     const PlanExecutor& reference() const {
         return core_;
+    }
+
+    bool fitsParameters(const PlanValues& values) const {
+        return core_.fitsParameters(values);
     }
 
     int latencySamples() const {

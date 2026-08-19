@@ -41,3 +41,8 @@ audioSlots=1 midiSlots=0 outputLatency=112
 [ 12] Meter       T-2:trackMeter                 lat=112     ports=a0          inplace
 [ 13] Gain        T-2:trackMute                  lat=112     ports=a0          inplace
 [ 14] Output      T-2:hardwareOutput             lat=-       ports=-
+
+== params ==
+magda-param-table v1
+params=0 modifiers=0 links=0
+order:

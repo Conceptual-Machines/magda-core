@@ -38,8 +38,14 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // Read only: it is live until the swap below, and it is this thread's own
     // handle on it that keeps it alive long enough to be read at all.
     const auto bindings = store_.realise(*prepared->plan, context);
+    // The parameter table travels inside the values (#2117), and the executor
+    // needs it here rather than at the first block: it is what the per-op
+    // windows and the block's own room are sized from. A table published later
+    // for the same plan has the same shape by construction, since both were
+    // resolved from one model against one plan.
     auto messages = prepared->executor.prepare(*prepared->plan, bindings, context,
-                                               live_ == nullptr ? nullptr : &live_->executor);
+                                               live_ == nullptr ? nullptr : &live_->executor,
+                                               prepared->values.params.get());
     if (!prepared->executor.isPrepared())
         return {false, std::move(messages)};
 
@@ -72,6 +78,10 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
 
     // Only now: until the swap, the epoch this replaces was the one rendering,
     // and anything the new one took over from it is shared rather than copied.
+    // Guarded because the escalation path in publishValues() passes this very
+    // set back in.
+    if (&modelIds != &lastModelIds_)
+        lastModelIds_ = modelIds;
     live_ = std::move(prepared);
     livePlan_ = live_->plan;
 
@@ -84,8 +94,32 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     return {true, std::move(messages)};
 }
 
-void EngineSession::publishValues(PlanValues values) {
-    values_.nonRealtimeReplace(std::move(values));
+EngineSession::Result EngineSession::publishValues(PlanValues values) {
+    // Nothing playing: there is nothing to check against and nothing rendering
+    // them yet, and the plan that arrives next brings its own.
+    if (live_ == nullptr) {
+        values_.nonRealtimeReplace(std::move(values));
+        return {true, {}};
+    }
+
+    if (!live_->executor.appliesValues(values))
+        return {false,
+                {"these values were resolved against a different plan, so they are not "
+                 "published: the plan they belong to has to be published with them"}};
+
+    if (live_->executor.fitsParameters(values)) {
+        values_.nonRealtimeReplace(std::move(values));
+        return {true, {}};
+    }
+
+    // The parameter set changed without the plan changing. See the header: this
+    // is a structural publish wearing a mixer-speed call, and the live plan is
+    // the plan it is published on.
+    auto result = publish(livePlan_, live_->context, lastModelIds_, std::move(values));
+    result.messages.emplace_back(
+        "the parameters changed shape without the plan changing, so this values publish was "
+        "republished as a structural one");
+    return result;
 }
 
 void EngineSession::publishTransport(TransportSnapshot transport) {
