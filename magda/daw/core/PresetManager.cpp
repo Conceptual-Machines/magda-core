@@ -6,6 +6,7 @@
 #include "../media_db/PresetDbIndexer.hpp"
 #include "../project/serialization/ProjectSerializer.hpp"
 #include "AppPaths.hpp"
+#include "DeviceParamMigrations.hpp"
 #include "LegacyDeviceAliases.hpp"
 #include "version.hpp"
 
@@ -262,6 +263,7 @@ bool PresetManager::loadChainPreset(const juce::String& presetName,
         outChainElements.push_back(std::move(element));
     }
     legacy_devices::migrateRetiredDevicesInChain(outChainElements);
+    device_param_migrations::migrateChainPreset(outChainElements);
     return true;
 }
 
@@ -350,6 +352,7 @@ bool PresetManager::loadRackPreset(const juce::String& presetName, RackInfo& out
         return false;
     }
     legacy_devices::migrateRetiredDevicesInRack(outRack);
+    device_param_migrations::migrateRackPreset(outRack);
     return true;
 }
 
@@ -405,6 +408,7 @@ bool PresetManager::loadDevicePreset(const juce::String& pluginFolder,
         return false;
     }
     legacy_devices::migrateRetiredDevice(outDevice);
+    device_param_migrations::migrateDevicePreset(outDevice);
     return true;
 }
 

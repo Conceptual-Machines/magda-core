@@ -81,6 +81,13 @@ set(TEST_SOURCES
     test_midi_clip_resize_left.cpp
     test_looped_waveform_tile.cpp
     test_project_serialization.cpp
+    # Real projects and presets saved by released versions (#2079). Model-level:
+    # the load, the migrations it runs and the links it repoints need no engine.
+    # The v1 -> v2 device state conversion does, and lives in
+    # test_legacy_corpus_migration_juce.cpp.
+    test_legacy_corpus.cpp
+    test_persisted_enum_pins.cpp
+    test_device_param_migrations.cpp
     test_project_document_adapters.cpp
     # Unsaved-changes tracking across the undo stack and project boundaries
     test_project_dirty_tracking.cpp
@@ -393,6 +400,12 @@ target_compile_definitions(magda_tests
     # path from the target rather than reconstructing it keeps the test pointed
     # at the binary this build produced.
     MAGDA_MCP_BRIDGE_BINARY="$<TARGET_FILE:magda_mcp_bridge>"
+    # The legacy corpus (#2079) and the frozen device parameter order it checks
+    # saved indices against (#1887). Both live in the source tree: the corpus is
+    # real user files that must never be regenerated, and an intended change to
+    # the frozen order has to show up as a reviewable diff.
+    MAGDA_LEGACY_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/corpus/legacy"
+    MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt"
 )
 
 # The bridge is exec'd, not linked, so nothing in the link graph would build it.
@@ -453,6 +466,9 @@ target_sources(magda_juce_tests PRIVATE
     test_drum_grid_serialization_juce.cpp
     test_device_services_juce.cpp
     test_device_param_schema_juce.cpp
+    # pluginState v1 -> v2 over the legacy corpus (#2079). Here rather than in
+    # magda_tests because the conversion reads the values off a live plugin.
+    test_legacy_corpus_migration_juce.cpp
     test_device_state_schema_juce.cpp
     test_convolution_device_juce.cpp
     test_master_sidechain_juce.cpp
@@ -592,7 +608,10 @@ target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
     # lives. Setting it here reaches nothing.
     # Frozen device parameter order (#1887) lives in the source tree so an
     # intentional change shows up as a reviewable diff.
-    MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt")
+    MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt"
+    # The legacy corpus (#2079): the JUCE suite converts the pre-v2 device state
+    # its projects carry, which needs a live plugin to read the values off.
+    MAGDA_LEGACY_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/corpus/legacy")
 
 # Include directories for JUCE tests
 target_include_directories(magda_juce_tests

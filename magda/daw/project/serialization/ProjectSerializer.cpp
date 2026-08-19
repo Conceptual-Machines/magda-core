@@ -2,10 +2,12 @@
 
 #include <juce_data_structures/juce_data_structures.h>
 
+#include <algorithm>
 #include <unordered_set>
 
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../../core/DeviceParamMigrations.hpp"
 #include "../../core/LegacyDeviceAliases.hpp"
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TrackManager.hpp"
@@ -286,6 +288,14 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         legacy_devices::migrateRetiredDevicesInProject(outData.tracks, outData.masterTrack.get(),
                                                        outData.automationLanes,
                                                        outData.automationClips);
+
+        // Then any device that renumbered its parameters, so a saved link still
+        // addresses the parameter it was made against (#2079). After the
+        // aliases: a device rewritten onto its successor is already the
+        // successor by the time its indices are looked up.
+        device_param_migrations::applyParamIndexMigrations(
+            outData.tracks, outData.masterTrack.get(), outData.automationLanes,
+            outData.automationClips);
 
         // Parameter aliases (UserProject layer -- opaque pass-through to AliasRegistry)
         if (obj->hasProperty("paramAliases"))
@@ -594,6 +604,11 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
                                                    hasMasterTrack ? &stagedMasterTrack : nullptr,
                                                    stagedAutomation, stagedAutomationClips);
 
+    // Then any device that renumbered its parameters (#2079).
+    device_param_migrations::applyParamIndexMigrations(
+        stagedTracks, hasMasterTrack ? &stagedMasterTrack : nullptr, stagedAutomation,
+        stagedAutomationClips);
+
     // Stage 2: All components validated successfully - now commit to managers atomically
     installStagedSources(stagedSources, stagedLegacySources, stagedClips);
     commitStagedData(stagedTracks, stagedClips, stagedAutomation, stagedAutomationClips);
@@ -883,7 +898,16 @@ juce::var ProjectSerializer::serializeClips() {
     juce::Array<juce::var> clipsArray;
 
     auto& clipManager = ClipManager::getInstance();
-    for (const auto& clip : clipManager.getClips()) {
+    // By id, because the manager stores clips in an unordered_map and its
+    // iteration order depends on the order they were inserted in. Without this,
+    // opening a project and saving it rewrites the clips array in a different
+    // order every time - the file changes with nothing in the project changing,
+    // and no diff of two saves means anything.
+    auto clips = clipManager.getClips();
+    std::sort(clips.begin(), clips.end(),
+              [](const ClipInfo& a, const ClipInfo& b) { return a.id < b.id; });
+
+    for (const auto& clip : clips) {
         clipsArray.add(serializeClipInfo(clip));
     }
 

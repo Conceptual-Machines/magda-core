@@ -53,13 +53,29 @@ bool isEngineOwnedChild(const juce::ValueTree& child) {
            child.hasType(te::IDs::SIDECHAINCONNECTIONS);
 }
 
-ds::Node captureNode(const juce::ValueTree& tree, bool isRoot) {
+/**
+ * Capture a tree as a document node.
+ *
+ * `parameterProperties` are the root properties the engine uses to hold the
+ * device's automatable parameters. In Tracktion a parameter IS a property on
+ * the plugin's tree, so a plugin that has had its parameters set - which is
+ * every plugin restored from a v2 document - carries the whole parameter list
+ * twice: once under the engine's own property names, once in the document's
+ * `params`. Keeping both would put engine-shaped parameter state back into a
+ * MAGDA file, which is what v2 exists to remove, and would make the document
+ * grow the first time a project was opened and saved. The document keys
+ * parameters by frozen index; the properties are dropped.
+ */
+ds::Node captureNode(const juce::ValueTree& tree, bool isRoot,
+                     const juce::StringArray& parameterProperties) {
     ds::Node node;
     node.type = tree.getType().toString();
 
     for (int i = 0; i < tree.getNumProperties(); ++i) {
         const auto name = tree.getPropertyName(i);
         if (isRoot ? isRootEngineOwnedProperty(name) : isNestedEngineOwnedProperty(name))
+            continue;
+        if (isRoot && parameterProperties.contains(name.toString()))
             continue;
         node.props.set(name, tree.getProperty(name));
     }
@@ -68,7 +84,7 @@ ds::Node captureNode(const juce::ValueTree& tree, bool isRoot) {
         const auto child = tree.getChild(i);
         if (isEngineOwnedChild(child))
             continue;
-        node.children.push_back(captureNode(child, false));
+        node.children.push_back(captureNode(child, false, parameterProperties));
     }
 
     return node;
@@ -128,11 +144,21 @@ juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& 
 
     ds::Doc doc;
     doc.deviceType = canonicalDeviceType(plugin.state.getProperty(te::IDs::type).toString());
-    doc.root = captureNode(plugin.state, true);
-    doc.root.type = {};  // the root element name is the engine's, not the device's
 
     const auto& params = plugin.getAutomatableParameters();
     doc.params.reserve(static_cast<size_t>(params.size()));
+
+    // Three Tracktion parameters store under a property spelled differently
+    // from their paramID; the spellings are frozen because released TE projects
+    // carry them. Without the aliases those properties survive the filter below
+    // and re-enter the document on the first capture after a restore.
+    static const std::pair<const char*, const char*> kParamPropertySpellings[] = {
+        {"chorusSpeed", "chosusSpeed"},  // 4OSC
+        {"chorusWidth", "chrousWidth"},  // 4OSC
+        {"damping", "damp"},             // Reverb
+    };
+
+    juce::StringArray parameterProperties;
     for (int i = 0; i < params.size(); ++i) {
         auto* param = params[i];
         if (param == nullptr)
@@ -140,7 +166,14 @@ juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& 
         // Base value, never the modulated value: a modulated read would bake the
         // current LFO position into the saved patch.
         doc.params.push_back({i, param->paramID, param->getCurrentBaseValue()});
+        parameterProperties.add(param->paramID);
+        for (const auto& [paramID, property] : kParamPropertySpellings)
+            if (param->paramID == paramID)
+                parameterProperties.add(property);
     }
+
+    doc.root = captureNode(plugin.state, true, parameterProperties);
+    doc.root.type = {};  // the root element name is the engine's, not the device's
 
     return ds::encode(doc);
 }

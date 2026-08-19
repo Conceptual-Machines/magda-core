@@ -47,6 +47,7 @@ target_sources(magda_daw PRIVATE
     DrumkitManager.cpp
     DeviceCatalogMetadata.cpp
     LegacyDeviceAliases.cpp
+    DeviceParamMigrations.cpp
     PluginPreferences.cpp
     PluginCapabilities.cpp
     PluginPresetScanner.cpp
