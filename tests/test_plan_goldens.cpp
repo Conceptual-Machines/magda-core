@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "PlanGoldenFixtures.hpp"
+#include "TextDifference.hpp"
 #include "exec/PlanLayoutDump.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanCrossfade.hpp"
@@ -136,34 +137,6 @@ std::string oneTrailingNewline(std::string text) {
     while (!text.empty() && (text.back() == '\n' || text.back() == ' '))
         text.pop_back();
     return text + "\n";
-}
-
-/// The first line that differs, so a failure names a decision rather than
-/// printing two documents at each other.
-std::string firstDifference(const std::string& expected, const std::string& actual) {
-    std::istringstream expectedLines(expected);
-    std::istringstream actualLines(actual);
-
-    std::string expectedLine;
-    std::string actualLine;
-    int number = 1;
-
-    while (true) {
-        const bool haveExpected = static_cast<bool>(std::getline(expectedLines, expectedLine));
-        const bool haveActual = static_cast<bool>(std::getline(actualLines, actualLine));
-
-        if (!haveExpected && !haveActual)
-            return {};
-        if (!haveExpected)
-            return "line " + std::to_string(number) + ": golden ends, got '" + actualLine + "'";
-        if (!haveActual)
-            return "line " + std::to_string(number) + ": expected '" + expectedLine + "', got end";
-        if (expectedLine != actualLine)
-            return "line " + std::to_string(number) + ":\n  expected: " + expectedLine +
-                   "\n  actual:   " + actualLine;
-
-        ++number;
-    }
 }
 
 }  // namespace

@@ -341,6 +341,13 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # owes nobody block-size invariance. In CI rather than in a nightly, because
     # a gate that runs after the merge is a report rather than a gate.
     list(APPEND TEST_SOURCES test_null_diff_block_size.cpp)
+
+    # The DAWproject cross-check (#2080). Native against native: each corpus
+    # project is exported, reimported, and required to compile to the same plan
+    # and render to the same samples. Model-only because both sides are the
+    # native engine and the export path is plain serialization.
+    list(APPEND TEST_SOURCES DawProjectRoundTrip.cpp)
+    list(APPEND TEST_SOURCES test_dawproject_round_trip.cpp)
 endif()
 
 # Create test executable
