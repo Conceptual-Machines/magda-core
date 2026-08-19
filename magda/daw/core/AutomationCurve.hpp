@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <span>
 
 #include "AutomationInfo.hpp"
@@ -33,6 +34,31 @@ namespace magda::automation {
  * as two straight runs meeting at its apex.
  */
 double valueAtBeat(std::span<const AutomationPoint> points, double beat);
+
+/** @brief Where a hard corner turns, and what it is worth there. */
+struct HardCorner {
+    double beat = 0.0;
+    double value = 0.0;
+};
+
+/**
+ * @brief The apex of the hard corner between @p p1 and @p p2, if it is one.
+ *
+ * The shape of a hard corner is two straight runs meeting at a point, and that
+ * point is a knot: anything sampling the curve at its breakpoints alone would
+ * miss it and draw one straight line where the curve has two. Exposed for the
+ * engine's bake, which has to know where a curve changes direction (#2118).
+ */
+std::optional<HardCorner> hardCornerOf(const AutomationPoint& p1, const AutomationPoint& p2);
+
+/**
+ * @brief The point that opens the segment @p beat falls in, or null.
+ *
+ * Null before the first point, at or after the last, and for a curve with
+ * fewer than two. What it is for is the curve type: a step holds and a bend
+ * does not, and whoever is sampling a segment has to know which it is in.
+ */
+const AutomationPoint* segmentOpening(std::span<const AutomationPoint> points, double beat);
 
 /**
  * @brief The value of a whole lane at a timeline beat.

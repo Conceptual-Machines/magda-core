@@ -169,34 +169,61 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
         return 1;
     }
 
-    // A segment per breakpoint inside the block, from where the block opens to
-    // where it ends. The bend between two breakpoints reads as a straight line
-    // here; over a few milliseconds that is a difference no device has asked to
-    // hear, and subdividing is what to do when one does.
+    // Whether the run a beat falls in holds its value rather than travelling to
+    // the next one. A step is not a bend that happens to be steep: a segment
+    // written as a ramp would glide a device through values the drawn curve
+    // never has.
+    const auto holdsFrom = [&curve](double beat) {
+        const auto* opener = magda::automation::segmentOpening(curve, beat);
+        return opener != nullptr && opener->curveType == magda::AutomationCurveType::Step;
+    };
+
     int written = 0;
     int startSample = 0;
     float startValue = opening;
+    bool holds = holdsFrom(block.startBeat);
 
-    for (const auto& point : curve) {
-        if (point.beatPosition <= block.startBeat)
-            continue;
-        if (point.beatPosition >= block.endBeat)
+    // Close the run in progress at @p beat and open the next one there. The
+    // value at a knot is the curve's value after it, which for a step is the
+    // jump and for everything else is where the previous run arrived.
+    const auto closeAt = [&](double beat) {
+        const auto sample = block.sampleForBeat(beat);
+        const auto value = valueAt(beat);
+
+        if (sample > startSample) {
+            out[static_cast<std::size_t>(written++)] =
+                ParamSegment{startSample, startValue, holds ? startValue : value};
+            startSample = sample;
+        }
+
+        startValue = value;
+        holds = holdsFrom(beat);
+    };
+
+    const auto inside = [&block](double beat) {
+        return beat > block.startBeat && beat < block.endBeat;
+    };
+
+    // Every knot the block contains, in beat order: each breakpoint, and the
+    // apex of a hard corner, which is where that curve changes direction
+    // between two breakpoints rather than at one.
+    for (std::size_t i = 0; i < curve.size(); ++i) {
+        if (curve[i].beatPosition >= block.endBeat)
             break;
         if (written + 1 >= static_cast<int>(out.size()))
             break;
 
-        const auto sample = block.sampleForBeat(point.beatPosition);
-        if (sample <= startSample)
-            continue;
+        if (inside(curve[i].beatPosition))
+            closeAt(curve[i].beatPosition);
 
-        const auto value = static_cast<float>(point.value);
-        out[static_cast<std::size_t>(written++)] = ParamSegment{startSample, startValue, value};
-        startSample = sample;
-        startValue = value;
+        if (i + 1 < curve.size())
+            if (const auto corner = magda::automation::hardCornerOf(curve[i], curve[i + 1]))
+                if (inside(corner->beat) && written + 1 < static_cast<int>(out.size()))
+                    closeAt(corner->beat);
     }
 
     out[static_cast<std::size_t>(written++)] =
-        ParamSegment{startSample, startValue, valueAt(block.endBeat)};
+        ParamSegment{startSample, startValue, holds ? startValue : valueAt(block.endBeat)};
     return written;
 }
 

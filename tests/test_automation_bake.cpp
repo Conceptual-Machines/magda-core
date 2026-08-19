@@ -314,6 +314,55 @@ TEST_CASE("A device that asked for segments gets one per breakpoint", "[engine][
     CHECK(values[param].valueAt(127) == approx(1.5625f));
 }
 
+TEST_CASE("A step inside a block holds rather than gliding", "[engine][param][bake]") {
+    auto tracks = trackWithDevice();
+
+    const auto table =
+        tableFor(tracks, {lane(deviceTarget(), {point(0.0, 0.0, AutomationCurveType::Step),
+                                                point(1.0, 1.0, AutomationCurveType::Step)})});
+    auto param = table.find(deviceParam(1, 7, 0));
+
+    auto opted = table;
+    opted.specs[static_cast<std::size_t>(param)].segmentAccurate = true;
+
+    const auto values = resolved(opted, blockAt(0.0, 2.0, 128));
+
+    // A step is not a bend that happens to be steep. Written as a ramp, the
+    // device would hear every value between the two, and the drawn curve has
+    // none of them.
+    REQUIRE(values[param].numSegments() == 2);
+    CHECK(values[param].valueAt(0) == approx(0.0f));
+    CHECK(values[param].valueAt(63) == approx(0.0f));
+    CHECK(values[param].valueAt(64) == approx(100.0f));
+    CHECK(values[param].valueAt(127) == approx(100.0f));
+}
+
+TEST_CASE("A hard corner keeps its apex inside a block", "[engine][param][bake]") {
+    auto tracks = trackWithDevice();
+
+    // A corner whose apex the shaper handle has dragged to a quarter of the
+    // way along, three quarters of the way up.
+    auto opener = point(0.0, 0.0, AutomationCurveType::HardCorner);
+    opener.outHandle.beatOffset = 1.0;
+    opener.outHandle.value = 0.75;
+
+    const auto table = tableFor(tracks, {lane(deviceTarget(), {opener, point(4.0, 0.0)})});
+    auto param = table.find(deviceParam(1, 7, 0));
+
+    auto opted = table;
+    opted.specs[static_cast<std::size_t>(param)].segmentAccurate = true;
+
+    const auto values = resolved(opted, blockAt(0.0, 4.0, 128));
+
+    // Two runs meeting at the apex. Sampled at its breakpoints alone the block
+    // would draw one straight line from nothing to nothing and the corner
+    // would vanish.
+    REQUIRE(values[param].numSegments() == 2);
+    CHECK(values[param].valueAt(32) == approx(75.0f));
+    CHECK(values[param].valueAt(16) == approx(37.5f));
+    CHECK(values[param].valueAt(80) == approx(37.5f));
+}
+
 namespace {
 
 /// A device that fills its output with ones, so what comes out of the master is

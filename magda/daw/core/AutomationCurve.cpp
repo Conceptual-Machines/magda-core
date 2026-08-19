@@ -9,6 +9,20 @@ namespace magda::automation {
 
 namespace {
 
+/// The point that opens the segment containing @p beat, for a curve known to
+/// have one. Binary rather than linear: this is called per block per automated
+/// parameter, and a lane is as long as the arrangement.
+const AutomationPoint* openingBefore(std::span<const AutomationPoint> points, double beat) {
+    const auto after = std::upper_bound(
+        points.begin(), points.end(), beat,
+        [](double value, const AutomationPoint& point) { return value < point.beatPosition; });
+
+    if (after == points.begin() || after == points.end())
+        return nullptr;
+
+    return &*(after - 1);
+}
+
 double interpolateBezier(double t, const AutomationPoint& p1, const AutomationPoint& p2) {
     // The editor renders the PARAMETRIC cubic (handles offset the control
     // points in x too), so evaluating the value cubic at t-linear-in-x
@@ -68,6 +82,31 @@ double evalLinearSegment(double t, const AutomationPoint& p1, const AutomationPo
 
 }  // namespace
 
+std::optional<HardCorner> hardCornerOf(const AutomationPoint& p1, const AutomationPoint& p2) {
+    if (p1.curveType != AutomationCurveType::HardCorner)
+        return std::nullopt;
+
+    const double duration = p2.beatPosition - p1.beatPosition;
+    if (duration <= 0.0)
+        return std::nullopt;
+
+    // The apex the shaper handle was dragged to, or the midpoint of a corner
+    // nobody has bent yet.
+    if (p1.outHandle.isZero())
+        return HardCorner{p1.beatPosition + 0.5 * duration, (p1.value + p2.value) * 0.5};
+
+    const double apexT = juce::jlimit(1.0e-4, 1.0 - 1.0e-4, p1.outHandle.beatOffset / duration);
+    return HardCorner{p1.beatPosition + apexT * duration, p1.value + p1.outHandle.value};
+}
+
+const AutomationPoint* segmentOpening(std::span<const AutomationPoint> points, double beat) {
+    if (points.size() < 2 || beat < points.front().beatPosition ||
+        beat >= points.back().beatPosition)
+        return nullptr;
+
+    return openingBefore(points, beat);
+}
+
 double valueAtBeat(std::span<const AutomationPoint> points, double beatPosition) {
     if (points.empty())
         return 0.5;
@@ -80,44 +119,42 @@ double valueAtBeat(std::span<const AutomationPoint> points, double beatPosition)
     if (beatPosition >= points.back().beatPosition)
         return points.back().value;
 
-    // Find surrounding points
-    for (size_t i = 0; i < points.size() - 1; ++i) {
-        const auto& p1 = points[i];
-        const auto& p2 = points[i + 1];
+    // The segment the beat falls in, found rather than walked to: a lane is in
+    // beat order, and an unrolled looping clip over a long arrangement is
+    // thousands of points that a block would otherwise skip past every time it
+    // asked (#2118 review).
+    const auto* opener = openingBefore(points, beatPosition);
+    if (opener == nullptr)
+        return 0.5;
 
-        if (beatPosition >= p1.beatPosition && beatPosition < p2.beatPosition) {
-            // Normalize t to 0-1 between points
-            double duration = p2.beatPosition - p1.beatPosition;
-            if (duration <= 0.0)
+    const auto& p1 = *opener;
+    const auto& p2 = *(opener + 1);
+
+    const double duration = p2.beatPosition - p1.beatPosition;
+    if (duration <= 0.0)
+        return p1.value;
+
+    const double t = (beatPosition - p1.beatPosition) / duration;
+
+    switch (p1.curveType) {
+        case AutomationCurveType::Linear:
+            return evalLinearSegment(t, p1, p2);
+
+        case AutomationCurveType::Bezier:
+            return interpolateBezier(t, p1, p2);
+
+        case AutomationCurveType::Step:
+            return p1.value;  // Hold until next point
+
+        case AutomationCurveType::HardCorner: {
+            const auto corner = hardCornerOf(p1, p2);
+            if (!corner.has_value())
                 return p1.value;
 
-            double t = (beatPosition - p1.beatPosition) / duration;
-
-            switch (p1.curveType) {
-                case AutomationCurveType::Linear:
-                    return evalLinearSegment(t, p1, p2);
-
-                case AutomationCurveType::Bezier:
-                    return interpolateBezier(t, p1, p2);
-
-                case AutomationCurveType::Step:
-                    return p1.value;  // Hold until next point
-
-                case AutomationCurveType::HardCorner: {
-                    // Two straight segments meeting at the apex (from the
-                    // shaper handle), or the midpoint when no apex was dragged.
-                    double apexT = 0.5;
-                    double apexValue = (p1.value + p2.value) * 0.5;
-                    if (!p1.outHandle.isZero()) {
-                        apexT =
-                            juce::jlimit(1.0e-4, 1.0 - 1.0e-4, p1.outHandle.beatOffset / duration);
-                        apexValue = p1.value + p1.outHandle.value;
-                    }
-                    if (t < apexT)
-                        return p1.value + (t / apexT) * (apexValue - p1.value);
-                    return apexValue + ((t - apexT) / (1.0 - apexT)) * (p2.value - apexValue);
-                }
-            }
+            const double apexT = (corner->beat - p1.beatPosition) / duration;
+            if (t < apexT)
+                return p1.value + (t / apexT) * (corner->value - p1.value);
+            return corner->value + ((t - apexT) / (1.0 - apexT)) * (p2.value - corner->value);
         }
     }
 

@@ -121,12 +121,16 @@ void resolveParam(ResolvedParams& out, int param, const ParamSpec& spec,
  * the port: the incumbent engine settles a parameter at the block boundary, and
  * a curve read more finely than that would differ from it everywhere.
  *
- * A parameter that asked for segment accuracy gets a segment per breakpoint the
- * block contains, running from one to the next. The bend between two
- * breakpoints reads as a straight line inside a block: the curve is sampled at
- * its breakpoints and interpolated between them, which over a few milliseconds
- * is a difference no device has yet asked to hear. Subdividing a bent segment
- * is what to do when one does.
+ * A parameter that asked for segment accuracy gets a segment per knot the block
+ * contains: every breakpoint, and the apex of a hard corner, which is where
+ * that curve turns between two breakpoints rather than at one. A step holds
+ * rather than travelling, because a step written as a ramp would glide a device
+ * through values the drawn curve never has.
+ *
+ * What is approximated is the bend of a curved segment, which reads as a
+ * straight line between the knots either side of it. Over a few milliseconds
+ * that is a difference no device has yet asked to hear; subdividing is what to
+ * do when one does.
  */
 int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& spec,
               const BlockInfo& block, std::span<ParamSegment> out);

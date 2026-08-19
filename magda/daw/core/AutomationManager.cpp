@@ -1115,19 +1115,6 @@ double AutomationManager::getClipValueAtBeat(AutomationClipId clipId,
     return interpolatePoints(clip->points, localBeatPosition);
 }
 
-double AutomationManager::interpolateLinear(double t, double v1, double v2) const {
-    return v1 + t * (v2 - v1);
-}
-
-double AutomationManager::interpolateBezier(double t, const AutomationPoint& p1,
-                                            const AutomationPoint& p2) const {
-    // Kept as a member because callers outside this file ask for it; the curve
-    // itself lives in core/AutomationCurve.hpp, where the engine can reach it.
-    const std::vector<AutomationPoint> segment{p1, p2};
-    return automation::valueAtBeat(segment,
-                                   p1.beatPosition + t * (p2.beatPosition - p1.beatPosition));
-}
-
 double AutomationManager::interpolatePoints(const std::vector<AutomationPoint>& points,
                                             double beatPosition) const {
     return automation::valueAtBeat(points, beatPosition);
