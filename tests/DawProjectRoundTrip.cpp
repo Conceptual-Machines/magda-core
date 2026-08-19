@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <set>
 #include <utility>
 
@@ -413,14 +414,89 @@ std::map<juce::String, decltype(T::id)> idsByName(const std::vector<T>& values) 
     return byName;
 }
 
-/// Everything the imported clips play, as the native leg wants to be told it.
-///
-/// Read back out of the pool rather than carried over from the original case.
-/// The archive extracted these files somewhere else under different names and
-/// the importer pooled them there, so a source list copied from the original
-/// would point the render at the files that never made the trip. That is the
-/// one way this harness could report a null it had not earned.
-std::vector<SourceFact> pooledSourcesFor(const std::vector<ClipInfo>& clips, std::string& refusal) {
+/**
+ * @brief The names a case went out under, handed back one at a time.
+ *
+ * Both halves of the mapping need this, and the discipline it enforces is not
+ * the obvious one. Rejecting duplicates in the ORIGINAL is necessary and not
+ * sufficient: an import that returns two tracks called "One" where "One" and
+ * "Two" went out resolves both onto One's id, and a count of what came back
+ * still matches, because two things came back and two went out. The harness
+ * would have turned a track that went missing into a duplicate of its
+ * neighbour, renumbered the pair into a consistent-looking project, and then
+ * compared that against the original. Normalising the exact failure a name
+ * mapping exists to make impossible.
+ *
+ * So a name is claimed rather than looked up, and the two ways that can go
+ * wrong are separate refusals: a name nothing went out under, and a name a
+ * second thing has already taken. Anything left unclaimed at the end did not
+ * come back at all, which is the third.
+ */
+template <typename Id> class NameClaims {
+  public:
+    NameClaims(const char* what, std::map<juce::String, Id> byName)
+        : what_(what), byName_(std::move(byName)) {}
+
+    /// The id @p name went out under, or nothing, with @p refusal set.
+    std::optional<Id> claim(const juce::String& name, std::string& refusal) {
+        const auto found = byName_.find(name);
+        if (found == byName_.end()) {
+            refusal = std::string("a ") + what_ + " came back named '" + name.toStdString() +
+                      "', which nothing went out under";
+            return std::nullopt;
+        }
+
+        if (!claimed_.insert(name).second) {
+            refusal = std::string("two ") + what_ + "s came back named '" + name.toStdString() +
+                      "', so one of them is standing in for something that did not come back";
+            return std::nullopt;
+        }
+
+        return found->second;
+    }
+
+    /// Whether everything that went out came back, naming one thing that did
+    /// not in @p refusal.
+    bool allClaimed(std::string& refusal) const {
+        for (const auto& entry : byName_) {
+            if (claimed_.count(entry.first) > 0)
+                continue;
+
+            refusal =
+                std::string("no ") + what_ + " came back named '" + entry.first.toStdString() + "'";
+            return false;
+        }
+
+        return true;
+    }
+
+  private:
+    const char* what_;
+    std::map<juce::String, Id> byName_;
+    std::set<juce::String> claimed_;
+};
+
+/**
+ * @brief Everything the imported clips play, as the native leg wants to be
+ *        told it.
+ *
+ * Read back out of the pool rather than carried over from the original case.
+ * The archive extracted these files into @p media under their archive-relative
+ * names and the importer pooled them there, so a source list copied from the
+ * original would point the render at the files that never made the trip.
+ *
+ * And every one of them has to be under @p media, which is the half that is not
+ * obvious. The exporter falls back to an absolute `external="true"` reference
+ * for a source it cannot embed, and the importer leaves such a path alone
+ * because there is nothing in the zip to extract. Both are correct behaviour on
+ * their own, and together they hand this back the ORIGINAL file: the clip
+ * resolves, the render nulls, and the case has certified an export that
+ * embedded nothing and an import that extracted nothing. That is the one way
+ * this harness could report a null it had not earned, so a source resolving
+ * outside the extraction directory is a refusal rather than a source.
+ */
+std::vector<SourceFact> pooledSourcesFor(const std::vector<ClipInfo>& clips,
+                                         const juce::File& media, std::string& refusal) {
     std::vector<SourceFact> sources;
     std::set<SourceId> seen;
 
@@ -437,6 +513,14 @@ std::vector<SourceFact> pooledSourcesFor(const std::vector<ClipInfo>& clips, std
             return {};
         }
 
+        if (!juce::File(source->filePath).isAChildOf(media)) {
+            refusal = "a clip came back playing '" + source->filePath.toStdString() +
+                      "', which is not a file this trip extracted: the export embedded it as an "
+                      "external reference, so nothing was written to the archive and nothing was "
+                      "read back out of it";
+            return {};
+        }
+
         sources.push_back(
             {source->id, source->filePath, source->sampleRate, source->durationSeconds});
     }
@@ -448,28 +532,25 @@ std::vector<SourceFact> pooledSourcesFor(const std::vector<ClipInfo>& clips, std
 std::map<TrackId, TrackId> mapTrackIds(const ProjectDocument& imported,
                                        const std::vector<TrackInfo>& original,
                                        std::string& refusal) {
-    const auto byName = idsByName(original);
+    auto byName = idsByName(original);
     if (byName.empty() && !original.empty()) {
         refusal = "two of this case's tracks share a name, so ids cannot be mapped back";
         return {};
     }
 
+    NameClaims<TrackId> claims("track", std::move(byName));
     std::map<TrackId, TrackId> mapped;
+
     for (const auto& track : imported.tracks) {
-        const auto found = byName.find(track.name);
-        if (found == byName.end()) {
-            refusal = "a track came back named '" + track.name.toStdString() +
-                      "', which nothing went out under";
+        const auto id = claims.claim(track.name, refusal);
+        if (!id.has_value())
             return {};
-        }
-        mapped[track.id] = found->second;
+
+        mapped[track.id] = *id;
     }
 
-    if (mapped.size() != original.size()) {
-        refusal = "the project went out with " + std::to_string(original.size()) +
-                  " tracks and came back with " + std::to_string(mapped.size());
+    if (!claims.allClaimed(refusal))
         return {};
-    }
 
     return mapped;
 }
@@ -507,11 +588,13 @@ bool takeTracks(ProjectDocument& imported, const std::map<TrackId, TrackId>& tra
 
 bool takeClips(ProjectDocument& imported, const std::map<TrackId, TrackId>& trackIds,
                const Case& original, Case& value, std::string& refusal) {
-    const auto clipIds = idsByName(original.clips);
+    auto clipIds = idsByName(original.clips);
     if (clipIds.empty() && !original.clips.empty()) {
         refusal = "two of this case's clips share a name, so ids cannot be mapped back";
         return false;
     }
+
+    NameClaims<ClipId> claims("clip", std::move(clipIds));
 
     for (auto& clip : imported.clips) {
         const auto track = trackIds.find(clip.trackId);
@@ -521,24 +604,15 @@ bool takeClips(ProjectDocument& imported, const std::map<TrackId, TrackId>& trac
         }
         clip.trackId = track->second;
 
-        const auto id = clipIds.find(clip.name);
-        if (id == clipIds.end()) {
-            refusal = "a clip came back named '" + clip.name.toStdString() +
-                      "', which nothing went out under";
+        const auto id = claims.claim(clip.name, refusal);
+        if (!id.has_value())
             return false;
-        }
-        clip.id = id->second;
 
+        clip.id = *id;
         value.clips.push_back(std::move(clip));
     }
 
-    if (value.clips.size() != original.clips.size()) {
-        refusal = "the project went out with " + std::to_string(original.clips.size()) +
-                  " clips and came back with " + std::to_string(value.clips.size());
-        return false;
-    }
-
-    return true;
+    return claims.allClaimed(refusal);
 }
 
 }  // namespace
@@ -591,7 +665,7 @@ RoundTrip exportAndReimport(const Case& original, const juce::File& scratchDirec
     if (!takeClips(imported, trackIds, original, result.value, result.refusal))
         return result;
 
-    result.value.sources = pooledSourcesFor(result.value.clips, result.refusal);
+    result.value.sources = pooledSourcesFor(result.value.clips, media, result.refusal);
     if (!result.refusal.empty())
         return result;
 
