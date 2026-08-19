@@ -30,24 +30,25 @@ void resolveParam(ResolvedParams& out, int param, const ParamSpec& spec,
     if (slot == nullptr)
         return;
 
+    // The scale travels with the values, because a position is only a value
+    // once something says what it is a position in.
+    out.setDomain(param, spec.domain);
+
     const int numSamples = out.numSamples();
     const int capacity = out.segmentCapacity();
     const float offset = modulationSum(spec, sources.modulation);
     const bool stepped = magda::ParameterUtils::isStepped(spec.domain);
 
-    // The one clamp, and the one conversion out of the normalised domain the
-    // lanes share into the units the device reads.
-    const auto toReal = [&](float normalised) {
-        return magda::ParameterUtils::normalizedToReal(
-            juce::jlimit(0.0f, 1.0f, normalised + offset), spec.domain);
-    };
-
+    // Positions, with the links added and nothing else done to them. The clamp
+    // and the scale are applied where the stream is read, at the position being
+    // asked about rather than at the ends of a segment, which is the only place
+    // either is correct (ParamBlock.hpp says why).
+    //
     // A stepped parameter holds its value across a segment: there is nothing
     // between two of its values for a ramp to pass through.
     const auto write = [&](int index, int startSample, float startNormalised, float endNormalised) {
-        const float startValue = toReal(startNormalised);
-        slot[index] =
-            ParamSegment{startSample, startValue, stepped ? startValue : toReal(endNormalised)};
+        const float start = startNormalised + offset;
+        slot[index] = ParamSegment{startSample, start, stepped ? start : endNormalised + offset};
     };
 
     const auto& automation = sources.automation;
@@ -88,27 +89,46 @@ void resolveParam(ResolvedParams& out, int param, const ParamSpec& spec,
     const int trailing = coverEnd < numSamples ? 1 : 0;
     const int total = leading + covered + trailing;
 
-    // Where the block ends up, which is where a list too long for its slot has
-    // to arrive anyway.
-    const float finalNormalised =
-        trailing > 0 ? sources.base : automation[static_cast<std::size_t>(covered - 1)].endValue;
+    // The last thing in the list, which is where a list too long for its slot
+    // has to arrive whatever it does on the way.
+    const auto& lastCovered = automation[static_cast<std::size_t>(covered - 1)];
+    const int finalStart = trailing > 0 ? coverEnd : std::max(lastCovered.startSample, 0);
+    const float finalStartNormalised = trailing > 0 ? sources.base : lastCovered.startValue;
+    const float finalEndNormalised = trailing > 0 ? sources.base : lastCovered.endValue;
 
     int written = 0;
     int index = 0;
 
-    // True when the segment just offered was the last one that fits and more
-    // were coming: it is written as a ramp to where the lane ends instead, and
-    // the rest are rolled into it.
+    // False when the list has run out of slots. The segment being offered is
+    // the last one that fits and more were coming, so what goes in that slot is
+    // the rest of the list coarsened into one, and the two ways of doing that
+    // are not interchangeable.
+    //
+    // A continuous parameter ramps from here to where the lane ends, which
+    // passes through every value in between and arrives on time. A stepped one
+    // cannot: it has no in-between, and a ramp written for it is flattened to
+    // its own start, which would throw the destination away. It spends the slot
+    // on the step the lane ends on instead, holding the value it already had
+    // until that step arrives. Either way the block ends where the lane says.
+    //
+    // With a single slot there is nothing to spend: the step would land at its
+    // own sample and leave the start of the block reading a value the parameter
+    // does not have yet, so the opening value is kept and the destination is
+    // what goes, which is the reading a device that asked for one value per
+    // block gets anyway.
     const auto offer = [&](int startSample, float startNormalised, float endNormalised) {
         const bool more = index < total - 1;
-        if (more && written == capacity - 1) {
-            write(written++, startSample, startNormalised, finalNormalised);
+        if (more && written == capacity - 1 && (!stepped || written > 0)) {
+            if (stepped)
+                write(written++, finalStart, finalStartNormalised, finalStartNormalised);
+            else
+                write(written++, startSample, startNormalised, finalEndNormalised);
             return false;
         }
 
         write(written++, startSample, startNormalised, endNormalised);
         ++index;
-        return true;
+        return written < capacity;
     };
 
     bool room = true;

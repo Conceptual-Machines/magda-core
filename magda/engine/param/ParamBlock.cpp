@@ -20,21 +20,27 @@ float ParamValues::valueAt(int sampleOffset) const {
     const auto& segment = segments_[index];
     const auto end = index + 1 < segments_.size() ? segments_[index + 1].startSample : numSamples_;
     const auto span = end - segment.startSample;
-    if (span <= 0)
-        return segment.startValue;
 
+    // The position first, then the scale, which is the whole reason a segment
+    // stores positions: normalizedToReal clamps its own input, so a ramp that
+    // leaves the range holds at the end of it from the sample it arrives, and a
+    // scale with a curve in it is read along the curve rather than across it.
     const auto position =
-        static_cast<float>(sample - segment.startSample) / static_cast<float>(span);
-    return segment.startValue + (segment.endValue - segment.startValue) * position;
+        span <= 0 ? segment.startValue
+                  : segment.startValue + (segment.endValue - segment.startValue) *
+                                             (static_cast<float>(sample - segment.startSample) /
+                                              static_cast<float>(span));
+    return magda::ParameterUtils::normalizedToReal(position, domain_);
 }
 
 ParamValues DeviceParams::operator[](int paramIndex) const {
     if (paramIndex < 0 || paramIndex >= size())
         return {};
 
-    const auto offset = static_cast<std::size_t>(paramIndex) * static_cast<std::size_t>(stride_);
-    const auto count = static_cast<std::size_t>(counts_[static_cast<std::size_t>(paramIndex)]);
-    return ParamValues{segments_.subspan(offset, count), numSamples_};
+    const auto index = static_cast<std::size_t>(paramIndex);
+    const auto offset = index * static_cast<std::size_t>(stride_);
+    const auto count = static_cast<std::size_t>(counts_[index]);
+    return ParamValues{segments_.subspan(offset, count), domains_[index], numSamples_};
 }
 
 void ResolvedParams::prepare(int numParams, int segmentCapacity) {
@@ -42,6 +48,7 @@ void ResolvedParams::prepare(int numParams, int segmentCapacity) {
     const auto count = static_cast<std::size_t>(std::max(numParams, 0));
     segments_.assign(count * static_cast<std::size_t>(stride_), ParamSegment{});
     counts_.assign(count, 0);
+    domains_.assign(count, magda::ParameterUtils::ParameterDomain{});
     numSamples_ = 0;
 }
 
@@ -54,22 +61,26 @@ ParamValues ResolvedParams::operator[](int param) const {
     if (param < 0 || param >= size())
         return {};
 
-    const auto offset = static_cast<std::size_t>(param) * static_cast<std::size_t>(stride_);
-    const auto count = static_cast<std::size_t>(counts_[static_cast<std::size_t>(param)]);
+    const auto index = static_cast<std::size_t>(param);
+    const auto offset = index * static_cast<std::size_t>(stride_);
+    const auto count = static_cast<std::size_t>(counts_[index]);
     return ParamValues{std::span<const ParamSegment>{segments_}.subspan(offset, count),
-                       numSamples_};
+                       domains_[index], numSamples_};
 }
 
 DeviceParams ResolvedParams::device(int firstParam, int count) const {
     if (firstParam < 0 || count <= 0 || firstParam + count > size())
         return {};
 
-    const auto offset = static_cast<std::size_t>(firstParam) * static_cast<std::size_t>(stride_);
-    const auto width = static_cast<std::size_t>(count) * static_cast<std::size_t>(stride_);
-    return DeviceParams{std::span<const ParamSegment>{segments_}.subspan(offset, width),
-                        std::span<const int>{counts_}.subspan(static_cast<std::size_t>(firstParam),
-                                                              static_cast<std::size_t>(count)),
-                        stride_, numSamples_};
+    const auto first = static_cast<std::size_t>(firstParam);
+    const auto span = static_cast<std::size_t>(count);
+    const auto offset = first * static_cast<std::size_t>(stride_);
+    const auto width = span * static_cast<std::size_t>(stride_);
+    return DeviceParams{
+        std::span<const ParamSegment>{segments_}.subspan(offset, width),
+        std::span<const int>{counts_}.subspan(first, span),
+        std::span<const magda::ParameterUtils::ParameterDomain>{domains_}.subspan(first, span),
+        stride_, numSamples_};
 }
 
 ParamSegment* ResolvedParams::slotFor(int param) {
@@ -91,6 +102,13 @@ void ResolvedParams::setSegmentCount(int param, int count) {
         return;
 
     counts_[static_cast<std::size_t>(param)] = std::clamp(count, 0, stride_);
+}
+
+void ResolvedParams::setDomain(int param, const magda::ParameterUtils::ParameterDomain& domain) {
+    if (param < 0 || param >= size())
+        return;
+
+    domains_[static_cast<std::size_t>(param)] = domain;
 }
 
 }  // namespace magda::engine

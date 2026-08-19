@@ -35,6 +35,9 @@
  *    domain, with each link's depth and polarity applied at the link.
  *  - One clamp, after every contribution, and then the parameter's own scale.
  *    A device never receives a value outside its range and never has to check.
+ *    Both happen where the stream is read rather than here, at the position
+ *    being asked about rather than at the ends of a segment, which is the only
+ *    place either is correct once a ramp is involved (ParamBlock.hpp).
  *  - A stepped parameter is quantised by the scale, which is where the steps
  *    are, and never ramped, because there is nothing between two of its values.
  *

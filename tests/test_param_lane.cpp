@@ -276,6 +276,55 @@ TEST_CASE("A stepped parameter quantises and never ramps", "[engine][param]") {
     CHECK(values.valueAt(32) == approx(3.0f));
 }
 
+TEST_CASE("A ramp through a nonlinear scale is read along it", "[engine][param]") {
+    OneParam table{128};
+
+    ParamSpec spec;
+    spec.domain.scale = magda::ParameterScale::Logarithmic;
+    spec.domain.minValue = 20.0f;
+    spec.domain.maxValue = 20000.0f;
+    spec.segmentAccurate = true;
+
+    const std::vector<ParamSegment> lane{{0, 0.0f, 1.0f}};
+
+    ParamSources sources;
+    sources.automation = lane;
+
+    const auto values = table.resolve(spec, sources);
+
+    // Halfway along the sweep is halfway along the scale, which is 632 Hz.
+    // Halfway between the converted ends is 10,010 Hz, a different parameter
+    // entirely, and that is what reading a segment of converted values gives.
+    CHECK(values.valueAt(0) == approx(20.0f));
+    CHECK(values.valueAt(64) ==
+          Catch::Approx(magda::ParameterUtils::normalizedToReal(0.5f, spec.domain)).epsilon(0.001));
+    CHECK(values.valueAt(64) < 1000.0f);
+}
+
+TEST_CASE("A ramp pushed out of range holds at the end of it", "[engine][param]") {
+    OneParam table{100};
+
+    // The lane reaches the top at the end of the block on its own; the link
+    // pushes it there at half. Converting the ends and interpolating between
+    // them would arrive at the top only at the end anyway, so the parameter
+    // would spend the second half of the block climbing somewhere it had
+    // already got to.
+    const std::vector<ParamSegment> lane{{0, 0.0f, 1.0f}};
+    const std::vector<ModContribution> links{{1.0f, 0.5f, false}};
+
+    ParamSources sources;
+    sources.automation = lane;
+    sources.modulation = links;
+
+    const auto values = table.resolve(percentSpec(/*segmentAccurate=*/true), sources);
+
+    CHECK(values.valueAt(0) == approx(50.0f));
+    CHECK(values.valueAt(25) == approx(75.0f));
+    CHECK(values.valueAt(50) == approx(100.0f));
+    CHECK(values.valueAt(75) == approx(100.0f));
+    CHECK(values.valueAt(99) == approx(100.0f));
+}
+
 TEST_CASE("A curve with more breakpoints than its slot arrives where it ends", "[engine][param]") {
     OneParam table{100, /*capacity=*/4};
 
@@ -294,7 +343,45 @@ TEST_CASE("A curve with more breakpoints than its slot arrives where it ends", "
     CHECK(values.valueAt(0) == approx(0.0f));
     CHECK(values.valueAt(20) == approx(20.0f));
     CHECK(values.segments().back().startSample == 30);
-    CHECK(values.segments().back().endValue == approx(80.0f));
+    // The stored positions are normalised; 0.8 is the 80 the curve ends at,
+    // and the last sample of the block is a hair short of arriving.
+    CHECK(values.segments().back().endValue == approx(0.8f));
+    CHECK(values.valueAt(99) == Catch::Approx(80.0f).margin(1.0));
+}
+
+TEST_CASE("A stepped lane too long for its slot keeps the step it ends on", "[engine][param]") {
+    ParamSpec spec;
+    spec.domain.scale = magda::ParameterScale::Discrete;
+    spec.domain.choiceCount = 3;
+    spec.segmentAccurate = true;
+
+    const std::vector<ParamSegment> lane{{0, 0.0f, 0.0f}, {30, 0.5f, 0.5f}, {60, 1.0f, 1.0f}};
+
+    ParamSources sources;
+    sources.automation = lane;
+
+    OneParam table{90, /*capacity=*/2};
+    const auto values = table.resolve(spec, sources);
+
+    // A ramp is no use to a parameter with three values and nothing between
+    // them, so the last slot goes on the step the lane ends on. The middle
+    // choice is what is lost, and the parameter still ends the block on the
+    // choice the lane asked for, at the sample it asked for it.
+    REQUIRE(values.numSegments() == 2);
+    CHECK(values.valueAt(0) == approx(0.0f));
+    CHECK(values.valueAt(59) == approx(0.0f));
+    CHECK(values.valueAt(60) == approx(2.0f));
+    CHECK(values.valueAt(89) == approx(2.0f));
+
+    // With one slot there is nothing to spend on the destination, and the
+    // opening value is what a device reading once for the block would have
+    // taken anyway.
+    OneParam single{90, /*capacity=*/1};
+    const auto narrow = single.resolve(spec, sources);
+
+    REQUIRE(narrow.numSegments() == 1);
+    CHECK(narrow.valueAt(0) == approx(0.0f));
+    CHECK(narrow.valueAt(89) == approx(0.0f));
 }
 
 TEST_CASE("A parameter nobody resolved reads as empty", "[engine][param]") {

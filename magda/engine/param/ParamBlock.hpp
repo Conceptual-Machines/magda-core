@@ -6,6 +6,8 @@
 #include <span>
 #include <vector>
 
+#include "core/ParameterUtils.hpp"
+
 /**
  * @file ParamBlock.hpp
  * @brief What a device reads when it asks what a parameter is right now.
@@ -38,11 +40,20 @@ namespace magda::engine {
  * row therefore meet exactly, and a step is a segment whose start differs from
  * the previous one's end rather than a pair of points at one sample.
  *
- * The values are in the domain of whatever wrote them: an automation lane's
- * segments carry normalised positions, because that is what a curve stores, and
- * the resolved stream a device reads carries the parameter's own units. A device
- * is handed Hz and dB rather than positions, because a normalised position is a
- * thing the model needs and a number of Hertz is a thing a filter needs.
+ * Normalised positions, unclamped, wherever a segment appears: in an automation
+ * lane on the way in, and in the resolved stream on the way out. A device still
+ * reads Hz and dB, because ParamValues converts on the way past, and the two
+ * facts have to go together.
+ *
+ * A segment that carried the parameter's own units could not be read correctly
+ * at any sample but its ends. Interpolating between two converted endpoints is
+ * only the same as converting the interpolated position when the scale is a
+ * straight line: on a logarithmic cutoff sweeping its whole range, the halfway
+ * point is 632 Hz through the scale and 10,010 Hz through the chord across it.
+ * Leaving the values unclamped is the same argument one step further out. A ramp
+ * that leaves the range partway through holds at the top from there on, and a
+ * pair of clamped endpoints describes a slower ramp that arrives at the end
+ * instead, which is a plateau the parameter never had.
  */
 struct ParamSegment {
     int startSample = 0;
@@ -55,13 +66,19 @@ struct ParamSegment {
  *
  * A view over segments the resolver wrote; it owns nothing and outlives
  * nothing. Handed to a device inside its DeviceBlock and dead when the block is.
+ *
+ * The clamp and the scale are applied here rather than by the resolver, at the
+ * position being read rather than at the ends of a segment, which is the only
+ * place either can be applied correctly (see ParamSegment). The device sees the
+ * parameter's own units and no sign of where the arithmetic happened.
  */
 class ParamValues {
   public:
     ParamValues() = default;
 
-    ParamValues(std::span<const ParamSegment> segments, int numSamples)
-        : segments_(segments), numSamples_(numSamples) {}
+    ParamValues(std::span<const ParamSegment> segments,
+                const magda::ParameterUtils::ParameterDomain& domain, int numSamples)
+        : segments_(segments), domain_(domain), numSamples_(numSamples) {}
 
     /**
      * @brief The parameter's value for the block.
@@ -72,7 +89,9 @@ class ParamValues {
      * itself.
      */
     float value() const {
-        return segments_.empty() ? 0.0f : segments_.front().startValue;
+        return segments_.empty()
+                   ? 0.0f
+                   : magda::ParameterUtils::normalizedToReal(segments_.front().startValue, domain_);
     }
 
     /**
@@ -86,6 +105,11 @@ class ParamValues {
     /// Whether the parameter holds one value for the whole block. True for
     /// everything the port produces, since the fork settles parameters at block
     /// boundaries and nothing opts out of that during the port.
+    ///
+    /// Read off the stored positions rather than the values they convert to, so
+    /// a stream that moves only outside the range says it moves. A device using
+    /// this to skip a per-sample read is told to do the work it did not need,
+    /// which is the direction that costs nothing but time.
     bool isConstant() const {
         return segments_.size() <= 1 &&
                (segments_.empty() || segments_.front().startValue == segments_.front().endValue);
@@ -111,6 +135,7 @@ class ParamValues {
 
   private:
     std::span<const ParamSegment> segments_;
+    magda::ParameterUtils::ParameterDomain domain_;
     int numSamples_ = 0;
 };
 
@@ -126,9 +151,14 @@ class DeviceParams {
   public:
     DeviceParams() = default;
 
-    DeviceParams(std::span<const ParamSegment> segments, std::span<const int> counts, int stride,
+    DeviceParams(std::span<const ParamSegment> segments, std::span<const int> counts,
+                 std::span<const magda::ParameterUtils::ParameterDomain> domains, int stride,
                  int numSamples)
-        : segments_(segments), counts_(counts), stride_(stride), numSamples_(numSamples) {}
+        : segments_(segments),
+          counts_(counts),
+          domains_(domains),
+          stride_(stride),
+          numSamples_(numSamples) {}
 
     int size() const {
         return static_cast<int>(counts_.size());
@@ -143,6 +173,7 @@ class DeviceParams {
   private:
     std::span<const ParamSegment> segments_;
     std::span<const int> counts_;
+    std::span<const magda::ParameterUtils::ParameterDomain> domains_;
     int stride_ = 0;
     int numSamples_ = 0;
 };
@@ -155,11 +186,12 @@ class DeviceParams {
  * because the arena is allocated once, off the audio thread, and a parameter
  * that needed to grow mid-block would be an allocation on it.
  *
- * The width is a budget, like the MIDI one in EngineDevice.hpp: a parameter
- * whose automation carries more breakpoints than this keeps the ones it has room
- * for and rolls the rest into its last segment, which then ramps to where the
- * curve actually ends. That is a coarser reading of a very busy curve, never a
- * wrong destination.
+ * The width is a budget, like the MIDI one in EngineDevice.hpp, and a curve with
+ * more breakpoints than fit is coarsened rather than cut off. What that means
+ * differs by what the parameter is, and both readings keep the destination: a
+ * continuous parameter rolls the tail into its last segment, which ramps to
+ * where the curve ends, and a stepped one spends its last slot on the step the
+ * curve ends on, losing the steps in between instead of the arrival.
  */
 class ResolvedParams {
   public:
@@ -209,9 +241,16 @@ class ResolvedParams {
     int segmentCount(int param) const;
     void setSegmentCount(int param, int count);
 
+    /// The scale @p param's stored positions are read through. Written by the
+    /// resolver from the parameter's spec, and travelling with the values
+    /// rather than beside them, because a position without the scale that
+    /// interprets it is not a value at all.
+    void setDomain(int param, const magda::ParameterUtils::ParameterDomain& domain);
+
   private:
     std::vector<ParamSegment> segments_;
     std::vector<int> counts_;
+    std::vector<magda::ParameterUtils::ParameterDomain> domains_;
     int stride_ = 0;
     int numSamples_ = 0;
 };
