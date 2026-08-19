@@ -788,7 +788,15 @@ void PlanExecutor::renderOp(OpId id, const OpValue& value, const BlockInfo& bloc
             if (device == nullptr)
                 break;
 
-            DeviceBlock deviceBlock{audio, &midiIn(op.inputs[1]), deviceMidiOut, {}, block};
+            // No parameters yet: the table a device reads is resolved against a
+            // plan and published with it, which is #2117. Until then a device
+            // is handed an empty window rather than a stale one.
+            DeviceBlock deviceBlock{.audio = audio,
+                                    .midiIn = &midiIn(op.inputs[1]),
+                                    .midiOut = deviceMidiOut,
+                                    .sidechain = {},
+                                    .params = {},
+                                    .block = block};
             if (op.inputs[2].valid())
                 deviceBlock.sidechain = audioIn(op.inputs[2], numSamples);
             device->process(deviceBlock);

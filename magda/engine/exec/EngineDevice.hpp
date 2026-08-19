@@ -4,6 +4,7 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include "exec/RenderContext.hpp"
+#include "param/ParamBlock.hpp"
 
 /**
  * @file EngineDevice.hpp
@@ -79,6 +80,26 @@ struct DeviceBlock {
     /// Sidechain audio. A zero-channel block when the slot is unconnected, so
     /// devices check getNumChannels() rather than assuming a source.
     juce::dsp::AudioBlock<const float> sidechain;
+
+    /**
+     * @brief The device's parameters, resolved for this block (#2116).
+     *
+     * Indexed the way the device declared them, and already everything the
+     * device could want to know: the stored value, the automation curve over
+     * it and the modifiers linked to it have been resolved into one value
+     * stream per parameter, clamped, quantised, and in the parameter's own
+     * units. A device reads these and has no other way to find out what a
+     * parameter is, which is what keeps the precedence rules in one place
+     * (param/ParamResolve.hpp) rather than in every device.
+     *
+     * Resolved before this call and before the MIDI above is looked at, so an
+     * event at sample zero sees the value automation put there rather than the
+     * one from the block before.
+     *
+     * Empty for a device with no parameters, and for every device until the
+     * table is published against a plan.
+     */
+    DeviceParams params;
 
     BlockInfo block;
 };
