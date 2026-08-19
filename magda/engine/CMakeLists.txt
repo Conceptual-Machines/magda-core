@@ -72,6 +72,12 @@ add_library(magda_engine STATIC
     exec/RuntimeStateStore.hpp
     exec/EngineSession.hpp
     exec/OfflineRender.hpp
+    param/ParamSpec.cpp
+    param/ParamBlock.cpp
+    param/ParamResolve.cpp
+    param/ParamSpec.hpp
+    param/ParamBlock.hpp
+    param/ParamResolve.hpp
     tap/LevelTap.hpp
     tap/SampleRing.hpp
     transport/TempoMap.cpp
@@ -157,7 +163,7 @@ endforeach()
 # engine's own headers.
 
 set(MAGDA_ENGINE_ALLOWED_QUOTED_PREFIXES
-    "core/" "clip/" "plan/" "exec/" "transport/" "io/" "tap/" "analysis/")
+    "core/" "clip/" "param/" "plan/" "exec/" "transport/" "io/" "tap/" "analysis/")
 
 file(GLOB_RECURSE MAGDA_ENGINE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"

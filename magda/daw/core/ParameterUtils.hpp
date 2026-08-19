@@ -12,6 +12,43 @@ namespace magda {
 namespace ParameterUtils {
 
 /**
+ * @brief The part of a ParameterInfo that decides what a normalized position means.
+ *
+ * A flat value type with no heap in it, because the conversion is not only a UI
+ * concern: the native engine resolves a modulated parameter on the audio thread
+ * every block (#2116), where a ParameterInfo cannot go. It carries strings, a
+ * choice list and a shared display provider, none of which the curve reads.
+ *
+ * Split out rather than reimplemented on the engine side. Two implementations of
+ * one curve is a difference nobody sees until a project sounds different in one
+ * engine than the other, so the conversion below is the only one there is and
+ * the ParameterInfo overloads are this one under another name.
+ */
+struct ParameterDomain {
+    ParameterScale scale = ParameterScale::Linear;
+    float minValue = 0.0f;
+    float maxValue = 1.0f;
+    float skewFactor = 1.0f;
+    float scaleAnchor = 0.0f;
+
+    /// Number of entries in the parameter's choice list, for Discrete. Zero
+    /// everywhere else, and Discrete with zero choices converts to 0 the way
+    /// an empty `choices` does.
+    int choiceCount = 0;
+};
+
+/** @brief The conversion domain of @p info. */
+ParameterDomain domainOf(const ParameterInfo& info);
+
+/**
+ * @brief Whether the domain's values are discrete steps rather than a continuum.
+ *
+ * A stepped parameter is never ramped: there is nothing between two of its
+ * values to ramp through.
+ */
+bool isStepped(const ParameterDomain& domain);
+
+/**
  * @brief Convert normalized value (0-1) to real parameter value
  *
  * @param normalized Normalized value in range [0, 1]
@@ -23,6 +60,7 @@ namespace ParameterUtils {
  *   float realHz = normalizedToReal(0.5f, cutoff);  // ~632 Hz (geometric mean)
  */
 float normalizedToReal(float normalized, const ParameterInfo& info);
+float normalizedToReal(float normalized, const ParameterDomain& domain);
 
 /**
  * @brief Convert real parameter value to normalized (0-1)
@@ -36,6 +74,7 @@ float normalizedToReal(float normalized, const ParameterInfo& info);
  *   float norm = realToNormalized(440.0f, cutoff);  // ~0.353
  */
 float realToNormalized(float real, const ParameterInfo& info);
+float realToNormalized(float real, const ParameterDomain& domain);
 
 /**
  * @brief A normalized fader position as the linear gain `TrackManager` stores.
@@ -96,6 +135,21 @@ ParameterNormalizedValue modelToNormalizedValue(ParameterModelValue model,
  * range. Parameters whose model and TE ranges already match pass through.
  */
 float modelToTeValue(ParameterModelValue model, const ParameterInfo& info);
+
+/**
+ * @brief What one modulation link adds to a normalized value.
+ *
+ * The polarity and depth rule on its own, with no base and no clamp, because
+ * the clamp belongs after every contribution has been added rather than after
+ * each one. Both functions below are this plus a sum plus that clamp, and so is
+ * the native engine's per-block resolution (#2116), which cannot call either of
+ * them: one clamps too early and the other wants a vector.
+ *
+ * @param modValue Modulator output (0-1, e.g. LFO value)
+ * @param amount   Modulation depth (-1 to 1)
+ * @param bipolar  If true, modValue 0-1 maps to -1 to +1 before scaling
+ */
+float modulationOffset(float modValue, float amount, bool bipolar);
 
 /**
  * @brief Apply modulation to a base normalized value
