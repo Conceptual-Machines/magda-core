@@ -223,7 +223,8 @@ void PlanExecutor::reset() {
 
 std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const PlanBindings& bindings,
                                                const RenderContext& context,
-                                               const PlanExecutor* previous) {
+                                               const PlanExecutor* previous,
+                                               const ParamTable* params) {
     reset();
 
     std::vector<std::string> messages;
@@ -245,6 +246,22 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     midiSourceForOp_.assign(numOps, nullptr);
     meterForOp_.assign(numOps, nullptr);
     midiTapForOp_.assign(numOps, nullptr);
+    paramWindowForOp_.assign(numOps, ParamTable::DeviceWindow{});
+
+    // The parameters of the table this plan is published with (#2117). Sized
+    // here, on this thread, so the block that resolves them allocates nothing,
+    // and looked up here so the block that reads them hashes nothing. A plan
+    // published without a table renders devices with no parameters, which is
+    // what every render did before there was a table at all.
+    if (params != nullptr) {
+        paramValues_.prepare(params->size());
+        paramScratch_.assign(static_cast<std::size_t>(std::max(params->maxLinksPerParam, 0)),
+                             ModContribution{});
+
+        for (std::size_t i = 0; i < numOps; ++i)
+            if (plan.ops[i].kind == OpKind::Device)
+                paramWindowForOp_[i] = params->windowFor(plan.ops[i].key.deviceKey());
+    }
 
     const auto describe = [&plan](std::size_t index) {
         return "op " + std::to_string(index) + " (" + toString(plan.ops[index].kind) + " " +
@@ -626,9 +643,22 @@ PlanExecutor::BlockStart PlanExecutor::beginBlock(const PlanValues& values,
     return start;
 }
 
+void PlanExecutor::resolveParameters(const PlanValues& values, int numSamples) {
+    if (!appliesValues(values) || values.params == nullptr) {
+        // Empty rather than stale: a device asking for a parameter gets a
+        // window of nothing, and nothing is what it had before a table was
+        // ever published.
+        paramValues_.beginBlock(numSamples);
+        return;
+    }
+
+    resolveParams(*values.params, paramValues_, paramScratch_, numSamples);
+}
+
 void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,
                            juce::AudioBuffer<float>& output) {
     const auto start = beginBlock(values, requestedBlock, output);
+    resolveParameters(values, start.block.numSamples);
     if (!start.render)
         return;
 
@@ -791,11 +821,12 @@ void PlanExecutor::renderOp(OpId id, const OpValue& value, const BlockInfo& bloc
             // No parameters yet: the table a device reads is resolved against a
             // plan and published with it, which is #2117. Until then a device
             // is handed an empty window rather than a stale one.
+            const auto window = paramWindowForOp_[static_cast<std::size_t>(i)];
             DeviceBlock deviceBlock{.audio = audio,
                                     .midiIn = &midiIn(op.inputs[1]),
                                     .midiOut = deviceMidiOut,
                                     .sidechain = {},
-                                    .params = {},
+                                    .params = paramValues_.device(window.first, window.count),
                                     .block = block};
             if (op.inputs[2].valid())
                 deviceBlock.sidechain = audioIn(op.inputs[2], numSamples);

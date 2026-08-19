@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "param/ParamTable.hpp"
 #include "plan/RenderPlan.hpp"
 
 namespace magda {
@@ -63,6 +65,26 @@ inline constexpr OpValue kUnityValue{};
 struct PlanValues {
     std::uint64_t planFingerprint = 0;
     std::vector<OpValue> ops;
+
+    /**
+     * @brief The parameters behind the same plan (#2117).
+     *
+     * The other half of what a plan reads out of the model, and it travels here
+     * rather than beside it because the two answer one question at two
+     * granularities: what a mixer move did to an op, and what a knob, a macro
+     * or a modifier did to a device's own parameters. Both are resolved off the
+     * audio thread against one plan, both are published whole, and a device
+     * hearing one of them from a previous plan is the same bug either way.
+     *
+     * Shared rather than owned, so a fader move that changed no parameter
+     * republishes the pointer it already had, and so a table outlives the
+     * publish that replaced it for exactly as long as the audio thread is still
+     * inside it.
+     *
+     * Null for a plan resolved without one, which is every test that is not
+     * about parameters and every render of a project that has none.
+     */
+    std::shared_ptr<const ParamTable> params;
 };
 
 /**

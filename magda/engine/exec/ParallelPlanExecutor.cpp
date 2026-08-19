@@ -48,7 +48,8 @@ ParallelPlanExecutor::~ParallelPlanExecutor() {
 std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
                                                        const PlanBindings& bindings,
                                                        const RenderContext& context,
-                                                       const ParallelPlanExecutor* previous) {
+                                                       const ParallelPlanExecutor* previous,
+                                                       const ParamTable* params) {
     // Everything below reallocates what a worker still finishing the last block
     // would read, so this comes first, the same as at destruction.
     letGoOfPool();
@@ -56,8 +57,8 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
     plan_ = nullptr;
     outputOps_.clear();
 
-    auto messages =
-        core_.prepare(plan, bindings, context, previous != nullptr ? &previous->core_ : nullptr);
+    auto messages = core_.prepare(plan, bindings, context,
+                                  previous != nullptr ? &previous->core_ : nullptr, params);
     if (!core_.isPrepared())
         return messages;
 
@@ -187,6 +188,10 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
     const auto start = core_.beginBlock(values, requestedBlock, output);
     if (!start.render || plan_ == nullptr)
         return;
+
+    // Before any worker starts: a device reads its parameters, and every op
+    // that could be one is about to become runnable.
+    core_.resolveParameters(values, start.block.numSamples);
 
     block_ = start.block;
     values_ = &values;

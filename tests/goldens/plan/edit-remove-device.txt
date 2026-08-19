@@ -40,6 +40,11 @@ audioSlots=1 midiSlots=0 outputLatency=0
 [ 12] Gain        T-2:trackMute                  lat=0       ports=a0          inplace
 [ 13] Output      T-2:hardwareOutput             lat=-       ports=-
 
+== params ==
+magda-param-table v1
+params=0 modifiers=0 links=0
+order:
+
 == edited plan ==
 magda-render-plan v1
 ops=12 outputs=1

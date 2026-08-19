@@ -4,6 +4,7 @@
 
 #include "param/ParamBlock.hpp"
 #include "param/ParamSpec.hpp"
+#include "param/ParamTable.hpp"
 
 /**
  * @file ParamResolve.hpp
@@ -106,5 +107,27 @@ struct ParamSources {
  */
 void resolveParam(ResolvedParams& out, int param, const ParamSpec& spec,
                   const ParamSources& sources);
+
+/**
+ * @brief Resolve every parameter of @p table for one block (#2117).
+ *
+ * On the audio thread, once per block, before any device runs. Walks the
+ * table's resolution order, so a macro driving a macro driving a device
+ * parameter needs no second pass: whatever a parameter reads has already been
+ * resolved when it is reached.
+ *
+ * @p scratch is where one parameter's contributions are gathered, and it has to
+ * hold ParamTable::maxLinksPerParam of them. Passed in rather than owned
+ * because this runs on the audio thread and the room has to have been found
+ * before the block started; a parameter with more links than there is room for
+ * keeps the ones that fit, which cannot happen against a scratch sized from the
+ * table it is used with.
+ *
+ * A table whose size does not match what @p out was prepared for is refused
+ * whole rather than resolved partly: the two are indexed by the same ParamId,
+ * and a mismatch means they were prepared against different plans.
+ */
+void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModContribution> scratch,
+                   int numSamples);
 
 }  // namespace magda::engine

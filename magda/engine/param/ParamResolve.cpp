@@ -147,4 +147,53 @@ void resolveParam(ResolvedParams& out, int param, const ParamSpec& spec,
     out.setSegmentCount(param, written);
 }
 
+void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModContribution> scratch,
+                   int numSamples) {
+    // Indexed by the same ParamId, so a size that disagrees is two things
+    // prepared against different plans. Refused whole: half a table of
+    // parameters is a project with some of its values from somewhere else.
+    if (table.size() != out.size())
+        return;
+
+    out.beginBlock(numSamples);
+
+    for (const auto param : table.order) {
+        if (param < 0 || param >= table.size())
+            continue;
+
+        const auto index = static_cast<std::size_t>(param);
+        const auto links = table.linksFor(param);
+
+        std::size_t used = 0;
+        for (const auto& link : links) {
+            if (used >= scratch.size())
+                break;
+
+            float value = 0.0f;
+            switch (link.source.kind) {
+                case ParamSourceRef::Kind::Parameter:
+                    // Already resolved: that is what the order is for.
+                    value = out.sourceValue(link.source.index);
+                    break;
+
+                case ParamSourceRef::Kind::Modifier:
+                    if (link.source.index >= 0 &&
+                        link.source.index < static_cast<int>(table.modifiers.size()))
+                        value = table.modifiers[static_cast<std::size_t>(link.source.index)].value;
+                    break;
+            }
+
+            scratch[used++] = ModContribution{value, link.amount, link.bipolar};
+        }
+
+        ParamSources sources;
+        sources.base = table.base[index];
+        sources.modulation = scratch.first(used);
+
+        // No automation yet: the lanes are baked in #2118, and until they are
+        // every parameter is its base plus whatever is linked to it.
+        resolveParam(out, param, table.specs[index], sources);
+    }
+}
+
 }  // namespace magda::engine

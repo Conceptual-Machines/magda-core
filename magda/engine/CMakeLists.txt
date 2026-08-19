@@ -74,10 +74,18 @@ add_library(magda_engine STATIC
     exec/OfflineRender.hpp
     param/ParamSpec.cpp
     param/ParamBlock.cpp
+    param/ParamKey.cpp
     param/ParamResolve.cpp
+    param/ParamTable.cpp
+    param/ParamTableCompiler.cpp
+    param/ParamTableDump.cpp
     param/ParamSpec.hpp
     param/ParamBlock.hpp
+    param/ParamKey.hpp
     param/ParamResolve.hpp
+    param/ParamTable.hpp
+    param/ParamTableCompiler.hpp
+    param/ParamTableDump.hpp
     tap/LevelTap.hpp
     tap/SampleRing.hpp
     transport/TempoMap.cpp

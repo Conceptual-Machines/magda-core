@@ -308,6 +308,8 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # The parameter lane (#2116). The lanes are fed by hand, so the precedence
     # rules are testable before anything writes them.
     list(APPEND TEST_SOURCES test_param_lane.cpp)
+    # The parameter table (#2117): addressing, the link graph and publication.
+    list(APPEND TEST_SOURCES test_param_table.cpp)
     list(APPEND TEST_SOURCES test_tempo_map.cpp)
     list(APPEND TEST_SOURCES test_transport_clock.cpp)
     list(APPEND TEST_SOURCES test_click_generator.cpp)

@@ -68,6 +68,18 @@ ParamValues ResolvedParams::operator[](int param) const {
                        domains_[index], numSamples_};
 }
 
+float ResolvedParams::sourceValue(int param) const {
+    if (param < 0 || param >= size())
+        return 0.0f;
+
+    const auto index = static_cast<std::size_t>(param);
+    if (counts_[index] == 0)
+        return 0.0f;
+
+    return juce::jlimit(0.0f, 1.0f,
+                        segments_[index * static_cast<std::size_t>(stride_)].startValue);
+}
+
 DeviceParams ResolvedParams::device(int firstParam, int count) const {
     if (firstParam < 0 || count <= 0 || firstParam + count > size())
         return {};

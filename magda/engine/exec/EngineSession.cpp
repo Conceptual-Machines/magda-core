@@ -38,8 +38,14 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // Read only: it is live until the swap below, and it is this thread's own
     // handle on it that keeps it alive long enough to be read at all.
     const auto bindings = store_.realise(*prepared->plan, context);
+    // The parameter table travels inside the values (#2117), and the executor
+    // needs it here rather than at the first block: it is what the per-op
+    // windows and the block's own room are sized from. A table published later
+    // for the same plan has the same shape by construction, since both were
+    // resolved from one model against one plan.
     auto messages = prepared->executor.prepare(*prepared->plan, bindings, context,
-                                               live_ == nullptr ? nullptr : &live_->executor);
+                                               live_ == nullptr ? nullptr : &live_->executor,
+                                               prepared->values.params.get());
     if (!prepared->executor.isPrepared())
         return {false, std::move(messages)};
 
