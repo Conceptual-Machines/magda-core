@@ -528,7 +528,23 @@ std::vector<SourceFact> pooledSourcesFor(const std::vector<ClipInfo>& clips,
     return sources;
 }
 
-/// Imported track ids, mapped back onto the ids the same names went out under.
+/**
+ * @brief Imported track ids, mapped back onto the ids the same names went out
+ *        under.
+ *
+ * Both sides of the map have to be one to one, and they are one to one for
+ * different reasons. The values are, because NameClaims hands each original id
+ * out once. The keys are not guaranteed by anything the importer does, so they
+ * are checked here: two imported tracks that came back under distinct names
+ * carrying one id would otherwise collapse to a single entry, and takeTracks
+ * would then look both of them up and give both the same original id. Every
+ * clip on either would follow it.
+ *
+ * That case has no count to fall back on. A map with one entry for two tracks
+ * still leaves every name claimed, so this is the only thing standing between
+ * an import that duplicated an id and a project renumbered into looking
+ * consistent.
+ */
 std::map<TrackId, TrackId> mapTrackIds(const ProjectDocument& imported,
                                        const std::vector<TrackInfo>& original,
                                        std::string& refusal) {
@@ -546,7 +562,12 @@ std::map<TrackId, TrackId> mapTrackIds(const ProjectDocument& imported,
         if (!id.has_value())
             return {};
 
-        mapped[track.id] = *id;
+        if (!mapped.emplace(track.id, *id).second) {
+            refusal = "two tracks came back carrying id " + std::to_string(track.id) +
+                      ", the second of them named '" + track.name.toStdString() +
+                      "', so one would have been mapped onto the other";
+            return {};
+        }
     }
 
     if (!claims.allClaimed(refusal))
