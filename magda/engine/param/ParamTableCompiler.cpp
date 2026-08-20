@@ -4,6 +4,8 @@
 #include <queue>
 #include <set>
 
+#include "core/AutomationCurve.hpp"
+#include "core/ClipLaneFlattener.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
 
@@ -44,12 +46,14 @@ struct Node {
     const magda::MacroArray* macros = nullptr;
     const magda::ModArray* mods = nullptr;
     const magda::DeviceInfo* device = nullptr;
+    const magda::TrackInfo* track = nullptr;
 };
 
 class Builder {
   public:
     ParamTable run(const RenderPlan& plan, const std::vector<magda::TrackInfo>& tracks,
-                   const magda::TrackInfo& master);
+                   const magda::TrackInfo& master, std::span<const magda::AutomationLaneInfo> lanes,
+                   std::span<const magda::AutomationClipInfo> clips);
 
   private:
     ParamId add(const ParamKey& key, const ParamSpec& spec, float base);
@@ -62,10 +66,19 @@ class Builder {
                   ChainSegment segment);
 
     void collectTargets();
+    void allocateMixer(const magda::TrackInfo& track);
     void allocate();
     void allocateDevice(const Node& node);
     void allocateMacros(const Node& node);
     void allocateMods(const Node& node);
+
+    void collectLaneTargets();
+    void resolveLanes();
+    void flattenCurves();
+
+    /// The clip @p id names, or null for one the lane lists and the project has
+    /// lost.
+    const magda::AutomationClipInfo* findClip(magda::AutomationClipId id) const;
 
     void resolveLinks();
     void orderAndBreakCycles();
@@ -76,6 +89,8 @@ class Builder {
     }
 
     ParamTable table_;
+    std::span<const magda::AutomationLaneInfo> lanes_;
+    std::span<const magda::AutomationClipInfo> clips_;
     std::vector<Node> nodes_;
     std::vector<PendingLink> pending_;
 
@@ -86,6 +101,9 @@ class Builder {
 
     /// Per parameter, until the cycle pass has decided which survive.
     std::vector<std::vector<ParamLink>> perParam_;
+
+    /// Per parameter, until the curves are flattened into the table.
+    std::vector<std::vector<magda::AutomationPoint>> perParamCurve_;
 };
 
 ParamId Builder::add(const ParamKey& key, const ParamSpec& spec, float base) {
@@ -103,6 +121,7 @@ ParamId Builder::add(const ParamKey& key, const ParamSpec& spec, float base) {
     table_.specs.push_back(spec);
     table_.base.push_back(base);
     perParam_.emplace_back();
+    perParamCurve_.emplace_back();
     table_.byKey.emplace(key, id);
     return id;
 }
@@ -124,8 +143,8 @@ void Builder::allocateMacros(const Node& node) {
         // a slot when it drives something or something drives it; the rest are
         // stored values the model keeps and the engine has no use for.
         //
-        // An automation lane targeting one is the third way to be worth a slot,
-        // and it lands with the lanes (#2118).
+        // A lane playing over one counts too: a macro nothing drives, driving
+        // nothing, with a curve on it, is a curve the project plays.
         if (macro.links.empty() && targeted_.count(key) == 0)
             continue;
 
@@ -283,12 +302,51 @@ void Builder::walkRack(const magda::RackInfo& rack, magda::TrackId trackId) {
         walkElements(chain.elements, trackId, rack.id);
 }
 
+/// The mixer values a track has, allocated only when something reaches them: a
+/// project with no automation on its faders keeps the value table's answer and
+/// pays nothing for a table it would not read.
+void Builder::allocateMixer(const magda::TrackInfo& track) {
+    ParamKey scope;
+    scope.scope = ParamKey::Scope::Track;
+    scope.trackId = track.id;
+
+    const auto fader = magda::ParameterPresets::faderVolume(-1, "Volume");
+    const auto panning = magda::ParameterPresets::pan(-1, "Pan");
+
+    // Volume and pan together or not at all. They are one op's two gains, put
+    // there by one pan law, so a fader resolved from a parameter has to resolve
+    // both of them: a pan lane over a table with no volume in it would have
+    // nothing to pan, and a volume lane over a table with no pan in it would
+    // recentre a track the moment its fader moved.
+    ParamKey volume = scope;
+    volume.kind = ParamKey::Kind::TrackVolume;
+    ParamKey pan = scope;
+    pan.kind = ParamKey::Kind::TrackPan;
+
+    if (targeted_.count(volume) > 0 || targeted_.count(pan) > 0) {
+        add(volume, paramSpecFrom(fader),
+            magda::ParameterUtils::normalizedFromGain(track.volume, fader));
+        add(pan, paramSpecFrom(panning),
+            magda::ParameterUtils::realToNormalized(track.pan, panning));
+    }
+
+    for (std::size_t slot = 0; slot < track.sends.size(); ++slot) {
+        ParamKey send = scope;
+        send.kind = ParamKey::Kind::SendLevel;
+        send.index = static_cast<int>(slot);
+        if (targeted_.count(send) > 0)
+            add(send, paramSpecFrom(fader),
+                magda::ParameterUtils::normalizedFromGain(track.sends[slot].level, fader));
+    }
+}
+
 void Builder::walkTrack(const magda::TrackInfo& track) {
     Node node;
     node.scope.scope = ParamKey::Scope::Track;
     node.scope.trackId = track.id;
     node.macros = &track.macros;
     node.mods = &track.mods;
+    node.track = &track;
     nodes_.push_back(node);
 
     walkElements(track.chain.fxChainElements, track.id, INVALID_RACK_ID);
@@ -316,10 +374,84 @@ void Builder::collectTargets() {
     }
 }
 
+const magda::AutomationClipInfo* Builder::findClip(magda::AutomationClipId id) const {
+    for (const auto& clip : clips_)
+        if (clip.id == id)
+            return &clip;
+    return nullptr;
+}
+
+/// Whether the model is playing this lane rather than holding it. Read mode is
+/// playback; disabled, touching and writing are all the user's hand on the
+/// parameter, and the base is what a parameter is worth when a hand is on it.
+bool isPlaying(const magda::AutomationLaneInfo& lane) {
+    return lane.authorityState == magda::AutomationAuthorityState::Reading && lane.hasData();
+}
+
+void Builder::collectLaneTargets() {
+    for (const auto& lane : lanes_)
+        if (isPlaying(lane))
+            if (const auto key = paramKeyFor(lane.target))
+                targeted_.insert(*key);
+}
+
+void Builder::resolveLanes() {
+    for (const auto& lane : lanes_) {
+        if (!isPlaying(lane))
+            continue;
+
+        const auto key = paramKeyFor(lane.target);
+        if (!key.has_value()) {
+            diagnose(std::string("a lane plays over ") + magda::toString(lane.target.kind) +
+                     ", which the parameter table does not carry yet");
+            continue;
+        }
+
+        const auto id = table_.find(*key);
+        if (id == INVALID_PARAM_ID) {
+            diagnose("a lane plays over " + toString(*key) + ", which the project does not have");
+            continue;
+        }
+
+        auto& curve = perParamCurve_[static_cast<std::size_t>(id)];
+        if (!curve.empty()) {
+            // Two lanes over one parameter: the model allows the shape and
+            // nothing says which of them wins, so neither is guessed at.
+            diagnose(toString(*key) + ": two lanes play over it, and the second is ignored");
+            continue;
+        }
+
+        if (lane.isAbsolute()) {
+            curve = lane.absolutePoints;
+            continue;
+        }
+
+        // A clip-based lane unrolled the way the model unrolls it: loops
+        // repeated, gaps held at the nearest edge, overlaps decided by the
+        // lane's own precedence (#1087).
+        const auto getClip = [this](magda::AutomationClipId clipId) { return findClip(clipId); };
+        curve = magda::flattenClipLane(lane, getClip, [&](double beat) {
+            return magda::automation::laneValueAtBeat(lane, getClip, beat);
+        });
+    }
+}
+
+void Builder::flattenCurves() {
+    table_.curveOffsets.reserve(perParamCurve_.size() + 1);
+    table_.curveOffsets.push_back(0);
+
+    for (const auto& curve : perParamCurve_) {
+        table_.curvePoints.insert(table_.curvePoints.end(), curve.begin(), curve.end());
+        table_.curveOffsets.push_back(static_cast<int>(table_.curvePoints.size()));
+    }
+}
+
 void Builder::allocate() {
     for (const auto& node : nodes_) {
         // Devices first within a node, so a device's window is contiguous.
         allocateDevice(node);
+        if (node.track != nullptr)
+            allocateMixer(*node.track);
         allocateMacros(node);
         allocateMods(node);
     }
@@ -553,7 +685,11 @@ void Builder::flattenLinks() {
 }
 
 ParamTable Builder::run(const RenderPlan& plan, const std::vector<magda::TrackInfo>& tracks,
-                        const magda::TrackInfo& master) {
+                        const magda::TrackInfo& master,
+                        std::span<const magda::AutomationLaneInfo> lanes,
+                        std::span<const magda::AutomationClipInfo> clips) {
+    lanes_ = lanes;
+    clips_ = clips;
     table_.planFingerprint = planFingerprint(plan);
 
     for (const auto& track : tracks)
@@ -561,10 +697,13 @@ ParamTable Builder::run(const RenderPlan& plan, const std::vector<magda::TrackIn
     walkTrack(master);
 
     collectTargets();
+    collectLaneTargets();
     allocate();
+    resolveLanes();
     resolveLinks();
     orderAndBreakCycles();
     flattenLinks();
+    flattenCurves();
 
     table_.layoutFingerprint = paramLayoutFingerprint(table_.keys);
 
@@ -574,8 +713,10 @@ ParamTable Builder::run(const RenderPlan& plan, const std::vector<magda::TrackIn
 }  // namespace
 
 ParamTable compileParamTable(const RenderPlan& plan, const std::vector<magda::TrackInfo>& tracks,
-                             const magda::TrackInfo& master) {
-    return Builder{}.run(plan, tracks, master);
+                             const magda::TrackInfo& master,
+                             std::span<const magda::AutomationLaneInfo> lanes,
+                             std::span<const magda::AutomationClipInfo> clips) {
+    return Builder{}.run(plan, tracks, master, lanes, clips);
 }
 
 }  // namespace magda::engine

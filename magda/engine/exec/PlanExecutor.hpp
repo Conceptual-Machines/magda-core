@@ -253,7 +253,7 @@ class PlanExecutor {
      * device is handed a window of nothing, which is what it would have had
      * before any table was published at all.
      */
-    void resolveParameters(const PlanValues& values, int numSamples);
+    void resolveParameters(const PlanValues& values, const BlockInfo& block);
 
     /**
      * @brief Render one op of the prepared plan.
@@ -503,6 +503,31 @@ class PlanExecutor {
     /// published with, so the block that fills them allocates nothing.
     ResolvedParams paramValues_;
     std::vector<ModContribution> paramScratch_;
+
+    /** @brief The parameters a mixer op reads instead of the published value. */
+    struct OpMixerParams {
+        /// A fader's volume or a send's level, in dB. Invalid where nothing
+        /// reaches the value and the published one stands.
+        ParamId gain = INVALID_PARAM_ID;
+
+        /// A fader's pan. Invalid on a send, which has none.
+        ParamId pan = INVALID_PARAM_ID;
+    };
+
+    /// Per op, resolved at prepare so the audio thread never looks a key up.
+    std::vector<OpMixerParams> mixerParamForOp_;
+
+    /// The gains @p op renders with: what the publisher resolved, unless a lane
+    /// or a link reaches the value it stands for, in which case what the block
+    /// resolved wins. A fader is the one value both layers can have an opinion
+    /// about, and the block's is the newer one by exactly the amount a lane
+    /// moves inside it.
+    OpValue mixerValueFor(std::size_t op, const OpValue& published) const;
+
+    /// Where one parameter's curve is baked before it is resolved. One
+    /// parameter's worth: the block walks them one at a time, and a segment
+    /// written for one is read before the next is baked.
+    std::vector<ParamSegment> paramSegments_;
 
     /// Per op: the window of the table a Device op's device reads, resolved
     /// once here so the audio thread never hashes a DeviceKey. Cached from one

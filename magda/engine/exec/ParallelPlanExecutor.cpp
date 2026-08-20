@@ -191,7 +191,7 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
 
     // Before any worker starts: a device reads its parameters, and every op
     // that could be one is about to become runnable.
-    core_.resolveParameters(values, start.block.numSamples);
+    core_.resolveParameters(values, start.block);
 
     block_ = start.block;
     values_ = &values;

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -106,10 +107,15 @@ struct PlanValues {
  *
  * @param tracks  every non-master track, as passed to compileRenderPlan
  * @param master  the master track
+ * @param lanes   the automation lanes the project has, and the clips they name.
+ *                Empty is a project with no automation, and every render that
+ *                is not about it.
  */
 std::vector<std::string> resolvePlanValues(const RenderPlan& plan,
                                            const std::vector<TrackInfo>& tracks,
-                                           const TrackInfo& master, PlanValues& values);
+                                           const TrackInfo& master, PlanValues& values,
+                                           std::span<const magda::AutomationLaneInfo> lanes = {},
+                                           std::span<const magda::AutomationClipInfo> clips = {});
 
 /**
  * @brief Gain a volume fader applies, given a linear volume from the model.
@@ -133,5 +139,15 @@ float faderGainFromDecibels(float decibels);
  * exists to avoid.
  */
 void applyLinearPanLaw(float gain, float pan, float& left, float& right);
+
+/**
+ * @brief Pan as the fader stores it: a deadband around centre, then clamped.
+ *
+ * Exposed because the fader is resolved in two places now. What a publish knows
+ * is where the model left the pan; what a block knows is where a lane has moved
+ * it to, and both have to be read through the same deadband or a pan lane would
+ * pass through a centre the model never has.
+ */
+float faderPanPosition(float pan);
 
 }  // namespace magda::engine

@@ -4,6 +4,8 @@
 
 #include <algorithm>
 
+#include "core/AutomationCurve.hpp"
+
 namespace magda::engine {
 
 namespace {
@@ -147,8 +149,144 @@ void resolveParam(ResolvedParams& out, int param, const ParamSpec& spec,
     out.setSegmentCount(param, written);
 }
 
-void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModContribution> scratch,
-                   int numSamples) {
+int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& spec,
+              const BlockInfo& block, std::span<ParamSegment> out) {
+    if (curve.empty() || out.empty())
+        return 0;
+
+    const auto valueAt = [&curve](double beat) {
+        return static_cast<float>(magda::automation::valueAtBeat(curve, beat));
+    };
+
+    const float opening = valueAt(block.startBeat);
+
+    // One value for the block, held: the incumbent engine settles a parameter
+    // at the block boundary, and a device that did not ask for more is not the
+    // place to start differing from it. Also the whole answer for a block with
+    // no time in it, which is what a stopped transport renders.
+    if (!spec.segmentAccurate || block.numSamples <= 0 || block.endBeat <= block.startBeat) {
+        out[0] = ParamSegment{0, opening, opening};
+        return 1;
+    }
+
+    // Whether the run a beat falls in holds its value rather than travelling to
+    // the next one. A step is not a bend that happens to be steep: a segment
+    // written as a ramp would glide a device through values the drawn curve
+    // never has.
+    const auto holdsFrom = [&curve](double beat) {
+        const auto* opener = magda::automation::segmentOpening(curve, beat);
+        return opener != nullptr && opener->curveType == magda::AutomationCurveType::Step;
+    };
+
+    // Where the curve ends up over this block, and where it gets there. Both
+    // are needed before the walk, because a walk that runs out of room has to
+    // spend its last segment on arriving rather than on where it had got to.
+    //
+    // Two endings, and the difference is the block's far edge. A run that
+    // travels arrives at the value the boundary has, which is the value the
+    // next block opens on. A run that holds arrives at the last knot inside
+    // this block: a step sitting exactly on the boundary belongs to the next
+    // block, and writing its value here would pull it earlier by however long
+    // the run before it lasts.
+    const float ending = valueAt(block.endBeat);
+    const auto boundary = std::lower_bound(
+        curve.begin(), curve.end(), block.endBeat,
+        [](const magda::AutomationPoint& point, double beat) { return point.beatPosition < beat; });
+    const bool hasKnotInside = boundary != curve.begin();
+    const int endingSample = hasKnotInside ? block.sampleForBeat((boundary - 1)->beatPosition) : 0;
+    const float endingHeld = hasKnotInside ? valueAt((boundary - 1)->beatPosition) : opening;
+
+    int written = 0;
+    int startSample = 0;
+    float startValue = opening;
+    bool holds = holdsFrom(block.startBeat);
+    bool overflowed = false;
+
+    // Close the run in progress at @p beat and open the next one there. The
+    // value at a knot is the curve's value after it, which for a step is the
+    // jump and for everything else is where the previous run arrived.
+    const auto closeAt = [&](double beat) {
+        const auto sample = block.sampleForBeat(beat);
+        const auto value = valueAt(beat);
+
+        if (sample > startSample) {
+            out[static_cast<std::size_t>(written++)] =
+                ParamSegment{startSample, startValue, holds ? startValue : value};
+            startSample = sample;
+        }
+
+        startValue = value;
+        holds = holdsFrom(beat);
+    };
+
+    const auto inside = [&block](double beat) {
+        return beat > block.startBeat && beat < block.endBeat;
+    };
+
+    // The run the block opens inside, rather than the top of the lane: an
+    // unrolled clip lane is as long as the arrangement, and every knot behind
+    // the playhead is one this block was never going to emit.
+    const auto opener = std::lower_bound(
+        curve.begin(), curve.end(), block.startBeat,
+        [](const magda::AutomationPoint& point, double beat) { return point.beatPosition < beat; });
+    auto index = static_cast<std::size_t>(std::distance(curve.begin(), opener));
+    if (index > 0)
+        --index;
+
+    // Every knot the block contains, in beat order: each breakpoint, and the
+    // apex of a hard corner, which is where that curve changes direction
+    // between two breakpoints rather than at one.
+    for (std::size_t i = index; i < curve.size(); ++i) {
+        if (curve[i].beatPosition >= block.endBeat)
+            break;
+        if (written + 1 >= static_cast<int>(out.size())) {
+            overflowed = true;
+            break;
+        }
+
+        if (inside(curve[i].beatPosition))
+            closeAt(curve[i].beatPosition);
+
+        if (i + 1 < curve.size())
+            if (const auto corner = magda::automation::hardCornerOf(curve[i], curve[i + 1])) {
+                if (written + 1 >= static_cast<int>(out.size())) {
+                    overflowed = true;
+                    break;
+                }
+                if (inside(corner->beat))
+                    closeAt(corner->beat);
+            }
+    }
+
+    // A bake that ran out of room spends its last segment on arriving, and the
+    // shape of that arrival belongs to the run the block ends in rather than to
+    // the run the walk gave up in. Curve type is a property of a point, so a
+    // knot the walk never reached can open a run of the other kind: a step run
+    // that overflowed can end in a ramp, and a ramp that overflowed can end in
+    // a step.
+    //
+    // Either way the run before it holds a little longer, which is the same
+    // coarsening ResolvedParams makes one level down when a curve outgrows its
+    // slot: the steps in between are what is lost, never the arrival.
+    if (overflowed && hasKnotInside) {
+        const auto sample = std::max(endingSample, startSample);
+        const bool finalHolds = holdsFrom((boundary - 1)->beatPosition);
+
+        out[static_cast<std::size_t>(written++)] =
+            finalHolds ? ParamSegment{sample, endingHeld, endingHeld}
+                       : ParamSegment{sample, endingHeld, ending};
+    } else {
+        out[static_cast<std::size_t>(written++)] =
+            ParamSegment{startSample, startValue, holds ? startValue : ending};
+    }
+
+    return written;
+}
+
+void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModContribution> links,
+                   std::span<ParamSegment> segments, const BlockInfo& block) {
+    const auto numSamples = block.numSamples;
+
     // Emptied first, and then refused. A table that does not fit is not a
     // reason to keep rendering last block's values: those were resolved for a
     // parameter set this one no longer has, and a device reading them would be
@@ -166,11 +304,11 @@ void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModCo
             continue;
 
         const auto index = static_cast<std::size_t>(param);
-        const auto links = table.linksFor(param);
+        const auto reaching = table.linksFor(param);
 
         std::size_t used = 0;
-        for (const auto& link : links) {
-            if (used >= scratch.size())
+        for (const auto& link : reaching) {
+            if (used >= links.size())
                 break;
 
             float value = 0.0f;
@@ -187,15 +325,18 @@ void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModCo
                     break;
             }
 
-            scratch[used++] = ModContribution{value, link.amount, link.bipolar};
+            links[used++] = ModContribution{value, link.amount, link.bipolar};
         }
+
+        const auto baked = bakeCurve(table.curveFor(param), table.specs[index], block, segments);
 
         ParamSources sources;
         sources.base = table.base[index];
-        sources.modulation = scratch.first(used);
+        sources.modulation = links.first(used);
+        sources.automation = std::span<const ParamSegment>{segments}.first(
+            static_cast<std::size_t>(std::max(baked, 0)));
+        sources.automationEnd = numSamples;
 
-        // No automation yet: the lanes are baked in #2118, and until they are
-        // every parameter is its base plus whatever is linked to it.
         resolveParam(out, param, table.specs[index], sources);
     }
 }

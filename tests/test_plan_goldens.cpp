@@ -119,7 +119,8 @@ std::string renderGolden(const goldens::Fixture& fixture) {
     // the graph and the parameters at once, and two files would make one
     // decision look like two regressions.
     out << "== params ==\n"
-        << engine::dumpParamTable(engine::compileParamTable(plan, fixture.tracks, fixture.master))
+        << engine::dumpParamTable(engine::compileParamTable(plan, fixture.tracks, fixture.master,
+                                                            fixture.lanes, fixture.clips))
         << "\n";
 
     if (fixture.editedTracks.empty())

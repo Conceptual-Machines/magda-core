@@ -1,7 +1,9 @@
 #pragma once
 
+#include <span>
 #include <vector>
 
+#include "core/AutomationInfo.hpp"
 #include "param/ParamTable.hpp"
 #include "plan/RenderPlan.hpp"
 
@@ -34,6 +36,14 @@ namespace magda::engine {
  * @param tracks  every non-master track, as passed to compileRenderPlan
  * @param master  the master track
  *
+ * @param lanes   the automation lanes the project has, playing or not
+ * @param clips    the automation clips those lanes name
+ *
+ * A lane is carried when the model says it is playing: read mode is playback,
+ * and disabled, touching and writing are all the user holding the parameter
+ * rather than the curve driving it. Which of those a lane is in is the model's
+ * decision (AutomationStateMachine), asked here and not second-guessed.
+ *
  * Diagnostics ride on the table (ParamTable::diagnostics): a link naming
  * something that does not exist, a target this table does not carry, a link to
  * a parameter that takes no modulation, and a cycle. Nothing is dropped in
@@ -41,6 +51,8 @@ namespace magda::engine {
  * minus whatever the diagnostic describes.
  */
 ParamTable compileParamTable(const RenderPlan& plan, const std::vector<magda::TrackInfo>& tracks,
-                             const magda::TrackInfo& master);
+                             const magda::TrackInfo& master,
+                             std::span<const magda::AutomationLaneInfo> lanes = {},
+                             std::span<const magda::AutomationClipInfo> clips = {});
 
 }  // namespace magda::engine

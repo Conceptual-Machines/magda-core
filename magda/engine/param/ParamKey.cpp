@@ -115,12 +115,35 @@ std::optional<ParamKey> paramKeyFor(const magda::ControlTarget& target) {
             key.index = target.modParamIndex;
             return key;
 
-        // Real targets that this table does not carry. The mixer values are
-        // resolved into PlanValues, off the audio thread, and the tempo belongs
-        // to the transport.
         case magda::ControlTarget::Kind::TrackVolume:
         case magda::ControlTarget::Kind::TrackPan:
-        case magda::ControlTarget::Kind::SendLevel:
+        case magda::ControlTarget::Kind::SendLevel: {
+            // Track-scoped and nothing else: a mixer value belongs to a track,
+            // and the path a target carries for one is the track's own.
+            if (target.devicePath.trackId == INVALID_TRACK_ID)
+                return std::nullopt;
+
+            key.scope = ParamKey::Scope::Track;
+            key.trackId = target.devicePath.trackId;
+
+            if (target.kind == magda::ControlTarget::Kind::TrackVolume) {
+                key.kind = ParamKey::Kind::TrackVolume;
+                return key;
+            }
+            if (target.kind == magda::ControlTarget::Kind::TrackPan) {
+                key.kind = ParamKey::Kind::TrackPan;
+                return key;
+            }
+
+            if (target.sendBusIndex < 0)
+                return std::nullopt;
+            key.kind = ParamKey::Kind::SendLevel;
+            key.index = target.sendBusIndex;
+            return key;
+        }
+
+        // The tempo is a real target that belongs to the transport rather than
+        // to any track, and nothing here can carry one.
         case magda::ControlTarget::Kind::Tempo:
             return std::nullopt;
     }
@@ -165,6 +188,15 @@ std::string toString(const ParamKey& key) {
             text += ":mod" + std::to_string(key.modId);
             if (key.index >= 0)
                 text += ".param" + std::to_string(key.index);
+            break;
+        case ParamKey::Kind::TrackVolume:
+            text += ":volume";
+            break;
+        case ParamKey::Kind::TrackPan:
+            text += ":pan";
+            break;
+        case ParamKey::Kind::SendLevel:
+            text += ":send" + std::to_string(key.index);
             break;
     }
 
