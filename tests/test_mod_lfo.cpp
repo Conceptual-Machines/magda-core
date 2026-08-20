@@ -789,7 +789,7 @@ TEST_CASE("A gate holds the output at nothing while the phase carries on",
 
     // Ungating resumes where the LFO would have been rather than where it was
     // when the gate shut: gating is not a pause.
-    harness.mods.setGated(fixture.modifier, false);
+    harness.mods.setGated(fixture.modifier, fixture.table, false);
     harness.run(fixture.table, block);
     CHECK(harness.mods.value(fixture.modifier) == approx(0.75f));
 }

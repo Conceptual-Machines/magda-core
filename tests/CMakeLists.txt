@@ -314,6 +314,12 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_automation_bake.cpp)
     # The LFO engine: shapes, rates, triggers and gates (#2119).
     list(APPEND TEST_SOURCES test_mod_lfo.cpp)
+    # The remaining three modifier engines, and the feeds two of them need
+    # (#2120): the envelope's gate, the walk, and the follower's source.
+    list(APPEND TEST_SOURCES test_mod_adsr.cpp)
+    list(APPEND TEST_SOURCES test_mod_random.cpp)
+    list(APPEND TEST_SOURCES test_mod_follower.cpp)
+    list(APPEND TEST_SOURCES test_mod_feeds.cpp)
     list(APPEND TEST_SOURCES test_tempo_map.cpp)
     list(APPEND TEST_SOURCES test_transport_clock.cpp)
     list(APPEND TEST_SOURCES test_click_generator.cpp)

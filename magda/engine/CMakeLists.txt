@@ -80,6 +80,10 @@ add_library(magda_engine STATIC
     param/ParamTableCompiler.cpp
     param/ParamTableDump.cpp
     param/ModLfo.cpp
+    param/ModAdsr.cpp
+    param/ModRandom.cpp
+    param/ModFollower.cpp
+    param/ModSources.cpp
     param/ModRuntime.cpp
     param/ParamSpec.hpp
     param/ParamBlock.hpp
@@ -89,6 +93,10 @@ add_library(magda_engine STATIC
     param/ParamTableCompiler.hpp
     param/ParamTableDump.hpp
     param/ModLfo.hpp
+    param/ModAdsr.hpp
+    param/ModRandom.hpp
+    param/ModFollower.hpp
+    param/ModSources.hpp
     param/ModRuntime.hpp
     tap/LevelTap.hpp
     tap/SampleRing.hpp

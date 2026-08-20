@@ -128,7 +128,7 @@ OpId ParallelPlanExecutor::runOp(OpId op) {
     // add into a buffer they all share, so they are left for the thread that
     // drove the block to run in plan order. Counted here anyway, because what
     // waits on what is the plan's business and not this decision's.
-    if (plan_->ops[static_cast<std::size_t>(op)].kind != OpKind::Output)
+    if (plan_->ops[static_cast<std::size_t>(op)].kind != OpKind::Output && !core_.inMidiPrefix(op))
         core_.renderOp(op, valueOf(op), block_, *output_);
 
     OpId carryOn = INVALID_OP_ID;
@@ -189,8 +189,16 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
     if (!start.render || plan_ == nullptr)
         return;
 
-    // Before any worker starts: a device reads its parameters, and every op
-    // that could be one is about to become runnable.
+    // Before any worker starts, and in this order. The MIDI a block has before
+    // it has audio is rendered on this thread, so the notes in it reach the
+    // modifiers of this block rather than the next one; then the parameters
+    // resolve, and every op that could read one is about to become runnable.
+    //
+    // The prefix ops are still scheduled below, so their consumers are released
+    // exactly as they would be otherwise; what the schedule skips is running
+    // them a second time, the same way it skips the outputs it renders at the
+    // end. Anything else would consume a live input queue twice.
+    core_.renderMidiPrefix(values, start.block);
     core_.resolveParameters(values, start.block);
 
     block_ = start.block;

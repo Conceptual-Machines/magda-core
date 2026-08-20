@@ -899,27 +899,69 @@ TEST_CASE("An unmonitored MIDI route does not make its source compile MIDI",
     CHECK(countRole(plan, OpRole::TrackMidiInput) == 0);
 }
 
-TEST_CASE("A rack-level sidechain is reported as unsupported", "[engine][plan][compiler]") {
-    RackInfo rack;
-    rack.id = 4;
-    rack.sidechain.type = SidechainConfig::Type::MIDI;
-    rack.sidechain.sourceTrackId = 2;
-    ChainInfo chain;
-    chain.id = 10;
-    chain.elements.push_back(makeDeviceElement(makeEffect(7)));
-    rack.chains.push_back(std::move(chain));
+TEST_CASE("A rack-level sidechain is an edge to the modulation system",
+          "[engine][plan][compiler]") {
+    // The rack, sidechained from track 2, with whatever modifiers the caller
+    // puts on it.
+    const auto planWith = [](magda::ModArray mods, SidechainConfig::Type type) {
+        RackInfo rack;
+        rack.id = 4;
+        rack.sidechain.type = type;
+        rack.sidechain.sourceTrackId = 2;
+        rack.mods = std::move(mods);
+        ChainInfo chain;
+        chain.id = 10;
+        chain.elements.push_back(makeDeviceElement(makeEffect(7)));
+        rack.chains.push_back(std::move(chain));
 
-    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
-    tracks[0].chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+        tracks[0].chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
 
-    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
-    requireWellFormed(plan);
+        return magda::engine::compileRenderPlan(tracks, makeMaster());
+    };
 
-    // It drives rack modulation rather than signal, so the plan carries no edge
-    // for it. That is a gap the contract says to name rather than pass over.
-    REQUIRE(plan.diagnostics.size() == 1);
-    CHECK(plan.diagnostics.front().find("rack 4") != std::string::npos);
-    CHECK(plan.diagnostics.front().find("modulation") != std::string::npos);
+    const auto listening = [](magda::ModType type, magda::LFOTriggerMode trigger) {
+        magda::ModInfo mod(0);
+        mod.type = type;
+        mod.triggerMode = trigger;
+        return magda::ModArray{mod};
+    };
+
+    SECTION("a rack nothing listens with is not an edge") {
+        // A sidechain feeds modulation, so a rack whose modifiers all
+        // free-run is a sidechain with nothing on the far end. No tap, and no
+        // diagnostic either: there is nothing the plan failed to carry.
+        const auto plan = planWith({}, SidechainConfig::Type::MIDI);
+        requireWellFormed(plan);
+
+        CHECK(plan.diagnostics.empty());
+        CHECK(countRole(plan, OpRole::ModulationTap) == 0);
+    }
+
+    SECTION("a note-triggered modifier on the rack makes it one") {
+        const auto plan = planWith(listening(magda::ModType::LFO, magda::LFOTriggerMode::MIDI),
+                                   SidechainConfig::Type::MIDI);
+        requireWellFormed(plan);
+
+        CHECK(plan.diagnostics.empty());
+        REQUIRE(countRole(plan, OpRole::ModulationTap) == 1);
+
+        // Keyed to the source rather than to the rack: what the op carries is
+        // one track's signal, and every modifier listening to that track reads
+        // the same one.
+        const auto taps = opsWithRole(plan, OpRole::ModulationTap);
+        REQUIRE(taps.size() == 1);
+        CHECK(plan.ops[static_cast<std::size_t>(taps.front())].key.trackId == 2);
+    }
+
+    SECTION("a follower on the rack makes it one too") {
+        const auto plan = planWith(listening(magda::ModType::Follower, magda::LFOTriggerMode::Free),
+                                   SidechainConfig::Type::Audio);
+        requireWellFormed(plan);
+
+        CHECK(plan.diagnostics.empty());
+        CHECK(countRole(plan, OpRole::ModulationTap) == 1);
+    }
 }
 
 TEST_CASE("Delta solo is reported on devices and on racks", "[engine][plan][compiler]") {

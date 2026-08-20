@@ -11,6 +11,7 @@
 #include "core/RackInfo.hpp"
 #include "core/TrackChain.hpp"
 #include "core/TrackInfo.hpp"
+#include "param/ModSources.hpp"
 #include "plan/TrackRouting.hpp"
 
 namespace magda::engine {
@@ -169,6 +170,11 @@ class Compiler {
     TrackId resolveAudioDestination(const TrackInfo& track) const;
 
     void emitTrack(const TrackInfo& track);
+
+    /// One op per track any modifier listens to, after every track has been
+    /// emitted so that every tap exists to read.
+    void emitModulationTaps();
+
     ChainSignal emitElements(const std::vector<ChainElement>& elements, const ChainSite& site,
                              ChainSignal signal);
     ChainSignal emitDevice(const DeviceInfo& device, const ChainSite& site, ChainSignal signal);
@@ -207,6 +213,9 @@ class Compiler {
     /// internal MIDI route. Their MIDI clips have to be compiled even when
     /// their own chain has nothing that consumes MIDI.
     std::set<TrackId> midiSourceTracks_;
+    /// Tracks a modifier somewhere in the project listens to (ModSources.hpp).
+    /// Both an ordering constraint and, at the end, an op each.
+    std::set<TrackId> modulationSourceTracks_;
 };
 
 OpId Compiler::addOp(OpKind kind, const OpKey& key, std::vector<PortRef> inputs,
@@ -320,6 +329,13 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
         // contributes no edge either.
         std::set<TrackId> upstream;
         collectSidechainSources(track, std::nullopt, upstream);
+
+        // A modifier listening to another track reads that track's signal, so
+        // it is an ordering constraint exactly as a sidechain is. It is also
+        // where the modifiers of a sidechained rack come in, which the plan
+        // used to report as something it could not carry (#2120).
+        collectModulationSources(track, upstream);
+
         if (const auto route = activeAudioInputRoute(track); route.namesTrack())
             upstream.insert(route.trackId);
         if (const auto route = activeMidiInputRoute(track); route.namesTrack())
@@ -511,15 +527,12 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     if (rack.bypassed)
         return signal;
 
-    // A rack-level sidechain drives the rack's own followers and LFOs, so it is
-    // a modulation source rather than a signal edge, and modulation is not
-    // topology. Reported rather than passed over in silence: the dependency on
-    // the source track is real and lands with the modulation slice.
-    if (rack.sidechain.isActive())
-        diagnose("rack " + std::to_string(rack.id) + ": " +
-                 (rack.sidechain.type == SidechainConfig::Type::MIDI ? "MIDI" : "audio") +
-                 " sidechain from track " + std::to_string(rack.sidechain.sourceTrackId) +
-                 " feeds rack modulation, which the plan does not carry yet");
+    // A rack-level sidechain drives the rack's own followers and triggered
+    // modifiers. It is still not a signal edge into the rack, because a rack
+    // does not mix its sidechain into its chains; what it is is a dependency on
+    // the source track, and that is now carried: the modulation tap emitted for
+    // that track is the edge, and collectModulationSources is what puts the
+    // source ahead of this rack's own track in the compile order (#2120).
 
     // Same dry path a device's delta solo needs, one level up: the rack
     // instance subtracts its own input, aligned to its wet output, from that
@@ -881,6 +894,45 @@ void Compiler::emitTrack(const TrackInfo& track) {
     pendingInputs_[destination].push_back(out);
 }
 
+void Compiler::emitModulationTaps() {
+    for (const auto sourceId : modulationSourceTracks_) {
+        // Post-fader and pre-mute, which is the point the fork taps as well:
+        // its follower tap sits at the end of the source track's plugin list
+        // and its trigger monitor keys off the same signal, so a muted source
+        // still ducks what it is ducking.
+        PortRef audio;
+        if (const auto found = trackSidechainTap_.find(sourceId); found != trackSidechainTap_.end())
+            audio = found->second;
+
+        // The source's chain-head MIDI, which is what a note-triggered
+        // modifier hears: the notes reaching the track rather than whatever
+        // its own instruments made of them.
+        PortRef midi;
+        if (const auto found = trackMidiInput_.find(sourceId); found != trackMidiInput_.end())
+            midi = found->second;
+
+        // Neither, which is a modifier listening to a track this plan does not
+        // carry: one that was deleted, or one skipped because nothing it feeds
+        // is audible. Reported rather than passed over, because a modulation
+        // that silently stops arriving is the hardest kind of silence to find.
+        if (!audio.valid() && !midi.valid()) {
+            diagnose("track " + std::to_string(sourceId) +
+                     " is listened to by a modifier but is not routed, so nothing reaches it");
+            continue;
+        }
+
+        const OpKey key{sourceId,          INVALID_RACK_ID,       INVALID_CHAIN_ID,
+                        INVALID_DEVICE_ID, OpRole::ModulationTap, 0,
+                        ChainSegment::Fx};
+
+        // No delay alignment. The two inputs are read for what they are rather
+        // than mixed with each other, and a modulation feed is a block late by
+        // construction anyway (ModFollower.hpp), so aligning it to a sample
+        // would be precision the path does not have.
+        addOp(OpKind::ModSource, key, {audio, midi}, {});
+    }
+}
+
 RenderPlan Compiler::run() {
     // A track whose MIDI someone else reads has to produce MIDI even when
     // nothing in its own chain consumes it, so this is collected up front.
@@ -894,9 +946,23 @@ RenderPlan Compiler::run() {
     }
     collectSidechainSources(master_, SidechainConfig::Type::MIDI, midiSourceTracks_);
 
+    for (const auto& track : tracks_)
+        collectModulationSources(track, modulationSourceTracks_);
+    collectModulationSources(master_, modulationSourceTracks_);
+
+    // A track a modifier listens to has to produce MIDI whether or not its own
+    // chain consumes any, on the same terms a MIDI sidechain does: a
+    // note-triggered modifier reads the notes reaching its source's chain head,
+    // and a source with no MIDI ops compiled has no chain head to read.
+    for (const auto& track : tracks_)
+        if (modulationSourceTracks_.count(track.id) != 0)
+            midiSourceTracks_.insert(track.id);
+
     for (const auto* track : computeTrackOrder())
         emitTrack(*track);
     emitTrack(master_);
+
+    emitModulationTaps();
 
     // Anything still queued belongs to a track that was compiled before its
     // source, which only happens when a routing cycle was broken above.

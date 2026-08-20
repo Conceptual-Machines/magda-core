@@ -25,6 +25,23 @@ void copyWithGain(juce::dsp::AudioBlock<float> destination, juce::dsp::AudioBloc
             channelGain(value, channel), numSamples);
 }
 
+/**
+ * @brief What an audio trigger listens for.
+ *
+ * The fork's own three numbers (AudioSidechainMonitorPlugin), because a project
+ * that ducks on a kick has to duck on the same kicks in both engines. A fast
+ * attack so a transient opens the gate, a moderate release so it does not
+ * chatter at the boundary, and a threshold around -20 dB, which is above what a
+ * quiet track leaves behind and below anything meant as a hit.
+ *
+ * One detector per source track rather than one per modifier, which is the
+ * fork's arrangement too: what an audio trigger keys off is a property of the
+ * signal rather than of whatever is listening to it.
+ */
+constexpr float kTriggerThreshold = 0.1f;
+constexpr double kTriggerAttackMs = 1.0;
+constexpr double kTriggerReleaseMs = 50.0;
+
 void applyGain(juce::dsp::AudioBlock<float> block, const OpValue& value, int numSamples) {
     for (std::size_t channel = 0; channel < block.getNumChannels(); ++channel)
         juce::FloatVectorOperations::multiply(block.getChannelPointer(channel),
@@ -255,6 +272,10 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     midiTapForOp_.assign(numOps, nullptr);
     paramWindowForOp_.assign(numOps, ParamTable::DeviceWindow{});
     mixerParamForOp_.assign(numOps, OpMixerParams{});
+    modSourceForOp_.assign(numOps, std::span<const int>{});
+    triggerForOp_.assign(numOps, TriggerDetector{});
+    inMidiPrefix_.assign(numOps, 0);
+    midiPrefix_.clear();
     paramLayout_ = 0;
 
     // The parameters of the table this plan is published with (#2117). Sized
@@ -299,9 +320,39 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 key.kind = ParamKey::Kind::SendLevel;
                 key.index = op.key.index;
                 mixerParamForOp_[i].gain = params->find(key);
+            } else if (op.kind == OpKind::ModSource) {
+                // The far end of the edge the compiler emitted, resolved once
+                // here. Both compilers worked the routing out from the same
+                // rule (ModSources.hpp), so a tap with nothing on the far end
+                // is the two having drifted rather than a project that has one.
+                modSourceForOp_[i] = mods_.listenersOf(op.key.trackId);
             }
         }
     }
+
+    // Which ops the block can render before it resolves anything. In plan
+    // order, which is dependency order, so a producer is decided before the ops
+    // reading it are asked about (PlanExecutor.hpp says what this buys).
+    for (std::size_t i = 0; i < numOps; ++i) {
+        const auto& op = plan.ops[i];
+
+        const bool onlyMidi =
+            !op.outputs.empty() && std::ranges::all_of(op.outputs, [](SignalKind kind) {
+                return kind == SignalKind::Midi;
+            });
+
+        const bool fedByPrefix = std::ranges::all_of(op.inputs, [&](const PortRef& input) {
+            return !input.valid() || inMidiPrefix_[static_cast<std::size_t>(input.op)] != 0;
+        });
+
+        if (!onlyMidi || !fedByPrefix)
+            continue;
+
+        inMidiPrefix_[i] = 1;
+        midiPrefix_.push_back(static_cast<OpId>(i));
+    }
+
+    detectMono_.assign(static_cast<std::size_t>(std::max(context.maxBlockSize, 0)), 0.0f);
 
     const auto describe = [&plan](std::size_t index) {
         return "op " + std::to_string(index) + " (" + toString(plan.ops[index].kind) + " " +
@@ -683,7 +734,159 @@ PlanExecutor::BlockStart PlanExecutor::beginBlock(const PlanValues& values,
     return start;
 }
 
+void PlanExecutor::settleBlockTable(const PlanValues& values) {
+    // Null on a block whose values do not fit, which is the same block that
+    // resolves nothing: a modifier addressed through the wrong table is
+    // another modifier, and half a table is worse than none.
+    blockTable_ = appliesValues(values) && fitsParameters(values) ? values.params.get() : nullptr;
+}
+
+void PlanExecutor::renderMidiPrefix(const PlanValues& values, const BlockInfo& block) {
+    settleBlockTable(values);
+
+    if (plan_ == nullptr)
+        return;
+
+    // The ops themselves. Nothing here reads a parameter, so a block whose
+    // values do not apply renders exactly the same MIDI: what an op of this set
+    // reads is a clip, an input queue, or another op of this set.
+    const bool applyValues = appliesValues(values);
+    for (const auto id : midiPrefix_)
+        renderOp(id, applyValues ? values.ops[static_cast<std::size_t>(id)] : kUnityValue, block,
+                 silence_);
+
+    if (blockTable_ == nullptr)
+        return;
+
+    // And then the notes in them, spent before the resolve rather than after,
+    // which is the whole point of running the prefix early: a modifier gated by
+    // a note hears it in the block the note is in.
+    for (std::size_t i = 0; i < plan_->ops.size(); ++i) {
+        const auto& op = plan_->ops[i];
+        if (op.kind != OpKind::ModSource || modSourceForOp_[i].empty())
+            continue;
+
+        const auto& midi = op.inputs[1];
+        if (midi.valid() && inMidiPrefix_[static_cast<std::size_t>(midi.op)] != 0)
+            feedNoteTriggers(i, midiIn(midi));
+    }
+}
+
+void PlanExecutor::feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi) {
+    if (midi.isEmpty())
+        return;
+
+    for (const auto metadata : midi) {
+        const auto message = metadata.getMessage();
+
+        // Note off before note on, because a message can be neither and most
+        // are: this runs over every event on a track's chain-head stream.
+        const bool on = message.isNoteOn();
+        const bool off = !on && message.isNoteOff(true);
+        const bool all = !on && !off && (message.isAllNotesOff() || message.isAllSoundOff());
+        if (!on && !off && !all)
+            continue;
+
+        for (const auto index : modSourceForOp_[op]) {
+            if (mods_.listensFor(index, *blockTable_) != ModListen::Midi)
+                continue;
+
+            if (on)
+                mods_.noteOn(index, *blockTable_);
+            else if (off)
+                mods_.noteOff(index, *blockTable_);
+            else
+                mods_.allNotesOff(index, *blockTable_);
+        }
+    }
+}
+
+void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
+    const auto i = static_cast<std::size_t>(id);
+    const auto& op = plan_->ops[i];
+
+    if (blockTable_ == nullptr || modSourceForOp_[i].empty())
+        return;
+
+    // The notes, where the prefix did not already spend them. A source whose
+    // MIDI a device makes is not in the prefix, so its notes are read here and
+    // land a block later, which is the same lag an audio trigger has.
+    if (const auto& midi = op.inputs[1];
+        midi.valid() && inMidiPrefix_[static_cast<std::size_t>(midi.op)] == 0)
+        feedNoteTriggers(i, midiIn(midi));
+
+    const auto& audio = op.inputs[0];
+    if (!audio.valid())
+        return;
+
+    const auto numSamples = std::min(block.numSamples, static_cast<int>(detectMono_.size()));
+    if (numSamples <= 0)
+        return;
+
+    // Downmixed to mono by averaging the channels, which is what the fork's tap
+    // hands its followers. A sum would make a stereo source read six decibels
+    // louder than the same material in mono.
+    auto in = audioIn(audio, numSamples);
+    const auto channels = static_cast<int>(in.getNumChannels());
+    const auto scale = channels > 0 ? 1.0f / static_cast<float>(channels) : 0.0f;
+
+    for (int s = 0; s < numSamples; ++s) {
+        float sum = 0.0f;
+        for (int c = 0; c < channels; ++c)
+            sum += in.getSample(c, s);
+        detectMono_[static_cast<std::size_t>(s)] = sum * scale;
+    }
+
+    const auto mono =
+        std::span<const float>{detectMono_}.first(static_cast<std::size_t>(numSamples));
+
+    // The level a trigger keys off, which is the block's peak rather than the
+    // mono average: the fork's monitor takes the loudest channel's magnitude
+    // and a duck should follow whichever side is loud.
+    float peak = 0.0f;
+    for (int c = 0; c < channels; ++c)
+        for (int s = 0; s < numSamples; ++s)
+            peak = std::max(peak, std::abs(in.getSample(c, s)));
+
+    auto& detector = triggerForOp_[i];
+
+    // One envelope per source rather than one per modifier, and the constants
+    // are the fork's: a fast attack so a transient opens the gate, a moderate
+    // release so it does not chatter, and a threshold well above the noise a
+    // silent track leaves behind. Per block, from the block's own length, so an
+    // offline render detects the same hits as playback does.
+    const auto blockMs = 1000.0 * numSamples / std::max(preparedContext().sampleRate, 1.0);
+    const auto attack = 1.0f - std::exp(static_cast<float>(-blockMs / kTriggerAttackMs));
+    const auto release = 1.0f - std::exp(static_cast<float>(-blockMs / kTriggerReleaseMs));
+
+    detector.envelope += (peak > detector.envelope ? attack : release) * (peak - detector.envelope);
+
+    const bool rising = !detector.open && detector.envelope > kTriggerThreshold;
+    const bool falling = detector.open && detector.envelope < kTriggerThreshold;
+    if (rising || falling)
+        detector.open = rising;
+
+    for (const auto index : modSourceForOp_[i]) {
+        if (mods_.listensFor(index, *blockTable_) != ModListen::Audio)
+            continue;
+
+        // A follower wants the samples; a trigger wants the edge. Both listen
+        // to the same track and neither is the other's fallback.
+        if (blockTable_->modifiers[static_cast<std::size_t>(index)].kind == ModKind::Follower) {
+            mods_.detectSource(index, *blockTable_, mono);
+            continue;
+        }
+
+        if (rising)
+            mods_.trigger(index, *blockTable_);
+        else if (falling)
+            mods_.setGated(index, *blockTable_, true);
+    }
+}
+
 void PlanExecutor::resolveParameters(const PlanValues& values, const BlockInfo& block) {
+    settleBlockTable(values);
+
     // Two shapes have to match, and neither is something appliesValues can
     // see: it compares the plan's fingerprint and its op count, and a link
     // edit changes neither. A macro gaining its first link grows the table by
@@ -696,26 +899,40 @@ void PlanExecutor::resolveParameters(const PlanValues& values, const BlockInfo& 
     // gets a window of nothing, which is what it had before a table was ever
     // published, and the session escalates a publish of this shape into a
     // structural one so the emptiness lasts a block rather than for ever.
-    if (!appliesValues(values) || values.params == nullptr || !fitsParameters(values)) {
+    if (blockTable_ == nullptr) {
         paramValues_.beginBlock(block.numSamples);
         return;
     }
 
-    resolveParams(*values.params, paramValues_, paramScratch_, paramSegments_, block, &mods_);
+    resolveParams(*blockTable_, paramValues_, paramScratch_, paramSegments_, block, &mods_);
 }
 
 void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,
                            juce::AudioBuffer<float>& output) {
     const auto start = beginBlock(values, requestedBlock, output);
-    resolveParameters(values, start.block);
-    if (!start.render)
+    if (!start.render) {
+        resolveParameters(values, start.block);
         return;
+    }
+
+    // The MIDI a block has before it has any audio, and the triggers in it.
+    // First, so that a note-gated modifier is resolved with the note that
+    // arrived in this block rather than with the one before it.
+    renderMidiPrefix(values, start.block);
+
+    resolveParameters(values, start.block);
 
     // In order, which is a schedule: ops are in dependency order, so everything
-    // an op reads has already run by the time the walk reaches it.
-    for (std::size_t i = 0; i < plan_->ops.size(); ++i)
+    // an op reads has already run by the time the walk reaches it. The prefix
+    // is skipped rather than re-run: rendering a live input source twice would
+    // consume the queue twice and drop half the notes.
+    for (std::size_t i = 0; i < plan_->ops.size(); ++i) {
+        if (inMidiPrefix_[i] != 0)
+            continue;
+
         renderOp(static_cast<OpId>(i), start.applyValues ? values.ops[i] : kUnityValue, start.block,
                  output);
+    }
 }
 
 OpValue PlanExecutor::mixerValueFor(std::size_t op, const OpValue& published) const {
@@ -966,6 +1183,10 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 tap->write(out, numSamples);
             break;
         }
+
+        case OpKind::ModSource:
+            renderModSource(id, block);
+            break;
 
         case OpKind::Output: {
             if (value.silent || !op.inputs[0].valid())

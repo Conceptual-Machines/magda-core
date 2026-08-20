@@ -296,27 +296,50 @@ float modifierValue(const ParamTable& table, const ModRuntime* mods, int index) 
                            : table.modifiers[static_cast<std::size_t>(index)].value;
 }
 
-/// The rate modifier @p index runs at this block: what its own settings say,
-/// unless something reaches its Rate parameter, which resolved earlier in the
-/// order precisely so this can read it.
+/// The rate one modifier carries, and whether that rate is a musical division.
+/// Two kinds have one; an envelope's stage lengths and a follower's time
+/// constants are times rather than a frequency, and the lane that would drive
+/// them does not exist.
+struct ModRateLane {
+    LfoRate rate;
+    bool tempoSync = false;
+    bool exists = false;
+};
+
+ModRateLane rateLaneOf(const ParamModifier& modifier) {
+    switch (modifier.kind) {
+        case ModKind::Lfo:
+            return {modifier.lfo.rate, modifier.lfo.tempoSync, true};
+        case ModKind::Random:
+            return {modifier.random.rate, modifier.random.tempoSync, true};
+        case ModKind::Adsr:
+        case ModKind::Follower:
+            return {};
+    }
+    return {};
+}
+
+/// The rate a modifier runs at this block: what its own settings say, unless
+/// something reaches its Rate parameter, which resolved earlier in the order
+/// precisely so this can read it.
 LfoRate rateFor(const ResolvedParams& out, const ParamModifier& modifier) {
-    auto rate = modifier.lfo.rate;
-    if (modifier.rate == INVALID_PARAM_ID)
-        return rate;
+    auto lane = rateLaneOf(modifier);
+    if (!lane.exists || modifier.rate == INVALID_PARAM_ID)
+        return lane.rate;
 
     const auto resolved = out[modifier.rate];
     if (resolved.empty())
-        return rate;
+        return lane.rate;
 
     // One lane, two meanings, decided by the same flag that decides what the
     // period is: a frequency when the modifier is free, and a division when it
     // is synced.
-    if (modifier.lfo.tempoSync)
-        rate.rateType = rateTypeFromLaneValue(resolved.value());
+    if (lane.tempoSync)
+        lane.rate.rateType = rateTypeFromLaneValue(resolved.value());
     else
-        rate.hz = resolved.value();
+        lane.rate.hz = resolved.value();
 
-    return rate;
+    return lane.rate;
 }
 
 void resolveOneParam(const ParamTable& table, ResolvedParams& out, const ModRuntime* mods,

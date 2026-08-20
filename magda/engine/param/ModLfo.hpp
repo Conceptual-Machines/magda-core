@@ -272,6 +272,30 @@ struct ModTiming {
 ModTiming modTimingFor(const BlockInfo& block, double sampleRate);
 
 /**
+ * @brief Where @p block opens, counted in bars.
+ *
+ * The bar grid rather than a beat count divided by a bar's length, because the
+ * two part company at a signature change: a change always starts a bar
+ * (TempoMap.hpp), so two bars of four four followed by six eight puts a bar
+ * line at beat eight, and eight divided by the three beats a six eight bar
+ * lasts is two and two thirds. A modifier reading that opens every six eight
+ * bar two thirds of the way through its cycle and stays there.
+ *
+ * Whole bars plus the fraction of this one that has gone by, which restarts at
+ * the change and carries the denominator with it, since the beat inside a bar
+ * is counted in the signature's own note value.
+ *
+ * Without a map there are no changes to survive, and the closed form is the
+ * same number: a hand-assembled block gets the arithmetic the grid would have
+ * given it.
+ *
+ * Shared because every timeline-locked modifier asks it, not only the LFO: a
+ * synced random walk that stepped on a different grid from the LFO beside it
+ * would be two answers to one question.
+ */
+double modBarPosition(const BlockInfo& block, const ModTiming& timing);
+
+/**
  * @brief How much of a bar one rate type is.
  *
  * The fork's own table (ModifierCommon::getBarFraction), because a synced LFO's
