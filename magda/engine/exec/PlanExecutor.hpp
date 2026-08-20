@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <memory>
+#include <set>
 #include <span>
 #include <string>
 #include <vector>
@@ -321,6 +322,18 @@ class PlanExecutor {
     /// gate the source never changed.
     int carriedTriggerDetectors() const {
         return carriedTriggerDetectors_;
+    }
+
+    /// Detectors no two taps share. Every modulation tap owns its own level and
+    /// gate, so this is the number of taps: a track read at both its points has
+    /// two, and one detector between them would let a level at one point work
+    /// the gate at the other.
+    int distinctTriggerDetectors() const {
+        std::set<const TriggerDetector*> seen;
+        for (const auto& detector : triggerForOp_)
+            if (detector != nullptr)
+                seen.insert(detector.get());
+        return static_cast<int>(seen.size());
     }
 
     /// Samples the prepared plan's output is delayed by: what the devices along

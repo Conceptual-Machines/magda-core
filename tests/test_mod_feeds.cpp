@@ -404,6 +404,48 @@ TEST_CASE("A cross-track modifier is triggered by the notes it listens to",
     CHECK(session.render() == approx(1.0f));
 }
 
+TEST_CASE("A track's two taps never share a detector", "[engine][mod][feeds]") {
+    // A track read at both its points has two taps and two detectors. One
+    // between them would let a level at the far end work the gate at the near
+    // one, which is a duck firing on the wrong signal, and it survives a
+    // republish because the carry is what would alias them.
+    auto source = makeTrack(2);
+    source.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(9)));
+
+    auto listener = makeTrack(1);
+    listener.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(7)));
+
+    auto& device = magda::getDevice(listener.chain.fxChainElements.front());
+    device.sidechain.type = SidechainConfig::Type::Audio;
+    device.sidechain.sourceTrackId = 2;
+    device.mods = createDefaultMods(2);
+    device.mods[0].setType(ModType::LFO);
+    device.mods[0].triggerMode = LFOTriggerMode::Audio;
+    device.mods[1].setType(ModType::Follower);
+
+    const std::vector<TrackInfo> tracks{listener, source};
+    const auto master = makeMaster();
+    const auto plan = compileRenderPlan(tracks, master);
+
+    magda::engine::PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, master, values);
+    REQUIRE(values.params != nullptr);
+
+    const magda::engine::RenderContext context{kSampleRate, kBlock, 2};
+    magda::engine::PlanBindings bindings;
+
+    magda::engine::PlanExecutor first;
+    first.prepare(plan, bindings, context, nullptr, values.params.get());
+    REQUIRE(first.distinctTriggerDetectors() == 2);
+
+    // And still two after taking the previous epoch's over, which is where a
+    // carry keyed by the track alone would collapse them onto one.
+    magda::engine::PlanExecutor second;
+    second.prepare(plan, bindings, context, &first, values.params.get());
+    CHECK(second.carriedTriggerDetectors() == 2);
+    CHECK(second.distinctTriggerDetectors() == 2);
+}
+
 TEST_CASE("A modulation tap keeps its detector across a prepare", "[engine][mod][feeds]") {
     // A structural publish during playback must not zero a tap's envelope. If
     // it did, a source above the threshold at that moment would read as a

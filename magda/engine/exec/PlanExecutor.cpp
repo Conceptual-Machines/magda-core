@@ -287,11 +287,16 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     // by exactly that render. Copying it here would be a read racing a write,
     // and would carry a half-updated detector, which is the spurious edge the
     // carry exists to prevent.
-    std::map<TrackId, std::shared_ptr<TriggerDetector>> carriedTriggers;
+    // Keyed by the tap rather than by the track, because a track has two of
+    // them: one where its triggers key off and one where its followers listen.
+    // The track alone would collapse the pair onto one entry, and the plan
+    // taking that over would run both taps through a single detector, so a
+    // level at one point would open and shut the gate at the other.
+    std::map<std::pair<TrackId, int>, std::shared_ptr<TriggerDetector>> carriedTriggers;
     if (previous != nullptr && previous != this && previous->plan_ != nullptr)
         for (std::size_t i = 0; i < previous->plan_->ops.size(); ++i)
-            if (previous->plan_->ops[i].kind == OpKind::ModSource)
-                carriedTriggers[previous->plan_->ops[i].key.trackId] = previous->triggerForOp_[i];
+            if (const auto& op = previous->plan_->ops[i]; op.kind == OpKind::ModSource)
+                carriedTriggers[{op.key.trackId, op.key.index}] = previous->triggerForOp_[i];
 
     triggerForOp_.assign(numOps, nullptr);
     carriedTriggerDetectors_ = 0;
@@ -299,7 +304,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         if (plan.ops[i].kind != OpKind::ModSource)
             continue;
 
-        if (const auto found = carriedTriggers.find(plan.ops[i].key.trackId);
+        if (const auto found =
+                carriedTriggers.find({plan.ops[i].key.trackId, plan.ops[i].key.index});
             found != carriedTriggers.end() && found->second != nullptr) {
             triggerForOp_[i] = found->second;
             ++carriedTriggerDetectors_;
