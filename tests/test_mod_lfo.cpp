@@ -14,6 +14,7 @@
 #include "param/ParamResolve.hpp"
 #include "param/ParamTableCompiler.hpp"
 #include "plan/PlanCompiler.hpp"
+#include "transport/TempoMap.hpp"
 
 /**
  * @file test_mod_lfo.cpp
@@ -44,6 +45,7 @@ using magda::engine::ModKind;
 using magda::engine::ModRuntime;
 using magda::engine::ModSync;
 using magda::engine::ModTiming;
+using magda::engine::modTimingFor;
 using magda::engine::ParamKey;
 using magda::engine::ParamSegment;
 using magda::engine::ParamStep;
@@ -367,6 +369,38 @@ TEST_CASE("A tempo-synced LFO's period is a fraction of a bar", "[engine][mod][l
 
         CHECK(step(state, settings, blockAt(1.5, 1.0, 512), {}, timing(120.0, 3, 4)) ==
               approx(0.5f));
+    }
+
+    SECTION("the bar grid survives a signature change") {
+        // A change always starts a bar, so two bars of four four followed by
+        // six eight puts a bar line at beat eight. Counting beats and dividing
+        // by a bar's length gives 8/3 there, which would open every six eight
+        // bar two thirds of the way through the cycle and stay that way.
+        const magda::engine::TempoMap map({{0.0, 120.0}}, {{0.0, 4, 4}, {8.0, 6, 8}});
+
+        LfoSettings settings;
+        settings.wave = LFOWaveform::Saw;
+        settings.sync = ModSync::Transport;
+        settings.tempoSync = true;
+        settings.rate.rateType = static_cast<int>(ModRateType::Bar);
+
+        const auto atBeat = [&](double beat) {
+            auto block = blockAt(beat, 0.5, 512);
+            block.tempo = &map;
+            LfoState state;
+            return step(state, settings, block, {}, modTimingFor(block, kSampleRate));
+        };
+
+        // Every bar line opens a cycle: the two four four bars, then the six
+        // eight ones, which are three quarter notes each.
+        CHECK(atBeat(0.0) == approx(0.0f));
+        CHECK(atBeat(4.0) == approx(0.0f));
+        CHECK(atBeat(8.0) == approx(0.0f));
+        CHECK(atBeat(11.0) == approx(0.0f));
+
+        // And halfway through one is halfway through the cycle.
+        CHECK(atBeat(2.0) == approx(0.5f));
+        CHECK(atBeat(9.5) == approx(0.5f));
     }
 
     SECTION("in six eight a bar is three beats, not six") {

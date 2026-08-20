@@ -30,6 +30,34 @@ float wrapPhase(float phase) {
     return phase >= 1.0f ? 0.0f : phase;
 }
 
+/**
+ * @brief Where the block opens, counted in bars.
+ *
+ * The bar grid rather than a beat count divided by a bar's length, because the
+ * two part company at a signature change: a change always starts a bar
+ * (TempoMap.hpp), so two bars of four four followed by six eight puts a bar
+ * line at beat eight, and eight divided by the three beats a six eight bar
+ * lasts is two and two thirds. A modifier reading that opens every six eight
+ * bar two thirds of the way through its cycle and stays there.
+ *
+ * Whole bars plus the fraction of this one that has gone by, which restarts at
+ * the change and carries the denominator with it, since the beat inside a bar
+ * is counted in the signature's own note value.
+ *
+ * Without a map there are no changes to survive, and the closed form is the
+ * same number: a hand-assembled block gets the arithmetic the grid would have
+ * given it.
+ */
+double barPositionOf(const BlockInfo& block, const ModTiming& timing) {
+    if (block.tempo != nullptr) {
+        const auto grid = block.tempo->barsAndBeatsAt(block.startBeat);
+        return grid.bar + grid.beat / std::max(grid.numerator, 1);
+    }
+
+    const auto barBeats = 4.0 * timing.numerator / timing.denominator;
+    return block.startBeat / std::max(barBeats, 1.0e-6);
+}
+
 bool loopsInRegion(const LfoSettings& settings) {
     // A drawn curve only. The loop region is MSEG's, and the built-in
     // waveforms have no intro to play once before settling into one.
@@ -187,8 +215,9 @@ float advanceLfo(LfoState& state, const LfoSettings& settings,
     // how many blocks have gone by, which is what puts two of them at one rate
     // in phase with each other and with the bar however playback got there.
     if (settings.sync == ModSync::Transport) {
-        state.cycles =
-            settings.tempoSync ? block.startBeat / beatsPerCycle : block.startSeconds * hz;
+        state.cycles = settings.tempoSync
+                           ? barPositionOf(block, timing) / barFractionOf(settings.rate.rateType)
+                           : block.startSeconds * hz;
     }
 
     const double cycles = state.cycles;
