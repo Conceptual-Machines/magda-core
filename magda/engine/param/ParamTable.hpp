@@ -101,12 +101,19 @@ struct ParamModifier {
     FollowerSettings follower;
 
     /**
-     * @brief The track whose audio this modifier follows, or INVALID_TRACK_ID.
+     * @brief The track whose signal this modifier listens to, or
+     *        INVALID_TRACK_ID.
      *
-     * Only a follower has one, and only a follower whose scope names a source:
-     * everything else modulates without listening. Carried on the modifier
-     * rather than in the plan because it is not topology, and read by the
-     * executor to decide whose rendered block the detector is handed.
+     * Set for every modifier that listens at all: a follower, which is nothing
+     * but its source, and a MIDI- or audio-triggered one, which waits on that
+     * track's notes or its level. A free-running or timeline-locked modifier
+     * listens to nothing and says so by having none of this, which is what
+     * keeps a plan from carrying a track's signal nobody reads.
+     *
+     * Which track it is is ModSources.hpp's rule, called by both compilers.
+     * Carried on the modifier rather than in the plan because it is not
+     * topology, and read by the executor to decide who is on the far end of
+     * each modulation tap.
      */
     magda::TrackId source = magda::INVALID_TRACK_ID;
 

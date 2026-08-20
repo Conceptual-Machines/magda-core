@@ -315,6 +315,14 @@ class PlanExecutor {
         return boundMeterCount_;
     }
 
+    /// Modulation taps that took over the detector of the executor they
+    /// replaced rather than starting again. What that buys is the same thing
+    /// ModRuntime's carry buys: an edit during playback does not restate a
+    /// gate the source never changed.
+    int carriedTriggerDetectors() const {
+        return carriedTriggerDetectors_;
+    }
+
     /// Samples the prepared plan's output is delayed by: what the devices along
     /// its longest path to the output report between them.
     int latencySamples() const {
@@ -596,6 +604,8 @@ class PlanExecutor {
 
     /// Per ModSource op, indexed the same way the ops are.
     std::vector<TriggerDetector> triggerForOp_;
+
+    int carriedTriggerDetectors_ = 0;
 
     /**
      * @brief The table this block resolved against, or null.

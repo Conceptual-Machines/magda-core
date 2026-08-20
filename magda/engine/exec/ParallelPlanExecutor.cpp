@@ -56,6 +56,7 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
 
     plan_ = nullptr;
     outputOps_.clear();
+    modSourceOps_.clear();
 
     auto messages = core_.prepare(plan, bindings, context,
                                   previous != nullptr ? &previous->core_ : nullptr, params);
@@ -85,9 +86,12 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
     pending_ = std::vector<std::atomic<std::uint16_t>>(numOps);
     nextReady_ = std::vector<std::atomic<OpId>>(numOps);
 
-    for (std::size_t i = 0; i < numOps; ++i)
+    for (std::size_t i = 0; i < numOps; ++i) {
         if (plan.ops[i].kind == OpKind::Output)
             outputOps_.push_back(static_cast<OpId>(i));
+        else if (plan.ops[i].kind == OpKind::ModSource)
+            modSourceOps_.push_back(static_cast<OpId>(i));
+    }
 
     plan_ = &plan;
     return messages;
@@ -124,11 +128,17 @@ OpId ParallelPlanExecutor::pop() {
 }
 
 OpId ParallelPlanExecutor::runOp(OpId op) {
-    // Output ops are the exception the whole schedule is written around: they
-    // add into a buffer they all share, so they are left for the thread that
-    // drove the block to run in plan order. Counted here anyway, because what
-    // waits on what is the plan's business and not this decision's.
-    if (plan_->ops[static_cast<std::size_t>(op)].kind != OpKind::Output && !core_.inMidiPrefix(op))
+    // Two kinds are left for the thread that drove the block, and both for the
+    // same reason: each shares a buffer with the others of its kind rather than
+    // owning one. Output ops add into the one buffer reaching the hardware, and
+    // modulation taps detect through one scratch buffer apiece on the executor
+    // and on the runtime, so two taps running at once, which two listened-to
+    // tracks with disjoint subgraphs make schedulable, would corrupt each
+    // other's detection. Counted here anyway, because what waits on what is the
+    // plan's business and not this decision's; neither can stall the block,
+    // because nothing consumes either.
+    const auto kind = plan_->ops[static_cast<std::size_t>(op)].kind;
+    if (kind != OpKind::Output && kind != OpKind::ModSource && !core_.inMidiPrefix(op))
         core_.renderOp(op, valueOf(op), block_, *output_);
 
     OpId carryOn = INVALID_OP_ID;
@@ -232,8 +242,11 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
     }
 
     // The graph has drained, so this thread is the only one with anything to
-    // do. In plan order: the sum reaching the hardware is compiled, like every
-    // other sum in the plan.
+    // do. In plan order: the taps detect one at a time, and the sum reaching
+    // the hardware is compiled like every other sum in the plan.
+    for (const auto op : modSourceOps_)
+        core_.renderOp(op, valueOf(op), block_, output);
+
     for (const auto op : outputOps_)
         core_.renderOp(op, valueOf(op), block_, output);
 }

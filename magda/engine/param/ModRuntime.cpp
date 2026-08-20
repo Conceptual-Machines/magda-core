@@ -49,7 +49,7 @@ bool gatedByTrigger(const ParamModifier& modifier) {
 /// Whether this modifier belongs to another track's detector, and therefore
 /// hears nothing from where it lives. One flag under four names, because each
 /// kind's settings carry their own copy of what the model said.
-bool drivenFromElsewhere(const ParamModifier& modifier) {
+bool isDrivenFromElsewhere(const ParamModifier& modifier) {
     switch (modifier.kind) {
         case ModKind::Lfo:
             return modifier.lfo.skipNativeResync;
@@ -218,6 +218,13 @@ std::span<const int> ModRuntime::listenersOf(magda::TrackId track) const {
     return std::span<const int>{listeners_}.subspan(first, last - first);
 }
 
+bool ModRuntime::drivenFromElsewhere(int index, const ParamTable& table) const {
+    if (index < 0 || index >= static_cast<int>(table.modifiers.size()))
+        return false;
+
+    return isDrivenFromElsewhere(table.modifiers[static_cast<std::size_t>(index)]);
+}
+
 ModListen ModRuntime::listensFor(int index, const ParamTable& table) const {
     if (index < 0 || index >= static_cast<int>(table.modifiers.size()))
         return ModListen::Nothing;
@@ -372,7 +379,7 @@ void ModRuntime::noteOn(int index, const ParamTable& table) {
     // The fork suppresses the two separately, because its flags are set apart
     // and the combination is prevented rather than refused. Here the policy is
     // the guard: a modifier driven from elsewhere does not hear this at all.
-    if (drivenFromElsewhere(modifier))
+    if (isDrivenFromElsewhere(modifier))
         return;
 
     // From where it is rather than from zero. A gap is what a cross-track
@@ -394,7 +401,7 @@ void ModRuntime::noteOff(int index, const ParamTable& table) {
         return;
 
     const auto& modifier = table.modifiers[static_cast<std::size_t>(index)];
-    if (drivenFromElsewhere(modifier) || !gatedByTrigger(modifier))
+    if (isDrivenFromElsewhere(modifier) || !gatedByTrigger(modifier))
         return;
 
     auto* held = heldNotesOf(*state, modifier);
@@ -412,7 +419,7 @@ void ModRuntime::allNotesOff(int index, const ParamTable& table) {
         return;
 
     const auto& modifier = table.modifiers[static_cast<std::size_t>(index)];
-    if (drivenFromElsewhere(modifier) || !gatedByTrigger(modifier))
+    if (isDrivenFromElsewhere(modifier) || !gatedByTrigger(modifier))
         return;
 
     if (auto* held = heldNotesOf(*state, modifier))

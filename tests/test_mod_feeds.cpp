@@ -331,3 +331,102 @@ TEST_CASE("A note only reaches the modifiers waiting for one", "[engine][mod][fe
     REQUIRE(listeners.size() == 1);
     CHECK(listeners.front() == 0);
 }
+
+TEST_CASE("A cross-track modifier is triggered by the notes it listens to",
+          "[engine][mod][feeds]") {
+    // The two listeners a tap feeds take a trigger through different doors, and
+    // the cross-track one has only the trigger. Its note-counting path refuses
+    // it by design, so an executor that fed it through noteOn alone would leave
+    // the MIDI half of every rack and device sidechain dead.
+    auto source = makeTrack(2);
+
+    RackInfo rack;
+    rack.id = 4;
+    rack.sidechain.type = SidechainConfig::Type::MIDI;
+    rack.sidechain.sourceTrackId = 2;
+    rack.mods = createDefaultMods(1);
+    rack.mods[0].type = ModType::Envelope;
+    rack.mods[0].triggerMode = LFOTriggerMode::MIDI;
+    rack.mods[0].envAttackMs = 0.0f;
+    rack.mods[0].envDecayMs = 0.0f;
+    rack.mods[0].envSustain = 1.0f;
+    rack.mods[0].envReleaseMs = 0.0f;
+    rack.mods[0].links.push_back(ModLink{
+        ControlTarget::pluginParam(ChainNodePath::chainDevice(1, 4, 10, 7), 0), 1.0f, false, true});
+
+    ChainInfo chain;
+    chain.id = 10;
+    chain.elements.push_back(makeDeviceElement(makeDevice(7)));
+    rack.chains.push_back(std::move(chain));
+
+    auto destination = makeTrack(1);
+    destination.volume = 1.0f;
+    destination.pan = 0.0f;
+    destination.chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+    source.recordArmed = true;
+    source.inputMonitor = InputMonitorMode::In;
+    source.midiInputDevice = "test";
+
+    ScriptedMidi midi;
+    Session session({destination, source}, &midi);
+    REQUIRE(session.published);
+
+    // The runtime agrees it is the cross-track kind, which is what selects the
+    // door: the same answer the executor asks for.
+    const auto master = makeMaster();
+    const std::vector<TrackInfo> tracks{destination, source};
+    const auto table = compileParamTable(compileRenderPlan(tracks, master), tracks, master, {});
+    REQUIRE(table.modifiers.size() == 1);
+
+    ModRuntime probe;
+    probe.prepare(table, magda::engine::RenderContext{kSampleRate, kBlock, 2});
+    CHECK(probe.drivenFromElsewhere(0, table));
+    CHECK(probe.listensFor(0, table) == magda::engine::ModListen::Midi);
+
+    CHECK(session.render() == approx(0.0f));
+
+    // The note reaches the trigger in the block it arrived in, and what that
+    // block publishes is the gap a cross-track trigger asks for: one block of
+    // nothing so the device sees a transition rather than a continuation. The
+    // fork's triggerNoteOn does the same with its forceZeroValue.
+    midi.pending.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    CHECK(session.render() == approx(0.0f));
+
+    // Then the attack, which has no time in it, so the envelope is up.
+    CHECK(session.render() == approx(1.0f));
+
+    // And the note lifting does not shut it: the fork leaves the gate alone on
+    // note-off so the modifier runs its full cycle after a hit.
+    midi.pending.addEvent(juce::MidiMessage::noteOff(1, 60), 0);
+    CHECK(session.render() == approx(1.0f));
+    CHECK(session.render() == approx(1.0f));
+}
+
+TEST_CASE("A modulation tap keeps its detector across a prepare", "[engine][mod][feeds]") {
+    // A structural publish during playback must not zero a tap's envelope. If
+    // it did, a source above the threshold at that moment would read as a
+    // rising edge on the next block and fire a trigger nothing played, forced
+    // gap included, so every link edit would be an audible blip on a live
+    // sidechain. The fork's monitor survives the same edits with its own level
+    // and gate intact, and this carries on the same terms ModRuntime carries a
+    // phase.
+    auto tracks = std::vector{trackWithModifier(ModType::LFO, LFOTriggerMode::Audio)};
+    const auto master = makeMaster();
+    const auto plan = compileRenderPlan(tracks, master);
+
+    magda::engine::PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, master, values);
+    REQUIRE(values.params != nullptr);
+
+    const magda::engine::RenderContext context{kSampleRate, kBlock, 2};
+    magda::engine::PlanBindings bindings;
+
+    magda::engine::PlanExecutor first;
+    first.prepare(plan, bindings, context, nullptr, values.params.get());
+    CHECK(first.carriedTriggerDetectors() == 0);
+
+    magda::engine::PlanExecutor second;
+    second.prepare(plan, bindings, context, &first, values.params.get());
+    CHECK(second.carriedTriggerDetectors() == 1);
+}

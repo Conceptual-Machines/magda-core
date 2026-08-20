@@ -172,6 +172,22 @@ class ModRuntime {
     /// three lists that could disagree about who is on which.
     ModListen listensFor(int index, const ParamTable& table) const;
 
+    /**
+     * @brief Whether modifier @p index is driven by a track other than its own.
+     *
+     * The two kinds of listener a source's tap feeds, and they take a trigger
+     * through different doors. One living on the source hears its notes as its
+     * own: it counts them, and the gate shuts when the last one lifts. One
+     * living somewhere else is following that track rather than playing it, so
+     * the note-counting path refuses it outright and @ref trigger is the way
+     * in, which is the fork's arrangement too (SidechainMonitorPlugin fires
+     * triggerSidechain and does nothing at all on note-off).
+     *
+     * Exposed because the executor holds the tap and cannot otherwise tell the
+     * two apart.
+     */
+    bool drivenFromElsewhere(int index, const ParamTable& table) const;
+
     /// What modifier @p index published this block, or the model's own value
     /// for one nothing has advanced.
     float value(int index) const;

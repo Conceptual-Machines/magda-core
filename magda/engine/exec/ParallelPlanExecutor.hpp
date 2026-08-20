@@ -189,6 +189,12 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// schedule deciding the arithmetic.
     std::vector<OpId> outputOps_;
 
+    /// Modulation taps, rendered after the drain for the reason the outputs
+    /// are: each detects through a scratch buffer shared with every other tap,
+    /// and two of them are schedulable at once whenever their source tracks
+    /// have disjoint subgraphs.
+    std::vector<OpId> modSourceOps_;
+
     /// Producers each op is still waiting for. The plan's dependencyCounts,
     /// copied in at the top of every block.
     std::vector<std::atomic<std::uint16_t>> pending_;

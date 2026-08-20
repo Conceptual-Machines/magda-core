@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <set>
 
 namespace magda::engine {
@@ -273,7 +274,31 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     paramWindowForOp_.assign(numOps, ParamTable::DeviceWindow{});
     mixerParamForOp_.assign(numOps, OpMixerParams{});
     modSourceForOp_.assign(numOps, std::span<const int>{});
+
+    // The detectors of the epoch being replaced, by the track each watches.
+    // A modulation tap's envelope is state the way an LFO's phase is state, and
+    // a structural republish during playback must not zero it: a source above
+    // the threshold at that moment would read as a rising edge on the next
+    // block and fire a trigger nothing played. The fork's monitor plugin
+    // survives the same edits with its own level and gate intact.
+    std::map<TrackId, TriggerDetector> carriedTriggers;
+    if (previous != nullptr)
+        for (std::size_t i = 0; i < previous->plan_->ops.size(); ++i)
+            if (previous->plan_->ops[i].kind == OpKind::ModSource)
+                carriedTriggers[previous->plan_->ops[i].key.trackId] = previous->triggerForOp_[i];
+
     triggerForOp_.assign(numOps, TriggerDetector{});
+    carriedTriggerDetectors_ = 0;
+    for (std::size_t i = 0; i < numOps; ++i) {
+        if (plan.ops[i].kind != OpKind::ModSource)
+            continue;
+        if (const auto found = carriedTriggers.find(plan.ops[i].key.trackId);
+            found != carriedTriggers.end()) {
+            triggerForOp_[i] = found->second;
+            ++carriedTriggerDetectors_;
+        }
+    }
+
     inMidiPrefix_.assign(numOps, 0);
     midiPrefix_.clear();
     paramLayout_ = 0;
@@ -776,26 +801,43 @@ void PlanExecutor::feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi
     if (midi.isEmpty())
         return;
 
-    for (const auto metadata : midi) {
-        const auto message = metadata.getMessage();
+    // Whether the block holds a note at all, settled before anything is fed.
+    // A cross-track listener takes one trigger for the block rather than one
+    // per note, which is what the fork's monitor does: it scans the buffer,
+    // sets a flag, and fires triggerSidechain once.
+    bool anyNoteOn = false;
+    for (const auto metadata : midi)
+        if (metadata.getMessage().isNoteOn()) {
+            anyNoteOn = true;
+            break;
+        }
 
-        // Note off before note on, because a message can be neither and most
-        // are: this runs over every event on a track's chain-head stream.
-        const bool on = message.isNoteOn();
-        const bool off = !on && message.isNoteOff(true);
-        const bool all = !on && !off && (message.isAllNotesOff() || message.isAllSoundOff());
-        if (!on && !off && !all)
+    for (const auto index : modSourceForOp_[op]) {
+        if (mods_.listensFor(index, *blockTable_) != ModListen::Midi)
             continue;
 
-        for (const auto index : modSourceForOp_[op]) {
-            if (mods_.listensFor(index, *blockTable_) != ModListen::Midi)
-                continue;
+        // A modifier living somewhere else is following this track rather than
+        // playing it. The note-counting path refuses it by design, so a trigger
+        // is the only door it has, and there is no note-off half: the fork
+        // deliberately leaves the gate alone there so the modifier runs its
+        // full cycle after a hit (SidechainMonitorPlugin says so at the note-off
+        // branch it does not take).
+        if (mods_.drivenFromElsewhere(index, *blockTable_)) {
+            if (anyNoteOn)
+                mods_.trigger(index, *blockTable_);
+            continue;
+        }
 
-            if (on)
+        // A modifier on the source hears its notes as its own, one at a time,
+        // so the held count is right and the gate shuts when the last lifts.
+        for (const auto metadata : midi) {
+            const auto message = metadata.getMessage();
+
+            if (message.isNoteOn())
                 mods_.noteOn(index, *blockTable_);
-            else if (off)
+            else if (message.isNoteOff(true))
                 mods_.noteOff(index, *blockTable_);
-            else
+            else if (message.isAllNotesOff() || message.isAllSoundOff())
                 mods_.allNotesOff(index, *blockTable_);
         }
     }
