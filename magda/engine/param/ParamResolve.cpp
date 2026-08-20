@@ -258,18 +258,27 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
             }
     }
 
-    // A run that holds cannot arrive by ramping, so a bake that ran out of room
-    // inside one spends its last segment on the step the curve ends on, at the
-    // sample it lands. What is lost is the steps in between, which is the same
-    // coarsening ResolvedParams makes when a curve outgrows its slot; the run
-    // before it simply holds a little longer. A run that does not hold ramps to
-    // the same place, which arrives on time whether or not it overflowed.
-    if (overflowed && holds && hasKnotInside)
+    // A bake that ran out of room spends its last segment on arriving, and the
+    // shape of that arrival belongs to the run the block ends in rather than to
+    // the run the walk gave up in. Curve type is a property of a point, so a
+    // knot the walk never reached can open a run of the other kind: a step run
+    // that overflowed can end in a ramp, and a ramp that overflowed can end in
+    // a step.
+    //
+    // Either way the run before it holds a little longer, which is the same
+    // coarsening ResolvedParams makes one level down when a curve outgrows its
+    // slot: the steps in between are what is lost, never the arrival.
+    if (overflowed && hasKnotInside) {
+        const auto sample = std::max(endingSample, startSample);
+        const bool finalHolds = holdsFrom((boundary - 1)->beatPosition);
+
         out[static_cast<std::size_t>(written++)] =
-            ParamSegment{std::max(endingSample, startSample), endingHeld, endingHeld};
-    else
+            finalHolds ? ParamSegment{sample, endingHeld, endingHeld}
+                       : ParamSegment{sample, endingHeld, ending};
+    } else {
         out[static_cast<std::size_t>(written++)] =
             ParamSegment{startSample, startValue, holds ? startValue : ending};
+    }
 
     return written;
 }

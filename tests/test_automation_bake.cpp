@@ -389,6 +389,47 @@ TEST_CASE("A step on the block's far edge belongs to the next block", "[engine][
     CHECK(values[param].segments().back().endValue == approx(0.5f));
 }
 
+TEST_CASE("An overflowing bake arrives in the shape the block ends in", "[engine][param][bake]") {
+    auto tracks = trackWithDevice();
+
+    // Enough knots to exhaust the arena, and a final run of the other kind. The
+    // walk gives up inside the first sort; what the last segment has to look
+    // like is decided by the second.
+    const auto laneEndingIn = [](AutomationCurveType busy, AutomationCurveType last) {
+        std::vector<AutomationPoint> points;
+        for (int i = 0; i < 20; ++i)
+            points.push_back(
+                point(static_cast<double>(i) * 0.09, static_cast<double>(i) / 76.0, busy));
+        points.push_back(point(1.9, 0.25, last));
+        points.push_back(point(2.0, 1.0, AutomationCurveType::Linear));
+        return points;
+    };
+
+    const auto endOfBlock = [&](AutomationCurveType busy, AutomationCurveType last) {
+        const auto table = tableFor(tracks, {lane(deviceTarget(), laneEndingIn(busy, last))});
+        const auto param = table.find(deviceParam(1, 7, 0));
+
+        auto opted = table;
+        opted.specs[static_cast<std::size_t>(param)].segmentAccurate = true;
+
+        const auto values = resolved(opted, blockAt(0.0, 2.0, 512));
+        REQUIRE(values[param].numSegments() <= values.segmentCapacity());
+        return values[param].segments().back();
+    };
+
+    SECTION("steps that end in a ramp still ramp") {
+        const auto last = endOfBlock(AutomationCurveType::Step, AutomationCurveType::Linear);
+        CHECK(last.startValue == approx(0.25f));
+        CHECK(last.endValue == approx(1.0f));
+    }
+
+    SECTION("ramps that end in a step still hold") {
+        const auto last = endOfBlock(AutomationCurveType::Linear, AutomationCurveType::Step);
+        CHECK(last.startValue == approx(0.25f));
+        CHECK(last.endValue == approx(0.25f));
+    }
+}
+
 TEST_CASE("A hard corner keeps its apex inside a block", "[engine][param][bake]") {
     auto tracks = trackWithDevice();
 
