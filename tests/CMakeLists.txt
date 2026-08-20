@@ -312,6 +312,8 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_param_table.cpp)
     # Automation lanes baked into the parameter lane (#2118).
     list(APPEND TEST_SOURCES test_automation_bake.cpp)
+    # The LFO engine: shapes, rates, triggers and gates (#2119).
+    list(APPEND TEST_SOURCES test_mod_lfo.cpp)
     list(APPEND TEST_SOURCES test_tempo_map.cpp)
     list(APPEND TEST_SOURCES test_transport_clock.cpp)
     list(APPEND TEST_SOURCES test_click_generator.cpp)

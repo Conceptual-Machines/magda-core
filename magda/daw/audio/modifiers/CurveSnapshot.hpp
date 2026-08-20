@@ -4,8 +4,9 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <span>
 
-#include "../../core/CurveMath.hpp"
+#include "../../core/ModCurve.hpp"
 #include "../../core/ModInfo.hpp"
 
 namespace magda {
@@ -19,16 +20,9 @@ namespace magda {
 struct CurveSnapshot {
     static constexpr int kMaxPoints = 64;
 
-    struct Point {
-        float phase = 0.0f;
-        float value = 0.5f;
-        float tension = 0.0f;
-        int curveType = 0;
-        float inHandleX = 0.0f;
-        float inHandleY = 0.0f;
-        float outHandleX = 0.0f;
-        float outHandleY = 0.0f;
-    };
+    /// The model's own point, so the snapshot is a fixed-size copy of the
+    /// drawn curve rather than a second description of one.
+    using Point = CurvePointData;
 
     std::array<Point, kMaxPoints> points{};
     int count = 0;
@@ -46,35 +40,19 @@ struct CurveSnapshot {
     float loopStart = 0.0f;
     float loopEnd = 1.0f;
 
+    /// The drawn points, as a span the shared reading takes.
+    std::span<const Point> drawn() const {
+        return {points.data(), static_cast<size_t>(count)};
+    }
+
     /**
      * @brief Generate a preset curve value (no custom points).
      *
-     * Same logic as ModulatorEngine::generateCurvePreset — pure math, no
-     * allocations, safe for audio thread.
+     * The model's own reading (core/ModCurve.hpp): pure math, no allocations,
+     * safe for the audio thread.
      */
     static float evaluatePreset(CurvePreset p, float phase) {
-        constexpr float PI = 3.14159265359f;
-        switch (p) {
-            case CurvePreset::Triangle:
-                return (phase < 0.5f) ? phase * 2.0f : 2.0f - phase * 2.0f;
-            case CurvePreset::Sine:
-                return (std::sin(2.0f * PI * phase) + 1.0f) * 0.5f;
-            case CurvePreset::RampUp:
-                return phase;
-            case CurvePreset::RampDown:
-                return 1.0f - phase;
-            case CurvePreset::SCurve: {
-                float t = phase;
-                return t * t * (3.0f - 2.0f * t);
-            }
-            case CurvePreset::Exponential:
-                return (std::exp(phase * 3.0f) - 1.0f) / (std::exp(3.0f) - 1.0f);
-            case CurvePreset::Logarithmic:
-                return std::log(1.0f + phase * (std::exp(1.0f) - 1.0f));
-            case CurvePreset::Custom:
-            default:
-                return phase;
-        }
+        return magda::modcurve::preset(p, phase);
     }
 
     /**
@@ -85,9 +63,7 @@ struct CurveSnapshot {
      * (which would interpolate from the last point back toward the first).
      */
     float endValue() const {
-        if (count > 0)
-            return points[static_cast<size_t>(count - 1)].value;
-        return evaluatePreset(preset, 1.0f);
+        return magda::modcurve::endValue(LFOWaveform::Custom, preset, drawn());
     }
 
     /**
@@ -104,118 +80,11 @@ struct CurveSnapshot {
     /**
      * @brief Evaluate the curve at a given phase.
      *
-     * If custom points exist, uses tension-based interpolation (same as
-     * ModulatorEngine::evaluateCurvePoints). Otherwise falls back to
-     * generating the preset curve mathematically.
+     * The model's own reading (core/ModCurve.hpp), so the editor's preview,
+     * this snapshot and the native engine's LFO all draw one curve.
      */
     float evaluate(float phase) const {
-        if (count == 0)
-            return evaluatePreset(preset, phase);
-        if (count == 1)
-            return points[0].value;
-
-        const Point* p1 = nullptr;
-        const Point* p2 = nullptr;
-
-        for (int i = 0; i < count; ++i) {
-            if (points[static_cast<size_t>(i)].phase > phase) {
-                if (i == 0) {
-                    p1 = &points[static_cast<size_t>(count - 1)];
-                    p2 = &points[0];
-                } else {
-                    p1 = &points[static_cast<size_t>(i - 1)];
-                    p2 = &points[static_cast<size_t>(i)];
-                }
-                break;
-            }
-        }
-
-        if (!p1) {
-            p1 = &points[static_cast<size_t>(count - 1)];
-            p2 = &points[0];
-        }
-
-        // Step: the segment holds p1's value until the next point (sample &
-        // hold / rectangular steps).
-        constexpr int kStepCurveType = 2;
-        if (p1->curveType == kStepCurveType)
-            return p1->value;
-
-        float phaseSpan;
-        float localPhase;
-        if (p2->phase < p1->phase) {
-            phaseSpan = (1.0f - p1->phase) + p2->phase;
-            if (phase >= p1->phase)
-                localPhase = phase - p1->phase;
-            else
-                localPhase = (1.0f - p1->phase) + phase;
-        } else {
-            phaseSpan = p2->phase - p1->phase;
-            localPhase = phase - p1->phase;
-        }
-
-        float t = (phaseSpan > 0.0001f) ? (localPhase / phaseSpan) : 0.0f;
-        t = std::clamp(t, 0.0f, 1.0f);
-
-        float tension = p1->tension;
-        auto applyTension = [tension](float input) {
-            if (std::abs(tension) < 0.001f)
-                return input;
-            if (tension > 0)
-                return std::pow(input, 1.0f + tension * 2.0f);
-            return 1.0f - std::pow(1.0f - input, 1.0f - tension * 2.0f);
-        };
-
-        auto getShaper = [&]() {
-            struct Shaper {
-                float t = 0.5f;
-                float value = 0.5f;
-                bool stored = false;
-            };
-
-            constexpr float kHandleEpsilon = 0.000001f;
-            const bool hasStoredShaper =
-                p2->phase > p1->phase && (std::abs(p1->outHandleX) > kHandleEpsilon ||
-                                          std::abs(p1->outHandleY) > kHandleEpsilon ||
-                                          std::abs(p2->inHandleX) > kHandleEpsilon ||
-                                          std::abs(p2->inHandleY) > kHandleEpsilon);
-
-            if (hasStoredShaper) {
-                const float shaperPhase =
-                    std::clamp(p1->phase + p1->outHandleX, p1->phase, p2->phase);
-                const float shaperT = (p2->phase - p1->phase > 0.0001f)
-                                          ? ((shaperPhase - p1->phase) / (p2->phase - p1->phase))
-                                          : 0.5f;
-                return Shaper{std::clamp(shaperT, 0.001f, 0.999f),
-                              std::clamp(p1->value + p1->outHandleY, 0.0f, 1.0f), true};
-            }
-
-            constexpr float cornerT = 0.5f;
-            return Shaper{cornerT, p1->value + applyTension(cornerT) * (p2->value - p1->value),
-                          false};
-        };
-
-        constexpr int kHardCornerCurveType = 3;
-        if (p1->curveType == kHardCornerCurveType) {
-            const auto shaper = getShaper();
-            if (t <= shaper.t) {
-                const float u = t / shaper.t;
-                return p1->value + u * (shaper.value - p1->value);
-            }
-            const float u = (t - shaper.t) / (1.0f - shaper.t);
-            return shaper.value + u * (p2->value - shaper.value);
-        }
-
-        // Linear segment: shared bounded power warp so the audio output matches
-        // exactly what the curve editor draws (see core/CurveMath.hpp).
-        constexpr float kLinearHandleEps = 0.000001f;
-        const bool hasStoredShaper =
-            p2->phase > p1->phase && (std::abs(p1->outHandleX) > kLinearHandleEps ||
-                                      std::abs(p1->outHandleY) > kLinearHandleEps ||
-                                      std::abs(p2->inHandleX) > kLinearHandleEps ||
-                                      std::abs(p2->inHandleY) > kLinearHandleEps);
-        return magda::curvemath::evalSegment(p1->value, p2->value, p1->value + p1->outHandleY,
-                                             tension, hasStoredShaper, t);
+        return magda::modcurve::shapeAt(LFOWaveform::Custom, preset, drawn(), phase);
     }
 };
 
@@ -266,18 +135,8 @@ struct CurveSnapshotHolder {
         back->count =
             std::min(static_cast<int>(modInfo.curvePoints.size()), CurveSnapshot::kMaxPoints);
 
-        for (int i = 0; i < back->count; ++i) {
-            const auto& src = modInfo.curvePoints[static_cast<size_t>(i)];
-            auto& dst = back->points[static_cast<size_t>(i)];
-            dst.phase = src.phase;
-            dst.value = src.value;
-            dst.tension = src.tension;
-            dst.curveType = src.curveType;
-            dst.inHandleX = src.inHandleX;
-            dst.inHandleY = src.inHandleY;
-            dst.outHandleX = src.outHandleX;
-            dst.outHandleY = src.outHandleY;
-        }
+        for (int i = 0; i < back->count; ++i)
+            back->points[static_cast<size_t>(i)] = modInfo.curvePoints[static_cast<size_t>(i)];
 
         // Swap: audio thread will now read from the newly written buffer
         active.store(back, std::memory_order_release);

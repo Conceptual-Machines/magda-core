@@ -19,6 +19,10 @@ namespace {
 /// deciding how much the engine allocates.
 constexpr int kMaxDeviceParamIndex = 4096;
 
+/// The one parameter a modifier exposes: its Rate, which the model addresses
+/// as ControlTarget::modParam(scope, modId, 0).
+constexpr int kModRateParamIndex = 0;
+
 /// What a macro knob is: a position between nothing and everything, with the
 /// meaning of both left to whatever it is linked to.
 ParamSpec macroSpec() {
@@ -27,6 +31,104 @@ ParamSpec macroSpec() {
     spec.domain.minValue = 0.0f;
     spec.domain.maxValue = 1.0f;
     return spec;
+}
+
+/// Which engine drives a modifier of this type.
+ModKind modKindOf(magda::ModType type) {
+    switch (type) {
+        case magda::ModType::LFO:
+            return ModKind::Lfo;
+        case magda::ModType::Envelope:
+            return ModKind::Adsr;
+        case magda::ModType::Random:
+            return ModKind::Random;
+        case magda::ModType::Follower:
+            return ModKind::Follower;
+    }
+    return ModKind::Lfo;
+}
+
+/**
+ * @brief Where a modifier's phase comes from, folded from what the model says.
+ *
+ * The model keeps the trigger mode and the tempo-sync flag apart, and the fork
+ * folds the two into one sync type (ModifierHelpers::mapSyncType). Folded the
+ * same way here, so a project sounds the same in both engines:
+ *
+ *  - a MIDI or audio trigger is a run something restarts, whether or not it is
+ *    also tempo synced;
+ *  - a transport trigger, and tempo sync on its own, are both a run locked to
+ *    the timeline, which is what makes a synced LFO agree with the bar;
+ *  - everything else free-runs at its own frequency.
+ */
+ModSync modSyncOf(const magda::ModInfo& mod) {
+    if (mod.triggerMode == magda::LFOTriggerMode::MIDI ||
+        mod.triggerMode == magda::LFOTriggerMode::Audio)
+        return ModSync::Note;
+
+    if (mod.tempoSync || mod.triggerMode == magda::LFOTriggerMode::Transport)
+        return ModSync::Transport;
+
+    return ModSync::Free;
+}
+
+/// What the model says one LFO is.
+LfoSettings lfoSettingsOf(const magda::ModInfo& mod) {
+    LfoSettings settings;
+    settings.wave = mod.waveform;
+    settings.preset = mod.curvePreset;
+    settings.sync = modSyncOf(mod);
+    settings.trigger = mod.triggerMode;
+    settings.tempoSync = mod.tempoSync;
+    settings.rate.hz = mod.rate;
+    settings.rate.rateType = mod.tempoSync ? magda::syncDivisionToTeRateOrdinal(mod.syncDivision)
+                                           : static_cast<int>(magda::ModRateType::Hertz);
+    settings.phaseOffset = mod.phaseOffset;
+    settings.oneShot = mod.oneShot;
+    settings.invertOutput = mod.invertOutput;
+    settings.useLoopRegion = mod.useLoopRegion;
+    settings.loopStart = mod.loopStart;
+    settings.loopEnd = mod.loopEnd;
+
+    // Which triggers this LFO listens to, and whether they gate it. Both are
+    // the fork's rules read off the same model fields (applyLFOProperties):
+    // a note-triggered LFO is gated by its own held notes so it reads as an
+    // envelope, and an audio-triggered one sits shut between hits.
+    //
+    // Cross-track sidechain is the one thing the model cannot say here. It is
+    // a property of the device the modifier drives rather than of the modifier
+    // (PluginManager owns it in the fork), so it is left off and set by
+    // whoever knows, which is the same place that will feed the triggers.
+    settings.gateOnTrigger = mod.triggerMode == magda::LFOTriggerMode::MIDI;
+    settings.startGated = mod.triggerMode == magda::LFOTriggerMode::Audio ||
+                          (mod.triggerMode == magda::LFOTriggerMode::MIDI && !mod.running);
+
+    return settings;
+}
+
+/**
+ * @brief What the modifier's Rate lane means, and where it starts.
+ *
+ * One lane with two readings, chosen by the same flag that chooses what the
+ * period is: a frequency while the modifier free-runs, and a division ordinal
+ * while it is synced. The model's own two descriptions of that lane, because
+ * they are what a curve drawn over it was normalised against, and a second
+ * copy of the numbers here would be a lane the engine read differently from
+ * the editor that drew it.
+ */
+ParamSpec modRateSpec(const magda::ModInfo& mod) {
+    return paramSpecFrom(mod.tempoSync ? magda::ParameterPresets::modRateSyncDivision()
+                                       : magda::ParameterPresets::modRateHz());
+}
+
+/// Where that lane sits before anything moves it, normalised.
+float modRateBase(const magda::ModInfo& mod) {
+    const auto spec = modRateSpec(mod);
+    const auto real =
+        mod.tempoSync ? laneValueFromRateType(magda::syncDivisionToTeRateOrdinal(mod.syncDivision))
+                      : mod.rate;
+
+    return magda::ParameterUtils::realToNormalized(real, spec.domain);
 }
 
 /// A link as this pass needs it, whichever kind of source it came from.
@@ -104,6 +206,10 @@ class Builder {
 
     /// Per parameter, until the curves are flattened into the table.
     std::vector<std::vector<magda::AutomationPoint>> perParamCurve_;
+
+    /// Per modifier, on the same terms: the cycle drawn on it, or nothing for
+    /// one playing a built-in waveform.
+    std::vector<std::vector<magda::CurvePointData>> modCurve_;
 };
 
 ParamId Builder::add(const ParamKey& key, const ParamSpec& spec, float base) {
@@ -168,15 +274,49 @@ void Builder::allocateMods(const Node& node) {
         key.modId = mod.id;
         key.index = -1;
 
-        // The model's own reading of the modifier, which is a constant until
-        // the engines land (#2119, #2120). The two rules that are already
-        // invariants rather than implementation get applied here: an inactive
-        // modifier outputs nothing, and a curve drawn as a level is applied as
-        // its complement.
+        // The model's own reading of the modifier. What a kind with no engine
+        // publishes and holds, and what a block with no runtime behind it
+        // reads. The two rules that are invariants rather than implementation
+        // are applied here as well: an inactive modifier outputs nothing, and
+        // a curve drawn as a level is applied as its complement.
         const float output = mod.enabled ? (mod.invertOutput ? 1.0f - mod.value : mod.value) : 0.0f;
 
+        ParamModifier modifier;
+        modifier.key = key;
+        modifier.value = output;
+        modifier.kind = modKindOf(mod.type);
+        modifier.enabled = mod.enabled;
+        modifier.lfo = lfoSettingsOf(mod);
+
         const auto index = static_cast<int>(table_.modifiers.size());
-        table_.modifiers.push_back(ParamModifier{key, output});
+        table_.modifiers.push_back(modifier);
+
+        // The drawn cycle, where there is one. Copied into the table's own
+        // arena for the reason the automation curves are: an audio thread
+        // cannot go looking in the model, and the model is free to change
+        // underneath the block that is playing it.
+        modCurve_.emplace_back();
+        if (mod.waveform == magda::LFOWaveform::Custom)
+            modCurve_.back() = mod.curvePoints;
+
+        // Its Rate parameter, when something reaches it: a macro or another
+        // modifier driving it, or a lane playing over it. Nothing reaches the
+        // rate of almost any modifier, and a parameter each for the rest would
+        // be a table mostly made of numbers that never move.
+        ParamKey rateKey = key;
+        rateKey.index = kModRateParamIndex;
+
+        if (targeted_.count(rateKey) != 0)
+            table_.modifiers.back().rate = add(rateKey, modRateSpec(mod), modRateBase(mod));
+
+        // A modifier the model has switched off has no links at all rather
+        // than links from a source that outputs zero. The fork creates no
+        // modifier for one, so nothing is assigned and nothing contributes;
+        // carrying the links instead would push every bipolar target down by
+        // the link's own depth, which is a modifier doing something while
+        // switched off.
+        if (!mod.enabled)
+            continue;
 
         for (const auto& link : mod.links) {
             // A link the model keeps but does not apply. Not a diagnostic: it
@@ -444,6 +584,14 @@ void Builder::flattenCurves() {
         table_.curvePoints.insert(table_.curvePoints.end(), curve.begin(), curve.end());
         table_.curveOffsets.push_back(static_cast<int>(table_.curvePoints.size()));
     }
+
+    table_.modCurveOffsets.reserve(modCurve_.size() + 1);
+    table_.modCurveOffsets.push_back(0);
+
+    for (const auto& curve : modCurve_) {
+        table_.modCurvePoints.insert(table_.modCurvePoints.end(), curve.begin(), curve.end());
+        table_.modCurveOffsets.push_back(static_cast<int>(table_.modCurvePoints.size()));
+    }
 }
 
 void Builder::allocate() {
@@ -471,10 +619,9 @@ void Builder::resolveLinks() {
             continue;
         }
 
-        if (key->kind == ParamKey::Kind::ModParam) {
+        if (key->kind == ParamKey::Kind::ModParam && key->index != kModRateParamIndex) {
             diagnose(pending.sourceName + ": links to " + toString(*key) +
-                     ", and a modifier's own parameters arrive with the engines that define "
-                     "them (#2119)");
+                     ", and Rate is the only parameter a modifier has");
             continue;
         }
 
@@ -571,34 +718,58 @@ std::vector<int> stronglyConnectedComponents(const std::vector<std::vector<int>>
 }
 
 void Builder::orderAndBreakCycles() {
-    const auto count = static_cast<std::size_t>(table_.size());
+    // Two kinds of node in one graph, because they depend on each other in
+    // both directions: a parameter reads the modifiers linked to it, and a
+    // modifier reads the Rate parameter driving it. Parameters first, then the
+    // modifiers, so a node id is an index into one or the other.
+    const auto params = static_cast<std::size_t>(table_.size());
+    const auto mods = table_.modifiers.size();
+    const auto count = params + mods;
 
-    // What each parameter reads. A modifier source contributes the modifier's
-    // own parameters, which is nothing until they exist; the loop is written for
-    // what it will be rather than for what it is today, because the order it
-    // produces is the thing that has to stay right.
-    std::vector<std::vector<int>> consumers(count);
-    const auto forEachDependency = [&](std::size_t target, const auto& visit) {
-        for (const auto& link : perParam_[target]) {
-            if (link.source.kind != ParamSourceRef::Kind::Parameter)
-                continue;
-            const auto source = static_cast<std::size_t>(link.source.index);
-            if (source < count)
-                visit(source);
+    const auto nodeForMod = [params](std::size_t modifier) { return params + modifier; };
+
+    // What each node reads.
+    const auto forEachDependency = [&](std::size_t node, const auto& visit) {
+        if (node < params) {
+            for (const auto& link : perParam_[node]) {
+                const auto source = static_cast<std::size_t>(link.source.index);
+                switch (link.source.kind) {
+                    case ParamSourceRef::Kind::Parameter:
+                        if (source < params)
+                            visit(source);
+                        break;
+                    case ParamSourceRef::Kind::Modifier:
+                        if (source < mods)
+                            visit(nodeForMod(source));
+                        break;
+                }
+            }
+            return;
         }
+
+        const auto rate = table_.modifiers[node - params].rate;
+        if (rate != INVALID_PARAM_ID && static_cast<std::size_t>(rate) < params)
+            visit(static_cast<std::size_t>(rate));
     };
 
-    for (std::size_t target = 0; target < count; ++target)
-        forEachDependency(target, [&](std::size_t source) {
-            consumers[source].push_back(static_cast<int>(target));
-        });
+    std::vector<std::vector<int>> consumers(count);
+    const auto buildConsumers = [&] {
+        for (auto& list : consumers)
+            list.clear();
+        for (std::size_t node = 0; node < count; ++node)
+            forEachDependency(node, [&](std::size_t source) {
+                consumers[source].push_back(static_cast<int>(node));
+            });
+    };
 
-    // A cycle is a component with more than one parameter in it, or a parameter
-    // that reads itself. Only the links inside such a component are dropped:
+    buildConsumers();
+
+    // A cycle is a component with more than one node in it, or a node that
+    // reads itself. Only what is inside such a component is dropped:
     // everything hanging off a cycle waits on it too, and a parameter that
     // merely reads a cycle member has done nothing wrong. Once the cycle's own
-    // links are gone its members resolve at their base, and the link that reads
-    // one of them is honoured against that.
+    // edges are gone its members resolve at their base, and the link that
+    // reads one of them is honoured against that.
     const auto component = stronglyConnectedComponents(consumers);
 
     std::vector<int> componentSize(count, 0);
@@ -606,18 +777,28 @@ void Builder::orderAndBreakCycles() {
         if (id >= 0)
             ++componentSize[static_cast<std::size_t>(id)];
 
-    for (std::size_t target = 0; target < count; ++target) {
+    const auto insideCycle = [&](std::size_t node, std::size_t source) {
+        if (component[source] != component[node])
+            return false;
+        return source == node || componentSize[static_cast<std::size_t>(component[node])] > 1;
+    };
+
+    const auto describe = [&](std::size_t node) {
+        return node < params ? toString(table_.keys[node])
+                             : toString(table_.modifiers[node - params].key);
+    };
+
+    for (std::size_t target = 0; target < params; ++target) {
         auto& links = perParam_[target];
         const auto removed = std::remove_if(links.begin(), links.end(), [&](const ParamLink& link) {
-            if (link.source.kind != ParamSourceRef::Kind::Parameter)
-                return false;
-
             const auto source = static_cast<std::size_t>(link.source.index);
-            if (source >= count || component[source] != component[target])
-                return false;
-
-            return source == target ||
-                   componentSize[static_cast<std::size_t>(component[target])] > 1;
+            switch (link.source.kind) {
+                case ParamSourceRef::Kind::Parameter:
+                    return source < params && insideCycle(target, source);
+                case ParamSourceRef::Kind::Modifier:
+                    return source < mods && insideCycle(target, nodeForMod(source));
+            }
+            return false;
         });
 
         if (removed == links.end())
@@ -628,33 +809,50 @@ void Builder::orderAndBreakCycles() {
         links.erase(removed, links.end());
     }
 
+    // A modifier whose own rate is inside the cycle stops reading it and runs
+    // at what the model stored, which is the same answer one level up: the
+    // parameter survives, and only the edge that made it impossible goes.
+    for (std::size_t modifier = 0; modifier < mods; ++modifier) {
+        auto& rate = table_.modifiers[modifier].rate;
+        if (rate == INVALID_PARAM_ID || static_cast<std::size_t>(rate) >= params)
+            continue;
+
+        if (!insideCycle(nodeForMod(modifier), static_cast<std::size_t>(rate)))
+            continue;
+
+        diagnose(describe(nodeForMod(modifier)) +
+                 ": its rate is part of a modulation cycle, so it runs at the stored one");
+        rate = INVALID_PARAM_ID;
+    }
+
     // With the cycles broken there is an order, and it is the same walk either
-    // way: ascending id among everything that is ready, so the order is a
+    // way: ascending node among everything that is ready, so the order is a
     // property of the model rather than of how a container iterated.
     std::vector<int> waitingOn(count, 0);
-    for (std::size_t target = 0; target < count; ++target)
-        forEachDependency(target, [&](std::size_t) { ++waitingOn[target]; });
+    for (std::size_t node = 0; node < count; ++node)
+        forEachDependency(node, [&](std::size_t) { ++waitingOn[node]; });
 
-    for (auto& list : consumers)
-        list.clear();
-    for (std::size_t target = 0; target < count; ++target)
-        forEachDependency(target, [&](std::size_t source) {
-            consumers[source].push_back(static_cast<int>(target));
-        });
+    buildConsumers();
 
-    std::priority_queue<ParamId, std::vector<ParamId>, std::greater<>> ready;
+    const auto step = [&](std::size_t node) {
+        return node < params
+                   ? ParamStep{ParamStep::Kind::Parameter, static_cast<int>(node)}
+                   : ParamStep{ParamStep::Kind::Modifier, static_cast<int>(node - params)};
+    };
+
+    std::priority_queue<int, std::vector<int>, std::greater<>> ready;
     for (std::size_t i = 0; i < count; ++i)
         if (waitingOn[i] == 0)
-            ready.push(static_cast<ParamId>(i));
+            ready.push(static_cast<int>(i));
 
     table_.order.clear();
     table_.order.reserve(count);
     while (!ready.empty()) {
-        const auto id = ready.top();
+        const auto node = static_cast<std::size_t>(ready.top());
         ready.pop();
-        table_.order.push_back(id);
+        table_.order.push_back(step(node));
 
-        for (const auto consumer : consumers[static_cast<std::size_t>(id)])
+        for (const auto consumer : consumers[node])
             if (--waitingOn[static_cast<std::size_t>(consumer)] == 0)
                 ready.push(consumer);
     }
@@ -664,12 +862,12 @@ void Builder::orderAndBreakCycles() {
 
     // Unreachable: every cycle was broken above, and a graph without one has a
     // topological order. Reported and completed rather than asserted, because
-    // the alternative is a table whose order is missing parameters, which the
-    // block resolver would read as parameters nobody resolved.
+    // the alternative is an order missing things the block would then read as
+    // resolved by nobody.
     for (std::size_t i = 0; i < count; ++i)
         if (waitingOn[i] > 0) {
-            diagnose(toString(table_.keys[i]) + ": still waits on something after the cycle pass");
-            table_.order.push_back(static_cast<ParamId>(i));
+            diagnose(describe(i) + ": still waits on something after the cycle pass");
+            table_.order.push_back(step(i));
         }
 }
 
@@ -706,6 +904,7 @@ ParamTable Builder::run(const RenderPlan& plan, const std::vector<magda::TrackIn
     flattenCurves();
 
     table_.layoutFingerprint = paramLayoutFingerprint(table_.keys);
+    table_.modifierFingerprint = paramModifierFingerprint(table_.modifiers);
 
     return std::move(table_);
 }

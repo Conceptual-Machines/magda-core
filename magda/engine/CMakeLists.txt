@@ -79,6 +79,8 @@ add_library(magda_engine STATIC
     param/ParamTable.cpp
     param/ParamTableCompiler.cpp
     param/ParamTableDump.cpp
+    param/ModLfo.cpp
+    param/ModRuntime.cpp
     param/ParamSpec.hpp
     param/ParamBlock.hpp
     param/ParamKey.hpp
@@ -86,6 +88,8 @@ add_library(magda_engine STATIC
     param/ParamTable.hpp
     param/ParamTableCompiler.hpp
     param/ParamTableDump.hpp
+    param/ModLfo.hpp
+    param/ModRuntime.hpp
     tap/LevelTap.hpp
     tap/SampleRing.hpp
     transport/TempoMap.cpp

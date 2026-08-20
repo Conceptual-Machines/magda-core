@@ -413,6 +413,59 @@ inline ParameterInfo pan(int index, const juce::String& name) {
     return info;
 }
 
+/**
+ * @brief A modulator's Rate, as a frequency.
+ *
+ * What the Rate control writes and what a lane over it stores, so the slider
+ * position and the curve agree, and so the native engine reads a lane back
+ * through the same description that normalised it (#2119).
+ *
+ * The range is chosen so the geometric centre (sqrt(min * max)) lands on 1 Hz,
+ * which is the natural musical mid for an LFO.
+ */
+inline ParameterInfo modRateHz(const juce::String& name = "Rate") {
+    ParameterInfo info = frequency(0, name, 0.05f, 20.0f);
+    info.teMinValue = 0.05f;
+    info.teMaxValue = 20.0f;
+    info.defaultValue = 1.0f;
+    return info;
+}
+
+/**
+ * @brief The same Rate, as a musical division.
+ *
+ * ModRateType is ordered slow to fast with Hertz at zero, and Hertz is not a
+ * division: it is the other reading of this same control. So the lane drops
+ * that slot and counts from the first real division instead, which is why the
+ * value stored here is the ordinal minus one and why nothing can resolve to
+ * "not synced at all" by running to the bottom of its range.
+ *
+ * MAGDA exposes 16 Bars down to 1/32 T. The ordinals past those exist so a
+ * value written by an imported project still round-trips (ModInfo.hpp).
+ *
+ * labelTicks names only the plain divisions, to keep the axis legible; the
+ * dotted and triplet ones still appear in the value-to-string lookup.
+ */
+inline ParameterInfo modRateSyncDivision(const juce::String& name = "Rate") {
+    ParameterInfo info;
+    info.paramIndex = 1;
+    info.name = name;
+    info.unit = "";
+    info.minValue = 0.0f;
+    info.maxValue = 19.0f;
+    info.teMinValue = 1.0f;
+    info.teMaxValue = 20.0f;
+    info.defaultValue = 9.0f;  // quarter, which is ordinal 10 counted from 1
+    info.scale = ParameterScale::Discrete;
+    info.displayFormat = DisplayFormat::Default;
+    info.choices = {"16 Bars", "8 Bars", "4 Bars", "2 Bars", "1 Bar", "1/2.", "1/2",
+                    "1/2T",    "1/4.",   "1/4",    "1/4T",   "1/8.",  "1/8",  "1/8T",
+                    "1/16.",   "1/16",   "1/16T",  "1/32.",  "1/32",  "1/32T"};
+    info.labelTicks = {{0.0f, "16 Bars"}, {2.0f, "4 Bars"}, {4.0f, "1 Bar"}, {6.0f, "1/2"},
+                       {9.0f, "1/4"},     {12.0f, "1/8"},   {15.0f, "1/16"}, {18.0f, "1/32"}};
+    return info;
+}
+
 }  // namespace ParameterPresets
 
 }  // namespace magda

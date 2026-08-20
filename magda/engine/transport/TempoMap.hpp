@@ -66,6 +66,7 @@ struct BarsAndBeats {
     double beat = 0.0;
 
     int numerator = 4;
+    int denominator = 4;
 };
 
 /**

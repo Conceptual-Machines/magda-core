@@ -224,6 +224,7 @@ void PlanExecutor::reset() {
     paramScratch_.clear();
     paramSegments_.clear();
     paramValues_.prepare(0);
+    mods_.reset();
     paramLayout_ = 0;
 }
 
@@ -268,6 +269,12 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                              ModContribution{});
         paramSegments_.assign(static_cast<std::size_t>(paramValues_.segmentCapacity()),
                               ParamSegment{});
+
+        // The modifier engines, and whatever the epoch being replaced has
+        // already turned. Shared rather than copied: the audio thread is still
+        // inside that executor until the swap, so an LFO carried across one
+        // goes on from where it is rather than from where it was read.
+        mods_.prepare(*params, context, previous == nullptr ? nullptr : &previous->mods_);
 
         for (std::size_t i = 0; i < numOps; ++i) {
             const auto& op = plan.ops[i];
@@ -694,7 +701,7 @@ void PlanExecutor::resolveParameters(const PlanValues& values, const BlockInfo& 
         return;
     }
 
-    resolveParams(*values.params, paramValues_, paramScratch_, paramSegments_, block);
+    resolveParams(*values.params, paramValues_, paramScratch_, paramSegments_, block, &mods_);
 }
 
 void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,

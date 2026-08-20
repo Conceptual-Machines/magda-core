@@ -122,6 +122,9 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     int carriedCrossfades() const {
         return core_.carriedCrossfades();
     }
+    int carriedModifiers() const {
+        return core_.carriedModifiers();
+    }
     bool isPrepared() const {
         return plan_ != nullptr;
     }

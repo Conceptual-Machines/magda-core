@@ -38,19 +38,21 @@ audioSlots=1 midiSlots=0 outputLatency=0
 
 == params ==
 magda-param-table v1
-params=8 modifiers=1 links=4
+params=9 modifiers=1 links=5
 [  0] T1:volume                    fader[-60.000,6.000] base=0.750  links=0 lane=2
 [  1] T1:pan                       lin[-1.000,1.000] base=0.500  links=0
 [  2] T1:macro0                    lin[0.000,1.000] base=1.000  links=0
 [  3] T1:macro1                    lin[0.000,1.000] base=0.500  links=1
       <- param[  2] amount=0.500 bipolar=0
-[  4] T1/D7:param0                 lin[0.000,100.000] base=0.000  links=1 lane=2
+[  4] T1:mod0.param0               step[20]         base=0.316  links=1
+      <- param[  3] amount=0.250 bipolar=0
+[  5] T1/D7:param0                 lin[0.000,100.000] base=0.000  links=1 lane=2
       <- param[  3] amount=1.000 bipolar=0
-[  5] T1/D7:param1                 lin[0.000,100.000] base=0.250  links=1
+[  6] T1/D7:param1                 lin[0.000,100.000] base=0.250  links=1
       <- mod[  0] amount=0.500 bipolar=1
-[  6] T1/D7:param2                 lin[0.000,100.000] base=0.500  links=1
-      <- param[  7] amount=0.500 bipolar=1
-[  7] T1/D7:macro0                 lin[0.000,1.000] base=0.250  links=0
+[  7] T1/D7:param2                 lin[0.000,100.000] base=0.500  links=1
+      <- param[  8] amount=0.500 bipolar=1
+[  8] T1/D7:macro0                 lin[0.000,1.000] base=0.250  links=0
 modifiers:
-[  0] T1:mod0                      value=0.750
-order: 0 1 2 3 4 5 7 6
+[  0] T1:mod0                      lfo       value=0.750 custom sync[7] transport phase=0.250 curve=2 rate=param[4]
+order: 0 1 2 3 4 5 8 7 m0 6

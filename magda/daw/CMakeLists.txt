@@ -264,6 +264,10 @@ add_library(magda_types STATIC
     # The shape of an automation lane, on its own, so the engine bakes a curve
     # through the same function the editor draws it with (#2118).
     core/AutomationCurve.cpp
+    # The shape of a modulator's cycle, on the same terms: the editor's preview,
+    # the fork's audio snapshot and the native engine's LFO read one curve
+    # rather than three (#2119).
+    core/ModCurve.cpp
     core/DeviceState.cpp
     # Clip placement rules (#2003). Pure, beat domain, no manager: they answer
     # against a lane of clips, which is what lets the arrangement ask about a
@@ -284,6 +288,7 @@ add_library(magda_types STATIC
     core/ParameterUtils.hpp
     core/AutomationCurve.hpp
     core/AutomationInfo.hpp
+    core/ModCurve.hpp
     core/DeviceInfo.hpp
     core/DeviceState.hpp
     core/KitRow.hpp
