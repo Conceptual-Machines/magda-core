@@ -151,9 +151,18 @@ void restartLfo(LfoState& state, const LfoSettings& settings) {
 float advanceLfo(LfoState& state, const LfoSettings& settings,
                  std::span<const magda::CurvePointData> curve, const BlockInfo& block,
                  const ModTiming& timing) {
-    if (!state.started) {
+    // A fresh state takes its gate from the settings, and so does one whose
+    // trigger mode has changed underneath it: the gate belongs to the triggers
+    // of the mode that opened it, and a mode change retires all of them. An
+    // audio-triggered LFO sits shut between hits, and switching it to free
+    // running would otherwise leave it shut for ever, because nothing in the
+    // new mode ever opens a gate. The held-note count goes with it, for the
+    // same reason.
+    if (!state.started || state.trigger != settings.trigger) {
         state.started = true;
+        state.trigger = settings.trigger;
         state.gated = settings.startGated;
+        state.heldNotes = 0;
     }
 
     // A latch belongs to the setting that made it. Turning one-shot off clears

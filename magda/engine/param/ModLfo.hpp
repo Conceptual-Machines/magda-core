@@ -100,6 +100,16 @@ struct LfoSettings {
 
     ModSync sync = ModSync::Free;
 
+    /**
+     * @brief What the model says triggers it, before the fold into @ref sync.
+     *
+     * Carried as well as folded, because the fold is lossy in the one place it
+     * matters: MIDI and audio both run as ModSync::Note and gate differently,
+     * so the gate cannot be reconciled against the folded form. A mode change
+     * is the one edit that has to reach a running LFO's gate (LfoState::gated).
+     */
+    magda::LFOTriggerMode trigger = magda::LFOTriggerMode::Free;
+
     /// Whether the rate is a musical division rather than a frequency. What
     /// the Rate parameter means depends on it, which is why the two travel
     /// together.
@@ -220,6 +230,22 @@ struct LfoState {
      * fighting the note that had just opened it.
      */
     bool started = false;
+
+    /**
+     * @brief The trigger mode this state's gate was seeded under.
+     *
+     * The one edit a running gate has to hear. A gate belongs to the triggers
+     * of the mode that opened it, and a mode change retires all of them: an
+     * audio-triggered LFO sits shut between hits, and switching it to free
+     * running would otherwise leave it shut for ever, because nothing in the
+     * new mode ever opens a gate.
+     *
+     * Compared rather than re-applied, so an ordinary publish leaves the gate
+     * where the last note put it. The fork gets the same effect by re-applying
+     * unconditionally, which it can afford because its gate is not also where
+     * a held note is counted.
+     */
+    magda::LFOTriggerMode trigger = magda::LFOTriggerMode::Free;
 };
 
 /**
@@ -254,8 +280,24 @@ double barFractionOf(int rateType);
 /**
  * @brief How many beats one cycle of a tempo-synced LFO lasts.
  *
- * The bar fraction times the signature's own beats, which is what makes a
- * "1 Bar" LFO a bar long whatever the signature is.
+ * The bar fraction times the signature's numerator, and the numerator alone:
+ * the denominator is not read here because it is not read in the fork either.
+ * No TE modifier looks at one, and a TE beat is a quarter note exactly as a
+ * beat is here, so a modifier's "bar" is the numerator counted in quarter
+ * notes rather than in the signature's own note value.
+ *
+ * In four four the two readings agree and nothing shows. In six eight they do
+ * not: a bar is three quarter notes, and this says six, so a "1 Bar" LFO runs
+ * two written bars long. Transport sync inherits the same reading, and takes
+ * the numerator at the block's own position, so a signature change moves the
+ * phase rather than continuing it.
+ *
+ * Kept because it is the fork's, not because it is right. Every synced
+ * modifier in every project in anything but an x/4 signature is placed by this
+ * arithmetic, and correcting it during the port would move all of them: the
+ * null-diff corpus would report the difference and the user would hear it.
+ * Changing it is a decision about the incumbent's behaviour, taken once, for
+ * both engines at the same time (#2128).
  */
 double cycleBeats(int rateType, int numerator);
 

@@ -78,6 +78,7 @@ LfoSettings lfoSettingsOf(const magda::ModInfo& mod) {
     settings.wave = mod.waveform;
     settings.preset = mod.curvePreset;
     settings.sync = modSyncOf(mod);
+    settings.trigger = mod.triggerMode;
     settings.tempoSync = mod.tempoSync;
     settings.rate.hz = mod.rate;
     settings.rate.rateType = mod.tempoSync ? magda::syncDivisionToTeRateOrdinal(mod.syncDivision)

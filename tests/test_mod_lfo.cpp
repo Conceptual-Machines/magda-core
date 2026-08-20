@@ -361,6 +361,27 @@ TEST_CASE("A tempo-synced LFO's period is a fraction of a bar", "[engine][mod][l
         CHECK(step(state, settings, blockAt(1.5, 1.0, 512), {}, timing(120.0, 3)) == approx(0.5f));
     }
 
+    SECTION("and the denominator is not read, because the fork does not read one") {
+        // Pinned rather than endorsed. A bar of six eight is three quarter
+        // notes, and this counts six, so a "1 Bar" LFO runs two written bars
+        // long. No TE modifier reads a denominator and a TE beat is a quarter
+        // note, so this is what every synced modifier in every x/8 project is
+        // already placed by; correcting it during the port would move all of
+        // them at once. See cycleBeats and #2128.
+        CHECK(cycleBeats(static_cast<int>(ModRateType::Bar), 6) == Catch::Approx(6.0));
+
+        LfoState state;
+        LfoSettings settings;
+        settings.wave = LFOWaveform::Saw;
+        settings.sync = ModSync::Transport;
+        settings.tempoSync = true;
+        settings.rate.rateType = static_cast<int>(ModRateType::Bar);
+
+        // Three quarter notes in is one written bar of six eight, and half a
+        // cycle rather than a whole one.
+        CHECK(step(state, settings, blockAt(3.0, 1.0, 512), {}, timing(120.0, 6)) == approx(0.5f));
+    }
+
     SECTION("free-running, the period is that many beats at this tempo") {
         LfoState state;
         LfoSettings settings;
@@ -649,6 +670,52 @@ TEST_CASE("A forced zero stands in for the gap a gated retrigger leaves",
         // middle of a duck is a click on every hit.
         CHECK(harness.mods.value(fixture.modifier) == approx(1.0f));
         CHECK(before != approx(0.0f));
+    }
+}
+
+TEST_CASE("Changing the trigger mode retires the gate the old one left",
+          "[engine][mod][lfo][trigger]") {
+    // An audio-triggered LFO sits shut between hits, and a trigger mode is a
+    // values publish rather than a structural one, so the runtime is never
+    // re-prepared for it. Without reconciling, switching to free running would
+    // leave the gate shut for ever: nothing in the new mode ever opens one.
+    auto fixture = triggered(LFOTriggerMode::Audio);
+    Harness harness(fixture.table);
+    const auto block = stoppedBlock(12000);
+
+    harness.run(fixture.table, block);
+    harness.run(fixture.table, block);
+    REQUIRE(harness.mods.value(fixture.modifier) == approx(0.0f));
+
+    auto freed = fixture.table;
+    freed.modifiers[0].lfo.trigger = LFOTriggerMode::Free;
+    freed.modifiers[0].lfo.sync = ModSync::Free;
+    freed.modifiers[0].lfo.startGated = false;
+    freed.modifiers[0].lfo.gateOnTrigger = false;
+
+    harness.run(freed, block);
+    CHECK(harness.mods.value(fixture.modifier) == approx(0.5f));
+
+    SECTION("and the held notes with it") {
+        auto midi = freed;
+        midi.modifiers[0].lfo.trigger = LFOTriggerMode::MIDI;
+        midi.modifiers[0].lfo.sync = ModSync::Note;
+        midi.modifiers[0].lfo.gateOnTrigger = true;
+        midi.modifiers[0].lfo.startGated = true;
+
+        // Shut again on the mode change, and one note-off cannot open it by
+        // taking a count left over from the mode before.
+        harness.run(midi, block);
+        CHECK(harness.mods.value(fixture.modifier) == approx(0.0f));
+
+        harness.mods.noteOff(fixture.modifier, midi);
+        harness.run(midi, block);
+        CHECK(harness.mods.value(fixture.modifier) == approx(0.0f));
+
+        harness.mods.noteOn(fixture.modifier, midi);
+        harness.run(midi, block);
+        harness.run(midi, block);
+        CHECK(harness.mods.value(fixture.modifier) == approx(0.25f));
     }
 }
 
