@@ -320,6 +320,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_mod_random.cpp)
     list(APPEND TEST_SOURCES test_mod_follower.cpp)
     list(APPEND TEST_SOURCES test_mod_feeds.cpp)
+    # Macros at track, rack and device scope (#2121): which array a path
+    # names, nested racks, and a macro reaching a modifier's rate.
+    list(APPEND TEST_SOURCES test_param_macros.cpp)
     list(APPEND TEST_SOURCES test_tempo_map.cpp)
     list(APPEND TEST_SOURCES test_transport_clock.cpp)
     list(APPEND TEST_SOURCES test_click_generator.cpp)
