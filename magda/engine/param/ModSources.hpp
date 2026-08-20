@@ -94,17 +94,13 @@ inline std::optional<magda::TrackId> modifierSourceTrack(const magda::ModInfo& m
 /**
  * @brief The source a sidechain config names, or INVALID_TRACK_ID for none.
  *
- * Either type. What a sidechain says here is where a scope's modifiers listen,
- * and what each of them listens for is its own business: an audio sidechain
- * carrying a note-triggered modifier's notes is the same edge to the same
- * track, and the tap emitted for it carries both the level and the MIDI.
- *
- * That is a decision rather than a transcription. The fork picks the monitor
- * from the sidechain's type, so a note-triggered modifier on an audio-keyed
- * device is fed by the level detector there and hears no notes at all, which
- * makes what a modifier does depend on a setting belonging to the device it
- * happens to sit on. Here the modifier's own trigger mode decides, which is the
- * reading the model's own controls describe.
+ * Either type, because the type is not this question's. A sidechain says which
+ * track a scope reads; the trigger mode on the modifier says what that modifier
+ * is waiting for. The fork separates them the same way: it installs its MIDI
+ * monitor for a track with a note-triggered modifier and its level monitor for
+ * one with an audio-triggered modifier, both read off the modes rather than off
+ * any sidechain's type (trackNeedsSidechainMonitor, trackNeedsAudioSidechain-
+ * Monitor).
  */
 inline magda::TrackId sidechainSourceOf(const magda::SidechainConfig& sidechain) {
     return sidechain.isActive() ? sidechain.sourceTrackId : magda::INVALID_TRACK_ID;
