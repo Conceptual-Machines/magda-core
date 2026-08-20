@@ -42,6 +42,7 @@ using namespace magda;
 using magda::engine::BlockInfo;
 using magda::engine::compileParamTable;
 using magda::engine::compileRenderPlan;
+using magda::engine::ModKind;
 using magda::engine::ModRuntime;
 
 namespace {
@@ -429,4 +430,124 @@ TEST_CASE("A modulation tap keeps its detector across a prepare", "[engine][mod]
     magda::engine::PlanExecutor second;
     second.prepare(plan, bindings, context, &first, values.params.get());
     CHECK(second.carriedTriggerDetectors() == 1);
+}
+
+TEST_CASE("A follower and a trigger on one source read different points", "[engine][mod][feeds]") {
+    // The fork has two tap points and uses both: its trigger monitor sits in
+    // front of the chain and its follower tap at the far end. One point for
+    // both would make riding the source fader silence the triggers, which it
+    // does in neither engine.
+    auto source = makeTrack(2);
+    source.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(9)));
+
+    auto listener = makeTrack(1);
+    listener.mods = createDefaultMods(2);
+    listener.mods[0].setType(ModType::LFO);
+    listener.mods[0].triggerMode = LFOTriggerMode::Audio;
+    listener.mods[1].setType(ModType::Follower);
+
+    // Both listen to track 2, through a device keyed from it.
+    listener.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(7)));
+    auto& device = magda::getDevice(listener.chain.fxChainElements.front());
+    device.sidechain.type = SidechainConfig::Type::Audio;
+    device.sidechain.sourceTrackId = 2;
+    device.mods = listener.mods;
+    listener.mods = createDefaultMods(0);
+
+    const std::vector<TrackInfo> tracks{listener, source};
+    const auto master = makeMaster();
+    const auto plan = compileRenderPlan(tracks, master);
+
+    // Two taps on the one source, and they read different ops.
+    std::vector<magda::engine::OpId> taps;
+    for (std::size_t i = 0; i < plan.ops.size(); ++i)
+        if (plan.ops[i].key.role == magda::engine::OpRole::ModulationTap) {
+            CHECK(plan.ops[i].key.trackId == 2);
+            taps.push_back(static_cast<magda::engine::OpId>(i));
+        }
+
+    REQUIRE(taps.size() == 2);
+    CHECK(plan.ops[static_cast<std::size_t>(taps[0])].inputs[0].op !=
+          plan.ops[static_cast<std::size_t>(taps[1])].inputs[0].op);
+
+    // The near one is the chain head, in front of the source's own device; the
+    // far one is its meter, which is post-fader and pre-mute.
+    const auto roleOfInput = [&](magda::engine::OpId tap) {
+        const auto producer = plan.ops[static_cast<std::size_t>(tap)].inputs[0].op;
+        return plan.ops[static_cast<std::size_t>(producer)].key.role;
+    };
+
+    CHECK(roleOfInput(taps[0]) == magda::engine::OpRole::TrackAudioInput);
+    CHECK(roleOfInput(taps[1]) == magda::engine::OpRole::TrackMeter);
+
+    // And the table says which modifier is on which, so the executor can
+    // dispatch each from the point it named.
+    const auto table = compileParamTable(plan, tracks, master, {});
+    REQUIRE(table.modifiers.size() == 2);
+    for (const auto& modifier : table.modifiers) {
+        CHECK(modifier.source == 2);
+        CHECK(modifier.tap ==
+              (modifier.kind == ModKind::Follower ? ModTapPoint::PostFader : ModTapPoint::PreFx));
+    }
+}
+
+TEST_CASE("A modulation feed does not order the tracks", "[engine][mod][feeds]") {
+    // A modifier listening to another track needs that track's tap to exist,
+    // and it does: the taps are emitted after every track. What it must not do
+    // is force the source to compile first, because a track routed into the
+    // very track its modifiers listen to is an ordinary project and a cycle
+    // here, and the breaker resolves a cycle by dropping a real connection.
+    //
+    // A rack sidechain is the case that isolates it. A device sidechain is a
+    // signal edge in its own right and orders the tracks for reasons that have
+    // nothing to do with modulation; a rack does not mix its sidechain into its
+    // chains, so the only edge it could contribute is the modulation one.
+    RackInfo rack;
+    rack.id = 4;
+    rack.sidechain.type = SidechainConfig::Type::Audio;
+    rack.sidechain.sourceTrackId = 2;
+    rack.mods = createDefaultMods(1);
+    rack.mods[0].setType(ModType::LFO);
+    rack.mods[0].triggerMode = LFOTriggerMode::Audio;
+    rack.mods[0].links.push_back(ModLink{
+        ControlTarget::pluginParam(ChainNodePath::chainDevice(1, 4, 10, 7), 0), 1.0f, false, true});
+
+    ChainInfo chain;
+    chain.id = 10;
+    chain.elements.push_back(makeDeviceElement(makeDevice(7)));
+    rack.chains.push_back(std::move(chain));
+
+    auto listener = makeTrack(1);
+    listener.audioOutputDevice = "track:2";
+    listener.chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+    auto sink = makeTrack(2);
+    sink.type = TrackType::Audio;
+
+    // Declared source-last, which is the order that used to invent the cycle.
+    const std::vector<TrackInfo> tracks{sink, listener};
+    const auto master = makeMaster();
+    const auto plan = compileRenderPlan(tracks, master);
+
+    // The real routing survives: nothing was dropped to break a cycle that the
+    // modulation feed invented.
+    for (const auto& message : plan.diagnostics)
+        CHECK(message.find("arrived after it was compiled") == std::string::npos);
+
+    // And track 1's audio still reaches track 2, which is the connection the
+    // cycle breaker used to spend.
+    bool reaches = false;
+    for (const auto& op : plan.ops)
+        if (op.key.trackId == 2 && op.key.role == magda::engine::OpRole::TrackAudioInput)
+            reaches = !op.inputs.empty() && op.inputs.front().valid();
+    CHECK(reaches);
+
+    // The tap is still there, reading track 2 at the point the trigger named.
+    int taps = 0;
+    for (const auto& op : plan.ops)
+        if (op.key.role == magda::engine::OpRole::ModulationTap) {
+            ++taps;
+            CHECK(op.key.trackId == 2);
+        }
+    CHECK(taps == 1);
 }

@@ -44,6 +44,12 @@ enum class ModListen : std::uint8_t {
     Midi,     ///< the source's notes: a MIDI trigger
 };
 
+/// Where @p mod listens, which only means anything when it listens to audio.
+/// The model's own field, read through here so both compilers ask one question.
+inline magda::ModTapPoint modTapPointOf(const magda::ModInfo& mod) {
+    return mod.tapPoint;
+}
+
 /// What @p mod listens for, before the question of which track it listens to.
 inline ModListen modListenOf(const magda::ModInfo& mod) {
     if (!mod.enabled)
@@ -106,20 +112,59 @@ inline magda::TrackId sidechainSourceOf(const magda::SidechainConfig& sidechain)
     return sidechain.isActive() ? sidechain.sourceTrackId : magda::INVALID_TRACK_ID;
 }
 
-/// Every track the modifiers on @p mods listen to, added to @p out.
-inline void collectModulationSources(const magda::ModArray& mods, magda::TrackId sidechainSource,
-                                     magda::TrackId ownTrack, std::set<magda::TrackId>& out) {
-    for (const auto& mod : mods)
-        if (const auto source = modifierSourceTrack(mod, sidechainSource, ownTrack))
-            out.insert(*source);
+/**
+ * @brief One place the modulation system reads a track.
+ *
+ * A track is read at one point or two, never more: the two the engines have.
+ * What decides which is what listens, and a track with a follower at the far
+ * end and a trigger at the near one needs both.
+ */
+struct ModTap {
+    magda::TrackId track = magda::INVALID_TRACK_ID;
+    magda::ModTapPoint point = magda::ModTapPoint::PreFx;
+
+    auto operator<=>(const ModTap&) const = default;
+};
+
+/**
+ * @brief Every point the modifiers on @p mods read, added to @p out.
+ *
+ * An audio listener reads the point it names. A note listener reads the near
+ * one, and not because notes are near: MIDI has no fader to sit either side
+ * of, so it rides the tap that a track listened to at all always has rather
+ * than earning one of its own.
+ */
+inline void collectModulationTaps(const magda::ModArray& mods, magda::TrackId sidechainSource,
+                                  magda::TrackId ownTrack, std::set<ModTap>& out) {
+    for (const auto& mod : mods) {
+        const auto source = modifierSourceTrack(mod, sidechainSource, ownTrack);
+        if (!source)
+            continue;
+
+        out.insert(ModTap{*source, modListenOf(mod) == ModListen::Midi ? magda::ModTapPoint::PreFx
+                                                                       : modTapPointOf(mod)});
+    }
 }
 
-void collectModulationSources(const std::vector<magda::ChainElement>& elements,
-                              magda::TrackId ownTrack, std::set<magda::TrackId>& out);
+/// Every track the modifiers on @p mods listen to for notes, added to @p out.
+/// A source has to compile its MIDI ops whether or not its own chain wants
+/// them, which is a question about the track rather than about a tap point.
+inline void collectNoteSources(const magda::ModArray& mods, magda::TrackId sidechainSource,
+                               magda::TrackId ownTrack, std::set<magda::TrackId>& out) {
+    for (const auto& mod : mods)
+        if (modListenOf(mod) == ModListen::Midi)
+            if (const auto source = modifierSourceTrack(mod, sidechainSource, ownTrack))
+                out.insert(*source);
+}
 
-/// Every track the modifiers anywhere on @p track listen to, added to @p out.
-/// Walked in the same shape the parameter table walks its scopes, because the
-/// two lists have to be the same list.
-void collectModulationSources(const magda::TrackInfo& track, std::set<magda::TrackId>& out);
+void collectModulationTaps(const std::vector<magda::ChainElement>& elements,
+                           magda::TrackId ownTrack, std::set<ModTap>& out,
+                           std::set<magda::TrackId>& notes);
+
+/// Every point the modifiers anywhere on @p track read, and every track any of
+/// them reads for notes. Walked in the same shape the parameter table walks its
+/// scopes, because the two lists have to be the same list.
+void collectModulationTaps(const magda::TrackInfo& track, std::set<ModTap>& out,
+                           std::set<magda::TrackId>& notes);
 
 }  // namespace magda::engine

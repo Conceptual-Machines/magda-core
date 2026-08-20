@@ -457,6 +457,16 @@ void TrackManager::setModType(const ChainNodePath& path, int modIndex, ModType t
     auto& mod = (*node.mods)[modIndex];
     auto oldType = mod.type;
     mod.type = type;
+
+    // A modifier that has just become another kind is a new modifier as far as
+    // the tap point is concerned: a follower wants the far end and a trigger
+    // wants the near one, and carrying the old kind's answer over would leave a
+    // fresh follower keying off the wrong place with nothing on screen to say
+    // why. Re-derived on the type change alone, so a point the user moved
+    // afterwards stays where they put it.
+    if (oldType != type)
+        mod.tapPoint = defaultModTapPoint(type);
+
     auto defaultOldName = ModInfo::getDefaultName(modIndex, oldType);
     if (mod.name == defaultOldName) {
         mod.name = ModInfo::getDefaultName(modIndex, type);
@@ -520,6 +530,14 @@ void TrackManager::setModOneShot(const ChainNodePath& path, int modIndex, bool o
     // direction: back to loop it should run again, and re-entering one-shot
     // should wait for the next trigger rather than stay latched complete.
     mod.oneShotComplete = false;
+    notifyDeviceModifiersChanged(path.trackId);
+}
+
+void TrackManager::setModTapPoint(const ChainNodePath& path, int modIndex, ModTapPoint point) {
+    auto node = resolveChainNode(path);
+    if (!indexInRange(node.mods, modIndex))
+        return;
+    (*node.mods)[modIndex].tapPoint = point;
     notifyDeviceModifiersChanged(path.trackId);
 }
 

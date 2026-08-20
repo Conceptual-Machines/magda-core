@@ -281,21 +281,30 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     // the threshold at that moment would read as a rising edge on the next
     // block and fire a trigger nothing played. The fork's monitor plugin
     // survives the same edits with its own level and gate intact.
-    std::map<TrackId, TriggerDetector> carriedTriggers;
-    if (previous != nullptr)
+    // Shared rather than copied, on the terms the delay lines and the modifier
+    // states are shared: the executor being replaced is still rendering while
+    // this one is prepared, and a tap's envelope is written on the audio thread
+    // by exactly that render. Copying it here would be a read racing a write,
+    // and would carry a half-updated detector, which is the spurious edge the
+    // carry exists to prevent.
+    std::map<TrackId, std::shared_ptr<TriggerDetector>> carriedTriggers;
+    if (previous != nullptr && previous != this && previous->plan_ != nullptr)
         for (std::size_t i = 0; i < previous->plan_->ops.size(); ++i)
             if (previous->plan_->ops[i].kind == OpKind::ModSource)
                 carriedTriggers[previous->plan_->ops[i].key.trackId] = previous->triggerForOp_[i];
 
-    triggerForOp_.assign(numOps, TriggerDetector{});
+    triggerForOp_.assign(numOps, nullptr);
     carriedTriggerDetectors_ = 0;
     for (std::size_t i = 0; i < numOps; ++i) {
         if (plan.ops[i].kind != OpKind::ModSource)
             continue;
+
         if (const auto found = carriedTriggers.find(plan.ops[i].key.trackId);
-            found != carriedTriggers.end()) {
+            found != carriedTriggers.end() && found->second != nullptr) {
             triggerForOp_[i] = found->second;
             ++carriedTriggerDetectors_;
+        } else {
+            triggerForOp_[i] = std::make_shared<TriggerDetector>();
         }
     }
 
@@ -890,7 +899,9 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
         for (int s = 0; s < numSamples; ++s)
             peak = std::max(peak, std::abs(in.getSample(c, s)));
 
-    auto& detector = triggerForOp_[i];
+    auto* detector = triggerForOp_[i].get();
+    if (detector == nullptr)
+        return;
 
     // One envelope per source rather than one per modifier, and the constants
     // are the fork's: a fast attack so a transient opens the gate, a moderate
@@ -901,15 +912,24 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
     const auto attack = 1.0f - std::exp(static_cast<float>(-blockMs / kTriggerAttackMs));
     const auto release = 1.0f - std::exp(static_cast<float>(-blockMs / kTriggerReleaseMs));
 
-    detector.envelope += (peak > detector.envelope ? attack : release) * (peak - detector.envelope);
+    detector->envelope +=
+        (peak > detector->envelope ? attack : release) * (peak - detector->envelope);
 
-    const bool rising = !detector.open && detector.envelope > kTriggerThreshold;
-    const bool falling = detector.open && detector.envelope < kTriggerThreshold;
+    const bool rising = !detector->open && detector->envelope > kTriggerThreshold;
+    const bool falling = detector->open && detector->envelope < kTriggerThreshold;
     if (rising || falling)
-        detector.open = rising;
+        detector->open = rising;
+
+    // Which of a track's two taps this is. A listener reads the one it names,
+    // so a follower at the far end and a trigger at the near one on the same
+    // source each hear their own point rather than sharing whichever op ran.
+    const auto point =
+        op.key.index == 0 ? magda::ModTapPoint::PreFx : magda::ModTapPoint::PostFader;
 
     for (const auto index : modSourceForOp_[i]) {
         if (mods_.listensFor(index, *blockTable_) != ModListen::Audio)
+            continue;
+        if (blockTable_->modifiers[static_cast<std::size_t>(index)].tap != point)
             continue;
 
         // A follower wants the samples; a trigger wants the edge. Both listen

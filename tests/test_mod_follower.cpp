@@ -122,7 +122,7 @@ TrackInfo trackWithFollower() {
     auto track = makeTrack(1);
     track.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(7)));
     track.mods = createDefaultMods(1);
-    track.mods[0].type = ModType::Follower;
+    track.mods[0].setType(ModType::Follower);
     track.mods[0].followerAttackMs = 10.0f;
     track.mods[0].followerReleaseMs = 100.0f;
     track.mods[0].links.push_back(ModLink{
@@ -354,7 +354,7 @@ TEST_CASE("A follower listens to its own track unless its scope is sidechained",
         device.sidechain.type = SidechainConfig::Type::Audio;
         device.sidechain.sourceTrackId = 2;
         device.mods = createDefaultMods(1);
-        device.mods[0].type = ModType::Follower;
+        device.mods[0].setType(ModType::Follower);
 
         const auto table = tableFor({track, makeTrack(2)});
 

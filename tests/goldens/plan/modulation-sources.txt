@@ -5,70 +5,72 @@
 
 == plan ==
 magda-render-plan v1
-ops=29 outputs=1
-[  0] ClipAudio   det   T2:clipAudio                   in=-                out=audio       deps=0
-[  1] MixAudio    det   T2:trackAudioInput             in=0:0              out=audio       deps=1
-[  2] ClipMidi    det   T2:clipMidi                    in=-                out=midi        deps=0
-[  3] MergeMidi   det   T2:trackMidiInput              in=2:0              out=midi        deps=1
-[  4] Delay       det   T2/D9:deviceInputDelay         in=1:0              out=audio       deps=1
-[  5] Delay       det   T2/D9:deviceInputDelay#1       in=3:0              out=midi        deps=1
-[  6] Device      det   T2/D9:deviceProcess            in=4:0,5:0,-        out=audio       deps=2
-[  7] Gain        det   T2/D9:deviceGain               in=6:0              out=audio       deps=1
-[  8] Fader       det   T2:trackFader                  in=7:0,-            out=audio       deps=1
-[  9] Meter       det   T2:trackMeter                  in=8:0              out=audio       deps=1
-[ 10] Gain        det   T2:trackMute                   in=9:0              out=audio       deps=1
-[ 11] ClipAudio   det   T1:clipAudio                   in=-                out=audio       deps=0
-[ 12] MixAudio    det   T1:trackAudioInput             in=11:0             out=audio       deps=1
-[ 13] Device      det   T1/R4/C10/D7:deviceProcess     in=12:0,-,-         out=audio       deps=1
-[ 14] Gain        det   T1/R4/C10/D7:deviceGain        in=13:0             out=audio       deps=1
-[ 15] Fader       det   T1/R4/C10:rackChainFader       in=14:0,-           out=audio       deps=1
-[ 16] MixAudio    det   T1/R4:rackMix                  in=15:0             out=audio       deps=1
-[ 17] Fader       det   T1/R4:rackFader                in=16:0,-           out=audio       deps=1
-[ 18] Fader       det   T1:trackFader                  in=17:0,-           out=audio       deps=1
-[ 19] Meter       det   T1:trackMeter                  in=18:0             out=audio       deps=1
-[ 20] Gain        det   T1:trackMute                   in=19:0             out=audio       deps=1
-[ 21] Delay       det   T-2:mixInputDelay              in=10:0             out=audio       deps=1
+ops=30 outputs=1
+[  0] ClipAudio   det   T1:clipAudio                   in=-                out=audio       deps=0
+[  1] MixAudio    det   T1:trackAudioInput             in=0:0              out=audio       deps=1
+[  2] Device      det   T1/R4/C10/D7:deviceProcess     in=1:0,-,-          out=audio       deps=1
+[  3] Gain        det   T1/R4/C10/D7:deviceGain        in=2:0              out=audio       deps=1
+[  4] Fader       det   T1/R4/C10:rackChainFader       in=3:0,-            out=audio       deps=1
+[  5] MixAudio    det   T1/R4:rackMix                  in=4:0              out=audio       deps=1
+[  6] Fader       det   T1/R4:rackFader                in=5:0,-            out=audio       deps=1
+[  7] Fader       det   T1:trackFader                  in=6:0,-            out=audio       deps=1
+[  8] Meter       det   T1:trackMeter                  in=7:0              out=audio       deps=1
+[  9] Gain        det   T1:trackMute                   in=8:0              out=audio       deps=1
+[ 10] ClipAudio   det   T2:clipAudio                   in=-                out=audio       deps=0
+[ 11] MixAudio    det   T2:trackAudioInput             in=10:0             out=audio       deps=1
+[ 12] ClipMidi    det   T2:clipMidi                    in=-                out=midi        deps=0
+[ 13] MergeMidi   det   T2:trackMidiInput              in=12:0             out=midi        deps=1
+[ 14] Delay       det   T2/D9:deviceInputDelay         in=11:0             out=audio       deps=1
+[ 15] Delay       det   T2/D9:deviceInputDelay#1       in=13:0             out=midi        deps=1
+[ 16] Device      det   T2/D9:deviceProcess            in=14:0,15:0,-      out=audio       deps=2
+[ 17] Gain        det   T2/D9:deviceGain               in=16:0             out=audio       deps=1
+[ 18] Fader       det   T2:trackFader                  in=17:0,-           out=audio       deps=1
+[ 19] Meter       det   T2:trackMeter                  in=18:0             out=audio       deps=1
+[ 20] Gain        det   T2:trackMute                   in=19:0             out=audio       deps=1
+[ 21] Delay       det   T-2:mixInputDelay              in=9:0              out=audio       deps=1
 [ 22] Delay       det   T-2:mixInputDelay#1            in=20:0             out=audio       deps=1
 [ 23] MixAudio    det   T-2:trackAudioInput            in=21:0,22:0        out=audio       deps=2
 [ 24] Fader       det   T-2:trackFader                 in=23:0,-           out=audio       deps=1
 [ 25] Meter       det   T-2:trackMeter                 in=24:0             out=audio       deps=1
 [ 26] Gain        det   T-2:trackMute                  in=25:0             out=audio       deps=1
 [ 27] Output      det   T-2:hardwareOutput             in=26:0             out=-           deps=1
-[ 28] ModSource   det   T2:modulationTap               in=9:0,3:0          out=-           deps=2
-ready=0,2,11
+[ 28] ModSource   det   T2:modulationTap               in=11:0,13:0        out=-           deps=2
+[ 29] ModSource   det   T2:modulationTap#1             in=19:0,-           out=-           deps=1
+ready=0,10,12
 
 == layout ==
 magda-plan-layout v1
-audioSlots=3 midiSlots=2 outputLatency=0
-[  0] ClipAudio   T2:clipAudio                   lat=0       ports=a0
-[  1] MixAudio    T2:trackAudioInput             lat=0       ports=a0          inplace
-[  2] ClipMidi    T2:clipMidi                    lat=0       ports=m0
-[  3] MergeMidi   T2:trackMidiInput              lat=0       ports=m1
-[  4] Delay       T2/D9:deviceInputDelay         lat=0       ports=a0          hold=0 elided
-[  5] Delay       T2/D9:deviceInputDelay#1       lat=0       ports=m1          hold=0 elided
-[  6] Device      T2/D9:deviceProcess            lat=0       ports=a0          inplace
-[  7] Gain        T2/D9:deviceGain               lat=0       ports=a0          inplace
-[  8] Fader       T2:trackFader                  lat=0       ports=a0          inplace
-[  9] Meter       T2:trackMeter                  lat=0       ports=a0          inplace
-[ 10] Gain        T2:trackMute                   lat=0       ports=a1
-[ 11] ClipAudio   T1:clipAudio                   lat=0       ports=a2
-[ 12] MixAudio    T1:trackAudioInput             lat=0       ports=a2          inplace
-[ 13] Device      T1/R4/C10/D7:deviceProcess     lat=0       ports=a2          inplace
-[ 14] Gain        T1/R4/C10/D7:deviceGain        lat=0       ports=a2          inplace
-[ 15] Fader       T1/R4/C10:rackChainFader       lat=0       ports=a2          inplace
-[ 16] MixAudio    T1/R4:rackMix                  lat=0       ports=a2          inplace
-[ 17] Fader       T1/R4:rackFader                lat=0       ports=a2          inplace
-[ 18] Fader       T1:trackFader                  lat=0       ports=a2          inplace
-[ 19] Meter       T1:trackMeter                  lat=0       ports=a2          inplace
-[ 20] Gain        T1:trackMute                   lat=0       ports=a2          inplace
-[ 21] Delay       T-2:mixInputDelay              lat=0       ports=a1          hold=0 elided
-[ 22] Delay       T-2:mixInputDelay#1            lat=0       ports=a2          hold=0 elided
-[ 23] MixAudio    T-2:trackAudioInput            lat=0       ports=a1          inplace
-[ 24] Fader       T-2:trackFader                 lat=0       ports=a1          inplace
-[ 25] Meter       T-2:trackMeter                 lat=0       ports=a1          inplace
-[ 26] Gain        T-2:trackMute                  lat=0       ports=a1          inplace
+audioSlots=4 midiSlots=2 outputLatency=0
+[  0] ClipAudio   T1:clipAudio                   lat=0       ports=a0
+[  1] MixAudio    T1:trackAudioInput             lat=0       ports=a0          inplace
+[  2] Device      T1/R4/C10/D7:deviceProcess     lat=0       ports=a0          inplace
+[  3] Gain        T1/R4/C10/D7:deviceGain        lat=0       ports=a0          inplace
+[  4] Fader       T1/R4/C10:rackChainFader       lat=0       ports=a0          inplace
+[  5] MixAudio    T1/R4:rackMix                  lat=0       ports=a0          inplace
+[  6] Fader       T1/R4:rackFader                lat=0       ports=a0          inplace
+[  7] Fader       T1:trackFader                  lat=0       ports=a0          inplace
+[  8] Meter       T1:trackMeter                  lat=0       ports=a0          inplace
+[  9] Gain        T1:trackMute                   lat=0       ports=a0          inplace
+[ 10] ClipAudio   T2:clipAudio                   lat=0       ports=a1
+[ 11] MixAudio    T2:trackAudioInput             lat=0       ports=a1          inplace
+[ 12] ClipMidi    T2:clipMidi                    lat=0       ports=m0
+[ 13] MergeMidi   T2:trackMidiInput              lat=0       ports=m1
+[ 14] Delay       T2/D9:deviceInputDelay         lat=0       ports=a1          hold=0 elided
+[ 15] Delay       T2/D9:deviceInputDelay#1       lat=0       ports=m1          hold=0 elided
+[ 16] Device      T2/D9:deviceProcess            lat=0       ports=a2
+[ 17] Gain        T2/D9:deviceGain               lat=0       ports=a2          inplace
+[ 18] Fader       T2:trackFader                  lat=0       ports=a2          inplace
+[ 19] Meter       T2:trackMeter                  lat=0       ports=a2          inplace
+[ 20] Gain        T2:trackMute                   lat=0       ports=a3
+[ 21] Delay       T-2:mixInputDelay              lat=0       ports=a0          hold=0 elided
+[ 22] Delay       T-2:mixInputDelay#1            lat=0       ports=a3          hold=0 elided
+[ 23] MixAudio    T-2:trackAudioInput            lat=0       ports=a0          inplace
+[ 24] Fader       T-2:trackFader                 lat=0       ports=a0          inplace
+[ 25] Meter       T-2:trackMeter                 lat=0       ports=a0          inplace
+[ 26] Gain        T-2:trackMute                  lat=0       ports=a0          inplace
 [ 27] Output      T-2:hardwareOutput             lat=-       ports=-
 [ 28] ModSource   T2:modulationTap               lat=-       ports=-
+[ 29] ModSource   T2:modulationTap#1             lat=-       ports=-
 
 == params ==
 magda-param-table v1
@@ -80,6 +82,6 @@ params=2 modifiers=3 links=3
       <- mod[  2] amount=0.500 bipolar=1
 modifiers:
 [  0] T1:mod0                      random    value=0.500 stepped sync[16] transport shape=0.500 smooth=0.250 step=0.600
-[  1] T1/R4:mod0                   adsr      value=0.500 a=5.000ms d=120.000ms s=0.400 r=250.000ms note curves[0.250,0.000,0.000] source=track[2]
-[  2] T1/R4:mod1                   follower  value=0.500 gain=6.000dB a=20.000ms h=30.000ms r=400.000ms hp=150.000Hz source=track[2]
+[  1] T1/R4:mod0                   adsr      value=0.500 a=5.000ms d=120.000ms s=0.400 r=250.000ms note curves[0.250,0.000,0.000] source=track[2] prefx
+[  2] T1/R4:mod1                   follower  value=0.500 gain=6.000dB a=20.000ms h=30.000ms r=400.000ms hp=150.000Hz source=track[2] postfader
 order: m0 m1 0 m2 1

@@ -226,7 +226,8 @@ std::string dumpParamTable(const ParamTable& table) {
             // plan's modulation tap, printed so a golden shows the edge from
             // both sides rather than only from the plan's.
             if (modifier.source != magda::INVALID_TRACK_ID)
-                line << " source=track[" << modifier.source << "]";
+                line << " source=track[" << modifier.source << "]"
+                     << (modifier.tap == magda::ModTapPoint::PreFx ? " prefx" : " postfader");
 
             if (modifier.rate != INVALID_PARAM_ID)
                 line << " rate=param[" << modifier.rate << "]";

@@ -602,8 +602,12 @@ class PlanExecutor {
         bool open = false;
     };
 
-    /// Per ModSource op, indexed the same way the ops are.
-    std::vector<TriggerDetector> triggerForOp_;
+    /// Per ModSource op, indexed the same way the ops are. Held by shared
+    /// pointer for the reason the delay lines are: a tap the next plan also has
+    /// is the same detector rather than a copy of one read at some instant, and
+    /// only one epoch renders at a time so there is an owner to outlive and no
+    /// concurrent use to guard against.
+    std::vector<std::shared_ptr<TriggerDetector>> triggerForOp_;
 
     int carriedTriggerDetectors_ = 0;
 

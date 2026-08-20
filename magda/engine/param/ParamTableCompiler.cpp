@@ -393,8 +393,11 @@ void Builder::allocateMods(const Node& node) {
         // Which track this one listens to, if it listens at all. The same rule
         // the plan compiler emits the edge from, called rather than restated
         // (ModSources.hpp says why that matters).
-        if (const auto source = modifierSourceTrack(mod, node.sidechainSource, node.scope.trackId))
+        if (const auto source =
+                modifierSourceTrack(mod, node.sidechainSource, node.scope.trackId)) {
             modifier.source = *source;
+            modifier.tap = modTapPointOf(mod);
+        }
 
         // Cross-track is a property of the scope rather than of the modifier,
         // which is why the settings could not say it: a modifier whose scope is

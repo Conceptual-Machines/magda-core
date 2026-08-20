@@ -323,7 +323,7 @@ Fixture modulationSources() {
         ModLink{ControlTarget::pluginParam(ChainNodePath::chainDevice(1, 4, 10, 7), 0), 0.75f,
                 false, true});
 
-    rack.mods[1].type = ModType::Follower;
+    rack.mods[1].setType(ModType::Follower);
     rack.mods[1].followerGainDb = 6.0f;
     rack.mods[1].followerAttackMs = 20.0f;
     rack.mods[1].followerHoldMs = 30.0f;

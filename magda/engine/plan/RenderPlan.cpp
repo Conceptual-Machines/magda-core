@@ -35,7 +35,7 @@ int arityOf(OpKind kind) {
         case OpKind::Output:
             return 1;
         case OpKind::ModSource:
-            return 2;  // the source's audio, the source's MIDI
+            return 2;  // the source's audio at this tap's point, the source's MIDI
     }
     return -1;
 }

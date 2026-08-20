@@ -472,6 +472,7 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
 
     // Envelope follower (type == Follower)
     SER(followerGainDb);
+    obj->setProperty("tapPoint", static_cast<int>(mod.tapPoint));
     SER(followerAttackMs);
     SER(followerHoldMs);
     SER(followerReleaseMs);
@@ -560,6 +561,13 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
         DESER(randomSmooth);
     if (obj->hasProperty("randomStepDepth"))
         DESER(randomStepDepth);
+
+    // Where it listens. Absent in every project written before the point was a
+    // choice, and the answer there is the fork's own split, which is what those
+    // projects were rendered against.
+    data.tapPoint = obj->hasProperty("tapPoint")
+                        ? static_cast<ModTapPoint>(static_cast<int>(obj->getProperty("tapPoint")))
+                        : defaultModTapPoint(data.type);
 
     // Envelope follower (type == Follower).
     if (obj->hasProperty("followerGainDb"))

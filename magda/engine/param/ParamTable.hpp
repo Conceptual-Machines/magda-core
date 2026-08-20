@@ -117,6 +117,11 @@ struct ParamModifier {
      */
     magda::TrackId source = magda::INVALID_TRACK_ID;
 
+    /// Where in @ref source's chain it listens. Only read for a modifier that
+    /// listens to audio; a note reaches its listeners from one point because
+    /// MIDI has no fader to sit either side of.
+    magda::ModTapPoint tap = magda::ModTapPoint::PreFx;
+
     /**
      * @brief The modifier's own Rate parameter, or INVALID_PARAM_ID.
      *

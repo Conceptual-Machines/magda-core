@@ -704,6 +704,10 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setModSyncDivision(const ChainNodePath& path, int modIndex, SyncDivision division);
     void setModOneShot(const ChainNodePath& path, int modIndex, bool oneShot);
     void setModTriggerMode(const ChainNodePath& path, int modIndex, LFOTriggerMode mode);
+
+    /// Where in the source track's chain this modifier listens. Only means
+    /// anything for one that listens to audio: a follower, or a level trigger.
+    void setModTapPoint(const ChainNodePath& path, int modIndex, ModTapPoint point);
     void setModCurvePreset(const ChainNodePath& path, int modIndex, CurvePreset preset);
     void setModCurveState(const ChainNodePath& path, int modIndex, CurvePreset preset,
                           const std::vector<CurvePointData>& points);
