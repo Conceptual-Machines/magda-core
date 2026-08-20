@@ -334,6 +334,13 @@ class PlanExecutor {
         return carriedCrossfades_;
     }
 
+    /// Modifiers this executor took over mid-cycle from the one it replaced.
+    /// An LFO that did not restart because a device was inserted somewhere
+    /// else in the project (#2119).
+    int carriedModifiers() const {
+        return mods_.carried();
+    }
+
     /// True once a valid plan has been prepared.
     bool isPrepared() const {
         return plan_ != nullptr;
@@ -379,7 +386,8 @@ class PlanExecutor {
         return values.params == nullptr ||
                (values.params->layoutFingerprint == paramLayout_ &&
                 values.params->size() == paramValues_.size() &&
-                values.params->maxLinksPerParam <= static_cast<int>(paramScratch_.size()));
+                values.params->maxLinksPerParam <= static_cast<int>(paramScratch_.size()) &&
+                values.params->modifierFingerprint == mods_.fingerprint());
     }
 
     /**
@@ -503,6 +511,11 @@ class PlanExecutor {
     /// published with, so the block that fills them allocates nothing.
     ResolvedParams paramValues_;
     std::vector<ModContribution> paramScratch_;
+
+    /// Where the modifiers of this plan have got to (#2119). Sized at prepare
+    /// from the same table, and carried from the executor being replaced, so a
+    /// device insert does not restart every LFO in the project.
+    ModRuntime mods_;
 
     /** @brief The parameters a mixer op reads instead of the published value. */
     struct OpMixerParams {

@@ -3,6 +3,7 @@
 #include <span>
 
 #include "exec/RenderContext.hpp"
+#include "param/ModRuntime.hpp"
 #include "param/ParamBlock.hpp"
 #include "param/ParamSpec.hpp"
 #include "param/ParamTable.hpp"
@@ -140,8 +141,13 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
  *
  * On the audio thread, once per block, before any device runs. Walks the
  * table's resolution order, so a macro driving a macro driving a device
- * parameter needs no second pass: whatever a parameter reads has already been
+ * parameter needs no second pass: whatever a step reads has already been
  * resolved when it is reached.
+ *
+ * The order covers the modifiers too (#2119), which is what lets a macro drive
+ * an LFO's rate while the LFO drives a cutoff, in the same single pass. @p mods
+ * is where their phase lives; without one, every modifier reads the value the
+ * table carries, which is the model's own and does not move between publishes.
  *
  * @p links is where one parameter's contributions are gathered, and it has to
  * hold ParamTable::maxLinksPerParam of them. @p segments is where its curve is
@@ -159,6 +165,7 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
  * and a mismatch means they were prepared against different plans.
  */
 void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModContribution> links,
-                   std::span<ParamSegment> segments, const BlockInfo& block);
+                   std::span<ParamSegment> segments, const BlockInfo& block,
+                   ModRuntime* mods = nullptr);
 
 }  // namespace magda::engine

@@ -41,6 +41,60 @@ std::string domainText(const magda::ParameterUtils::ParameterDomain& domain) {
     return "?" + range;
 }
 
+std::string waveText(magda::LFOWaveform wave) {
+    switch (wave) {
+        case magda::LFOWaveform::Sine:
+            return "sine";
+        case magda::LFOWaveform::Triangle:
+            return "triangle";
+        case magda::LFOWaveform::Square:
+            return "square";
+        case magda::LFOWaveform::Saw:
+            return "saw";
+        case magda::LFOWaveform::ReverseSaw:
+            return "revsaw";
+        case magda::LFOWaveform::Custom:
+            return "custom";
+    }
+    return "?";
+}
+
+std::string syncText(ModSync sync) {
+    switch (sync) {
+        case ModSync::Free:
+            return "free";
+        case ModSync::Transport:
+            return "transport";
+        case ModSync::Note:
+            return "note";
+    }
+    return "?";
+}
+
+/// What kind of engine drives it, for a table where only one of them runs.
+std::string kindText(ModKind kind) {
+    switch (kind) {
+        case ModKind::Lfo:
+            return "lfo";
+        case ModKind::Adsr:
+            return "adsr";
+        case ModKind::Random:
+            return "random";
+        case ModKind::Follower:
+            return "follower";
+    }
+    return "?";
+}
+
+/// The rate, as the thing a reader is checking: a frequency, or the division
+/// ordinal a synced modifier's period comes from.
+std::string rateText(const LfoSettings& lfo) {
+    if (!lfo.tempoSync)
+        return number(lfo.rate.hz) + "Hz";
+
+    return "sync[" + std::to_string(lfo.rate.rateType) + "]";
+}
+
 }  // namespace
 
 std::string dumpParamTable(const ParamTable& table) {
@@ -81,18 +135,47 @@ std::string dumpParamTable(const ParamTable& table) {
     if (!table.modifiers.empty()) {
         out << "modifiers:\n";
         for (std::size_t i = 0; i < table.modifiers.size(); ++i) {
+            const auto& modifier = table.modifiers[i];
+            const auto& lfo = modifier.lfo;
+            const auto index = static_cast<int>(i);
+
             std::ostringstream line;
-            line << "[" << rightAligned(static_cast<int>(i), 3) << "] "
-                 << padded(toString(table.modifiers[i].key), 28) << " "
-                 << "value=" << number(table.modifiers[i].value);
+            line << "[" << rightAligned(index, 3) << "] " << padded(toString(modifier.key), 28)
+                 << " " << padded(kindText(modifier.kind), 9)
+                 << " value=" << number(modifier.value);
+
+            if (!modifier.enabled)
+                line << " off";
+
+            if (modifier.kind == ModKind::Lfo) {
+                line << " " << waveText(lfo.wave) << " " << rateText(lfo) << " "
+                     << syncText(lfo.sync);
+
+                if (lfo.phaseOffset != 0.0f)
+                    line << " phase=" << number(lfo.phaseOffset);
+                if (lfo.oneShot)
+                    line << " oneshot";
+                if (lfo.invertOutput)
+                    line << " inverted";
+                if (lfo.useLoopRegion)
+                    line << " loop[" << number(lfo.loopStart) << "," << number(lfo.loopEnd) << "]";
+                if (lfo.gateOnTrigger)
+                    line << " gated";
+                if (!table.modCurveFor(index).empty())
+                    line << " curve=" << table.modCurveFor(index).size();
+            }
+
+            if (modifier.rate != INVALID_PARAM_ID)
+                line << " rate=param[" << modifier.rate << "]";
+
             writeLine(out, line.str());
         }
     }
 
     std::ostringstream order;
     order << "order:";
-    for (const auto param : table.order)
-        order << " " << param;
+    for (const auto& step : table.order)
+        order << " " << (step.kind == ParamStep::Kind::Modifier ? "m" : "") << step.index;
     writeLine(out, order.str());
 
     if (!table.diagnostics.empty()) {

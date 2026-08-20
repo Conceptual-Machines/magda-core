@@ -31,6 +31,7 @@ using magda::engine::INVALID_PARAM_ID;
 using magda::engine::ModContribution;
 using magda::engine::ParamKey;
 using magda::engine::paramKeyFor;
+using magda::engine::ParamStep;
 using magda::engine::ParamTable;
 using magda::engine::ResolvedParams;
 using magda::engine::resolveParams;
@@ -218,7 +219,8 @@ TEST_CASE("A macro driving a macro resolves in the order that makes both right",
 
     // The order is the claim: the source before whatever reads it.
     const auto position = [&](magda::engine::ParamId id) {
-        return std::find(table.order.begin(), table.order.end(), id) - table.order.begin();
+        const auto step = magda::engine::ParamStep{ParamStep::Kind::Parameter, id};
+        return std::find(table.order.begin(), table.order.end(), step) - table.order.begin();
     };
     CHECK(position(first) < position(second));
     CHECK(position(second) < position(param));
@@ -301,13 +303,23 @@ TEST_CASE("A link the table cannot carry is reported rather than dropped",
         CHECK(mentions(table, "which the project does not have"));
     }
 
-    SECTION("a modifier parameter, which arrives with the engines") {
+    SECTION("a modifier parameter that is not the rate") {
         auto track = makeTrack(1);
+        track.mods = createDefaultMods(1);
         track.macros[0].links.push_back(
-            MacroLink{ControlTarget::modParam(ChainNodePath::trackLevel(1), 0, 0), 1.0f, false});
+            MacroLink{ControlTarget::modParam(ChainNodePath::trackLevel(1), 0, 3), 1.0f, false});
 
         const auto table = tableFor({track});
-        CHECK(mentions(table, "#2119"));
+        CHECK(mentions(table, "Rate is the only parameter a modifier has"));
+    }
+
+    SECTION("the rate of a modifier the project does not have") {
+        auto track = makeTrack(1);
+        track.macros[0].links.push_back(
+            MacroLink{ControlTarget::modParam(ChainNodePath::trackLevel(1), 4, 0), 1.0f, false});
+
+        const auto table = tableFor({track});
+        CHECK(mentions(table, "which the project does not have"));
     }
 }
 

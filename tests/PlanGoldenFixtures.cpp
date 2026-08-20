@@ -247,10 +247,21 @@ Fixture parameterLinks() {
     value.tracks[0].macros[1].links.push_back(
         MacroLink{ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 7), 0), 1.0f, false});
 
+    // A tempo-synced LFO with a drawn cycle, driving a device parameter, with
+    // its own rate driven by a macro (#2119). The rate link is what puts the
+    // modifier inside the resolution order rather than beside it.
     value.tracks[0].mods = createDefaultMods(1);
     value.tracks[0].mods[0].value = 0.75f;
+    value.tracks[0].mods[0].waveform = LFOWaveform::Custom;
+    value.tracks[0].mods[0].tempoSync = true;
+    value.tracks[0].mods[0].syncDivision = SyncDivision::Half;
+    value.tracks[0].mods[0].phaseOffset = 0.25f;
+    value.tracks[0].mods[0].curvePoints = {{0.0f, 0.0f}, {0.5f, 1.0f}};
     value.tracks[0].mods[0].links.push_back(ModLink{
         ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 7), 1), 0.5f, true, true});
+
+    value.tracks[0].macros[1].links.push_back(
+        MacroLink{ControlTarget::modParam(ChainNodePath::trackLevel(1), 0, 0), 0.25f, false});
 
     // A lane over the device's first parameter, and one over the track fader,
     // which is a parameter only because the lane reaches it (#2118).

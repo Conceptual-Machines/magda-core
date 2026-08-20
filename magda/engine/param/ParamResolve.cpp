@@ -283,15 +283,90 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
     return written;
 }
 
-void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModContribution> links,
-                   std::span<ParamSegment> segments, const BlockInfo& block) {
-    const auto numSamples = block.numSamples;
+namespace {
 
+/// What a link reading modifier @p index gets. The runtime's, where there is
+/// one; otherwise the model's own reading, which is what every modifier
+/// published before it had an engine.
+float modifierValue(const ParamTable& table, const ModRuntime* mods, int index) {
+    if (index < 0 || index >= static_cast<int>(table.modifiers.size()))
+        return 0.0f;
+
+    return mods != nullptr ? mods->value(index)
+                           : table.modifiers[static_cast<std::size_t>(index)].value;
+}
+
+/// The rate modifier @p index runs at this block: what its own settings say,
+/// unless something reaches its Rate parameter, which resolved earlier in the
+/// order precisely so this can read it.
+LfoRate rateFor(const ResolvedParams& out, const ParamModifier& modifier) {
+    auto rate = modifier.lfo.rate;
+    if (modifier.rate == INVALID_PARAM_ID)
+        return rate;
+
+    const auto resolved = out[modifier.rate];
+    if (resolved.empty())
+        return rate;
+
+    // One lane, two meanings, decided by the same flag that decides what the
+    // period is: a frequency when the modifier is free, and a division when it
+    // is synced.
+    if (modifier.lfo.tempoSync)
+        rate.rateType = rateTypeFromLaneValue(resolved.value());
+    else
+        rate.hz = resolved.value();
+
+    return rate;
+}
+
+void resolveOneParam(const ParamTable& table, ResolvedParams& out, const ModRuntime* mods,
+                     std::span<ModContribution> links, std::span<ParamSegment> segments,
+                     const BlockInfo& block, ParamId param) {
+    const auto index = static_cast<std::size_t>(param);
+    const auto reaching = table.linksFor(param);
+
+    std::size_t used = 0;
+    for (const auto& link : reaching) {
+        if (used >= links.size())
+            break;
+
+        float value = 0.0f;
+        switch (link.source.kind) {
+            case ParamSourceRef::Kind::Parameter:
+                // Already resolved: that is what the order is for.
+                value = out.sourceValue(link.source.index);
+                break;
+
+            case ParamSourceRef::Kind::Modifier:
+                // Already advanced, for the same reason.
+                value = modifierValue(table, mods, link.source.index);
+                break;
+        }
+
+        links[used++] = ModContribution{value, link.amount, link.bipolar};
+    }
+
+    const auto baked = bakeCurve(table.curveFor(param), table.specs[index], block, segments);
+
+    ParamSources sources;
+    sources.base = table.base[index];
+    sources.modulation = links.first(used);
+    sources.automation =
+        std::span<const ParamSegment>{segments}.first(static_cast<std::size_t>(std::max(baked, 0)));
+    sources.automationEnd = block.numSamples;
+
+    resolveParam(out, param, table.specs[index], sources);
+}
+
+}  // namespace
+
+void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModContribution> links,
+                   std::span<ParamSegment> segments, const BlockInfo& block, ModRuntime* mods) {
     // Emptied first, and then refused. A table that does not fit is not a
     // reason to keep rendering last block's values: those were resolved for a
     // parameter set this one no longer has, and a device reading them would be
     // holding a frozen project rather than an unresolved one.
-    out.beginBlock(numSamples);
+    out.beginBlock(block.numSamples);
 
     // Indexed by the same ParamId, so a size that disagrees is two things
     // prepared against different tables. Refused whole: half a table of
@@ -299,45 +374,34 @@ void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModCo
     if (table.size() != out.size())
         return;
 
-    for (const auto param : table.order) {
-        if (param < 0 || param >= table.size())
-            continue;
+    // The modifier list is indexed the same way, and a runtime sized for a
+    // different one holds another modifier's phase at every index. Rather than
+    // refuse the whole block over it, the modifiers fall back to the values
+    // the table carries, which is what they published before they could move.
+    const bool runnable =
+        mods != nullptr && mods->size() == static_cast<int>(table.modifiers.size());
+    if (runnable)
+        mods->beginBlock(block);
 
-        const auto index = static_cast<std::size_t>(param);
-        const auto reaching = table.linksFor(param);
+    // Nothing behind the modifiers, so what a link reads is the table's own
+    // value rather than an index into a runtime sized for another list.
+    const ModRuntime* reading = runnable ? mods : nullptr;
 
-        std::size_t used = 0;
-        for (const auto& link : reaching) {
-            if (used >= links.size())
+    for (const auto& step : table.order) {
+        switch (step.kind) {
+            case ParamStep::Kind::Parameter:
+                if (step.index >= 0 && step.index < table.size())
+                    resolveOneParam(table, out, reading, links, segments, block, step.index);
                 break;
 
-            float value = 0.0f;
-            switch (link.source.kind) {
-                case ParamSourceRef::Kind::Parameter:
-                    // Already resolved: that is what the order is for.
-                    value = out.sourceValue(link.source.index);
-                    break;
-
-                case ParamSourceRef::Kind::Modifier:
-                    if (link.source.index >= 0 &&
-                        link.source.index < static_cast<int>(table.modifiers.size()))
-                        value = table.modifiers[static_cast<std::size_t>(link.source.index)].value;
-                    break;
-            }
-
-            links[used++] = ModContribution{value, link.amount, link.bipolar};
+            case ParamStep::Kind::Modifier:
+                if (runnable && step.index >= 0 &&
+                    step.index < static_cast<int>(table.modifiers.size())) {
+                    const auto& modifier = table.modifiers[static_cast<std::size_t>(step.index)];
+                    mods->advance(step.index, table, rateFor(out, modifier), block);
+                }
+                break;
         }
-
-        const auto baked = bakeCurve(table.curveFor(param), table.specs[index], block, segments);
-
-        ParamSources sources;
-        sources.base = table.base[index];
-        sources.modulation = links.first(used);
-        sources.automation = std::span<const ParamSegment>{segments}.first(
-            static_cast<std::size_t>(std::max(baked, 0)));
-        sources.automationEnd = numSamples;
-
-        resolveParam(out, param, table.specs[index], sources);
     }
 }
 

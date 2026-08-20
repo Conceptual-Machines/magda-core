@@ -7,6 +7,8 @@
 #include <vector>
 
 #include "core/AutomationInfo.hpp"
+#include "core/ModInfo.hpp"
+#include "param/ModLfo.hpp"
 #include "param/ParamKey.hpp"
 #include "param/ParamSpec.hpp"
 
@@ -60,19 +62,65 @@ struct ParamLink {
 /**
  * @brief One modifier instance, as the thing links read.
  *
- * Its value is the model's own for now, which is a constant for the duration of
- * a block and a constant for the duration of a publish. The engines that make
- * it move arrive in #2119 and #2120; what is settled here is that a modifier is
- * a source with an identity, so a link can name one and the resolution order
- * can account for one.
+ * A source with an identity, so a link can name one and the resolution order
+ * can account for one, plus what it takes to run it. The LFO runs here (#2119);
+ * the rest publish @ref value and hold it until their engines arrive (#2120),
+ * which is what every modifier did before this slice.
  */
 struct ParamModifier {
     /// The modifier itself: its owner's scope and its id, with no parameter
     /// index (see ParamKey::modId).
     ParamKey key;
 
-    /// Its output, 0 to 1, as the model last saw it.
+    /// Its output, 0 to 1, as the model last saw it. What a kind with no
+    /// engine publishes, and what a block with no runtime behind it reads.
     float value = 0.0f;
+
+    ModKind kind = ModKind::Lfo;
+
+    /// A modifier the model has switched off contributes nothing at all: its
+    /// links are not carried, because a bipolar link reading an output of zero
+    /// would push its parameter down by the link's own depth, and the model's
+    /// answer is that there is no modifier there.
+    bool enabled = true;
+
+    /// What the LFO is, for @ref kind == ModKind::Lfo.
+    LfoSettings lfo;
+
+    /**
+     * @brief The modifier's own Rate parameter, or INVALID_PARAM_ID.
+     *
+     * Carried only when something reaches it: a lane playing over the rate, or
+     * a macro or another modifier driving it. The overwhelming majority of
+     * modifiers have a rate nothing touches, and one parameter each for them
+     * would be a table mostly made of numbers that never move.
+     *
+     * Its value is a frequency or a division ordinal depending on
+     * LfoSettings::tempoSync, which is the same one lane the model's Rate
+     * control writes (AutomationInfo's makeHzRateInfo / makeSyncDivisionInfo).
+     */
+    ParamId rate = INVALID_PARAM_ID;
+};
+
+/**
+ * @brief One step of the order a block resolves in.
+ *
+ * Two kinds of thing resolve, and they depend on each other in both
+ * directions: a parameter reads the modifiers linked to it, and a modifier
+ * reads the Rate parameter driving it. One order over both is what lets a
+ * macro drive an LFO's rate while the LFO drives a cutoff, in one pass, with
+ * no second look and no fixed point.
+ */
+struct ParamStep {
+    enum class Kind : std::uint8_t {
+        Parameter,  ///< resolve the parameter at @ref index
+        Modifier,   ///< advance the modifier at @ref index
+    };
+
+    Kind kind = Kind::Parameter;
+    int index = 0;
+
+    bool operator==(const ParamStep&) const = default;
 };
 
 /**
@@ -103,6 +151,17 @@ struct ParamTable {
     std::vector<ParamModifier> modifiers;
 
     /**
+     * @brief The curves drawn on the modifiers, in one arena.
+     *
+     * modCurvePoints[modCurveOffsets[i], modCurveOffsets[i + 1]) is the cycle
+     * modifier i has drawn on it, and empty is a modifier playing a built-in
+     * waveform, which is almost all of them. One arena rather than a vector
+     * each, for the reason the links have one.
+     */
+    std::vector<magda::CurvePointData> modCurvePoints;
+    std::vector<int> modCurveOffsets;
+
+    /**
      * @brief The lane playing over each parameter, in beats.
      *
      * Breakpoints, as the model draws them: curvePoints[curveOffsets[i],
@@ -124,14 +183,15 @@ struct ParamTable {
     std::vector<int> curveOffsets;
 
     /**
-     * @brief The order parameters resolve in.
+     * @brief The order the block resolves in.
      *
-     * A permutation of every ParamId, arranged so that anything a parameter
-     * reads has already been resolved when it is. A macro driving a macro
-     * driving a device parameter therefore needs no second pass and no fixed
-     * point, and the audio thread walks a vector.
+     * Every parameter and every modifier, once each, arranged so that anything
+     * a step reads has already been resolved when it is reached. A macro
+     * driving an LFO's rate while the LFO drives a device parameter therefore
+     * needs no second pass and no fixed point, and the audio thread walks a
+     * vector.
      */
-    std::vector<ParamId> order;
+    std::vector<ParamStep> order;
 
     /// The most links any one parameter has, which is how much room the block
     /// resolver needs to gather one parameter's contributions.
@@ -153,6 +213,17 @@ struct ParamTable {
      * that moved with them would turn every knob into a structural edit.
      */
     std::uint64_t layoutFingerprint = 0;
+
+    /**
+     * @brief Identity of the modifier list: which modifier is at which index.
+     *
+     * What @ref layoutFingerprint is to the parameters, and needed separately
+     * because modifiers are not parameters: a scope gaining a page of them
+     * moves every modifier after it without touching a key, and the runtime
+     * holding each one's phase is indexed the same way. Without it a values
+     * publish would hand one LFO's phase to another.
+     */
+    std::uint64_t modifierFingerprint = 0;
 
     /** Where one device's parameters sit in the table. */
     struct DeviceWindow {
@@ -189,6 +260,10 @@ struct ParamTable {
     /// The lane playing over @p param, empty when none is.
     std::span<const magda::AutomationPoint> curveFor(ParamId param) const;
 
+    /// The cycle drawn on modifier @p modifier, empty when it plays a built-in
+    /// waveform.
+    std::span<const magda::CurvePointData> modCurveFor(int modifier) const;
+
     /// Where @p device's parameters are, or a window of nothing.
     DeviceWindow windowFor(const DeviceKey& device) const {
         const auto found = deviceWindows.find(device);
@@ -205,5 +280,14 @@ struct ParamTable {
  * parameter that index was resolved for.
  */
 std::uint64_t paramLayoutFingerprint(const std::vector<ParamKey>& keys);
+
+/**
+ * @brief The modifier fingerprint of a modifier list.
+ *
+ * Exposed for the same reason the layout's is: the thing holding a modifier's
+ * phase was prepared against one list and has to be able to tell that the
+ * table it meets is not it.
+ */
+std::uint64_t paramModifierFingerprint(const std::vector<ParamModifier>& modifiers);
 
 }  // namespace magda::engine
