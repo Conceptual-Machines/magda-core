@@ -181,12 +181,20 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
     // Where the curve ends up over this block, and where it gets there. Both
     // are needed before the walk, because a walk that runs out of room has to
     // spend its last segment on arriving rather than on where it had got to.
+    //
+    // Two endings, and the difference is the block's far edge. A run that
+    // travels arrives at the value the boundary has, which is the value the
+    // next block opens on. A run that holds arrives at the last knot inside
+    // this block: a step sitting exactly on the boundary belongs to the next
+    // block, and writing its value here would pull it earlier by however long
+    // the run before it lasts.
     const float ending = valueAt(block.endBeat);
-    const auto lastKnot = std::lower_bound(
+    const auto boundary = std::lower_bound(
         curve.begin(), curve.end(), block.endBeat,
         [](const magda::AutomationPoint& point, double beat) { return point.beatPosition < beat; });
-    const int endingSample =
-        lastKnot == curve.begin() ? 0 : block.sampleForBeat((lastKnot - 1)->beatPosition);
+    const bool hasKnotInside = boundary != curve.begin();
+    const int endingSample = hasKnotInside ? block.sampleForBeat((boundary - 1)->beatPosition) : 0;
+    const float endingHeld = hasKnotInside ? valueAt((boundary - 1)->beatPosition) : opening;
 
     int written = 0;
     int startSample = 0;
@@ -256,9 +264,9 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
     // coarsening ResolvedParams makes when a curve outgrows its slot; the run
     // before it simply holds a little longer. A run that does not hold ramps to
     // the same place, which arrives on time whether or not it overflowed.
-    if (overflowed && holds)
+    if (overflowed && holds && hasKnotInside)
         out[static_cast<std::size_t>(written++)] =
-            ParamSegment{std::max(endingSample, startSample), ending, ending};
+            ParamSegment{std::max(endingSample, startSample), endingHeld, endingHeld};
     else
         out[static_cast<std::size_t>(written++)] =
             ParamSegment{startSample, startValue, holds ? startValue : ending};

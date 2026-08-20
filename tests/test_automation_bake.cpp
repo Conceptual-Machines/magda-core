@@ -364,6 +364,31 @@ TEST_CASE("A stepped curve too busy for the block still arrives", "[engine][para
     CHECK(values[param].segments().back().endValue == approx(1.0f));
 }
 
+TEST_CASE("A step on the block's far edge belongs to the next block", "[engine][param][bake]") {
+    auto tracks = trackWithDevice();
+
+    // Twenty steps inside the block, and one sitting exactly on its far edge.
+    // The block runs to that edge without reaching it, so the last value this
+    // block holds is the one before it, however little room the bake had left.
+    std::vector<AutomationPoint> steps;
+    for (int i = 0; i < 20; ++i)
+        steps.push_back(point(static_cast<double>(i) * 0.1, static_cast<double>(i) / 38.0,
+                              AutomationCurveType::Step));
+    steps.push_back(point(2.0, 1.0, AutomationCurveType::Step));
+
+    const auto table = tableFor(tracks, {lane(deviceTarget(), steps)});
+    const auto param = table.find(deviceParam(1, 7, 0));
+
+    auto opted = table;
+    opted.specs[static_cast<std::size_t>(param)].segmentAccurate = true;
+
+    const auto values = resolved(opted, blockAt(0.0, 2.0, 512));
+
+    REQUIRE(values[param].numSegments() <= values.segmentCapacity());
+    CHECK(values[param].valueAt(511) == approx(50.0f));
+    CHECK(values[param].segments().back().endValue == approx(0.5f));
+}
+
 TEST_CASE("A hard corner keeps its apex inside a block", "[engine][param][bake]") {
     auto tracks = trackWithDevice();
 
