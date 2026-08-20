@@ -261,17 +261,21 @@ enum class LFOTriggerMode {
  * one source can reasonably want different points, which is the same reason the
  * follower's band limits are per modifier.
  */
-enum class ModTapPoint {
+enum class ModTapPoint : int {
     /// After whatever makes the track's sound and before its effects: the chain
     /// head on a track with no instrument, and immediately past the instrument
     /// on one that has it. What an audio trigger keys off, so a hit is detected
     /// on what the track played rather than on what survived its chain.
-    PreFx,
+    ///
+    /// Ordinals are pinned: this is written into a project as its integer
+    /// (AutomationModSerializer), so an insert here would move an existing
+    /// project's modifiers to the other point (test_persisted_enum_pins.cpp).
+    PreFx = 0,
 
     /// The far end: post-FX, post-fader, before the muting node. What a
     /// follower tracks, so riding the source fader moves the modulation, and
     /// before the mute so a muted source still ducks what it is ducking.
-    PostFader,
+    PostFader = 1,
 };
 
 /**

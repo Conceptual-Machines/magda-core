@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "core/TrackInfo.hpp"
+#include "core/TrackManager.hpp"
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
 #include "exec/RuntimeStateStore.hpp"
@@ -592,4 +593,31 @@ TEST_CASE("A modulation feed does not order the tracks", "[engine][mod][feeds]")
             CHECK(op.key.trackId == 2);
         }
     CHECK(taps == 1);
+}
+
+TEST_CASE("A modifier added as a follower listens at the far end", "[engine][mod][feeds]") {
+    // The add path is where a follower is normally born, so it is the path that
+    // has to hand it the tap point its kind wants. Constructing an LFO and
+    // assigning the type over it leaves the point where the LFO wanted it, and
+    // every follower the user creates would key off the head of the chain.
+    auto& manager = TrackManager::getInstance();
+    manager.clearAllTracks();
+
+    const auto trackId = manager.createTrack("Source", TrackType::Audio);
+    const auto path = ChainNodePath::trackLevel(trackId);
+
+    manager.addMod(path, 0, ModType::Follower, LFOWaveform::Sine);
+    manager.addMod(path, 1, ModType::LFO, LFOWaveform::Sine);
+
+    const auto* track = manager.getTrack(trackId);
+    REQUIRE(track != nullptr);
+    REQUIRE(track->mods.size() >= 2);
+
+    CHECK(track->mods[0].type == ModType::Follower);
+    CHECK(track->mods[0].tapPoint == ModTapPoint::PostFader);
+
+    // And everything else takes the near one, which is where a trigger keys off.
+    CHECK(track->mods[1].tapPoint == ModTapPoint::PreFx);
+
+    manager.clearAllTracks();
 }
