@@ -60,8 +60,8 @@ Catch::Approx approx(float value) {
 
 constexpr double kSampleRate = 48000.0;
 
-ModTiming timing(double bpm = 120.0, int numerator = 4) {
-    return ModTiming{kSampleRate, bpm, numerator};
+ModTiming timing(double bpm = 120.0, int numerator = 4, int denominator = 4) {
+    return ModTiming{kSampleRate, bpm, numerator, denominator};
 }
 
 /// A block of @p numSamples that does not move the timeline, which is what a
@@ -331,9 +331,16 @@ TEST_CASE("A tempo-synced LFO's period is a fraction of a bar", "[engine][mod][l
     }
 
     SECTION("a bar is the signature's own bar") {
-        CHECK(cycleBeats(static_cast<int>(ModRateType::Bar), 4) == Catch::Approx(4.0));
-        CHECK(cycleBeats(static_cast<int>(ModRateType::Bar), 3) == Catch::Approx(3.0));
-        CHECK(cycleBeats(static_cast<int>(ModRateType::Half), 4) == Catch::Approx(2.0));
+        CHECK(cycleBeats(static_cast<int>(ModRateType::Bar), 4, 4) == Catch::Approx(4.0));
+        CHECK(cycleBeats(static_cast<int>(ModRateType::Bar), 3, 4) == Catch::Approx(3.0));
+        CHECK(cycleBeats(static_cast<int>(ModRateType::Half), 4, 4) == Catch::Approx(2.0));
+
+        // The denominator counts. A bar of six eight is three quarter notes,
+        // and a beat is a quarter note, so it is three beats rather than six.
+        CHECK(cycleBeats(static_cast<int>(ModRateType::Bar), 6, 8) == Catch::Approx(3.0));
+        CHECK(cycleBeats(static_cast<int>(ModRateType::Bar), 3, 8) == Catch::Approx(1.5));
+        CHECK(cycleBeats(static_cast<int>(ModRateType::Bar), 12, 8) == Catch::Approx(6.0));
+        CHECK(cycleBeats(static_cast<int>(ModRateType::Bar), 2, 2) == Catch::Approx(4.0));
     }
 
     SECTION("locked to the bar line") {
@@ -358,18 +365,14 @@ TEST_CASE("A tempo-synced LFO's period is a fraction of a bar", "[engine][mod][l
         settings.tempoSync = true;
         settings.rate.rateType = static_cast<int>(ModRateType::Bar);
 
-        CHECK(step(state, settings, blockAt(1.5, 1.0, 512), {}, timing(120.0, 3)) == approx(0.5f));
+        CHECK(step(state, settings, blockAt(1.5, 1.0, 512), {}, timing(120.0, 3, 4)) ==
+              approx(0.5f));
     }
 
-    SECTION("and the denominator is not read, because the fork does not read one") {
-        // Pinned rather than endorsed. A bar of six eight is three quarter
-        // notes, and this counts six, so a "1 Bar" LFO runs two written bars
-        // long. No TE modifier reads a denominator and a TE beat is a quarter
-        // note, so this is what every synced modifier in every x/8 project is
-        // already placed by; correcting it during the port would move all of
-        // them at once. See cycleBeats and #2128.
-        CHECK(cycleBeats(static_cast<int>(ModRateType::Bar), 6) == Catch::Approx(6.0));
-
+    SECTION("in six eight a bar is three beats, not six") {
+        // The fork used to count the numerator in quarter notes, so a "1 Bar"
+        // modifier here ran two written bars long. Both engines read the
+        // denominator now (#2128).
         LfoState state;
         LfoSettings settings;
         settings.wave = LFOWaveform::Saw;
@@ -377,9 +380,14 @@ TEST_CASE("A tempo-synced LFO's period is a fraction of a bar", "[engine][mod][l
         settings.tempoSync = true;
         settings.rate.rateType = static_cast<int>(ModRateType::Bar);
 
-        // Three quarter notes in is one written bar of six eight, and half a
-        // cycle rather than a whole one.
-        CHECK(step(state, settings, blockAt(3.0, 1.0, 512), {}, timing(120.0, 6)) == approx(0.5f));
+        // A bar and a half in, which is halfway through the second cycle.
+        CHECK(step(state, settings, blockAt(4.5, 0.5, 512), {}, timing(120.0, 6, 8)) ==
+              approx(0.5f));
+
+        // And the bar line itself opens a cycle.
+        LfoState onTheBar;
+        CHECK(step(onTheBar, settings, blockAt(3.0, 0.5, 512), {}, timing(120.0, 6, 8)) ==
+              approx(0.0f));
     }
 
     SECTION("free-running, the period is that many beats at this tempo") {

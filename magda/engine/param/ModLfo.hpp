@@ -253,14 +253,19 @@ struct LfoState {
  *
  * The sample rate, because a free-running LFO advances by how long the block
  * lasted rather than by how far the timeline moved, and the two are different
- * things while the transport is stopped. The tempo and the signature, because
- * a musical division is a fraction of a bar and a bar is neither of those on
- * its own.
+ * things while the transport is stopped. The tempo and the whole signature,
+ * because a musical division is a fraction of a bar and a bar is none of those
+ * on its own.
  */
 struct ModTiming {
     double sampleRate = 44100.0;
     double bpm = 120.0;
+
+    /// The signature at the block's first beat. Both halves of it, because a
+    /// bar is the numerator counted in the denominator's note value and either
+    /// on its own describes the wrong bar.
     int numerator = 4;
+    int denominator = 4;
 };
 
 /** @brief The tempo and signature @p block opens on, read off its map. */
@@ -280,26 +285,19 @@ double barFractionOf(int rateType);
 /**
  * @brief How many beats one cycle of a tempo-synced LFO lasts.
  *
- * The bar fraction times the signature's numerator, and the numerator alone:
- * the denominator is not read here because it is not read in the fork either.
- * No TE modifier looks at one, and a TE beat is a quarter note exactly as a
- * beat is here, so a modifier's "bar" is the numerator counted in quarter
- * notes rather than in the signature's own note value.
+ * The bar fraction times the length of a bar, and a bar is the signature's
+ * numerator counted in its own note value: `numerator * 4 / denominator`
+ * quarter notes, because a beat is a quarter note here and everywhere else in
+ * the engine. A bar of six eight is three of them, not six.
  *
- * In four four the two readings agree and nothing shows. In six eight they do
- * not: a bar is three quarter notes, and this says six, so a "1 Bar" LFO runs
- * two written bars long. Transport sync inherits the same reading, and takes
- * the numerator at the block's own position, so a signature change moves the
- * phase rather than continuing it.
- *
- * Kept because it is the fork's, not because it is right. Every synced
- * modifier in every project in anything but an x/4 signature is placed by this
- * arithmetic, and correcting it during the port would move all of them: the
- * null-diff corpus would report the difference and the user would hear it.
- * Changing it is a decision about the incumbent's behaviour, taken once, for
- * both engines at the same time (#2128).
+ * The fork used to count the numerator in quarter notes, so a "1 Bar" modifier
+ * in six eight ran two written bars long and every other division was out by
+ * the same ratio. The four TE modifiers are patched to match this rather than
+ * this being bent to match them: an engine being replaced is not a reason to
+ * carry its arithmetic forward, and the two agreeing is what keeps the
+ * null-diff corpus meaningful (#2128).
  */
-double cycleBeats(int rateType, int numerator);
+double cycleBeats(int rateType, int numerator, int denominator);
 
 /**
  * @brief The rate ordinal a Rate lane's value stands for, and back again.

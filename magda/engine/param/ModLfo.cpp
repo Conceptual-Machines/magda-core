@@ -100,8 +100,12 @@ double barFractionOf(int rateType) {
     return 1.0;
 }
 
-double cycleBeats(int rateType, int numerator) {
-    return barFractionOf(rateType) * std::max(numerator, 1);
+double cycleBeats(int rateType, int numerator, int denominator) {
+    // A bar in quarter notes, which is what a beat is here. The signature's
+    // own note value is the denominator's, so six eight is three quarter notes
+    // rather than six.
+    const auto barBeats = 4.0 * std::max(numerator, 1) / std::max(denominator, 1);
+    return barFractionOf(rateType) * barBeats;
 }
 
 int rateTypeFromLaneValue(float laneValue) {
@@ -123,13 +127,16 @@ ModTiming modTimingFor(const BlockInfo& block, double sampleRate) {
     // what it gets is what a session that has never seen a transport renders
     // at: 120 in four four, which is the same default TransportState holds.
     if (block.tempo != nullptr) {
+        const auto signature = block.tempo->barsAndBeatsAt(block.startBeat);
         timing.bpm = block.tempo->bpmAt(block.startBeat);
-        timing.numerator = block.tempo->barsAndBeatsAt(block.startBeat).numerator;
+        timing.numerator = signature.numerator;
+        timing.denominator = signature.denominator;
     }
 
     if (!(timing.bpm > 0.0))
         timing.bpm = 120.0;
     timing.numerator = std::max(timing.numerator, 1);
+    timing.denominator = std::max(timing.denominator, 1);
 
     return timing;
 }
@@ -174,7 +181,7 @@ float advanceLfo(LfoState& state, const LfoSettings& settings,
 
     const double hz = std::max(static_cast<double>(settings.rate.hz), kMinHz);
     const double beatsPerCycle =
-        std::max(cycleBeats(settings.rate.rateType, timing.numerator), 1.0e-6);
+        std::max(cycleBeats(settings.rate.rateType, timing.numerator, timing.denominator), 1.0e-6);
 
     // A timeline-locked LFO is a function of where the block is rather than of
     // how many blocks have gone by, which is what puts two of them at one rate

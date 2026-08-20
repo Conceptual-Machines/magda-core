@@ -299,7 +299,7 @@ BarsAndBeats TempoMap::barsAndBeatsAt(double beat) const {
 
     return {section.signatureStartBar + static_cast<int>(bars),
             (sinceSignature - bars * barBeats) / tickBeatsOf(section.denominator),
-            section.numerator};
+            section.numerator, section.denominator};
 }
 
 BeatTick TempoMap::tickAtOrAfter(double beat) const {
