@@ -189,6 +189,22 @@ struct LfoState {
     /// A one-shot that has played through and is holding its end value.
     bool completed = false;
 
+    /**
+     * @brief A trigger has asked for one block of nothing.
+     *
+     * The gap a gated retrigger would have left, so a device sees a transition
+     * rather than a continuation. Latched rather than written straight to the
+     * output, because a trigger arrives inside a block whose parameters have
+     * already been resolved: the block after it is the first one a device can
+     * see, and a value written at the moment of the trigger would be
+     * overwritten before anything read it.
+     *
+     * The block that spends it holds the phase as well, so the shape resumes
+     * from its start on the block after. That is the fork's own sequence, one
+     * block later, which is the same block the trigger itself is late by.
+     */
+    bool forceZero = false;
+
     /// Notes holding the gate open. The gate shuts when the last one lifts,
     /// which is what makes a note-triggered LFO read as an envelope.
     int heldNotes = 0;

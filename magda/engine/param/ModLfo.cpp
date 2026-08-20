@@ -215,13 +215,24 @@ float advanceLfo(LfoState& state, const LfoSettings& settings,
     if (state.gated)
         value = 0.0f;
 
+    // A trigger asked for one block of nothing, and this is the first block a
+    // device can see (LfoState::forceZero). The phase is published where the
+    // restart put it, so the editor's dot is already back at the top, and it
+    // is not advanced, so the shape resumes from its start on the next block
+    // rather than a block into itself.
+    const bool zeroed = state.forceZero;
+    if (zeroed) {
+        state.forceZero = false;
+        value = 0.0f;
+    }
+
     state.phase = phase;
     state.value = value;
 
     // Moved on for the next block, after this one's value has been settled,
     // which is the order the fork's timer uses: the value a block renders with
     // is the value at its first sample.
-    if (settings.sync != ModSync::Transport && !holding) {
+    if (settings.sync != ModSync::Transport && !holding && !zeroed) {
         const double blockSeconds =
             static_cast<double>(std::max(block.numSamples, 0)) / timing.sampleRate;
         const double periodSeconds =

@@ -136,15 +136,18 @@ void ModRuntime::noteOn(int index, const ParamTable& table) {
 
     const auto& settings = table.modifiers[static_cast<std::size_t>(index)].lfo;
 
-    // A cross-track sidechain LFO follows its source track and nothing else.
-    // Retriggering it from the track it ducks is the bug the fork's flag
-    // exists to prevent: the phase restarts against the sidechain rhythm and
-    // the gate flaps on every note the destination happens to play.
-    if (settings.skipNativeResync && !settings.gateOnTrigger)
+    // A cross-track sidechain LFO follows its source track and nothing else:
+    // not its phase, and not its gate either. Retriggering it from the track
+    // it ducks is the bug the fork's flag exists to prevent, and so is gating
+    // it from there, which flaps on every note the destination plays.
+    //
+    // The fork suppresses the two separately, because its flags are set apart
+    // and the combination is prevented rather than refused. Here the policy is
+    // the guard: a modifier driven from elsewhere does not hear this at all.
+    if (settings.skipNativeResync)
         return;
 
-    if (!settings.skipNativeResync)
-        restartLfo(state->lfo, settings);
+    restartLfo(state->lfo, settings);
 
     if (settings.gateOnTrigger) {
         ++state->lfo.heldNotes;
@@ -158,7 +161,8 @@ void ModRuntime::noteOff(int index, const ParamTable& table) {
     if (state == nullptr || index >= static_cast<int>(table.modifiers.size()))
         return;
 
-    if (!table.modifiers[static_cast<std::size_t>(index)].lfo.gateOnTrigger)
+    const auto& settings = table.modifiers[static_cast<std::size_t>(index)].lfo;
+    if (settings.skipNativeResync || !settings.gateOnTrigger)
         return;
 
     state->lfo.heldNotes = std::max(0, state->lfo.heldNotes - 1);
@@ -172,7 +176,8 @@ void ModRuntime::allNotesOff(int index, const ParamTable& table) {
     if (state == nullptr || index >= static_cast<int>(table.modifiers.size()))
         return;
 
-    if (!table.modifiers[static_cast<std::size_t>(index)].lfo.gateOnTrigger)
+    const auto& settings = table.modifiers[static_cast<std::size_t>(index)].lfo;
+    if (settings.skipNativeResync || !settings.gateOnTrigger)
         return;
 
     state->lfo.heldNotes = 0;
@@ -195,10 +200,13 @@ void ModRuntime::trigger(int index, const ParamTable& table, bool forceZero) {
     // device sees a transition rather than a continuation. Never for a level
     // curve: there, zero output is full level, and forcing one in the middle
     // of a duck pops the gain up for a block, which is a click on every hit.
-    if (forceZero && !settings.invertOutput) {
-        state->lfo.value = 0.0f;
-        values_[static_cast<std::size_t>(index)] = 0.0f;
-    }
+    //
+    // Latched rather than published. A trigger arrives inside a block whose
+    // parameters have already been resolved, so a value written here would be
+    // overwritten by the next block's advance before any device read it; the
+    // latch is what makes the gap reach one (LfoState::forceZero).
+    if (forceZero && !settings.invertOutput)
+        state->lfo.forceZero = true;
 }
 
 void ModRuntime::setGated(int index, bool gated) {

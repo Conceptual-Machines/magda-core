@@ -52,8 +52,16 @@ std::uint64_t paramModifierFingerprint(const std::vector<ParamModifier>& modifie
     Fingerprint hash;
     hash.mix(modifiers.size());
 
-    for (const auto& modifier : modifiers)
+    for (const auto& modifier : modifiers) {
         hash.mix(modifier.key);
+
+        // The kind as well as the address, because the model changes one
+        // without moving the other: switching a modifier from an LFO to a
+        // random is an edit in place, and it would otherwise travel as a
+        // values publish that the runtime is never re-prepared for. The engine
+        // behind an address is structural even when the address is not.
+        hash.mix(static_cast<std::uint64_t>(modifier.kind));
+    }
 
     return hash.value();
 }

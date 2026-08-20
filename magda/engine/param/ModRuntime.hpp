@@ -147,9 +147,12 @@ class ModRuntime {
     void noteOn(int index, const ParamTable& table);
 
     /// The other half of it: the gate shuts when the last held note lifts.
+    /// Refused on the same terms, because a gate that only one half of the
+    /// pair could reach would latch open on the first note it heard.
     void noteOff(int index, const ParamTable& table);
 
-    /// Every held note at once, which is what an all-notes-off is.
+    /// Every held note at once, which is what an all-notes-off is. Refused on
+    /// the same terms again.
     void allNotesOff(int index, const ParamTable& table);
 
     /**

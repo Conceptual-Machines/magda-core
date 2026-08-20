@@ -570,6 +570,22 @@ TEST_CASE("A cross-track LFO ignores the track it modulates", "[engine][mod][lfo
         CHECK(harness.mods.value(fixture.modifier) == approx(0.5f));
     }
 
+    SECTION("nor does one that would otherwise gate it") {
+        // The fork prevents this pairing by setting its two flags apart rather
+        // than by refusing it. Refusing it here is what keeps the destination
+        // track's notes off a cross-track LFO's gate whatever sets the flags.
+        auto gating = fixture.table;
+        gating.modifiers[0].lfo.gateOnTrigger = true;
+
+        harness.mods.noteOn(fixture.modifier, gating);
+        harness.run(gating, block);
+        CHECK(harness.mods.value(fixture.modifier) == approx(0.5f));
+
+        harness.mods.noteOff(fixture.modifier, gating);
+        harness.run(gating, block);
+        CHECK(harness.mods.value(fixture.modifier) == approx(0.75f));
+    }
+
     SECTION("a trigger from its source restarts it") {
         harness.mods.trigger(fixture.modifier, fixture.table);
         harness.run(fixture.table, block);
@@ -588,16 +604,51 @@ TEST_CASE("A forced zero stands in for the gap a gated retrigger leaves",
     harness.run(fixture.table, block);
     REQUIRE(harness.mods.value(fixture.modifier) == approx(0.25f));
 
+    // The trigger lands inside a block whose parameters are already resolved,
+    // so the gap is published on the next one and the shape starts over on the
+    // one after: the fork's own sequence, late by the block the trigger is.
     harness.mods.trigger(fixture.modifier, fixture.table, /*forceZero=*/true);
+
+    harness.run(fixture.table, block);
     CHECK(harness.mods.value(fixture.modifier) == approx(0.0f));
 
+    harness.run(fixture.table, block);
+    CHECK(harness.mods.value(fixture.modifier) == approx(0.0f));
+
+    harness.run(fixture.table, block);
+    CHECK(harness.mods.value(fixture.modifier) == approx(0.25f));
+
+    SECTION("and the gap is a gap in a shape that does not open at nothing") {
+        // A saw opens at zero either way, so it cannot tell a gap from a
+        // restart. A sine opens halfway up, and the gap is the whole point.
+        auto sine = fixture.table;
+        sine.modifiers[0].lfo.wave = LFOWaveform::Sine;
+
+        harness.run(sine, block);
+        REQUIRE(harness.mods.value(fixture.modifier) != approx(0.0f));
+
+        harness.mods.trigger(fixture.modifier, sine, /*forceZero=*/true);
+        harness.run(sine, block);
+        CHECK(harness.mods.value(fixture.modifier) == approx(0.0f));
+
+        harness.run(sine, block);
+        CHECK(harness.mods.value(fixture.modifier) == approx(0.5f));
+    }
+
     SECTION("but never on a level curve, where zero is full level") {
-        fixture.table.modifiers[0].lfo.invertOutput = true;
-        harness.run(fixture.table, block);
+        auto level = fixture.table;
+        level.modifiers[0].lfo.invertOutput = true;
+
+        harness.run(level, block);
         const auto before = harness.mods.value(fixture.modifier);
 
-        harness.mods.trigger(fixture.modifier, fixture.table, /*forceZero=*/true);
-        CHECK(harness.mods.value(fixture.modifier) == approx(before));
+        harness.mods.trigger(fixture.modifier, level, /*forceZero=*/true);
+        harness.run(level, block);
+
+        // Restarted, and never zero on the way: forcing full level in the
+        // middle of a duck is a click on every hit.
+        CHECK(harness.mods.value(fixture.modifier) == approx(1.0f));
+        CHECK(before != approx(0.0f));
     }
 }
 
@@ -791,6 +842,17 @@ TEST_CASE("The modifier fingerprint moves when the list does", "[engine][mod][lf
     auto turned = trackWithLfo();
     turned.mods[0].rate = 4.0f;
     CHECK(tableFor({turned}).modifierFingerprint == one.modifierFingerprint);
+
+    SECTION("and a modifier that becomes another kind is a different list") {
+        // The model switches a type in place, at the same address, so nothing
+        // else about the table moves. Without the kind in here it would travel
+        // as a values publish that the runtime is never re-prepared for, and
+        // switching away and back would resume the phase of the modifier that
+        // had been replaced.
+        auto retyped = trackWithLfo();
+        retyped.mods[0].type = ModType::Random;
+        CHECK(tableFor({retyped}).modifierFingerprint != one.modifierFingerprint);
+    }
 }
 
 // =============================================================================
