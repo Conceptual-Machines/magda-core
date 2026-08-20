@@ -11,6 +11,7 @@
 #include "core/RackInfo.hpp"
 #include "core/TrackChain.hpp"
 #include "core/TrackInfo.hpp"
+#include "param/ModSources.hpp"
 #include "plan/TrackRouting.hpp"
 
 namespace magda::engine {
@@ -64,6 +65,25 @@ bool elementsConsumeMidi(const std::vector<ChainElement>& elements) {
             });
         }
         return false;
+    });
+}
+
+/// Whether a rack produces the track's sound rather than processing it, which
+/// is what puts the trigger tap after it rather than in front of it. The fork
+/// asks the same question of the same subtree (rackContainsInstrumentSource).
+bool rackHasInstrument(const RackInfo& rack) {
+    return std::ranges::any_of(rack.chains, [](const ChainInfo& chain) {
+        if (!chainIsActive(chain))
+            return false;
+        return std::ranges::any_of(chain.elements, [](const ChainElement& element) {
+            if (isDevice(element)) {
+                const auto& device = getDevice(element);
+                return !device.bypassed && device.isInstrument;
+            }
+            if (isRack(element))
+                return rackHasInstrument(getRack(element));
+            return false;
+        });
     });
 }
 
@@ -169,6 +189,11 @@ class Compiler {
     TrackId resolveAudioDestination(const TrackInfo& track) const;
 
     void emitTrack(const TrackInfo& track);
+
+    /// One op per track any modifier listens to, after every track has been
+    /// emitted so that every tap exists to read.
+    void emitModulationTaps();
+
     ChainSignal emitElements(const std::vector<ChainElement>& elements, const ChainSite& site,
                              ChainSignal signal);
     ChainSignal emitDevice(const DeviceInfo& device, const ChainSite& site, ChainSignal signal);
@@ -193,6 +218,24 @@ class Compiler {
     /// send: after the plugin list (the fader included) and before the muting
     /// node, so a muted source still feeds the compressor keying off it.
     std::map<TrackId, PortRef> trackSidechainTap_;
+    /**
+     * @brief Where an audio trigger keys off each emitted track.
+     *
+     * Not the sidechain tap, and the difference is the whole of what a source
+     * fader does. The fork puts its trigger monitor at the front of the chain,
+     * or immediately after the instrument that makes the sound, so a hit is
+     * detected on what the track played; the follower tap sits at the far end,
+     * post-FX and post-fader, so a follower tracks what the track sends. Riding
+     * the source fader therefore moves a follower and leaves the triggers
+     * alone, and a plan reading one point for both would lose that.
+     */
+    std::map<TrackId, PortRef> trackTriggerTap_;
+
+    /// The track whose trigger tap is still being looked for, and whether the
+    /// instrument that ends the search has gone by. Top level only, because the
+    /// fork's own search is over the track's own element list.
+    TrackId triggerTapTrack_ = INVALID_TRACK_ID;
+    bool triggerTapFound_ = false;
     /// Post-mute output: what the track's destination and any track taking this
     /// track as its audio input actually receive.
     std::map<TrackId, PortRef> trackRoutedOutput_;
@@ -207,6 +250,10 @@ class Compiler {
     /// internal MIDI route. Their MIDI clips have to be compiled even when
     /// their own chain has nothing that consumes MIDI.
     std::set<TrackId> midiSourceTracks_;
+    /// Every point a modifier somewhere in the project reads (ModSources.hpp),
+    /// and every track one of them reads for notes. One op each at the end.
+    std::set<ModTap> modulationTaps_;
+    std::set<TrackId> noteSourceTracks_;
 };
 
 OpId Compiler::addOp(OpKind kind, const OpKey& key, std::vector<PortRef> inputs,
@@ -320,6 +367,21 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
         // contributes no edge either.
         std::set<TrackId> upstream;
         collectSidechainSources(track, std::nullopt, upstream);
+
+        // Deliberately not the modulation sources. A modifier listening to
+        // another track needs that track's tap to exist, and it does: the taps
+        // are emitted after every track, so they see every tap point whatever
+        // order the tracks went in. What a modulation feed does not need is to
+        // come first, because nothing in the block reads it in the block that
+        // produced it. The audio side is one block behind by construction
+        // (ModFollower.hpp), and the MIDI side is read from the prefix, which
+        // runs before the graph rather than inside it.
+        //
+        // Making it an ordering edge costs real routing. A track routed into
+        // the very track its own modifiers listen to is an ordinary project and
+        // a cycle here, and the breaker resolves a cycle by dropping a
+        // connection: the audio edge would go so that a modulation feed which
+        // did not need ordering could have it.
         if (const auto route = activeAudioInputRoute(track); route.namesTrack())
             upstream.insert(route.trackId);
         if (const auto route = activeMidiInputRoute(track); route.namesTrack())
@@ -511,15 +573,12 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     if (rack.bypassed)
         return signal;
 
-    // A rack-level sidechain drives the rack's own followers and LFOs, so it is
-    // a modulation source rather than a signal edge, and modulation is not
-    // topology. Reported rather than passed over in silence: the dependency on
-    // the source track is real and lands with the modulation slice.
-    if (rack.sidechain.isActive())
-        diagnose("rack " + std::to_string(rack.id) + ": " +
-                 (rack.sidechain.type == SidechainConfig::Type::MIDI ? "MIDI" : "audio") +
-                 " sidechain from track " + std::to_string(rack.sidechain.sourceTrackId) +
-                 " feeds rack modulation, which the plan does not carry yet");
+    // A rack-level sidechain drives the rack's own followers and triggered
+    // modifiers. It is still not a signal edge into the rack, because a rack
+    // does not mix its sidechain into its chains; what it is is a dependency on
+    // the source track, and that is now carried: the modulation tap emitted for
+    // that track is the edge, and collectModulationSources is what puts the
+    // source ahead of this rack's own track in the compile order (#2120).
 
     // Same dry path a device's delta solo needs, one level up: the rack
     // instance subtracts its own input, aligned to its wet output, from that
@@ -622,12 +681,35 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
 
 ChainSignal Compiler::emitElements(const std::vector<ChainElement>& elements, const ChainSite& site,
                                    ChainSignal signal) {
+    // Only the track's own list, and only while a trigger tap is still wanted.
+    // A nested chain is not where the fork looks either: an instrument inside a
+    // rack ends the search at the rack, not inside it.
+    const bool watchingForInstrument = !triggerTapFound_ && site.trackId == triggerTapTrack_ &&
+                                       site.rackId == INVALID_RACK_ID &&
+                                       site.segment == ChainSegment::Fx;
+
     for (const auto& element : elements) {
-        if (isDevice(element))
-            signal = emitDevice(getDevice(element), site, signal);
-        else if (isRack(element))
-            signal = emitRack(getRack(element), site, signal);
+        bool endsTheSearch = false;
+
+        if (isDevice(element)) {
+            const auto& device = getDevice(element);
+            endsTheSearch = !device.bypassed && device.isInstrument;
+            signal = emitDevice(device, site, signal);
+        } else if (isRack(element)) {
+            const auto& rack = getRack(element);
+            endsTheSearch = !rack.bypassed && rackHasInstrument(rack);
+            signal = emitRack(rack, site, signal);
+        }
+
+        // Immediately after whatever makes the sound, which is where the fork
+        // puts the monitor on a track that has an instrument: in front of it
+        // there is nothing to detect.
+        if (watchingForInstrument && endsTheSearch && !triggerTapFound_) {
+            trackTriggerTap_[site.trackId] = signal.audio;
+            triggerTapFound_ = true;
+        }
     }
+
     return signal;
 }
 
@@ -704,6 +786,13 @@ void Compiler::emitTrack(const TrackInfo& track) {
                          INVALID_DEVICE_ID, OpRole::TrackAudioInput, 0};
     ChainSignal signal;
     signal.audio = emitMix(inputKey, audioSources);
+
+    // The chain head is where an audio trigger keys off a track with no
+    // instrument on it, which is every audio track. One with an instrument
+    // moves it along to just past that instrument during the walk below.
+    trackTriggerTap_[track.id] = signal.audio;
+    triggerTapTrack_ = track.id;
+    triggerTapFound_ = false;
 
     std::vector<PortRef> midiSources;
     if (carriesClips(track) && (chainConsumesMidi(track) || midiSourceTracks_.contains(track.id))) {
@@ -881,6 +970,56 @@ void Compiler::emitTrack(const TrackInfo& track) {
     pendingInputs_[destination].push_back(out);
 }
 
+void Compiler::emitModulationTaps() {
+    for (const auto& tap : modulationTaps_) {
+        const auto preFx = tap.point == ModTapPoint::PreFx;
+
+        // Two points, and the tap reads the one it is for. Pre-FX is after
+        // whatever makes the track's sound and before its effects, which is
+        // where the fork puts its trigger monitor; post-fader is the far end,
+        // before the muting node, which is where it puts its follower tap. A
+        // plan reading one point for both would lose what the source fader
+        // does, which is the whole of the difference.
+        const auto& points = preFx ? trackTriggerTap_ : trackSidechainTap_;
+
+        PortRef audio;
+        if (const auto found = points.find(tap.track); found != points.end())
+            audio = found->second;
+
+        // The source's chain-head MIDI, which is what a note-triggered
+        // modifier hears: the notes reaching the track rather than whatever
+        // its own instruments made of them. On the pre-FX tap alone, because a
+        // note has no fader question and two taps carrying it would fire every
+        // note-triggered modifier twice.
+        PortRef midi;
+        if (preFx && noteSourceTracks_.count(tap.track) != 0)
+            if (const auto found = trackMidiInput_.find(tap.track); found != trackMidiInput_.end())
+                midi = found->second;
+
+        // Neither, which is a modifier listening to a track this plan does not
+        // carry: one that was deleted, or one skipped because nothing it feeds
+        // is audible. Reported rather than passed over, because a modulation
+        // that silently stops arriving is the hardest kind of silence to find.
+        if (!audio.valid() && !midi.valid()) {
+            diagnose("track " + std::to_string(tap.track) +
+                     " is listened to by a modifier but is not routed, so nothing reaches it");
+            continue;
+        }
+
+        // The point is part of the identity, because a track read at both is
+        // two ops and the differ hash-joins on the key.
+        const OpKey key{tap.track,         INVALID_RACK_ID,       INVALID_CHAIN_ID,
+                        INVALID_DEVICE_ID, OpRole::ModulationTap, preFx ? 0 : 1,
+                        ChainSegment::Fx};
+
+        // No delay alignment. The two inputs are read for what they are rather
+        // than mixed with each other, and a modulation feed is a block late by
+        // construction anyway (ModFollower.hpp), so aligning it to a sample
+        // would be precision the path does not have.
+        addOp(OpKind::ModSource, key, {audio, midi}, {});
+    }
+}
+
 RenderPlan Compiler::run() {
     // A track whose MIDI someone else reads has to produce MIDI even when
     // nothing in its own chain consumes it, so this is collected up front.
@@ -894,9 +1033,21 @@ RenderPlan Compiler::run() {
     }
     collectSidechainSources(master_, SidechainConfig::Type::MIDI, midiSourceTracks_);
 
+    for (const auto& track : tracks_)
+        collectModulationTaps(track, modulationTaps_, noteSourceTracks_);
+    collectModulationTaps(master_, modulationTaps_, noteSourceTracks_);
+
+    // A track a modifier listens to for notes has to produce MIDI whether or
+    // not its own chain consumes any, on the same terms a MIDI sidechain does:
+    // a note-triggered modifier reads the notes reaching its source's chain
+    // head, and a source with no MIDI ops compiled has no chain head to read.
+    midiSourceTracks_.insert(noteSourceTracks_.begin(), noteSourceTracks_.end());
+
     for (const auto* track : computeTrackOrder())
         emitTrack(*track);
     emitTrack(master_);
+
+    emitModulationTaps();
 
     // Anything still queued belongs to a track that was compiled before its
     // source, which only happens when a routing cycle was broken above.

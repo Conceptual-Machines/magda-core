@@ -8,6 +8,7 @@
 #include "core/ClipLaneFlattener.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
+#include "param/ModSources.hpp"
 
 namespace magda::engine {
 
@@ -107,6 +108,100 @@ LfoSettings lfoSettingsOf(const magda::ModInfo& mod) {
 }
 
 /**
+ * @brief Where an envelope's gate comes from, folded from the trigger mode.
+ *
+ * Not the LFO's fold, and the difference is tempo sync. For an LFO tempo sync
+ * decides what the period is and therefore whether the phase is a function of
+ * the timeline, so it belongs in the fold. For an envelope it only scales the
+ * stage lengths, and a tempo-synced free-running envelope is still free
+ * running. The fork keeps the two apart for the same reason
+ * (ModifierHelpers::mapADSRSyncType).
+ */
+ModSync adsrSyncOf(const magda::ModInfo& mod) {
+    switch (mod.triggerMode) {
+        case magda::LFOTriggerMode::Transport:
+            return ModSync::Transport;
+        case magda::LFOTriggerMode::MIDI:
+        case magda::LFOTriggerMode::Audio:
+            return ModSync::Note;
+        case magda::LFOTriggerMode::Free:
+            break;
+    }
+    return ModSync::Free;
+}
+
+/// What the model says one envelope is.
+AdsrSettings adsrSettingsOf(const magda::ModInfo& mod) {
+    AdsrSettings settings;
+    settings.attackMs = mod.envAttackMs;
+    settings.decayMs = mod.envDecayMs;
+    settings.releaseMs = mod.envReleaseMs;
+    settings.sustain = mod.envSustain;
+    settings.attackCurve = mod.envAttackCurve;
+    settings.decayCurve = mod.envDecayCurve;
+    settings.releaseCurve = mod.envReleaseCurve;
+    settings.sync = adsrSyncOf(mod);
+    settings.trigger = mod.triggerMode;
+    settings.tempoSync = mod.tempoSync;
+
+    // One division for all three stages, because that is what the model
+    // carries: the fork writes it to the ADSR's separate attack, decay and
+    // release sync parameters and they always hold the same value.
+    settings.rateType = mod.tempoSync ? magda::syncDivisionToTeRateOrdinal(mod.syncDivision)
+                                      : static_cast<int>(magda::ModRateType::Hertz);
+
+    // The gate rules the fork applies (applyADSRProperties), read off the same
+    // model fields. An audio-triggered envelope's gate belongs to the detector
+    // watching its source, and it sits shut between hits; a note-triggered one
+    // is shut until the model says it is running.
+    settings.startGated = mod.triggerMode == magda::LFOTriggerMode::Audio ||
+                          (mod.triggerMode == magda::LFOTriggerMode::MIDI && !mod.running);
+
+    return settings;
+}
+
+/// What the model says one random modulator is.
+RandomSettings randomSettingsOf(const magda::ModInfo& mod) {
+    RandomSettings settings;
+    settings.type = mod.randomType == 1 ? RandomShape::Noise : RandomShape::Stepped;
+
+    // The LFO's fold, unchanged. The fork maps the two with the same call
+    // (applyRandomProperties uses mapSyncType), because both read the model's
+    // one trigger mode and one tempo-sync flag.
+    settings.sync = modSyncOf(mod);
+    settings.trigger = mod.triggerMode;
+    settings.tempoSync = mod.tempoSync;
+    settings.rate.hz = mod.rate;
+    settings.rate.rateType = mod.tempoSync ? magda::syncDivisionToTeRateOrdinal(mod.syncDivision)
+                                           : static_cast<int>(magda::ModRateType::Hertz);
+    settings.shape = mod.randomShape;
+    settings.smooth = mod.randomSmooth;
+    settings.stepDepth = mod.randomStepDepth;
+
+    return settings;
+}
+
+/// What the model says one envelope follower is.
+FollowerSettings followerSettingsOf(const magda::ModInfo& mod) {
+    FollowerSettings settings;
+
+    // The gain belongs before the band limits and before detection, which is
+    // where the fork puts it too: its own source cache applies this and holds
+    // TE's post-detection gain at unity, because a level that has already been
+    // detected has no frequency content left for a filter to act on.
+    settings.gainDb = mod.followerGainDb;
+    settings.attackMs = mod.followerAttackMs;
+    settings.holdMs = mod.followerHoldMs;
+    settings.releaseMs = mod.followerReleaseMs;
+    settings.highPass = mod.followerHpEnabled;
+    settings.highPassHz = mod.followerHpFreq;
+    settings.lowPass = mod.followerLpEnabled;
+    settings.lowPassHz = mod.followerLpFreq;
+
+    return settings;
+}
+
+/**
  * @brief What the modifier's Rate lane means, and where it starts.
  *
  * One lane with two readings, chosen by the same flag that chooses what the
@@ -149,6 +244,10 @@ struct Node {
     const magda::ModArray* mods = nullptr;
     const magda::DeviceInfo* device = nullptr;
     const magda::TrackInfo* track = nullptr;
+
+    /// The track this scope is sidechained from, or none. What the modifiers
+    /// living here listen to instead of their own track (ModSources.hpp).
+    magda::TrackId sidechainSource = magda::INVALID_TRACK_ID;
 };
 
 class Builder {
@@ -287,6 +386,30 @@ void Builder::allocateMods(const Node& node) {
         modifier.kind = modKindOf(mod.type);
         modifier.enabled = mod.enabled;
         modifier.lfo = lfoSettingsOf(mod);
+        modifier.adsr = adsrSettingsOf(mod);
+        modifier.random = randomSettingsOf(mod);
+        modifier.follower = followerSettingsOf(mod);
+
+        // Which track this one listens to, if it listens at all. The same rule
+        // the plan compiler emits the edge from, called rather than restated
+        // (ModSources.hpp says why that matters).
+        if (const auto source =
+                modifierSourceTrack(mod, node.sidechainSource, node.scope.trackId)) {
+            modifier.source = *source;
+            modifier.tap = modTapPointOf(mod);
+        }
+
+        // Cross-track is a property of the scope rather than of the modifier,
+        // which is why the settings could not say it: a modifier whose scope is
+        // sidechained from elsewhere is driven by that track's detector and
+        // must not be retriggered by the track it lives on. The fork keeps the
+        // same flag on the same terms, set by PluginManager rather than by the
+        // modifier itself.
+        const bool crossTrack = node.sidechainSource != magda::INVALID_TRACK_ID &&
+                                node.sidechainSource != node.scope.trackId;
+        modifier.lfo.skipNativeResync = crossTrack;
+        modifier.adsr.skipNativeResync = crossTrack;
+        modifier.random.skipNativeResync = crossTrack;
 
         const auto index = static_cast<int>(table_.modifiers.size());
         table_.modifiers.push_back(modifier);
@@ -408,6 +531,7 @@ void Builder::walkElements(const std::vector<magda::ChainElement>& elements, mag
             node.macros = &device.macros;
             node.mods = &device.mods;
             node.device = &device;
+            node.sidechainSource = sidechainSourceOf(device.sidechain);
             nodes_.push_back(node);
         } else if (magda::isRack(element)) {
             walkRack(magda::getRack(element), trackId);
@@ -425,6 +549,7 @@ void Builder::walkFlat(const std::vector<magda::PostFxChainElement>& elements,
         node.macros = &element.device.macros;
         node.mods = &element.device.mods;
         node.device = &element.device;
+        node.sidechainSource = sidechainSourceOf(element.device.sidechain);
         nodes_.push_back(node);
     }
 }
@@ -436,6 +561,7 @@ void Builder::walkRack(const magda::RackInfo& rack, magda::TrackId trackId) {
     node.scope.rackId = rack.id;
     node.macros = &rack.macros;
     node.mods = &rack.mods;
+    node.sidechainSource = sidechainSourceOf(rack.sidechain);
     nodes_.push_back(node);
 
     for (const auto& chain : rack.chains)

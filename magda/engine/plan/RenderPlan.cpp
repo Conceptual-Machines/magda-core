@@ -34,6 +34,8 @@ int arityOf(OpKind kind) {
         case OpKind::Meter:
         case OpKind::Output:
             return 1;
+        case OpKind::ModSource:
+            return 2;  // the source's audio at this tap's point, the source's MIDI
     }
     return -1;
 }
@@ -66,6 +68,8 @@ const char* toString(OpKind kind) {
             return "SendTap";
         case OpKind::Meter:
             return "Meter";
+        case OpKind::ModSource:
+            return "ModSource";
         case OpKind::Output:
             return "Output";
     }
@@ -110,6 +114,8 @@ const char* toString(OpRole role) {
             return "trackMute";
         case OpRole::SendTap:
             return "sendTap";
+        case OpRole::ModulationTap:
+            return "modulationTap";
         case OpRole::HardwareOutput:
             return "hardwareOutput";
         case OpRole::MixInputDelay:
@@ -335,8 +341,10 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
             problems.push_back(label + "has the same key as op " + std::to_string(owner->second) +
                                ", so the differ cannot tell them apart");
 
-        // Output is the plan's only sink; everything else must produce.
-        if (op.outputs.empty() != (op.kind == OpKind::Output))
+        // Two sinks and no others: the hardware output, and the tap that hands
+        // a track's signal to the modulation system. Everything else produces.
+        const bool sink = op.kind == OpKind::Output || op.kind == OpKind::ModSource;
+        if (op.outputs.empty() != sink)
             problems.push_back(label + (op.outputs.empty() ? "no output port"
                                                            : "is a sink and must have no ports"));
 
@@ -368,13 +376,14 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
             }
             // A delay carries whatever reaches it, so its own output port is
             // what its input has to agree with.
+            const bool midiSlot = op.kind == OpKind::MergeMidi ||
+                                  ((op.kind == OpKind::Device || op.kind == OpKind::Fader ||
+                                    op.kind == OpKind::ModSource) &&
+                                   slot == 1);
             const auto expected =
                 op.kind == OpKind::Delay
                     ? (op.outputs.empty() ? SignalKind::Audio : op.outputs.front())
-                    : ((op.kind == OpKind::MergeMidi ||
-                        ((op.kind == OpKind::Device || op.kind == OpKind::Fader) && slot == 1))
-                           ? SignalKind::Midi
-                           : SignalKind::Audio);
+                    : (midiSlot ? SignalKind::Midi : SignalKind::Audio);
             const auto actual = producer.outputs[static_cast<std::size_t>(input.port)];
             if (actual != expected)
                 problems.push_back(label + "input " + std::to_string(slot) + " is " +

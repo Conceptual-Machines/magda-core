@@ -172,6 +172,12 @@ static_assert(static_cast<int>(LFOWaveform::Saw) == 3);
 static_assert(static_cast<int>(LFOWaveform::ReverseSaw) == 4);
 static_assert(static_cast<int>(LFOWaveform::Custom) == 5);
 
+// Where a modifier listens in its source's chain (#2120). Written as an
+// integer, so an insert would move every modifier in every saved project to
+// the other point: a follower would start keying off the head of the chain.
+static_assert(static_cast<int>(ModTapPoint::PreFx) == 0);
+static_assert(static_cast<int>(ModTapPoint::PostFader) == 1);
+
 static_assert(static_cast<int>(LFOTriggerMode::Free) == 0);
 static_assert(static_cast<int>(LFOTriggerMode::Transport) == 1);
 static_assert(static_cast<int>(LFOTriggerMode::MIDI) == 2);
@@ -339,6 +345,8 @@ std::vector<Pin> allPins() {
         PIN(ModType, Envelope, 1),
         PIN(ModType, Random, 2),
         PIN(ModType, Follower, 3),
+        PIN(ModTapPoint, PreFx, 0),
+        PIN(ModTapPoint, PostFader, 1),
         PIN(LFOWaveform, Sine, 0),
         PIN(LFOWaveform, Triangle, 1),
         PIN(LFOWaveform, Square, 2),

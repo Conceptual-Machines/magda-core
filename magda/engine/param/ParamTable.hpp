@@ -8,7 +8,10 @@
 
 #include "core/AutomationInfo.hpp"
 #include "core/ModInfo.hpp"
+#include "param/ModAdsr.hpp"
+#include "param/ModFollower.hpp"
 #include "param/ModLfo.hpp"
+#include "param/ModRandom.hpp"
 #include "param/ParamKey.hpp"
 #include "param/ParamSpec.hpp"
 
@@ -63,9 +66,15 @@ struct ParamLink {
  * @brief One modifier instance, as the thing links read.
  *
  * A source with an identity, so a link can name one and the resolution order
- * can account for one, plus what it takes to run it. The LFO runs here (#2119);
- * the rest publish @ref value and hold it until their engines arrive (#2120),
- * which is what every modifier did before this slice.
+ * can account for one, plus what it takes to run it.
+ *
+ * Four kinds and four settings structs, side by side rather than in a union or
+ * a variant. Exactly one of them is live and the other three are dead weight,
+ * which is about a hundred bytes per modifier: a project with a modifier on
+ * every scope it could have one on spends a few tens of kilobytes on the
+ * padding, once, off the audio thread. A variant would save that and cost a
+ * discriminated read on the block path, and the table's whole design is that
+ * what crosses to the audio thread is flat and copyable.
  */
 struct ParamModifier {
     /// The modifier itself: its owner's scope and its id, with no parameter
@@ -84,8 +93,34 @@ struct ParamModifier {
     /// answer is that there is no modifier there.
     bool enabled = true;
 
-    /// What the LFO is, for @ref kind == ModKind::Lfo.
+    /// What the modifier is, for whichever @ref kind it is. The other three are
+    /// left at their defaults and never read.
     LfoSettings lfo;
+    AdsrSettings adsr;
+    RandomSettings random;
+    FollowerSettings follower;
+
+    /**
+     * @brief The track whose signal this modifier listens to, or
+     *        INVALID_TRACK_ID.
+     *
+     * Set for every modifier that listens at all: a follower, which is nothing
+     * but its source, and a MIDI- or audio-triggered one, which waits on that
+     * track's notes or its level. A free-running or timeline-locked modifier
+     * listens to nothing and says so by having none of this, which is what
+     * keeps a plan from carrying a track's signal nobody reads.
+     *
+     * Which track it is is ModSources.hpp's rule, called by both compilers.
+     * Carried on the modifier rather than in the plan because it is not
+     * topology, and read by the executor to decide who is on the far end of
+     * each modulation tap.
+     */
+    magda::TrackId source = magda::INVALID_TRACK_ID;
+
+    /// Where in @ref source's chain it listens. Only read for a modifier that
+    /// listens to audio; a note reaches its listeners from one point because
+    /// MIDI has no fader to sit either side of.
+    magda::ModTapPoint tap = magda::ModTapPoint::PreFx;
 
     /**
      * @brief The modifier's own Rate parameter, or INVALID_PARAM_ID.
@@ -95,9 +130,11 @@ struct ParamModifier {
      * modifiers have a rate nothing touches, and one parameter each for them
      * would be a table mostly made of numbers that never move.
      *
-     * Its value is a frequency or a division ordinal depending on
-     * LfoSettings::tempoSync, which is the same one lane the model's Rate
+     * Its value is a frequency or a division ordinal depending on whether the
+     * modifier is tempo synced, which is the same one lane the model's Rate
      * control writes (AutomationInfo's makeHzRateInfo / makeSyncDivisionInfo).
+     * The LFO and the random walk share it; an envelope's stage lengths and a
+     * follower's time constants are not rates and have none.
      */
     ParamId rate = INVALID_PARAM_ID;
 };

@@ -77,7 +77,7 @@ TEST_CASE("ModulationBaker - bakeability by mod type", "[automation][bake]") {
     REQUIRE_FALSE(ModulationBaker::isBakeable(mod));
     mod.type = ModType::Random;
     REQUIRE_FALSE(ModulationBaker::isBakeable(mod));
-    mod.type = ModType::Follower;
+    mod.setType(ModType::Follower);
     REQUIRE_FALSE(ModulationBaker::isBakeable(mod));
 }
 
@@ -239,7 +239,7 @@ TEST_CASE("ModulationBaker - empty or non-bakeable input yields no points", "[au
     REQUIRE(ModulationBaker::bake({}, opts, tempo).empty());
 
     auto follower = makeSource(makeLFO(LFOWaveform::Sine, SyncDivision::Quarter), 1.0f);
-    follower.mod.type = ModType::Follower;
+    follower.mod.setType(ModType::Follower);
     REQUIRE(ModulationBaker::bake({follower}, opts, tempo).empty());
 
     ModulationBaker::Options degenerate;

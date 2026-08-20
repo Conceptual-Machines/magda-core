@@ -69,6 +69,7 @@ enum class OpKind : std::uint8_t {
     Fader,      ///< volume + pan, and the MIDI its stage passes on
     SendTap,    ///< pre/post-fader tap feeding another track
     Meter,      ///< level tap read by the UI
+    ModSource,  ///< a track's signal as the modulation system reads it
     Output,     ///< hardware output
 };
 
@@ -98,6 +99,7 @@ enum class OpRole : std::uint8_t {
     TrackMeter,       ///< the track's post-fader, pre-mute level tap
     TrackMute,        ///< mute and solo, applied after the meter and sidechain tap
     SendTap,          ///< one send slot
+    ModulationTap,    ///< one track's signal, read by the modifiers listening to it
     HardwareOutput,   ///< the master's hardware output
 
     // Latency compensation. A delay sits on one edge, so its identity is the

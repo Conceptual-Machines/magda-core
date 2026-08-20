@@ -357,7 +357,11 @@ void TrackManager::addMod(const ChainNodePath& path, int slotIndex, ModType type
     if (slotIndex < 0 || slotIndex > static_cast<int>(mods.size()))
         return;
     ModInfo newMod(slotIndex);
-    newMod.type = type;
+
+    // Through setType, so the new modifier takes the tap point its kind wants.
+    // Assigning the type on its own leaves a fresh follower listening in front
+    // of the source's chain, where the fork's follower never listens.
+    newMod.setType(type);
     newMod.waveform = waveform;
     // An envelope defaults to note-triggered: free-running would just cycle
     // the A-D-R shape, which is rarely what you want from an ADSR.
@@ -457,6 +461,16 @@ void TrackManager::setModType(const ChainNodePath& path, int modIndex, ModType t
     auto& mod = (*node.mods)[modIndex];
     auto oldType = mod.type;
     mod.type = type;
+
+    // A modifier that has just become another kind is a new modifier as far as
+    // the tap point is concerned: a follower wants the far end and a trigger
+    // wants the near one, and carrying the old kind's answer over would leave a
+    // fresh follower keying off the wrong place with nothing on screen to say
+    // why. Re-derived on the type change alone, so a point the user moved
+    // afterwards stays where they put it.
+    if (oldType != type)
+        mod.tapPoint = defaultModTapPoint(type);
+
     auto defaultOldName = ModInfo::getDefaultName(modIndex, oldType);
     if (mod.name == defaultOldName) {
         mod.name = ModInfo::getDefaultName(modIndex, type);
@@ -520,6 +534,14 @@ void TrackManager::setModOneShot(const ChainNodePath& path, int modIndex, bool o
     // direction: back to loop it should run again, and re-entering one-shot
     // should wait for the next trigger rather than stay latched complete.
     mod.oneShotComplete = false;
+    notifyDeviceModifiersChanged(path.trackId);
+}
+
+void TrackManager::setModTapPoint(const ChainNodePath& path, int modIndex, ModTapPoint point) {
+    auto node = resolveChainNode(path);
+    if (!indexInRange(node.mods, modIndex))
+        return;
+    (*node.mods)[modIndex].tapPoint = point;
     notifyDeviceModifiersChanged(path.trackId);
 }
 

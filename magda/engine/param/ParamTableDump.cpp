@@ -88,11 +88,25 @@ std::string kindText(ModKind kind) {
 
 /// The rate, as the thing a reader is checking: a frequency, or the division
 /// ordinal a synced modifier's period comes from.
-std::string rateText(const LfoSettings& lfo) {
-    if (!lfo.tempoSync)
-        return number(lfo.rate.hz) + "Hz";
+std::string rateText(bool tempoSync, const LfoRate& rate) {
+    if (!tempoSync)
+        return number(rate.hz) + "Hz";
 
-    return "sync[" + std::to_string(lfo.rate.rateType) + "]";
+    return "sync[" + std::to_string(rate.rateType) + "]";
+}
+
+/// A stage length, which is a time unless the envelope is synced, in which case
+/// every stage runs at the one division the model carries.
+std::string stageText(float milliseconds, const AdsrSettings& adsr) {
+    if (adsr.tempoSync && adsr.rateType != static_cast<int>(magda::ModRateType::Hertz))
+        return "sync[" + std::to_string(adsr.rateType) + "]";
+
+    return number(milliseconds) + "ms";
+}
+
+/// What a random modulator does with its cycle.
+std::string randomTypeText(RandomShape type) {
+    return type == RandomShape::Noise ? "noise" : "stepped";
 }
 
 }  // namespace
@@ -147,23 +161,73 @@ std::string dumpParamTable(const ParamTable& table) {
             if (!modifier.enabled)
                 line << " off";
 
-            if (modifier.kind == ModKind::Lfo) {
-                line << " " << waveText(lfo.wave) << " " << rateText(lfo) << " "
-                     << syncText(lfo.sync);
+            // Only the live kind's settings, because the other three are at
+            // their defaults and printing them would be four modifiers'
+            // worth of noise around the one that is there.
+            switch (modifier.kind) {
+                case ModKind::Lfo: {
+                    line << " " << waveText(lfo.wave) << " " << rateText(lfo.tempoSync, lfo.rate)
+                         << " " << syncText(lfo.sync);
 
-                if (lfo.phaseOffset != 0.0f)
-                    line << " phase=" << number(lfo.phaseOffset);
-                if (lfo.oneShot)
-                    line << " oneshot";
-                if (lfo.invertOutput)
-                    line << " inverted";
-                if (lfo.useLoopRegion)
-                    line << " loop[" << number(lfo.loopStart) << "," << number(lfo.loopEnd) << "]";
-                if (lfo.gateOnTrigger)
-                    line << " gated";
-                if (!table.modCurveFor(index).empty())
-                    line << " curve=" << table.modCurveFor(index).size();
+                    if (lfo.phaseOffset != 0.0f)
+                        line << " phase=" << number(lfo.phaseOffset);
+                    if (lfo.oneShot)
+                        line << " oneshot";
+                    if (lfo.invertOutput)
+                        line << " inverted";
+                    if (lfo.useLoopRegion)
+                        line << " loop[" << number(lfo.loopStart) << "," << number(lfo.loopEnd)
+                             << "]";
+                    if (lfo.gateOnTrigger)
+                        line << " gated";
+                    if (!table.modCurveFor(index).empty())
+                        line << " curve=" << table.modCurveFor(index).size();
+                    break;
+                }
+
+                case ModKind::Adsr: {
+                    const auto& adsr = modifier.adsr;
+                    line << " a=" << stageText(adsr.attackMs, adsr)
+                         << " d=" << stageText(adsr.decayMs, adsr) << " s=" << number(adsr.sustain)
+                         << " r=" << stageText(adsr.releaseMs, adsr) << " " << syncText(adsr.sync);
+
+                    if (adsr.attackCurve != 0.0f || adsr.decayCurve != 0.0f ||
+                        adsr.releaseCurve != 0.0f)
+                        line << " curves[" << number(adsr.attackCurve) << ","
+                             << number(adsr.decayCurve) << "," << number(adsr.releaseCurve) << "]";
+                    break;
+                }
+
+                case ModKind::Random: {
+                    const auto& random = modifier.random;
+                    line << " " << randomTypeText(random.type) << " "
+                         << rateText(random.tempoSync, random.rate) << " " << syncText(random.sync)
+                         << " shape=" << number(random.shape) << " smooth=" << number(random.smooth)
+                         << " step=" << number(random.stepDepth);
+                    break;
+                }
+
+                case ModKind::Follower: {
+                    const auto& follower = modifier.follower;
+                    line << " gain=" << number(follower.gainDb) << "dB"
+                         << " a=" << number(follower.attackMs) << "ms"
+                         << " h=" << number(follower.holdMs) << "ms"
+                         << " r=" << number(follower.releaseMs) << "ms";
+
+                    if (follower.highPass)
+                        line << " hp=" << number(follower.highPassHz) << "Hz";
+                    if (follower.lowPass)
+                        line << " lp=" << number(follower.lowPassHz) << "Hz";
+                    break;
+                }
             }
+
+            // What it listens to, where it listens at all. The far end of the
+            // plan's modulation tap, printed so a golden shows the edge from
+            // both sides rather than only from the plan's.
+            if (modifier.source != magda::INVALID_TRACK_ID)
+                line << " source=track[" << modifier.source << "]"
+                     << (modifier.tap == magda::ModTapPoint::PreFx ? " prefx" : " postfader");
 
             if (modifier.rate != INVALID_PARAM_ID)
                 line << " rate=param[" << modifier.rate << "]";

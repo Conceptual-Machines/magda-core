@@ -5,6 +5,8 @@
 
 #include <atomic>
 #include <memory>
+#include <set>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -256,6 +258,38 @@ class PlanExecutor {
     void resolveParameters(const PlanValues& values, const BlockInfo& block);
 
     /**
+     * @brief Render the MIDI a block has before it has any audio (#2120).
+     *
+     * On the audio thread, after beginBlock and before resolveParameters, from
+     * both executors. What it renders is the set of ops whose outputs are all
+     * MIDI and whose producers are all in that same set: clip readers, live
+     * input queues, the merges that gather them, and the delays on those edges.
+     * None of it reads a parameter and none of it reads audio, so running it
+     * early is the same schedule seen from a different place.
+     *
+     * What that buys is the one block a note-triggered modifier would otherwise
+     * be late by. Parameters resolve at the top of a block, so a trigger fired
+     * by an op during the walk is not spent until the next block's resolve; a
+     * trigger read off a MIDI buffer that already exists is spent in this one.
+     *
+     * MIDI a device makes is not in the prefix and cannot be: an arpeggiator's
+     * notes are work that has not happened yet at resolve time. A modifier
+     * triggered from those is a block late, which is the lag an audio trigger
+     * has as well (ModFollower.hpp).
+     *
+     * The caller must not render these ops again. They stay in the schedule so
+     * their consumers are released as usual, and both executors skip re-running
+     * them: a live input queue rendered twice is a queue read twice.
+     */
+    void renderMidiPrefix(const PlanValues& values, const BlockInfo& block);
+
+    /// Whether @p op was already rendered by @ref renderMidiPrefix this block.
+    bool inMidiPrefix(OpId op) const {
+        const auto i = static_cast<std::size_t>(op);
+        return i < inMidiPrefix_.size() && inMidiPrefix_[i] != 0;
+    }
+
+    /**
      * @brief Render one op of the prepared plan.
      *
      * Every op the engine renders passes through here, from both executors,
@@ -280,6 +314,26 @@ class PlanExecutor {
     /// publish nothing, because nothing is reading them.
     int boundMeterCount() const {
         return boundMeterCount_;
+    }
+
+    /// Modulation taps that took over the detector of the executor they
+    /// replaced rather than starting again. What that buys is the same thing
+    /// ModRuntime's carry buys: an edit during playback does not restate a
+    /// gate the source never changed.
+    int carriedTriggerDetectors() const {
+        return carriedTriggerDetectors_;
+    }
+
+    /// Detectors no two taps share. Every modulation tap owns its own level and
+    /// gate, so this is the number of taps: a track read at both its points has
+    /// two, and one detector between them would let a level at one point work
+    /// the gate at the other.
+    int distinctTriggerDetectors() const {
+        std::set<const TriggerDetector*> seen;
+        for (const auto& detector : triggerForOp_)
+            if (detector != nullptr)
+                seen.insert(detector.get());
+        return static_cast<int>(seen.size());
     }
 
     /// Samples the prepared plan's output is delayed by: what the devices along
@@ -516,6 +570,82 @@ class PlanExecutor {
     /// from the same table, and carried from the executor being replaced, so a
     /// device insert does not restart every LFO in the project.
     ModRuntime mods_;
+
+    /**
+     * @brief Ops that can run before the block's parameters are resolved.
+     *
+     * Every op whose outputs are all MIDI and whose producers are all in this
+     * set, which is the MIDI a block has before any audio exists: clip readers,
+     * live input queues, the merges that gather them, and the delays on those
+     * edges. None of it reads a parameter and none of it reads audio, so
+     * running it first is the same schedule seen from a different place rather
+     * than a reordering.
+     *
+     * What that buys is the one block a note-triggered modifier would otherwise
+     * be late by. Parameters resolve at the top of a block, so a trigger fired
+     * by an op is not spent until the next block's resolve; a trigger read off
+     * a MIDI buffer that already exists is spent in this one. The fork's own
+     * gate is the later of the two and its monitor is the earlier, so this is
+     * the fork's best case made unconditional.
+     *
+     * MIDI a device makes is not in here and cannot be: an arpeggiator's notes
+     * are audio-thread work that has not happened yet at resolve time. A
+     * modifier triggered from those is a block late, and that is the same lag
+     * an audio trigger has and is documented in the same place.
+     */
+    std::vector<OpId> midiPrefix_;
+
+    /// Per op: whether it belongs to @ref midiPrefix_, so the block's main walk
+    /// leaves alone what the prefix already rendered.
+    std::vector<char> inMidiPrefix_;
+
+    /// Per op: the modifiers a ModSource op feeds, or an empty span. Resolved
+    /// at prepare from the table's own record of what listens to what.
+    std::vector<std::span<const int>> modSourceForOp_;
+
+    /// One block of the source's audio, downmixed to mono, which is what a
+    /// detector reads. Sized at prepare.
+    std::vector<float> detectMono_;
+
+    /// Per follower: what its own detection needs to know about the level its
+    /// audio trigger is at, kept out of the modifier states because it belongs
+    /// to the source rather than to the modifier.
+    struct TriggerDetector {
+        float envelope = 0.0f;
+        bool open = false;
+    };
+
+    /// Per ModSource op, indexed the same way the ops are. Held by shared
+    /// pointer for the reason the delay lines are: a tap the next plan also has
+    /// is the same detector rather than a copy of one read at some instant, and
+    /// only one epoch renders at a time so there is an owner to outlive and no
+    /// concurrent use to guard against.
+    std::vector<std::shared_ptr<TriggerDetector>> triggerForOp_;
+
+    int carriedTriggerDetectors_ = 0;
+
+    /**
+     * @brief The table this block resolved against, or null.
+     *
+     * Set once at the top of the block and read by the ops that need to name a
+     * modifier. Not a second copy of anything: it is the same table
+     * resolveParameters was handed, kept for the length of the walk because a
+     * modulation tap runs inside the walk and the values it was given do not
+     * reach renderOp.
+     */
+    const ParamTable* blockTable_ = nullptr;
+
+    /// Settle @ref blockTable_ for this block. Called by whichever of the two
+    /// entry points runs first, and idempotent, because beginBlock is const and
+    /// the prefix needs the answer before the resolve does.
+    void settleBlockTable(const PlanValues& values);
+
+    /// Read one modulation tap: hand the source's level to the followers
+    /// listening to it, and its rises and falls to the triggered ones.
+    void renderModSource(OpId id, const BlockInfo& block);
+
+    /// Spend the notes in @p midi on the modifiers listening to @p op's track.
+    void feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi);
 
     /** @brief The parameters a mixer op reads instead of the published value. */
     struct OpMixerParams {

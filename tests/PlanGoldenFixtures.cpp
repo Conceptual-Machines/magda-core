@@ -284,6 +284,84 @@ Fixture parameterLinks() {
     return value;
 }
 
+/// The modulation feeds (#2120). What the plan compiler could not express
+/// before this slice: a rack sidechained from another track, whose modifiers
+/// listen to that track rather than to the one they live on, plus the two kinds
+/// that listen without a trigger mode saying so.
+///
+/// Both sides of the edge are here on purpose. The plan gains one tap per
+/// listened-to track, and the table records which modifier is on the far end of
+/// it, so a golden that showed only one of the two could go on holding while
+/// the other drifted.
+Fixture modulationSources() {
+    Fixture value;
+    value.name = "modulation-sources";
+    value.covers = "the tracks modifiers listen to, and the taps that carry them";
+
+    // The source. Nothing else reads it, so without the modifiers listening it
+    // would be routed to master and no further.
+    auto source = track(2);
+    source.chain.fxChainElements.push_back(makeDeviceElement(effect(9)));
+
+    // A rack keyed from the source, with an envelope its notes gate and a
+    // follower tracking its level through a band limit.
+    RackInfo rack;
+    rack.id = 4;
+    rack.name = "Ducker";
+    rack.sidechain.type = SidechainConfig::Type::Audio;
+    rack.sidechain.sourceTrackId = 2;
+    rack.mods = createDefaultMods(2);
+
+    rack.mods[0].type = ModType::Envelope;
+    rack.mods[0].triggerMode = LFOTriggerMode::MIDI;
+    rack.mods[0].envAttackMs = 5.0f;
+    rack.mods[0].envDecayMs = 120.0f;
+    rack.mods[0].envSustain = 0.4f;
+    rack.mods[0].envReleaseMs = 250.0f;
+    rack.mods[0].envAttackCurve = 0.25f;
+    rack.mods[0].links.push_back(
+        ModLink{ControlTarget::pluginParam(ChainNodePath::chainDevice(1, 4, 10, 7), 0), 0.75f,
+                false, true});
+
+    rack.mods[1].setType(ModType::Follower);
+    rack.mods[1].followerGainDb = 6.0f;
+    rack.mods[1].followerAttackMs = 20.0f;
+    rack.mods[1].followerHoldMs = 30.0f;
+    rack.mods[1].followerReleaseMs = 400.0f;
+    rack.mods[1].followerHpEnabled = true;
+    rack.mods[1].followerHpFreq = 150.0f;
+    rack.mods[1].links.push_back(ModLink{
+        ControlTarget::pluginParam(ChainNodePath::chainDevice(1, 4, 10, 7), 1), 0.5f, true, true});
+
+    ChainInfo chain;
+    chain.id = 10;
+    chain.name = "Chain";
+    chain.elements.push_back(makeDeviceElement(effectWithParameters(7, 2)));
+    rack.chains.push_back(std::move(chain));
+
+    auto destination = track(1);
+    destination.chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+    // And a random walk on the destination track itself, listening to nothing:
+    // a modifier with no trigger and no source is what most of them are, and it
+    // is here so the golden shows the difference.
+    destination.mods = createDefaultMods(1);
+    destination.mods[0].type = ModType::Random;
+    destination.mods[0].randomShape = 0.5f;
+    destination.mods[0].randomSmooth = 0.25f;
+    destination.mods[0].randomStepDepth = 0.6f;
+    destination.mods[0].tempoSync = true;
+    destination.mods[0].syncDivision = SyncDivision::Sixteenth;
+    destination.mods[0].links.push_back(
+        ModLink{ControlTarget::pluginParam(ChainNodePath::chainDevice(1, 4, 10, 7), 1), 0.25f,
+                false, true});
+
+    value.tracks = {destination, source};
+    value.master = master();
+    value.options = withoutMeters();
+    return value;
+}
+
 Fixture groupRouting() {
     Fixture value;
     value.name = "group-routing";
@@ -367,6 +445,7 @@ std::vector<Fixture> planFixtures() {
     fixtures.push_back(sectionLocalDeviceIds());
     fixtures.push_back(groupRouting());
     fixtures.push_back(parameterLinks());
+    fixtures.push_back(modulationSources());
     fixtures.push_back(insertDevice());
     fixtures.push_back(removeDevice());
     fixtures.push_back(reorderDevices());
