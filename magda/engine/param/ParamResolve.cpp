@@ -178,10 +178,21 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
         return opener != nullptr && opener->curveType == magda::AutomationCurveType::Step;
     };
 
+    // Where the curve ends up over this block, and where it gets there. Both
+    // are needed before the walk, because a walk that runs out of room has to
+    // spend its last segment on arriving rather than on where it had got to.
+    const float ending = valueAt(block.endBeat);
+    const auto lastKnot = std::lower_bound(
+        curve.begin(), curve.end(), block.endBeat,
+        [](const magda::AutomationPoint& point, double beat) { return point.beatPosition < beat; });
+    const int endingSample =
+        lastKnot == curve.begin() ? 0 : block.sampleForBeat((lastKnot - 1)->beatPosition);
+
     int written = 0;
     int startSample = 0;
     float startValue = opening;
     bool holds = holdsFrom(block.startBeat);
+    bool overflowed = false;
 
     // Close the run in progress at @p beat and open the next one there. The
     // value at a knot is the curve's value after it, which for a step is the
@@ -204,26 +215,54 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
         return beat > block.startBeat && beat < block.endBeat;
     };
 
+    // The run the block opens inside, rather than the top of the lane: an
+    // unrolled clip lane is as long as the arrangement, and every knot behind
+    // the playhead is one this block was never going to emit.
+    const auto opener = std::lower_bound(
+        curve.begin(), curve.end(), block.startBeat,
+        [](const magda::AutomationPoint& point, double beat) { return point.beatPosition < beat; });
+    auto index = static_cast<std::size_t>(std::distance(curve.begin(), opener));
+    if (index > 0)
+        --index;
+
     // Every knot the block contains, in beat order: each breakpoint, and the
     // apex of a hard corner, which is where that curve changes direction
     // between two breakpoints rather than at one.
-    for (std::size_t i = 0; i < curve.size(); ++i) {
+    for (std::size_t i = index; i < curve.size(); ++i) {
         if (curve[i].beatPosition >= block.endBeat)
             break;
-        if (written + 1 >= static_cast<int>(out.size()))
+        if (written + 1 >= static_cast<int>(out.size())) {
+            overflowed = true;
             break;
+        }
 
         if (inside(curve[i].beatPosition))
             closeAt(curve[i].beatPosition);
 
         if (i + 1 < curve.size())
-            if (const auto corner = magda::automation::hardCornerOf(curve[i], curve[i + 1]))
-                if (inside(corner->beat) && written + 1 < static_cast<int>(out.size()))
+            if (const auto corner = magda::automation::hardCornerOf(curve[i], curve[i + 1])) {
+                if (written + 1 >= static_cast<int>(out.size())) {
+                    overflowed = true;
+                    break;
+                }
+                if (inside(corner->beat))
                     closeAt(corner->beat);
+            }
     }
 
-    out[static_cast<std::size_t>(written++)] =
-        ParamSegment{startSample, startValue, holds ? startValue : valueAt(block.endBeat)};
+    // A run that holds cannot arrive by ramping, so a bake that ran out of room
+    // inside one spends its last segment on the step the curve ends on, at the
+    // sample it lands. What is lost is the steps in between, which is the same
+    // coarsening ResolvedParams makes when a curve outgrows its slot; the run
+    // before it simply holds a little longer. A run that does not hold ramps to
+    // the same place, which arrives on time whether or not it overflowed.
+    if (overflowed && holds)
+        out[static_cast<std::size_t>(written++)] =
+            ParamSegment{std::max(endingSample, startSample), ending, ending};
+    else
+        out[static_cast<std::size_t>(written++)] =
+            ParamSegment{startSample, startValue, holds ? startValue : ending};
+
     return written;
 }
 

@@ -313,17 +313,22 @@ void Builder::allocateMixer(const magda::TrackInfo& track) {
     const auto fader = magda::ParameterPresets::faderVolume(-1, "Volume");
     const auto panning = magda::ParameterPresets::pan(-1, "Pan");
 
+    // Volume and pan together or not at all. They are one op's two gains, put
+    // there by one pan law, so a fader resolved from a parameter has to resolve
+    // both of them: a pan lane over a table with no volume in it would have
+    // nothing to pan, and a volume lane over a table with no pan in it would
+    // recentre a track the moment its fader moved.
     ParamKey volume = scope;
     volume.kind = ParamKey::Kind::TrackVolume;
-    if (targeted_.count(volume) > 0)
-        add(volume, paramSpecFrom(fader),
-            magda::ParameterUtils::normalizedFromGain(track.volume, fader));
-
     ParamKey pan = scope;
     pan.kind = ParamKey::Kind::TrackPan;
-    if (targeted_.count(pan) > 0)
+
+    if (targeted_.count(volume) > 0 || targeted_.count(pan) > 0) {
+        add(volume, paramSpecFrom(fader),
+            magda::ParameterUtils::normalizedFromGain(track.volume, fader));
         add(pan, paramSpecFrom(panning),
             magda::ParameterUtils::realToNormalized(track.pan, panning));
+    }
 
     for (std::size_t slot = 0; slot < track.sends.size(); ++slot) {
         ParamKey send = scope;

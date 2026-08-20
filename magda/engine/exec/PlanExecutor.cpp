@@ -726,6 +726,10 @@ OpValue PlanExecutor::mixerValueFor(std::size_t op, const OpValue& published) co
     OpValue value = published;
 
     const auto gain = faderGainFromDecibels(level.value());
+
+    // A fader carries both or neither (ParamTableCompiler::allocateMixer), so
+    // a pan that is missing here is a send, which has none. A send's level is
+    // one number and reaches both channels alike.
     const auto pan = params.pan == INVALID_PARAM_ID ? ParamValues{} : paramValues_[params.pan];
 
     if (pan.empty()) {

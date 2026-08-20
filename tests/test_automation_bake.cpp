@@ -337,6 +337,33 @@ TEST_CASE("A step inside a block holds rather than gliding", "[engine][param][ba
     CHECK(values[param].valueAt(127) == approx(100.0f));
 }
 
+TEST_CASE("A stepped curve too busy for the block still arrives", "[engine][param][bake]") {
+    auto tracks = trackWithDevice();
+
+    // Two dozen steps inside one block, against sixteen slots. Something has to
+    // go, and it is the steps in between rather than the one the curve ends on.
+    std::vector<AutomationPoint> steps;
+    for (int i = 0; i < 24; ++i)
+        steps.push_back(point(static_cast<double>(i) * 0.05, static_cast<double>(i) / 23.0,
+                              AutomationCurveType::Step));
+
+    const auto table = tableFor(tracks, {lane(deviceTarget(), steps)});
+    const auto param = table.find(deviceParam(1, 7, 0));
+
+    auto opted = table;
+    opted.specs[static_cast<std::size_t>(param)].segmentAccurate = true;
+
+    const auto values = resolved(opted, blockAt(0.0, 2.0, 512));
+
+    CHECK(values[param].numSegments() <= values.segmentCapacity());
+    CHECK(values[param].valueAt(0) == approx(0.0f));
+
+    // The block ends on the step the curve ends on, at the sample it lands.
+    CHECK(values[param].valueAt(511) == approx(100.0f));
+    CHECK(values[param].segments().back().startValue == approx(1.0f));
+    CHECK(values[param].segments().back().endValue == approx(1.0f));
+}
+
 TEST_CASE("A hard corner keeps its apex inside a block", "[engine][param][bake]") {
     auto tracks = trackWithDevice();
 
@@ -443,6 +470,55 @@ TEST_CASE("A lane over a track fader moves the fader", "[engine][param][bake]") 
     CHECK(render(session, 0.0) == approx(expected(0.0)));
     CHECK(render(session, 2.0) == approx(expected(0.375)));
     CHECK(render(session, 4.0) == approx(expected(0.75)));
+}
+
+TEST_CASE("A fader carries volume and pan together", "[engine][param][bake]") {
+    auto tracks = trackWithDevice();
+    tracks[0].pan = -1.0f;  // hard left
+    const auto master = makeMaster();
+
+    const auto plan =
+        std::make_shared<const magda::engine::RenderPlan>(compileRenderPlan(tracks, master));
+
+    const auto masterGain = magda::engine::faderGainFromVolume(master.volume);
+    const auto trackGain = magda::engine::faderGainFromVolume(tracks[0].volume);
+
+    const auto renderWith = [&](const AutomationLaneInfo& automated) {
+        magda::engine::PlanValues values;
+        magda::engine::resolvePlanValues(*plan, tracks, master, values, std::vector{automated});
+
+        ToneFactory factory;
+        magda::engine::EngineSession session(factory);
+        REQUIRE(session
+                    .publish(plan, magda::engine::RenderContext{44100.0, 64, 2},
+                             magda::engine::collectRuntimeStateIds(tracks, master), values)
+                    .published);
+
+        juce::AudioBuffer<float> output(2, 64);
+        session.process(64, output);
+        return std::pair{output.getSample(0, 0), output.getSample(1, 0)};
+    };
+
+    SECTION("a lane over the pan alone still moves it") {
+        // Hard left in the model, hard right in the lane. A fader whose volume
+        // was not carried would leave the parameter unread and the track where
+        // the model left it.
+        const auto [left, right] = renderWith(lane(ControlTarget::trackPan(1), {point(0.0, 1.0)}));
+
+        CHECK(left == approx(0.0f));
+        CHECK(right == approx(2.0f * trackGain * masterGain));
+    }
+
+    SECTION("a lane over the volume alone leaves the pan where it was") {
+        // The track is hard left and the lane says unity. A fader that carried
+        // its volume without its pan would recentre the track the moment the
+        // lane moved it.
+        const auto [left, right] =
+            renderWith(lane(ControlTarget::trackVolume(1), {point(0.0, 0.75)}));
+
+        CHECK(left == approx(2.0f * masterGain));
+        CHECK(right == approx(0.0f));
+    }
 }
 
 TEST_CASE("A fader nothing automates keeps the published value", "[engine][param][bake]") {
