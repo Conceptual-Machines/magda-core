@@ -9,15 +9,11 @@ namespace magda {
 
 namespace {
 
-/// How far ahead of a step's edge the holding point goes, in beats. Small
-/// enough to be inaudible at any tempo, large enough that Tracktion keeps it as
-/// a separate point rather than folding it into the edge.
+/// How far ahead of a step's edge the holding point goes, in beats.
 constexpr double kStepEpsilon = 0.0001;
 
-/// How many pieces a curved segment is cut into. Coarse on purpose: the
-/// iterator is linear, and each point is a ValueTree mutation with a listener
-/// fan-out behind it, so a fine tessellation is paid for on the message thread
-/// every time a point moves.
+/// How many pieces a curved segment is cut into. Coarse on purpose: each point
+/// is a ValueTree mutation with a listener fan-out behind it.
 constexpr int kBezierSegments = 12;
 
 }  // namespace
@@ -27,18 +23,15 @@ void bakeLaneIntoCurve(te::AutomationCurve& curve, const AutomationLaneInfo& lan
                        const std::function<double(double)>& valueAtBeat,
                        const std::function<float(double)>& toParameterValue) {
     // One Tracktion point per MAGDA point, plus whatever a shape needs on top.
-    // Tracktion interpolates linearly between its own points, which is what a
-    // Linear segment already is, so a dense resampling of every lane would be
-    // thousands of ValueTree mutations describing a line.
+    // A dense resampling would be thousands of mutations describing a line.
     const std::vector<AutomationPoint>* sourcePoints = nullptr;
     std::vector<AutomationPoint> clipFlattened;
 
     if (lane.isAbsolute()) {
         sourcePoints = &lane.absolutePoints;
     } else if (lane.isClipBased()) {
-        // A clip-based lane unrolled into an absolute-style breakpoint list --
-        // loop iterations, gap holds and wrap jumps included -- so the loop
-        // below treats it exactly like an absolute lane.
+        // Unrolled into an absolute-style breakpoint list, loop iterations
+        // and gap holds included, so the loop below treats it as one.
         clipFlattened = flattenClipLane(lane, getClip, valueAtBeat);
         sourcePoints = &clipFlattened;
     }
@@ -47,8 +40,7 @@ void bakeLaneIntoCurve(te::AutomationCurve& curve, const AutomationLaneInfo& lan
         return;
 
     const auto addPoint = [&](double beat, double normalized) {
-        // Stored as beats, so a tempo edit moves the curve with the grid rather
-        // than leaving it pinned at the seconds it was baked at.
+        // Beats, so a tempo edit moves the curve with the grid.
         curve.addPoint(te::EditPosition{te::BeatPosition::fromBeats(beat)},
                        toParameterValue(normalized), 0.0f, nullptr);
     };
@@ -56,20 +48,17 @@ void bakeLaneIntoCurve(te::AutomationCurve& curve, const AutomationLaneInfo& lan
     for (std::size_t i = 0; i < sourcePoints->size(); ++i) {
         const auto& point = (*sourcePoints)[i];
 
-        // A step holds the previous value right up to this point and then
-        // jumps. Without the holding point the linear iterator ramps between
-        // the two and lets every value in between through.
+        // A step holds right up to this point and then jumps; without the
+        // holding point the linear iterator ramps between the two.
         if (i > 0 && (*sourcePoints)[i - 1].curveType == AutomationCurveType::Step) {
             const auto preStepBeat = point.beatPosition - kStepEpsilon;
             if (preStepBeat > (*sourcePoints)[i - 1].beatPosition)
                 addPoint(preStepBeat, valueAtBeat(preStepBeat));
         }
 
-        // Anything that is not a straight line between its endpoints has to be
-        // cut into pieces, because a linear iterator handed two endpoints plays
-        // a straight line whatever the user drew. Bezier always; a Linear
-        // segment whenever tension or a handle bends it; a hard corner because
-        // its shape is not its endpoints either.
+        // Anything not a straight line between its endpoints is cut into
+        // pieces: bezier always, a Linear segment whenever tension or a handle
+        // bends it, and a hard corner.
         if (i > 0) {
             const auto& previous = (*sourcePoints)[i - 1];
             const auto bezier = previous.curveType == AutomationCurveType::Bezier;

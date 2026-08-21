@@ -653,51 +653,42 @@ the routing graph, in [#1892](https://github.com/Conceptual-Machines/magda-core/
 
 **Parameters are where the corpus first runs a device.** Until
 [#2123](https://github.com/Conceptual-Machines/magda-core/issues/2123) a `Device` op resolved to
-a stand-in that passed signal through and the incumbent instantiated none of the model's devices,
-so a parameter that nothing reads was a parameter nothing could compare. That is now a gain with
-one parameter, written once as a contract (`tests/NullDiffGain.hpp`) and implemented in both legs
-the way the MIDI capture already was: a `te::Plugin` in the app's own registry, hidden from the
-browser, and its opposite number bound to the native leg's `Device` op. What a gain device
-renders is the value of its own parameter, so a case that plays a constant into it draws the
-curve directly.
+a stand-in and the incumbent instantiated none of the model's devices, so a parameter nothing
+reads was a parameter nothing could compare. That is now a gain with one parameter, written once
+as a contract (`tests/NullDiffGain.hpp`) and implemented in both legs the way the MIDI capture
+already was. What a gain device renders is the value of its own parameter, so a case that plays a
+constant into it draws the curve directly.
 
-Nine cases: the stored value, a step curve over it, a square LFO over it, both at once, the
-stored value under each of those, a macro at track scope and at device scope, and the fader past
-both ends of its range where the clamp is. All nine null. Each drives the incumbent through the
-app's own paths rather than through a second set written here: the curve is emitted by the same
-`bakeLaneIntoCurve` the playback engine uses, and the modifiers and macros are built by
-`ModifierSyncWalker`, the same walker `PluginManager` drives.
+Nine cases, all nulling: the stored value, a step curve over it, a square LFO over it, both at
+once, the stored value under each, a macro at track and at device scope, and the fader past both
+ends of its range where the clamp is. Each drives the incumbent through the app's own paths
+rather than a second set written here: the curve is emitted by the same `bakeLaneIntoCurve` the
+playback engine uses, and the modifiers and macros are built by `ModifierSyncWalker`, the walker
+`PluginManager` drives.
 
-**The steps land on the half beat and the impulses land on the beat**, and that is the whole
-reason these compare at the ordinary floor. Both engines settle a parameter at the top of a
-block, because that is what an `AutomatableParameter` is, so they agree wherever a curve is
-holding still and can differ by up to a block wherever it jumps. Eleven thousand samples of
-silence either side of every jump covers a block at 4096 as well as at 512, which is why these
-cases are also bit identical across the invariance gate rather than exempt from it. The rule is
-#2040's, applied to a new dimension: choose the material so a residual can only be a bug, never
-the tolerance.
+**The steps land on the half beat and the impulses land on the beat**, which is why these compare
+at the ordinary floor. Both engines settle a parameter at the top of a block, so they agree
+wherever a curve is holding still and can differ by up to a block wherever it jumps; eleven
+thousand samples of silence either side of every jump covers a block at 4096 as well as at 512,
+so these cases are also bit identical across the invariance gate rather than exempt from it.
 
 **Three things are named rather than covered**, each after being tried. Rack-scope macros need a
-`te::RackType` that `RackSyncManager` builds out of a `PluginManager`, which is the boundary
-sends stop at and moves with #1892. The random walk cannot be nulled by anybody, since the fork
-seeds its generator from the clock and does not render the same numbers twice. The envelope
-follower is fed by a `FollowerSourceTapPlugin` that `PluginManager` installs, so without the
-device layer the fork's follower is handed nothing.
+`te::RackType` that `RackSyncManager` builds out of a `PluginManager`, which is the boundary sends
+stop at and moves with #1892. The random walk cannot be nulled by anybody, since the fork seeds
+its generator from the clock. The envelope follower is fed by a `FollowerSourceTapPlugin` that
+`PluginManager` installs, so without the device layer the fork's follower is handed nothing.
 
-The envelope is the fourth, and it is a finding rather than a boundary. Its note gate is behind
-that same device layer, and its transport gate is the fork asking
-`TransportControl::isPlaying()`, which is false throughout every offline render: a
-transport-triggered envelope therefore does nothing in a bounce in the current engine, while the
-engine being built plays it, because its transport gate is a property of the block. The case was
-written and renders 0.625 against silence. It is not in the corpus, for the reason reverse-plus-
-warp is not: a case that pinned it would be asking the engine to reproduce a bug.
+The envelope is a finding rather than a boundary. Its note gate is behind that same device layer,
+and its transport gate is the fork asking `TransportControl::isPlaying()`, which is false
+throughout every offline render: a transport-triggered envelope does nothing in a bounce in the
+current engine, while the engine being built plays it. The case was written and renders 0.625
+against silence. It is not in the corpus, for the reason reverse-plus-warp is not.
 
 The slice also found one in the fork's LFO. `std::fmod` keeps the sign of its left-hand side, so
 a negative edit time gave `Ramp::setPosition` a negative position, which it asserts on and then
-clamps to zero. Two ordinary things produce a negative edit time: a count-in, and the lead-in an
-offline render primes the graph with, which is half a second of it on every bounce. Forty-four
-assertions per case, and a phase pinned at the top of the cycle for as long as the time stayed
-negative. The fix wraps forward instead.
+clamps to zero. A count-in produces one, and so does the lead-in an offline render primes the
+graph with, which is half a second of it on every bounce: forty-four assertions per case and a
+phase pinned at the top of its cycle throughout. The fix wraps forward instead.
 
 **Properties over generated edits**
 ([#2077](https://github.com/Conceptual-Machines/magda-core/issues/2077)) are the same argument

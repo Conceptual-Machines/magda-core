@@ -333,16 +333,12 @@ Loss tempoMap() {
 /// the two engines have to agree about, with nothing in it about a file format.
 /// A track's own modulation, which rides on TrackInfo rather than on its chain.
 ///
-/// Separate from internalDevices() because it is a separate field and a
-/// separate reason. The chain is lost because DAWproject has no representation
-/// for an internal device; the macros and modifiers are lost because the format
-/// has no representation for modulation at all -- there is no macro knob in it
-/// and nothing that means "an LFO linked to a parameter at a depth".
+/// Separate from internalDevices(): the chain is lost because the format has no
+/// internal device, this is lost because it has no modulation at all.
 ///
 /// Restored by counting what is linked rather than by comparing the arrays.
-/// Every track carries sixteen macros and the empty ones survive the trip as
-/// empty, so a comparison of the arrays would fire on a case that lost nothing;
-/// what is at stake is whether a link came back, and that is a count.
+/// Every track carries sixteen macros and the empty ones survive as empty, so
+/// comparing the arrays would fire on a case that lost nothing.
 Loss trackModulation() {
     return {.field = "TrackInfo::macros, TrackInfo::mods",
             .reason = "DAWproject has no representation for modulation: no macro knob, and "

@@ -161,23 +161,14 @@ const bool captureDeviceRegistered = magda::daw::audio::registerDevicePack(regis
 // The device with a parameter (#2123)
 // =============================================================================
 
-/// The property the gain's value is stored under, and the one the parameter is
-/// attached to. Its own name rather than one of TE's IDs, because nothing else
-/// in the Edit means the same thing by it.
+/// The property the gain's value is stored under.
 const juce::Identifier kGainProperty("nulldiffGain");
 
 /// The incumbent's half of the contract in NullDiffGain.hpp.
 ///
-/// One parameter, applied as a plain multiply. No smoothing and no ramp: a
-/// smoother is state, state is memory, and two smoothers primed differently
-/// never agree, so a residual would be measuring the device rather than the
-/// parameter.
-///
-/// The value is read once, at the top of the block, which is what an
-/// AutomatableParameter is: TE settles every parameter from its automation and
-/// its modifiers before the graph runs and holds it for the block. The engine's
-/// twin reads per sample instead. Where the two could differ, which is inside
-/// one block of a step, the cases play silence.
+/// One parameter, a plain multiply, no smoothing. The value is read once at the
+/// top of the block, which is what an AutomatableParameter is; the engine's twin
+/// reads per sample, and the cases play silence wherever that could differ.
 class GainPlugin final : public te::Plugin {
   public:
     explicit GainPlugin(te::PluginCreationInfo info) : te::Plugin(info) {
@@ -276,21 +267,13 @@ const bool gainDeviceRegistered = magda::daw::audio::registerDevicePack(register
 
 /// Where a link's target lives, for the walker that wires modifiers and macros.
 ///
-/// The app's own lookup is PluginManager's, which resolves any device anywhere
-/// in the chain hierarchy. This resolves the only devices this leg installs. It
-/// is a lookup rather than a sync: the wiring is still ModifierSyncWalker's,
-/// which is the point -- a second walker written for the harness would be a
-/// harness agreeing with itself about what a modifier does.
+/// A lookup rather than a sync: the wiring is still ModifierSyncWalker's, which
+/// is the point. The app's own lookup is PluginManager's; this resolves the
+/// only devices this leg installs.
 ///
-/// Keyed by the whole path and not by the device id in it. A device id is
-/// unique within a chain segment rather than across the hierarchy (#1899), so
-/// a link naming a rack-inner or post-FX device could carry the same number as
-/// a top-level one; matching on the number would wire the modifier onto the
-/// plugin this leg happens to have installed and then compare a project against
-/// a differently connected one. Matching on the path returns nullptr instead,
-/// which is what the walker already does something sensible with: the link is
-/// dropped, the native leg's table reports it as a target the project does not
-/// have, and the runner refuses the case rather than certifying it.
+/// Keyed by the whole path, not by the device id in it. An id is unique within
+/// a chain segment and not across the hierarchy (#1899), so matching on the
+/// number would wire a rack-inner or post-FX target onto the top-level plugin.
 class GainPluginLookup final : public magda::TargetPluginLookup {
   public:
     void add(const magda::ChainNodePath& path, te::Plugin* plugin) {
@@ -306,14 +289,9 @@ class GainPluginLookup final : public magda::TargetPluginLookup {
     std::map<magda::ChainNodePath, te::Plugin*> plugins_;
 };
 
-/// Everything one scope's modifiers and macros need to live in, for as long as
-/// the Edit does.
-///
-/// The walker writes into references it is handed, because in the app these
-/// live on PluginManager's synced-device records. Here they live for the length
-/// of a render, and they are torn down before the Edit is: a macro parameter
-/// outliving its list, or a modifier outliving the track it was inserted on, is
-/// a crash in TE's own bookkeeping rather than a leak.
+/// Where one scope's modifiers and macros live. The walker writes into
+/// references it is handed; in the app these sit on PluginManager's synced
+/// device records, here they last the length of a render.
 struct ScopeModifiers {
     std::map<magda::ModId, te::Modifier::Ptr> modifiers;
     std::map<magda::ModId, std::unique_ptr<magda::CurveSnapshotHolder>> curveSnapshots;
@@ -324,9 +302,8 @@ struct ScopeModifiers {
     }
 };
 
-/// Whether anything in @p node is worth building TE state for. A track with the
-/// default sixteen empty macros and no modifiers gets none, which keeps every
-/// case that is not about modulation exactly as it was.
+/// Whether @p node is worth building TE state for. A track with the default
+/// sixteen empty macros and no modifiers gets none.
 bool carriesModulation(const magda::ConstChainNode& node) {
     if (node.mods != nullptr)
         for (const auto& mod : *node.mods)
@@ -480,14 +457,9 @@ IncumbentRender renderIncumbent(const Case& value) {
     // --- the device with a parameter -----------------------------------------
     //
     // One GainPlugin per model gain device, in chain order, at the head of the
-    // track's plugin list so it sits where the plan puts its Device op: ahead
-    // of the fader, behind nothing. The corpus installs no other device, and
-    // every other device in the model is still a thing neither leg runs.
-    //
-    // This is the first case of the corpus running a device under both engines
-    // at all (#2123). Until it did, every parameter, every curve, every
-    // modifier and every macro in #1891 had been judged only by tests written
-    // beside them.
+    // track's plugin list so it sits where the plan puts its Device op. The
+    // first device the corpus runs under both engines at all (#2123); every
+    // other device in the model is still a thing neither leg runs.
 
     GainPluginLookup lookup;
     std::map<ChainNodePath, GainPlugin*> gains;
@@ -530,20 +502,16 @@ IncumbentRender renderIncumbent(const Case& value) {
 
     // Where the modulation this render builds lives, and what unwinds it.
     //
-    // Declared here, ahead of both sections that fill them, because the order
-    // they are destroyed in is load bearing. The unwinder's teardown reaches
-    // into the scope maps, so it has to run while they are still alive, and
-    // every one of them has to be gone before the Edit is: a macro parameter
-    // destroyed while its list is already tearing down, or one holding a
-    // populated curve, unwinds TE's per-edit-element bookkeeping in the wrong
-    // order. The app's playback engine clears its own baked curves in its
-    // destructor for the same reason.
+    // Declared ahead of both sections that fill them because destruction order
+    // is load bearing: the teardown reaches into the scope maps, and everything
+    // has to be gone before the Edit is. A macro destroyed while its list is
+    // already tearing down, or one holding a populated curve, unwinds TE's
+    // bookkeeping in the wrong order.
     //
-    // A guard rather than a pair of loops at the end, because this function has
-    // an exit that does not reach the end: a proxy that never arrives returns
-    // from the middle of the wait below.
+    // A guard rather than loops at the end, because a proxy that never arrives
+    // returns from the middle of the wait below.
     std::map<TrackId, ScopeModifiers> trackModulation;
-    std::map<DeviceId, ScopeModifiers> deviceModulation;
+    std::map<ChainNodePath, ScopeModifiers> deviceModulation;
     std::vector<std::unique_ptr<magda::CurveSnapshotHolder>> deferredHolders;
 
     struct Unwind {
@@ -565,16 +533,13 @@ IncumbentRender renderIncumbent(const Case& value) {
 
     // --- automation ----------------------------------------------------------
     //
-    // Baked into the fork's own curve on the parameter the lane names, through
-    // the same emission the app's playback engine uses (AutomationBake.hpp): a
-    // second bake written here would be a corpus agreeing with itself about
-    // what a step or a bezier means.
+    // Baked through the same emission the app's playback engine uses
+    // (AutomationBake.hpp): a second bake here would be a corpus agreeing with
+    // itself about what a step means.
     //
-    // Device parameters only. Every other target -- a fader, a send, a macro,
-    // a modifier's rate -- resolves through ControlTargetResolver, which wants
-    // a PluginManager and the device layer behind it, and that is the second
-    // sync this corpus refuses to have. It is the same boundary sends stop at,
-    // and it moves with #1892.
+    // Device parameters only. Every other target resolves through
+    // ControlTargetResolver, which wants a PluginManager -- the second sync
+    // this corpus refuses, and the boundary sends stop at too (#1892).
 
     for (const auto& lane : value.lanes) {
         if (lane.target.kind != ControlTarget::Kind::PluginParam) {
@@ -603,10 +568,8 @@ IncumbentRender renderIncumbent(const Case& value) {
             return nullptr;
         };
 
-        // The gain parameter is zero to one on both sides, so a lane's
-        // normalised position is already what the parameter stores and neither
-        // leg converts. See NullDiffGain.hpp for why that is the contract
-        // rather than a convenience.
+        // Zero to one on both sides, so the lane's normalised position is
+        // already what the parameter stores (NullDiffGain.hpp).
         bakeLaneIntoCurve(
             curve, lane, getClip,
             [&](double beat) { return magda::automation::laneValueAtBeat(lane, getClip, beat); },
@@ -619,15 +582,60 @@ IncumbentRender renderIncumbent(const Case& value) {
     // --- modifiers and macros ------------------------------------------------
     //
     // The app's own walker, at the two scopes a track can carry without a rack:
-    // the track itself, and each top-level device. Both take the track's
-    // modifier list and the track's macro list, which is exactly what
+    // the track itself and each top-level device. Both take the track's
+    // modifier and macro lists, which is what
     // PluginManager::syncDeviceModifiers hands them for a non-instrument
-    // device.
-    //
-    // Rack scope is the third the model has and is not here. A rack's
-    // modifiers and macros live on a te::RackType that RackSyncManager builds
-    // out of a PluginManager, so wiring one up would be the second sync the
-    // corpus refuses; it moves with the rest of the routing graph in #1892.
+    // device. Rack scope needs a te::RackType only RackSyncManager builds, so
+    // it is refused below rather than skipped (#1892).
+    // What the walker would drop in silence, refused out loud first: it wires
+    // nothing for a target this leg has no plugin for, while the native table
+    // resolves it and modulates. That is a modulated render compared against an
+    // unmodulated one, and where the target is inaudible it is a false null.
+    const auto unwirable = [&](const ControlTarget& target,
+                               const magda::ModArray& scopeMods) -> std::string {
+        switch (target.kind) {
+            case ControlTarget::Kind::PluginParam:
+                if (gains.count(target.devicePath) == 0)
+                    return "a device this leg does not install: " +
+                           target.devicePath.toString().toStdString();
+                return {};
+
+            case ControlTarget::Kind::ModParam:
+                // Same scope only, which is the walker's own rule.
+                for (const auto& mod : scopeMods)
+                    if (mod.id == target.modId)
+                        return {};
+                return "a modifier outside the scope the link lives in";
+
+            default:
+                // A fader, a send, a macro. The native table carries the first
+                // two; the walker wires none of them.
+                return std::string("a ") + magda::toString(target.kind) +
+                       " target, which this leg cannot wire";
+        }
+    };
+
+    const auto refuseUnwirableLinks = [&](const magda::ConstChainNode& node) -> std::string {
+        if (node.mods != nullptr)
+            for (const auto& mod : *node.mods)
+                if (mod.enabled)
+                    for (const auto& link : mod.links)
+                        if (link.enabled && link.isValid())
+                            if (auto why = unwirable(link.target, *node.mods); !why.empty())
+                                return "a modifier links to " + why;
+
+        if (node.macros != nullptr)
+            for (const auto& macro : *node.macros)
+                for (const auto& link : macro.links)
+                    if (link.target.isValid())
+                        if (auto why = unwirable(
+                                link.target, node.mods == nullptr ? magda::ModArray{} : *node.mods);
+                            !why.empty())
+                            return "a macro links to " + why;
+
+        return {};
+    };
+
     for (const auto& track : value.tracks) {
         auto* audioTrack = trackController.getAudioTrack(track.id);
         if (audioTrack == nullptr)
@@ -653,11 +661,8 @@ IncumbentRender renderIncumbent(const Case& value) {
             auto state = scope.state();
             magda::ModifierSyncWalker::syncStructure(node, ctx, state, deferredHolders);
 
-            // Torn down through the same walker, handed a node with nothing on
-            // it, which is the path a bypassed device already takes. The macro
-            // parameters and the modifiers have to be gone before the Edit is:
-            // a macro outliving its list unwinds TE's own bookkeeping in the
-            // wrong order, which the app's playback engine had to learn too.
+            // Torn down through the same walker handed an empty node, which
+            // is the path a bypassed device already takes.
             tearDownModulation.emplace_back([&scope, ctx, this_node = node]() mutable {
                 this_node.mods = nullptr;
                 this_node.macros = nullptr;
@@ -667,14 +672,43 @@ IncumbentRender renderIncumbent(const Case& value) {
             });
         };
 
+        const auto refuse = [&](const std::string& why) {
+            result.failure = why;
+            ClipManager::getInstance().clearAllClips();
+            ProjectManager::getInstance().setTempo(previousTempo);
+        };
+
         magda::ConstChainNode trackNode;
         trackNode.scope = magda::ChainScope::Track;
         trackNode.trackId = track.id;
         trackNode.mods = &track.mods;
         trackNode.macros = &track.macros;
 
-        if (carriesModulation(trackNode))
+        if (carriesModulation(trackNode)) {
+            if (auto why = refuseUnwirableLinks(trackNode); !why.empty()) {
+                refuse(why);
+                return result;
+            }
             sync(trackNode, trackModulation[track.id]);
+        }
+
+        // A rack's own modifiers and macros need a te::RackType this leg does
+        // not build (#1892). Refused rather than skipped.
+        for (const auto& element : track.chain.fxChainElements) {
+            if (!magda::isRack(element))
+                continue;
+
+            const auto& rack = magda::getRack(element);
+            magda::ConstChainNode rackNode;
+            rackNode.scope = magda::ChainScope::Rack;
+            rackNode.mods = &rack.mods;
+            rackNode.macros = &rack.macros;
+
+            if (carriesModulation(rackNode)) {
+                refuse("a rack carries modulation, which this leg cannot sync");
+                return result;
+            }
+        }
 
         for (const auto& element : track.chain.fxChainElements) {
             if (!magda::isDevice(element))
@@ -690,29 +724,26 @@ IncumbentRender renderIncumbent(const Case& value) {
             deviceNode.macros = &device.macros;
             deviceNode.params = &device.parameters;
 
-            if (carriesModulation(deviceNode))
-                sync(deviceNode, deviceModulation[device.id]);
+            if (carriesModulation(deviceNode)) {
+                if (auto why = refuseUnwirableLinks(deviceNode); !why.empty()) {
+                    refuse(why);
+                    return result;
+                }
+                sync(deviceNode,
+                     deviceModulation[ChainNodePath::topLevelDevice(track.id, device.id)]);
+            }
         }
     }
 
     // --- the host write ------------------------------------------------------
     //
-    // Last, and that ordering is the case rather than an implementation detail.
-    // A stored value is what a knob move, a control surface, a preset load or a
-    // restored project sets, and every one of those arrives at a parameter that
-    // already has whatever automation and modifiers the project gave it. Writing
-    // it before the modifier was attached would be writing to a parameter
-    // nothing was modulating, which is the one arrangement where the bug this
-    // asserts against cannot happen.
+    // Last, and the ordering is the case rather than a detail: a stored value
+    // arrives at a parameter that already has whatever the project gave it.
     //
-    // setParameterFromHost rather than setParameter, because that is the rule
-    // for a host write and this leg is the app's paths rather than a second set
-    // of them. What it is not is what makes the host-write cases pass: the
-    // fork's guard is a runtime condition (setParameter returns early only
-    // while currentModifierValue is non-zero), so a write made before the
-    // render starts goes through either call. The corpus was run both ways to
-    // find that out, and the case's own comment says what it does and does not
-    // therefore pin.
+    // setParameterFromHost because that is the rule for a host write, not
+    // because it is what makes these cases pass: the fork's guard is a runtime
+    // condition, so a write made before the render starts goes through either
+    // call. The corpus was run both ways to find that out.
     for (const auto& track : value.tracks) {
         for (const auto& element : track.chain.fxChainElements) {
             if (!magda::isDevice(element))

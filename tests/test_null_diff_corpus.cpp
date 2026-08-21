@@ -202,25 +202,19 @@ TEST_CASE("Every case says what it covers and what it plays", "[nulldiff][corpus
 }
 
 TEST_CASE("Every lane and every link names something the project has", "[nulldiff][corpus]") {
-    // A parameter case asserts what a curve, a modifier or a macro does to a
-    // device parameter, and the way for one to assert nothing is for its target
-    // to miss. A lane over a device the project does not carry is dropped by
-    // the table with a diagnostic, a link to a parameter that is not there is
-    // dropped the same way, and in both cases the two legs render the same
-    // unmodulated audio and the case passes having compared nothing.
+    // The way a parameter case asserts nothing is for its target to miss: the
+    // table drops the lane or the link with a diagnostic, both legs render the
+    // same unmodulated audio, and the case passes having compared nothing.
     //
-    // The native leg does report those diagnostics and the runner refuses a
-    // case that produced one, so this is the second half rather than the only
-    // half: the runner catches it when the corpus is rendered, and this catches
-    // it in the model-only target, in a second, without an Edit.
+    // The runner catches that when the corpus is rendered. This catches it in
+    // the model-only target, in a second, without an Edit.
     for (const auto& value : sharedCorpus(scratch())) {
         INFO(value.name);
 
-        // Matched on the whole path rather than on the device id inside it. A
-        // device id is unique within a chain segment and not across the
-        // hierarchy (#1899), so a target naming a post-FX device would be
-        // satisfied here by the FX device with the same number, and the rule
-        // would pass on exactly the case it exists to catch.
+        // Matched on the whole path, not the device id in it: an id is unique
+        // within a chain segment and not across the hierarchy (#1899), so a
+        // post-FX target would otherwise be satisfied by the FX device with the
+        // same number.
         const auto namesADeviceParameter = [&](const ControlTarget& target) {
             if (target.kind != ControlTarget::Kind::PluginParam)
                 return true;  // Not this rule's business; the table reports it.
@@ -259,9 +253,9 @@ TEST_CASE("Every lane and every link names something the project has", "[nulldif
         };
 
         for (const auto& lane : value.lanes) {
-            // A lane the model is not playing is a lane the table leaves out,
-            // so a case carrying one would be asserting the base value under a
-            // name that says automation.
+            // A lane the model is not playing is one the table leaves out, so
+            // a case carrying one asserts the base under a name that says
+            // automation.
             CHECK(lane.authorityState == AutomationAuthorityState::Reading);
             CHECK(lane.hasData());
             CHECK(namesADeviceParameter(lane.target));

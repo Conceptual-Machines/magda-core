@@ -90,15 +90,10 @@ struct Case {
     std::vector<TempoPoint> tempo{{0.0, 120.0}};
 
     /// The automation the project plays, and the clips a clip-based lane names
-    /// (#2123). Empty for every case that is not about automation, which is
-    /// most of them.
-    ///
-    /// Carried on the case rather than installed into AutomationManager by a
-    /// leg, for the reason every other part of a case is model values: both
-    /// legs are handed the same lanes and each builds its own world from them.
-    /// The engine compiles them into segment lanes through
-    /// `resolvePlanValues`; the incumbent bakes them into the fork's own
-    /// `AutomationCurve` on the parameter the target names.
+    /// (#2123). Model values like the rest of a case: both legs are handed the
+    /// same lanes and each builds its own world from them. The engine compiles
+    /// them into segment lanes, the incumbent bakes them into the fork's own
+    /// AutomationCurve.
     std::vector<AutomationLaneInfo> lanes;
     std::vector<AutomationClipInfo> automationClips;
 
