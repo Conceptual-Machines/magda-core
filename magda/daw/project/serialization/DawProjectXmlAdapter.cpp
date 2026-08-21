@@ -11,6 +11,7 @@
 #include <optional>
 #include <set>
 
+#include "../../core/Config.hpp"
 #include "../../core/ParameterUtils.hpp"
 #include "../../core/TempoUtils.hpp"
 #include "version.hpp"
@@ -804,13 +805,30 @@ SourceId adoptImportedSource(const juce::String& path, double declaredDuration) 
     return sourceId;
 }
 
+/**
+ * @brief One clip of an imported arrangement or scene.
+ *
+ * @p trackColour is what the clip takes when the file gives it none, which is
+ * not an edge case but the common one: a clip in Bitwig has no colour of its
+ * own until somebody picks one, and until then it shows its track's. DAWproject
+ * writes that as an absent `color` attribute, so a colour read straight off the
+ * element would be MAGDA's transparent "unset", and every clip in an imported
+ * project would draw as flat black once the swatch forced it opaque (#1786).
+ *
+ * Inheriting instead is what MAGDA does for its own clips: a new one takes the
+ * colour of the track it lands on (ClipManager, clip colour mode 0). So the two
+ * halves of "this clip has no colour of its own" now agree, whichever side of
+ * the importer they came from.
+ */
 ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipId clipId,
-                     double projectTempo) {
+                     double projectTempo, juce::Colour trackColour) {
     ClipInfo clip;
     clip.id = clipId;
     clip.trackId = trackId;
     clip.name = clipElement.getStringAttribute("name");
     clip.colour = colourFromDawProject(clipElement.getStringAttribute("color"));
+    if (clip.colour.isTransparent())
+        clip.colour = trackColour;
     clip.view = ClipView::Arrangement;
     clip.setPlacementBeats(clipElement.getDoubleAttribute("time", 0.0),
                            clipElement.getDoubleAttribute("duration", 0.0));
@@ -1323,6 +1341,22 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                 : "track:" + juce::String(destinationTrack.id);
     }
 
+    // What a clip with no colour of its own inherits. Resolved here rather than
+    // inside clipFromXml because the tracks are the importer's own by this
+    // point: the clip lanes name a track and this is where that name has
+    // already become a TrackId.
+    //
+    // A track the file left colourless falls through to the first palette
+    // colour, which is where ClipManager lands for a clip on a track it cannot
+    // find. Black is never the answer, because black is what "unset" looks like
+    // once a swatch has forced it opaque, and that is the bug (#1786).
+    const auto importedTrackColour = [&document](TrackId trackId) {
+        for (const auto& track : document.tracks)
+            if (track.id == trackId && !track.colour.isTransparent())
+                return track.colour;
+        return juce::Colour(Config::getDefaultColour(0));
+    };
+
     ClipId nextClipId = 1;
     if (auto* arrangement = root->getChildByName("Arrangement")) {
         if (auto* rootLanes = arrangement->getChildByName("Lanes")) {
@@ -1335,7 +1369,8 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                 if (auto* clips = trackLanes->getChildByName("Clips")) {
                     for (auto* clipElement : clips->getChildWithTagNameIterator("Clip"))
                         document.clips.push_back(clipFromXml(*clipElement, trackIt->second,
-                                                             nextClipId++, document.info.tempo));
+                                                             nextClipId++, document.info.tempo,
+                                                             importedTrackColour(trackIt->second)));
                 }
 
                 for (auto* pointsElement : trackLanes->getChildWithTagNameIterator("Points")) {
@@ -1400,7 +1435,8 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
 
                         if (auto* clipElement = timeline->getChildByName("Clip")) {
                             auto clip = clipFromXml(*clipElement, trackIt->second, nextClipId++,
-                                                    document.info.tempo);
+                                                    document.info.tempo,
+                                                    importedTrackColour(trackIt->second));
                             clip.view = ClipView::Session;
                             clip.sceneIndex = sceneIndex;
                             clip.setPlacementBeats(0.0, clip.placement.lengthBeats);
