@@ -267,7 +267,7 @@ Published Harness::publish(const Project& project) {
     live_ = std::move(executor);
 
     const auto modelIds = engine::collectRuntimeStateIds(project.tracks, project.master);
-    store_.releaseDeleted(*plan, modelIds);
+    store_.releaseDeleted(*plan, modelIds, nullptr);
 
     published.modelDevices = modelIds.devices;
     published.owned = ledger_.alive;

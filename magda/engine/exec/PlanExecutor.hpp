@@ -316,6 +316,34 @@ class PlanExecutor {
         return boundMeterCount_;
     }
 
+    /// Value taps this plan's table found a home for (#2122): a parameter the
+    /// table carries, or a modifier the runtime holds. A key the bindings
+    /// offered and the table does not have is not one of these and is not an
+    /// error; it is a host asking about a value this project does not move.
+    int boundValueTapCount() const {
+        return static_cast<int>(paramTaps_.size() + modTaps_.size());
+    }
+
+    /**
+     * @brief Take back what this plan no longer publishes (#2122).
+     *
+     * Off the audio thread, and only after the swap that made this plan live.
+     * Every tap the bindings offered and this table found no home for is
+     * cleared, so a host reads no writes at all rather than a value frozen
+     * where the last plan left it.
+     *
+     * That is not a rare case. A lane deleted off a fader takes that fader out
+     * of the parameter table, because a mixer value is carried only while
+     * something reaches it; without this the tap would sit at the last
+     * automated position under a count that never moves again, which the header
+     * tells hosts to read as an engine that has stopped.
+     *
+     * After the swap rather than at prepare, because until the swap the epoch
+     * being replaced is still rendering: a tap cleared while it is still being
+     * written would be counting from one again by the next block.
+     */
+    void clearUnboundValueTaps();
+
     /// Modulation taps that took over the detector of the executor they
     /// replaced rather than starting again. What that buys is the same thing
     /// ModRuntime's carry buys: an edit during playback does not restate a
@@ -560,6 +588,32 @@ class PlanExecutor {
     /// PlanBindings::midiTaps.
     std::vector<MidiTap*> midiTapForOp_;
 
+    /** @brief One value the block publishes for whoever is drawing it (#2122). */
+    struct BoundValueTap {
+        /// A ParamId, or an index into the modifier runtime.
+        int index = 0;
+        ValueTap* tap = nullptr;
+    };
+
+    /// Compact rather than one slot per parameter, which is the difference
+    /// between these and the per-op bindings above. A plan has hundreds of ops
+    /// and a host binds a good fraction of the meters; a table has a parameter
+    /// per parameter of every device in the project and a host draws the few
+    /// dozen it has on screen. A vector the length of the table would be
+    /// thousands of nulls walked every block to find them.
+    ///
+    /// Resolved at prepare against the table the plan was prepared with, so the
+    /// block never looks a key up, and safe to hold by index for exactly as
+    /// long as the windows are: a table whose layout differs is refused whole
+    /// (see fitsParameters).
+    std::vector<BoundValueTap> paramTaps_;
+    std::vector<BoundValueTap> modTaps_;
+
+    /// The other side of those two: taps the bindings offered that this table
+    /// has nowhere to publish from. Kept so the swap can clear them, which is
+    /// the only thing anything does with them.
+    std::vector<ValueTap*> unboundTaps_;
+
     /// This block's parameter values, and the room the resolver gathers one
     /// parameter's links in. Sized at prepare from the table the plan was
     /// published with, so the block that fills them allocates nothing.
@@ -643,6 +697,22 @@ class PlanExecutor {
     /// Read one modulation tap: hand the source's level to the followers
     /// listening to it, and its rises and falls to the triggered ones.
     void renderModSource(OpId id, const BlockInfo& block);
+
+    /**
+     * @brief Publish what this block settled, to whoever is watching (#2122).
+     *
+     * On the audio thread, at the end of the resolve and nowhere else: that is
+     * the moment both numbers exist and the last moment they are still the
+     * block's own rather than something a device has since been handed.
+     *
+     * A block that resolved no table publishes nothing at all, rather than
+     * publishing the zeros an empty table would answer with. The values a host
+     * is drawing then hold, which is what they do whenever nothing is
+     * rendering; slamming every watched knob to zero for the one block a
+     * mismatched table takes to be replaced would be a visible fault reporting
+     * an invisible one.
+     */
+    void publishValueTaps();
 
     /// Spend the notes in @p midi on the modifiers listening to @p op's track.
     void feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi);

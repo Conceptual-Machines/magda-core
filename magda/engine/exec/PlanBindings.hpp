@@ -5,9 +5,11 @@
 
 #include "core/TypeIds.hpp"
 #include "exec/EngineDevice.hpp"
+#include "param/ParamKey.hpp"
 #include "plan/RenderPlan.hpp"
 #include "tap/LevelTap.hpp"
 #include "tap/MidiTap.hpp"
+#include "tap/ValueTap.hpp"
 
 namespace magda::engine {
 
@@ -66,6 +68,32 @@ struct PlanBindings {
      * observing, and an unbound op is not reported.
      */
     std::map<OpKey, MidiTap*> midiTaps;
+
+    /**
+     * @brief Where a value is published for whoever is drawing it (#2122).
+     *
+     * Keyed by ParamKey rather than by OpKey, which is the one difference from
+     * the two above and follows from what is being read: a meter is a place in
+     * the signal and this is a number in the parameter system. One map for both
+     * of the numbers, because the key already says which: a key with a
+     * parameter index is a parameter's resolved position, and a modifier key
+     * with none is that modifier's output (ParamKey.hpp).
+     *
+     * Optional in the same way and for the same reason. A host binds what it is
+     * drawing, which is a device editor's worth of parameters out of a
+     * project's thousands, and a value nobody has asked about publishes nothing
+     * and is not reported.
+     *
+     * Resolved against the table the plan is prepared with, so a key the table
+     * does not carry binds nothing. That is not an error either, and it is not
+     * rare: the table carries a mixer value, a macro or a modifier's rate only
+     * while something reaches it, so an unautomated fader with nothing linked
+     * to it has no publisher at all. The tap reads no writes, which is what
+     * tells a host the engine does not move this value and the model's own is
+     * the answer (ValueTap.hpp). A parameter that has since been deleted lands
+     * in the same place by the same route.
+     */
+    std::map<ParamKey, ValueTap*> valueTaps;
 };
 
 }  // namespace magda::engine

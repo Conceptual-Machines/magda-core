@@ -237,6 +237,9 @@ void PlanExecutor::reset() {
     meterForOp_.clear();
     boundMeterCount_ = 0;
     midiTapForOp_.clear();
+    paramTaps_.clear();
+    modTaps_.clear();
+    unboundTaps_.clear();
     paramWindowForOp_.clear();
     mixerParamForOp_.clear();
     paramScratch_.clear();
@@ -368,6 +371,43 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 modSourceForOp_[i] = mods_.listenersOf(op.key.trackId);
             }
         }
+    }
+
+    // The values a host asked to read back, resolved to the indices the block
+    // already has (#2122). A key with a parameter index is a parameter of the
+    // table; a modifier key has none and is looked for in the runtime, which is
+    // where the output it names is published.
+    //
+    // A key neither the table nor the runtime has binds nothing and is not
+    // reported, which is the ordinary answer rather than a fault: the table
+    // carries a mixer value, a macro or a modifier's rate only while something
+    // reaches it, so a host drawing an unautomated fader is asking about a
+    // number the engine does not move. It is kept anyway, because the swap has
+    // to clear it: a tap that used to be published and now is not would
+    // otherwise freeze where the last plan left it.
+    //
+    // Outside the block above rather than inside it, because a plan published
+    // with no table at all is the same situation seen from further away. It
+    // publishes nothing, so every tap the bindings offered is one of these; a
+    // loop that only ran when there was a table would leave them all frozen at
+    // whatever the last plan that had one wrote.
+    for (const auto& [key, tap] : bindings.valueTaps) {
+        if (tap == nullptr)
+            continue;
+
+        if (params != nullptr) {
+            if (const auto param = params->find(key); param != INVALID_PARAM_ID) {
+                paramTaps_.push_back(BoundValueTap{param, tap});
+                continue;
+            }
+
+            if (const auto modifier = mods_.indexOf(key); modifier >= 0) {
+                modTaps_.push_back(BoundValueTap{modifier, tap});
+                continue;
+            }
+        }
+
+        unboundTaps_.push_back(tap);
     }
 
     // Which ops the block can render before it resolves anything. In plan
@@ -973,6 +1013,29 @@ void PlanExecutor::resolveParameters(const PlanValues& values, const BlockInfo& 
     }
 
     resolveParams(*blockTable_, paramValues_, paramScratch_, paramSegments_, block, &mods_);
+    publishValueTaps();
+}
+
+void PlanExecutor::clearUnboundValueTaps() {
+    for (auto* tap : unboundTaps_)
+        tap->clear();
+}
+
+void PlanExecutor::publishValueTaps() {
+    // The position the parameter opens the block at, clamped, which is the same
+    // answer a link reading it as a source gets. A knob draws where the value
+    // is at the boundary for the same reason a device reads it there: that is
+    // where the fork settles a parameter, and what is being drawn is what is
+    // being heard.
+    for (const auto& bound : paramTaps_)
+        bound.tap->write(paramValues_.sourceValue(bound.index));
+
+    // The modifier's own output rather than anything downstream of it, so a
+    // modifier editor animates the shape the modifier made and not the depth
+    // some link applied to it. The depth belongs to the link, and a parameter
+    // tap is where its effect shows.
+    for (const auto& bound : modTaps_)
+        bound.tap->write(mods_.value(bound.index));
 }
 
 void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,
