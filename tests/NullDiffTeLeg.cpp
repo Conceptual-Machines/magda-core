@@ -277,24 +277,33 @@ const bool gainDeviceRegistered = magda::daw::audio::registerDevicePack(register
 /// Where a link's target lives, for the walker that wires modifiers and macros.
 ///
 /// The app's own lookup is PluginManager's, which resolves any device anywhere
-/// in the chain hierarchy. This resolves the only devices this leg installs, by
-/// the id their path names. It is a lookup rather than a sync: the wiring is
-/// still ModifierSyncWalker's, which is the point -- a second walker written
-/// for the harness would be a harness agreeing with itself about what a
-/// modifier does.
+/// in the chain hierarchy. This resolves the only devices this leg installs. It
+/// is a lookup rather than a sync: the wiring is still ModifierSyncWalker's,
+/// which is the point -- a second walker written for the harness would be a
+/// harness agreeing with itself about what a modifier does.
+///
+/// Keyed by the whole path and not by the device id in it. A device id is
+/// unique within a chain segment rather than across the hierarchy (#1899), so
+/// a link naming a rack-inner or post-FX device could carry the same number as
+/// a top-level one; matching on the number would wire the modifier onto the
+/// plugin this leg happens to have installed and then compare a project against
+/// a differently connected one. Matching on the path returns nullptr instead,
+/// which is what the walker already does something sensible with: the link is
+/// dropped, the native leg's table reports it as a target the project does not
+/// have, and the runner refuses the case rather than certifying it.
 class GainPluginLookup final : public magda::TargetPluginLookup {
   public:
-    void add(magda::DeviceId id, te::Plugin* plugin) {
-        plugins_[id] = plugin;
+    void add(const magda::ChainNodePath& path, te::Plugin* plugin) {
+        plugins_[path] = plugin;
     }
 
     te::Plugin* getPlugin(const magda::ChainNodePath& path) const override {
-        const auto found = plugins_.find(path.getDeviceId());
+        const auto found = plugins_.find(path);
         return found == plugins_.end() ? nullptr : found->second;
     }
 
   private:
-    std::map<magda::DeviceId, te::Plugin*> plugins_;
+    std::map<magda::ChainNodePath, te::Plugin*> plugins_;
 };
 
 /// Everything one scope's modifiers and macros need to live in, for as long as
@@ -481,7 +490,7 @@ IncumbentRender renderIncumbent(const Case& value) {
     // beside them.
 
     GainPluginLookup lookup;
-    std::map<DeviceId, GainPlugin*> gains;
+    std::map<ChainNodePath, GainPlugin*> gains;
 
     for (const auto& track : value.tracks) {
         auto* audioTrack = trackController.getAudioTrack(track.id);
@@ -511,8 +520,11 @@ IncumbentRender renderIncumbent(const Case& value) {
 
             audioTrack->pluginList.insertPlugin(plugin, slot++, nullptr);
 
-            lookup.add(device.id, plugin.get());
-            gains[device.id] = gain;
+            // The path the model addresses it by, which is what a lane's target
+            // and a link's target both carry.
+            const auto path = ChainNodePath::topLevelDevice(track.id, device.id);
+            lookup.add(path, plugin.get());
+            gains[path] = gain;
         }
     }
 
@@ -572,7 +584,7 @@ IncumbentRender renderIncumbent(const Case& value) {
             return result;
         }
 
-        const auto found = gains.find(lane.target.devicePath.getDeviceId());
+        const auto found = gains.find(lane.target.devicePath);
         if (found == gains.end() || lane.target.paramIndex != kGainParamIndex) {
             result.failure = "a lane plays over a parameter this project does not have";
             ClipManager::getInstance().clearAllClips();
@@ -707,7 +719,7 @@ IncumbentRender renderIncumbent(const Case& value) {
                 continue;
 
             const auto& device = magda::getDevice(element);
-            const auto found = gains.find(device.id);
+            const auto found = gains.find(ChainNodePath::topLevelDevice(track.id, device.id));
             if (found == gains.end())
                 continue;
 

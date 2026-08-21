@@ -216,21 +216,44 @@ TEST_CASE("Every lane and every link names something the project has", "[nulldif
     for (const auto& value : sharedCorpus(scratch())) {
         INFO(value.name);
 
+        // Matched on the whole path rather than on the device id inside it. A
+        // device id is unique within a chain segment and not across the
+        // hierarchy (#1899), so a target naming a post-FX device would be
+        // satisfied here by the FX device with the same number, and the rule
+        // would pass on exactly the case it exists to catch.
         const auto namesADeviceParameter = [&](const ControlTarget& target) {
             if (target.kind != ControlTarget::Kind::PluginParam)
                 return true;  // Not this rule's business; the table reports it.
 
-            for (const auto& track : value.tracks)
+            const auto declares = [&](const DeviceInfo& device, const ChainNodePath& path) {
+                if (path != target.devicePath)
+                    return false;
+
+                for (const auto& parameter : device.parameters)
+                    if (parameter.paramIndex == target.paramIndex)
+                        return true;
+
+                return false;
+            };
+
+            for (const auto& track : value.tracks) {
                 for (const auto& element : track.chain.fxChainElements)
                     if (magda::isDevice(element)) {
                         const auto& device = magda::getDevice(element);
-                        if (device.id != target.devicePath.getDeviceId())
-                            continue;
-
-                        for (const auto& parameter : device.parameters)
-                            if (parameter.paramIndex == target.paramIndex)
-                                return true;
+                        if (declares(device, ChainNodePath::topLevelDevice(track.id, device.id)))
+                            return true;
                     }
+
+                for (const auto& element : track.chain.postFxChainElements)
+                    if (declares(element.device,
+                                 ChainNodePath::postFxDevice(track.id, element.device.id)))
+                        return true;
+
+                for (const auto& element : track.chain.mixerAnalysisElements)
+                    if (declares(element.device,
+                                 ChainNodePath::mixerAnalysisDevice(track.id, element.device.id)))
+                        return true;
+            }
 
             return false;
         };

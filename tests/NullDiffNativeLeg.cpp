@@ -146,32 +146,44 @@ class GainDevice final : public EngineDevice {
     }
 };
 
-/// Every device the case declares, by the id the plan addresses it with.
+/// Every device the case declares, by the identity the plan addresses it with.
 ///
 /// Walked from the model rather than carried on the ops, because a Device op
 /// names an identity and the model is what says what stands behind it. Racks
 /// included, so a device inside one is bound the same way a top-level one is.
+///
+/// Keyed by DeviceKey and not by DeviceId, which is the difference between
+/// binding the device the op named and binding one that shares its number. A
+/// device id is unique within a chain segment and not across them (#1899), so
+/// the post-FX chain and the mixer analysis chain each have their own id space:
+/// a map keyed by the number alone would let a post-FX device stand in for the
+/// FX device with the same one, and the executor would hand the plan's gain op
+/// whatever that other device happened to be. The plan is already careful about
+/// this -- OpKey::deviceKey() carries the segment for exactly this reason -- so
+/// the lookup has to be as well.
 void collectDevices(const std::vector<magda::ChainElement>& elements,
-                    std::map<DeviceId, const magda::DeviceInfo*>& out) {
+                    std::map<DeviceKey, const magda::DeviceInfo*>& out) {
     for (const auto& element : elements) {
         if (magda::isDevice(element)) {
             const auto& device = magda::getDevice(element);
-            out[device.id] = &device;
+            out[DeviceKey{ChainSegment::Fx, device.id}] = &device;
         } else if (magda::isRack(element)) {
+            // A rack's chains are part of the FX segment: the compiler emits
+            // their devices with the segment the rack itself sits in.
             for (const auto& chain : magda::getRack(element).chains)
                 collectDevices(chain.elements, out);
         }
     }
 }
 
-std::map<DeviceId, const magda::DeviceInfo*> devicesIn(const Case& value) {
-    std::map<DeviceId, const magda::DeviceInfo*> devices;
+std::map<DeviceKey, const magda::DeviceInfo*> devicesIn(const Case& value) {
+    std::map<DeviceKey, const magda::DeviceInfo*> devices;
     for (const auto& track : value.tracks) {
         collectDevices(track.chain.fxChainElements, devices);
         for (const auto& element : track.chain.postFxChainElements)
-            devices[element.device.id] = &element.device;
+            devices[DeviceKey{ChainSegment::PostFx, element.device.id}] = &element.device;
         for (const auto& element : track.chain.mixerAnalysisElements)
-            devices[element.device.id] = &element.device;
+            devices[DeviceKey{ChainSegment::MixerAnalysis, element.device.id}] = &element.device;
     }
     return devices;
 }
@@ -342,7 +354,7 @@ NativeRender renderNative(const Case& value) {
                 // (#2123): the incumbent really does instantiate its twin, so
                 // both legs run a device with a parameter and the parameter is
                 // what the render is measuring.
-                const auto found = modelDevices.find(op.key.deviceId);
+                const auto found = modelDevices.find(op.key.deviceKey());
                 const auto* model = found == modelDevices.end() ? nullptr : found->second;
 
                 if (model != nullptr && isGainDevice(*model)) {
