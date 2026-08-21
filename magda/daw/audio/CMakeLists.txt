@@ -414,6 +414,8 @@ target_sources(magda_daw PRIVATE
     racks/InstrumentRackManager.cpp
     racks/RackSyncManager.cpp
     modifiers/ModifierSync.cpp
+    automation/AutomationBake.cpp
+    automation/AutomationBake.hpp
     automation/ControlTargetResolver.cpp
     automation/ControlTargetResolver.hpp
     automation/AutomationPlaybackEngine.cpp

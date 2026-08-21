@@ -7,6 +7,7 @@
 #include <memory>
 #include <set>
 
+#include "NullDiffGain.hpp"
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipMidiSource.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
@@ -106,6 +107,74 @@ class Passthrough final : public EngineDevice {
   public:
     void process(DeviceBlock&) override {}
 };
+
+/// The one device the corpus runs under both engines (#2123).
+///
+/// Multiplies by parameter zero and does nothing else, so what it renders is
+/// the value of its own parameter: a constant played through it draws the
+/// curve automation, a modifier or a macro put on that parameter. See
+/// NullDiffGain.hpp for the contract the incumbent's twin is held to.
+///
+/// Read per sample rather than once at the top of the block. The engine
+/// resolves a parameter into segments precisely so that the audio is a function
+/// of timeline position rather than of how the host cut its callbacks up, and a
+/// device reading only the block's opening value would give that up here and
+/// fail the block-size gate (#2078). The fork holds a parameter for the block
+/// because that is what AutomatableParameter does; where the two could differ,
+/// which is inside one block of a step, the cases play silence.
+class GainDevice final : public EngineDevice {
+  public:
+    void process(DeviceBlock& block) override {
+        const auto gain = block.params[kGainParamIndex];
+        if (gain.empty())
+            return;
+
+        const auto numSamples = static_cast<int>(block.audio.getNumSamples());
+        const auto numChannels = static_cast<int>(block.audio.getNumChannels());
+
+        if (gain.isConstant()) {
+            block.audio.multiplyBy(gain.value());
+            return;
+        }
+
+        for (auto sample = 0; sample < numSamples; ++sample) {
+            const auto value = gain.valueAt(sample);
+            for (auto channel = 0; channel < numChannels; ++channel)
+                block.audio.setSample(channel, sample,
+                                      block.audio.getSample(channel, sample) * value);
+        }
+    }
+};
+
+/// Every device the case declares, by the id the plan addresses it with.
+///
+/// Walked from the model rather than carried on the ops, because a Device op
+/// names an identity and the model is what says what stands behind it. Racks
+/// included, so a device inside one is bound the same way a top-level one is.
+void collectDevices(const std::vector<magda::ChainElement>& elements,
+                    std::map<DeviceId, const magda::DeviceInfo*>& out) {
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            const auto& device = magda::getDevice(element);
+            out[device.id] = &device;
+        } else if (magda::isRack(element)) {
+            for (const auto& chain : magda::getRack(element).chains)
+                collectDevices(chain.elements, out);
+        }
+    }
+}
+
+std::map<DeviceId, const magda::DeviceInfo*> devicesIn(const Case& value) {
+    std::map<DeviceId, const magda::DeviceInfo*> devices;
+    for (const auto& track : value.tracks) {
+        collectDevices(track.chain.fxChainElements, devices);
+        for (const auto& element : track.chain.postFxChainElements)
+            devices[element.device.id] = &element.device;
+        for (const auto& element : track.chain.mixerAnalysisElements)
+            devices[element.device.id] = &element.device;
+    }
+    return devices;
+}
 
 engine::TempoMap tempoMapFor(const Case& value) {
     // Consecutive changes ramp: the tempo travels from one to the next across
@@ -221,6 +290,9 @@ NativeRender renderNative(const Case& value) {
     std::map<TrackId, std::unique_ptr<ClipAudioSource>> audioSources;
     std::map<TrackId, std::unique_ptr<ClipMidiSource>> midiSources;
     std::vector<std::unique_ptr<Passthrough>> passthroughs;
+    std::vector<std::unique_ptr<GainDevice>> gains;
+
+    const auto modelDevices = devicesIn(value);
 
     // The tracks the corpus compares MIDI for, which is the same question the
     // incumbent asks when it decides where to put a capture. Asked once, of the
@@ -255,12 +327,32 @@ NativeRender renderNative(const Case& value) {
             }
 
             case OpKind::Device: {
-                // Transparent, always. A device stand-in exists because the
-                // executor refuses a plan with an unbound Device op, not because
-                // the corpus wants to hear what a device would do, and it no
-                // longer decides anything about where MIDI is observed. The
-                // incumbent instantiates none of the model's devices either, so
-                // passing signal is also what it does.
+                // A gain device where the model says the project has one, and a
+                // stand-in everywhere else.
+                //
+                // Transparent is what the incumbent does with the devices it
+                // does not instantiate, which until this slice was all of them:
+                // a stand-in exists because the executor refuses a plan with an
+                // unbound Device op, not because the corpus wants to hear what a
+                // device would do. A stand-in that cleared the buffer would
+                // silence an audio track that merely carries an effect, and the
+                // two legs would differ over a device neither is running.
+                //
+                // The gain device is the exception, and the point of this slice
+                // (#2123): the incumbent really does instantiate its twin, so
+                // both legs run a device with a parameter and the parameter is
+                // what the render is measuring.
+                const auto found = modelDevices.find(op.key.deviceId);
+                const auto* model = found == modelDevices.end() ? nullptr : found->second;
+
+                if (model != nullptr && isGainDevice(*model)) {
+                    auto device = std::make_unique<GainDevice>();
+                    device->prepare(context);
+                    bindings.devices[op.key.deviceKey()] = device.get();
+                    gains.push_back(std::move(device));
+                    break;
+                }
+
                 auto device = std::make_unique<Passthrough>();
                 device->prepare(context);
                 bindings.devices[op.key.deviceKey()] = device.get();
@@ -286,12 +378,32 @@ NativeRender renderNative(const Case& value) {
             taps[trackId] = std::move(tap);
         }
 
+    // The op values and the parameter table together, out of one call, so the
+    // two cannot be published out of step (#2117). The lanes are the case's
+    // own: a project with no automation passes an empty span and pays for no
+    // table it would not read.
     PlanValues values;
-    for (const auto& diagnostic : resolvePlanValues(plan, value.tracks, value.master, values))
+    for (const auto& diagnostic : resolvePlanValues(plan, value.tracks, value.master, values,
+                                                    value.lanes, value.automationClips))
         result.diagnostics.push_back("values: " + diagnostic);
 
+    // What the table itself could not honour: a link naming something the
+    // project does not have, a lane over a target the table does not carry, a
+    // cycle. Nothing is refused for these, so a case with one renders and would
+    // otherwise pass having quietly dropped the very thing it exists to
+    // compare.
+    if (values.params != nullptr)
+        for (const auto& diagnostic : values.params->diagnostics)
+            result.diagnostics.push_back("params: " + diagnostic);
+
+    // Prepared against that table rather than against none. Without it the
+    // executor sizes no parameter storage and no modifier state, every device
+    // is handed an empty window, and a case built to hear its parameter would
+    // render at whatever the device does with nothing -- which for the gain
+    // device is unity, so the project would sound plausible and assert nothing.
     PlanExecutor executor;
-    for (const auto& diagnostic : executor.prepare(plan, bindings, context))
+    for (const auto& diagnostic :
+         executor.prepare(plan, bindings, context, nullptr, values.params.get()))
         result.diagnostics.push_back("prepare: " + diagnostic);
 
     if (!executor.isPrepared()) {

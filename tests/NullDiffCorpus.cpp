@@ -4,6 +4,7 @@
 #include <map>
 
 #include "NullDiffCase.hpp"
+#include "NullDiffGain.hpp"
 #include "NullDiffMaterial.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/SourcePool.hpp"
@@ -165,6 +166,131 @@ TrackInfo mixTrack(TrackId id, const char* name) {
     return track;
 }
 
+/// A track carrying one gain device, which is the only device either engine
+/// really runs (#2123, NullDiffGain.hpp).
+///
+/// The parameter's stored value is the case's, because that is what a host
+/// write is: a knob move, a control surface, a preset load and a restored
+/// project all set the same number, and the engine keeps it in a lane
+/// modulation never writes to. A case that leaves it at unity is a case with no
+/// host write in it.
+TrackInfo gainTrackOn(TrackId trackId, DeviceId deviceId, const char* name, float base) {
+    TrackInfo track;
+    track.id = trackId;
+    track.type = TrackType::Audio;
+    track.name = name;
+    track.audioOutputDevice = "master";
+    track.chain.fxChainElements.emplace_back(gainDevice(deviceId, base));
+    return track;
+}
+
+/// Where a link or a lane addresses that device's one parameter.
+ControlTarget gainTarget(TrackId trackId, DeviceId deviceId) {
+    return ControlTarget::pluginParam(ChainNodePath::topLevelDevice(trackId, deviceId),
+                                      kGainParamIndex);
+}
+
+/// A curve that holds and jumps, rather than one that travels.
+///
+/// Every `param.*` case steps, and none of them ramps, for a reason that is
+/// about the comparison rather than about automation. The engine settles a
+/// parameter at the top of a block, because that is what the fork does with an
+/// AutomatableParameter, so the two agree everywhere the curve is holding
+/// still and can differ by up to a block wherever it moves. A ramp moves
+/// everywhere, so a ramping case would measure block alignment; a step moves at
+/// four instants, and the material is silent at all four.
+///
+/// So the steps land on the half beat and the impulses land on the beat. At 120
+/// bpm that is 11025 samples of silence either side of every jump, which covers
+/// a block at every size the invariance gate renders at (#2078) as well as the
+/// 512 the corpus renders at.
+AutomationLaneInfo stepLane(AutomationLaneId id, const ControlTarget& target,
+                            std::vector<std::pair<double, double>> steps) {
+    AutomationLaneInfo lane;
+    lane.id = id;
+    lane.target = target;
+    lane.type = AutomationLaneType::Absolute;
+    lane.authorityState = AutomationAuthorityState::Reading;
+    lane.paramName = "Gain";
+
+    AutomationPointId pointId = 1;
+    for (const auto& [beat, value] : steps) {
+        AutomationPoint point;
+        point.id = pointId++;
+        point.beatPosition = beat;
+        point.value = value;
+        point.curveType = AutomationCurveType::Step;
+        lane.absolutePoints.push_back(point);
+    }
+
+    return lane;
+}
+
+/// A square LFO locked to the transport, driving @p target.
+///
+/// Square because it is the one shape whose output holds still between its
+/// edges, which is what lets a modulated case be compared sample for sample:
+/// the two engines advance a modifier once per block, so a shape that moves
+/// continuously moves at a different instant in each of them and at every block
+/// size. A square moves four times over this case and the material is silent at
+/// all four.
+///
+/// Locked to the transport rather than free running, and that is not a
+/// preference either: a free-running LFO accumulates its phase per block, so
+/// where it has got to depends on how the callbacks were cut up. A
+/// transport-locked one is a function of where the block is (ModLfo.cpp), which
+/// is the same thing the render is supposed to be.
+///
+/// A cycle of two seconds with an eighth of a cycle of offset puts its edges at
+/// 0.75, 1.75, 2.75 and 3.75 seconds, which is a quarter of a beat off every
+/// impulse.
+///
+/// @p tempoSynced picks which of them says so. Half a hertz and one bar at 120
+/// bpm are the same two seconds, and they are the same LFO everywhere except in
+/// the fork, where the two are separate branches of one timer: hertz runs a
+/// ramp off the edit time, a division reads the bar grid. Both are covered
+/// because a corpus that exercised one of them would have found neither the
+/// bar-origin bug (#2128) nor the negative-ramp one below it.
+ModInfo squareLfo(ModId id, const ControlTarget& target, float amount, bool tempoSynced = false) {
+    ModInfo mod;
+    mod.id = id;
+    mod.name = "LFO " + juce::String(static_cast<int>(id) + 1);
+    mod.type = ModType::LFO;
+    mod.enabled = true;
+    mod.waveform = LFOWaveform::Square;
+    mod.rate = 0.5f;
+    mod.phaseOffset = 0.125f;
+    mod.tempoSync = tempoSynced;
+    mod.syncDivision = SyncDivision::Whole;
+    mod.triggerMode = LFOTriggerMode::Transport;
+
+    ModLink link;
+    link.target = target;
+    link.amount = amount;
+    link.bipolar = false;
+    link.enabled = true;
+    mod.links.push_back(link);
+
+    return mod;
+}
+
+/// A macro knob at @p value, linked to @p target with @p amount.
+///
+/// Written into the array a scope already has rather than appended, because a
+/// macro is addressed by its index: the model gives every track, rack and
+/// device sixteen of them and a macro's identity is where it sits.
+void linkMacro(MacroArray& macros, int index, float value, const ControlTarget& target,
+               float amount) {
+    auto& macro = macros[static_cast<std::size_t>(index)];
+    macro.value = value;
+
+    MacroLink link;
+    link.target = target;
+    link.amount = amount;
+    link.bipolar = false;
+    macro.links.push_back(link);
+}
+
 // --- material ----------------------------------------------------------------
 
 SourceFact writeSource(const juce::File& directory, const juce::String& name,
@@ -321,6 +447,19 @@ Case newMixCase(const char* name, const char* covers, std::vector<TrackInfo> tra
     // Only the mixer cases. Everything above plays material whose length is part
     // of what it covers: a loop has to tile, a stretched clip has to hold its
     // ratio, and a folding groove needs the bars to fold over.
+    value.endBeat = 8.0;
+    return value;
+}
+
+/// A `param.*` case: one track, one gain device, two bars.
+///
+/// Two bars for the reason the mixer cases are: what these assert repeats every
+/// beat, and every case is rendered four more times by the invariance gate, so
+/// its length is paid for five times over.
+Case newParamCase(const char* name, const char* covers, TrackInfo track) {
+    std::vector<TrackInfo> tracks;
+    tracks.push_back(std::move(track));
+    auto value = newTrackCase(name, covers, std::move(tracks));
     value.endBeat = 8.0;
     return value;
 }
@@ -830,6 +969,281 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
             value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
                                               static_cast<ClipId>(250 + index), 0.0, 4.0, source));
         }
+
+        corpus.push_back(std::move(value));
+    }
+
+    // --- the fader's own ends -------------------------------------------------
+
+    {
+        // The fader past both ends of its range, which is where the clamp is
+        // and the one part of the law the three points in mix.volume cannot
+        // reach.
+        //
+        // The fader stores a slider position rather than a gain, so a volume is
+        // turned into decibels, the decibels into a position, and the position
+        // clamped to [0, 1] before it becomes a gain again. That clamp is the
+        // whole subject: above it the fader tops out at +6 dB however large the
+        // number is, below it the position floors and the track goes silent
+        // rather than merely very quiet. A model that scaled instead of
+        // clipping, on either side, is a project that plays back louder than it
+        // was mixed.
+        //
+        // Both ends and the exact top, in one case, because they are three
+        // readings of one function. mix.volume.silent already asks what a
+        // volume of zero does; this asks what a volume the range cannot hold
+        // does, which is a different question with the same answer at only one
+        // of its two ends.
+        auto value = newMixCase("mix.volume.clamp", "the fader past both ends of its range",
+                                {mixTrack(1, "Over"), mixTrack(2, "Top"), mixTrack(3, "Under")});
+
+        // Four times unity is +12 dB, well past the +6 the position allows;
+        // 1.9952623 is +6 dB exactly, which is the position at its top; and a
+        // millionth is -120 dB, past the -100 the position floors at.
+        const std::array<float, 3> volumes{4.0f, 1.9952623f, 0.000001f};
+        for (auto index = 0; index < 3; ++index) {
+            value.tracks[static_cast<std::size_t>(index)].volume =
+                volumes[static_cast<std::size_t>(index)];
+
+            const auto source = writeSource(scratchDirectory, "clamp" + juce::String(index),
+                                            stepsEvery(0.5 + 0.125 * index));
+            value.sources.push_back(source);
+            value.clips.push_back(audioClipOn(static_cast<TrackId>(index + 1),
+                                              static_cast<ClipId>(270 + index), 0.0, 4.0, source));
+        }
+
+        corpus.push_back(std::move(value));
+    }
+
+    // --- parameters, automation, modifiers and macros --------------------------
+    //
+    // The first cases in the corpus that run a device under both engines, and
+    // therefore the first that put any of #1891 in front of the fork: the value
+    // lane, the automation bake, the modifier engines and macros at two of
+    // their three scopes had all been judged by tests written beside them.
+    //
+    // Every one of them plays impulses on the beat through a gain whose
+    // parameter is what the case is about, so the render is the parameter's own
+    // curve sampled eight times. A value wrong in the fourth decimal is visible
+    // and nothing else is in the path: no fader but unity, no pan, no
+    // interpolator, no stretcher.
+    //
+    // **The steps land on the half beat.** Both engines settle a parameter at
+    // the top of a block, so they agree wherever it is holding still and can
+    // differ by up to a block wherever it jumps. Eleven thousand samples of
+    // silence either side of every jump is what makes the ordinary floor apply
+    // rather than a tolerance, and it is the same rule the rest of the corpus
+    // follows: choose the material so a residual can only be a bug.
+    //
+    // **Rack scope is missing from the macro cases**, and deliberately. A
+    // rack's macros live on a te::RackType that RackSyncManager builds out of a
+    // PluginManager, and writing one into the leg is the second sync this
+    // corpus refuses to have. It is the boundary sends stop at, and it moves
+    // with #1892.
+    //
+    // **Three of the four modifier engines are not here either**, and each for
+    // a reason of its own rather than for want of a case. Each was written
+    // after trying, which is the only way to find out.
+    //
+    // The random walk cannot be nulled by anybody. The fork seeds its generator
+    // from the clock, so it does not render the same numbers twice, let alone
+    // the same numbers as an engine that seeds from a modifier's address on
+    // purpose (ModRandom.hpp). There is no null to claim, and a case that
+    // claimed one would be claiming something about a coincidence.
+    //
+    // The envelope follower is fed by a FollowerSourceTapPlugin that
+    // PluginManager installs, and MAGDA always drives the fork's follower from
+    // it (ModifierSync sets usesExternalInput). Without the device layer the
+    // fork's follower is handed nothing at all, so the case would compare a
+    // level against a silence. Same boundary as the sends, and it moves with
+    // the same issue.
+    //
+    // The envelope has no gate a render can open. Its note gate comes from
+    // MAGDA's held-note model through PluginManager, which is that same
+    // boundary; and its transport gate is the fork asking
+    // TransportControl::isPlaying(), which is false throughout every offline
+    // render. So a transport-gated envelope does nothing in a bounce there,
+    // while the engine, whose transport gate is a property of the block, plays
+    // it. The case was written, it renders 0.625 against silence, and it is not
+    // in the corpus: what it asserts is a bug in the incumbent, and a corpus
+    // case that pins one would be asking the engine to reproduce it. The LFO
+    // is the engine that carries this dimension instead, in both of its rate
+    // modes, and the envelope's own stages are pinned where the answer is a
+    // number, in ModAdsr's tests.
+
+    {
+        auto value = newParamCase("param.base", "a device parameter's stored value, heard",
+                                  gainTrackOn(kTrack, 910, "Base", 0.5f));
+
+        const auto source = writeSource(scratchDirectory, "parambase", impulses(0.5));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(280, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A curve over a parameter, and the first time the bake has been
+        // compared against anything but itself. Both legs read the same lane:
+        // the engine compiles it into segments, the incumbent emits it into a
+        // te::AutomationCurve through the app's own bake (AutomationBake.hpp).
+        auto value = newParamCase("param.automation", "a step curve over a device parameter",
+                                  gainTrackOn(kTrack, 911, "Automated", 1.0f));
+
+        const auto source = writeSource(scratchDirectory, "paramauto", impulses(0.5));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(281, 0.0, 8.0, source));
+
+        value.lanes.push_back(
+            stepLane(1, gainTarget(kTrack, 911),
+                     {{0.0, 1.0}, {1.5, 0.25}, {2.5, 0.75}, {4.5, 0.125}, {6.5, 1.0}}));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A modifier over a parameter. The link is unipolar at full depth over
+        // a base of zero, so the parameter is the modifier's own output and the
+        // render is its shape: the two engines either agree about what a square
+        // LFO locked to the transport is doing, or the impulses come out at
+        // different heights.
+        auto track = gainTrackOn(kTrack, 912, "Modulated", 0.0f);
+        track.mods.push_back(squareLfo(0, gainTarget(kTrack, 912), 1.0f));
+
+        auto value = newParamCase("param.modifier", "a square LFO over a device parameter",
+                                  std::move(track));
+
+        const auto source = writeSource(scratchDirectory, "parammod", impulses(0.5));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(282, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // Both lanes at once, which is the case the precedence rules exist for:
+        // automation replaces the base, and modulation is added to whichever of
+        // the two applied. Half depth over a curve that steps between an eighth
+        // and three quarters, so every combination lands somewhere different
+        // and a leg that dropped either lane renders a different height at
+        // every impulse.
+        //
+        // Tempo synced, where param.modifier runs in hertz. The two are the
+        // same two-second cycle and the same edges; in the fork they are
+        // separate branches of one timer, and this is where the second of them
+        // is covered.
+        auto track = gainTrackOn(kTrack, 913, "Both", 1.0f);
+        track.mods.push_back(squareLfo(0, gainTarget(kTrack, 913), 0.25f, true));
+
+        auto value = newParamCase("param.both", "automation and a modifier on one parameter",
+                                  std::move(track));
+
+        const auto source = writeSource(scratchDirectory, "paramboth", impulses(0.5));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(283, 0.0, 8.0, source));
+
+        value.lanes.push_back(
+            stepLane(1, gainTarget(kTrack, 913), {{0.0, 0.125}, {2.5, 0.75}, {5.5, 0.375}}));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A host write under automation. The stored value is nothing the curve
+        // ever reaches, so a leg that let the base through anywhere renders an
+        // impulse the other does not have.
+        //
+        // What it asserts is the first precedence rule: a lane that covers the
+        // block replaces the base rather than adding to it. The fork agrees,
+        // for its own reason -- an automated parameter is written from its
+        // curve every block, so the last host write is simply overwritten --
+        // and the two arriving at the same audio from different arrangements is
+        // the whole point of comparing them.
+        auto value = newParamCase("param.hostwrite.automation",
+                                  "a stored value under a curve that covers it",
+                                  gainTrackOn(kTrack, 914, "Written", 0.9f));
+
+        const auto source = writeSource(scratchDirectory, "paramwriteauto", impulses(0.5));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(284, 0.0, 8.0, source));
+
+        value.lanes.push_back(
+            stepLane(1, gainTarget(kTrack, 914), {{0.0, 0.2}, {1.5, 0.6}, {4.5, 0.2}}));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A host write under a modifier: the stored value is what modulation is
+        // added to, rather than something modulation replaces.
+        //
+        // A quarter of a stored value under half a square, so the parameter is
+        // a quarter or three quarters and neither is reachable without both
+        // lanes: a leg that let modulation overwrite the base renders zero or a
+        // half instead, at every impulse, and one that ignored the modifier
+        // renders a flat quarter.
+        //
+        // What it does not pin, and the corpus checked rather than assumed:
+        // that a write arriving mid-playback survives. The bug class #1891 was
+        // arranged around is a runtime one -- Tracktion's setParameter returns
+        // early only while the modifier's output is non-zero at that instant --
+        // and an offline render is a batch job with nobody's hand on a knob
+        // during it. Running the corpus with the leg's write swapped for
+        // setParameter leaves this case nulling, which is how that was found.
+        // The lane arrangement is what makes the class impossible and it is
+        // asserted here; the timing is asserted where a gesture exists, in the
+        // parameter suites.
+        auto track = gainTrackOn(kTrack, 915, "Written", 0.25f);
+        track.mods.push_back(squareLfo(0, gainTarget(kTrack, 915), 0.5f));
+
+        auto value = newParamCase("param.hostwrite.modifier",
+                                  "a stored value under an active modifier", std::move(track));
+
+        const auto source = writeSource(scratchDirectory, "paramwritemod", impulses(0.5));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(285, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A macro at track scope, which is a knob that owns nothing and drives
+        // whatever it is linked to. Base zero and full depth, so the parameter
+        // is the macro's position and the render says whether the two engines
+        // agree about what a macro is worth.
+        auto track = gainTrackOn(kTrack, 916, "Track Macro", 0.0f);
+        linkMacro(track.macros, 0, 0.625f, gainTarget(kTrack, 916), 1.0f);
+
+        auto value = newParamCase("macro.track", "a track macro driving a device parameter",
+                                  std::move(track));
+
+        const auto source = writeSource(scratchDirectory, "macrotrack", impulses(0.5));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(286, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The same knob at device scope. A different macro array, a different
+        // node in the walker, and in the fork a different owner for the macro
+        // parameter, so it is a case rather than a repetition: a leg that
+        // resolved every macro against the track would render this one
+        // identically and prove nothing.
+        //
+        // A depth of three quarters over a base of an eighth, so the answer is
+        // neither the macro's position nor the base and a leg that dropped
+        // either is audible.
+        auto track = gainTrackOn(kTrack, 917, "Device Macro", 0.125f);
+        auto& device = magda::getDevice(track.chain.fxChainElements.front());
+        linkMacro(device.macros, 0, 0.5f, gainTarget(kTrack, 917), 0.75f);
+
+        auto value = newParamCase("macro.device", "a device macro driving its own parameter",
+                                  std::move(track));
+
+        const auto source = writeSource(scratchDirectory, "macrodevice", impulses(0.5));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(287, 0.0, 8.0, source));
 
         corpus.push_back(std::move(value));
     }
