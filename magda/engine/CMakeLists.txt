@@ -100,6 +100,7 @@ add_library(magda_engine STATIC
     param/ModRuntime.hpp
     tap/LevelTap.hpp
     tap/SampleRing.hpp
+    tap/ValueTap.hpp
     transport/TempoMap.cpp
     transport/TransportClock.cpp
     transport/ClickGenerator.cpp

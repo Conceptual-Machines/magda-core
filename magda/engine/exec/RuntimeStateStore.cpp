@@ -4,6 +4,7 @@
 
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
+#include "param/ParamTable.hpp"
 
 namespace magda::engine {
 namespace {
@@ -64,6 +65,36 @@ bool isNamed(const OpKey& key, const RuntimeStateIds& ids) {
     if (key.deviceId != INVALID_DEVICE_ID)
         return ids.devices.contains(key.deviceKey());
     return ids.tracks.contains(key.trackId);
+}
+
+/// Whether a value tap's key still names something the model holds. A device
+/// parameter, and a macro or a modifier at device scope, live and die with the
+/// device; everything at track scope, with the track.
+///
+/// A rack scope is retained by its track, which is coarser than the rest and
+/// deliberately so: RuntimeStateIds names devices and tracks, a rack is neither,
+/// and what the coarser rule costs is two atomics per deleted rack held until
+/// the track goes. A third ID set that only this would read costs more.
+bool isNamed(const ParamKey& key, const RuntimeStateIds& ids) {
+    if (key.scope == ParamKey::Scope::Device)
+        return ids.devices.contains(key.device);
+    return ids.tracks.contains(key.trackId);
+}
+
+/// Whether @p table carries the value @p key names, which is what decides
+/// whether the audio thread can reach the tap bound to it. Parameters answer
+/// from the index the table is built around; a modifier taken as a source has
+/// no parameter index and is looked for among the modifiers, which are tens
+/// where the parameters are thousands.
+bool carries(const ParamTable& table, const ParamKey& key) {
+    if (table.find(key) != INVALID_PARAM_ID)
+        return true;
+
+    for (const auto& modifier : table.modifiers)
+        if (modifier.key == key)
+            return true;
+
+    return false;
 }
 
 /// Entries whose key nothing in `named` holds any more.
@@ -153,6 +184,22 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
         }
     }
 
+    // The values the host wants read back (#2122). Off the host's list rather
+    // than off the table, because the list is the few dozen a window is drawing
+    // and the table is every parameter in the project.
+    //
+    // Bound whether or not the current table carries the key: a host may ask
+    // for a parameter that has since been deleted, and what happens then is
+    // that nothing ever writes to the tap, which is what PlanBindings says an
+    // unbound value does anyway. Deciding it here would be a second answer to a
+    // question the executor already has to ask against the table it prepared.
+    for (const auto& key : factory_.valuesToTap()) {
+        auto& tap = valueTaps_[key];
+        if (tap == nullptr)
+            tap = std::make_unique<ValueTap>();
+        bindings.valueTaps[key] = tap.get();
+    }
+
     return bindings;
 }
 
@@ -168,7 +215,8 @@ LevelTap* RuntimeStateStore::realiseMeter(const OpKey& key) {
 }
 
 std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
-                                              const RuntimeStateIds& modelIds) {
+                                              const RuntimeStateIds& modelIds,
+                                              const ParamTable* liveTable) {
     // The plan's own IDs go in first and unconditionally. Everything it names
     // is reachable from the audio thread this instant, whatever the caller
     // believes the model still holds.
@@ -212,6 +260,20 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
         ++removed;
     }
 
+    // The live table first and unconditionally, on the same reading the plan
+    // gets above: a tap the table carries is one the executor holds a pointer
+    // to and the audio thread writes through every block, whatever the caller
+    // believes the model still holds.
+    for (auto entry = valueTaps_.begin(); entry != valueTaps_.end();) {
+        if ((liveTable != nullptr && carries(*liveTable, entry->first)) ||
+            isNamed(entry->first, keep)) {
+            ++entry;
+            continue;
+        }
+        entry = valueTaps_.erase(entry);
+        ++removed;
+    }
+
     return removed;
 }
 
@@ -236,9 +298,14 @@ RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
     return ids;
 }
 
+ValueTap* RuntimeStateStore::valueTap(const ParamKey& key) const {
+    const auto found = valueTaps_.find(key);
+    return found == valueTaps_.end() ? nullptr : found->second.get();
+}
+
 std::size_t RuntimeStateStore::size() const {
     return devices_.size() + clipAudio_.size() + clipMidi_.size() + audioInputs_.size() +
-           midiInputs_.size() + meters_.size();
+           midiInputs_.size() + meters_.size() + valueTaps_.size();
 }
 
 }  // namespace magda::engine

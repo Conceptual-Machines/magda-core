@@ -89,7 +89,10 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // still reachable from the plan the audio thread was rendering. The plan
     // that is live goes in as well, so what it names survives however stale
     // the caller's model IDs turn out to be.
-    store_.releaseDeleted(*livePlan_, modelIds);
+    // The table goes in beside the plan, because a plan does not name a
+    // parameter and the value taps are keyed by one: it is what says which of
+    // them the audio thread can now reach (#2122).
+    store_.releaseDeleted(*livePlan_, modelIds, live_->values.params.get());
 
     return {true, std::move(messages)};
 }

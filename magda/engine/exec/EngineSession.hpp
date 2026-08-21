@@ -195,6 +195,21 @@ class EngineSession {
         return store_.size();
     }
 
+    /**
+     * @brief Where @p key's value is published, or nullptr (#2122).
+     *
+     * What a host collects after asking for a value through
+     * RuntimeStateFactory::valuesToTap(). The lookup is on the publishing
+     * thread; the tap it hands back is readable from any thread, and is what a
+     * knob under modulation, a modifier editor, and a touch or latch gesture
+     * all draw from.
+     *
+     * Good until the next publish. See RuntimeStateStore::valueTap().
+     */
+    ValueTap* valueTap(const ParamKey& key) const {
+        return store_.valueTap(key);
+    }
+
     /// The plan currently published, or null. On the publishing thread.
     std::shared_ptr<const RenderPlan> livePlan() const {
         return livePlan_;
