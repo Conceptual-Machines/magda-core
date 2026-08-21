@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 
 /**
  * @file ValueTap.hpp
@@ -60,12 +61,31 @@
  * wants to know whether the engine is running at all can ask the value it is
  * already reading rather than the transport.
  *
+ * ## Why the two of them are one word
+ *
+ * The count is what a reader gates a repaint on, so a reading that pairs one
+ * block's count with another block's value is not a stale frame but a value
+ * that never arrives. Read the value first and a reader can see the old value
+ * beside the new count: it redraws with the old one, and at the next poll the
+ * count has not moved again, so it decides nothing changed and the value it
+ * never drew stays undrawn until something else writes. Read the count first
+ * and the mirror image happens, with the fresher value thrown away for a count
+ * that had not caught up. Neither order is a repaint's worth of wrong.
+ *
+ * So they are not two atomics. A float and a 32-bit count fit in one 64-bit
+ * word, which every platform this builds for stores and loads in one
+ * instruction, and a reading is then always one block's own: one store on the
+ * audio thread, one load off it, no sequence lock and nothing to retry.
+ *
  * One writer, the audio thread. Any number of readers.
  */
 
 namespace magda::engine {
 
 class ValueTap {
+    static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+                  "a value tap is written on the audio thread and must not take a lock");
+
   public:
     /** @brief The value, and how many blocks have published one. */
     struct Reading {
@@ -88,22 +108,17 @@ class ValueTap {
      * Off the audio thread, from as many readers as like, as often as they
      * like. Nothing is consumed and nothing is reset.
      *
-     * The two fields are loaded one after the other rather than together, and
-     * the order is deliberate: the value first, so a count that arrives from a
-     * later block than the value came from reads as a change that has already
-     * been drawn. That costs a repaint of a value that had not moved yet, once,
-     * and the other order would cost a change that never showed at all.
+     * One load, so the pair is one block's own: the count belongs to the block
+     * that wrote the value beside it, and a reader gating a repaint on the
+     * count is gating on the value it is about to draw.
      */
     Reading read() const {
-        Reading reading;
-        reading.value = value_.load(std::memory_order_acquire);
-        reading.writes = writes_.load(std::memory_order_acquire);
-        return reading;
+        return unpack(state_.load(std::memory_order_acquire));
     }
 
     /// Just the value, for a reader that only draws it.
     float value() const {
-        return value_.load(std::memory_order_acquire);
+        return read().value;
     }
 
     /**
@@ -114,15 +129,36 @@ class ValueTap {
      * Unconditional rather than only on a change, because the count is of
      * blocks published and a tap that fell silent on a value that stopped
      * moving would be indistinguishable from one whose engine had stopped.
+     *
+     * The count comes off the word this is about to replace rather than out of
+     * a counter of its own, which is what makes the pair inseparable. Loading
+     * it needs no ordering and no compare-and-swap: there is one writer, and it
+     * is the only thing that ever changes this.
      */
     void write(float value) {
-        value_.store(value, std::memory_order_release);
-        writes_.fetch_add(1, std::memory_order_release);
+        const auto writes = unpack(state_.load(std::memory_order_relaxed)).writes;
+        state_.store(pack(value, writes + 1), std::memory_order_release);
     }
 
   private:
-    std::atomic<float> value_{0.0f};
-    std::atomic<std::uint32_t> writes_{0};
+    /// The count in the high half, the float's bits in the low one. A zeroed
+    /// word is therefore no writes and a value of zero, which is what a tap
+    /// nothing has published reads as.
+    static std::uint64_t pack(float value, std::uint32_t writes) {
+        std::uint32_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        return (static_cast<std::uint64_t>(writes) << 32U) | bits;
+    }
+
+    static Reading unpack(std::uint64_t state) {
+        Reading reading;
+        const auto bits = static_cast<std::uint32_t>(state & 0xFFFFFFFFULL);
+        std::memcpy(&reading.value, &bits, sizeof(bits));
+        reading.writes = static_cast<std::uint32_t>(state >> 32U);
+        return reading;
+    }
+
+    std::atomic<std::uint64_t> state_{0};
 };
 
 }  // namespace magda::engine

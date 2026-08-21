@@ -291,6 +291,31 @@ TEST_CASE("A value tap counts the blocks that published it", "[engine][tap][valu
     CHECK(tap.value() == approx(0.5f));
 }
 
+TEST_CASE("A value tap's count belongs to the value beside it", "[engine][tap][value]") {
+    ValueTap tap;
+
+    // The pair is what a reader gates a repaint on, so the two halves coming
+    // from different blocks is not a stale frame: a count that has moved past
+    // the value it arrived with means the reader draws the older one and then
+    // decides, at the next poll, that nothing has changed since. The value it
+    // never drew would stay undrawn until something else wrote.
+    for (std::uint32_t written = 1; written <= 8; ++written) {
+        tap.write(static_cast<float>(written) / 8.0f);
+
+        const auto reading = tap.read();
+        CHECK(reading.writes == written);
+        CHECK(reading.value == approx(static_cast<float>(reading.writes) / 8.0f));
+    }
+}
+
+TEST_CASE("A value tap that has published nothing reads as nothing", "[engine][tap][value]") {
+    const ValueTap tap;
+
+    const auto reading = tap.read();
+    CHECK(reading.writes == 0);
+    CHECK(reading.value == approx(0.0f));
+}
+
 // --- what the engine publishes through them
 
 TEST_CASE("A modifier tap publishes the modifier's own output", "[engine][tap][value]") {
