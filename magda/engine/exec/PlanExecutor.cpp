@@ -371,23 +371,31 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 modSourceForOp_[i] = mods_.listenersOf(op.key.trackId);
             }
         }
+    }
 
-        // The values a host asked to read back, resolved to the indices the
-        // block already has (#2122). A key with a parameter index is a
-        // parameter of the table; a modifier key has none and is looked for in
-        // the runtime, which is where the output it names is published.
-        //
-        // A key neither of them has binds nothing and is not reported, which is
-        // the ordinary answer rather than a fault: the table carries a mixer
-        // value, a macro or a modifier's rate only while something reaches it,
-        // so a host drawing an unautomated fader is asking about a number the
-        // engine does not move. It is kept anyway, because the swap has to
-        // clear it: a tap that used to be published and now is not would
-        // otherwise freeze where the last plan left it.
-        for (const auto& [key, tap] : bindings.valueTaps) {
-            if (tap == nullptr)
-                continue;
+    // The values a host asked to read back, resolved to the indices the block
+    // already has (#2122). A key with a parameter index is a parameter of the
+    // table; a modifier key has none and is looked for in the runtime, which is
+    // where the output it names is published.
+    //
+    // A key neither the table nor the runtime has binds nothing and is not
+    // reported, which is the ordinary answer rather than a fault: the table
+    // carries a mixer value, a macro or a modifier's rate only while something
+    // reaches it, so a host drawing an unautomated fader is asking about a
+    // number the engine does not move. It is kept anyway, because the swap has
+    // to clear it: a tap that used to be published and now is not would
+    // otherwise freeze where the last plan left it.
+    //
+    // Outside the block above rather than inside it, because a plan published
+    // with no table at all is the same situation seen from further away. It
+    // publishes nothing, so every tap the bindings offered is one of these; a
+    // loop that only ran when there was a table would leave them all frozen at
+    // whatever the last plan that had one wrote.
+    for (const auto& [key, tap] : bindings.valueTaps) {
+        if (tap == nullptr)
+            continue;
 
+        if (params != nullptr) {
             if (const auto param = params->find(key); param != INVALID_PARAM_ID) {
                 paramTaps_.push_back(BoundValueTap{param, tap});
                 continue;
@@ -397,9 +405,9 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 modTaps_.push_back(BoundValueTap{modifier, tap});
                 continue;
             }
-
-            unboundTaps_.push_back(tap);
         }
+
+        unboundTaps_.push_back(tap);
     }
 
     // Which ops the block can render before it resolves anything. In plan

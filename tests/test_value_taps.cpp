@@ -183,6 +183,19 @@ struct Session {
         return result.published;
     }
 
+    /// The same plan again, with values that carry no parameter table. What a
+    /// caller resolving its own values without one publishes, and what every
+    /// render did before there was a table at all.
+    bool publishWithoutTable() {
+        magda::engine::PlanValues values;
+        magda::engine::resolvePlanValues(*plan, tracks, master, values);
+        values.params.reset();
+
+        const magda::engine::RenderContext context{kSampleRate, kBlock, 2};
+        const auto ids = magda::engine::collectRuntimeStateIds(tracks, master);
+        return session.publish(plan, context, ids, std::move(values)).published;
+    }
+
     void render() {
         juce::AudioBuffer<float> output(2, kBlock);
         session.process(kBlock, output);
@@ -422,6 +435,34 @@ TEST_CASE("A block with no table it fits leaves the taps holding", "[engine][tap
 }
 
 // --- what the store does with them
+
+TEST_CASE("A plan published with no table at all publishes no values either",
+          "[engine][tap][value]") {
+    const auto track = trackWithEnvelope(/*storedValue=*/0.25f, /*amount=*/0.5f);
+    const auto param = deviceParam(0);
+
+    ScriptedMidi midi;
+    Session session({track}, {param}, &midi);
+    REQUIRE(session.published);
+
+    midi.pending.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    session.render();
+    REQUIRE(session.writes(param) > 0);
+    REQUIRE(session.read(param) == approx(0.75f));
+
+    // The same plan, published with values that carry no table. Nothing
+    // resolves, so nothing publishes, and every tap the bindings offered is one
+    // this plan has nowhere to write from: the same case as a key the table
+    // dropped, seen from further away. Left out of the clear, they would hold
+    // the last automated value under a stalled count for as long as the session
+    // ran.
+    REQUIRE(session.publishWithoutTable());
+    session.render();
+
+    CHECK(session.boundValueTaps() == 0);
+    CHECK(session.writes(param) == 0);
+    CHECK(session.read(param) == approx(0.0f));
+}
 
 TEST_CASE("A value tap outlives the plans that reference it", "[engine][tap][value]") {
     auto track = trackWithEnvelope(/*storedValue=*/0.25f, /*amount=*/0.5f);
