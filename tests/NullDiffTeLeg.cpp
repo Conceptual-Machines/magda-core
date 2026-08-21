@@ -591,7 +591,7 @@ IncumbentRender renderIncumbent(const Case& value) {
     // nothing for a target this leg has no plugin for, while the native table
     // resolves it and modulates. That is a modulated render compared against an
     // unmodulated one, and where the target is inaudible it is a false null.
-    const auto unwirable = [&](const ControlTarget& target,
+    const auto unwirable = [&](const ControlTarget& target, const ChainNodePath& scopePath,
                                const magda::ModArray& scopeMods) -> std::string {
         switch (target.kind) {
             case ControlTarget::Kind::PluginParam:
@@ -601,11 +601,26 @@ IncumbentRender renderIncumbent(const Case& value) {
                 return {};
 
             case ControlTarget::Kind::ModParam:
-                // Same scope only, which is the walker's own rule.
+                // Same scope, asked of the path rather than of the id.
+                // resolveSameScopeModParam looks the modifier up by id alone,
+                // so a target naming another scope is wired to whichever local
+                // modifier shares its number while the native table resolves
+                // the whole path to a different parameter. The two then differ
+                // over a link both of them think they honoured.
+                if (target.devicePath != scopePath)
+                    return "a modifier in another scope (" +
+                           target.devicePath.toString().toStdString() +
+                           "), which the walker resolves by id alone";
+
+                // Rate is the only parameter the native table gives a modifier;
+                // the walker also resolves index 1 to depth.
+                if (target.modParamIndex != 0)
+                    return "a modifier parameter that is not its Rate";
+
                 for (const auto& mod : scopeMods)
-                    if (mod.id == target.modId)
+                    if (mod.id == target.modId && mod.enabled)
                         return {};
-                return "a modifier outside the scope the link lives in";
+                return "a modifier this scope does not have, or one that is off";
 
             default:
                 // A fader, a send, a macro. The native table carries the first
@@ -615,22 +630,23 @@ IncumbentRender renderIncumbent(const Case& value) {
         }
     };
 
-    const auto refuseUnwirableLinks = [&](const magda::ConstChainNode& node) -> std::string {
-        if (node.mods != nullptr)
-            for (const auto& mod : *node.mods)
-                if (mod.enabled)
-                    for (const auto& link : mod.links)
-                        if (link.enabled && link.isValid())
-                            if (auto why = unwirable(link.target, *node.mods); !why.empty())
-                                return "a modifier links to " + why;
+    const auto refuseUnwirableLinks = [&](const magda::ConstChainNode& node,
+                                          const ChainNodePath& scopePath) -> std::string {
+        static const magda::ModArray noMods;
+        const auto& mods = node.mods == nullptr ? noMods : *node.mods;
+
+        for (const auto& mod : mods)
+            if (mod.enabled)
+                for (const auto& link : mod.links)
+                    if (link.enabled && link.isValid())
+                        if (auto why = unwirable(link.target, scopePath, mods); !why.empty())
+                            return "a modifier links to " + why;
 
         if (node.macros != nullptr)
             for (const auto& macro : *node.macros)
                 for (const auto& link : macro.links)
                     if (link.target.isValid())
-                        if (auto why = unwirable(
-                                link.target, node.mods == nullptr ? magda::ModArray{} : *node.mods);
-                            !why.empty())
+                        if (auto why = unwirable(link.target, scopePath, mods); !why.empty())
                             return "a macro links to " + why;
 
         return {};
@@ -685,7 +701,8 @@ IncumbentRender renderIncumbent(const Case& value) {
         trackNode.macros = &track.macros;
 
         if (carriesModulation(trackNode)) {
-            if (auto why = refuseUnwirableLinks(trackNode); !why.empty()) {
+            if (auto why = refuseUnwirableLinks(trackNode, ChainNodePath::trackLevel(track.id));
+                !why.empty()) {
                 refuse(why);
                 return result;
             }
@@ -725,12 +742,13 @@ IncumbentRender renderIncumbent(const Case& value) {
             deviceNode.params = &device.parameters;
 
             if (carriesModulation(deviceNode)) {
-                if (auto why = refuseUnwirableLinks(deviceNode); !why.empty()) {
+                const auto devicePath = ChainNodePath::topLevelDevice(track.id, device.id);
+
+                if (auto why = refuseUnwirableLinks(deviceNode, devicePath); !why.empty()) {
                     refuse(why);
                     return result;
                 }
-                sync(deviceNode,
-                     deviceModulation[ChainNodePath::topLevelDevice(track.id, device.id)]);
+                sync(deviceNode, deviceModulation[devicePath]);
             }
         }
     }
