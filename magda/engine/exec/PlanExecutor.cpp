@@ -239,6 +239,7 @@ void PlanExecutor::reset() {
     midiTapForOp_.clear();
     paramTaps_.clear();
     modTaps_.clear();
+    unboundTaps_.clear();
     paramWindowForOp_.clear();
     mixerParamForOp_.clear();
     paramScratch_.clear();
@@ -376,9 +377,13 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         // parameter of the table; a modifier key has none and is looked for in
         // the runtime, which is where the output it names is published.
         //
-        // A key neither of them has binds nothing and is not reported: the
-        // bindings are what a window is drawing, and a window outlives the
-        // device it was opened on by however long it takes to shut.
+        // A key neither of them has binds nothing and is not reported, which is
+        // the ordinary answer rather than a fault: the table carries a mixer
+        // value, a macro or a modifier's rate only while something reaches it,
+        // so a host drawing an unautomated fader is asking about a number the
+        // engine does not move. It is kept anyway, because the swap has to
+        // clear it: a tap that used to be published and now is not would
+        // otherwise freeze where the last plan left it.
         for (const auto& [key, tap] : bindings.valueTaps) {
             if (tap == nullptr)
                 continue;
@@ -388,8 +393,12 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 continue;
             }
 
-            if (const auto modifier = mods_.indexOf(key); modifier >= 0)
+            if (const auto modifier = mods_.indexOf(key); modifier >= 0) {
                 modTaps_.push_back(BoundValueTap{modifier, tap});
+                continue;
+            }
+
+            unboundTaps_.push_back(tap);
         }
     }
 
@@ -997,6 +1006,11 @@ void PlanExecutor::resolveParameters(const PlanValues& values, const BlockInfo& 
 
     resolveParams(*blockTable_, paramValues_, paramScratch_, paramSegments_, block, &mods_);
     publishValueTaps();
+}
+
+void PlanExecutor::clearUnboundValueTaps() {
+    for (auto* tap : unboundTaps_)
+        tap->clear();
 }
 
 void PlanExecutor::publishValueTaps() {

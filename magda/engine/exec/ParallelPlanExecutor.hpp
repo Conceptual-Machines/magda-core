@@ -104,6 +104,9 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     int boundValueTapCount() const {
         return core_.boundValueTapCount();
     }
+    void clearUnboundValueTaps() {
+        core_.clearUnboundValueTaps();
+    }
     int audioBufferCount() const {
         return core_.audioBufferCount();
     }

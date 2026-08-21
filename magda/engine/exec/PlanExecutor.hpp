@@ -319,10 +319,30 @@ class PlanExecutor {
     /// Value taps this plan's table found a home for (#2122): a parameter the
     /// table carries, or a modifier the runtime holds. A key the bindings
     /// offered and the table does not have is not one of these and is not an
-    /// error; it is a host asking about something this project no longer has.
+    /// error; it is a host asking about a value this project does not move.
     int boundValueTapCount() const {
         return static_cast<int>(paramTaps_.size() + modTaps_.size());
     }
+
+    /**
+     * @brief Take back what this plan no longer publishes (#2122).
+     *
+     * Off the audio thread, and only after the swap that made this plan live.
+     * Every tap the bindings offered and this table found no home for is
+     * cleared, so a host reads no writes at all rather than a value frozen
+     * where the last plan left it.
+     *
+     * That is not a rare case. A lane deleted off a fader takes that fader out
+     * of the parameter table, because a mixer value is carried only while
+     * something reaches it; without this the tap would sit at the last
+     * automated position under a count that never moves again, which the header
+     * tells hosts to read as an engine that has stopped.
+     *
+     * After the swap rather than at prepare, because until the swap the epoch
+     * being replaced is still rendering: a tap cleared while it is still being
+     * written would be counting from one again by the next block.
+     */
+    void clearUnboundValueTaps();
 
     /// Modulation taps that took over the detector of the executor they
     /// replaced rather than starting again. What that buys is the same thing
@@ -588,6 +608,11 @@ class PlanExecutor {
     /// (see fitsParameters).
     std::vector<BoundValueTap> paramTaps_;
     std::vector<BoundValueTap> modTaps_;
+
+    /// The other side of those two: taps the bindings offered that this table
+    /// has nowhere to publish from. Kept so the swap can clear them, which is
+    /// the only thing anything does with them.
+    std::vector<ValueTap*> unboundTaps_;
 
     /// This block's parameter values, and the room the resolver gathers one
     /// parameter's links in. Sized at prepare from the table the plan was

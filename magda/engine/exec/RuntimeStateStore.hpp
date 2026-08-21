@@ -86,6 +86,12 @@ class RuntimeStateFactory {
      * for the position that parameter resolved to, a modifier's for the output
      * that modifier published.
      *
+     * A modifier is named by its key with no parameter index, which means
+     * `index = -1` and not the default a hand-built ParamKey carries: index 0
+     * is the modifier's own Rate parameter, so a key left at its default asks
+     * about the rate rather than the output. modifierKeyFor() builds the right
+     * shape from a ControlTarget and is the way to avoid choosing.
+     *
      * Shaped as one question rather than as a createValueTap() beside the
      * others, which is the one asymmetry here and is a matter of how many there
      * are. A plan has hundreds of ops and a host with a mixer open wants a
@@ -185,9 +191,16 @@ class RuntimeStateStore {
      * that says which of them the audio thread can reach. A plan does not name
      * a parameter, so nothing else here could answer it. Null is a session
      * rendering without a table, where no value tap is reachable at all.
+     *
+     * Required rather than defaulted, for the reason the plan is passed rather
+     * than trusted to the caller's IDs. Omitting it would leave eviction to the
+     * model IDs alone, and a tap the live table carries but the ID set does not
+     * name would be destroyed while the executor still holds its pointer: the
+     * next block writes through freed memory, on the audio thread. A keep that
+     * cannot be waived must not be possible to leave out.
      */
     std::size_t releaseDeleted(const RenderPlan& livePlan, const RuntimeStateIds& modelIds,
-                               const ParamTable* liveTable = nullptr);
+                               const ParamTable* liveTable);
 
     /**
      * @brief The tap publishing @p key, or nullptr (#2122).
@@ -196,9 +209,14 @@ class RuntimeStateStore {
      * back and this is where it collects them. Off the audio thread; what it
      * hands back is readable from any thread, which is the whole point of it.
      *
-     * Null until a publish has been through, because that is when the taps are
-     * made: a window that opens between two of them is drawing a value nothing
-     * has offered yet, and it gets one at the next publish rather than never.
+     * Null until a publish has been attempted, because that is when the taps
+     * are made: a window that opens between two of them is drawing a value
+     * nothing has offered yet, and it gets one at the next publish rather than
+     * never. Attempted rather than succeeded, since the taps are realised
+     * before a plan is known to prepare; non-null therefore says the store has
+     * one, not that anything is publishing through it. What answers that is the
+     * tap's own count, where zero means nothing in the engine moves this value
+     * and the model's own is the answer (ValueTap.hpp).
      *
      * Good until the next publish, like every other pointer the store hands
      * out. A tap whose device has been deleted goes when the plan that named it

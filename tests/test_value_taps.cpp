@@ -1,13 +1,14 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
+#include <span>
 #include <vector>
 
+#include "EngineSessionScaffold.hpp"
 #include "core/TrackInfo.hpp"
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
 #include "exec/RuntimeStateStore.hpp"
-#include "param/ParamTableCompiler.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "tap/ValueTap.hpp"
 
@@ -31,9 +32,12 @@
  */
 
 using namespace magda;
-using magda::engine::compileRenderPlan;
 using magda::engine::ParamKey;
 using magda::engine::ValueTap;
+using magda::test::makeMaster;
+using magda::test::makeTrack;
+using magda::test::ScriptedMidi;
+using magda::test::ScriptedMidiSource;
 
 namespace {
 
@@ -46,23 +50,6 @@ constexpr int kBlock = 512;
 
 constexpr TrackId kTrack = 1;
 constexpr DeviceId kDevice = 7;
-
-TrackInfo makeTrack(TrackId id) {
-    TrackInfo track;
-    track.id = id;
-    track.name = "Track " + juce::String(id);
-    track.audioOutputDevice = "master";
-    track.mods = createDefaultMods(0);
-    return track;
-}
-
-TrackInfo makeMaster() {
-    auto master = makeTrack(MASTER_TRACK_ID);
-    master.type = TrackType::Master;
-    master.audioOutputDevice = {};
-    master.volume = 1.0f;
-    return master;
-}
 
 /// A device with one parameter reading 0 to 1, so a normalised position and the
 /// value the device is handed are the same number and a case says one thing.
@@ -149,27 +136,6 @@ class NullDevice final : public magda::engine::EngineDevice {
     void process(magda::engine::DeviceBlock&) override {}
 };
 
-/// What a case queues for the next block. Owned by the case rather than by the
-/// session, because the point of one is to put a note in a named block.
-struct ScriptedMidi {
-    juce::MidiBuffer pending;
-};
-
-class ScriptedMidiSource final : public magda::engine::EngineMidiSource {
-  public:
-    explicit ScriptedMidiSource(ScriptedMidi* script) : script_(script) {}
-
-    void render(const magda::engine::BlockInfo&, juce::MidiBuffer& out) override {
-        if (script_ == nullptr)
-            return;
-        out.addEvents(script_->pending, 0, -1, 0);
-        script_->pending.clear();
-    }
-
-  private:
-    ScriptedMidi* script_ = nullptr;
-};
-
 /// A host that wants a fixed set of values read back, which is what having a
 /// window open amounts to.
 class Factory final : public magda::engine::RuntimeStateFactory {
@@ -204,22 +170,29 @@ struct Session {
 
     /// Publish @p trackList as the project, which is what an edit amounts to.
     bool publish(const std::vector<TrackInfo>& trackList) {
-        auto compiled =
-            std::make_shared<const magda::engine::RenderPlan>(compileRenderPlan(trackList, master));
+        return publishWithLanes(trackList, {});
+    }
 
-        magda::engine::PlanValues values;
-        magda::engine::resolvePlanValues(*compiled, trackList, master, values);
-
-        const auto ids = magda::engine::collectRuntimeStateIds(trackList, master);
+    /// The same, with the automation the project has. A lane is the only way a
+    /// mixer value reaches the parameter table at all.
+    bool publishWithLanes(const std::vector<TrackInfo>& trackList,
+                          std::span<const AutomationLaneInfo> lanes) {
         const magda::engine::RenderContext context{kSampleRate, kBlock, 2};
-        const auto result = session.publish(compiled, context, ids, std::move(values));
-        plan = std::move(compiled);
+        auto result = magda::test::publishProject(session, trackList, master, context, lanes);
+        plan = std::move(result.plan);
         return result.published;
     }
 
     void render() {
         juce::AudioBuffer<float> output(2, kBlock);
         session.process(kBlock, output);
+    }
+
+    /// Values the live plan found somewhere to publish from, which is not the
+    /// number of taps: a key the table does not carry has one and is never
+    /// written.
+    int boundValueTaps() const {
+        return session.boundValueTapCount();
     }
 
     /// What a window would do: ask for the tap by the key it asked to have
@@ -308,6 +281,20 @@ TEST_CASE("A value tap's count belongs to the value beside it", "[engine][tap][v
     }
 }
 
+TEST_CASE("A value tap's count wraps past its maximum without passing through zero",
+          "[engine][tap][value]") {
+    // Zero is the reading that says nothing in the engine publishes this value
+    // and the model's own is the answer, so a count that reached it by counting
+    // would hand a host a live parameter wearing that sign. Thirty-three days
+    // at 96 kHz and 64 samples a block gets there, which is a rig left running
+    // rather than a hypothetical, and is not a number a test can render its way
+    // to: the rule is asserted where it is decided.
+    STATIC_REQUIRE(ValueTap::nextWriteCount(0) == 1);
+    STATIC_REQUIRE(ValueTap::nextWriteCount(41) == 42);
+    STATIC_REQUIRE(ValueTap::nextWriteCount(0xFFFFFFFEU) == 0xFFFFFFFFU);
+    STATIC_REQUIRE(ValueTap::nextWriteCount(0xFFFFFFFFU) == 1);
+}
+
 TEST_CASE("A value tap that has published nothing reads as nothing", "[engine][tap][value]") {
     const ValueTap tap;
 
@@ -348,6 +335,10 @@ TEST_CASE("A parameter tap publishes what the block resolved, not what is stored
     ScriptedMidi midi;
     Session session({track}, {param, mod}, &midi);
     REQUIRE(session.published);
+
+    // Both found a home: the parameter in the table, the modifier in the
+    // runtime beside it.
+    CHECK(session.boundValueTaps() == 2);
 
     session.render();
     CHECK(session.read(param) == approx(0.25f));
@@ -399,6 +390,7 @@ TEST_CASE("A value the table does not carry is bound to nothing rather than refu
     auto* tap = session.tapFor(missing);
     REQUIRE(tap != nullptr);
     CHECK(tap->read().writes == 0);
+    CHECK(session.boundValueTaps() == 0);
 }
 
 TEST_CASE("A block with no table it fits leaves the taps holding", "[engine][tap][value]") {
@@ -458,6 +450,50 @@ TEST_CASE("A value tap outlives the plans that reference it", "[engine][tap][val
     CHECK(session.tapFor(param) == before);
     CHECK(before->read().value == approx(reading.value));
     CHECK(before->read().writes == reading.writes);
+
+    // And still being written, which keeping the object does not prove: a
+    // republish that left the map alone and stopped re-binding would freeze
+    // every open window from the first edit onwards and pass everything above.
+    session.render();
+    CHECK(before->read().writes > reading.writes);
+    CHECK(before->read().value == approx(0.75f));
+}
+
+TEST_CASE("A value the engine stops publishing goes back to publishing nothing",
+          "[engine][tap][value]") {
+    // The lane is what puts a fader in the parameter table at all: a mixer
+    // value is carried only while something reaches it. So this is a fader that
+    // is automated, watched, and then has its automation taken away.
+    auto track = trackWithEnvelope(/*storedValue=*/0.25f, /*amount=*/0.5f);
+    const auto fader = trackVolume(kTrack);
+
+    AutomationLaneInfo lane;
+    lane.id = 1;
+    lane.target = ControlTarget::trackVolume(kTrack);
+    lane.type = AutomationLaneType::Absolute;
+    lane.authorityState = AutomationAuthorityState::Reading;
+    lane.absolutePoints = {AutomationPoint{1, 0.0, 0.4}, AutomationPoint{2, 4.0, 0.4}};
+
+    const std::vector<AutomationLaneInfo> lanes{lane};
+
+    ScriptedMidi midi;
+    Session session({track}, {fader}, &midi);
+    REQUIRE(session.published);
+    REQUIRE(session.publishWithLanes(session.tracks, lanes));
+
+    session.render();
+    const auto automated = session.writes(fader);
+    REQUIRE(automated > 0);
+
+    // The lane goes. The fader leaves the table with it, so nothing publishes
+    // the value any more and the tap has to say so: left counting from before,
+    // it would hold the last automated position under a stalled count, which
+    // this header tells a host to read as an engine that has stopped.
+    REQUIRE(session.publish(session.tracks));
+    session.render();
+
+    CHECK(session.writes(fader) == 0);
+    CHECK(session.read(fader) == approx(0.0f));
 }
 
 TEST_CASE("A value tap goes when what it names does", "[engine][tap][value]") {

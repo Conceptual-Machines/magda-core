@@ -199,15 +199,30 @@ class EngineSession {
      * @brief Where @p key's value is published, or nullptr (#2122).
      *
      * What a host collects after asking for a value through
-     * RuntimeStateFactory::valuesToTap(). The lookup is on the publishing
-     * thread; the tap it hands back is readable from any thread, and is what a
-     * knob under modulation, a modifier editor, and a touch or latch gesture
-     * all draw from.
+     * RuntimeStateFactory::valuesToTap(). What it hands back is where a knob
+     * under modulation, a modifier editor, and a touch or latch gesture all
+     * draw from.
      *
-     * Good until the next publish. See RuntimeStateStore::valueTap().
+     * Both the lookup and the pointer belong to the publishing thread, and that
+     * is a lifetime rather than a convention: the next publish can destroy the
+     * tap outright, on that thread, with nothing deferring the reclamation. A
+     * cached pointer read from a paint or animation thread is a use-after-free
+     * waiting for an edit. Fetch it here, use it before returning to the
+     * message loop, and ask again after every publish; read() is safe from
+     * wherever it is called for exactly as long as the pointer is.
+     *
+     * See RuntimeStateStore::valueTap() for what null means, which is not the
+     * same as the tap being unbound.
      */
     ValueTap* valueTap(const ParamKey& key) const {
         return store_.valueTap(key);
+    }
+
+    /// Values the live plan found somewhere to publish from, which is not the
+    /// number of taps the store holds: a key the parameter table does not carry
+    /// has a tap and is never written through it. On the publishing thread.
+    int boundValueTapCount() const {
+        return live_ == nullptr ? 0 : live_->executor.boundValueTapCount();
     }
 
     /// The plan currently published, or null. On the publishing thread.

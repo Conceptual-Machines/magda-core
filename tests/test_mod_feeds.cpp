@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 
+#include "EngineSessionScaffold.hpp"
 #include "core/TrackInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "exec/EngineSession.hpp"
@@ -58,22 +59,10 @@ constexpr double kSampleRate = 48000.0;
 /// blocks and a difference of one block is unmistakable.
 constexpr int kBlock = 512;
 
-TrackInfo makeTrack(TrackId id) {
-    TrackInfo track;
-    track.id = id;
-    track.name = "Track " + juce::String(id);
-    track.audioOutputDevice = "master";
-    track.mods = createDefaultMods(0);
-    return track;
-}
-
-TrackInfo makeMaster() {
-    auto master = makeTrack(MASTER_TRACK_ID);
-    master.type = TrackType::Master;
-    master.audioOutputDevice = {};
-    master.volume = 1.0f;
-    return master;
-}
+using magda::test::makeMaster;
+using magda::test::makeTrack;
+using magda::test::ScriptedMidi;
+using magda::test::ScriptedMidiSource;
 
 /// A device whose output is its only parameter, so what leaves the master is
 /// what the modulation did to it.
@@ -82,33 +71,6 @@ class LevelDevice final : public magda::engine::EngineDevice {
     void process(magda::engine::DeviceBlock& block) override {
         block.audio.fill(block.params.size() > 0 ? block.params[0].value() : 0.0f);
     }
-};
-
-/// What the test queues for the next block, and what it saw of the blocks that
-/// consumed it. Owned by the test rather than by the session, because the point
-/// of the case is to put a note in one specific block.
-struct ScriptedMidi {
-    juce::MidiBuffer pending;
-    int blocks = 0;
-};
-
-/// The session's end of it: a source that hands over whatever is queued and
-/// clears the queue, so a note is played once.
-class ScriptedMidiSource final : public magda::engine::EngineMidiSource {
-  public:
-    explicit ScriptedMidiSource(ScriptedMidi* script) : script_(script) {}
-
-    void render(const BlockInfo&, juce::MidiBuffer& out) override {
-        if (script_ == nullptr)
-            return;
-
-        out.addEvents(script_->pending, 0, -1, 0);
-        script_->pending.clear();
-        ++script_->blocks;
-    }
-
-  private:
-    ScriptedMidi* script_ = nullptr;
 };
 
 class Factory final : public magda::engine::RuntimeStateFactory {
@@ -173,14 +135,10 @@ struct Session {
     Session(std::vector<TrackInfo> trackList, ScriptedMidi* midi)
         : tracks(std::move(trackList)), factory(midi), session(factory) {
         master = makeMaster();
-        plan = std::make_shared<const magda::engine::RenderPlan>(compileRenderPlan(tracks, master));
-
-        magda::engine::PlanValues values;
-        magda::engine::resolvePlanValues(*plan, tracks, master, values);
-
-        const auto ids = magda::engine::collectRuntimeStateIds(tracks, master);
         const magda::engine::RenderContext context{kSampleRate, kBlock, 2};
-        published = session.publish(plan, context, ids, std::move(values)).published;
+        auto result = magda::test::publishProject(session, tracks, master, context);
+        plan = std::move(result.plan);
+        published = result.published;
     }
 
     /// One block, and the first sample the master produced.

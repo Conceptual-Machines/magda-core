@@ -85,9 +85,13 @@ struct PlanBindings {
      * and is not reported.
      *
      * Resolved against the table the plan is prepared with, so a key the table
-     * does not carry binds nothing. That is not an error either: a host may ask
-     * for a parameter that has since been deleted, and the answer is that
-     * nothing writes to it.
+     * does not carry binds nothing. That is not an error either, and it is not
+     * rare: the table carries a mixer value, a macro or a modifier's rate only
+     * while something reaches it, so an unautomated fader with nothing linked
+     * to it has no publisher at all. The tap reads no writes, which is what
+     * tells a host the engine does not move this value and the model's own is
+     * the answer (ValueTap.hpp). A parameter that has since been deleted lands
+     * in the same place by the same route.
      */
     std::map<ParamKey, ValueTap*> valueTaps;
 };

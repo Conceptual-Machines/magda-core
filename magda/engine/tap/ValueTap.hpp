@@ -1,8 +1,8 @@
 #pragma once
 
 #include <atomic>
+#include <bit>
 #include <cstdint>
-#include <cstring>
 
 /**
  * @file ValueTap.hpp
@@ -61,6 +61,27 @@
  * wants to know whether the engine is running at all can ask the value it is
  * already reading rather than the transport.
  *
+ * ## What no writes means
+ *
+ * A count of zero is the one reading with a meaning of its own: nothing in the
+ * engine publishes this value, so the model's own is the answer and the tap is
+ * not part of it. That is not only the moment before the first block. The
+ * parameter table carries a mixer value, a macro or a modifier's rate only when
+ * something reaches it, because a project's faders and its sixteen macros per
+ * scope are overwhelmingly numbers nothing moves; a tap on one of those has no
+ * publisher and says so.
+ *
+ * Which means it has to be able to go back. A lane deleted off a fader takes
+ * that fader out of the table, and a tap left counting from before would freeze
+ * at the last automated position while claiming the engine had stopped. So a
+ * publish that binds nothing to a tap clears it (see @ref clear), and the host
+ * reads what is true: the engine has no opinion, ask the model.
+ *
+ * The count therefore never wraps to zero on its own. Thirty-three days of
+ * continuous rendering at 96 kHz and 64 samples a block is not a number to
+ * dismiss for an installation, and reaching it must not turn a live parameter
+ * into one nothing publishes.
+ *
  * ## Why the two of them are one word
  *
  * The count is what a reader gates a repaint on, so a reading that pairs one
@@ -89,16 +110,16 @@ class ValueTap {
   public:
     /** @brief The value, and how many blocks have published one. */
     struct Reading {
-        /// Normalised, 0 to 1. Zero before any block has published, which is a
-        /// tap that has been bound and not yet written rather than a parameter
-        /// whose value is zero; @ref writes is what tells those apart.
+        /// Normalised, 0 to 1. Zero where nothing has published, which is not a
+        /// parameter whose value is zero; @ref writes is what tells those
+        /// apart.
         float value = 0.0f;
 
-        /// Blocks published since the tap was made. Wraps, and is meant to be
-        /// compared with the last one seen rather than read as a total: a
-        /// reader asking whether this differs from what it drew last frame gets
-        /// the right answer across the wrap, and one asking how many blocks
-        /// have gone by does not.
+        /// Blocks published. Zero means nothing in the engine publishes this
+        /// value and the model's own is the answer; anything else is meant to
+        /// be compared with the last count seen rather than read as a total.
+        /// It wraps past its own maximum without passing through zero, so the
+        /// comparison stays right and the zero keeps its one meaning.
         std::uint32_t writes = 0;
     };
 
@@ -137,25 +158,52 @@ class ValueTap {
      */
     void write(float value) {
         const auto writes = unpack(state_.load(std::memory_order_relaxed)).writes;
-        state_.store(pack(value, writes + 1), std::memory_order_release);
+        state_.store(pack(value, nextWriteCount(writes)), std::memory_order_release);
+    }
+
+    /**
+     * @brief Back to nothing published. Off the audio thread.
+     *
+     * For a tap the engine has stopped having an opinion about: a publish that
+     * bound it to nothing, because what it names is no longer a value the
+     * parameter table carries. The alternative is a tap frozen at its last
+     * value under a count that has stopped moving, which a host reads as an
+     * engine that has stopped rather than as a value it now owns outright.
+     *
+     * Only ever after the swap that made such a plan live. A tap cleared while
+     * the epoch it replaces is still rendering would be written again by that
+     * epoch's next block and left counting from one.
+     */
+    void clear() {
+        state_.store(0, std::memory_order_release);
+    }
+
+    /**
+     * @brief The count after @p writes.
+     *
+     * Public because it is a rule of the contract above rather than an
+     * implementation detail: the count skips zero on the way round, so the one
+     * reading that means "nothing publishes this" cannot be reached by a rig
+     * that has simply been up for a long time. Thirty-three days of continuous
+     * rendering at 96 kHz and 64 samples a block is not a number to dismiss for
+     * an installation, and it is not a number a test can reach either, which is
+     * the other half of why this is nameable.
+     */
+    static constexpr std::uint32_t nextWriteCount(std::uint32_t writes) {
+        return writes + 1 == 0 ? 1 : writes + 1;
     }
 
   private:
     /// The count in the high half, the float's bits in the low one. A zeroed
     /// word is therefore no writes and a value of zero, which is what a tap
-    /// nothing has published reads as.
-    static std::uint64_t pack(float value, std::uint32_t writes) {
-        std::uint32_t bits = 0;
-        std::memcpy(&bits, &value, sizeof(bits));
-        return (static_cast<std::uint64_t>(writes) << 32U) | bits;
+    /// nothing publishes reads as.
+    static constexpr std::uint64_t pack(float value, std::uint32_t writes) {
+        return (static_cast<std::uint64_t>(writes) << 32U) | std::bit_cast<std::uint32_t>(value);
     }
 
-    static Reading unpack(std::uint64_t state) {
-        Reading reading;
-        const auto bits = static_cast<std::uint32_t>(state & 0xFFFFFFFFULL);
-        std::memcpy(&reading.value, &bits, sizeof(bits));
-        reading.writes = static_cast<std::uint32_t>(state >> 32U);
-        return reading;
+    static constexpr Reading unpack(std::uint64_t state) {
+        return Reading{std::bit_cast<float>(static_cast<std::uint32_t>(state & 0xFFFFFFFFULL)),
+                       static_cast<std::uint32_t>(state >> 32U)};
     }
 
     std::atomic<std::uint64_t> state_{0};

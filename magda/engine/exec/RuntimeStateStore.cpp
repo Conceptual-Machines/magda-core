@@ -261,18 +261,21 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
     }
 
     // The live table first and unconditionally, on the same reading the plan
-    // gets above: a tap the table carries is one the executor holds a pointer
-    // to and the audio thread writes through every block, whatever the caller
-    // believes the model still holds.
-    for (auto entry = valueTaps_.begin(); entry != valueTaps_.end();) {
-        if ((liveTable != nullptr && carries(*liveTable, entry->first)) ||
-            isNamed(entry->first, keep)) {
-            ++entry;
-            continue;
-        }
-        entry = valueTaps_.erase(entry);
-        ++removed;
-    }
+    // gets above. A tap the table carries may be one the executor holds a
+    // pointer to and the audio thread writes through every block, whatever the
+    // caller believes the model still holds; it is only "may be" because the
+    // executor binds the keys the host last asked for rather than every key the
+    // table has, and this is the side to be wrong on.
+    //
+    // The model rule behind it keeps a tap the host has stopped asking about
+    // until the device or track it names goes, so a session accumulates a map
+    // node and one word per parameter ever displayed. Bounded by the project's
+    // own parameter count, and what it buys is that a window closed and
+    // reopened is reading the same tap rather than one starting from zero.
+    removed += std::erase_if(valueTaps_, [&](const auto& entry) {
+        return !((liveTable != nullptr && carries(*liveTable, entry.first)) ||
+                 isNamed(entry.first, keep));
+    });
 
     return removed;
 }

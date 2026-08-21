@@ -85,13 +85,18 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     live_ = std::move(prepared);
     livePlan_ = live_->plan;
 
+    // Values this plan has nowhere to publish from, taken back now that it is
+    // the one rendering. Here rather than at prepare, because until the swap
+    // the epoch being replaced was still writing them, and a tap cleared under
+    // it would be counting from one again by its next block (#2122).
+    live_->executor.clearUnboundValueTaps();
+
     // Safe only now: before the swap, everything about to be destroyed was
     // still reachable from the plan the audio thread was rendering. The plan
     // that is live goes in as well, so what it names survives however stale
-    // the caller's model IDs turn out to be.
-    // The table goes in beside the plan, because a plan does not name a
-    // parameter and the value taps are keyed by one: it is what says which of
-    // them the audio thread can now reach (#2122).
+    // the caller's model IDs turn out to be. The table goes in beside it,
+    // because a plan does not name a parameter and the value taps are keyed by
+    // one: it is what says which of them the audio thread can now reach.
     store_.releaseDeleted(*livePlan_, modelIds, live_->values.params.get());
 
     return {true, std::move(messages)};
