@@ -75,9 +75,9 @@ audioSlots=4 midiSlots=2 outputLatency=0
 == params ==
 magda-param-table v1
 params=2 modifiers=3 links=3
-[  0] T1/D7:param0                 lin[0.000,100.000] base=0.000  links=1
+[  0] T1/R4/D7:param0              lin[0.000,100.000] base=0.000  links=1
       <- mod[  1] amount=0.750 bipolar=0
-[  1] T1/D7:param1                 lin[0.000,100.000] base=0.250  links=2
+[  1] T1/R4/D7:param1              lin[0.000,100.000] base=0.250  links=2
       <- mod[  0] amount=0.250 bipolar=0
       <- mod[  2] amount=0.500 bipolar=1
 modifiers:

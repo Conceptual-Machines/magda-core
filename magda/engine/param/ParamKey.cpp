@@ -173,6 +173,14 @@ std::string toString(const ParamKey& key) {
             text += "/R" + std::to_string(key.rackId);
             break;
         case ParamKey::Scope::Device:
+            // The rack it is in, where it is in one. A device id is unique
+            // inside its section, so the rack is not what tells two devices
+            // apart; it is what tells two keys apart. A link whose path
+            // remembers a rack the device has since left resolves to a key
+            // that differs from the live one only here, and without it the
+            // report of that miss would name the parameter the project has.
+            if (key.rackId != INVALID_RACK_ID)
+                text += "/R" + std::to_string(key.rackId);
             text += "/" + toString(key.device);
             break;
     }

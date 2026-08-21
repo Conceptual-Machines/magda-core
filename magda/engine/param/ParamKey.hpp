@@ -101,7 +101,10 @@ std::optional<ParamKey> paramKeyFor(const magda::ControlTarget& target);
 /// key with no parameter index. Empty when the target names no modifier.
 std::optional<ParamKey> modifierKeyFor(const magda::ControlTarget& target);
 
-/// Canonical text, e.g. "T1/D7:param3", "T1/R4:macro0", "T1:mod2.param0".
+/// Canonical text, e.g. "T1/D7:param3", "T1/R4:macro0", "T1:mod2.param0",
+/// and "T1/R5/D90:param0" for a device inside a rack. Injective over keys:
+/// two keys that differ render differently, which is what lets a
+/// diagnostic name the thing it missed.
 std::string toString(const ParamKey& key);
 
 }  // namespace magda::engine
