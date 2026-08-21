@@ -8,6 +8,7 @@
 #include "AudioClipTestHelpers.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/project/ProjectInfo.hpp"
 #include "magda/daw/project/serialization/DawProjectArchive.hpp"
@@ -878,6 +879,105 @@ TEST_CASE("DawProjectXmlAdapter imports Bitwig group and master channel destinat
     REQUIRE(staged.masterTrack != nullptr);
     REQUIRE(staged.masterTrack->name == "Master");
     REQUIRE(staged.tracks.size() == 3);
+}
+
+TEST_CASE("DawProjectXmlAdapter gives a colourless imported clip its track's colour",
+          "[project][serialization][dawproject][colour]") {
+    // A clip in Bitwig has no colour of its own until somebody picks one, and
+    // until then it shows its track's. DAWproject writes that as an absent
+    // `color` attribute, and reading it straight off the element gives MAGDA's
+    // transparent "unset", which the swatch then forces opaque: every clip in
+    // an imported project drew as flat black (#1786).
+    //
+    // The second clip has a colour of its own, so the case also says that
+    // inheriting does not overwrite one the file did set.
+    const juce::String xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<Project version="1.0">
+  <Structure>
+    <Track contentType="notes" loaded="true" id="tDrums" name="Drums" color="#3c8f4e">
+      <Channel audioChannels="2" destination="cMaster" role="regular" id="cDrums"/>
+    </Track>
+    <Track contentType="audio notes" loaded="true" id="tMaster" name="Master">
+      <Channel audioChannels="2" role="master" id="cMaster"/>
+    </Track>
+  </Structure>
+  <Arrangement id="arrangement">
+    <Lanes timeUnit="beats" id="laneRoot">
+      <Lanes track="tDrums" id="laneDrums">
+        <Clips id="clipsDrums">
+          <Clip time="0.0" duration="4.0" name="Inherited"/>
+          <Clip time="4.0" duration="4.0" name="Explicit" color="#c04070"/>
+        </Clips>
+      </Lanes>
+    </Lanes>
+  </Arrangement>
+</Project>)";
+
+    ProjectDocument doc;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, doc, error));
+    REQUIRE(doc.clips.size() == 2);
+
+    const ClipInfo* inherited = nullptr;
+    const ClipInfo* explicitly = nullptr;
+    for (const auto& clip : doc.clips) {
+        if (clip.name == "Inherited")
+            inherited = &clip;
+        else if (clip.name == "Explicit")
+            explicitly = &clip;
+    }
+    REQUIRE(inherited != nullptr);
+    REQUIRE(explicitly != nullptr);
+
+    const TrackInfo* drums = nullptr;
+    for (const auto& track : doc.tracks)
+        if (track.name == "Drums")
+            drums = &track;
+    REQUIRE(drums != nullptr);
+    REQUIRE(drums->colour == juce::Colour(0xff3c8f4e));
+
+    CHECK(inherited->colour == drums->colour);
+    CHECK(explicitly->colour == juce::Colour(0xffc04070));
+
+    // Whatever it inherited, it is a colour: unset is what draws black, and the
+    // report is about black clips rather than about any particular hue.
+    CHECK_FALSE(inherited->colour.isTransparent());
+}
+
+TEST_CASE("DawProjectXmlAdapter gives a colourless clip on a colourless track a real colour",
+          "[project][serialization][dawproject][colour]") {
+    // The end of the fallback chain. A file that colours nothing still must not
+    // produce black clips, because black is what MAGDA's "unset" looks like once
+    // a swatch has forced it opaque, and a user cannot tell that apart from a
+    // colour somebody chose.
+    const juce::String xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<Project version="1.0">
+  <Structure>
+    <Track contentType="notes" loaded="true" id="tPlain" name="Plain">
+      <Channel audioChannels="2" destination="cMaster" role="regular" id="cPlain"/>
+    </Track>
+    <Track contentType="audio notes" loaded="true" id="tMaster" name="Master">
+      <Channel audioChannels="2" role="master" id="cMaster"/>
+    </Track>
+  </Structure>
+  <Arrangement id="arrangement">
+    <Lanes timeUnit="beats" id="laneRoot">
+      <Lanes track="tPlain" id="lanePlain">
+        <Clips id="clipsPlain">
+          <Clip time="0.0" duration="4.0" name="Colourless"/>
+        </Clips>
+      </Lanes>
+    </Lanes>
+  </Arrangement>
+</Project>)";
+
+    ProjectDocument doc;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, doc, error));
+    REQUIRE(doc.clips.size() == 1);
+
+    CHECK_FALSE(doc.clips[0].colour.isTransparent());
+    CHECK(doc.clips[0].colour == juce::Colour(Config::getDefaultColour(0)));
 }
 
 TEST_CASE("DawProjectXmlAdapter imports effect tracks as aux returns with send routing",
