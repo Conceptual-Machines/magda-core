@@ -18,6 +18,10 @@ namespace transport = daw::ui::transport;
 
 TransportPanel::TransportPanel() {
     MixAnalysisService::getInstance().addListener(this);
+    // applyThemedLabelFonts() re-resolves these from FontManager on every
+    // look-and-feel change, and the section widths are measured for the result.
+    // The font-scale refresh must not multiply them a second time.
+    markResolvesOwnFonts(*this);
     setupTransportButtons();
     setupTimeDisplayBoxes();
     setupTempoAndQuantize();
@@ -640,7 +644,7 @@ void TransportPanel::setupTimeDisplayBoxes() {
     auto setupBBTLabel = [this](std::unique_ptr<BarsBeatsTicksLabel>& label,
                                 const juce::String& overlay, juce::Colour textColour) {
         label = std::make_unique<BarsBeatsTicksLabel>();
-        label->setRange(0.0, 100000.0, 0.0);
+        label->setRange(0.0, transport::kTimecodeMaxBeats, 0.0);
         label->setBarsBeatsIsPosition(true);
         label->setDoubleClickResetsValue(false);
         label->setDrawBackground(false);
@@ -1376,13 +1380,9 @@ void TransportPanel::setCpuUsage(float usage) {
     }
 
     if (cpuValueLabel) {
-        int avgPct = juce::roundToInt(currentCpuUsage * 100.0f);
-        int peakPct = juce::roundToInt(peakCpuUsage * 100.0f);
-        if (peakPct > avgPct + 2)
-            cpuValueLabel->setText(juce::String(avgPct) + "/" + juce::String(peakPct) + "%",
-                                   juce::dontSendNotification);
-        else
-            cpuValueLabel->setText(juce::String(avgPct) + "%", juce::dontSendNotification);
+        cpuValueLabel->setText(transport::cpuReadoutText(juce::roundToInt(currentCpuUsage * 100.0f),
+                                                         juce::roundToInt(peakCpuUsage * 100.0f)),
+                               juce::dontSendNotification);
     }
     updateCpuTooltip();
     repaint(getCpuArea());

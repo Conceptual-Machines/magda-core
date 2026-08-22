@@ -13,10 +13,11 @@ namespace magda::daw::ui::transport {
  *  The layout takes these as input instead of measuring them itself so the
  *  arithmetic stays a pure function of (width, height, text, density) and can
  *  be asserted without a graphics context. Each field is the pixel width of the
- *  widest string that widget will ever show.
+ *  widest content that widget will ever show, asked of the widget itself where
+ *  the widget is the one that knows.
  */
 struct TextWidths {
-    int barNumber = 0;           // "0000", the widest timecode segment
+    int timecodeBox = 0;         // a whole bars.beats.ticks readout, as it sizes itself
     int tempo = 0;               // "999.99" in the BPM readout font
     int timeSigNumerator = 0;    // "16/" -- the numerator carries the slash
     int timeSigDenominator = 0;  // "16"

@@ -203,22 +203,59 @@ bool BarsBeatsTicksLabel::isDragging() const {
            (ticksSegment_ && ticksSegment_->isDragging());
 }
 
-void BarsBeatsTicksLabel::resized() {
-    auto bounds = getLocalBounds().reduced(2, 0);
-    int totalWidth = bounds.getWidth();
+std::array<int, 3> BarsBeatsTicksLabel::segmentWidthsFor(double maxValue, int minBeatsPerBar,
+                                                         int maxBeatsPerBar, bool isPosition) {
+    const int offset = isPosition ? 1 : 0;
+    const int lowBeatsPerBar = juce::jmax(1, minBeatsPerBar);
+    const int highBeatsPerBar = juce::jmax(lowBeatsPerBar, maxBeatsPerBar);
 
-    // Proportions: bars ~25%, dot ~5%, beats ~25%, dot ~5%, ticks ~40%
-    int dotWidth = 6;
-    int availableWidth = totalWidth - dotWidth * 2;
-    int barsWidth = static_cast<int>(availableWidth * 0.25);
-    int beatsWidth = static_cast<int>(availableWidth * 0.25);
-    int ticksWidth = availableWidth - barsWidth - beatsWidth;
+    // Fewest beats per bar gives the most bars; most beats per bar gives the
+    // highest beat number. Ticks are zero-padded to three digits either way.
+    const int maxBars = static_cast<int>(maxValue / lowBeatsPerBar) + offset;
+    const int maxBeats = highBeatsPerBar - 1 + offset;
+
+    const auto font = FontManager::getInstance().getUIFont(kTextFontSize);
+    // Measure a string of the widest digit rather than the number itself, so a
+    // value made of narrow digits does not under-size the segment.
+    const auto widthOfDigits = [&font](int digits) {
+        return juce::GlyphArrangement::getStringWidthInt(
+                   font, juce::String::repeatedString("8", digits)) +
+               kSegmentPad;
+    };
+
+    return {widthOfDigits(juce::String(maxBars).length()),
+            widthOfDigits(juce::String(maxBeats).length()), widthOfDigits(3)};
+}
+
+int BarsBeatsTicksLabel::preferredWidthForRange(double maxValue, int minBeatsPerBar,
+                                                int maxBeatsPerBar, bool isPosition) {
+    const auto needed = segmentWidthsFor(maxValue, minBeatsPerBar, maxBeatsPerBar, isPosition);
+    return needed[0] + needed[1] + needed[2] + (2 * kDotWidth) + (2 * kEdgeInset);
+}
+
+std::array<int, 3> BarsBeatsTicksLabel::segmentWidths() const {
+    return segmentWidthsFor(maxValue_, beatsPerBar_, beatsPerBar_, barsBeatsIsPosition_);
+}
+
+void BarsBeatsTicksLabel::resized() {
+    auto bounds = getLocalBounds().reduced(kEdgeInset, 0);
+
+    // Share the strip out in proportion to what each segment has to show. A
+    // fixed quarter for the bar number clipped long positions while leaving
+    // the three-digit tick segment half the box.
+    const auto needed = segmentWidths();
+    const int total = juce::jmax(1, needed[0] + needed[1] + needed[2]);
+    const int available = juce::jmax(3, bounds.getWidth() - (2 * kDotWidth));
+
+    const int barsWidth = available * needed[0] / total;
+    const int beatsWidth = available * needed[1] / total;
+    const int ticksWidth = available - barsWidth - beatsWidth;
 
     int x = bounds.getX();
     barsSegment_->setBounds(x, bounds.getY(), barsWidth, bounds.getHeight());
-    x += barsWidth + dotWidth;
+    x += barsWidth + kDotWidth;
     beatsSegment_->setBounds(x, bounds.getY(), beatsWidth, bounds.getHeight());
-    x += beatsWidth + dotWidth;
+    x += beatsWidth + kDotWidth;
     ticksSegment_->setBounds(x, bounds.getY(), ticksWidth, bounds.getHeight());
 }
 

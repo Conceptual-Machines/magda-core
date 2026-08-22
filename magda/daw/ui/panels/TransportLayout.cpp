@@ -47,9 +47,6 @@ constexpr int kAutoWriteGap = 8;   // minimum air left of the automation-write b
 constexpr int kButtonMargin = 3;  // vertical inset of the icon-button row
 constexpr int kMinButtonSize = 24;
 constexpr int kRowGap = 2;             // between the two stacked readout rows
-constexpr int kTimeBoxInset = 2;       // BarsBeatsTicksLabel's own left/right inset
-constexpr int kTimeDotWidth = 6;       // the dot drawn between two timecode segments
-constexpr int kTimeBarsPercent = 25;   // share of the segment strip the bars number gets
 constexpr int kTimeSigOverlap = 4;     // the denominator tucks under the numerator's slash
 constexpr int kPunchIconInset = 4;     // punch icons ride the right end of their box
 constexpr int kCpuFrameInsetX = 4;     // CPU frame inset, matching the painted rounded rect
@@ -104,14 +101,6 @@ int scaled(int basePx, float densityScale) {
     return juce::roundToInt(static_cast<float>(basePx) * densityScale);
 }
 
-// The bars segment is given a fixed share of the strip between the two dot
-// separators, so the strip has to be that many times the widest bar number for
-// the digits to fit. Beats and ticks are shorter and ride along.
-int intrinsicTimeBoxWidth(const TextWidths& text) {
-    const int strip = (text.barNumber * 100) / kTimeBarsPercent;
-    return strip + (2 * kTimeDotWidth) + (2 * kTimeBoxInset);
-}
-
 Metrics metricsFor(int width, int height, const TextWidths& text, float densityScale) {
     Metrics m;
     m.width = width;
@@ -141,7 +130,7 @@ Metrics metricsFor(int width, int height, const TextWidths& text, float densityS
     m.timeBoxSlack = scaled(kTimeBoxSlack, densityScale);
 
     const int cellPad = scaled(kCellPad, densityScale);
-    m.timeBox = intrinsicTimeBoxWidth(text);
+    m.timeBox = text.timecodeBox;
     m.tempoCell = text.tempo + (2 * cellPad);
     m.timeSigNum = text.timeSigNumerator + (2 * cellPad);
     m.timeSigDen = text.timeSigDenominator + (2 * cellPad);

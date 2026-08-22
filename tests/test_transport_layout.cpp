@@ -21,7 +21,7 @@ namespace {
 // without invalidating the test.
 TextWidths nominalText() {
     TextWidths text;
-    text.barNumber = 23;
+    text.timecodeBox = 93;
     text.tempo = 43;
     text.timeSigNumerator = 20;
     text.timeSigDenominator = 16;
@@ -65,7 +65,7 @@ TEST_CASE("It keeps fitting as the text around it grows", "[ui][transport-layout
     // start collapsing, which is what the overflow menu is for.
     for (int extra = 0; extra <= 3; ++extra) {
         auto text = nominalText();
-        text.barNumber += extra;
+        text.timecodeBox += extra * 4;
         text.tempo += extra * 2;
         text.timeSigNumerator += extra;
         text.timeSigDenominator += extra;
@@ -81,30 +81,14 @@ TEST_CASE("It keeps fitting as the text around it grows", "[ui][transport-layout
     }
 }
 
-TEST_CASE("It fits however short the transport is dragged", "[ui][transport-layout]") {
+TEST_CASE("It fits at every height the transport can be dragged to", "[ui][transport-layout]") {
+    // The icon buttons are square, so a taller transport is also a wider one.
     const auto& config = LayoutConfig::getInstance();
-    for (int height = config.minTransportHeight; height <= config.defaultTransportHeight;
-         ++height) {
+    for (int height = config.minTransportHeight; height <= config.maxTransportHeight; ++height) {
         INFO("transport height " << height);
         const auto l = compute(LayoutConfig::defaultWindowWidth, height, nominalText(), 1.0f);
         REQUIRE(nothingCollapsed(l));
     }
-}
-
-TEST_CASE("Dragged to its tallest, only the right cluster gives", "[ui][transport-layout]") {
-    // The icon buttons are square, so a taller transport is also a wider one.
-    // At the tallest the panel allows, a 1200px window runs out of room -- and
-    // what goes is the first thing in the drop order, nothing else.
-    const auto l = compute(LayoutConfig::defaultWindowWidth,
-                           LayoutConfig::getInstance().maxTransportHeight, nominalText(), 1.0f);
-
-    REQUIRE_FALSE(l.rightClusterVisible);
-    REQUIRE(l.overflowVisible);
-    REQUIRE(l.navVisible);
-    REQUIRE(l.loopBackVisible);
-    REQUIRE(l.punchVisible);
-    REQUIRE(l.selLoopTimesVisible);
-    REQUIRE(l.gridVisible);
 }
 
 // ---------------------------------------------------------------------------
@@ -227,10 +211,21 @@ TEST_CASE("Spacing density moves the layout with it", "[ui][transport-layout]") 
 
 TEST_CASE("Spare width goes to the timecode readouts, up to a cap", "[ui][transport-layout]") {
     const int height = defaultTransportHeight();
-    const auto tight = compute(LayoutConfig::defaultWindowWidth, height, nominalText(), 1.0f);
-    const auto roomy = compute(1600, height, nominalText(), 1.0f);
-    const auto huge = compute(2600, height, nominalText(), 1.0f);
+    const auto text = nominalText();
 
+    // The narrowest width that still holds everything, where there is no spare
+    // to share out and the readouts sit at their intrinsic size.
+    int snug = 0;
+    for (int width = 400; width <= 2000 && snug == 0; ++width)
+        if (nothingCollapsed(compute(width, height, text, 1.0f)))
+            snug = width;
+    REQUIRE(snug > 0);
+
+    const auto tight = compute(snug, height, text, 1.0f);
+    const auto roomy = compute(snug + 120, height, text, 1.0f);
+    const auto huge = compute(snug + 1200, height, text, 1.0f);
+
+    REQUIRE(tight.playhead.getWidth() == text.timecodeBox);
     REQUIRE(roomy.playhead.getWidth() > tight.playhead.getWidth());
     REQUIRE(huge.playhead.getWidth() == roomy.playhead.getWidth());
 

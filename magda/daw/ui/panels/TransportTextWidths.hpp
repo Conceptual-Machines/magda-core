@@ -21,6 +21,21 @@ inline constexpr float kCpuTitleFontSize = 8.0f;
 inline constexpr float kCpuValueFontSize = 11.0f;
 inline constexpr float kBannerFontSize = 10.0f;  // the AUTOMATION WRITE banner
 
+// The range the timecode readouts accept, in beats. Declared here so the
+// labels and the width measured for them agree on how large a bar number the
+// box has to hold.
+inline constexpr double kTimecodeMaxBeats = 100000.0;
+
+// How far the retained peak has to run ahead of the average before the CPU
+// readout shows it as well.
+inline constexpr int kCpuPeakMargin = 2;
+
+/** The CPU readout: the smoothed average, with the retained peak beside it once
+ *  the peak has run far enough ahead to be worth showing. The label and the
+ *  width measured for it both format through here, so the slot always fits what
+ *  it will be asked to draw. */
+juce::String cpuReadoutText(int averagePercent, int peakPercent);
+
 /** Measures the widest string each text-sized section of the transport has to
  *  hold, in the font that section actually draws with.
  *

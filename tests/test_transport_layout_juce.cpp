@@ -6,6 +6,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "magda/daw/core/Config.hpp"
+#include "magda/daw/core/TempoUtils.hpp"
+#include "magda/daw/ui/components/common/BarsBeatsTicksLabel.hpp"
 #include "magda/daw/ui/components/common/DraggableValueLabel.hpp"
 #include "magda/daw/ui/layout/LayoutConfig.hpp"
 #include "magda/daw/ui/panels/TransportLayout.hpp"
@@ -18,17 +20,21 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
 
     void runTest() override {
         using namespace magda::daw::ui::transport;
+        auto& fonts = magda::FontManager::getInstance();
+        const auto widthOf = [](const juce::Font& font, juce::StringRef string) {
+            return juce::GlyphArrangement::getStringWidthInt(font, string);
+        };
         const auto& config = magda::LayoutConfig::getInstance();
 
         beginTest("Measured widths are real numbers");
         const auto text = measureTextWidths();
-        logMessage("bars=" + juce::String(text.barNumber) + " tempo=" + juce::String(text.tempo) +
-                   " sigNum=" + juce::String(text.timeSigNumerator) +
+        logMessage("timecodeBox=" + juce::String(text.timecodeBox) + " tempo=" +
+                   juce::String(text.tempo) + " sigNum=" + juce::String(text.timeSigNumerator) +
                    " sigDen=" + juce::String(text.timeSigDenominator) + " cpuTitle=" +
                    juce::String(text.cpuTitle) + " cpuValue=" + juce::String(text.cpuValue) +
                    " gridDivision=" + juce::String(text.gridDivision) +
                    " gridToggle=" + juce::String(text.gridToggle));
-        expect(text.barNumber > 0);
+        expect(text.timecodeBox > 0);
         expect(text.tempo > 0);
         expect(text.timeSigNumerator > 0);
         expect(text.timeSigDenominator > 0);
@@ -71,7 +77,6 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
                 }
             } restore{config, originalScale};
 
-            auto& fonts = magda::FontManager::getInstance();
             juce::Label label;
             label.setFont(fonts.getUIFont(kCpuTitleFontSize));
             const float once = label.getFont().getHeight();
@@ -91,9 +96,40 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
                                       static_cast<float>(text.tempo) * 1.25f, 1.5f);
         }
 
+        beginTest("The timecode box holds the largest position its range can reach");
+        {
+            // Positions are one-indexed and the labels accept kTimecodeMaxBeats
+            // beats, so at one beat per bar the bar number reaches six digits.
+            // Sizing the box for four clipped it.
+            const auto needed = magda::BarsBeatsTicksLabel::segmentWidthsFor(
+                kTimecodeMaxBeats, magda::MIN_TIME_SIGNATURE_VALUE, magda::MAX_TIME_SIGNATURE_VALUE,
+                true);
+            const auto timecodeFont = fonts.getUIFont(magda::BarsBeatsTicksLabel::kTextFontSize);
+            const juce::String widestBars(
+                static_cast<int>(kTimecodeMaxBeats / magda::MIN_TIME_SIGNATURE_VALUE) + 1);
+
+            expect(needed[0] >= widthOf(timecodeFont, widestBars),
+                   "the bars segment cannot hold " + widestBars);
+            expect(needed[1] >=
+                   widthOf(timecodeFont, juce::String(magda::MAX_TIME_SIGNATURE_VALUE)));
+            expect(needed[2] >= widthOf(timecodeFont, "888"));
+            expect(l.playhead.getWidth() >= needed[0] + needed[1] + needed[2]);
+        }
+
+        beginTest("The CPU slot holds the peak form, not just the average");
+        {
+            // setCpuUsage shows the retained peak beside the average once it
+            // runs ahead, so the widest readout is two numbers, not "100%".
+            expect(cpuReadoutText(50, 51) == "50%", "a peak within the margin is not shown");
+            expect(cpuReadoutText(88, 100) == "88/100%");
+
+            const auto cpuFont = fonts.getMonoFont(kCpuValueFontSize);
+            expect(l.cpuValue.getWidth() >= widthOf(cpuFont, cpuReadoutText(88, 100)),
+                   "the CPU readout clips once the peak runs ahead");
+        }
+
         beginTest("Each readout is wide enough for the string it has to draw");
-        // The bars segment gets a quarter of the strip between the two dots.
-        expect((l.playhead.getWidth() - 16) / 4 >= text.barNumber);
+        expect(l.playhead.getWidth() >= text.timecodeBox);
         expect(l.tempo.getWidth() >= text.tempo);
         expect(l.timeSigNumerator.getWidth() >= text.timeSigNumerator);
         expect(l.timeSigDenominator.getWidth() >= text.timeSigDenominator);

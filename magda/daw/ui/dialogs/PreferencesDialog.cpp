@@ -3103,6 +3103,12 @@ void scaleExplicitFonts(juce::Component& component, double ratio) {
     if (std::abs(ratio - 1.0) < 0.001)
         return;
 
+    // A subtree that re-resolves its own fonts has already been handed the new
+    // scale by the look-and-feel broadcast; multiplying its cached fonts by the
+    // ratio on top of that would apply the scale twice.
+    if (magda::resolvesOwnFonts(component))
+        return;
+
     const auto scaleFont = [ratio](juce::Font font) {
         return font.withHeight(font.getHeight() * static_cast<float>(ratio));
     };

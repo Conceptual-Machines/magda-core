@@ -9,6 +9,12 @@
 
 namespace magda::daw::ui::transport {
 
+juce::String cpuReadoutText(int averagePercent, int peakPercent) {
+    if (peakPercent > averagePercent + kCpuPeakMargin)
+        return juce::String(averagePercent) + "/" + juce::String(peakPercent) + "%";
+    return juce::String(averagePercent) + "%";
+}
+
 TextWidths measureTextWidths() {
     auto& fonts = FontManager::getInstance();
     const auto widthOf = [](const juce::Font& font, juce::StringRef text) {
@@ -18,7 +24,6 @@ TextWidths measureTextWidths() {
     // Each width is measured in the font that widget draws with, so a change of
     // font size or family moves the layout with it instead of overflowing it.
     // The sizes come from the widgets themselves wherever they own one.
-    const auto timecodeFont = fonts.getUIFont(BarsBeatsTicksLabel::kTextFontSize);
     const auto readoutFont = fonts.getUIFont(kReadoutFontSize);
     const auto divisionFont = fonts.getUIFontBold(GridDivisionButton::kFontSize);
     const auto toggleFont =
@@ -27,14 +32,21 @@ TextWidths measureTextWidths() {
     const auto cpuValueFont = fonts.getMonoFont(kCpuValueFontSize);
 
     TextWidths text;
-    // The bars segment is the widest of the three: beats stop at the time
-    // signature and ticks at three digits.
-    text.barNumber = widthOf(timecodeFont, "0000");
+    // The readout sizes itself: it knows its own segment shares and how large a
+    // bar number the range can reach, which a box drawn around it does not.
+    text.timecodeBox = BarsBeatsTicksLabel::preferredWidthForRange(
+        kTimecodeMaxBeats, MIN_TIME_SIGNATURE_VALUE, MAX_TIME_SIGNATURE_VALUE, true);
     text.tempo = widthOf(readoutFont, juce::String(MAX_VALID_BPM, 2));
     text.timeSigNumerator = widthOf(readoutFont, juce::String(MAX_TIME_SIGNATURE_VALUE) + "/");
     text.timeSigDenominator = widthOf(readoutFont, juce::String(MAX_TIME_SIGNATURE_VALUE));
     text.cpuTitle = widthOf(cpuTitleFont, tr("transport.cpu.cpu"));
-    text.cpuValue = widthOf(cpuValueFont, "100%");
+    // The readout gains a second number once the peak runs ahead of the average,
+    // so measure every digit-count combination it can reach rather than just
+    // "100%". A run of the widest digit stands in for each length.
+    for (int average : {8, 88, 100})
+        for (int peak : {8, 88, 100})
+            text.cpuValue =
+                juce::jmax(text.cpuValue, widthOf(cpuValueFont, cpuReadoutText(average, peak)));
     text.gridToggle =
         juce::jmax(widthOf(toggleFont, kAutoGridCaption), widthOf(toggleFont, kSnapCaption));
 
