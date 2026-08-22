@@ -131,6 +131,22 @@ Disabling a clip removes it from playback without deleting it. Right-click a cli
 
 The enabled state is per-clip: disabling one member of a [link group](#linked-ghost-clips) does not silence its ghost siblings.
 
+## Overlapping clips
+
+Arrangement clips stack rather than erase each other. Drag a clip onto one that is already there and the clip underneath keeps its position and its full contents; it is covered, not trimmed. Move the covering clip away again and the material underneath comes back on its own, because what a clip plays is worked out from the lane each time rather than stored.
+
+The clip on top owns the span it covers, and the one underneath plays what is left. A clip covered end to end plays nothing while staying exactly where it is. Which clip is on top is set when you place or move it, so the most recently moved clip wins, and the lane draws in that same order: what you see stacked is what you hear.
+
+Two cases deliberately do not occlude:
+
+- A partial overlap between two audio clips that both have [auto-crossfade](#crossfades) on. That overlap is a crossfade, and both clips sound across it.
+- A clip you disabled by hand, which covers nothing because it is already silent.
+
+**Play through an overlap.** A clip can be set to sound even where something covers it. New clips take their starting value from **New clips play through overlaps** in [Preferences](interface/preferences.md); changing that preference leaves existing clips alone.
+
+!!! note "Dropping a clip inside a longer one"
+    A clip dropped entirely within a longer one splits that clip into three pieces, because a head and a tail cannot be a single audible span. The slice under the drop is kept as a clip of its own rather than deleted, so it is simply covered: silent while the drop sits on it, audible again the moment the drop moves away. The seams stay visible, but no material is lost.
+
 ## Flatten MIDI Loop
 
 When a MIDI clip is looping, right-click it and choose **Flatten MIDI Loop** to write the repetitions out as real notes. The loop cycles (including any offset phase) are baked into actual MIDI across the clip's full length, looping is switched off, and the offset resets to zero. The clip stays a MIDI clip in place, ready for per-note editing in the [Piano Roll](panels/piano-roll.md); the operation is a single undoable step.
