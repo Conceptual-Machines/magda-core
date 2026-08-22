@@ -367,15 +367,18 @@ void MainWindow::applyDensityFromConfig() {
 }
 
 void MainWindow::applyFontFromConfig() {
-    const auto& family = Config::getInstance().getUIFontFamily();
-    if (family == appliedFontFamily_)
+    const auto& config = Config::getInstance();
+    const auto& family = config.getUIFontFamily();
+    const auto scale = config.getUIFontScale();
+    if (family == appliedFontFamily_ && scale == appliedFontScale_)
         return;
     appliedFontFamily_ = family;
+    appliedFontScale_ = scale;
 
-    // FontManager resolves the family live; broadcast a look-and-feel change so
-    // every component re-fetches its fonts and repaints. Components that fetch
-    // fonts in paint()/lookAndFeelChanged update immediately; the few that cache
-    // a juce::Font at construction pick it up on their next rebuild.
+    // FontManager resolves the family and scale live; broadcast a look-and-feel
+    // change so every component re-fetches its fonts and repaints. Components
+    // that fetch fonts in paint()/lookAndFeelChanged update immediately; the few
+    // that cache a juce::Font at construction pick it up on their next rebuild.
     refreshThemedLookAndFeels();
 }
 

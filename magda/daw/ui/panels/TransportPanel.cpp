@@ -1270,6 +1270,12 @@ void TransportPanel::updatePunchLabelColors() {
 
 void TransportPanel::lookAndFeelChanged() {
     applyThemedLabelColours();
+    // The section widths are measured from the fonts, so a live font family or
+    // font scale change has to re-measure them. A look-and-feel broadcast
+    // repaints but does not relayout, which would otherwise leave the bar
+    // arranged for the font it no longer draws with.
+    if (overflowButton != nullptr)
+        resized();
 }
 
 void TransportPanel::applyThemedLabelColours() {
