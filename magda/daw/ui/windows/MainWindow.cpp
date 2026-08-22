@@ -271,11 +271,11 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
         auto workArea = display->userArea;  // Excludes taskbar
         // Leave some margin so the title bar and window frame are fully visible
         int margin = 10;
-        int w = juce::jmin(1200, workArea.getWidth() - margin * 2);
-        int h = juce::jmin(800, workArea.getHeight() - margin * 2);
+        int w = juce::jmin(LayoutConfig::defaultWindowWidth, workArea.getWidth() - margin * 2);
+        int h = juce::jmin(LayoutConfig::defaultWindowHeight, workArea.getHeight() - margin * 2);
         setBoundsConstrained(workArea.withSizeKeepingCentre(w, h));
     } else {
-        setSize(1200, 800);
+        setSize(LayoutConfig::defaultWindowWidth, LayoutConfig::defaultWindowHeight);
         centreWithSize(getWidth(), getHeight());
     }
     juce::Logger::writeToLog("[MainWindow] Calling setVisible(true)...");

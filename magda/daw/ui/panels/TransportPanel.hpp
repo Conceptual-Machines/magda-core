@@ -9,6 +9,7 @@
 #include "../components/common/DraggableValueLabel.hpp"
 #include "../components/common/GridDivisionMenu.hpp"
 #include "../components/common/SvgButton.hpp"
+#include "TransportLayout.hpp"
 #include "core/MixAnalysisService.hpp"
 #include "core/TempoUtils.hpp"
 
@@ -200,29 +201,10 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
     juce::Rectangle<int> getTempoQuantizeArea() const;
     juce::Rectangle<int> getCpuArea() const;
 
-    // Visibility state computed in resized() from available width. Items
-    // collapse into the overflow menu in priority order: CPU → automation
-    // write indicator → QWERTY toggle. cpuVisible_ gates the CPU meter's slot
-    // on the right edge and must be set before any getCpuArea()-dependent
-    // layout runs.
-    bool cpuVisible_ = true;
-    bool qwertyVisible_ = true;
-    bool autoWriteFits_ = true;  // inline indicator (separate from toggle button)
-    bool overflowVisible_ = false;
-    // Collapsible section flags (false = section is hidden and its actions
-    // are reachable from the overflow menu).
-    bool navButtonsVisible_ = true;    // home, prev, next
-    bool loopBackVisible_ = true;      // loop, back-to-arrangement
-    bool punchVisible_ = true;         // punch in/out stacked box
-    bool selLoopTimesVisible_ = true;  // selection + loop time groups
-    bool gridVisible_ = true;          // grid quantize cluster
-
-    // Right-edge X of each major section, computed every resized(). paint()
-    // reads these for vertical separators and the area getters return
-    // rectangles built from them.
-    int transportRight_ = 0;
-    int metroRight_ = 0;
-    int timeRight_ = 0;
+    // Where every child sits and which sections survived the last resized().
+    // paint() and the overflow menu read it rather than keeping their own copy
+    // of the arithmetic.
+    daw::ui::transport::Layout layout_;
 
     // Button styling
     void styleTransportButton(SvgButton& button, ColourRole accentRole,
@@ -248,6 +230,7 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
     void showAutomationModeMenu();
     void emitCurrentAutomationMode();
     void updateAutomationLabelText();
+    void updateAutomationWriteLabelVisibility();
     bool isSnapEnabled = true;
     bool isAutoGrid = true;
     int gridNumerator = 1;
