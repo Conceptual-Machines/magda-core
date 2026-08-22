@@ -29,7 +29,7 @@ is. When the two disagree, the headers are right and this file is stale.
 | Clip model: container from content | [#1901](https://github.com/Conceptual-Machines/magda-core/issues/1901) | done |
 | **Engine core: plan, executor, PDC** | [#1889](https://github.com/Conceptual-Machines/magda-core/issues/1889) | **all 10 slices done** |
 | **Arranger clip playback** | [#1890](https://github.com/Conceptual-Machines/magda-core/issues/1890) | **all 7 slices done** |
-| Parameters, modifiers, macros, automation | [#1891](https://github.com/Conceptual-Machines/magda-core/issues/1891) | not started |
+| **Parameters, modifiers, macros, automation** | [#1891](https://github.com/Conceptual-Machines/magda-core/issues/1891) | **all 8 slices done** |
 | Rack graph: pins, summing, multi-out, nesting | [#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892) | not started |
 | External plugin hosting and hardware inserts | [#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893) | not started |
 | Clip launcher and session playback | [#1894](https://github.com/Conceptual-Machines/magda-core/issues/1894) | not started |
@@ -55,6 +55,19 @@ stretch and pitch ([#2037](https://github.com/Conceptual-Machines/magda-core/iss
 warp, beat detection and loop info ([#2038](https://github.com/Conceptual-Machines/magda-core/issues/2038)),
 MIDI clips ([#2039](https://github.com/Conceptual-Machines/magda-core/issues/2039)),
 the null-diff corpus ([#2040](https://github.com/Conceptual-Machines/magda-core/issues/2040)).
+
+Parameters, slice by slice: the value lane and what a device reads
+([#2116](https://github.com/Conceptual-Machines/magda-core/issues/2116)),
+publication, addressing and the link graph
+([#2117](https://github.com/Conceptual-Machines/magda-core/issues/2117)),
+the automation bake ([#2118](https://github.com/Conceptual-Machines/magda-core/issues/2118)),
+the LFO ([#2119](https://github.com/Conceptual-Machines/magda-core/issues/2119)),
+ADSR, random and the envelope follower
+([#2120](https://github.com/Conceptual-Machines/magda-core/issues/2120)),
+macros at track, rack and device scope
+([#2121](https://github.com/Conceptual-Machines/magda-core/issues/2121)),
+value read-back taps ([#2122](https://github.com/Conceptual-Machines/magda-core/issues/2122)),
+parity cases ([#2123](https://github.com/Conceptual-Machines/magda-core/issues/2123)).
 
 Validation, slice by slice. Done: whole-project cases and the tiered oracle
 ([#2075](https://github.com/Conceptual-Machines/magda-core/issues/2075)),
@@ -537,10 +550,10 @@ there while its session path applies it, which is a gap in the sync layer rather
 Six of the clip slices were judged by tests written beside them, and a test asserts what its
 author believed the rule was. The corpus
 ([#2040](https://github.com/Conceptual-Machines/magda-core/issues/2040)) is the one thing here
-that cannot: twenty-nine projects, each built as model values and handed to both engines,
+that cannot: thirty-eight projects, each built as model values and handed to both engines,
 neither of which gets a say in what the other produces. It lives in `tests/NullDiff*` and runs in
 `magda_juce_tests`, because the incumbent leg is a `te::Edit`. The canonical report it prints
-names the count, so `cases=29` at the top of a run is the figure this paragraph has to match.
+names the count, so `cases=38` at the top of a run is the figure this paragraph has to match.
 
 **Nothing is golden.** A checked-in reference render would freeze the fork at the moment it was
 recorded, so the day the fork changes the corpus would report an engine that broke. Both legs
@@ -618,12 +631,13 @@ than a different verdict.
 **The mixer** is where the corpus first has more than one track. `resolvePlanValues` implements
 the fader law, the linear pan law, mute inheritance and solo through destination routing, and
 until [#2075](https://github.com/Conceptual-Machines/magda-core/issues/2075) none of it had been
-compared against the incumbent at all. Seven `mix.*` cases now do: summing, the fader across its
-range, the bottom of that range on its own, the pan law at its ends, mute, solo, and the master's
-own fader and pan. The incumbent leg drives them through the same four calls
-`AudioBridge::trackPropertyChanged` makes.
+compared against the incumbent at all. Eight `mix.*` cases now do: summing, the fader across its
+range, the bottom of that range on its own, the fader past both ends where the clamp is, the pan
+law at its ends, mute, solo, and the master's own fader and pan. The incumbent leg drives them
+through the same four calls `AudioBridge::trackPropertyChanged` makes.
 
-None of them has more than three tracks, and that is a constraint rather than a preference. Four
+Only `mix.summing` has more than three tracks, which used to be a constraint rather than a
+preference. Four
 audio tracks in one Edit collide in the fork's node-identity hash, so the graph's uniqueness
 assertion fires; it reproduces on four tracks carrying one impulse clip each, which is nothing to
 do with the mixer. The runner refuses to certify a case that provoked an assertion, so this is a
@@ -636,6 +650,45 @@ The incumbent's sends live on `te::AuxSendPlugin` instances that `PluginManagerS
 which wants a `PluginManager` and the device layer behind it, and writing those plugins straight
 into the leg would be the second sync the corpus refuses to have. They belong with the rest of
 the routing graph, in [#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892).
+
+**Parameters are where the corpus first runs a device.** Until
+[#2123](https://github.com/Conceptual-Machines/magda-core/issues/2123) a `Device` op resolved to
+a stand-in and the incumbent instantiated none of the model's devices, so a parameter nothing
+reads was a parameter nothing could compare. That is now a gain with one parameter, written once
+as a contract (`tests/NullDiffGain.hpp`) and implemented in both legs the way the MIDI capture
+already was. What a gain device renders is the value of its own parameter, so a case that plays a
+constant into it draws the curve directly.
+
+Nine cases, all nulling: the stored value, a step curve over it, a square LFO over it, both at
+once, the stored value under each, a macro at track and at device scope, and the fader past both
+ends of its range where the clamp is. Each drives the incumbent through the app's own paths
+rather than a second set written here: the curve is emitted by the same `bakeLaneIntoCurve` the
+playback engine uses, and the modifiers and macros are built by `ModifierSyncWalker`, the walker
+`PluginManager` drives.
+
+**The steps land on the half beat and the impulses land on the beat**, which is why these compare
+at the ordinary floor. Both engines settle a parameter at the top of a block, so they agree
+wherever a curve is holding still and can differ by up to a block wherever it jumps; eleven
+thousand samples of silence either side of every jump covers a block at 4096 as well as at 512,
+so these cases are also bit identical across the invariance gate rather than exempt from it.
+
+**Three things are named rather than covered**, each after being tried. Rack-scope macros need a
+`te::RackType` that `RackSyncManager` builds out of a `PluginManager`, which is the boundary sends
+stop at and moves with #1892. The random walk cannot be nulled by anybody, since the fork seeds
+its generator from the clock. The envelope follower is fed by a `FollowerSourceTapPlugin` that
+`PluginManager` installs, so without the device layer the fork's follower is handed nothing.
+
+The envelope is a finding rather than a boundary. Its note gate is behind that same device layer,
+and its transport gate is the fork asking `TransportControl::isPlaying()`, which is false
+throughout every offline render: a transport-triggered envelope does nothing in a bounce in the
+current engine, while the engine being built plays it. The case was written and renders 0.625
+against silence. It is not in the corpus, for the reason reverse-plus-warp is not.
+
+The slice also found one in the fork's LFO. `std::fmod` keeps the sign of its left-hand side, so
+a negative edit time gave `Ramp::setPosition` a negative position, which it asserts on and then
+clamps to zero. A count-in produces one, and so does the lead-in an offline render primes the
+graph with, which is half a second of it on every bounce: forty-four assertions per case and a
+phase pinned at the top of its cycle throughout. The fix wraps forward instead.
 
 **Properties over generated edits**
 ([#2077](https://github.com/Conceptual-Machines/magda-core/issues/2077)) are the same argument
@@ -726,9 +779,10 @@ vocoder's state, so the two renders of the same clip came out a decibel apart. T
 cell now, which is the unit the voice actually drives it in.
 
 What the rig still does not cover is the rest of
-[#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896): no case carries a real
-device, because nothing yet runs one under both engines; the interactive paths have no runner;
-and none of the migration half exists.
+[#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896): no case carries a device
+either engine ships, because nothing yet runs one of those under both of them, and the gain
+device the parameter cases play through was written for the corpus; the interactive paths have no
+runner; and none of the migration half exists.
 
 ---
 
@@ -736,9 +790,6 @@ and none of the migration half exists.
 
 Worth knowing before reading the code and wondering where something is:
 
-- **Parameters and automation** ([#1891](https://github.com/Conceptual-Machines/magda-core/issues/1891)).
-  `PlanValues` carries mixer values; automation curves, modifiers and macros do not exist in the
-  engine yet.
 - **Racks, the rest of them** ([#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892)).
   The ordinary shape already compiles: `PlanCompiler::emitRack` emits chain faders, the rack
   mix, its MIDI merges and its output fader, nested racks included, and the compiler and

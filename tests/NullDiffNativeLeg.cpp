@@ -7,6 +7,7 @@
 #include <memory>
 #include <set>
 
+#include "NullDiffGain.hpp"
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipMidiSource.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
@@ -106,6 +107,70 @@ class Passthrough final : public EngineDevice {
   public:
     void process(DeviceBlock&) override {}
 };
+
+/// The one device the corpus runs under both engines (#2123).
+///
+/// Multiplies by parameter zero and nothing else, so what it renders is the
+/// value of its own parameter. NullDiffGain.hpp has the contract.
+///
+/// Read per sample rather than once at the top of the block: a device reading
+/// only the block's opening value would give up the invariance the segments
+/// exist for and fail the block-size gate (#2078).
+class GainDevice final : public EngineDevice {
+  public:
+    void process(DeviceBlock& block) override {
+        const auto gain = block.params[kGainParamIndex];
+        if (gain.empty())
+            return;
+
+        const auto numSamples = static_cast<int>(block.audio.getNumSamples());
+        const auto numChannels = static_cast<int>(block.audio.getNumChannels());
+
+        if (gain.isConstant()) {
+            block.audio.multiplyBy(gain.value());
+            return;
+        }
+
+        for (auto sample = 0; sample < numSamples; ++sample) {
+            const auto value = gain.valueAt(sample);
+            for (auto channel = 0; channel < numChannels; ++channel)
+                block.audio.setSample(channel, sample,
+                                      block.audio.getSample(channel, sample) * value);
+        }
+    }
+};
+
+/// Every device the case declares, by the identity the plan addresses it with.
+///
+/// Keyed by DeviceKey and not by DeviceId: an id is unique within a chain
+/// segment and not across them (#1899), so a map keyed by the number alone
+/// would let a post-FX device stand in for the FX device with the same one.
+/// OpKey::deviceKey() carries the segment for that reason; this has to match.
+void collectDevices(const std::vector<magda::ChainElement>& elements,
+                    std::map<DeviceKey, const magda::DeviceInfo*>& out) {
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            const auto& device = magda::getDevice(element);
+            out[DeviceKey{ChainSegment::Fx, device.id}] = &device;
+        } else if (magda::isRack(element)) {
+            // A rack's chains sit in the segment the rack itself does.
+            for (const auto& chain : magda::getRack(element).chains)
+                collectDevices(chain.elements, out);
+        }
+    }
+}
+
+std::map<DeviceKey, const magda::DeviceInfo*> devicesIn(const Case& value) {
+    std::map<DeviceKey, const magda::DeviceInfo*> devices;
+    for (const auto& track : value.tracks) {
+        collectDevices(track.chain.fxChainElements, devices);
+        for (const auto& element : track.chain.postFxChainElements)
+            devices[DeviceKey{ChainSegment::PostFx, element.device.id}] = &element.device;
+        for (const auto& element : track.chain.mixerAnalysisElements)
+            devices[DeviceKey{ChainSegment::MixerAnalysis, element.device.id}] = &element.device;
+    }
+    return devices;
+}
 
 engine::TempoMap tempoMapFor(const Case& value) {
     // Consecutive changes ramp: the tempo travels from one to the next across
@@ -221,6 +286,9 @@ NativeRender renderNative(const Case& value) {
     std::map<TrackId, std::unique_ptr<ClipAudioSource>> audioSources;
     std::map<TrackId, std::unique_ptr<ClipMidiSource>> midiSources;
     std::vector<std::unique_ptr<Passthrough>> passthroughs;
+    std::vector<std::unique_ptr<GainDevice>> gains;
+
+    const auto modelDevices = devicesIn(value);
 
     // The tracks the corpus compares MIDI for, which is the same question the
     // incumbent asks when it decides where to put a capture. Asked once, of the
@@ -255,12 +323,23 @@ NativeRender renderNative(const Case& value) {
             }
 
             case OpKind::Device: {
-                // Transparent, always. A device stand-in exists because the
-                // executor refuses a plan with an unbound Device op, not because
-                // the corpus wants to hear what a device would do, and it no
-                // longer decides anything about where MIDI is observed. The
-                // incumbent instantiates none of the model's devices either, so
-                // passing signal is also what it does.
+                // A gain device where the model says the project has one, and a
+                // stand-in everywhere else. The stand-in exists because the
+                // executor refuses an unbound Device op, and it passes signal
+                // because that is what the incumbent does with a device it does
+                // not instantiate. The gain is the exception the slice is for:
+                // the incumbent really does instantiate its twin.
+                const auto found = modelDevices.find(op.key.deviceKey());
+                const auto* model = found == modelDevices.end() ? nullptr : found->second;
+
+                if (model != nullptr && isGainDevice(*model)) {
+                    auto device = std::make_unique<GainDevice>();
+                    device->prepare(context);
+                    bindings.devices[op.key.deviceKey()] = device.get();
+                    gains.push_back(std::move(device));
+                    break;
+                }
+
                 auto device = std::make_unique<Passthrough>();
                 device->prepare(context);
                 bindings.devices[op.key.deviceKey()] = device.get();
@@ -286,12 +365,27 @@ NativeRender renderNative(const Case& value) {
             taps[trackId] = std::move(tap);
         }
 
+    // The op values and the parameter table together, out of one call, so the
+    // two cannot be published out of step (#2117).
     PlanValues values;
-    for (const auto& diagnostic : resolvePlanValues(plan, value.tracks, value.master, values))
+    for (const auto& diagnostic : resolvePlanValues(plan, value.tracks, value.master, values,
+                                                    value.lanes, value.automationClips))
         result.diagnostics.push_back("values: " + diagnostic);
 
+    // What the table could not honour: a link naming something the project does
+    // not have, a lane over a target it does not carry, a cycle. Nothing is
+    // refused for these, so a case with one would otherwise pass having dropped
+    // the thing it exists to compare.
+    if (values.params != nullptr)
+        for (const auto& diagnostic : values.params->diagnostics)
+            result.diagnostics.push_back("params: " + diagnostic);
+
+    // Prepared against that table rather than against none: without it every
+    // device is handed an empty window, and the gain device reads that as
+    // unity, so the project would sound plausible and assert nothing.
     PlanExecutor executor;
-    for (const auto& diagnostic : executor.prepare(plan, bindings, context))
+    for (const auto& diagnostic :
+         executor.prepare(plan, bindings, context, nullptr, values.params.get()))
         result.diagnostics.push_back("prepare: " + diagnostic);
 
     if (!executor.isPrepared()) {

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "NullDiffCompare.hpp"
+#include "core/AutomationInfo.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/TrackInfo.hpp"
 #include "core/TypeIds.hpp"
@@ -87,6 +88,14 @@ struct Case {
     std::vector<ClipInfo> clips;
     std::vector<SourceFact> sources;
     std::vector<TempoPoint> tempo{{0.0, 120.0}};
+
+    /// The automation the project plays, and the clips a clip-based lane names
+    /// (#2123). Model values like the rest of a case: both legs are handed the
+    /// same lanes and each builds its own world from them. The engine compiles
+    /// them into segment lanes, the incumbent bakes them into the fork's own
+    /// AutomationCurve.
+    std::vector<AutomationLaneInfo> lanes;
+    std::vector<AutomationClipInfo> automationClips;
 
     /// The groove templates the clips may name, as the fork keeps them: a
     /// <GROOVETEMPLATES> document. One string feeds both legs, which is what

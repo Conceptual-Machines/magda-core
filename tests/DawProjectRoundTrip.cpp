@@ -331,6 +331,46 @@ Loss tempoMap() {
 
 /// The table. Keyed by case name so that the corpus stays a description of what
 /// the two engines have to agree about, with nothing in it about a file format.
+/// A track's own modulation, which rides on TrackInfo rather than on its chain.
+///
+/// Separate from internalDevices(): the chain is lost because the format has no
+/// internal device, this is lost because it has no modulation at all.
+///
+/// Restored by counting what is linked rather than by comparing the arrays.
+/// Every track carries sixteen macros and the empty ones survive as empty, so
+/// comparing the arrays would fire on a case that lost nothing.
+Loss trackModulation() {
+    return {.field = "TrackInfo::macros, TrackInfo::mods",
+            .reason = "DAWproject has no representation for modulation: no macro knob, and "
+                      "nothing that means an LFO linked to a parameter at a depth. A track's "
+                      "macros and modifiers come back as the empty defaults",
+            .restore = [](Case& imported, const Case& original) {
+                const auto links = [](const TrackInfo& track) {
+                    auto count = std::size_t{0};
+                    for (const auto& macro : track.macros)
+                        count += macro.links.size();
+                    for (const auto& mod : track.mods)
+                        if (mod.enabled)
+                            count += mod.links.size();
+                    return count;
+                };
+
+                bool restored = false;
+
+                for (auto& track : imported.tracks)
+                    for (const auto& source : original.tracks) {
+                        if (source.name != track.name || links(track) == links(source))
+                            continue;
+
+                        track.macros = source.macros;
+                        track.mods = source.mods;
+                        restored = true;
+                    }
+
+                return restored;
+            }};
+}
+
 const std::map<std::string, std::vector<Loss>>& lossTable() {
     static const std::map<std::string, std::vector<Loss>> table{
         {"fades.curves", {fades()}},
@@ -345,6 +385,14 @@ const std::map<std::string, std::vector<Loss>>& lossTable() {
         {"stretch.broadband", {speedRatio(), stretchMode()}},
         {"warp.audio", {warp(), stretchMode()}},
         {"takes.comp", {takesAndComp()}},
+        {"param.base", {internalDevices()}},
+        {"param.automation", {internalDevices()}},
+        {"param.modifier", {internalDevices(), trackModulation()}},
+        {"param.both", {internalDevices(), trackModulation()}},
+        {"param.hostwrite.automation", {internalDevices()}},
+        {"param.hostwrite.modifier", {internalDevices(), trackModulation()}},
+        {"macro.track", {internalDevices(), trackModulation()}},
+        {"macro.device", {internalDevices()}},
         {"project.mixed", {internalDevices()}},
         {"midi.notes", {internalDevices()}},
         {"midi.cc", {internalDevices(), controllers()}},

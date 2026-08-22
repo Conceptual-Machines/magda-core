@@ -36,7 +36,7 @@ juce::File scratch() {
 TEST_CASE("The corpus builds and covers what the slice claims", "[nulldiff][corpus]") {
     const auto corpus = sharedCorpus(scratch());
 
-    REQUIRE(corpus.size() == 29);
+    REQUIRE(corpus.size() == 38);
 
     std::set<std::string> names;
     for (const auto& value : corpus)
@@ -67,6 +67,15 @@ TEST_CASE("The corpus builds and covers what the slice claims", "[nulldiff][corp
                                  "mix.mute",
                                  "mix.solo",
                                  "mix.master",
+                                 "mix.volume.clamp",
+                                 "param.base",
+                                 "param.automation",
+                                 "param.modifier",
+                                 "param.both",
+                                 "param.hostwrite.automation",
+                                 "param.hostwrite.modifier",
+                                 "macro.track",
+                                 "macro.device",
                                  "project.mixed",
                                  "midi.notes",
                                  "midi.cc",
@@ -189,6 +198,95 @@ TEST_CASE("Every case says what it covers and what it plays", "[nulldiff][corpus
             CHECK(std::any_of(value.tracks.begin(), value.tracks.end(), [](const TrackInfo& track) {
                 return magda::engine::chainConsumesMidi(track);
             }));
+    }
+}
+
+TEST_CASE("Every lane and every link names something the project has", "[nulldiff][corpus]") {
+    // The way a parameter case asserts nothing is for its target to miss: the
+    // table drops the lane or the link with a diagnostic, both legs render the
+    // same unmodulated audio, and the case passes having compared nothing.
+    //
+    // The runner catches that when the corpus is rendered. This catches it in
+    // the model-only target, in a second, without an Edit.
+    for (const auto& value : sharedCorpus(scratch())) {
+        INFO(value.name);
+
+        // Matched on the whole path, not the device id in it: an id is unique
+        // within a chain segment and not across the hierarchy (#1899), so a
+        // post-FX target would otherwise be satisfied by the FX device with the
+        // same number.
+        const auto namesADeviceParameter = [&](const ControlTarget& target) {
+            if (target.kind != ControlTarget::Kind::PluginParam)
+                return true;  // Not this rule's business; the table reports it.
+
+            const auto declares = [&](const DeviceInfo& device, const ChainNodePath& path) {
+                if (path != target.devicePath)
+                    return false;
+
+                for (const auto& parameter : device.parameters)
+                    if (parameter.paramIndex == target.paramIndex)
+                        return true;
+
+                return false;
+            };
+
+            for (const auto& track : value.tracks) {
+                for (const auto& element : track.chain.fxChainElements)
+                    if (magda::isDevice(element)) {
+                        const auto& device = magda::getDevice(element);
+                        if (declares(device, ChainNodePath::topLevelDevice(track.id, device.id)))
+                            return true;
+                    }
+
+                for (const auto& element : track.chain.postFxChainElements)
+                    if (declares(element.device,
+                                 ChainNodePath::postFxDevice(track.id, element.device.id)))
+                        return true;
+
+                for (const auto& element : track.chain.mixerAnalysisElements)
+                    if (declares(element.device,
+                                 ChainNodePath::mixerAnalysisDevice(track.id, element.device.id)))
+                        return true;
+            }
+
+            return false;
+        };
+
+        for (const auto& lane : value.lanes) {
+            // A lane the model is not playing is one the table leaves out, so
+            // a case carrying one asserts the base under a name that says
+            // automation.
+            CHECK(lane.authorityState == AutomationAuthorityState::Reading);
+            CHECK(lane.hasData());
+            CHECK(namesADeviceParameter(lane.target));
+        }
+
+        for (const auto& track : value.tracks) {
+            for (const auto& mod : track.mods)
+                for (const auto& link : mod.links)
+                    if (mod.enabled && link.enabled)
+                        CHECK(namesADeviceParameter(link.target));
+
+            for (const auto& macro : track.macros)
+                for (const auto& link : macro.links)
+                    CHECK(namesADeviceParameter(link.target));
+
+            for (const auto& element : track.chain.fxChainElements) {
+                if (!magda::isDevice(element))
+                    continue;
+
+                const auto& device = magda::getDevice(element);
+
+                for (const auto& mod : device.mods)
+                    for (const auto& link : mod.links)
+                        if (mod.enabled && link.enabled)
+                            CHECK(namesADeviceParameter(link.target));
+
+                for (const auto& macro : device.macros)
+                    for (const auto& link : macro.links)
+                        CHECK(namesADeviceParameter(link.target));
+            }
+        }
     }
 }
 
