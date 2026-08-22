@@ -18,7 +18,6 @@ The dialog is organised into sections; each section is described below.
 - **Panel visibility defaults** — Choose which panels are shown on startup
 - **Behavior settings** — Configure UI interaction preferences
 - **Auto-crossfade new audio clips** - New audio clips overlap into a [crossfade](../clips.md#crossfades) automatically when they meet a neighbour
-- **New clips play through overlaps** - What a new clip starts with when something covers it. Off, the clip on top owns the span it covers and the clip underneath plays only what is left; on, both sound across the overlap. This is only the starting value, so changing it leaves existing clips alone; per clip, right-click and tick **Play Through Overlap**. See [Overlapping clips](../clips.md#overlapping-clips)
 - **New tracks run post-FX after the fader** - The side of the track fader a new track's [post-FX section](../fx-chain.md#post-fx-section) starts on. Existing tracks keep their own setting, which you change from the fader tag on the post-FX panel
 - **Duplicate Loop Range: grow / advance** - When you duplicate the loop range, choose whether the loop grows to cover the copy or advances past it
 - **Auto-hide arrangement scrollbars** — Keep the arrangement scrollbars hidden until you hover near them, for a cleaner workspace
