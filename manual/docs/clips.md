@@ -150,10 +150,12 @@ To make both clips sound where they overlap, right-click either one and tick **P
 
 Either clip can carry the switch, which matters because the clip you reach for when something goes quiet is the one that went quiet, and that is the one underneath.
 
-Creating a [crossfade](#crossfades) turns it on for you, on both clips. A crossfade needs both sides sounding to have anything to fade into, so it sets the fade and the play-through together.
+Asking for a [crossfade](#crossfades) turns it on for you, on both clips: right-click and choose **Crossfade with Previous Clip** or **Crossfade with Next Clip**, or drag a crossfade handle. Asking for a fade region is asking for both clips to be heard across it, so the gesture sets the fade and the play-through together.
 
-!!! note "Auto-crossfade does not keep a clip audible"
-    Auto-crossfade shapes an overlap that is already playing both, so audio fades into audio instead of both running flat. It cannot keep a covered clip alive on its own. **Play Through Overlap** is the switch that decides whether both sound; the crossfade only decides how they meet.
+!!! note "The Auto Crossfade property does not do this"
+    **Auto Crossfade** marks a clip as eligible to crossfade; it does not create a fade region, and it leaves play-through alone. The same goes for the **Auto-crossfade new audio clips** preference, which only sets that property on new clips.
+
+    This matters because auto-crossfade cannot keep a covered clip audible on its own. It shapes an overlap that is already playing both, so audio fades into audio instead of both running flat. **Play Through Overlap** is what decides whether both sound; the crossfade only decides how they meet.
 
 ## Flatten MIDI Loop
 
