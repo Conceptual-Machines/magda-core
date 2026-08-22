@@ -137,15 +137,23 @@ Arrangement clips stack rather than erase each other. Drag a clip onto one that 
 
 The clip on top owns the span it covers, and the one underneath plays what is left. A clip covered end to end plays nothing while staying exactly where it is. Which clip is on top is set when you place or move it, so the most recently moved clip wins, and the lane draws in that same order: what you see stacked is what you hear.
 
-Two cases deliberately do not occlude:
+Where a cover lands decides what the clip underneath becomes:
 
-- A partial overlap between two audio clips that both have [auto-crossfade](#crossfades) on. That overlap is a crossfade, and both clips sound across it.
-- A clip you disabled by hand, which covers nothing because it is already silent.
+- **Overlapping an edge** shortens it. The audible span pulls in to the edge of the cover, which is a shorter clip rather than a hole in one.
+- **Landing strictly inside it** leaves a hole. The clip keeps its start and end and goes silent across the covered span only. A MIDI clip plays around the hole by dropping the notes that start inside it; an audio clip carries the hole through to playback. Nothing is cut and nothing is split, so the material comes back intact when the cover moves away.
 
-**Play through an overlap.** A clip can be set to sound even where something covers it. New clips take their starting value from **New clips play through overlaps** in [Preferences](interface/preferences.md); changing that preference leaves existing clips alone.
+A clip you disabled by hand covers nothing, because it is already silent. Letting it occlude would silence the clip below on behalf of silence.
 
-!!! note "Dropping a clip inside a longer one"
-    A clip dropped entirely within a longer one splits that clip into three pieces, because a head and a tail cannot be a single audible span. The slice under the drop is kept as a clip of its own rather than deleted, so it is simply covered: silent while the drop sits on it, audible again the moment the drop moves away. The seams stay visible, but no material is lost.
+### Play Through Overlap
+
+To make both clips sound where they overlap, right-click either one and tick **Play Through Overlap**. The lane hatches the shared span to show it is playing both.
+
+Either clip can carry the switch, which matters because the clip you reach for when something goes quiet is the one that went quiet, and that is the one underneath.
+
+New clips take their starting value from **New clips play through overlaps** in [Preferences](interface/preferences.md). Changing that preference leaves existing clips alone.
+
+!!! note "Auto-crossfade does not keep a clip audible"
+    [Auto-crossfade](#crossfades) shapes an overlap that is already playing both, so audio fades into audio instead of both running flat. It cannot keep a covered clip alive on its own. If you want both audio clips to sound across an overlap, **Play Through Overlap** is the switch that does it; the crossfade only decides how they meet.
 
 ## Flatten MIDI Loop
 
