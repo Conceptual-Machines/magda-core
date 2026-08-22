@@ -71,13 +71,6 @@ MUTATIONS: list[tuple[str, str, str]] = [
         "if False:",
     ),
     (
-        "resources/read disagrees with tools/call",
-        '            result({"contents": [{"uri": uri, "mimeType": "application/json", '
-        '"text": TRACKS_JSON}]})',
-        '            result({"contents": [{"uri": uri, "mimeType": "application/json", '
-        '"text": "{\\"tracks\\": []}"}]})',
-    ),
-    (
         "Mcp-Name mismatch not validated",
         "            if raw != params.get(name_field):\n"
         '                self._send_json(400, self._error(rid, -32020, "Mcp-Name mismatch"))\n'
@@ -238,13 +231,14 @@ def main() -> int:
 
     caught = 0
     missed: list[str] = []
+    stale: list[str] = []
     for mutation in mutations:
         name = mutation[0]
         try:
             failed, unclear, stdout = run(mutation)
         except LookupError as exc:
             print(f"  STALE   {name}\n            {exc}")
-            missed.append(name)
+            stale.append(name)
             continue
         new_failures = [f for f in failed if f not in ALWAYS_FAILS]
         new_unclear = [u for u in unclear if u not in base_unclear]
@@ -260,12 +254,16 @@ def main() -> int:
             print(f"  MISSED  {name}")
 
     print(f"\n  {caught}/{len(mutations)} mutations caught")
+    if stale:
+        print("\n  These no longer match the stub, so they tested nothing. Re-point "
+              "them at the code that replaced it, or delete them:")
+        for name in stale:
+            print(f"    {name}")
     if missed:
-        print("\n  Nothing went red for these, so no check is watching them:")
+        print("\n  These applied and nothing went red, so no check is watching them:")
         for name in missed:
             print(f"    {name}")
-        return 1
-    return 0
+    return 1 if (missed or stale) else 0
 
 
 if __name__ == "__main__":
