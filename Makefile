@@ -360,6 +360,40 @@ test-list: test-build
 	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	cd $(BUILD_DIR) && $(TEST_ENV) ./tests/magda_tests --list-tests
 
+# Drive a running MAGDA over every remote transport (#2059).
+#
+# Not part of `make test`: it needs a MAGDA that is actually running with the
+# remote API switched on, which is the whole point — it checks the installed
+# artefact rather than the tree. ARGS passes flags through, e.g.
+# `make test-transport ARGS="--osc --write"`.
+.PHONY: test-transport
+test-transport:
+	@echo "🔌 Checking the remote transports against a running MAGDA..."
+	@if [ -x .venv/bin/python ]; then \
+		.venv/bin/python tools/transport_check $(ARGS); \
+	else \
+		python3 tools/transport_check $(ARGS); \
+	fi
+
+# The transport harness against a stub, so it can be checked with no MAGDA and
+# no network. This one is safe to run anywhere.
+.PHONY: test-transport-selftest
+test-transport-selftest:
+	@echo "🔌 Checking the transport harness itself..."
+	python3 tools/transport_check/selftest.py
+
+# Prove each check can fail: break the stub 23 ways and confirm the check meant
+# to catch each one does. Slow — it runs the whole harness per mutation. Uses
+# .venv when it exists, which adds the official-SDK mutations.
+.PHONY: test-transport-mutations
+test-transport-mutations:
+	@echo "🔌 Breaking the stub to prove the checks bite..."
+	@if [ -x .venv/bin/python ]; then \
+		.venv/bin/python tools/transport_check/mutation_test.py; \
+	else \
+		python3 tools/transport_check/mutation_test.py; \
+	fi
+
 # Clean build artifacts
 .PHONY: clean
 clean:
