@@ -1,5 +1,7 @@
 target_sources(magda_daw_app PRIVATE
     TransportPanel.cpp
+    TransportLayout.cpp
+    TransportTextWidths.cpp
     TimelineHeaderPanel.cpp
     LeftPanel.cpp
     RightPanel.cpp
@@ -8,6 +10,8 @@ target_sources(magda_daw_app PRIVATE
     PanelTabBar.cpp
     TabbedPanel.cpp
     TransportPanel.hpp
+    TransportLayout.hpp
+    TransportTextWidths.hpp
     TimelineHeaderPanel.hpp
     LeftPanel.hpp
     RightPanel.hpp

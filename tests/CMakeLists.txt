@@ -130,6 +130,10 @@ set(TEST_SOURCES
     test_arrangement_hit_tester.cpp
     # Curve-view readout stays inside the plot (#2072)
     test_curve_label_layout.cpp
+    # Transport sections measure themselves instead of estimating (#2071/#2074).
+    # TransportLayout builds into magda_daw_app, so pull its implementation in.
+    test_transport_layout.cpp
+    ../magda/daw/ui/panels/TransportLayout.cpp
     # Panel tab layout survives a restart (#2103). The panel sources live in
     # magda_daw_app rather than the magda_daw library, so pull them in directly.
     test_panel_tab_persistence.cpp
@@ -511,6 +515,12 @@ target_sources(magda_juce_tests PRIVATE
     test_clip_paint_juce.cpp
     test_clip_nudge_juce.cpp
     test_multiband_curve_view_juce.cpp
+    # The transport layout against the widths the shipped fonts really produce
+    # (#2071). Needs a graphics context, so it lives here rather than in
+    # magda_tests, which asserts the same layout as pure arithmetic.
+    test_transport_layout_juce.cpp
+    ../magda/daw/ui/panels/TransportLayout.cpp
+    ../magda/daw/ui/panels/TransportTextWidths.cpp
     # Keep test runs out of the developer's real config.json (see the copy in
     # magda_tests): RemoteApiHost persists grants via Config::save(). The guard
     # test is duplicated per target because each uses its own framework.

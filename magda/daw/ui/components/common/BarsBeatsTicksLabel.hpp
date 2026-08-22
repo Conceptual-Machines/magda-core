@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
 #include <functional>
 
 #include "core/TempoUtils.hpp"
@@ -18,6 +19,24 @@ namespace magda {
  */
 class BarsBeatsTicksLabel : public juce::Component {
   public:
+    // The size the digits are drawn at. Published so anything sizing a box
+    // around this label measures the same font it will render with.
+    static constexpr float kTextFontSize = 10.0f;
+
+    /** Width a label needs to show its widest value without clipping, across a
+     *  whole range of time signatures: the bar number is widest at the fewest
+     *  beats per bar, the beat number at the most. Static so a caller can size
+     *  a box before the label exists; it reads the same font and segment
+     *  widths that resized() lays out with, so the two cannot disagree. */
+    static int preferredWidthForRange(double maxValue, int minBeatsPerBar, int maxBeatsPerBar,
+                                      bool isPosition);
+
+    /** Width each segment needs for the widest value it can show, in the order
+     *  bars, beats, ticks. resized() shares the strip out in these proportions,
+     *  so this is also what the segments get at the preferred width. */
+    static std::array<int, 3> segmentWidthsFor(double maxValue, int minBeatsPerBar,
+                                               int maxBeatsPerBar, bool isPosition);
+
     BarsBeatsTicksLabel();
     ~BarsBeatsTicksLabel() override;
 
@@ -64,6 +83,13 @@ class BarsBeatsTicksLabel : public juce::Component {
     void resized() override;
 
   private:
+    // Geometry shared by resized() and preferredWidthForRange().
+    static constexpr int kEdgeInset = 2;   // left/right inset of the segment strip
+    static constexpr int kDotWidth = 6;    // gap between two segments, where the dot is drawn
+    static constexpr int kSegmentPad = 4;  // air around a segment's digits
+
+    std::array<int, 3> segmentWidths() const;
+
     static constexpr int TICKS_PER_BEAT = 480;
     static constexpr int TICKS_PER_16TH = 120;  // 480 / 4
 

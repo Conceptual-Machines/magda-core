@@ -53,6 +53,11 @@ class SmallButtonLookAndFeel : public juce::LookAndFeel_V4 {
         g.drawText(button.getButtonText(), bounds, juce::Justification::centred, false);
     }
 
+    // Published so a caller sizing a button measures the same font this draws.
+    float getFontSize() const {
+        return fontSize_;
+    }
+
     static SmallButtonLookAndFeel& getInstance() {
         static SmallButtonLookAndFeel instance;
         return instance;

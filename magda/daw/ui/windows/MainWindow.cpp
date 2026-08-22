@@ -271,11 +271,11 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
         auto workArea = display->userArea;  // Excludes taskbar
         // Leave some margin so the title bar and window frame are fully visible
         int margin = 10;
-        int w = juce::jmin(1200, workArea.getWidth() - margin * 2);
-        int h = juce::jmin(800, workArea.getHeight() - margin * 2);
+        int w = juce::jmin(LayoutConfig::defaultWindowWidth, workArea.getWidth() - margin * 2);
+        int h = juce::jmin(LayoutConfig::defaultWindowHeight, workArea.getHeight() - margin * 2);
         setBoundsConstrained(workArea.withSizeKeepingCentre(w, h));
     } else {
-        setSize(1200, 800);
+        setSize(LayoutConfig::defaultWindowWidth, LayoutConfig::defaultWindowHeight);
         centreWithSize(getWidth(), getHeight());
     }
     juce::Logger::writeToLog("[MainWindow] Calling setVisible(true)...");
@@ -367,15 +367,18 @@ void MainWindow::applyDensityFromConfig() {
 }
 
 void MainWindow::applyFontFromConfig() {
-    const auto& family = Config::getInstance().getUIFontFamily();
-    if (family == appliedFontFamily_)
+    const auto& config = Config::getInstance();
+    const auto& family = config.getUIFontFamily();
+    const auto scale = config.getUIFontScale();
+    if (family == appliedFontFamily_ && scale == appliedFontScale_)
         return;
     appliedFontFamily_ = family;
+    appliedFontScale_ = scale;
 
-    // FontManager resolves the family live; broadcast a look-and-feel change so
-    // every component re-fetches its fonts and repaints. Components that fetch
-    // fonts in paint()/lookAndFeelChanged update immediately; the few that cache
-    // a juce::Font at construction pick it up on their next rebuild.
+    // FontManager resolves the family and scale live; broadcast a look-and-feel
+    // change so every component re-fetches its fonts and repaints. Components
+    // that fetch fonts in paint()/lookAndFeelChanged update immediately; the few
+    // that cache a juce::Font at construction pick it up on their next rebuild.
     refreshThemedLookAndFeels();
 }
 

@@ -94,6 +94,13 @@ struct LayoutConfig {
     int zoomButtonSize = 24;
     int zoomSliderMinWidth = 60;
 
+    // The size MainWindow opens at when the display has room for it. The
+    // transport spans the full window width, so defaultWindowWidth is the
+    // width its layout has to fit into on a default launch -- see the
+    // transport layout test that pins exactly that.
+    static constexpr int defaultWindowWidth = 1200;
+    static constexpr int defaultWindowHeight = 800;
+
     // Main window panels
     int defaultTransportHeight = 48;
     int minTransportHeight = 40;

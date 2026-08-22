@@ -50,10 +50,15 @@ void BarsBeatsTicksLabel::setDrawBackground(bool draw) {
 }
 
 void BarsBeatsTicksLabel::setRange(double min, double max, double defaultValue) {
+    // The segment shares are worked out from how large each number can get, so
+    // anything that changes that has to relayout, not just repaint.
+    const bool reshapes = maxValue_ != max;
     minValue_ = min;
     maxValue_ = max;
     defaultValue_ = juce::jlimit(min, max, defaultValue);
     value_ = juce::jlimit(minValue_, maxValue_, value_);
+    if (reshapes)
+        resized();
     updateSegmentTexts();
     repaint();
 }
@@ -71,13 +76,22 @@ void BarsBeatsTicksLabel::setValue(double newValue, juce::NotificationType notif
 }
 
 void BarsBeatsTicksLabel::setBeatsPerBar(int beatsPerBar) {
+    const bool reshapes = beatsPerBar_ != beatsPerBar;
     beatsPerBar_ = beatsPerBar;
+    // A wider time signature means a wider beat number and fewer bars, which
+    // moves the boundary between the two segments.
+    if (reshapes)
+        resized();
     updateSegmentTexts();
     repaint();
 }
 
 void BarsBeatsTicksLabel::setBarsBeatsIsPosition(bool isPosition) {
+    const bool reshapes = barsBeatsIsPosition_ != isPosition;
     barsBeatsIsPosition_ = isPosition;
+    // One-indexed positions can carry a digit the zero-indexed form cannot.
+    if (reshapes)
+        resized();
     updateSegmentTexts();
     repaint();
 }
@@ -152,7 +166,7 @@ void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
     }
 
     g.setColour(getTextColour());
-    g.setFont(FontManager::getInstance().getUIFont(10.0f));
+    g.setFont(FontManager::getInstance().getUIFont(kTextFontSize));
 
     if (textOverride_.isNotEmpty()) {
         // Draw override text centred in bounds
@@ -203,22 +217,59 @@ bool BarsBeatsTicksLabel::isDragging() const {
            (ticksSegment_ && ticksSegment_->isDragging());
 }
 
-void BarsBeatsTicksLabel::resized() {
-    auto bounds = getLocalBounds().reduced(2, 0);
-    int totalWidth = bounds.getWidth();
+std::array<int, 3> BarsBeatsTicksLabel::segmentWidthsFor(double maxValue, int minBeatsPerBar,
+                                                         int maxBeatsPerBar, bool isPosition) {
+    const int offset = isPosition ? 1 : 0;
+    const int lowBeatsPerBar = juce::jmax(1, minBeatsPerBar);
+    const int highBeatsPerBar = juce::jmax(lowBeatsPerBar, maxBeatsPerBar);
 
-    // Proportions: bars ~25%, dot ~5%, beats ~25%, dot ~5%, ticks ~40%
-    int dotWidth = 6;
-    int availableWidth = totalWidth - dotWidth * 2;
-    int barsWidth = static_cast<int>(availableWidth * 0.25);
-    int beatsWidth = static_cast<int>(availableWidth * 0.25);
-    int ticksWidth = availableWidth - barsWidth - beatsWidth;
+    // Fewest beats per bar gives the most bars; most beats per bar gives the
+    // highest beat number. Ticks are zero-padded to three digits either way.
+    const int maxBars = static_cast<int>(maxValue / lowBeatsPerBar) + offset;
+    const int maxBeats = highBeatsPerBar - 1 + offset;
+
+    const auto font = FontManager::getInstance().getUIFont(kTextFontSize);
+    // Measure a string of the widest digit rather than the number itself, so a
+    // value made of narrow digits does not under-size the segment.
+    const auto widthOfDigits = [&font](int digits) {
+        return juce::GlyphArrangement::getStringWidthInt(
+                   font, juce::String::repeatedString("8", digits)) +
+               kSegmentPad;
+    };
+
+    return {widthOfDigits(juce::String(maxBars).length()),
+            widthOfDigits(juce::String(maxBeats).length()), widthOfDigits(3)};
+}
+
+int BarsBeatsTicksLabel::preferredWidthForRange(double maxValue, int minBeatsPerBar,
+                                                int maxBeatsPerBar, bool isPosition) {
+    const auto needed = segmentWidthsFor(maxValue, minBeatsPerBar, maxBeatsPerBar, isPosition);
+    return needed[0] + needed[1] + needed[2] + (2 * kDotWidth) + (2 * kEdgeInset);
+}
+
+std::array<int, 3> BarsBeatsTicksLabel::segmentWidths() const {
+    return segmentWidthsFor(maxValue_, beatsPerBar_, beatsPerBar_, barsBeatsIsPosition_);
+}
+
+void BarsBeatsTicksLabel::resized() {
+    auto bounds = getLocalBounds().reduced(kEdgeInset, 0);
+
+    // Share the strip out in proportion to what each segment has to show. A
+    // fixed quarter for the bar number clipped long positions while leaving
+    // the three-digit tick segment half the box.
+    const auto needed = segmentWidths();
+    const int total = juce::jmax(1, needed[0] + needed[1] + needed[2]);
+    const int available = juce::jmax(3, bounds.getWidth() - (2 * kDotWidth));
+
+    const int barsWidth = available * needed[0] / total;
+    const int beatsWidth = available * needed[1] / total;
+    const int ticksWidth = available - barsWidth - beatsWidth;
 
     int x = bounds.getX();
     barsSegment_->setBounds(x, bounds.getY(), barsWidth, bounds.getHeight());
-    x += barsWidth + dotWidth;
+    x += barsWidth + kDotWidth;
     beatsSegment_->setBounds(x, bounds.getY(), beatsWidth, bounds.getHeight());
-    x += beatsWidth + dotWidth;
+    x += beatsWidth + kDotWidth;
     ticksSegment_->setBounds(x, bounds.getY(), ticksWidth, bounds.getHeight());
 }
 
@@ -251,7 +302,7 @@ juce::String BarsBeatsTicksLabel::SegmentLabel::formatDisplay() const {
 void BarsBeatsTicksLabel::SegmentLabel::paint(juce::Graphics& g) {
     if (!isEditing_ && owner_.textOverride_.isEmpty()) {
         g.setColour(owner_.getTextColour());
-        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+        g.setFont(FontManager::getInstance().getUIFont(kTextFontSize));
         g.drawText(formatDisplay(), getLocalBounds(), juce::Justification::centred, false);
     }
 }
@@ -351,7 +402,7 @@ void BarsBeatsTicksLabel::SegmentLabel::startEditing() {
 
     editor_ = std::make_unique<juce::TextEditor>();
     editor_->setBounds(getLocalBounds());
-    editor_->setFont(FontManager::getInstance().getUIFont(10.0f));
+    editor_->setFont(FontManager::getInstance().getUIFont(kTextFontSize));
     editor_->setText(formatDisplay(), false);
     editor_->selectAll();
     editor_->setJustification(juce::Justification::centred);
