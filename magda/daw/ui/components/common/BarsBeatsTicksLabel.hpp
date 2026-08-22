@@ -32,8 +32,10 @@ class BarsBeatsTicksLabel : public juce::Component {
                                       bool isPosition);
 
     /** Width each segment needs for the widest value it can show, in the order
-     *  bars, beats, ticks. resized() shares the strip out in these proportions,
-     *  so this is also what the segments get at the preferred width. */
+     *  bars, beats, ticks. preferredWidthForRange() adds these up; the live
+     *  layout shares the strip out by the digits on screen instead (see
+     *  resized()), so a box sized for this holds the widest value while a
+     *  typical one reads balanced. */
     static std::array<int, 3> segmentWidthsFor(double maxValue, int minBeatsPerBar,
                                                int maxBeatsPerBar, bool isPosition);
 
@@ -68,6 +70,22 @@ class BarsBeatsTicksLabel : public juce::Component {
     // Whether to draw background fill + border (default: true)
     void setDrawBackground(bool draw);
 
+    /** Width at the right end of the label its glyphs keep clear, for a caption
+     *  or icon the owner draws over the box's end. The owner measures that
+     *  decoration and adds the same number to the box it gives this label
+     *  (TransportLayout does), so the digits never sit under it. The glyphs
+     *  already stop kEdgeInset + kSegmentPad / 2 short of the edge, so only
+     *  what the decoration needs beyond that comes off the strip. Zero by
+     *  default. */
+    void setTrailingInset(int px);
+
+    // Geometry shared by resized() and preferredWidthForRange(). Public, like
+    // kTextFontSize, so a caller sizing a box around this label can reason
+    // about where its glyphs stop.
+    static constexpr int kEdgeInset = 2;   // left/right inset of the segment strip
+    static constexpr int kDotWidth = 6;    // gap between two segments, where the dot is drawn
+    static constexpr int kSegmentPad = 4;  // air around a segment's digits
+
     // Text override: when set, displays this text instead of bars.beats.ticks segments
     void setTextOverride(const juce::String& text);
     void clearTextOverride();
@@ -83,12 +101,16 @@ class BarsBeatsTicksLabel : public juce::Component {
     void resized() override;
 
   private:
-    // Geometry shared by resized() and preferredWidthForRange().
-    static constexpr int kEdgeInset = 2;   // left/right inset of the segment strip
-    static constexpr int kDotWidth = 6;    // gap between two segments, where the dot is drawn
-    static constexpr int kSegmentPad = 4;  // air around a segment's digits
+    // Width each segment needs for the digits it is showing right now; the
+    // strip is shared out in these proportions.
+    std::array<int, 3> shownSegmentWidths() const;
+    // Width of a run of `digits` of the widest digit, plus the segment's air.
+    static int widthOfDigits(int digits);
 
-    std::array<int, 3> segmentWidths() const;
+    int trailingInset_ = 0;
+    // Digit counts of the bar and beat numbers last laid out for, so a value
+    // that gains or loses a digit relayouts rather than just repaints.
+    std::array<int, 2> laidOutDigits_{0, 0};
 
     static constexpr int TICKS_PER_BEAT = 480;
     static constexpr int TICKS_PER_16TH = 120;  // 480 / 4

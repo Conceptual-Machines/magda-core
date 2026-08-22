@@ -28,13 +28,15 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
 
         beginTest("Measured widths are real numbers");
         const auto text = measureTextWidths();
-        logMessage("timecodeBox=" + juce::String(text.timecodeBox) + " tempo=" +
-                   juce::String(text.tempo) + " sigNum=" + juce::String(text.timeSigNumerator) +
+        logMessage("timecodeBox=" + juce::String(text.timecodeBox) + " timecodeCaption=" +
+                   juce::String(text.timecodeCaption) + " tempo=" + juce::String(text.tempo) +
+                   " sigNum=" + juce::String(text.timeSigNumerator) +
                    " sigDen=" + juce::String(text.timeSigDenominator) + " cpuTitle=" +
                    juce::String(text.cpuTitle) + " cpuValue=" + juce::String(text.cpuValue) +
                    " gridDivision=" + juce::String(text.gridDivision) +
                    " gridToggle=" + juce::String(text.gridToggle));
         expect(text.timecodeBox > 0);
+        expect(text.timecodeCaption > 0);
         expect(text.tempo > 0);
         expect(text.timeSigNumerator > 0);
         expect(text.timeSigDenominator > 0);
@@ -116,36 +118,68 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
             expect(l.playhead.getWidth() >= needed[0] + needed[1] + needed[2]);
         }
 
-        beginTest("A new time signature re-proportions the readout's segments");
+        beginTest("A bar number that gains a digit re-proportions the readout's segments");
         {
-            // The segment shares depend on how large the beat number can get,
-            // so changing the time signature is a relayout, not a repaint. A
-            // stale 4/4 layout clips a perfectly valid beat 16.
+            // The strip is shared out by the digits on screen, so "1.1.000"
+            // reads balanced instead of reserving the width of a five-digit
+            // bar number, and a value that grows a digit relayouts rather than
+            // clipping or just repainting.
             magda::BarsBeatsTicksLabel label;
             label.setRange(0.0, kTimecodeMaxBeats, 0.0);
             label.setBarsBeatsIsPosition(true);
             label.setBeatsPerBar(4);
             label.setSize(text.timecodeBox, 20);
+            expect(label.getNumChildComponents() == 3, "expected three segments");
 
-            juce::Array<juce::Rectangle<int>> before;
-            for (auto* child : label.getChildren())
-                before.add(child->getBounds());
-            expect(before.size() == 3, "expected three segments");
+            const auto barsBefore = label.getChildComponent(0)->getBounds();
+            const auto ticksBefore = label.getChildComponent(2)->getBounds();
+            // A one-digit bar number gets no more of the strip than the
+            // one-digit beat number beside it.
+            expect(barsBefore.getWidth() == label.getChildComponent(1)->getWidth(),
+                   "a one-digit bar number took more room than a one-digit beat number");
 
-            label.setBeatsPerBar(magda::MAX_TIME_SIGNATURE_VALUE);
+            label.setValue(9.0 * 4.0, juce::dontSendNotification);  // bar 10
+            expect(label.getChildComponent(0)->getWidth() > barsBefore.getWidth(),
+                   "the bar segment did not grow for its second digit");
+            expect(label.getChildComponent(2)->getBounds() != ticksBefore,
+                   "the segments kept their one-digit proportions");
 
-            bool reproportioned = false;
-            for (int i = 0; i < before.size(); ++i)
-                reproportioned |= label.getChildComponent(i)->getBounds() != before[i];
-            expect(reproportioned, "the segments kept their 4/4 proportions");
-
-            // ...and the beat segment is the one that grew.
-            const auto narrow =
+            // The widest value the range allows still fits, segment by segment.
+            label.setValue(kTimecodeMaxBeats, juce::dontSendNotification);
+            const auto needed =
                 magda::BarsBeatsTicksLabel::segmentWidthsFor(kTimecodeMaxBeats, 4, 4, true);
-            const auto wide = magda::BarsBeatsTicksLabel::segmentWidthsFor(
-                kTimecodeMaxBeats, magda::MAX_TIME_SIGNATURE_VALUE, magda::MAX_TIME_SIGNATURE_VALUE,
-                true);
-            expect(wide[1] > narrow[1]);
+            for (int i = 0; i < 3; ++i)
+                expect(label.getChildComponent(i)->getWidth() >= needed[i],
+                       "segment " + juce::String(i) + " clips the largest position");
+        }
+
+        beginTest("The digits stay clear of what is drawn over the readout's end");
+        {
+            // TransportPanel draws the group caption over the box's top-right
+            // corner and the punch box carries its icons there. The layout
+            // adds that zone to every readout and hands it to the label, which
+            // keeps its strip out of it.
+            expect(l.timeBoxTrailingInset >= text.timecodeCaption,
+                   "the inset does not cover the caption");
+
+            magda::BarsBeatsTicksLabel label;
+            label.setRange(0.0, kTimecodeMaxBeats, 0.0);
+            label.setBarsBeatsIsPosition(true);
+            label.setSize(l.playhead.getWidth(), l.playhead.getHeight());
+            label.setTrailingInset(l.timeBoxTrailingInset);
+            label.setValue(kTimecodeMaxBeats, juce::dontSendNotification);
+
+            // The last glyph sits half a segment pad inside its segment.
+            const int glyphRight = label.getChildComponent(2)->getRight() -
+                                   (magda::BarsBeatsTicksLabel::kSegmentPad / 2);
+            expect(glyphRight <= label.getWidth() - l.timeBoxTrailingInset,
+                   "the ticks run under the caption");
+            const auto needed = magda::BarsBeatsTicksLabel::segmentWidthsFor(
+                kTimecodeMaxBeats, magda::DEFAULT_TIME_SIGNATURE_NUMERATOR,
+                magda::DEFAULT_TIME_SIGNATURE_NUMERATOR, true);
+            for (int i = 0; i < 3; ++i)
+                expect(label.getChildComponent(i)->getWidth() >= needed[i],
+                       "segment " + juce::String(i) + " lost room to the inset");
         }
 
         beginTest("The CPU slot holds the peak form, not just the average");

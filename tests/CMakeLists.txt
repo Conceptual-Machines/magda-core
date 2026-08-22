@@ -530,6 +530,9 @@ target_sources(magda_juce_tests PRIVATE
     # ParamSlotComponent builds into magda_daw_app, so the test target needs it
     # and the param helpers it calls into compiled in directly.
     test_param_slot_boolean_sync_juce.cpp
+    # A discrete cell's dropdown must not write the parameter on rebuild, and
+    # must map an external plugin's TE-native value onto its choices.
+    test_param_slot_discrete_combo_juce.cpp
     ../magda/daw/ui/components/chain/params/ParamSlotComponent.cpp
     ../magda/daw/ui/components/chain/params/ParamWidgetSetup.cpp
     ../magda/daw/ui/components/chain/params/ParamLinkResolver.cpp
@@ -682,6 +685,9 @@ add_test(NAME config_path_redirect_juce
 
 add_test(NAME param_slot_boolean_sync_juce
          COMMAND magda_juce_tests "Param Slot Boolean Sync Tests")
+
+add_test(NAME param_slot_discrete_combo_juce
+         COMMAND magda_juce_tests "Param Slot Discrete Combo Tests")
 
 add_test(NAME timeline_extreme_zoom_paint_juce
          COMMAND magda_juce_tests "Timeline Extreme Zoom Paint Tests")

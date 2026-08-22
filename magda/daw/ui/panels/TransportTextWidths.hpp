@@ -1,6 +1,7 @@
 #pragma once
 
 #include "TransportLayout.hpp"
+#include "core/TempoUtils.hpp"
 
 namespace magda::daw::ui::transport {
 
@@ -21,10 +22,23 @@ inline constexpr float kCpuTitleFontSize = 8.0f;
 inline constexpr float kCpuValueFontSize = 11.0f;
 inline constexpr float kBannerFontSize = 10.0f;  // the AUTOMATION WRITE banner
 
-// The range the timecode readouts accept, in beats. Declared here so the
-// labels and the width measured for them agree on how large a bar number the
-// box has to hold.
-inline constexpr double kTimecodeMaxBeats = 100000.0;
+// The group captions drawn over the top-right corner of the timecode boxes,
+// and the size they are drawn at. Here for the same reason as the AUTO / SNAP
+// captions: the string measured and the string drawn are one string.
+inline constexpr const char* kSelectionCaption = "SEL";
+inline constexpr const char* kLoopCaption = "LOOP";
+inline constexpr const char* kCursorCaption = "CUR";
+inline constexpr float kTimecodeCaptionFontSize = 7.0f;
+
+// The largest bar number the timecode readouts show, in any meter: five
+// digits. The range the labels accept follows from it, in beats at the fewest
+// beats per bar, so the labels and the width measured for them agree on how
+// large a bar number the box has to hold. (A round beat count at one beat per
+// bar put a sixth digit on the one-indexed bar number, and every readout in
+// every meter paid for it.)
+inline constexpr int kTimecodeMaxBars = 99999;
+inline constexpr double kTimecodeMaxBeats =
+    static_cast<double>((kTimecodeMaxBars - 1) * MIN_TIME_SIGNATURE_VALUE);
 
 // How far the retained peak has to run ahead of the average before the CPU
 // readout shows it as well.

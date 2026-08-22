@@ -30,12 +30,23 @@ TextWidths measureTextWidths() {
         fonts.getUIFontBold(SmallButtonLookAndFeel::getInstance().getFontSize());
     const auto cpuTitleFont = fonts.getUIFont(kCpuTitleFontSize);
     const auto cpuValueFont = fonts.getMonoFont(kCpuValueFontSize);
+    const auto captionFont = fonts.getUIFont(kTimecodeCaptionFontSize);
 
     TextWidths text;
     // The readout sizes itself: it knows its own segment shares and how large a
     // bar number the range can reach, which a box drawn around it does not.
     text.timecodeBox = BarsBeatsTicksLabel::preferredWidthForRange(
         kTimecodeMaxBeats, MIN_TIME_SIGNATURE_VALUE, MAX_TIME_SIGNATURE_VALUE, true);
+    // The caption TransportPanel draws over the box's top-right corner. The
+    // layout reserves this much at the end of every readout, and the readout
+    // keeps its digits out of it.
+    for (const char* caption : {kSelectionCaption, kLoopCaption, kCursorCaption})
+        text.timecodeCaption = juce::jmax(text.timecodeCaption, widthOf(captionFont, caption));
+    // The readout's glyphs stop this far inside its edge on their own (the strip
+    // inset plus half a segment's air), so the box only has to grow by what the
+    // caption needs beyond that.
+    text.timecodeGlyphInset =
+        BarsBeatsTicksLabel::kEdgeInset + (BarsBeatsTicksLabel::kSegmentPad / 2);
     text.tempo = widthOf(readoutFont, juce::String(MAX_VALID_BPM, 2));
     text.timeSigNumerator = widthOf(readoutFont, juce::String(MAX_TIME_SIGNATURE_VALUE) + "/");
     text.timeSigDenominator = widthOf(readoutFont, juce::String(MAX_TIME_SIGNATURE_VALUE));

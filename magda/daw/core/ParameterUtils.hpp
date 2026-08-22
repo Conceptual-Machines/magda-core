@@ -137,6 +137,36 @@ ParameterNormalizedValue modelToNormalizedValue(ParameterModelValue model,
 float modelToTeValue(ParameterModelValue model, const ParameterInfo& info);
 
 /**
+ * @brief True when DeviceInfo::currentValue for @p info is the TE-native value
+ *        rather than a scaled real one.
+ *
+ * This is the external-plugin case: a saved parameter config or AI-Detect gave
+ * the parameter a display range (or a choice list) while TE keeps storing it
+ * normalized, and normalizedToModelValue() deliberately leaves the model in
+ * TE's domain so it cannot fight the plugin's own listener. Everything else
+ * (internal devices, external params without an override) carries the scaled
+ * value the display range describes.
+ */
+bool modelHoldsTeNativeValue(const ParameterInfo& info);
+
+/**
+ * @brief The choice a Discrete parameter's model value selects.
+ *
+ * Internal devices store the choice index itself, so this is a rounding. An
+ * external parameter whose saved config marks it discrete stores TE's
+ * normalized value (see modelHoldsTeNativeValue), which has to be spread over
+ * the choice list: Serum's Bend Up at 0.54167 with 49 choices is "+2", not
+ * choice 1. Returns -1 when there are no choices.
+ */
+int choiceIndexForModelValue(ParameterModelValue model, const ParameterInfo& info);
+
+/**
+ * @brief The model value that selects choice @p index. Inverse of
+ *        choiceIndexForModelValue().
+ */
+ParameterModelValue modelValueForChoiceIndex(int index, const ParameterInfo& info);
+
+/**
  * @brief What one modulation link adds to a normalized value.
  *
  * The polarity and depth rule on its own, with no base and no clamp, because
