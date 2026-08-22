@@ -370,6 +370,10 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
     // auto-crossfade audio clips play as crossfades instead of trimming.
     clip.autoCrossfade = Config::getInstance().getAutoCrossfadeByDefault();
 
+    // What a new clip starts with when something covers it (#2003). Per clip
+    // from here on: the preference seeds it and never speaks for it again.
+    clip.overlapPlaysBoth = Config::getInstance().getClipOverlapPlaysBoth();
+
     const double bpm = isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
 
     clip.setPlacementBeats(startBeats, lengthBeats);
@@ -529,6 +533,9 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
     clip.trackId = trackId;
     clip.setMidiContent();
     clip.view = view;
+    // Occlusion applies to audio and MIDI alike, so the preference seeds both
+    // (#2003). Per clip from here on.
+    clip.overlapPlaysBoth = Config::getInstance().getClipOverlapPlaysBoth();
     clip.name = generateClipName(ClipType::MIDI);
     // Chord-track clips are chord progressions, not generic MIDI clips.
     if (const auto* nameTrack = TrackManager::getInstance().getTrack(trackId);
