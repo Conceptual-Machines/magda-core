@@ -32,8 +32,9 @@ void configureMomentaryButton(MomentaryParamButton& button,
  * @brief Create/configure a combo box for a discrete parameter with named choices.
  *
  * Populates the combo with the choices in @p info and sets the current
- * selection. The callback is wired to fire @p onValueChanged with a
- * normalized 0–1 value.
+ * selection. The callback is wired to fire @p onValueChanged with the selected
+ * choice index; the caller maps that onto the parameter's model value (see
+ * ParameterUtils::modelValueForChoiceIndex).
  */
 void configureDiscreteCombo(juce::ComboBox& combo, const magda::ParameterInfo& info,
                             std::function<void(double)> onValueChanged);

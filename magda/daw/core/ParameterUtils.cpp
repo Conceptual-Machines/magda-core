@@ -273,6 +273,43 @@ float modelToTeValue(ParameterModelValue model, const ParameterInfo& info) {
     return info.teMinValue + normalized.value * teSpan;
 }
 
+bool modelHoldsTeNativeValue(const ParameterInfo& info) {
+    // The branch normalizedToModelValue() / modelToNormalizedValue() take when
+    // they leave the value in TE's domain, named so widgets can ask the same
+    // question instead of guessing at the value's meaning.
+    return !infoMatchesTeRange(info) && !isDisplayMappedInternalValue(info);
+}
+
+int choiceIndexForModelValue(ParameterModelValue model, const ParameterInfo& info) {
+    const int count = static_cast<int>(info.choices.size());
+    if (count <= 0)
+        return -1;
+
+    if (modelHoldsTeNativeValue(info)) {
+        const float normalized = modelToNormalizedValue(model, info).value;
+        return juce::jlimit(
+            0, count - 1,
+            static_cast<int>(std::lround(normalized * static_cast<float>(count - 1))));
+    }
+
+    return juce::jlimit(0, count - 1, static_cast<int>(std::lround(model.value)));
+}
+
+ParameterModelValue modelValueForChoiceIndex(int index, const ParameterInfo& info) {
+    const int count = static_cast<int>(info.choices.size());
+    if (count <= 0)
+        return {0.0f};
+    index = juce::jlimit(0, count - 1, index);
+
+    if (modelHoldsTeNativeValue(info)) {
+        const float normalized =
+            count > 1 ? static_cast<float>(index) / static_cast<float>(count - 1) : 0.0f;
+        return normalizedToModelValue(ParameterNormalizedValue::clamped(normalized), info);
+    }
+
+    return {static_cast<float>(index)};
+}
+
 float modulationOffset(float modValue, float amount, bool bipolar) {
     // modValue is 0-1, convert to -1 to +1 if bipolar, then scale by the depth.
     return (bipolar ? (modValue * 2.0f - 1.0f) : modValue) * amount;

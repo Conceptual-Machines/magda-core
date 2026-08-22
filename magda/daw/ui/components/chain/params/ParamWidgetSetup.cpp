@@ -123,7 +123,6 @@ void configureDiscreteCombo(juce::ComboBox& combo, const magda::ParameterInfo& i
     combo.setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
     combo.setJustificationType(juce::Justification::centred);
 
-    int numChoices = static_cast<int>(info.choices.size());
     combo.onChange = [&combo, cb = std::move(onValueChanged)]() {
         if (cb) {
             int selected = combo.getSelectedItemIndex();
@@ -131,14 +130,21 @@ void configureDiscreteCombo(juce::ComboBox& combo, const magda::ParameterInfo& i
         }
     };
 
-    combo.clear();
+    // ComboBox::clear() defaults to sendNotificationAsync. A slot is reused
+    // across rebuilds, so from the second configure on the combo already holds
+    // a selection and clearing it queues an onChange that lands AFTER the
+    // items below are re-added and the current choice re-selected: the
+    // callback then reads that selection and writes it back to the parameter
+    // as if the user had picked it. That is how a Serum loaded with a saved
+    // discrete config came back transposed after a view switch.
+    combo.clear(juce::dontSendNotification);
     int id = 1;
     for (const auto& choice : info.choices) {
         combo.addItem(choice, id++);
     }
 
-    int selectedIndex = static_cast<int>(std::round(info.currentValue));
-    combo.setSelectedItemIndex(juce::jlimit(0, numChoices - 1, selectedIndex),
+    combo.setSelectedItemIndex(magda::ParameterUtils::choiceIndexForModelValue(
+                                   magda::ParameterModelValue{info.currentValue}, info),
                                juce::dontSendNotification);
 }
 
