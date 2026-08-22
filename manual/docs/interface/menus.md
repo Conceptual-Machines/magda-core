@@ -88,6 +88,8 @@ Each track has a checkbox for each view mode: **Live**, **Arrange**, **Mix**, an
 | Preferences | Open the preferences dialog |
 | AI Settings | Open the AI settings dialog (see [AI Assistant — Setup](../panels/ai-assistant.md#setup)) |
 | Audio/MIDI Settings | Open audio and MIDI device configuration |
+| Controllers | Open the controllers dialog (see [Controllers](controllers.md)) |
+| Connections | Open the MCP and WebSocket endpoints, OSC, and client permissions (see [Connections](connections.md)) |
 | Plugin Settings | Open plugin settings (see [Plugin Settings](plugin-settings.md)) |
 
 ## Window

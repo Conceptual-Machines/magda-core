@@ -157,10 +157,15 @@ std::optional<Endpoint> resolveEndpoint() {
         if (pid <= 0 || !isProcessAlive(pid))
             continue;
 
-        // Absent when MAGDA came up but its MCP listener did not. The record is
-        // still valid for the WebSocket, and is simply not for us.
+        // Absent when the MCP endpoint is switched off or did not bind. The
+        // record is still valid for the WebSocket, and is simply not for us.
         const auto url = parsed["mcpUrl"].toString();
-        const auto token = parsed["token"].toString();
+        // Each transport carries its own credential since #2142. `token` is the
+        // WebSocket's; falling back to it keeps this bridge working against a
+        // MAGDA that predates the split, where one token opened both.
+        auto token = parsed["mcpToken"].toString();
+        if (token.isEmpty())
+            token = parsed["token"].toString();
         if (url.isEmpty() || token.isEmpty())
             continue;
 

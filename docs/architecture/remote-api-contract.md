@@ -47,6 +47,18 @@ MCP projects operations into tools and read operations into `magda://` resources
 — see [remote-api-mcp.md](remote-api-mcp.md). Both consume this registry, and
 neither declares an operation or a schema of its own.
 
+They are independent listeners: separate ports, separate bearer tokens, and a
+separate switch each, so either can run without the other and either can be
+restarted or re-credentialled while the other keeps serving. What they share is
+everything above the socket — one `OperationRegistry`, one dispatcher, one
+subscription hub, one client registry. Two dispatchers would be two revision
+counters and two undo groupings over one project; two registries would be two
+answers to "may this client edit".
+
+(OSC is not one of these transports. It does not consume this registry, carries
+no token, and has no place in the scope model — it is a control-surface protocol
+that happens to arrive over a socket.)
+
 Both also want to know who is calling, so the user can grant them different
 things. A WebSocket client names itself in the upgrade's query string
 (`ws://127.0.0.1:51734/rpc?client=my-tool`); an MCP client uses

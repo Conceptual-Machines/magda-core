@@ -22,7 +22,7 @@ from typing import Any
 from wire import SseParser, WebSocket, osc_decode, osc_encode
 
 #: What this harness calls itself. Stable rather than random so it occupies one
-#: row in AI Settings -> Clients instead of a new one per run.
+#: row in Connections -> Clients instead of a new one per run.
 CLIENT_NAME = "magda-transport-check"
 
 #: A second identity that must never be granted anything. The read-only checks

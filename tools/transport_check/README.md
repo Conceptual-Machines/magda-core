@@ -33,7 +33,7 @@ between the docs and the build shows up here as a failing check.
 
 | Suite | Needs |
 |---|---|
-| everything | MAGDA running with **AI Settings → Remote** switched on |
+| everything | MAGDA running with **Connections → MCP** and **Connections → WebSocket** switched on |
 | `--osc` | **OSC enabled** in the Controllers settings (it is off by default) |
 | `--bridge` | `magda-mcp` beside the running executable, on `PATH`, or `--bridge-path` |
 | `--mcp-sdk` | Python 3.10+ with `pip install -r tools/transport_check/requirements.txt` |
@@ -129,7 +129,7 @@ Two consequences:
 
 ## Clients it registers
 
-Two entries appear in **AI Settings → Clients** after a run:
+Two entries appear in **Connections → Clients** after a run:
 
 | Name | Grant it |
 |---|---|

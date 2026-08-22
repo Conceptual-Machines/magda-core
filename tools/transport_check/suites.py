@@ -66,7 +66,7 @@ class Context:
         if client_name not in self._mcp_clients:
             origin, path = self.record.mcp_origin_and_path()
             self._mcp_clients[client_name] = McpHttpClient(
-                origin, path, self.record.token, client_name, timeout=self.timeout
+                origin, path, self.record.mcp_token, client_name, timeout=self.timeout
             )
         return self._mcp_clients[client_name]
 
@@ -255,6 +255,12 @@ def run_discovery(context: Context, others: list[discovery.Record]) -> None:
 
 def run_websocket(context: Context) -> None:
     runner = SuiteRunner(context, "websocket")
+    # Since #2142 the two transports switch on separately, so a record with no
+    # WebSocket entry is a supported configuration rather than a broken run —
+    # the mirror image of the `has_mcp` guard the MCP suites have always had.
+    if not context.record.has_websocket:
+        runner.skip("every check", "the record carries no WebSocket url")
+        return
     from wire import HandshakeError
 
     def bad_token() -> tuple[Status, str, dict]:
@@ -386,7 +392,7 @@ def _ws_write(ws: WsClient) -> tuple[Status, str, dict]:
                 f"'{clients.CLIENT_NAME}' has not been granted 'edit'. That is the "
                 "correct default — every new client is read-only — but it means this "
                 "check cannot run. Tick edit and transport for it in "
-                "AI Settings -> Clients."
+                "Connections -> Clients."
             )
         assert written.ok, f"setTempo failed: {written.error}"
         assert written.revision is not None and before.revision is not None
@@ -438,7 +444,7 @@ def _ws_stale(ws: WsClient) -> tuple[Status, str, dict]:
     if _is_permission_denial(reply):
         return unclear(
             f"refused, but for want of the 'edit' permission rather than the stale "
-            f"revision — grant '{clients.CLIENT_NAME}' edit in AI Settings -> Clients "
+            f"revision — grant '{clients.CLIENT_NAME}' edit in Connections -> Clients "
             "for this to check what it is meant to",
             code=reply.code,
         )
@@ -948,8 +954,11 @@ def run_bridge_without_magda(context: Context) -> None:
 
 def run_readonly(context: Context) -> None:
     runner = SuiteRunner(context, "read-only client")
+    if not context.record.has_websocket:
+        runner.skip("every check", "the record carries no WebSocket url")
+        return
     runner.report.note(
-        f"as '{clients.READONLY_CLIENT_NAME}' — do not grant this one anything in AI Settings"
+        f"as '{clients.READONLY_CLIENT_NAME}' — do not grant this one anything in Connections"
     )
 
     def ws_read() -> tuple[Status, str, dict]:
@@ -966,7 +975,7 @@ def run_readonly(context: Context) -> None:
             if reply.ok:
                 return fail(
                     "an ungranted client created a track. Either this name has been "
-                    "granted 'edit' in AI Settings -> Clients, or nothing is being enforced."
+                    "granted 'edit' in Connections -> Clients, or nothing is being enforced."
                 )
             message = (reply.error or {}).get("message", "")
             return ok(f"code {reply.code}: {message[:80]}", code=reply.code, message=message)

@@ -40,6 +40,9 @@ enum class TechnicalTextToken {
     Hex,
     Lua,
     Osc,
+    Api,
+    Mcp,
+    WebSocket,
 };
 
 inline juce::String technicalText(TechnicalTextToken token) {
@@ -111,6 +114,12 @@ inline juce::String technicalText(TechnicalTextToken token) {
             return "Lua";
         case TechnicalTextToken::Osc:
             return "OSC";
+        case TechnicalTextToken::Api:
+            return "API";
+        case TechnicalTextToken::Mcp:
+            return "MCP";
+        case TechnicalTextToken::WebSocket:
+            return "WebSocket";
     }
 
     return {};

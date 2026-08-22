@@ -73,6 +73,10 @@ class SubscriptionHub;
  * config, when no token could be generated, or when the port is taken. There is
  * no partial state where MAGDA is listening but unauthenticated.
  */
+/// Which listener. Both are carried by one `RemoteApiHost`, but they are
+/// started, stopped, and credentialled independently (#2142).
+enum class Transport { WebSocket, Mcp };
+
 class RemoteApiHost {
   public:
     /**
@@ -91,12 +95,39 @@ class RemoteApiHost {
     RemoteApiHost& operator=(const RemoteApiHost&) = delete;
 
     /**
-     * @brief Read config, generate a token, publish it, and start listening.
+     * @brief Start whichever transports config enables, and publish the record.
      *
-     * A no-op returning false when `Config::getRemoteApiEnabled()` is off, so
-     * the caller can always call this and let configuration decide.
+     * Each transport is independent: one that is disabled is skipped, and one
+     * that fails to bind does not take the other down. Returns true when at
+     * least one listener came up, so false means nothing is answering — which is
+     * also what it returns when both are switched off.
      */
     bool start();
+
+    /**
+     * @brief Open one transport, leaving the other exactly as it is (#2142).
+     *
+     * What a settings toggle needs. Mints that transport's credential, binds its
+     * port, and rewrites the discovery record to add it; the other transport's
+     * entry and token in that record are untouched, so a client already
+     * connected over it never notices.
+     *
+     * Returns false when config has this transport switched off, when it is
+     * already running, or when the port could not be bound.
+     *
+     * Message thread only, like `start()`.
+     */
+    bool startTransport(Transport transport);
+
+    /**
+     * @brief Close one transport, leaving the other listening.
+     *
+     * Withdraws that transport's credential and its entry in the discovery
+     * record, and drops the connections it was carrying. Idempotent. When it is
+     * the last one listening the record goes away entirely, because a record
+     * with neither transport in it advertises nothing.
+     */
+    void stopTransport(Transport transport);
 
     /**
      * @brief Close the listeners and withdraw the credential, permanently.
@@ -133,15 +164,25 @@ class RemoteApiHost {
      * record, which this rewrites before returning — so a well-behaved one
      * recovers on its own and a stale copy of the old token never works again.
      *
-     * A no-op returning false when nothing is listening: there is no credential
-     * to rotate, and minting one without a listener would publish a record for
-     * a port nobody is answering on.
+     * A no-op returning false when this transport is not listening: there is no
+     * credential to rotate, and minting one without a listener would publish a
+     * record for a port nobody is answering on.
+     *
+     * Per transport since #2142. The two hold separate tokens, so rotating one
+     * leaves the other's clients connected — re-credentialling a misbehaving
+     * script no longer drops an AI host mid-conversation. It buys granularity,
+     * not isolation: both tokens live in the same owner-only file and both doors
+     * open onto the same dispatcher and the same grants.
      *
      * Message thread only, like `start()`.
      */
-    bool rotateToken();
+    bool rotateToken(Transport transport);
 
+    /// Whether anything is listening.
     bool isRunning() const;
+
+    /// Whether that particular transport is listening.
+    bool isRunning(Transport transport) const;
 
     /// The WebSocket port actually bound, or 0 when not running.
     int boundPort() const;
@@ -234,7 +275,30 @@ class RemoteApiHost {
     std::unique_ptr<SubscriptionHub> subscriptions_;
     std::unique_ptr<RemoteWebSocketServer> server_;
     std::unique_ptr<RemoteMcpServer> mcpServer_;
-    juce::String token_;
+
+    /// One credential per transport. Separate so either can be rotated alone;
+    /// see `rotateToken`.
+    juce::String wsToken_;
+    juce::String mcpToken_;
+
+    /**
+     * @brief Rewrite the discovery record from whatever is listening right now.
+     *
+     * Called after every start, stop, and rotation, because the record is a
+     * projection of live state rather than of config: a port in it that nothing
+     * is answering on is the one failure mode it exists to prevent. Deletes the
+     * file instead when neither transport is up.
+     *
+     * Returns false when the record could not be written, which the callers
+     * treat as fatal to the listeners they just brought up — a listener whose
+     * token nobody can read is useless and still a listener.
+     */
+    bool publishRecord();
+
+    /// Drop the connections one transport was carrying. Its sockets are gone by
+    /// the time this runs, so anything still listed is a phantom row in the
+    /// settings table with a disconnect button that would answer false.
+    void forgetConnections(Transport transport);
 };
 
 /**

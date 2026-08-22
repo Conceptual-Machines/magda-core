@@ -406,6 +406,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                          true, false);
             menu.addSeparator();
             menu.addItem(ControllerSettings, trEllipsis("menu.settings.controllers"), true, false);
+            menu.addItem(ConnectionSettings, trEllipsis("menu.settings.connections"), true, false);
             menu.addSeparator();
             menu.addItem(PluginSettings, trEllipsis("menu.settings.plugins"), true, false);
             break;
@@ -608,6 +609,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case ControllerSettings:
             if (callbacks_.onControllerSettings)
                 callbacks_.onControllerSettings();
+            break;
+        case ConnectionSettings:
+            if (callbacks_.onConnectionSettings)
+                callbacks_.onConnectionSettings();
             break;
 
         // View menu

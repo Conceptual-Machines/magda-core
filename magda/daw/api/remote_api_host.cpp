@@ -121,7 +121,18 @@ juce::String generateToken() {
  * is never briefly world-readable. On Windows the file inherits the ACL of the
  * per-user app data directory, which is already owner-only.
  */
-bool writeTokenFile(const juce::File& file, const juce::String& token, int port, int mcpPort) {
+/**
+ * @brief Publish whatever is listening, with one credential per transport.
+ *
+ * A transport's port, URL and token appear together or not at all: a client
+ * reads one group and needs all three, and a partial entry is a client that
+ * connects to a port with no credential or presents a credential to nothing.
+ *
+ * `token`/`url`/`port` are the WebSocket's and keep their original names, so a
+ * script written before the split still finds what it was reading.
+ */
+bool writeTokenFile(const juce::File& file, const juce::String& wsToken, int port,
+                    const juce::String& mcpToken, int mcpPort) {
     file.getParentDirectory().createDirectory();
     file.deleteFile();
     if (!file.create().wasOk())
@@ -136,15 +147,21 @@ bool writeTokenFile(const juce::File& file, const juce::String& token, int port,
 #endif
 
     auto* payload = new juce::DynamicObject();
-    payload->setProperty("port", port);
-    payload->setProperty("token", token);
-    payload->setProperty("url", "ws://127.0.0.1:" + juce::String(port) + "/rpc");
+    // Each group is present only when its listener actually came up. A URL for a
+    // port nothing is answering on is worse than its absence, which a client can
+    // at least act on — and since #2142 either transport can legitimately be the
+    // one that is off, so this is the normal case rather than a failure.
+    if (port > 0 && wsToken.isNotEmpty()) {
+        payload->setProperty("port", port);
+        payload->setProperty("token", wsToken);
+        payload->setProperty("url", "ws://127.0.0.1:" + juce::String(port) + "/rpc");
+    }
     // Named separately because a client picks one: an MCP host wants `mcpUrl`, a
-    // script that needs pushed state wants `url`. Present only when the MCP
-    // listener actually came up — a URL for a port nothing is answering on is
-    // worse than its absence, which a client can at least act on.
-    if (mcpPort > 0) {
+    // script that needs pushed state wants `url`. The tokens are separate too,
+    // so rotating one transport cannot invalidate the other's sessions.
+    if (mcpPort > 0 && mcpToken.isNotEmpty()) {
         payload->setProperty("mcpPort", mcpPort);
+        payload->setProperty("mcpToken", mcpToken);
         payload->setProperty("mcpUrl", "http://127.0.0.1:" + juce::String(mcpPort) +
                                            RemoteMcpServer::endpointPath());
     }
@@ -300,28 +317,40 @@ void RemoteApiHost::persistGrants() {
 }
 
 bool RemoteApiHost::start() {
-    if (server_ != nullptr && server_->isRunning())
-        return true;
-
-    // Our own record predates this listener, and a record without a listener
-    // behind it is worse than none: it hands a client a port and a credential
-    // that a crashed previous run left behind, and if the OS has reissued that
-    // port it points them at a stranger. Clearing it before every early return —
-    // disabled in config, no token, a port already taken — keeps the rule that a
-    // record exists only while something is answering on it. The already-running
-    // check comes first so a second call cannot delete a record still in use.
-    tokenFile().deleteFile();
-
     // Other instances' records are theirs to remove; only the ones whose process
     // has gone are ours to sweep.
     sweepAbandonedRecords(paths::dataDir(), currentProcessId());
 
+    // Independently, and neither result gates the other: a machine where the
+    // MCP port is taken should still get its WebSocket.
+    startTransport(Transport::WebSocket);
+    startTransport(Transport::Mcp);
+
+    if (isRunning())
+        return true;
+
+    // Nothing came up, and a record exists only while something is answering on
+    // it. Our own can still be here from a crashed run under this pid — the
+    // sweep above only collects records whose process is gone, and this process
+    // is very much alive. Left alone it advertises a port nothing is listening
+    // on, and if the OS has reissued that port it points a client at a stranger.
+    // `publishRecord` deletes the file when both servers are down.
+    publishRecord();
+    return false;
+}
+
+bool RemoteApiHost::startTransport(Transport transport) {
+    if (isRunning(transport))
+        return true;
+
     auto& config = Config::getInstance();
-    if (!config.getRemoteApiEnabled())
+    const auto wanted = transport == Transport::WebSocket ? config.getRemoteApiWebSocketEnabled()
+                                                          : config.getRemoteApiMcpEnabled();
+    if (!wanted)
         return false;
 
-    token_ = generateToken();
-    if (token_.isEmpty()) {
+    auto token = generateToken();
+    if (token.isEmpty()) {
         DBG("RemoteApiHost: could not generate a token; not starting");
         return false;
     }
@@ -329,62 +358,61 @@ bool RemoteApiHost::start() {
     // The token is a credential that will appear in headers this process logs
     // around. Registering it means any line that quotes one is masked before it
     // reaches the audit log or the app log.
-    registerRemoteSecret(token_);
+    registerRemoteSecret(token);
 
-    RemoteWebSocketServer::Options options;
-    options.bearerToken = token_;
-    options.port = config.getRemoteApiPort();
-    options.clients = clients_.get();
-    options.audit = audit_;
+    juce::StringArray allowedOrigins;
     for (const auto& origin : config.getRemoteApiAllowedOrigins())
-        options.allowedOrigins.push_back(juce::String::fromUTF8(origin.c_str()));
+        allowedOrigins.add(juce::String::fromUTF8(origin.c_str()));
 
-    server_ = std::make_unique<RemoteWebSocketServer>(*service_, options, subscriptions_.get());
-    if (!server_->start()) {
-        server_.reset();
-        forgetRemoteSecret(token_);
-        token_ = {};
-        return false;
-    }
+    if (transport == Transport::WebSocket) {
+        RemoteWebSocketServer::Options options;
+        options.bearerToken = token;
+        options.port = config.getRemoteApiPort();
+        options.clients = clients_.get();
+        options.audit = audit_;
+        for (const auto& origin : allowedOrigins)
+            options.allowedOrigins.push_back(origin);
 
-    // The MCP endpoint, on its own port and behind the same token and the same
-    // enable flag. Its failure is not fatal to the WebSocket: they are separate
-    // listeners precisely so one cannot take the other down, and a MAGDA with a
-    // working control socket and no MCP endpoint is a degraded state a user can
-    // still work in. The discovery record then simply omits `mcpUrl`.
-    RemoteMcpServer::Options mcpOptions;
-    mcpOptions.bearerToken = token_;
-    mcpOptions.port = config.getRemoteApiMcpPort();
-    mcpOptions.allowedOrigins = options.allowedOrigins;
-    mcpOptions.clients = clients_.get();
-    mcpOptions.audit = audit_;
+        server_ = std::make_unique<RemoteWebSocketServer>(*service_, options, subscriptions_.get());
+        if (!server_->start()) {
+            server_.reset();
+            forgetRemoteSecret(token);
+            return false;
+        }
+        wsToken_ = token;
+    } else {
+        RemoteMcpServer::Options options;
+        options.bearerToken = token;
+        options.port = config.getRemoteApiMcpPort();
+        options.clients = clients_.get();
+        options.audit = audit_;
+        for (const auto& origin : allowedOrigins)
+            options.allowedOrigins.push_back(origin);
 
-    mcpServer_ = std::make_unique<RemoteMcpServer>(*service_, mcpOptions, subscriptions_.get());
-    if (!mcpServer_->start()) {
-        DBG("RemoteApiHost: MCP endpoint did not start; the WebSocket API is unaffected");
-        mcpServer_.reset();
+        mcpServer_ = std::make_unique<RemoteMcpServer>(*service_, options, subscriptions_.get());
+        if (!mcpServer_->start()) {
+            DBG("RemoteApiHost: MCP endpoint did not start");
+            mcpServer_.reset();
+            forgetRemoteSecret(token);
+            return false;
+        }
+        mcpToken_ = token;
     }
 
     // A running listener whose token nobody can read is useless and still a
-    // listener, so a failure to publish takes the servers down with it.
-    if (!writeTokenFile(tokenFile(), token_, server_->boundPort(), mcpPort())) {
-        // The name, not the path. This line goes to the app log, which users
-        // paste into bug reports, and the directory is their home directory.
+    // listener, so a failure to publish takes down the one just started. The
+    // other transport keeps its entry, which `publishRecord` rewrote from live
+    // state before failing.
+    if (!publishRecord()) {
         DBG("RemoteApiHost: could not write " + redactedFileName(tokenFile()));
-        if (mcpServer_ != nullptr) {
-            mcpServer_->stop();
-            mcpServer_.reset();
-        }
-        server_->stop();
-        server_.reset();
-        forgetRemoteSecret(token_);
-        token_ = {};
+        stopTransport(transport);
         return false;
     }
 
-    juce::Logger::writeToLog(
-        "Remote API listening on ws://127.0.0.1:" + juce::String(server_->boundPort()) + "/rpc");
-    if (mcpServer_ != nullptr) {
+    if (transport == Transport::WebSocket) {
+        juce::Logger::writeToLog("Remote API listening on ws://127.0.0.1:" +
+                                 juce::String(server_->boundPort()) + "/rpc");
+    } else {
         juce::Logger::writeToLog(
             "MCP endpoint listening on http://127.0.0.1:" + juce::String(mcpServer_->boundPort()) +
             RemoteMcpServer::endpointPath());
@@ -392,47 +420,80 @@ bool RemoteApiHost::start() {
     return true;
 }
 
-void RemoteApiHost::stopListening() {
-    // Before the hub, like the WebSocket server: an open notification stream is
-    // a registered hub client, and the hub must not be shut down underneath one.
-    if (mcpServer_ != nullptr) {
-        mcpServer_->stop();
-        mcpServer_.reset();
-    }
-    if (server_ != nullptr) {
+void RemoteApiHost::stopTransport(Transport transport) {
+    if (transport == Transport::WebSocket) {
+        if (server_ == nullptr)
+            return;
         server_->stop();
         server_.reset();
+        forgetRemoteSecret(wsToken_);
+        wsToken_ = {};
+    } else {
+        if (mcpServer_ == nullptr)
+            return;
+        mcpServer_->stop();
+        mcpServer_.reset();
+        forgetRemoteSecret(mcpToken_);
+        mcpToken_ = {};
     }
-    // The token dies with the listener that used it; leaving the file behind
-    // would advertise a port that is no longer listening and a credential that
-    // no longer works.
-    tokenFile().deleteFile();
-    forgetRemoteSecret(token_);
-    token_ = {};
 
-    // Connections were tracked by the servers that have just gone. Anything
-    // still listed refers to a socket that no longer exists — a settings table
-    // showing phantom clients, with a disconnect button that would answer
-    // false. Grants are untouched: those are the user's decisions, not
-    // per-run state.
-    if (clients_ != nullptr) {
-        for (const auto& client : clients_->connections())
-            clients_->noteDisconnected(client.connectionId);
-    }
+    // Rewritten rather than deleted: the other transport may still be up, and
+    // its client should not lose the record it re-reads on reconnect.
+    // `publishRecord` deletes the file itself once nothing is listening.
+    publishRecord();
+    forgetConnections(transport);
 }
 
-bool RemoteApiHost::rotateToken() {
-    if (!isRunning())
+bool RemoteApiHost::publishRecord() {
+    const auto file = tokenFile();
+
+    // Nothing listening means no record. One that outlived its listeners hands a
+    // client a port a crashed run left behind, and if the OS has reissued it,
+    // points them at a stranger.
+    if (server_ == nullptr && mcpServer_ == nullptr) {
+        file.deleteFile();
+        return true;
+    }
+
+    return writeTokenFile(file, wsToken_, boundPort(), mcpToken_, mcpPort());
+}
+
+void RemoteApiHost::forgetConnections(Transport transport) {
+    if (clients_ == nullptr)
+        return;
+
+    // Connections were tracked by the server that has just gone. Anything still
+    // listed refers to a socket that no longer exists — a settings table showing
+    // phantom clients, with a disconnect button that would answer false. Grants
+    // are untouched: those are the user's decisions, not per-run state.
+    const juce::String name =
+        transport == Transport::WebSocket ? TRANSPORT_WEBSOCKET : TRANSPORT_MCP;
+    for (const auto& client : clients_->connections())
+        if (client.transport == name)
+            clients_->noteDisconnected(client.connectionId);
+}
+
+void RemoteApiHost::stopListening() {
+    // MCP before the WebSocket, and both before the hub: an open notification
+    // stream is a registered hub client, and the hub must not be shut down
+    // underneath one.
+    stopTransport(Transport::Mcp);
+    stopTransport(Transport::WebSocket);
+}
+
+bool RemoteApiHost::rotateToken(Transport transport) {
+    if (!isRunning(transport))
         return false;
 
-    // A restart rather than a swap of the credential in place. Both servers
-    // read `bearerToken` from an immutable Options copy taken at construction,
-    // and making it mutable would mean a live comparison against a value
-    // changing under the comparing thread — for the one operation where being
-    // half-applied is worst. Rebuilding is what guarantees every existing
-    // connection is gone: they were admitted by a token that no longer exists.
-    stopListening();
-    return start();
+    // A restart of that one listener rather than a swap of the credential in
+    // place. Both servers read `bearerToken` from an immutable Options copy
+    // taken at construction, and making it mutable would mean a live comparison
+    // against a value changing under the comparing thread — for the one
+    // operation where being half-applied is worst. Rebuilding is what guarantees
+    // every existing connection *on this transport* is gone: they were admitted
+    // by a token that no longer exists. The other transport is never touched.
+    stopTransport(transport);
+    return startTransport(transport);
 }
 
 void RemoteApiHost::stop() {
@@ -453,7 +514,13 @@ void RemoteApiHost::stop() {
 }
 
 bool RemoteApiHost::isRunning() const {
-    return server_ != nullptr && server_->isRunning();
+    return isRunning(Transport::WebSocket) || isRunning(Transport::Mcp);
+}
+
+bool RemoteApiHost::isRunning(Transport transport) const {
+    if (transport == Transport::WebSocket)
+        return server_ != nullptr && server_->isRunning();
+    return mcpServer_ != nullptr && mcpServer_->isRunning();
 }
 
 int RemoteApiHost::boundPort() const {

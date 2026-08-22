@@ -29,6 +29,19 @@ Config& Config::getInstance() {
     return instance;
 }
 
+RemoteApiSwitches remoteApiSwitchesFrom(const juce::var& remoteApiObject) {
+    RemoteApiSwitches switches;
+    auto* obj = remoteApiObject.getDynamicObject();
+    if (obj == nullptr)
+        return switches;
+
+    const bool legacy = obj->hasProperty("enabled") && bool(obj->getProperty("enabled"));
+    switches.websocket =
+        obj->hasProperty("websocket") ? bool(obj->getProperty("websocket")) : legacy;
+    switches.mcp = obj->hasProperty("mcp") ? bool(obj->getProperty("mcp")) : legacy;
+    return switches;
+}
+
 void Config::addRecentProject(const std::string& path) {
     // Remove existing entry if present (dedup)
     recentProjects.erase(std::remove(recentProjects.begin(), recentProjects.end(), path),
@@ -241,7 +254,12 @@ void Config::save() {
     // generated per run into a file only the user can read.
     {
         auto* remoteObj = new juce::DynamicObject();
-        remoteObj->setProperty("enabled", remoteApiEnabled);
+        remoteObj->setProperty("websocket", remoteApiWebSocketEnabled);
+        remoteObj->setProperty("mcp", remoteApiMcpEnabled);
+        // Still written, for a config that gets read by a build predating the
+        // split (#2142). An older MAGDA starts both transports from it, which
+        // is the same thing it did before there were two switches.
+        remoteObj->setProperty("enabled", remoteApiWebSocketEnabled || remoteApiMcpEnabled);
         remoteObj->setProperty("port", remoteApiPort);
         remoteObj->setProperty("mcpPort", remoteApiMcpPort);
         juce::Array<juce::var> originArray;
@@ -745,8 +763,9 @@ void Config::load() {
     // Remote API — absent means the defaults, which leave the listener off.
     if (obj->hasProperty("remoteApi")) {
         if (auto* remoteObj = obj->getProperty("remoteApi").getDynamicObject()) {
-            if (remoteObj->hasProperty("enabled"))
-                remoteApiEnabled = remoteObj->getProperty("enabled");
+            const auto switches = remoteApiSwitchesFrom(obj->getProperty("remoteApi"));
+            remoteApiWebSocketEnabled = switches.websocket;
+            remoteApiMcpEnabled = switches.mcp;
             if (remoteObj->hasProperty("port"))
                 remoteApiPort = remoteObj->getProperty("port");
             if (remoteObj->hasProperty("mcpPort"))

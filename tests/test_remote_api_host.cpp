@@ -36,28 +36,32 @@ struct MessageThreadRelaxation {
 struct ScopedRemoteApiConfig {
     explicit ScopedRemoteApiConfig(bool enabled) {
         auto& config = Config::getInstance();
-        wasEnabled_ = config.getRemoteApiEnabled();
         previousPort_ = config.getRemoteApiPort();
         previousMcpPort_ = config.getRemoteApiMcpPort();
         // Grants too (#1860): a host persists them on every change, so a test
         // that connects a client would otherwise leave its grant behind in the
         // developer's real config file.
         previousClients_ = config.getRemoteApiClients();
-        config.setRemoteApiEnabled(enabled);
+        wasWebSocket_ = config.getRemoteApiWebSocketEnabled();
+        wasMcp_ = config.getRemoteApiMcpEnabled();
+        config.setRemoteApiWebSocketEnabled(enabled);
+        config.setRemoteApiMcpEnabled(enabled);
         config.setRemoteApiPort(0);
         config.setRemoteApiMcpPort(0);
         config.setRemoteApiClients({});
     }
     ~ScopedRemoteApiConfig() {
         auto& config = Config::getInstance();
-        config.setRemoteApiEnabled(wasEnabled_);
+        config.setRemoteApiWebSocketEnabled(wasWebSocket_);
+        config.setRemoteApiMcpEnabled(wasMcp_);
         config.setRemoteApiPort(previousPort_);
         config.setRemoteApiMcpPort(previousMcpPort_);
         config.setRemoteApiClients(previousClients_);
     }
 
   private:
-    bool wasEnabled_ = false;
+    bool wasWebSocket_ = false;
+    bool wasMcp_ = false;
     int previousPort_ = 0;
     int previousMcpPort_ = 0;
     juce::var previousClients_;
@@ -366,7 +370,7 @@ TEST_CASE("A client-supplied idempotency key still dedupes across a restart",
     REQUIRE(api.project_.info.tempo == 140.0);
 }
 
-TEST_CASE("The record names both transports, and both take the same token",
+TEST_CASE("The record names both transports, each with its own token",
           "[remote][host][auth][mcp]") {
     MessageThreadRelaxation relax;
     ScopedRemoteApiConfig config(true);
@@ -381,7 +385,12 @@ TEST_CASE("The record names both transports, and both take the same token",
     REQUIRE(host.mcpPort() != host.boundPort());
 
     const auto published = readTokenFile(host.tokenFile());
-    const auto token = published["token"].toString();
+    const auto token = published["mcpToken"].toString();
+    // Separate credentials since #2142, so that either transport can be
+    // re-credentialled without dropping the other's sessions.
+    REQUIRE(token.isNotEmpty());
+    REQUIRE(published["token"].toString().isNotEmpty());
+    REQUIRE(token != published["token"].toString());
     REQUIRE(static_cast<int>(published["mcpPort"]) == host.mcpPort());
     REQUIRE(published["mcpUrl"].toString() ==
             "http://127.0.0.1:" + juce::String(host.mcpPort()) + "/mcp");
@@ -391,8 +400,7 @@ TEST_CASE("The record names both transports, and both take the same token",
 
     httplib::Client client("http://127.0.0.1:" + std::to_string(host.mcpPort()));
 
-    // The token authenticates the user at the keyboard, not a protocol, so the
-    // one credential opens both transports.
+    // The MCP endpoint takes the MCP token.
     const httplib::Headers headers = {{"Authorization", "Bearer " + token.toStdString()},
                                       {"MCP-Protocol-Version", "2026-07-28"},
                                       {"Mcp-Method", "server/discover"}};
@@ -409,6 +417,14 @@ TEST_CASE("The record names both transports, and both take the same token",
         client.Post("/mcp", {{"Authorization", "Bearer not-the-token"}}, "{}", "application/json");
     REQUIRE(refused);
     REQUIRE(refused->status == 401);
+
+    // And specifically not the WebSocket's, which is the whole point of them
+    // being two credentials rather than one.
+    auto crossed = client.Post(
+        "/mcp", {{"Authorization", "Bearer " + published["token"].toString().toStdString()}}, "{}",
+        "application/json");
+    REQUIRE(crossed);
+    REQUIRE(crossed->status == 401);
 
     // Both listeners go down together, and the record goes with them.
     host.stop();
@@ -590,7 +606,7 @@ TEST_CASE("Rotating the token invalidates the old one and drops its clients",
         // difference between testing rotation and testing that race.
         REQUIRE(waitFor([&] { return host.clients().connectionCount() == 1; }));
 
-        REQUIRE(host.rotateToken());
+        REQUIRE(host.rotateToken(Transport::WebSocket));
     }
 
     // A new credential, published where a client will look for it.
@@ -621,6 +637,163 @@ TEST_CASE("Rotation is refused when nothing is listening", "[remote][host][permi
 
     MockMagdaApi api;
     RemoteApiHost host(api);
-    REQUIRE_FALSE(host.rotateToken());
+    REQUIRE_FALSE(host.rotateToken(Transport::WebSocket));
     REQUIRE_FALSE(host.tokenFile().existsAsFile());
+}
+
+// =============================================================================
+// Independent transports (#2142)
+// =============================================================================
+
+TEST_CASE("Either transport runs without the other", "[remote][host][lifecycle]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(false);
+    auto& settings = Config::getInstance();
+
+    SECTION("WebSocket alone publishes no MCP entry") {
+        settings.setRemoteApiWebSocketEnabled(true);
+        settings.setRemoteApiMcpEnabled(false);
+
+        MockMagdaApi api;
+        RemoteApiHost host(api);
+        REQUIRE(host.start());
+        REQUIRE(host.isRunning(Transport::WebSocket));
+        REQUIRE_FALSE(host.isRunning(Transport::Mcp));
+        REQUIRE(host.mcpPort() == 0);
+
+        const auto published = readTokenFile(host.tokenFile());
+        REQUIRE(published["url"].toString().startsWith("ws://"));
+        REQUIRE(published["token"].toString().isNotEmpty());
+        // Absent, not empty: a client that finds the key and an unusable value
+        // has to special-case it, where a missing key is already the answer.
+        REQUIRE_FALSE(published.hasProperty("mcpUrl"));
+        REQUIRE_FALSE(published.hasProperty("mcpToken"));
+    }
+
+    SECTION("MCP alone publishes no WebSocket entry") {
+        settings.setRemoteApiWebSocketEnabled(false);
+        settings.setRemoteApiMcpEnabled(true);
+
+        MockMagdaApi api;
+        RemoteApiHost host(api);
+        // The WebSocket used to be the anchor for both `isRunning` and the
+        // record, so MCP-only was not expressible at all before #2142.
+        REQUIRE(host.start());
+        REQUIRE(host.isRunning());
+        REQUIRE_FALSE(host.isRunning(Transport::WebSocket));
+        REQUIRE(host.isRunning(Transport::Mcp));
+        REQUIRE(host.boundPort() == 0);
+
+        const auto published = readTokenFile(host.tokenFile());
+        REQUIRE(published["mcpUrl"].toString().startsWith("http://"));
+        REQUIRE(published["mcpToken"].toString().isNotEmpty());
+        REQUIRE_FALSE(published.hasProperty("url"));
+        REQUIRE_FALSE(published.hasProperty("token"));
+    }
+
+    SECTION("neither means no record at all") {
+        MockMagdaApi api;
+        RemoteApiHost host(api);
+        REQUIRE_FALSE(host.start());
+        REQUIRE_FALSE(host.isRunning());
+        REQUIRE_FALSE(host.tokenFile().existsAsFile());
+    }
+}
+
+TEST_CASE("Rotating one transport leaves the other's credential alone",
+          "[remote][host][auth][mcp]") {
+    // The reason the tokens are separate: re-credentialling a misbehaving script
+    // must not drop an AI host mid-conversation.
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+
+    const auto before = readTokenFile(host.tokenFile());
+    const auto wsBefore = before["token"].toString();
+    const auto mcpBefore = before["mcpToken"].toString();
+    const auto mcpPortBefore = static_cast<int>(before["mcpPort"]);
+    REQUIRE(wsBefore.isNotEmpty());
+    REQUIRE(mcpBefore.isNotEmpty());
+
+    REQUIRE(host.rotateToken(Transport::WebSocket));
+
+    const auto after = readTokenFile(host.tokenFile());
+    REQUIRE(after["token"].toString() != wsBefore);
+    REQUIRE(after["mcpToken"].toString() == mcpBefore);
+    // Not restarted either, so an open MCP session survives on its own port.
+    REQUIRE(static_cast<int>(after["mcpPort"]) == mcpPortBefore);
+    REQUIRE(host.isRunning(Transport::Mcp));
+
+    // And the other way round.
+    REQUIRE(host.rotateToken(Transport::Mcp));
+    const auto last = readTokenFile(host.tokenFile());
+    REQUIRE(last["mcpToken"].toString() != mcpBefore);
+    REQUIRE(last["token"].toString() == after["token"].toString());
+}
+
+TEST_CASE("Stopping one transport keeps the other's record entry",
+          "[remote][host][lifecycle][mcp]") {
+    MessageThreadRelaxation relax;
+    ScopedRemoteApiConfig config(true);
+
+    MockMagdaApi api;
+    RemoteApiHost host(api);
+    REQUIRE(host.start());
+    const auto wsToken = readTokenFile(host.tokenFile())["token"].toString();
+
+    host.stopTransport(Transport::Mcp);
+
+    REQUIRE(host.isRunning(Transport::WebSocket));
+    REQUIRE_FALSE(host.isRunning(Transport::Mcp));
+    const auto published = readTokenFile(host.tokenFile());
+    // Rewritten, not deleted: a WebSocket client re-reading the record on
+    // reconnect must still find its own entry, unchanged.
+    REQUIRE(published["token"].toString() == wsToken);
+    REQUIRE_FALSE(published.hasProperty("mcpUrl"));
+
+    host.stopTransport(Transport::WebSocket);
+    REQUIRE_FALSE(host.tokenFile().existsAsFile());
+}
+
+TEST_CASE("Config switches survive the transport split", "[remote][host][lifecycle]") {
+    auto switchesFor = [](const char* json) {
+        juce::var parsed;
+        REQUIRE(juce::JSON::parse(json, parsed).wasOk());
+        return magda::remoteApiSwitchesFrom(parsed);
+    };
+
+    SECTION("a file predating the split starts both") {
+        // `enabled` was one switch for two listeners. Reading it as anything
+        // less would silently turn off a transport already in use.
+        const auto s = switchesFor(R"({"enabled":true,"port":0,"mcpPort":0})");
+        REQUIRE(s.websocket);
+        REQUIRE(s.mcp);
+    }
+
+    SECTION("a legacy file that was off stays off") {
+        const auto s = switchesFor(R"({"enabled":false})");
+        REQUIRE_FALSE(s.websocket);
+        REQUIRE_FALSE(s.mcp);
+    }
+
+    SECTION("an explicit switch beats the legacy flag, including turning one off") {
+        const auto s = switchesFor(R"({"enabled":true,"mcp":false})");
+        REQUIRE(s.websocket);
+        REQUIRE_FALSE(s.mcp);
+    }
+
+    SECTION("the new keys stand on their own") {
+        const auto s = switchesFor(R"({"websocket":false,"mcp":true})");
+        REQUIRE_FALSE(s.websocket);
+        REQUIRE(s.mcp);
+    }
+
+    SECTION("no remoteApi block at all means nothing listens") {
+        const auto s = magda::remoteApiSwitchesFrom(juce::var());
+        REQUIRE_FALSE(s.websocket);
+        REQUIRE_FALSE(s.mcp);
+    }
 }

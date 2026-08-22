@@ -13,26 +13,60 @@ revisions, the same one-undo-step-per-mutation, the same error taxonomy.
 
 ## Connecting
 
-The MCP endpoint is off unless the remote API is enabled, and it binds loopback
-only. When MAGDA starts it writes a discovery record beside its other app data:
+The MCP endpoint is off until switched on, and it binds loopback only. When MAGDA
+starts it writes a discovery record beside its other app data:
 
 ```
 remote-api-<pid>.json
 {"port":51734,"token":"…","url":"ws://127.0.0.1:51734/rpc",
- "mcpPort":51735,"mcpUrl":"http://127.0.0.1:51735/mcp","pid":4021}
+ "mcpPort":51735,"mcpToken":"…","mcpUrl":"http://127.0.0.1:51735/mcp",
+ "pid":4021}
 ```
 
 The record is per process, because MAGDA allows more than one instance; a client
-that finds several is looking at several running instances and has to pick. Both
-transports appear in one record and take the same token — it authenticates the
-user at the keyboard, not a protocol.
+that finds several is looking at several running instances and has to pick.
+
+### Two transports, one record
+
+The remote API is **two listeners, not one**: a WebSocket carrying JSON-RPC, and
+this MCP endpoint over Streamable HTTP. They share a dispatcher, a subscription
+hub, and a client registry — see
+[remote-api-contract.md](architecture/remote-api-contract.md) — but they are
+separate sockets on separate ports, switched on separately, each with its own
+bearer token.
+
+So a group in the record is present only when its listener is up:
+
+| Keys | The |
+|---|---|
+| `port`, `url`, `token` | WebSocket |
+| `mcpPort`, `mcpUrl`, `mcpToken` | MCP endpoint |
+
+Read the group you need and treat a missing one as "that transport is off",
+which is a supported state rather than a fault. An MCP host wants `mcpUrl` and
+`mcpToken`; a script that needs pushed state wants `url` and `token`.
+
+The tokens are separate so that either transport can be re-credentialled without
+dropping the other's sessions. That buys granularity, **not isolation**: both
+live in the same owner-only file, and both doors open onto the same operations
+and the same per-client grants. A token authenticates the user at the keyboard,
+not a protocol.
+
+> `mcpToken` arrived in #2142. A client written before it read `token` for both,
+> so falling back to `token` when `mcpToken` is absent keeps working against an
+> older MAGDA. MAGDA's own bridge does exactly that.
+
+**OSC is not part of any of this.** It is a separate stack with its own socket
+and no token, no client registry, and no scopes. It shares the Connections
+dialog and nothing else.
 
 ### Turning it on
 
-**AI Settings → Remote.** The toggle opens and closes the listener immediately
-rather than at the next launch, and the page shows the exact JSON to paste into
-an MCP host, composed from this install's own paths. Copy it, paste it, done —
-there is nothing to look up.
+**Settings → Connections → MCP.** The toggle opens and closes that listener
+immediately rather than at the next launch, and the page shows the exact JSON to
+paste into an MCP host, composed from this install's own paths. Copy it, paste
+it, done — there is nothing to look up. The WebSocket has its own tab and its own
+switch; leaving it off costs an MCP host nothing.
 
 Everything below is what that page is doing, for anyone wiring it by hand.
 
@@ -42,8 +76,8 @@ A client that connects for the first time can **read only**. If your host report
 that it cannot create a track or start playback, that is not a bug — nothing has
 been granted yet.
 
-**AI Settings → Clients** lists everything that has connected, by the name it
-gave. Tick what you want it to be able to do:
+**Settings → Connections → Clients** lists everything that has connected over
+either transport, by the name it gave. Tick what you want it to be able to do:
 
 | Permission | Lets the client |
 |---|---|
@@ -71,10 +105,11 @@ reach the API — see
 [remote-api-permissions.md](architecture/remote-api-permissions.md) for the
 threat model in full.
 
-**Rotate token** on the Remote page throws the current credential away and
-disconnects everything using it. The bridge re-reads the discovery record on
-every request, so an MCP host configured through it survives rotation without
-noticing.
+**Rotate token** on the MCP page throws that endpoint's credential away and
+disconnects everything using it; WebSocket clients are untouched, and the button
+on the WebSocket tab is the mirror image. The bridge re-reads the discovery
+record on every request, so an MCP host configured through it survives rotation
+without noticing.
 
 ### Where the bridge lives
 

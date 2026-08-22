@@ -36,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "MAGDA must be running with AI Settings -> Remote switched on.\n"
+            "MAGDA must be running with Connections -> MCP and/or WebSocket on.\n"
             "The OSC suite additionally needs OSC enabled in the Controllers settings.\n"
         ),
     )
@@ -115,8 +115,9 @@ def run(argv: list[str] | None = None) -> Report | None:
         print(f"\n  {exc}\n", file=sys.stderr)
         return None
 
-    print(f"\n  MAGDA pid {record.pid}  ws :{record.port}"
-          + (f"  mcp :{record.mcp_port}" if record.mcp_port else "  mcp: not listening"))
+    print(f"\n  MAGDA pid {record.pid}"
+          + (f"  ws :{record.port}" if record.has_websocket else "  ws: not listening")
+          + (f"  mcp :{record.mcp_port}" if record.has_mcp else "  mcp: not listening"))
     print(f"  {record.path}")
     if args.write:
         print("\n  --write: the mutating checks will run and revert what they change.")

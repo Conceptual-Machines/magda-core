@@ -4,6 +4,7 @@
 #include "../dialogs/AISettingsDialog.hpp"
 #include "../dialogs/AboutDialog.hpp"
 #include "../dialogs/AudioSettingsDialog.hpp"
+#include "../dialogs/ConnectionsDialog.hpp"
 #include "../dialogs/ControllersDialog.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/ExportMidiDialog.hpp"
@@ -972,6 +973,8 @@ void MainWindow::setupMenuCallbacks() {
 
     // Settings menu callbacks
     callbacks.onControllerSettings = [this]() { ControllersDialog::showDialog(this); };
+
+    callbacks.onConnectionSettings = [this]() { ConnectionsDialog::showDialog(this); };
 
     callbacks.onPluginSettings = [this]() {
         if (!mainComponent)
