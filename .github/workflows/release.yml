@@ -159,6 +159,13 @@ jobs:
             --entitlements "$ENTITLEMENTS" \
             --sign "$IDENTITY" \
             "$APP_PATH/Contents/MacOS/magda-mcp"
+        else
+          # Not a warning. An MCP host launches this binary directly, so a
+          # release without it is one where every configured host fails at
+          # startup — and the settings page, correctly, offers a placeholder
+          # instead of a path. Better to fail the release than ship that.
+          echo "::error::magda-mcp is missing from the bundle; the build did not stage it"
+          exit 1
         fi
 
         # Sign any embedded frameworks/dylibs
@@ -430,6 +437,13 @@ jobs:
             --entitlements "$ENTITLEMENTS" \
             --sign "$IDENTITY" \
             "$APP_PATH/Contents/MacOS/magda-mcp"
+        else
+          # Not a warning. An MCP host launches this binary directly, so a
+          # release without it is one where every configured host fails at
+          # startup — and the settings page, correctly, offers a placeholder
+          # instead of a path. Better to fail the release than ship that.
+          echo "::error::magda-mcp is missing from the bundle; the build did not stage it"
+          exit 1
         fi
 
         find "$APP_PATH/Contents/Frameworks" -name "*.dylib" -o -name "*.framework" 2>/dev/null | while read -r lib; do
@@ -874,7 +888,10 @@ jobs:
           Copy-Item $mcpBridge "$stage\magda-mcp.exe"
           Write-Output "Copied MCP bridge to staging"
         } else {
-          Write-Warning "magda-mcp.exe not found at $mcpBridge"
+          # See the macOS note: a release without the bridge breaks every
+          # configured MCP host, so this fails rather than warns.
+          Write-Output "::error::magda-mcp.exe not found at $mcpBridge"
+          exit 1
         }
 
         # Runtime DLLs sitting next to MAGDA.exe: the ONNX Runtime DLLs (media DB
@@ -1123,7 +1140,8 @@ jobs:
           echo "Found MCP bridge: $MCP_BRIDGE"
           cp "$MCP_BRIDGE" "$APPDIR/usr/bin/magda-mcp"
         else
-          echo "Warning: magda-mcp not found"
+          echo "::error::magda-mcp not found; the AppImage would ship without it"
+          exit 1
         fi
 
         # Localization JSON - StringTable looks for lang/ next to the binary
@@ -1235,7 +1253,10 @@ jobs:
           sha256sum "magda-mcp-${VERSION}-Linux-x86_64" > "magda-mcp-${VERSION}-Linux-x86_64.sha256"
           cat "magda-mcp-${VERSION}-Linux-x86_64.sha256"
         else
-          echo "Warning: magda-mcp not found; the Linux MCP asset will be missing"
+          # The asset Linux users are told to download, so its absence is the
+          # whole feature missing on that platform rather than a detail.
+          echo "::error::magda-mcp not found; the Linux MCP asset would be missing"
+          exit 1
         fi
 
     - name: Upload artifact

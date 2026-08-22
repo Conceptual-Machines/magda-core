@@ -154,6 +154,41 @@ bool isCatalogueMethod(const juce::String& method) {
            method == "resources/templates/list";
 }
 
+/**
+ * @brief Methods whose modern result the schema types as cacheable.
+ *
+ * `2026-07-28` gives a cacheable result its own cache directives, and makes
+ * them required rather than optional: `resultType` alone does not satisfy the
+ * schema. A client that validates against it — the official SDK does — rejects
+ * the response outright, so omitting them is not a client being lenient about a
+ * missing field, it is the catalogue failing to parse and the session being
+ * useless from its first call.
+ *
+ * `tools/call` is deliberately absent: its result is not cacheable, and
+ * stamping directives on it would put fields on the wire the schema for that
+ * method does not have. `prompts/list` is the sixth cacheable method and is
+ * not served here.
+ */
+bool isCacheableResult(const juce::String& method) {
+    return method == "tools/list" || method == "resources/list" ||
+           method == "resources/templates/list" || method == "resources/read" ||
+           method == "server/discover";
+}
+
+/**
+ * @brief Say that nothing here may be held.
+ *
+ * `ttlMs` of zero, scope `private`. Both are the honest answer rather than a
+ * placeholder: this endpoint projects a live session that the person at the
+ * keyboard is editing, so a result cached for any length of time is a result
+ * that can be wrong, and everything behind the bearer token belongs to one
+ * user rather than to a shared cache.
+ */
+void setCacheDirectives(juce::var& result) {
+    setProperty(result, "ttlMs", 0);
+    setProperty(result, "cacheScope", "private");
+}
+
 int resourceReadCodeFor(ErrorCode code) {
     switch (code) {
         case ErrorCode::NotFound:
@@ -365,6 +400,8 @@ juce::var McpEndpoint::discoverResult() const {
 
     auto result = makeObject();
     setProperty(result, "resultType", "complete");
+    // Modern by definition: server/discover exists only in this revision.
+    setCacheDirectives(result);
     setProperty(result, "supportedVersions", versions);
     setProperty(result, "capabilities", capabilities());
     setProperty(result, "instructions", kInstructions);
@@ -568,12 +605,15 @@ juce::var McpEndpoint::listenClosedResult(const juce::var& subscriptionId) {
 void McpEndpoint::handle(const Call& call, Completion onComplete) {
     const auto modern = call.era == McpEra::Modern;
 
-    auto complete = [modern, this](juce::var result) {
+    auto complete = [modern, method = call.method, this](juce::var result) {
         // `resultType` exists only in the modern era. Stamping it on a legacy
         // reply would put a field on the wire that the revision the client
-        // negotiated has never heard of.
+        // negotiated has never heard of. The same goes for the cache
+        // directives, which that revision introduced alongside it.
         if (modern) {
             setProperty(result, "resultType", "complete");
+            if (isCacheableResult(method))
+                setCacheDirectives(result);
             auto meta = result["_meta"];
             if (meta.getDynamicObject() == nullptr)
                 meta = makeObject();
@@ -843,8 +883,10 @@ void McpEndpoint::readResource(const Call& call, Completion onComplete) {
                 setProperty(meta, MCP_META_SERVER_INFO, info);
 
             auto result = makeObject();
-            if (modern)
+            if (modern) {
                 setProperty(result, "resultType", "complete");
+                setCacheDirectives(result);
+            }
             setProperty(result, "contents", all);
             setProperty(result, "_meta", meta);
             onComplete(McpReply::ok(result));

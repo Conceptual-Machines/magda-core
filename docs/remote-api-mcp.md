@@ -197,6 +197,15 @@ closed objects: unknown fields are rejected, numbers must be finite and in range
 access, and `openWorldHint: false`, since nothing here reaches outside the open
 project.
 
+Every modern result carries `resultType`, and a **cacheable** one — the two
+catalogue lists, the template list, `resources/read`, and `server/discover` —
+carries `ttlMs` and `cacheScope` beside it, which that revision makes required
+rather than optional. Both say the same thing: `ttlMs` is `0` and `cacheScope`
+is `private`. Nothing here may be held. This projects a session someone is
+editing, so a cached result is one that can be wrong, and everything behind the
+bearer token belongs to one user. `tools/call` is not cacheable and carries
+neither.
+
 A successful call returns the operation's output as `structuredContent`, the same
 JSON serialized into a `content` text block, and the committed project revision in
 `_meta`:
@@ -249,8 +258,18 @@ Templates, from `resources/templates/list`:
 | `magda://clips/{clip_id}` | `clips.get` |
 
 A read returns one `contents` entry, `application/json`, whose `text` is byte for
-byte what `tools/call` puts in `structuredContent` for the same operation. That
-equivalence is asserted in the tests rather than assumed.
+byte what `tools/call` puts in `structuredContent` for the same operation — with
+one exception, below. That equivalence is asserted in the tests rather than
+assumed, for an object-valued operation and an array-valued one, because only
+the second meets the exception.
+
+**Array-valued operations differ by a wrapper.** MCP types `structuredContent`
+as an object, so `tracks.list` and the other list reads are wrapped as
+`{"items": [...]}` on the tool surface. A resource has no `outputSchema` to
+satisfy, so `resources/read` returns the array bare. Same data, two shapes: read
+`magda://tracks` and you get `[...]`, call `tracks.list` and you get
+`{"items": [...]}`. The WebSocket transport returns the bare array too — the
+wrapper is MCP's constraint, not the contract's.
 
 `magda://devices` lists devices that exist on tracks; `magda://devices/catalog`
 lists device *kinds* that can be added, addressed by `catalogId`. The two are not
