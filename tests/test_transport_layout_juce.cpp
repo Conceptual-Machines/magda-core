@@ -116,6 +116,38 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
             expect(l.playhead.getWidth() >= needed[0] + needed[1] + needed[2]);
         }
 
+        beginTest("A new time signature re-proportions the readout's segments");
+        {
+            // The segment shares depend on how large the beat number can get,
+            // so changing the time signature is a relayout, not a repaint. A
+            // stale 4/4 layout clips a perfectly valid beat 16.
+            magda::BarsBeatsTicksLabel label;
+            label.setRange(0.0, kTimecodeMaxBeats, 0.0);
+            label.setBarsBeatsIsPosition(true);
+            label.setBeatsPerBar(4);
+            label.setSize(text.timecodeBox, 20);
+
+            juce::Array<juce::Rectangle<int>> before;
+            for (auto* child : label.getChildren())
+                before.add(child->getBounds());
+            expect(before.size() == 3, "expected three segments");
+
+            label.setBeatsPerBar(magda::MAX_TIME_SIGNATURE_VALUE);
+
+            bool reproportioned = false;
+            for (int i = 0; i < before.size(); ++i)
+                reproportioned |= label.getChildComponent(i)->getBounds() != before[i];
+            expect(reproportioned, "the segments kept their 4/4 proportions");
+
+            // ...and the beat segment is the one that grew.
+            const auto narrow =
+                magda::BarsBeatsTicksLabel::segmentWidthsFor(kTimecodeMaxBeats, 4, 4, true);
+            const auto wide = magda::BarsBeatsTicksLabel::segmentWidthsFor(
+                kTimecodeMaxBeats, magda::MAX_TIME_SIGNATURE_VALUE, magda::MAX_TIME_SIGNATURE_VALUE,
+                true);
+            expect(wide[1] > narrow[1]);
+        }
+
         beginTest("The CPU slot holds the peak form, not just the average");
         {
             // setCpuUsage shows the retained peak beside the average once it

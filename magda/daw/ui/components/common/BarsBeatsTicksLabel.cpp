@@ -50,10 +50,15 @@ void BarsBeatsTicksLabel::setDrawBackground(bool draw) {
 }
 
 void BarsBeatsTicksLabel::setRange(double min, double max, double defaultValue) {
+    // The segment shares are worked out from how large each number can get, so
+    // anything that changes that has to relayout, not just repaint.
+    const bool reshapes = maxValue_ != max;
     minValue_ = min;
     maxValue_ = max;
     defaultValue_ = juce::jlimit(min, max, defaultValue);
     value_ = juce::jlimit(minValue_, maxValue_, value_);
+    if (reshapes)
+        resized();
     updateSegmentTexts();
     repaint();
 }
@@ -71,13 +76,22 @@ void BarsBeatsTicksLabel::setValue(double newValue, juce::NotificationType notif
 }
 
 void BarsBeatsTicksLabel::setBeatsPerBar(int beatsPerBar) {
+    const bool reshapes = beatsPerBar_ != beatsPerBar;
     beatsPerBar_ = beatsPerBar;
+    // A wider time signature means a wider beat number and fewer bars, which
+    // moves the boundary between the two segments.
+    if (reshapes)
+        resized();
     updateSegmentTexts();
     repaint();
 }
 
 void BarsBeatsTicksLabel::setBarsBeatsIsPosition(bool isPosition) {
+    const bool reshapes = barsBeatsIsPosition_ != isPosition;
     barsBeatsIsPosition_ = isPosition;
+    // One-indexed positions can carry a digit the zero-indexed form cannot.
+    if (reshapes)
+        resized();
     updateSegmentTexts();
     repaint();
 }
