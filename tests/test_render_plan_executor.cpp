@@ -753,6 +753,131 @@ TEST_CASE("A rack sums its chains through their faders and its own output law", 
     CHECK(harness.outputSample() == approx(chainGain * juce::Decibels::decibelsToGain(-6.0f)));
 }
 
+TEST_CASE("Delta solo hears what the device added", "[engine][exec]") {
+    auto effect = makeEffect(7);
+    effect.deltaSolo = true;
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(effect));
+
+    SECTION("a device that changes the signal leaves its difference behind") {
+        Harness harness({track}, makeMaster());
+        ConstantSource source(0.5f);
+        GainDevice device(0.25f);
+        harness.bindings.clipAudio[1] = &source;
+        harness.bindings.devices[DeviceKey{7}] = &device;
+
+        harness.prepareCleanly();
+        harness.render();
+
+        CHECK(harness.outputSample() == approx(0.5f * 0.25f - 0.5f));
+    }
+
+    SECTION("a device that changes nothing leaves nothing") {
+        Harness harness({track}, makeMaster());
+        ConstantSource source(0.5f);
+        GainDevice device(1.0f);
+        harness.bindings.clipAudio[1] = &source;
+        harness.bindings.devices[DeviceKey{7}] = &device;
+
+        harness.prepareCleanly();
+        harness.render();
+
+        CHECK(device.processedBlocks == 1);
+        CHECK(harness.outputSample() == approx(0.0f));
+    }
+}
+
+TEST_CASE("A delta solo's dry edge is delayed to meet the wet one", "[engine][exec]") {
+    // A device that only delays adds nothing, so its delta is silence - but
+    // only once the dry side has been held back to meet it. Compensate it
+    // wrongly and the impulse comes out twice, once from each side.
+    auto effect = makeEffect(7);
+    effect.deltaSolo = true;
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(effect));
+
+    Harness harness({track}, makeMaster());
+    ImpulseSource source(1.0f);
+    LatentDevice device(32);
+    harness.bindings.clipAudio[1] = &source;
+    harness.bindings.devices[DeviceKey{7}] = &device;
+
+    harness.prepareCleanly();
+
+    const auto stream = renderStream(harness, 2);
+    INFO(magda::engine::dumpPlan(harness.plan));
+    CHECK(soundingSamples(stream).empty());
+}
+
+TEST_CASE("Delta solo turned on mid-render reads a dry line that has been running",
+          "[engine][exec]") {
+    // The point of compiling the subtract and its dry delay whether or not
+    // anything is soloing a delta. A delay line is history: one that came into
+    // being when the button was pressed would hand back its own length in
+    // silence, so a device with any real latency would leak its wet signal for
+    // that long and then step. The current engine keeps the same line running
+    // for the same reason - PluginNode's deltaLatencyProcessor is built from
+    // the plugin's latency alone and written every block, and only the read is
+    // conditional (see the regression in tests/test_delta_solo.cpp).
+    //
+    // A device that only delays adds nothing, so its delta is silence. Reaching
+    // that on the very first block after the toggle is possible only if the dry
+    // line already holds the samples the wet side is now arriving with.
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+
+    Harness harness({track}, makeMaster());
+    RampSource source;
+    LatentDevice device(kBlockSize);
+    harness.bindings.clipAudio[1] = &source;
+    harness.bindings.devices[DeviceKey{7}] = &device;
+
+    harness.prepareCleanly();
+    INFO(magda::engine::dumpPlan(harness.plan));
+
+    // Block 0 with the delta unheard: the device's own delay is still filling,
+    // and nothing is taken off what comes out of it.
+    harness.render(kBlockSize, 0);
+
+    // Now the model says to hear it, which is a value away: the plan does not
+    // change, so nothing is rebuilt and the line keeps its contents.
+    getDevice(harness.tracks[0].chain.fxChainElements[0]).deltaSolo = true;
+    harness.valueMessages = magda::engine::resolvePlanValues(harness.plan, harness.tracks,
+                                                             harness.master, harness.values);
+    REQUIRE(harness.valueMessages.empty());
+
+    harness.render(kBlockSize, kBlockSize);
+    for (int sample = 0; sample < kBlockSize; ++sample)
+        CHECK(harness.outputSample(0, sample) == approx(0.0f));
+}
+
+TEST_CASE("Delta solo around a rack measures its output against its input", "[engine][exec]") {
+    auto rack = std::make_unique<RackInfo>();
+    rack->id = 5;
+    rack->deltaSolo = true;
+
+    ChainInfo chain;
+    chain.id = 10;
+    chain.elements.push_back(makeDeviceElement(makeEffect(7)));
+    rack->chains.push_back(std::move(chain));
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(ChainElement{std::move(rack)});
+
+    Harness harness({track}, makeMaster());
+    ConstantSource source(1.0f);
+    GainDevice device(0.5f);
+    harness.bindings.clipAudio[1] = &source;
+    harness.bindings.devices[DeviceKey{7}] = &device;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    CHECK(harness.outputSample() == approx(0.5f - 1.0f));
+}
+
 TEST_CASE("A rack chain out of the mix contributes neither audio nor MIDI", "[engine][exec]") {
     auto rack = std::make_unique<RackInfo>();
     rack->id = 5;
@@ -1465,7 +1590,10 @@ TEST_CASE("What is in flight survives the plan being replaced", "[engine][exec][
 
     SECTION("taking over from the epoch being replaced") {
         REQUIRE(second.prepare(plan, bindings, context, &first).empty());
-        CHECK(second.carriedDelayLines() == 1);
+
+        // The master's alignment of track 2, and the dry edge of the latent
+        // device's own delta: both hold samples, and both carry.
+        CHECK(second.carriedDelayLines() == 2);
 
         // Block 1, on the new executor: the impulse comes out where it would
         // have if nothing had happened.

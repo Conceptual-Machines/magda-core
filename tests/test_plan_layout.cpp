@@ -273,9 +273,10 @@ TEST_CASE("A delay holding no samples is not a buffer and not an op",
                 ++held;
         }
 
-        // The master sums both tracks, and track 2's side of that sum is the
-        // one that has to wait.
-        CHECK(held == 1);
+        // Two: track 2's side of the master's sum, which waits for track 1's
+        // device, and the dry edge of that device's own delta, which waits for
+        // the device itself.
+        CHECK(held == 2);
     }
 }
 
@@ -308,4 +309,80 @@ TEST_CASE("Latency accumulates along a chain and meets at a fan-in",
     REQUIRE(delays.size() == 2);
     CHECK(delays[0] == 0);
     CHECK(delays[1] == 120);
+}
+
+TEST_CASE("A delta solo's dry edge waits for the processing it is measured against",
+          "[engine][exec][layout][pdc]") {
+    // The delays aligning one delta's two sides, by the slot each fills. Every
+    // device slot and every rack carries a delta now, so which one is being
+    // asked about has to be named: keyed on the op the delays belong to rather
+    // than on the role alone, or the section would be reading whichever delta
+    // the compiler happened to emit last.
+    const auto dryDelays = [](const Layout& layout, DeviceId deviceId, RackId rackId) {
+        std::map<int, int> bySlot;
+        for (std::size_t i = 0; i < layout.plan.ops.size(); ++i) {
+            const auto& key = layout.plan.ops[i].key;
+            if (key.role == OpRole::SubtractInputDelay && key.deviceId == deviceId &&
+                key.rackId == rackId)
+                bySlot[key.index] = layout.delaySamples[i];
+        }
+        return bySlot;
+    };
+
+    SECTION("a device: its own latency, and nothing on the wet side") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+
+        const auto layout = layoutOf(tracks, makeMaster(), {{7, 100}});
+        INFO(magda::engine::dumpPlan(layout.plan));
+
+        const auto delays = dryDelays(layout, 7, INVALID_RACK_ID);
+        REQUIRE(delays.size() == 2);
+        CHECK(delays.at(0) == 0);
+        CHECK(delays.at(1) == 100);
+    }
+
+    SECTION("and whatever aligned the device's own input, on top of it") {
+        auto compressor = makeEffect(7);
+        compressor.sidechain.type = SidechainConfig::Type::Audio;
+        compressor.sidechain.sourceTrackId = 2;
+
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+        tracks[1].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(8)));
+
+        // The key arrives 40 samples late, so the device's own audio input is
+        // held back that far before the device adds its 100.
+        const auto layout = layoutOf(tracks, makeMaster(), {{7, 100}, {8, 40}});
+        INFO(magda::engine::dumpPlan(layout.plan));
+
+        const auto delays = dryDelays(layout, 7, INVALID_RACK_ID);
+        REQUIRE(delays.size() == 2);
+        CHECK(delays.at(0) == 0);
+        CHECK(delays.at(1) == 140);
+    }
+
+    SECTION("a rack: everything its chains and its own alignment came to") {
+        auto rack = std::make_unique<RackInfo>();
+        rack->id = 5;
+        for (const ChainId chainId : {ChainId{10}, ChainId{11}}) {
+            ChainInfo chain;
+            chain.id = chainId;
+            chain.elements.push_back(makeDeviceElement(makeEffect(static_cast<DeviceId>(chainId))));
+            rack->chains.push_back(std::move(chain));
+        }
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(ChainElement{std::move(rack)});
+
+        // The rack's output is as late as its latest chain, which is what its
+        // own mix aligned the other one to.
+        const auto layout = layoutOf(tracks, makeMaster(), {{10, 48}, {11, 16}});
+        INFO(magda::engine::dumpPlan(layout.plan));
+
+        const auto delays = dryDelays(layout, INVALID_DEVICE_ID, 5);
+        REQUIRE(delays.size() == 2);
+        CHECK(delays.at(0) == 0);
+        CHECK(delays.at(1) == 48);
+    }
 }

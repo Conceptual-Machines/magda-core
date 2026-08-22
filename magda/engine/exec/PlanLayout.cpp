@@ -78,6 +78,10 @@ std::optional<std::size_t> inPlaceInputOf(const PlanOp& op) {
         case OpKind::SendTap:
         case OpKind::Meter:
         case OpKind::Fader:
+        // A difference is taken in the buffer holding the signal it measures.
+        // The dry side it subtracts is a different port, and one op reading a
+        // port is what lets that port be written over at all.
+        case OpKind::Subtract:
             return op.inputs.empty() || !op.inputs.front().valid() ? std::nullopt
                                                                    : std::optional<std::size_t>(0);
 

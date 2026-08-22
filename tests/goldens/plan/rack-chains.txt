@@ -5,52 +5,70 @@
 
 == plan ==
 magda-render-plan v1
-ops=20 outputs=1
+ops=29 outputs=1
 [  0] ClipAudio   det   T1:clipAudio                   in=-                out=audio       deps=0
 [  1] MixAudio    det   T1:trackAudioInput             in=0:0              out=audio       deps=1
 [  2] Device      det   T1/R5/C10/D10:deviceProcess    in=1:0,-,-          out=audio       deps=1
-[  3] Gain        det   T1/R5/C10/D10:deviceGain       in=2:0              out=audio       deps=1
-[  4] Fader       det   T1/R5/C10:rackChainFader       in=3:0,-            out=audio       deps=1
-[  5] Device      det   T1/R5/C11/D11:deviceProcess    in=1:0,-,-          out=audio       deps=1
-[  6] Gain        det   T1/R5/C11/D11:deviceGain       in=5:0              out=audio       deps=1
-[  7] Fader       det   T1/R5/C11:rackChainFader       in=6:0,-            out=audio       deps=1
-[  8] Delay       det   T1/R5:mixInputDelay            in=4:0              out=audio       deps=1
-[  9] Delay       det   T1/R5:mixInputDelay#1          in=7:0              out=audio       deps=1
-[ 10] MixAudio    det   T1/R5:rackMix                  in=8:0,9:0          out=audio       deps=2
-[ 11] Fader       det   T1/R5:rackFader                in=10:0,-           out=audio       deps=1
-[ 12] Fader       det   T1:trackFader                  in=11:0,-           out=audio       deps=1
-[ 13] Meter       det   T1:trackMeter                  in=12:0             out=audio       deps=1
-[ 14] Gain        det   T1:trackMute                   in=13:0             out=audio       deps=1
-[ 15] MixAudio    det   T-2:trackAudioInput            in=14:0             out=audio       deps=1
-[ 16] Fader       det   T-2:trackFader                 in=15:0,-           out=audio       deps=1
-[ 17] Meter       det   T-2:trackMeter                 in=16:0             out=audio       deps=1
-[ 18] Gain        det   T-2:trackMute                  in=17:0             out=audio       deps=1
-[ 19] Output      det   T-2:hardwareOutput             in=18:0             out=-           deps=1
+[  3] Delay       det   T1/R5/C10/D10:subtractInputDelay in=2:0              out=audio       deps=1
+[  4] Delay       det   T1/R5/C10/D10:subtractInputDelay#1 in=1:0              out=audio       deps=1
+[  5] Subtract    det   T1/R5/C10/D10:deviceDelta      in=3:0,4:0          out=audio       deps=2
+[  6] Gain        det   T1/R5/C10/D10:deviceGain       in=5:0              out=audio       deps=1
+[  7] Fader       det   T1/R5/C10:rackChainFader       in=6:0,-            out=audio       deps=1
+[  8] Device      det   T1/R5/C11/D11:deviceProcess    in=1:0,-,-          out=audio       deps=1
+[  9] Delay       det   T1/R5/C11/D11:subtractInputDelay in=8:0              out=audio       deps=1
+[ 10] Delay       det   T1/R5/C11/D11:subtractInputDelay#1 in=1:0              out=audio       deps=1
+[ 11] Subtract    det   T1/R5/C11/D11:deviceDelta      in=9:0,10:0         out=audio       deps=2
+[ 12] Gain        det   T1/R5/C11/D11:deviceGain       in=11:0             out=audio       deps=1
+[ 13] Fader       det   T1/R5/C11:rackChainFader       in=12:0,-           out=audio       deps=1
+[ 14] Delay       det   T1/R5:mixInputDelay            in=7:0              out=audio       deps=1
+[ 15] Delay       det   T1/R5:mixInputDelay#1          in=13:0             out=audio       deps=1
+[ 16] MixAudio    det   T1/R5:rackMix                  in=14:0,15:0        out=audio       deps=2
+[ 17] Fader       det   T1/R5:rackFader                in=16:0,-           out=audio       deps=1
+[ 18] Delay       det   T1/R5:subtractInputDelay       in=17:0             out=audio       deps=1
+[ 19] Delay       det   T1/R5:subtractInputDelay#1     in=1:0              out=audio       deps=1
+[ 20] Subtract    det   T1/R5:rackDelta                in=18:0,19:0        out=audio       deps=2
+[ 21] Fader       det   T1:trackFader                  in=20:0,-           out=audio       deps=1
+[ 22] Meter       det   T1:trackMeter                  in=21:0             out=audio       deps=1
+[ 23] Gain        det   T1:trackMute                   in=22:0             out=audio       deps=1
+[ 24] MixAudio    det   T-2:trackAudioInput            in=23:0             out=audio       deps=1
+[ 25] Fader       det   T-2:trackFader                 in=24:0,-           out=audio       deps=1
+[ 26] Meter       det   T-2:trackMeter                 in=25:0             out=audio       deps=1
+[ 27] Gain        det   T-2:trackMute                  in=26:0             out=audio       deps=1
+[ 28] Output      det   T-2:hardwareOutput             in=27:0             out=-           deps=1
 ready=0
 
 == layout ==
 magda-plan-layout v1
-audioSlots=3 midiSlots=0 outputLatency=48
+audioSlots=5 midiSlots=0 outputLatency=48
 [  0] ClipAudio   T1:clipAudio                   lat=0       ports=a0
 [  1] MixAudio    T1:trackAudioInput             lat=0       ports=a0          inplace
 [  2] Device      T1/R5/C10/D10:deviceProcess    lat=48      ports=a1
-[  3] Gain        T1/R5/C10/D10:deviceGain       lat=48      ports=a1          inplace
-[  4] Fader       T1/R5/C10:rackChainFader       lat=48      ports=a1          inplace
-[  5] Device      T1/R5/C11/D11:deviceProcess    lat=0       ports=a2
-[  6] Gain        T1/R5/C11/D11:deviceGain       lat=0       ports=a2          inplace
-[  7] Fader       T1/R5/C11:rackChainFader       lat=0       ports=a2          inplace
-[  8] Delay       T1/R5:mixInputDelay            lat=48      ports=a1          hold=0 elided
-[  9] Delay       T1/R5:mixInputDelay#1          lat=48      ports=a2          hold=48 inplace
-[ 10] MixAudio    T1/R5:rackMix                  lat=48      ports=a1          inplace
-[ 11] Fader       T1/R5:rackFader                lat=48      ports=a1          inplace
-[ 12] Fader       T1:trackFader                  lat=48      ports=a1          inplace
-[ 13] Meter       T1:trackMeter                  lat=48      ports=a1          inplace
-[ 14] Gain        T1:trackMute                   lat=48      ports=a1          inplace
-[ 15] MixAudio    T-2:trackAudioInput            lat=48      ports=a1          inplace
-[ 16] Fader       T-2:trackFader                 lat=48      ports=a1          inplace
-[ 17] Meter       T-2:trackMeter                 lat=48      ports=a1          inplace
-[ 18] Gain        T-2:trackMute                  lat=48      ports=a1          inplace
-[ 19] Output      T-2:hardwareOutput             lat=-       ports=-
+[  3] Delay       T1/R5/C10/D10:subtractInputDelay lat=48      ports=a1          hold=0 elided
+[  4] Delay       T1/R5/C10/D10:subtractInputDelay#1 lat=48      ports=a2          hold=48
+[  5] Subtract    T1/R5/C10/D10:deviceDelta      lat=48      ports=a1          inplace
+[  6] Gain        T1/R5/C10/D10:deviceGain       lat=48      ports=a1          inplace
+[  7] Fader       T1/R5/C10:rackChainFader       lat=48      ports=a1          inplace
+[  8] Device      T1/R5/C11/D11:deviceProcess    lat=0       ports=a3
+[  9] Delay       T1/R5/C11/D11:subtractInputDelay lat=0       ports=a3          hold=0 elided
+[ 10] Delay       T1/R5/C11/D11:subtractInputDelay#1 lat=0       ports=a0          hold=0 elided
+[ 11] Subtract    T1/R5/C11/D11:deviceDelta      lat=0       ports=a3          inplace
+[ 12] Gain        T1/R5/C11/D11:deviceGain       lat=0       ports=a3          inplace
+[ 13] Fader       T1/R5/C11:rackChainFader       lat=0       ports=a3          inplace
+[ 14] Delay       T1/R5:mixInputDelay            lat=48      ports=a1          hold=0 elided
+[ 15] Delay       T1/R5:mixInputDelay#1          lat=48      ports=a3          hold=48 inplace
+[ 16] MixAudio    T1/R5:rackMix                  lat=48      ports=a1          inplace
+[ 17] Fader       T1/R5:rackFader                lat=48      ports=a1          inplace
+[ 18] Delay       T1/R5:subtractInputDelay       lat=48      ports=a1          hold=0 elided
+[ 19] Delay       T1/R5:subtractInputDelay#1     lat=48      ports=a4          hold=48
+[ 20] Subtract    T1/R5:rackDelta                lat=48      ports=a1          inplace
+[ 21] Fader       T1:trackFader                  lat=48      ports=a1          inplace
+[ 22] Meter       T1:trackMeter                  lat=48      ports=a1          inplace
+[ 23] Gain        T1:trackMute                   lat=48      ports=a1          inplace
+[ 24] MixAudio    T-2:trackAudioInput            lat=48      ports=a1          inplace
+[ 25] Fader       T-2:trackFader                 lat=48      ports=a1          inplace
+[ 26] Meter       T-2:trackMeter                 lat=48      ports=a1          inplace
+[ 27] Gain        T-2:trackMute                  lat=48      ports=a1          inplace
+[ 28] Output      T-2:hardwareOutput             lat=-       ports=-
 
 == params ==
 magda-param-table v1

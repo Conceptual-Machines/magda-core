@@ -377,6 +377,32 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
             break;
         }
 
+        // The two ops the model toggles rather than recompiles. The subtract
+        // and the delay feeding it are in every plan, so turning delta solo on
+        // is a value away and the dry line has been running all along; what
+        // happens here is only whether anything is taken off the wet path.
+        case OpRole::DeviceDelta: {
+            const auto* device = findDevice(*track, key);
+            if (device == nullptr) {
+                report(id, "no device " + std::to_string(key.deviceId) +
+                               " in the model, leaving its delta unheard");
+                break;
+            }
+            value.subtractsDry = device->deltaSolo;
+            break;
+        }
+
+        case OpRole::RackDelta: {
+            const auto* rack = findRack(*track, key.rackId);
+            if (rack == nullptr) {
+                report(id, "no rack " + std::to_string(key.rackId) +
+                               " in the model, leaving its delta unheard");
+                break;
+            }
+            value.subtractsDry = rack->deltaSolo;
+            break;
+        }
+
         case OpRole::RackChainFader: {
             const auto* rack = findRack(*track, key.rackId);
             const auto* chain = rack == nullptr ? nullptr : findChain(*rack, key.chainId);
@@ -419,9 +445,9 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
             break;
         }
 
-        // Sources, sums, merges, devices, meters and the output carry no value
-        // of their own: what they render comes from their bindings, and what
-        // they pass on is whatever reached them.
+        // Sources, sums, merges, differences, devices, meters and the output
+        // carry no value of their own: what they render comes from their
+        // bindings, and what they pass on is whatever reached them.
         case OpRole::ClipAudio:
         case OpRole::ClipMidi:
         case OpRole::LiveAudioInput:
@@ -446,6 +472,7 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::MergeInputDelay:
         case OpRole::DeviceInputDelay:
         case OpRole::FaderInputDelay:
+        case OpRole::SubtractInputDelay:
         case OpRole::EdgeCrossfade:
             break;
     }

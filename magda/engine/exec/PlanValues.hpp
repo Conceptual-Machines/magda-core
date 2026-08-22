@@ -43,6 +43,15 @@ struct OpValue {
     /// mute or by a sibling's solo) gates the chain's MIDI as well as its
     /// audio, and no gain can silence a MIDI stream.
     bool silent = false;
+
+    /// Whether a Subtract takes its dry side away, which is whether the device
+    /// or rack it is keyed to is soloing its delta. Its own field rather than a
+    /// gain on the dry edge, because the safe reading of a value that does not
+    /// apply is "unchanged", and for a difference that is taking nothing away
+    /// rather than taking all of it. kUnityValue would otherwise mean every
+    /// delta in the plan, which for a device that passes its input through is
+    /// the whole track going quiet.
+    bool subtractsDry = false;
 };
 
 /**

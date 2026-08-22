@@ -25,6 +25,8 @@ int arityOf(OpKind kind) {
             return 2;  // audio, MIDI
         case OpKind::Crossfade:
             return 2;  // the edge as it was, the edge as it is
+        case OpKind::Subtract:
+            return 2;  // the processed signal, the dry signal it is measured against
         case OpKind::MixAudio:
         case OpKind::MergeMidi:
             return -1;  // variadic
@@ -56,6 +58,8 @@ const char* toString(OpKind kind) {
             return "MixAudio";
         case OpKind::MergeMidi:
             return "MergeMidi";
+        case OpKind::Subtract:
+            return "Subtract";
         case OpKind::Delay:
             return "Delay";
         case OpKind::Crossfade:
@@ -92,6 +96,8 @@ const char* toString(OpRole role) {
             return "trackMidiInput";
         case OpRole::DeviceProcess:
             return "deviceProcess";
+        case OpRole::DeviceDelta:
+            return "deviceDelta";
         case OpRole::DeviceGain:
             return "deviceGain";
         case OpRole::DeviceMeter:
@@ -106,6 +112,8 @@ const char* toString(OpRole role) {
             return "rackMidiMix";
         case OpRole::RackFader:
             return "rackFader";
+        case OpRole::RackDelta:
+            return "rackDelta";
         case OpRole::TrackFader:
             return "trackFader";
         case OpRole::TrackMeter:
@@ -126,6 +134,8 @@ const char* toString(OpRole role) {
             return "deviceInputDelay";
         case OpRole::FaderInputDelay:
             return "faderInputDelay";
+        case OpRole::SubtractInputDelay:
+            return "subtractInputDelay";
         case OpRole::EdgeCrossfade:
             return "edgeCrossfade";
     }
@@ -203,6 +213,7 @@ bool isInputDelayRole(OpRole role) {
         case OpRole::MergeInputDelay:
         case OpRole::DeviceInputDelay:
         case OpRole::FaderInputDelay:
+        case OpRole::SubtractInputDelay:
             return true;
         default:
             return false;

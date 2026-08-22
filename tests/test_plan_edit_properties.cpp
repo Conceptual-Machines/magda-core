@@ -843,6 +843,15 @@ struct Transient {
     bool faded = false;
     bool flushed = false;
     bool reached = false;
+
+    /// The edit compiled to the plan that was already running, so no edge
+    /// moved and the fade pass had nothing to smooth. What changed is a value,
+    /// and a value arrives when it is published. Delta solo is the one the
+    /// generator toggles; mute and every fader position work the same way and
+    /// are not edits here. Declared and counted rather than passed over,
+    /// because an exemption that covered a swap would be the bound quietly
+    /// ceasing to exist.
+    bool valueOnly = false;
 };
 
 std::optional<std::string> checkStepBounds(const Transient& transient, Report* report) {
@@ -862,10 +871,12 @@ std::optional<std::string> checkStepBounds(const Transient& transient, Report* r
                    std::to_string(sample) + ": " + std::to_string(value);
     }
 
-    // A path that starts from silence steps by whatever it was carrying, and
-    // an edge the pass refused steps by whatever it had left: both are declared
-    // divergences rather than failures, and both are counted where they happen.
-    if (!transient.faded || transient.flushed) {
+    // A path that starts from silence steps by whatever it was carrying, an
+    // edge the pass refused steps by whatever it had left, and a publish that
+    // compiled to the running plan steps by whatever the model asked to hear:
+    // all three are declared divergences rather than failures, and all three
+    // are counted where they happen.
+    if (!transient.faded || transient.flushed || transient.valueOnly) {
         if (report != nullptr && transient.reached)
             ++report->transientsExempt;
         return std::nullopt;
@@ -989,6 +1000,12 @@ std::optional<std::string> transientProperty(const std::vector<Edit>& edits, Rep
             transient.before = steady[trackId];
             transient.faded = published.faded.unfaded == 0;
             transient.flushed = pathStartsFlushed(upstream, before, published);
+            // The compiler's output on both sides, rather than the diff: a
+            // spent fade leaving the plan retires an op without anything
+            // having moved, and that is the pass tidying up after the previous
+            // edit rather than this one changing the graph.
+            transient.valueOnly = engine::planFingerprint(before.compiled) ==
+                                  engine::planFingerprint(published.compiled);
             transient.reached = std::ranges::any_of(
                 touchedTracks, [&upstream](TrackId touched) { return upstream.contains(touched); });
 

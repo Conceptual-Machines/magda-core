@@ -1157,6 +1157,26 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             break;
         }
 
+        case OpKind::Subtract: {
+            // What the processing added: its output, minus the dry signal it
+            // was handed, which the compiler has already aligned to it. Whether
+            // anything is taken away is the value layer's to say, and while it
+            // says no this is a passthrough, one the buffer assignment has
+            // usually already let write in place. An unconnected dry side
+            // leaves the output alone too, the way every other op here treats a
+            // slot its arity declares and its plan did not fill.
+            auto out = audioOut(id, 0, numSamples);
+            if (value.silent || !op.inputs[0].valid()) {
+                out.clear();
+                break;
+            }
+            if (!writesInPlace(i))
+                out.copyFrom(audioIn(op.inputs[0], numSamples));
+            if (value.subtractsDry && op.inputs[1].valid())
+                out.subtract(audioIn(op.inputs[1], numSamples));
+            break;
+        }
+
         case OpKind::Delay: {
             // A delay runs whatever the value layer says about the ops
             // around it. One that stopped writing while its chain was

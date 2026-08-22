@@ -105,7 +105,7 @@ Fixture bareTrack() {
 Fixture deviceChain() {
     Fixture value;
     value.name = "device-chain";
-    value.covers = "chain order, and the three ops a device slot compiles to";
+    value.covers = "chain order, and the four ops a device slot compiles to";
     value.tracks = {track(1)};
     value.tracks[0].chain.fxChainElements.push_back(makeDeviceElement(effect(7)));
     value.tracks[0].chain.fxChainElements.push_back(makeDeviceElement(effect(8)));
@@ -196,6 +196,37 @@ Fixture sidechain() {
     value.tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
     value.master = master();
     value.options = withoutMeters();
+    return value;
+}
+
+/// Delta solo at both scopes at once (#2136): a device measured against what it
+/// was handed, inside a rack measured against what reached the rack. The device
+/// reports latency, so the dry edges have something to wait for and the golden
+/// pins what their alignment resolves to as well as where the ops went.
+///
+/// No flag is set on either, because none is needed: whether a delta is heard
+/// is a value, and a golden is structure. The subtracts and their dry lines are
+/// in every plan so that turning one on does not create the delay line it is
+/// about to read.
+Fixture deltaSolo() {
+    Fixture value;
+    value.name = "delta-solo";
+    value.covers = "a device's delta inside a rack's, and what their dry edges wait for";
+
+    const auto processed = effect(7);
+
+    auto rack = std::make_unique<RackInfo>();
+    rack->id = 5;
+    ChainInfo chain;
+    chain.id = 10;
+    chain.elements.push_back(makeDeviceElement(processed));
+    rack->chains.push_back(std::move(chain));
+
+    value.tracks = {track(1)};
+    value.tracks[0].chain.fxChainElements.push_back(ChainElement{std::move(rack)});
+    value.master = master();
+    value.options = withoutMeters();
+    value.deviceLatency = {{deviceAt(1, 7, 5, 10), 64}};
     return value;
 }
 
@@ -442,6 +473,7 @@ std::vector<Fixture> planFixtures() {
     fixtures.push_back(cascadedLatency());
     fixtures.push_back(rackChains());
     fixtures.push_back(sidechain());
+    fixtures.push_back(deltaSolo());
     fixtures.push_back(sectionLocalDeviceIds());
     fixtures.push_back(groupRouting());
     fixtures.push_back(parameterLinks());
