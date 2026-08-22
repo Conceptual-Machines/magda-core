@@ -51,6 +51,7 @@ nav:
       - Plugin Settings: interface/plugin-settings.md
       - AI Settings: interface/ai-settings.md
       - Controllers: interface/controllers.md
+      - Connections: interface/connections.md
   - Tracks: tracks.md
   - Clips: clips.md
   - Stem Separation: stem-separation.md

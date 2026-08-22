@@ -1,5 +1,6 @@
 target_sources(magda_daw_app PRIVATE
     ControllersDialog.cpp
+    ConnectionsDialog.cpp
     AISettingsDialog.cpp
     AudioSettingsDialog.cpp
     ChainTreeDialog.cpp
@@ -14,6 +15,7 @@ target_sources(magda_daw_app PRIVATE
     AboutDialog.cpp
     SplashScreen.cpp
     AISettingsDialog.hpp
+    ConnectionsDialog.hpp
     AudioSettingsDialog.hpp
     ChainTreeDialog.hpp
     ExportAudioDialog.hpp

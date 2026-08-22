@@ -125,16 +125,26 @@ class Record:
 
     path: Path
     pid: int
+    #: The WebSocket's bearer token. Empty when that transport is switched off.
     token: str
     port: int
     url: str
+    #: The MCP endpoint's own bearer token (#2142). Separate from `token` so
+    #: either transport can be re-credentialled without dropping the other's
+    #: sessions. Falls back to `token` against a MAGDA predating the split,
+    #: where one credential opened both.
+    mcp_token: str
     mcp_port: int | None
     mcp_url: str | None
     mtime: float
 
     @property
     def has_mcp(self) -> bool:
-        return bool(self.mcp_url) and bool(self.mcp_port)
+        return bool(self.mcp_url) and bool(self.mcp_port) and bool(self.mcp_token)
+
+    @property
+    def has_websocket(self) -> bool:
+        return bool(self.url) and bool(self.port) and bool(self.token)
 
     def owner_only(self) -> bool | None:
         """True iff the record is readable by its owner alone.
@@ -171,6 +181,7 @@ def parse_record(path: Path) -> Record | None:
             token=str(raw.get("token", "")),
             port=int(raw.get("port", 0)),
             url=str(raw.get("url", "")),
+            mcp_token=str(raw.get("mcpToken") or raw.get("token") or ""),
             mcp_port=int(raw["mcpPort"]) if raw.get("mcpPort") else None,
             mcp_url=str(raw["mcpUrl"]) if raw.get("mcpUrl") else None,
             mtime=path.stat().st_mtime,
@@ -190,7 +201,11 @@ def find_records(directory: Path) -> list[Record]:
     found = []
     for path in sorted(directory.glob(RECORD_GLOB)):
         record = parse_record(path)
-        if record is None or not record.token or not process_alive(record.pid):
+        if record is None or not process_alive(record.pid):
+            continue
+        # Either transport being published makes the record worth having; since
+        # #2142 a MAGDA can legitimately be running MCP with no WebSocket.
+        if not record.has_websocket and not record.has_mcp:
             continue
         found.append(record)
     return sorted(found, key=lambda r: r.mtime, reverse=True)
@@ -218,7 +233,7 @@ def resolve(
     if not records:
         raise DiscoveryError(
             f"no live MAGDA found in {directory}\n"
-            "  Start MAGDA and switch on AI Settings -> Remote, or point at a\n"
-            "  record with --record / a directory with --data-dir."
+            "  Start MAGDA and switch on Connections -> MCP and/or WebSocket,\n"
+            "  or point at a record with --record / a directory with --data-dir."
         )
     return records[0], records[1:]

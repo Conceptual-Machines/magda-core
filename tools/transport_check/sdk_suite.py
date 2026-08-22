@@ -27,7 +27,7 @@ from typing import Any
 from report import Status
 
 #: What the SDK calls itself to MAGDA. A separate identity from the
-#: hand-written client's, so AI Settings -> Clients shows which host did what.
+#: hand-written client's, so Connections -> Clients shows which host did what.
 SDK_CLIENT_NAME = "magda-transport-check-sdk"
 
 
@@ -107,8 +107,8 @@ def run_sdk(context) -> None:
     runner.report.note(f"SDK latest protocol: {types.LATEST_PROTOCOL_VERSION}")
 
     url = context.record.mcp_url or ""
-    auto = SdkSession(url, context.record.token, mode="auto")
-    legacy = SdkSession(url, context.record.token, mode="legacy")
+    auto = SdkSession(url, context.record.mcp_token, mode="auto")
+    legacy = SdkSession(url, context.record.mcp_token, mode="legacy")
 
     negotiated: list[str] = []
 

@@ -21,12 +21,17 @@ what.
 machine. Three facts, stated plainly because a reader who assumes otherwise will
 build on it wrongly:
 
-1. Admission is the per-run bearer token, and nothing else.
-2. That token lives in `remote-api-<pid>.json` beside MAGDA's other app data.
+1. Admission is a per-run bearer token, and nothing else.
+2. The tokens live in `remote-api-<pid>.json` beside MAGDA's other app data.
    It is written owner-only, which stops *other users* reading it — but every
    process running as this user can.
-3. The client's name is self-declared. A caller holding the token can claim any
+3. The client's name is self-declared. A caller holding a token can claim any
    name and receive whatever that name was granted.
+
+Each transport has its own token (#2142) — `token` for the WebSocket, `mcpToken`
+for MCP. That exists so either can be rotated on its own, and adds nothing here:
+both sit in the same file, so anything that can read one can read the other, and
+both admit a caller to the same operations under the same grants.
 
 So a process that can read your home directory can already do anything the
 remote API can do. Per-client secrets would not change that: they would be
@@ -251,17 +256,20 @@ connection can cost everyone else; scopes decide what it is allowed to ask for.
 
 ## Token rotation
 
-Settings ▸ AI ▸ Remote ▸ **Rotate token**. A new credential is generated, the
-discovery record is rewritten, and every connected client is disconnected —
-because a token that still admitted the sessions it replaced would not have been
-revoked.
+Settings ▸ Connections ▸ **MCP** or **WebSocket** ▸ **Rotate token**. Per
+transport: a new credential is generated for that one, its entry in the discovery
+record is rewritten, and every client connected over it is disconnected — because
+a token that still admitted the sessions it replaced would not have been revoked.
+The other transport is not touched, which is the point of the tokens being
+separate: re-credentialling a misbehaving script does not drop an AI host
+mid-conversation.
 
-It is implemented as a listener restart rather than a swap in place. Both servers
-read `bearerToken` from an immutable options copy taken at construction; making it
-mutable would mean comparing against a value changing under the comparing thread,
-for the one operation where being half-applied is worst. Rebuilding guarantees
-every existing connection is gone: they were admitted by a token that no longer
-exists.
+It is implemented as a restart of that one listener rather than a swap in place.
+Both servers read `bearerToken` from an immutable options copy taken at
+construction; making it mutable would mean comparing against a value changing
+under the comparing thread, for the one operation where being half-applied is
+worst. Rebuilding guarantees every existing connection on that transport is gone:
+they were admitted by a token that no longer exists.
 
 A well-behaved client re-reads the discovery record and reconnects on its own.
 The `magda-mcp` bridge does this on every request, so an MCP host survives
@@ -269,14 +277,23 @@ rotation without noticing.
 
 ## The settings UI
 
-Two tabs, because turning the endpoint on and saying what a client may do are
+Settings ▸ Connections, four tabs — **MCP**, **WebSocket**, **OSC**, **Clients**.
+The transports are separate tabs because they are separate listeners, and grants
+are a fourth because turning an endpoint on and saying what a client may do are
 separate decisions made at different times.
 
-**Remote** — the enable toggle (applied immediately, not on OK), endpoint status
-and port, token rotation, and the MCP host configuration snippet composed from
-the running install.
+**MCP** and **WebSocket** — each carries its own enable toggle (applied
+immediately, not on OK), that listener's status and port, and its own **Rotate
+token**. MCP shows the host configuration snippet composed from the running
+install; the WebSocket shows the connect URL and where to read the token, which
+is never displayed — it is regenerated every run, so the file path is the durable
+thing.
 
-**Clients** — a row per client MAGDA has heard from, with a checkbox per scope,
+**OSC** is in this dialog but not in this document: no token, no client registry,
+no scopes.
+
+**Clients** — a row per client MAGDA has heard from, over either transport, with
+a checkbox per scope,
 whether it is connected and over which transport, **Disconnect**, and **Forget**.
 Underneath, a tail of the audit log, so "why did my assistant say it could not do
 that" has an answer on the same screen as the checkbox that fixes it.

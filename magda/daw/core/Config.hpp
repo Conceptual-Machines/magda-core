@@ -23,6 +23,28 @@ class ConfigListener {
  * Configuration class to manage all configurable settings in the DAW
  * This will later be exposed through a UI for user customization
  */
+/// The two remote-API transport switches as a config file resolves to them.
+struct RemoteApiSwitches {
+    bool websocket = false;
+    bool mcp = false;
+};
+
+/**
+ * @brief Read the transport switches out of a config file's `remoteApi` object.
+ *
+ * Separate from `Config::load` so the one rule with a migration in it can be
+ * tested without a config file on disk: a file written before #2142 carries only
+ * `enabled`, which meant both listeners, and reading it as anything less would
+ * silently switch off a transport somebody was already using.
+ *
+ * Either new key present wins over the legacy flag, including when it turns a
+ * transport off that `enabled` would have started — that is a user who has since
+ * made the choice explicitly.
+ *
+ * Anything that is not an object, including a void var, resolves to both off.
+ */
+RemoteApiSwitches remoteApiSwitchesFrom(const juce::var& remoteApiObject);
+
 class Config {
   public:
     static Config& getInstance();
@@ -479,11 +501,28 @@ class Config {
 
     // Remote API (issue #1856). Off by default: starting a listener is not
     // something a DAW should do because it was installed, even on loopback.
-    bool getRemoteApiEnabled() const {
-        return remoteApiEnabled;
+    //
+    // Two independent switches, one per transport (#2142). They were one flag
+    // while the remote API was understood as "the MCP surface", but a user who
+    // drives MAGDA from a script wants the WebSocket and no MCP endpoint, and a
+    // user with only an AI host wants the reverse. Neither should have to open a
+    // listener they will not use.
+    bool getRemoteApiWebSocketEnabled() const {
+        return remoteApiWebSocketEnabled;
     }
-    void setRemoteApiEnabled(bool enabled) {
-        remoteApiEnabled = enabled;
+    void setRemoteApiWebSocketEnabled(bool enabled) {
+        remoteApiWebSocketEnabled = enabled;
+    }
+    bool getRemoteApiMcpEnabled() const {
+        return remoteApiMcpEnabled;
+    }
+    void setRemoteApiMcpEnabled(bool enabled) {
+        remoteApiMcpEnabled = enabled;
+    }
+    /// Whether anything is meant to be listening. Derived, not stored: there is
+    /// no third state where the remote API is "on" with both transports off.
+    bool getRemoteApiEnabled() const {
+        return remoteApiWebSocketEnabled || remoteApiMcpEnabled;
     }
     /// 0 asks the OS for a free port. Clients read the actual one out of the
     /// token file, so a fixed port is a convenience rather than a requirement.
@@ -497,8 +536,7 @@ class Config {
     /// routes on the WebSocket's: an MCP notification stream holds a connection
     /// thread for its lifetime, so its budget is sized separately. 0 asks the OS
     /// for a free port, and the discovery file carries the real one alongside
-    /// the WebSocket's. Gated by the same `enabled` flag — there is one remote
-    /// API, with two ways in.
+    /// the WebSocket's.
     int getRemoteApiMcpPort() const {
         return remoteApiMcpPort;
     }
@@ -1497,7 +1535,8 @@ class Config {
     // generated per run and written to a file only the user can read, so it
     // never sits in a config file that gets copied around or pasted into a bug
     // report.
-    bool remoteApiEnabled = false;
+    bool remoteApiWebSocketEnabled = false;
+    bool remoteApiMcpEnabled = false;
     int remoteApiPort = 0;     // 0 = ephemeral; the token file carries the real one
     int remoteApiMcpPort = 0;  // likewise, for the MCP endpoint (#1858)
     std::vector<std::string> remoteApiAllowedOrigins;
