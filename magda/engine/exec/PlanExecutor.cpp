@@ -1,6 +1,7 @@
 #include "exec/PlanExecutor.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <map>
 #include <set>
@@ -1232,6 +1233,19 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 deviceMidiOut = &midiOut(id, 1);
                 deviceMidiOut->clear();
             }
+            // A multi-out instrument's further pairs sit on the ports after
+            // the main audio and any MIDI, so the count is what is left.
+            //
+            // Cleared here, ahead of everything that can leave this op early,
+            // rather than beside the call that hands them over. A pair the
+            // device does not write this block, because the track is silent or
+            // because nothing is bound, would otherwise give the track reading
+            // it the block before.
+            const auto firstMultiOutPort = producesMidi ? 2 : 1;
+            const auto multiOutPairs = std::min(
+                static_cast<int>(op.outputs.size()) - firstMultiOutPort, kMaxMultiOutPairs);
+            for (int pair = 0; pair < multiOutPairs; ++pair)
+                audioOut(id, firstMultiOutPort + pair, numSamples).clear();
 
             if (value.silent) {
                 audio.clear();
@@ -1259,7 +1273,22 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                                     .block = block};
             if (op.inputs[2].valid())
                 deviceBlock.sidechain = audioIn(op.inputs[2], numSamples);
-            device->process(deviceBlock);
+
+            // The pair blocks are gathered on the stack rather than on the
+            // executor: the parallel executor runs Device ops on any thread it
+            // likes, and anything shared here would be two devices writing one
+            // array. Built only where there are pairs, so the devices that have
+            // none, which is nearly all of them, pay nothing for it.
+            if (multiOutPairs <= 0) {
+                device->process(deviceBlock);
+            } else {
+                std::array<juce::dsp::AudioBlock<float>, kMaxMultiOutPairs> pairs;
+                for (int pair = 0; pair < multiOutPairs; ++pair)
+                    pairs[static_cast<std::size_t>(pair)] =
+                        audioOut(id, firstMultiOutPort + pair, numSamples);
+                deviceBlock.extraOutputs = {pairs.data(), static_cast<std::size_t>(multiOutPairs)};
+                device->process(deviceBlock);
+            }
             jassert(deviceMidiOut == nullptr || deviceMidiOut->data.size() <= kMaxMidiBytesPerPort);
             break;
         }

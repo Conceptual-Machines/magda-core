@@ -582,7 +582,7 @@ TEST_CASE("Entries can be read back for one client", "[remote][permissions][audi
 TEST_CASE("A registered secret never survives into a log line",
           "[remote][permissions][redaction]") {
     forgetAllRemoteSecrets();
-    const juce::String token = "9f3a1c7e5b2d8406";
+    const juce::String token = "9f3a1c7e5b2d8406";  // gitleaks:allow, a test fixture
     registerRemoteSecret(token);
 
     const auto redacted = redactSecrets("connecting with token " + token + " to the endpoint");
@@ -630,7 +630,7 @@ TEST_CASE("An audit detail is redacted on the way in", "[remote][permissions][re
     // At the one point every entry passes through, rather than at each call
     // site — where each new one is a chance to forget.
     forgetAllRemoteSecrets();
-    const juce::String token = "abcdef0123456789";
+    const juce::String token = "abcdef0123456789";  // gitleaks:allow, a test fixture
     registerRemoteSecret(token);
 
     auto log = std::make_shared<RemoteAuditLog>();

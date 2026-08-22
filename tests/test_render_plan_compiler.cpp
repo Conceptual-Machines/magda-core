@@ -1606,3 +1606,307 @@ TEST_CASE("Section-local device ids have distinct plan identities",
                          {ChainSegment::MixerAnalysis, 3},
                      });
 }
+
+namespace {
+
+/// An instrument with @p pairs stereo output pairs, the first of which is its
+/// main output. Pins follow the current engine's layout, two channels per pair
+/// from pin 1, which is what InstrumentRackManager reads a pair off.
+DeviceInfo makeMultiOutInstrument(DeviceId id, int pairs) {
+    auto device = makeInstrument(id);
+    device.multiOut.isMultiOut = true;
+    device.multiOut.totalOutputChannels = pairs * 2;
+    for (int pair = 0; pair < pairs; ++pair) {
+        MultiOutOutputPair out;
+        out.outputIndex = pair;
+        out.name = "St." + juce::String(pair * 2 + 1) + "-" + juce::String(pair * 2 + 2);
+        out.firstPin = 1 + pair * 2;
+        out.numChannels = 2;
+        device.multiOut.outputPairs.push_back(out);
+    }
+    return device;
+}
+
+/// A MultiOut track reading @p pair of @p deviceId on @p sourceTrack.
+TrackInfo makeMultiOutTrack(TrackId id, TrackId sourceTrack, DeviceId deviceId, int pair) {
+    auto track = makeTrack(id, TrackType::MultiOut);
+    track.multiOutLink = MultiOutTrackLink{sourceTrack, deviceId, pair};
+    return track;
+}
+
+/// The chain-head mix of one track.
+magda::engine::OpId trackInput(const RenderPlan& plan, TrackId trackId) {
+    for (const auto op : opsWithRole(plan, OpRole::TrackAudioInput))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == trackId)
+            return op;
+    return magda::engine::INVALID_OP_ID;
+}
+
+/// The device's process op, whatever else it emits.
+magda::engine::OpId deviceProcess(const RenderPlan& plan, DeviceId deviceId) {
+    for (std::size_t i = 0; i < plan.ops.size(); ++i) {
+        const auto& key = plan.ops[i].key;
+        if (key.deviceId == deviceId && key.role == OpRole::DeviceProcess)
+            return static_cast<magda::engine::OpId>(i);
+    }
+    return magda::engine::INVALID_OP_ID;
+}
+
+bool anyDiagnosticContains(const RenderPlan& plan, const std::string& text) {
+    return std::ranges::any_of(plan.diagnostics, [&text](const std::string& message) {
+        return message.find(text) != std::string::npos;
+    });
+}
+
+}  // namespace
+
+TEST_CASE("A multi-out pair feeds the track that opened it", "[engine][plan][compiler]") {
+    // The reading track is declared before its source, so only the multi-out
+    // dependency can put the source first.
+    std::vector<TrackInfo> tracks{makeMultiOutTrack(2, 1, 7, 1), makeTrack(1)};
+    tracks[1].chain.fxChainElements.push_back(makeDeviceElement(makeMultiOutInstrument(7, 3)));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+
+    const auto process = deviceProcess(plan, 7);
+    REQUIRE(process != magda::engine::INVALID_OP_ID);
+
+    // Three pairs: the main output at port 0, and one port each for pairs 1
+    // and 2, whether or not a track opened them.
+    const auto& outputs = plan.ops[static_cast<std::size_t>(process)].outputs;
+    REQUIRE(outputs.size() == 3);
+    CHECK(std::ranges::all_of(outputs, [](magda::engine::SignalKind kind) {
+        return kind == magda::engine::SignalKind::Audio;
+    }));
+
+    // The reading track's chain head is that pair's port and nothing else.
+    const auto input = trackInput(plan, 2);
+    REQUIRE(input != magda::engine::INVALID_OP_ID);
+    const auto& inputs = plan.ops[static_cast<std::size_t>(input)].inputs;
+    REQUIRE(inputs.size() == 1);
+    CHECK(rawInputOp(plan, input, 0) == process);
+    CHECK(inputs[0].port == 1);
+}
+
+TEST_CASE("A multi-out link the source device cannot honour is reported",
+          "[engine][plan][compiler]") {
+    SECTION("a pair the device does not have") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 4)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeMultiOutInstrument(7, 2)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(anyDiagnosticContains(plan, "is not a pair that device has"));
+        CHECK(plan.ops[static_cast<std::size_t>(trackInput(plan, 2))].inputs.empty());
+    }
+
+    SECTION("a device that is not multi-out at all") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(7)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(anyDiagnosticContains(plan, "is not a pair that device has"));
+    }
+
+    SECTION("the main pair, which stays on the source track") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 0)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeMultiOutInstrument(7, 3)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(anyDiagnosticContains(plan, "is not a pair this track can read"));
+    }
+
+    SECTION("two tracks on one pair") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 1),
+                                      makeMultiOutTrack(3, 1, 7, 1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeMultiOutInstrument(7, 2)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(anyDiagnosticContains(plan, "is already read by track 2"));
+
+        // The first claim stands; the second track reads nothing.
+        CHECK(plan.ops[static_cast<std::size_t>(trackInput(plan, 2))].inputs.size() == 1);
+        CHECK(plan.ops[static_cast<std::size_t>(trackInput(plan, 3))].inputs.empty());
+    }
+}
+
+TEST_CASE("A bypassed multi-out instrument silences its pairs without reporting them",
+          "[engine][plan][compiler]") {
+    auto instrument = makeMultiOutInstrument(7, 3);
+    instrument.bypassed = true;
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 1)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(instrument));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    // A bypassed device is not in the plan, so the pair has nothing to read;
+    // the link is still the one the model meant, so nothing is reported.
+    CHECK(plan.diagnostics.empty());
+    CHECK(deviceProcess(plan, 7) == magda::engine::INVALID_OP_ID);
+    CHECK(plan.ops[static_cast<std::size_t>(trackInput(plan, 2))].inputs.empty());
+}
+
+TEST_CASE("A multi-out instrument that also writes MIDI keeps its pairs after it",
+          "[engine][plan][compiler]") {
+    auto instrument = makeMultiOutInstrument(7, 2);
+    instrument.producesMidi = true;
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 1)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(instrument));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+
+    const auto process = deviceProcess(plan, 7);
+    const auto& outputs = plan.ops[static_cast<std::size_t>(process)].outputs;
+    REQUIRE(outputs.size() == 3);
+    CHECK(outputs[0] == magda::engine::SignalKind::Audio);
+    CHECK(outputs[1] == magda::engine::SignalKind::Midi);
+    CHECK(outputs[2] == magda::engine::SignalKind::Audio);
+
+    const auto input = trackInput(plan, 2);
+    CHECK(plan.ops[static_cast<std::size_t>(input)].inputs[0].port == 2);
+}
+
+TEST_CASE("A rack chain routed to an aux output reaches nothing and says so",
+          "[engine][plan][compiler]") {
+    RackInfo rack;
+    rack.id = 4;
+    ChainInfo mainChain;
+    mainChain.id = 10;
+    mainChain.elements.push_back(makeDeviceElement(makeEffect(7)));
+    ChainInfo auxChain;
+    auxChain.id = 11;
+    auxChain.outputIndex = 1;
+    auxChain.elements.push_back(makeDeviceElement(makeEffect(8)));
+    rack.chains.push_back(std::move(mainChain));
+    rack.chains.push_back(std::move(auxChain));
+
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    CHECK(anyDiagnosticContains(plan, "reaches nothing, the chain is silent"));
+
+    // Only the main chain is compiled, and the device on the aux chain with it.
+    CHECK(countRole(plan, OpRole::RackChainFader) == 1);
+    CHECK(deviceProcess(plan, 8) == magda::engine::INVALID_OP_ID);
+}
+
+TEST_CASE("A multi-out link survives its source not being compiled", "[engine][plan][compiler]") {
+    // Whether the link is sound and whether the device is in the plan are two
+    // questions. Everything that leaves an instrument out of the plan would
+    // otherwise read as a broken link, and the track would be told its pair
+    // does not exist when the only thing that happened is that the chain it
+    // sits on is not running. Bypass is the other way in, and has its own case
+    // above.
+    SECTION("the source track's insert chain is powered off") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 1)};
+        tracks[0].chain.enabled = false;
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeMultiOutInstrument(7, 3)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        CHECK(plan.diagnostics.empty());
+        CHECK(deviceProcess(plan, 7) == magda::engine::INVALID_OP_ID);
+        CHECK(plan.ops[static_cast<std::size_t>(trackInput(plan, 2))].inputs.empty());
+    }
+
+    SECTION("but a link to a track that does not exist is still reported") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 9, 7, 1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeMultiOutInstrument(7, 3)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(anyDiagnosticContains(plan, "is not a pair that device has"));
+    }
+}
+
+TEST_CASE("A multi-out pair that carries nothing is not an ordering dependency",
+          "[engine][plan][compiler]") {
+    // The edge only exists where a connection does. An edge for a pair nothing
+    // carries can invent a cycle, and the breaker resolves a cycle by dropping
+    // a connection: a real one would go so an imaginary one could be ordered.
+    auto instrument = makeMultiOutInstrument(7, 3);
+    instrument.bypassed = true;
+
+    // Track 2 reads a pair of the bypassed instrument on track 1, and track 1
+    // takes track 2's output as its own input. Only the multi-out edge can
+    // close that loop, and it must not.
+    std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 1)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(instrument));
+    tracks[1].audioOutputDevice = "track:1";
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    CHECK_FALSE(anyDiagnosticContains(plan, "routing cycle"));
+    CHECK_FALSE(anyDiagnosticContains(plan, "arrived after it was compiled"));
+
+    // Track 2's real connection into track 1 survives, which is what a dropped
+    // edge would have cost: track 1's own clips, and track 2's output.
+    const auto input = trackInput(plan, 1);
+    REQUIRE(input != magda::engine::INVALID_OP_ID);
+    REQUIRE(plan.ops[static_cast<std::size_t>(input)].inputs.size() == 2);
+
+    magda::engine::OpId readerMute = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackMute))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 2)
+            readerMute = op;
+    REQUIRE(readerMute != magda::engine::INVALID_OP_ID);
+    CHECK(inputOp(plan, input, 1) == readerMute);
+}
+
+TEST_CASE("A device with more pairs than one op can carry says so", "[engine][plan][compiler]") {
+    const auto overBudget = magda::engine::kMaxMultiOutPairs + 2;
+
+    SECTION("the device reports the pairs it could not compile") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(
+            makeDeviceElement(makeMultiOutInstrument(7, overBudget + 1)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        // Never a silent shortening: the ports stop at the budget and the drop
+        // is named.
+        CHECK(anyDiagnosticContains(plan, "one device can carry, the rest are not compiled"));
+        const auto process = deviceProcess(plan, 7);
+        CHECK(plan.ops[static_cast<std::size_t>(process)].outputs.size() ==
+              static_cast<std::size_t>(magda::engine::kMaxMultiOutPairs) + 1);
+    }
+
+    SECTION("a track reading past the budget is told which limit it hit") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, overBudget)};
+        tracks[0].chain.fxChainElements.push_back(
+            makeDeviceElement(makeMultiOutInstrument(7, overBudget + 1)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        // The device has that pair, so this is not the broken-link message.
+        CHECK(anyDiagnosticContains(plan, "pairs one device can carry"));
+        CHECK_FALSE(anyDiagnosticContains(plan, "is not a pair that device has"));
+    }
+
+    SECTION("a pair inside the budget still routes on the same device") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 1)};
+        tracks[0].chain.fxChainElements.push_back(
+            makeDeviceElement(makeMultiOutInstrument(7, overBudget + 1)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(plan.ops[static_cast<std::size_t>(trackInput(plan, 2))].inputs.size() == 1);
+    }
+}
