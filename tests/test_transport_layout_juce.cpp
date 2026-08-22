@@ -5,9 +5,12 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "magda/daw/core/Config.hpp"
+#include "magda/daw/ui/components/common/DraggableValueLabel.hpp"
 #include "magda/daw/ui/layout/LayoutConfig.hpp"
 #include "magda/daw/ui/panels/TransportLayout.hpp"
 #include "magda/daw/ui/panels/TransportTextWidths.hpp"
+#include "magda/daw/ui/themes/FontManager.hpp"
 
 class TransportLayoutFontsTest final : public juce::UnitTest {
   public:
@@ -51,6 +54,41 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
                                        config.defaultTransportHeight, text, density);
             expect(!dense.overflowVisible,
                    "the overflow button is showing at density " + juce::String(density, 1));
+        }
+
+        beginTest("The font scale is applied once, however often fonts are re-applied");
+        {
+            // TransportPanel hands its cached-font children a font again on
+            // every look-and-feel change, and re-measures for it. Both have to
+            // be idempotent, or a run of font changes would walk the sizes.
+            auto& config = magda::Config::getInstance();
+            const double originalScale = config.getUIFontScale();
+            const struct Restore {
+                magda::Config& config;
+                double scale;
+                ~Restore() {
+                    config.setUIFontScale(scale);
+                }
+            } restore{config, originalScale};
+
+            auto& fonts = magda::FontManager::getInstance();
+            juce::Label label;
+            label.setFont(fonts.getUIFont(kCpuTitleFontSize));
+            const float once = label.getFont().getHeight();
+            label.setFont(fonts.getUIFont(kCpuTitleFontSize));
+            expectEquals(label.getFont().getHeight(), once);
+
+            config.setUIFontScale(originalScale * 1.25);
+            label.setFont(fonts.getUIFont(kCpuTitleFontSize));
+            const float scaled = label.getFont().getHeight();
+            label.setFont(fonts.getUIFont(kCpuTitleFontSize));
+            expectEquals(label.getFont().getHeight(), scaled);
+            expectWithinAbsoluteError(scaled, once * 1.25f, 0.01f);
+
+            // ...and the measurement follows it by the same one factor.
+            const auto scaledText = measureTextWidths();
+            expectWithinAbsoluteError(static_cast<float>(scaledText.tempo),
+                                      static_cast<float>(text.tempo) * 1.25f, 1.5f);
         }
 
         beginTest("Each readout is wide enough for the string it has to draw");
