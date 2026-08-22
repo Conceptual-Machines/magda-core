@@ -1560,3 +1560,164 @@ TEST_CASE("A chain out of the mix silences a nested rack's MIDI too", "[engine][
         CHECK(harness.outputSample() == approx(0.0f));
     }
 }
+
+namespace {
+
+/// Writes a different DC level to every output pair it has, so which pair a
+/// track is reading is visible in that track's meter. The main pair carries
+/// `base`, and pair n carries base * (n + 1).
+class MultiOutInstrument final : public EngineDevice {
+  public:
+    explicit MultiOutInstrument(float base) : base_(base) {}
+
+    void process(DeviceBlock& block) override {
+        ++processedBlocks;
+        sawExtraOutputs = static_cast<int>(block.extraOutputs.size());
+
+        block.audio.fill(base_);
+        for (std::size_t pair = 0; pair < block.extraOutputs.size(); ++pair)
+            block.extraOutputs[pair].fill(base_ * static_cast<float>(pair + 2));
+    }
+
+    int processedBlocks = 0;
+    int sawExtraOutputs = 0;
+
+  private:
+    float base_;
+};
+
+DeviceInfo makeMultiOutInstrument(DeviceId id, int pairs) {
+    auto device = makeInstrument(id);
+    device.multiOut.isMultiOut = true;
+    device.multiOut.totalOutputChannels = pairs * 2;
+    for (int pair = 0; pair < pairs; ++pair) {
+        MultiOutOutputPair out;
+        out.outputIndex = pair;
+        out.firstPin = 1 + pair * 2;
+        out.numChannels = 2;
+        device.multiOut.outputPairs.push_back(out);
+    }
+    return device;
+}
+
+TrackInfo makeMultiOutTrack(TrackId id, TrackId sourceTrack, DeviceId deviceId, int pair) {
+    auto track = makeTrack(id, TrackType::MultiOut);
+    track.multiOutLink = MultiOutTrackLink{sourceTrack, deviceId, pair};
+    return track;
+}
+
+}  // namespace
+
+TEST_CASE("Each multi-out pair reaches the track that opened it", "[engine][exec]") {
+    auto source = makeTrack(1);
+    source.chain.fxChainElements.push_back(makeDeviceElement(makeMultiOutInstrument(7, 3)));
+
+    Harness harness({source, makeMultiOutTrack(2, 1, 7, 1), makeMultiOutTrack(3, 1, 7, 2)},
+                    makeMaster());
+    ConstantSource silence(0.0f);
+    NoteSource notes(64);
+    MultiOutInstrument instrument(0.1f);
+    harness.bindings.clipAudio[1] = &silence;
+    harness.bindings.clipMidi[1] = &notes;
+    harness.bindings.devices[DeviceKey{7}] = &instrument;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    // Two pairs past the main one, whether or not both were opened.
+    CHECK(instrument.processedBlocks == 1);
+    CHECK(instrument.sawExtraOutputs == 2);
+
+    // Each track reads its own pair, and the source track keeps the main one.
+    CHECK(harness.takeMeterFor(OpRole::TrackMeter, 1) == approx(0.1f));
+    CHECK(harness.takeMeterFor(OpRole::TrackMeter, 2) == approx(0.2f));
+    CHECK(harness.takeMeterFor(OpRole::TrackMeter, 3) == approx(0.3f));
+
+    // All three land on the master, which is what a multi-out setup sounds
+    // like with nothing else done to it.
+    CHECK(harness.outputSample() == approx(0.6f));
+}
+
+TEST_CASE("A multi-out pair nobody opened is rendered and dropped", "[engine][exec]") {
+    auto source = makeTrack(1);
+    source.chain.fxChainElements.push_back(makeDeviceElement(makeMultiOutInstrument(7, 3)));
+
+    Harness harness({source, makeMultiOutTrack(2, 1, 7, 1)}, makeMaster());
+    ConstantSource silence(0.0f);
+    NoteSource notes(64);
+    MultiOutInstrument instrument(0.1f);
+    harness.bindings.clipAudio[1] = &silence;
+    harness.bindings.clipMidi[1] = &notes;
+    harness.bindings.devices[DeviceKey{7}] = &instrument;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    // The device still writes both pairs: its output layout is its own, and
+    // the plan decides what is read rather than what is produced.
+    CHECK(instrument.sawExtraOutputs == 2);
+    CHECK(harness.takeMeterFor(OpRole::TrackMeter, 2) == approx(0.2f));
+
+    // Pair 2 reaches nothing, so the master carries the main pair and pair 1.
+    CHECK(harness.outputSample() == approx(0.3f));
+}
+
+TEST_CASE("An ordinary device is handed no extra outputs", "[engine][exec]") {
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(7)));
+
+    Harness harness({track}, makeMaster());
+    ConstantSource silence(0.0f);
+    NoteSource notes(64);
+    MultiOutInstrument instrument(0.25f);
+    harness.bindings.clipAudio[1] = &silence;
+    harness.bindings.clipMidi[1] = &notes;
+    harness.bindings.devices[DeviceKey{7}] = &instrument;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    CHECK(instrument.sawExtraOutputs == 0);
+    CHECK(harness.outputSample() == approx(0.25f));
+}
+
+TEST_CASE("A multi-out pair the device stops writing goes silent", "[engine][exec]") {
+    // Writes its pairs on the first block only, which is what any instrument
+    // with nothing to play on a pair does. The pair has to go silent rather
+    // than repeat the block it last had material for, and the only thing that
+    // makes that true is the executor clearing the port before the call.
+    class WritesOnceInstrument final : public EngineDevice {
+      public:
+        void process(DeviceBlock& block) override {
+            block.audio.fill(0.1f);
+            if (blocks++ > 0)
+                return;
+            for (std::size_t pair = 0; pair < block.extraOutputs.size(); ++pair)
+                block.extraOutputs[pair].fill(0.2f);
+        }
+
+        int blocks = 0;
+    };
+
+    auto source = makeTrack(1);
+    source.chain.fxChainElements.push_back(makeDeviceElement(makeMultiOutInstrument(7, 2)));
+
+    Harness harness({source, makeMultiOutTrack(2, 1, 7, 1)}, makeMaster());
+    ConstantSource silence(0.0f);
+    NoteSource notes(64);
+    WritesOnceInstrument instrument;
+    harness.bindings.clipAudio[1] = &silence;
+    harness.bindings.clipMidi[1] = &notes;
+    harness.bindings.devices[DeviceKey{7}] = &instrument;
+
+    harness.prepareCleanly();
+    harness.render();
+    REQUIRE(harness.takeMeterFor(OpRole::TrackMeter, 2) == approx(0.2f));
+
+    harness.render(kBlockSize, kBlockSize);
+    CHECK(instrument.blocks == 2);
+    CHECK(harness.takeMeterFor(OpRole::TrackMeter, 2) == approx(0.0f));
+
+    // The main pair is unaffected: it is written every block.
+    CHECK(harness.takeMeterFor(OpRole::TrackMeter, 1) == approx(0.1f));
+}

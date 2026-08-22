@@ -5,6 +5,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/ChainRoutingModel.hpp"
@@ -244,8 +245,19 @@ class Compiler {
     /// whatever its own chain made of it.
     std::map<TrackId, PortRef> trackMidiInput_;
     /// Signals waiting to be summed into a track that has not been emitted yet:
-    /// child track outputs and incoming send taps.
+    /// child track outputs, incoming send taps and multi-out pairs.
     std::map<TrackId, std::vector<PortRef>> pendingInputs_;
+    /// Which MultiOut track reads each output pair of each multi-out instrument,
+    /// collected before emission because the device has to declare its ports in
+    /// one go and only the tracks know which pairs anyone reads. Keyed on the
+    /// device's own track and id: a link names no section, and a multi-out
+    /// instrument is an FX-section device, which is the one space those ids can
+    /// come from.
+    std::map<std::pair<TrackId, DeviceId>, std::map<int, TrackId>> multiOutTargets_;
+    /// MultiOut tracks whose link named a pair the model actually has. A link
+    /// that resolved to nothing is what emitTrack reports; a resolved pair on a
+    /// bypassed instrument is silent without being wrong.
+    std::set<TrackId> multiOutResolved_;
     /// Tracks whose MIDI another track reads, through a MIDI sidechain or an
     /// internal MIDI route. Their MIDI clips have to be compiled even when
     /// their own chain has nothing that consumes MIDI.
@@ -361,12 +373,17 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
             if (const auto destination = indexOf(resolveSendDestination(send)); destination >= 0)
                 addEdge(i, static_cast<std::size_t>(destination));
 
-        // Sidechains and internal input routes read another track, so that
-        // track comes first. Every edge here has to correspond to a connection
-        // emission will actually make; multi-out is not compiled at all, so it
-        // contributes no edge either.
+        // Sidechains, internal input routes and multi-out pairs read another
+        // track, so that track comes first. Every edge here has to correspond
+        // to a connection emission will actually make, which is why the
+        // multi-out edge is gated on the same thing emission is: a link naming
+        // pair zero or a pair past what the engine can address connects
+        // nothing, so ordering for it would be inventing a dependency.
         std::set<TrackId> upstream;
         collectSidechainSources(track, std::nullopt, upstream);
+        if (track.multiOutLink && track.multiOutLink->outputPairIndex > 0 &&
+            track.multiOutLink->outputPairIndex <= kMaxMultiOutPairs)
+            upstream.insert(track.multiOutLink->sourceTrackId);
 
         // Deliberately not the modulation sources. A modifier listening to
         // another track needs that track's tap to exist, and it does: the taps
@@ -489,6 +506,35 @@ std::vector<PortRef> Compiler::alignInputs(const OpKey& key, OpKind kind,
 
 ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site,
                                  ChainSignal signal) {
+    // A multi-out instrument declares a port for every pair it has past the
+    // main one, opened or not, so that a port's position is its pair number and
+    // the device never has to ask what is being listened to. Which of them a
+    // MultiOut track reads is a separate question, answered below.
+    //
+    // Top level and the FX section only, which is where a multi-out instrument
+    // sits: a link names an id with no section, and TrackManager::getDevice
+    // resolves it against the track's own chain rather than inside its racks.
+    const bool ownsMultiOutPairs = site.rackId == INVALID_RACK_ID &&
+                                   site.segment == ChainSegment::Fx && device.multiOut.isMultiOut;
+    // Clamped at both ends. A device flagged multi-out with no pairs listed is
+    // a plugin that has not finished reporting its channels yet, and it has to
+    // come out as no extra ports rather than as a negative count.
+    const auto multiOutPairCount =
+        ownsMultiOutPairs ? std::clamp(static_cast<int>(device.multiOut.outputPairs.size()) - 1, 0,
+                                       kMaxMultiOutPairs)
+                          : 0;
+
+    // Resolved before the bypass check below, because a bypassed instrument
+    // makes its pairs silent rather than unrouted: the link is still the one
+    // the model meant, and reporting it would put a diagnostic in front of an
+    // ordinary edit.
+    const auto targets = multiOutTargets_.find({site.trackId, device.id});
+    const bool hasTargets = ownsMultiOutPairs && targets != multiOutTargets_.end();
+    if (hasTargets)
+        for (const auto& [pairIndex, targetTrack] : targets->second)
+            if (pairIndex <= multiOutPairCount)
+                multiOutResolved_.insert(targetTrack);
+
     if (device.bypassed)
         return signal;
 
@@ -533,11 +579,27 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     if (producesMidi)
         outputs.push_back(SignalKind::Midi);
 
+    // The further pairs are ports on the same op, after the main audio and any
+    // MIDI. They carry the device's raw output: the slot's gain trim and meter
+    // are the main pair's, and the current engine puts them on the instance the
+    // track's chain reads rather than on the one an output pair gets.
+    const auto firstMultiOutPort = static_cast<int>(outputs.size());
+    outputs.insert(outputs.end(), static_cast<std::size_t>(multiOutPairCount), SignalKind::Audio);
+
     OpKey key{site.trackId,          site.rackId, site.chainId, device.id,
               OpRole::DeviceProcess, 0,           site.segment};
     const auto processOp = addOp(
         OpKind::Device, key, alignInputs(key, OpKind::Device, {signal.audio, midiIn, sidechainIn}),
         std::move(outputs));
+
+    // Pair n is port firstMultiOutPort + n - 1. A pair no track opened stays
+    // unread, which is what the current engine does with a pin no RackInstance
+    // was made for.
+    if (hasTargets)
+        for (const auto& [pairIndex, targetTrack] : targets->second)
+            if (pairIndex <= multiOutPairCount)
+                pendingInputs_[targetTrack].push_back(
+                    PortRef{processOp, firstMultiOutPort + pairIndex - 1});
 
     ChainSignal out;
     out.audio = PortRef{processOp, 0};
@@ -612,12 +674,18 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
 
     for (const auto& chain : rack.chains) {
         if (chain.outputIndex != 0) {
-            // Rack aux outputs feed multi-out tracks, which this compiler does
-            // not wire yet. Compiling nothing for the chain is wrong in a
-            // visible way; compiling it into the main mix would be wrong
-            // silently, and compiling it nowhere would leave dead ops behind.
+            // Not the same mechanism as a multi-out track, which reads an
+            // output pair of an instrument rather than a chain of a user rack.
+            // A chain routed to an aux output is silent in the current engine
+            // too: RackSyncManager wires it to output pins 3 and up, and the
+            // rack instance on the track reads pins 1 and 2, so nothing is on
+            // the other end of them. Compiling nothing is therefore parity,
+            // and it is reported because the model says something the signal
+            // flow does not: routing a chain to an aux output loses it, and
+            // silently dropping it here would look like the plan's doing.
             diagnose("rack " + std::to_string(rack.id) + " chain " + std::to_string(chain.id) +
-                     ": aux output " + std::to_string(chain.outputIndex) + " is not routed yet");
+                     ": aux output " + std::to_string(chain.outputIndex) +
+                     " reaches nothing, the chain is silent");
             continue;
         }
 
@@ -719,11 +787,19 @@ void Compiler::emitTrack(const TrackInfo& track) {
 
     // --- chain head ---
 
-    if (track.multiOutLink)
+    // The pair itself arrives through pendingInputs_, put there by the device
+    // that owns it: the source track is ordered ahead of this one, so by now it
+    // is either waiting or it never existed. Only the second case is reported,
+    // and only here, because a pair the source device does not have is a broken
+    // link rather than a configuration the plan cannot express.
+    if (track.multiOutLink && !multiOutResolved_.contains(track.id)) {
+        const auto& link = *track.multiOutLink;
         diagnose("track " + std::to_string(track.id) + ": multi-out pair " +
-                 std::to_string(track.multiOutLink->outputPairIndex) + " of device " +
-                 std::to_string(track.multiOutLink->sourceDeviceId) +
-                 " is not routed yet, the track renders silence");
+                 std::to_string(link.outputPairIndex) + " of device " +
+                 std::to_string(link.sourceDeviceId) + " on track " +
+                 std::to_string(link.sourceTrackId) +
+                 " is not a pair that device has, the track renders silence");
+    }
 
     // Freeze is structural: the current engine renders the track, disables its
     // plugins and plays the render back. Compiling the live chain both diverges
@@ -1042,6 +1118,31 @@ RenderPlan Compiler::run() {
     // a note-triggered modifier reads the notes reaching its source's chain
     // head, and a source with no MIDI ops compiled has no chain head to read.
     midiSourceTracks_.insert(noteSourceTracks_.begin(), noteSourceTracks_.end());
+
+    // Which multi-out pairs anyone reads, before any device declares its ports.
+    // A device emits a port per pair a track links to and no others, so a pair
+    // nobody opened costs nothing and a dead port never reaches the plan.
+    for (const auto& track : tracks_) {
+        if (!track.multiOutLink)
+            continue;
+        const auto& link = *track.multiOutLink;
+        if (link.outputPairIndex <= 0 || link.outputPairIndex > kMaxMultiOutPairs) {
+            // Pair 0 is the instrument's main output, which stays on its own
+            // track's chain: a MultiOut track claiming it would read the signal
+            // twice. Out of range is the model naming a pin the engine cannot
+            // address.
+            diagnose("track " + std::to_string(track.id) + ": multi-out pair " +
+                     std::to_string(link.outputPairIndex) + " of device " +
+                     std::to_string(link.sourceDeviceId) + " is not a pair this track can read");
+            continue;
+        }
+        auto& pairs = multiOutTargets_[{link.sourceTrackId, link.sourceDeviceId}];
+        if (const auto [owner, inserted] = pairs.emplace(link.outputPairIndex, track.id); !inserted)
+            diagnose("track " + std::to_string(track.id) + ": multi-out pair " +
+                     std::to_string(link.outputPairIndex) + " of device " +
+                     std::to_string(link.sourceDeviceId) + " is already read by track " +
+                     std::to_string(owner->second) + ", this track renders silence");
+    }
 
     for (const auto* track : computeTrackOrder())
         emitTrack(*track);

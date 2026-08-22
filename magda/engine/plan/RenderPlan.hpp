@@ -47,6 +47,21 @@ constexpr OpId INVALID_OP_ID = -1;
 /** Which kind of signal a port carries. */
 enum class SignalKind : std::uint8_t { Audio, Midi };
 
+// Output ports of a Device op, in order. Port 0 is the device's audio output,
+// and it is the one the chain carries on from. A device that writes MIDI has it
+// at port 1. Anything after that is a multi-out instrument's further output
+// pairs, in pair order, and those leave the chain rather than continuing along
+// it: each is read by the MultiOut track whose MultiOutTrackLink names that
+// pair, the way the current engine gives the pair its own RackInstance reading
+// its own pins. The order is what makes the two existing shapes, {Audio} and
+// {Audio, Midi}, special cases of it rather than something a reader has to tell
+// apart.
+
+/// Output pairs past the main one that one device may have. The current engine
+/// clamps rack output pins to the same figure (RackSyncManager), and a plan
+/// carrying more would address pins it cannot reach.
+constexpr int kMaxMultiOutPairs = 31;
+
 /**
  * @brief What an op computes.
  *

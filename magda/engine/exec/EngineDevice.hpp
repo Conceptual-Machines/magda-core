@@ -3,6 +3,8 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include <span>
+
 #include "exec/RenderContext.hpp"
 #include "param/ParamBlock.hpp"
 
@@ -80,6 +82,25 @@ struct DeviceBlock {
     /// Sidechain audio. A zero-channel block when the slot is unconnected, so
     /// devices check getNumChannels() rather than assuming a source.
     juce::dsp::AudioBlock<const float> sidechain;
+
+    /**
+     * @brief A multi-out instrument's further output pairs.
+     *
+     * `extraOutputs[k]` is pair k + 1: pair 0 is `audio` above, which is what
+     * the device's own chain carries on from. Empty for every device that is
+     * not multi-out, which is almost all of them.
+     *
+     * One block per pair the device declares, whether or not a MultiOut track
+     * was opened for it, so a device writes its outputs where its own layout
+     * says they go and never has to ask what is being listened to. That is what
+     * the current engine does too: the instrument writes every pin of the rack
+     * around it, and it is the RackInstance for a pair that decides whether
+     * anyone reads those pins. A pair no track opened is rendered and dropped.
+     *
+     * Each block arrives cleared, so a device that writes only the pairs it has
+     * material for leaves the rest silent rather than stale.
+     */
+    std::span<juce::dsp::AudioBlock<float>> extraOutputs;
 
     /**
      * @brief The device's parameters, resolved for this block (#2116).
