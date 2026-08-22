@@ -298,6 +298,10 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_parallel_executor.cpp)
     list(APPEND TEST_SOURCES test_plan_layout.cpp)
     list(APPEND TEST_SOURCES test_plan_diff.cpp)
+    # Rack nesting, recursion and op-key identity (#2137). Reaches the parameter
+    # table as well as the plan, because the nearest-scope rule the two resolve
+    # against is what has to agree across a nesting change.
+    list(APPEND TEST_SOURCES test_plan_rack_nesting.cpp)
     list(APPEND TEST_SOURCES test_plan_crossfade.cpp)
     # Plan goldens (#2076). Fixtures and runner both reach into magda_engine.
     list(APPEND TEST_SOURCES PlanGoldenFixtures.cpp)

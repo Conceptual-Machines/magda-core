@@ -1,10 +1,13 @@
 #include "param/ModSources.hpp"
 
+#include "plan/RackNesting.hpp"
+
 namespace magda::engine {
+namespace {
 
 void collectModulationTaps(const std::vector<magda::ChainElement>& elements,
                            magda::TrackId ownTrack, std::set<ModTap>& out,
-                           std::set<magda::TrackId>& notes) {
+                           std::set<magda::TrackId>& notes, RackNesting& nesting) {
     for (const auto& element : elements) {
         if (magda::isDevice(element)) {
             const auto& device = magda::getDevice(element);
@@ -13,6 +16,15 @@ void collectModulationTaps(const std::vector<magda::ChainElement>& elements,
             collectNoteSources(device.mods, source, ownTrack, notes);
         } else if (magda::isRack(element)) {
             const auto& rack = magda::getRack(element);
+
+            // A rack instance that contains itself is not compiled and its
+            // parameters are not carried, so there is no modifier under the
+            // loop to hear anything. A tap collected for one would be an
+            // ordering edge to a track nothing reads.
+            if (nesting.encloses(rack.id))
+                continue;
+
+            const RackNesting::Scope scope{nesting, rack.id};
             const auto source = sidechainSourceOf(rack.sidechain);
 
             // The rack's own modifiers hear the rack's sidechain. This is the
@@ -27,9 +39,18 @@ void collectModulationTaps(const std::vector<magda::ChainElement>& elements,
             // own sidechain, and the rack's is the rack's. The fork resolves it
             // the same way, per scope rather than per subtree.
             for (const auto& chain : rack.chains)
-                collectModulationTaps(chain.elements, ownTrack, out, notes);
+                collectModulationTaps(chain.elements, ownTrack, out, notes, nesting);
         }
     }
+}
+
+}  // namespace
+
+void collectModulationTaps(const std::vector<magda::ChainElement>& elements,
+                           magda::TrackId ownTrack, std::set<ModTap>& out,
+                           std::set<magda::TrackId>& notes) {
+    RackNesting nesting;
+    collectModulationTaps(elements, ownTrack, out, notes, nesting);
 }
 
 void collectModulationTaps(const magda::TrackInfo& track, std::set<ModTap>& out,
