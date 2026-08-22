@@ -18,6 +18,8 @@ namespace magda::daw::ui::transport {
  */
 struct TextWidths {
     int timecodeBox = 0;         // a whole bars.beats.ticks readout, as it sizes itself
+    int timecodeCaption = 0;     // the widest of the SEL / LOOP / CUR captions, in their font
+    int timecodeGlyphInset = 0;  // how far inside a readout's edge its last glyph already stops
     int tempo = 0;               // "999.99" in the BPM readout font
     int timeSigNumerator = 0;    // "16/" -- the numerator carries the slash
     int timeSigDenominator = 0;  // "16"
@@ -60,6 +62,11 @@ struct Layout {
     bool automationWriteLabelFits = true;
 
     bool isVisible(Section section) const;
+
+    // What every timecode readout keeps clear at its right end, where the
+    // group caption is drawn over it and the punch box carries its icons. The
+    // readouts' widths include it; TransportPanel hands it to each label.
+    int timeBoxTrailingInset = 0;
 
     // Right edge of each separator-delimited band, in panel coordinates.
     int transportRight = 0;

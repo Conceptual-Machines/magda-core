@@ -49,16 +49,20 @@ void BarsBeatsTicksLabel::setDrawBackground(bool draw) {
     repaint();
 }
 
+void BarsBeatsTicksLabel::setTrailingInset(int px) {
+    px = juce::jmax(0, px);
+    if (trailingInset_ == px)
+        return;
+    trailingInset_ = px;
+    resized();
+    repaint();
+}
+
 void BarsBeatsTicksLabel::setRange(double min, double max, double defaultValue) {
-    // The segment shares are worked out from how large each number can get, so
-    // anything that changes that has to relayout, not just repaint.
-    const bool reshapes = maxValue_ != max;
     minValue_ = min;
     maxValue_ = max;
     defaultValue_ = juce::jlimit(min, max, defaultValue);
     value_ = juce::jlimit(minValue_, maxValue_, value_);
-    if (reshapes)
-        resized();
     updateSegmentTexts();
     repaint();
 }
@@ -76,22 +80,14 @@ void BarsBeatsTicksLabel::setValue(double newValue, juce::NotificationType notif
 }
 
 void BarsBeatsTicksLabel::setBeatsPerBar(int beatsPerBar) {
-    const bool reshapes = beatsPerBar_ != beatsPerBar;
     beatsPerBar_ = beatsPerBar;
-    // A wider time signature means a wider beat number and fewer bars, which
-    // moves the boundary between the two segments.
-    if (reshapes)
-        resized();
+    // updateSegmentTexts relayouts if the bar or beat number changes width.
     updateSegmentTexts();
     repaint();
 }
 
 void BarsBeatsTicksLabel::setBarsBeatsIsPosition(bool isPosition) {
-    const bool reshapes = barsBeatsIsPosition_ != isPosition;
     barsBeatsIsPosition_ = isPosition;
-    // One-indexed positions can carry a digit the zero-indexed form cannot.
-    if (reshapes)
-        resized();
     updateSegmentTexts();
     repaint();
 }
@@ -147,6 +143,15 @@ void BarsBeatsTicksLabel::updateSegmentTexts() {
     barsSegment_->setDisplayValue(bars + offset);
     beatsSegment_->setDisplayValue(beats + offset);
     ticksSegment_->setDisplayValue(ticks);
+
+    // The strip is shared out by the digits shown, so a bar or beat number
+    // that gains or loses a digit moves the segment boundaries.
+    const std::array<int, 2> digits{juce::String(bars + offset).length(),
+                                    juce::String(beats + offset).length()};
+    if (digits != laidOutDigits_) {
+        laidOutDigits_ = digits;
+        resized();
+    }
 }
 
 void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
@@ -228,17 +233,17 @@ std::array<int, 3> BarsBeatsTicksLabel::segmentWidthsFor(double maxValue, int mi
     const int maxBars = static_cast<int>(maxValue / lowBeatsPerBar) + offset;
     const int maxBeats = highBeatsPerBar - 1 + offset;
 
-    const auto font = FontManager::getInstance().getUIFont(kTextFontSize);
-    // Measure a string of the widest digit rather than the number itself, so a
-    // value made of narrow digits does not under-size the segment.
-    const auto widthOfDigits = [&font](int digits) {
-        return juce::GlyphArrangement::getStringWidthInt(
-                   font, juce::String::repeatedString("8", digits)) +
-               kSegmentPad;
-    };
-
     return {widthOfDigits(juce::String(maxBars).length()),
             widthOfDigits(juce::String(maxBeats).length()), widthOfDigits(3)};
+}
+
+int BarsBeatsTicksLabel::widthOfDigits(int digits) {
+    // Measure a string of the widest digit rather than the number itself, so a
+    // value made of narrow digits does not under-size the segment.
+    const auto font = FontManager::getInstance().getUIFont(kTextFontSize);
+    return juce::GlyphArrangement::getStringWidthInt(font,
+                                                     juce::String::repeatedString("8", digits)) +
+           kSegmentPad;
 }
 
 int BarsBeatsTicksLabel::preferredWidthForRange(double maxValue, int minBeatsPerBar,
@@ -247,17 +252,25 @@ int BarsBeatsTicksLabel::preferredWidthForRange(double maxValue, int minBeatsPer
     return needed[0] + needed[1] + needed[2] + (2 * kDotWidth) + (2 * kEdgeInset);
 }
 
-std::array<int, 3> BarsBeatsTicksLabel::segmentWidths() const {
-    return segmentWidthsFor(maxValue_, beatsPerBar_, beatsPerBar_, barsBeatsIsPosition_);
+std::array<int, 3> BarsBeatsTicksLabel::shownSegmentWidths() const {
+    return {widthOfDigits(juce::String(barsSegment_->getDisplayValue()).length()),
+            widthOfDigits(juce::String(beatsSegment_->getDisplayValue()).length()),
+            widthOfDigits(3)};
 }
 
 void BarsBeatsTicksLabel::resized() {
     auto bounds = getLocalBounds().reduced(kEdgeInset, 0);
+    // The glyphs already stop kEdgeInset + half a segment pad short of the
+    // edge; the inset only has to take the rest off the strip.
+    bounds.removeFromRight(juce::jmax(0, trailingInset_ - kEdgeInset - (kSegmentPad / 2)));
 
-    // Share the strip out in proportion to what each segment has to show. A
-    // fixed quarter for the bar number clipped long positions while leaving
-    // the three-digit tick segment half the box.
-    const auto needed = segmentWidths();
+    // Share the strip out in proportion to the digits on screen. Shared by
+    // the largest value the range allows, a bar segment showing "1" was
+    // mostly air and pushed the ticks against the far edge; shared by what it
+    // shows, "1.1.000" sits balanced, and a bar number that gains a digit
+    // takes the room when it needs it (updateSegmentTexts relayouts then). A
+    // box sized by preferredWidthForRange() still holds the widest value.
+    const auto needed = shownSegmentWidths();
     const int total = juce::jmax(1, needed[0] + needed[1] + needed[2]);
     const int available = juce::jmax(3, bounds.getWidth() - (2 * kDotWidth));
 

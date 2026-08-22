@@ -86,7 +86,8 @@ struct Metrics {
     int timeBoxSlack = 0;
 
     // Measured widths
-    int timeBox = 0;  // a bars.beats.ticks readout; grown by the flex pass
+    int timeBoxDecoration = 0;  // the right end of a readout its glyphs keep clear
+    int timeBox = 0;            // a bars.beats.ticks readout; grown by the flex pass
     int tempoCell = 0;
     int timeSigNum = 0;
     int timeSigDen = 0;
@@ -130,7 +131,13 @@ Metrics metricsFor(int width, int height, const TextWidths& text, float densityS
     m.timeBoxSlack = scaled(kTimeBoxSlack, densityScale);
 
     const int cellPad = scaled(kCellPad, densityScale);
-    m.timeBox = text.timecodeBox;
+    // A readout's glyphs stop short of its right end, where TransportPanel
+    // draws the group caption (SEL / LOOP / CUR) and the punch box carries its
+    // icons. The wider of the two, so every readout stays the same width. The
+    // label keeps its glyphs clear of exactly this much (setTrailingInset), and
+    // the box grows by what that needs beyond the inset the glyphs keep anyway.
+    m.timeBoxDecoration = juce::jmax(text.timecodeCaption, m.punchIcon + kPunchIconInset);
+    m.timeBox = text.timecodeBox + juce::jmax(0, m.timeBoxDecoration - text.timecodeGlyphInset);
     m.tempoCell = text.tempo + (2 * cellPad);
     m.timeSigNum = text.timeSigNumerator + (2 * cellPad);
     m.timeSigDen = text.timeSigDenominator + (2 * cellPad);
@@ -381,6 +388,7 @@ Layout compute(int width, int height, const TextWidths& text, float densityScale
     const SectionWidths widths = measureAll(m);
 
     Layout l;
+    l.timeBoxTrailingInset = m.timeBoxDecoration;
     const int required = resolveVisibility(l, widths, width);
 
     // Spare width goes to the timecode readouts, which read better with air

@@ -147,19 +147,20 @@ void TransportPanel::paint(juce::Graphics& g) {
 
         // Group label at top-right
         g.setColour(groupColour.withAlpha(0.5f));
-        g.setFont(FontManager::getInstance().getUIFont(7.0f));
+        g.setFont(FontManager::getInstance().getUIFont(transport::kTimecodeCaptionFontSize));
         g.drawText(groupName, wrapperBounds.toNearestInt().reduced(2, 1),
                    juce::Justification::topRight, false);
     };
 
     if (layout_.selLoopTimesVisible) {
         drawGroupWrapper(selectionStartLabel->getBounds().getUnion(selectionEndLabel->getBounds()),
-                         "SEL", DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        drawGroupWrapper(loopStartLabel->getBounds().getUnion(loopEndLabel->getBounds()), "LOOP",
-                         DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
+                         transport::kSelectionCaption,
+                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        drawGroupWrapper(loopStartLabel->getBounds().getUnion(loopEndLabel->getBounds()),
+                         transport::kLoopCaption, DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
     }
     drawGroupWrapper(playheadPositionLabel->getBounds().getUnion(editCursorLabel->getBounds()),
-                     "CUR", DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+                     transport::kCursorCaption, DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     if (layout_.punchVisible) {
         drawGroupWrapper(punchInButton->getBounds()
                              .getUnion(punchStartLabel->getBounds())
@@ -242,6 +243,13 @@ void TransportPanel::resized() {
     layout_ = transport::compute(getWidth(), getHeight(), transport::measureTextWidths(),
                                  LayoutConfig::getInstance().densityScale);
     const auto& l = layout_;
+
+    // The readouts keep their digits clear of the caption / punch icons drawn
+    // over their right end; the layout measured that zone into their width.
+    for (auto* label : {selectionStartLabel.get(), selectionEndLabel.get(), loopStartLabel.get(),
+                        loopEndLabel.get(), playheadPositionLabel.get(), editCursorLabel.get(),
+                        punchStartLabel.get(), punchEndLabel.get()})
+        label->setTrailingInset(l.timeBoxTrailingInset);
 
     // Visibility first: a dropped section keeps the empty rectangle the layout
     // left it, so no z-order or paint call can read a stale position.

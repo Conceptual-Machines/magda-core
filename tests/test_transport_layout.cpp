@@ -21,12 +21,14 @@ namespace {
 // without invalidating the test.
 TextWidths nominalText() {
     TextWidths text;
-    text.timecodeBox = 93;
+    text.timecodeBox = 85;
+    text.timecodeCaption = 20;
+    text.timecodeGlyphInset = 4;
     text.tempo = 43;
     text.timeSigNumerator = 20;
     text.timeSigDenominator = 16;
     text.cpuTitle = 17;
-    text.cpuValue = 23;
+    text.cpuValue = 40;
     text.gridDivision = 18;
     text.gridToggle = 26;
     return text;
@@ -66,6 +68,7 @@ TEST_CASE("It keeps fitting as the text around it grows", "[ui][transport-layout
     for (int extra = 0; extra <= 3; ++extra) {
         auto text = nominalText();
         text.timecodeBox += extra * 4;
+        text.timecodeCaption += extra;
         text.tempo += extra * 2;
         text.timeSigNumerator += extra;
         text.timeSigDenominator += extra;
@@ -225,7 +228,8 @@ TEST_CASE("Spare width goes to the timecode readouts, up to a cap", "[ui][transp
     const auto roomy = compute(snug + 120, height, text, 1.0f);
     const auto huge = compute(snug + 1200, height, text, 1.0f);
 
-    REQUIRE(tight.playhead.getWidth() == text.timecodeBox);
+    REQUIRE(tight.playhead.getWidth() ==
+            text.timecodeBox + tight.timeBoxTrailingInset - text.timecodeGlyphInset);
     REQUIRE(roomy.playhead.getWidth() > tight.playhead.getWidth());
     REQUIRE(huge.playhead.getWidth() == roomy.playhead.getWidth());
 
@@ -233,4 +237,35 @@ TEST_CASE("Spare width goes to the timecode readouts, up to a cap", "[ui][transp
     REQUIRE(roomy.selectionStart.getWidth() == roomy.playhead.getWidth());
     REQUIRE(roomy.loopEnd.getWidth() == roomy.playhead.getWidth());
     REQUIRE(roomy.punchStart.getWidth() == roomy.playhead.getWidth());
+}
+
+// ---------------------------------------------------------------------------
+// What is drawn over a readout's right end: the group caption (SEL / LOOP /
+// CUR) and, in the punch box, the in/out icons. The readout's digits have to
+// stop short of it, so the box carries that zone on top of the digits.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("A readout is wider than its digits by what is drawn over its end",
+          "[ui][transport-layout]") {
+    const int height = defaultTransportHeight();
+    const auto text = nominalText();
+
+    for (int width = 600; width <= 1600; width += 50) {
+        const auto l = compute(width, height, text, 1.0f);
+        INFO("width " << width);
+
+        // The inset covers the caption and the punch icons, whichever is wider,
+        // and the readout grew by what that needs beyond the air its glyphs
+        // keep at the edge anyway.
+        REQUIRE(l.timeBoxTrailingInset >= text.timecodeCaption);
+        REQUIRE(l.playhead.getWidth() >=
+                text.timecodeBox + l.timeBoxTrailingInset - text.timecodeGlyphInset);
+
+        if (l.punchVisible) {
+            // The punch icons sit inside the zone the digits keep clear.
+            REQUIRE(l.punchIn.getRight() <= l.punchStart.getRight());
+            REQUIRE(l.punchIn.getX() >= l.punchStart.getRight() - l.timeBoxTrailingInset);
+            REQUIRE(l.punchOut.getX() >= l.punchEnd.getRight() - l.timeBoxTrailingInset);
+        }
+    }
 }
