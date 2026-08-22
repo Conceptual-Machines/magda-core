@@ -35,6 +35,10 @@ class ExportAudioDialog : public juce::Component {
     void resized() override;
     void paint(juce::Graphics& g) override;
 
+    // The hosting window's background is a colour override handed over once at
+    // construction, so it does not follow a live theme switch on its own.
+    void lookAndFeelChanged() override;
+
     // Get current settings from dialog
     Settings getSettings() const;
 

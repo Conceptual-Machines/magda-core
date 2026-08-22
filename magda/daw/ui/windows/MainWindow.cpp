@@ -27,6 +27,7 @@
 #include "../state/TimelineEvents.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
+#include "../themes/FileBrowserLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "../themes/SmallComboBoxLookAndFeel.hpp"
@@ -441,6 +442,9 @@ void MainWindow::refreshThemedLookAndFeels() {
     DarkTheme::applyToLookAndFeel(daw::ui::SmallButtonLookAndFeel::getInstance());
     DarkTheme::applyToLookAndFeel(daw::ui::FlatTabButtonLookAndFeel::getInstance());
     DarkTheme::applyToLookAndFeel(daw::ui::SmallComboBoxLookAndFeel::getInstance());
+    // Not a DarkTheme::applyToLookAndFeel target: it pushes its own scrollbar
+    // colour into its table, which no repaint would refresh.
+    daw::ui::FileBrowserLookAndFeel::getInstance().refreshThemeColours();
 
 #if JUCE_WINDOWS
     // Keep native chrome in step with live theme changes. DWM expects FALSE
@@ -465,6 +469,16 @@ void MainWindow::refreshThemedLookAndFeels() {
 
 void MainWindow::closeButtonPressed() {
     juce::JUCEApplication::getInstance()->systemRequestedQuit();
+}
+
+// A window's background is a per-component colour override, so it survives the
+// look-and-feel change that repaints everything else and would keep the palette
+// the window was constructed under. It is not hidden behind the content either:
+// the in-window menu bar (Windows and Linux) draws its fill at 40% alpha, so the
+// stale colour shows straight through as a strip along the top of the window.
+void MainWindow::lookAndFeelChanged() {
+    juce::DocumentWindow::lookAndFeelChanged();
+    setBackgroundColour(DarkTheme::getBackgroundColour());
 }
 
 void MainWindow::applyPanelVisibilityFromConfig() {

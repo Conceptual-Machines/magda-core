@@ -1162,6 +1162,7 @@ TrackChainContent::TrackChainContent()
 }
 
 void TrackChainContent::lookAndFeelChanged() {
+    mixerLookAndFeel_.refreshThemeColours();
     if (chainBypassButton_) {
         chainBypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
         chainBypassButton_->setActiveColor(juce::Colours::white);

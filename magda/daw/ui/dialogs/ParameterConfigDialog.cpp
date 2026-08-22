@@ -73,6 +73,13 @@ class AIPromptEditorComponent : public juce::Component {
         setSize(520, 250);
     }
 
+    // Launched async into a DialogWindow of its own, so it can be on screen
+    // when the theme changes under it. The hosting window's background is a
+    // colour override handed over once at construction.
+    void lookAndFeelChanged() override {
+        refreshHostWindowBackground(*this);
+    }
+
     void resized() override {
         auto bounds = getLocalBounds().reduced(16);
         description_.setBounds(bounds.removeFromTop(24));
@@ -677,6 +684,10 @@ void ParameterConfigDialog::paint(juce::Graphics& g) {
         g.strokePath(arc, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved,
                                                juce::PathStrokeType::rounded));
     }
+}
+
+void ParameterConfigDialog::lookAndFeelChanged() {
+    refreshHostWindowBackground(*this);
 }
 
 void ParameterConfigDialog::resized() {

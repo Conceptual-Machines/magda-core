@@ -64,6 +64,10 @@ void GainStagingDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
 }
 
+void GainStagingDialog::lookAndFeelChanged() {
+    refreshHostWindowBackground(*this);
+}
+
 void GainStagingDialog::resized() {
     auto bounds = getLocalBounds().reduced(20);
 

@@ -59,6 +59,10 @@ class AudioSettingsDialog : public juce::Component,
     void resized() override;
     void paint(juce::Graphics& g) override;
 
+    // The hosting window's background is a colour override handed over once at
+    // construction, so it does not follow a live theme switch on its own.
+    void lookAndFeelChanged() override;
+
     // Re-list the device combos when the driver type or device changes (e.g. the
     // user picks a different driver in the AudioDeviceSelectorComponent).
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;

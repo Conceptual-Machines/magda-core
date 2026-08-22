@@ -15,14 +15,22 @@ namespace magda::daw::ui {
 class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
   public:
     FileBrowserLookAndFeel() {
-        setColour(juce::ScrollBar::thumbColourId,
-                  DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
-        setColour(juce::ScrollBar::backgroundColourId, juce::Colours::transparentBlack);
+        refreshThemeColours();
 
         // Keep the source drawable untouched; drawFileItem tints a short-lived
         // copy so existing rows follow a live theme switch.
         midiDrawable_ =
             juce::Drawable::createFromImageData(BinaryData::midi_svg, BinaryData::midi_svgSize);
+    }
+
+    // A LookAndFeel is not a Component, so it never hears the look-and-feel
+    // broadcast a live theme switch sends. This colour is pushed into its own
+    // table and would keep the palette the singleton was built under, so
+    // MainWindow re-applies it alongside the other shared look-and-feels.
+    void refreshThemeColours() {
+        setColour(juce::ScrollBar::thumbColourId,
+                  DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
+        setColour(juce::ScrollBar::backgroundColourId, juce::Colours::transparentBlack);
     }
     ~FileBrowserLookAndFeel() override = default;
 

@@ -242,6 +242,11 @@ SplashScreen::SplashScreen()
     setAlwaysOnTop(true);
 }
 
+void SplashScreen::lookAndFeelChanged() {
+    juce::DocumentWindow::lookAndFeelChanged();
+    setBackgroundColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+}
+
 void SplashScreen::dismiss() {
     setVisible(false);
 }

@@ -53,6 +53,10 @@ class ParameterConfigDialog : public juce::Component,
     ~ParameterConfigDialog() override;
 
     void paint(juce::Graphics& g) override;
+
+    // The hosting window's background is a colour override handed over once at
+    // construction, so it does not follow a live theme switch on its own.
+    void lookAndFeelChanged() override;
     void resized() override;
 
     // TableListBoxModel interface

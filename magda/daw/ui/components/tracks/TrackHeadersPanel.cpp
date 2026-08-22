@@ -1351,6 +1351,7 @@ void TrackHeadersPanel::updateHeaderSelectionColours() {
 }
 
 void TrackHeadersPanel::lookAndFeelChanged() {
+    sliderLookAndFeel_.refreshThemeColours();
     // Per-track header labels cache concrete text colours, so a repaint alone
     // won't refresh them after a theme switch. Name labels are selection-aware
     // (handled by updateHeaderSelectionColours); the compact peak and column

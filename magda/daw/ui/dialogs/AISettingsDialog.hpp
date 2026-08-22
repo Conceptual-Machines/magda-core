@@ -23,6 +23,10 @@ class AISettingsDialog : public juce::Component {
     void resized() override;
     void paint(juce::Graphics& g) override;
 
+    // The hosting window's background is a colour override handed over once at
+    // construction, so it does not follow a live theme switch on its own.
+    void lookAndFeelChanged() override;
+
     // initialTabName selects a tab by its title (e.g. "Stems") once the
     // dialog is up; empty keeps the default tab.
     static void showDialog(juce::Component* parent, const juce::String& initialTabName = {});
