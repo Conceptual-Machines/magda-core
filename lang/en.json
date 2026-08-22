@@ -266,7 +266,7 @@
     "label.external_format_preference": "When a plugin exists in several formats:",
     "option.prefer_vst3": "Prefer {0}",
     "option.prefer_au": "Prefer {0}",
-    "option.prefer_lv2": "Prefer LV2",
+    "option.prefer_lv2": "Prefer {0}",
     "dialog.select_directory": "Select Plugin Directory",
     "column.plugin": "Plugin",
     "column.reason": "Reason",

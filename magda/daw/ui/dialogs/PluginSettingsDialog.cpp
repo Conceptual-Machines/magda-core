@@ -354,8 +354,10 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
             .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Au)),
         static_cast<int>(PluginFormat::AU) + 1);
 #endif
-    formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_lv2"),
-                                      static_cast<int>(PluginFormat::LV2) + 1);
+    formatPreferenceSelector_.addItem(
+        tr("plugin_settings.option.prefer_lv2")
+            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Lv2)),
+        static_cast<int>(PluginFormat::LV2) + 1);
     formatPreferenceSelector_.setColour(juce::ComboBox::backgroundColourId,
                                         DarkTheme::getColour(DarkTheme::SURFACE));
     formatPreferenceSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
