@@ -19,7 +19,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
@@ -27,6 +27,7 @@ import clients
 import discovery
 from clients import (
     LEGACY_PROTOCOL,
+    Reply,
     MAGDA_META_REVISION,
     MODERN_PROTOCOL,
     McpBridgeClient,
@@ -55,9 +56,22 @@ class Context:
             client_name=client_name, timeout=self.timeout, **kwargs
         )
 
+    #: One client per identity, reused across suites. The rate limit is a
+    #: single bucket for the endpoint, so pacing only works if every request
+    #: this harness makes is spaced against the last one — a fresh client per
+    #: suite would each think it had the whole budget.
+    _mcp_clients: dict = field(default_factory=dict, repr=False)
+
     def mcp(self, client_name: str = clients.CLIENT_NAME) -> McpHttpClient:
-        origin, path = self.record.mcp_origin_and_path()
-        return McpHttpClient(origin, path, self.record.token, client_name, timeout=self.timeout)
+        if client_name not in self._mcp_clients:
+            origin, path = self.record.mcp_origin_and_path()
+            self._mcp_clients[client_name] = McpHttpClient(
+                origin, path, self.record.token, client_name, timeout=self.timeout
+            )
+        return self._mcp_clients[client_name]
+
+    def throttled(self) -> int:
+        return sum(client.throttled for client in self._mcp_clients.values())
 
 
 class SuiteRunner:
@@ -367,6 +381,13 @@ def _ws_write(ws: WsClient) -> tuple[Status, str, dict]:
     target = round(float(original) + 1.0, 3)
     try:
         written = ws.call("project.setTempo", {"tempo": target})
+        if not written.ok and _is_permission_denial(written):
+            return unclear(
+                f"'{clients.CLIENT_NAME}' has not been granted 'edit'. That is the "
+                "correct default — every new client is read-only — but it means this "
+                "check cannot run. Tick edit and transport for it in "
+                "AI Settings -> Clients."
+            )
         assert written.ok, f"setTempo failed: {written.error}"
         assert written.revision is not None and before.revision is not None
         assert written.revision > before.revision, (
@@ -384,15 +405,43 @@ def _ws_write(ws: WsClient) -> tuple[Status, str, dict]:
         ws.call("project.setTempo", {"tempo": float(original)})
 
 
+#: The WebSocket transport's code for "you have not been granted this".
+WS_PERMISSION_DENIED = -32006
+
+
+def _is_permission_denial(reply: "Reply") -> bool:
+    error = reply.error or {}
+    return (
+        error.get("code") == WS_PERMISSION_DENIED
+        or (error.get("data") or {}).get("code") == "permission_denied"
+    )
+
+
 def _ws_stale(ws: WsClient) -> tuple[Status, str, dict]:
+    """A stale `expectedRevision` must lose — and for that reason.
+
+    An ungranted client is refused every write, so "the write did not happen"
+    is true here whether or not optimistic concurrency works at all. Checking
+    only that it failed would go green on a MAGDA that had never implemented
+    `expectedRevision`, which is the opposite of what this exists to establish.
+    """
     current = ws.call("project.get")
     assert current.revision is not None, "no revision to be stale against"
     tempo = float((current.result or {}).get("tempo", 120.0))
-    reply = ws.call(
-        "project.setTempo", {"tempo": tempo}, meta={"expectedRevision": 1}
-    )
+    stale = 1 if current.revision != 1 else 2
+    reply = ws.call("project.setTempo", {"tempo": tempo}, meta={"expectedRevision": stale})
     if reply.ok:
-        return fail("a write against revision 1 was applied, so nothing is being checked")
+        return fail(
+            f"a write against revision {stale} was applied while the project was at "
+            f"{current.revision}, so nothing is enforcing expectedRevision"
+        )
+    if _is_permission_denial(reply):
+        return unclear(
+            f"refused, but for want of the 'edit' permission rather than the stale "
+            f"revision — grant '{clients.CLIENT_NAME}' edit in AI Settings -> Clients "
+            "for this to check what it is meant to",
+            code=reply.code,
+        )
     return ok(f"refused with code {reply.code}", code=reply.code)
 
 
@@ -472,22 +521,65 @@ def run_mcp_modern(context: Context) -> None:
 
     runner.check("tools/call returns structured content and a revision", tools_call)
 
-    def resources_read() -> tuple[Status, str, dict]:
-        reply = mcp.modern("resources/read", {"uri": "magda://tracks"})
-        assert reply.status == 200, f"HTTP {reply.status}: {reply.body[:200]}"
-        contents = (reply.json().get("result") or {}).get("contents") or []
-        assert contents, "resources/read returned no contents"
-        entry = contents[0]
-        assert entry.get("mimeType") == "application/json", f"mimeType {entry.get('mimeType')}"
-        if not call_text:
-            return unclear("tools/call did not run, so there is nothing to compare against")
-        if entry.get("text") == call_text[0]:
-            return ok("byte for byte identical to the tools/call text block")
-        if json.loads(entry.get("text", "null")) == json.loads(call_text[0]):
-            return unclear("equal as JSON but not byte for byte, which the docs promise")
-        return fail("resources/read and tools/call disagree for the same operation")
+    def _text_pair(tool: str, uri: str) -> tuple[str, str, dict]:
+        called = mcp.modern("tools/call", {"name": tool, "arguments": {}})
+        assert called.status == 200, f"tools/call {tool}: HTTP {called.status}"
+        call_result = called.json().get("result") or {}
+        assert call_result.get("isError") is False, f"tools/call {tool} failed: {call_result}"
+        read = mcp.modern("resources/read", {"uri": uri})
+        assert read.status == 200, f"resources/read {uri}: HTTP {read.status}"
+        contents = (read.json().get("result") or {}).get("contents") or []
+        assert contents, f"resources/read {uri} returned no contents"
+        assert contents[0].get("mimeType") == "application/json", contents[0].get("mimeType")
+        return (call_result.get("content") or [{}])[0].get("text", ""), contents[0].get("text", ""), call_result
 
-    runner.check("resources/read matches tools/call for the same operation", resources_read)
+    def object_parity() -> tuple[Status, str, dict]:
+        call_text, read_text, result = _text_pair("project.get", "magda://project/current")
+        if call_text == read_text:
+            return ok("byte for byte identical, as documented")
+        if json.loads(call_text) == json.loads(read_text):
+            return unclear("equal as JSON but not byte for byte, which the docs promise")
+        return fail(
+            "resources/read and tools/call disagree for the same operation",
+            call=call_text[:200], read=read_text[:200],
+        )
+
+    runner.check(
+        "resources/read matches tools/call for an object-valued operation", object_parity
+    )
+
+    def array_parity() -> tuple[Status, str, dict]:
+        """The case the in-tree parity test does not reach.
+
+        `structuredContent` is typed as an object, so an array-valued
+        operation is wrapped as `{"items": [...]}` on the tool surface.
+        `resources/read` has no such constraint and returns the bare array, so
+        the two surfaces carry the same data in two shapes — which is not the
+        unqualified byte-for-byte equivalence docs/remote-api-mcp.md promises.
+        """
+        call_text, read_text, result = _text_pair("tracks.list", "magda://tracks")
+        if call_text == read_text:
+            return ok("identical — the tool surface is not wrapping this one")
+
+        structured = result.get("structuredContent")
+        wrapped = isinstance(structured, dict) and set(structured) == {"items"}
+        if wrapped and structured["items"] == json.loads(read_text):
+            return ok(
+                "tools/call wraps the array as {\"items\": [...]} and resources/read "
+                "returns it bare — same data, two shapes. Deliberate (remote_mcp.cpp: "
+                "structuredContent must be an object), but docs/remote-api-mcp.md "
+                "promises byte-for-byte equality with no carve-out for this.",
+                call=call_text[:120], read=read_text[:120],
+            )
+        return fail(
+            "an array-valued operation disagrees across the two surfaces, and not "
+            "by the documented {items} wrapper either",
+            call=call_text[:200], read=read_text[:200],
+        )
+
+    runner.check(
+        "an array-valued operation differs only by the documented wrapper", array_parity
+    )
 
     def templates() -> tuple[Status, str, dict]:
         reply = mcp.modern("resources/templates/list")

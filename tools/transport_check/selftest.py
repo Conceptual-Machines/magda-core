@@ -49,7 +49,18 @@ TOOLS = [
 CACHEABLE_RESULTS = {"tools/list", "resources/list", "resources/templates/list",
                      "resources/read", "server/discover"}
 
-TRACKS_JSON = json.dumps({"tracks": [{"id": 1, "name": "Drums"}]})
+#: `tracks.list` returns an *array*, and the two MCP surfaces carry it
+#: differently — `structuredContent` is typed as an object, so the tool surface
+#: wraps it while `resources/read` returns it bare. Modelled here because the
+#: real endpoint does it, and a stub that returned an object from both would
+#: let the parity checks pass without ever meeting the case that matters.
+TRACKS_ARRAY = [{"id": 1, "name": "Drums"}]
+TRACKS_BARE_JSON = json.dumps(TRACKS_ARRAY)
+TRACKS_WRAPPED_JSON = json.dumps({"items": TRACKS_ARRAY})
+
+
+def project_json() -> str:
+    return json.dumps({"name": "Stub", "tempo": STATE["tempo"]})
 
 #: The stub project. Shared by every transport, because "an OSC message
 #: changed something a WebSocket read can see" is precisely what the
@@ -215,7 +226,7 @@ class StubWebSocket(threading.Thread):
         elif method == "project.get":
             result({"tempo": STATE['tempo'], "name": "Stub"})
         elif method == "tracks.list":
-            result(json.loads(TRACKS_JSON))
+            result(TRACKS_ARRAY)
         elif method == "project.setTempo":
             STATE['tempo'] = float(params.get("tempo", STATE['tempo']))
             STATE['revision'] += 1
@@ -444,17 +455,26 @@ class StubMcpHandler(http.server.BaseHTTPRequestHandler):
         elif method == "tools/list":
             result({"tools": TOOLS})
         elif method == "resources/list":
-            result({"resources": [{"uri": "magda://tracks", "name": "tracks",
-                                   "mimeType": "application/json"}]})
+            result({"resources": [
+                {"uri": "magda://tracks", "name": "tracks",
+                 "mimeType": "application/json"},
+                {"uri": "magda://project/current", "name": "project",
+                 "mimeType": "application/json"},
+            ]})
         elif method == "resources/templates/list":
             result({"resourceTemplates": [{"uriTemplate": "magda://tracks/{track_id}",
                                            "name": "track"}]})
         elif method == "resources/read":
             uri = params.get("uri")
-            if uri != "magda://tracks":
+            bodies = {
+                "magda://tracks": TRACKS_BARE_JSON,
+                "magda://project/current": project_json(),
+            }
+            if uri not in bodies:
                 self._send_json(200, self._error(rid, -32602, f"no resource at {uri}"))
                 return
-            result({"contents": [{"uri": uri, "mimeType": "application/json", "text": TRACKS_JSON}]})
+            result({"contents": [{"uri": uri, "mimeType": "application/json",
+                                  "text": bodies[uri]}]})
         elif method == "tools/call":
             self._tools_call(rid, params, client_name, result)
         elif method == "resources/subscribe":
@@ -481,7 +501,12 @@ class StubMcpHandler(http.server.BaseHTTPRequestHandler):
                 {"code": "NOT_FOUND", "message": "no track with that id",
                  "issues": [{"field": "trackId", "problem": "unknown"}]})}]})
             return
-        text = TRACKS_JSON if name == "tracks.list" else json.dumps({"ok": True})
+        if name == "tracks.list":
+            text = TRACKS_WRAPPED_JSON
+        elif name == "project.get":
+            text = project_json()
+        else:
+            text = json.dumps({"ok": True})
         result({
             "isError": False,
             "content": [{"type": "text", "text": text}],

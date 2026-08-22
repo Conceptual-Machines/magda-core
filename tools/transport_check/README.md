@@ -95,6 +95,24 @@ legacy schema requires none of it. A server that stamps `resultType` alone is
 refused by a validating client on every one of those methods, which is a
 failure no amount of testing against a permissive client will show.
 
+## Sharing the endpoint
+
+The MCP endpoint's rate limit is **one bucket for the whole endpoint**, not one
+per client — deliberately, since every caller arrives from 127.0.0.1 presenting
+the same token, so nothing there can tell two local processes apart. The bucket
+holds `maxConcurrentRequests` tokens (eight) and refills at
+`maxRequestsPerSecond`.
+
+Two consequences:
+
+- The harness paces itself (~40 req/s) and rides out a 429 with backoff rather
+  than reporting it. Without that, a dozen checks drain the bucket and every
+  check after them fails with a 429 that says nothing about what it was
+  checking. `--cooldown` sets the pause between suites.
+- **Anything else you have configured against this MAGDA spends from the same
+  budget** — an MCP host in an editor, say. If the run reports that it was
+  throttled, that is what it means. Quit the other client for a clean run.
+
 ## The four verdicts
 
 `OK` and `FAIL` are what they look like. The other two carry weight:

@@ -25,13 +25,20 @@ class DiscoveryError(Exception):
 
 
 def os_default_app_data_dir() -> Path:
-    """`juce::File::userApplicationDataDirectory` / "MAGDA".
+    """`juce::File::userApplicationDataDirectory` / "MAGDA" — `alwaysOSDefault()`.
 
-    The three values JUCE resolves that special location to, per platform.
-    Linux follows XDG, which is what JUCE's `resolveXDGFolder` does.
+    The three values JUCE resolves that special location to, per platform,
+    read off `juce_Files_*` rather than assumed:
+
+    - macOS is `~/Library`, **not** `~/Library/Application Support`. JUCE keeps
+      the latter for `userApplicationDataDirectory` on no platform, and an app
+      that wants it appends it itself. MAGDA does not, so its data lives in
+      `~/Library/MAGDA`.
+    - Windows is `CSIDL_APPDATA`, the roaming profile.
+    - Linux is `XDG_CONFIG_HOME` or `~/.config`.
     """
     if sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support"
+        base = Path.home() / "Library"
     elif sys.platform == "win32":
         appdata = os.environ.get("APPDATA")
         base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
@@ -53,7 +60,7 @@ def data_dir(override: str | os.PathLike[str] | None = None) -> Path:
         return Path(env)
 
     default = os_default_app_data_dir()
-    config = default / "config.json"
+    config = config_file(default)
     if config.is_file():
         try:
             configured = json.loads(config.read_text(encoding="utf-8")).get("dataDir")
@@ -62,6 +69,19 @@ def data_dir(override: str | os.PathLike[str] | None = None) -> Path:
         if configured:
             return Path(configured)
     return default
+
+
+def config_file(default_dir: Path) -> Path:
+    """Where MAGDA reads its configuration from — `paths::configFile()`.
+
+    `MAGDA_CONFIG_FILE` moves the file itself, which is a separate thing from
+    `MAGDA_DATA_DIR` moving everything the file points at. A harness that
+    honoured only the second would read a stale `dataDir` out of the default
+    config while MAGDA was using another one entirely.
+    """
+    if override := os.environ.get("MAGDA_CONFIG_FILE"):
+        return Path(override)
+    return default_dir / "config.json"
 
 
 def process_alive(pid: int) -> bool:

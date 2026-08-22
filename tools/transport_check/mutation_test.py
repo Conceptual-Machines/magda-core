@@ -149,6 +149,16 @@ MUTATIONS: list[tuple[str, str, str]] = [
         "    record.chmod(0o600)",
         "    record.chmod(0o644)",
     ),
+    (
+        "an object-valued resource disagrees with its tool",
+        '                "magda://project/current": project_json(),',
+        '                "magda://project/current": json.dumps({"name": "Different"}),',
+    ),
+    (
+        "an array-valued resource disagrees by more than the {items} wrapper",
+        '                "magda://tracks": TRACKS_BARE_JSON,',
+        '                "magda://tracks": json.dumps([{"id": 99, "name": "Wrong"}]),',
+    ),
 ]
 
 #: Mutations that only the official-SDK suite can catch, so they are skipped

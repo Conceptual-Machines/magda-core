@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import time
 from typing import Any
 
 from report import Status
@@ -76,7 +77,14 @@ class SdkSession:
         ) as client:
             return await body(client)
 
+    #: Seconds to wait before opening a session. The SDK does not pace itself
+    #: and a session costs several requests — a discover probe, an initialize
+    #: if it falls back, then the call. The endpoint's bucket is shared by
+    #: every local client, so an unpaced suite starves whatever runs next.
+    settle = 1.0
+
     def run(self, body) -> Any:
+        time.sleep(self.settle)
         return asyncio.run(self._run(body))
 
 

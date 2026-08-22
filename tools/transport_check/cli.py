@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 # Running the directory puts it on sys.path, so the modules beside this one
@@ -62,6 +63,9 @@ def build_parser() -> argparse.ArgumentParser:
                            help="how long to hold a notification stream open (default: 3)")
     behaviour.add_argument("--timeout", type=float, default=10.0, metavar="SECONDS",
                            help="per-request timeout (default: 10)")
+    behaviour.add_argument("--cooldown", type=float, default=1.5, metavar="SECONDS",
+                           help="pause between suites so the endpoint's shared rate "
+                                "limit bucket refills (default: 1.5)")
 
     where = parser.add_argument_group("where to look")
     where.add_argument("--record", metavar="PATH", help="use this discovery record")
@@ -129,24 +133,48 @@ def run(argv: list[str] | None = None) -> Report | None:
         timeout=args.timeout,
     )
 
+    def cooldown() -> None:
+        """Let the endpoint's token bucket refill between suites.
+
+        One bucket serves the whole endpoint and the SSE checks hold a
+        connection for their whole window, so a suite that starts the instant
+        the last one finished can be refused for reasons that have nothing to
+        do with what it is checking.
+        """
+        time.sleep(args.cooldown)
+
     if "discovery" in selected:
         suites.run_discovery(context, others)
+    cooldown()
     if "ws" in selected:
         suites.run_websocket(context)
+    cooldown()
     if "mcp" in selected:
         suites.run_mcp_modern(context)
         suites.run_mcp_legacy(context)
+    cooldown()
     if "mcp_sdk" in selected:
         from sdk_suite import run_sdk
 
         run_sdk(context)
+    cooldown()
     if "bridge" in selected:
         suites.run_bridge(context)
         suites.run_bridge_without_magda(context)
+    cooldown()
     if "readonly" in selected:
         suites.run_readonly(context)
+    cooldown()
     if "osc" in selected:
         suites.run_osc(context)
+
+    throttled = context.throttled()
+    if throttled:
+        report.note(
+            f"the endpoint rate-limited this run {throttled} time(s) and the harness "
+            "backed off. The limit is one bucket for the whole endpoint, so another "
+            "client — an MCP host you have configured, for instance — shares it."
+        )
 
     report.summarise()
     if args.json:

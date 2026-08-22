@@ -223,12 +223,24 @@ class McpHttpClient:
         token: str,
         client_name: str = CLIENT_NAME,
         timeout: float = 15.0,
+        min_interval: float = 0.025,
+        max_retries: int = 4,
+        backoff: float = 0.25,
     ) -> None:
         self.origin = origin
         self.path = path
         self.token = token
         self.client_name = client_name
         self.timeout = timeout
+        #: Seconds between requests. 40/s against a 50/s limit, so the bucket
+        #: gains a little on every call instead of draining.
+        self.min_interval = min_interval
+        self.max_retries = max_retries
+        self.backoff = backoff
+        #: How many 429s were ridden out. Reported once per run, because a
+        #: number here means something else is sharing the endpoint.
+        self.throttled = 0
+        self._last_request = 0.0
         scheme, _, hostport = origin.partition("://")
         self.scheme = scheme
         host, _, port = hostport.partition(":")
@@ -240,6 +252,20 @@ class McpHttpClient:
     def _connect(self, timeout: float | None = None) -> http.client.HTTPConnection:
         return http.client.HTTPConnection(self.host, self.port, timeout=timeout or self.timeout)
 
+    def _pace(self) -> None:
+        """Stay under the endpoint's rate limit rather than measuring it.
+
+        The bucket holds `maxConcurrentRequests` tokens — eight — and refills at
+        `maxRequestsPerSecond`. Firing checks back to back drains it in about a
+        dozen requests, and everything after that fails with a 429 that says
+        nothing about the thing being checked.
+        """
+        if self.min_interval <= 0:
+            return
+        wait = self._last_request + self.min_interval - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+
     def request(
         self,
         method: str,
@@ -247,18 +273,35 @@ class McpHttpClient:
         headers: dict[str, str] | None = None,
         http_method: str = "POST",
     ) -> HttpReply:
-        conn = self._connect()
-        try:
-            conn.request(http_method, self.path, body, headers or {})
-            response = conn.getresponse()
-            payload = response.read().decode("utf-8", "replace")
-            return HttpReply(
-                response.status,
-                {k.lower(): v for k, v in response.getheaders()},
-                payload,
-            )
-        finally:
-            conn.close()
+        """One request, paced, retrying a 429 the way a real client would.
+
+        The limit is one bucket for the endpoint rather than one per client —
+        deliberately, since every caller arrives from 127.0.0.1 with the same
+        token — so anything else talking to MAGDA spends from the same budget.
+        A harness that treated a shared-budget 429 as a verdict would report
+        failures that belong to whatever else was connected.
+        """
+        for attempt in range(self.max_retries + 1):
+            self._pace()
+            conn = self._connect()
+            try:
+                conn.request(http_method, self.path, body, headers or {})
+                response = conn.getresponse()
+                payload = response.read().decode("utf-8", "replace")
+                reply = HttpReply(
+                    response.status,
+                    {k.lower(): v for k, v in response.getheaders()},
+                    payload,
+                )
+            finally:
+                self._last_request = time.monotonic()
+                conn.close()
+
+            if reply.status != 429 or attempt == self.max_retries:
+                return reply
+            self.throttled += 1
+            time.sleep(self.backoff * (2 ** attempt))
+        return reply  # unreachable, but keeps the type honest
 
     def base_headers(self) -> dict[str, str]:
         return {
@@ -374,6 +417,10 @@ class McpHttpClient:
         keep-alive comments were seen. The comment count is the evidence that a
         quiet stream stayed up rather than merely not having failed yet.
         """
+        # A stream costs a token like any other request, and opening one on a
+        # drained bucket answers 429 instead of an event stream.
+        self._pace()
+        self._last_request = time.monotonic()
         conn = self._connect(timeout=window + self.timeout)
         parser = SseParser()
         messages: list[Any] = []
