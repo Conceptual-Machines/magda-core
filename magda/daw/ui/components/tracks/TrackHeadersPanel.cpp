@@ -907,8 +907,8 @@ void TrackHeadersPanel::tracksChanged() {
         if (!track || !track->isVisibleIn(currentViewMode_))
             return;
 
-        if (track->type == TrackType::Aux)
-            return;  // Aux tracks rendered in separate section
+        if (!occupiesArrangementRow(track->type))
+            return;  // Rendered in the aux strip instead — see the predicate.
 
         visibleTrackIds_.push_back(trackId);
 

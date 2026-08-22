@@ -17,6 +17,7 @@
 #include "../clips/ClipComponent.hpp"
 #include "../common/InternalFileDrag.hpp"
 #include "Config.hpp"
+#include "TrackControlsPolicy.hpp"
 #include "core/AppPaths.hpp"
 #include "core/AutomationCommands.hpp"
 #include "core/ClipCommands.hpp"
@@ -275,6 +276,9 @@ void TrackContentPanel::tracksChanged() {
         const auto* track = trackManager.getTrack(trackId);
         if (!track || !track->isVisibleIn(currentViewMode_))
             return;
+
+        if (!occupiesArrangementRow(track->type))
+            return;  // Rendered in the aux strip instead — see the predicate.
 
         visibleTrackIds_.push_back(trackId);
 
