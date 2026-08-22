@@ -171,6 +171,12 @@ class Compiler {
     void diagnose(std::string message);
 
     const TrackInfo* findTrack(TrackId id) const;
+
+    /// The top-level FX device @p deviceId on @p trackId, which is where a
+    /// multi-out instrument sits and the only place a MultiOutTrackLink can
+    /// name: the link carries no section, and TrackManager::getDevice resolves
+    /// it against the track's own chain rather than inside its racks.
+    const DeviceInfo* findMultiOutSource(TrackId trackId, DeviceId deviceId) const;
     TrackId resolveSendDestination(const SendInfo& send) const;
     std::vector<const TrackInfo*> computeTrackOrder();
 
@@ -254,10 +260,6 @@ class Compiler {
     /// instrument is an FX-section device, which is the one space those ids can
     /// come from.
     std::map<std::pair<TrackId, DeviceId>, std::map<int, TrackId>> multiOutTargets_;
-    /// MultiOut tracks whose link named a pair the model actually has. A link
-    /// that resolved to nothing is what emitTrack reports; a resolved pair on a
-    /// bypassed instrument is silent without being wrong.
-    std::set<TrackId> multiOutResolved_;
     /// Tracks whose MIDI another track reads, through a MIDI sidechain or an
     /// internal MIDI route. Their MIDI clips have to be compiled even when
     /// their own chain has nothing that consumes MIDI.
@@ -301,6 +303,17 @@ const TrackInfo* Compiler::findTrack(TrackId id) const {
     const auto found =
         std::ranges::find_if(tracks_, [id](const TrackInfo& track) { return track.id == id; });
     return found == tracks_.end() ? nullptr : &*found;
+}
+
+const DeviceInfo* Compiler::findMultiOutSource(TrackId trackId, DeviceId deviceId) const {
+    const auto* track = findTrack(trackId);
+    if (track == nullptr)
+        return nullptr;
+
+    for (const auto& element : track->chain.fxChainElements)
+        if (isDevice(element) && getDevice(element).id == deviceId)
+            return &getDevice(element);
+    return nullptr;
 }
 
 bool Compiler::carriesClips(const TrackInfo& track) const {
@@ -524,16 +537,8 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
                                        kMaxMultiOutPairs)
                           : 0;
 
-    // Resolved before the bypass check below, because a bypassed instrument
-    // makes its pairs silent rather than unrouted: the link is still the one
-    // the model meant, and reporting it would put a diagnostic in front of an
-    // ordinary edit.
     const auto targets = multiOutTargets_.find({site.trackId, device.id});
     const bool hasTargets = ownsMultiOutPairs && targets != multiOutTargets_.end();
-    if (hasTargets)
-        for (const auto& [pairIndex, targetTrack] : targets->second)
-            if (pairIndex <= multiOutPairCount)
-                multiOutResolved_.insert(targetTrack);
 
     if (device.bypassed)
         return signal;
@@ -787,19 +792,13 @@ void Compiler::emitTrack(const TrackInfo& track) {
 
     // --- chain head ---
 
-    // The pair itself arrives through pendingInputs_, put there by the device
-    // that owns it: the source track is ordered ahead of this one, so by now it
-    // is either waiting or it never existed. Only the second case is reported,
-    // and only here, because a pair the source device does not have is a broken
-    // link rather than a configuration the plan cannot express.
-    if (track.multiOutLink && !multiOutResolved_.contains(track.id)) {
-        const auto& link = *track.multiOutLink;
-        diagnose("track " + std::to_string(track.id) + ": multi-out pair " +
-                 std::to_string(link.outputPairIndex) + " of device " +
-                 std::to_string(link.sourceDeviceId) + " on track " +
-                 std::to_string(link.sourceTrackId) +
-                 " is not a pair that device has, the track renders silence");
-    }
+    // A multi-out pair arrives through pendingInputs_, put there by the device
+    // that owns it, and nothing is reported here: whether the link names a pair
+    // that exists was settled against the model in run(). Whether the device is
+    // compiled at all is a separate question with its own answers, and none of
+    // them is the link's doing. A pair whose instrument is bypassed, or whose
+    // track has its insert chain powered off, is silent for the same reason
+    // everything else on that chain is.
 
     // Freeze is structural: the current engine renders the track, disables its
     // plugins and plays the render back. Compiling the live chain both diverges
@@ -1136,6 +1135,22 @@ RenderPlan Compiler::run() {
                      std::to_string(link.sourceDeviceId) + " is not a pair this track can read");
             continue;
         }
+        // Whether the link names a pair that exists is a question about the
+        // model, so it is answered from the model. Asking emission instead
+        // would make every reason a device is not compiled look like a broken
+        // link: chain power off and bypass both leave an instrument out of the
+        // plan, and neither is anything to do with the link.
+        const auto* device = findMultiOutSource(link.sourceTrackId, link.sourceDeviceId);
+        if (device == nullptr || !device->multiOut.isMultiOut ||
+            link.outputPairIndex >= static_cast<int>(device->multiOut.outputPairs.size())) {
+            diagnose("track " + std::to_string(track.id) + ": multi-out pair " +
+                     std::to_string(link.outputPairIndex) + " of device " +
+                     std::to_string(link.sourceDeviceId) + " on track " +
+                     std::to_string(link.sourceTrackId) +
+                     " is not a pair that device has, the track renders silence");
+            continue;
+        }
+
         auto& pairs = multiOutTargets_[{link.sourceTrackId, link.sourceDeviceId}];
         if (const auto [owner, inserted] = pairs.emplace(link.outputPairIndex, track.id); !inserted)
             diagnose("track " + std::to_string(track.id) + ": multi-out pair " +

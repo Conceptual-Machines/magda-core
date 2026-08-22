@@ -1802,3 +1802,44 @@ TEST_CASE("A rack chain routed to an aux output reaches nothing and says so",
     CHECK(countRole(plan, OpRole::RackChainFader) == 1);
     CHECK(deviceProcess(plan, 8) == magda::engine::INVALID_OP_ID);
 }
+
+TEST_CASE("A multi-out link survives its source not being compiled", "[engine][plan][compiler]") {
+    // Whether the link is sound and whether the device is in the plan are two
+    // questions. Everything that leaves an instrument out of the plan would
+    // otherwise read as a broken link, and the track would be told its pair
+    // does not exist when the only thing that happened is that the chain it
+    // sits on is not running.
+    SECTION("the source track's insert chain is powered off") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 1)};
+        tracks[0].chain.enabled = false;
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeMultiOutInstrument(7, 3)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        CHECK(plan.diagnostics.empty());
+        CHECK(deviceProcess(plan, 7) == magda::engine::INVALID_OP_ID);
+        CHECK(plan.ops[static_cast<std::size_t>(trackInput(plan, 2))].inputs.empty());
+    }
+
+    SECTION("the instrument is bypassed") {
+        auto instrument = makeMultiOutInstrument(7, 3);
+        instrument.bypassed = true;
+
+        std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(instrument));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(plan.diagnostics.empty());
+    }
+
+    SECTION("but a link to a track that does not exist is still reported") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 9, 7, 1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeMultiOutInstrument(7, 3)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(anyDiagnosticContains(plan, "is not a pair that device has"));
+    }
+}
