@@ -94,6 +94,51 @@ TEST_CASE("new audio clips follow the auto-crossfade config default", "[crossfad
     CHECK(cm.getClip(id)->autoCrossfade == Config::getInstance().getAutoCrossfadeByDefault());
 }
 
+// The sibling preference. It shipped unread: the dialog set its own toggle from
+// it and no creation path ever asked, so a new clip started false whatever it
+// said (#2160). Both clip types, because occlusion applies to both.
+TEST_CASE("new clips follow the overlap-plays-both config default", "[crossfade][occlusion]") {
+    auto& config = Config::getInstance();
+    const bool original = config.getClipOverlapPlaysBoth();
+
+    for (const bool preference : {true, false}) {
+        resetState();
+        config.setClipOverlapPlaysBoth(preference);
+        auto& cm = ClipManager::getInstance();
+        const auto trackId = createTrack();
+
+        const ClipId audio = createAudioBeats(trackId, 0.0, 4.0);
+        CHECK(cm.getClip(audio)->overlapPlaysBoth == preference);
+
+        const ClipId midi = cm.createMidiClipBeats(trackId, 8.0, 4.0, ClipView::Arrangement);
+        CHECK(cm.getClip(midi)->overlapPlaysBoth == preference);
+    }
+
+    config.setClipOverlapPlaysBoth(original);
+}
+
+// The preference seeds and then stops speaking for the clip, which is what
+// makes the per-clip Play Through Overlap switch meaningful.
+TEST_CASE("changing the overlap default leaves existing clips alone", "[crossfade][occlusion]") {
+    auto& config = Config::getInstance();
+    const bool original = config.getClipOverlapPlaysBoth();
+
+    resetState();
+    config.setClipOverlapPlaysBoth(false);
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+    const ClipId existing = createAudioBeats(trackId, 0.0, 4.0);
+    REQUIRE(cm.getClip(existing)->overlapPlaysBoth == false);
+
+    config.setClipOverlapPlaysBoth(true);
+    CHECK(cm.getClip(existing)->overlapPlaysBoth == false);
+
+    const ClipId fresh = createAudioBeats(trackId, 8.0, 4.0);
+    CHECK(cm.getClip(fresh)->overlapPlaysBoth == true);
+
+    config.setClipOverlapPlaysBoth(original);
+}
+
 // ============================================================================
 // setCrossfadeBeats — creation, resize, removal
 // ============================================================================
