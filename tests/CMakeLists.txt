@@ -577,6 +577,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/common/InternalFileDrag.cpp
     ../magda/daw/ui/themes/CursorManager.cpp
     ../magda/daw/ui/themes/FontManager.cpp
+    test_arrangement_row_alignment_juce.cpp
     test_automation_modes_juce.cpp
     test_arrangement_transport_loop_juce.cpp
     test_external_plugin_state_restore_juce.cpp

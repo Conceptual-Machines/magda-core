@@ -12,6 +12,24 @@ namespace magda {
  * decide where and how the controls are laid out; whether a control exists
  * for a track type is declared here and nowhere else.
  */
+/**
+ * @brief Whether a track occupies a row in the scrolling arrangement columns.
+ *
+ * Aux returns do not. They have their own fixed strip below the arrangement —
+ * `MainView`'s `AuxHeadersPanel` and `AuxContentPanel`, sized from the aux count
+ * — so a row up here as well would render the same track twice.
+ *
+ * This is one function rather than one condition in each panel because the
+ * header column and the content column are locked to a single scroll offset.
+ * A track present in one and absent from the other shifts everything below it
+ * by that track's height, and the two columns drift apart the further you
+ * scroll. That is exactly what happened when aux tracks gained their own strip:
+ * the header column learned to skip them and the content column did not.
+ */
+inline bool occupiesArrangementRow(TrackType type) {
+    return type != TrackType::Aux;
+}
+
 struct TrackControlsPolicy {
     // What stands in for the mute toggle.
     enum class MuteStyle {
