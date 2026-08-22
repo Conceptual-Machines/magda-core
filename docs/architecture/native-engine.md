@@ -208,15 +208,21 @@ changed does not rebuild.
 
 Three is the usual shape rather than a rule: an analysis device is a transparent passthrough
 with no trim and no tap, so it compiles to a bare process op, and a compile with device meters
-switched off emits no meter ops at all.
+switched off emits no meter ops at all. A device soloing its delta gets a fourth, a `Subtract`
+between the processing and the trim, reading the device's output and the dry signal the device
+was handed. A rack soloing its delta gets the same op one level up, around its own fader. The
+dry edge is taken in front of whatever aligned the device's own input, so the alignment it needs
+is an ordinary `Delay` on the subtract's own fan-in rather than a second latency concept: what
+that delay resolves to is the whole distance the wet path travelled, the processing's latency
+included.
 
 **Every op has a key.** `T1/D7:deviceGain` is the model location plus the structural role, and
 `validatePlan` proves keys are unique. That key is how a new plan recognises an op in the old
 one, which is the whole of section 4.
 
 The op vocabulary is deliberately small: `ClipAudio`, `ClipMidi`, `AudioInput`, `MidiInput`,
-`Device`, `MixAudio`, `MergeMidi`, `Delay`, `Crossfade`, `Gain`, `Fader`, `SendTap`, `Meter`,
-`Output`.
+`Device`, `MixAudio`, `MergeMidi`, `Subtract`, `Delay`, `Crossfade`, `Gain`, `Fader`, `SendTap`,
+`Meter`, `ModSource`, `Output`.
 
 ---
 

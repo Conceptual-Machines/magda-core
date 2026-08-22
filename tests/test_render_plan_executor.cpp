@@ -753,6 +753,89 @@ TEST_CASE("A rack sums its chains through their faders and its own output law", 
     CHECK(harness.outputSample() == approx(chainGain * juce::Decibels::decibelsToGain(-6.0f)));
 }
 
+TEST_CASE("Delta solo hears what the device added", "[engine][exec]") {
+    auto effect = makeEffect(7);
+    effect.deltaSolo = true;
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(effect));
+
+    SECTION("a device that changes the signal leaves its difference behind") {
+        Harness harness({track}, makeMaster());
+        ConstantSource source(0.5f);
+        GainDevice device(0.25f);
+        harness.bindings.clipAudio[1] = &source;
+        harness.bindings.devices[DeviceKey{7}] = &device;
+
+        harness.prepareCleanly();
+        harness.render();
+
+        CHECK(harness.outputSample() == approx(0.5f * 0.25f - 0.5f));
+    }
+
+    SECTION("a device that changes nothing leaves nothing") {
+        Harness harness({track}, makeMaster());
+        ConstantSource source(0.5f);
+        GainDevice device(1.0f);
+        harness.bindings.clipAudio[1] = &source;
+        harness.bindings.devices[DeviceKey{7}] = &device;
+
+        harness.prepareCleanly();
+        harness.render();
+
+        CHECK(device.processedBlocks == 1);
+        CHECK(harness.outputSample() == approx(0.0f));
+    }
+}
+
+TEST_CASE("A delta solo's dry edge is delayed to meet the wet one", "[engine][exec]") {
+    // A device that only delays adds nothing, so its delta is silence - but
+    // only once the dry side has been held back to meet it. Compensate it
+    // wrongly and the impulse comes out twice, once from each side.
+    auto effect = makeEffect(7);
+    effect.deltaSolo = true;
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(effect));
+
+    Harness harness({track}, makeMaster());
+    ImpulseSource source(1.0f);
+    LatentDevice device(32);
+    harness.bindings.clipAudio[1] = &source;
+    harness.bindings.devices[DeviceKey{7}] = &device;
+
+    harness.prepareCleanly();
+
+    const auto stream = renderStream(harness, 2);
+    INFO(magda::engine::dumpPlan(harness.plan));
+    CHECK(soundingSamples(stream).empty());
+}
+
+TEST_CASE("Delta solo around a rack measures its output against its input", "[engine][exec]") {
+    auto rack = std::make_unique<RackInfo>();
+    rack->id = 5;
+    rack->deltaSolo = true;
+
+    ChainInfo chain;
+    chain.id = 10;
+    chain.elements.push_back(makeDeviceElement(makeEffect(7)));
+    rack->chains.push_back(std::move(chain));
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(ChainElement{std::move(rack)});
+
+    Harness harness({track}, makeMaster());
+    ConstantSource source(1.0f);
+    GainDevice device(0.5f);
+    harness.bindings.clipAudio[1] = &source;
+    harness.bindings.devices[DeviceKey{7}] = &device;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    CHECK(harness.outputSample() == approx(0.5f - 1.0f));
+}
+
 TEST_CASE("A rack chain out of the mix contributes neither audio nor MIDI", "[engine][exec]") {
     auto rack = std::make_unique<RackInfo>();
     rack->id = 5;

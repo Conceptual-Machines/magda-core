@@ -512,6 +512,37 @@ Scene rackScene() {
     return scene;
 }
 
+/// Delta solo at both scopes, which is where an op reads two live buffers and
+/// writes over one of them. The dry edge has to survive the whole of the
+/// processing it is measured against, and a schedule that lets its buffer be
+/// reused meanwhile is a race this executor finds and the reference one does
+/// not.
+Scene deltaScene() {
+    Scene scene;
+    auto rack = std::make_unique<RackInfo>();
+    rack->id = 5;
+    rack->deltaSolo = true;
+    rack->volume = -3.0f;
+
+    auto processed = makeEffect(500);
+    processed.deltaSolo = true;
+
+    ChainInfo chain;
+    chain.id = 10;
+    chain.elements.push_back(makeDeviceElement(processed));
+    chain.elements.push_back(makeDeviceElement(makeEffect(501)));
+    rack->chains.push_back(std::move(chain));
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(ChainElement{std::move(rack)});
+    scene.tracks.push_back(track);
+
+    scene.bindings.clipAudio[1] = scene.own(std::make_unique<RampSource>(13));
+    scene.bindings.devices[DeviceKey{500}] = scene.own(std::make_unique<LatentDevice>(53));
+    scene.bindings.devices[DeviceKey{501}] = scene.own(std::make_unique<GainDevice>(0.6f));
+    return scene;
+}
+
 /// Devices that really are late, so the plan carries delays and the paths
 /// meeting at the master have to be aligned by them rather than by luck.
 Scene latencyScene() {
@@ -606,7 +637,7 @@ struct NamedScene {
 const std::vector<NamedScene> kScenes = {
     {"one chain", chainScene},      {"eight tracks", wideScene}, {"sends into an aux", sendScene},
     {"a rack's chains", rackScene}, {"latency", latencyScene},   {"MIDI", midiScene},
-    {"a group track", groupScene},
+    {"a group track", groupScene},  {"delta solo", deltaScene},
 };
 
 /// The thread counts every scene is rendered at. Zero workers is the parallel

@@ -964,8 +964,9 @@ TEST_CASE("A rack-level sidechain is an edge to the modulation system",
     }
 }
 
-TEST_CASE("Delta solo is reported on devices and on racks", "[engine][plan][compiler]") {
-    SECTION("device") {
+TEST_CASE("Delta solo subtracts the dry signal from what the processing made",
+          "[engine][plan][compiler]") {
+    SECTION("a device is measured against the audio it was handed") {
         auto effect = makeEffect(7);
         effect.deltaSolo = true;
 
@@ -974,16 +975,53 @@ TEST_CASE("Delta solo is reported on devices and on racks", "[engine][plan][comp
 
         const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
         requireWellFormed(plan);
+        CHECK(plan.diagnostics.empty());
 
-        // The plan has no dry edge past a device and no delay line to align it
-        // with, so the device compiles as if delta solo were off. Named rather
-        // than passed over, like every other gap.
-        REQUIRE(plan.diagnostics.size() == 1);
-        CHECK(plan.diagnostics.front().find("device 7") != std::string::npos);
-        CHECK(plan.diagnostics.front().find("delta solo") != std::string::npos);
+        const auto deltas = opsWithRole(plan, OpRole::DeviceDelta);
+        REQUIRE(deltas.size() == 1);
+        const auto delta = deltas.front();
+        CHECK(plan.ops[static_cast<std::size_t>(delta)].kind == OpKind::Subtract);
+
+        const auto process = opsWithRole(plan, OpRole::DeviceProcess).front();
+        CHECK(inputOp(plan, delta, 0) == process);
+        CHECK(inputOp(plan, delta, 1) == deviceInput(plan, 7));
+
+        // In front of the slot's gain and meter, which read the delta rather
+        // than the device once there is one.
+        CHECK(inputOp(plan, opsWithRole(plan, OpRole::DeviceGain).front(), 0) == delta);
     }
 
-    SECTION("rack") {
+    SECTION("the dry edge is taken in front of the device's own input alignment") {
+        auto compressor = makeEffect(7);
+        compressor.deltaSolo = true;
+        compressor.sidechain.type = SidechainConfig::Type::Audio;
+        compressor.sidechain.sourceTrackId = 2;
+
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(plan.diagnostics.empty());
+
+        // A sidechain gives the device's audio slot a delay of its own. The
+        // delta's dry delay hangs off the same producer rather than off that
+        // one: a delay reading a delay would count the edge twice, and
+        // validatePlan rejects it, which requireWellFormed has just asserted.
+        const auto delta = opsWithRole(plan, OpRole::DeviceDelta).front();
+        const auto process = opsWithRole(plan, OpRole::DeviceProcess).front();
+        const auto dryDelay = rawInputOp(plan, delta, 1);
+        const auto deviceDelay = rawInputOp(plan, process, 0);
+        REQUIRE(dryDelay != magda::engine::INVALID_OP_ID);
+        REQUIRE(deviceDelay != magda::engine::INVALID_OP_ID);
+        CHECK(plan.ops[static_cast<std::size_t>(dryDelay)].kind == OpKind::Delay);
+        CHECK(plan.ops[static_cast<std::size_t>(deviceDelay)].kind == OpKind::Delay);
+        CHECK(dryDelay != deviceDelay);
+        CHECK(plan.ops[static_cast<std::size_t>(dryDelay)].inputs.front() ==
+              plan.ops[static_cast<std::size_t>(deviceDelay)].inputs.front());
+    }
+
+    SECTION("a rack is measured one level up, around its own fader") {
         RackInfo rack;
         rack.id = 4;
         rack.deltaSolo = true;
@@ -997,13 +1035,87 @@ TEST_CASE("Delta solo is reported on devices and on racks", "[engine][plan][comp
 
         const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
         requireWellFormed(plan);
+        CHECK(plan.diagnostics.empty());
 
-        REQUIRE(plan.diagnostics.size() == 1);
-        CHECK(plan.diagnostics.front().find("rack 4") != std::string::npos);
-        CHECK(plan.diagnostics.front().find("delta solo") != std::string::npos);
+        const auto deltas = opsWithRole(plan, OpRole::RackDelta);
+        REQUIRE(deltas.size() == 1);
+        const auto delta = deltas.front();
+        CHECK(plan.ops[static_cast<std::size_t>(delta)].kind == OpKind::Subtract);
+        CHECK(plan.ops[static_cast<std::size_t>(delta)].key.rackId == 4);
+
+        // The rack's volume and pan are on the wet path in the current engine
+        // whether or not delta solo is on, so the fader is inside what is
+        // measured; the dry side is what reached the rack.
+        CHECK(inputOp(plan, delta, 0) == opsWithRole(plan, OpRole::RackFader).front());
+
+        const auto dry = inputOp(plan, delta, 1);
+        REQUIRE(dry != magda::engine::INVALID_OP_ID);
+        CHECK(plan.ops[static_cast<std::size_t>(dry)].key.role == OpRole::TrackAudioInput);
+        CHECK(plan.ops[static_cast<std::size_t>(dry)].key.trackId == 1);
     }
 
-    SECTION("a bypassed device is not in the plan, so it is not reported") {
+    SECTION("a rack with no chains still has an output of its own to measure") {
+        RackInfo rack;
+        rack.id = 4;
+        rack.deltaSolo = true;
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(plan.diagnostics.empty());
+
+        REQUIRE(countRole(plan, OpRole::RackDelta) == 1);
+        const auto delta = opsWithRole(plan, OpRole::RackDelta).front();
+        CHECK(inputOp(plan, delta, 0) == opsWithRole(plan, OpRole::RackFader).front());
+
+        const auto dry = inputOp(plan, delta, 1);
+        REQUIRE(dry != magda::engine::INVALID_OP_ID);
+        CHECK(plan.ops[static_cast<std::size_t>(dry)].key.role == OpRole::TrackAudioInput);
+        CHECK(plan.ops[static_cast<std::size_t>(dry)].key.trackId == 1);
+    }
+
+    SECTION("a device inside a rack inside a rack is keyed where it sits") {
+        auto effect = makeEffect(7);
+        effect.deltaSolo = true;
+
+        RackInfo inner;
+        inner.id = 5;
+        ChainInfo innerChain;
+        innerChain.id = 11;
+        innerChain.elements.push_back(makeDeviceElement(effect));
+        inner.chains.push_back(std::move(innerChain));
+
+        RackInfo outer;
+        outer.id = 4;
+        ChainInfo outerChain;
+        outerChain.id = 10;
+        outerChain.elements.push_back(makeRackElement(std::move(inner)));
+        outer.chains.push_back(std::move(outerChain));
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeRackElement(std::move(outer)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(plan.diagnostics.empty());
+
+        // The dry edge crosses no boundary the keys do not already carry: it is
+        // the chain audio at the device's own site, which is where the device
+        // op is keyed too.
+        REQUIRE(countRole(plan, OpRole::DeviceDelta) == 1);
+        const auto delta = opsWithRole(plan, OpRole::DeviceDelta).front();
+        const auto& key = plan.ops[static_cast<std::size_t>(delta)].key;
+        CHECK(key.trackId == 1);
+        CHECK(key.rackId == 5);
+        CHECK(key.chainId == 11);
+        CHECK(key.deviceId == 7);
+        CHECK(inputOp(plan, delta, 0) == opsWithRole(plan, OpRole::DeviceProcess).front());
+        CHECK(inputOp(plan, delta, 1) == deviceInput(plan, 7));
+    }
+
+    SECTION("a bypassed device is not in the plan, so nothing is subtracted") {
         auto effect = makeEffect(7);
         effect.deltaSolo = true;
         effect.bypassed = true;
@@ -1014,6 +1126,13 @@ TEST_CASE("Delta solo is reported on devices and on racks", "[engine][plan][comp
         const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
         requireWellFormed(plan);
         CHECK(plan.diagnostics.empty());
+
+        // The chain, not silence, which is parity: bypass reaches the current
+        // engine as `Plugin::setEnabled(false)`, and PluginNode skips the
+        // subtraction for a plugin that is not enabled. Delta solo on a device
+        // that does nothing is silence because subtracting its input from its
+        // output leaves nothing, not because the flag is on.
+        CHECK(countRole(plan, OpRole::DeviceDelta) == 0);
     }
 }
 

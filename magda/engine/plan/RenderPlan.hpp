@@ -88,6 +88,7 @@ enum class OpKind : std::uint8_t {
     Device,      ///< a device instance (instrument, effect, MIDI or analysis)
     MixAudio,   ///< ordered sum of audio inputs (summing order is compiled, never scheduling order)
     MergeMidi,  ///< ordered merge of MIDI inputs
+    Subtract,   ///< one audio input minus another: what a delta solo hears
     Delay,      ///< latency compensation on one edge; the sample count is bound at prepare time
     Crossfade,  ///< an edge as it was and as it is, ramped from one to the other
     Gain,       ///< scalar gain
@@ -113,6 +114,7 @@ enum class OpRole : std::uint8_t {
     TrackAudioInput,  ///< sum of everything feeding the track's chain head
     TrackMidiInput,   ///< merge of everything feeding the track's chain head
     DeviceProcess,    ///< the device itself
+    DeviceDelta,      ///< the device's output minus the dry input it was handed
     DeviceGain,       ///< the device slot's gain trim
     DeviceMeter,      ///< the device slot's level tap
     ChainMidiMerge,   ///< raw chain MIDI merged with a device's MIDI output
@@ -120,6 +122,7 @@ enum class OpRole : std::uint8_t {
     RackMix,          ///< sum of a rack's chains
     RackMidiMix,      ///< merge of a rack's chain MIDI outputs
     RackFader,        ///< the rack's output volume + pan
+    RackDelta,        ///< the rack's output minus the dry input it was handed
     TrackFader,       ///< the track fader
     TrackMeter,       ///< the track's post-fader, pre-mute level tap
     TrackMute,        ///< mute and solo, applied after the meter and sidechain tap
@@ -132,10 +135,11 @@ enum class OpRole : std::uint8_t {
     // and OpKey::index says which slot. Two ops of the same kind never share a
     // location, so this is unique wherever the compiler emits it, which
     // validatePlan's key check is what actually guarantees.
-    MixInputDelay,     ///< aligns one input of a MixAudio
-    MergeInputDelay,   ///< aligns one input of a MergeMidi
-    DeviceInputDelay,  ///< aligns one input slot of a Device
-    FaderInputDelay,   ///< aligns one input slot of a Fader
+    MixInputDelay,       ///< aligns one input of a MixAudio
+    MergeInputDelay,     ///< aligns one input of a MergeMidi
+    DeviceInputDelay,    ///< aligns one input slot of a Device
+    FaderInputDelay,     ///< aligns one input slot of a Fader
+    SubtractInputDelay,  ///< aligns one input slot of a Subtract
 
     // A fade sits on one edge, like a delay, so its identity is the op it feeds
     // plus the slot it fills. Unlike a delay it has no role of its own to say

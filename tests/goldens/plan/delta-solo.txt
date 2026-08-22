@@ -1,0 +1,60 @@
+# delta-solo
+# a device and the rack around it, each against the dry signal it was handed
+#
+# Generated. See tests/test_plan_goldens.cpp to regenerate.
+
+== plan ==
+magda-render-plan v1
+ops=21 outputs=1
+[  0] ClipAudio   det   T1:clipAudio                   in=-                out=audio       deps=0
+[  1] MixAudio    det   T1:trackAudioInput             in=0:0              out=audio       deps=1
+[  2] Device      det   T1/R5/C10/D7:deviceProcess     in=1:0,-,-          out=audio       deps=1
+[  3] Delay       det   T1/R5/C10/D7:subtractInputDelay in=2:0              out=audio       deps=1
+[  4] Delay       det   T1/R5/C10/D7:subtractInputDelay#1 in=1:0              out=audio       deps=1
+[  5] Subtract    det   T1/R5/C10/D7:deviceDelta       in=3:0,4:0          out=audio       deps=2
+[  6] Gain        det   T1/R5/C10/D7:deviceGain        in=5:0              out=audio       deps=1
+[  7] Fader       det   T1/R5/C10:rackChainFader       in=6:0,-            out=audio       deps=1
+[  8] MixAudio    det   T1/R5:rackMix                  in=7:0              out=audio       deps=1
+[  9] Fader       det   T1/R5:rackFader                in=8:0,-            out=audio       deps=1
+[ 10] Delay       det   T1/R5:subtractInputDelay       in=9:0              out=audio       deps=1
+[ 11] Delay       det   T1/R5:subtractInputDelay#1     in=1:0              out=audio       deps=1
+[ 12] Subtract    det   T1/R5:rackDelta                in=10:0,11:0        out=audio       deps=2
+[ 13] Fader       det   T1:trackFader                  in=12:0,-           out=audio       deps=1
+[ 14] Meter       det   T1:trackMeter                  in=13:0             out=audio       deps=1
+[ 15] Gain        det   T1:trackMute                   in=14:0             out=audio       deps=1
+[ 16] MixAudio    det   T-2:trackAudioInput            in=15:0             out=audio       deps=1
+[ 17] Fader       det   T-2:trackFader                 in=16:0,-           out=audio       deps=1
+[ 18] Meter       det   T-2:trackMeter                 in=17:0             out=audio       deps=1
+[ 19] Gain        det   T-2:trackMute                  in=18:0             out=audio       deps=1
+[ 20] Output      det   T-2:hardwareOutput             in=19:0             out=-           deps=1
+ready=0
+
+== layout ==
+magda-plan-layout v1
+audioSlots=4 midiSlots=0 outputLatency=64
+[  0] ClipAudio   T1:clipAudio                   lat=0       ports=a0
+[  1] MixAudio    T1:trackAudioInput             lat=0       ports=a0          inplace
+[  2] Device      T1/R5/C10/D7:deviceProcess     lat=64      ports=a1
+[  3] Delay       T1/R5/C10/D7:subtractInputDelay lat=64      ports=a1          hold=0 elided
+[  4] Delay       T1/R5/C10/D7:subtractInputDelay#1 lat=64      ports=a2          hold=64
+[  5] Subtract    T1/R5/C10/D7:deviceDelta       lat=64      ports=a1          inplace
+[  6] Gain        T1/R5/C10/D7:deviceGain        lat=64      ports=a1          inplace
+[  7] Fader       T1/R5/C10:rackChainFader       lat=64      ports=a1          inplace
+[  8] MixAudio    T1/R5:rackMix                  lat=64      ports=a1          inplace
+[  9] Fader       T1/R5:rackFader                lat=64      ports=a1          inplace
+[ 10] Delay       T1/R5:subtractInputDelay       lat=64      ports=a1          hold=0 elided
+[ 11] Delay       T1/R5:subtractInputDelay#1     lat=64      ports=a3          hold=64
+[ 12] Subtract    T1/R5:rackDelta                lat=64      ports=a1          inplace
+[ 13] Fader       T1:trackFader                  lat=64      ports=a1          inplace
+[ 14] Meter       T1:trackMeter                  lat=64      ports=a1          inplace
+[ 15] Gain        T1:trackMute                   lat=64      ports=a1          inplace
+[ 16] MixAudio    T-2:trackAudioInput            lat=64      ports=a1          inplace
+[ 17] Fader       T-2:trackFader                 lat=64      ports=a1          inplace
+[ 18] Meter       T-2:trackMeter                 lat=64      ports=a1          inplace
+[ 19] Gain        T-2:trackMute                  lat=64      ports=a1          inplace
+[ 20] Output      T-2:hardwareOutput             lat=-       ports=-
+
+== params ==
+magda-param-table v1
+params=0 modifiers=0 links=0
+order:

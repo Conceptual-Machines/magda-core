@@ -129,6 +129,7 @@ enum class EditKind : std::uint8_t {
     RemoveDevice,
     MoveDevice,
     BypassDevice,
+    DeltaSoloDevice,
     SetDeviceLatency,
     AddRack,
     RemoveRack,

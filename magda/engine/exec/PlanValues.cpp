@@ -419,9 +419,9 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
             break;
         }
 
-        // Sources, sums, merges, devices, meters and the output carry no value
-        // of their own: what they render comes from their bindings, and what
-        // they pass on is whatever reached them.
+        // Sources, sums, merges, differences, devices, meters and the output
+        // carry no value of their own: what they render comes from their
+        // bindings, and what they pass on is whatever reached them.
         case OpRole::ClipAudio:
         case OpRole::ClipMidi:
         case OpRole::LiveAudioInput:
@@ -429,10 +429,12 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::TrackAudioInput:
         case OpRole::TrackMidiInput:
         case OpRole::DeviceProcess:
+        case OpRole::DeviceDelta:
         case OpRole::DeviceMeter:
         case OpRole::ChainMidiMerge:
         case OpRole::RackMix:
         case OpRole::RackMidiMix:
+        case OpRole::RackDelta:
         case OpRole::TrackMeter:
         // A modulation tap reads what reached it and has no value of its own.
         // Not even a mute: a modifier following a track is following what that
@@ -446,6 +448,7 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::MergeInputDelay:
         case OpRole::DeviceInputDelay:
         case OpRole::FaderInputDelay:
+        case OpRole::SubtractInputDelay:
         case OpRole::EdgeCrossfade:
             break;
     }

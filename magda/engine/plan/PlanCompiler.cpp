@@ -213,6 +213,20 @@ class Compiler {
     ChainSignal emitDevice(const DeviceInfo& device, const ChainSite& site, ChainSignal signal);
     ChainSignal emitRack(const RackInfo& rack, const ChainSite& site, ChainSignal signal);
 
+    /// Delta solo: @p wet minus @p dry, which is what the device or rack the
+    /// key names added to the signal. Both sides go through alignInputs, so
+    /// the dry edge meets the wet one through the same PDC delay every other
+    /// fan-in uses rather than through a second latency concept. What that
+    /// delay resolves to is the whole distance the wet path travelled, the
+    /// processing's own latency included.
+    PortRef emitDelta(const OpKey& key, PortRef wet, PortRef dry);
+
+    /// The same thing around a rack instance, or @p wet where the rack is not
+    /// soloing its delta. Two call sites, because a rack with no chains still
+    /// has an output of its own to measure: its fader is applied on the wet
+    /// path whether or not there are chains under it.
+    PortRef emitRackDelta(const RackInfo& rack, const ChainSite& site, PortRef wet, PortRef dry);
+
     /// Sums `sources` into one audio port, always through an op so the op's
     /// identity survives sources appearing and disappearing.
     PortRef emitMix(const OpKey& key, const std::vector<PortRef>& sources);
@@ -496,6 +510,26 @@ PortRef Compiler::emitMix(const OpKey& key, const std::vector<PortRef>& sources)
                    0};
 }
 
+PortRef Compiler::emitDelta(const OpKey& key, PortRef wet, PortRef dry) {
+    return PortRef{addOp(OpKind::Subtract, key, alignInputs(key, OpKind::Subtract, {wet, dry}),
+                         {SignalKind::Audio}),
+                   0};
+}
+
+PortRef Compiler::emitRackDelta(const RackInfo& rack, const ChainSite& site, PortRef wet,
+                                PortRef dry) {
+    if (!rack.deltaSolo)
+        return wet;
+
+    // The dry edge the current engine keeps around every rack instance,
+    // delayed to match the wet path. One level up from a device's, and the
+    // same shape: the rack's output, its own volume and pan included, minus
+    // what reached it.
+    const OpKey key{site.trackId,      rack.id, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
+                    OpRole::RackDelta, 0,       site.segment};
+    return emitDelta(key, wet, dry);
+}
+
 std::vector<PortRef> Compiler::alignInputs(const OpKey& key, OpKind kind,
                                            std::vector<PortRef> inputs) {
     // One input is its own maximum, so its compensation is zero in every
@@ -519,6 +553,8 @@ std::vector<PortRef> Compiler::alignInputs(const OpKey& key, OpKind kind,
                 return OpRole::DeviceInputDelay;
             case OpKind::Fader:
                 return OpRole::FaderInputDelay;
+            case OpKind::Subtract:
+                return OpRole::SubtractInputDelay;
             default:
                 jassertfalse;  // nothing else fans in
                 return OpRole::MixInputDelay;
@@ -572,16 +608,6 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
 
     if (device.bypassed)
         return signal;
-
-    // Delta solo subtracts the device's dry input, aligned to its output, from
-    // that output. The alignment is a delay like any other now; what is still
-    // missing is the edge carrying the dry signal past the device and the op
-    // that subtracts it.
-    if (device.deltaSolo)
-        diagnose("device " + std::to_string(device.id) + " on track " +
-                 std::to_string(site.trackId) +
-                 ": delta solo needs a dry edge past the device and an op to subtract it, "
-                 "which the plan does not carry yet");
 
     const auto node = routing::makeRoutingNode(device);
 
@@ -639,6 +665,22 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     ChainSignal out;
     out.audio = PortRef{processOp, 0};
 
+    // Delta solo: what the device added, which is its output minus the dry
+    // signal it was handed. The dry edge is that signal rather than the device's
+    // own input slot, which may already carry a delay lining the audio up with a
+    // sidechain: a delay reading a delay would count that edge's compensation
+    // twice, and taken from in front of it the subtract's own delay resolves to
+    // the whole distance instead, the input alignment and the device's latency
+    // together.
+    //
+    // Ahead of the slot's gain and meter, which is where the current engine
+    // subtracts it too: those are MAGDA's own and sit outside the plugin, so
+    // what they trim and report is the delta once there is one.
+    if (device.deltaSolo) {
+        key.role = OpRole::DeviceDelta;
+        out.audio = emitDelta(key, out.audio, signal.audio);
+    }
+
     if (!isTransparentTap(device)) {
         key.role = OpRole::DeviceGain;
         out.audio = PortRef{addOp(OpKind::Gain, key, {out.audio}, {SignalKind::Audio}), 0};
@@ -677,15 +719,6 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     // that track is the edge, and collectModulationSources is what puts the
     // source ahead of this rack's own track in the compile order (#2120).
 
-    // Same dry path a device's delta solo needs, one level up: the rack
-    // instance subtracts its own input, aligned to its wet output, from that
-    // output. The current engine keeps a dry edge around every rack instance
-    // for exactly this, and delays it to match the wet path.
-    if (rack.deltaSolo)
-        diagnose("rack " + std::to_string(rack.id) +
-                 ": delta solo needs a dry edge around the rack and an op to subtract it, "
-                 "which the plan does not carry yet");
-
     // A rack with no chains passes signal rather than silence: compiling it to
     // a zero-input mix would silence the track. It is not fully transparent
     // though, because rack volume and pan land on the instance's output gains,
@@ -698,10 +731,9 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     if (rack.chains.empty()) {
         const OpKey faderKey{site.trackId,      rack.id, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
                              OpRole::RackFader, 0,       site.segment};
-        return {
-            PortRef{addOp(OpKind::Fader, faderKey, {signal.audio, noInput()}, {SignalKind::Audio}),
-                    0},
-            signal.midi};
+        const PortRef faded{
+            addOp(OpKind::Fader, faderKey, {signal.audio, noInput()}, {SignalKind::Audio}), 0};
+        return {emitRackDelta(rack, site, faded, signal.audio), signal.midi};
     }
 
     std::vector<PortRef> chainAudio;
@@ -765,6 +797,7 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     const OpKey faderKey{site.trackId,      rack.id, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
                          OpRole::RackFader, 0,       site.segment};
     out.audio = PortRef{addOp(OpKind::Fader, faderKey, {mixed, noInput()}, {SignalKind::Audio}), 0};
+    out.audio = emitRackDelta(rack, site, out.audio, signal.audio);
 
     if (chainMidi.empty()) {
         out.midi = signal.midi;

@@ -309,3 +309,76 @@ TEST_CASE("Latency accumulates along a chain and meets at a fan-in",
     CHECK(delays[0] == 0);
     CHECK(delays[1] == 120);
 }
+
+TEST_CASE("A delta solo's dry edge waits for the processing it is measured against",
+          "[engine][exec][layout][pdc]") {
+    const auto dryDelays = [](const Layout& layout) {
+        std::map<int, int> bySlot;
+        for (std::size_t i = 0; i < layout.plan.ops.size(); ++i)
+            if (layout.plan.ops[i].key.role == OpRole::SubtractInputDelay)
+                bySlot[layout.plan.ops[i].key.index] = layout.delaySamples[i];
+        return bySlot;
+    };
+
+    SECTION("a device: its own latency, and nothing on the wet side") {
+        auto effect = makeEffect(7);
+        effect.deltaSolo = true;
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(effect));
+
+        const auto layout = layoutOf(tracks, makeMaster(), {{7, 100}});
+        INFO(magda::engine::dumpPlan(layout.plan));
+
+        const auto delays = dryDelays(layout);
+        REQUIRE(delays.size() == 2);
+        CHECK(delays.at(0) == 0);
+        CHECK(delays.at(1) == 100);
+    }
+
+    SECTION("and whatever aligned the device's own input, on top of it") {
+        auto compressor = makeEffect(7);
+        compressor.deltaSolo = true;
+        compressor.sidechain.type = SidechainConfig::Type::Audio;
+        compressor.sidechain.sourceTrackId = 2;
+
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+        tracks[1].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(8)));
+
+        // The key arrives 40 samples late, so the device's own audio input is
+        // held back that far before the device adds its 100.
+        const auto layout = layoutOf(tracks, makeMaster(), {{7, 100}, {8, 40}});
+        INFO(magda::engine::dumpPlan(layout.plan));
+
+        const auto delays = dryDelays(layout);
+        REQUIRE(delays.size() == 2);
+        CHECK(delays.at(0) == 0);
+        CHECK(delays.at(1) == 140);
+    }
+
+    SECTION("a rack: everything its chains and its own alignment came to") {
+        auto rack = std::make_unique<RackInfo>();
+        rack->id = 5;
+        rack->deltaSolo = true;
+        for (const ChainId chainId : {ChainId{10}, ChainId{11}}) {
+            ChainInfo chain;
+            chain.id = chainId;
+            chain.elements.push_back(makeDeviceElement(makeEffect(static_cast<DeviceId>(chainId))));
+            rack->chains.push_back(std::move(chain));
+        }
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(ChainElement{std::move(rack)});
+
+        // The rack's output is as late as its latest chain, which is what its
+        // own mix aligned the other one to.
+        const auto layout = layoutOf(tracks, makeMaster(), {{10, 48}, {11, 16}});
+        INFO(magda::engine::dumpPlan(layout.plan));
+
+        const auto delays = dryDelays(layout);
+        REQUIRE(delays.size() == 2);
+        CHECK(delays.at(0) == 0);
+        CHECK(delays.at(1) == 48);
+    }
+}

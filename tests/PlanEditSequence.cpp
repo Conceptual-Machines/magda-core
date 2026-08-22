@@ -425,6 +425,9 @@ std::string toString(const Edit& edit) {
         case EditKind::BypassDevice:
             out << "bypassDevice D" << edit.deviceId << " " << (edit.flag ? "on" : "off");
             break;
+        case EditKind::DeltaSoloDevice:
+            out << "deltaSoloDevice D" << edit.deviceId << " " << (edit.flag ? "on" : "off");
+            break;
         case EditKind::SetDeviceLatency:
             out << "setDeviceLatency D" << edit.deviceId << " " << edit.latencySamples;
             break;
@@ -557,6 +560,18 @@ bool apply(const Edit& edit, Project& project) {
             if (device.bypassed == edit.flag)
                 return false;
             device.bypassed = edit.flag;
+            return true;
+        }
+
+        case EditKind::DeltaSoloDevice: {
+            DeviceAt at;
+            if (!findDevice(project, edit.deviceId, at))
+                return false;
+
+            auto& device = getDevice((*at.container)[at.index]);
+            if (device.deltaSolo == edit.flag)
+                return false;
+            device.deltaSolo = edit.flag;
             return true;
         }
 
@@ -801,6 +816,7 @@ std::set<TrackId> touched(const Edit& edit, const Project& before) {
         case EditKind::RemoveDevice:
         case EditKind::MoveDevice:
         case EditKind::BypassDevice:
+        case EditKind::DeltaSoloDevice:
         case EditKind::SetDeviceLatency:
             add(ownerOfDevice(edit.deviceId));
             break;
@@ -977,6 +993,7 @@ std::vector<Edit> generate(std::uint64_t seed, int length) {
                 case EditKind::RemoveDevice:
                 case EditKind::MoveDevice:
                 case EditKind::BypassDevice:
+                case EditKind::DeltaSoloDevice:
                 case EditKind::SetDeviceLatency:
                 case EditKind::SetSidechain: {
                     if (inventory.devices.empty())
