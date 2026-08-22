@@ -57,10 +57,20 @@ enum class SignalKind : std::uint8_t { Audio, Midi };
 // {Audio, Midi}, special cases of it rather than something a reader has to tell
 // apart.
 
-/// Output pairs past the main one that one device may have. The current engine
-/// clamps rack output pins to the same figure (RackSyncManager), and a plan
-/// carrying more would address pins it cannot reach.
-constexpr int kMaxMultiOutPairs = 31;
+/// Output pairs past the main one that one Device op may carry.
+///
+/// Not a limit the model has. `InstrumentRackManager::wrapMultiOutInstrument`
+/// adds one rack pin per channel with no clamp, and a device's pairs are read
+/// off the plugin's own buses, so the model will describe as many as the plugin
+/// reports. (The clamp in `RackSyncManager` is the user-rack chain mechanism,
+/// which is unrelated: see the aux-output note in PlanCompiler::emitRack.)
+///
+/// What is bounded is the executor, which gathers a device's pair blocks on the
+/// stack because the parallel executor runs Device ops on any thread and shared
+/// storage would be two devices writing one array. This is that budget, and it
+/// is generous next to the widest plugins in use: 64 pairs is 128 channels.
+/// A device with more is reported by the compiler rather than quietly shortened.
+constexpr int kMaxMultiOutPairs = 64;
 
 /**
  * @brief What an op computes.

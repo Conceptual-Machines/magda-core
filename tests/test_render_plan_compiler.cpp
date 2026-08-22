@@ -1832,3 +1832,81 @@ TEST_CASE("A multi-out link survives its source not being compiled", "[engine][p
         CHECK(anyDiagnosticContains(plan, "is not a pair that device has"));
     }
 }
+
+TEST_CASE("A multi-out pair that carries nothing is not an ordering dependency",
+          "[engine][plan][compiler]") {
+    // The edge only exists where a connection does. An edge for a pair nothing
+    // carries can invent a cycle, and the breaker resolves a cycle by dropping
+    // a connection: a real one would go so an imaginary one could be ordered.
+    auto instrument = makeMultiOutInstrument(7, 3);
+    instrument.bypassed = true;
+
+    // Track 2 reads a pair of the bypassed instrument on track 1, and track 1
+    // takes track 2's output as its own input. Only the multi-out edge can
+    // close that loop, and it must not.
+    std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 1)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(instrument));
+    tracks[1].audioOutputDevice = "track:1";
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    CHECK_FALSE(anyDiagnosticContains(plan, "routing cycle"));
+    CHECK_FALSE(anyDiagnosticContains(plan, "arrived after it was compiled"));
+
+    // Track 2's real connection into track 1 survives, which is what a dropped
+    // edge would have cost: track 1's own clips, and track 2's output.
+    const auto input = trackInput(plan, 1);
+    REQUIRE(input != magda::engine::INVALID_OP_ID);
+    REQUIRE(plan.ops[static_cast<std::size_t>(input)].inputs.size() == 2);
+
+    magda::engine::OpId readerMute = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackMute))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 2)
+            readerMute = op;
+    REQUIRE(readerMute != magda::engine::INVALID_OP_ID);
+    CHECK(inputOp(plan, input, 1) == readerMute);
+}
+
+TEST_CASE("A device with more pairs than one op can carry says so", "[engine][plan][compiler]") {
+    const auto overBudget = magda::engine::kMaxMultiOutPairs + 2;
+
+    SECTION("the device reports the pairs it could not compile") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(
+            makeDeviceElement(makeMultiOutInstrument(7, overBudget + 1)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        // Never a silent shortening: the ports stop at the budget and the drop
+        // is named.
+        CHECK(anyDiagnosticContains(plan, "one device can carry, the rest are not compiled"));
+        const auto process = deviceProcess(plan, 7);
+        CHECK(plan.ops[static_cast<std::size_t>(process)].outputs.size() ==
+              static_cast<std::size_t>(magda::engine::kMaxMultiOutPairs) + 1);
+    }
+
+    SECTION("a track reading past the budget is told which limit it hit") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, overBudget)};
+        tracks[0].chain.fxChainElements.push_back(
+            makeDeviceElement(makeMultiOutInstrument(7, overBudget + 1)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        // The device has that pair, so this is not the broken-link message.
+        CHECK(anyDiagnosticContains(plan, "pairs one device can carry"));
+        CHECK_FALSE(anyDiagnosticContains(plan, "is not a pair that device has"));
+    }
+
+    SECTION("a pair inside the budget still routes on the same device") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 1)};
+        tracks[0].chain.fxChainElements.push_back(
+            makeDeviceElement(makeMultiOutInstrument(7, overBudget + 1)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(plan.ops[static_cast<std::size_t>(trackInput(plan, 2))].inputs.size() == 1);
+    }
+}
