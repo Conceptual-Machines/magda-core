@@ -1148,9 +1148,13 @@ RenderPlan Compiler::run() {
     // head, and a source with no MIDI ops compiled has no chain head to read.
     midiSourceTracks_.insert(noteSourceTracks_.begin(), noteSourceTracks_.end());
 
-    // Which multi-out pairs anyone reads, before any device declares its ports.
-    // A device emits a port per pair a track links to and no others, so a pair
-    // nobody opened costs nothing and a dead port never reaches the plan.
+    // Who reads which multi-out pair, collected before emission because a track
+    // is where that is written down and the device that owns the pair is
+    // compiled first. It decides where a pair goes, not whether it exists: a
+    // device declares a port for every pair it has, so port position stays the
+    // pair number whatever any track does, and a pair nobody opened is rendered
+    // and dropped the way the current engine drops a pin with no RackInstance
+    // reading it.
     for (const auto& track : tracks_) {
         if (!track.multiOutLink)
             continue;
