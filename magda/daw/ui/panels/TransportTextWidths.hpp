@@ -10,6 +10,17 @@ namespace magda::daw::ui::transport {
 inline constexpr const char* kAutoGridCaption = "AUTO";
 inline constexpr const char* kSnapCaption = "SNAP";
 
+// Font sizes the transport itself chooses, for the children that cache a font
+// rather than resolving one at paint time. Declared here so the size measured
+// and the size applied to the widget are one number. The children that do
+// resolve their own font publish theirs instead (BarsBeatsTicksLabel,
+// GridDivisionButton, SmallButtonLookAndFeel), and the measurement reads it
+// from them.
+inline constexpr float kReadoutFontSize = 14.0f;  // BPM and time signature
+inline constexpr float kCpuTitleFontSize = 8.0f;
+inline constexpr float kCpuValueFontSize = 11.0f;
+inline constexpr float kBannerFontSize = 10.0f;  // the AUTOMATION WRITE banner
+
 /** Measures the widest string each text-sized section of the transport has to
  *  hold, in the font that section actually draws with.
  *

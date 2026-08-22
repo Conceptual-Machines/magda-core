@@ -216,6 +216,9 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
     // Applies every themed text colour to the child value labels from the
     // active palette. Shared by initial setup and runtime theme changes.
     void applyThemedLabelColours();
+    // Same, for the children that cache a resolved juce::Font rather than
+    // fetching one at paint time.
+    void applyThemedLabelFonts();
 
     // State
     bool isPlaying = false;

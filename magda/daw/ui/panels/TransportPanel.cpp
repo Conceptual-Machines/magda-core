@@ -26,14 +26,12 @@ TransportPanel::TransportPanel() {
     cpuTitleLabel = std::make_unique<juce::Label>("cpuTitle", tr("transport.cpu.cpu"));
     cpuTitleLabel->setColour(juce::Label::textColourId,
                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    cpuTitleLabel->setFont(FontManager::getInstance().getUIFont(8.0f));
     cpuTitleLabel->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(*cpuTitleLabel);
 
     cpuValueLabel = std::make_unique<juce::Label>("cpuValue", "0%");
     cpuValueLabel->setColour(juce::Label::textColourId,
                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    cpuValueLabel->setFont(FontManager::getInstance().getMonoFont(11.0f));
     cpuValueLabel->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(*cpuValueLabel);
 
@@ -43,7 +41,6 @@ TransportPanel::TransportPanel() {
                                     DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     automationWriteLabel->setColour(juce::Label::backgroundColourId,
                                     juce::Colours::transparentBlack);
-    automationWriteLabel->setFont(FontManager::getInstance().getUIFont(10.0f).boldened());
     automationWriteLabel->setJustificationType(juce::Justification::centredRight);
     addChildComponent(*automationWriteLabel);
 
@@ -56,6 +53,8 @@ TransportPanel::TransportPanel() {
         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).darker(0.6f));
     overflowButton->onClick = [this]() { showOverflowMenu(); };
     addChildComponent(*overflowButton);
+
+    applyThemedLabelFonts();
 }
 
 TransportPanel::~TransportPanel() {
@@ -753,7 +752,6 @@ void TransportPanel::setupTempoAndQuantize() {
     tempoLabel->setDecimalPlaces(2);
     tempoLabel->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     tempoLabel->setShowFillIndicator(false);
-    tempoLabel->setFontSize(14.0f);
     tempoLabel->setDoubleClickResetsValue(false);
     tempoLabel->setSnapToInteger(true);
     tempoLabel->setDrawBorder(false);
@@ -777,7 +775,6 @@ void TransportPanel::setupTempoAndQuantize() {
                                     juce::dontSendNotification);
     timeSigNumeratorLabel->setTextColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     timeSigNumeratorLabel->setShowFillIndicator(false);
-    timeSigNumeratorLabel->setFontSize(14.0f);
     timeSigNumeratorLabel->setDoubleClickResetsValue(true);
     timeSigNumeratorLabel->setDrawBorder(false);
     timeSigNumeratorLabel->setDrawBackground(false);
@@ -800,7 +797,6 @@ void TransportPanel::setupTempoAndQuantize() {
                                       juce::dontSendNotification);
     timeSigDenominatorLabel->setTextColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     timeSigDenominatorLabel->setShowFillIndicator(false);
-    timeSigDenominatorLabel->setFontSize(14.0f);
     timeSigDenominatorLabel->setDoubleClickResetsValue(true);
     timeSigDenominatorLabel->setDrawBorder(false);
     timeSigDenominatorLabel->setDrawBackground(false);
@@ -1270,12 +1266,34 @@ void TransportPanel::updatePunchLabelColors() {
 
 void TransportPanel::lookAndFeelChanged() {
     applyThemedLabelColours();
-    // The section widths are measured from the fonts, so a live font family or
-    // font scale change has to re-measure them. A look-and-feel broadcast
-    // repaints but does not relayout, which would otherwise leave the bar
-    // arranged for the font it no longer draws with.
+    // The children that cache a resolved font have to be handed the new one
+    // before the bar is measured for it, or the layout would be sized for a
+    // font those children are not drawing with. Then relayout: a look-and-feel
+    // broadcast repaints but does not resize, and the section widths come from
+    // the fonts now.
+    applyThemedLabelFonts();
     if (overflowButton != nullptr)
         resized();
+}
+
+// The children that resolve a font at paint time (the timecode readouts, the
+// grid division button, the AUTO/SNAP toggles) follow a font change on their
+// own. These cache one, so they are handed it again here, at the sizes
+// TransportTextWidths measures them at.
+void TransportPanel::applyThemedLabelFonts() {
+    if (overflowButton == nullptr)
+        return;
+
+    auto& fonts = FontManager::getInstance();
+    cpuTitleLabel->setFont(fonts.getUIFont(transport::kCpuTitleFontSize));
+    cpuValueLabel->setFont(fonts.getMonoFont(transport::kCpuValueFontSize));
+    automationWriteLabel->setFont(fonts.getUIFont(transport::kBannerFontSize).boldened());
+
+    // DraggableValueLabel resolves and caches on setFontSize, so re-setting the
+    // same size is what re-fetches it from FontManager.
+    tempoLabel->setFontSize(transport::kReadoutFontSize);
+    timeSigNumeratorLabel->setFontSize(transport::kReadoutFontSize);
+    timeSigDenominatorLabel->setFontSize(transport::kReadoutFontSize);
 }
 
 void TransportPanel::applyThemedLabelColours() {

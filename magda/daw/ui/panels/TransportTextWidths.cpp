@@ -1,7 +1,9 @@
 #include "TransportTextWidths.hpp"
 
+#include "../components/common/BarsBeatsTicksLabel.hpp"
 #include "../components/common/GridDivisionMenu.hpp"
 #include "../themes/FontManager.hpp"
+#include "../themes/SmallButtonLookAndFeel.hpp"
 #include "core/StringTable.hpp"
 #include "core/TempoUtils.hpp"
 
@@ -15,12 +17,14 @@ TextWidths measureTextWidths() {
 
     // Each width is measured in the font that widget draws with, so a change of
     // font size or family moves the layout with it instead of overflowing it.
-    const auto timecodeFont = fonts.getUIFont(10.0f);      // BarsBeatsTicksLabel segments
-    const auto readoutFont = fonts.getUIFont(14.0f);       // BPM and time-signature labels
-    const auto divisionFont = fonts.getUIFontBold(10.0f);  // GridDivisionButton
-    const auto toggleFont = fonts.getUIFontBold(9.0f);     // SmallButtonLookAndFeel
-    const auto cpuTitleFont = fonts.getUIFont(8.0f);
-    const auto cpuValueFont = fonts.getMonoFont(11.0f);
+    // The sizes come from the widgets themselves wherever they own one.
+    const auto timecodeFont = fonts.getUIFont(BarsBeatsTicksLabel::kTextFontSize);
+    const auto readoutFont = fonts.getUIFont(kReadoutFontSize);
+    const auto divisionFont = fonts.getUIFontBold(GridDivisionButton::kFontSize);
+    const auto toggleFont =
+        fonts.getUIFontBold(SmallButtonLookAndFeel::getInstance().getFontSize());
+    const auto cpuTitleFont = fonts.getUIFont(kCpuTitleFontSize);
+    const auto cpuValueFont = fonts.getMonoFont(kCpuValueFontSize);
 
     TextWidths text;
     // The bars segment is the widest of the three: beats stop at the time

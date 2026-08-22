@@ -18,6 +18,10 @@ namespace magda {
  */
 class BarsBeatsTicksLabel : public juce::Component {
   public:
+    // The size the digits are drawn at. Published so anything sizing a box
+    // around this label measures the same font it will render with.
+    static constexpr float kTextFontSize = 10.0f;
+
     BarsBeatsTicksLabel();
     ~BarsBeatsTicksLabel() override;
 

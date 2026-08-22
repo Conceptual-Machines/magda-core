@@ -152,7 +152,7 @@ void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
     }
 
     g.setColour(getTextColour());
-    g.setFont(FontManager::getInstance().getUIFont(10.0f));
+    g.setFont(FontManager::getInstance().getUIFont(kTextFontSize));
 
     if (textOverride_.isNotEmpty()) {
         // Draw override text centred in bounds
@@ -251,7 +251,7 @@ juce::String BarsBeatsTicksLabel::SegmentLabel::formatDisplay() const {
 void BarsBeatsTicksLabel::SegmentLabel::paint(juce::Graphics& g) {
     if (!isEditing_ && owner_.textOverride_.isEmpty()) {
         g.setColour(owner_.getTextColour());
-        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+        g.setFont(FontManager::getInstance().getUIFont(kTextFontSize));
         g.drawText(formatDisplay(), getLocalBounds(), juce::Justification::centred, false);
     }
 }
@@ -351,7 +351,7 @@ void BarsBeatsTicksLabel::SegmentLabel::startEditing() {
 
     editor_ = std::make_unique<juce::TextEditor>();
     editor_->setBounds(getLocalBounds());
-    editor_->setFont(FontManager::getInstance().getUIFont(10.0f));
+    editor_->setFont(FontManager::getInstance().getUIFont(kTextFontSize));
     editor_->setText(formatDisplay(), false);
     editor_->selectAll();
     editor_->setJustification(juce::Justification::centred);
