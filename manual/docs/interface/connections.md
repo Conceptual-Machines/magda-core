@@ -72,6 +72,8 @@ Underneath the client list is a tail of what has actually been asked for, and ho
 
 MAGDA can be driven by an Open Sound Control surface — a tablet layout, a lighting desk, anything that sends OSC.
 
+MAGDA understands a fixed set of addresses out of the box, so a stock mixer template works with no mapping step. See the [OSC Address Reference](../reference/osc-addresses.md) for what to send and what comes back.
+
 - **Listen for OSC** — Whether the socket is open at all.
 - **Listen on** — **All interfaces (0.0.0.0)** or **This computer only (127.0.0.1)**. OSC has no authentication, so which interfaces answer is the whole of its access control; loopback is the safe default if the surface runs on this machine.
 - **Receive port** — Where MAGDA listens. Committed when the field loses focus, so typing part of a port number does not rebind the socket.
