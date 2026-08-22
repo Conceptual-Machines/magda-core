@@ -519,6 +519,102 @@ TEST_CASE("A tool call and a resource read return the same projection",
             juce::JSON::toString(viaTool.json["result"]["structuredContent"], true));
 }
 
+TEST_CASE("An array-valued operation differs across the surfaces only by its wrapper",
+          "[remote][mcp-http][parity]") {
+    // The case the object-valued parity test above cannot reach. MCP types
+    // `structuredContent` as an object, so a list read is wrapped as
+    // `{"items": [...]}` on the tool surface while the resource returns it
+    // bare. Both carry the same data, and asserting only the object-valued
+    // operation left the wrapper unexercised — which is how the two surfaces
+    // came to disagree in a way nothing in the tree noticed.
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+
+    RemoteApiService service(api);
+    RemoteMcpServer server(service, testOptions());
+    REQUIRE(server.start());
+
+    httplib::Client client(base(server));
+
+    const auto viaTool =
+        call(client, "tools/call",
+             object({{"name", "tracks.list"}, {"arguments", juce::var(new juce::DynamicObject())}}),
+             "tracks.list");
+    REQUIRE(viaTool.status == 200);
+
+    const auto viaResource =
+        call(client, "resources/read", object({{"uri", "magda://tracks"}}), "magda://tracks");
+    REQUIRE(viaResource.status == 200);
+
+    const auto* contents = viaResource.json["result"]["contents"].getArray();
+    REQUIRE(contents != nullptr);
+    const auto readText = (*contents)[0]["text"].toString();
+
+    // The tool surface wraps; the resource does not.
+    const auto structured = viaTool.json["result"]["structuredContent"];
+    REQUIRE(structured.getDynamicObject() != nullptr);
+    REQUIRE(structured.hasProperty("items"));
+    REQUIRE(structured["items"].isArray());
+    REQUIRE(readText == juce::JSON::toString(structured["items"], true));
+
+    // And the bare array is what the WebSocket transport returns, unwrapped.
+    const auto direct = service.dispatchSync("tracks.list", juce::var(new juce::DynamicObject()),
+                                             fullyGrantedContext());
+    REQUIRE(direct.ok);
+    REQUIRE(direct.result.isArray());
+    REQUIRE(juce::JSON::toString(direct.result, true) == readText);
+}
+
+TEST_CASE("A cacheable modern result carries its cache directives", "[remote][mcp-http][parity]") {
+    // `2026-07-28` makes `ttlMs` and `cacheScope` required on a cacheable
+    // result rather than optional, so a client validating against the schema
+    // rejects a response that stamps `resultType` alone — the catalogue fails
+    // to parse and the session is useless from its first call.
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+
+    RemoteApiService service(api);
+    RemoteMcpServer server(service, testOptions());
+    REQUIRE(server.start());
+
+    httplib::Client client(base(server));
+
+    const auto cacheable = {std::string("tools/list"), std::string("resources/list"),
+                            std::string("resources/templates/list")};
+    for (const auto& method : cacheable) {
+        const auto reply = call(client, juce::String(method));
+        REQUIRE(reply.status == 200);
+        const auto result = reply.json["result"];
+        REQUIRE(result["resultType"].toString() == "complete");
+        REQUIRE(result.hasProperty("ttlMs"));
+        REQUIRE(static_cast<int>(result["ttlMs"]) == 0);
+        REQUIRE(result["cacheScope"].toString() == "private");
+    }
+
+    const auto read =
+        call(client, "resources/read", object({{"uri", "magda://tracks"}}), "magda://tracks");
+    REQUIRE(read.status == 200);
+    REQUIRE(static_cast<int>(read.json["result"]["ttlMs"]) == 0);
+    REQUIRE(read.json["result"]["cacheScope"].toString() == "private");
+
+    const auto discover = call(client, "server/discover");
+    REQUIRE(discover.status == 200);
+    REQUIRE(static_cast<int>(discover.json["result"]["ttlMs"]) == 0);
+    REQUIRE(discover.json["result"]["cacheScope"].toString() == "private");
+
+    // `tools/call` is not cacheable, and the schema for that method has no
+    // place for the directives — stamping them would be as wrong as omitting
+    // them from the ones above.
+    const auto called =
+        call(client, "tools/call",
+             object({{"name", "tracks.list"}, {"arguments", juce::var(new juce::DynamicObject())}}),
+             "tracks.list");
+    REQUIRE(called.status == 200);
+    REQUIRE(called.json["result"]["resultType"].toString() == "complete");
+    REQUIRE(!called.json["result"].hasProperty("ttlMs"));
+    REQUIRE(!called.json["result"].hasProperty("cacheScope"));
+}
+
 TEST_CASE("A mutation through MCP is one undo step", "[remote][mcp-http][parity]") {
     MessageThreadRelaxation relax;
     MockMagdaApi api;
