@@ -206,17 +206,38 @@ def run_discovery(context: Context, others: list[discovery.Record]) -> None:
 
     runner.check("token file is owner-only", perms)
 
-    runner.check(
-        "record carries a WebSocket URL",
-        lambda: ok(record.url, port=record.port) if record.url and record.port
-        else fail("record has no url/port"),
-    )
+    # Since #2142 each transport has its own switch, so a missing group is a
+    # supported configuration and not a fault. The record alone cannot tell
+    # "switched off" from "failed to bind" — that distinction lives in config,
+    # which this harness deliberately does not read — so an absent group skips
+    # and names both causes rather than guessing.
+    if record.has_websocket:
+        runner.check(
+            "record carries a WebSocket URL",
+            lambda: ok(record.url, port=record.port),
+        )
+    else:
+        runner.skip(
+            "record carries a WebSocket URL",
+            "no url/port: the WebSocket is switched off, or its port was taken",
+        )
 
-    runner.check(
-        "record carries an MCP URL",
-        lambda: ok(record.mcp_url or "", mcpPort=record.mcp_port) if record.has_mcp
-        else fail("no mcpUrl: MAGDA came up but its MCP listener did not"),
-    )
+    if record.has_mcp:
+        runner.check(
+            "record carries an MCP URL",
+            lambda: ok(record.mcp_url or "", mcpPort=record.mcp_port),
+        )
+    else:
+        runner.skip(
+            "record carries an MCP URL",
+            "no mcpUrl: the MCP endpoint is switched off, or its port was taken",
+        )
+
+    if not record.has_websocket and not record.has_mcp:
+        runner.check(
+            "at least one transport is listening",
+            lambda: fail("the record names neither transport, so nothing is reachable"),
+        )
 
     if others:
         runner.check(
@@ -860,6 +881,11 @@ def resolve_bridge(context: Context) -> Path | None:
 
 def run_bridge(context: Context) -> None:
     runner = SuiteRunner(context, "mcp bridge (magda-mcp, stdio)")
+    # The bridge speaks only to the MCP endpoint, so with that switched off it
+    # has nothing to reach and its failure says nothing about this build.
+    if not context.record.has_mcp:
+        runner.skip("every check", "the record carries no mcpUrl")
+        return
     bridge = resolve_bridge(context)
     if bridge is None:
         runner.skip(

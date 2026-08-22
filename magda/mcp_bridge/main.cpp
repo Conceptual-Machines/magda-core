@@ -291,8 +291,13 @@ class Bridge {
         // still waiting. Falling through silently would leave a request
         // outstanding forever with nothing to say why — the one outcome a stdio
         // server must never produce.
-        fail(id, "Could not reach a running MAGDA. Start MAGDA and enable the remote API in its "
-                 "settings.");
+        // Names the MCP endpoint, not "the remote API": since #2142 the two
+        // transports switch on separately, so the common case here is a MAGDA
+        // that is running with its WebSocket up and this endpoint off. Telling
+        // that user to enable a thing they already enabled sends them looking
+        // at the wrong switch.
+        fail(id, "Could not reach a running MAGDA on its MCP endpoint. Start MAGDA and switch on "
+                 "Settings > Connections > MCP.");
     }
 
     /// @return true when the request was answered, false to re-resolve and retry.
