@@ -7,6 +7,7 @@
 #include "../themes/FontManager.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/PluginScanCoordinator.hpp"
 
@@ -343,11 +344,15 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
 
     // Ids are PluginFormat values so the mapping needs no lookup table. AU is
     // macOS-only; VST3 and LV2 exist everywhere MAGDA runs.
-    formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_vst3"),
-                                      static_cast<int>(PluginFormat::VST3) + 1);
+    formatPreferenceSelector_.addItem(
+        tr("plugin_settings.option.prefer_vst3")
+            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Vst3)),
+        static_cast<int>(PluginFormat::VST3) + 1);
 #if JUCE_MAC
-    formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_au"),
-                                      static_cast<int>(PluginFormat::AU) + 1);
+    formatPreferenceSelector_.addItem(
+        tr("plugin_settings.option.prefer_au")
+            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Au)),
+        static_cast<int>(PluginFormat::AU) + 1);
 #endif
     formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_lv2"),
                                       static_cast<int>(PluginFormat::LV2) + 1);

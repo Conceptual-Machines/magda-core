@@ -955,7 +955,8 @@ void MainWindow::setupMenuCallbacks() {
                     juce::AlertWindow::InfoIcon, tr("dialogs.updates.title"),
                     tr("dialogs.updates.available_body")
                         .replace("{0}", r.latestVersion)
-                        .replace("{1}", r.currentVersion),
+                        .replace("{1}", r.currentVersion)
+                        .replace("{2}", magda::technicalText(magda::TechnicalTextToken::Magda)),
                     tr("dialogs.updates.view_release"), tr("dialogs.cancel"), nullptr,
                     juce::ModalCallbackFunction::create([url = r.releaseUrl](int result) {
                         if (result == 1 && url.isNotEmpty())
@@ -964,7 +965,9 @@ void MainWindow::setupMenuCallbacks() {
             } else {
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::InfoIcon, tr("dialogs.updates.title"),
-                    tr("dialogs.updates.up_to_date").replace("{0}", r.currentVersion));
+                    tr("dialogs.updates.up_to_date")
+                        .replace("{0}", r.currentVersion)
+                        .replace("{1}", magda::technicalText(magda::TechnicalTextToken::Magda)));
             }
         });
     };
