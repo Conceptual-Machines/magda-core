@@ -473,6 +473,10 @@ void AudioSettingsDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
 }
 
+void AudioSettingsDialog::lookAndFeelChanged() {
+    refreshHostWindowBackground(*this);
+}
+
 void AudioSettingsDialog::resized() {
     auto bounds = getLocalBounds().reduced(10);
 

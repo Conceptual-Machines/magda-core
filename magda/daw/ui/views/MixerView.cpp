@@ -1686,6 +1686,12 @@ void MixerView::ChannelStrip::resetPeak() {
         peakLabel->setText("-inf", juce::dontSendNotification);
 }
 
+// The fader look-and-feel is a plain member, not a Component, so the theme
+// broadcast never reaches it on its own.
+void MixerView::lookAndFeelChanged() {
+    mixerLookAndFeel_.refreshThemeColours();
+}
+
 void MixerView::ChannelStrip::lookAndFeelChanged() {
     // trackLabel and peakLabel cache a concrete text colour, so a repaint alone
     // won't refresh them after a theme switch. trackLabel's colour is

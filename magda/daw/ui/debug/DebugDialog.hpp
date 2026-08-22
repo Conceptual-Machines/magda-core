@@ -18,6 +18,11 @@ class DebugDialog : public juce::DocumentWindow {
 
     void closeButtonPressed() override;
 
+    // The background is a per-component colour override, so it outlives the
+    // look-and-feel change that repaints everything else. Re-resolve it, or a
+    // window left open across a theme switch keeps the old palette.
+    void lookAndFeelChanged() override;
+
     // Show the dialog (creates if needed)
     static void show();
     static void hide();

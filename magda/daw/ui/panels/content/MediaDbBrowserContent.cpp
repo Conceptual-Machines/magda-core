@@ -2572,6 +2572,14 @@ class MediaDbBrowserContent::PopOutWindow : public juce::DocumentWindow {
         delete this;
     }
 
+    // The background is a per-component colour override, so it outlives the
+    // look-and-feel change that repaints everything else. Re-resolve it, or a
+    // window left open across a theme switch keeps the old palette.
+    void lookAndFeelChanged() override {
+        juce::DocumentWindow::lookAndFeelChanged();
+        setBackgroundColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    }
+
   private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PopOutWindow)
 };

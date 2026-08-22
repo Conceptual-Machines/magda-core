@@ -390,4 +390,9 @@ void SessionClipEditorWindow::closeButtonPressed() {
         setVisible(false);
 }
 
+void SessionClipEditorWindow::lookAndFeelChanged() {
+    juce::DocumentWindow::lookAndFeelChanged();
+    setBackgroundColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+}
+
 }  // namespace magda

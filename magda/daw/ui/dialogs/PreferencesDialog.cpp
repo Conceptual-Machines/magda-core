@@ -3001,10 +3001,7 @@ void PreferencesDialog::lookAndFeelChanged() {
     for (int i = 0; i < tabbedComponent.getNumTabs(); ++i)
         tabbedComponent.setTabBackgroundColour(i, background);
 
-    if (auto* window = findParentComponentOfClass<juce::DialogWindow>()) {
-        window->setBackgroundColour(background);
-        window->repaint();
-    }
+    refreshHostWindowBackground(*this);
 
     repaint();
 }

@@ -7,7 +7,12 @@
 namespace magda {
 
 MixerLookAndFeel::MixerLookAndFeel() {
-    // Set default slider colors
+    refreshThemeColours();
+}
+
+// Reached for slider styles this class does not draw itself, which fall through
+// to LookAndFeel_V4 and resolve these ids.
+void MixerLookAndFeel::refreshThemeColours() {
     setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
     setColour(juce::Slider::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
     setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));

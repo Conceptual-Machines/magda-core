@@ -139,6 +139,10 @@ void ProjectSettingsDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
 }
 
+void ProjectSettingsDialog::lookAndFeelChanged() {
+    refreshHostWindowBackground(*this);
+}
+
 void ProjectSettingsDialog::resized() {
     auto bounds = getLocalBounds().reduced(kPad);
 

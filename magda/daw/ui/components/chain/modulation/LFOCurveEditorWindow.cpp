@@ -587,4 +587,9 @@ void LFOCurveEditorWindow::closeButtonPressed() {
     }
 }
 
+void LFOCurveEditorWindow::lookAndFeelChanged() {
+    juce::DocumentWindow::lookAndFeelChanged();
+    setBackgroundColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+}
+
 }  // namespace magda::daw::ui

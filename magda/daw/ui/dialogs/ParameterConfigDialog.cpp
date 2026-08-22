@@ -679,6 +679,10 @@ void ParameterConfigDialog::paint(juce::Graphics& g) {
     }
 }
 
+void ParameterConfigDialog::lookAndFeelChanged() {
+    refreshHostWindowBackground(*this);
+}
+
 void ParameterConfigDialog::resized() {
     auto bounds = getLocalBounds().reduced(16);
 

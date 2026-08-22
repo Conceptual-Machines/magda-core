@@ -13,6 +13,12 @@ class MixerLookAndFeel : public juce::LookAndFeel_V4 {
     MixerLookAndFeel();
     ~MixerLookAndFeel() override;
 
+    // A LookAndFeel is not a Component, so it never hears the look-and-feel
+    // broadcast that a live theme switch sends. The colours below are pushed
+    // into its own colour table and would keep the palette this instance was
+    // constructed under; owners re-apply them from their lookAndFeelChanged().
+    void refreshThemeColours();
+
     // Override linear slider drawing for custom fader appearance
     void drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
                           float minSliderPos, float maxSliderPos,

@@ -30,6 +30,14 @@ class FloatingHostWindow : public juce::DocumentWindow {
         setTitleBarHeight(MainLookAndFeel::kTitleBarHeight);
         setAlwaysOnTop(true);
     }
+
+    // The background is a per-component colour override, so it outlives the
+    // look-and-feel change that repaints everything else. Re-resolve it, or a
+    // window left open across a theme switch keeps the old palette.
+    void lookAndFeelChanged() override {
+        juce::DocumentWindow::lookAndFeelChanged();
+        setBackgroundColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    }
 };
 
 }  // namespace magda::daw::ui

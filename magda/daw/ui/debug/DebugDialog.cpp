@@ -301,6 +301,11 @@ void DebugDialog::closeButtonPressed() {
     hide();
 }
 
+void DebugDialog::lookAndFeelChanged() {
+    juce::DocumentWindow::lookAndFeelChanged();
+    setBackgroundColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+}
+
 void DebugDialog::show() {
     if (!instance_) {
         instance_ = std::make_unique<DebugDialog>();

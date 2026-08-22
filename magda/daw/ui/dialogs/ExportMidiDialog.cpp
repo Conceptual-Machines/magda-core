@@ -72,6 +72,10 @@ void ExportMidiDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
 }
 
+void ExportMidiDialog::lookAndFeelChanged() {
+    refreshHostWindowBackground(*this);
+}
+
 void ExportMidiDialog::resized() {
     auto bounds = getLocalBounds().reduced(20);
 

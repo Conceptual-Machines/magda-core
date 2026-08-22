@@ -569,6 +569,20 @@ inline juce::Colour deriveClipBody(juce::Colour stored) {
     return ThemeManager::isLightTheme() ? swatch : swatch.darker(0.3f);
 }
 
+// A window's background is a per-component colour override, handed over once
+// when the window is constructed. JUCE keeps such overrides across a
+// look-and-feel change, so unlike a colour read inside paint() it does not
+// follow a live theme switch on its own. Nor is it always hidden behind the
+// content: the in-window menu bar draws its fill at 40% alpha, and JUCE's own
+// dialog chrome leaves margins, so the stale colour shows through.
+//
+// Call this from the hosted content's lookAndFeelChanged() to re-resolve it.
+inline void refreshHostWindowBackground(juce::Component& content,
+                                        ColourRole role = ColourRole::PANEL_BACKGROUND) {
+    if (auto* window = content.findParentComponentOfClass<juce::ResizableWindow>())
+        window->setBackgroundColour(DarkTheme::getColour(role));
+}
+
 // Keeps named colours in a custom device UI bound to a role without forcing
 // every paint call to spell out DarkTheme::getColour(). The conversion and
 // common modifiers resolve the active palette at the point of use.

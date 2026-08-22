@@ -44,6 +44,7 @@ class MainWindow : public juce::DocumentWindow,
     ~MainWindow() override;
 
     void closeButtonPressed() override;
+    void lookAndFeelChanged() override;
 
     // ProjectManagerListener
     void projectOpened(const ProjectInfo& info) override;
