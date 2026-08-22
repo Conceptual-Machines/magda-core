@@ -64,21 +64,25 @@ int countRole(const RenderPlan& plan, OpRole role) {
     return static_cast<int>(opsWithRole(plan, role).size());
 }
 
-/// The op an input slot reads, or -1 when the slot is unconnected. Latency
-/// compensation is looked through: a delay stands for the op behind it, and
-/// these tests are about what is routed where rather than about the delays,
-/// which have their own.
+/// The op an input slot reads, or -1 when the slot is unconnected. The two ops
+/// every slot carries whatever the model says are looked through: a delay
+/// stands for the op behind it, and so does the subtract that would take a
+/// delta on it, which passes its wet side along until something is soloing
+/// that delta. These tests are about what is routed where; both have their own.
 magda::engine::OpId inputOp(const RenderPlan& plan, magda::engine::OpId op, std::size_t slot) {
     const auto& inputs = plan.ops[static_cast<std::size_t>(op)].inputs;
     if (slot >= inputs.size())
         return magda::engine::INVALID_OP_ID;
 
-    const auto source = inputs[slot].op;
-    if (source == magda::engine::INVALID_OP_ID)
-        return source;
-
-    const auto& producer = plan.ops[static_cast<std::size_t>(source)];
-    return producer.kind == magda::engine::OpKind::Delay ? producer.inputs.front().op : source;
+    auto source = inputs[slot].op;
+    while (source != magda::engine::INVALID_OP_ID) {
+        const auto& producer = plan.ops[static_cast<std::size_t>(source)];
+        if (producer.kind != magda::engine::OpKind::Delay &&
+            producer.kind != magda::engine::OpKind::Subtract)
+            break;
+        source = producer.inputs.front().op;
+    }
+    return source;
 }
 
 /// The op an input slot reads without looking through anything.
@@ -162,20 +166,23 @@ TEST_CASE("The plan dump is the compiler's golden surface", "[engine][plan][comp
     requireWellFormed(plan);
 
     CHECK(magda::engine::dumpPlan(plan) == R"(magda-render-plan v1
-ops=13 outputs=1
+ops=16 outputs=1
 [  0] ClipAudio   det   T1:clipAudio                   in=-                out=audio       deps=0
 [  1] MixAudio    det   T1:trackAudioInput             in=0:0              out=audio       deps=1
 [  2] Device      det   T1/D7:deviceProcess            in=1:0,-,-          out=audio       deps=1
-[  3] Gain        det   T1/D7:deviceGain               in=2:0              out=audio       deps=1
-[  4] Meter       det   T1/D7:deviceMeter              in=3:0              out=audio       deps=1
-[  5] Fader       det   T1:trackFader                  in=4:0,-            out=audio       deps=1
-[  6] Meter       det   T1:trackMeter                  in=5:0              out=audio       deps=1
-[  7] Gain        det   T1:trackMute                   in=6:0              out=audio       deps=1
-[  8] MixAudio    det   T-2:trackAudioInput            in=7:0              out=audio       deps=1
-[  9] Fader       det   T-2:trackFader                 in=8:0,-            out=audio       deps=1
-[ 10] Meter       det   T-2:trackMeter                 in=9:0              out=audio       deps=1
-[ 11] Gain        det   T-2:trackMute                  in=10:0             out=audio       deps=1
-[ 12] Output      det   T-2:hardwareOutput             in=11:0             out=-           deps=1
+[  3] Delay       det   T1/D7:subtractInputDelay       in=2:0              out=audio       deps=1
+[  4] Delay       det   T1/D7:subtractInputDelay#1     in=1:0              out=audio       deps=1
+[  5] Subtract    det   T1/D7:deviceDelta              in=3:0,4:0          out=audio       deps=2
+[  6] Gain        det   T1/D7:deviceGain               in=5:0              out=audio       deps=1
+[  7] Meter       det   T1/D7:deviceMeter              in=6:0              out=audio       deps=1
+[  8] Fader       det   T1:trackFader                  in=7:0,-            out=audio       deps=1
+[  9] Meter       det   T1:trackMeter                  in=8:0              out=audio       deps=1
+[ 10] Gain        det   T1:trackMute                   in=9:0              out=audio       deps=1
+[ 11] MixAudio    det   T-2:trackAudioInput            in=10:0             out=audio       deps=1
+[ 12] Fader       det   T-2:trackFader                 in=11:0,-           out=audio       deps=1
+[ 13] Meter       det   T-2:trackMeter                 in=12:0             out=audio       deps=1
+[ 14] Gain        det   T-2:trackMute                  in=13:0             out=audio       deps=1
+[ 15] Output      det   T-2:hardwareOutput             in=14:0             out=-           deps=1
 ready=0
 )");
 }
@@ -194,28 +201,31 @@ TEST_CASE("A second track is a fan-in, and a fan-in is where the delays go",
     requireWellFormed(plan);
 
     CHECK(magda::engine::dumpPlan(plan) == R"(magda-render-plan v1
-ops=20 outputs=1
+ops=23 outputs=1
 [  0] ClipAudio   det   T1:clipAudio                   in=-                out=audio       deps=0
 [  1] MixAudio    det   T1:trackAudioInput             in=0:0              out=audio       deps=1
 [  2] Device      det   T1/D7:deviceProcess            in=1:0,-,-          out=audio       deps=1
-[  3] Gain        det   T1/D7:deviceGain               in=2:0              out=audio       deps=1
-[  4] Meter       det   T1/D7:deviceMeter              in=3:0              out=audio       deps=1
-[  5] Fader       det   T1:trackFader                  in=4:0,-            out=audio       deps=1
-[  6] Meter       det   T1:trackMeter                  in=5:0              out=audio       deps=1
-[  7] Gain        det   T1:trackMute                   in=6:0              out=audio       deps=1
-[  8] ClipAudio   det   T2:clipAudio                   in=-                out=audio       deps=0
-[  9] MixAudio    det   T2:trackAudioInput             in=8:0              out=audio       deps=1
-[ 10] Fader       det   T2:trackFader                  in=9:0,-            out=audio       deps=1
-[ 11] Meter       det   T2:trackMeter                  in=10:0             out=audio       deps=1
-[ 12] Gain        det   T2:trackMute                   in=11:0             out=audio       deps=1
-[ 13] Delay       det   T-2:mixInputDelay              in=7:0              out=audio       deps=1
-[ 14] Delay       det   T-2:mixInputDelay#1            in=12:0             out=audio       deps=1
-[ 15] MixAudio    det   T-2:trackAudioInput            in=13:0,14:0        out=audio       deps=2
-[ 16] Fader       det   T-2:trackFader                 in=15:0,-           out=audio       deps=1
-[ 17] Meter       det   T-2:trackMeter                 in=16:0             out=audio       deps=1
-[ 18] Gain        det   T-2:trackMute                  in=17:0             out=audio       deps=1
-[ 19] Output      det   T-2:hardwareOutput             in=18:0             out=-           deps=1
-ready=0,8
+[  3] Delay       det   T1/D7:subtractInputDelay       in=2:0              out=audio       deps=1
+[  4] Delay       det   T1/D7:subtractInputDelay#1     in=1:0              out=audio       deps=1
+[  5] Subtract    det   T1/D7:deviceDelta              in=3:0,4:0          out=audio       deps=2
+[  6] Gain        det   T1/D7:deviceGain               in=5:0              out=audio       deps=1
+[  7] Meter       det   T1/D7:deviceMeter              in=6:0              out=audio       deps=1
+[  8] Fader       det   T1:trackFader                  in=7:0,-            out=audio       deps=1
+[  9] Meter       det   T1:trackMeter                  in=8:0              out=audio       deps=1
+[ 10] Gain        det   T1:trackMute                   in=9:0              out=audio       deps=1
+[ 11] ClipAudio   det   T2:clipAudio                   in=-                out=audio       deps=0
+[ 12] MixAudio    det   T2:trackAudioInput             in=11:0             out=audio       deps=1
+[ 13] Fader       det   T2:trackFader                  in=12:0,-           out=audio       deps=1
+[ 14] Meter       det   T2:trackMeter                  in=13:0             out=audio       deps=1
+[ 15] Gain        det   T2:trackMute                   in=14:0             out=audio       deps=1
+[ 16] Delay       det   T-2:mixInputDelay              in=10:0             out=audio       deps=1
+[ 17] Delay       det   T-2:mixInputDelay#1            in=15:0             out=audio       deps=1
+[ 18] MixAudio    det   T-2:trackAudioInput            in=16:0,17:0        out=audio       deps=2
+[ 19] Fader       det   T-2:trackFader                 in=18:0,-           out=audio       deps=1
+[ 20] Meter       det   T-2:trackMeter                 in=19:0             out=audio       deps=1
+[ 21] Gain        det   T-2:trackMute                  in=20:0             out=audio       deps=1
+[ 22] Output      det   T-2:hardwareOutput             in=21:0             out=-           deps=1
+ready=0,11
 )");
 }
 
@@ -964,14 +974,34 @@ TEST_CASE("A rack-level sidechain is an edge to the modulation system",
     }
 }
 
-TEST_CASE("Delta solo subtracts the dry signal from what the processing made",
+TEST_CASE("Every device slot and every rack carries the subtract a delta is taken on",
           "[engine][plan][compiler]") {
-    SECTION("a device is measured against the audio it was handed") {
-        auto effect = makeEffect(7);
-        effect.deltaSolo = true;
+    SECTION("the flag does not change the plan at all") {
+        // Delta solo is a value, not structure. The subtract and the delay
+        // feeding it are in the plan whatever the model says, because that
+        // delay is a delay line and a delay line is history: one created at the
+        // moment the button was pressed would hand back its own length in
+        // silence first. So the two plans are the same plan, and the toggle is
+        // a value away.
+        std::vector<TrackInfo> off{makeTrack(1)};
+        off[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
 
+        auto soloed = makeEffect(7);
+        soloed.deltaSolo = true;
+        std::vector<TrackInfo> on{makeTrack(1)};
+        on[0].chain.fxChainElements.push_back(makeDeviceElement(soloed));
+
+        const auto planOff = magda::engine::compileRenderPlan(off, makeMaster());
+        const auto planOn = magda::engine::compileRenderPlan(on, makeMaster());
+        requireWellFormed(planOff);
+
+        CHECK(magda::engine::dumpPlan(planOff) == magda::engine::dumpPlan(planOn));
+        CHECK(magda::engine::planFingerprint(planOff) == magda::engine::planFingerprint(planOn));
+    }
+
+    SECTION("a device is measured against the audio it was handed") {
         std::vector<TrackInfo> tracks{makeTrack(1)};
-        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(effect));
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
 
         const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
         requireWellFormed(plan);
@@ -987,13 +1017,12 @@ TEST_CASE("Delta solo subtracts the dry signal from what the processing made",
         CHECK(inputOp(plan, delta, 1) == deviceInput(plan, 7));
 
         // In front of the slot's gain and meter, which read the delta rather
-        // than the device once there is one.
-        CHECK(inputOp(plan, opsWithRole(plan, OpRole::DeviceGain).front(), 0) == delta);
+        // than the device whenever one is being heard.
+        CHECK(rawInputOp(plan, opsWithRole(plan, OpRole::DeviceGain).front(), 0) == delta);
     }
 
     SECTION("the dry edge is taken in front of the device's own input alignment") {
         auto compressor = makeEffect(7);
-        compressor.deltaSolo = true;
         compressor.sidechain.type = SidechainConfig::Type::Audio;
         compressor.sidechain.sourceTrackId = 2;
 
@@ -1024,7 +1053,6 @@ TEST_CASE("Delta solo subtracts the dry signal from what the processing made",
     SECTION("a rack is measured one level up, around its own fader") {
         RackInfo rack;
         rack.id = 4;
-        rack.deltaSolo = true;
         ChainInfo chain;
         chain.id = 10;
         chain.elements.push_back(makeDeviceElement(makeEffect(7)));
@@ -1044,7 +1072,7 @@ TEST_CASE("Delta solo subtracts the dry signal from what the processing made",
         CHECK(plan.ops[static_cast<std::size_t>(delta)].key.rackId == 4);
 
         // The rack's volume and pan are on the wet path in the current engine
-        // whether or not delta solo is on, so the fader is inside what is
+        // whether or not a delta is being heard, so the fader is inside what is
         // measured; the dry side is what reached the rack.
         CHECK(inputOp(plan, delta, 0) == opsWithRole(plan, OpRole::RackFader).front());
 
@@ -1057,7 +1085,6 @@ TEST_CASE("Delta solo subtracts the dry signal from what the processing made",
     SECTION("a rack with no chains still has an output of its own to measure") {
         RackInfo rack;
         rack.id = 4;
-        rack.deltaSolo = true;
 
         std::vector<TrackInfo> tracks{makeTrack(1)};
         tracks[0].chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
@@ -1077,14 +1104,11 @@ TEST_CASE("Delta solo subtracts the dry signal from what the processing made",
     }
 
     SECTION("a device inside a rack inside a rack is keyed where it sits") {
-        auto effect = makeEffect(7);
-        effect.deltaSolo = true;
-
         RackInfo inner;
         inner.id = 5;
         ChainInfo innerChain;
         innerChain.id = 11;
-        innerChain.elements.push_back(makeDeviceElement(effect));
+        innerChain.elements.push_back(makeDeviceElement(makeEffect(7)));
         inner.chains.push_back(std::move(innerChain));
 
         RackInfo outer;
@@ -1113,9 +1137,27 @@ TEST_CASE("Delta solo subtracts the dry signal from what the processing made",
         CHECK(key.deviceId == 7);
         CHECK(inputOp(plan, delta, 0) == opsWithRole(plan, OpRole::DeviceProcess).front());
         CHECK(inputOp(plan, delta, 1) == deviceInput(plan, 7));
+
+        // Both racks are measured too, each around its own fader.
+        CHECK(countRole(plan, OpRole::RackDelta) == 2);
     }
 
-    SECTION("a bypassed device is not in the plan, so nothing is subtracted") {
+    SECTION("a transparent tap has nothing to measure") {
+        // Its output is its input, so its delta is silence by construction and
+        // there is no difference for a subtract to find. The same reason it has
+        // no gain trim and no meter of its own.
+        auto analysis = makeEffect(7);
+        analysis.deviceType = DeviceType::Analysis;
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(analysis));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(countRole(plan, OpRole::DeviceDelta) == 0);
+    }
+
+    SECTION("a bypassed device is not in the plan, so nothing measures it") {
         auto effect = makeEffect(7);
         effect.deltaSolo = true;
         effect.bypassed = true;

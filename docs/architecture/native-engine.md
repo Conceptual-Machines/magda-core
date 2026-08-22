@@ -200,21 +200,30 @@ flowchart TD
     L --> M["12 Output"]
 ```
 
-Two things that look like clutter and are not:
+Three things that look like clutter and are not:
 
-**An ordinary device is three ops.** Its processing, its gain trim and its meter tap are
-separate, so the differ can carry, rebuild and crossfade each independently. A device whose trim
-changed does not rebuild.
+**An ordinary device is four ops.** Its processing, its delta, its gain trim and its meter tap
+are separate, so the differ can carry, rebuild and crossfade each independently. A device whose
+trim changed does not rebuild.
 
-Three is the usual shape rather than a rule: an analysis device is a transparent passthrough
-with no trim and no tap, so it compiles to a bare process op, and a compile with device meters
-switched off emits no meter ops at all. A device soloing its delta gets a fourth, a `Subtract`
-between the processing and the trim, reading the device's output and the dry signal the device
-was handed. A rack soloing its delta gets the same op one level up, around its own fader. The
-dry edge is taken in front of whatever aligned the device's own input, so the alignment it needs
-is an ordinary `Delay` on the subtract's own fan-in rather than a second latency concept: what
-that delay resolves to is the whole distance the wet path travelled, the processing's latency
-included.
+Four is the usual shape rather than a rule: an analysis device is a transparent passthrough with
+no trim, no tap and no difference to take, so it compiles to a bare process op, and a compile
+with device meters switched off emits no meter ops at all.
+
+**The delta is a `Subtract`,** between the processing and the trim, reading the device's output
+and the dry signal the device was handed; a rack gets the same op one level up, around its own
+fader. The dry edge is taken in front of whatever aligned the device's own input, so the
+alignment it needs is an ordinary `Delay` on the subtract's own fan-in rather than a second
+latency concept: what that delay resolves to is the whole distance the wet path travelled, the
+processing's latency included.
+
+It is in the plan whether or not anything is soloing that delta, and what the model decides is
+only whether the subtraction happens (`OpValue::subtractsDry`). The delay on the dry edge is a
+delay line, and a delay line is history: one that came into being at the moment the button was
+pressed would hand back its own length in silence, so a device with any real latency would leak
+its wet signal for that long and then step. The current engine keeps the same line running for
+the same reason. Delta solo is therefore a value like mute, not structure like bypass, and
+turning it on compiles nothing.
 
 **Every op has a key.** `T1/D7:deviceGain` is the model location plus the structural role, and
 `validatePlan` proves keys are unique. That key is how a new plan recognises an op in the old

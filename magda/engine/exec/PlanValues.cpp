@@ -377,6 +377,32 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
             break;
         }
 
+        // The two ops the model toggles rather than recompiles. The subtract
+        // and the delay feeding it are in every plan, so turning delta solo on
+        // is a value away and the dry line has been running all along; what
+        // happens here is only whether anything is taken off the wet path.
+        case OpRole::DeviceDelta: {
+            const auto* device = findDevice(*track, key);
+            if (device == nullptr) {
+                report(id, "no device " + std::to_string(key.deviceId) +
+                               " in the model, leaving its delta unheard");
+                break;
+            }
+            value.subtractsDry = device->deltaSolo;
+            break;
+        }
+
+        case OpRole::RackDelta: {
+            const auto* rack = findRack(*track, key.rackId);
+            if (rack == nullptr) {
+                report(id, "no rack " + std::to_string(key.rackId) +
+                               " in the model, leaving its delta unheard");
+                break;
+            }
+            value.subtractsDry = rack->deltaSolo;
+            break;
+        }
+
         case OpRole::RackChainFader: {
             const auto* rack = findRack(*track, key.rackId);
             const auto* chain = rack == nullptr ? nullptr : findChain(*rack, key.chainId);
@@ -429,12 +455,10 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::TrackAudioInput:
         case OpRole::TrackMidiInput:
         case OpRole::DeviceProcess:
-        case OpRole::DeviceDelta:
         case OpRole::DeviceMeter:
         case OpRole::ChainMidiMerge:
         case OpRole::RackMix:
         case OpRole::RackMidiMix:
-        case OpRole::RackDelta:
         case OpRole::TrackMeter:
         // A modulation tap reads what reached it and has no value of its own.
         // Not even a mute: a modifier following a track is following what that

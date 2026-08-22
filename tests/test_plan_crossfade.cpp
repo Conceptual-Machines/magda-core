@@ -320,8 +320,8 @@ TEST_CASE("A device removed has nothing to fade from", "[engine][plan][crossfade
 
 TEST_CASE("A reorder fades the one edge that can be faded", "[engine][plan][crossfade]") {
     // Two devices swapped. The edge into the chain's new first device can fade,
-    // because what it used to read is still upstream of it; the other two edges
-    // read something that has itself changed, or something that now comes after
+    // because what it used to read is still upstream of it; the rest read
+    // something that has itself changed, or something that now comes after
     // them, and neither is the old signal.
     Bench bench;
     bench.setChain({7, 8});
@@ -334,7 +334,11 @@ TEST_CASE("A reorder fades the one edge that can be faded", "[engine][plan][cros
     INFO(magda::engine::dumpPlan(faded.plan));
 
     CHECK(faded.inserted == 1);
-    CHECK(faded.unfaded == 2);
+
+    // Four rather than two: each device is fed twice now, once into its
+    // processing and once into the dry edge of its own delta, and a reorder
+    // moves both.
+    CHECK(faded.unfaded == 4);
     CHECK(validatePlan(faded.plan).empty());
 }
 

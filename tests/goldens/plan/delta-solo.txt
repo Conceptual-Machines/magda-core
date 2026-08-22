@@ -1,5 +1,5 @@
 # delta-solo
-# a device and the rack around it, each against the dry signal it was handed
+# a device's delta inside a rack's, and what their dry edges wait for
 #
 # Generated. See tests/test_plan_goldens.cpp to regenerate.
 
