@@ -73,6 +73,13 @@ class AIPromptEditorComponent : public juce::Component {
         setSize(520, 250);
     }
 
+    // Launched async into a DialogWindow of its own, so it can be on screen
+    // when the theme changes under it. The hosting window's background is a
+    // colour override handed over once at construction.
+    void lookAndFeelChanged() override {
+        refreshHostWindowBackground(*this);
+    }
+
     void resized() override {
         auto bounds = getLocalBounds().reduced(16);
         description_.setBounds(bounds.removeFromTop(24));
