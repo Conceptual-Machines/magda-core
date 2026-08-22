@@ -1808,7 +1808,8 @@ TEST_CASE("A multi-out link survives its source not being compiled", "[engine][p
     // questions. Everything that leaves an instrument out of the plan would
     // otherwise read as a broken link, and the track would be told its pair
     // does not exist when the only thing that happened is that the chain it
-    // sits on is not running.
+    // sits on is not running. Bypass is the other way in, and has its own case
+    // above.
     SECTION("the source track's insert chain is powered off") {
         std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 1)};
         tracks[0].chain.enabled = false;
@@ -1820,18 +1821,6 @@ TEST_CASE("A multi-out link survives its source not being compiled", "[engine][p
         CHECK(plan.diagnostics.empty());
         CHECK(deviceProcess(plan, 7) == magda::engine::INVALID_OP_ID);
         CHECK(plan.ops[static_cast<std::size_t>(trackInput(plan, 2))].inputs.empty());
-    }
-
-    SECTION("the instrument is bypassed") {
-        auto instrument = makeMultiOutInstrument(7, 3);
-        instrument.bypassed = true;
-
-        std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 1)};
-        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(instrument));
-
-        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
-        requireWellFormed(plan);
-        CHECK(plan.diagnostics.empty());
     }
 
     SECTION("but a link to a track that does not exist is still reported") {
