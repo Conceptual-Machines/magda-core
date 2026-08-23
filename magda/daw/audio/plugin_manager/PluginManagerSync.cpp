@@ -133,10 +133,31 @@ void updateDeviceCapabilityFlags(DeviceInfo& device, te::Plugin& plugin) {
 
     // The channel counts the chain model compiles against, asked the way the
     // incumbent's chain wiring asks them.
+    //
+    // A plugin whose instance is not there yet, or never will be, answers
+    // nothing rather than answering wrong: te::ExternalPlugin fills neither
+    // array when it has no AudioPluginInstance, so both come back empty. The
+    // incumbent asks again every time it rewires a chain and recovers on its
+    // own; the model is told once and keeps it, so a reading taken before the
+    // plugin arrived would leave a real device wired to no audio at all for
+    // the rest of the session.
+    //
+    // So nothing said means nothing recorded. What the fields already hold
+    // stands, and their default is the stereo the incumbent falls back to for
+    // a chain node whose plugin it cannot find. A plugin that really is
+    // silent on both sides is read as stereo and wired as a passthrough it
+    // writes nothing to, which costs a block of copying and no audio; the
+    // other way round costs the device.
+    //
+    // Same shape as the promoted flags above, and for the same reason: a
+    // reading taken when the plugin is not there must never be able to take
+    // routing away.
     juce::StringArray audioInputs, audioOutputs;
     plugin.getChannelNames(&audioInputs, &audioOutputs);
-    device.audioInputChannels = audioInputs.size();
-    device.audioOutputChannels = audioOutputs.size();
+    if (!audioInputs.isEmpty() || !audioOutputs.isEmpty()) {
+        device.audioInputChannels = audioInputs.size();
+        device.audioOutputChannels = audioOutputs.size();
+    }
 }
 
 // Faust's processor owns a dynamic canSidechain flag, while the generic

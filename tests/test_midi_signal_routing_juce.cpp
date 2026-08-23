@@ -102,6 +102,8 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
             [this] { testRackSyncRoutesChainOutputIndexToRackPins(); });
         magda::test::runWithCleanJuceState(
             [this] { testRackSyncInstrumentInjectsAudioAndPassesMidiToFx(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testPluginWithNoInstanceDoesNotRewriteChannelCounts(); });
         magda::test::runWithCleanJuceState([this] { testRackDeviceStampsLiveChannelCounts(); });
         magda::test::runWithCleanJuceState(
             [this] { testRackSyncMidiSidechainFxDoesNotReceiveChainMidi(); });
@@ -678,6 +680,72 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
                "Instrument right audio should be injected into the downstream FX");
 
         rackSync.removeRack(rack.id);
+    }
+
+    void testPluginWithNoInstanceDoesNotRewriteChannelCounts() {
+        beginTest("A plugin with no instance leaves the channel counts alone");
+
+        // te::ExternalPlugin fills neither channel-name array when it has no
+        // AudioPluginInstance, so it answers nought in and nought out: the
+        // shape of a plugin still loading, or one whose scan is stale. The
+        // incumbent asks again on every rewire and recovers; the model is told
+        // once and keeps it, so recording that reading would leave a real
+        // device wired to no audio at all for the rest of the session.
+        auto* editPtr = magda::test::getSharedEngine().getEdit();
+        expect(editPtr != nullptr, "The shared engine must have an Edit");
+        if (editPtr == nullptr)
+            return;
+
+        auto& tm = magda::TrackManager::getInstance();
+        const auto trackId = tm.createTrack("Silent Reporter");
+        const auto rackId = tm.addRackToTrack(trackId, "Silent Rack");
+        auto* rackInfo = tm.getRack(trackId, rackId);
+        expect(rackInfo != nullptr, "Rack should have been added to the track");
+        if (rackInfo == nullptr || rackInfo->chains.empty())
+            return;
+
+        const auto chainId = rackInfo->chains[0].id;
+        auto device = makeInternalDevice(9911, "Ghost", "ghost");
+        device.audioInputChannels = 1;
+        device.audioOutputChannels = 2;
+        rackInfo->chains[0].elements.push_back(magda::makeDeviceElement(device));
+
+        juce::PluginDescription desc;
+        desc.name = "Ghost";
+        desc.pluginFormatName = "VST3";
+        desc.fileOrIdentifier = "/nonexistent/Ghost.vst3";
+        desc.uniqueId = 0x47484f53;
+        desc.numInputChannels = 2;
+        desc.numOutputChannels = 2;
+
+        auto shell =
+            editPtr->getPluginCache().createNewPlugin(te::ExternalPlugin::xmlTypeName, desc);
+        expect(shell != nullptr, "A description with no file behind it still makes a shell");
+        if (shell == nullptr)
+            return;
+
+        juce::StringArray ins, outs;
+        shell->getChannelNames(&ins, &outs);
+        expectEquals(ins.size(), 0, "The shell should report no inputs");
+        expectEquals(outs.size(), 0, "The shell should report no outputs");
+
+        const auto devicePath =
+            magda::ChainNodePath::rack(trackId, rackId).withChain(chainId).withDevice(device.id);
+        magda::test::getSharedEngine()
+            .getAudioBridge()
+            ->getPluginManager()
+            .registerRackPluginProcessor(devicePath, shell, device);
+
+        auto* canonical = tm.getDeviceInChainByPath(devicePath);
+        expect(canonical != nullptr, "The rack's device should resolve by path");
+        if (canonical != nullptr) {
+            expectEquals(canonical->audioInputChannels, 1,
+                         "A plugin that reports nothing must not rewrite the input width");
+            expectEquals(canonical->audioOutputChannels, 2,
+                         "A plugin that reports nothing must not rewrite the output width");
+        }
+
+        tm.deleteTrack(trackId);
     }
 
     void testRackDeviceStampsLiveChannelCounts() {
