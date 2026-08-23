@@ -618,6 +618,11 @@ bool apply(const Edit& edit, Project& project) {
             return true;
         }
 
+        // Bypass and delta solo are one switch with three positions, not two
+        // switches: TrackManager clears each when the other is set, for devices
+        // and for racks. A generator that set them independently would build a
+        // project no user can reach, and the compiler reports that pair rather
+        // than compiling it.
         case EditKind::BypassDevice: {
             DeviceAt at;
             if (!findDevice(project, edit.deviceId, at))
@@ -627,6 +632,8 @@ bool apply(const Edit& edit, Project& project) {
             if (device.bypassed == edit.flag)
                 return false;
             device.bypassed = edit.flag;
+            if (edit.flag)
+                device.deltaSolo = false;
             return true;
         }
 
@@ -639,6 +646,8 @@ bool apply(const Edit& edit, Project& project) {
             if (device.deltaSolo == edit.flag)
                 return false;
             device.deltaSolo = edit.flag;
+            if (edit.flag)
+                device.bypassed = false;
             return true;
         }
 

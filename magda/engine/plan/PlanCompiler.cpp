@@ -641,8 +641,27 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     const auto targets = multiOutTargets_.find({site.trackId, device.id});
     const bool hasTargets = ownsMultiOutPairs && targets != multiOutTargets_.end();
 
-    if (device.bypassed)
+    if (device.bypassed) {
+        // Bypass removes the device from the plan, so there is no output to
+        // measure a difference against and the chain passes through unchanged,
+        // which is what the current engine does: bypass reaches it as
+        // `Plugin::setEnabled(false)` and PluginNode's delta subtraction is
+        // guarded on the plugin being enabled.
+        //
+        // The model's own setters cannot produce this pair - bypassing clears
+        // delta solo and enabling delta solo clears bypass, for devices and for
+        // racks (TrackManager::setDeviceBypassed and the rest) - so a project
+        // holding both came in through deserialisation, which writes the two
+        // fields straight into the struct. Reported rather than ignored,
+        // because the delta button will be lit over a device that is passing
+        // its input through, and nothing else would say why.
+        if (device.deltaSolo)
+            diagnose("device " + std::to_string(device.id) + " on track " +
+                     std::to_string(site.trackId) +
+                     ": delta solo on a bypassed device measures nothing, the chain passes "
+                     "through unchanged");
         return signal;
+    }
 
     const auto node = routing::makeRoutingNode(device);
 
@@ -712,9 +731,20 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     // subtracts it too: those are MAGDA's own and sit outside the plugin, so
     // what they trim and report is the delta while one is being heard.
     //
-    // A transparent tap has none of the four: its output is its input, so its
-    // delta is silence by construction and there is nothing for the subtract to
-    // find.
+    // A transparent tap has none of the four. Its output is its input, so the
+    // difference it would take is silence whatever the signal, and the model
+    // cannot ask for it: the delta button belongs to DeviceType::Effect alone
+    // (DeviceSlotHeaderSpec's `visibility.delta`), and nothing else writes the
+    // flag. A stored project can still carry one, because the field is
+    // serialised on every device, and that is worth a word rather than a
+    // silence - the plan hands back the chain where the flag asks for nothing
+    // at all.
+    if (isTransparentTap(device) && device.deltaSolo)
+        diagnose("device " + std::to_string(device.id) + " on track " +
+                 std::to_string(site.trackId) +
+                 ": delta solo on an analysis device has nothing to subtract, the chain passes "
+                 "through unchanged");
+
     if (!isTransparentTap(device)) {
         key.role = OpRole::DeviceDelta;
         out.audio = emitDelta(key, out.audio, signal.audio);
@@ -746,8 +776,16 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
 }
 
 ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, ChainSignal signal) {
-    if (rack.bypassed)
+    if (rack.bypassed) {
+        // The device case one level up, and unreachable the same way: the
+        // model's setters keep a rack's bypass and its delta solo apart, so
+        // both together arrived from a stored project.
+        if (rack.deltaSolo)
+            diagnose("rack " + std::to_string(rack.id) +
+                     ": delta solo on a bypassed rack measures nothing, the chain passes through "
+                     "unchanged");
         return signal;
+    }
 
     // Refused rather than compiled to some depth (RackNesting.hpp), and passed
     // through the way a bypassed one is, so the rest of the chain still reaches
