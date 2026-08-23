@@ -432,8 +432,8 @@ HandlerResult clipsCreateMidi(MagdaApi& api, const juce::var& input, const Reque
         input["view"].toString() == "session" ? ClipView::Session : ClipView::Arrangement;
     const auto id = runCommandAndRead<CreateClipCommand>(
         api, [](const CreateClipCommand& command) { return command.getCreatedClipId(); },
-        ClipType::MIDI, trackId, BeatPosition(static_cast<double>(input["startBeat"])),
-        BeatDuration(static_cast<double>(input["lengthBeats"])), juce::String(), view);
+        ClipType::MIDI, trackId, BeatPosition{static_cast<double>(input["startBeat"])},
+        BeatDuration{static_cast<double>(input["lengthBeats"])}, juce::String(), view);
     if (id == INVALID_CLIP_ID)
         return HandlerResult::fail(ErrorCode::InternalError, "clip creation failed");
     return HandlerResult::ok(idResult(id));

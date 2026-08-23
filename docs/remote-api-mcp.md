@@ -113,25 +113,32 @@ without noticing.
 
 ### Where the bridge lives
 
-The build stages `magda-mcp` beside the MAGDA executable, which is the one
-location that means something on all three platforms:
+A host stores the bridge's absolute path once and launches it later, on its own
+schedule, with MAGDA possibly closed. So the path has to be permanent, and it has
+to survive whatever the host does to the string. Only macOS meets that with the
+copy staged beside MAGDA:
 
 | Platform | Path |
 |---|---|
 | macOS | `/Applications/MAGDA.app/Contents/MacOS/magda-mcp` |
-| Windows | `C:\Program Files\MAGDA\magda-mcp.exe` |
-| Linux | published as a **separate release asset**, `magda-mcp-<version>-Linux-x86_64` |
+| Windows | `C:\ProgramData\MAGDA\bin\magda-mcp.exe` |
+| Linux | `<data dir>/bin/magda-mcp`, staged on first use |
 
-Linux is the exception because an AppImage is a single squashfs file: a path
-inside it exists only while it is mounted, and a mount point is different every
-run, so nothing inside can go in a host's config. The bridge is in the AppImage
-too — beside the binary, for an extracted install — but the asset is what a user
-should point at. Drop it anywhere on `PATH`; it locates MAGDA through the
-discovery record and does not care where it was run from.
+**Windows** installs the bridge to `%ProgramData%` rather than `$INSTDIR`. Hosts
+disagree on whether a configured command is an argv array or a string they split
+on whitespace, and for the splitters the space in `C:\Program Files\MAGDA` breaks
+the command in two. `%ProgramData%` is a fixed name on every supported Windows and
+holds no user name, so it is space-free whoever is logged in.
 
-The settings page knows this: running from an AppImage it prints a placeholder
-and disables Copy rather than publishing its own `/tmp/.mount_…` path, which
-would stop existing the moment MAGDA quit.
+**Linux** ships the bridge inside the AppImage, which is a single squashfs file:
+a path inside it exists only while mounted, and the mount point differs every run.
+So the first time the MCP page is opened, MAGDA copies the bridge out to
+`<data dir>/bin/` and publishes that path. It re-copies whenever the staged binary
+stops matching the one in the image, so upgrading the AppImage upgrades the bridge.
+
+None of this moves the bridge away from MAGDA in any sense that matters — it
+locates a running instance through the discovery record, not by relative path, so
+it works from wherever it is run.
 
 It is signed on macOS and Windows in its own right, not just as part of the
 bundle. An MCP host launches it directly, so Gatekeeper and SmartScreen judge it

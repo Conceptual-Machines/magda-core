@@ -16,7 +16,13 @@ concurrency:
 
 jobs:
   build-macos:
-    runs-on: macos-14  # Apple Silicon; includes the CLAP semantic-search backend (ORT-only on arm64)
+    # Apple Silicon; includes the CLAP semantic-search backend (ORT-only on arm64).
+    # macos-15 rather than macos-14: macos-14's Apple Clang predates P0960
+    # (parenthesized aggregate initialisation), so C++20 that compiles on every other
+    # leg failed here and only at release time. It also put the two Mac binaries on
+    # different compilers, since the x86_64 job below is already macos-15-intel.
+    # CMAKE_OSX_DEPLOYMENT_TARGET below still pins what the build supports.
+    runs-on: macos-15
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -880,9 +886,10 @@ jobs:
           Write-Warning "magda_plugin_scanner.exe not found at $scanner"
         }
 
-        # The MCP bridge (#1858). An MCP host is configured with its absolute
-        # path, so it has to land in the install directory beside MAGDA.exe —
-        # that is the path the AI settings page tells the user to paste.
+        # The MCP bridge (#1858). Staged here for the installer to pick up; the
+        # installer puts it under %ProgramData%\MAGDA\bin rather than $INSTDIR,
+        # because a host that splits its configured command on whitespace chokes
+        # on the space in "C:\Program Files". See magda-installer.nsi.
         $mcpBridge = Join-Path $exeDir "magda-mcp.exe"
         if (Test-Path $mcpBridge) {
           Copy-Item $mcpBridge "$stage\magda-mcp.exe"
@@ -1131,10 +1138,11 @@ jobs:
           echo "Warning: magda_plugin_scanner not found"
         fi
 
-        # The MCP bridge (#1858), beside the binary like everywhere else so the
-        # AI settings page can name it. Also kept as a standalone release asset
-        # below: an AppImage is a single squashfs file, so a path inside it only
-        # exists while it is mounted and cannot go in an MCP host's config.
+        # The MCP bridge (#1858). An AppImage is a single squashfs file, so this
+        # path only exists while the image is mounted and cannot itself go in an
+        # MCP host's config. MAGDA copies it out to the data dir on first use and
+        # publishes that path instead, so shipping it inside is enough — see
+        # McpPage::stagedBridgeExecutable in ConnectionsDialog.cpp.
         MCP_BRIDGE=$(find build -name "magda-mcp" -type f -executable | head -1)
         if [ -n "$MCP_BRIDGE" ]; then
           echo "Found MCP bridge: $MCP_BRIDGE"
@@ -1242,23 +1250,6 @@ jobs:
         sha256sum "$APPIMAGE" > "${APPIMAGE}.sha256"
         cat "${APPIMAGE}.sha256"
 
-        # The MCP bridge ships separately on Linux because the AppImage cannot
-        # expose a stable path to anything inside it. Users drop this on their
-        # PATH and name it in their MCP host's config; it finds MAGDA through the
-        # discovery record either way, so it does not care where it lives.
-        MCP_BRIDGE=$(find build -name "magda-mcp" -type f -executable | head -1)
-        if [ -n "$MCP_BRIDGE" ]; then
-          cp "$MCP_BRIDGE" "magda-mcp-${VERSION}-Linux-x86_64"
-          chmod +x "magda-mcp-${VERSION}-Linux-x86_64"
-          sha256sum "magda-mcp-${VERSION}-Linux-x86_64" > "magda-mcp-${VERSION}-Linux-x86_64.sha256"
-          cat "magda-mcp-${VERSION}-Linux-x86_64.sha256"
-        else
-          # The asset Linux users are told to download, so its absence is the
-          # whole feature missing on that platform rather than a detail.
-          echo "::error::magda-mcp not found; the Linux MCP asset would be missing"
-          exit 1
-        fi
-
     - name: Upload artifact
       uses: actions/upload-artifact@v7
       with:
@@ -1266,8 +1257,6 @@ jobs:
         path: |
           MAGDA-*-Linux-x86_64.AppImage
           MAGDA-*-Linux-x86_64.AppImage.sha256
-          magda-mcp-*-Linux-x86_64
-          magda-mcp-*-Linux-x86_64.sha256
 
   create-release:
     # Publish a GitHub Release only for tag pushes. A workflow_dispatch run is

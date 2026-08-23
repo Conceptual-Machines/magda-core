@@ -719,11 +719,12 @@ def main() -> int:
     return verdict(report)
 
 
-#: The one check the stub cannot satisfy. The harness looks for `magda-mcp`
-#: beside the executable behind the discovery record's pid, and that pid here
-#: is the Python running this file. A *passing* result would mean the check was
-#: not looking at anything, so it is expected to fail rather than excused.
-EXPECTED_FAILURES = {"magda-mcp is staged beside the MAGDA executable"}
+#: The one check the stub cannot satisfy. The harness resolves the executable
+#: behind the discovery record's pid, and that pid here is the Python running
+#: this file, so the bridge is never where a real install would put it. A
+#: *passing* result would mean the check was not looking at anything, so it is
+#: expected to fail rather than excused.
+EXPECTED_FAILURES = {"magda-mcp is where the settings page points"}
 
 
 def verdict(report) -> int:

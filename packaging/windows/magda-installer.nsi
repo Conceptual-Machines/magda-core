@@ -11,6 +11,10 @@ InstallDirRegKey HKLM "Software\MAGDA" "Install_Dir"
 RequestExecutionLevel admin
 Unicode True
 
+; %ProgramData%\MAGDA\bin — where the MCP bridge is installed. See the Install
+; section for why it is not under $INSTDIR.
+Var McpBinDir
+
 ; UI settings
 !define MUI_ABORTWARNING
 
@@ -62,9 +66,31 @@ vc_redist_ok:
     File "${__FILEDIR__}\MAGDA.exe"
     File "${__FILEDIR__}\mgd_doc_icon.ico"
     File /nonfatal "${__FILEDIR__}\magda_plugin_scanner.exe"
-    ; The MCP bridge (#1858). An MCP host is configured with its absolute
-    ; path under $INSTDIR, which is what the AI settings page hands the user.
+
+    ; The MCP bridge (#1858) goes to %ProgramData%\MAGDA\bin, NOT $INSTDIR.
+    ; An MCP host is configured with its absolute path and launches it itself,
+    ; and hosts differ on whether that string is an argv array or something they
+    ; split on whitespace. The default $INSTDIR is "C:\Program Files\MAGDA", so
+    ; for the splitters the space breaks the command. %ProgramData% is a fixed
+    ; name on every supported Windows and carries no user name, making it
+    ; space-free regardless of who is logged in.
+    ;
+    ; The bridge does not need to sit beside MAGDA: it locates a running
+    ; instance through the discovery record under the data dir, not by relative
+    ; path. SetShellVarContext is restored straight away so the Start Menu and
+    ; Desktop shortcuts below stay per-user as before.
+    SetShellVarContext all
+    StrCpy $McpBinDir "$APPDATA\MAGDA\bin"
+    SetShellVarContext current
+
+    SetOutPath "$McpBinDir"
     File /nonfatal "${__FILEDIR__}\magda-mcp.exe"
+    SetOutPath $INSTDIR
+
+    ; Upgrading in place over an install that predates the move: the copy left
+    ; in $INSTDIR is never used again, and leaving it invites someone to
+    ; configure a host with the path that has the space in it.
+    Delete "$INSTDIR\magda-mcp.exe"
 
     ; All runtime DLLs staged next to MAGDA.exe: ONNX Runtime (a load-time app
     ; dependency) and libxml2 + its transitive deps (DAWproject XSD validation).
@@ -157,6 +183,7 @@ Section "Uninstall"
     Delete "$INSTDIR\MAGDA.exe"
     Delete "$INSTDIR\mgd_doc_icon.ico"
     Delete "$INSTDIR\magda_plugin_scanner.exe"
+    ; Installs predating the move to %ProgramData% put the bridge here.
     Delete "$INSTDIR\magda-mcp.exe"
     Delete "$INSTDIR\*.dll"
     Delete "$INSTDIR\Uninstall.exe"
@@ -168,6 +195,15 @@ Section "Uninstall"
     RMDir /r "$INSTDIR\dawproject"
     RMDir /r "$INSTDIR\models"
     RMDir "$INSTDIR"
+
+    ; The MCP bridge, out under %ProgramData%. Both RMDirs are non-recursive on
+    ; purpose: MAGDA\bin goes only if the bridge was all it held, and MAGDA only
+    ; if nothing else has since been written there.
+    SetShellVarContext all
+    Delete "$APPDATA\MAGDA\bin\magda-mcp.exe"
+    RMDir "$APPDATA\MAGDA\bin"
+    RMDir "$APPDATA\MAGDA"
+    SetShellVarContext current
 
     Delete "$SMPROGRAMS\MAGDA\*.*"
     RMDir "$SMPROGRAMS\MAGDA"
