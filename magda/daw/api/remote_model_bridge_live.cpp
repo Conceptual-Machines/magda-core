@@ -5,6 +5,7 @@
 #include "../project/ProjectManager.hpp"
 #include "remote_model_bridge.hpp"
 #include "remote_service.hpp"
+#include "transport_api.hpp"
 
 namespace magda::remote {
 
@@ -33,18 +34,23 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
                                       public SelectionManagerListener,
                                       public ProjectManagerListener {
   public:
-    explicit Impl(RemoteApiService& service)
+    explicit Impl(RemoteApiService& service, TransportApi* transport)
         // ProjectManager starts an autosave timer in its constructor, so
         // constructing it without an event loop is invalid. A host with no
         // MessageManager has no project open/close lifecycle to observe in the
         // first place, so skip it there rather than forcing the singleton into
         // existence just to listen to it.
         : service_(service),
+          transport_(transport),
           observingProject_(juce::MessageManager::getInstanceWithoutCreating() != nullptr) {
         TrackManager::getInstance().addListener(this);
         ClipManager::getInstance().addListener(this);
         AutomationManager::getInstance().addListener(this);
         SelectionManager::getInstance().addListener(this);
+        if (transport_ != nullptr) {
+            transportListener_ = transport_->addStateListener(
+                [this] { service_.noteModelActivity(Topic::Transport); });
+        }
         if (observingProject_)
             ProjectManager::getInstance().addListener(this);
     }
@@ -52,6 +58,8 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
     ~Impl() override {
         if (observingProject_)
             ProjectManager::getInstance().removeListener(this);
+        if (transport_ != nullptr && transportListener_ != 0)
+            transport_->removeStateListener(transportListener_);
         SelectionManager::getInstance().removeListener(this);
         AutomationManager::getInstance().removeListener(this);
         ClipManager::getInstance().removeListener(this);
@@ -187,6 +195,8 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
     // ---- ProjectManagerListener -----------------------------------------
 
     void projectOpened(const ProjectInfo&) override {
+        if (transport_ != nullptr)
+            transport_->refreshStateSource();
         // Everything queued against the outgoing project is now addressed at
         // state that no longer exists. This is the trigger the service's
         // cancellation path exists for, and it already bumps the revision and
@@ -195,6 +205,8 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
         service_.projectReplaced();
     }
     void projectClosed() override {
+        if (transport_ != nullptr)
+            transport_->refreshStateSource();
         service_.projectReplaced();
     }
     void projectSaved(const ProjectInfo&) override {
@@ -206,11 +218,13 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
 
   private:
     RemoteApiService& service_;
+    TransportApi* transport_ = nullptr;
+    int transportListener_ = 0;
     bool observingProject_ = false;
 };
 
-ModelChangeBridge::ModelChangeBridge(RemoteApiService& service)
-    : impl_(std::make_unique<Impl>(service)) {}
+ModelChangeBridge::ModelChangeBridge(RemoteApiService& service, TransportApi* transport)
+    : impl_(std::make_unique<Impl>(service, transport)) {}
 
 ModelChangeBridge::~ModelChangeBridge() = default;
 

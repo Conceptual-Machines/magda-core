@@ -173,6 +173,13 @@ TEST_CASE("Origin is checked only when the client sends one", "[remote][websocke
         REQUIRE(client.connect());
     }
 
+    SECTION("a listed browser origin without a token is refused") {
+        httplib::Headers headers;
+        headers.emplace("Origin", kOrigin);
+        httplib::ws::WebSocketClient client(endpoint(server) + "?token=", headers);
+        REQUIRE_FALSE(client.connect());
+    }
+
     SECTION("a native client sending no Origin is allowed") {
         // Absent is not the same as unrecognised. Treating it as a refusal would
         // lock out every non-browser client, which is most of them.

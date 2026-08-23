@@ -285,7 +285,7 @@ struct SubscriptionHub::Client {
 };
 
 /**
- * Drives `sampleNow` for continuous topics and transport-state observation.
+ * Drives `sampleNow` for continuous topics.
  *
  * Separate from the hub for the same reason `ChangeSource::Pump` is: the header
  * does not inherit `juce::Timer`, and a headless host — where constructing a
@@ -442,7 +442,6 @@ void SubscriptionHub::releaseIdleTopicsLocked() {
 void SubscriptionHub::applyTopology() {
     bool wantChanges = false;
     bool wantSampler = false;
-    bool wantTransport = false;
     int existing = 0;
     {
         const std::lock_guard<std::mutex> lock(mutex_);
@@ -454,21 +453,10 @@ void SubscriptionHub::applyTopology() {
             const auto topic = static_cast<Topic>(index);
             if (!anySubscriberLocked(topic))
                 continue;
-            if (isContinuousTopic(topic) || topic == Topic::Transport)
+            if (isContinuousTopic(topic))
                 wantSampler = true;
-            if (topic == Topic::Transport)
-                wantTransport = true;
             if (!isContinuousTopic(topic))
                 wantChanges = true;
-        }
-        if (!wantTransport) {
-            transportStateKnown_ = false;
-        } else if (!transportStateKnown_) {
-            auto& transport = api_.transport();
-            transportPlaying_ = transport.isPlaying();
-            transportRecording_ = transport.isRecording();
-            transportLooping_ = transport.isLoopEnabled();
-            transportStateKnown_ = true;
         }
         existing = changeToken_;
 
@@ -764,43 +752,21 @@ void SubscriptionHub::publish(const std::vector<ChangeSource::Change>& changes) 
 }
 
 void SubscriptionHub::sampleNow() {
-    bool transportChanged = false;
-    {
-        const std::lock_guard<std::mutex> lock(mutex_);
-        if (shutdown_)
-            return;
+    const std::lock_guard<std::mutex> lock(mutex_);
+    if (shutdown_)
+        return;
 
-        if (anySubscriberLocked(Topic::Transport)) {
-            auto& transport = api_.transport();
-            const auto playing = transport.isPlaying();
-            const auto recording = transport.isRecording();
-            const auto looping = transport.isLoopEnabled();
-            transportChanged = transportStateKnown_ &&
-                               (playing != transportPlaying_ || recording != transportRecording_ ||
-                                looping != transportLooping_);
-            transportStateKnown_ = true;
-            transportPlaying_ = playing;
-            transportRecording_ = recording;
-            transportLooping_ = looping;
-        }
+    const auto revision = service_.currentRevision();
+    for (const auto topic : {Topic::Meters, Topic::Playhead}) {
+        if (!anySubscriberLocked(topic))
+            continue;
 
-        const auto revision = service_.currentRevision();
-        for (const auto topic : {Topic::Meters, Topic::Playhead}) {
-            if (!anySubscriberLocked(topic))
-                continue;
-
-            const SubscriptionEvent event{topic, SubscriptionEvent::Type::Sample, revision,
-                                          sampleTopic(topic)};
-            for (auto& client : clients_)
-                if (client.subscribed[indexOf(topic)])
-                    deliverLocked(client, event);
-        }
+        const SubscriptionEvent event{topic, SubscriptionEvent::Type::Sample, revision,
+                                      sampleTopic(topic)};
+        for (auto& client : clients_)
+            if (client.subscribed[indexOf(topic)])
+                deliverLocked(client, event);
     }
-
-    // Use the normal coalescing path so transport updates have the same ordering
-    // and backpressure behaviour as every other local model change.
-    if (transportChanged)
-        service_.noteModelActivity(Topic::Transport);
 }
 
 bool SubscriptionHub::dropAbandonedLocked() {

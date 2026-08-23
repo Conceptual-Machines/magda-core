@@ -1,6 +1,8 @@
 #pragma once
 
 #include <functional>
+#include <memory>
+#include <vector>
 
 #include "transport_api.hpp"
 
@@ -26,9 +28,10 @@ class TransportApiLive : public TransportApi {
     using EditGetter = std::function<tracktion::Edit*()>;
     using TransportFn = std::function<void()>;
 
-    void setEditGetter(EditGetter g) {
-        getEdit_ = std::move(g);
-    }
+    TransportApiLive();
+    ~TransportApiLive() override;
+
+    void setEditGetter(EditGetter g);
 
     /** Route play() through this callback when set, instead of going
      *  straight to Tracktion's transport. The application wires this to
@@ -61,16 +64,30 @@ class TransportApiLive : public TransportApi {
     double getPositionBeats() const override;
     void setPositionBeats(double beats) override;
     double beatsAtBarOffset(double beats, int deltaBars) const override;
+    int addStateListener(StateListener listener) override;
+    void removeStateListener(int token) override;
+    void refreshStateSource() override;
 
   private:
+    class StateObserver;
+    struct ListenerEntry {
+        int token = 0;
+        StateListener callback;
+    };
+
     tracktion::Edit* edit() const {
         return getEdit_ ? getEdit_() : nullptr;
     }
+
+    void notifyStateListeners();
 
     EditGetter getEdit_;
     TransportFn playDispatch_;
     TransportFn stopDispatch_;
     std::function<void(bool)> loopDispatch_;
+    std::vector<ListenerEntry> stateListeners_;
+    std::unique_ptr<StateObserver> stateObserver_;
+    int nextStateListenerToken_ = 1;
 };
 
 }  // namespace magda

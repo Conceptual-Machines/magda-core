@@ -113,9 +113,8 @@ class MeterSource {
  * Nothing marks them: the playhead moves without notifying anyone and meters are
  * a continuous signal. They are sampled on their own timer instead, at
  * `Options::samplingIntervalMs`, latest value wins. A client that does not
- * subscribe to them costs nothing, and the timer does not run. The same sampler
- * observes play/record/loop while `transport` has a subscriber, because local
- * transport controls have no model-listener callback to mark that topic.
+ * subscribe to them costs nothing, and the timer does not run. Discrete
+ * play/record/loop changes arrive through `ModelChangeBridge` listeners instead.
  *
  * ## Falling behind
  *
@@ -166,7 +165,7 @@ class SubscriptionHub {
     using Completion = std::function<void(Response)>;
 
     struct Options {
-        /// Cadence for `meters`, `playhead`, and transport observation. 20 Hz:
+        /// Cadence for `meters` and `playhead`. 20 Hz:
         /// fast enough for a meter or moving playhead readout, and an order of
         /// magnitude below the block rate that produces the underlying values.
         int samplingIntervalMs = 50;
@@ -223,9 +222,8 @@ class SubscriptionHub {
      */
     void publish(const std::vector<ChangeSource::Change>& changes);
 
-    /// Read and push `meters` and `playhead`, and detect local transport state
-    /// changes. Driven by the sampling timer; exposed for the same reason as
-    /// `publish`.
+    /// Read and push `meters` and `playhead`. Driven by the sampling timer;
+    /// exposed for the same reason as `publish`.
     void sampleNow();
 
     /**
@@ -293,11 +291,6 @@ class SubscriptionHub {
 
     std::unique_ptr<MeterSource> meters_;
     std::unique_ptr<Sampler> sampler_;
-    bool transportStateKnown_ = false;
-    bool transportPlaying_ = false;
-    bool transportRecording_ = false;
-    bool transportLooping_ = false;
-
     std::shared_ptr<Gate> gate_;
     int changeToken_ = 0;
     bool topologyPending_ = false;

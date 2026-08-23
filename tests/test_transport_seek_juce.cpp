@@ -22,11 +22,9 @@ namespace te = tracktion;
 
 namespace {
 
-/// A transport reading `edit`, wired the way MagdaApiLive wires one.
-magda::TransportApiLive transportFor(te::Edit& edit) {
-    magda::TransportApiLive transport;
+/// Wire a transport to `edit` the way MagdaApiLive wires one.
+void useEdit(magda::TransportApiLive& transport, te::Edit& edit) {
     transport.setEditGetter([&edit] { return &edit; });
-    return transport;
 }
 
 /// Put a time signature at `beat`, which is how a meter change is expressed.
@@ -59,7 +57,8 @@ class TransportSeekBarsTests final : public juce::UnitTest {
             if (edit == nullptr)
                 return;
 
-            auto transport = transportFor(*edit);
+            magda::TransportApiLive transport;
+            useEdit(transport, *edit);
             transport.setPositionBeats(12.0);
 
             transport.seekBars(-1);
@@ -82,7 +81,8 @@ class TransportSeekBarsTests final : public juce::UnitTest {
 
             setTimeSig(*edit, 8.0, 7, 8);
 
-            auto transport = transportFor(*edit);
+            magda::TransportApiLive transport;
+            useEdit(transport, *edit);
 
             // One bar back from the top of the second 7/8 bar is seven beats,
             // not four.
@@ -109,7 +109,8 @@ class TransportSeekBarsTests final : public juce::UnitTest {
             if (edit == nullptr)
                 return;
 
-            auto transport = transportFor(*edit);
+            magda::TransportApiLive transport;
+            useEdit(transport, *edit);
             transport.setPositionBeats(10.0);
 
             transport.seekBars(-1);
@@ -123,7 +124,8 @@ class TransportSeekBarsTests final : public juce::UnitTest {
             if (edit == nullptr)
                 return;
 
-            auto transport = transportFor(*edit);
+            magda::TransportApiLive transport;
+            useEdit(transport, *edit);
             transport.setPositionBeats(4.0);
 
             transport.seekBars(-100);
@@ -141,7 +143,8 @@ class TransportSeekBarsTests final : public juce::UnitTest {
             if (edit == nullptr)
                 return;
 
-            auto transport = transportFor(*edit);
+            magda::TransportApiLive transport;
+            useEdit(transport, *edit);
             transport.setPositionBeats(8.0);
 
             transport.seekBars(std::numeric_limits<long long>::min());
@@ -149,6 +152,41 @@ class TransportSeekBarsTests final : public juce::UnitTest {
 
             transport.seekBars(std::numeric_limits<long long>::max());
             expectGreaterThan(transport.getPositionBeats(), 0.0);
+        }
+
+        beginTest("Discrete transport listeners follow the current Edit");
+        {
+            auto first = te::engine::test_utilities::createTestEdit(*engine, 1);
+            auto second = te::engine::test_utilities::createTestEdit(*engine, 1);
+            expect(first != nullptr && second != nullptr, "no Edit");
+            if (first == nullptr || second == nullptr)
+                return;
+
+            te::Edit* current = first.get();
+            magda::TransportApiLive transport;
+            transport.setEditGetter([&current] { return current; });
+
+            int changes = 0;
+            const auto token = transport.addStateListener([&changes] { ++changes; });
+
+            first->getTransport().looping = true;
+            expectEquals(changes, 1, "Loop state should arrive through the ValueTree listener");
+
+            first->getTransport().sendSynchronousChangeMessage();
+            expectEquals(changes, 2,
+                         "Play/record state should arrive through the ChangeBroadcaster");
+
+            current = second.get();
+            transport.refreshStateSource();
+            first->getTransport().looping = false;
+            expectEquals(changes, 2, "The outgoing Edit should be detached");
+
+            second->getTransport().looping = true;
+            expectEquals(changes, 3, "The replacement Edit should be observed");
+
+            transport.removeStateListener(token);
+            second->getTransport().looping = false;
+            expectEquals(changes, 3, "Removing the listener should detach observation");
         }
     }
 };

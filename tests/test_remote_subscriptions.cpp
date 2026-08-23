@@ -452,32 +452,6 @@ TEST_CASE("Meters and the playhead are sampled from their own sources",
     REQUIRE(static_cast<bool>(playhead[0].payload["playing"]));
 }
 
-TEST_CASE("A local transport change is detected without an API write",
-          "[remote][subscriptions][transport]") {
-    MessageThreadRelaxation relaxation;
-    MockMagdaApi api;
-    RemoteApiService service(api);
-    Recorder recorder;
-    SubscriptionHub hub(api, service);
-
-    const auto client = hub.addClient(recorder.sink(), recorder.disconnect());
-    const auto response = subscribe(hub, client, {"transport"});
-    REQUIRE(response.ok);
-    REQUIRE(recorder.events.empty());
-
-    // This bypasses RemoteApiService just like a button in the local UI. The
-    // subscription sampler must notice it; otherwise only remote-originated
-    // play/record/loop changes would ever reach a remote client.
-    api.transport_.playing = true;
-    hub.sampleNow();
-    service.changes().flush();
-
-    const auto events = recorder.forTopic(Topic::Transport);
-    REQUIRE(events.size() == 1);
-    REQUIRE(events[0].type == SubscriptionEvent::Type::Delta);
-    REQUIRE(static_cast<bool>(events[0].payload["playing"]));
-}
-
 TEST_CASE("Sampling costs nothing when nobody is subscribed to it",
           "[remote][subscriptions][meters]") {
     MessageThreadRelaxation relaxation;

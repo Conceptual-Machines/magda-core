@@ -6,6 +6,7 @@
 
 #include "AppPaths.hpp"
 #include "Config.hpp"
+#include "magda_api.hpp"
 #include "remote_audit.hpp"
 #include "remote_clients.hpp"
 #include "remote_mcp_server.hpp"
@@ -201,7 +202,7 @@ RemoteApiHost::RemoteApiHost(MagdaApi& api, AudioEngine* engine)
     : audit_(std::make_shared<RemoteAuditLog>()),
       clients_(std::make_unique<RemoteClientRegistry>()),
       service_(std::make_unique<RemoteApiService>(api)),
-      bridge_(std::make_unique<ModelChangeBridge>(*service_)),
+      bridge_(std::make_unique<ModelChangeBridge>(*service_, &api.transport())),
       subscriptions_(std::make_unique<SubscriptionHub>(api, *service_)) {
     if (engine != nullptr)
         subscriptions_->setMeterSource(makeLiveMeterSource(*engine));

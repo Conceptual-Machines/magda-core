@@ -4,6 +4,8 @@
 
 namespace magda {
 
+class TransportApi;
+
 namespace remote {
 
 class RemoteApiService;
@@ -32,7 +34,7 @@ class RemoteApiService;
  */
 class ModelChangeBridge {
   public:
-    explicit ModelChangeBridge(RemoteApiService& service);
+    explicit ModelChangeBridge(RemoteApiService& service, TransportApi* transport = nullptr);
     ~ModelChangeBridge();
 
     ModelChangeBridge(const ModelChangeBridge&) = delete;

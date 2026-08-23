@@ -976,6 +976,7 @@ class MockTransportApi : public TransportApi {
 
     int playCalls = 0;
     int stopCalls = 0;
+    int refreshStateSourceCalls = 0;
 
     void play() override {
         ++playCalls;
@@ -1021,6 +1022,37 @@ class MockTransportApi : public TransportApi {
         lastBarOffset = deltaBars;
         return beats + (beatsPerBar * deltaBars);
     }
+
+    int addStateListener(StateListener listener) override {
+        const auto token = nextStateListenerToken++;
+        stateListeners.emplace_back(token, std::move(listener));
+        return token;
+    }
+
+    void removeStateListener(int token) override {
+        stateListeners.erase(
+            std::remove_if(stateListeners.begin(), stateListeners.end(),
+                           [token](const auto& entry) { return entry.first == token; }),
+            stateListeners.end());
+    }
+
+    void refreshStateSource() override {
+        ++refreshStateSourceCalls;
+    }
+
+    void notifyStateChanged() {
+        const auto listeners = stateListeners;
+        for (const auto& [_, listener] : listeners)
+            listener();
+    }
+
+    int stateListenerCount() const {
+        return static_cast<int>(stateListeners.size());
+    }
+
+  private:
+    int nextStateListenerToken = 1;
+    std::vector<std::pair<int, StateListener>> stateListeners;
 };
 
 class MockMidiApi : public MidiApi {

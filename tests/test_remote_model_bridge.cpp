@@ -32,7 +32,7 @@ struct BridgeFixture {
         service.changes().addListener([this](const std::vector<ChangeSource::Change>& changes) {
             seen.insert(seen.end(), changes.begin(), changes.end());
         });
-        bridge = std::make_unique<ModelChangeBridge>(service);
+        bridge = std::make_unique<ModelChangeBridge>(service, &api.transport_);
     }
 
     ~BridgeFixture() {
@@ -119,7 +119,9 @@ TEST_CASE("A burst of model notifications coalesces to one delivery", "[remote][
 
 TEST_CASE("Destroying the bridge detaches it from the model", "[remote][bridge][lifecycle]") {
     BridgeFixture fixture;
+    REQUIRE(fixture.api.transport_.stateListenerCount() == 1);
     fixture.bridge.reset();
+    REQUIRE(fixture.api.transport_.stateListenerCount() == 0);
     fixture.seen.clear();
 
     // Must not notify, and must not touch the destroyed listener.
@@ -127,6 +129,21 @@ TEST_CASE("Destroying the bridge detaches it from the model", "[remote][bridge][
     fixture.service.changes().flush();
 
     REQUIRE(fixture.seen.empty());
+}
+
+TEST_CASE("A local transport callback reaches subscribers without advancing the revision",
+          "[remote][bridge][transport]") {
+    BridgeFixture fixture;
+    const auto before = fixture.service.currentRevision();
+
+    // This is the abstraction-level equivalent of Tracktion's transport
+    // ChangeBroadcaster or looping ValueTree firing after a local UI action.
+    fixture.api.transport_.playing = true;
+    fixture.api.transport_.notifyStateChanged();
+    fixture.service.changes().flush();
+
+    REQUIRE(fixture.sawTopic(Topic::Transport));
+    REQUIRE(fixture.service.currentRevision() == before);
 }
 
 TEST_CASE("A shut-down service ignores model notifications", "[remote][bridge][lifecycle]") {

@@ -597,7 +597,9 @@ struct RemoteWebSocketServer::Impl {
                                       : juce::String();
         const auto headerAuthorised = isAuthorised(
             juce::String(request.get_header_value("Authorization")), options.bearerToken);
-        if (!headerAuthorised && (!fromBrowser || browserToken != options.bearerToken)) {
+        const auto browserAuthorised = fromBrowser && browserToken.isNotEmpty() &&
+                                       secureEquals(browserToken, options.bearerToken);
+        if (!headerAuthorised && !browserAuthorised) {
             // The reason, never the credential. `redactSecrets` would mask a
             // `Bearer …` value anyway; not building the string in the first
             // place is the version that cannot be got wrong later.

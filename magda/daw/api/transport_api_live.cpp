@@ -9,6 +9,105 @@ namespace magda {
 
 namespace te = tracktion;
 
+/**
+ * Owns the edit-scoped JUCE listeners without exposing Tracktion types through
+ * TransportApiLive's header.
+ */
+class TransportApiLive::StateObserver final : private juce::ChangeListener,
+                                              private juce::ValueTree::Listener {
+  public:
+    explicit StateObserver(TransportApiLive& owner) : owner_(owner) {}
+
+    ~StateObserver() override {
+        detach();
+    }
+
+    void refresh() {
+        auto* next = owner_.edit();
+        if (next == edit_)
+            return;
+
+        detach();
+        edit_ = next;
+        if (edit_ == nullptr)
+            return;
+
+        auto& transport = edit_->getTransport();
+        transport.addChangeListener(this);
+        state_ = transport.state;
+        state_.addListener(this);
+    }
+
+  private:
+    void detach() {
+        if (state_.isValid())
+            state_.removeListener(this);
+        state_ = {};
+        if (edit_ != nullptr)
+            edit_->getTransport().removeChangeListener(this);
+        edit_ = nullptr;
+    }
+
+    void changeListenerCallback(juce::ChangeBroadcaster*) override {
+        owner_.notifyStateListeners();
+    }
+
+    void valueTreePropertyChanged(juce::ValueTree& tree,
+                                  const juce::Identifier& property) override {
+        // TransportControl broadcasts play/stop/record, while looping is a
+        // persistent CachedValue and therefore arrives through its state tree.
+        if (tree == state_ && property == juce::Identifier("looping"))
+            owner_.notifyStateListeners();
+    }
+
+    TransportApiLive& owner_;
+    te::Edit* edit_ = nullptr;
+    juce::ValueTree state_;
+};
+
+TransportApiLive::TransportApiLive() = default;
+
+TransportApiLive::~TransportApiLive() = default;
+
+void TransportApiLive::setEditGetter(EditGetter getter) {
+    getEdit_ = std::move(getter);
+    refreshStateSource();
+}
+
+int TransportApiLive::addStateListener(StateListener listener) {
+    if (!listener)
+        return 0;
+
+    const auto token = nextStateListenerToken_++;
+    stateListeners_.push_back({token, std::move(listener)});
+    refreshStateSource();
+    return token;
+}
+
+void TransportApiLive::removeStateListener(int token) {
+    stateListeners_.erase(
+        std::remove_if(stateListeners_.begin(), stateListeners_.end(),
+                       [token](const ListenerEntry& entry) { return entry.token == token; }),
+        stateListeners_.end());
+    if (stateListeners_.empty())
+        stateObserver_.reset();
+}
+
+void TransportApiLive::refreshStateSource() {
+    if (stateListeners_.empty())
+        return;
+    if (stateObserver_ == nullptr)
+        stateObserver_ = std::make_unique<StateObserver>(*this);
+    stateObserver_->refresh();
+}
+
+void TransportApiLive::notifyStateListeners() {
+    // A callback may remove itself, so iterate a stable copy.
+    const auto listeners = stateListeners_;
+    for (const auto& listener : listeners)
+        listener.callback();
+}
+
 void TransportApiLive::play() {
     if (playDispatch_) {
         playDispatch_();

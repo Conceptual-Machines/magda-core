@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 namespace magda {
 
@@ -18,6 +19,8 @@ namespace magda {
  */
 class TransportApi {
   public:
+    using StateListener = std::function<void()>;
+
     virtual ~TransportApi() = default;
 
     /** Start playback from the current edit position. */
@@ -49,6 +52,20 @@ class TransportApi {
      * top. Returns `beats` unchanged when there is no edit to ask.
      */
     virtual double beatsAtBarOffset(double beats, int deltaBars) const = 0;
+
+    /**
+     * Observe discrete play/stop/record/loop state changes.
+     *
+     * Live implementations deliver on the message thread. The default no-op
+     * keeps headless facades free of JUCE/engine listener machinery.
+     */
+    virtual int addStateListener(StateListener) {
+        return 0;
+    }
+    virtual void removeStateListener(int) {}
+
+    /** Reattach listeners after the current project/Edit is replaced. */
+    virtual void refreshStateSource() {}
 
     // ------------------------------------------------------------------
     // Relative seeking (#1987)
