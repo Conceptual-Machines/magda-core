@@ -24,8 +24,10 @@ std::string describePorts(const RenderPlan& plan, const BufferLayout& layout,
             text += ",";
 
         const auto port = static_cast<std::size_t>(portOffsets[op]) + i;
-        text += outputs[i] == SignalKind::Midi ? "m" : "a";
+        text += outputs[i].kind == SignalKind::Midi ? "m" : "a";
         text += std::to_string(layout.portSlots[port]);
+        if (outputs[i].kind == SignalKind::Audio && outputs[i].channels != 2)
+            text += "/" + std::to_string(outputs[i].channels);
     }
     return text;
 }

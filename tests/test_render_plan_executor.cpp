@@ -205,6 +205,47 @@ class NoteToDcInstrument final : public EngineDevice {
     float level_ = 0.0f;
 };
 
+/// Reports the width of the block it was handed, and writes a different level
+/// on every channel of it, so what a device was given and what it wrote are
+/// both readable downstream.
+class WidthProbeDevice final : public EngineDevice {
+  public:
+    explicit WidthProbeDevice(std::vector<float> perChannel) : perChannel_(std::move(perChannel)) {}
+
+    void process(DeviceBlock& block) override {
+        channelsSeen = static_cast<int>(block.audio.getNumChannels());
+        inputSeen.assign(block.audio.getNumChannels(), 0.0f);
+        for (std::size_t channel = 0; channel < block.audio.getNumChannels(); ++channel) {
+            inputSeen[channel] = block.audio.getSample(static_cast<int>(channel), 0);
+            if (channel < perChannel_.size())
+                block.audio.getSingleChannelBlock(channel).fill(perChannel_[channel]);
+        }
+    }
+
+    int channelsSeen = -1;
+    std::vector<float> inputSeen;
+
+  private:
+    std::vector<float> perChannel_;
+};
+
+/// A constant on every channel it is given, whatever it was handed. What an
+/// instrument does: it generates rather than processes.
+class ConstantInstrument final : public EngineDevice {
+  public:
+    explicit ConstantInstrument(float level) : level_(level) {}
+
+    void process(DeviceBlock& block) override {
+        inputSeen = block.audio.getNumChannels() > 0 ? block.audio.getSample(0, 0) : 0.0f;
+        block.audio.fill(level_);
+    }
+
+    float inputSeen = 0.0f;
+
+  private:
+    float level_;
+};
+
 /// One sample at timeline position zero and silence everywhere else, so where
 /// a signal ends up is a sample index rather than a level.
 class ImpulseSource final : public EngineAudioSource {
@@ -413,6 +454,20 @@ struct Harness {
                 return static_cast<OpId>(i);
         FAIL("plan has no op with the requested role");
         return magda::engine::INVALID_OP_ID;
+    }
+
+    /// The tap on one device's slot, where a track has more than one meter and
+    /// the role alone would not say which.
+    float takeMeterForDevice(DeviceId deviceId) {
+        for (const auto& op : plan.ops) {
+            if (op.key.role != OpRole::DeviceMeter || op.key.deviceId != deviceId)
+                continue;
+            const auto found = meters.find(op.key);
+            REQUIRE(found != meters.end());
+            return found->second->read().loudest();
+        }
+        FAIL("plan has no device meter for the device");
+        return 0.0f;
     }
 
     /// Takes the tap's level, which is what reading a meter does: it reports
@@ -906,7 +961,11 @@ TEST_CASE("A rack chain out of the mix contributes neither audio nor MIDI", "[en
 
         harness.prepareCleanly();
         harness.render();
-        CHECK(harness.outputSample() == approx(0.25f + instrumentLevel));
+        // The rack's input flows through every chain and the chains sum: the
+        // empty chain passes it through, and the instrument's chain injects
+        // the instrument onto it rather than replacing it, which is what the
+        // current engine's parallel rack wiring makes of the same model.
+        CHECK(harness.outputSample() == approx(0.25f + 0.25f + instrumentLevel));
     }
 
     SECTION("the second chain is muted") {
@@ -1473,7 +1532,13 @@ TEST_CASE("Block size does not change where delayed MIDI lands", "[engine][exec]
     const auto renderNotes = [](const std::vector<int>& blockSizes) {
         auto track = makeTrack(1);
         track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
-        track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(8)));
+        // A MIDI-consuming effect rather than an instrument: an instrument is
+        // never fed the chain, so there is no latent audio edge ahead of it
+        // for its MIDI to meet; what holds an instrument's audio to the bus is
+        // the inject mix, not a delay on its input.
+        auto reader = makeEffect(8);
+        reader.canReceiveMidi = true;
+        track.chain.fxChainElements.push_back(makeDeviceElement(reader));
 
         Harness harness({track}, makeMaster());
         ConstantSource audio(0.0f);
@@ -1499,8 +1564,8 @@ TEST_CASE("Block size does not change where delayed MIDI lands", "[engine][exec]
     const auto whole = renderNotes({kBlockSize, kBlockSize, kBlockSize, kBlockSize});
     const auto split = renderNotes({1, 7, kBlockSize, 3, 1, 40, 20, kBlockSize, 60, 24});
 
-    // The instrument's audio arrives 80 samples late, so its MIDI is held to
-    // meet it: a note at t is seen at t + 80, however the blocks were cut.
+    // The reader's audio arrives 80 samples late, so its MIDI is held to meet
+    // it: a note at t is seen at t + 80, however the blocks were cut.
     REQUIRE_FALSE(whole.empty());
     for (const auto position : whole)
         CHECK(position % 23 == 80 % 23);
@@ -1520,7 +1585,9 @@ TEST_CASE("Block size does not change where delayed MIDI lands", "[engine][exec]
 
         auto track = makeTrack(1);
         track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
-        track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(8)));
+        auto reader = makeEffect(8);
+        reader.canReceiveMidi = true;
+        track.chain.fxChainElements.push_back(makeDeviceElement(reader));
 
         Harness harness({track}, makeMaster());
         ConstantSource audio(0.0f);
@@ -1848,4 +1915,166 @@ TEST_CASE("A multi-out pair the device stops writing goes silent", "[engine][exe
 
     // The main pair is unaffected: it is written every block.
     CHECK(harness.takeMeterFor(OpRole::TrackMeter, 1) == approx(0.1f));
+}
+
+TEST_CASE("A device is handed the channels it declared", "[engine][exec]") {
+    SECTION("a mono device sees one channel and is heard on both") {
+        auto effect = makeEffect(7);
+        effect.audioInputChannels = 1;
+        effect.audioOutputChannels = 1;
+
+        auto track = makeTrack(1);
+        track.chain.fxChainElements.push_back(makeDeviceElement(effect));
+
+        Harness harness({track}, makeMaster());
+        ConstantSource source(0.5f);
+        WidthProbeDevice device({0.25f, 0.75f});
+        harness.bindings.clipAudio[1] = &source;
+        harness.bindings.devices[DeviceKey{7}] = &device;
+
+        harness.prepareCleanly();
+        harness.render();
+
+        CHECK(device.channelsSeen == 1);
+        REQUIRE(device.inputSeen.size() == 1);
+        CHECK(device.inputSeen[0] == approx(0.5f));
+
+        // The one channel it wrote, on both sides of the slot: the way the
+        // current engine reads a one-pin source off pin 1 twice.
+        CHECK(harness.outputSample(0) == approx(0.25f));
+        CHECK(harness.outputSample(1) == approx(0.25f));
+    }
+
+    SECTION("a device with one input and two outputs never sees the far side") {
+        auto effect = makeEffect(7);
+        effect.audioInputChannels = 1;
+
+        auto track = makeTrack(1);
+        track.chain.fxChainElements.push_back(makeDeviceElement(effect));
+
+        Harness harness({track}, makeMaster());
+        ConstantSource source(0.5f);
+        WidthProbeDevice device({0.25f, 0.75f});
+        harness.bindings.clipAudio[1] = &source;
+        harness.bindings.devices[DeviceKey{7}] = &device;
+
+        harness.prepareCleanly();
+        harness.render();
+
+        // Two channels to write, but only the first was ever connected on the
+        // way in: the second starts silent rather than holding the bus.
+        CHECK(device.channelsSeen == 2);
+        REQUIRE(device.inputSeen.size() == 2);
+        CHECK(device.inputSeen[0] == approx(0.5f));
+        CHECK(device.inputSeen[1] == approx(0.0f));
+
+        CHECK(harness.outputSample(0) == approx(0.25f));
+        CHECK(harness.outputSample(1) == approx(0.75f));
+    }
+
+    SECTION("a device with no audio input is handed no audio at all") {
+        auto generator = makeEffect(7);
+        generator.audioInputChannels = 0;
+
+        auto track = makeTrack(1);
+        track.chain.fxChainElements.push_back(makeDeviceElement(generator));
+
+        Harness harness({track}, makeMaster());
+        ConstantSource source(0.5f);
+        WidthProbeDevice device({0.25f, 0.25f});
+        harness.bindings.clipAudio[1] = &source;
+        harness.bindings.devices[DeviceKey{7}] = &device;
+
+        harness.prepareCleanly();
+        harness.render();
+
+        REQUIRE(device.inputSeen.size() == 2);
+        CHECK(device.inputSeen[0] == approx(0.0f));
+
+        // And the bus flows past it untouched, which is the whole point of not
+        // wiring it: the source reaches the output, the generator does not.
+        CHECK(harness.outputSample(0) == approx(0.5f));
+        CHECK(harness.outputSample(1) == approx(0.5f));
+    }
+
+    SECTION("a device with no audio output leaves nothing behind it") {
+        auto sink = makeEffect(7);
+        sink.audioOutputChannels = 0;
+
+        auto track = makeTrack(1);
+        track.chain.fxChainElements.push_back(makeDeviceElement(sink));
+
+        Harness harness({track}, makeMaster());
+        ConstantSource source(0.5f);
+        WidthProbeDevice device({0.25f, 0.25f});
+        harness.bindings.clipAudio[1] = &source;
+        harness.bindings.devices[DeviceKey{7}] = &device;
+
+        harness.prepareCleanly();
+        harness.render();
+
+        // It still reads the bus, and still runs.
+        REQUIRE(device.inputSeen.size() == 2);
+        CHECK(device.inputSeen[0] == approx(0.5f));
+
+        CHECK(harness.outputSample(0) == approx(0.0f));
+        CHECK(harness.outputSample(1) == approx(0.0f));
+    }
+}
+
+TEST_CASE("An instrument sums with the audio already flowing past it", "[engine][exec]") {
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(8)));
+
+    Harness harness({track}, makeMaster());
+    ConstantSource source(0.5f);
+    NoteSource notes(60);
+    GainDevice effect(0.5f);
+    ConstantInstrument instrument(0.125f);
+    harness.bindings.clipAudio[1] = &source;
+    harness.bindings.clipMidi[1] = &notes;
+    harness.bindings.devices[DeviceKey{7}] = &effect;
+    harness.bindings.devices[DeviceKey{8}] = &instrument;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    // The effect's 0.25 does not disappear into the instrument: the two sum,
+    // which is what the current engine's chain wiring does with an instrument
+    // it pushes onto the audio bus without clearing it.
+    CHECK(harness.outputSample(0) == approx(0.25f + 0.125f));
+    CHECK(harness.outputSample(1) == approx(0.25f + 0.125f));
+
+    // And the instrument never saw the bus it summed into.
+    CHECK(instrument.inputSeen == approx(0.0f));
+}
+
+TEST_CASE("An instrument's slot trims and meters the instrument alone", "[engine][exec]") {
+    auto instrument = makeInstrument(8);
+    instrument.gainValue = 0.5f;
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+    track.chain.fxChainElements.push_back(makeDeviceElement(instrument));
+
+    Harness harness({track}, makeMaster());
+    ConstantSource source(0.5f);
+    NoteSource notes(60);
+    GainDevice effect(1.0f);
+    ConstantInstrument generator(0.25f);
+    harness.bindings.clipAudio[1] = &source;
+    harness.bindings.clipMidi[1] = &notes;
+    harness.bindings.devices[DeviceKey{7}] = &effect;
+    harness.bindings.devices[DeviceKey{8}] = &generator;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    // The slot's trim scales the instrument, not the 0.5 flowing past it: the
+    // current engine hangs the trim and the tap off the plugin's own node,
+    // inside the wrapper that does the summing.
+    CHECK(harness.outputSample(0) == approx(0.5f + 0.125f));
+
+    CHECK(harness.takeMeterForDevice(8) == approx(0.125f));
 }

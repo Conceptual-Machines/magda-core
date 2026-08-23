@@ -65,7 +65,7 @@ class OpSet {
 /// purpose: a MIDI op clears its output before writing it, so an output sharing
 /// its input's buffer would clear the events it was about to read.
 std::optional<std::size_t> inPlaceInputOf(const PlanOp& op) {
-    if (op.outputs.empty() || op.outputs.front() != SignalKind::Audio)
+    if (op.outputs.empty() || op.outputs.front().kind != SignalKind::Audio)
         return std::nullopt;
 
     switch (op.kind) {
@@ -263,7 +263,7 @@ BufferLayout assignBuffers(const RenderPlan& plan, const std::vector<int>& portO
             if (canonical[flatPort] != flatPort)
                 continue;  // elided: it is its input's port and shares its slot
 
-            const auto isAudio = op.outputs[port] == SignalKind::Audio;
+            const auto isAudio = op.outputs[port].kind == SignalKind::Audio;
             auto& slotUsers = isAudio ? audioSlotUsers : midiSlotUsers;
 
             // Writing over an input the op is the last to read costs nothing

@@ -24,6 +24,16 @@ std::string describeInputs(const PlanOp& op) {
     return text;
 }
 
+/// A port as "audio", with its width only when that is not the bus's: a mono
+/// port is "audio/1", one carrying nothing "audio/0". Stereo stays bare so the
+/// goldens written before ports had widths still say what they meant.
+std::string describePort(const PortDesc& port) {
+    auto text = std::string(toString(port.kind));
+    if (port.kind == SignalKind::Audio && port.channels != 2)
+        text += "/" + std::to_string(port.channels);
+    return text;
+}
+
 std::string describeOutputs(const PlanOp& op) {
     if (op.outputs.empty())
         return "-";
@@ -32,7 +42,7 @@ std::string describeOutputs(const PlanOp& op) {
     for (std::size_t i = 0; i < op.outputs.size(); ++i) {
         if (i > 0)
             text += ",";
-        text += toString(op.outputs[i]);
+        text += describePort(op.outputs[i]);
     }
     return text;
 }

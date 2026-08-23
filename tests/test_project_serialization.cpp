@@ -2005,6 +2005,69 @@ TEST_CASE("DeviceInfo panel UI state roundtrip", "[project][serialization][devic
     REQUIRE(loaded.aiPanelOutput.isEmpty());
 }
 
+TEST_CASE("Device channel counts survive a project roundtrip", "[project][serialization][device]") {
+    ProjectTestFixture fixture;
+
+    auto& trackManager = TrackManager::getInstance();
+    auto trackId = trackManager.createTrack("Channel Counts", TrackType::Audio);
+
+    DeviceInfo mono;
+    mono.id = 31;
+    mono.name = "Mono Effect";
+    mono.pluginId = "internal.mono";
+    mono.format = PluginFormat::Internal;
+    mono.audioInputChannels = 1;
+    mono.audioOutputChannels = 1;
+    REQUIRE(trackManager.addDeviceToTrack(trackId, mono) != INVALID_DEVICE_ID);
+
+    DeviceInfo stereo;
+    stereo.id = 32;
+    stereo.name = "Stereo Effect";
+    stereo.pluginId = "internal.stereo";
+    stereo.format = PluginFormat::Internal;
+    REQUIRE(trackManager.addDeviceToTrack(trackId, stereo) != INVALID_DEVICE_ID);
+
+    ProjectInfo info;
+    auto json = ProjectSerializer::serializeProject(info);
+
+    ProjectInfo loadedInfo;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
+    auto* loadedTrack = trackManager.getTrack(trackId);
+    REQUIRE(loadedTrack != nullptr);
+    REQUIRE(loadedTrack->chain.fxChainElements.size() == 2);
+
+    const auto& loadedMono = getDevice(loadedTrack->chain.fxChainElements[0]);
+    CHECK(loadedMono.audioInputChannels == 1);
+    CHECK(loadedMono.audioOutputChannels == 1);
+
+    const auto& loadedStereo = getDevice(loadedTrack->chain.fxChainElements[1]);
+    CHECK(loadedStereo.audioInputChannels == 2);
+    CHECK(loadedStereo.audioOutputChannels == 2);
+}
+
+TEST_CASE("A device with no channel counts written loads as stereo",
+          "[project][serialization][device]") {
+    // What a project saved before the counts existed looks like. Stereo is
+    // both the field's default and what the current engine's chain wiring
+    // falls back to when it cannot ask the plugin, so an old project keeps
+    // the graph it had.
+    DeviceInfo device;
+    device.id = 33;
+    device.name = "Legacy";
+    device.pluginId = "internal.legacy";
+    device.format = PluginFormat::Internal;
+
+    const auto json = ProjectSerializer::serializeDeviceInfo(device);
+    REQUIRE(json.isObject());
+    CHECK_FALSE(json.getDynamicObject()->hasProperty("audioInputChannels"));
+    CHECK_FALSE(json.getDynamicObject()->hasProperty("audioOutputChannels"));
+
+    DeviceInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(json, loaded));
+    CHECK(loaded.audioInputChannels == 2);
+    CHECK(loaded.audioOutputChannels == 2);
+}
+
 TEST_CASE("Section-scoped device ids survive project roundtrip",
           "[project][serialization][devices]") {
     ProjectTestFixture fixture;

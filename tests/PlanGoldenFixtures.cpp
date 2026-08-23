@@ -125,6 +125,34 @@ Fixture instrumentTrack() {
     return value;
 }
 
+Fixture channelWidths() {
+    Fixture value;
+    value.name = "channel-widths";
+    value.covers = "what a device declares it reads and writes, and what the bus does around it";
+    value.tracks = {track(1)};
+
+    // The four shapes the chain model has to tell apart, in one chain: a mono
+    // device, one not wired to the bus at all, one that leaves nothing behind
+    // it, and an instrument summing onto what flowed past.
+    auto mono = effect(7);
+    mono.audioInputChannels = 1;
+    mono.audioOutputChannels = 1;
+
+    auto generator = effect(8);
+    generator.audioInputChannels = 0;
+
+    auto sink = effect(9);
+    sink.audioOutputChannels = 0;
+
+    value.tracks[0].chain.fxChainElements.push_back(makeDeviceElement(mono));
+    value.tracks[0].chain.fxChainElements.push_back(makeDeviceElement(generator));
+    value.tracks[0].chain.fxChainElements.push_back(makeDeviceElement(instrument(10)));
+    value.tracks[0].chain.fxChainElements.push_back(makeDeviceElement(sink));
+    value.master = master();
+    value.options = withoutMeters();
+    return value;
+}
+
 Fixture fanIn() {
     Fixture value;
     value.name = "fan-in";
@@ -469,6 +497,7 @@ std::vector<Fixture> planFixtures() {
     fixtures.push_back(bareTrack());
     fixtures.push_back(deviceChain());
     fixtures.push_back(instrumentTrack());
+    fixtures.push_back(channelWidths());
     fixtures.push_back(fanIn());
     fixtures.push_back(cascadedLatency());
     fixtures.push_back(rackChains());

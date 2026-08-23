@@ -537,6 +537,13 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     // true (old projects) and an explicit user-disabled false must survive.
     obj->setProperty("midiInThru", device.midiInThru);
 
+    // Audio channel counts, only when the plugin reported something other than
+    // the stereo the field defaults to.
+    if (device.audioInputChannels != 2)
+        obj->setProperty("audioInputChannels", device.audioInputChannels);
+    if (device.audioOutputChannels != 2)
+        obj->setProperty("audioOutputChannels", device.audioOutputChannels);
+
     // Per-instance drum kit rows
     if (!device.kitRows.empty()) {
         juce::Array<juce::var> kitArray;
@@ -729,6 +736,10 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     if (!midiInThruVar.isVoid()) {
         outDevice.midiInThru = static_cast<bool>(midiInThruVar);
     }
+    if (obj->hasProperty("audioInputChannels"))
+        outDevice.audioInputChannels = static_cast<int>(obj->getProperty("audioInputChannels"));
+    if (obj->hasProperty("audioOutputChannels"))
+        outDevice.audioOutputChannels = static_cast<int>(obj->getProperty("audioOutputChannels"));
 
     // Plugin native state
     if (obj->hasProperty("pluginState"))

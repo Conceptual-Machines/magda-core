@@ -47,6 +47,29 @@ constexpr OpId INVALID_OP_ID = -1;
 /** Which kind of signal a port carries. */
 enum class SignalKind : std::uint8_t { Audio, Midi };
 
+/**
+ * @brief One output port: what it carries, and for audio, at what width.
+ *
+ * The bus is stereo, so a port is at most stereo. A mono port is one channel
+ * that every reader hears on both sides of its stereo slot, the way the
+ * current engine reads a one-pin source off pin 1 twice; the producer's op
+ * widens it, so nothing downstream has to know. Zero channels is a port that
+ * carries nothing: the shape an op keeps so port positions stay put when a
+ * device reports no audio output at all.
+ */
+struct PortDesc {
+    SignalKind kind = SignalKind::Audio;
+    std::uint8_t channels = 2;
+
+    // Implicit, so the existing {SignalKind::Audio} port lists still say what
+    // they meant: a plain kind is the bus at full width.
+    PortDesc(SignalKind k = SignalKind::Audio)
+        : kind(k), channels(k == SignalKind::Audio ? 2 : 0) {}
+    PortDesc(SignalKind k, std::uint8_t c) : kind(k), channels(c) {}
+
+    bool operator==(const PortDesc&) const = default;
+};
+
 // Output ports of a Device op, in order. Port 0 is the device's audio output,
 // and it is the one the chain carries on from. A device that writes MIDI has it
 // at port 1. Anything after that is a multi-out instrument's further output
@@ -114,6 +137,7 @@ enum class OpRole : std::uint8_t {
     TrackAudioInput,  ///< sum of everything feeding the track's chain head
     TrackMidiInput,   ///< merge of everything feeding the track's chain head
     DeviceProcess,    ///< the device itself
+    DeviceInject,     ///< an instrument's output summing into the bus flowing past it
     DeviceDelta,      ///< the device's output minus the dry input it was handed
     DeviceGain,       ///< the device slot's gain trim
     DeviceMeter,      ///< the device slot's level tap
@@ -327,7 +351,16 @@ struct PlanOp {
     OpKey key;
     LivenessDomain liveness = LivenessDomain::Deterministic;
     std::vector<PortRef> inputs;
-    std::vector<SignalKind> outputs;
+    std::vector<PortDesc> outputs;
+
+    /// Channels of audio a Device op reads off its first input port. The port
+    /// itself is the chain's and stays stereo; a device declaring one input
+    /// channel is handed only the first, which is the current engine wiring
+    /// pin 1 and leaving pin 2 unconnected, not a downmix. Zero for every
+    /// other op kind, and for a device whose audio input is not connected:
+    /// an instrument never reads the bus, and a device reporting no audio
+    /// input is not wired to it.
+    std::uint8_t audioInputChannels = 0;
 };
 
 /**

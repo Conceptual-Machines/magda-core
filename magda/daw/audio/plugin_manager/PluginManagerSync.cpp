@@ -130,6 +130,13 @@ void updateDeviceCapabilityFlags(DeviceInfo& device, te::Plugin& plugin) {
     if (snapshot.hasMidiInput && !device.isInstrument)
         device.canReceiveMidi = true;
     device.producesMidi = snapshot.hasMidiOutput;
+
+    // The channel counts the chain model compiles against, asked the way the
+    // incumbent's chain wiring asks them.
+    juce::StringArray audioInputs, audioOutputs;
+    plugin.getChannelNames(&audioInputs, &audioOutputs);
+    device.audioInputChannels = audioInputs.size();
+    device.audioOutputChannels = audioOutputs.size();
 }
 
 // Faust's processor owns a dynamic canSidechain flag, while the generic

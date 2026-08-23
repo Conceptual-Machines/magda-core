@@ -131,6 +131,34 @@ CompileOptions withoutDeviceMeters() {
     return options;
 }
 
+/// What the process op of a device declares: what it reads off the bus, and
+/// what its main output port carries.
+struct DeviceWidths {
+    int in = 0;
+    int out = 0;
+    bool readsTheBus = false;
+};
+
+DeviceWidths widthsOf(const RenderPlan& plan, DeviceId deviceId) {
+    for (const auto& op : plan.ops) {
+        if (op.key.role != OpRole::DeviceProcess || op.key.deviceId != deviceId)
+            continue;
+        REQUIRE_FALSE(op.outputs.empty());
+        return {op.audioInputChannels, op.outputs.front().channels, op.inputs[0].valid()};
+    }
+    FAIL("plan has no process op for the device");
+    return {};
+}
+
+/// A mono-in, mono-out effect. The counts are what the host stamped off the
+/// live plugin, which is the only place they come from.
+DeviceInfo makeMonoEffect(DeviceId id) {
+    auto device = makeEffect(id);
+    device.audioInputChannels = 1;
+    device.audioOutputChannels = 1;
+    return device;
+}
+
 }  // namespace
 
 TEST_CASE("Empty session compiles to a track feeding the master output",
@@ -268,6 +296,166 @@ TEST_CASE("A device compiles to process, gain and meter ops", "[engine][plan][co
         CHECK(countRole(plan, OpRole::DeviceMeter) == 0);
         CHECK(countRole(plan, OpRole::DeviceGain) == 1);
     }
+}
+
+TEST_CASE("A device's channel counts reach the ports it is compiled to",
+          "[engine][plan][compiler]") {
+    SECTION("a stereo device is the bus's width on both sides") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        const auto widths = widthsOf(plan, 7);
+        CHECK(widths.in == 2);
+        CHECK(widths.out == 2);
+    }
+
+    SECTION("a mono device reads and writes one channel") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeMonoEffect(7)));
+
+        const auto plan =
+            magda::engine::compileRenderPlan(tracks, makeMaster(), withoutDeviceMeters());
+        requireWellFormed(plan);
+
+        const auto widths = widthsOf(plan, 7);
+        CHECK(widths.in == 1);
+        CHECK(widths.out == 1);
+
+        // The chain past it is the bus again: a mono port is one channel every
+        // reader hears on both sides, not a narrower chain.
+        CHECK(inputOp(plan, opsWithRole(plan, OpRole::TrackFader).front(), 0) ==
+              deviceOutput(plan, 7));
+    }
+
+    SECTION("a device wider than the bus is clamped to it") {
+        auto surround = makeEffect(7);
+        surround.audioInputChannels = 6;
+        surround.audioOutputChannels = 6;
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(surround));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        const auto widths = widthsOf(plan, 7);
+        CHECK(widths.in == 2);
+        CHECK(widths.out == 2);
+    }
+
+    SECTION("an analysis tap keeps the bus whatever it reports") {
+        auto scope = makeMonoEffect(9);
+        scope.deviceType = DeviceType::Analysis;
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(scope));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        // Its output is its input, so narrowing it would narrow the chain
+        // rather than the device.
+        const auto widths = widthsOf(plan, 9);
+        CHECK(widths.in == 2);
+        CHECK(widths.out == 2);
+    }
+}
+
+TEST_CASE("A device with no audio input is not wired to the bus", "[engine][plan][compiler]") {
+    auto generator = makeEffect(7);
+    generator.audioInputChannels = 0;
+
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(generator));
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(8)));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    const auto widths = widthsOf(plan, 7);
+    CHECK(widths.in == 0);
+    CHECK_FALSE(widths.readsTheBus);
+
+    // The bus flows past it, which is what the current engine's chain wiring
+    // does with a device it never connects: the effect behind it reads the
+    // track's audio input rather than the generator.
+    CHECK(deviceInput(plan, 8) == opsWithRole(plan, OpRole::TrackAudioInput).front());
+
+    // It still has a slot of its own, ending nowhere: the device runs and its
+    // meter reads it, and nothing downstream hears it.
+    CHECK(countRole(plan, OpRole::DeviceMeter) == 2);
+}
+
+TEST_CASE("A device with no audio output starves what follows it", "[engine][plan][compiler]") {
+    auto sink = makeEffect(7);
+    sink.audioOutputChannels = 0;
+
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(sink));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    const auto widths = widthsOf(plan, 7);
+    CHECK(widths.in == 2);
+    CHECK(widths.out == 0);
+
+    // Nothing to trim and nothing to meter, and nothing left for the fader to
+    // read: the current engine clears the bus at its input and puts nothing
+    // back.
+    CHECK(countRole(plan, OpRole::DeviceGain) == 0);
+    CHECK(countRole(plan, OpRole::DeviceMeter) == 0);
+    CHECK(rawInputOp(plan, opsWithRole(plan, OpRole::TrackFader).front(), 0) ==
+          magda::engine::INVALID_OP_ID);
+}
+
+TEST_CASE("An instrument's output sums into the bus flowing past it", "[engine][plan][compiler]") {
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(8)));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), withoutDeviceMeters());
+    requireWellFormed(plan);
+
+    // It is never handed the bus: an instrument generates rather than
+    // processes, so there is no audio edge into it at all.
+    const auto widths = widthsOf(plan, 8);
+    CHECK(widths.in == 0);
+    CHECK_FALSE(widths.readsTheBus);
+
+    const auto inject = opsWithRole(plan, OpRole::DeviceInject);
+    REQUIRE(inject.size() == 1);
+    CHECK(plan.ops[static_cast<std::size_t>(inject.front())].kind == OpKind::MixAudio);
+
+    // The two things it sums: what flowed past, and the instrument's own slot.
+    // The slot rather than the process op, because the trim and the tap belong
+    // to the plugin and so run before the sum rather than over it.
+    CHECK(inputOp(plan, inject.front(), 0) == deviceOutput(plan, 7));
+    CHECK(rawInputOp(plan, inject.front(), 1) != magda::engine::INVALID_OP_ID);
+    CHECK(inputOp(plan, inject.front(), 1) == deviceOutput(plan, 8));
+
+    CHECK(inputOp(plan, opsWithRole(plan, OpRole::TrackFader).front(), 0) == inject.front());
+}
+
+TEST_CASE("An instrument behind a starved bus has nothing to sum with",
+          "[engine][plan][compiler]") {
+    auto sink = makeEffect(7);
+    sink.audioOutputChannels = 0;
+
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(sink));
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(8)));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), withoutDeviceMeters());
+    requireWellFormed(plan);
+
+    // Nothing flowed past for it to join, so there is no mix worth emitting
+    // and the chain carries on from the instrument's slot alone.
+    CHECK(countRole(plan, OpRole::DeviceInject) == 0);
+    CHECK(inputOp(plan, opsWithRole(plan, OpRole::TrackFader).front(), 0) == deviceOutput(plan, 8));
 }
 
 TEST_CASE("Analysis devices compile to a bare process op", "[engine][plan][compiler]") {
@@ -1518,9 +1706,14 @@ TEST_CASE("Latency compensation goes where paths can arrive apart",
 
     SECTION("a device reading audio and MIDI, but not one reading audio alone") {
         // Track 2 has nothing in it that consumes MIDI, so no MIDI is compiled
-        // for it at all and its effect has one input to wait on.
+        // for it at all and its effect has one input to wait on. Track 1's
+        // effect consumes the chain's MIDI as well as its audio, so it has two
+        // paths to wait on. An instrument would have only the MIDI one: it is
+        // never fed the bus, so there is no audio edge to align.
         std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
-        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(3)));
+        auto midiEffect = makeEffect(3);
+        midiEffect.canReceiveMidi = true;
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(midiEffect));
         tracks[1].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(4)));
 
         const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
@@ -1528,8 +1721,8 @@ TEST_CASE("Latency compensation goes where paths can arrive apart",
 
         const auto devices = opsWithRole(plan, OpRole::DeviceProcess);
         REQUIRE(devices.size() == 2);
-        CHECK(delaysInto(plan, devices[0]) == 2);  // the instrument: audio and MIDI
-        CHECK(delaysInto(plan, devices[1]) == 0);  // the effect: audio alone
+        CHECK(delaysInto(plan, devices[0]) == 2);  // the MIDI effect: audio and MIDI
+        CHECK(delaysInto(plan, devices[1]) == 0);  // the plain effect: audio alone
         CHECK(countRole(plan, OpRole::DeviceInputDelay) == 2);
     }
 
@@ -1838,8 +2031,8 @@ TEST_CASE("A multi-out pair feeds the track that opened it", "[engine][plan][com
     // and 2, whether or not a track opened them.
     const auto& outputs = plan.ops[static_cast<std::size_t>(process)].outputs;
     REQUIRE(outputs.size() == 3);
-    CHECK(std::ranges::all_of(outputs, [](magda::engine::SignalKind kind) {
-        return kind == magda::engine::SignalKind::Audio;
+    CHECK(std::ranges::all_of(outputs, [](magda::engine::PortDesc port) {
+        return port.kind == magda::engine::SignalKind::Audio;
     }));
 
     // The reading track's chain head is that pair's port and nothing else.
@@ -1849,6 +2042,28 @@ TEST_CASE("A multi-out pair feeds the track that opened it", "[engine][plan][com
     REQUIRE(inputs.size() == 1);
     CHECK(rawInputOp(plan, input, 0) == process);
     CHECK(inputs[0].port == 1);
+}
+
+TEST_CASE("A multi-out pair carries the width the device gave it", "[engine][plan][compiler]") {
+    // A drum machine with a mono pair among its stereo ones, which is what the
+    // current engine reads off a single pin twice.
+    auto drums = makeMultiOutInstrument(7, 3);
+    drums.multiOut.outputPairs[2].numChannels = 1;
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeMultiOutTrack(2, 1, 7, 2)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(drums));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+
+    // Pair p is port p, the main output being pair 0: only the one the device
+    // called mono is narrow.
+    const auto& outputs = plan.ops[static_cast<std::size_t>(deviceProcess(plan, 7))].outputs;
+    REQUIRE(outputs.size() == 3);
+    CHECK(outputs[0].channels == 2);
+    CHECK(outputs[1].channels == 2);
+    CHECK(outputs[2].channels == 1);
 }
 
 TEST_CASE("A multi-out link the source device cannot honour is reported",

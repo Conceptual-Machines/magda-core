@@ -210,6 +210,19 @@ Four is the usual shape rather than a rule: an analysis device is a transparent 
 no trim, no tap and no difference to take, so it compiles to a bare process op, and a compile
 with device meters switched off emits no meter ops at all.
 
+**A device says how wide it is, and the chain wiring follows.** A plan port carries a channel
+count as well as a kind (`PortDesc`), and a `Device` op says what it reads off the bus
+(`PlanOp::audioInputChannels`) as well as what its output port carries. The counts come from the
+plugin, asked the way the current engine's chain wiring asks them (`getChannelNames`), and they
+decide four things it already decides: a device reporting no audio input is not wired to the bus
+at all, so the bus flows past it and its own slot ends nowhere; a device reporting no audio
+output leaves nothing for the next stage to read; an instrument is never handed the bus, and its
+slot ends in a `MixAudio` that sums it into whatever was already flowing rather than replacing
+it; and a device narrower than the bus is handed only the channels it declared, its own output
+widened back over the slot afterwards. That last part is why widths live on `Device` ops alone:
+everything downstream reads a slot at the bus's width, so a width anywhere else would be
+describing a boundary that is not there, and `validatePlan` says so.
+
 **The delta is a `Subtract`,** between the processing and the trim, reading the device's output
 and the dry signal the device was handed; a rack gets the same op one level up, around its own
 fader. The dry edge is taken in front of whatever aligned the device's own input, so the

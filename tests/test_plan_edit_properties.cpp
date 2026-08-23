@@ -214,8 +214,8 @@ std::string signatureOf(const RenderPlan& plan, std::size_t op) {
 
     std::ostringstream out;
     out << engine::toString(node.kind) << " outputs=";
-    for (const auto kind : node.outputs)
-        out << engine::toString(kind) << ",";
+    for (const auto port : node.outputs)
+        out << engine::toString(port.kind) << ",";
 
     out << " inputs=";
     for (const auto& input : node.inputs) {

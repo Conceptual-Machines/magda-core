@@ -96,6 +96,8 @@ const char* toString(OpRole role) {
             return "trackMidiInput";
         case OpRole::DeviceProcess:
             return "deviceProcess";
+        case OpRole::DeviceInject:
+            return "deviceInject";
         case OpRole::DeviceDelta:
             return "deviceDelta";
         case OpRole::DeviceGain:
@@ -318,8 +320,11 @@ std::uint64_t planFingerprint(const RenderPlan& plan) {
         }
 
         mix(op.outputs.size());
-        for (const auto output : op.outputs)
-            mix(static_cast<std::uint64_t>(output));
+        for (const auto output : op.outputs) {
+            mix(static_cast<std::uint64_t>(output.kind));
+            mix(static_cast<std::uint64_t>(output.channels));
+        }
+        mix(static_cast<std::uint64_t>(op.audioInputChannels));
     }
 
     return hash;
@@ -393,13 +398,33 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
                                    slot == 1);
             const auto expected =
                 op.kind == OpKind::Delay
-                    ? (op.outputs.empty() ? SignalKind::Audio : op.outputs.front())
+                    ? (op.outputs.empty() ? SignalKind::Audio : op.outputs.front().kind)
                     : (midiSlot ? SignalKind::Midi : SignalKind::Audio);
             const auto actual = producer.outputs[static_cast<std::size_t>(input.port)];
-            if (actual != expected)
+            if (actual.kind != expected)
                 problems.push_back(label + "input " + std::to_string(slot) + " is " +
-                                   toString(actual) + ", expected " + toString(expected));
+                                   toString(actual.kind) + ", expected " + toString(expected));
         }
+
+        // Widths. A width describes a device boundary and nothing else: what a
+        // plugin was asked to read and what it says it wrote. Everywhere else
+        // a port is the bus, because the executor widens a narrow device port
+        // over its slot before anything downstream reads it. A MIDI port has
+        // no channels to declare at all.
+        for (const auto output : op.outputs) {
+            if (output.kind == SignalKind::Midi) {
+                if (output.channels != 0)
+                    problems.push_back(label + "declares midi at " +
+                                       std::to_string(output.channels) + " channels");
+            } else if (output.channels > 2 || (output.channels != 2 && op.kind != OpKind::Device)) {
+                problems.push_back(label + "declares audio at " + std::to_string(output.channels) +
+                                   " channels");
+            }
+        }
+
+        if (op.audioInputChannels > 2 || (op.audioInputChannels != 0 && op.kind != OpKind::Device))
+            problems.push_back(label + "reads its audio input at " +
+                               std::to_string(op.audioInputChannels) + " channels");
 
         // A delay's sample count is not in the plan: it is resolved when the
         // plan is prepared, from the latency the ops upstream of its consumer
@@ -443,7 +468,7 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
             if (op.inputs.size() != 2 || !op.inputs[0].valid() || !op.inputs[1].valid())
                 problems.push_back(label + "is a crossfade without both sides of the edge");
 
-            if (op.outputs.size() != 1 || op.outputs.front() != SignalKind::Audio)
+            if (op.outputs.size() != 1 || op.outputs.front().kind != SignalKind::Audio)
                 problems.push_back(label + "is a crossfade and does not produce one audio port");
 
             if (op.key.index < 0)

@@ -633,7 +633,7 @@ TEST_CASE("A fade produces the latency of the side it is becoming", "[engine][pl
 
     RenderPlan plan;
     const auto add = [&plan](OpKind kind, magda::engine::OpKey key, std::vector<PortRef> inputs,
-                             std::vector<SignalKind> outputs) {
+                             std::vector<magda::engine::PortDesc> outputs) {
         PlanOp op;
         op.kind = kind;
         op.key = key;

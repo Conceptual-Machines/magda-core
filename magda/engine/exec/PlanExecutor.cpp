@@ -418,8 +418,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         const auto& op = plan.ops[i];
 
         const bool onlyMidi =
-            !op.outputs.empty() && std::ranges::all_of(op.outputs, [](SignalKind kind) {
-                return kind == SignalKind::Midi;
+            !op.outputs.empty() && std::ranges::all_of(op.outputs, [](const PortDesc& port) {
+                return port.kind == SignalKind::Midi;
             });
 
         const bool fedByPrefix = std::ranges::all_of(op.inputs, [&](const PortRef& input) {
@@ -578,7 +578,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         const auto& op = plan.ops[i];
 
         if (op.kind == OpKind::Delay) {
-            if (op.outputs.front() != SignalKind::Midi)
+            if (op.outputs.front().kind != SignalKind::Midi)
                 continue;
             // A delay's output block covers one block's worth of its input's
             // time, and that stretch falls across two of the spans the budget
@@ -599,13 +599,14 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
             if (!input.valid())
                 continue;
             if (plan.ops[static_cast<std::size_t>(input.op)]
-                    .outputs[static_cast<std::size_t>(input.port)] != SignalKind::Midi)
+                    .outputs[static_cast<std::size_t>(input.port)]
+                    .kind != SignalKind::Midi)
                 continue;
             carried += portMidiBytes[flatPort(input)];
         }
 
         for (std::size_t port = 0; port < op.outputs.size(); ++port)
-            if (op.outputs[port] == SignalKind::Midi)
+            if (op.outputs[port].kind == SignalKind::Midi)
                 portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + port] = carried;
     }
 
@@ -613,7 +614,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     midiByteBounds_.assign(static_cast<std::size_t>(layout.numMidiSlots), 0);
     for (std::size_t i = 0; i < numOps; ++i) {
         for (std::size_t port = 0; port < plan.ops[i].outputs.size(); ++port) {
-            if (plan.ops[i].outputs[port] != SignalKind::Midi)
+            if (plan.ops[i].outputs[port].kind != SignalKind::Midi)
                 continue;
             const auto flat = static_cast<std::size_t>(portOffsets_[i]) + port;
             auto& bound = midiByteBounds_[static_cast<std::size_t>(portSlots_[flat])];
@@ -655,7 +656,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
         const auto from = carriedFrom(i);
 
-        if (plan.ops[i].outputs.front() == SignalKind::Audio) {
+        if (plan.ops[i].outputs.front().kind == SignalKind::Audio) {
             std::shared_ptr<AudioDelayLine> line;
             if (from != INVALID_OP_ID)
                 if (const auto& adopted = previous->audioDelayFor(from);
@@ -1183,7 +1184,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // silent would hand back audio from before the silence when
             // the chain returned, which is the one thing a delay line
             // cannot do.
-            if (op.outputs.front() == SignalKind::Audio) {
+            if (op.outputs.front().kind == SignalKind::Audio) {
                 const auto line = audioDelayForOp_[i];
                 if (line < 0)
                     break;  // no samples to hold: its port is its input's
@@ -1247,7 +1248,8 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
 
         case OpKind::Device: {
             auto audio = audioOut(id, 0, numSamples);
-            const auto producesMidi = op.outputs.size() > 1 && op.outputs[1] == SignalKind::Midi;
+            const auto producesMidi =
+                op.outputs.size() > 1 && op.outputs[1].kind == SignalKind::Midi;
             juce::MidiBuffer* deviceMidiOut = nullptr;
             if (producesMidi) {
                 deviceMidiOut = &midiOut(id, 1);
@@ -1277,15 +1279,55 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             else if (!writesInPlace(i))
                 audio.copyFrom(audioIn(op.inputs[0], numSamples));
 
+            // The device is handed exactly the channels it declared: its input
+            // width where it reads, its output width where it writes, and the
+            // wider of the two to stand in. A mono device therefore sees a
+            // one-channel block rather than being handed stereo and read back
+            // as if it had written both sides of it.
+            const auto inputWidth =
+                static_cast<std::size_t>(op.inputs[0].valid() ? op.audioInputChannels : 0);
+            const auto outputWidth = static_cast<std::size_t>(op.outputs.front().channels);
+            const auto blockWidth = std::max(inputWidth, outputWidth);
+
+            // A channel the device writes but does not read starts silent
+            // rather than holding the bus: the pin it stands for is one the
+            // current engine leaves unconnected on the way in, so a one-in
+            // two-out device must not find the chain's right side waiting on
+            // the side it only ever writes.
+            for (auto channel = inputWidth; channel < blockWidth; ++channel)
+                audio.getSingleChannelBlock(channel).clear();
+
+            // Every port still fills its slot, because everything downstream
+            // reads slots stereo-wide: a mono port's one channel is heard on
+            // both sides, the way the current engine reads a one-pin source
+            // off pin 1 twice, and a port carrying nothing is silence rather
+            // than the input its buffer was prefilled with. A port whose
+            // device is not bound is widened too: what the plan says a port
+            // carries cannot depend on whether anything is there to write it.
+            const auto widenPortsToSlots = [&] {
+                for (std::size_t port = 0; port < op.outputs.size(); ++port) {
+                    const auto& output = op.outputs[port];
+                    if (output.kind != SignalKind::Audio || output.channels == 2)
+                        continue;
+                    auto slot = audioOut(id, static_cast<int>(port), numSamples);
+                    if (output.channels == 1)
+                        slot.getSingleChannelBlock(1).copyFrom(slot.getSingleChannelBlock(0));
+                    else
+                        slot.clear();
+                }
+            };
+
             auto* device = deviceForOp_[i];
-            if (device == nullptr)
+            if (device == nullptr) {
+                widenPortsToSlots();
                 break;
+            }
 
             // No parameters yet: the table a device reads is resolved against a
             // plan and published with it, which is #2117. Until then a device
             // is handed an empty window rather than a stale one.
             const auto window = paramWindowForOp_[static_cast<std::size_t>(i)];
-            DeviceBlock deviceBlock{.audio = audio,
+            DeviceBlock deviceBlock{.audio = audio.getSubsetChannelBlock(0, blockWidth),
                                     .midiIn = &midiIn(op.inputs[1]),
                                     .midiOut = deviceMidiOut,
                                     .sidechain = {},
@@ -1303,12 +1345,18 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 device->process(deviceBlock);
             } else {
                 std::array<juce::dsp::AudioBlock<float>, kMaxMultiOutPairs> pairs;
-                for (int pair = 0; pair < multiOutPairs; ++pair)
+                for (int pair = 0; pair < multiOutPairs; ++pair) {
+                    const auto& port =
+                        op.outputs[static_cast<std::size_t>(firstMultiOutPort + pair)];
                     pairs[static_cast<std::size_t>(pair)] =
-                        audioOut(id, firstMultiOutPort + pair, numSamples);
+                        audioOut(id, firstMultiOutPort + pair, numSamples)
+                            .getSubsetChannelBlock(0, static_cast<std::size_t>(port.channels));
+                }
                 deviceBlock.extraOutputs = {pairs.data(), static_cast<std::size_t>(multiOutPairs)};
                 device->process(deviceBlock);
             }
+
+            widenPortsToSlots();
             jassert(deviceMidiOut == nullptr || deviceMidiOut->data.size() <= kMaxMidiBytesPerPort);
             break;
         }
@@ -1338,7 +1386,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // silent flag takes the whole chain out of the mix. Gain does
             // not apply to it: there is no such thing as MIDI at half
             // volume, only MIDI that is connected or is not.
-            if (op.outputs.size() > 1 && op.outputs[1] == SignalKind::Midi) {
+            if (op.outputs.size() > 1 && op.outputs[1].kind == SignalKind::Midi) {
                 auto& outMidiBuffer = midiOut(id, 1);
                 outMidiBuffer.clear();
                 if (!value.silent && op.inputs[1].valid())
