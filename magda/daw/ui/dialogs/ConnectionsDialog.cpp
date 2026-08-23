@@ -5,6 +5,11 @@
 #include <utility>
 #include <vector>
 
+// For the access(X_OK) check on the staged bridge in McpPage.
+#if !JUCE_WINDOWS && !JUCE_MAC
+    #include <unistd.h>
+#endif
+
 #include "../../api/remote_api_host.hpp"
 #include "../../api/remote_audit.hpp"
 #include "../../api/remote_clients.hpp"
@@ -462,6 +467,14 @@ class McpPage : public TransportPage {
         return std::getenv("APPIMAGE") != nullptr || std::getenv("APPDIR") != nullptr;
     }
 
+    /// Whether this process could actually exec the file. `juce::File` can set
+    /// the execute bit but not ask about it, and the question here is the
+    /// effective one — owner, group, and mode together — which is what
+    /// `access(2)` answers.
+    static bool isExecutable(const juce::File& file) {
+        return ::access(file.getFullPathName().toRawUTF8(), X_OK) == 0;
+    }
+
     /**
      * @brief The AppImage's bridge, copied to a path that outlives the mount.
      *
@@ -472,8 +485,10 @@ class McpPage : public TransportPage {
      *
      * Re-staged whenever the copy no longer matches the binary in the mount, so
      * upgrading the AppImage upgrades the bridge without the user having to know
-     * a copy was ever made. Size plus modification time is enough to tell: the
-     * squashfs carries the build's timestamps, so a rebuild moves both.
+     * a copy was ever made. Size plus modification time identifies the build —
+     * the squashfs carries the build's timestamps, so a rebuild moves both — and
+     * the execute bit is checked alongside them, because a copy that is the
+     * right build but no longer runnable is no more use than a stale one.
      *
      * Returns {} if the copy cannot be made, which the page renders as its
      * "point this somewhere yourself" fallback rather than a path that will not
@@ -497,19 +512,44 @@ class McpPage : public TransportPage {
             return {};
 
         const auto staged = paths::dataDir().getChildFile("bin").getChildFile("magda-mcp");
+
+        // Size and mtime say it is the right build; the execute bit says a host
+        // can actually launch it. A restored backup, an rsync without -p, or a
+        // move across filesystems can preserve the first two and drop the third,
+        // and publishing a path that cannot be executed fails inside the host
+        // with nothing pointing back here. Repair the bit if it is ours to
+        // repair, and re-stage from scratch if it is not.
         if (staged.existsAsFile() && staged.getSize() == source.getSize() &&
-            staged.getLastModificationTime() == source.getLastModificationTime())
+            staged.getLastModificationTime() == source.getLastModificationTime() &&
+            (isExecutable(staged) || staged.setExecutePermission(true)))
             return staged;
 
         if (!staged.getParentDirectory().createDirectory())
             return {};
 
-        // JUCE's POSIX copy is a stream copy into a freshly created file: it
-        // carries neither the execute bit nor the timestamp, and this needs
-        // both — the first to run at all, the second so the next launch can tell
-        // this copy from the one a newer AppImage would bring.
-        if (!source.copyFileTo(staged) || !staged.setExecutePermission(true))
+        // Build the replacement beside the destination, then rename over it.
+        // JUCE's POSIX copy deletes the destination before it starts writing, so
+        // copying straight onto `staged` would throw away a working bridge to
+        // make room for one that might not finish — and that path is the one
+        // every already-configured host has been told to launch. rename(2)
+        // within a directory is atomic, so a host starting mid-upgrade gets
+        // either the old bridge or the new one, never a partial file.
+        const auto incoming = staged.getSiblingFile("magda-mcp.incoming").getNonexistentSibling();
+
+        // The copy is a stream copy into a fresh file, so it carries neither the
+        // execute bit nor the timestamp and both have to be put back: the first
+        // to run at all, the second so the next launch can tell this copy from
+        // the one a newer AppImage would bring.
+        if (!source.copyFileTo(incoming) || !incoming.setExecutePermission(true) ||
+            !incoming.moveFileTo(staged)) {
+            incoming.deleteFile();
             return {};
+        }
+
+        // Best-effort, and deliberately not a reason to fail: a filesystem that
+        // will not take a timestamp costs a re-stage on each launch, which is
+        // wasteful but works. Failing here would leave the user with no bridge
+        // at all over a field that only feeds the freshness check.
         staged.setLastModificationTime(source.getLastModificationTime());
 
         return staged;
