@@ -1522,6 +1522,14 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
 
         auto material = noise();
         material.seed = 0x9E3779B9u;
+        // Two channels, and stated rather than left to the default: MaterialSpec
+        // starts at one, and a mono file read into a stereo bus arrives with the
+        // same samples on both sides. That is the one thing this case cannot
+        // afford -- a fold of two identical channels is the identity whichever
+        // way it is done, so the case would null green over a device reading the
+        // wrong side. The noise generator seeds per channel, so asking for two
+        // is what makes the two sides differ.
+        material.channels = 2;
         value.seed = material.seed;
 
         const auto source = writeSource(scratchDirectory, "rackmono", material);
