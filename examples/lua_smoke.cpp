@@ -41,12 +41,12 @@ int main(int argc, char** argv) {
         magda::TrackInfo a;
         a.id = 1;
         a.name = "Drums";
-        a.type = magda::TrackType::Audio;
+        a.type = magda::TrackType::Media;
         a.volume = 0.8f;
         magda::TrackInfo b;
         b.id = 2;
         b.name = "Bass";
-        b.type = magda::TrackType::Audio;
+        b.type = magda::TrackType::Media;
         b.volume = 0.6f;
         mock.tracks_.tracks.push_back(a);
         mock.tracks_.tracks.push_back(b);

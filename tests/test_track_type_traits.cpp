@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "magda/daw/core/ClipPlacementPolicy.hpp"
 #include "magda/daw/core/TrackInfo.hpp"
 #include "magda/daw/core/TrackTypes.hpp"
 
@@ -139,4 +140,39 @@ TEST_CASE("A track answers for itself what its type declares", "[track][types]")
     track.type = TrackType::Chord;
     CHECK(track.acceptsUserClip(ClipType::MIDI));
     CHECK_FALSE(track.acceptsUserClip(ClipType::Audio));
+}
+
+TEST_CASE("Moving a clip asks what the clip is, not only what kind", "[track][types]") {
+    // The gap a kind-only check leaves. A chord lane accepts MIDI by kind,
+    // because a progression is a MIDI clip -- so a check that stopped at the
+    // kind would let any MIDI clip be dragged or nudged onto the chord track,
+    // where nothing would turn it into harmony. Detection happens on import,
+    // and a move is not an import.
+    TrackInfo chordTrack;
+    chordTrack.type = TrackType::Chord;
+
+    ClipInfo plainMidi;
+    plainMidi.content = MidiClipModel{};
+    CHECK(chordTrack.acceptsUserClip(ClipType::MIDI));     // by kind, yes
+    CHECK_FALSE(trackAcceptsClip(chordTrack, plainMidi));  // with the clip in hand, no
+
+    ClipInfo progression;
+    progression.content = MidiClipModel{};
+    progression.chordAnnotations.push_back({});
+    CHECK(trackAcceptsClip(chordTrack, progression));
+
+    // A multi-out lane has no such distinction: MIDI is MIDI there.
+    TrackInfo multiOut;
+    multiOut.type = TrackType::MultiOut;
+    CHECK(trackAcceptsClip(multiOut, plainMidi));
+
+    ClipInfo audio;
+    audio.content = AudioClipModel{};
+    CHECK_FALSE(trackAcceptsClip(multiOut, audio));
+
+    // And a bus takes neither, whatever the clip turns out to be.
+    TrackInfo group;
+    group.type = TrackType::Group;
+    CHECK_FALSE(trackAcceptsClip(group, audio));
+    CHECK_FALSE(trackAcceptsClip(group, progression));
 }

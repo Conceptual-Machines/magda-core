@@ -22,6 +22,7 @@
 #include "core/AutomationCommands.hpp"
 #include "core/ChordProgressionConverter.hpp"
 #include "core/ClipCommands.hpp"
+#include "core/ClipPlacementPolicy.hpp"
 #include "core/MidiChordMarkers.hpp"
 #include "core/PasteTargetResolver.hpp"
 #include "core/SelectionManager.hpp"
@@ -2476,6 +2477,13 @@ void TrackContentPanel::rebuildClipComponents() {
         };
 
         clipComp->onClipMovedToTrack = [](ClipId id, TrackId newTrackId) {
+            // The same question the command asks, asked first so a refused move
+            // is not an undo step that does nothing.
+            const auto* target = TrackManager::getInstance().getTrack(newTrackId);
+            const auto* dragged = ClipManager::getInstance().getClip(id);
+            if (target == nullptr || dragged == nullptr || !trackAcceptsClip(*target, *dragged))
+                return;
+
             auto cmd = std::make_unique<MoveClipToTrackCommand>(id, newTrackId);
             UndoManager::getInstance().executeCommand(std::move(cmd));
         };
