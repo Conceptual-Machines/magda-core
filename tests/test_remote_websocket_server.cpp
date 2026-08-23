@@ -874,11 +874,11 @@ TEST_CASE("A dropped subscriber stops being able to change the project",
     service.changes().flush();
     REQUIRE(hub.clientCount() == 0);
 
-    // Marking a connection closed is all a foreign thread may do — the reader
-    // owns the socket. That only ends the connection if the reader looks, and
-    // until it did, a client dropped for backpressure kept getting its requests
-    // executed with only the replies thrown away.
-    REQUIRE(client.send(request("transport.play", {}, 2)));
+    // The disconnect shuts down the socket from the hub's thread. Depending on
+    // scheduling, this write either reaches the kernel just before shutdown or
+    // is refused because shutdown already won. The security invariant is the
+    // same in both cases: no post-drop request reaches the dispatcher.
+    static_cast<void>(client.send(request("transport.play", {}, 2)));
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
     while (server.connectionCount() > 0 && std::chrono::steady_clock::now() < deadline)
