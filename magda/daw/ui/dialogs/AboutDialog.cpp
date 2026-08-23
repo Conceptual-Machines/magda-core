@@ -2,6 +2,7 @@
 
 #include "BinaryData.h"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "magda.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -256,7 +257,9 @@ class AboutDialog::ContentComponent : public juce::Component {
 // =============================================================================
 
 AboutDialog::AboutDialog()
-    : DialogWindow(tr("dialogs.about"), DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND), true) {
+    : DialogWindow(tr("dialogs.about")
+                       .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Magda)),
+                   DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND), true) {
     setContentOwned(new ContentComponent(), true);
     setUsingNativeTitleBar(false);
     setResizable(false, false);

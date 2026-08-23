@@ -95,10 +95,11 @@ class TransportPage : public juce::Component, private juce::Timer {
         blurbLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
         blurbLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
         blurbLabel_.setJustificationType(juce::Justification::topLeft);
-        blurbLabel_.setText(key("blurb"), juce::dontSendNotification);
+        blurbLabel_.setText(named("blurb"), juce::dontSendNotification);
         addAndMakeVisible(blurbLabel_);
 
-        enableToggle_.setButtonText(key("enable"));
+        enableToggle_.setButtonText(
+            named("enable").replace("{1}", magda::technicalText(magda::TechnicalTextToken::Api)));
         enableToggle_.setColour(juce::ToggleButton::textColourId,
                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         enableToggle_.setColour(juce::ToggleButton::tickColourId,
@@ -123,7 +124,7 @@ class TransportPage : public juce::Component, private juce::Timer {
         rotateButton_.onClick = [this]() { confirmRotate(); };
         addAndMakeVisible(rotateButton_);
 
-        fieldCaption_.setText(key("field_caption"), juce::dontSendNotification);
+        fieldCaption_.setText(named("field_caption"), juce::dontSendNotification);
         styleLabel(fieldCaption_);
         addAndMakeVisible(fieldCaption_);
 
@@ -147,7 +148,9 @@ class TransportPage : public juce::Component, private juce::Timer {
         hintLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
         hintLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
         hintLabel_.setJustificationType(juce::Justification::topLeft);
-        hintLabel_.setText(key("hint"), juce::dontSendNotification);
+        hintLabel_.setText(
+            named("hint").replace("{1}", magda::technicalText(magda::TechnicalTextToken::Magda)),
+            juce::dontSendNotification);
         addAndMakeVisible(hintLabel_);
 
         enableToggle_.setToggleState(enabledInConfig(), juce::dontSendNotification);
@@ -211,6 +214,24 @@ class TransportPage : public juce::Component, private juce::Timer {
     /// A `connections.<prefix>.<leaf>` string.
     juce::String key(const char* leaf) const {
         return tr("connections." + keyPrefix_ + "." + leaf);
+    }
+
+    /// The same, with this transport's name substituted for `{0}`.
+    ///
+    /// "MCP" and "WebSocket" are product names, not words to translate, so no
+    /// string spells either of them: they arrive through `technicalText` like
+    /// every other technical term. A string that names a second such term uses
+    /// `{1}` and substitutes it at its own call site, since which term that is
+    /// differs between the two transports.
+    juce::String named(const char* leaf) const {
+        return key(leaf).replace("{0}", displayName());
+    }
+
+    /// This transport's name, as it is written in every language.
+    juce::String displayName() const {
+        return magda::technicalText(transport_ == magda::remote::Transport::WebSocket
+                                        ? magda::TechnicalTextToken::WebSocket
+                                        : magda::TechnicalTextToken::Mcp);
     }
 
   private:
@@ -306,12 +327,6 @@ class TransportPage : public juce::Component, private juce::Timer {
                     live->rotateToken(transport_);
                 refresh();
             });
-    }
-
-    juce::String displayName() const {
-        return magda::technicalText(transport_ == magda::remote::Transport::WebSocket
-                                        ? magda::TechnicalTextToken::WebSocket
-                                        : magda::TechnicalTextToken::Mcp);
     }
 
     void refresh() {
@@ -458,7 +473,11 @@ class McpPage : public TransportPage {
         if (!haveBridge) {
             // A wrong path is worse than an obvious placeholder: it fails inside
             // another application, at launch, with nothing pointing back here.
-            snippet = commentBlock(key("bridge_missing")) + snippet;
+            snippet =
+                commentBlock(
+                    key("bridge_missing")
+                        .replace("{1}", magda::technicalText(magda::TechnicalTextToken::Magda))) +
+                snippet;
         }
 
         // Nothing worth copying when the path is a placeholder.
@@ -735,7 +754,10 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
                 rows_.clear();
                 clientsHolder_.removeAllChildren();
             }
-            emptyLabel_.setText(tr("connections.clients.unavailable"), juce::dontSendNotification);
+            emptyLabel_.setText(
+                tr("connections.clients.unavailable")
+                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Api)),
+                juce::dontSendNotification);
             emptyLabel_.setVisible(true);
             return;
         }
@@ -879,7 +901,9 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
     OscSurfacesPage() {
         auto& config = Config::getInstance();
 
-        enable_.setButtonText(tr("connections.osc.enable"));
+        enable_.setButtonText(
+            tr("connections.osc.enable")
+                .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Osc)));
         enable_.setToggleState(config.getOscEnabled(), juce::dontSendNotification);
         enable_.onClick = [this] {
             Config::getInstance().setOscEnabled(enable_.getToggleState());
@@ -1096,7 +1120,8 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
             // The state a silent surface is actually in, and the one a message
             // counter reading zero could never distinguish from a dropped
             // packet: nothing has ever arrived, so there is nobody to answer.
-            text << tr("connections.osc.surfaces_none");
+            text << tr("connections.osc.surfaces_none")
+                        .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Magda));
         } else {
             const auto now = juce::Time::currentTimeMillis();
             for (const auto& surface : surfaces)

@@ -426,7 +426,11 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             menu.addItem(OpenManual, tr("menu.help.manual"), true, false);
             menu.addItem(CheckForUpdates, trEllipsis("menu.help.check_updates"), true, false);
             menu.addSeparator();
-            menu.addItem(About, tr("menu.help.about"), true, false);
+            menu.addItem(
+                About,
+                tr("menu.help.about")
+                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Magda)),
+                true, false);
             break;
         }
 
