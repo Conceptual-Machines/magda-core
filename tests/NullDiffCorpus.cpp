@@ -1583,6 +1583,57 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         corpus.push_back(std::move(value));
     }
 
+    {
+        // A multi-out instrument and the track that reads its second pair.
+        //
+        // The other half of the aux question, and a different mechanism from
+        // rack.aux above: a chain routed to a rack's aux output reaches
+        // nothing, while an output pair of an instrument reaches the MultiOut
+        // track that opened it. The compiler says as much where it refuses the
+        // first; this is where the second is rendered rather than asserted in
+        // a comment.
+        //
+        // MIDI drives it, so nothing here rests on two engines agreeing about
+        // a free-running clock: on every note-on the device writes an impulse
+        // to pair 0 and half of one to pair 1 (NullDiffGain.hpp), and where a
+        // note lands is what the `midi.*` cases already pin.
+        //
+        // The two tracks are panned apart, and that is what makes the case able
+        // to say which pair reached which track rather than only that the total
+        // was right. Both feed the master, so a leg that sent both pairs down
+        // one track, or swapped them, would sum to the same figure on a case
+        // that let them overlap; hard left against hard right puts the source
+        // pair at full scale in one channel and the second pair at half scale
+        // in the other, and any mixing up of the two moves both.
+        auto source = instrumentTrackOn(1, 970, "Source");
+        source.chain.fxChainElements.clear();
+        source.chain.fxChainElements.emplace_back(multiOutSynthDevice(970, 2));
+        source.pan = -1.0f;
+
+        TrackInfo pairTrack;
+        pairTrack.id = 2;
+        pairTrack.type = TrackType::MultiOut;
+        pairTrack.name = "Pair";
+        pairTrack.audioOutputDevice = "master";
+        pairTrack.pan = 1.0f;
+        pairTrack.multiOutLink = MultiOutTrackLink{1, 970, 1};
+
+        auto value = newTrackCase("multiout.pair",
+                                  "an instrument's second output pair and the track that reads it",
+                                  {std::move(source), std::move(pairTrack)});
+        value.endBeat = 8.0;
+
+        auto clip = midiClipOn(1, 320, 0.0, 8.0);
+        // Full velocity, so the level is exactly one and the pair's half is
+        // exactly a half: a corpus that had to compare 0.7874 against 0.7874
+        // would be measuring the same arithmetic with more places to go wrong.
+        for (auto index = 0; index < 8; ++index)
+            clip.midiNotes.push_back(note(60 + index, static_cast<double>(index), 0.5, 127));
+        value.clips.push_back(std::move(clip));
+
+        corpus.push_back(std::move(value));
+    }
+
     // --- a project that asserts both -------------------------------------------
 
     {

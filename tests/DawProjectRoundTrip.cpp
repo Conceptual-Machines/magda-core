@@ -371,6 +371,34 @@ Loss trackModulation() {
             }};
 }
 
+Loss multiOutRouting() {
+    return {.field = "TrackInfo::type, TrackInfo::multiOutLink",
+            .reason = "an instrument's further output pairs have no DAWproject representation, "
+                      "and neither does a track whose whole content is one of them. The format "
+                      "gives a channel one audio output and a destination; a MultiOut track is "
+                      "a second reader of a device that lives on another track, which is a "
+                      "relationship between a track and a device rather than between two "
+                      "channels. It comes back as an ordinary audio track with no link",
+            .restore = [](Case& imported, const Case& original) {
+                bool restored = false;
+
+                for (auto& track : imported.tracks)
+                    for (const auto& source : original.tracks) {
+                        if (source.name != track.name)
+                            continue;
+                        if (track.type == source.type &&
+                            track.multiOutLink.has_value() == source.multiOutLink.has_value())
+                            continue;
+
+                        track.type = source.type;
+                        track.multiOutLink = source.multiOutLink;
+                        restored = true;
+                    }
+
+                return restored;
+            }};
+}
+
 const std::map<std::string, std::vector<Loss>>& lossTable() {
     static const std::map<std::string, std::vector<Loss>> table{
         {"fades.curves", {fades()}},
@@ -407,6 +435,7 @@ const std::map<std::string, std::vector<Loss>>& lossTable() {
         {"rack.aux", {internalDevices()}},
         {"rack.mono", {internalDevices()}},
         {"rack.instrument", {internalDevices()}},
+        {"multiout.pair", {internalDevices(), multiOutRouting()}},
         {"project.mixed", {internalDevices()}},
         {"midi.notes", {internalDevices()}},
         {"midi.cc", {internalDevices(), controllers()}},
