@@ -3401,16 +3401,21 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
         if (!track)
             return;
 
-        // The only question worth asking of the target, and the same one the
-        // clip drag and the keyboard nudge ask (TrackInfo::canHostClips).
-        // Nothing here inspects what is being dropped: a track is hybrid, so
-        // the kind of file decides what clip gets made, never whether it is
-        // allowed (#2172).
-        if (!track->canHostClips()) {
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Drop Failed",
-                                                   "Files cannot be dropped on this track.");
+        // Block drops on group/aux tracks (no clip timeline)
+        if (track->type == TrackType::Group || track->type == TrackType::Aux) {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, "Drop Failed",
+                "Files cannot be dropped on group or aux tracks.");
             return;
         }
+
+        // Nothing else is asked of the target, and in particular nothing is
+        // asked about the file. A track is hybrid: TrackType::Audio is the
+        // regular track and holds audio clips and MIDI clips alike, which is
+        // why the importer below creates one for both. A Drum Grid on the
+        // chain used to refuse every dropped file here, so the track likeliest
+        // to want a .mid was the one that would not take one, while the same
+        // clip could be dragged onto it from a neighbour (#2172).
     }
     // If targetTrackId is still INVALID, we'll create a new track below
 

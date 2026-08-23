@@ -240,28 +240,6 @@ struct TrackInfo {
         return type != TrackType::Aux && type != TrackType::Group && type != TrackType::Master;
     }
 
-    // Whether clips can live on this track's timeline. Single source of truth
-    // for every path that puts one there: a file drop, a clip drag, a keyboard
-    // nudge.
-    //
-    // Asked of the track rather than of what is being placed, because a track
-    // is hybrid -- TrackType::Audio is the regular track and it hosts audio
-    // clips and MIDI clips alike. Nothing about a clip's kind decides where it
-    // may land, and a call site that tested for one was how a Drum Grid track
-    // came to refuse the .mid files it was the likeliest track to want
-    // (#2172), while the identical clip could be dragged onto it from a
-    // neighbour.
-    //
-    // What cannot host clips is structural. Group and Aux are buses with no
-    // timeline of their own, Master has no lane, Chord is a singleton whose
-    // clips are progressions rather than parts, and a MultiOut lane is owned by
-    // a device's output pair -- deactivating that pair erases the track without
-    // touching its clips, so anything parked there is orphaned.
-    bool canHostClips() const {
-        return type != TrackType::Group && type != TrackType::Aux && type != TrackType::Master &&
-               type != TrackType::Chord && type != TrackType::MultiOut;
-    }
-
     // Enforce the track-type invariants on this struct's own fields. Input-less
     // tracks (Aux send buses, Group summing tracks) only pass signal from
     // elsewhere: they take no external audio/MIDI input and so cannot be

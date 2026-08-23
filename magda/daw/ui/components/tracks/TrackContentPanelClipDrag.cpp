@@ -402,12 +402,18 @@ void TrackContentPanel::cancelMultiClipDrag() {
 
 namespace {
 
-// Tracks a nudge may move a clip onto, which is every track that can hold a
-// clip at all. The rule and the reasons behind it live on TrackInfo, so that a
-// nudge, a drag and a file drop cannot come to disagree about where a clip is
-// allowed to be — which is exactly what they had done (#2172).
+// Tracks a nudge may move a clip onto. Group and aux tracks are buses with no
+// clip timeline, the master track has no lane, and the chord track is a
+// singleton whose clips are chord progressions — a MIDI clip landing there
+// would change meaning. Multi-out tracks look like ordinary lanes but are
+// owned by a device's output pair: deactivateMultiOutPair() erases the track
+// outright without touching its clips, so anything parked there is orphaned
+// the moment the user switches that output off. Vertical nudging steps over
+// all of them.
 bool canHostNudgedClips(const TrackInfo& track) {
-    return track.canHostClips();
+    return track.type != TrackType::Group && track.type != TrackType::Aux &&
+           track.type != TrackType::Master && track.type != TrackType::Chord &&
+           track.type != TrackType::MultiOut;
 }
 
 // The clips a nudge acts on: the arrangement half of the selection. Session
