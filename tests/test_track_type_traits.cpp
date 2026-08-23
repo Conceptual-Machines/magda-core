@@ -24,7 +24,7 @@ TEST_CASE("A Media track is the one that carries material", "[track][types]") {
 
     // The hybrid track, and the only one a user puts clips on directly.
     CHECK(media.hasTimeline);
-    CHECK(media.acceptsUserClips);
+    CHECK(media.userClips == UserClipAcceptance::Any);
     CHECK(media.takesExternalInput);
     CHECK(media.hostsInstrument);
     CHECK(media.occupiesArrangementRow);
@@ -55,7 +55,7 @@ TEST_CASE("Buses carry signal from elsewhere and originate none", "[track][types
         INFO("track type " << getTrackTypeName(type));
 
         CHECK_FALSE(bus.hasTimeline);
-        CHECK_FALSE(bus.acceptsUserClips);
+        CHECK(bus.userClips == UserClipAcceptance::None);
         CHECK_FALSE(bus.hostsInstrument);
     }
 
@@ -72,19 +72,23 @@ TEST_CASE("Buses carry signal from elsewhere and originate none", "[track][types
     CHECK(traitsOf(TrackType::Master).takesExternalInput);
 }
 
-TEST_CASE("A timeline is not permission to put a clip on it", "[track][types]") {
-    // The distinction the old exclusion lists kept getting wrong. Both of these
-    // have lanes with clips on them, and neither takes a clip the user aims at
-    // it: a chord track's clips are progressions, so an ordinary MIDI clip
-    // landing there would change what the track means, and a multi-out lane is
-    // erased with its device's output pair without its clips going too.
-    for (const auto type : {TrackType::Chord, TrackType::MultiOut}) {
-        INFO("track type " << getTrackTypeName(type));
-        CHECK(traitsOf(type).hasTimeline);
-        CHECK_FALSE(traitsOf(type).acceptsUserClips);
-    }
+TEST_CASE("A lane can be typed without being closed", "[track][types]") {
+    // The distinction the old exclusion lists could not express, so they
+    // refused both of these outright. Each has a lane, and each takes one
+    // particular thing rather than anything aimed at it.
 
+    // MIDI on a multi-out lane plays the parent instrument, which is what
+    // MidiInputRouter already does with live input arriving there. Audio has
+    // nothing to do on one.
+    CHECK(traitsOf(TrackType::MultiOut).hasTimeline);
+    CHECK(traitsOf(TrackType::MultiOut).userClips == UserClipAcceptance::MidiOnly);
     CHECK(traitsOf(TrackType::MultiOut).isDeviceOwned);
+
+    // The chord track holds progressions. Dropping one on it is the obvious
+    // gesture and has to work; an ordinary MIDI clip would change what the
+    // track means.
+    CHECK(traitsOf(TrackType::Chord).hasTimeline);
+    CHECK(traitsOf(TrackType::Chord).userClips == UserClipAcceptance::Progressions);
     CHECK(traitsOf(TrackType::Chord).isSingleton);
 
     // Monitor-only: it auditions chords and is left out of the mix.
@@ -92,17 +96,16 @@ TEST_CASE("A timeline is not permission to put a clip on it", "[track][types]") 
     CHECK(traitsOf(TrackType::Media).isRendered);
 }
 
-TEST_CASE("Exactly one track type accepts a clip the user aims at it", "[track][types]") {
-    // Stated as a count rather than per type, because this is the property the
-    // drop, the drag and the nudge each have to agree on, and the way they
-    // disagreed before was by one of them admitting one type too many.
-    int accepting = 0;
+TEST_CASE("Only the Media track takes whatever is aimed at it", "[track][types]") {
+    // The property the drop, the drag and the nudge each have to agree on. The
+    // way they disagreed before was by one of them admitting a type the others
+    // refused, so this is stated over every type rather than for one.
     for (const auto type : {TrackType::Media, TrackType::Group, TrackType::Aux, TrackType::Master,
-                            TrackType::MultiOut, TrackType::Chord})
-        if (traitsOf(type).acceptsUserClips)
-            ++accepting;
-
-    CHECK(accepting == 1);
+                            TrackType::MultiOut, TrackType::Chord}) {
+        INFO("track type " << getTrackTypeName(type));
+        const bool takesEverything = traitsOf(type).userClips == UserClipAcceptance::Any;
+        CHECK(takesEverything == (type == TrackType::Media));
+    }
 }
 
 TEST_CASE("A track answers for itself what its type declares", "[track][types]") {
@@ -112,10 +115,26 @@ TEST_CASE("A track answers for itself what its type declares", "[track][types]")
     track.type = TrackType::Aux;
     CHECK_FALSE(track.takesExternalInput());
     CHECK_FALSE(track.canHostInstrument());
-    CHECK_FALSE(track.acceptsUserClips());
+    CHECK_FALSE(track.acceptsAnyUserClip());
+    CHECK_FALSE(track.acceptsUserClip(ClipType::Audio));
+    CHECK_FALSE(track.acceptsUserClip(ClipType::MIDI));
 
     track.type = TrackType::Media;
     CHECK(track.takesExternalInput());
     CHECK(track.canHostInstrument());
-    CHECK(track.acceptsUserClips());
+    CHECK(track.acceptsUserClip(ClipType::Audio));
+    CHECK(track.acceptsUserClip(ClipType::MIDI));
+
+    // The kind is the question, not the track. A multi-out lane takes the MIDI
+    // that plays its parent instrument and refuses the audio that has nowhere
+    // to go, and answering yes or no for the whole track could say neither.
+    track.type = TrackType::MultiOut;
+    CHECK(track.acceptsUserClip(ClipType::MIDI));
+    CHECK_FALSE(track.acceptsUserClip(ClipType::Audio));
+
+    // A progression is a MIDI clip, so the type-level answer is yes and the
+    // content check happens at the drop, where the file can be read.
+    track.type = TrackType::Chord;
+    CHECK(track.acceptsUserClip(ClipType::MIDI));
+    CHECK_FALSE(track.acceptsUserClip(ClipType::Audio));
 }

@@ -33,6 +33,37 @@ enum class TrackType {
 };
 
 /**
+ * @brief What a user may put on a track's lane.
+ *
+ * Having a lane is not the same as taking anything that is aimed at it, and
+ * the difference is per type rather than per gesture: a drop, a drag and a
+ * nudge all ask this one question.
+ */
+enum class UserClipAcceptance {
+    /// No lane, or a lane the user does not place clips on.
+    None,
+
+    /// Audio or MIDI, whichever the material is. The Media track.
+    Any,
+
+    /// MIDI only. A multi-out lane belongs to a device's output pair and the
+    /// MIDI on it plays the parent instrument, the same way MidiInputRouter
+    /// already routes live input through such a track to its parent. Audio has
+    /// nothing to do there.
+    ///
+    /// Worth knowing rather than worth forbidding: deactivating the output pair
+    /// erases the track without taking its clips along, so what is placed here
+    /// does not outlive that pair.
+    MidiOnly,
+
+    /// Chord progressions only -- a .mid carrying CHORD: markers. The lane is
+    /// typed rather than closed: dropping a progression on the chord track is
+    /// the obvious gesture and it works, while an ordinary MIDI clip landing
+    /// there would change what the track means.
+    Progressions,
+};
+
+/**
  * @brief The facts a track type declares about itself.
  *
  * Every question the app asks of a track type is a field here, so that asking
@@ -42,42 +73,40 @@ enum class TrackType {
  */
 struct TrackTypeTraits {
     /// Owns a lane in the arrangement that clips live on.
-    bool hasTimeline;
+    bool hasTimeline = false;
 
-    /// A user may put an arbitrary clip on that lane -- drop a file, drag one
-    /// in, nudge one over. Narrower than hasTimeline on purpose. A Chord track
-    /// has clips and they are progressions, so an ordinary MIDI clip landing
-    /// there would change what the track means; a MultiOut lane is erased with
-    /// its output pair without taking its clips along, so anything put there is
-    /// orphaned the moment the user switches that output off.
-    bool acceptsUserClips;
+    /// What a user may place on that lane -- drop a file, drag a clip in, nudge
+    /// one over. Narrower than hasTimeline on purpose, and not a bool, because
+    /// three lanes accept three different things and a bool could only say
+    /// which of them were "not Media".
+    UserClipAcceptance userClips = UserClipAcceptance::None;
 
     /// Takes external audio/MIDI input, so it can be monitored and record-armed.
     /// Buses only pass on what reaches them from elsewhere.
-    bool takesExternalInput;
+    bool takesExternalInput = false;
 
     /// Can host an instrument device. Buses and the master process signal from
     /// elsewhere and never originate it.
-    bool hostsInstrument;
+    bool hostsInstrument = false;
 
     /// Occupies a row in the scrolling arrangement columns. Aux returns do not:
     /// they have their own fixed strip below the arrangement, so a row here as
     /// well would render the same track twice, and the header and content
     /// columns would drift apart by that track's height as you scroll.
-    bool occupiesArrangementRow;
+    bool occupiesArrangementRow = false;
 
     /// Can contain child tracks.
-    bool canHaveChildren;
+    bool canHaveChildren = false;
 
     /// Contributes to the rendered mix. The chord track is monitor-only.
-    bool isRendered;
+    bool isRendered = false;
 
     /// At most one exists in a project, created on demand rather than by the
     /// user adding a track.
-    bool isSingleton;
+    bool isSingleton = false;
 
     /// Exists because a device's output pair does, and is destroyed with it.
-    bool isDeviceOwned;
+    bool isDeviceOwned = false;
 };
 
 /**
@@ -90,36 +119,98 @@ struct TrackTypeTraits {
  */
 constexpr TrackTypeTraits traitsOf(TrackType type) {
     switch (type) {
+        // The regular track. The only one a user puts an arbitrary clip on.
         case TrackType::Media:
-            return {/* hasTimeline */ true,
-                    /* acceptsUserClips */ true,
-                    /* takesExternalInput */ true,
-                    /* hostsInstrument */ true,
-                    /* occupiesArrangementRow */ true,
-                    /* canHaveChildren */ false,
-                    /* isRendered */ true,
-                    /* isSingleton */ false,
-                    /* isDeviceOwned */ false};
+            return {
+                .hasTimeline = true,
+                .userClips = UserClipAcceptance::Any,
+                .takesExternalInput = true,
+                .hostsInstrument = true,
+                .occupiesArrangementRow = true,
+                .canHaveChildren = false,
+                .isRendered = true,
+                .isSingleton = false,
+                .isDeviceOwned = false,
+            };
 
+        // Sums the children it owns. A bus: nothing originates here.
         case TrackType::Group:
-            return {false, false, false, false, true, true, true, false, false};
+            return {
+                .hasTimeline = false,
+                .userClips = UserClipAcceptance::None,
+                .takesExternalInput = false,
+                .hostsInstrument = false,
+                .occupiesArrangementRow = true,
+                .canHaveChildren = true,
+                .isRendered = true,
+                .isSingleton = false,
+                .isDeviceOwned = false,
+            };
 
+        // Fed by sends. No arrangement row of its own -- aux returns live in
+        // the fixed strip below, and a row here as well would draw them twice.
         case TrackType::Aux:
-            return {false, false, false, false, false, false, true, false, false};
+            return {
+                .hasTimeline = false,
+                .userClips = UserClipAcceptance::None,
+                .takesExternalInput = false,
+                .hostsInstrument = false,
+                .occupiesArrangementRow = false,
+                .canHaveChildren = false,
+                .isRendered = true,
+                .isSingleton = false,
+                .isDeviceOwned = false,
+            };
 
+        // The one output. Takes input like a media track and originates none.
         case TrackType::Master:
-            return {false, false, true, false, true, false, true, true, false};
+            return {
+                .hasTimeline = false,
+                .userClips = UserClipAcceptance::None,
+                .takesExternalInput = true,
+                .hostsInstrument = false,
+                .occupiesArrangementRow = true,
+                .canHaveChildren = false,
+                .isRendered = true,
+                .isSingleton = true,
+                .isDeviceOwned = false,
+            };
 
+        // A device's output pair, wearing a lane. MIDI on it plays the parent
+        // instrument, which is what MidiInputRouter already does with live
+        // input arriving here. Audio has nothing to do on such a lane.
         case TrackType::MultiOut:
-            return {true, false, true, true, true, false, true, false, true};
+            return {
+                .hasTimeline = true,
+                .userClips = UserClipAcceptance::MidiOnly,
+                .takesExternalInput = true,
+                .hostsInstrument = true,
+                .occupiesArrangementRow = true,
+                .canHaveChildren = false,
+                .isRendered = true,
+                .isSingleton = false,
+                .isDeviceOwned = true,
+            };
 
+        // Auditions chords and stays out of the mix. Its lane is typed rather
+        // than closed: progressions belong on it, ordinary clips do not.
         case TrackType::Chord:
-            return {true, false, true, true, true, false, false, true, false};
+            return {
+                .hasTimeline = true,
+                .userClips = UserClipAcceptance::Progressions,
+                .takesExternalInput = true,
+                .hostsInstrument = true,
+                .occupiesArrangementRow = true,
+                .canHaveChildren = false,
+                .isRendered = false,
+                .isSingleton = true,
+                .isDeviceOwned = false,
+            };
     }
 
     // Unreachable for any declared type; a value cast in from outside the enum
     // gets the most restrictive answer rather than the most permissive one.
-    return {false, false, false, false, false, false, false, false, false};
+    return {};
 }
 
 /**

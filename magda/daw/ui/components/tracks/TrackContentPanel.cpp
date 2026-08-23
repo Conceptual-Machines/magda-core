@@ -3394,27 +3394,8 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
 
     TrackId targetTrackId = INVALID_TRACK_ID;
 
-    if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
-        // Dropped on an existing track
-        targetTrackId = visibleTrackIds_[trackIndex];
-        auto* track = TrackManager::getInstance().getTrack(targetTrackId);
-        if (!track)
-            return;
-
-        // One question about the target, and none at all about the file. A
-        // Media track is hybrid, so what is dropped decides which clip gets
-        // made and never whether it is allowed. A Drum Grid on the chain used
-        // to refuse every dropped file here, which made the track likeliest to
-        // want a .mid the one that would not take one (#2172).
-        if (!track->acceptsUserClips()) {
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Drop Failed",
-                                                   "Clips cannot be placed on this track.");
-            return;
-        }
-    }
-    // If targetTrackId is still INVALID, we'll create a new track below
-
-    // Separate audio and MIDI files
+    // Which kind each file is, worked out before the target is vetted: what a
+    // track accepts is per kind, so the check below needs to know what it has.
     juce::StringArray audioFiles, midiFiles;
     for (const auto& filePath : files) {
         if (filePath.endsWithIgnoreCase(".mid") || filePath.endsWithIgnoreCase(".midi"))
@@ -3424,6 +3405,70 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                  filePath.endsWithIgnoreCase(".ogg") || filePath.endsWithIgnoreCase(".flac"))
             audioFiles.add(filePath);
     }
+
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
+        // Dropped on an existing track
+        targetTrackId = visibleTrackIds_[trackIndex];
+        auto* track = TrackManager::getInstance().getTrack(targetTrackId);
+        if (!track)
+            return;
+
+        // What the target accepts, asked of the table every other path asks
+        // (TrackTypes.hpp). Nothing here is a question about the Drum Grid: a
+        // Media track is hybrid and takes both kinds, and a chain device used
+        // to refuse every dropped file here, which made the track likeliest to
+        // want a .mid the one that would not take one (#2172).
+        const auto refuse = [](const juce::String& why) {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Drop Failed",
+                                                   why);
+        };
+
+        if (!audioFiles.isEmpty() && !track->acceptsUserClip(ClipType::Audio)) {
+            if (midiFiles.isEmpty()) {
+                refuse("Audio clips cannot be placed on this track.");
+                return;
+            }
+
+            // A mixed drop still imports what the track does take, and says
+            // what it left. Refusing all of it because one file was the wrong
+            // kind is the shape of the bug this replaces.
+            refuse("Audio clips cannot be placed on this track, so only the MIDI was imported.");
+            audioFiles.clear();
+        }
+
+        if (!midiFiles.isEmpty() && !track->acceptsUserClip(ClipType::MIDI)) {
+            if (audioFiles.isEmpty()) {
+                refuse("MIDI clips cannot be placed on this track.");
+                return;
+            }
+            refuse("MIDI clips cannot be placed on this track, so only the audio was imported.");
+            midiFiles.clear();
+        }
+
+        // A progressions lane says yes to MIDI above, because a progression is
+        // a MIDI clip. Whether this material is one is a question about content
+        // rather than about kind, and here is where the content can be read.
+        if (traitsOf(track->type).userClips == UserClipAcceptance::Progressions) {
+            juce::StringArray progressions;
+            for (const auto& path : midiFiles)
+                if (!magda::daw::readChordMarkers(juce::File(path)).empty())
+                    progressions.add(path);
+
+            if (progressions.size() != midiFiles.size()) {
+                if (progressions.isEmpty()) {
+                    refuse("Only chord progressions can be placed on the chord track.");
+                    return;
+                }
+                refuse("Only chord progressions can be placed on the chord track, so the rest "
+                       "was left out.");
+            }
+            midiFiles = progressions;
+        }
+
+        if (audioFiles.isEmpty() && midiFiles.isEmpty())
+            return;
+    }
+    // If targetTrackId is still INVALID, we'll create a new track below
 
     int importedCount = 0;
 

@@ -1,6 +1,7 @@
 // TrackContentPanel — Multi-clip drag, time selection clip handling, and clip ghost methods.
 // Split from TrackContentPanel.cpp for file-size compliance.
 
+#include <algorithm>
 #include <limits>
 
 #include "../../interaction/ClipNudge.hpp"
@@ -402,11 +403,19 @@ void TrackContentPanel::cancelMultiClipDrag() {
 
 namespace {
 
-// Tracks a nudge may move a clip onto, which is the same set that a file drop
-// and a clip drag may target. The reasons live with the types themselves now,
-// so vertical nudging steps over whatever the table says it must.
-bool canHostNudgedClips(const TrackInfo& track) {
-    return track.acceptsUserClips();
+// Tracks a nudge may move this selection onto, which is the same question a
+// file drop and a clip drag ask, of the same table (TrackTypes.hpp).
+//
+// Asked with the selection in hand rather than of the track alone, because a
+// lane can accept one kind and not another: a multi-out lane takes MIDI, whose
+// notes play the parent instrument, and has nothing to do with audio. A mixed
+// selection therefore needs a track that accepts every kind in it, since a
+// nudge moves the selection as one block and cannot leave half of it behind.
+bool canHostNudgedClips(const TrackInfo& track, const std::vector<ClipType>& kinds) {
+    for (const auto kind : kinds)
+        if (!track.acceptsUserClip(kind))
+            return false;
+    return !kinds.empty();
 }
 
 // The clips a nudge acts on: the arrangement half of the selection. Session
@@ -536,10 +545,22 @@ bool TrackContentPanel::nudgeSelectedClipsToAdjacentTrack(int direction) {
     // the model out of step with its rendered audio. Skipping them (rather
     // than refusing) keeps a frozen lane from walling off the tracks below it.
     auto& trackManager = TrackManager::getInstance();
+    auto& clipManager = ClipManager::getInstance();
+
+    // What is moving, so a destination can be judged against it.
+    std::vector<ClipType> movingKinds;
+    for (const ClipId clipId : clips) {
+        if (const auto* clip = clipManager.getClip(clipId)) {
+            const auto kind = clip->getType();
+            if (std::find(movingKinds.begin(), movingKinds.end(), kind) == movingKinds.end())
+                movingKinds.push_back(kind);
+        }
+    }
+
     std::vector<TrackId> hostTrackIds;
     for (TrackId trackId : visibleTrackIds_) {
         const auto* track = trackManager.getTrack(trackId);
-        if (track != nullptr && canHostNudgedClips(*track) && !track->frozen)
+        if (track != nullptr && canHostNudgedClips(*track, movingKinds) && !track->frozen)
             hostTrackIds.push_back(trackId);
     }
     if (hostTrackIds.size() < 2)
@@ -552,7 +573,6 @@ bool TrackContentPanel::nudgeSelectedClipsToAdjacentTrack(int direction) {
     std::vector<ClipTrackIndex> moves;
     moves.reserve(clips.size());
 
-    auto& clipManager = ClipManager::getInstance();
     int minTrackIndex = std::numeric_limits<int>::max();
     int maxTrackIndex = std::numeric_limits<int>::min();
     for (ClipId clipId : clips) {

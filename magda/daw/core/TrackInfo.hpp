@@ -235,11 +235,31 @@ struct TrackInfo {
         return traitsOf(type).hostsInstrument;
     }
 
-    // Whether a user may put an arbitrary clip on this track: drop a file on
-    // it, drag one in, nudge one over. See TrackTypeTraits::acceptsUserClips
-    // for why this is narrower than "has a timeline".
-    bool acceptsUserClips() const {
-        return traitsOf(type).acceptsUserClips;
+    // Whether a user may put a clip of this kind on the track: drop a file on
+    // it, drag one in, nudge one over. See UserClipAcceptance for why this
+    // takes the kind rather than answering yes or no for the whole track.
+    //
+    // A Progressions lane answers yes to MIDI, because a progression is a MIDI
+    // clip. Whether the material really is a progression is a question about
+    // content, so it is asked where the content is readable -- at the drop,
+    // which has the file.
+    bool acceptsUserClip(ClipType clipType) const {
+        switch (traitsOf(type).userClips) {
+            case UserClipAcceptance::None:
+                return false;
+            case UserClipAcceptance::Any:
+                return true;
+            case UserClipAcceptance::MidiOnly:
+            case UserClipAcceptance::Progressions:
+                return clipType == ClipType::MIDI;
+        }
+        return false;
+    }
+
+    // Whether anything at all may be placed here, for the callers that have no
+    // clip in hand yet.
+    bool acceptsAnyUserClip() const {
+        return traitsOf(type).userClips != UserClipAcceptance::None;
     }
 
     // Enforce the track-type invariants on this struct's own fields. Input-less
