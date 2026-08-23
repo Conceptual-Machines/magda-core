@@ -151,10 +151,10 @@ Stands up a stub MAGDA — WebSocket, MCP in both eras, OSC, and a stand-in
 bridge — and runs the whole harness against it. Needs no MAGDA and no network,
 so it belongs anywhere CI can run Python.
 
-One check is *expected* to fail there: `magda-mcp is staged beside the MAGDA
-executable` looks beside the binary behind the record's pid, which under the
-self-test is the Python interpreter. The self-test asserts that it fails, since
-a pass would mean the check was not looking at anything.
+One check is *expected* to fail there: `magda-mcp is where the settings page
+points` resolves the binary behind the record's pid, which under the self-test is
+the Python interpreter. The self-test asserts that it fails, since a pass would
+mean the check was not looking at anything.
 
 ### Proving the checks are not vacuous
 
