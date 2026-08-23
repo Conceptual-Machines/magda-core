@@ -3409,15 +3409,13 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
             return;
         }
 
-        // Block drops on tracks with a DrumGrid plugin
-        for (const auto& element : track->chain.fxChainElements) {
-            if (isDevice(element) && getDevice(element).pluginId.containsIgnoreCase("drumgrid")) {
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::AlertWindow::WarningIcon, "Drop Failed",
-                    "Files cannot be dropped on Drum Grid tracks.");
-                return;
-            }
-        }
+        // Nothing else is asked of the target, and in particular nothing is
+        // asked about the file. A track is hybrid: TrackType::Audio is the
+        // regular track and holds audio clips and MIDI clips alike, which is
+        // why the importer below creates one for both. A Drum Grid on the
+        // chain used to refuse every dropped file here, so the track likeliest
+        // to want a .mid was the one that would not take one, while the same
+        // clip could be dragged onto it from a neighbour (#2172).
     }
     // If targetTrackId is still INVALID, we'll create a new track below
 

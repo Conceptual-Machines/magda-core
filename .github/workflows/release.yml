@@ -16,7 +16,13 @@ concurrency:
 
 jobs:
   build-macos:
-    runs-on: macos-14  # Apple Silicon; includes the CLAP semantic-search backend (ORT-only on arm64)
+    # Apple Silicon; includes the CLAP semantic-search backend (ORT-only on arm64).
+    # macos-15 rather than macos-14: macos-14's Apple Clang predates P0960
+    # (parenthesized aggregate initialisation), so C++20 that compiles on every other
+    # leg failed here and only at release time. It also put the two Mac binaries on
+    # different compilers, since the x86_64 job below is already macos-15-intel.
+    # CMAKE_OSX_DEPLOYMENT_TARGET below still pins what the build supports.
+    runs-on: macos-15
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:

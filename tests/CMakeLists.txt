@@ -518,6 +518,8 @@ target_sources(magda_juce_tests PRIVATE
     test_multi_clip_resize_preview_juce.cpp
     test_clip_paint_juce.cpp
     test_clip_nudge_juce.cpp
+    # Files dropped straight onto a Drum Grid track (#2172)
+    test_drum_grid_file_drop_juce.cpp
     test_multiband_curve_view_juce.cpp
     # The transport layout against the widths the shipped fonts really produce
     # (#2071). Needs a graphics context, so it lives here rather than in
