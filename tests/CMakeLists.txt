@@ -367,6 +367,12 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_null_diff_corpus.cpp)
     list(APPEND TEST_SOURCES test_null_diff_native_leg.cpp)
 
+    # The device layer under the engine (#2174): the app's own catalogs asked
+    # for a Device op's device, and a shipped device rendered through the
+    # adapter. The engine's half alone -- what the two hosts do with one device
+    # is the corpus's question, in magda_juce_tests.
+    list(APPEND TEST_SOURCES test_engine_device_layer.cpp)
+
     # The block-size invariance gate (#2078). Model-only for the same reason the
     # native leg is: the claim is the native engine's alone, and the incumbent
     # owes nobody block-size invariance. In CI rather than in a nightly, because
@@ -404,7 +410,7 @@ target_link_libraries(magda_tests
 )
 
 if(MAGDA_BUILD_NATIVE_ENGINE)
-    target_link_libraries(magda_tests PRIVATE magda_engine)
+    target_link_libraries(magda_tests PRIVATE magda_engine magda_engine_devices)
 endif()
 
 # Include directories
@@ -646,8 +652,12 @@ target_link_libraries(magda_juce_tests
 # The native engine, for the null-diff corpus (#2040). This is the one target
 # that links both it and Tracktion, which is the whole point of it: the corpus
 # renders one project through each and compares.
+#
+# magda_engine_devices with it (#2174): the device layer the native leg binds a
+# Device op through, so both legs run the app's own devices rather than a pair
+# written for the corpus.
 if(MAGDA_BUILD_NATIVE_ENGINE)
-    target_link_libraries(magda_juce_tests PRIVATE magda_engine)
+    target_link_libraries(magda_juce_tests PRIVATE magda_engine magda_engine_devices)
 endif()
 
 target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1

@@ -216,7 +216,7 @@ RackInfo rackOf(RackId id, const char* name, std::vector<ChainInfo> chains) {
 TrackInfo rackTrack(TrackId trackId, const char* name, RackInfo rack) {
     TrackInfo track;
     track.id = trackId;
-    track.type = TrackType::Audio;
+    track.type = TrackType::Media;
     track.name = name;
     track.audioOutputDevice = "master";
     track.chain.fxChainElements.push_back(makeRackElement(std::move(rack)));

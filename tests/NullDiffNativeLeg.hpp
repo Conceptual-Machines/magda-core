@@ -21,11 +21,12 @@
  * What this file does own is the host side the engine deliberately does not
  * have. A snapshot carries paths because that is what the model holds, and
  * turning one into a reader is the host's job (io/AudioFileReader.hpp), so the
- * factory that opens a WAV lives here. So does the device standing in for the
- * synth a MIDI clip would play, which records what arrives instead of making a
- * sound: the plan compiles no ClipMidi op for a track whose chain consumes no
- * MIDI, so the capture point and the reason the MIDI exists at all are the same
- * thing.
+ * factory that opens a WAV lives here. Binding a Device op is the same kind of
+ * job and is no longer done here: the app's own factory answers for every
+ * device that has moved to the SDK (EngineDeviceFactory.hpp). What is left in
+ * this file is the corpus's own two -- the gain and the impulse instrument,
+ * which are in no catalog because they were written for the corpus -- and the
+ * stand-in for a device neither engine runs (#2174).
  */
 
 namespace magda::nulldiff {

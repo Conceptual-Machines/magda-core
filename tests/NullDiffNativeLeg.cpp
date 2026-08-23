@@ -18,6 +18,7 @@
 #include "exec/PlanExecutor.hpp"
 #include "exec/PlanValues.hpp"
 #include "io/PrefetchThread.hpp"
+#include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "transport/TempoMap.hpp"
 
@@ -325,6 +326,11 @@ NativeRender renderNative(const Case& value) {
     std::map<TrackId, std::unique_ptr<ClipAudioSource>> audioSources;
     std::map<TrackId, std::unique_ptr<ClipMidiSource>> midiSources;
     std::vector<std::unique_ptr<Passthrough>> passthroughs;
+
+    // The devices the app's own factory built, kept alive for the render. One
+    // vector for all of them, because what they have in common is who owns them
+    // rather than what they are.
+    std::vector<std::unique_ptr<EngineDevice>> hosted;
     std::vector<std::unique_ptr<GainDevice>> gains;
     std::vector<std::unique_ptr<ImpulseSynthDevice>> synths;
 
@@ -363,12 +369,17 @@ NativeRender renderNative(const Case& value) {
             }
 
             case OpKind::Device: {
-                // A gain device where the model says the project has one, and a
-                // stand-in everywhere else. The stand-in exists because the
-                // executor refuses an unbound Device op, and it passes signal
-                // because that is what the incumbent does with a device it does
-                // not instantiate. The gain is the exception the slice is for:
-                // the incumbent really does instantiate its twin.
+                // The corpus's own two where the model names them, the app's
+                // own factory for everything else, and a stand-in for what
+                // neither can build.
+                //
+                // The corpus's two come first because nothing else can build
+                // them: they are registered so that the incumbent can create
+                // one, and they carry no createDevice, so the factory would
+                // return null for both and they would fall through to the
+                // stand-in. Every device MAGDA ships that has moved to the SDK
+                // is built by the factory below, which is what makes a corpus
+                // case able to contain one (#2174).
                 const auto found = modelDevices.find(op.key.deviceKey());
                 const auto* model = found == modelDevices.end() ? nullptr : found->second;
 
@@ -388,6 +399,39 @@ NativeRender renderNative(const Case& value) {
                     break;
                 }
 
+                if (model != nullptr) {
+                    // Built for an offline render, because that is what this
+                    // leg is and what the other leg's Renderer tells its own
+                    // devices. A device that skips live-only work has to skip
+                    // it on both sides or the corpus is comparing two different
+                    // decisions about the same block.
+                    if (auto device = ::magda::daw::audio::engine_adapter::createEngineDevice(
+                            *model, /*offlineRender=*/true)) {
+                        device->prepare(context);
+                        bindings.devices[op.key.deviceKey()] = device.get();
+                        hosted.push_back(std::move(device));
+                        break;
+                    }
+
+                    // A device the app can build and the engine cannot, said
+                    // out loud. The stand-in below still has to be bound,
+                    // because the executor refuses an unbound Device op, but a
+                    // case that reached it is measuring a project the engine did
+                    // not really render.
+                    //
+                    // Only for a device some catalog knows. An id nothing
+                    // registered is not a device either engine runs -- the MIDI
+                    // cases' instrument slot is one, and the incumbent puts a
+                    // capture there rather than a plugin -- and reporting those
+                    // would make every such case unmeasurable over an asymmetry
+                    // that does not exist.
+                    if (::magda::daw::audio::engine_adapter::isRegisteredDevice(model->pluginId))
+                        result.diagnostics.push_back("devices: no native device for " +
+                                                     model->pluginId.toStdString());
+                }
+
+                // The stand-in passes signal because that is what the incumbent
+                // does with a device it does not instantiate.
                 auto device = std::make_unique<Passthrough>();
                 device->prepare(context);
                 bindings.devices[op.key.deviceKey()] = device.get();
