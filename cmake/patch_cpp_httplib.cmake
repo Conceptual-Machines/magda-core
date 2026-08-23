@@ -5,7 +5,7 @@ file(READ "${HTTPLIB_SOURCE_DIR}/httplib.h" HTTPLIB_HEADER)
 # configurable.
 if(NOT HTTPLIB_HEADER MATCHES "void shutdown\\(\\);[\r\n]+  const Request &request")
     execute_process(
-        COMMAND git apply --ignore-space-change "${HTTPLIB_PATCH}"
+        COMMAND git apply --unidiff-zero --ignore-space-change "${HTTPLIB_PATCH}"
         WORKING_DIRECTORY "${HTTPLIB_SOURCE_DIR}"
         RESULT_VARIABLE PATCH_RESULT
         ERROR_VARIABLE PATCH_ERROR
