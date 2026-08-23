@@ -120,11 +120,11 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
     std::vector<ParameterMapping> parameters_;
     std::vector<float*> channels_;
 
-    /// The SDK's MIDI buffer, as storage that outlives the block: the entries
-    /// stay alive so a long message reuses what it already holds, and only the
-    /// first `midiLive_` of them are this block's. See the view in the .cpp.
+    /// The SDK's MIDI buffer for one block, and the index list its sort
+    /// permutes. Both reserved to the port's bound and never grown past it.
     std::vector<DeviceMidiEvent> midiScratch_;
-    int midiLive_ = 0;
+    std::vector<int> midiOrder_;
+    int midiCapacity_ = 0;
 
     /// What the executor said can reach the input port, which is the sum
     /// through the MIDI graph rather than one producer's budget. The constant

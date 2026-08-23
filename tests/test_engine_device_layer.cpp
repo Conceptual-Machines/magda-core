@@ -141,6 +141,40 @@ class BoundProbe final : public magda::engine::EngineDevice {
     int bound = -1;
 };
 
+/// Rewrites, reorders and drops what it was handed, on messages big enough to
+/// be heap-allocated.
+///
+/// The three mutating paths of DeviceMidiBuffer in one device, on SysEx,
+/// because that is where juce::MidiMessage owns heap and where getting the
+/// assignment wrong leaks it rather than merely misbehaving.
+class RewritingDevice final : public magda::daw::audio::MagdaDevice {
+  public:
+    magda::daw::audio::DeviceProperties properties() const override {
+        magda::daw::audio::DeviceProperties properties;
+        properties.pluginId = "rewriting";
+        properties.name = "Rewriting";
+        properties.takesMidiInput = true;
+        return properties;
+    }
+
+    void process(magda::daw::audio::DeviceProcessContext& context) override {
+        if (context.midi == nullptr || context.midi->size() < 3)
+            return;
+
+        // Reversed, so the sort has a permutation to apply rather than an
+        // already-ordered list to leave alone.
+        const auto count = context.midi->size();
+        for (int at = 0; at < count; ++at) {
+            auto message = context.midi->message(at);
+            message.setTimeStamp(static_cast<double>(count - at));
+            context.midi->setEvent(at, {message, 0});
+        }
+
+        context.midi->sortByTimestamp();
+        context.midi->removeEvent(1);
+    }
+};
+
 /// What @p buffer costs against the port's budget, by the engine's own model:
 /// six bytes an event plus the event's own length.
 int budgetCostOf(const juce::MidiBuffer& buffer) {
@@ -429,4 +463,44 @@ TEST_CASE("the executor tells a device what can reach its MIDI input", "[engine]
     // rather than being left at whatever it assumed.
     CHECK(synthProbe.bound >= magda::engine::kMaxMidiBytesPerPort);
     CHECK(gainProbe.bound == 0);
+}
+
+TEST_CASE("a device may rewrite, reorder and drop long messages", "[engine][devices][2174]") {
+    // juce::MidiMessage keeps anything past eight bytes on the heap, and its
+    // move assignment overwrites the destination's pointer without freeing what
+    // it held. So every path that puts a message somewhere has to copy or
+    // move-construct, and the two obvious spellings -- vector::erase and
+    // stable_sort over the events -- do neither. This runs all three mutating
+    // paths over SysEx, which is where that goes wrong.
+    auto rewriting = std::make_unique<RewritingDevice>();
+    adapter::EngineMagdaDevice hosted(std::move(rewriting), /*offlineRender=*/false);
+
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    // Distinguishable payloads, long enough to be heap-allocated.
+    const std::vector<std::uint8_t> first(32, 0x11);
+    const std::vector<std::uint8_t> second(32, 0x22);
+    const std::vector<std::uint8_t> third(32, 0x33);
+
+    Block block(context);
+    block.midi.addEvent(juce::MidiMessage::createSysExMessage(first.data(), 32), 0);
+    block.midi.addEvent(juce::MidiMessage::createSysExMessage(second.data(), 32), 1);
+    block.midi.addEvent(juce::MidiMessage::createSysExMessage(third.data(), 32), 2);
+
+    juce::MidiBuffer out;
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiOut = &out;
+    hosted.process(deviceBlock);
+
+    // Reversed by the rewrite, then the second of those dropped: third, first.
+    std::vector<std::uint8_t> marks;
+    for (const auto metadata : out) {
+        const auto message = metadata.getMessage();
+        REQUIRE(message.isSysEx());
+        REQUIRE(message.getSysExDataSize() == 32);
+        marks.push_back(message.getSysExData()[0]);
+    }
+
+    CHECK(marks == std::vector<std::uint8_t>{0x33, 0x11});
 }
