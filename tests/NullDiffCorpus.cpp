@@ -212,22 +212,6 @@ RackInfo rackOf(RackId id, const char* name, std::vector<ChainInfo> chains) {
     return rack;
 }
 
-/// The instrument stand-in, as a chain element.
-///
-/// The same device `instrumentTrackOn` puts on a track: an instrument as far as
-/// the compiler is concerned, replaced in both legs by something that records
-/// what arrives rather than making a sound.
-DeviceInfo chainInstrument(DeviceId id) {
-    DeviceInfo device;
-    device.id = id;
-    device.name = "Capture";
-    device.deviceType = DeviceType::Instrument;
-    device.isInstrument = true;
-    device.canReceiveMidi = true;
-    device.format = PluginFormat::Internal;
-    return device;
-}
-
 /// A track whose FX chain is that one rack.
 TrackInfo rackTrack(TrackId trackId, const char* name, RackInfo rack) {
     TrackInfo track;
@@ -1551,23 +1535,40 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         // An instrument behind an audio source in the same chain. What it
         // measures is one rule: an instrument's output is added to the bus it
         // was handed rather than replacing it, so the audio already travelling
-        // the chain survives it.
+        // the chain survives it and the two are heard together.
         //
-        // The instrument makes no sound in either leg -- it is the stand-in the
-        // MIDI cases use, and the incumbent instantiates nothing for it -- so
-        // what comes out is the gain in front of it and nothing else. That is
-        // exactly what makes the case sharp: a leg that let the instrument
-        // replace the bus would render silence, and half of full scale against
-        // silence is not a difference anybody has to measure carefully.
+        // A real instrument, playing real notes. An earlier version of this
+        // case used the silent stand-in the MIDI cases use, and it nulled for
+        // the wrong reason: the incumbent instantiates nothing for that device,
+        // so its rack chain held a gain and no instrument at all, and the rule
+        // was being asserted of one engine while the other was asked whether
+        // half of full scale equals half of full scale. A case whose whole
+        // subject is absent from one side of the comparison is worse than no
+        // case, because it reports green.
         //
         // The instrument is second so that the audio reaches it. First would
         // ask a different and weaker question, because there would be nothing
         // travelling the chain yet for it to be added to.
+        //
+        // The audio clip runs the first four beats and the notes the last four,
+        // and they do not overlap. Not a weakening of the case: what it asks is
+        // whether the bus survives the instrument, and with the two apart the
+        // first half of the render is audio that only reaches the output if the
+        // instrument added to the bus rather than replacing it, while the
+        // second half is the instrument itself. Replacing would silence the
+        // first half completely.
+        //
+        // Apart because they have to be. Occlusion is kind-blind (ClipOcclusion:
+        // one switch decides, on audio and MIDI alike), so a MIDI clip laid over
+        // an audio clip on the same track covers it, and the corpus excludes
+        // overlaps for the reason its header gives -- the incumbent has no
+        // correct behaviour to diff against there. Overlapped, this case
+        // measured that exclusion instead of what it is about.
         ChainInfo chain;
         chain.id = 1;
         chain.name = "Source then instrument";
         chain.elements.emplace_back(gainDevice(964, 0.5f));
-        chain.elements.emplace_back(chainInstrument(965));
+        chain.elements.emplace_back(synthDevice(965));
 
         std::vector<ChainInfo> chains;
         chains.push_back(std::move(chain));
@@ -1579,6 +1580,17 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         const auto source = writeSource(scratchDirectory, "rackinstrument", impulses(0.25));
         value.sources.push_back(source);
         value.clips.push_back(audioClip(310, 0.0, 4.0, source));
+
+        // On the half beat, which at 120 bpm is 11025 samples and therefore a
+        // whole one. A quarter beat is 5512.5, and a note asked to start half
+        // way through a sample is rounded into a block, so where it lands
+        // depends on how the render was cut up -- which the invariance gate
+        // reads as the engine failing to be a function of timeline position
+        // (#2078). It was right to.
+        auto notes = midiClip(311, 4.0, 4.0);
+        for (auto index = 0; index < 4; ++index)
+            notes.midiNotes.push_back(note(60 + index, index + 0.5, 0.5, 127));
+        value.clips.push_back(std::move(notes));
 
         corpus.push_back(std::move(value));
     }

@@ -140,13 +140,13 @@ class GainDevice final : public EngineDevice {
     }
 };
 
-/// The engine's half of the multi-out contract in NullDiffGain.hpp (#2139).
+/// The engine's half of the instrument contract in NullDiffGain.hpp (#2139).
 ///
 /// One sample per note-on into pair 0, half of it into pair 1. The pairs the
 /// plan gave it and no others: `extraOutputs` is one block per pair the device
 /// declared, cleared on the way in, so a pair nothing opened is written and
 /// dropped rather than skipped here.
-class MultiOutSynthDevice final : public EngineDevice {
+class ImpulseSynthDevice final : public EngineDevice {
   public:
     void process(DeviceBlock& block) override {
         if (block.midiIn == nullptr)
@@ -326,7 +326,7 @@ NativeRender renderNative(const Case& value) {
     std::map<TrackId, std::unique_ptr<ClipMidiSource>> midiSources;
     std::vector<std::unique_ptr<Passthrough>> passthroughs;
     std::vector<std::unique_ptr<GainDevice>> gains;
-    std::vector<std::unique_ptr<MultiOutSynthDevice>> multiOuts;
+    std::vector<std::unique_ptr<ImpulseSynthDevice>> synths;
 
     const auto modelDevices = devicesIn(value);
 
@@ -372,11 +372,11 @@ NativeRender renderNative(const Case& value) {
                 const auto found = modelDevices.find(op.key.deviceKey());
                 const auto* model = found == modelDevices.end() ? nullptr : found->second;
 
-                if (model != nullptr && isMultiOutSynthDevice(*model)) {
-                    auto device = std::make_unique<MultiOutSynthDevice>();
+                if (model != nullptr && isImpulseSynthDevice(*model)) {
+                    auto device = std::make_unique<ImpulseSynthDevice>();
                     device->prepare(context);
                     bindings.devices[op.key.deviceKey()] = device.get();
-                    multiOuts.push_back(std::move(device));
+                    synths.push_back(std::move(device));
                     break;
                 }
 

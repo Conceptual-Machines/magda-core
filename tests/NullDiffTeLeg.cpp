@@ -311,36 +311,28 @@ class MonoGainPlugin final : public GainPlugin {
 };
 
 // =============================================================================
-// The four-channel instrument (#2139)
+// The instrument (#2139)
 // =============================================================================
 
-/// The incumbent's half of the multi-out contract in NullDiffGain.hpp.
+/// The incumbent's half of the instrument contract in NullDiffGain.hpp.
 ///
-/// A synth, because that is what the current engine's multi-out path is built
-/// for: only an instrument is wrapped, and the wrapper routes audio around it
-/// rather than into it. Four channels, so the wrapper has pins three and four
-/// to wire to the rack outputs a second RackInstance reads.
-class MultiOutSynthPlugin final : public te::Plugin {
+/// A synth rather than an effect, and not only because the current engine's
+/// multi-out path wants one: an instrument is the device that generates
+/// instead of processing, and both engines route audio around it rather than
+/// into it. Its width is the only thing its two subclasses differ by.
+class ImpulseSynthPlugin : public te::Plugin {
   public:
-    explicit MultiOutSynthPlugin(te::PluginCreationInfo info) : te::Plugin(info) {}
+    explicit ImpulseSynthPlugin(te::PluginCreationInfo info) : te::Plugin(info) {}
 
-    ~MultiOutSynthPlugin() override {
+    ~ImpulseSynthPlugin() override {
         notifyListenersOfDeletion();
     }
 
-    static const char* getPluginName() {
-        return "Null Diff Multi Out";
-    }
+    /// How many channels this one writes: two for the plain instrument, four
+    /// for the multi-out one. The rack matrix reads it off the plugin and the
+    /// plan reads the same figure off the model.
+    virtual int channelCount() const = 0;
 
-    juce::String getName() const override {
-        return getPluginName();
-    }
-    juce::String getPluginType() override {
-        return kMultiOutPluginId;
-    }
-    juce::String getShortName(int) override {
-        return "NDMulti";
-    }
     juce::String getSelectableDescription() override {
         return getName();
     }
@@ -368,17 +360,18 @@ class MultiOutSynthPlugin final : public te::Plugin {
     }
 
     void getChannelNames(juce::StringArray* ins, juce::StringArray* outs) override {
-        // No audio in: the wrapper does not feed one, and saying otherwise
-        // would have the rack matrix wire a bus this device never reads.
+        // No audio in: neither engine feeds an instrument one, and saying
+        // otherwise would have the rack matrix wire a bus this device never
+        // reads.
         juce::ignoreUnused(ins);
 
         if (outs != nullptr)
-            for (int channel = 1; channel <= kChannels; ++channel)
+            for (int channel = 1; channel <= channelCount(); ++channel)
                 outs->add("Out " + juce::String(channel));
     }
 
     int getNumOutputChannelsGivenInputs(int) override {
-        return kChannels;
+        return channelCount();
     }
 
     void initialise(const te::PluginInitialisationInfo& info) override {
@@ -412,16 +405,16 @@ class MultiOutSynthPlugin final : public te::Plugin {
 
             const auto level = static_cast<float>(message.getVelocity()) / 127.0f;
 
-            write(*context.destBuffer, 0, at, level);
-            write(*context.destBuffer, 1, at, level);
-            write(*context.destBuffer, 2, at, level * kMultiOutSecondPairScale);
-            write(*context.destBuffer, 3, at, level * kMultiOutSecondPairScale);
+            // Pair 0 on the first two channels, every further pair at the
+            // declared scale. A two-channel one has no further pair and writes
+            // the first alone.
+            for (int channel = 0; channel < channelCount(); ++channel)
+                write(*context.destBuffer, channel, at,
+                      channel < 2 ? level : level * kMultiOutSecondPairScale);
         }
     }
 
     void restorePluginStateFromValueTree(const juce::ValueTree&) override {}
-
-    static constexpr int kChannels = 4;
 
   private:
     static void write(juce::AudioBuffer<float>& target, int channel, int sample, float level) {
@@ -431,6 +424,81 @@ class MultiOutSynthPlugin final : public te::Plugin {
 
     double sampleRate_ = 44100.0;
 };
+
+/// The plain one, at the width every other device in the corpus has.
+class SynthPlugin final : public ImpulseSynthPlugin {
+  public:
+    explicit SynthPlugin(te::PluginCreationInfo info) : ImpulseSynthPlugin(std::move(info)) {}
+
+    static const char* getPluginName() {
+        return "Null Diff Synth";
+    }
+
+    juce::String getName() const override {
+        return getPluginName();
+    }
+    juce::String getPluginType() override {
+        return kSynthPluginId;
+    }
+    juce::String getShortName(int) override {
+        return "NDSynth";
+    }
+
+    int channelCount() const override {
+        return 2;
+    }
+};
+
+/// The one with two further channels, so the multi-out wrapper has pins three
+/// and four to wire to the rack outputs a second RackInstance reads.
+class MultiOutSynthPlugin final : public ImpulseSynthPlugin {
+  public:
+    explicit MultiOutSynthPlugin(te::PluginCreationInfo info)
+        : ImpulseSynthPlugin(std::move(info)) {}
+
+    static const char* getPluginName() {
+        return "Null Diff Multi Out";
+    }
+
+    juce::String getName() const override {
+        return getPluginName();
+    }
+    juce::String getPluginType() override {
+        return kMultiOutPluginId;
+    }
+    juce::String getShortName(int) override {
+        return "NDMulti";
+    }
+
+    int channelCount() const override {
+        return 4;
+    }
+};
+
+void registerSynthDevice(magda::daw::audio::InternalPluginRegistry& registry) {
+    magda::daw::audio::InternalPluginSpec spec;
+    spec.pluginId = kSynthPluginId;
+    spec.displayName = SynthPlugin::getPluginName();
+    spec.browserCategory = "Utility";
+    spec.description = "A MIDI-driven instrument, for the null-diff corpus.";
+    spec.createMode = magda::daw::audio::InternalPluginCreateMode::FreshValueTree;
+    spec.canCreateDetached = true;
+    spec.canCreateOnTrack = false;
+    spec.showInBrowser = false;
+    spec.isInstrument = true;
+    spec.tags = kCorpusDeviceTags;
+    spec.tagCount = static_cast<int>(std::size(kCorpusDeviceTags));
+    spec.matchesPlugin = [](magda::daw::audio::DevicePluginRef plugin) {
+        return dynamic_cast<SynthPlugin*>(
+                   magda::daw::audio::tracktion_adapter::pluginFromRef(plugin)) != nullptr;
+    };
+    spec.createPlugin = [](const magda::daw::audio::DevicePluginCreationContext& context) {
+        return magda::daw::audio::tracktion_adapter::pluginHandle(
+            new SynthPlugin(magda::daw::audio::tracktion_adapter::creationInfo(context)));
+    };
+
+    registry.registerPlugin(spec);
+}
 
 void registerMultiOutDevice(magda::daw::audio::InternalPluginRegistry& registry) {
     magda::daw::audio::InternalPluginSpec spec;
@@ -457,6 +525,7 @@ void registerMultiOutDevice(magda::daw::audio::InternalPluginRegistry& registry)
     registry.registerPlugin(spec);
 }
 
+const bool synthDeviceRegistered = magda::daw::audio::registerDevicePack(registerSynthDevice);
 const bool multiOutDeviceRegistered = magda::daw::audio::registerDevicePack(registerMultiOutDevice);
 
 void registerGainDevice(magda::daw::audio::InternalPluginRegistry& registry) {

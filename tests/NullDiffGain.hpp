@@ -40,7 +40,8 @@ namespace magda::nulldiff {
 /// leg, hidden from the browser, and only ever inside a test binary.
 inline constexpr const char* kGainPluginId = "nulldiffgain";
 
-/// A four-channel instrument, for the multi-out case (#2139).
+/// A MIDI-driven instrument, for the cases that need one to make a sound
+/// (#2139).
 ///
 /// Not a gain: a multi-out instrument is the one device whose extra pairs
 /// exist at all, and in both engines an instrument generates rather than
@@ -62,6 +63,9 @@ inline constexpr const char* kGainPluginId = "nulldiffgain";
 /// corpus's material for anything that has to be exact, and a pair that
 /// carries half of the other is what lets a case say which pair reached which
 /// track.
+inline constexpr const char* kSynthPluginId = "nulldiffsynth";
+
+/// The same instrument with two further channels, for the multi-out case.
 inline constexpr const char* kMultiOutPluginId = "nulldiffmultiout";
 
 /// What pair 1 carries, relative to pair 0.
@@ -146,6 +150,28 @@ inline magda::DeviceInfo monoGainDevice(magda::DeviceId id, float value = kGainD
 }
 
 /**
+ * @brief The instrument, at the ordinary stereo width.
+ *
+ * What an instrument inside a chain is for: it generates rather than
+ * processes, so a chain carrying both an audio source and one of these is
+ * where the two engines have to agree that the instrument's output is *added*
+ * to the bus rather than replacing it.
+ */
+inline magda::DeviceInfo synthDevice(magda::DeviceId id) {
+    magda::DeviceInfo device;
+    device.id = id;
+    device.name = "Null Diff Synth";
+    device.pluginId = kSynthPluginId;
+    device.deviceType = magda::DeviceType::Instrument;
+    device.isInstrument = true;
+    device.canReceiveMidi = true;
+    device.format = magda::PluginFormat::Internal;
+    device.audioInputChannels = 0;
+    device.audioOutputChannels = 2;
+    return device;
+}
+
+/**
  * @brief The four-channel instrument, with its second pair opened by @p pairTrack.
  *
  * Two pairs declared, which is what gives the plan a port to emit and the
@@ -155,16 +181,9 @@ inline magda::DeviceInfo monoGainDevice(magda::DeviceId id, float value = kGainD
  * engines to route a pair the model says nobody wants.
  */
 inline magda::DeviceInfo multiOutSynthDevice(magda::DeviceId id, magda::TrackId pairTrack) {
-    magda::DeviceInfo device;
-    device.id = id;
+    auto device = synthDevice(id);
     device.name = "Null Diff Multi Out";
     device.pluginId = kMultiOutPluginId;
-    device.deviceType = magda::DeviceType::Instrument;
-    device.isInstrument = true;
-    device.canReceiveMidi = true;
-    device.format = magda::PluginFormat::Internal;
-    device.audioInputChannels = 0;
-    device.audioOutputChannels = 2;
 
     device.multiOut.isMultiOut = true;
     device.multiOut.totalOutputChannels = 4;
@@ -189,7 +208,14 @@ inline magda::DeviceInfo multiOutSynthDevice(magda::DeviceId id, magda::TrackId 
     return device;
 }
 
-/// Whether @p device is the four-channel instrument.
+/// Whether @p device is one of the two instruments. Both run the same law; what
+/// differs is how many channels they write it to.
+inline bool isImpulseSynthDevice(const magda::DeviceInfo& device) {
+    return device.pluginId == kSynthPluginId || device.pluginId == kMultiOutPluginId;
+}
+
+/// Whether @p device is the four-channel one, which is the only one the
+/// incumbent has to wrap for its extra pins.
 inline bool isMultiOutSynthDevice(const magda::DeviceInfo& device) {
     return device.pluginId == kMultiOutPluginId;
 }
