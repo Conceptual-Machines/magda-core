@@ -300,3 +300,52 @@ TEST_CASE("AliasRegistry - listener is notified on changes", "[aliases][registry
 
     reg.removeListener(&listener);
 }
+
+// ============================================================================
+// Stored alias decoding — a corrupt path must not widen the alias
+// ============================================================================
+
+TEST_CASE("A project-scoped alias round-trips its path", "[alias][serialization]") {
+    const auto alias = makeAlias("serum", 4, "Cutoff", ChainNodePath::chainDevice(1, 2, 3, 4));
+
+    StoredAlias loaded;
+    REQUIRE(deserializeStoredAlias(serializeStoredAlias(alias), loaded));
+    REQUIRE(loaded.path.has_value());
+    REQUIRE(*loaded.path == *alias.path);
+}
+
+TEST_CASE("An alias with no path stays user-global", "[alias][serialization]") {
+    StoredAlias loaded;
+    REQUIRE(deserializeStoredAlias(serializeStoredAlias(makeAlias("serum", 4, "Cutoff")), loaded));
+    REQUIRE_FALSE(loaded.path.has_value());
+}
+
+TEST_CASE("An alias whose path is present but unreadable is rejected", "[alias][serialization]") {
+    // StoredAlias uses an absent path to mean "user-global", and isValid() does
+    // not require one. Dropping an unreadable path would therefore promote a
+    // project-scoped alias to global scope and let it resolve against whatever
+    // device is in context.
+    const auto alias = makeAlias("serum", 4, "Cutoff", ChainNodePath::chainDevice(1, 2, 3, 4));
+
+    SECTION("null") {
+        // JSON null decodes to a void var, which reads the same as absent.
+        auto json = serializeStoredAlias(alias);
+        json.getDynamicObject()->setProperty("path", juce::var());
+        StoredAlias loaded;
+        REQUIRE_FALSE(deserializeStoredAlias(json, loaded));
+    }
+
+    SECTION("not an object") {
+        auto json = serializeStoredAlias(alias);
+        json.getDynamicObject()->setProperty("path", "nonsense");
+        StoredAlias loaded;
+        REQUIRE_FALSE(deserializeStoredAlias(json, loaded));
+    }
+
+    SECTION("an object that is not a path") {
+        auto json = serializeStoredAlias(alias);
+        json.getDynamicObject()->setProperty("path", juce::var(new juce::DynamicObject()));
+        StoredAlias loaded;
+        REQUIRE_FALSE(deserializeStoredAlias(json, loaded));
+    }
+}

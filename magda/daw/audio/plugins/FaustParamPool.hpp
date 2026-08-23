@@ -65,7 +65,7 @@ struct HarvestedOutput {
  * is what gives macro / mod / automation links their stable home).
  * The pool only owns the slot metadata table.
  *
- * Routing rules (full spec in docs/FAUST_POOL_REFACTOR.md):
+ * Routing rules (full spec in docs/architecture/faust-param-pool.md):
  *   1. First pass — every harvested control with a valid `[idx:N]`
  *      (0..63 and not already taken) claims that slot.
  *   2. Second pass — every remaining control fills the next free slot

@@ -19,6 +19,7 @@
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "core/AppPaths.hpp"
+#include "core/Config.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/PluginAlias.hpp"
 #include "core/PluginPreferences.hpp"
@@ -391,6 +392,40 @@ class PluginBrowserContent::FolderTreeItem : public CategoryTreeItem {
 //==============================================================================
 // PluginBrowserContent
 //==============================================================================
+std::string PluginBrowserContent::viewModeId(ViewMode mode) {
+    switch (mode) {
+        case ViewMode::ByCategory:
+            return "category";
+        case ViewMode::ByManufacturer:
+            return "manufacturer";
+        case ViewMode::ByFormat:
+            return "format";
+        case ViewMode::Favorites:
+            return "favorites";
+        case ViewMode::Folders:
+            return "folders";
+    }
+    return "category";
+}
+
+PluginBrowserContent::ViewMode PluginBrowserContent::viewModeFromId(const std::string& id) {
+    for (auto mode : {ViewMode::ByCategory, ViewMode::ByManufacturer, ViewMode::ByFormat,
+                      ViewMode::Favorites, ViewMode::Folders}) {
+        if (viewModeId(mode) == id)
+            return mode;
+    }
+    return ViewMode::ByCategory;  // Unknown id (older or newer config)
+}
+
+void PluginBrowserContent::saveViewMode() const {
+    auto& config = magda::Config::getInstance();
+    const auto id = viewModeId(currentViewMode_);
+    if (config.getPluginBrowserViewMode() != id) {
+        config.setPluginBrowserViewMode(id);
+        config.save();
+    }
+}
+
 PluginBrowserContent::PluginBrowserContent() {
     setName("Plugin Browser");
 
@@ -399,16 +434,19 @@ PluginBrowserContent::PluginBrowserContent() {
     searchBox_.onTextChange = [this]() { filterBySearch(searchBox_.getText()); };
     addAndMakeVisible(searchBox_);
 
-    // Setup view mode selector
+    // Setup view mode selector, opening on the grouping the user last chose
     viewModeSelector_.addItem("By Category", 1);
     viewModeSelector_.addItem("By Manufacturer", 2);
     viewModeSelector_.addItem("By Format", 3);
     viewModeSelector_.addItem("Favorites", 4);
     viewModeSelector_.addItem("Folders", 5);
-    viewModeSelector_.setSelectedId(1, juce::dontSendNotification);
+    currentViewMode_ = viewModeFromId(magda::Config::getInstance().getPluginBrowserViewMode());
+    viewModeSelector_.setSelectedId(static_cast<int>(currentViewMode_) + 1,
+                                    juce::dontSendNotification);
     viewModeSelector_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     viewModeSelector_.onChange = [this]() {
         currentViewMode_ = static_cast<ViewMode>(viewModeSelector_.getSelectedId() - 1);
+        saveViewMode();
         rebuildTree();
     };
     addAndMakeVisible(viewModeSelector_);

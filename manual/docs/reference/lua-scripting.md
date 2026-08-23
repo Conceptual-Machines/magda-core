@@ -77,6 +77,64 @@ Every function below lives under the global `magda` table. All are message-threa
 | `magda.transport.set_loop_enabled(enabled)` | — | |
 | `magda.transport.position_beats()` | number | Current playhead position, in beats |
 | `magda.transport.set_position_beats(beats)` | — | Move the playhead |
+| `magda.transport.seek_beats(delta)` | — | Move the playhead by `delta` beats. Stops at the start of the project |
+| `magda.transport.seek_bars(delta)` | — | Move the playhead by `delta` bars, using the project's meter. Stops at the start of the project |
+
+#### Rewind and fast-forward buttons
+
+`seek_beats` and `seek_bars` are the relative pair. They exist because a
+transport button is relative by nature: it says "back one bar", not "go to bar
+seven". Written with `set_position_beats` instead, every script re-derives the
+same two things — the clamp at the start of the project, and how long a bar
+is, which stops being four beats the moment the project is not in four.
+
+```lua
+function on_midi(event)
+  -- MCU rewind and fast forward, as an Arturia KeyLab sends them.
+  if event.type ~= "note_on" then return end
+
+  if event.number == 0x5B then
+    magda.transport.seek_bars(-1)
+  elseif event.number == 0x5C then
+    magda.transport.seek_bars(1)
+  end
+end
+```
+
+**Holding the button to scrub.** These buttons are usually held rather than
+tapped. MAGDA has no auto-repeat of its own, so the script drives it: remember
+which direction is held, and move on each tick.
+
+```lua
+local scrub = 0
+local BEATS_PER_SECOND = 8
+
+function on_midi(event)
+  if event.number ~= 0x5B and event.number ~= 0x5C then return end
+
+  if event.type == "note_off" then
+    scrub = 0
+  elseif event.type == "note_on" then
+    scrub = (event.number == 0x5B) and -1 or 1
+  end
+end
+
+function on_tick(dt)
+  if scrub ~= 0 then
+    magda.transport.seek_beats(scrub * BEATS_PER_SECOND * dt)
+  end
+end
+```
+
+Scale by `dt` rather than moving a fixed amount per tick: ticks arrive at about
+30 Hz, so a fixed beat per tick is thirty beats a second and the shuttle rate
+would change if that rate ever did. `BEATS_PER_SECOND` is then the number to
+tune, and it means what it says.
+
+A surface that repeats note-on while a button is held needs no `on_tick` at
+all — seek on each repeat and drop the `scrub` variable. Every repeat moves the
+playhead, because a relative seek is an edge rather than a value and nothing
+coalesces it away.
 
 ### `magda.project`
 

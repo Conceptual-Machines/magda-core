@@ -288,7 +288,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @brief Ensure VolumeAndPanPlugin is at the correct position (near end of chain)
      * @param track The Tracktion Engine audio track
      */
-    void ensureVolumePluginPosition(te::AudioTrack* track) const;
+    void ensureVolumePluginPosition(TrackId trackId, te::AudioTrack* track) const;
 
     // =========================================================================
     // Track Mapping
@@ -419,6 +419,19 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     MeteringBuffer& getRecordingMeteringBuffer() {
         return recordingMeteringBuffer_;
+    }
+
+    /**
+     * @brief Get the dedicated remote-API metering buffer (#1857)
+     *
+     * A third buffer for the same reason there is a second. A reader that pops
+     * takes data away from the others, and one that only peeks stops seeing new
+     * data once the ring fills — which it does within a second when no UI meter
+     * is on screen to drain it. A remote meter subscriber has to work with the
+     * mixer closed, so it gets its own ring and drains it to the latest value.
+     */
+    MeteringBuffer& getRemoteMeteringBuffer() {
+        return remoteMeteringBuffer_;
     }
 
     // =========================================================================
@@ -836,6 +849,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Lock-free communication buffers
     MeteringBuffer meteringBuffer_;
     MeteringBuffer recordingMeteringBuffer_;
+    MeteringBuffer remoteMeteringBuffer_;
 
     // Phase 1 refactoring: Pure data managers (extracted from AudioBridge)
     TransportStateManager transportState_;

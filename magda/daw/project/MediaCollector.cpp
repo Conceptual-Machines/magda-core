@@ -1,5 +1,7 @@
 #include "MediaCollector.hpp"
 
+#include <algorithm>
+
 #include "../audio/AudioThumbnailManager.hpp"
 #include "../core/ClipInfo.hpp"
 #include "../core/ClipManager.hpp"
@@ -112,11 +114,22 @@ MediaCollector::Plan MediaCollector::scan() {
 
     // 1. Audio clip sources.
     for (const auto& clip : ClipManager::getInstance().getClips()) {
-        if (!clip.isAudio())
-            continue;
-        const auto idx = resolve(clip.audio().source.filePath);
-        if (idx >= 0)
-            plan.items[static_cast<size_t>(idx)].clipRefs.push_back(clip.id);
+        for (const auto& event : clip.isAudio() ? clip.audio().events : std::vector<AudioEvent>{}) {
+            const auto idx = resolve(event.sourceFilePath());
+            if (idx < 0)
+                continue;
+
+            auto& item = plan.items[static_cast<size_t>(idx)];
+            if (std::find(item.clipRefs.begin(), item.clipRefs.end(), clip.id) ==
+                item.clipRefs.end()) {
+                item.clipRefs.push_back(clip.id);
+            }
+            if (event.sourceId != INVALID_SOURCE_ID &&
+                std::find(item.sourceRefs.begin(), item.sourceRefs.end(), event.sourceId) ==
+                    item.sourceRefs.end()) {
+                item.sourceRefs.push_back(event.sourceId);
+            }
+        }
     }
 
     // 2 + 3. Samplers (standalone, incl. inside instrument racks) and drum pads.
@@ -164,15 +177,23 @@ MediaCollector::Summary MediaCollector::apply(const Plan& plan) {
 
         const auto newPath = item.dest.getFullPathName();
 
-        for (auto clipId : item.clipRefs) {
-            if (auto* clip = clipManager.getClip(clipId); clip != nullptr && clip->isAudio()) {
-                const auto oldPath = clip->audio().source.filePath;
-                clip->audio().source.filePath = newPath;
-                thumbs.invalidateFile(oldPath);
-                thumbs.invalidateFile(newPath);
-                clipManager.forceNotifyClipPropertyChanged(clipId);
+        // Repoint the pooled sources, not the clips: every clip sharing a
+        // file follows automatically.
+        for (auto sourceId : item.sourceRefs) {
+            const auto owner = SourcePool::getInstance().relink(sourceId, newPath);
+            if (owner != INVALID_SOURCE_ID && owner != sourceId) {
+                // The destination was already pooled under another source.
+                // Move the events across rather than leaving two entries
+                // claiming one file.
+                clipManager.repointEventsToSource(sourceId, owner);
             }
         }
+
+        thumbs.invalidateFile(item.source.getFullPathName());
+        thumbs.invalidateFile(newPath);
+
+        for (auto clipId : item.clipRefs)
+            clipManager.forceNotifyClipPropertyChanged(clipId);
 
         for (const auto& replace : item.samplerRefs)
             replace(item.dest);

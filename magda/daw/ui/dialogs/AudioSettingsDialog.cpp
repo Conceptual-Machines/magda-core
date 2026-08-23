@@ -473,6 +473,10 @@ void AudioSettingsDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
 }
 
+void AudioSettingsDialog::lookAndFeelChanged() {
+    refreshHostWindowBackground(*this);
+}
+
 void AudioSettingsDialog::resized() {
     auto bounds = getLocalBounds().reduced(10);
 
@@ -534,8 +538,13 @@ void AudioSettingsDialog::resized() {
 }
 
 void AudioSettingsDialog::populateDeviceLists() {
-    inputDeviceComboBox_.clear();
-    outputDeviceComboBox_.clear();
+    // clear() defaults to sendNotificationAsync: on a re-list (every device
+    // change notification lands here) the queued onChange fires after the
+    // current device is re-selected below and re-applies the device setup,
+    // which broadcasts another change. The selection below is explicit, so
+    // nothing here wants that notification.
+    inputDeviceComboBox_.clear(juce::dontSendNotification);
+    outputDeviceComboBox_.clear(juce::dontSendNotification);
     updateDevicePickerMode();
 
     // List devices from the ACTIVE driver type (see activeDeviceTypeFor): using

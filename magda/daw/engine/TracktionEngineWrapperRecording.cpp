@@ -123,7 +123,7 @@ void TracktionEngineWrapper::recordingFinished(
                 audioTrackInfo && !audioTrackInfo->audioInputDevice.isEmpty();
 
             if (!audioTrackHasInput) {
-                DBG("  skipping audio clip — track has no audio input configured");
+                DBG("  skipping audio clip - track has no audio input configured");
                 audioClip->removeFromParent();
                 continue;
             }
@@ -207,8 +207,10 @@ void TracktionEngineWrapper::recordingFinished(
             if (auto* newClip = clipManager.getClip(clipId)) {
                 double projectBPM = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
                 if (isValidBpm(projectBPM)) {
-                    newClip->audio().interpretation.bpm = projectBPM;
-                    newClip->audio().interpretation.totalBeats = lengthSeconds * projectBPM / 60.0;
+                    if (auto* event = newClip->primaryEvent()) {
+                        event->interpBpm = projectBPM;
+                        event->interpTotalBeats = lengthSeconds * projectBPM / 60.0;
+                    }
                 }
                 if (!takes.empty()) {
                     newClip->audio().takes = std::move(takes);
@@ -605,10 +607,8 @@ ClipId TracktionEngineWrapper::createEmptySessionSlotRecordingClip(TrackId track
 
     clipManager.setClipSceneIndex(clipId, sceneIndex);
     if (auto* clip = clipManager.getClip(clipId)) {
-        const double tempo = getTempo() > 0.0 ? getTempo() : 120.0;
         clip->loopEnabled = true;
         clip->loopLengthBeats = lengthBeats;
-        clip->loopLength = clip->getTimelineLength(tempo);
     }
     SelectionManager::getInstance().selectClip(clipId);
     clipManager.forceNotifyClipPropertyChanged(clipId);
@@ -661,15 +661,17 @@ bool TracktionEngineWrapper::finalizeSessionSlotAudioRecording(
     if (auto* clipInfo = clipManager.getClip(clipId)) {
         clipInfo->setPlacementBeats(0.0, lengthBeats);
         clipInfo->deriveTimesFromBeats(projectBpm);
-        clipInfo->autoTempo = true;
-        clipInfo->loopEnabled = true;
-        clipInfo->loopStartBeats = 0.0;
-        clipInfo->loopLengthBeats = lengthBeats;
-        clipInfo->loopStart = 0.0;
-        clipInfo->loopLength = clipInfo->getTimelineLength(projectBpm);
-        clipInfo->audio().interpretation.bpm = projectBpm;
-        clipInfo->audio().interpretation.totalBeats = lengthBeats;
-        clipInfo->audio().interpretation.totalBeatsLocked = true;
+        if (auto* event = clipInfo->primaryEvent()) {
+            // Recorded at the project tempo, so the interpretation is exact
+            // rather than detected.
+            event->interpBpm = projectBpm;
+            event->interpTotalBeats = lengthBeats;
+            event->interpTotalBeatsLocked = true;
+            event->autoTempo = true;
+            clipInfo->loopEnabled = true;
+            event->loopStartSamples = 0;
+            event->setLoopLengthSeconds(lengthBeats * 60.0 / projectBpm);
+        }
         clipManager.forceNotifyClipPropertyChanged(clipId);
         SelectionManager::getInstance().selectClip(clipId);
     }
@@ -776,7 +778,6 @@ bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
         clipInfo->deriveTimesFromBeats(tempo);
         clipInfo->loopEnabled = true;
         clipInfo->loopLengthBeats = lengthBeats;
-        clipInfo->loopLength = clipInfo->getTimelineLength(tempo);
         clipInfo->midiNotes = std::move(recordedNotes);
         clipInfo->midiCCData = std::move(recordedCC);
         clipInfo->midiPitchBendData = std::move(recordedPB);

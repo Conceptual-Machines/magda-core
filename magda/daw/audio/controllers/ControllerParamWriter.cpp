@@ -40,10 +40,12 @@ void DefaultControllerParamWriter::write(const ResolveResult& resolved, float va
             writeTrackLevel(resolved.target, clamped);
             break;
         case ControlTarget::Kind::SendLevel:
+            writeSendLevel(resolved.target, clamped);
+            break;
         case ControlTarget::Kind::Tempo:
-            // Not reachable from controller bindings yet: no resolver produces
-            // either kind for a control surface. Wire them here alongside
-            // writeTrackLevel when one does.
+            // Not reachable from a control surface yet: OSC sets tempo through
+            // ProjectApi, which is where the project's own limits live. Wire it
+            // here alongside writeTrackLevel when something needs the target.
             break;
     }
 }
@@ -62,15 +64,30 @@ void DefaultControllerParamWriter::writeTrackLevel(const ControlTarget& target, 
     // Same normalized -> real conversion the automation engine applies, so a
     // controller fader and an automation curve resolve to identical values.
     const ParameterInfo info = getParameterInfoForTarget(target);
-    const float real = ParameterUtils::normalizedToReal(clamped, info);
 
     auto& trackMgr = TrackManager::getInstance();
     if (target.kind == ControlTarget::Kind::TrackVolume) {
-        // The fader range is in dB; TrackManager expects linear gain.
-        trackMgr.setTrackVolume(trackId, std::pow(10.0f, real / 20.0f));
+        // The fader range is in dB; TrackManager expects linear gain. One home
+        // for that pair, shared with the reader that inverts it.
+        trackMgr.setTrackVolume(trackId, ParameterUtils::gainFromNormalized(clamped, info));
     } else {
-        trackMgr.setTrackPan(trackId, real);
+        trackMgr.setTrackPan(trackId, ParameterUtils::normalizedToReal(clamped, info));
     }
+}
+
+// Send levels, through TrackManager for the same reason track levels are: the
+// setter keeps TrackInfo in sync and notifies the mixer. The normalized -> dB
+// -> linear-gain mapping is the one AutomationPlaybackEngine applies to the
+// same target kind, so a send driven by a control surface and one driven by a
+// curve land on the same value.
+void DefaultControllerParamWriter::writeSendLevel(const ControlTarget& target, float clamped) {
+    const auto trackId = target.devicePath.trackId;
+    if (trackId == INVALID_TRACK_ID || target.sendBusIndex < 0)
+        return;
+
+    const ParameterInfo info = getParameterInfoForTarget(target);
+    TrackManager::getInstance().setSendLevel(trackId, target.sendBusIndex,
+                                             ParameterUtils::gainFromNormalized(clamped, info));
 }
 
 void DefaultControllerParamWriter::writePluginParam(const ControlTarget& target, float clamped) {

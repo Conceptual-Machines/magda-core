@@ -28,6 +28,27 @@ class TrackApiLive : public TrackApi {
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device) override;
     DeviceId addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
                               const DeviceInfo& device) override;
+
+    // Path-addressed racks and chains (#1993). These are the implementations;
+    // the triple-based overrides below are shims over them.
+    RackId addRackToChainByPath(const ChainNodePath& chainPath, const juce::String& name) override;
+    void removeRackFromChainByPath(const ChainNodePath& rackPath) override;
+    const RackInfo* getRackByPath(const ChainNodePath& rackPath) const override;
+    void setRackBypassedByPath(const ChainNodePath& rackPath, bool bypassed) override;
+    void setRackVolume(const ChainNodePath& rackPath, float volumeDb) override;
+    ChainId addChainToRack(const ChainNodePath& rackPath, const juce::String& name) override;
+    void removeChainByPath(const ChainNodePath& chainPath) override;
+    const ChainInfo* getChainByPath(const ChainNodePath& chainPath) const override;
+    void setChainOutput(const ChainNodePath& chainPath, int outputIndex) override;
+    void setChainMuted(const ChainNodePath& chainPath, bool muted) override;
+    void setChainBypassed(const ChainNodePath& chainPath, bool bypassed) override;
+    void setChainSolo(const ChainNodePath& chainPath, bool solo) override;
+    void setChainVolume(const ChainNodePath& chainPath, float volumeDb) override;
+    void setChainPan(const ChainNodePath& chainPath, float pan) override;
+    void setChainName(const ChainNodePath& chainPath, const juce::String& name) override;
+    DeviceId addDeviceToChainByPath(const ChainNodePath& chainPath,
+                                    const DeviceInfo& device) override;
+
     RackId addRackToTrack(TrackId trackId, const juce::String& name) override;
     void removeRackFromTrack(TrackId trackId, RackId rackId) override;
     const RackInfo* getRack(TrackId trackId, RackId rackId) const override;

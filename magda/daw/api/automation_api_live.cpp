@@ -1,6 +1,10 @@
 #include "automation_api_live.hpp"
 
+#include <memory>
+
+#include "../core/AutomationCommands.hpp"
 #include "../core/AutomationManager.hpp"
+#include "../core/UndoManager.hpp"
 
 namespace magda {
 
@@ -28,6 +32,43 @@ AutomationPointId AutomationApiLive::addPoint(AutomationLaneId laneId, double be
 
 void AutomationApiLive::clearLanePoints(AutomationLaneId laneId) {
     AutomationManager::getInstance().clearLanePoints(laneId);
+}
+
+const std::vector<AutomationLaneInfo>& AutomationApiLive::getLanes() const {
+    return AutomationManager::getInstance().getLanes();
+}
+
+std::vector<AutomationLaneId> AutomationApiLive::getLanesForTrack(TrackId trackId) const {
+    return AutomationManager::getInstance().getLanesForTrack(trackId);
+}
+
+std::vector<AutomationLaneId> AutomationApiLive::getEditScopedLanes() const {
+    return AutomationManager::getInstance().getEditScopedLanes();
+}
+
+const std::vector<AutomationClipInfo>& AutomationApiLive::getClips() const {
+    return AutomationManager::getInstance().getClips();
+}
+
+bool AutomationApiLive::setLanePoints(AutomationLaneId laneId,
+                                      std::vector<AutomationPoint> points) {
+    const auto* lane = AutomationManager::getInstance().getLane(laneId);
+    if (lane == nullptr || !lane->isAbsolute())
+        return false;
+
+    auto command = std::make_unique<SetAutomationLanePointsCommand>(laneId, std::move(points));
+    auto* raw = command.get();
+    UndoManager::getInstance().executeCommand(std::move(command));
+    return raw->didApply();
+}
+
+bool AutomationApiLive::deleteLane(AutomationLaneId laneId) {
+    if (AutomationManager::getInstance().getLane(laneId) == nullptr)
+        return false;
+
+    UndoManager::getInstance().executeCommand(
+        std::make_unique<DeleteAutomationLaneCommand>(laneId));
+    return true;
 }
 
 bool AutomationApiLive::retypeEmptyLane(AutomationLaneId laneId, AutomationLaneType type) {

@@ -301,24 +301,8 @@ juce::var serializeStoredAlias(const StoredAlias& alias) {
     obj->setProperty("paramIndex", alias.paramIndex);
     obj->setProperty("paramNameAtSetTime", alias.paramNameAtSetTime);
 
-    if (alias.path.has_value()) {
-        // Inline ChainNodePath serialization
-        const auto& path = *alias.path;
-        auto* pathObj = new juce::DynamicObject();
-        pathObj->setProperty("trackId", path.trackId);
-        pathObj->setProperty("topLevelDeviceId", path.topLevelDeviceId);
-        pathObj->setProperty("isTrackLevel", path.isTrackLevel);
-
-        juce::Array<juce::var> stepsArray;
-        for (const auto& step : path.steps) {
-            auto* stepObj = new juce::DynamicObject();
-            stepObj->setProperty("type", static_cast<int>(step.type));
-            stepObj->setProperty("id", step.id);
-            stepsArray.add(juce::var(stepObj));
-        }
-        pathObj->setProperty("steps", juce::var(stepsArray));
-        obj->setProperty("path", juce::var(pathObj));
-    }
+    if (alias.path.has_value())
+        obj->setProperty("path", toVar(*alias.path));
 
     return juce::var(obj);
 }
@@ -336,31 +320,15 @@ bool deserializeStoredAlias(const juce::var& v, StoredAlias& out) {
     out.paramNameAtSetTime = obj->getProperty("paramNameAtSetTime").toString();
     out.path = std::nullopt;
 
+    // An absent path means a user-global alias. A path that is present but
+    // unreadable is corrupt, and must not quietly widen the alias to global
+    // scope — that retargets it just as surely as a wrong path would. JSON null
+    // parses to a void var, so it is caught here too rather than read as absent.
     if (obj->hasProperty("path")) {
-        auto pathVar = obj->getProperty("path");
-        if (pathVar.isObject()) {
-            auto* pathObj = pathVar.getDynamicObject();
-            ChainNodePath path;
-            path.trackId = static_cast<int>(pathObj->getProperty("trackId"));
-            path.topLevelDeviceId = static_cast<int>(pathObj->getProperty("topLevelDeviceId"));
-            if (pathObj->hasProperty("isTrackLevel"))
-                path.isTrackLevel = static_cast<bool>(pathObj->getProperty("isTrackLevel"));
-
-            auto stepsVar = pathObj->getProperty("steps");
-            if (stepsVar.isArray()) {
-                for (const auto& stepVar : *stepsVar.getArray()) {
-                    if (!stepVar.isObject())
-                        continue;
-                    auto* stepObj = stepVar.getDynamicObject();
-                    ChainPathStep step;
-                    step.type =
-                        static_cast<ChainStepType>(static_cast<int>(stepObj->getProperty("type")));
-                    step.id = static_cast<int>(stepObj->getProperty("id"));
-                    path.steps.push_back(step);
-                }
-            }
-            out.path = path;
-        }
+        ChainNodePath path;
+        if (!fromVar(obj->getProperty("path"), path))
+            return false;
+        out.path = path;
     }
 
     return out.isValid();

@@ -183,7 +183,25 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
      * @brief Ensure VolumeAndPanPlugin is at the correct position (near end of chain)
      * @param track The Tracktion Engine audio track
      */
-    void ensureVolumePluginPosition(te::AudioTrack* track) const;
+    /// Bring the track's AuxSendPlugins into line with `TrackInfo::sends`.
+    /// Shared by the ordinary and multi-out sync paths; the multi-out one used
+    /// to return before this ran and so never created a send at all.
+    void reconcileSends(const TrackInfo& trackInfo, te::AudioTrack& track);
+
+    /// Append everything after the fx tree to `desiredOrder`, grouped so that
+    /// every pre-fader plugin precedes every post-fader one. Shared by the
+    /// ordinary and multi-out sync paths, which each used to carry their own.
+    void appendStripOrder(TrackId trackId, const TrackInfo& trackInfo, te::AudioTrack& track,
+                          std::vector<te::Plugin*>& desiredOrder) const;
+
+    void ensureVolumePluginPosition(TrackId trackId, te::AudioTrack* track) const;
+
+    /// The plugins on `trackId` that belong after the track fader: the post-FX
+    /// stage and mixer-analysis rail when the chain is post-fader, the track's
+    /// post-fader aux sends, and the always-on measurement tap, which is
+    /// post-fader unconditionally.
+    std::unordered_set<te::Plugin*> collectPostFaderPlugins(TrackId trackId,
+                                                            te::AudioTrack& track) const;
 
     /**
      * @brief Callback invoked when a plugin fails to load

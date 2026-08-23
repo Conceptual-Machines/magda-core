@@ -59,6 +59,7 @@ class MixerView : public juce::Component,
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
     bool keyPressed(const juce::KeyPress& key) override;
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseDown(const juce::MouseEvent& event) override;

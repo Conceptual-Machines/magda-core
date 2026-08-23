@@ -249,6 +249,47 @@ enum class LFOTriggerMode {
 };
 
 /**
+ * @brief Where in a source track's chain a modifier listens.
+ *
+ * The two points the engines actually have, named for what they are rather than
+ * for a fader they sit either side of. A third point between them (post-FX,
+ * pre-fader) is not something either engine taps today, so it is deliberately
+ * not offered: adding it is a change to both engines and its own decision.
+ *
+ * Per modifier rather than per sidechain, because a modifier listening to its
+ * own track has no sidechain to carry the setting, and because two listeners on
+ * one source can reasonably want different points, which is the same reason the
+ * follower's band limits are per modifier.
+ */
+enum class ModTapPoint : int {
+    /// After whatever makes the track's sound and before its effects: the chain
+    /// head on a track with no instrument, and immediately past the instrument
+    /// on one that has it. What an audio trigger keys off, so a hit is detected
+    /// on what the track played rather than on what survived its chain.
+    ///
+    /// Ordinals are pinned: this is written into a project as its integer
+    /// (AutomationModSerializer), so an insert here would move an existing
+    /// project's modifiers to the other point (test_persisted_enum_pins.cpp).
+    PreFx = 0,
+
+    /// The far end: post-FX, post-fader, before the muting node. What a
+    /// follower tracks, so riding the source fader moves the modulation, and
+    /// before the mute so a muted source still ducks what it is ducking.
+    PostFader = 1,
+};
+
+/**
+ * @brief Where a modifier of this type listens unless it says otherwise.
+ *
+ * The fork's own split, which is what makes the default pure parity: its
+ * follower tap is post-fader and its trigger monitor is pre-FX, so a project
+ * carrying neither setting sounds the same in both engines.
+ */
+inline ModTapPoint defaultModTapPoint(ModType type) {
+    return type == ModType::Follower ? ModTapPoint::PostFader : ModTapPoint::PreFx;
+}
+
+/**
  * @brief A single mod-to-parameter link with its own amount.
  *
  * The target is a ControlTarget which addresses any parameter the system can
@@ -360,6 +401,12 @@ struct ModInfo {
     float followerHoldMs = 0.0f;       // Envelope hold time (ms)
     float followerReleaseMs = 500.0f;  // Envelope release time (ms)
 
+    // Where in the source track's chain this modifier listens. Only means
+    // anything for a modifier that listens to audio at all: a follower, or one
+    // triggered by level. Defaulted per type on creation, on a type change and
+    // on loading a project that predates the field (defaultModTapPoint).
+    ModTapPoint tapPoint = ModTapPoint::PreFx;
+
     // Band-limit detection: filter the raw source audio BEFORE peak detection so
     // the follower can track just part of the spectrum (e.g. only the bass).
     // Applied by the post-FX FollowerSourceTapPlugin, not TE's own post-rectify
@@ -384,7 +431,19 @@ struct ModInfo {
 
     // Constructor with index (for initialization)
     explicit ModInfo(int index)
-        : id(index), name(getDefaultName(index, ModType::LFO)), type(ModType::LFO) {}
+        : id(index),
+          name(getDefaultName(index, ModType::LFO)),
+          type(ModType::LFO),
+          tapPoint(defaultModTapPoint(ModType::LFO)) {}
+
+    /// Become @p t, and take the tap point that goes with it. What
+    /// TrackManager::setModType does, for the places that build a ModInfo
+    /// directly: assigning the type on its own leaves the point at the one the
+    /// old kind wanted, which for a follower is the wrong end of the chain.
+    void setType(ModType t) {
+        type = t;
+        tapPoint = defaultModTapPoint(t);
+    }
 
     bool isLinked() const {
         return !links.empty();

@@ -1,5 +1,9 @@
 #pragma once
 
+#include <algorithm>
+#include <cmath>
+#include <functional>
+
 namespace magda {
 
 /**
@@ -15,6 +19,8 @@ namespace magda {
  */
 class TransportApi {
   public:
+    using StateListener = std::function<void()>;
+
     virtual ~TransportApi() = default;
 
     /** Start playback from the current edit position. */
@@ -35,6 +41,88 @@ class TransportApi {
     /** Edit position in beats. Returns 0 if no edit is loaded. */
     virtual double getPositionBeats() const = 0;
     virtual void setPositionBeats(double beats) = 0;
+
+    /**
+     * The beat position `deltaBars` bars from `beats`, keeping the offset
+     * within the bar and following any meter changes in between.
+     *
+     * The one thing relative seeking needs that absolute positioning does not:
+     * how long a bar is, which is a property of the project rather than of the
+     * caller. Implementations answer it; `seekBars` below is written once on
+     * top. Returns `beats` unchanged when there is no edit to ask.
+     */
+    virtual double beatsAtBarOffset(double beats, int deltaBars) const = 0;
+
+    /**
+     * Observe discrete play/stop/record/loop state changes.
+     *
+     * Live implementations deliver on the message thread. The default no-op
+     * keeps headless facades free of JUCE/engine listener machinery.
+     */
+    virtual int addStateListener(StateListener) {
+        return 0;
+    }
+    virtual void removeStateListener(int) {}
+
+    /** Reattach listeners after the current project/Edit is replaced. */
+    virtual void refreshStateSource() {}
+
+    // ------------------------------------------------------------------
+    // Relative seeking (#1987)
+    //
+    // Concrete rather than virtual, and here rather than in any one caller.
+    // Rewind and fast-forward buttons are relative by nature, and three
+    // surfaces need them — Lua scripts, the remote API's transport
+    // operations, and the OSC namespace. Written as read-modify-write at each
+    // of those, the clamp at zero and the bar length get re-derived three
+    // times and drift three ways.
+    // ------------------------------------------------------------------
+
+    /**
+     * Move the playhead `delta` beats, clamped at zero.
+     *
+     * A non-finite delta moves nothing. The clamp cannot catch one: every
+     * comparison against NaN is false, so `std::max(0.0, NaN)` is 0 and a
+     * single bad number would send the playhead to the start of the project.
+     * Every surface takes its delta from outside MAGDA — a Lua number, a JSON
+     * number, an OSC float — so it is refused here rather than at each of them.
+     */
+    void seekBeats(double delta) {
+        if (!std::isfinite(delta))
+            return;
+
+        setPositionBeats(std::max(0.0, getPositionBeats() + delta));
+    }
+
+    /**
+     * The furthest one seek moves, in bars.
+     *
+     * Past any real project by a wide margin — a million bars of 4/4 is about
+     * thirty days of music at 120 bpm — and small enough that adding it to a
+     * bar number cannot overflow an int.
+     */
+    static constexpr int kMaxBarOffset = 1000000;
+
+    /**
+     * Move the playhead `deltaBars` bars, meter-aware, clamped at zero.
+     *
+     * Takes a 64-bit count and bounds it here rather than at each caller.
+     * Every surface reads its number from somewhere outside MAGDA — a Lua
+     * integer, a JSON number, an OSC float — and narrowing to int at three
+     * different edges is three chances to do it wrong. Anything past the
+     * bound is a seek to one end of the project or the other, which is what
+     * clamping gives.
+     */
+    void seekBars(long long deltaBars) {
+        const auto bounded = static_cast<int>(std::clamp<long long>(
+            deltaBars, -static_cast<long long>(kMaxBarOffset), kMaxBarOffset));
+
+        const auto target = beatsAtBarOffset(getPositionBeats(), bounded);
+        if (!std::isfinite(target))
+            return;
+
+        setPositionBeats(std::max(0.0, target));
+    }
 };
 
 }  // namespace magda

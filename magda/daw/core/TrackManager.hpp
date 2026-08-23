@@ -468,6 +468,11 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     bool isChainEnabled(TrackId trackId) const;
     void setChainEnabled(TrackId trackId, bool enabled);
 
+    /// Which side of the fader the whole post-FX stage sits on (#2087). One
+    /// switch per chain; per-device placement is the v1 upgrade.
+    void setPostFxPostFader(TrackId trackId, bool postFader);
+    bool isPostFxPostFader(TrackId trackId) const;
+
     /** @brief A device's engine enablement: its own bypassed flag combined
         with the owning track's chain power (insert-chain devices only). */
     bool isDeviceEffectivelyEnabled(const ChainNodePath& devicePath,
@@ -486,6 +491,13 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setChainSolo(const ChainNodePath& chainPath, bool solo);
     void setChainVolume(const ChainNodePath& chainPath, float volume);
     void setChainPan(const ChainNodePath& chainPath, float pan);
+    // These two completed the set (#1993). Every other chain setter already had
+    // a path form; without them the facade could reach a nested chain's mute and
+    // volume but not its name or output, which is not a line anyone would have
+    // drawn on purpose. The triple-based forms above now delegate here, so there
+    // is one body rather than two that can drift.
+    void setChainOutput(const ChainNodePath& chainPath, int outputIndex);
+    void setChainName(const ChainNodePath& chainPath, const juce::String& name);
     void setChainExpanded(TrackId trackId, RackId rackId, ChainId chainId, bool expanded);
     void setRackVolume(TrackId trackId, RackId rackId, float volume);
     void setRackVolume(const ChainNodePath& rackPath, float volume);
@@ -692,6 +704,10 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setModSyncDivision(const ChainNodePath& path, int modIndex, SyncDivision division);
     void setModOneShot(const ChainNodePath& path, int modIndex, bool oneShot);
     void setModTriggerMode(const ChainNodePath& path, int modIndex, LFOTriggerMode mode);
+
+    /// Where in the source track's chain this modifier listens. Only means
+    /// anything for one that listens to audio: a follower, or a level trigger.
+    void setModTapPoint(const ChainNodePath& path, int modIndex, ModTapPoint point);
     void setModCurvePreset(const ChainNodePath& path, int modIndex, CurvePreset preset);
     void setModCurveState(const ChainNodePath& path, int modIndex, CurvePreset preset,
                           const std::vector<CurvePointData>& points);

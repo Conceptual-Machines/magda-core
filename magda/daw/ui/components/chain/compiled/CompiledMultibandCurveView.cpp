@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "../../../utils/CurveLabelLayout.hpp"
 #include "audio/plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
 #include "core/GestureRouter.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -841,7 +842,9 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
 
         g.setColour(colour.withAlpha(rangeActive ? 0.95f : 0.35f));
         g.drawText(rangeText + " dB",
-                   juce::Rectangle<float>(cx - 28.0f, (yUpper + yLower) * 0.5f - 6.0f, 56.0f, 12.0f)
+                   CurveLabelLayout::centredIn(
+                       juce::Rectangle<float>(x0, plot.getY(), x1 - x0, plot.getHeight()), cx,
+                       ((yUpper + yLower) * 0.5f) - 6.0f, 56.0f, 12.0f)
                        .toNearestInt(),
                    juce::Justification::centred);
 
@@ -881,10 +884,10 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
                                   ? juce::String(hz / 1000.0f, 2) + " kHz"
                                   : juce::String(static_cast<int>(std::round(hz))) + " Hz";
             g.setFont(11.0f);
-            g.drawText(
-                text,
-                juce::Rectangle<float>(x - 32.0f, plot.getY() + 2.0f, 64.0f, 14.0f).toNearestInt(),
-                juce::Justification::centred);
+            g.drawText(text,
+                       CurveLabelLayout::centredIn(plot, x, plot.getY() + 2.0f, 64.0f, 14.0f)
+                           .toNearestInt(),
+                       juce::Justification::centred);
         }
     };
     drawXo(lowX, Handle::LowXo, lowXoHz_);

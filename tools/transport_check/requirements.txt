@@ -1,0 +1,9 @@
+# Optional: the official MCP SDK, used by sdk_suite.py to drive the endpoint as
+# an independent host that validates every response against the protocol
+# schema. Needs Python 3.10+; the rest of the harness is stdlib-only and runs
+# on 3.9, so nothing here is required for a normal run.
+#
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r tools/transport_check/requirements.txt
+#   .venv/bin/python tools/transport_check --all
+mcp>=2.0.0

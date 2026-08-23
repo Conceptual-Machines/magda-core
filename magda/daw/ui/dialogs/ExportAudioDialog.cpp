@@ -153,6 +153,10 @@ void ExportAudioDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
 }
 
+void ExportAudioDialog::lookAndFeelChanged() {
+    refreshHostWindowBackground(*this);
+}
+
 void ExportAudioDialog::resized() {
     auto bounds = getLocalBounds().reduced(20);
 

@@ -18,7 +18,7 @@
 
 ---
 MAGDA是一款免费的, 深度集成 AI 的开源数字音频工作站（DAW），基于 C++20、JUCE 框架与 Tracktion 音频引擎开发.
- - [English](README.md) | **简体中文** 
+ - [English](README.md) | **简体中文**
 
 ### 特性
 
@@ -94,7 +94,7 @@ make lint       # Run clang-tidy analysis
 - **Periodic Code Analysis**: 每周扫描 TODO、FIXME 与代码异味
 - **Refactoring Scanner**: 每两周分析代码复杂度，统计技术债务
 
-有关自动化分析和周期性工作流的详细信息，详见 [docs/AUTOMATED_WORKFLOWS.md](docs/AUTOMATED_WORKFLOWS.md) 
+有关自动化分析和周期性工作流的详细信息，详见 [docs/ci/automated-workflows.md](docs/ci/automated-workflows.md)
 
 ## Security安全机制
 
@@ -108,7 +108,7 @@ MAGDA 高度重视安全问题，代码仓库内置了全方位安全防护机�
 
 **发现安全问题？** 请查阅我们的安全政策 [安全政策](SECURITY.md) 以了解负责任的披露方式.
 
-有关分支保护和安全架构的详细信息，请参见 [docs/BRANCH_PROTECTION.md](docs/BRANCH_PROTECTION.md).
+有关分支保护和安全架构的详细信息，请参见 [docs/ci/branch-protection.md](docs/ci/branch-protection.md).
 
 ## Architecture系统架构
 

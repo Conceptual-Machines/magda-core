@@ -203,6 +203,11 @@ class ParamSlotComponent : public juce::Component,
     // Called from setParamValue so automation echoes move the widget, not just
     // the underlying slider.
     void syncDiscreteSelection(double value);
+    // Same for the boolean toggle: its tick is set once when the widget is
+    // configured, so without this a write from anywhere else (a device's own
+    // curve view, automation, a macro) leaves the checkbox showing the old
+    // state until the parameter list is rebuilt.
+    void syncBooleanToggle(double value);
     // Push a param's help text onto every widget that can own the mouse, since
     // JUCE resolves tooltips from the component under the pointer only.
     void applyTooltip(const juce::String& tooltip);

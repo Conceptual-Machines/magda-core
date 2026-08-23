@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "PanelEvents.hpp"
@@ -34,6 +35,25 @@ class PanelStateListener {
         juce::ignoreUnused(location, collapsed);
     }
 };
+
+/**
+ * @brief Reorder a panel's tabs to follow a persisted order.
+ *
+ * Content-type ids this build does not know, and ids for tabs the panel does
+ * not offer, are dropped; tabs the saved order never mentions are appended in
+ * their default position. A layout written by a build with a different tab set
+ * therefore still opens, with every tab this build has.
+ *
+ * An empty saved order leaves the panel untouched.
+ */
+void applyPersistedTabOrder(PanelState& panel, const std::vector<std::string>& savedOrder);
+
+/**
+ * @brief Bring a persisted front tab forward, if this build still has that tab.
+ *
+ * An empty or unrecognised id leaves the panel's default front tab in place.
+ */
+void applyPersistedActiveTab(PanelState& panel, const std::string& savedActiveTab);
 
 /**
  * @brief Singleton controller for managing panel state
@@ -118,6 +138,16 @@ class PanelController {
 
     AllPanelStates state_;
     std::vector<PanelStateListener*> listeners_;
+
+    /** Overlay the tab order and front tab persisted in Config onto the
+     *  defaults already in state_. Anything the config does not name, or
+     *  names with an id this build does not know, keeps its default. */
+    void restoreFromConfig();
+
+    /** Write this panel's tab order and front tab back to Config and flush.
+     *  No-op when nothing the config holds has actually changed, so the
+     *  selection-driven bottom panel does not write on every clip click. */
+    void persistToConfig(PanelLocation location);
 
     void notifyPanelChanged(PanelLocation location);
     void notifyActiveTabChanged(PanelLocation location);

@@ -173,13 +173,13 @@ void TranscriptionService::transcribeAudioClip(ClipId sourceClipId, Completion o
 
     // Snapshot everything we need off the clip now (message thread); the clip
     // pointer must not be touched on the worker.
-    const juce::String filePath = clip->audio().source.filePath;
+    const juce::String filePath = audioEventRef(*clip).sourceFilePath();
     const juce::String sourceName = juce::File(filePath).getFileNameWithoutExtension();
     const TrackId sourceTrackId = clip->trackId;
     const ClipView view = clip->view;
     const double startBeat = clip->placement.startBeat;
     const double lengthBeats = clip->placement.lengthBeats;
-    const double offsetSec = clip->offset;
+    const double offsetSec = audioEventRef(*clip).anchorSeconds();
     const double bpm = projectBpm();
 
     // onComplete needs to survive the lambda copy into the pool.

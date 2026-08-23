@@ -15,6 +15,7 @@
 #include "audio/plugins/InsertCapturePlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/racks/InstrumentRackManager.hpp"
+#include "core/ClipOcclusion.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/Config.hpp"
 #include "core/ControlTarget.hpp"
@@ -1030,9 +1031,7 @@ void JoinClipsCommand::performAction() {
         }
 
         left->loopEnabled = false;
-        left->loopStart = 0.0;
         left->loopStartBeats = 0.0;
-        left->loopLength = 0.0;
         left->loopLengthBeats = 0.0;
         left->midiOffset = 0.0;
         left->midiTrimOffset = 0.0;
@@ -1229,7 +1228,7 @@ void RenderClipCommand::execute() {
     }
 
     // Determine output file path — always use the project's renders directory
-    juce::File sourceFile(clip->audio().source.filePath);
+    juce::File sourceFile(magda::audioEventRef(*clip).sourceFilePath());
     auto rendersDir = ProjectManager::getInstance().getRendersDirectory();
     if (rendersDir == juce::File())
         rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
@@ -1384,7 +1383,7 @@ void RenderTimeSelectionCommand::execute() {
 
         // Determine output file path from first overlapping clip's source
         auto* firstClip = clipManager.getClip(overlappingIds[0]);
-        juce::File sourceFile(firstClip->audio().source.filePath);
+        juce::File sourceFile(magda::audioEventRef(*firstClip).sourceFilePath());
         auto rendersDir = ProjectManager::getInstance().getRendersDirectory();
         if (rendersDir == juce::File())
             rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
@@ -2449,6 +2448,210 @@ void FlattenMidiClipCommand::undo() {
 }
 
 // ============================================================================
+// FlattenClipStackCommand
+// ============================================================================
+
+namespace {
+
+/// Timeline beat a note sits at, for a clip whose loops have been unrolled and
+/// whose offsets are therefore zero.
+double noteTimelineBeat(const ClipInfo& flattened, const MidiNote& note) {
+    return flattened.placement.startBeat + note.startBeat;
+}
+
+bool playsAt(const AudibleSpan& span, double timelineBeat) {
+    constexpr double tolBeats = 1e-6;
+    if (!span.audible)
+        return false;
+    if (timelineBeat < span.startBeat - tolBeats || timelineBeat >= span.endBeat() - tolBeats)
+        return false;
+    for (const auto& hole : span.silenced) {
+        if (timelineBeat >= hole.start.value - tolBeats && timelineBeat < hole.end.value - tolBeats)
+            return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+FlattenClipStackCommand::FlattenClipStackCommand(ClipId anchorClipId) : anchorId_(anchorClipId) {}
+
+std::vector<ClipId> FlattenClipStackCommand::collectStack(ClipId anchorClipId) {
+    auto& clipManager = ClipManager::getInstance();
+    const auto* anchor = clipManager.getClip(anchorClipId);
+    if (anchor == nullptr || anchor->view != ClipView::Arrangement || !anchor->isMidi())
+        return {};
+
+    std::vector<ClipInfo> lane;
+    for (ClipId id : clipManager.getClipsOnTrack(anchor->trackId, ClipView::Arrangement)) {
+        if (const auto* clip = clipManager.getClip(id))
+            lane.push_back(*clip);
+    }
+
+    auto overlaps = [](const ClipInfo& a, const ClipInfo& b) {
+        const double aEnd = a.placement.startBeat + a.placement.lengthBeats;
+        const double bEnd = b.placement.startBeat + b.placement.lengthBeats;
+        return a.placement.startBeat < bEnd && b.placement.startBeat < aEnd;
+    };
+
+    // Grow the group until it stops picking up new clips: A over B over C
+    // flattens as one stack even when A and C never touch.
+    std::vector<ClipId> stack{anchorClipId};
+    bool grew = true;
+    while (grew) {
+        grew = false;
+        for (const auto& candidate : lane) {
+            if (std::find(stack.begin(), stack.end(), candidate.id) != stack.end())
+                continue;
+            for (ClipId inStack : stack) {
+                const auto* member = clipManager.getClip(inStack);
+                if (member == nullptr || !overlaps(*member, candidate))
+                    continue;
+                // An audio clip in the stack cannot be merged into notes.
+                if (!candidate.isMidi())
+                    return {};
+                stack.push_back(candidate.id);
+                grew = true;
+                break;
+            }
+        }
+    }
+
+    return stack.size() > 1 ? stack : std::vector<ClipId>{};
+}
+
+void FlattenClipStackCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+
+    const auto stack = collectStack(anchorId_);
+    if (stack.size() < 2)
+        return;
+
+    const auto* anchor = clipManager.getClip(anchorId_);
+    if (anchor == nullptr)
+        return;
+    const TrackId trackId = anchor->trackId;
+
+    if (!executed_)
+        arrangementSnapshot_ = clipManager.getArrangementClips();
+
+    std::vector<ClipInfo> lane;
+    for (ClipId id : clipManager.getClipsOnTrack(trackId, ClipView::Arrangement)) {
+        if (const auto* clip = clipManager.getClip(id))
+            lane.push_back(*clip);
+    }
+    const auto spans = computeAudibleSpans(lane);
+
+    // Bottom to top, so notes land in the order they are stacked.
+    std::vector<ClipInfo> members;
+    for (ClipId id : stack) {
+        if (const auto* clip = clipManager.getClip(id))
+            members.push_back(*clip);
+    }
+    std::sort(members.begin(), members.end(), [](const ClipInfo& a, const ClipInfo& b) {
+        if (a.stackOrder != b.stackOrder)
+            return a.stackOrder < b.stackOrder;
+        return a.id < b.id;
+    });
+
+    double mergedStart = std::numeric_limits<double>::max();
+    double mergedEnd = std::numeric_limits<double>::lowest();
+    for (const auto& member : members) {
+        mergedStart = std::min(mergedStart, member.placement.startBeat);
+        mergedEnd = std::max(mergedEnd, member.placement.startBeat + member.placement.lengthBeats);
+    }
+    if (!(mergedEnd > mergedStart))
+        return;
+
+    std::vector<MidiNote> mergedNotes;
+    std::vector<MidiCCData> mergedCC;
+    std::vector<MidiPitchBendData> mergedPitchBend;
+
+    for (const auto& member : members) {
+        // Unroll first: what a looped clip plays is its expanded note list, and
+        // that is what has to end up in the merged clip.
+        ClipInfo flattened = member;
+        ClipOperations::flattenMidiClip(flattened);
+
+        const auto spanIt = spans.find(member.id);
+        if (spanIt == spans.end())
+            continue;
+        const auto& span = spanIt->second;
+
+        for (const auto& note : flattened.midiNotes) {
+            const double timelineBeat = noteTimelineBeat(flattened, note);
+            if (!playsAt(span, timelineBeat))
+                continue;
+            MidiNote moved = note;
+            moved.startBeat = timelineBeat - mergedStart;
+            mergedNotes.push_back(moved);
+        }
+        for (const auto& cc : flattened.midiCCData) {
+            const double timelineBeat = flattened.placement.startBeat + cc.beatPosition;
+            if (!playsAt(span, timelineBeat))
+                continue;
+            MidiCCData moved = cc;
+            moved.beatPosition = timelineBeat - mergedStart;
+            mergedCC.push_back(moved);
+        }
+        for (const auto& pb : flattened.midiPitchBendData) {
+            const double timelineBeat = flattened.placement.startBeat + pb.beatPosition;
+            if (!playsAt(span, timelineBeat))
+                continue;
+            MidiPitchBendData moved = pb;
+            moved.beatPosition = timelineBeat - mergedStart;
+            mergedPitchBend.push_back(moved);
+        }
+    }
+
+    std::sort(mergedNotes.begin(), mergedNotes.end(),
+              [](const MidiNote& a, const MidiNote& b) { return a.startBeat < b.startBeat; });
+
+    // The clip the user acted on survives and keeps its name and colour; the
+    // rest of the stack is folded into it.
+    clipManager.makeClipUnique(anchorId_);
+    for (ClipId id : stack) {
+        if (id != anchorId_)
+            clipManager.deleteClip(id);
+    }
+
+    auto* target = clipManager.getClip(anchorId_);
+    if (target == nullptr)
+        return;
+
+    const double bpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    target->midiNotes = std::move(mergedNotes);
+    target->midiCCData = std::move(mergedCC);
+    target->midiPitchBendData = std::move(mergedPitchBend);
+    target->loopEnabled = false;
+    target->midiOffset = 0.0;
+    target->midiTrimOffset = 0.0;
+    ClipOperations::setBeatPlacement(*target, mergedStart, mergedEnd - mergedStart,
+                                     isValidBpm(bpm) ? bpm : 120.0);
+
+    clipManager.forceNotifyClipsChanged();
+    executed_ = true;
+}
+
+void FlattenClipStackCommand::undo() {
+    if (!executed_)
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+
+    auto currentClips = clipManager.getArrangementClips();
+    for (const auto& clip : currentClips) {
+        clipManager.deleteClip(clip.id);
+    }
+    for (const auto& clip : arrangementSnapshot_) {
+        clipManager.restoreClip(clip);
+    }
+
+    clipManager.forceNotifyClipsChanged();
+    executed_ = false;
+}
+
+// ============================================================================
 // RecordSessionToArrangementCommand
 // ============================================================================
 
@@ -2535,13 +2738,14 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
     // markers define a non-linear mapping.  With warp off the linear formula
     // is correct, so we convert marker sourceTime values to the linear
     // timeline domain.
-    clip->warpEnabled = false;
+    if (auto* warpEvent = clip->primaryEvent())
+        warpEvent->warpEnabled = false;
     bridge->disableWarp(clipId);
 
     const double bpm = resolveTimelineBpm(tempo);
     double clipStart = clip->getTimelineStart(bpm);
     double clipEnd = clip->getTimelineEnd(bpm);
-    double clipOffset = clip->getSourceOffset();
+    double clipOffset = magda::audioEventRef(*clip).anchorSeconds();
 
     std::vector<double> splitTimes;
     splitTimes.reserve(markers.size());
@@ -2552,10 +2756,10 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
     for (size_t i = 1; i + 1 < markers.size(); ++i) {
         double sourceDelta = markers[i].sourceTime - clipOffset;
         double splitTime;
-        if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0) {
-            splitTime = clipStart + sourceDelta * clip->audio().interpretation.bpm / bpm;
+        if (magda::audioEventRef(*clip).autoTempo && magda::audioEventRef(*clip).interpBpm > 0.0) {
+            splitTime = clipStart + sourceDelta * magda::audioEventRef(*clip).interpBpm / bpm;
         } else {
-            splitTime = clipStart + sourceDelta / clip->speedRatio;
+            splitTime = clipStart + sourceDelta / magda::audioEventRef(*clip).speedRatio;
         }
         if (splitTime > clipStart && splitTime < clipEnd) {
             splitTimes.push_back(splitTime);
@@ -2577,8 +2781,8 @@ void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo, AudioBrid
         return;
 
     // Disable warp before splitting if enabled
-    if (clip->warpEnabled) {
-        clip->warpEnabled = false;
+    if (auto* warpEvent = clip->primaryEvent(); warpEvent != nullptr && warpEvent->warpEnabled) {
+        warpEvent->warpEnabled = false;
         if (bridge)
             bridge->disableWarp(clipId);
     }
@@ -2837,21 +3041,21 @@ void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || !clip->isAudio() || clip->audio().source.filePath.isEmpty())
+    if (!clip || !clip->isAudio() || magda::audioEventRef(*clip).sourceFilePath().isEmpty())
         return;
 
     auto markers = bridge->getWarpMarkers(clipId);
     if (markers.size() <= 2)
         return;
 
-    juce::File audioFile(clip->audio().source.filePath);
+    juce::File audioFile(magda::audioEventRef(*clip).sourceFilePath());
     if (!audioFile.existsAsFile())
         return;
 
     const double bpm = resolveTimelineBpm(tempo);
     double clipStart = clip->getTimelineStart(bpm);
     double clipEnd = clip->getTimelineEnd(bpm);
-    double clipOffset = clip->getSourceOffset();
+    double clipOffset = magda::audioEventRef(*clip).anchorSeconds();
 
     // Build sorted interior marker source times
     std::vector<double> interiorSourceTimes;
@@ -2875,10 +3079,10 @@ void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge
 
     auto sourceToTimeline = [&](double sourceTime) -> double {
         double sourceDelta = sourceTime - clipOffset;
-        if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0)
-            return clipStart + sourceDelta * clip->audio().interpretation.bpm / bpm;
+        if (magda::audioEventRef(*clip).autoTempo && magda::audioEventRef(*clip).interpBpm > 0.0)
+            return clipStart + sourceDelta * magda::audioEventRef(*clip).interpBpm / bpm;
         else
-            return clipStart + sourceDelta / clip->speedRatio;
+            return clipStart + sourceDelta / magda::audioEventRef(*clip).speedRatio;
     };
 
     std::vector<SliceRegion> slices;
@@ -2900,25 +3104,25 @@ void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, Aud
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || !clip->isAudio() || clip->audio().source.filePath.isEmpty())
+    if (!clip || !clip->isAudio() || magda::audioEventRef(*clip).sourceFilePath().isEmpty())
         return;
 
-    juce::File audioFile(clip->audio().source.filePath);
+    juce::File audioFile(magda::audioEventRef(*clip).sourceFilePath());
     if (!audioFile.existsAsFile())
         return;
 
     const double bpm = resolveTimelineBpm(tempo);
     double clipStart = clip->getTimelineStart(bpm);
     double clipEnd = clip->getTimelineEnd(bpm);
-    double clipOffset = clip->getSourceOffset();
+    double clipOffset = magda::audioEventRef(*clip).anchorSeconds();
 
     // Convert timeline grid lines to source-file boundaries
     auto timelineToSource = [&](double timelinePos) -> double {
         double delta = timelinePos - clipStart;
-        if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0)
-            return clipOffset + delta * bpm / clip->audio().interpretation.bpm;
+        if (magda::audioEventRef(*clip).autoTempo && magda::audioEventRef(*clip).interpBpm > 0.0)
+            return clipOffset + delta * bpm / magda::audioEventRef(*clip).interpBpm;
         else
-            return clipOffset + delta * clip->speedRatio;
+            return clipOffset + delta * magda::audioEventRef(*clip).speedRatio;
     };
 
     // Build timeline grid positions within the clip

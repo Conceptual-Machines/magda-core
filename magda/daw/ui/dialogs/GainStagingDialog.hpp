@@ -25,6 +25,10 @@ class GainStagingDialog : public juce::Component {
     void resized() override;
     void paint(juce::Graphics& g) override;
 
+    // The hosting window's background is a colour override handed over once at
+    // construction, so it does not follow a live theme switch on its own.
+    void lookAndFeelChanged() override;
+
     Settings getSettings() const;
 
     std::function<void(const Settings&)> onStart;

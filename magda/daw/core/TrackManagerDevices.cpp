@@ -434,34 +434,23 @@ void TrackManager::setDeviceInChainBypassed(TrackId trackId, RackId rackId, Chai
 }
 
 // Helper to get chain from a path that ends with Chain step
+/**
+ * @brief The chain a path names, or nothing.
+ *
+ * Delegates rather than resolving again. This was a second copy of
+ * `TrackManager::getChainByPath` — same "drop the last step, resolve the rack,
+ * search its chains" body — and the two drifted the moment one of them learned
+ * something the other did not: the structural guards added for #1993 went into
+ * `getChainByPath`, so `rack > chain1 > chain2` was refused there and still
+ * resolved to the sibling `chain2` here.
+ *
+ * That mattered because this copy is the one `getDeviceInChainByPath` uses, and
+ * device paths are the surface a remote client supplies verbatim
+ * (`toChainNodePath` builds them from whatever steps arrive). One body means
+ * one set of rules for both.
+ */
 static ChainInfo* getChainFromPath(TrackManager& tm, const ChainNodePath& chainPath) {
-    if (chainPath.steps.empty())
-        return nullptr;
-
-    // Extract chainId from the last step (should be Chain type)
-    ChainId chainId = INVALID_CHAIN_ID;
-    if (chainPath.steps.back().type == ChainStepType::Chain) {
-        chainId = chainPath.steps.back().id;
-    } else {
-        return nullptr;
-    }
-
-    // Build the parent rack path
-    ChainNodePath rackPath;
-    rackPath.trackId = chainPath.trackId;
-    for (size_t i = 0; i < chainPath.steps.size() - 1; ++i) {
-        rackPath.steps.push_back(chainPath.steps[i]);
-    }
-
-    // Get the parent rack and find the chain
-    if (auto* rack = tm.getRackByPath(rackPath)) {
-        for (auto& c : rack->chains) {
-            if (c.id == chainId) {
-                return &c;
-            }
-        }
-    }
-    return nullptr;
+    return tm.getChainByPath(chainPath);
 }
 
 static std::vector<ChainElement>* getElementContainerForChainPath(TrackManager& tm,
@@ -482,15 +471,7 @@ static std::vector<ChainElement>* getElementContainerForChainPath(TrackManager& 
 }
 
 static ChainNodePath getParentChainPathForElementPath(const ChainNodePath& elementPath) {
-    ChainNodePath parent;
-    parent.trackId = elementPath.trackId;
-    if (elementPath.topLevelDeviceId != INVALID_DEVICE_ID)
-        return parent;
-
-    parent.steps = elementPath.steps;
-    if (!parent.steps.empty())
-        parent.steps.pop_back();
-    return parent;
+    return elementPath.parentChain();
 }
 
 using DevicePathMap = std::map<DeviceId, ChainNodePath>;

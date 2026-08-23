@@ -9,15 +9,6 @@
 namespace magda {
 
 /**
- * @brief Which of a track's two FX lists a path descends into.
- *
- * Encoded as the id of a leading ChainStepType::Segment step. Fx is the
- * implicit default (paths with no Segment step address the main FX chain);
- * post-fx paths carry an explicit Segment(PostFx) step as their first step.
- */
-enum class ChainSegment { Fx, PostFx, MixerAnalysis };
-
-/**
  * @brief Type of element in a chain path step
  *
  * Segment is appended last so the persisted integer values of Rack/Chain/
@@ -262,6 +253,27 @@ struct ChainNodePath {
         return p;
     }
 
+    /**
+     * @brief The chain this element lives in.
+     *
+     * Differs from `parent()` for a legacy top-level device, whose id lives
+     * outside `steps` — `parent()` returns that path unchanged and so still
+     * addresses the device rather than its container. The result is a chain
+     * path with no steps for the track's main FX chain, which is what the
+     * element-container lookups expect.
+     */
+    ChainNodePath parentChain() const {
+        ChainNodePath p;
+        p.trackId = trackId;
+        if (topLevelDeviceId != INVALID_DEVICE_ID)
+            return p;
+
+        p.steps = steps;
+        if (!p.steps.empty())
+            p.steps.pop_back();
+        return p;
+    }
+
     // Build a human-readable path string (for debugging/display)
     juce::String toString() const {
         juce::String result = "Track[" + juce::String(trackId) + "]";
@@ -291,5 +303,33 @@ struct ChainNodePath {
         return result;
     }
 };
+
+// ============================================================================
+// Canonical serialization
+// ============================================================================
+
+/**
+ * @brief Serialize a path to its canonical persisted JSON form.
+ *
+ * Shape: `{trackId, topLevelDeviceId, isTrackLevel, steps:[{type,id}]}`, where
+ * `type` is the integer value of `ChainStepType`. This is the on-disk format
+ * already used by stored parameter aliases, so it must stay
+ * backward-compatible — see the note on `ChainStepType` about keeping the
+ * enum's integer values stable.
+ *
+ * This is the *persistence* form. The remote API publishes a separate
+ * string-typed projection so external clients never depend on enum ordering.
+ */
+juce::var toVar(const ChainNodePath& path);
+
+/**
+ * @brief Parse a path from its canonical persisted JSON form.
+ *
+ * Tolerant of absent optional fields so older saved data keeps loading.
+ * Returns false and leaves `out` untouched if `v` is not an object; an
+ * unparseable path yields an invalid `ChainNodePath`, which callers should
+ * check with `isValid()`.
+ */
+bool fromVar(const juce::var& v, ChainNodePath& out);
 
 }  // namespace magda

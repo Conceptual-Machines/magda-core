@@ -29,7 +29,7 @@ namespace te = tracktion::engine;
 // slots and the audio thread denormalizes per-slot to real units when
 // writing the zone. This keeps macro / mod / MIDI Learn / automation
 // links pinned to slot indices that survive a recompile — see
-// docs/FAUST_POOL_REFACTOR.md.
+// docs/architecture/faust-param-pool.md.
 class FaustPlugin : public te::Plugin, public IFaustEditorModel {
   public:
     FaustPlugin(const te::PluginCreationInfo& info);

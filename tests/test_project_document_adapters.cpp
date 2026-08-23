@@ -5,8 +5,10 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "AudioClipTestHelpers.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/project/ProjectInfo.hpp"
 #include "magda/daw/project/serialization/DawProjectArchive.hpp"
@@ -512,13 +514,13 @@ TEST_CASE("DawProjectArchive embeds and extracts referenced audio files",
     clip.name = "Loop";
     clip.setAudioContent();
     clip.setPlacementBeats(0.0, 4.0);
-    clip.audio().source.filePath = source.getFullPathName();
+    magda::test::giveAudioEvent(clip, source.getFullPathName());
     // Looped region + read offset (exact binary fractions so they round-trip
     // bit-for-bit through the double->string->double path).
-    clip.offset = 0.25;
+    magda::test::audioEvent(clip).setAnchorSeconds(0.25);
     clip.loopEnabled = true;
-    clip.loopStart = 0.5;
-    clip.loopLength = 0.25;
+    magda::test::audioEvent(clip).setLoopStartSeconds(0.5);
+    magda::test::audioEvent(clip).setLoopLengthSeconds(0.25);
     document.clips.push_back(clip);
 
     auto archive = createTempDawProjectFile();
@@ -551,7 +553,7 @@ TEST_CASE("DawProjectArchive embeds and extracts referenced audio files",
     REQUIRE(DawProjectArchive::readFromFile(archive, imported, error, extractionDir));
     REQUIRE(imported.clips.size() == 1);
     REQUIRE(imported.clips[0].isAudio());
-    const juce::File extracted(imported.clips[0].audio().source.filePath);
+    const juce::File extracted(magda::audioEventRef(imported.clips[0]).sourceFilePath());
     REQUIRE(extracted.existsAsFile());
     REQUIRE(extracted.getSize() == source.getSize());
 
@@ -563,10 +565,11 @@ TEST_CASE("DawProjectArchive embeds and extracts referenced audio files",
     REQUIRE(static_cast<int>(reader->numChannels) == kChannels);
 
     // Loop region and read offset survive the round-trip.
-    REQUIRE(imported.clips[0].offset == 0.25);
+    const auto& importedEvent = magda::audioEventRef(imported.clips[0]);
+    REQUIRE(importedEvent.anchorSeconds() == Catch::Approx(0.25));
     REQUIRE(imported.clips[0].loopEnabled);
-    REQUIRE(imported.clips[0].loopStart == 0.5);
-    REQUIRE(imported.clips[0].loopLength == 0.25);
+    REQUIRE(importedEvent.loopStartSeconds() == Catch::Approx(0.5));
+    REQUIRE(importedEvent.loopLengthSeconds() == Catch::Approx(0.25));
 
     source.deleteFile();
     archive.deleteFile();
@@ -590,14 +593,17 @@ TEST_CASE("DawProjectXmlAdapter warps beat-locked (autoTempo) audio clips",
     clip.trackId = track.id;
     clip.name = "Warped";
     clip.setAudioContent();
-    clip.setPlacementBeats(0.0, 16.0);                       // a 4-beat loop across 16 beats
-    clip.audio().source.filePath = "/nonexistent/beat.wav";  // not embedded; XML-level test
-    clip.audio().source.durationSeconds = 2.0;
-    clip.audio().interpretation.totalBeats = 4.0;  // source is 4 beats long -> 120 bpm
-    clip.autoTempo = true;
+    clip.setPlacementBeats(0.0, 16.0);                           // a 4-beat loop across 16 beats
+    magda::test::giveAudioEvent(clip, "/nonexistent/beat.wav");  // not embedded; XML-level test
+    magda::test::setSourceDuration(clip, 2.0);
+    magda::test::audioEvent(clip).interpTotalBeats = 4.0;  // source is 4 beats long ...
+    magda::test::audioEvent(clip).interpBpm = 120.0;       // ... at 120 bpm.
+    // The BPM is what makes the source loop expressible in beats at all: the
+    // region is stored in source samples and beats are a view on it (#1901).
+    magda::test::audioEvent(clip).autoTempo = true;
     clip.loopEnabled = true;
-    clip.loopStartBeats = 0.0;
-    clip.loopLengthBeats = 4.0;
+    magda::test::audioEvent(clip).setLoopStartBeats(0.0);
+    magda::test::audioEvent(clip).setLoopLengthBeats(4.0);
     document.clips.push_back(clip);
 
     auto xml = DawProjectXmlAdapter::toProjectXml(document);
@@ -619,12 +625,12 @@ TEST_CASE("DawProjectXmlAdapter warps beat-locked (autoTempo) audio clips",
     REQUIRE(imported.clips.size() == 1);
     const auto& ic = imported.clips[0];
     REQUIRE(ic.isAudio());
-    REQUIRE(ic.autoTempo);
+    REQUIRE(magda::audioEventRef(ic).autoTempo);
     REQUIRE(ic.loopEnabled);
-    REQUIRE(ic.loopStartBeats == 0.0);
-    REQUIRE(ic.loopLengthBeats == 4.0);
-    REQUIRE(ic.audio().interpretation.totalBeats == 4.0);
-    REQUIRE(ic.audio().source.durationSeconds == 2.0);
+    REQUIRE(magda::audioEventRef(ic).loopStartBeats() == 0.0);
+    REQUIRE(magda::audioEventRef(ic).loopLengthBeats() == 4.0);
+    REQUIRE(magda::audioEventRef(ic).interpTotalBeats == 4.0);
+    REQUIRE(magda::audioEventRef(ic).sourceDurationSeconds() == 2.0);
 }
 
 TEST_CASE("DawProjectArchive embeds and restores VST3 device state",
@@ -873,6 +879,105 @@ TEST_CASE("DawProjectXmlAdapter imports Bitwig group and master channel destinat
     REQUIRE(staged.masterTrack != nullptr);
     REQUIRE(staged.masterTrack->name == "Master");
     REQUIRE(staged.tracks.size() == 3);
+}
+
+TEST_CASE("DawProjectXmlAdapter gives a colourless imported clip its track's colour",
+          "[project][serialization][dawproject][colour]") {
+    // A clip in Bitwig has no colour of its own until somebody picks one, and
+    // until then it shows its track's. DAWproject writes that as an absent
+    // `color` attribute, and reading it straight off the element gives MAGDA's
+    // transparent "unset", which the swatch then forces opaque: every clip in
+    // an imported project drew as flat black (#1786).
+    //
+    // The second clip has a colour of its own, so the case also says that
+    // inheriting does not overwrite one the file did set.
+    const juce::String xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<Project version="1.0">
+  <Structure>
+    <Track contentType="notes" loaded="true" id="tDrums" name="Drums" color="#3c8f4e">
+      <Channel audioChannels="2" destination="cMaster" role="regular" id="cDrums"/>
+    </Track>
+    <Track contentType="audio notes" loaded="true" id="tMaster" name="Master">
+      <Channel audioChannels="2" role="master" id="cMaster"/>
+    </Track>
+  </Structure>
+  <Arrangement id="arrangement">
+    <Lanes timeUnit="beats" id="laneRoot">
+      <Lanes track="tDrums" id="laneDrums">
+        <Clips id="clipsDrums">
+          <Clip time="0.0" duration="4.0" name="Inherited"/>
+          <Clip time="4.0" duration="4.0" name="Explicit" color="#c04070"/>
+        </Clips>
+      </Lanes>
+    </Lanes>
+  </Arrangement>
+</Project>)";
+
+    ProjectDocument doc;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, doc, error));
+    REQUIRE(doc.clips.size() == 2);
+
+    const ClipInfo* inherited = nullptr;
+    const ClipInfo* explicitly = nullptr;
+    for (const auto& clip : doc.clips) {
+        if (clip.name == "Inherited")
+            inherited = &clip;
+        else if (clip.name == "Explicit")
+            explicitly = &clip;
+    }
+    REQUIRE(inherited != nullptr);
+    REQUIRE(explicitly != nullptr);
+
+    const TrackInfo* drums = nullptr;
+    for (const auto& track : doc.tracks)
+        if (track.name == "Drums")
+            drums = &track;
+    REQUIRE(drums != nullptr);
+    REQUIRE(drums->colour == juce::Colour(0xff3c8f4e));
+
+    CHECK(inherited->colour == drums->colour);
+    CHECK(explicitly->colour == juce::Colour(0xffc04070));
+
+    // Whatever it inherited, it is a colour: unset is what draws black, and the
+    // report is about black clips rather than about any particular hue.
+    CHECK_FALSE(inherited->colour.isTransparent());
+}
+
+TEST_CASE("DawProjectXmlAdapter gives a colourless clip on a colourless track a real colour",
+          "[project][serialization][dawproject][colour]") {
+    // The end of the fallback chain. A file that colours nothing still must not
+    // produce black clips, because black is what MAGDA's "unset" looks like once
+    // a swatch has forced it opaque, and a user cannot tell that apart from a
+    // colour somebody chose.
+    const juce::String xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<Project version="1.0">
+  <Structure>
+    <Track contentType="notes" loaded="true" id="tPlain" name="Plain">
+      <Channel audioChannels="2" destination="cMaster" role="regular" id="cPlain"/>
+    </Track>
+    <Track contentType="audio notes" loaded="true" id="tMaster" name="Master">
+      <Channel audioChannels="2" role="master" id="cMaster"/>
+    </Track>
+  </Structure>
+  <Arrangement id="arrangement">
+    <Lanes timeUnit="beats" id="laneRoot">
+      <Lanes track="tPlain" id="lanePlain">
+        <Clips id="clipsPlain">
+          <Clip time="0.0" duration="4.0" name="Colourless"/>
+        </Clips>
+      </Lanes>
+    </Lanes>
+  </Arrangement>
+</Project>)";
+
+    ProjectDocument doc;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, doc, error));
+    REQUIRE(doc.clips.size() == 1);
+
+    CHECK_FALSE(doc.clips[0].colour.isTransparent());
+    CHECK(doc.clips[0].colour == juce::Colour(Config::getDefaultColour(0)));
 }
 
 TEST_CASE("DawProjectXmlAdapter imports effect tracks as aux returns with send routing",

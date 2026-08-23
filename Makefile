@@ -57,6 +57,17 @@ CLANG_TIDY ?= $(shell if [ -x /opt/homebrew/opt/llvm/bin/clang-tidy ]; then \
 		command -v clang-tidy 2>/dev/null; \
 	fi)
 
+# The compile database is written by Apple's /usr/bin/c++, which finds the macOS
+# SDK through xcrun and so records no -isysroot. Homebrew's clang-tidy has no
+# such fallback, and without the SDK it cannot find <vector> - which means the
+# translation unit stops parsing at the first standard header and the run
+# reports whatever it happened to see before that, rather than nothing. Empty on
+# Linux, where the compiler and the analyser share a sysroot.
+TIDY_SYSROOT := $(shell if [ "$$(uname)" = "Darwin" ]; then \
+		SDK=$$(xcrun --show-sdk-path 2>/dev/null); \
+		[ -n "$$SDK" ] && echo "--extra-arg=-isysroot --extra-arg=$$SDK"; \
+	fi)
+
 # Default target
 .PHONY: all
 all: debug
@@ -282,6 +293,31 @@ test: test-build
 	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	cd $(BUILD_DIR) && $(TEST_ENV) ./tests/magda_tests
 
+# Build and run the Catch2 tests under ThreadSanitizer. The native engine's
+# parallel executor is lock-free, so "it passed" from an ordinary build says
+# nothing about the orderings it did not happen to take. TEST=<filter> narrows
+# it, e.g. make test-tsan TEST="[parallel]".
+.PHONY: test-tsan-build
+test-tsan-build:
+	@echo "🧵 Building tests (Debug + ThreadSanitizer)..."
+	@mkdir -p $(BUILD_DIR_TSAN) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@if [ ! -f $(BUILD_DIR_TSAN)/CMakeCache.txt ]; then \
+		echo "📝 Configuring project with TSAN..."; \
+		cd $(BUILD_DIR_TSAN) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+			-DCMAKE_CXX_FLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=thread" \
+			-DCMAKE_C_FLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=thread" \
+			-DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" \
+			-DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=thread" \
+			-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+	fi
+	cd $(BUILD_DIR_TSAN) && $(BUILD_ENV) ninja magda_tests
+
+.PHONY: test-tsan
+test-tsan: test-tsan-build
+	@echo "🧵 Running tests with ThreadSanitizer..."
+	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	cd $(BUILD_DIR_TSAN) && $(TEST_ENV) ./tests/magda_tests $(if $(TEST),"$(TEST)",)
+
 # Run tests using CTest
 .PHONY: test-ctest
 test-ctest: test-build
@@ -324,6 +360,40 @@ test-list: test-build
 	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	cd $(BUILD_DIR) && $(TEST_ENV) ./tests/magda_tests --list-tests
 
+# Drive a running MAGDA over every remote transport (#2059).
+#
+# Not part of `make test`: it needs a MAGDA that is actually running with the
+# remote API switched on, which is the whole point — it checks the installed
+# artefact rather than the tree. ARGS passes flags through, e.g.
+# `make test-transport ARGS="--osc --write"`.
+.PHONY: test-transport
+test-transport:
+	@echo "🔌 Checking the remote transports against a running MAGDA..."
+	@if [ -x .venv/bin/python ]; then \
+		.venv/bin/python tools/transport_check $(ARGS); \
+	else \
+		python3 tools/transport_check $(ARGS); \
+	fi
+
+# The transport harness against a stub, so it can be checked with no MAGDA and
+# no network. This one is safe to run anywhere.
+.PHONY: test-transport-selftest
+test-transport-selftest:
+	@echo "🔌 Checking the transport harness itself..."
+	python3 tools/transport_check/selftest.py
+
+# Prove each check can fail: break the stub 23 ways and confirm the check meant
+# to catch each one does. Slow — it runs the whole harness per mutation. Uses
+# .venv when it exists, which adds the official-SDK mutations.
+.PHONY: test-transport-mutations
+test-transport-mutations:
+	@echo "🔌 Breaking the stub to prove the checks bite..."
+	@if [ -x .venv/bin/python ]; then \
+		.venv/bin/python tools/transport_check/mutation_test.py; \
+	else \
+		python3 tools/transport_check/mutation_test.py; \
+	fi
+
 # Clean build artifacts
 .PHONY: clean
 clean:
@@ -337,13 +407,36 @@ rebuild: clean debug
 
 # Format code
 .PHONY: format
+# Formatting goes through pre-commit, which pins the clang-format version in
+# .pre-commit-config.yaml. That pin is the point. Running whatever clang-format
+# happens to be on PATH means every developer formats to their own version, the
+# commit hook puts the file back on its way in, and the pair churn forever
+# against each other. One pinned binary, one set of files, used by this target,
+# by the hook and by CI.
+#
+# One behaviour worth knowing: --all-files means all *tracked* files, so a new
+# file that has not been git added yet is skipped here where the old find would
+# have formatted it. The commit hook catches it the moment it is staged, so
+# nothing reaches a commit unformatted; "make format did nothing to my new file"
+# is this, and not a bug.
 format:
 	@echo "🎨 Formatting code..."
-	@if command -v clang-format >/dev/null 2>&1; then \
-		find magda tests \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) | xargs clang-format -i; \
+	@if ! command -v pre-commit >/dev/null 2>&1; then \
+		echo "❌ pre-commit not found. Install it with: pip install pre-commit"; \
+		exit 1; \
+	fi
+	@# Twice on purpose. The first pass rewrites files and exits non-zero for
+	@# saying so, which is why its status cannot be trusted; the second has
+	@# nothing left to rewrite, so anything but success there is a real failure -
+	@# a broken hook environment, a download that did not arrive, a config that
+	@# does not parse. Swallowing the first status alone would report success for
+	@# all of those while formatting nothing.
+	@pre-commit run clang-format --all-files >/dev/null 2>&1 || true
+	@if pre-commit run clang-format --all-files; then \
 		echo "✅ Code formatting complete"; \
 	else \
-		echo "❌ clang-format not found. Please install it first."; \
+		echo "❌ Formatting failed for a reason other than rewriting files"; \
+		exit 1; \
 	fi
 
 # Lint code with clang-tidy (analyze all source files)
@@ -366,7 +459,7 @@ lint:
 		{} \
 		--config-file=.clang-tidy \
 		--format-style=file \
-		-p=$(BUILD_DIR) \
+		-p=$(BUILD_DIR) $(TIDY_SYSROOT) \
 		--quiet \;
 	@echo "✅ Code analysis complete"
 
@@ -392,7 +485,7 @@ lint-changed:
 				$$file \
 				--config-file=.clang-tidy \
 				--format-style=file \
-				-p=$(BUILD_DIR) \
+				-p=$(BUILD_DIR) $(TIDY_SYSROOT) \
 				--quiet; \
 		done; \
 	fi
@@ -420,7 +513,7 @@ lint-fix:
 				{} \
 				--config-file=.clang-tidy \
 				--format-style=file \
-				-p=$(BUILD_DIR) \
+				-p=$(BUILD_DIR) $(TIDY_SYSROOT) \
 				--fix \
 				--fix-errors \;; \
 			echo "✅ Fixes applied" ;; \
@@ -444,7 +537,7 @@ lint-file:
 		$(FILE) \
 		--config-file=.clang-tidy \
 		--format-style=file \
-		-p=$(BUILD_DIR)
+		-p=$(BUILD_DIR) $(TIDY_SYSROOT)
 	@echo "✅ Analysis complete"
 
 # Show help

@@ -13,9 +13,26 @@ target_sources(magda_daw PRIVATE
     transport_api_live.cpp
     focused_api_live.cpp
     plugin_api_live.cpp
+    device_api_live.cpp
     groove_api_live.cpp
+    osc_command_sink_live.cpp
+    osc_feedback_live.cpp
     remote_api.cpp
     remote_api_projection.cpp
+    remote_handlers.cpp
+    remote_scopes.cpp
+    remote_clients.cpp
+    remote_audit.cpp
+    remote_service.cpp
+    remote_changes.cpp
+    remote_model_bridge_live.cpp
+    remote_subscriptions.cpp
+    remote_meters_live.cpp
+    remote_http_auth.cpp
+    remote_mcp.cpp
+    remote_mcp_server.cpp
+    remote_websocket_server.cpp
+    remote_api_host.cpp
     # Headers (listed for IDE visibility)
     magda_api.hpp
     magda_api_live.hpp
@@ -45,4 +62,17 @@ target_sources(magda_daw PRIVATE
     groove_api.hpp
     groove_api_live.hpp
     remote_api.hpp
+    remote_handlers.hpp
+    remote_scopes.hpp
+    remote_clients.hpp
+    remote_audit.hpp
+    remote_service.hpp
+    remote_changes.hpp
+    remote_model_bridge.hpp
+    remote_subscriptions.hpp
+    remote_http_auth.hpp
+    remote_mcp.hpp
+    remote_mcp_server.hpp
+    remote_websocket_server.hpp
+    remote_api_host.hpp
 )

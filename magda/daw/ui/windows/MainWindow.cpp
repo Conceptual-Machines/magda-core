@@ -27,6 +27,7 @@
 #include "../state/TimelineEvents.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
+#include "../themes/FileBrowserLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "../themes/SmallComboBoxLookAndFeel.hpp"
@@ -271,11 +272,11 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
         auto workArea = display->userArea;  // Excludes taskbar
         // Leave some margin so the title bar and window frame are fully visible
         int margin = 10;
-        int w = juce::jmin(1200, workArea.getWidth() - margin * 2);
-        int h = juce::jmin(800, workArea.getHeight() - margin * 2);
+        int w = juce::jmin(LayoutConfig::defaultWindowWidth, workArea.getWidth() - margin * 2);
+        int h = juce::jmin(LayoutConfig::defaultWindowHeight, workArea.getHeight() - margin * 2);
         setBoundsConstrained(workArea.withSizeKeepingCentre(w, h));
     } else {
-        setSize(1200, 800);
+        setSize(LayoutConfig::defaultWindowWidth, LayoutConfig::defaultWindowHeight);
         centreWithSize(getWidth(), getHeight());
     }
     juce::Logger::writeToLog("[MainWindow] Calling setVisible(true)...");
@@ -367,15 +368,18 @@ void MainWindow::applyDensityFromConfig() {
 }
 
 void MainWindow::applyFontFromConfig() {
-    const auto& family = Config::getInstance().getUIFontFamily();
-    if (family == appliedFontFamily_)
+    const auto& config = Config::getInstance();
+    const auto& family = config.getUIFontFamily();
+    const auto scale = config.getUIFontScale();
+    if (family == appliedFontFamily_ && scale == appliedFontScale_)
         return;
     appliedFontFamily_ = family;
+    appliedFontScale_ = scale;
 
-    // FontManager resolves the family live; broadcast a look-and-feel change so
-    // every component re-fetches its fonts and repaints. Components that fetch
-    // fonts in paint()/lookAndFeelChanged update immediately; the few that cache
-    // a juce::Font at construction pick it up on their next rebuild.
+    // FontManager resolves the family and scale live; broadcast a look-and-feel
+    // change so every component re-fetches its fonts and repaints. Components
+    // that fetch fonts in paint()/lookAndFeelChanged update immediately; the few
+    // that cache a juce::Font at construction pick it up on their next rebuild.
     refreshThemedLookAndFeels();
 }
 
@@ -438,6 +442,9 @@ void MainWindow::refreshThemedLookAndFeels() {
     DarkTheme::applyToLookAndFeel(daw::ui::SmallButtonLookAndFeel::getInstance());
     DarkTheme::applyToLookAndFeel(daw::ui::FlatTabButtonLookAndFeel::getInstance());
     DarkTheme::applyToLookAndFeel(daw::ui::SmallComboBoxLookAndFeel::getInstance());
+    // Not a DarkTheme::applyToLookAndFeel target: it pushes its own scrollbar
+    // colour into its table, which no repaint would refresh.
+    daw::ui::FileBrowserLookAndFeel::getInstance().refreshThemeColours();
 
 #if JUCE_WINDOWS
     // Keep native chrome in step with live theme changes. DWM expects FALSE
@@ -462,6 +469,16 @@ void MainWindow::refreshThemedLookAndFeels() {
 
 void MainWindow::closeButtonPressed() {
     juce::JUCEApplication::getInstance()->systemRequestedQuit();
+}
+
+// A window's background is a per-component colour override, so it survives the
+// look-and-feel change that repaints everything else and would keep the palette
+// the window was constructed under. It is not hidden behind the content either:
+// the in-window menu bar (Windows and Linux) draws its fill at 40% alpha, so the
+// stale colour shows straight through as a strip along the top of the window.
+void MainWindow::lookAndFeelChanged() {
+    juce::DocumentWindow::lookAndFeelChanged();
+    setBackgroundColour(DarkTheme::getBackgroundColour());
 }
 
 void MainWindow::applyPanelVisibilityFromConfig() {
@@ -1316,7 +1333,10 @@ MainWindow::MainComponent::~MainComponent() {
     // Drop the menu bar's reference to our command manager before it dies.
     MenuManager::getInstance().setCommandManager(nullptr);
 
-    // Save panel collapse state and sizes to Config for persistence
+    // Save panel collapse state and sizes to Config for persistence. The
+    // save() is not optional: nothing else flushes Config on the way out, and
+    // the app ends in _exit(), so without it these writes only ever reached
+    // the in-memory singleton and every session started on the defaults.
     auto& config = Config::getInstance();
     config.setLeftPanelCollapsed(leftPanelCollapsed);
     config.setRightPanelCollapsed(rightPanelCollapsed);
@@ -1324,6 +1344,7 @@ MainWindow::MainComponent::~MainComponent() {
     config.setLeftPanelWidth(leftPanelWidth);
     config.setRightPanelWidth(rightPanelWidth);
     config.setBottomPanelHeight(bottomPanelHeight);
+    config.save();
 
     // Remove command manager key listener before destruction
     removeKeyListener(commandManager.getKeyMappings());

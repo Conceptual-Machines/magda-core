@@ -10,6 +10,10 @@ namespace magda {
  *  - Cloud: manage cloud provider API keys
  *  - Config: preset or per-agent provider mapping (references configured providers)
  *  - Models: embedded, sample-analysis, and stem-separation models
+ *
+ * The remote API listener and its client grants used to be two more tabs here.
+ * They govern every remote client, not just AI ones, so they moved to
+ * Settings -> Connections (#2142).
  */
 class AISettingsDialog : public juce::Component {
   public:
@@ -18,6 +22,10 @@ class AISettingsDialog : public juce::Component {
 
     void resized() override;
     void paint(juce::Graphics& g) override;
+
+    // The hosting window's background is a colour override handed over once at
+    // construction, so it does not follow a live theme switch on its own.
+    void lookAndFeelChanged() override;
 
     // initialTabName selects a tab by its title (e.g. "Stems") once the
     // dialog is up; empty keeps the default tab.

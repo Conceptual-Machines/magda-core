@@ -49,6 +49,15 @@ void BarsBeatsTicksLabel::setDrawBackground(bool draw) {
     repaint();
 }
 
+void BarsBeatsTicksLabel::setTrailingInset(int px) {
+    px = juce::jmax(0, px);
+    if (trailingInset_ == px)
+        return;
+    trailingInset_ = px;
+    resized();
+    repaint();
+}
+
 void BarsBeatsTicksLabel::setRange(double min, double max, double defaultValue) {
     minValue_ = min;
     maxValue_ = max;
@@ -72,6 +81,7 @@ void BarsBeatsTicksLabel::setValue(double newValue, juce::NotificationType notif
 
 void BarsBeatsTicksLabel::setBeatsPerBar(int beatsPerBar) {
     beatsPerBar_ = beatsPerBar;
+    // updateSegmentTexts relayouts if the bar or beat number changes width.
     updateSegmentTexts();
     repaint();
 }
@@ -133,6 +143,15 @@ void BarsBeatsTicksLabel::updateSegmentTexts() {
     barsSegment_->setDisplayValue(bars + offset);
     beatsSegment_->setDisplayValue(beats + offset);
     ticksSegment_->setDisplayValue(ticks);
+
+    // The strip is shared out by the digits shown, so a bar or beat number
+    // that gains or loses a digit moves the segment boundaries.
+    const std::array<int, 2> digits{juce::String(bars + offset).length(),
+                                    juce::String(beats + offset).length()};
+    if (digits != laidOutDigits_) {
+        laidOutDigits_ = digits;
+        resized();
+    }
 }
 
 void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
@@ -152,7 +171,7 @@ void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
     }
 
     g.setColour(getTextColour());
-    g.setFont(FontManager::getInstance().getUIFont(10.0f));
+    g.setFont(FontManager::getInstance().getUIFont(kTextFontSize));
 
     if (textOverride_.isNotEmpty()) {
         // Draw override text centred in bounds
@@ -203,22 +222,67 @@ bool BarsBeatsTicksLabel::isDragging() const {
            (ticksSegment_ && ticksSegment_->isDragging());
 }
 
-void BarsBeatsTicksLabel::resized() {
-    auto bounds = getLocalBounds().reduced(2, 0);
-    int totalWidth = bounds.getWidth();
+std::array<int, 3> BarsBeatsTicksLabel::segmentWidthsFor(double maxValue, int minBeatsPerBar,
+                                                         int maxBeatsPerBar, bool isPosition) {
+    const int offset = isPosition ? 1 : 0;
+    const int lowBeatsPerBar = juce::jmax(1, minBeatsPerBar);
+    const int highBeatsPerBar = juce::jmax(lowBeatsPerBar, maxBeatsPerBar);
 
-    // Proportions: bars ~25%, dot ~5%, beats ~25%, dot ~5%, ticks ~40%
-    int dotWidth = 6;
-    int availableWidth = totalWidth - dotWidth * 2;
-    int barsWidth = static_cast<int>(availableWidth * 0.25);
-    int beatsWidth = static_cast<int>(availableWidth * 0.25);
-    int ticksWidth = availableWidth - barsWidth - beatsWidth;
+    // Fewest beats per bar gives the most bars; most beats per bar gives the
+    // highest beat number. Ticks are zero-padded to three digits either way.
+    const int maxBars = static_cast<int>(maxValue / lowBeatsPerBar) + offset;
+    const int maxBeats = highBeatsPerBar - 1 + offset;
+
+    return {widthOfDigits(juce::String(maxBars).length()),
+            widthOfDigits(juce::String(maxBeats).length()), widthOfDigits(3)};
+}
+
+int BarsBeatsTicksLabel::widthOfDigits(int digits) {
+    // Measure a string of the widest digit rather than the number itself, so a
+    // value made of narrow digits does not under-size the segment.
+    const auto font = FontManager::getInstance().getUIFont(kTextFontSize);
+    return juce::GlyphArrangement::getStringWidthInt(font,
+                                                     juce::String::repeatedString("8", digits)) +
+           kSegmentPad;
+}
+
+int BarsBeatsTicksLabel::preferredWidthForRange(double maxValue, int minBeatsPerBar,
+                                                int maxBeatsPerBar, bool isPosition) {
+    const auto needed = segmentWidthsFor(maxValue, minBeatsPerBar, maxBeatsPerBar, isPosition);
+    return needed[0] + needed[1] + needed[2] + (2 * kDotWidth) + (2 * kEdgeInset);
+}
+
+std::array<int, 3> BarsBeatsTicksLabel::shownSegmentWidths() const {
+    return {widthOfDigits(juce::String(barsSegment_->getDisplayValue()).length()),
+            widthOfDigits(juce::String(beatsSegment_->getDisplayValue()).length()),
+            widthOfDigits(3)};
+}
+
+void BarsBeatsTicksLabel::resized() {
+    auto bounds = getLocalBounds().reduced(kEdgeInset, 0);
+    // The glyphs already stop kEdgeInset + half a segment pad short of the
+    // edge; the inset only has to take the rest off the strip.
+    bounds.removeFromRight(juce::jmax(0, trailingInset_ - kEdgeInset - (kSegmentPad / 2)));
+
+    // Share the strip out in proportion to the digits on screen. Shared by
+    // the largest value the range allows, a bar segment showing "1" was
+    // mostly air and pushed the ticks against the far edge; shared by what it
+    // shows, "1.1.000" sits balanced, and a bar number that gains a digit
+    // takes the room when it needs it (updateSegmentTexts relayouts then). A
+    // box sized by preferredWidthForRange() still holds the widest value.
+    const auto needed = shownSegmentWidths();
+    const int total = juce::jmax(1, needed[0] + needed[1] + needed[2]);
+    const int available = juce::jmax(3, bounds.getWidth() - (2 * kDotWidth));
+
+    const int barsWidth = available * needed[0] / total;
+    const int beatsWidth = available * needed[1] / total;
+    const int ticksWidth = available - barsWidth - beatsWidth;
 
     int x = bounds.getX();
     barsSegment_->setBounds(x, bounds.getY(), barsWidth, bounds.getHeight());
-    x += barsWidth + dotWidth;
+    x += barsWidth + kDotWidth;
     beatsSegment_->setBounds(x, bounds.getY(), beatsWidth, bounds.getHeight());
-    x += beatsWidth + dotWidth;
+    x += beatsWidth + kDotWidth;
     ticksSegment_->setBounds(x, bounds.getY(), ticksWidth, bounds.getHeight());
 }
 
@@ -251,7 +315,7 @@ juce::String BarsBeatsTicksLabel::SegmentLabel::formatDisplay() const {
 void BarsBeatsTicksLabel::SegmentLabel::paint(juce::Graphics& g) {
     if (!isEditing_ && owner_.textOverride_.isEmpty()) {
         g.setColour(owner_.getTextColour());
-        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+        g.setFont(FontManager::getInstance().getUIFont(kTextFontSize));
         g.drawText(formatDisplay(), getLocalBounds(), juce::Justification::centred, false);
     }
 }
@@ -351,7 +415,7 @@ void BarsBeatsTicksLabel::SegmentLabel::startEditing() {
 
     editor_ = std::make_unique<juce::TextEditor>();
     editor_->setBounds(getLocalBounds());
-    editor_->setFont(FontManager::getInstance().getUIFont(10.0f));
+    editor_->setFont(FontManager::getInstance().getUIFont(kTextFontSize));
     editor_->setText(formatDisplay(), false);
     editor_->selectAll();
     editor_->setJustification(juce::Justification::centred);

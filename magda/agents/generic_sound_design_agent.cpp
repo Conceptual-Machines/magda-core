@@ -104,9 +104,10 @@ juce::String buildSystemPrompt(const juce::String& displayName, const juce::Stri
     prompt << "You are a sound designer for the \"" << displayName << "\" audio plugin.";
     if (description.isNotEmpty())
         prompt << " " << description;
-    prompt << "\n\nGiven a short user description, design a single preset by choosing values "
-              "for the instrument's parameters. Output ONLY a JSON object — no prose, no "
-              "markdown fences.\n\n";
+    prompt << juce::String::fromUTF8(
+        "\n\nGiven a short user description, design a single preset by choosing values "
+        "for the instrument's parameters. Output ONLY a JSON object — no prose, no "
+        "markdown fences.\n\n");
 
     prompt << "OUTPUT SCHEMA:\n"
               "{\n"
@@ -115,16 +116,17 @@ juce::String buildSystemPrompt(const juce::String& displayName, const juce::Stri
               "  \"params\": { \"<parameter name>\": <value>, ... }\n"
               "}\n\n";
 
-    prompt << "RULES:\n"
-              "- Use the EXACT parameter names listed below.\n"
-              "- Emit each value in the parameter's own units and within its stated range "
-              "(e.g. a Hz cutoff as a real frequency, an ms time as milliseconds).\n"
-              "- For parameters shown with `options:`, emit one of the listed option labels "
-              "as a string (exact text).\n"
-              "- Omit any parameter you want left at its current value. Only set the ones that "
-              "matter for the requested sound.\n"
-              "- Keep output levels sensible — do not push level/gain parameters to their "
-              "maximum without reason.\n\n";
+    prompt << juce::String::fromUTF8(
+        "RULES:\n"
+        "- Use the EXACT parameter names listed below.\n"
+        "- Emit each value in the parameter's own units and within its stated range "
+        "(e.g. a Hz cutoff as a real frequency, an ms time as milliseconds).\n"
+        "- For parameters shown with `options:`, emit one of the listed option labels "
+        "as a string (exact text).\n"
+        "- Omit any parameter you want left at its current value. Only set the ones that "
+        "matter for the requested sound.\n"
+        "- Keep output levels sensible — do not push level/gain parameters to their "
+        "maximum without reason.\n\n");
 
     if (categoryOverride.isNotEmpty())
         prompt << "Bias the design toward this character: " << categoryOverride << "\n\n";

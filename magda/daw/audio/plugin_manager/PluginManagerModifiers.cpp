@@ -1090,7 +1090,7 @@ void PluginManager::resyncDeviceModifiers(TrackId trackId) {
             // un-gating and silencing the sidechained track.
             if (renderingActive_.load(std::memory_order_relaxed)) {
                 DBG("[RENDER] skipping full modifier rebuild for track " << trackId
-                                                                         << " — rendering active");
+                                                                         << " - rendering active");
                 updateDeviceModifierProperties(trackId);
             } else {
                 // Link structure changed — full rebuild

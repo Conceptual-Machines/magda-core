@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "ClipFades.hpp"
 #include "ClipInfo.hpp"
 #include "ClipOperations.hpp"
 #include "ClipTypes.hpp"
@@ -417,7 +418,7 @@ class ClipManager {
     [[nodiscard]] bool canSaveClipToLibrary(ClipId clipId) const;
 
     [[nodiscard]] bool saveClipToLibrary(
-        ClipId clipId, std::optional<std::vector<ClipInfo::WarpMarker>> warpMarkers = std::nullopt);
+        ClipId clipId, std::optional<std::vector<WarpMarker>> warpMarkers = std::nullopt);
 
     /** @brief Refresh the seconds-domain cache (length, startTime, offset,
      *         loopStart, loopLength) on a beat-authoritative clip from its
@@ -454,7 +455,8 @@ class ClipManager {
     void setClipGainDB(ClipId clipId, float dB);
     void setClipPan(ClipId clipId, float pan);
 
-    // Fades
+    // Fades. Seconds, as before #1901 — the fade moved onto the audio event,
+    // its units did not.
     void setFadeIn(ClipId clipId, double seconds);
     void setFadeOut(ClipId clipId, double seconds);
     void setFadeInType(ClipId clipId, int type);
@@ -462,6 +464,10 @@ class ClipManager {
     void setFadeInBehaviour(ClipId clipId, int behaviour);
     void setFadeOutBehaviour(ClipId clipId, int behaviour);
     void setAutoCrossfade(ClipId clipId, bool enabled);
+
+    /// Let this clip play through its overlaps instead of the stack silencing
+    /// one side (#2003). Audio and MIDI alike, unlike autoCrossfade.
+    void setOverlapPlaysBoth(ClipId clipId, bool playsBoth);
 
     void setLaunchFadeSamples(ClipId clipId, int samples);
 
@@ -477,22 +483,51 @@ class ClipManager {
     // field to keep in sync.
     // ========================================================================
 
-    struct CrossfadeInfo {
-        ClipId leftClipId = INVALID_CLIP_ID;   // earlier clip (fades out)
-        ClipId rightClipId = INVALID_CLIP_ID;  // later clip (fades in)
-        double startBeat = 0.0;                // overlap start (right clip's start)
-        double endBeat = 0.0;                  // overlap end (left clip's end)
-
-        double lengthBeats() const {
-            return endBeat - startBeat;
-        }
-    };
+    /// The queries themselves live in ClipFades.hpp, on their own, because they
+    /// answer against a lane rather than against the model: the arrangement
+    /// asks about a drag it has not committed, and the native engine's clip
+    /// snapshot asks without a manager at all (#2034). These names stay so the
+    /// call sites that ask the model read as they always did.
+    using CrossfadeInfo = ::magda::CrossfadeInfo;
+    using EffectiveFades = ::magda::EffectiveFades;
 
     /// The crossfade covering this clip's start/end edge, if any. Only
     /// returns a value when the overlap qualifies (both clips audio,
     /// arrangement, autoCrossfade on, partial overlap).
     std::optional<CrossfadeInfo> getCrossfadeAtStart(ClipId clipId) const;
     std::optional<CrossfadeInfo> getCrossfadeAtEnd(ClipId clipId) const;
+
+    /// The same queries against an explicit set of clips rather than the
+    /// committed model, so a drag can show the crossfade it is about to make or
+    /// break while the mouse is still down (#2003). The lane must hold the
+    /// clips as they would be at that moment, the dragged one included.
+    static std::optional<CrossfadeInfo> crossfadeAtStartIn(const std::vector<ClipInfo>& lane,
+                                                           ClipId clipId);
+    static std::optional<CrossfadeInfo> crossfadeAtEndIn(const std::vector<ClipInfo>& lane,
+                                                         ClipId clipId);
+
+    /// Every arrangement clip on one track, which is the unit an overlap is
+    /// resolved against.
+    std::vector<ClipInfo> arrangementLane(TrackId trackId) const;
+
+    /**
+     * @brief The fades a clip really plays with, once the lane is taken into
+     *        account (#2003).
+     *
+     * Its own stored fades, replaced at either edge by the overlap AUTO-XFADE
+     * turns into a fade, and clamped so the two never sum past the clip — the
+     * same clamp TE applies, so what is drawn is what is heard. One call for
+     * the arrangement view and for the engine, because a fade drawn differently
+     * from the one played is the bug this replaces.
+     *
+     * @param lane   The clips as they are at this moment, this one included —
+     *               the committed lane, or a previewed one mid-drag.
+     */
+    static EffectiveFades effectiveFadesIn(const std::vector<ClipInfo>& lane, ClipId clipId,
+                                           double bpm);
+
+    /// The same against the committed model.
+    EffectiveFades getEffectiveFades(ClipId clipId, double bpm) const;
 
     /// The audio clip abutting/overlapping this clip's start (previous) or
     /// end (next) that a crossfade could be created with — regardless of the
@@ -859,10 +894,19 @@ class ClipManager {
     void createTestClips();
 
     /**
-     * @brief Resolve overlaps after placing/moving a dominant clip
+     * @brief Settle a lane after placing/moving a dominant clip
      *
-     * Trims or deletes any arrangement clips on the same track that overlap with
-     * the dominant clip. "Last write wins" semantics.
+     * The dominant goes to the top of its lane's stack and owns the span it
+     * covers, but nothing underneath is cut for it (#2003): covered clips keep
+     * their placement and content, and computeAudibleSpans decides what each of
+     * them plays, so moving the dominant away fills the gap by itself.
+     *
+     * Nothing else changes the model: no trim, no split, no delete, at any
+     * overlap shape. A drop landing strictly inside another audio clip used to
+     * split it into head / covered slice / tail, because the Tracktion mirror
+     * holds one engine clip per model clip and cannot express a hole; the
+     * native engine carries silenced ranges on the clip snapshot instead
+     * (#1890), so that case keeps whole clips too.
      * Called internally by move methods and explicit opt-in creation paths.
      */
     void resolveOverlaps(ClipId dominantClipId);
@@ -870,9 +914,25 @@ class ClipManager {
     /// Reset a looped clip's length to its base loop length and disable looping
     void resetLoopedClipLength(ClipInfo& clip);
 
+    /// Move every event off @p from and onto @p to. Used when a relink target
+    /// turns out to be pooled already, so one file keeps one source.
+    void repointEventsToSource(SourceId from, SourceId to);
+
+    /// Record the file behind every clipboard event, so a paste after a
+    /// project switch resolves by path rather than by a renumbered id.
+    void stashClipboardSourcePaths();
+
+    /// Path a clipboard event should paste from.
+    juce::String clipboardSourcePathFor(const AudioEvent& event) const;
+
   private:
-    ClipManager() = default;
+    ClipManager();
     ~ClipManager() = default;
+
+    /// Rescale every event on @p sourceId whose source-domain positions were
+    /// expressed at @p oldRate. Installed on SourcePool as its rate-change
+    /// handler, so resolving or relinking a file cannot move clip positions.
+    void rescaleEventsForSourceRate(SourceId sourceId, double oldRate, double newRate);
 
     double findNonOverlappingStartBeats(TrackId trackId, double desiredStartBeats,
                                         double lengthBeats, ClipView view) const;
@@ -907,6 +967,13 @@ class ClipManager {
 
     // Clipboard storage
     std::vector<ClipInfo> clipboard_;
+    /// File path per source id referenced by the clipboard, captured at copy
+    /// time. The clipboard deliberately survives project switches, but an
+    /// event carries only a SourceId and loading a project clears and
+    /// renumbers the pool, so a stored id would resolve against the new
+    /// project's table: a collision pastes the wrong file, a miss pastes
+    /// nothing. Paths do not collide.
+    std::unordered_map<SourceId, juce::String> clipboardSourcePaths_;
     double clipboardReferenceBeat_ = 0.0;  // Beats; anchor for maintaining relative paste positions
 
     // Note clipboard storage
@@ -921,8 +988,15 @@ class ClipManager {
 
     int nextClipId_ = 1;
     int nextLinkGroupId_ = 1;
+    int nextStackOrder_ = 1;
     ClipId selectedClipId_ = INVALID_CLIP_ID;
     ClipId lastTriggeredSessionClipId_ = INVALID_CLIP_ID;
+
+    /// Put an arrangement clip on top of its lane (#2003). Every path that
+    /// places or moves a clip goes through here, so "on top" is whatever the
+    /// user touched last — and the clip they just dropped is the one that owns
+    /// the span it landed on.
+    void bringToFrontOfStack(ClipInfo& clip);
 
     /// Assign a fresh link group to the clip if it has none. Returns the group id.
     int ensureLinkGroup(ClipInfo& clip);

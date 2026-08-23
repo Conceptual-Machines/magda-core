@@ -121,7 +121,7 @@ bool StringTable::loadLanguage(const juce::String& languageCode) {
         // so callers can surface the failure rather than silently using an
         // empty string table.
         if (english_.empty()) {
-            DBG("StringTable::loadLanguage(\"en\"): english_ is empty — en.json not loaded");
+            DBG("StringTable::loadLanguage(\"en\"): english_ is empty - en.json not loaded");
             return false;
         }
         localized_ = english_;

@@ -73,6 +73,13 @@ class AIPromptEditorComponent : public juce::Component {
         setSize(520, 250);
     }
 
+    // Launched async into a DialogWindow of its own, so it can be on screen
+    // when the theme changes under it. The hosting window's background is a
+    // colour override handed over once at construction.
+    void lookAndFeelChanged() override {
+        refreshHostWindowBackground(*this);
+    }
+
     void resized() override {
         auto bounds = getLocalBounds().reduced(16);
         description_.setBounds(bounds.removeFromTop(24));
@@ -385,7 +392,8 @@ class ParameterConfigDialog::RangeCell : public juce::Component {
                     return "+inf";
                 return juce::String(v, 1);
             };
-            editor_.setText(formatValue(param.rangeMin) + " — " + formatValue(param.rangeMax),
+            editor_.setText(formatValue(param.rangeMin) + juce::String::fromUTF8(" — ") +
+                                formatValue(param.rangeMax),
                             false);
             editor_.setEnabled(true);
         }
@@ -592,8 +600,8 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
             "Discard all inferred units, ranges, AI parameter selections, and custom "
             "instructions for \"" +
                 pluginName_ +
-                "\" and show every parameter as a plain 0–100 % slider.\n\n"
-                "This cannot be undone.",
+                juce::String::fromUTF8("\" and show every parameter as a plain 0–100 % slider.\n\n"
+                                       "This cannot be undone."),
             juce::AlertWindow::QuestionIcon);
         alert->addButton("Reset", 1, juce::KeyPress(juce::KeyPress::returnKey));
         alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
@@ -676,6 +684,10 @@ void ParameterConfigDialog::paint(juce::Graphics& g) {
         g.strokePath(arc, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved,
                                                juce::PathStrokeType::rounded));
     }
+}
+
+void ParameterConfigDialog::lookAndFeelChanged() {
+    refreshHostWindowBackground(*this);
 }
 
 void ParameterConfigDialog::resized() {
@@ -1085,7 +1097,7 @@ void ParameterConfigDialog::resetParameterConfiguration() {
     rebuildFilteredList();
     table_.updateContent();
     updateTitle();
-    aiStatusLabel_.setText("Reset to 0–100 %", juce::dontSendNotification);
+    aiStatusLabel_.setText(juce::String::fromUTF8("Reset to 0–100 %"), juce::dontSendNotification);
 }
 
 void ParameterConfigDialog::runHeuristicDetection() {
@@ -1120,7 +1132,7 @@ void ParameterConfigDialog::runHeuristicDetection() {
     juce::String status =
         juce::String(resolved) + " / " + juce::String(visibleInputs.size()) + " resolved";
     if (ambiguous > 0)
-        status += " — use AI Detect for the rest";
+        status += juce::String::fromUTF8(" — use AI Detect for the rest");
     aiStatusLabel_.setText(status, juce::dontSendNotification);
 }
 

@@ -2,7 +2,9 @@
 
 #include <vector>
 
+#include "../core/ChainNodePath.hpp"
 #include "../core/DeviceInfo.hpp"
+#include "../core/RackInfo.hpp"
 #include "../core/TrackInfo.hpp"
 #include "../core/TrackTypes.hpp"
 #include "../core/TypeIds.hpp"
@@ -41,8 +43,56 @@ class TrackApi {
     virtual DeviceId addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
                                       const DeviceInfo& device) = 0;
 
+    // ------------------------------------------------------------------
+    // Racks and chains, by path (#1993)
+    //
+    // A `(trackId, rackId, chainId)` triple names exactly one level of
+    // nesting, and the model nests arbitrarily — `Track > Rack > Chain >
+    // Rack > Chain > Device`. So the triple-based surface below cannot
+    // address anything inside a nested rack: there is no triple that names
+    // the inner chain. A remote or agent caller could reach a *device* at
+    // depth (`DevicePathDto` has carried a full route since #1991) but not
+    // the chain containing it, so "add a chain to this rack" stopped working
+    // at depth two.
+    //
+    // These are the same operations addressed by `ChainNodePath`, which is
+    // the route the UI has always used. The names deliberately mirror
+    // `TrackManager`'s own — this facade is a view onto it, and inventing a
+    // third vocabulary for the same calls would be one more mapping to hold
+    // in your head.
+    //
+    // The triple-based methods below are kept as shims over these, so there
+    // is one implementation rather than two that can drift, and the agent
+    // DSL — whose grammar is inherently one-rack-at-a-time — keeps working
+    // unchanged.
+    // ------------------------------------------------------------------
+
+    virtual RackId addRackToChainByPath(const ChainNodePath& chainPath,
+                                        const juce::String& name) = 0;
+    virtual void removeRackFromChainByPath(const ChainNodePath& rackPath) = 0;
+    virtual const RackInfo* getRackByPath(const ChainNodePath& rackPath) const = 0;
+    virtual void setRackBypassedByPath(const ChainNodePath& rackPath, bool bypassed) = 0;
+    virtual void setRackVolume(const ChainNodePath& rackPath, float volumeDb) = 0;
+
+    virtual ChainId addChainToRack(const ChainNodePath& rackPath, const juce::String& name) = 0;
+    virtual void removeChainByPath(const ChainNodePath& chainPath) = 0;
+    virtual const ChainInfo* getChainByPath(const ChainNodePath& chainPath) const = 0;
+    virtual void setChainOutput(const ChainNodePath& chainPath, int outputIndex) = 0;
+    virtual void setChainMuted(const ChainNodePath& chainPath, bool muted) = 0;
+    virtual void setChainBypassed(const ChainNodePath& chainPath, bool bypassed) = 0;
+    virtual void setChainSolo(const ChainNodePath& chainPath, bool solo) = 0;
+    virtual void setChainVolume(const ChainNodePath& chainPath, float volumeDb) = 0;
+    virtual void setChainPan(const ChainNodePath& chainPath, float pan) = 0;
+    virtual void setChainName(const ChainNodePath& chainPath, const juce::String& name) = 0;
+
+    virtual DeviceId addDeviceToChainByPath(const ChainNodePath& chainPath,
+                                            const DeviceInfo& device) = 0;
+
     // Focused top-level rack and chain management surface for command agents.
     // IDs are stable model IDs, surfaced in the command-state snapshot.
+    //
+    // Every one of these is a shim over the path form above, addressing depth
+    // one: `(t, r, c)` is `ChainNodePath::chain(t, r, c)`.
     virtual RackId addRackToTrack(TrackId trackId, const juce::String& name) = 0;
     virtual void removeRackFromTrack(TrackId trackId, RackId rackId) = 0;
     virtual const RackInfo* getRack(TrackId trackId, RackId rackId) const = 0;

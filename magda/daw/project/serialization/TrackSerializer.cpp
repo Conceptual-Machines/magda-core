@@ -1,6 +1,7 @@
 #include <algorithm>
 
 #include "../../audio/plugins/InternalPluginRegistry.hpp"
+#include "../../core/DeviceParamMigrations.hpp"
 #include "../../core/PluginCapabilities.hpp"
 #include "../../core/ViewModeState.hpp"
 #include "ProjectSerializer.hpp"
@@ -136,6 +137,7 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
         postFxArray.add(serializeDeviceInfo(element.device));
     }
     obj->setProperty("postFxChainElements", juce::var(postFxArray));
+    obj->setProperty("postFxPostFader", track.chain.postFxPostFader);
 
     // Mixer-analysis section: rail-managed mini oscilloscope / spectrum devices.
     // Persist their per-device pluginState so UI settings (e.g. trace colour)
@@ -289,6 +291,15 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     // Missing in projects saved before the chain power flag -> default true
     if (!obj->getProperty("chainEnabled").isVoid())
         outTrack.chain.enabled = static_cast<bool>(obj->getProperty("chainEnabled"));
+
+    // Missing in projects saved before the fader boundary existed (#2087) ->
+    // default post-fader, same as a new track. Those projects were compiled
+    // pre-fader, so a post-FX processor in one moves below the fader on load and
+    // the track sounds different. That is the fix rather than a regression: the
+    // section is post-fader now, and the switch below is how a project says
+    // otherwise.
+    if (!obj->getProperty("postFxPostFader").isVoid())
+        outTrack.chain.postFxPostFader = static_cast<bool>(obj->getProperty("postFxPostFader"));
 
     auto chainVar = obj->getProperty("chainElements");
     if (chainVar.isArray()) {
@@ -526,6 +537,16 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     // true (old projects) and an explicit user-disabled false must survive.
     obj->setProperty("midiInThru", device.midiInThru);
 
+    // Audio channel counts, only when they differ from the stereo default.
+    // Never a zero output count: that is the one value that silences the chain
+    // behind the device, and on a machine where the plugin is missing it would
+    // do so for no reason. Same rule as the flags above, which are only written
+    // when true: a stale saved value must not be able to take routing away.
+    if (device.audioInputChannels != 2)
+        obj->setProperty("audioInputChannels", device.audioInputChannels);
+    if (device.audioOutputChannels != 2 && device.audioOutputChannels > 0)
+        obj->setProperty("audioOutputChannels", device.audioOutputChannels);
+
     // Per-instance drum kit rows
     if (!device.kitRows.empty()) {
         juce::Array<juce::var> kitArray;
@@ -598,6 +619,14 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
             if (!deserializeParameterInfo(paramVar, param)) {
                 return false;
             }
+            // Builds before the version string was wired to the tag wrote every
+            // parameter with paramIndex -1: the index was its position in the
+            // array and was never stored. Restore it, or nothing that addresses
+            // a parameter by index on a device loaded from one of those files -
+            // saved automation, macro and mod links, the v2 state document -
+            // can match a parameter at all.
+            if (param.paramIndex < 0)
+                param.paramIndex = static_cast<int>(outDevice.parameters.size());
             outDevice.parameters.push_back(param);
         }
     }
@@ -709,6 +738,15 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     auto midiInThruVar = obj->getProperty("midiInThru");
     if (!midiInThruVar.isVoid()) {
         outDevice.midiInThru = static_cast<bool>(midiInThruVar);
+    }
+    if (obj->hasProperty("audioInputChannels"))
+        outDevice.audioInputChannels = static_cast<int>(obj->getProperty("audioInputChannels"));
+    if (obj->hasProperty("audioOutputChannels")) {
+        // Checked on the way in too, so a hand-edited or older project cannot
+        // silence a chain either. Zero comes from the live plugin or not at all.
+        const auto outputs = static_cast<int>(obj->getProperty("audioOutputChannels"));
+        if (outputs > 0)
+            outDevice.audioOutputChannels = outputs;
     }
 
     // Plugin native state

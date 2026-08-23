@@ -1,0 +1,13 @@
+diff --git a/httplib.h b/httplib.h
+index ed3b7e4..0942e93 100644
+--- a/httplib.h
++++ b/httplib.h
+@@ -4217,0 +4218 @@ public:
++  void shutdown();
+@@ -21191,0 +21193,6 @@ inline void WebSocket::close(CloseStatus status, const std::string &reason) {
++inline void WebSocket::shutdown() {
++  closed_ = true;
++  ping_cv_.notify_all();
++  detail::shutdown_socket(strm_.socket());
++}
++

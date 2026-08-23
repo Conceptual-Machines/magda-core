@@ -103,6 +103,11 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState(
             [this] { testRackSyncInstrumentInjectsAudioAndPassesMidiToFx(); });
         magda::test::runWithCleanJuceState(
+            [this] { testPluginWithNoInstanceDoesNotRewriteChannelCounts(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testGenuinelySilentPluginIsRecordedAsSilent(); });
+        magda::test::runWithCleanJuceState([this] { testRackDeviceStampsLiveChannelCounts(); });
+        magda::test::runWithCleanJuceState(
             [this] { testRackSyncMidiSidechainFxDoesNotReceiveChainMidi(); });
         magda::test::runWithCleanJuceState(
             [this] { testTopLevelMidiSidechainFxGetsExclusiveSourceMidiAndRestoresChainMidi(); });
@@ -679,6 +684,174 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         rackSync.removeRack(rack.id);
     }
 
+    void testPluginWithNoInstanceDoesNotRewriteChannelCounts() {
+        beginTest("A plugin with no instance leaves the channel counts alone");
+
+        // te::ExternalPlugin fills neither channel-name array when it has no
+        // AudioPluginInstance, so it reports 0 in and 0 out. That is what a
+        // plugin still loading looks like. Storing it would leave a working
+        // device connected to no audio for the rest of the session, since the
+        // model is told once and keeps it.
+        auto* editPtr = magda::test::getSharedEngine().getEdit();
+        expect(editPtr != nullptr, "The shared engine must have an Edit");
+        if (editPtr == nullptr)
+            return;
+
+        auto& tm = magda::TrackManager::getInstance();
+        const auto trackId = tm.createTrack("Silent Reporter");
+        const auto rackId = tm.addRackToTrack(trackId, "Silent Rack");
+        auto* rackInfo = tm.getRack(trackId, rackId);
+        expect(rackInfo != nullptr, "Rack should have been added to the track");
+        if (rackInfo == nullptr || rackInfo->chains.empty())
+            return;
+
+        const auto chainId = rackInfo->chains[0].id;
+        auto device = makeInternalDevice(9911, "Ghost", "ghost");
+        device.audioInputChannels = 1;
+        device.audioOutputChannels = 2;
+        rackInfo->chains[0].elements.push_back(magda::makeDeviceElement(device));
+
+        juce::PluginDescription desc;
+        desc.name = "Ghost";
+        desc.pluginFormatName = "VST3";
+        desc.fileOrIdentifier = "/nonexistent/Ghost.vst3";
+        desc.uniqueId = 0x47484f53;
+        desc.numInputChannels = 2;
+        desc.numOutputChannels = 2;
+
+        auto shell =
+            editPtr->getPluginCache().createNewPlugin(te::ExternalPlugin::xmlTypeName, desc);
+        expect(shell != nullptr, "A description with no file behind it still makes a shell");
+        if (shell == nullptr)
+            return;
+
+        juce::StringArray ins, outs;
+        shell->getChannelNames(&ins, &outs);
+        expectEquals(ins.size(), 0, "The shell should report no inputs");
+        expectEquals(outs.size(), 0, "The shell should report no outputs");
+
+        const auto devicePath =
+            magda::ChainNodePath::rack(trackId, rackId).withChain(chainId).withDevice(device.id);
+        magda::test::getSharedEngine()
+            .getAudioBridge()
+            ->getPluginManager()
+            .registerRackPluginProcessor(devicePath, shell, device);
+
+        auto* canonical = tm.getDeviceInChainByPath(devicePath);
+        expect(canonical != nullptr, "The rack's device should resolve by path");
+        if (canonical != nullptr) {
+            expectEquals(canonical->audioInputChannels, 1,
+                         "A plugin that reports nothing must not rewrite the input width");
+            expectEquals(canonical->audioOutputChannels, 2,
+                         "A plugin that reports nothing must not rewrite the output width");
+        }
+
+        tm.deleteTrack(trackId);
+    }
+
+    void testGenuinelySilentPluginIsRecordedAsSilent() {
+        beginTest("A plugin that really has no audio is recorded as having none");
+
+        // The other side of the check above. 0 and 0 is a correct answer for a
+        // MIDI-only plugin: te::MidiPatchBay overrides getChannelNames with an
+        // empty body. The current engine gives those no audio because that is
+        // what they report, so assuming stereo would put them in the audio path
+        // it leaves them out of.
+        auto* editPtr = magda::test::getSharedEngine().getEdit();
+        expect(editPtr != nullptr, "The shared engine must have an Edit");
+        if (editPtr == nullptr)
+            return;
+
+        auto& tm = magda::TrackManager::getInstance();
+        const auto trackId = tm.createTrack("Silent For Real");
+        const auto rackId = tm.addRackToTrack(trackId, "Silent Rack");
+        auto* rackInfo = tm.getRack(trackId, rackId);
+        expect(rackInfo != nullptr, "Rack should have been added to the track");
+        if (rackInfo == nullptr || rackInfo->chains.empty())
+            return;
+
+        const auto chainId = rackInfo->chains[0].id;
+        auto device = makeInternalDevice(9921, "Patch Bay", "midiPatchBay");
+        rackInfo->chains[0].elements.push_back(magda::makeDeviceElement(device));
+
+        auto patchBay = editPtr->getPluginCache().createNewPlugin(te::MidiPatchBayPlugin::create());
+        expect(patchBay != nullptr, "A MIDI patch bay should be creatable");
+        if (patchBay == nullptr)
+            return;
+
+        juce::StringArray ins, outs;
+        patchBay->getChannelNames(&ins, &outs);
+        expectEquals(ins.size(), 0, "The patch bay should report no audio inputs");
+        expectEquals(outs.size(), 0, "The patch bay should report no audio outputs");
+        expect(dynamic_cast<te::ExternalPlugin*>(patchBay.get()) == nullptr,
+               "The patch bay is not an external plugin, so it can always answer");
+
+        const auto devicePath =
+            magda::ChainNodePath::rack(trackId, rackId).withChain(chainId).withDevice(device.id);
+        magda::test::getSharedEngine()
+            .getAudioBridge()
+            ->getPluginManager()
+            .registerRackPluginProcessor(devicePath, patchBay, device);
+
+        auto* canonical = tm.getDeviceInChainByPath(devicePath);
+        expect(canonical != nullptr, "The rack's device should resolve by path");
+        if (canonical != nullptr) {
+            expectEquals(canonical->audioInputChannels, 0,
+                         "A plugin that really has no audio input must be recorded with none");
+            expectEquals(canonical->audioOutputChannels, 0,
+                         "A plugin that really has no audio output must be recorded with none");
+        }
+
+        tm.deleteTrack(trackId);
+    }
+
+    void testRackDeviceStampsLiveChannelCounts() {
+        beginTest("Rack sync stamps a contained device's live channel counts");
+
+        // The chain model wires from these counts, and a device inside a rack
+        // reaches the engine only through registerRackPluginProcessor. If that
+        // stopped recording them, every rack device would keep whatever the
+        // model happened to hold.
+        //
+        // The internal plugins all report stereo, so the counts are seeded
+        // wrong on purpose. What is under test is that the live plugin has the
+        // last word, not that any particular plugin is mono.
+        auto& tm = magda::TrackManager::getInstance();
+        const auto trackId = tm.createTrack("Rack Counts");
+        const auto rackId = tm.addRackToTrack(trackId, "Counts Rack");
+        auto* rackInfo = tm.getRack(trackId, rackId);
+        expect(rackInfo != nullptr, "Rack should have been added to the track");
+        if (rackInfo == nullptr || rackInfo->chains.empty())
+            return;
+
+        const auto chainId = rackInfo->chains[0].id;
+        auto fx = makeInternalDevice(9903, "Filter", "magda_filter");
+        fx.audioInputChannels = 1;
+        fx.audioOutputChannels = 1;
+        rackInfo->chains[0].elements.push_back(magda::makeDeviceElement(fx));
+
+        auto& rackSync = magda::test::getSharedEngine()
+                             .getAudioBridge()
+                             ->getPluginManager()
+                             .getRackSyncManager();
+        rackSync.removeRack(rackId);
+        rackSync.syncRack(trackId, *tm.getRack(trackId, rackId));
+
+        const auto devicePath =
+            magda::ChainNodePath::rack(trackId, rackId).withChain(chainId).withDevice(fx.id);
+        auto* canonical = tm.getDeviceInChainByPath(devicePath);
+        expect(canonical != nullptr, "The rack's device should resolve by path");
+        if (canonical != nullptr) {
+            expectEquals(canonical->audioInputChannels, 2,
+                         "Rack device should read its input width off the live plugin");
+            expectEquals(canonical->audioOutputChannels, 2,
+                         "Rack device should read its output width off the live plugin");
+        }
+
+        rackSync.removeRack(rackId);
+        tm.deleteTrack(trackId);
+    }
+
     void testRackSyncMidiSidechainFxDoesNotReceiveChainMidi() {
         beginTest("Rack sync excludes MIDI-sidechained FX from chain MIDI");
 
@@ -969,8 +1142,13 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         expect(faderIdx >= 0, "VolumeAndPan fader must be on the track");
         expect(meterIdx >= 0, "LevelMeter must be on the track");
         expect(fxIdx < postFxIdx, "FX must come before post-FX");
-        expect(postFxIdx < faderIdx, "Post-FX must come before the fader");
-        expect(faderIdx < meterIdx, "Fader must come before the meter");
+        // Post-fader by default since #2087, which is the fader boundary
+        // de7a0b7c deferred. Which side the stage sits on is now
+        // TrackChain::postFxPostFader; both placements are covered in
+        // test_post_fx_fader_order_juce.cpp, and the native engine's half of the
+        // same contract in test_render_plan_compiler.cpp.
+        expect(faderIdx < postFxIdx, "Post-FX must come after the fader");
+        expect(postFxIdx < meterIdx, "The meter stays last");
 
         // Removing the post-FX device must drop its TE plugin.
         trackManager.removeDeviceFromChainByPath(postFxPath);

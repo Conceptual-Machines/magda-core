@@ -6,6 +6,7 @@
 #include <thread>
 
 #include "../../../../agents/gain_staging_agent.hpp"
+#include "../../components/chain/ChainNodePathDrag.hpp"
 #include "../../components/common/InternalFileDrag.hpp"
 #include "../../components/common/MasterSpeakerButton.hpp"
 #include "../../components/mixer/LevelMeterScale.hpp"
@@ -48,57 +49,21 @@ bool dragObjectToChainNodePath(const juce::DynamicObject& obj, magda::ChainNodeP
     if (type != "chainElement" && type != "chainElements")
         return false;
 
-    path.trackId = static_cast<magda::TrackId>(static_cast<int>(obj.getProperty("trackId")));
-    path.topLevelDeviceId =
-        static_cast<magda::DeviceId>(static_cast<int>(obj.getProperty("topLevelDeviceId")));
-    path.isTrackLevel = static_cast<bool>(obj.getProperty("isTrackLevel"));
-
-    auto stepTypes =
-        juce::StringArray::fromTokens(obj.getProperty("stepTypes").toString(), ",", "");
-    auto stepIds = juce::StringArray::fromTokens(obj.getProperty("stepIds").toString(), ",", "");
-    if (stepTypes.size() != stepIds.size())
+    const auto decoded = readChainNodePathFromDragInfo(obj);
+    if (!decoded)
         return false;
-
-    for (int i = 0; i < stepTypes.size(); ++i) {
-        const int typeValue = stepTypes[i].getIntValue();
-        if (typeValue < static_cast<int>(magda::ChainStepType::Rack) ||
-            typeValue > static_cast<int>(magda::ChainStepType::Device))
-            return false;
-        path.steps.push_back(
-            {static_cast<magda::ChainStepType>(typeValue), stepIds[i].getIntValue()});
-    }
-
-    return path.isValid();
+    path = *decoded;
+    return true;
 }
 
 bool dragObjectToChainNodePathAt(const juce::DynamicObject& obj, int index,
                                  magda::ChainNodePath& path) {
     path = {};
-    const auto suffix = juce::String(index);
-
-    path.trackId =
-        static_cast<magda::TrackId>(static_cast<int>(obj.getProperty("trackId" + suffix)));
-    path.topLevelDeviceId = static_cast<magda::DeviceId>(
-        static_cast<int>(obj.getProperty("topLevelDeviceId" + suffix)));
-    path.isTrackLevel = static_cast<bool>(obj.getProperty("isTrackLevel" + suffix));
-
-    auto stepTypes =
-        juce::StringArray::fromTokens(obj.getProperty("stepTypes" + suffix).toString(), ",", "");
-    auto stepIds =
-        juce::StringArray::fromTokens(obj.getProperty("stepIds" + suffix).toString(), ",", "");
-    if (stepTypes.size() != stepIds.size())
+    const auto decoded = readChainNodePathFromDragInfo(obj, index);
+    if (!decoded)
         return false;
-
-    for (int i = 0; i < stepTypes.size(); ++i) {
-        const int typeValue = stepTypes[i].getIntValue();
-        if (typeValue < static_cast<int>(magda::ChainStepType::Rack) ||
-            typeValue > static_cast<int>(magda::ChainStepType::Device))
-            return false;
-        path.steps.push_back(
-            {static_cast<magda::ChainStepType>(typeValue), stepIds[i].getIntValue()});
-    }
-
-    return path.isValid();
+    path = *decoded;
+    return true;
 }
 
 std::vector<magda::ChainNodePath> dragObjectToChainNodePaths(const juce::DynamicObject& obj) {
@@ -1197,6 +1162,7 @@ TrackChainContent::TrackChainContent()
 }
 
 void TrackChainContent::lookAndFeelChanged() {
+    mixerLookAndFeel_.refreshThemeColours();
     if (chainBypassButton_) {
         chainBypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
         chainBypassButton_->setActiveColor(juce::Colours::white);

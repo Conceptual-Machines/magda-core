@@ -1,0 +1,677 @@
+#include <atomic>
+#include <catch2/catch_test_macros.hpp>
+#include <chrono>
+#include <thread>
+#include <vector>
+
+#include "MockMagdaApi.hpp"
+#include "RemoteTestScopes.hpp"
+#include "magda/daw/api/remote_service.hpp"
+
+using namespace magda;
+using namespace magda::remote;
+using magda::test::fullyGrantedContext;
+using magda::test::MockMagdaApi;
+
+namespace {
+
+/// Reads MagdaApi live state, which asserts the message thread. The Catch2
+/// runner has no MessageManager, so suspend that assertion for the file — the
+/// same accommodation the existing projection tests make.
+struct MessageThreadRelaxation {
+    ScopedMessageThreadAssertionDisabler disabler;
+};
+
+juce::var emptyInput() {
+    return juce::var(new juce::DynamicObject());
+}
+
+juce::var object(std::initializer_list<std::pair<const char*, juce::var>> fields) {
+    auto* result = new juce::DynamicObject();
+    for (const auto& [key, value] : fields)
+        result->setProperty(key, value);
+    return result;
+}
+
+/// Runs one operation to completion and returns the response. Dispatch executes
+/// inline when there is no message thread to hop to, so this is synchronous.
+Response run(RemoteApiService& service, const juce::String& name, const juce::var& input,
+             RequestContext context = fullyGrantedContext()) {
+    Response captured;
+    int completions = 0;
+    service.dispatch(name, input, context, [&](Response response) {
+        captured = std::move(response);
+        ++completions;
+    });
+    REQUIRE(completions == 1);
+    return captured;
+}
+
+juce::String errorCodeOf(const Response& response) {
+    return toString(response.error.code);
+}
+
+}  // namespace
+
+TEST_CASE("Every declared operation has a handler", "[remote][service][registry]") {
+    // The property the handler-on-descriptor design exists to guarantee: before
+    // it, the registry declared 36 operations and implemented none, and nothing
+    // detected that.
+    //
+    // Transport-scoped operations (#1857) are the one deliberate exception, and
+    // the assertion is two-way rather than a carve-out: an operation with no
+    // handler must say it is the transport's, and one that claims to be the
+    // transport's must not also carry a handler here.
+    const auto& operations = OperationRegistry::instance().operations();
+    REQUIRE_FALSE(operations.empty());
+    for (const auto& operation : operations) {
+        INFO("operation: " << operation.name);
+        REQUIRE((operation.handler != nullptr) == !operation.transportScoped);
+    }
+}
+
+TEST_CASE("An unknown operation is rejected without touching the model",
+          "[remote][service][errors]") {
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto response = run(service, "tracks.summonDragon", emptyInput());
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "unknown_operation");
+    REQUIRE(api.tracks_.created.empty());
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("Schema-invalid input is rejected before execution", "[remote][service][errors]") {
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    // tempo is required and bounded to 20..400 by the operation's input schema.
+    const auto missing = run(service, "project.setTempo", emptyInput());
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE(errorCodeOf(missing) == "validation_failed");
+
+    const auto outOfRange = run(service, "project.setTempo", object({{"tempo", 10000.0}}));
+    REQUIRE_FALSE(outOfRange.ok);
+    REQUIRE(errorCodeOf(outOfRange) == "validation_failed");
+
+    // Nothing reached the facade, and no revision was burned on a bad request.
+    REQUIRE(api.project_.info.tempo != 10000.0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("A read executes and leaves the revision alone", "[remote][service]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.project_.info.name = "Demo";
+    api.project_.info.tempo = 128.0;
+    RemoteApiService service(api);
+
+    const auto response = run(service, "project.get", emptyInput());
+
+    REQUIRE(response.ok);
+    REQUIRE(response.result["name"].toString() == "Demo");
+    REQUIRE(static_cast<double>(response.result["tempo"]) == 128.0);
+    REQUIRE(response.revision == INITIAL_REVISION);
+    // A read must not open an undo step.
+    REQUIRE(api.undo_.compoundDescriptions.empty());
+}
+
+TEST_CASE("A committed write advances the revision by exactly one", "[remote][service]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto first = run(service, "project.setTempo", object({{"tempo", 90.0}}));
+    REQUIRE(first.ok);
+    REQUIRE(first.revision == INITIAL_REVISION + 1);
+    REQUIRE(api.project_.info.tempo == 90.0);
+
+    const auto second = run(service, "project.setTempo", object({{"tempo", 100.0}}));
+    REQUIRE(second.revision == INITIAL_REVISION + 2);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 2);
+}
+
+TEST_CASE("A failed write does not advance the revision", "[remote][service]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    // Schema-valid but semantically wrong: no such track.
+    const auto response = run(service, "tracks.delete", object({{"trackId", 999}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "not_found");
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+    // Otherwise every rejected request would invalidate other clients'
+    // expectedRevision for no reason.
+    REQUIRE(response.revision == INITIAL_REVISION);
+}
+
+TEST_CASE("One mutating request opens one named undo step", "[remote][service][undo]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    // Uses a write with no command behind it, so this stays a test of the
+    // dispatcher's compound bracketing. That a command-backed write is actually
+    // undoable is asserted against the real UndoManager in the live tests — a
+    // stub cannot answer that question, since it does not run commands.
+    const auto response = run(service, "project.setTempo", object({{"tempo", 90.0}}));
+
+    REQUIRE(response.ok);
+    REQUIRE(api.undo_.compoundDescriptions.size() == 1);
+    REQUIRE(api.undo_.maxCompoundDepth == 1);
+    // Balanced: a leaked compound would swallow the user's next edits.
+    REQUIRE(api.undo_.compoundDepth == 0);
+    // Named, so the user sees what the remote client did rather than "Undo".
+    REQUIRE(api.undo_.compoundDescriptions[0].isNotEmpty());
+}
+
+TEST_CASE("A write that fails inside the handler still closes its undo step",
+          "[remote][service][undo]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto response = run(service, "tracks.delete", object({{"trackId", 4242}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(api.undo_.compoundDepth == 0);
+}
+
+TEST_CASE("A stale expected revision is rejected as a conflict", "[remote][service][revisions]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 90.0}})).ok);
+
+    auto stale = fullyGrantedContext();
+    stale.expectedRevision = INITIAL_REVISION;  // what the client saw before the write above
+    const auto response = run(service, "project.setTempo", object({{"tempo", 140.0}}), stale);
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "conflict");
+    REQUIRE(api.project_.info.tempo == 90.0);
+
+    // The matching revision succeeds, so a client can recover by re-reading.
+    auto current = fullyGrantedContext();
+    current.expectedRevision = service.currentRevision();
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 140.0}}), current).ok);
+    REQUIRE(api.project_.info.tempo == 140.0);
+}
+
+TEST_CASE("Retrying a completed write does not apply it twice", "[remote][service][idempotency]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto context = fullyGrantedContext();
+    context.clientId = "client-a";
+    context.requestId = "req-1";
+
+    const auto first = run(service, "project.setTempo", object({{"tempo", 90.0}}), context);
+    REQUIRE(first.ok);
+    REQUIRE(api.project_.info.tempo == 90.0);
+
+    // The client never saw the response and retried the same request id. The
+    // payload differs to make replay observable: if this executed rather than
+    // replaying, the tempo would move.
+    const auto retry = run(service, "project.setTempo", object({{"tempo", 140.0}}), context);
+    REQUIRE(retry.ok);
+    REQUIRE(api.project_.info.tempo == 90.0);
+    // The replay is the original response verbatim, so the client's view stays
+    // consistent.
+    REQUIRE(static_cast<double>(retry.result["tempo"]) == 90.0);
+    REQUIRE(retry.revision == first.revision);
+    REQUIRE(service.currentRevision() == first.revision);
+}
+
+TEST_CASE("Idempotency keys are scoped per client", "[remote][service][idempotency]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto first = fullyGrantedContext();
+    first.clientId = "client-a";
+    first.requestId = "req-1";
+    auto second = fullyGrantedContext();
+    second.clientId = "client-b";
+    second.requestId = "req-1";  // same id, different client
+
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 90.0}}), first).ok);
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 140.0}}), second).ok);
+
+    // Both executed: one client must never replay another's response.
+    REQUIRE(api.project_.info.tempo == 140.0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 2);
+}
+
+TEST_CASE("Reads are not served from the idempotency cache", "[remote][service][idempotency]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.project_.info.tempo = 120.0;
+    RemoteApiService service(api);
+
+    auto context = fullyGrantedContext();
+    context.clientId = "client-a";
+    context.requestId = "req-read";
+
+    const auto first = run(service, "project.get", emptyInput(), context);
+    REQUIRE(static_cast<double>(first.result["tempo"]) == 120.0);
+
+    api.project_.info.tempo = 145.0;
+
+    // Caching a read would serve state that has since changed.
+    const auto second = run(service, "project.get", emptyInput(), context);
+    REQUIRE(static_cast<double>(second.result["tempo"]) == 145.0);
+}
+
+TEST_CASE("The idempotency cache is bounded", "[remote][service][idempotency]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    service.setIdempotencyCacheCapacity(2);
+
+    const auto writeWithId = [&](const juce::String& requestId, double tempo) {
+        auto context = fullyGrantedContext();
+        context.clientId = "client-a";
+        context.requestId = requestId;
+        return run(service, "project.setTempo", object({{"tempo", tempo}}), context);
+    };
+
+    writeWithId("r1", 90.0);
+    writeWithId("r2", 100.0);
+    writeWithId("r3", 110.0);  // evicts r1
+    REQUIRE(api.project_.info.tempo == 110.0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 3);
+
+    // r1 has aged out, so its retry re-executes rather than replaying. That is
+    // the accepted trade: a bounded cache cannot promise idempotency forever,
+    // and unbounded growth is the worse failure for a long-lived session.
+    writeWithId("r1", 120.0);
+    REQUIRE(api.project_.info.tempo == 120.0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 4);
+
+    // r3 is still cached, so this replays instead of applying 130.
+    writeWithId("r3", 130.0);
+    REQUIRE(api.project_.info.tempo == 120.0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 4);
+}
+
+TEST_CASE("Concurrent retries of one request id apply the mutation once",
+          "[remote][service][idempotency][stress]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    // The pre-queue cache lookup cannot catch this on its own: both requests can
+    // pass it before either has finished. The recheck inside the serialized
+    // execution path is what makes the duplicate replay instead of re-applying.
+    constexpr int threadCount = 8;
+    std::atomic<int> okCount{0};
+    std::vector<std::thread> workers;
+    workers.reserve(threadCount);
+    for (int worker = 0; worker < threadCount; ++worker) {
+        workers.emplace_back([&] {
+            auto context = fullyGrantedContext();
+            context.clientId = "client-a";
+            context.requestId = "req-1";
+            service.dispatch("project.setTempo", object({{"tempo", 90.0}}), context,
+                             [&](Response response) {
+                                 if (response.ok)
+                                     ++okCount;
+                             });
+        });
+    }
+    for (auto& worker : workers)
+        worker.join();
+
+    // Every caller gets a success, but only one of them was a real mutation.
+    REQUIRE(okCount.load() == threadCount);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 1);
+}
+
+TEST_CASE("Selection ids are checked against the model", "[remote][service][selection]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto selection = [](std::initializer_list<std::pair<const char*, juce::var>> overrides) {
+        auto* result = new juce::DynamicObject();
+        result->setProperty("trackId", juce::var());
+        result->setProperty("clipId", juce::var());
+        result->setProperty("clipIds", juce::Array<juce::var>{});
+        result->setProperty("automationLaneId", juce::var());
+        result->setProperty("automationClipId", juce::var());
+        result->setProperty("noteClipId", juce::var());
+        result->setProperty("noteIndices", juce::Array<juce::var>{});
+        for (const auto& [key, value] : overrides)
+            result->setProperty(key, value);
+        return juce::var(result);
+    };
+
+    // SelectionManager accepts ids without checking they exist, so an
+    // unvalidated request would leave the session pointing at nothing and still
+    // report success.
+    const auto badTrack = run(service, "selection.set", selection({{"trackId", 999}}));
+    REQUIRE_FALSE(badTrack.ok);
+    REQUIRE(errorCodeOf(badTrack) == "not_found");
+
+    const auto badClip = run(service, "selection.set", selection({{"clipId", 777}}));
+    REQUIRE_FALSE(badClip.ok);
+    REQUIRE(errorCodeOf(badClip) == "not_found");
+
+    // Nothing was applied on the way to the error.
+    REQUIRE(api.selection_.trackSelections.empty());
+    REQUIRE(api.selection_.clipSelections.empty());
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("An empty selection clears the whole selection", "[remote][service][selection]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto* empty = new juce::DynamicObject();
+    empty->setProperty("trackId", juce::var());
+    empty->setProperty("clipId", juce::var());
+    empty->setProperty("clipIds", juce::Array<juce::var>{});
+    empty->setProperty("automationLaneId", juce::var());
+    empty->setProperty("automationClipId", juce::var());
+    empty->setProperty("noteClipId", juce::var());
+    empty->setProperty("noteIndices", juce::Array<juce::var>{});
+
+    const auto response = run(service, "selection.set", juce::var(empty));
+
+    REQUIRE(response.ok);
+    // clearNoteSelection alone is a no-op outside note mode, so it cannot
+    // express "select nothing" for a track or clip selection.
+    REQUIRE(api.selection_.clearSelectionCalls == 1);
+}
+
+TEST_CASE("An expired deadline fails with timeout instead of executing late",
+          "[remote][service][errors]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto context = fullyGrantedContext();
+    context.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+
+    const auto response = run(service, "project.setTempo", object({{"tempo", 90.0}}), context);
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "timeout");
+    REQUIRE(api.project_.info.tempo != 90.0);
+}
+
+TEST_CASE("A shut-down service accepts nothing", "[remote][service][lifecycle]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    service.shutdown();
+    REQUIRE(service.isShutdown());
+
+    const auto response = run(service, "project.setTempo", object({{"tempo", 90.0}}));
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "cancelled");
+    REQUIRE(api.project_.info.tempo != 90.0);
+}
+
+TEST_CASE("Shutdown is idempotent", "[remote][service][lifecycle]") {
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    service.shutdown();
+    service.shutdown();
+    REQUIRE(service.isShutdown());
+}
+
+TEST_CASE("Replacing the project invalidates outstanding revisions",
+          "[remote][service][lifecycle]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto before = service.currentRevision();
+    service.projectReplaced();
+    REQUIRE(service.currentRevision() > before);
+
+    // A client holding the pre-swap revision is now stale by construction,
+    // rather than writing into a project that no longer exists.
+    auto context = fullyGrantedContext();
+    context.expectedRevision = before;
+    const auto response = run(service, "project.setTempo", object({{"tempo", 90.0}}), context);
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "conflict");
+}
+
+TEST_CASE("Replacing the project clears the idempotency cache", "[remote][service][lifecycle]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto context = fullyGrantedContext();
+    context.clientId = "client-a";
+    context.requestId = "req-1";
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 90.0}}), context).ok);
+    REQUIRE(api.project_.info.tempo == 90.0);
+
+    service.projectReplaced();
+
+    // The cached response describes the outgoing project, so replaying it would
+    // answer for state that no longer exists. This must execute instead.
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 140.0}}), context).ok);
+    REQUIRE(api.project_.info.tempo == 140.0);
+}
+
+TEST_CASE("Committed writes notify the matching change topic", "[remote][service][changes]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    std::vector<ChangeSource::Change> seen;
+    service.changes().addListener([&](const std::vector<ChangeSource::Change>& changes) {
+        seen.insert(seen.end(), changes.begin(), changes.end());
+    });
+
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 90.0}})).ok);
+    service.changes().flush();
+
+    REQUIRE(seen.size() == 1);
+    REQUIRE(seen[0].topic == Topic::Project);
+    REQUIRE(seen[0].revision == service.currentRevision());
+}
+
+TEST_CASE("Reads emit no change notifications", "[remote][service][changes]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    std::vector<ChangeSource::Change> seen;
+    service.changes().addListener([&](const std::vector<ChangeSource::Change>& changes) {
+        seen.insert(seen.end(), changes.begin(), changes.end());
+    });
+
+    REQUIRE(run(service, "project.get", emptyInput()).ok);
+    REQUIRE(run(service, "tracks.list", emptyInput()).ok);
+    service.changes().flush();
+
+    REQUIRE(seen.empty());
+}
+
+TEST_CASE("dispatchSync returns the response directly", "[remote][service]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.project_.info.tempo = 111.0;
+    RemoteApiService service(api);
+
+    const auto response = service.dispatchSync("project.get", emptyInput(), fullyGrantedContext());
+
+    REQUIRE(response.ok);
+    REQUIRE(static_cast<double>(response.result["tempo"]) == 111.0);
+}
+
+TEST_CASE("A local committed change bumps the revision", "[remote][service][changes]") {
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    std::vector<ChangeSource::Change> seen;
+    service.changes().addListener([&](const std::vector<ChangeSource::Change>& changes) {
+        seen.insert(seen.end(), changes.begin(), changes.end());
+    });
+
+    service.noteModelChanged(Topic::Tracks);
+    service.changes().flush();
+
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 1);
+    REQUIRE(seen.size() == 1);
+    REQUIRE(seen[0].topic == Topic::Tracks);
+}
+
+TEST_CASE("Continuous motion notifies without bumping the revision", "[remote][service][changes]") {
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    std::vector<ChangeSource::Change> seen;
+    service.changes().addListener([&](const std::vector<ChangeSource::Change>& changes) {
+        seen.insert(seen.end(), changes.begin(), changes.end());
+    });
+
+    // A parameter following an LFO fires continuously while the transport
+    // rolls. Bumping the revision for it would leave every client's
+    // expectedRevision permanently stale during playback.
+    for (int index = 0; index < 200; ++index)
+        service.noteModelActivity(Topic::Devices);
+    service.changes().flush();
+
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+    REQUIRE(seen.size() == 1);
+    REQUIRE(seen[0].topic == Topic::Devices);
+
+    // And a write with the pre-motion revision still succeeds, which is the
+    // property that makes remote control usable during playback.
+    auto context = fullyGrantedContext();
+    context.expectedRevision = INITIAL_REVISION;
+    const ScopedMessageThreadAssertionDisabler disabler;
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 90.0}}), context).ok);
+}
+
+TEST_CASE("A shut-down service records no further model changes", "[remote][service][lifecycle]") {
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    service.shutdown();
+
+    std::vector<ChangeSource::Change> seen;
+    service.changes().addListener([&](const std::vector<ChangeSource::Change>& changes) {
+        seen.insert(seen.end(), changes.begin(), changes.end());
+    });
+
+    service.noteModelChanged(Topic::Tracks);
+    service.noteModelActivity(Topic::Devices);
+    service.changes().flush();
+
+    REQUIRE(seen.empty());
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("The response envelope carries the revision", "[remote][service]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto response = run(service, "project.setTempo", object({{"tempo", 90.0}}));
+    const auto envelope = response.toEnvelope();
+
+    REQUIRE(static_cast<bool>(envelope["ok"]));
+    REQUIRE(static_cast<juce::int64>(envelope["revision"]) == 1);
+    REQUIRE(envelope["apiVersion"].toString() == juce::String(API_VERSION.data()));
+
+    const auto failed = run(service, "tracks.delete", object({{"trackId", 999}}));
+    const auto failureEnvelope = failed.toEnvelope();
+    REQUIRE_FALSE(static_cast<bool>(failureEnvelope["ok"]));
+    REQUIRE(failureEnvelope["error"]["code"].toString() == "not_found");
+    REQUIRE(static_cast<juce::int64>(failureEnvelope["revision"]) == 1);
+}
+
+TEST_CASE("Concurrent dispatch from many threads keeps revisions unique",
+          "[remote][service][stress]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    constexpr int threadCount = 8;
+    constexpr int perThread = 25;
+
+    std::mutex revisionMutex;
+    std::vector<Revision> revisions;
+    std::atomic<int> failures{0};
+
+    std::vector<std::thread> workers;
+    workers.reserve(threadCount);
+    for (int worker = 0; worker < threadCount; ++worker) {
+        workers.emplace_back([&, worker] {
+            for (int index = 0; index < perThread; ++index) {
+                auto context = fullyGrantedContext();
+                context.clientId = "client-" + juce::String(worker);
+                context.requestId = juce::String(index);
+                service.dispatch("project.setTempo", object({{"tempo", 100.0}}), context,
+                                 [&](Response response) {
+                                     if (!response.ok) {
+                                         ++failures;
+                                         return;
+                                     }
+                                     const std::lock_guard<std::mutex> lock(revisionMutex);
+                                     revisions.push_back(response.revision);
+                                 });
+            }
+        });
+    }
+    for (auto& worker : workers)
+        worker.join();
+
+    REQUIRE(failures.load() == 0);
+    REQUIRE(revisions.size() == static_cast<std::size_t>(threadCount * perThread));
+
+    // Every committed write got its own revision — none reused, none skipped.
+    std::sort(revisions.begin(), revisions.end());
+    REQUIRE(std::adjacent_find(revisions.begin(), revisions.end()) == revisions.end());
+    REQUIRE(revisions.front() == 1);
+    REQUIRE(revisions.back() == static_cast<Revision>(threadCount * perThread));
+    REQUIRE(service.currentRevision() == static_cast<Revision>(threadCount * perThread));
+}
+
+TEST_CASE("Concurrent change marks never lose the newest revision",
+          "[remote][service][stress][changes]") {
+    ChangeSource changes;
+    std::vector<ChangeSource::Change> seen;
+    changes.addListener([&](const std::vector<ChangeSource::Change>& batch) {
+        seen.insert(seen.end(), batch.begin(), batch.end());
+    });
+
+    constexpr int threadCount = 4;
+    constexpr Revision perThread = 500;
+
+    std::vector<std::thread> workers;
+    workers.reserve(threadCount);
+    for (int worker = 0; worker < threadCount; ++worker) {
+        workers.emplace_back([&changes, worker] {
+            for (Revision revision = 1; revision <= perThread; ++revision)
+                changes.markChanged(Topic::Meters,
+                                    revision + static_cast<Revision>(worker) * perThread);
+        });
+    }
+    for (auto& worker : workers)
+        worker.join();
+
+    changes.flush();
+
+    REQUIRE(seen.size() == 1);
+    REQUIRE(seen[0].topic == Topic::Meters);
+    // Latest-value-wins has to hold under contention, not just single-threaded.
+    REQUIRE(seen[0].revision == perThread * threadCount);
+}

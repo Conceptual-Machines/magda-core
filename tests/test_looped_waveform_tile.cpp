@@ -2,6 +2,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "AudioClipTestHelpers.hpp"
 #include "magda/daw/core/ClipDisplayInfo.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 
@@ -80,11 +81,11 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.offset = 1.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(1.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
-        clip.loopStart = 0.0;
-        clip.loopLength = 0.0;
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(0.0);
 
         syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);  // fileDuration=0 → fallback
@@ -99,11 +100,12 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 8.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopStart = 0.5;
-        clip.loopLength = 2.0;
-        clip.offset = clip.loopStart;
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.5);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(2.0);
+        magda::test::audioEvent(clip).setAnchorSeconds(
+            magda::test::audioEvent(clip).loopStartSeconds());
 
         syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
@@ -127,11 +129,12 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 16.0;
-        clip.speedRatio = 2.0;  // 2x faster
+        magda::test::audioEvent(clip).speedRatio = 2.0;  // 2x faster
         clip.loopEnabled = true;
-        clip.loopStart = 1.0;
-        clip.loopLength = 1.0;
-        clip.offset = clip.loopStart;
+        magda::test::audioEvent(clip).setLoopStartSeconds(1.0);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(1.0);
+        magda::test::audioEvent(clip).setAnchorSeconds(
+            magda::test::audioEvent(clip).loopStartSeconds());
 
         syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/3.0);
@@ -155,11 +158,11 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 1.0;
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopStart = 0.0;
-        clip.loopLength = 0.0;
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(0.0);
 
         syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/1.0);
@@ -174,11 +177,12 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 1.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopStart = 0.5;
-        clip.loopLength = 2.0;
-        clip.offset = clip.loopStart;
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.5);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(2.0);
+        magda::test::audioEvent(clip).setAnchorSeconds(
+            magda::test::audioEvent(clip).loopStartSeconds());
 
         syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
@@ -194,11 +198,11 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 2.0;
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopStart = 0.0;
-        clip.loopLength = 2.0;
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(2.0);
 
         syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/2.0);
@@ -218,11 +222,11 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 6.0;
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopStart = 0.0;
-        clip.loopLength = 2.0;
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(2.0);
 
         syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
@@ -243,8 +247,8 @@ TEST_CASE("ClipDisplayInfo maps session playhead into waveform editor display ti
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 8.0;
-        clip.offset = 1.5;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(1.5);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
 
         syncPlacement(clip);
@@ -260,11 +264,11 @@ TEST_CASE("ClipDisplayInfo maps session playhead into waveform editor display ti
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 12.0;
-        clip.offset = 1.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(1.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopStart = 1.0;
-        clip.loopLength = 4.0;
+        magda::test::audioEvent(clip).setLoopStartSeconds(1.0);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(4.0);
 
         syncPlacement(clip);
         const auto di = ClipDisplayInfo::from(clip, 120.0);
@@ -280,11 +284,11 @@ TEST_CASE("ClipDisplayInfo maps session playhead into waveform editor display ti
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 12.0;
-        clip.offset = 2.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(2.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopStart = 1.0;
-        clip.loopLength = 4.0;
+        magda::test::audioEvent(clip).setLoopStartSeconds(1.0);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(4.0);
 
         syncPlacement(clip);
         const auto di = ClipDisplayInfo::from(clip, 120.0);
@@ -298,48 +302,55 @@ TEST_CASE("ClipDisplayInfo maps session playhead into waveform editor display ti
     SECTION("Auto-tempo source BPM maps session playhead in display-time seconds") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.autoTempo = true;
+        magda::test::audioEvent(clip).autoTempo = true;
         clip.startTime = 0.0;
         clip.length = 8.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.audio().interpretation.bpm = 172.0;
-        clip.audio().interpretation.totalBeats = 16.0;
-        clip.audio().source.durationSeconds = 16.0 * 60.0 / 172.0;
+        magda::test::audioEvent(clip).interpBpm = 172.0;
+        magda::test::audioEvent(clip).interpTotalBeats = 16.0;
+        magda::test::setSourceDuration(clip, 16.0 * 60.0 / 172.0);
         clip.setPlacementBeats(0.0, 16.0);
-        clip.loopStartBeats = 0.0;
-        clip.loopLengthBeats = 16.0;
-        clip.offsetBeats = 4.0;
+        magda::test::audioEvent(clip).setLoopStartBeats(0.0);
+        magda::test::audioEvent(clip).setLoopLengthBeats(16.0);
+        magda::test::audioEvent(clip).setAnchorBeats(4.0);
 
-        const auto di = ClipDisplayInfo::from(clip, 120.0, clip.audio().source.durationSeconds);
+        const auto di = ClipDisplayInfo::from(
+            clip, 120.0, magda::test::audioEvent(clip).sourceDurationSeconds());
 
         REQUIRE(di.loopLengthSeconds == Catch::Approx(8.0));
         REQUIRE(di.sessionPlayheadToDisplayPosition(0.0) == Catch::Approx(2.0));
         REQUIRE(di.sessionPlayheadToDisplayPosition(1.0) == Catch::Approx(3.0));
-        REQUIRE(di.sessionPlayheadToDisplayPosition(6.0) == Catch::Approx(0.0));
+        // The anchor is stored in source samples (#1901), so a wrap that
+        // lands on the loop start is exact to a fraction of a sample.
+        REQUIRE(di.sessionPlayheadToDisplayPosition(6.0) == Catch::Approx(0.0).margin(1.0e-4));
         REQUIRE(di.sessionPlayheadToDisplayPosition(8.5) == Catch::Approx(2.5));
     }
 
-    SECTION("Auto-tempo playhead mapping ignores stale source seconds caches") {
+    SECTION("Auto-tempo playhead mapping derives from the single source region") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.autoTempo = true;
+        magda::test::audioEvent(clip).autoTempo = true;
         clip.startTime = 99.0;  // stale cache; placement is authoritative
         clip.length = 99.0;     // stale cache; placement is authoritative
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.audio().interpretation.bpm = 172.0;
-        clip.audio().interpretation.totalBeats = 16.0;
-        clip.audio().source.durationSeconds = 16.0 * 60.0 / 172.0;
+        magda::test::audioEvent(clip).interpBpm = 172.0;
+        magda::test::audioEvent(clip).interpTotalBeats = 16.0;
+        magda::test::setSourceDuration(clip, 16.0 * 60.0 / 172.0);
         clip.setPlacementBeats(0.0, 16.0);
-        clip.loopStart = 99.0;   // stale cache; loopStartBeats is authoritative
-        clip.loopLength = 99.0;  // stale cache; loopLengthBeats is authoritative
-        clip.offset = 99.0;      // stale cache; offsetBeats is authoritative
-        clip.loopStartBeats = 4.0;
-        clip.loopLengthBeats = 8.0;
-        clip.offsetBeats = 6.0;
+        magda::test::audioEvent(clip).setLoopStartSeconds(
+            99.0);  // stale cache; loopStartBeats is authoritative
+        magda::test::audioEvent(clip).setLoopLengthSeconds(
+            99.0);  // stale cache; loopLengthBeats is authoritative
+        magda::test::audioEvent(clip).setAnchorSeconds(
+            99.0);  // stale cache; offsetBeats is authoritative
+        magda::test::audioEvent(clip).setLoopStartBeats(4.0);
+        magda::test::audioEvent(clip).setLoopLengthBeats(8.0);
+        magda::test::audioEvent(clip).setAnchorBeats(6.0);
 
-        const auto di = ClipDisplayInfo::from(clip, 120.0, clip.audio().source.durationSeconds);
+        const auto di = ClipDisplayInfo::from(
+            clip, 120.0, magda::test::audioEvent(clip).sourceDurationSeconds());
 
         REQUIRE(di.loopStartPositionSeconds == Catch::Approx(2.0));
         REQUIRE(di.loopLengthSeconds == Catch::Approx(4.0));
@@ -352,21 +363,23 @@ TEST_CASE("ClipDisplayInfo maps session playhead into waveform editor display ti
     SECTION("Auto-tempo display source conversion follows source BPM after Beats edit") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.autoTempo = true;
+        magda::test::audioEvent(clip).autoTempo = true;
         clip.loopEnabled = true;
-        clip.speedRatio = 1.0;
-        clip.audio().interpretation.bpm = 129.0;
-        clip.audio().interpretation.totalBeats = 12.0;
-        clip.audio().source.durationSeconds = 12.0 * 60.0 / 129.0;
+        magda::test::audioEvent(clip).speedRatio = 1.0;
+        magda::test::audioEvent(clip).interpBpm = 129.0;
+        magda::test::audioEvent(clip).interpTotalBeats = 12.0;
+        magda::test::setSourceDuration(clip, 12.0 * 60.0 / 129.0);
         clip.setPlacementBeats(0.0, 12.0);
-        clip.loopStartBeats = 0.0;
-        clip.loopLengthBeats = 12.0;
-        clip.offsetBeats = 3.0;
-        clip.loopStart = 99.0;
-        clip.loopLength = 99.0;
-        clip.offset = 99.0;
+        magda::test::audioEvent(clip).setLoopStartBeats(0.0);
+        magda::test::audioEvent(clip).setLoopLengthBeats(12.0);
+        magda::test::audioEvent(clip).setAnchorBeats(3.0);
+        // #1157 poisoned separate seconds caches here to prove the display did
+        // not read them. Since #1901 the source region has one representation
+        // (samples) with seconds and beats as views on it, so there is no
+        // cache left to go stale.
 
-        const auto di = ClipDisplayInfo::from(clip, 120.0, clip.audio().source.durationSeconds);
+        const auto di = ClipDisplayInfo::from(
+            clip, 120.0, magda::test::audioEvent(clip).sourceDurationSeconds());
 
         REQUIRE(di.fileExtentTimeline() == Catch::Approx(6.0));
         REQUIRE(di.loopLengthSeconds == Catch::Approx(6.0));
@@ -384,10 +397,10 @@ TEST_CASE("ClipDisplayInfo keeps a reversed selection on the original source rul
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 2.0;
-        clip.offset = 2.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(2.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
-        clip.isReversed = true;
+        magda::test::audioEvent(clip).reversed = true;
 
         syncPlacement(clip);
         const auto di = ClipDisplayInfo::from(clip, 120.0, 10.0);
@@ -411,10 +424,10 @@ TEST_CASE("ClipDisplayInfo keeps a reversed selection on the original source rul
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 2.0;
-        clip.offset = 2.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(2.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
-        clip.isReversed = true;
+        magda::test::audioEvent(clip).reversed = true;
 
         syncPlacement(clip);
         const auto di = ClipDisplayInfo::from(clip, 120.0, 10.0);
@@ -431,10 +444,10 @@ TEST_CASE("ClipDisplayInfo keeps a reversed selection on the original source rul
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 1.0;
-        clip.offset = 2.0;
-        clip.speedRatio = 2.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(2.0);
+        magda::test::audioEvent(clip).speedRatio = 2.0;
         clip.loopEnabled = false;
-        clip.isReversed = true;
+        magda::test::audioEvent(clip).reversed = true;
 
         syncPlacement(clip);
         const auto di = ClipDisplayInfo::from(clip, 120.0, 10.0);
@@ -452,10 +465,10 @@ TEST_CASE("ClipDisplayInfo keeps a reversed selection on the original source rul
         clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 2.0;
-        clip.offset = 2.0;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).setAnchorSeconds(2.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
-        clip.isReversed = false;
+        magda::test::audioEvent(clip).reversed = false;
 
         syncPlacement(clip);
         const auto di = ClipDisplayInfo::from(clip, 120.0, 10.0);

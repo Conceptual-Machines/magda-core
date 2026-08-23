@@ -8,6 +8,7 @@
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../audio/MidiBridge.hpp"
 #include "../../audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
+#include "../../core/MixerStripOrder.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/PluginWindowManager.hpp"
@@ -1685,6 +1686,12 @@ void MixerView::ChannelStrip::resetPeak() {
         peakLabel->setText("-inf", juce::dontSendNotification);
 }
 
+// The fader look-and-feel is a plain member, not a Component, so the theme
+// broadcast never reaches it on its own.
+void MixerView::lookAndFeelChanged() {
+    mixerLookAndFeel_.refreshThemeColours();
+}
+
 void MixerView::ChannelStrip::lookAndFeelChanged() {
     // trackLabel and peakLabel cache a concrete text colour, so a repaint alone
     // won't refresh them after a theme switch. trackLabel's colour is
@@ -1960,22 +1967,12 @@ void MixerView::rebuildChannelStrips() {
     const auto& tracks = TrackManager::getInstance().getTracks();
 
     for (const auto& track : tracks) {
-        // Only show tracks visible in the current view mode
-        if (!track.isVisibleIn(currentViewMode_)) {
+        // Hidden tracks, aux returns (drawn in their own section) and children
+        // of a collapsed group are not strips. The rule lives in one place
+        // because control surfaces address strips by position and have to agree
+        // with what is on screen — see MixerStripOrder.hpp.
+        if (!isMixerStrip(track, tracks, currentViewMode_))
             continue;
-        }
-
-        if (track.type == TrackType::Aux)
-            continue;  // Aux strips handled separately
-
-        // Skip children of collapsed group tracks
-        if (track.hasParent()) {
-            if (auto* parent = TrackManager::getInstance().getTrack(track.parentId)) {
-                if ((parent->isGroup() || parent->hasChildren()) &&
-                    parent->isCollapsedIn(currentViewMode_))
-                    continue;
-            }
-        }
 
         auto strip = std::make_unique<ChannelStrip>(track, audioEngine_, false);
         strip->onClicked = [this](int trackId, bool isMaster) {

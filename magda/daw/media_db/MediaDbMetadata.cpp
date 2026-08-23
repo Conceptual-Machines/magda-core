@@ -1197,9 +1197,9 @@ int moveFolderInLibrary(MediaDatabase& db, const std::filesystem::path& oldFolde
     int matchedRows = -1;
     {
         sqlite3_stmt* probe = nullptr;
-        if (sqlite3_prepare_v2(
-                handle, "SELECT COUNT(*) FROM media_file WHERE path >= ? AND path < ?", -1, &probe,
-                nullptr) == SQLITE_OK) {
+        if (sqlite3_prepare_v2(handle,
+                               "SELECT COUNT(*) FROM media_file WHERE path >= ? AND path < ?", -1,
+                               &probe, nullptr) == SQLITE_OK) {
             sqlite3_bind_text(probe, 1, oldPrefix.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(probe, 2, upper.c_str(), -1, SQLITE_TRANSIENT);
             if (sqlite3_step(probe) == SQLITE_ROW) {

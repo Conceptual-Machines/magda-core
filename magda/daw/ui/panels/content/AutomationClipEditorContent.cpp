@@ -348,14 +348,12 @@ void AutomationClipEditorContent::paintTrackGhost(juce::Graphics& g) {
             // what the arrangement actually renders.
             const double beatsPerSecond = tempo / 60.0;
             const double clipLengthInBeats = cLenSeconds * beatsPerSecond;
-            const double midiSrcLength =
-                c->loopLength > 0.0 ? c->loopLength : cLenSeconds * c->speedRatio;
+            // A MIDI clip's loop is clip beats: reading it off an audio event
+            // would always miss, and the ghost would stop unrolling.
             const double loopLengthBeats =
-                c->loopLengthBeats > 0.0
-                    ? c->loopLengthBeats
-                    : (midiSrcLength > 0.0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats);
+                c->loopLengthBeats > 0.0 ? c->loopLengthBeats : clipLengthInBeats;
             const double midiOffset = c->loopEnabled ? c->midiOffset : c->midiTrimOffset;
-            const double loopStart = c->loopStart * beatsPerSecond;
+            const double loopStart = c->loopStartBeats;
             const double loopEnd = loopStart + loopLengthBeats;
 
             const auto emitGhost = [&](double displayStart, double displayEnd, int pitch) {
@@ -397,7 +395,7 @@ void AutomationClipEditorContent::paintTrackGhost(juce::Graphics& g) {
                     emitGhost(displayStart, displayStart + note.lengthBeats, note.noteNumber);
                 }
             }
-        } else if (c->isAudio() && c->audio().source.filePath.isNotEmpty()) {
+        } else if (c->isAudio() && magda::audioEventRef(*c).sourceFilePath().isNotEmpty()) {
             const float x0 = beatToPixelF(cStart);
             const float x1 = beatToPixelF(cEnd);
             const auto area = juce::Rectangle<int>(

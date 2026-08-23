@@ -214,11 +214,11 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
     // Create arrangement clip with the session clip's content
     ClipId newClipId = INVALID_CLIP_ID;
 
-    if (sessionClip->isAudio()) {
-        if (sessionClip->audio().source.filePath.isNotEmpty()) {
-            newClipId = clipManager.createAudioClip(rec.trackId, rec.arrangementStartTime, duration,
-                                                    sessionClip->audio().source.filePath,
-                                                    ClipView::Arrangement);
+    if (const auto* sessionEvent = sessionClip->primaryEvent()) {
+        if (sessionEvent->sourceFilePath().isNotEmpty()) {
+            newClipId =
+                clipManager.createAudioClip(rec.trackId, rec.arrangementStartTime, duration,
+                                            sessionEvent->sourceFilePath(), ClipView::Arrangement);
         }
     } else {
         newClipId = clipManager.createMidiClip(rec.trackId, rec.arrangementStartTime, duration,
@@ -236,36 +236,37 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
     newClip->name = sessionClip->name;
     newClip->colour = sessionClip->colour;
 
-    if (sessionClip->isAudio()) {
-        newClip->offset = sessionClip->offset;
-        newClip->loopStart = sessionClip->loopStart;
-        newClip->loopLength = sessionClip->loopLength;
-        newClip->speedRatio = sessionClip->speedRatio;
-
-        // Copy beat-mode / auto-tempo properties so the arrangement clip
-        // stays in the same time-stretch mode as the session clip.
-        newClip->audio().interpretation.bpm = sessionClip->audio().interpretation.bpm;
-        newClip->audio().interpretation.totalBeats = sessionClip->audio().interpretation.totalBeats;
-        newClip->timeStretchMode = sessionClip->timeStretchMode;
-        newClip->loopStartBeats = sessionClip->loopStartBeats;
-        newClip->loopLengthBeats = sessionClip->loopLengthBeats;
+    auto* newEvent = newClip->primaryEvent();
+    const auto* sessionEvent = sessionClip->primaryEvent();
+    if (newEvent != nullptr && sessionEvent != nullptr) {
+        // Read position, source region, stretch and interpretation come across
+        // verbatim; the pooled source and event id belong to the new clip.
+        const EventId keepId = newEvent->id;
+        const SourceId keepSourceId = newEvent->sourceId;
+        *newEvent = *sessionEvent;
+        newEvent->id = keepId;
+        newEvent->sourceId = keepSourceId;
 
         // For autoTempo arrangement clips, startBeats and lengthBeats must
         // reflect the ARRANGEMENT position, not the session clip's values
         // (session clips have startBeats=0 since they live in slots).
-        if (sessionClip->autoTempo) {
+        if (sessionEvent->autoTempo) {
             auto& tempoSeq = edit_.tempoSequence;
             auto startBeatPos =
                 tempoSeq.toBeats(te::TimePosition::fromSeconds(rec.arrangementStartTime));
             auto endBeatPos = tempoSeq.toBeats(te::TimePosition::fromSeconds(stopTime));
-            newClip->startBeats = startBeatPos.inBeats();
-            newClip->lengthBeats = endBeatPos.inBeats() - startBeatPos.inBeats();
-            newClip->autoTempo = true;
+            // Through setPlacementBeats, not the mirror fields: the copy above
+            // brought the session event's slot geometry with it, and only this
+            // re-spans the event over the arrangement clip.
+            newClip->setPlacementBeats(startBeatPos.inBeats(),
+                                       endBeatPos.inBeats() - startBeatPos.inBeats());
+            newEvent->autoTempo = true;
         } else {
             double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
             if (bpm <= 0.0)
                 bpm = 120.0;
-            newClip->lengthBeats = sessionClip->getLengthInBeats(bpm);
+            newClip->setPlacementBeats(newClip->placement.startBeat,
+                                       sessionClip->getLengthInBeats(bpm));
         }
 
         // For looping audio: enable loop if duration exceeds one pass

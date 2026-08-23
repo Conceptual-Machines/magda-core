@@ -361,6 +361,11 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     if (type == TrackType::Chord)
         track.muted = !Config::getInstance().getChordPreviewOnByDefault();
 
+    // Which side of the fader the post-FX stage starts on. Per track from then
+    // on (the fader tag on the post-FX panel); the master track is pinned
+    // pre-fader by the compilers whatever this says.
+    track.chain.postFxPostFader = Config::getInstance().getPostFxPostFaderByDefault();
+
     // Set default routing
     track.audioOutputDevice = "master";  // Audio always routes to master
     track.audioInputDevice = "";         // Audio input disabled by default (enable via UI)
@@ -802,7 +807,7 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
     pairRef.trackId = newTrackId;
 
     DBG("TrackManager: Activated multi-out pair " << pairIndex << " for device " << deviceId
-                                                  << " → track " << newTrackId);
+                                                  << " -> track " << newTrackId);
 
     notifyTracksChanged();
     return newTrackId;
@@ -2301,6 +2306,23 @@ void TrackManager::setChainEnabled(TrackId trackId, bool enabled) {
     notifyTrackDevicesChanged(trackId);
 }
 
+void TrackManager::setPostFxPostFader(TrackId trackId, bool postFader) {
+    auto* track = getTrack(trackId);
+    if (!track || track->chain.postFxPostFader == postFader)
+        return;
+    track->chain.postFxPostFader = postFader;
+
+    // A devices-changed notification rather than a property one: this moves
+    // plugins across the fader, which is a change to the shape of the chain and
+    // is what PluginManager's reorder pass keys off.
+    notifyTrackDevicesChanged(trackId);
+}
+
+bool TrackManager::isPostFxPostFader(TrackId trackId) const {
+    const auto* track = getTrack(trackId);
+    return track == nullptr ? true : track->chain.postFxPostFader;
+}
+
 DeviceInfo* TrackManager::getDevice(TrackId trackId, DeviceId deviceId) {
     if (auto* track = getTrack(trackId)) {
         for (auto& element : track->chain.fxChainElements) {
@@ -2428,53 +2450,118 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
         return nullptr;
     }
 
+    // Track-level and legacy top-level-device paths cannot name an enclosing
+    // rack. Reject contradictory paths too (for example, a top-level device id
+    // combined with rack steps) instead of silently ignoring one representation.
+    if (rackPath.isTrackLevel || rackPath.topLevelDeviceId != INVALID_DEVICE_ID)
+        return nullptr;
+
     RackInfo* currentRack = nullptr;
     ChainInfo* currentChain = nullptr;
 
-    for (const auto& step : rackPath.steps) {
+    // A step that resolves to nothing ends the walk. This used to leave the
+    // previous `currentRack` in place and carry on, which made a broken path
+    // resolve to whatever it had passed through — so `outer > missingChain >
+    // missingRack` answered with `outer`. Worse, a missed Chain step left
+    // `currentChain` null, so the *next* Rack step searched the track's
+    // top-level list again and `outer > missingChain > someOtherTopLevelRack`
+    // answered with that unrelated rack.
+    //
+    // Every path-based rack mutator resolves through here, so that was a write
+    // landing silently on a node the caller never named. Failing closed is the
+    // only answer that cannot do that.
+    //
+    // The structure has to hold as well as the ids. Racks contain chains and
+    // chains contain racks, so a route alternates `Rack > Chain > Rack > Chain`;
+    // a step that cannot follow the one before it describes a route the model
+    // has no way to express. Checking only that each id resolves is not enough,
+    // because two consecutive steps of the same kind then move sideways through
+    // the tree using ids that all genuinely exist:
+    //
+    //   rack(A).withRack(B)            — B is a *sibling* top-level rack, and
+    //                                    with `currentChain` null the second
+    //                                    Rack step searched the track list
+    //                                    again and found it.
+    //   rack(R).withChain(c1).withChain(c2)
+    //                                  — c2 is a sibling chain of c1 in the
+    //                                    same rack, reached by a route that
+    //                                    never went through anything.
+    //
+    // Both resolved, and every path-based rack mutator would then write to a
+    // node on the other side of the tree from the one the caller named.
+    //
+    // Deliberately unchanged: a path that resolves *completely* but ends on a
+    // Chain or nested Device step still returns the enclosing rack rather than
+    // nothing. That is a terminal-type leniency on a route that does exist,
+    // which is a different question — #2057. A Device step therefore still has
+    // to name a real device in the current chain before this lookup may return
+    // that enclosing rack.
+    for (std::size_t index = 0; index < rackPath.steps.size(); ++index) {
+        const auto& step = rackPath.steps[index];
+        const bool isLast = index + 1 == rackPath.steps.size();
+
         switch (step.type) {
             case ChainStepType::Rack: {
-                if (currentChain == nullptr) {
-                    // Top-level rack in track's chainElements
-                    for (auto& element : track->chain.fxChainElements) {
-                        if (magda::isRack(element)) {
-                            if (magda::getRack(element).id == step.id) {
-                                currentRack = &magda::getRack(element);
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    // Nested rack within a chain
-                    for (auto& element : currentChain->elements) {
-                        if (magda::isRack(element)) {
-                            if (magda::getRack(element).id == step.id) {
-                                currentRack = &magda::getRack(element);
-                                currentChain = nullptr;  // Reset chain context
-                                break;
-                            }
-                        }
+                // Valid at track level, or immediately inside a chain. A Rack
+                // straight after a Rack is the sideways move above.
+                if (currentRack != nullptr && currentChain == nullptr)
+                    return nullptr;
+
+                // Top-level racks live in the track's own FX list; a nested one
+                // lives in the chain the previous step reached.
+                auto& elements =
+                    currentChain != nullptr ? currentChain->elements : track->chain.fxChainElements;
+                RackInfo* found = nullptr;
+                for (auto& element : elements) {
+                    if (magda::isRack(element) && magda::getRack(element).id == step.id) {
+                        found = &magda::getRack(element);
+                        break;
                     }
                 }
+                if (found == nullptr)
+                    return nullptr;
+                currentRack = found;
+                currentChain = nullptr;  // Reset chain context
                 break;
             }
             case ChainStepType::Chain: {
-                if (currentRack != nullptr) {
-                    for (auto& chain : currentRack->chains) {
-                        if (chain.id == step.id) {
-                            currentChain = &chain;
-                            break;
-                        }
+                // Only ever directly inside a rack. A Chain after a Chain would
+                // hop between siblings.
+                if (currentRack == nullptr || currentChain != nullptr)
+                    return nullptr;
+
+                ChainInfo* found = nullptr;
+                for (auto& chain : currentRack->chains) {
+                    if (chain.id == step.id) {
+                        found = &chain;
+                        break;
                     }
                 }
+                if (found == nullptr)
+                    return nullptr;
+                currentChain = found;
                 break;
             }
-            case ChainStepType::Device:
-                // Devices don't contain racks, skip
+            case ChainStepType::Device: {
+                // A nested device is a leaf directly inside the current chain.
+                // Validate both the parent and the id before preserving the
+                // #2057 behavior of returning its enclosing rack.
+                if (!isLast || currentChain == nullptr)
+                    return nullptr;
+                const auto found = std::find_if(
+                    currentChain->elements.begin(), currentChain->elements.end(),
+                    [&step](const ChainElement& element) {
+                        return magda::isDevice(element) && magda::getDevice(element).id == step.id;
+                    });
+                if (found == currentChain->elements.end())
+                    return nullptr;
                 break;
+            }
             case ChainStepType::Segment:
-                // Segment steps don't affect rack traversal
-                break;
+                // Explicit segments select the flat post-fx or mixer-analysis
+                // lists (the main FX segment is implicit). None can contain a
+                // rack, so a segmented path has no answer in this resolver.
+                return nullptr;
         }
     }
 
@@ -2553,6 +2640,16 @@ void TrackManager::removeChainByPath(const ChainNodePath& chainPath) {
 
 ChainInfo* TrackManager::getChainByPath(const ChainNodePath& chainPath) {
     if (chainPath.steps.empty() || chainPath.steps.back().type != ChainStepType::Chain)
+        return nullptr;
+
+    // A chain hangs directly off a rack, so the step before it has to be one.
+    // Checking the prefix through `getRackByPath` is not enough on its own: for
+    // `rack > chain1 > chain2` the prefix `rack > chain1` is a perfectly legal
+    // route, and the search below would then find `chain2` sitting beside
+    // `chain1` in that same rack — a sibling reached by a path that never
+    // descended into anything.
+    if (chainPath.steps.size() < 2 ||
+        chainPath.steps[chainPath.steps.size() - 2].type != ChainStepType::Rack)
         return nullptr;
 
     const ChainId chainId = chainPath.steps.back().id;
@@ -2635,12 +2732,16 @@ const ChainInfo* TrackManager::getChain(TrackId trackId, RackId rackId, ChainId 
     return nullptr;
 }
 
+void TrackManager::setChainOutput(const ChainNodePath& chainPath, int outputIndex) {
+    if (auto* chain = getChainByPath(chainPath)) {
+        chain->outputIndex = outputIndex;
+        notifyTrackDevicesChanged(chainPath.trackId);
+    }
+}
+
 void TrackManager::setChainOutput(TrackId trackId, RackId rackId, ChainId chainId,
                                   int outputIndex) {
-    if (auto* chain = getChain(trackId, rackId, chainId)) {
-        chain->outputIndex = outputIndex;
-        notifyTrackDevicesChanged(trackId);
-    }
+    setChainOutput(ChainNodePath::chain(trackId, rackId, chainId), outputIndex);
 }
 
 void TrackManager::setChainMuted(TrackId trackId, RackId rackId, ChainId chainId, bool muted) {
@@ -2679,15 +2780,19 @@ void TrackManager::setChainPan(TrackId trackId, RackId rackId, ChainId chainId, 
     }
 }
 
-void TrackManager::setChainName(TrackId trackId, RackId rackId, ChainId chainId,
-                                const juce::String& name) {
-    if (auto* chain = getChain(trackId, rackId, chainId)) {
+void TrackManager::setChainName(const ChainNodePath& chainPath, const juce::String& name) {
+    if (auto* chain = getChainByPath(chainPath)) {
         auto trimmed = name.trim();
         if (trimmed.isEmpty() || trimmed == chain->name)
             return;
         chain->name = trimmed;
-        notifyTrackPropertyChanged(trackId);
+        notifyTrackPropertyChanged(chainPath.trackId);
     }
+}
+
+void TrackManager::setChainName(TrackId trackId, RackId rackId, ChainId chainId,
+                                const juce::String& name) {
+    setChainName(ChainNodePath::chain(trackId, rackId, chainId), name);
 }
 
 void TrackManager::setRackVolume(TrackId trackId, RackId rackId, float volume) {

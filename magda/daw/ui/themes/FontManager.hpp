@@ -8,6 +8,23 @@
 
 namespace magda {
 
+// Marks a subtree that re-resolves its fonts from FontManager whenever the look
+// and feel changes. The font-scale refresh multiplies cached fonts by the change
+// ratio, which would land on top of a fresh resolve and apply the scale twice,
+// so it skips subtrees that say they handle it themselves.
+inline const juce::Identifier& resolvesOwnFontsProperty() {
+    static const juce::Identifier id("magdaResolvesOwnFonts");
+    return id;
+}
+
+inline void markResolvesOwnFonts(juce::Component& component) {
+    component.getProperties().set(resolvesOwnFontsProperty(), true);
+}
+
+inline bool resolvesOwnFonts(const juce::Component& component) {
+    return component.getProperties().contains(resolvesOwnFontsProperty());
+}
+
 class FontManager {
   public:
     enum class Weight { Regular, Medium, SemiBold, Bold };

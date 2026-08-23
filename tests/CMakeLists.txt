@@ -10,6 +10,9 @@ set(TEST_SOURCES
     test_auto_tempo.cpp
     test_audio_clip_stretch.cpp
     test_clip_bpm_invariant.cpp
+    test_source_pool.cpp
+    test_clip_event_model.cpp
+    test_clip_schema_migration.cpp
     test_audio_source_length.cpp
     test_audio_export.cpp
     test_offline_render_contract.cpp
@@ -61,18 +64,30 @@ set(TEST_SOURCES
     # directly - along with FontManager, which its themed button LookAndFeel pulls in.
     ../magda/daw/ui/components/chain/custom_ui/LevelsUI.cpp
     ../magda/daw/ui/themes/FontManager.cpp
+    test_chain_node_path_drag.cpp
+    # ChainNodePathDrag builds into magda_daw_app, so magda_tests needs it directly.
+    ../magda/daw/ui/components/chain/ChainNodePathDrag.cpp
     test_momentary_param_button.cpp
     test_delta_solo.cpp
+    test_hash_combine.cpp
     test_waveform_editor_absolute_mode.cpp
     test_clip_batch_edit.cpp
     test_clip_commands.cpp
     test_clip_crossfades.cpp
+    test_clip_occlusion.cpp
     # Ghost clips / link groups (issue #12)
     test_ghost_clips.cpp
     test_clip_resize_operations.cpp
     test_midi_clip_resize_left.cpp
     test_looped_waveform_tile.cpp
     test_project_serialization.cpp
+    # Real projects and presets saved by released versions (#2079). Model-level:
+    # the load, the migrations it runs and the links it repoints need no engine.
+    # The v1 -> v2 device state conversion does, and lives in
+    # test_legacy_corpus_migration_juce.cpp.
+    test_legacy_corpus.cpp
+    test_persisted_enum_pins.cpp
+    test_device_param_migrations.cpp
     test_project_document_adapters.cpp
     # Unsaved-changes tracking across the undo stack and project boundaries
     test_project_dirty_tracking.cpp
@@ -101,13 +116,33 @@ set(TEST_SOURCES
     test_agent_device_catalog.cpp
     test_chord_agent.cpp
     test_faust_agent.cpp
+    # The prompts' worked examples must satisfy the validator (Faust instrument
+    # [idx:N] report)
+    test_faust_prompt_examples.cpp
     test_dsl_project_commands.cpp
     test_dsl_rack_commands.cpp
     test_scale_detection.cpp
     test_step_clock.cpp
     test_string_table.cpp
+    # Guards the juce::String(const char*) ASCII-decode trap (#1858 follow-up)
+    test_non_ascii_string_literals.cpp
     # Arrangement pointer hit tester (#1719)
     test_arrangement_hit_tester.cpp
+    # Curve-view readout stays inside the plot (#2072)
+    test_curve_label_layout.cpp
+    # Transport sections measure themselves instead of estimating (#2071/#2074).
+    # TransportLayout builds into magda_daw_app, so pull its implementation in.
+    test_transport_layout.cpp
+    ../magda/daw/ui/panels/TransportLayout.cpp
+    # Panel tab layout survives a restart (#2103). The panel sources live in
+    # magda_daw_app rather than the magda_daw library, so pull them in directly.
+    test_panel_tab_persistence.cpp
+    ../magda/daw/ui/panels/state/PanelController.cpp
+    ../magda/daw/ui/panels/content/PanelContent.cpp
+    # Keep test runs out of the developer's real config.json. The redirect must
+    # be linked into every test binary, and the guard test proves it took.
+    TestConfigRedirect.cpp
+    test_config_path_redirect.cpp
     # Keyboard clip nudging (#1957)
     test_clip_nudge.cpp
     test_mono_note_processor.cpp
@@ -127,6 +162,8 @@ set(TEST_SOURCES
     test_midi_context.cpp
     test_llama_model_manager.cpp
     test_track_reorder.cpp
+    # New tracks take their post-FX fader side from the preference (#2094)
+    test_post_fx_fader_default.cpp
     test_automation_modes.cpp
     test_automation_stepped_targets.cpp
     test_automation_singleton.cpp
@@ -163,6 +200,15 @@ set(TEST_SOURCES
     test_automation_alias_targets.cpp
     # Controller data model tests (issue #1050 -- Phase A)
     test_binding_transform.cpp
+    # OSC control surfaces (issue #1757)
+    test_osc_address.cpp
+    test_osc_packet.cpp
+    test_osc_router.cpp
+    test_osc_command_sink.cpp
+    test_osc_bindings.cpp
+    test_osc_feedback.cpp
+    # Relative transport seek (#1987)
+    test_transport_seek.cpp
     # Controller registry tests (issue #1050 -- Phase B)
     test_controller_registry.cpp
     test_binding_registry.cpp
@@ -186,6 +232,22 @@ set(TEST_SOURCES
     # Lua bindings tests (issue #30 — bind MagdaApi)
     test_magda_api_lua_bindings.cpp
     test_remote_api_contract.cpp
+    test_remote_permissions.cpp
+    test_remote_permission_conformance.cpp
+    test_remote_service.cpp
+    test_remote_changes.cpp
+    test_remote_subscriptions.cpp
+    test_remote_model_bridge.cpp
+    test_remote_mcp.cpp
+    test_remote_mcp_server.cpp
+    test_remote_mcp_bridge.cpp
+    test_mcp_sse_parser.cpp
+    test_remote_websocket_server.cpp
+    test_remote_api_host.cpp
+    test_device_api.cpp
+    # Rack and chain addressing at depth through the facade (issue #1993)
+    test_track_api_nested_racks.cpp
+    test_automation_api_surface.cpp
     # Lua controller tests (issue #592 — MIDI dispatch)
     test_lua_controller.cpp
     # Focused device API tests
@@ -227,6 +289,96 @@ set(TEST_SOURCES
     test_spleeter_separator.cpp
 )
 
+# Native audio engine (epic #1882). The engine is a dark target with no TE and
+# no UI, but its compiler is exercised here: the model fixtures it compiles are
+# plain value types, so the plan tests are ordinary model-level Catch2 tests.
+if(MAGDA_BUILD_NATIVE_ENGINE)
+    list(APPEND TEST_SOURCES test_render_plan_compiler.cpp)
+    list(APPEND TEST_SOURCES test_render_plan_executor.cpp)
+    list(APPEND TEST_SOURCES test_parallel_executor.cpp)
+    list(APPEND TEST_SOURCES test_plan_layout.cpp)
+    list(APPEND TEST_SOURCES test_plan_diff.cpp)
+    # Rack nesting, recursion and op-key identity (#2137). Reaches the parameter
+    # table as well as the plan, because the nearest-scope rule the two resolve
+    # against is what has to agree across a nesting change.
+    list(APPEND TEST_SOURCES test_plan_rack_nesting.cpp)
+    list(APPEND TEST_SOURCES test_plan_crossfade.cpp)
+    # Plan goldens (#2076). Fixtures and runner both reach into magda_engine.
+    list(APPEND TEST_SOURCES PlanGoldenFixtures.cpp)
+    list(APPEND TEST_SOURCES test_plan_goldens.cpp)
+    # Differ property tests over random edit sequences (#2077). The vocabulary
+    # and the session the properties publish into are model-only, so they build
+    # here beside the runner rather than needing a te::Edit.
+    list(APPEND TEST_SOURCES PlanEditSequence.cpp)
+    list(APPEND TEST_SOURCES PlanEditHarness.cpp)
+    list(APPEND TEST_SOURCES test_plan_edit_properties.cpp)
+    list(APPEND TEST_SOURCES test_engine_session.cpp)
+    # The parameter lane (#2116). The lanes are fed by hand, so the precedence
+    # rules are testable before anything writes them.
+    list(APPEND TEST_SOURCES test_param_lane.cpp)
+    # The parameter table (#2117): addressing, the link graph and publication.
+    list(APPEND TEST_SOURCES test_param_table.cpp)
+    # Automation lanes baked into the parameter lane (#2118).
+    list(APPEND TEST_SOURCES test_automation_bake.cpp)
+    # The LFO engine: shapes, rates, triggers and gates (#2119).
+    list(APPEND TEST_SOURCES test_mod_lfo.cpp)
+    # The remaining three modifier engines, and the feeds two of them need
+    # (#2120): the envelope's gate, the walk, and the follower's source.
+    list(APPEND TEST_SOURCES test_mod_adsr.cpp)
+    list(APPEND TEST_SOURCES test_mod_random.cpp)
+    list(APPEND TEST_SOURCES test_mod_follower.cpp)
+    list(APPEND TEST_SOURCES test_mod_feeds.cpp)
+    # Macros at track, rack and device scope (#2121): which array a path
+    # names, nested racks, and a macro reaching a modifier's rate.
+    list(APPEND TEST_SOURCES test_param_macros.cpp)
+    # What the UI reads back (#2122): the modifier's output and the parameter's
+    # resolved value, published by the block that produced them.
+    list(APPEND TEST_SOURCES test_value_taps.cpp)
+    list(APPEND TEST_SOURCES test_tempo_map.cpp)
+    list(APPEND TEST_SOURCES test_transport_clock.cpp)
+    list(APPEND TEST_SOURCES test_click_generator.cpp)
+    list(APPEND TEST_SOURCES test_prefetch_stream.cpp)
+    list(APPEND TEST_SOURCES test_source_readers.cpp)
+    list(APPEND TEST_SOURCES test_streaming_audio_source.cpp)
+    list(APPEND TEST_SOURCES test_file_audio_source.cpp)
+    list(APPEND TEST_SOURCES test_offline_render.cpp)
+    list(APPEND TEST_SOURCES test_engine_taps.cpp)
+    list(APPEND TEST_SOURCES test_clip_snapshot.cpp)
+    list(APPEND TEST_SOURCES test_clip_voice.cpp)
+    list(APPEND TEST_SOURCES test_clip_voice_pool.cpp)
+    list(APPEND TEST_SOURCES test_clip_stretch.cpp)
+    list(APPEND TEST_SOURCES test_clip_warp.cpp)
+    list(APPEND TEST_SOURCES test_midi_clip_playback.cpp)
+    list(APPEND TEST_SOURCES test_groove_template.cpp)
+    list(APPEND TEST_SOURCES test_transient_detector.cpp)
+    list(APPEND TEST_SOURCES test_source_loop_info.cpp)
+
+    # The null-diff corpus (#2040). The comparator and the material it plays are
+    # model-only and live here, where they can be tested against known-bad pairs
+    # on their own; the two legs and the runner need a te::Edit and so live in
+    # magda_juce_tests.
+    list(APPEND TEST_SOURCES NullDiffMaterial.cpp)
+    list(APPEND TEST_SOURCES NullDiffCompare.cpp)
+    list(APPEND TEST_SOURCES NullDiffCorpus.cpp)
+    list(APPEND TEST_SOURCES NullDiffNativeLeg.cpp)
+    list(APPEND TEST_SOURCES test_null_diff_compare.cpp)
+    list(APPEND TEST_SOURCES test_null_diff_corpus.cpp)
+    list(APPEND TEST_SOURCES test_null_diff_native_leg.cpp)
+
+    # The block-size invariance gate (#2078). Model-only for the same reason the
+    # native leg is: the claim is the native engine's alone, and the incumbent
+    # owes nobody block-size invariance. In CI rather than in a nightly, because
+    # a gate that runs after the merge is a report rather than a gate.
+    list(APPEND TEST_SOURCES test_null_diff_block_size.cpp)
+
+    # The DAWproject cross-check (#2080). Native against native: each corpus
+    # project is exported, reimported, and required to compile to the same plan
+    # and render to the same samples. Model-only because both sides are the
+    # native engine and the export path is plain serialization.
+    list(APPEND TEST_SOURCES DawProjectRoundTrip.cpp)
+    list(APPEND TEST_SOURCES test_dawproject_round_trip.cpp)
+endif()
+
 # Create test executable
 add_executable(magda_tests ${TEST_SOURCES})
 
@@ -240,9 +392,18 @@ target_link_libraries(magda_tests
     # Faust runtime headers + the backend selection, so test_faust_backend.cpp
     # resolves to the same factory the app was built with.
     magda_faust_backend
+    # cpp-httplib ships both an HTTP and a WebSocket client, so the transport
+    # tests in test_remote_websocket_server.cpp and test_remote_mcp_server.cpp
+    # drive real sockets without a test-only dependency. magda_daw links it
+    # PRIVATE, so this target needs its own.
+    httplib::httplib
     # JUCE (core + gui_basics) comes transitively from magda_daw, compiled once
     # there; direct links would recompile the JUCE stack into this target.
 )
+
+if(MAGDA_BUILD_NATIVE_ENGINE)
+    target_link_libraries(magda_tests PRIVATE magda_engine)
+endif()
 
 # Include directories
 target_include_directories(magda_tests
@@ -257,6 +418,10 @@ target_compile_definitions(magda_tests
     PRIVATE
     MAGDA_REPO_ROOT="${CMAKE_SOURCE_DIR}"
     MAGDA_AUDIO_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/audio"
+    # Plan goldens (#2076) live in the source tree, so an intended change to
+    # the compiler shows up as a reviewable diff rather than a rewritten
+    # build artefact.
+    MAGDA_PLAN_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/goldens/plan"
     # The shared test engine must NOT auto-wire the live Tempo lane sync: it
     # attaches to the AutomationManager singleton and would perturb other tests.
     # TempoLaneSync is tested directly in test_tempo_lane_sync_juce.cpp instead.
@@ -266,7 +431,21 @@ target_compile_definitions(magda_tests
     # COMPILE_DEFINITIONS; set it explicitly so this target does not depend on
     # that re-export staying broad.
     MAGDA_ENABLE_TEST_HOOKS=1
+    # test_remote_mcp_bridge.cpp forks the real bridge binary: the thing it
+    # verifies is the process boundary, so there is nothing to link. Taking the
+    # path from the target rather than reconstructing it keeps the test pointed
+    # at the binary this build produced.
+    MAGDA_MCP_BRIDGE_BINARY="$<TARGET_FILE:magda_mcp_bridge>"
+    # The legacy corpus (#2079) and the frozen device parameter order it checks
+    # saved indices against (#1887). Both live in the source tree: the corpus is
+    # real user files that must never be regenerated, and an intended change to
+    # the frozen order has to show up as a reviewable diff.
+    MAGDA_LEGACY_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/corpus/legacy"
+    MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt"
 )
+
+# The bridge is exec'd, not linked, so nothing in the link graph would build it.
+add_dependencies(magda_tests magda_mcp_bridge)
 
 # Add the test to CTest
 add_test(NAME magda_unit_tests COMMAND magda_tests)
@@ -304,28 +483,66 @@ target_sources(magda_juce_tests PRIVATE
     test_offline_render_device_power_juce.cpp
     test_tracktion_engine_wrapper_refactoring_juce.cpp
     # test_export_no_assertion_juce.cpp  # Disabled - see issue #611 (generator device export)
+    test_assertion_watch_juce.cpp
     test_midi_recording_juce.cpp
     test_clip_sync_integration_juce.cpp
     test_signalsmith_loop_juce.cpp
     test_arranger_launcher_switching_juce.cpp
+    test_node_id_collision_juce.cpp
+    test_transport_seek_juce.cpp
     test_session_slot_recording_juce.cpp
     test_input_monitor_track_routing_juce.cpp
     test_controller_track_level_write_juce.cpp
+    # OSC control surfaces (issue #1757): a live receive thread and real packets
+    test_osc_service_juce.cpp
+    test_post_fx_fader_order_juce.cpp
     test_track_midi_recording_preview_juce.cpp
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp
     test_drum_grid_serialization_juce.cpp
     test_device_services_juce.cpp
     test_device_param_schema_juce.cpp
+    # pluginState v1 -> v2 over the legacy corpus (#2079). Here rather than in
+    # magda_tests because the conversion reads the values off a live plugin.
+    test_legacy_corpus_migration_juce.cpp
     test_device_state_schema_juce.cpp
     test_convolution_device_juce.cpp
     test_master_sidechain_juce.cpp
     test_midi_bridge_note_events_juce.cpp
     test_section_scoped_device_ids_juce.cpp
+    test_remote_service_live_juce.cpp
+    # Path-addressed racks/chains against the real TrackManager (issue #1993)
+    test_track_api_nested_racks_live_juce.cpp
+    test_remote_websocket_live_juce.cpp
     test_clip_inspector_juce.cpp
     test_multi_clip_resize_preview_juce.cpp
+    test_clip_paint_juce.cpp
     test_clip_nudge_juce.cpp
     test_multiband_curve_view_juce.cpp
+    # The transport layout against the widths the shipped fonts really produce
+    # (#2071). Needs a graphics context, so it lives here rather than in
+    # magda_tests, which asserts the same layout as pure arithmetic.
+    test_transport_layout_juce.cpp
+    ../magda/daw/ui/panels/TransportLayout.cpp
+    ../magda/daw/ui/panels/TransportTextWidths.cpp
+    # Keep test runs out of the developer's real config.json (see the copy in
+    # magda_tests): RemoteApiHost persists grants via Config::save(). The guard
+    # test is duplicated per target because each uses its own framework.
+    TestConfigRedirect.cpp
+    test_config_path_redirect_juce.cpp
+    # Boolean param cells follow value-only refreshes (#2072 follow-up).
+    # ParamSlotComponent builds into magda_daw_app, so the test target needs it
+    # and the param helpers it calls into compiled in directly.
+    test_param_slot_boolean_sync_juce.cpp
+    # A discrete cell's dropdown must not write the parameter on rebuild, and
+    # must map an external plugin's TE-native value onto its choices.
+    test_param_slot_discrete_combo_juce.cpp
+    ../magda/daw/ui/components/chain/params/ParamSlotComponent.cpp
+    ../magda/daw/ui/components/chain/params/ParamWidgetSetup.cpp
+    ../magda/daw/ui/components/chain/params/ParamLinkResolver.cpp
+    ../magda/daw/ui/components/chain/params/ParamLinkMenu.cpp
+    ../magda/daw/ui/components/chain/params/ModulationBakeAction.cpp
+    ../magda/daw/ui/components/chain/params/ParamModulationPainter.cpp
     test_timeline_extreme_zoom_paint_juce.cpp
     test_repaint_invariance_juce.cpp
     test_arrange_beat_native_juce.cpp
@@ -368,6 +585,8 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/dialogs/AISettingsDialog.cpp
     ../magda/daw/ui/interaction/ArrangementCursorMap.cpp
     ../magda/daw/ui/panels/state/PanelController.cpp
+    # PanelController persists its tab layout by content-type id, which lives here
+    ../magda/daw/ui/panels/content/PanelContent.cpp
     ../magda/daw/ui/components/common/BarsBeatsTicksLabel.cpp
     ../magda/daw/ui/components/common/ValueLabelControl.cpp
     ../magda/daw/ui/components/common/DraggableValueLabel.cpp
@@ -375,6 +594,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/common/InternalFileDrag.cpp
     ../magda/daw/ui/themes/CursorManager.cpp
     ../magda/daw/ui/themes/FontManager.cpp
+    test_arrangement_row_alignment_juce.cpp
     test_automation_modes_juce.cpp
     test_arrangement_transport_loop_juce.cpp
     test_external_plugin_state_restore_juce.cpp
@@ -384,6 +604,21 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/chain/slot/StepSequencerClipExport.cpp
 )
 
+# The null-diff corpus (#2040). It lives here rather than in magda_tests because
+# the incumbent leg is a te::Edit, and Edits in that target take later tests down
+# with them. The comparator, the material and the corpus itself are model-only
+# and are compiled into both, so they can also be tested on their own.
+if(MAGDA_BUILD_NATIVE_ENGINE)
+    target_sources(magda_juce_tests PRIVATE
+        NullDiffMaterial.cpp
+        NullDiffCompare.cpp
+        NullDiffCorpus.cpp
+        NullDiffNativeLeg.cpp
+        NullDiffTeLeg.cpp
+        test_null_diff_juce.cpp
+    )
+endif()
+
 # Link required libraries for JUCE tests
 target_link_libraries(magda_juce_tests
     PRIVATE
@@ -391,6 +626,9 @@ target_link_libraries(magda_juce_tests
     # ClipComponent's context menu reaches the AI settings dialog, which lives
     # on the agents library.
     magda_agents
+    # cpp-httplib's WebSocket client, for driving the transport against the live
+    # facade in test_remote_websocket_live_juce.cpp. magda_daw links it PRIVATE.
+    httplib::httplib
     # JUCE (core/events/gui_basics) comes transitively from magda_daw, compiled
     # once there; direct links would recompile the JUCE stack into this target.
     # Linux: juce_gui_extra is pulled in transitively via magda_daw's
@@ -401,11 +639,25 @@ target_link_libraries(magda_juce_tests
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
 )
 
+# The native engine, for the null-diff corpus (#2040). This is the one target
+# that links both it and Tracktion, which is the whole point of it: the corpus
+# renders one project through each and compares.
+if(MAGDA_BUILD_NATIVE_ENGINE)
+    target_link_libraries(magda_juce_tests PRIVATE magda_engine)
+endif()
+
 target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
     MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1
+    # JUCE_LOG_ASSERTIONS is set on magda_daw instead, gated on MAGDA_BUILD_TESTS:
+    # that is where Tracktion is compiled, and an assertion's logging is decided
+    # where the macro expands rather than where the test that wants to read it
+    # lives. Setting it here reaches nothing.
     # Frozen device parameter order (#1887) lives in the source tree so an
     # intentional change shows up as a reviewable diff.
-    MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt")
+    MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt"
+    # The legacy corpus (#2079): the JUCE suite converts the pre-v2 device state
+    # its projects carry, which needs a live plugin to read the values off.
+    MAGDA_LEGACY_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/corpus/legacy")
 
 # Include directories for JUCE tests
 target_include_directories(magda_juce_tests
@@ -432,6 +684,15 @@ add_test(NAME arrangement_transport_loop_juce
 add_test(NAME multiband_curve_view_juce
          COMMAND magda_juce_tests "Multiband Curve View Tests")
 
+add_test(NAME config_path_redirect_juce
+         COMMAND magda_juce_tests "Config Path Redirect Tests")
+
+add_test(NAME param_slot_boolean_sync_juce
+         COMMAND magda_juce_tests "Param Slot Boolean Sync Tests")
+
+add_test(NAME param_slot_discrete_combo_juce
+         COMMAND magda_juce_tests "Param Slot Discrete Combo Tests")
+
 add_test(NAME timeline_extreme_zoom_paint_juce
          COMMAND magda_juce_tests "Timeline Extreme Zoom Paint Tests")
 
@@ -449,6 +710,17 @@ add_test(NAME syntax_highlighting_juce
 
 add_test(NAME tempo_map_juce
          COMMAND magda_juce_tests "Tempo Map Tests")
+
+# The null-diff corpus (#2040): every case rendered through both engines. Two
+# entries because they fail for different reasons and one of them is much
+# cheaper: a mapping disagreement moves every clip in every project, so it is
+# worth seeing on its own before any waveform is compared.
+if(MAGDA_BUILD_NATIVE_ENGINE)
+    add_test(NAME null_diff_maps_juce
+             COMMAND magda_juce_tests "Null Diff Maps")
+    add_test(NAME null_diff_corpus_juce
+             COMMAND magda_juce_tests "Null Diff Corpus")
+endif()
 
 add_test(NAME tempo_lane_bridge_juce
          COMMAND magda_juce_tests "Tempo Lane Bridge Tests")
@@ -478,6 +750,17 @@ add_test(NAME device_state_schema_juce
 
 add_test(NAME convolution_device_juce
          COMMAND magda_juce_tests "Convolution Device")
+
+# Remote API against the live facade. Runs here rather than in magda_tests
+# because executing an undoable command constructs ProjectManager through
+# UndoableMutationScope, and its constructor starts a JUCE timer — which needs
+# an initialised message system to be valid.
+add_test(NAME remote_service_live_juce
+         COMMAND magda_juce_tests "Remote Service Live")
+
+# The facade's path-addressed rack/chain surface against the real TrackManager.
+add_test(NAME track_api_nested_racks_live_juce
+         COMMAND magda_juce_tests "Track API Nested Racks Live")
 
 # Both test executables link magda_daw, which links ONNX Runtime. On Windows the
 # loader only searches the exe's directory, the cwd, and PATH, so without a copy

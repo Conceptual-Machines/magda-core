@@ -6,7 +6,7 @@
 #include <functional>
 #include <memory>
 
-#include "CurveMath.hpp"
+#include "ModCurve.hpp"
 #include "ModInfo.hpp"
 
 namespace magda {
@@ -146,211 +146,24 @@ class ModulatorEngine {
 
     /**
      * @brief Generate waveform value for given phase
-     * @param waveform The waveform type
-     * @param phase Current phase (0.0 to 1.0)
-     * @return Output value (0.0 to 1.0)
+     *
+     * The model's own reading (core/ModCurve.hpp), so the visual sim, the
+     * audio snapshot and the native engine's LFO all draw one shape.
      */
     static float generateWaveform(LFOWaveform waveform, float phase) {
-        constexpr float PI = 3.14159265359f;
-
-        switch (waveform) {
-            case LFOWaveform::Sine:
-                return (std::sin(2.0f * PI * phase) + 1.0f) * 0.5f;
-
-            case LFOWaveform::Triangle:
-                return (phase < 0.5f) ? phase * 2.0f : 2.0f - phase * 2.0f;
-
-            case LFOWaveform::Square:
-                return phase < 0.5f ? 1.0f : 0.0f;
-
-            case LFOWaveform::Saw:
-                return phase;
-
-            case LFOWaveform::ReverseSaw:
-                return 1.0f - phase;
-
-            case LFOWaveform::Custom:
-                // For Custom, default to triangle - use generateCurvePreset for full support
-                return (phase < 0.5f) ? phase * 2.0f : 2.0f - phase * 2.0f;
-
-            default:
-                return 0.5f;
-        }
+        return modcurve::waveform(waveform, phase);
     }
 
-    /**
-     * @brief Generate curve preset value for given phase
-     * @param preset The curve preset type
-     * @param phase Current phase (0.0 to 1.0)
-     * @return Output value (0.0 to 1.0)
-     */
+    /** @brief Generate curve preset value for given phase. */
     static float generateCurvePreset(CurvePreset preset, float phase) {
-        constexpr float PI = 3.14159265359f;
-
-        switch (preset) {
-            case CurvePreset::Triangle:
-                return (phase < 0.5f) ? phase * 2.0f : 2.0f - phase * 2.0f;
-
-            case CurvePreset::Sine:
-                return (std::sin(2.0f * PI * phase) + 1.0f) * 0.5f;
-
-            case CurvePreset::RampUp:
-                return phase;
-
-            case CurvePreset::RampDown:
-                return 1.0f - phase;
-
-            case CurvePreset::SCurve: {
-                // Smooth S-curve using smoothstep
-                float t = phase;
-                return t * t * (3.0f - 2.0f * t);
-            }
-
-            case CurvePreset::Exponential:
-                // Exponential rise
-                return (std::exp(phase * 3.0f) - 1.0f) / (std::exp(3.0f) - 1.0f);
-
-            case CurvePreset::Logarithmic:
-                // Logarithmic rise
-                return std::log(1.0f + phase * (std::exp(1.0f) - 1.0f));
-
-            case CurvePreset::Custom:
-            default:
-                // Custom uses curve points - default to linear ramp
-                return phase;
-        }
+        return modcurve::preset(preset, phase);
     }
 
-    /**
-     * @brief Evaluate curve points at given phase using tension-based interpolation
-     * @param points The curve points sorted by phase
-     * @param phase Current phase (0.0 to 1.0)
-     * @return Output value (0.0 to 1.0)
-     */
+    /** @brief Evaluate drawn curve points at given phase. */
     static float evaluateCurvePoints(const std::vector<CurvePointData>& points, float phase) {
-        if (points.empty()) {
-            return 0.5f;  // Default to center
-        }
-        if (points.size() == 1) {
-            return points[0].value;
-        }
-
-        // Find bracketing points (curve loops, so we may wrap around)
-        const CurvePointData* p1 = nullptr;
-        const CurvePointData* p2 = nullptr;
-
-        for (size_t i = 0; i < points.size(); ++i) {
-            if (points[i].phase > phase) {
-                if (i == 0) {
-                    // Before first point - wrap from last point
-                    p1 = &points.back();
-                    p2 = &points[0];
-                } else {
-                    p1 = &points[i - 1];
-                    p2 = &points[i];
-                }
-                break;
-            }
-        }
-
-        // If we didn't find a bracket, we're after the last point - wrap to first
-        if (!p1) {
-            p1 = &points.back();
-            p2 = &points.front();
-        }
-
-        // Step: hold p1's value until the next point (sample & hold / steps).
-        constexpr int kStepCurveType = 2;
-        if (p1->curveType == kStepCurveType)
-            return p1->value;
-
-        // Calculate interpolation t value
-        float phaseSpan;
-        float localPhase;
-        if (p2->phase < p1->phase) {
-            // Wrapping case
-            phaseSpan = (1.0f - p1->phase) + p2->phase;
-            if (phase >= p1->phase) {
-                localPhase = phase - p1->phase;
-            } else {
-                localPhase = (1.0f - p1->phase) + phase;
-            }
-        } else {
-            phaseSpan = p2->phase - p1->phase;
-            localPhase = phase - p1->phase;
-        }
-
-        float t = (phaseSpan > 0.0001f) ? (localPhase / phaseSpan) : 0.0f;
-        t = std::clamp(t, 0.0f, 1.0f);
-
-        // Apply tension-based interpolation (same formula as CurveEditorBase)
-        float tension = p1->tension;
-        auto applyTension = [tension](float input) {
-            if (std::abs(tension) < 0.001f)
-                return input;
-            if (tension > 0)
-                return std::pow(input, 1.0f + tension * 2.0f);
-            return 1.0f - std::pow(1.0f - input, 1.0f - tension * 2.0f);
-        };
-
-        auto getShaper = [&]() {
-            struct Shaper {
-                float t = 0.5f;
-                float value = 0.5f;
-                bool stored = false;
-            };
-
-            constexpr float kHandleEpsilon = 0.000001f;
-            const bool hasStoredShaper =
-                p2->phase > p1->phase && (std::abs(p1->outHandleX) > kHandleEpsilon ||
-                                          std::abs(p1->outHandleY) > kHandleEpsilon ||
-                                          std::abs(p2->inHandleX) > kHandleEpsilon ||
-                                          std::abs(p2->inHandleY) > kHandleEpsilon);
-
-            if (hasStoredShaper) {
-                const float shaperPhase =
-                    std::clamp(p1->phase + p1->outHandleX, p1->phase, p2->phase);
-                const float shaperT = (p2->phase - p1->phase > 0.0001f)
-                                          ? ((shaperPhase - p1->phase) / (p2->phase - p1->phase))
-                                          : 0.5f;
-                return Shaper{std::clamp(shaperT, 0.001f, 0.999f),
-                              std::clamp(p1->value + p1->outHandleY, 0.0f, 1.0f), true};
-            }
-
-            constexpr float cornerT = 0.5f;
-            return Shaper{cornerT, p1->value + applyTension(cornerT) * (p2->value - p1->value),
-                          false};
-        };
-
-        constexpr int kHardCornerCurveType = 3;
-        if (p1->curveType == kHardCornerCurveType) {
-            const auto shaper = getShaper();
-            if (t <= shaper.t) {
-                const float u = t / shaper.t;
-                return p1->value + u * (shaper.value - p1->value);
-            }
-            const float u = (t - shaper.t) / (1.0f - shaper.t);
-            return shaper.value + u * (p2->value - shaper.value);
-        }
-
-        // Linear segment: shared bounded power warp so the engine output matches
-        // exactly what the curve editor draws (see core/CurveMath.hpp).
-        constexpr float kLinearHandleEps = 0.000001f;
-        const bool hasStoredShaper =
-            p2->phase > p1->phase && (std::abs(p1->outHandleX) > kLinearHandleEps ||
-                                      std::abs(p1->outHandleY) > kLinearHandleEps ||
-                                      std::abs(p2->inHandleX) > kLinearHandleEps ||
-                                      std::abs(p2->inHandleY) > kLinearHandleEps);
-        return magda::curvemath::evalSegment(p1->value, p2->value, p1->value + p1->outHandleY,
-                                             tension, hasStoredShaper, t);
+        return modcurve::points(points, phase);
     }
 
-    /**
-     * @brief Generate waveform value for a mod (handles Custom waveforms with curve points)
-     * @param mod The modulator info
-     * @param phase Current phase (0.0 to 1.0)
-     * @return Output value (0.0 to 1.0)
-     */
     /**
      * @brief Return the end-of-cycle value for oneshot mode.
      *
@@ -358,23 +171,12 @@ class ModulatorEngine {
      * interpolation), or the preset value at phase 1.0 for non-custom waveforms.
      */
     static float generateOneShotEndValue(const ModInfo& mod) {
-        if (mod.waveform == LFOWaveform::Custom) {
-            if (!mod.curvePoints.empty())
-                return mod.curvePoints.back().value;
-            return generateCurvePreset(mod.curvePreset, 1.0f);
-        }
-        return generateWaveform(mod.waveform, 1.0f);
+        return modcurve::endValue(mod.waveform, mod.curvePreset, mod.curvePoints);
     }
 
+    /** @brief Waveform value for a mod, handling Custom waveforms with curve points. */
     static float generateWaveformForMod(const ModInfo& mod, float phase) {
-        if (mod.waveform == LFOWaveform::Custom) {
-            if (!mod.curvePoints.empty()) {
-                return evaluateCurvePoints(mod.curvePoints, phase);
-            }
-            // Fallback to preset if no custom points
-            return generateCurvePreset(mod.curvePreset, phase);
-        }
-        return generateWaveform(mod.waveform, phase);
+        return modcurve::shapeAt(mod.waveform, mod.curvePreset, mod.curvePoints, phase);
     }
 
   private:

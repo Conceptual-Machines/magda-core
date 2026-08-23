@@ -261,14 +261,34 @@ juce_add_binary_data(MagdaAssets
 # include-boundary guard) lands with the device-library carve (#1834).
 add_library(magda_types STATIC
     core/ParameterUtils.cpp
+    # The shape of an automation lane, on its own, so the engine bakes a curve
+    # through the same function the editor draws it with (#2118).
+    core/AutomationCurve.cpp
+    # The shape of a modulator's cycle, on the same terms: the editor's preview,
+    # the fork's audio snapshot and the native engine's LFO read one curve
+    # rather than three (#2119).
+    core/ModCurve.cpp
     core/DeviceState.cpp
+    # Clip placement rules (#2003). Pure, beat domain, no manager: they answer
+    # against a lane of clips, which is what lets the arrangement ask about a
+    # drag it has not committed and the native engine's clip snapshot ask with
+    # no ClipManager at all (#2034). They live here rather than in magda_daw so
+    # the engine links a leaf instead of the whole DAW.
+    core/ClipOcclusion.cpp
+    core/ClipFades.cpp
     # value-type headers (listed to document the leaf's surface)
     core/TypeIds.hpp
+    core/ClipInfo.hpp
+    core/ClipOcclusion.hpp
+    core/ClipFades.hpp
     core/TechnicalText.hpp
     core/ChainNodePath.hpp
     core/ControlTarget.hpp
     core/ParameterInfo.hpp
     core/ParameterUtils.hpp
+    core/AutomationCurve.hpp
+    core/AutomationInfo.hpp
+    core/ModCurve.hpp
     core/DeviceInfo.hpp
     core/DeviceState.hpp
     core/KitRow.hpp
@@ -277,11 +297,15 @@ add_library(magda_types STATIC
     core/TempoUtils.hpp
 )
 target_compile_features(magda_types PUBLIC cxx_std_20)
+# juce_graphics as well as juce_core: ClipInfo names juce::Colour. Headers and
+# defines only, on the same terms as juce_core above.
 target_include_directories(magda_types
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}  # dependents resolve "core/<type>.hpp"
-    PRIVATE $<TARGET_PROPERTY:juce::juce_core,INTERFACE_INCLUDE_DIRECTORIES>)
+    PRIVATE $<TARGET_PROPERTY:juce::juce_core,INTERFACE_INCLUDE_DIRECTORIES>
+            $<TARGET_PROPERTY:juce::juce_graphics,INTERFACE_INCLUDE_DIRECTORIES>)
 target_compile_definitions(magda_types
-    PRIVATE $<TARGET_PROPERTY:juce::juce_core,INTERFACE_COMPILE_DEFINITIONS>)
+    PRIVATE $<TARGET_PROPERTY:juce::juce_core,INTERFACE_COMPILE_DEFINITIONS>
+            $<TARGET_PROPERTY:juce::juce_graphics,INTERFACE_COMPILE_DEFINITIONS>)
 
 # Core library — populated by per-subdir CMakeLists.txt below.
 add_library(magda_daw STATIC
@@ -496,6 +520,7 @@ set(MAGDA_JUCE_STACK
     juce::juce_audio_utils
     juce::juce_gui_basics
     juce::juce_gui_extra
+    juce::juce_osc  # OSC control surfaces (#1757); ships with JUCE, no new dependency
     tracktion::tracktion_engine
     juce_llm
 )
@@ -520,6 +545,10 @@ target_link_libraries(magda_daw
     PRIVATE
     ${MAGDA_JUCE_STACK}
     LibXml2::LibXml2
+    # Remote API transport (#1856). PRIVATE on purpose: httplib.h appears in
+    # remote_websocket_server.cpp and nowhere else, so no dependent inherits a
+    # 20k-line header it does not use.
+    httplib::httplib
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
     INTERFACE
@@ -663,6 +692,18 @@ target_compile_definitions(magda_daw
     # JUCE test exe fails to link it. Off for release (MAGDA_BUILD_TESTS=OFF), so
     # the hook is never shipped.
     $<$<BOOL:${MAGDA_BUILD_TESTS}>:MAGDA_ENABLE_TEST_HOOKS=1>
+    # Route jassert through juce::Logger rather than straight to stderr, so a
+    # test can read the engine's own assertions as a result instead of as
+    # console noise. It has to be set here because this is where Tracktion is
+    # compiled, and an assertion's logging is decided where the macro expands,
+    # not where the test that wants to see it lives.
+    #
+    # What it buys: an assertion is not fatal, so a graph Tracktion objects to
+    # renders anyway and produces a buffer that compares perfectly well. The
+    # null-diff runner watches per case and refuses to certify one that
+    # provoked an assertion. Test builds only, on the same gate as the hook
+    # above, so nothing about a shipping build changes.
+    $<$<BOOL:${MAGDA_BUILD_TESTS}>:JUCE_LOG_ASSERTIONS=1>
 )
 
 target_link_libraries(magda_daw_app
@@ -853,6 +894,39 @@ else()
         COMMENT "Copying plugin scanner alongside app executable"
     )
 endif()
+
+# Stage the MCP stdio bridge next to the main app (issue #1858).
+#
+# It has to be somewhere a user can name in an MCP host's config, and beside the
+# executable is the one place that is true of every install layout: inside the
+# bundle on macOS, in the install directory on Windows, next to the binary on
+# Linux. The AI settings page composes the config snippet from exactly this path,
+# so a dev build and a shipped one both produce a snippet that works.
+#
+# A separate always-run target rather than a POST_BUILD on magda_daw_app. A
+# POST_BUILD only fires when its own target relinks, so a change to the bridge
+# alone left a stale copy inside the bundle while the freshly built one sat in
+# its own artefacts directory — the build reported success and the installed
+# binary was the old one. `copy_if_different` makes running every build free
+# when nothing moved.
+if(APPLE)
+    set(MAGDA_MCP_BRIDGE_DEST "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/MacOS/magda-mcp")
+elseif(WIN32)
+    set(MAGDA_MCP_BRIDGE_DEST "$<TARGET_FILE_DIR:magda_daw_app>/magda-mcp.exe")
+else()
+    set(MAGDA_MCP_BRIDGE_DEST "$<TARGET_FILE_DIR:magda_daw_app>/magda-mcp")
+endif()
+
+add_custom_target(magda_stage_mcp_bridge ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:magda_mcp_bridge>"
+        "${MAGDA_MCP_BRIDGE_DEST}"
+    # Both, and in this order: the bridge supplies the file, and the app has to
+    # have created the bundle directory it is copied into.
+    DEPENDS magda_mcp_bridge magda_daw_app
+    COMMENT "Staging MCP bridge beside MAGDA"
+    VERBATIM
+)
 
 # Copy lang/ (localization JSON) into the app so StringTable can load it at runtime.
 set(MAGDA_LANG_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../lang")

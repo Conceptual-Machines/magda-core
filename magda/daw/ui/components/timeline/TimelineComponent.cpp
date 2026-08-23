@@ -1071,7 +1071,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                             timeStr = juce::String(ms, 1) + "ms";
                         } else {
                             int us = static_cast<int>(time * 1000000);
-                            timeStr = juce::String(us) + "μs";
+                            timeStr = juce::String(us) + juce::String::fromUTF8("μs");
                         }
                     }
 

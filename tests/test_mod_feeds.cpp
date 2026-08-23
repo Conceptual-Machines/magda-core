@@ -1,0 +1,581 @@
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <memory>
+#include <vector>
+
+#include "EngineSessionScaffold.hpp"
+#include "core/TrackInfo.hpp"
+#include "core/TrackManager.hpp"
+#include "exec/EngineSession.hpp"
+#include "exec/PlanValues.hpp"
+#include "exec/RuntimeStateStore.hpp"
+#include "param/ModRuntime.hpp"
+#include "param/ParamTableCompiler.hpp"
+#include "plan/PlanCompiler.hpp"
+
+/**
+ * @file test_mod_feeds.cpp
+ * @brief What reaches a modifier from outside the parameter system (#2120).
+ *
+ * Slice 4 built the trigger calls and had nothing to call them. This is the
+ * two feeds that do, measured end to end through a session, because what they
+ * are about is timing and timing is not visible from a call site.
+ *
+ * The claim under test is the distance rather than the gap. Both feeds
+ * eventually reach their modifier; what differs is how many blocks later, and
+ * that difference is a consequence of resolving parameters at the top of a
+ * block rather than a detail of how the feed was written.
+ *
+ *  - A note is known before the block resolves, because the ops that produce
+ *    MIDI read clips and input queues rather than audio. The prefix renders
+ *    them first, so the modifier is resolved with the note that arrived in
+ *    this block: distance zero.
+ *  - A level is not, because it is what the ops are about to produce. The
+ *    detector runs during the walk and the resolve that reads it is the next
+ *    block's: distance one, always exactly one.
+ *
+ * The fork's ordinary MIDI gate is the later of the two as well (its
+ * ADSRModifier reads a gate its applyToBuffer set during the previous block),
+ * and its monitor path is the earlier. So the first of these is the fork's best
+ * case made unconditional, and the second is its ordinary case.
+ */
+
+using namespace magda;
+using magda::engine::BlockInfo;
+using magda::engine::compileParamTable;
+using magda::engine::compileRenderPlan;
+using magda::engine::ModKind;
+using magda::engine::ModRuntime;
+
+namespace {
+
+Catch::Approx approx(float value) {
+    return Catch::Approx(value).margin(1e-4);
+}
+
+constexpr double kSampleRate = 48000.0;
+
+/// A quarter of a second, so a hundred-millisecond envelope stage is a few
+/// blocks and a difference of one block is unmistakable.
+constexpr int kBlock = 512;
+
+using magda::test::makeMaster;
+using magda::test::makeTrack;
+using magda::test::ScriptedMidi;
+using magda::test::ScriptedMidiSource;
+
+/// A device whose output is its only parameter, so what leaves the master is
+/// what the modulation did to it.
+class LevelDevice final : public magda::engine::EngineDevice {
+  public:
+    void process(magda::engine::DeviceBlock& block) override {
+        block.audio.fill(block.params.size() > 0 ? block.params[0].value() : 0.0f);
+    }
+};
+
+class Factory final : public magda::engine::RuntimeStateFactory {
+  public:
+    explicit Factory(ScriptedMidi* midi) : midi_(midi) {}
+
+    std::unique_ptr<magda::engine::EngineDevice> createDevice(magda::engine::DeviceKey) override {
+        return std::make_unique<LevelDevice>();
+    }
+
+    std::unique_ptr<magda::engine::EngineMidiSource> createMidiInput(TrackId) override {
+        return std::make_unique<ScriptedMidiSource>(midi_);
+    }
+
+  private:
+    ScriptedMidi* midi_ = nullptr;
+};
+
+DeviceInfo makeDevice(DeviceId id) {
+    DeviceInfo device;
+    device.id = id;
+    device.name = "Effect " + juce::String(id);
+    device.deviceType = DeviceType::Effect;
+    device.mods = createDefaultMods(0);
+
+    ParameterInfo info(0, "Level", "", 0.0f, 1.0f, 0.0f);
+    info.currentValue = 0.0f;
+    device.parameters.push_back(info);
+
+    return device;
+}
+
+/// A track with a device and one modifier of @p type wired to its parameter.
+TrackInfo trackWithModifier(ModType type, LFOTriggerMode trigger) {
+    auto track = makeTrack(1);
+    track.volume = 1.0f;
+    track.pan = 0.0f;
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(7)));
+    track.mods = createDefaultMods(1);
+    track.mods[0].type = type;
+    track.mods[0].triggerMode = trigger;
+
+    // Not running, so a note-triggered modifier starts shut. What is being
+    // measured is which block opens it, and one that was already open would
+    // measure nothing.
+    track.mods[0].running = false;
+
+    // Instant up, held there: what is being measured is which block the
+    // envelope opens in, so the stage lengths must not be part of the answer.
+    track.mods[0].envAttackMs = 0.0f;
+    track.mods[0].envDecayMs = 0.0f;
+    track.mods[0].envSustain = 1.0f;
+    track.mods[0].envReleaseMs = 0.0f;
+
+    track.mods[0].links.push_back(ModLink{
+        ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 7), 0), 1.0f, false, true});
+    return track;
+}
+
+/// A session over @p tracks, with @p midi bound as track 1's live MIDI input.
+struct Session {
+    Session(std::vector<TrackInfo> trackList, ScriptedMidi* midi)
+        : tracks(std::move(trackList)), factory(midi), session(factory) {
+        master = makeMaster();
+        const magda::engine::RenderContext context{kSampleRate, kBlock, 2};
+        auto result = magda::test::publishProject(session, tracks, master, context);
+        plan = std::move(result.plan);
+        published = result.published;
+    }
+
+    /// One block, and the first sample the master produced.
+    float render() {
+        juce::AudioBuffer<float> output(2, kBlock);
+        session.process(kBlock, output);
+        return output.getSample(0, 0);
+    }
+
+    std::vector<TrackInfo> tracks;
+    TrackInfo master;
+    std::shared_ptr<const magda::engine::RenderPlan> plan;
+    Factory factory;
+    magda::engine::EngineSession session;
+    bool published = false;
+};
+
+}  // namespace
+
+TEST_CASE("The MIDI a block has is known before the block resolves", "[engine][mod][feeds]") {
+    // The prefix is what makes a note-triggered modifier hear the note in the
+    // block it arrived in. Which ops are in it is decided at prepare time, from
+    // the plan: outputs all MIDI, and every producer already in the set.
+    auto track = trackWithModifier(ModType::Envelope, LFOTriggerMode::MIDI);
+    track.recordArmed = true;
+
+    const std::vector<TrackInfo> tracks{track};
+    const auto master = makeMaster();
+    const auto plan = compileRenderPlan(tracks, master);
+
+    // The track's chain-head MIDI is a merge of sources, so it is in the
+    // prefix; the device that reads it is not, because it produces audio.
+    bool sawMidiInput = false;
+    bool sawDevice = false;
+    for (const auto& op : plan.ops) {
+        if (op.key.role == magda::engine::OpRole::TrackMidiInput ||
+            op.key.role == magda::engine::OpRole::LiveMidiInput)
+            sawMidiInput = true;
+        if (op.kind == magda::engine::OpKind::Device)
+            sawDevice = true;
+    }
+
+    CHECK(sawMidiInput);
+    CHECK(sawDevice);
+}
+
+TEST_CASE("A note reaches its modifier in the block it arrived in", "[engine][mod][feeds]") {
+    auto track = trackWithModifier(ModType::Envelope, LFOTriggerMode::MIDI);
+    track.recordArmed = true;
+    track.inputMonitor = InputMonitorMode::In;
+    track.midiInputDevice = "test";
+
+    ScriptedMidi midi;
+    Session session({track}, &midi);
+    REQUIRE(session.published);
+
+    // Shut before the note: a MIDI-triggered envelope waits, and a modifier at
+    // rest contributes nothing.
+    CHECK(session.render() == approx(0.0f));
+
+    // The note lands in the next block. The prefix renders the MIDI ops before
+    // the parameters resolve, so the envelope opens in this block rather than
+    // in the one after: distance zero.
+    midi.pending.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    CHECK(session.render() == approx(1.0f));
+}
+
+TEST_CASE("A level reaches its modifier the block after the one it was in",
+          "[engine][mod][feeds]") {
+    // The follower's side of the same question. The source's audio does not
+    // exist when the block resolves, so the detector runs during the walk and
+    // the resolve that reads it is the next block's.
+    auto track = trackWithModifier(ModType::Follower, LFOTriggerMode::Free);
+
+    const std::vector<TrackInfo> tracks{track};
+    const auto master = makeMaster();
+    const auto plan = compileRenderPlan(tracks, master);
+    const auto table = compileParamTable(plan, tracks, master, {});
+    REQUIRE(table.modifiers.size() == 1);
+
+    ModRuntime mods;
+    mods.prepare(table, magda::engine::RenderContext{kSampleRate, kBlock, 2});
+
+    BlockInfo block;
+    block.numSamples = kBlock;
+
+    magda::engine::ResolvedParams values;
+    values.prepare(table.size());
+    std::vector<magda::engine::ModContribution> links(
+        static_cast<std::size_t>(std::max(table.maxLinksPerParam, 1)));
+    std::vector<magda::engine::ParamSegment> segments(
+        static_cast<std::size_t>(magda::engine::ResolvedParams::kDefaultSegmentCapacity));
+
+    const auto resolve = [&] {
+        magda::engine::resolveParams(table, values, links, segments, block, &mods);
+        return mods.value(0);
+    };
+
+    // Nothing detected, nothing published.
+    CHECK(resolve() == approx(0.0f));
+
+    // The block's audio, handed over after the block resolved, which is where
+    // the executor hands it over. This block's value was already settled, so
+    // the level shows up in the next one.
+    const std::vector<float> loud(static_cast<std::size_t>(kBlock), 1.0f);
+    mods.detectSource(0, table, loud);
+    CHECK(resolve() > 0.0f);
+}
+
+TEST_CASE("A modifier that listens to nothing carries no source", "[engine][mod][feeds]") {
+    // The rule that decides whether an edge is emitted at all. A free-running
+    // LFO on a sidechained device is not a reason to carry that track's audio
+    // anywhere, and a plan that carried it would be paying for a dependency
+    // nothing reads.
+    const auto sourceOf = [](ModType type, LFOTriggerMode trigger) {
+        const std::vector<TrackInfo> tracks{trackWithModifier(type, trigger)};
+        const auto master = makeMaster();
+        const auto plan = compileRenderPlan(tracks, master);
+        const auto table = compileParamTable(plan, tracks, master, {});
+        REQUIRE(table.modifiers.size() == 1);
+        return table.modifiers.front().source;
+    };
+
+    CHECK(sourceOf(ModType::LFO, LFOTriggerMode::Free) == INVALID_TRACK_ID);
+    CHECK(sourceOf(ModType::LFO, LFOTriggerMode::Transport) == INVALID_TRACK_ID);
+    CHECK(sourceOf(ModType::LFO, LFOTriggerMode::MIDI) == 1);
+    CHECK(sourceOf(ModType::LFO, LFOTriggerMode::Audio) == 1);
+
+    // A follower listens whatever its trigger mode says: the trigger fields
+    // belong to the kinds that have a phase.
+    CHECK(sourceOf(ModType::Follower, LFOTriggerMode::Free) == 1);
+}
+
+TEST_CASE("A note only reaches the modifiers waiting for one", "[engine][mod][feeds]") {
+    // One list of listeners per track, sorted by what each is waiting for, so
+    // an audio-triggered modifier is not opened by a note that happened to
+    // reach the same track.
+    const std::vector<TrackInfo> tracks{trackWithModifier(ModType::LFO, LFOTriggerMode::Audio)};
+    const auto master = makeMaster();
+    const auto plan = compileRenderPlan(tracks, master);
+    const auto table = compileParamTable(plan, tracks, master, {});
+    REQUIRE(table.modifiers.size() == 1);
+
+    ModRuntime mods;
+    mods.prepare(table, magda::engine::RenderContext{kSampleRate, kBlock, 2});
+
+    CHECK(mods.listensFor(0, table) == magda::engine::ModListen::Audio);
+
+    const auto listeners = mods.listenersOf(1);
+    REQUIRE(listeners.size() == 1);
+    CHECK(listeners.front() == 0);
+}
+
+TEST_CASE("A cross-track modifier is triggered by the notes it listens to",
+          "[engine][mod][feeds]") {
+    // The two listeners a tap feeds take a trigger through different doors, and
+    // the cross-track one has only the trigger. Its note-counting path refuses
+    // it by design, so an executor that fed it through noteOn alone would leave
+    // the MIDI half of every rack and device sidechain dead.
+    auto source = makeTrack(2);
+
+    RackInfo rack;
+    rack.id = 4;
+    rack.sidechain.type = SidechainConfig::Type::MIDI;
+    rack.sidechain.sourceTrackId = 2;
+    rack.mods = createDefaultMods(1);
+    rack.mods[0].type = ModType::Envelope;
+    rack.mods[0].triggerMode = LFOTriggerMode::MIDI;
+    rack.mods[0].envAttackMs = 0.0f;
+    rack.mods[0].envDecayMs = 0.0f;
+    rack.mods[0].envSustain = 1.0f;
+    rack.mods[0].envReleaseMs = 0.0f;
+    rack.mods[0].links.push_back(ModLink{
+        ControlTarget::pluginParam(ChainNodePath::chainDevice(1, 4, 10, 7), 0), 1.0f, false, true});
+
+    ChainInfo chain;
+    chain.id = 10;
+    chain.elements.push_back(makeDeviceElement(makeDevice(7)));
+    rack.chains.push_back(std::move(chain));
+
+    auto destination = makeTrack(1);
+    destination.volume = 1.0f;
+    destination.pan = 0.0f;
+    destination.chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+    source.recordArmed = true;
+    source.inputMonitor = InputMonitorMode::In;
+    source.midiInputDevice = "test";
+
+    ScriptedMidi midi;
+    Session session({destination, source}, &midi);
+    REQUIRE(session.published);
+
+    // The runtime agrees it is the cross-track kind, which is what selects the
+    // door: the same answer the executor asks for.
+    const auto master = makeMaster();
+    const std::vector<TrackInfo> tracks{destination, source};
+    const auto table = compileParamTable(compileRenderPlan(tracks, master), tracks, master, {});
+    REQUIRE(table.modifiers.size() == 1);
+
+    ModRuntime probe;
+    probe.prepare(table, magda::engine::RenderContext{kSampleRate, kBlock, 2});
+    CHECK(probe.drivenFromElsewhere(0, table));
+    CHECK(probe.listensFor(0, table) == magda::engine::ModListen::Midi);
+
+    CHECK(session.render() == approx(0.0f));
+
+    // The note reaches the trigger in the block it arrived in, and what that
+    // block publishes is the gap a cross-track trigger asks for: one block of
+    // nothing so the device sees a transition rather than a continuation. The
+    // fork's triggerNoteOn does the same with its forceZeroValue.
+    midi.pending.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    CHECK(session.render() == approx(0.0f));
+
+    // Then the attack, which has no time in it, so the envelope is up.
+    CHECK(session.render() == approx(1.0f));
+
+    // And the note lifting does not shut it: the fork leaves the gate alone on
+    // note-off so the modifier runs its full cycle after a hit.
+    midi.pending.addEvent(juce::MidiMessage::noteOff(1, 60), 0);
+    CHECK(session.render() == approx(1.0f));
+    CHECK(session.render() == approx(1.0f));
+}
+
+TEST_CASE("A track's two taps never share a detector", "[engine][mod][feeds]") {
+    // A track read at both its points has two taps and two detectors. One
+    // between them would let a level at the far end work the gate at the near
+    // one, which is a duck firing on the wrong signal, and it survives a
+    // republish because the carry is what would alias them.
+    auto source = makeTrack(2);
+    source.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(9)));
+
+    auto listener = makeTrack(1);
+    listener.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(7)));
+
+    auto& device = magda::getDevice(listener.chain.fxChainElements.front());
+    device.sidechain.type = SidechainConfig::Type::Audio;
+    device.sidechain.sourceTrackId = 2;
+    device.mods = createDefaultMods(2);
+    device.mods[0].setType(ModType::LFO);
+    device.mods[0].triggerMode = LFOTriggerMode::Audio;
+    device.mods[1].setType(ModType::Follower);
+
+    const std::vector<TrackInfo> tracks{listener, source};
+    const auto master = makeMaster();
+    const auto plan = compileRenderPlan(tracks, master);
+
+    magda::engine::PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, master, values);
+    REQUIRE(values.params != nullptr);
+
+    const magda::engine::RenderContext context{kSampleRate, kBlock, 2};
+    magda::engine::PlanBindings bindings;
+
+    magda::engine::PlanExecutor first;
+    first.prepare(plan, bindings, context, nullptr, values.params.get());
+    REQUIRE(first.distinctTriggerDetectors() == 2);
+
+    // And still two after taking the previous epoch's over, which is where a
+    // carry keyed by the track alone would collapse them onto one.
+    magda::engine::PlanExecutor second;
+    second.prepare(plan, bindings, context, &first, values.params.get());
+    CHECK(second.carriedTriggerDetectors() == 2);
+    CHECK(second.distinctTriggerDetectors() == 2);
+}
+
+TEST_CASE("A modulation tap keeps its detector across a prepare", "[engine][mod][feeds]") {
+    // A structural publish during playback must not zero a tap's envelope. If
+    // it did, a source above the threshold at that moment would read as a
+    // rising edge on the next block and fire a trigger nothing played, forced
+    // gap included, so every link edit would be an audible blip on a live
+    // sidechain. The fork's monitor survives the same edits with its own level
+    // and gate intact, and this carries on the same terms ModRuntime carries a
+    // phase.
+    auto tracks = std::vector{trackWithModifier(ModType::LFO, LFOTriggerMode::Audio)};
+    const auto master = makeMaster();
+    const auto plan = compileRenderPlan(tracks, master);
+
+    magda::engine::PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, master, values);
+    REQUIRE(values.params != nullptr);
+
+    const magda::engine::RenderContext context{kSampleRate, kBlock, 2};
+    magda::engine::PlanBindings bindings;
+
+    magda::engine::PlanExecutor first;
+    first.prepare(plan, bindings, context, nullptr, values.params.get());
+    CHECK(first.carriedTriggerDetectors() == 0);
+
+    magda::engine::PlanExecutor second;
+    second.prepare(plan, bindings, context, &first, values.params.get());
+    CHECK(second.carriedTriggerDetectors() == 1);
+}
+
+TEST_CASE("A follower and a trigger on one source read different points", "[engine][mod][feeds]") {
+    // The fork has two tap points and uses both: its trigger monitor sits in
+    // front of the chain and its follower tap at the far end. One point for
+    // both would make riding the source fader silence the triggers, which it
+    // does in neither engine.
+    auto source = makeTrack(2);
+    source.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(9)));
+
+    auto listener = makeTrack(1);
+    listener.mods = createDefaultMods(2);
+    listener.mods[0].setType(ModType::LFO);
+    listener.mods[0].triggerMode = LFOTriggerMode::Audio;
+    listener.mods[1].setType(ModType::Follower);
+
+    // Both listen to track 2, through a device keyed from it.
+    listener.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(7)));
+    auto& device = magda::getDevice(listener.chain.fxChainElements.front());
+    device.sidechain.type = SidechainConfig::Type::Audio;
+    device.sidechain.sourceTrackId = 2;
+    device.mods = listener.mods;
+    listener.mods = createDefaultMods(0);
+
+    const std::vector<TrackInfo> tracks{listener, source};
+    const auto master = makeMaster();
+    const auto plan = compileRenderPlan(tracks, master);
+
+    // Two taps on the one source, and they read different ops.
+    std::vector<magda::engine::OpId> taps;
+    for (std::size_t i = 0; i < plan.ops.size(); ++i)
+        if (plan.ops[i].key.role == magda::engine::OpRole::ModulationTap) {
+            CHECK(plan.ops[i].key.trackId == 2);
+            taps.push_back(static_cast<magda::engine::OpId>(i));
+        }
+
+    REQUIRE(taps.size() == 2);
+    CHECK(plan.ops[static_cast<std::size_t>(taps[0])].inputs[0].op !=
+          plan.ops[static_cast<std::size_t>(taps[1])].inputs[0].op);
+
+    // The near one is the chain head, in front of the source's own device; the
+    // far one is its meter, which is post-fader and pre-mute.
+    const auto roleOfInput = [&](magda::engine::OpId tap) {
+        const auto producer = plan.ops[static_cast<std::size_t>(tap)].inputs[0].op;
+        return plan.ops[static_cast<std::size_t>(producer)].key.role;
+    };
+
+    CHECK(roleOfInput(taps[0]) == magda::engine::OpRole::TrackAudioInput);
+    CHECK(roleOfInput(taps[1]) == magda::engine::OpRole::TrackMeter);
+
+    // And the table says which modifier is on which, so the executor can
+    // dispatch each from the point it named.
+    const auto table = compileParamTable(plan, tracks, master, {});
+    REQUIRE(table.modifiers.size() == 2);
+    for (const auto& modifier : table.modifiers) {
+        CHECK(modifier.source == 2);
+        CHECK(modifier.tap ==
+              (modifier.kind == ModKind::Follower ? ModTapPoint::PostFader : ModTapPoint::PreFx));
+    }
+}
+
+TEST_CASE("A modulation feed does not order the tracks", "[engine][mod][feeds]") {
+    // A modifier listening to another track needs that track's tap to exist,
+    // and it does: the taps are emitted after every track. What it must not do
+    // is force the source to compile first, because a track routed into the
+    // very track its modifiers listen to is an ordinary project and a cycle
+    // here, and the breaker resolves a cycle by dropping a real connection.
+    //
+    // A rack sidechain is the case that isolates it. A device sidechain is a
+    // signal edge in its own right and orders the tracks for reasons that have
+    // nothing to do with modulation; a rack does not mix its sidechain into its
+    // chains, so the only edge it could contribute is the modulation one.
+    RackInfo rack;
+    rack.id = 4;
+    rack.sidechain.type = SidechainConfig::Type::Audio;
+    rack.sidechain.sourceTrackId = 2;
+    rack.mods = createDefaultMods(1);
+    rack.mods[0].setType(ModType::LFO);
+    rack.mods[0].triggerMode = LFOTriggerMode::Audio;
+    rack.mods[0].links.push_back(ModLink{
+        ControlTarget::pluginParam(ChainNodePath::chainDevice(1, 4, 10, 7), 0), 1.0f, false, true});
+
+    ChainInfo chain;
+    chain.id = 10;
+    chain.elements.push_back(makeDeviceElement(makeDevice(7)));
+    rack.chains.push_back(std::move(chain));
+
+    auto listener = makeTrack(1);
+    listener.audioOutputDevice = "track:2";
+    listener.chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+    auto sink = makeTrack(2);
+    sink.type = TrackType::Audio;
+
+    // Declared source-last, which is the order that used to invent the cycle.
+    const std::vector<TrackInfo> tracks{sink, listener};
+    const auto master = makeMaster();
+    const auto plan = compileRenderPlan(tracks, master);
+
+    // The real routing survives: nothing was dropped to break a cycle that the
+    // modulation feed invented.
+    for (const auto& message : plan.diagnostics)
+        CHECK(message.find("arrived after it was compiled") == std::string::npos);
+
+    // And track 1's audio still reaches track 2, which is the connection the
+    // cycle breaker used to spend.
+    bool reaches = false;
+    for (const auto& op : plan.ops)
+        if (op.key.trackId == 2 && op.key.role == magda::engine::OpRole::TrackAudioInput)
+            reaches = !op.inputs.empty() && op.inputs.front().valid();
+    CHECK(reaches);
+
+    // The tap is still there, reading track 2 at the point the trigger named.
+    int taps = 0;
+    for (const auto& op : plan.ops)
+        if (op.key.role == magda::engine::OpRole::ModulationTap) {
+            ++taps;
+            CHECK(op.key.trackId == 2);
+        }
+    CHECK(taps == 1);
+}
+
+TEST_CASE("A modifier added as a follower listens at the far end", "[engine][mod][feeds]") {
+    // The add path is where a follower is normally born, so it is the path that
+    // has to hand it the tap point its kind wants. Constructing an LFO and
+    // assigning the type over it leaves the point where the LFO wanted it, and
+    // every follower the user creates would key off the head of the chain.
+    auto& manager = TrackManager::getInstance();
+    manager.clearAllTracks();
+
+    const auto trackId = manager.createTrack("Source", TrackType::Audio);
+    const auto path = ChainNodePath::trackLevel(trackId);
+
+    manager.addMod(path, 0, ModType::Follower, LFOWaveform::Sine);
+    manager.addMod(path, 1, ModType::LFO, LFOWaveform::Sine);
+
+    const auto* track = manager.getTrack(trackId);
+    REQUIRE(track != nullptr);
+    REQUIRE(track->mods.size() >= 2);
+
+    CHECK(track->mods[0].type == ModType::Follower);
+    CHECK(track->mods[0].tapPoint == ModTapPoint::PostFader);
+
+    // And everything else takes the near one, which is where a trigger keys off.
+    CHECK(track->mods[1].tapPoint == ModTapPoint::PreFx);
+
+    manager.clearAllTracks();
+}

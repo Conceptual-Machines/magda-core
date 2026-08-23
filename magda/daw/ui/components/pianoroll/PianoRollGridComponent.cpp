@@ -40,24 +40,16 @@ double timelineEndBeats(const ClipInfo& clip, double bpm) {
     return clip.getEndBeats(bpm);
 }
 
+// Audio clips reach this grid too (PianoRollContent and DrumGridClipContent
+// both route them here), so the loop has to come back in timeline beats for
+// either content type rather than off one domain's field.
 double effectiveLoopStartBeats(const ClipInfo& clip, double bpm) {
-    if (clip.loopStartBeats > 0.0)
-        return clip.loopStartBeats;
-
-    if (clip.loopStart > 0.0 && bpm > 0.0)
-        return clip.loopStart * bpm / 60.0;
-
-    return 0.0;
+    return juce::jmax(0.0, clip.loopStartInBeats(bpm));
 }
 
 double effectiveLoopLengthBeats(const ClipInfo& clip, double bpm) {
-    if (clip.loopLengthBeats > 0.0)
-        return clip.loopLengthBeats;
-
-    if (clip.loopLength > 0.0 && bpm > 0.0)
-        return clip.loopLength * bpm / 60.0;
-
-    return timelineLengthBeats(clip, bpm);
+    const double loopBeats = clip.loopLengthInBeats(bpm);
+    return loopBeats > 0.0 ? loopBeats : timelineLengthBeats(clip, bpm);
 }
 
 // Grid clicks use the same relative-loop contract as the ruler: display beat is

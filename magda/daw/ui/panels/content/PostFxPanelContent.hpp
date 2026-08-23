@@ -47,7 +47,9 @@ class PostFxPanelContent : public juce::Component, public magda::TrackManagerLis
 
   private:
     class Container;
+    class FaderSideTag;
     friend class Container;
+    friend class FaderSideTag;
 
     void rebuildSlots();
     void layoutSlots();
@@ -66,6 +68,7 @@ class PostFxPanelContent : public juce::Component, public magda::TrackManagerLis
     std::unique_ptr<Container> container_;
     std::vector<std::unique_ptr<DeviceSlotComponent>> slots_;
     juce::TextButton addButton_;
+    std::unique_ptr<FaderSideTag> faderSideTag_;
 
     // Drag-to-reorder state (driven by the slots' NodeComponent drag callbacks).
     NodeComponent* draggedNode_ = nullptr;
@@ -81,6 +84,7 @@ class PostFxPanelContent : public juce::Component, public magda::TrackManagerLis
     static constexpr int LEFT_PADDING = 8;
     static constexpr int DRAG_PADDING = 24;       // left room for a "before first" indicator
     static constexpr int APPEND_ZONE_WIDTH = 56;  // "+" add strip (matches FX chain)
+    static constexpr int TAG_LINE_HEIGHT = 11;    // one line of the pre/post-fader tag
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PostFxPanelContent)
 };

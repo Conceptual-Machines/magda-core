@@ -34,11 +34,16 @@ enum class TechnicalTextToken {
     DawProject,
     Vst3,
     Au,
+    Lv2,
     Json,
     Flac,
     Rgb,
     Hex,
     Lua,
+    Osc,
+    Api,
+    Mcp,
+    WebSocket,
 };
 
 inline juce::String technicalText(TechnicalTextToken token) {
@@ -98,6 +103,8 @@ inline juce::String technicalText(TechnicalTextToken token) {
             return "VST3";
         case TechnicalTextToken::Au:
             return "AU";
+        case TechnicalTextToken::Lv2:
+            return "LV2";
         case TechnicalTextToken::Json:
             return "JSON";
         case TechnicalTextToken::Flac:
@@ -108,6 +115,14 @@ inline juce::String technicalText(TechnicalTextToken token) {
             return "Hex";
         case TechnicalTextToken::Lua:
             return "Lua";
+        case TechnicalTextToken::Osc:
+            return "OSC";
+        case TechnicalTextToken::Api:
+            return "API";
+        case TechnicalTextToken::Mcp:
+            return "MCP";
+        case TechnicalTextToken::WebSocket:
+            return "WebSocket";
     }
 
     return {};

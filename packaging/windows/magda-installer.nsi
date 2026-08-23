@@ -62,6 +62,9 @@ vc_redist_ok:
     File "${__FILEDIR__}\MAGDA.exe"
     File "${__FILEDIR__}\mgd_doc_icon.ico"
     File /nonfatal "${__FILEDIR__}\magda_plugin_scanner.exe"
+    ; The MCP bridge (#1858). An MCP host is configured with its absolute
+    ; path under $INSTDIR, which is what the AI settings page hands the user.
+    File /nonfatal "${__FILEDIR__}\magda-mcp.exe"
 
     ; All runtime DLLs staged next to MAGDA.exe: ONNX Runtime (a load-time app
     ; dependency) and libxml2 + its transitive deps (DAWproject XSD validation).
@@ -154,6 +157,7 @@ Section "Uninstall"
     Delete "$INSTDIR\MAGDA.exe"
     Delete "$INSTDIR\mgd_doc_icon.ico"
     Delete "$INSTDIR\magda_plugin_scanner.exe"
+    Delete "$INSTDIR\magda-mcp.exe"
     Delete "$INSTDIR\*.dll"
     Delete "$INSTDIR\Uninstall.exe"
     RMDir /r "$INSTDIR\lang"

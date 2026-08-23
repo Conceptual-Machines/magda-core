@@ -33,7 +33,7 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
 
         // Get clip info
         const auto* clip = ClipManager::getInstance().getClip(clipId_);
-        if (!clip || !clip->isAudio() || clip->audio().source.filePath.isEmpty()) {
+        if (!clip || !clip->isAudio() || magda::audioEventRef(*clip).sourceFilePath().isEmpty()) {
             // No waveform to show
             g.setColour(DarkTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(14.0f));
@@ -44,8 +44,8 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
         auto waveformBounds = bounds.reduced(MARGIN);
 
         // Get waveform from cache
-        auto* thumbnail =
-            magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audio().source.filePath);
+        auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
+            magda::audioEventRef(*clip).sourceFilePath());
         if (thumbnail && thumbnail->getTotalLength() > 0.0) {
             // Build display info using project BPM, passing the file
             // duration so sourceFileStart / sourceFileEnd describe the
@@ -66,7 +66,7 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
             thumbnail->drawChannels(g, waveformBounds, startTime, endTime, 1.0f);
 
-            if (clip->isReversed && di.fileExtentTimeline() > 0.0 &&
+            if (magda::audioEventRef(*clip).reversed && di.fileExtentTimeline() > 0.0 &&
                 di.activeRegionEndPositionSeconds > di.activeRegionStartPositionSeconds) {
                 const double pixelsPerTimelineSecond =
                     waveformBounds.getWidth() / di.fileExtentTimeline();
@@ -213,7 +213,7 @@ void SessionClipEditor::setupHeader() {
     addAndMakeVisible(*lengthLabel_);
 
     // Close button
-    closeButton_ = std::make_unique<juce::TextButton>("✕");
+    closeButton_ = std::make_unique<juce::TextButton>(juce::String::fromUTF8("✕"));
     closeButton_->setColour(juce::TextButton::buttonColourId,
                             DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
     closeButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
@@ -355,8 +355,9 @@ void SessionClipEditor::updateControls() {
                           juce::dontSendNotification);
 
     // Update offset slider
-    if (clip->audio().source.filePath.isNotEmpty()) {
-        offsetSlider_->setValue(clip->offset, juce::dontSendNotification);
+    if (magda::audioEventRef(*clip).sourceFilePath().isNotEmpty()) {
+        offsetSlider_->setValue(magda::audioEventRef(*clip).anchorSeconds(),
+                                juce::dontSendNotification);
     }
 
     fadesSection_->setClip(clipId_);
@@ -387,6 +388,11 @@ void SessionClipEditorWindow::closeButtonPressed() {
         exitModalState(0);
     else
         setVisible(false);
+}
+
+void SessionClipEditorWindow::lookAndFeelChanged() {
+    juce::DocumentWindow::lookAndFeelChanged();
+    setBackgroundColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
 }
 
 }  // namespace magda

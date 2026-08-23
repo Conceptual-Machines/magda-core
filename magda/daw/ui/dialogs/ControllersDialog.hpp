@@ -26,6 +26,10 @@ class LuaScriptsPage;
  * Scripts tab: list of `.lua` files in the per-user scripts folder. Click a
  *   row to make it active (one active script at a time), right-click for
  *   Reveal / Unload. Reload re-runs the active script.
+ *
+ * OSC used to be a third tab here (#1757, #2091). It is a network transport
+ * rather than a control-surface binding, and it belongs beside the other things
+ * that drive MAGDA from outside, so it moved to Settings -> Connections (#2142).
  */
 class ControllersDialog : public juce::Component {
   public:

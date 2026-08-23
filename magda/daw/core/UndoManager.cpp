@@ -17,7 +17,7 @@ UndoManager::UndoManager() = default;
 
 void UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
     if (!command) {
-        DBG("📝 UNDO: executeCommand called with null command!");
+        DBG("UNDO: executeCommand called with null command!");
         return;
     }
 
@@ -64,7 +64,7 @@ bool UndoManager::undo() {
     auto entry = std::move(undoStack_.back());
     undoStack_.pop_back();
 
-    DBG("📝 UNDO: Undoing '" << entry.command->getDescription() << "'");
+    DBG("UNDO: Undoing '" << entry.command->getDescription() << "'");
 
     {
         ProjectManager::UndoableMutationScope mutationScope;
@@ -90,7 +90,7 @@ bool UndoManager::redo() {
     auto entry = std::move(redoStack_.back());
     redoStack_.pop_back();
 
-    DBG("📝 UNDO: Redoing '" << entry.command->getDescription() << "'");
+    DBG("UNDO: Redoing '" << entry.command->getDescription() << "'");
 
     {
         ProjectManager::UndoableMutationScope mutationScope;
@@ -167,7 +167,7 @@ void UndoManager::endCompoundOperation() {
         compoundCommands_.clear();
         notifyListeners();
 
-        DBG("📝 UNDO: Completed compound operation '" << compoundDescription_ << "'");
+        DBG("UNDO: Completed compound operation '" << compoundDescription_ << "'");
     }
 }
 

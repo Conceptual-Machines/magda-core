@@ -230,7 +230,7 @@ jobs:
     # sccache binary installed, failing every compile; -DVAR= overrides them.
     - name: Configure CMake
       run: |
-        cmake -B build -G Ninja \
+        "$GITHUB_WORKSPACE/scripts/ci-retry.sh" cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
           -DMAGDA_BUILD_TESTS=ON \
@@ -289,39 +289,29 @@ jobs:
         submodules: recursive
         lfs: true
 
-    - name: Cache apt packages
+    - name: Cache the pre-commit environment
       uses: actions/cache@v6
       with:
-        path: /var/cache/apt/archives
-        key: ${{ runner.os }}-apt-clang-${{ hashFiles('.github/workflows/ci.yml') }}
+        path: ~/.cache/pre-commit
+        key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
         restore-keys: |
-          ${{ runner.os }}-apt-clang-
+          ${{ runner.os }}-pre-commit-
 
-    - name: Install clang-format
-      run: |
-        # Hosted runners occasionally ship a stale Chrome apt source that can
-        # fail unrelated package installs with a hash mismatch.
-        sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google.list
-        sudo apt-get clean
-        sudo rm -rf /var/lib/apt/lists/*
-        sudo apt-get update -o Acquire::Retries=3
-        sudo apt-get install -y clang-format
+    # Formatting is checked with the clang-format version pinned in
+    # .pre-commit-config.yaml, which is the same one the commit hook and
+    # 'make format' now use. Installing the runner's own clang-format made this
+    # job a third opinion: a different version over a narrower set of
+    # directories than either of the other two, so it passed files the hook
+    # would rewrite and never looked at magda/engine or magda/music at all.
+    - name: Install pre-commit
+      run: pipx install pre-commit
 
     - name: Check code formatting
       run: |
-        echo "Checking code formatting with clang-format..."
-        echo "Running: find + clang-format --dry-run --Werror"
-
-        # Run clang-format check and capture output
-        # --Werror makes formatting issues return non-zero exit code
-        if find magda/daw magda/agents tests -name "*.cpp" -o -name "*.hpp" -o -name "*.h" 2>/dev/null | \
-          xargs clang-format --dry-run --Werror 2>&1 | tee format-check.log; then
-          echo "✅ Format check passed!"
+        echo "Checking code formatting with the pinned clang-format..."
+        if pre-commit run clang-format --all-files --show-diff-on-failure; then
+          echo "Format check passed!"
         else
-          echo ""
-          echo "❌ Format check found issues"
-          echo "Files with formatting problems:"
-          cat format-check.log
           echo ""
           echo "To fix these issues, run: make format"
           exit 1
@@ -484,12 +474,162 @@ jobs:
         { [ -d "$MUTABLE_DEBUG_DIR/lib" ] && echo "mutable_debug_hit=true" >> "$GITHUB_OUTPUT"; } || true
         { [ -d "$MUTABLE_RELEASE_DIR/lib" ] && echo "mutable_release_hit=true" >> "$GITHUB_OUTPUT"; } || true
 
+    # Third-party source tarballs, self-hosted variant. build-debug and
+    # build-release are deleted at the end of every run (the housekeeping step
+    # below), so FetchContent downloads Lua and SQLite from their upstream
+    # hosts again on every single run, and a run is then one outbound timeout
+    # away from failing in configure over something the change under test never
+    # touched. Not hypothetical: www.lua.org went unreachable from these
+    # runners and took both native jobs down with it, while the Linux job on
+    # another route passed the same commit.
+    #
+    # Same answer as the Faust artifacts above: a fixed directory outside the
+    # git workspace, keyed on version, handed to CMake as the source it should
+    # use rather than downloading one. FETCHCONTENT_SOURCE_DIR_<NAME> replaces
+    # the download and nothing else, so each build tree keeps its own binary
+    # dirs and the Debug and Release configures share one seed.
+    #
+    # Nothing is kept that does not match the hash CMakeLists.txt pins, and a
+    # seed that cannot be fetched leaves its flag off rather than failing the
+    # job: CMake then downloads it the way it always did.
+    - name: Prepare third-party source cache (self-hosted)
+      id: deps-cache
+      # A step that exists to save a download must never be the reason a build
+      # goes red. Everything below already degrades to letting CMake do the
+      # downloading; this covers whatever is left.
+      continue-on-error: true
+      run: |
+        set -uo pipefail
+        CACHE_ROOT="$HOME/magda-ci-cache/deps"
+        mkdir -p "$CACHE_ROOT"
+
+        # seed <dir> <sha256> <archive> <url>...
+        seed() {
+          local dir="$1" sha="$2" archive="$3"
+          shift 3
+
+          if [ -d "$dir" ]; then
+            echo "cached: $dir"
+            return 0
+          fi
+
+          local work
+          work="$(mktemp -d)"
+
+          # A short connect timeout so a host that is being blackholed rather
+          # than refusing costs seconds before the next URL is tried, instead
+          # of however long this machine's TCP stack takes to give up.
+          local fetched=""
+          for url in "$@"; do
+            if curl -sSfL --connect-timeout 30 --max-time 180 -o "$work/$archive" "$url"; then
+              fetched="$url"
+              break
+            fi
+            echo "could not fetch $url"
+          done
+
+          if [ -z "$fetched" ]; then
+            echo "no source for $(basename "$dir"), leaving it to CMake"
+            rm -rf "$work"
+            return 1
+          fi
+
+          if ! echo "$sha  $work/$archive" | shasum -a 256 -c - >/dev/null; then
+            echo "$fetched does not match the pinned hash, leaving it to CMake"
+            rm -rf "$work"
+            return 1
+          fi
+
+          mkdir -p "$work/extracted"
+          case "$archive" in
+            *.zip)    unzip -q "$work/$archive" -d "$work/extracted" ;;
+            *.tar.xz) tar -xJf "$work/$archive" -C "$work/extracted" ;;
+            *)        tar -xzf "$work/$archive" -C "$work/extracted" ;;
+          esac
+
+          # FetchContent hands its caller what is inside the archive rather
+          # than the archive's own root, so the seed has to be the directory
+          # it would have unpacked to and not the level above it.
+          local top
+          top="$(find "$work/extracted" -mindepth 1 -maxdepth 1)"
+          if [ "$(printf '%s\n' "$top" | wc -l)" -ne 1 ]; then
+            echo "$archive is not a single directory, leaving it to CMake"
+            rm -rf "$work"
+            return 1
+          fi
+
+          # Moved into place whole, so a directory that exists is a directory
+          # that is complete: an interrupted run leaves nothing to trust.
+          mv "$top" "$dir"
+          rm -rf "$work"
+          echo "seeded: $dir from $fetched"
+        }
+
+        LUA_DIR="$CACHE_ROOT/lua-5.4.7"
+        SQLITE_DIR="$CACHE_ROOT/sqlite-amalgamation-3530100"
+
+        seed "$LUA_DIR" \
+          9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30 \
+          lua-5.4.7.tar.gz \
+          https://www.lua.org/ftp/lua-5.4.7.tar.gz \
+          http://deb.debian.org/debian/pool/main/l/lua5.4/lua5.4_5.4.7.orig.tar.gz \
+          && echo "lua_dir=$LUA_DIR" >> "$GITHUB_OUTPUT"
+
+        # The SHA-256 of the zip CMakeLists.txt pins by its SHA3-256, which is
+        # not a digest the tools on a runner can take. Both are of the same
+        # file and a version bump changes both.
+        seed "$SQLITE_DIR" \
+          36ad6e7f38540a3b21a2ac36340833f0a9e426bc1c752751c3ba669466827eae \
+          sqlite-amalgamation-3530100.zip \
+          https://www.sqlite.org/2026/sqlite-amalgamation-3530100.zip \
+          && echo "sqlite_dir=$SQLITE_DIR" >> "$GITHUB_OUTPUT"
+
+        # wasmtime, and it is here for a sharper reason than saving a download.
+        #
+        # CMake's own downloader fails intermittently on this asset from this
+        # machine: file(DOWNLOAD) gets "Server returned nothing (no headers, no
+        # data)" following GitHub's redirect to release-assets.githubusercontent
+        # .com, measured at roughly one attempt in five and much worse in bursts,
+        # while curl fetches the same URL every time from the same shell a second
+        # later. Retrying configure does not help when the burst outlasts the
+        # attempts, and it cost this branch three red macOS runs.
+        #
+        # So the archive comes down through curl, which is reliable here, and
+        # CMake is handed the unpacked tree instead of a URL.
+        WASMTIME_VERSION=v47.0.2
+        WASMTIME_ASSET=aarch64-macos-c-api
+        WASMTIME_DIR="$CACHE_ROOT/wasmtime-$WASMTIME_VERSION-$WASMTIME_ASSET"
+
+        seed "$WASMTIME_DIR" \
+          c013fe243fd6e13cd63f13dcfa88c3aff5664e356181a2e1bda2c3bf8381fde0 \
+          "wasmtime-$WASMTIME_VERSION-$WASMTIME_ASSET.tar.xz" \
+          "https://github.com/bytecodealliance/wasmtime/releases/download/$WASMTIME_VERSION/wasmtime-$WASMTIME_VERSION-$WASMTIME_ASSET.tar.xz" \
+          && echo "wasmtime_dir=$WASMTIME_DIR" >> "$GITHUB_OUTPUT"
+
+        # The ONNX Runtime, for the same reason: it is the other release asset
+        # CMake fetches on this runner, and it failed the same way on the same
+        # afternoon.
+        ORT_VERSION=1.26.0
+        ORT_DIR="$CACHE_ROOT/onnxruntime-osx-arm64-$ORT_VERSION"
+
+        seed "$ORT_DIR" \
+          7a1280bbb1701ea514f71828765237e7896e0f2e1cd332f1f70dbd5c3e33aca3 \
+          "onnxruntime-osx-arm64-$ORT_VERSION.tgz" \
+          "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/onnxruntime-osx-arm64-$ORT_VERSION.tgz" \
+          && echo "onnxruntime_dir=$ORT_DIR" >> "$GITHUB_OUTPUT"
+
+        exit 0
+
     - name: Configure CMake (Debug)
       run: |
-        cmake -B build-debug -G Ninja \
+        "$GITHUB_WORKSPACE/scripts/ci-retry.sh" cmake -B build-debug -G Ninja \
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
           -DMAGDA_BUILD_TESTS=ON \
+          ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.wasmtime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_WASMTIME={0}', steps.deps-cache.outputs.wasmtime_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.onnxruntime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_ONNXRUNTIME={0}', steps.deps-cache.outputs.onnxruntime_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.faust_debug_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.faust_debug_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.mutable_debug_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.mutable_debug_dir) || '' }}
 
@@ -529,9 +669,13 @@ jobs:
 
     - name: Configure CMake (Release)
       run: |
-        cmake -B build-release -G Ninja \
+        "$GITHUB_WORKSPACE/scripts/ci-retry.sh" cmake -B build-release -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
           -DMAGDA_BUILD_TESTS=OFF \
+          ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.wasmtime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_WASMTIME={0}', steps.deps-cache.outputs.wasmtime_dir) || '' }} \
+          ${{ steps.deps-cache.outputs.onnxruntime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_ONNXRUNTIME={0}', steps.deps-cache.outputs.onnxruntime_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.faust_release_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.faust_release_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.mutable_release_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.mutable_release_dir) || '' }}
 
@@ -602,6 +746,7 @@ jobs:
           GH_TOKEN: ${{ secrets.RUNNER_STATUS_PAT }}
         run: |
           set -euo pipefail
+
           if [ -z "${GH_TOKEN:-}" ]; then
             echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
             echo "No RUNNER_STATUS_PAT available in this context (e.g. Dependabot PRs do not see repo secrets); falling back to windows-latest"
@@ -659,6 +804,22 @@ jobs:
     # recompiled (that ~10 min build only happens on the very first run / after a
     # pin bump). On GitHub-hosted runners the VM is ephemeral, so clone into
     # RUNNER_TEMP and let actions/cache carry the binary cache between runs.
+    # vcpkg.exe comes from a GitHub release, fetched by vcpkg's own bootstrap
+    # over WinHttp, and that fetch has failed this job outright: "the server
+    # returned an invalid or unrecognized response". It is the same shape as the
+    # asset failures on macOS, where CMake's downloader came back empty from
+    # GitHub while curl never did.
+    #
+    # A hosted runner keeps nothing between runs, so the tool is fetched again
+    # every time and every run gets another chance to lose. Cached, it is fetched
+    # once per pinned vcpkg commit and the bootstrap is skipped from then on.
+    - name: Cache the vcpkg tool
+      if: runner.environment == 'github-hosted'
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.temp }}\vcpkg-tool
+        key: ${{ runner.os }}-vcpkg-tool-${{ env.VCPKG_COMMIT }}
+
     - name: Setup vcpkg
       shell: powershell
       run: |
@@ -676,9 +837,87 @@ jobs:
         git -C $vcpkgRoot cat-file -e "$($env:VCPKG_COMMIT)^{commit}"
         if ($LASTEXITCODE -ne 0) { git -C $vcpkgRoot fetch origin }
         git -C $vcpkgRoot checkout $env:VCPKG_COMMIT
-        if (-not (Test-Path "$vcpkgRoot\vcpkg.exe")) {
-          & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+        # Whether there is a working tool at this path, which is not the same
+        # question as whether the path exists. bootstrap downloads straight to
+        # its destination, so an interrupted transfer leaves a prefix of an
+        # executable behind, and every later check that only looks for the file
+        # would accept it: the retry would stop early, and the cache would keep
+        # it for every run on this key from then on. Running it is the cheapest
+        # thing that cannot be fooled that way, and it is what bootstrap itself
+        # finishes with.
+        function Test-VcpkgTool($exe) {
+          if (-not (Test-Path $exe)) { return $false }
+          try {
+            & $exe version --disable-metrics | Out-Null
+            return ($LASTEXITCODE -eq 0)
+          } catch {
+            return $false
+          }
         }
+
+        # An executable already at the root is trusted only once it has run.
+        # That path survives every run on the self-hosted machine, including one
+        # where the last bootstrap attempt left a partial download there before
+        # this step gave up, so a file that merely exists would skip the cache
+        # restore and the retry loop both, and get copied into the tool cache on
+        # its way to failing at vcpkg install instead.
+        if ((Test-Path "$vcpkgRoot\vcpkg.exe") -and
+            (-not (Test-VcpkgTool "$vcpkgRoot\vcpkg.exe"))) {
+          Write-Host "the vcpkg.exe already present does not run, discarding it"
+          Remove-Item "$vcpkgRoot\vcpkg.exe" -Force -ErrorAction SilentlyContinue
+        }
+
+        # The tool this runner already fetched, put back before anything asks to
+        # download it again. See "Cache the vcpkg tool" above.
+        $toolCache = Join-Path $env:RUNNER_TEMP 'vcpkg-tool'
+        if ((-not (Test-Path "$vcpkgRoot\vcpkg.exe")) -and (Test-Path "$toolCache\vcpkg.exe")) {
+          Copy-Item "$toolCache\vcpkg.exe" "$vcpkgRoot\vcpkg.exe" -Force
+          if (Test-VcpkgTool "$vcpkgRoot\vcpkg.exe") {
+            Write-Host "vcpkg.exe restored from the tool cache"
+          } else {
+            Write-Host "the cached vcpkg.exe does not run, bootstrapping instead"
+            Remove-Item "$vcpkgRoot\vcpkg.exe" -Force -ErrorAction SilentlyContinue
+          }
+        }
+
+        if (-not (Test-Path "$vcpkgRoot\vcpkg.exe")) {
+          # Retried, because the download inside it is the flaky part and a
+          # second attempt half a minute later is usually enough.
+          $bootstrapped = $false
+          foreach ($attempt in 1..3) {
+            # Cleared first, so a half-written file from the attempt before
+            # cannot be inherited and mistaken for this one succeeding.
+            Remove-Item "$vcpkgRoot\vcpkg.exe" -Force -ErrorAction SilentlyContinue
+
+            $status = 1
+            try {
+              & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+              $status = $LASTEXITCODE
+            } catch {
+              Write-Host "vcpkg bootstrap threw: $_"
+            }
+
+            if ($status -eq 0 -and (Test-VcpkgTool "$vcpkgRoot\vcpkg.exe")) {
+              $bootstrapped = $true
+              break
+            }
+
+            Write-Host "vcpkg bootstrap attempt $attempt failed (exit $status)"
+            if ($attempt -lt 3) { Start-Sleep -Seconds 20 }
+          }
+
+          if (-not $bootstrapped) {
+            # So the next run starts from nothing rather than from whatever the
+            # last attempt managed to write.
+            Remove-Item "$vcpkgRoot\vcpkg.exe" -Force -ErrorAction SilentlyContinue
+            throw 'vcpkg bootstrap failed after 3 attempts'
+          }
+        }
+
+        # Kept for the next run on this runner, and only once it has run here.
+        New-Item -ItemType Directory -Force -Path $toolCache | Out-Null
+        Copy-Item "$vcpkgRoot\vcpkg.exe" "$toolCache\vcpkg.exe" -Force
+
         New-Item -ItemType Directory -Force -Path $binCache | Out-Null
         "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         "VCPKG_DEFAULT_BINARY_CACHE=$binCache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -775,12 +1014,119 @@ jobs:
         path: third_party/eurorack/build/lib
         key: ${{ runner.os }}-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-debug
 
+    # The macOS job's third-party source cache, in PowerShell. Same reason and
+    # same shape: the build dirs go at the end of every run, so Lua and SQLite
+    # would be downloaded again on every one, and www.lua.org going unreachable
+    # has already failed this job in configure. On the github-hosted fallback
+    # runner nothing persists between runs, so this simply does the download
+    # CMake would have done and costs nothing either way.
+    #
+    # No shell key, so this runs in whatever the job's other steps run in.
+    # Naming pwsh explicitly fails outright on a runner that only has Windows
+    # PowerShell, where the default falls back to it; and continue-on-error
+    # because a step that exists to save a download must never be the reason a
+    # build goes red.
+    - name: Prepare third-party source cache
+      id: deps-cache
+      continue-on-error: true
+      run: |
+        # Windows PowerShell 5.1 negotiates TLS 1.0 by default, which every
+        # host here refused years ago, and draws a progress bar for every
+        # buffer it reads, which is worth an order of magnitude on a download
+        # this size.
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $ProgressPreference = 'SilentlyContinue'
+
+        $cacheRoot = Join-Path $HOME 'magda-ci-cache\deps'
+        New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+
+        function Seed($dir, $sha, $archive, $urls) {
+            if (Test-Path $dir) {
+                Write-Host "cached: $dir"
+                return $true
+            }
+
+            $work = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
+            New-Item -ItemType Directory -Force -Path $work | Out-Null
+            $file = Join-Path $work $archive
+
+            $fetched = ''
+            foreach ($url in $urls) {
+                try {
+                    Invoke-WebRequest -Uri $url -OutFile $file -UseBasicParsing -TimeoutSec 180
+                    $fetched = $url
+                    break
+                } catch {
+                    Write-Host "could not fetch $url"
+                }
+            }
+
+            if (-not $fetched) {
+                Write-Host "no source for $dir, leaving it to CMake"
+                Remove-Item -Recurse -Force $work
+                return $false
+            }
+
+            if ((Get-FileHash $file -Algorithm SHA256).Hash -ne $sha.ToUpper()) {
+                Write-Host "$fetched does not match the pinned hash, leaving it to CMake"
+                Remove-Item -Recurse -Force $work
+                return $false
+            }
+
+            $extracted = Join-Path $work 'extracted'
+            New-Item -ItemType Directory -Force -Path $extracted | Out-Null
+
+            # bsdtar, which ships with Windows and reads both the tarball and
+            # the zip.
+            tar -xf $file -C $extracted
+
+            # FetchContent hands its caller what is inside the archive rather
+            # than the archive's own root, so the seed has to be the directory
+            # it would have unpacked to and not the level above it.
+            $top = @(Get-ChildItem $extracted)
+            if ($top.Count -ne 1) {
+                Write-Host "$archive is not a single directory, leaving it to CMake"
+                Remove-Item -Recurse -Force $work
+                return $false
+            }
+
+            # Moved into place whole, so a directory that exists is a directory
+            # that is complete.
+            Move-Item $top[0].FullName $dir
+            Remove-Item -Recurse -Force $work
+            Write-Host "seeded: $dir from $fetched"
+            return $true
+        }
+
+        $luaDir = Join-Path $cacheRoot 'lua-5.4.7'
+        $sqliteDir = Join-Path $cacheRoot 'sqlite-amalgamation-3530100'
+
+        # Written through .NET rather than Out-File: Windows PowerShell writes
+        # UTF-16 there and the runner reads the file as UTF-8.
+        if (Seed $luaDir '9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30' 'lua-5.4.7.tar.gz' @(
+                'https://www.lua.org/ftp/lua-5.4.7.tar.gz',
+                'http://deb.debian.org/debian/pool/main/l/lua5.4/lua5.4_5.4.7.orig.tar.gz')) {
+            [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "lua_dir=$luaDir`n")
+        }
+
+        # The SHA-256 of the zip CMakeLists.txt pins by its SHA3-256, which is
+        # not a digest the tools on a runner can take. Both are of the same
+        # file and a version bump changes both.
+        if (Seed $sqliteDir '36ad6e7f38540a3b21a2ac36340833f0a9e426bc1c752751c3ba669466827eae' 'sqlite-amalgamation-3530100.zip' @(
+                'https://www.sqlite.org/2026/sqlite-amalgamation-3530100.zip')) {
+            [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "sqlite_dir=$sqliteDir`n")
+        }
+
+        exit 0
+
     - name: Configure CMake (Debug)
       run: |
         cmake -B build-debug -G Ninja `
           -DCMAKE_BUILD_TYPE=Debug `
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON `
           -DMAGDA_BUILD_TESTS=ON `
+          ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} `
+          ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} `
           -DCMAKE_C_COMPILER_LAUNCHER=ccache `
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache `
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
@@ -815,8 +1161,13 @@ jobs:
       if: always()
       run: ccache -s
 
+    # A timeout is here to catch a hang, not to enforce a performance budget.
+    # At five minutes it was doing the second job badly: the last green run on
+    # dev finished this step in 4:53, so any test added anywhere in the suite
+    # failed Windows and nowhere else, with a timeout for a message. Fifteen
+    # still catches a hang and stops the gate going red over seven seconds.
     - name: Run tests
-      timeout-minutes: 5
+      timeout-minutes: 15
       run: |
         $testExe = Get-ChildItem -Path build-debug -Recurse -Filter "magda_tests.exe" | Select-Object -First 1
         if ($testExe) {
@@ -839,6 +1190,8 @@ jobs:
         cmake -B build-release -G Ninja `
           -DCMAKE_BUILD_TYPE=Release `
           -DMAGDA_BUILD_TESTS=OFF `
+          ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} `
+          ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} `
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
           -DVCPKG_TARGET_TRIPLET=x64-windows `
           ${{ steps.dsp-prebuilt-self.outputs.faust_release_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt-self.outputs.faust_release_dir) || '' }} `

@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include "ClipTypes.hpp"
+
 namespace magda {
 
 class ConfigListener {
@@ -21,6 +23,28 @@ class ConfigListener {
  * Configuration class to manage all configurable settings in the DAW
  * This will later be exposed through a UI for user customization
  */
+/// The two remote-API transport switches as a config file resolves to them.
+struct RemoteApiSwitches {
+    bool websocket = false;
+    bool mcp = false;
+};
+
+/**
+ * @brief Read the transport switches out of a config file's `remoteApi` object.
+ *
+ * Separate from `Config::load` so the one rule with a migration in it can be
+ * tested without a config file on disk: a file written before #2142 carries only
+ * `enabled`, which meant both listeners, and reading it as anything less would
+ * silently switch off a transport somebody was already using.
+ *
+ * Either new key present wins over the legacy flag, including when it turns a
+ * transport off that `enabled` would have started — that is a user who has since
+ * made the choice explicitly.
+ *
+ * Anything that is not an object, including a void var, resolves to both off.
+ */
+RemoteApiSwitches remoteApiSwitchesFrom(const juce::var& remoteApiObject);
+
 class Config {
   public:
     static Config& getInstance();
@@ -177,6 +201,37 @@ class Config {
     }
     void setBottomPanelHeight(int height) {
         bottomPanelHeight = height;
+    }
+
+    // Panel tab layout, restored by PanelController on startup. Content types
+    // are stable string ids ("pluginBrowser", "inspector", …) rather than tab
+    // indices, so changing the enum or the default tab list later cannot
+    // silently repoint a saved setting. An empty field means "use the
+    // built-in default", which is also what an unknown id falls back to.
+    struct PanelTabsConfig {
+        std::string activeTab;              // content-type id of the front tab
+        std::vector<std::string> tabOrder;  // content-type ids, left to right
+    };
+
+    const PanelTabsConfig& getLeftPanelTabs() const {
+        return leftPanelTabs;
+    }
+    void setLeftPanelTabs(PanelTabsConfig tabs) {
+        leftPanelTabs = std::move(tabs);
+    }
+
+    const PanelTabsConfig& getRightPanelTabs() const {
+        return rightPanelTabs;
+    }
+    void setRightPanelTabs(PanelTabsConfig tabs) {
+        rightPanelTabs = std::move(tabs);
+    }
+
+    const PanelTabsConfig& getBottomPanelTabs() const {
+        return bottomPanelTabs;
+    }
+    void setBottomPanelTabs(PanelTabsConfig tabs) {
+        bottomPanelTabs = std::move(tabs);
     }
 
     // Layout Configuration
@@ -394,6 +449,25 @@ class Config {
         autoCrossfadeByDefault = enabled;
     }
 
+    // Which side of the track fader a NEW track's post-FX stage (and its mixer
+    // analysis rail) starts on (#2094). Per track from then on, via the fader
+    // tag on the post-FX panel. The master track is always pre-fader.
+    bool getPostFxPostFaderByDefault() const {
+        return postFxPostFaderByDefault;
+    }
+    void setPostFxPostFaderByDefault(bool postFader) {
+        postFxPostFaderByDefault = postFader;
+    }
+
+    // What NEW clips start with (#2003): whether they play through an overlap
+    // rather than the stack silencing one side. Per clip from then on.
+    void setClipOverlapPlaysBoth(bool playBoth) {
+        clipOverlapPlaysBoth = playBoth;
+    }
+    bool getClipOverlapPlaysBoth() const {
+        return clipOverlapPlaysBoth;
+    }
+
     // Recent Projects
     std::vector<std::string> getRecentProjects() const {
         return recentProjects;
@@ -423,6 +497,139 @@ class Config {
     }
     void setLastUpdateCheckTimestamp(int64_t ms) {
         lastUpdateCheckTimestamp = ms;
+    }
+
+    // Remote API (issue #1856). Off by default: starting a listener is not
+    // something a DAW should do because it was installed, even on loopback.
+    //
+    // Two independent switches, one per transport (#2142). They were one flag
+    // while the remote API was understood as "the MCP surface", but a user who
+    // drives MAGDA from a script wants the WebSocket and no MCP endpoint, and a
+    // user with only an AI host wants the reverse. Neither should have to open a
+    // listener they will not use.
+    bool getRemoteApiWebSocketEnabled() const {
+        return remoteApiWebSocketEnabled;
+    }
+    void setRemoteApiWebSocketEnabled(bool enabled) {
+        remoteApiWebSocketEnabled = enabled;
+    }
+    bool getRemoteApiMcpEnabled() const {
+        return remoteApiMcpEnabled;
+    }
+    void setRemoteApiMcpEnabled(bool enabled) {
+        remoteApiMcpEnabled = enabled;
+    }
+    /// Whether anything is meant to be listening. Derived, not stored: there is
+    /// no third state where the remote API is "on" with both transports off.
+    bool getRemoteApiEnabled() const {
+        return remoteApiWebSocketEnabled || remoteApiMcpEnabled;
+    }
+    /// 0 asks the OS for a free port. Clients read the actual one out of the
+    /// token file, so a fixed port is a convenience rather than a requirement.
+    int getRemoteApiPort() const {
+        return remoteApiPort;
+    }
+    void setRemoteApiPort(int port) {
+        remoteApiPort = port;
+    }
+    /// The MCP endpoint's own port (issue #1858). A second listener rather than
+    /// routes on the WebSocket's: an MCP notification stream holds a connection
+    /// thread for its lifetime, so its budget is sized separately. 0 asks the OS
+    /// for a free port, and the discovery file carries the real one alongside
+    /// the WebSocket's.
+    int getRemoteApiMcpPort() const {
+        return remoteApiMcpPort;
+    }
+    void setRemoteApiMcpPort(int port) {
+        remoteApiMcpPort = port;
+    }
+    /// Browser origins allowed to connect. Empty means no browser may; native
+    /// clients send no Origin and are unaffected.
+    const std::vector<std::string>& getRemoteApiAllowedOrigins() const {
+        return remoteApiAllowedOrigins;
+    }
+    void setRemoteApiAllowedOrigins(const std::vector<std::string>& origins) {
+        remoteApiAllowedOrigins = origins;
+    }
+    /**
+     * Per-client permission grants (issue #1860), as the JSON array
+     * `RemoteClientRegistry` reads and writes.
+     *
+     * Stored opaquely rather than as typed fields, because the shape belongs to
+     * the registry and the scope vocabulary is its to extend. Config's job here
+     * is to persist and return it unchanged.
+     *
+     * A missing entry is not a permission — it is the absence of one, and a
+     * client MAGDA has not seen starts read-only. So there is nothing dangerous
+     * about this array being absent, hand-edited, or copied between machines:
+     * the worst it can do is grant a name the user already chose to grant, and
+     * the token that lets anyone use it is not in here.
+     */
+    const juce::var& getRemoteApiClients() const {
+        return remoteApiClients;
+    }
+    void setRemoteApiClients(juce::var clients) {
+        remoteApiClients = std::move(clients);
+    }
+
+    // OSC control surfaces (issue #1757). Off by default, for the same reason
+    // the remote API is: a DAW should not start listening because it was
+    // installed. Unlike the remote API there is no token to check — OSC is
+    // unauthenticated UDP by design — so the bind address is the whole of the
+    // access control and is a setting rather than a constant.
+    bool getOscEnabled() const {
+        return oscEnabled;
+    }
+    void setOscEnabled(bool enabled) {
+        oscEnabled = enabled;
+    }
+    /// The UDP port MAGDA listens on. 9000 is the TouchOSC / Open Stage Control
+    /// default, so a stock template needs no configuration at either end.
+    int getOscReceivePort() const {
+        return oscReceivePort;
+    }
+    void setOscReceivePort(int port) {
+        oscReceivePort = port;
+    }
+    /**
+     * Which local interface to bind. Two values are meaningful:
+     *
+     *  - `0.0.0.0` — every interface, so a tablet on the same Wi-Fi can reach
+     *    MAGDA. The default, because a phone or tablet running TouchOSC is the
+     *    point of the feature and localhost-only would make it useless.
+     *  - `127.0.0.1` — loopback only, for a bridge or show-control process on
+     *    this machine.
+     *
+     * Anything the OS will bind is accepted; these two are what the settings UI
+     * offers. Bound as-is rather than validated here, so a user with a specific
+     * interface address can name it.
+     */
+    const std::string& getOscBindAddress() const {
+        return oscBindAddress;
+    }
+    void setOscBindAddress(const std::string& address) {
+        oscBindAddress = address;
+    }
+    /**
+     * The port MAGDA answers a surface on (issues #2091, #2096).
+     *
+     * There is no host beside it and no separate enable, because there is
+     * nothing left for either to say. MAGDA reads its own datagrams, so it knows
+     * which host a surface is talking from and replies there; feedback is on
+     * whenever the listener is, since a MAGDA that can hear a surface and has
+     * nothing to answer it with is a state with no use.
+     *
+     * The port survives that because it is the one thing the sender does not
+     * tell us: a surface sends from an ephemeral port and listens on a fixed
+     * one, so the port to reply on cannot be inferred from the port a message
+     * came from. 9001 is TouchOSC's default receive port, the companion of the
+     * 9000 above.
+     */
+    int getOscFeedbackPort() const {
+        return oscFeedbackPort;
+    }
+    void setOscFeedbackPort(int port) {
+        oscFeedbackPort = port;
     }
 
     // Browser filter settings
@@ -467,6 +674,18 @@ class Config {
     }
     void setBrowserLastView(const std::string& view) {
         browserLastView = view;
+    }
+
+    // Grouping the plugin browser restores on startup: "category",
+    // "manufacturer", "format", "favorites" or "folders". A stable id rather
+    // than the combo box's item number, so reordering that menu later cannot
+    // repoint an existing setting; an unrecognised value falls back to
+    // "category".
+    std::string getPluginBrowserViewMode() const {
+        return pluginBrowserViewMode;
+    }
+    void setPluginBrowserViewMode(const std::string& mode) {
+        pluginBrowserViewMode = mode;
     }
 
     // User-chosen location for the Sample Tagger ONNX bundle. Empty
@@ -1159,6 +1378,11 @@ class Config {
     int rightPanelWidth = 0;
     int bottomPanelHeight = 0;
 
+    // Panel tab layout (empty = use getDefaultPanelStates())
+    PanelTabsConfig leftPanelTabs;
+    PanelTabsConfig rightPanelTabs;
+    PanelTabsConfig bottomPanelTabs;
+
     // Track deletion settings
     bool confirmTrackDelete = true;  // Show confirmation dialog before deleting a track
 
@@ -1259,6 +1483,13 @@ class Config {
     // New audio clips get AUTO-XFADE enabled (see #1499).
     bool autoCrossfadeByDefault = true;
 
+    // New clips play through their overlaps instead of the clip on top owning
+    // the span it covers (see #2003).
+    bool clipOverlapPlaysBoth = false;
+
+    // New tracks run their post-FX stage after the track fader (see #2094).
+    bool postFxPostFaderByDefault = true;
+
     // Browser filter settings (media explorer)
     bool browserFilterAudio = true;    // Show audio files by default
     bool browserFilterMidi = false;    // Hide MIDI files by default
@@ -1273,6 +1504,9 @@ class Config {
     // "filesystem" → file browser at browserDefaultDirectory.
     // "library"    → DB browser (sample library).
     std::string browserLastView = "filesystem";
+
+    // Which grouping the plugin browser should restore on startup (see accessor).
+    std::string pluginBrowserViewMode = "category";
 
     // Optional override for the Sample Tagger ONNX bundle location.
     // Empty = use the default dataDir/MediaDB/models.
@@ -1296,6 +1530,27 @@ class Config {
     // Auto-update check
     bool autoCheckUpdates = true;          // Check GitHub for newer releases on startup
     int64_t lastUpdateCheckTimestamp = 0;  // ms since epoch; rate-limit at 24h
+
+    // Remote API (#1856). The bearer token is deliberately absent: it is
+    // generated per run and written to a file only the user can read, so it
+    // never sits in a config file that gets copied around or pasted into a bug
+    // report.
+    bool remoteApiWebSocketEnabled = false;
+    bool remoteApiMcpEnabled = false;
+    int remoteApiPort = 0;     // 0 = ephemeral; the token file carries the real one
+    int remoteApiMcpPort = 0;  // likewise, for the MCP endpoint (#1858)
+    std::vector<std::string> remoteApiAllowedOrigins;
+    /// Array of `{name, scopes, firstSeenMs, lastSeenMs}` — see #1860. Void
+    /// until something writes one, which reads as "no client has been granted
+    /// anything yet".
+    juce::var remoteApiClients;
+
+    // OSC control surfaces (#1757). Off, and reachable from the network when
+    // switched on — see the accessors for why the bind default is not loopback.
+    bool oscEnabled = false;
+    int oscReceivePort = 9000;
+    std::string oscBindAddress = "0.0.0.0";
+    int oscFeedbackPort = 9001;
 
     // Export audio settings
     std::string exportFormat = "WAV24";  // WAV16, WAV24, WAV32, FLAC

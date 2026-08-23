@@ -96,6 +96,44 @@ float applyRange(const BindingRange& range, float normalizedAfterCurve) {
 }
 
 // ============================================================================
+// Inverses
+// ============================================================================
+
+float invertCurve(BindingCurve curve, float y) {
+    y = y < 0.0f ? 0.0f : (y > 1.0f ? 1.0f : y);
+
+    switch (curve) {
+        case BindingCurve::Linear:
+            return y;
+
+        case BindingCurve::Log:
+            // The inverse of log1p(x * (e - 1)), which is the Exp curve itself.
+            return std::expm1(y) / kEMinus1;
+
+        case BindingCurve::Exp:
+            // And its mirror: Exp and Log are each other's inverse.
+            return std::log1p(y * kEMinus1);
+
+        case BindingCurve::SCurve: {
+            // Smoothstep is the cubic 3x^2 - 2x^3, whose one real root in [0,1]
+            // has this closed form. Cheaper and exact where a Newton iteration
+            // would be neither, and it lands exactly on 0, 0.5 and 1.
+            const float clamped = juce::jlimit(-1.0f, 1.0f, 1.0f - 2.0f * y);
+            return 0.5f - std::sin(std::asin(clamped) / 3.0f);
+        }
+    }
+
+    return y;
+}
+
+float invertRange(const BindingRange& range, float ranged) {
+    const float span = range.max - range.min;
+    if (span == 0.0f)
+        return 0.0f;
+    return juce::jlimit(0.0f, 1.0f, (ranged - range.min) / span);
+}
+
+// ============================================================================
 // applyToggle
 // ============================================================================
 
@@ -110,6 +148,26 @@ float applyToggle(int rawValue, ToggleState& state) {
     state.wasHigh = isHigh;
 
     return state.on ? 1.0f : 0.0f;
+}
+
+// ============================================================================
+// applyModeNormalized
+// ============================================================================
+
+TransformOutput applyModeNormalized(BindingMode mode, float normalized, ToggleState& state) {
+    const float clamped = juce::jlimit(0.0f, 1.0f, normalized);
+
+    if (mode == BindingMode::Toggle) {
+        // Reuses the MIDI edge logic rather than restating it, by handing it a
+        // value on the same side of its threshold. Toggle only asks which side
+        // of half-way the control is, so nothing is lost in the conversion and
+        // the two paths cannot drift apart.
+        return {true, applyToggle(clamped >= 0.5f ? 127 : 0, state)};
+    }
+
+    // Absolute, and the relative modes with it — see the header for why a
+    // value that arrives normalized has no delta to decode.
+    return {true, clamped};
 }
 
 }  // namespace magda

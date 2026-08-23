@@ -180,30 +180,30 @@ struct ClipDisplayInfo {
     //
     // fileDuration is optional; pass 0 if unknown.
     //
-    // Issue #1157: every seconds-domain value read from `clip` is routed
-    // through ClipInfo accessors (getTimelineLength / getSourceLoopStart /
-    // getSourceLoopLength / getSourceOffset) so autoTempo clips compute
-    // live from beats × BPM and stay correct after BPM changes.
+    // Issue #1157: the timeline seconds come from beat-domain accessors so
+    // autoTempo clips compute live and stay correct after BPM changes. The
+    // source-domain values come off the clip's audio event (#1901).
     static ClipDisplayInfo from(const ClipInfo& clip, double bpm, double fileDuration = 0.0) {
         ClipDisplayInfo d{};
         const double projectBpm = isValidBpm(bpm) ? bpm : DEFAULT_BPM;
+        const auto& event = audioEventRef(clip);
 
         const double clipLength = clip.getTimelineLength(projectBpm);
         const double clipStart = clip.getTimelineStart(projectBpm);
-        const double clipOffset = clip.getSourceOffset();
-        const double clipLoopStart = clip.getSourceLoopStart();
-        const double clipLoopLength = clip.getSourceLoopLength();
+        const double clipOffset = event.anchorSeconds();
+        const double clipLoopStart = event.loopStartSeconds();
+        const double clipLoopLength = event.loopLengthSeconds();
 
         d.startTime = clipStart;
         d.length = clipLength;
         d.endTime = clipStart + clipLength;
         d.offset = clipOffset;
-        d.speedRatio = clip.speedRatio;
-        d.reversed = clip.isReversed;
+        d.speedRatio = event.speedRatio;
+        d.reversed = event.reversed;
 
-        d.autoTempo = clip.autoTempo;
+        d.autoTempo = event.autoTempo;
         d.lengthBeats = clip.placement.lengthBeats;
-        d.loopLengthBeats = clip.loopLengthBeats;
+        d.loopLengthBeats = event.loopLengthBeats();
         d.startBeats = clip.getStartBeats(projectBpm);
         d.endBeats = clip.getEndBeats(projectBpm);
 
@@ -215,12 +215,12 @@ struct ClipDisplayInfo {
         // the loop's beat-count for the same calibration. Issue #1157.
         //
         // Manual stretch: timelineSeconds = sourceSeconds / speedRatio.
-        if (clip.autoTempo && clip.audio().interpretation.bpm > 0.0) {
-            d.srcToTimelineRatio = clip.audio().interpretation.bpm / projectBpm;
-        } else if (clip.autoTempo && clipLoopLength > 0.0 && clip.loopLengthBeats > 0.0) {
-            d.srcToTimelineRatio = (clip.loopLengthBeats * 60.0 / projectBpm) / clipLoopLength;
+        if (event.autoTempo && event.interpBpm > 0.0) {
+            d.srcToTimelineRatio = event.interpBpm / projectBpm;
+        } else if (event.autoTempo && clipLoopLength > 0.0 && d.loopLengthBeats > 0.0) {
+            d.srcToTimelineRatio = (d.loopLengthBeats * 60.0 / projectBpm) / clipLoopLength;
         } else {
-            d.srcToTimelineRatio = (clip.speedRatio > 0.0) ? 1.0 / clip.speedRatio : 1.0;
+            d.srcToTimelineRatio = (event.speedRatio > 0.0) ? 1.0 / event.speedRatio : 1.0;
         }
 
         // ---- Source file extent (always [0, fileDuration]) ----
@@ -232,7 +232,7 @@ struct ClipDisplayInfo {
             // conservative range derived from the clip's own length so
             // the editor still gets something sane to draw.
             const double sourceLenFromLength =
-                (clip.speedRatio > 0.0) ? clipLength * clip.speedRatio : clipLength;
+                (event.speedRatio > 0.0) ? clipLength * event.speedRatio : clipLength;
             d.sourceFileEnd = std::max(clipOffset + sourceLenFromLength, clipOffset + 0.001);
         }
 

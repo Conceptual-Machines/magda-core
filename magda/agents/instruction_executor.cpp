@@ -980,7 +980,7 @@ bool InstructionExecutor::executeHit(const HitOp& op) {
         }
     }
     if (noteNumber < 0) {
-        results_.add("Skipped " + op.role + " — no row in track's kit");
+        results_.add("Skipped " + op.role + juce::String::fromUTF8(" — no row in track's kit"));
         return true;
     }
 

@@ -17,6 +17,7 @@
 #include "../clips/ClipComponent.hpp"
 #include "../common/InternalFileDrag.hpp"
 #include "Config.hpp"
+#include "TrackControlsPolicy.hpp"
 #include "core/AppPaths.hpp"
 #include "core/AutomationCommands.hpp"
 #include "core/ClipCommands.hpp"
@@ -192,6 +193,49 @@ void TrackContentPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile&
     tracksChanged();  // Rebuild with new visibility settings
 }
 
+std::vector<ClipInfo> TrackContentPanel::previewLaneClips(TrackId trackId) const {
+    auto& clipManager = ClipManager::getInstance();
+
+    const bool laneIsDragging =
+        std::any_of(clipComponents_.begin(), clipComponents_.end(), [&](const auto& comp) {
+            if (!comp->isCurrentlyDragging())
+                return false;
+            const auto* clip = clipManager.getClip(comp->getClipId());
+            return clip != nullptr && clip->trackId == trackId;
+        });
+    if (!laneIsDragging)
+        return {};
+
+    std::vector<ClipInfo> lane;
+    for (ClipId id : clipManager.getClipsOnTrack(trackId, ClipView::Arrangement)) {
+        const auto* clip = clipManager.getClip(id);
+        if (clip == nullptr)
+            continue;
+
+        ClipInfo previewed = *clip;
+        for (const auto& comp : clipComponents_) {
+            if (comp->getClipId() != id)
+                continue;
+            double startBeat = 0.0;
+            double lengthBeats = 0.0;
+            if (comp->previewPlacementBeats(tempoBPM, startBeat, lengthBeats))
+                previewed.setPlacementBeats(startBeat, lengthBeats);
+            break;
+        }
+        lane.push_back(std::move(previewed));
+    }
+    return lane;
+}
+
+void TrackContentPanel::repaintClipsOnTrack(TrackId trackId) {
+    auto& clipManager = ClipManager::getInstance();
+    for (auto& clipComp : clipComponents_) {
+        const auto* clip = clipManager.getClip(clipComp->getClipId());
+        if (clip != nullptr && clip->trackId == trackId)
+            clipComp->repaint();
+    }
+}
+
 void TrackContentPanel::repaintVisible() {
     if (auto* viewport = findParentComponentOfClass<juce::Viewport>()) {
         repaint(juce::Rectangle<int>(viewport->getViewPositionX(), viewport->getViewPositionY(),
@@ -232,6 +276,9 @@ void TrackContentPanel::tracksChanged() {
         const auto* track = trackManager.getTrack(trackId);
         if (!track || !track->isVisibleIn(currentViewMode_))
             return;
+
+        if (!occupiesArrangementRow(track->type))
+            return;  // Rendered in the aux strip instead — see the predicate.
 
         visibleTrackIds_.push_back(trackId);
 
@@ -2348,6 +2395,13 @@ void TrackContentPanel::clipPropertyChanged(ClipId clipId) {
             // Update all clip positions (updateClipComponentPositions already
             // skips dragging clips internally)
             updateClipComponentPositions();
+
+            // What one clip draws depends on the clips it overlaps: AUTO-XFADE
+            // or play-through on this one changes the fade its neighbour draws
+            // and whether it shows through. Neither moves that neighbour, so
+            // nothing else would repaint it (#2003).
+            if (const auto* clip = ClipManager::getInstance().getClip(clipId))
+                repaintClipsOnTrack(clip->trackId);
             break;
         }
     }
@@ -2387,12 +2441,19 @@ void TrackContentPanel::rebuildClipComponents() {
     // Remove all existing clip components
     clipComponents_.clear();
 
-    // Get only arrangement clips (timeline-based). Sort by start beat so the
-    // child z-order is deterministic: a later clip sits on top of the one it
-    // crossfades into (#1499) instead of following hash-map iteration order.
+    // Get only arrangement clips (timeline-based). Child z-order follows the
+    // lane's stacking order, so what you see matches what you hear: the clip on
+    // top is the one that owns the span it covers (#2003), and it is the clip
+    // drawn over the one underneath. Start beat breaks ties within a stack
+    // level, which keeps a later clip above the one it crossfades into (#1499)
+    // instead of following hash-map iteration order.
     auto clips = ClipManager::getInstance().getArrangementClips();
     std::sort(clips.begin(), clips.end(), [](const ClipInfo& a, const ClipInfo& b) {
-        return a.placement.startBeat < b.placement.startBeat;
+        if (a.stackOrder != b.stackOrder)
+            return a.stackOrder < b.stackOrder;
+        if (a.placement.startBeat != b.placement.startBeat)
+            return a.placement.startBeat < b.placement.startBeat;
+        return a.id < b.id;
     });
 
     // Create a component for each clip that belongs to a visible track
@@ -2563,11 +2624,28 @@ void TrackContentPanel::updateClipComponentPositions() {
         visibleRight = visibleLeft + viewport->getViewWidth();
     }
 
+    // Which stretch of each clip has another clip playing with it (#2003). It
+    // takes a whole lane to work out, so it is resolved here once per track
+    // rather than per clip at paint time, and only for lanes that actually hold
+    // more than one clip.
+    std::unordered_map<TrackId, std::vector<ClipInfo>> laneClips;
+    for (auto& clipComp : clipComponents_) {
+        if (const auto* clip = ClipManager::getInstance().getClip(clipComp->getClipId()))
+            laneClips[clip->trackId].push_back(*clip);
+    }
+
     for (auto& clipComp : clipComponents_) {
         const auto* clip = ClipManager::getInstance().getClip(clipComp->getClipId());
         if (!clip) {
             continue;
         }
+
+        const auto& lane = laneClips[clip->trackId];
+        const bool stacked = lane.size() > 1;
+        clipComp->setBothPlayRanges(stacked ? computeBothPlayRanges(lane, clip->id)
+                                            : std::vector<BeatRange>{});
+        clipComp->setShowThroughRanges(stacked ? computeShowThroughRanges(lane, clip->id)
+                                               : std::vector<BeatRange>{});
 
         // Skip clips that are being dragged - they manage their own position
         if (clipComp->isCurrentlyDragging()) {

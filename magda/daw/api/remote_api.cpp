@@ -4,6 +4,8 @@
 #include <cmath>
 #include <limits>
 
+#include "remote_handlers.hpp"
+
 namespace magda::remote {
 namespace {
 
@@ -52,9 +54,10 @@ void applyIntegerBounds(juce::var schema, const juce::String& propertyName = {})
     if (!items.isVoid())
         applyIntegerBounds(items, propertyName);
 
-    if (auto* alternatives = object->getProperty("anyOf").getArray())
-        for (auto& alternative : *alternatives)
-            applyIntegerBounds(alternative, propertyName);
+    for (const char* keyword : {"anyOf", "oneOf"})
+        if (auto* alternatives = object->getProperty(keyword).getArray())
+            for (auto& alternative : *alternatives)
+                applyIntegerBounds(alternative, propertyName);
 }
 
 // Blanket DoS caps for request payloads. Response schemas must stay valid for
@@ -79,9 +82,10 @@ void applyRequestLimits(juce::var schema) {
     if (!items.isVoid())
         applyRequestLimits(items);
 
-    if (auto* alternatives = object->getProperty("anyOf").getArray())
-        for (auto& alternative : *alternatives)
-            applyRequestLimits(alternative);
+    for (const char* keyword : {"anyOf", "oneOf"})
+        if (auto* alternatives = object->getProperty(keyword).getArray())
+            for (auto& alternative : *alternatives)
+                applyRequestLimits(alternative);
 }
 
 juce::var parseSchema(const char* json) {
@@ -208,25 +212,55 @@ const juce::var& clipSchema() {
     return value;
 }
 
-const juce::var& deviceSchema() {
+const juce::var& devicePathSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
         "properties":{
-            "id":{"type":"integer","minimum":0},
-            "trackId":{"type":"integer","minimum":0},
-            "rackId":{"type":["integer","null"]},
-            "chainId":{"type":["integer","null"]},
-            "name":{"type":"string"},
-            "type":{"type":"string","enum":["instrument","effect","midi","analysis"]},
-            "format":{"type":"string","enum":["vst3","au","vst","internal"]},
-            "instrument":{"type":"boolean"},
-            "bypassed":{"type":"boolean"},
-            "gainDb":{"type":"number"}
+            "trackId":{"anyOf":[{"type":"integer","const":-2},
+                                {"type":"integer","minimum":0}]},
+            "section":{"type":"string","enum":["fx","post_fx","mixer_analysis"]},
+            "trackLevel":{"type":"boolean"},
+            "topLevelDeviceId":{"type":["integer","null"],"minimum":0},
+            "steps":{"type":"array","items":{
+                "type":"object",
+                "properties":{
+                    "type":{"type":"string","enum":["rack","chain","device"]},
+                    "id":{"type":"integer","minimum":0}
+                },
+                "required":["type","id"],
+                "additionalProperties":false
+            }}
         },
-        "required":["id","trackId","rackId","chainId","name","type","format","instrument",
-                    "bypassed","gainDb"],
+        "required":["trackId","section","trackLevel","topLevelDeviceId","steps"],
         "additionalProperties":false
     })json");
+    return value;
+}
+
+const juce::var& deviceSchema() {
+    static auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "id":{"type":"integer","minimum":0},
+                "trackId":{"type":"integer","minimum":0},
+                "rackId":{"type":["integer","null"]},
+                "chainId":{"type":["integer","null"]},
+                "devicePath":{},
+                "name":{"type":"string"},
+                "type":{"type":"string","enum":["instrument","effect","midi","analysis"]},
+                "format":{"type":"string","enum":["vst3","au","lv2","internal"]},
+                "instrument":{"type":"boolean"},
+                "bypassed":{"type":"boolean"},
+                "gainDb":{"type":"number"}
+            },
+            "required":["id","trackId","rackId","chainId","devicePath","name","type","format",
+                        "instrument","bypassed","gainDb"],
+            "additionalProperties":false
+        })json");
+        schema["properties"].getDynamicObject()->setProperty("devicePath", devicePathSchema());
+        return schema;
+    }();
     return value;
 }
 
@@ -295,6 +329,26 @@ const juce::var& deviceGraphSchema() {
     return value;
 }
 
+const juce::var& deviceCatalogEntrySchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "catalogId":{"type":"string"},
+            "name":{"type":"string"},
+            "manufacturer":{"type":"string"},
+            "category":{"type":"string"},
+            "description":{"type":"string"},
+            "format":{"type":"string","enum":["vst3","au","lv2","internal"]},
+            "type":{"type":"string","enum":["instrument","effect","midi","analysis"]},
+            "instrument":{"type":"boolean"}
+        },
+        "required":["catalogId","name","manufacturer","category","description","format","type",
+                    "instrument"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
 const juce::var& selectionSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
@@ -358,23 +412,31 @@ const juce::var& sessionSchema() {
 }
 
 const juce::var& automationTargetSchema() {
-    static const auto value = parseSchema(R"json({
-        "type":"object",
-        "properties":{
-            "kind":{"type":"string","enum":["plugin_param","device_macro","mod_param",
-                "track_volume","track_pan","send_level","tempo"]},
-            "trackId":{"anyOf":[{"type":"null"},{"type":"integer","const":-2},
-                                {"type":"integer","minimum":0}]},
-            "deviceId":{"type":["integer","null"],"minimum":0},
-            "parameterIndex":{"type":"integer","minimum":-1},
-            "modId":{"type":"integer","minimum":-1},
-            "modParameterIndex":{"type":"integer","minimum":-1},
-            "sendBusIndex":{"type":"integer","minimum":-1}
-        },
-        "required":["kind","trackId","deviceId","parameterIndex","modId","modParameterIndex",
-                    "sendBusIndex"],
-        "additionalProperties":false
-    })json");
+    static auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "kind":{"type":"string","enum":["plugin_param","device_macro","mod_param",
+                    "track_volume","track_pan","send_level","tempo"]},
+                "devicePath":{},
+                "parameterIndex":{"type":"integer","minimum":-1},
+                "modId":{"type":"integer","minimum":-1},
+                "modParameterIndex":{"type":"integer","minimum":-1},
+                "sendBusIndex":{"type":"integer","minimum":-1}
+            },
+            "required":["kind","devicePath","parameterIndex","modId","modParameterIndex",
+                        "sendBusIndex"],
+            "additionalProperties":false
+        })json");
+        // Edit-scoped targets (tempo) carry no path, so null is permitted.
+        auto* nullable = new juce::DynamicObject();
+        juce::Array<juce::var> alternatives;
+        alternatives.add(parseSchema(R"json({"type":"null"})json"));
+        alternatives.add(devicePathSchema());
+        nullable->setProperty("anyOf", juce::var(alternatives));
+        schema["properties"].getDynamicObject()->setProperty("devicePath", juce::var(nullable));
+        return schema;
+    }();
     return value;
 }
 
@@ -415,6 +477,99 @@ const juce::var& automationLaneSchema() {
         return schema;
     }();
     return value;
+}
+
+// ---------------------------------------------------------------------------
+// Subscription schemas (#1857)
+// ---------------------------------------------------------------------------
+
+/// The topic names, spelled once. Kept in step with `magda::remote::Topic` by
+/// the round-trip test over `parseTopic`, which fails the moment the two drift.
+const char* kTopicEnumJson =
+    R"json({"type":"array","minItems":1,"maxItems":10,
+            "items":{"type":"string","enum":["project","tracks","clips","devices","selection",
+                                             "transport","session","automation","meters",
+                                             "playhead"]}})json";
+
+juce::var topicListSchema() {
+    return parseSchema(kTopicEnumJson);
+}
+
+/// `{"topics":[…]}` with topics optional — absent means every subscribed topic.
+juce::var topicSelectionSchema() {
+    auto schema = parseSchema(R"json({
+        "type":"object","properties":{"topics":{}},"additionalProperties":false
+    })json");
+    schema["properties"].getDynamicObject()->setProperty("topics", topicListSchema());
+    return schema;
+}
+
+/**
+ * @brief `{"topics":[…], "snapshot": true}`.
+ *
+ * No revision to resume from. A project revision counts committed mutations,
+ * and subscription events are also published for motion that commits nothing,
+ * so naming a revision cannot establish that a client saw every event up to it.
+ * `snapshot:false` is the deliberate opt-out — the client asserting it has state
+ * and will resync itself — rather than the server guessing on its behalf.
+ */
+juce::var subscribeInputSchema() {
+    auto schema = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "topics":{},
+            "snapshot":{"type":"boolean"}
+        },
+        "required":["topics"],"additionalProperties":false
+    })json");
+    schema["properties"].getDynamicObject()->setProperty("topics", topicListSchema());
+    return schema;
+}
+
+/**
+ * @brief The pushed envelope, published so a client can generate against it.
+ *
+ * `payload` is deliberately unconstrained: for a snapshot it is the matching
+ * read operation's output, for a delta it is `{added,updated,removed}` or that
+ * same output, and for a sample it is a meter or playhead reading. Declaring one
+ * shape here would be declaring a false one.
+ */
+const juce::var& subscriptionEventSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "topic":{"type":"string"},
+            "type":{"type":"string","enum":["snapshot","delta","sample"]},
+            "revision":{"type":"integer","minimum":0},
+            "payload":{}
+        },
+        "required":["topic","type","revision","payload"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+/// `withSnapshots` distinguishes the two methods that hand back initial state
+/// in their reply from the two that only report what is subscribed.
+juce::var subscriptionResultSchema(bool withSnapshots) {
+    auto schema = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "topics":{"type":"array","items":{"type":"string"}},
+            "revision":{"type":"integer","minimum":0}
+        },
+        "required":["topics","revision"],
+        "additionalProperties":false
+    })json");
+    if (!withSnapshots)
+        return schema;
+
+    auto* properties = schema["properties"].getDynamicObject();
+    properties->setProperty("snapshots", arraySchema(subscriptionEventSchema()));
+    schema.getDynamicObject()->setProperty(
+        "required", juce::var(juce::Array<juce::var>{juce::var("topics"), juce::var("revision"),
+                                                     juce::var("snapshots")}));
+    return schema;
 }
 
 bool matchesType(const juce::var& value, const juce::String& type) {
@@ -481,6 +636,43 @@ void validateValue(const juce::var& value, const juce::var& schema, const juce::
         return;
     }
 
+    // Exactly one branch, where anyOf wants at least one. Implemented rather
+    // than ignored: an unknown keyword is silently dropped here, so a schema
+    // that declared oneOf would advertise a constraint nothing enforced, and
+    // both "neither field" and "both fields" would reach the handler.
+    if (auto* alternatives = schemaObject->getProperty("oneOf").getArray()) {
+        int matches = 0;
+        std::vector<ValidationIssue> branchIssues;
+
+        for (int index = 0; index < alternatives->size(); ++index) {
+            std::vector<ValidationIssue> candidateIssues;
+            validateValue(value, (*alternatives)[index],
+                          path + "<oneOf:" + juce::String(index) + ">", candidateIssues);
+            if (candidateIssues.empty())
+                ++matches;
+            else
+                branchIssues.insert(branchIssues.end(), candidateIssues.begin(),
+                                    candidateIssues.end());
+        }
+
+        // Only a failure ends validation here. Unlike anyOf, whose branches
+        // stand for the whole schema, oneOf sits beside properties, required
+        // and additionalProperties on the same object -- returning on success
+        // would skip every one of them, so the exclusivity would be enforced
+        // and the field bounds silently would not.
+        if (matches != 1) {
+            if (matches == 0) {
+                addIssue(issues, path, "one_of", "Value does not match any allowed schema");
+                issues.insert(issues.end(), branchIssues.begin(), branchIssues.end());
+            } else {
+                addIssue(issues, path, "one_of",
+                         "Value matches " + juce::String(matches) +
+                             " allowed schemas, but must match exactly one");
+            }
+            return;
+        }
+    }
+
     const auto declaredType = schemaObject->getProperty("type");
     if (!declaredType.isVoid() && !typeMatches(value, declaredType)) {
         addIssue(issues, path, "type",
@@ -527,6 +719,9 @@ void validateValue(const juce::var& value, const juce::var& schema, const juce::
         const auto maxItems = schemaObject->getProperty("maxItems");
         if (!maxItems.isVoid() && array->size() > static_cast<int>(maxItems))
             addIssue(issues, path, "max_items", "Array exceeds the allowed item count");
+        const auto minItems = schemaObject->getProperty("minItems");
+        if (!minItems.isVoid() && array->size() < static_cast<int>(minItems))
+            addIssue(issues, path, "min_items", "Array has fewer items than allowed");
         const auto itemSchema = schemaObject->getProperty("items");
         if (!itemSchema.isVoid()) {
             for (int index = 0; index < array->size(); ++index)
@@ -622,18 +817,43 @@ juce::var operationInputSchema(const char* json) {
 
 }  // namespace
 
+// Shared by device listings, automation targets, and operation handlers: all
+// three address a device the same way, and must not drift apart. Defined
+// outside the anonymous namespace above so handlers in another translation
+// unit reuse this decoder rather than growing a second one — the helpers it
+// calls stay internal, which is why it lives here rather than with them.
+DevicePathDto devicePathFromJson(const juce::var& json) {
+    DevicePathDto dto;
+    dto.trackId = readInt(json, "trackId");
+    dto.section = json["section"].toString();
+    dto.trackLevel = static_cast<bool>(json["trackLevel"]);
+    dto.topLevelDeviceId = readNullableId<DeviceId>(json, "topLevelDeviceId");
+    if (auto* steps = json["steps"].getArray()) {
+        dto.steps.reserve(static_cast<size_t>(steps->size()));
+        for (const auto& item : *steps)
+            dto.steps.push_back({item["type"].toString(), readInt(item, "id")});
+    }
+    return dto;
+}
+
 juce::String toString(ErrorCode code) {
     switch (code) {
         case ErrorCode::InvalidRequest:
             return "invalid_request";
         case ErrorCode::UnknownOperation:
             return "unknown_operation";
+        case ErrorCode::PermissionDenied:
+            return "permission_denied";
         case ErrorCode::ValidationFailed:
             return "validation_failed";
         case ErrorCode::NotFound:
             return "not_found";
         case ErrorCode::Conflict:
             return "conflict";
+        case ErrorCode::Timeout:
+            return "timeout";
+        case ErrorCode::Cancelled:
+            return "cancelled";
         case ErrorCode::InternalError:
             return "internal_error";
     }
@@ -677,6 +897,37 @@ std::vector<ValidationIssue> validateJson(const juce::var& value, const juce::va
     std::vector<ValidationIssue> issues;
     validateValue(value, schema, path, issues);
     return issues;
+}
+
+std::optional<juce::int64> jsonInteger(const juce::var& value, juce::int64 lowest,
+                                       juce::int64 highest) {
+    juce::int64 result = 0;
+
+    if (value.isInt() || value.isInt64()) {
+        result = static_cast<juce::int64>(value);
+    } else if (value.isDouble()) {
+        const auto number = static_cast<double>(value);
+        if (!std::isfinite(number) || number != std::floor(number))
+            return std::nullopt;
+
+        // Establish that the value fits an int64 at all before converting, and
+        // do it against 2^63 exclusive rather than (double)INT64_MAX. That cast
+        // rounds *up* to exactly 2^63, so comparing against it lets 2^63 itself
+        // through as "not greater" and straight into the conversion it was meant
+        // to prevent. The negative bound needs no such care: -2^63 is exactly
+        // representable and is a valid int64.
+        constexpr double twoPow63 = 9223372036854775808.0;
+        if (number >= twoPow63 || number < -twoPow63)
+            return std::nullopt;
+
+        result = static_cast<juce::int64>(number);
+    } else {
+        return std::nullopt;
+    }
+
+    if (result < lowest || result > highest)
+        return std::nullopt;
+    return result;
 }
 
 std::optional<Error> validateOperationInput(const OperationDescriptor& operation,
@@ -762,6 +1013,7 @@ juce::var toJson(const DeviceDto& dto) {
     object->setProperty("trackId", dto.trackId);
     object->setProperty("rackId", nullableId(dto.rackId));
     object->setProperty("chainId", nullableId(dto.chainId));
+    object->setProperty("devicePath", toJson(dto.devicePath));
     object->setProperty("name", dto.name);
     object->setProperty("type", dto.type);
     object->setProperty("format", dto.format);
@@ -818,6 +1070,19 @@ juce::var toJson(const DeviceGraphDto& dto) {
     return object;
 }
 
+juce::var toJson(const DeviceCatalogEntryDto& dto) {
+    auto object = new juce::DynamicObject();
+    object->setProperty("catalogId", dto.catalogId);
+    object->setProperty("name", dto.name);
+    object->setProperty("manufacturer", dto.manufacturer);
+    object->setProperty("category", dto.category);
+    object->setProperty("description", dto.description);
+    object->setProperty("format", dto.format);
+    object->setProperty("type", dto.type);
+    object->setProperty("instrument", dto.instrument);
+    return object;
+}
+
 juce::var toJson(const SelectionDto& dto) {
     auto object = new juce::DynamicObject();
     object->setProperty("trackId", nullableId(dto.trackId));
@@ -866,11 +1131,29 @@ juce::var toJson(const AutomationPointDto& dto) {
     return object;
 }
 
+juce::var toJson(const DevicePathDto& dto) {
+    auto object = new juce::DynamicObject();
+    object->setProperty("trackId", dto.trackId);
+    object->setProperty("section", dto.section);
+    object->setProperty("trackLevel", dto.trackLevel);
+    object->setProperty("topLevelDeviceId", nullableId(dto.topLevelDeviceId));
+
+    juce::Array<juce::var> steps;
+    for (const auto& step : dto.steps) {
+        auto* stepObject = new juce::DynamicObject();
+        stepObject->setProperty("type", step.type);
+        stepObject->setProperty("id", step.id);
+        steps.add(juce::var(stepObject));
+    }
+    object->setProperty("steps", juce::var(steps));
+    return object;
+}
+
 juce::var toJson(const AutomationTargetDto& dto) {
     auto object = new juce::DynamicObject();
     object->setProperty("kind", dto.kind);
-    object->setProperty("trackId", nullableId(dto.trackId));
-    object->setProperty("deviceId", nullableId(dto.deviceId));
+    object->setProperty("devicePath",
+                        dto.devicePath.has_value() ? toJson(*dto.devicePath) : juce::var());
     object->setProperty("parameterIndex", dto.parameterIndex);
     object->setProperty("modId", dto.modId);
     object->setProperty("modParameterIndex", dto.modParameterIndex);
@@ -977,6 +1260,7 @@ std::optional<DeviceDto> deviceFromJson(const juce::var& json, Error& error) {
     dto.trackId = readInt(json, "trackId");
     dto.rackId = readNullableId<RackId>(json, "rackId");
     dto.chainId = readNullableId<ChainId>(json, "chainId");
+    dto.devicePath = devicePathFromJson(json["devicePath"]);
     dto.name = json["name"].toString();
     dto.type = json["type"].toString();
     dto.format = json["format"].toString();
@@ -1045,6 +1329,22 @@ std::optional<DeviceGraphDto> deviceGraphFromJson(const juce::var& json, Error& 
     return dto;
 }
 
+std::optional<DeviceCatalogEntryDto> deviceCatalogEntryFromJson(const juce::var& json,
+                                                                Error& error) {
+    if (!prepareDecode(json, deviceCatalogEntrySchema(), error))
+        return std::nullopt;
+    DeviceCatalogEntryDto dto;
+    dto.catalogId = json["catalogId"].toString();
+    dto.name = json["name"].toString();
+    dto.manufacturer = json["manufacturer"].toString();
+    dto.category = json["category"].toString();
+    dto.description = json["description"].toString();
+    dto.format = json["format"].toString();
+    dto.type = json["type"].toString();
+    dto.instrument = static_cast<bool>(json["instrument"]);
+    return dto;
+}
+
 std::optional<SelectionDto> selectionFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, selectionSchema(), error))
         return std::nullopt;
@@ -1091,8 +1391,8 @@ std::optional<AutomationLaneDto> automationLaneFromJson(const juce::var& json, E
     dto.name = json["name"].toString();
     const auto target = json["target"];
     dto.target.kind = target["kind"].toString();
-    dto.target.trackId = readNullableId<TrackId>(target, "trackId");
-    dto.target.deviceId = readNullableId<DeviceId>(target, "deviceId");
+    if (const auto path = target["devicePath"]; path.isObject())
+        dto.target.devicePath = devicePathFromJson(path);
     dto.target.parameterIndex = readInt(target, "parameterIndex");
     dto.target.modId = readInt(target, "modId");
     dto.target.modParameterIndex = readInt(target, "modParameterIndex");
@@ -1120,18 +1420,20 @@ OperationRegistry::OperationRegistry() {
     })json");
 
     auto add = [this](const char* name, const char* summary, OperationAccess access,
-                      juce::var input, juce::var output) {
+                      OperationHandler handler, juce::var input, juce::var output) {
         // DTO schemas are shared between input and output roles, so cap a deep
         // copy: the request-only DoS limits must never leak into a response
         // schema, which has to stay valid for anything the model can hold.
         input = input.clone();
         applyRequestLimits(input);
-        operations_.push_back({juce::String(name), juce::String(summary), access, std::move(input),
-                               std::move(output)});
+        // `requiredScope` is deliberately left at its `read` default here and
+        // set from the policy table below, not passed in. See the comment there.
+        operations_.push_back({juce::String(name), juce::String(summary), access, Scope::Read,
+                               std::move(input), std::move(output), handler});
     };
 
     add("system.describe", "List the API version and every available operation",
-        OperationAccess::Read, emptyObjectSchema(), parseSchema(R"json({
+        OperationAccess::Read, &handlers::systemDescribe, emptyObjectSchema(), parseSchema(R"json({
             "type":"object",
             "properties":{
                 "apiVersion":{"type":"string"},
@@ -1141,16 +1443,16 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"));
 
-    add("project.get", "Get safe project metadata", OperationAccess::Read, emptyObjectSchema(),
-        projectSchema());
+    add("project.get", "Get safe project metadata", OperationAccess::Read, &handlers::projectGet,
+        emptyObjectSchema(), projectSchema());
     add("project.setTempo", "Set the project tempo", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::projectSetTempo, operationInputSchema(R"json({
             "type":"object","properties":{"tempo":{"type":"number","minimum":20,"maximum":400}},
             "required":["tempo"],"additionalProperties":false
         })json"),
         projectSchema());
     add("project.setTimeSignature", "Set the project time signature", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::projectSetTimeSignature, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "numerator":{"type":"integer","minimum":1,"maximum":32},
@@ -1160,15 +1462,17 @@ OperationRegistry::OperationRegistry() {
         })json"),
         projectSchema());
 
-    add("tracks.list", "List tracks", OperationAccess::Read, emptyObjectSchema(),
-        arraySchema(trackSchema()));
-    add("tracks.get", "Get one track", OperationAccess::Read, operationInputSchema(R"json({
+    add("tracks.list", "List tracks", OperationAccess::Read, &handlers::tracksList,
+        emptyObjectSchema(), arraySchema(trackSchema()));
+    add("tracks.get", "Get one track", OperationAccess::Read, &handlers::tracksGet,
+        operationInputSchema(R"json({
             "type":"object","properties":{"trackId":{"anyOf":[
                 {"type":"integer","const":-2},{"type":"integer","minimum":0}]}},
             "required":["trackId"],"additionalProperties":false
         })json"),
         trackSchema());
-    add("tracks.create", "Create a track", OperationAccess::Write, operationInputSchema(R"json({
+    add("tracks.create", "Create a track", OperationAccess::Write, &handlers::tracksCreate,
+        operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "name":{"type":"string"},
@@ -1178,7 +1482,7 @@ OperationRegistry::OperationRegistry() {
         })json"),
         idResult);
     add("tracks.update", "Update track mixer or display fields", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::tracksUpdate, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "trackId":{"type":"integer","minimum":0},
@@ -1191,14 +1495,15 @@ OperationRegistry::OperationRegistry() {
             "required":["trackId"],"additionalProperties":false
         })json"),
         trackSchema());
-    add("tracks.delete", "Delete a track", OperationAccess::Write, operationInputSchema(R"json({
+    add("tracks.delete", "Delete a track", OperationAccess::Write, &handlers::tracksDelete,
+        operationInputSchema(R"json({
             "type":"object","properties":{"trackId":{"type":"integer","minimum":0}},
             "required":["trackId"],"additionalProperties":false
         })json"),
         okResult);
 
     add("clips.list", "List clips with optional track and view filters", OperationAccess::Read,
-        operationInputSchema(R"json({
+        &handlers::clipsList, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "trackId":{"type":"integer","minimum":0},
@@ -1207,13 +1512,14 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"),
         arraySchema(clipSchema()));
-    add("clips.get", "Get one clip", OperationAccess::Read, operationInputSchema(R"json({
+    add("clips.get", "Get one clip", OperationAccess::Read, &handlers::clipsGet,
+        operationInputSchema(R"json({
             "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
             "required":["clipId"],"additionalProperties":false
         })json"),
         clipSchema());
     add("clips.createMidi", "Create a MIDI clip", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::clipsCreateMidi, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "trackId":{"type":"integer","minimum":0},
@@ -1226,7 +1532,7 @@ OperationRegistry::OperationRegistry() {
         })json"),
         idResult);
     add("clips.addMidiNote", "Add a note to a MIDI clip", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::clipsAddMidiNote, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "clipId":{"type":"integer","minimum":0},
@@ -1239,26 +1545,32 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"),
         clipSchema());
-    add("clips.delete", "Delete a clip", OperationAccess::Write, operationInputSchema(R"json({
+    add("clips.delete", "Delete a clip", OperationAccess::Write, &handlers::clipsDelete,
+        operationInputSchema(R"json({
             "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
             "required":["clipId"],"additionalProperties":false
         })json"),
         okResult);
 
     add("devices.list", "List safe device and rack graph metadata", OperationAccess::Read,
-        operationInputSchema(R"json({
+        &handlers::devicesList, operationInputSchema(R"json({
             "type":"object","properties":{"trackId":{"type":"integer","minimum":0}},
             "additionalProperties":false
         })json"),
         deviceGraphSchema());
-    add("racks.create", "Create a top-level rack", OperationAccess::Write,
+    // The kinds a client may add, as opposed to devices.list's instances. Read
+    // rather than write, and answered from the same catalogue `addDevice` takes
+    // its `catalogId` from — so what this lists is exactly what can be asked for.
+    add("devices.catalog", "List devices that can be added, by catalogue id", OperationAccess::Read,
+        &handlers::devicesCatalog, emptyObjectSchema(), arraySchema(deviceCatalogEntrySchema()));
+    add("racks.create", "Create a top-level rack", OperationAccess::Write, &handlers::racksCreate,
         operationInputSchema(R"json({
             "type":"object",
             "properties":{"trackId":{"type":"integer","minimum":0},"name":{"type":"string"}},
             "required":["trackId","name"],"additionalProperties":false
         })json"),
         idResult);
-    add("racks.remove", "Remove a top-level rack", OperationAccess::Write,
+    add("racks.remove", "Remove a top-level rack", OperationAccess::Write, &handlers::racksRemove,
         operationInputSchema(R"json({
             "type":"object",
             "properties":{
@@ -1268,7 +1580,7 @@ OperationRegistry::OperationRegistry() {
             "required":["trackId","rackId"],"additionalProperties":false
         })json"),
         okResult);
-    add("racks.setBypassed", "Set rack bypass", OperationAccess::Write,
+    add("racks.setBypassed", "Set rack bypass", OperationAccess::Write, &handlers::racksSetBypassed,
         operationInputSchema(R"json({
             "type":"object",
             "properties":{
@@ -1280,73 +1592,86 @@ OperationRegistry::OperationRegistry() {
         })json"),
         rackSchema());
 
-    add("selection.get", "Get the current selection", OperationAccess::Read, emptyObjectSchema(),
-        selectionSchema());
+    add("selection.get", "Get the current selection", OperationAccess::Read,
+        &handlers::selectionGet, emptyObjectSchema(), selectionSchema());
     add("selection.set", "Replace the current track, clip, or note selection",
-        OperationAccess::Write, selectionSchema(), selectionSchema());
+        OperationAccess::Write, &handlers::selectionSet, selectionSchema(), selectionSchema());
 
-    add("transport.get", "Get transport state", OperationAccess::Read, emptyObjectSchema(),
-        transportSchema());
-    add("transport.play", "Start playback", OperationAccess::Write, emptyObjectSchema(),
-        transportSchema());
-    add("transport.stop", "Stop playback", OperationAccess::Write, emptyObjectSchema(),
-        transportSchema());
+    add("transport.get", "Get transport state", OperationAccess::Read, &handlers::transportGet,
+        emptyObjectSchema(), transportSchema());
+    add("transport.play", "Start playback", OperationAccess::Write, &handlers::transportPlay,
+        emptyObjectSchema(), transportSchema());
+    add("transport.stop", "Stop playback", OperationAccess::Write, &handlers::transportStop,
+        emptyObjectSchema(), transportSchema());
     add("transport.setRecording", "Set recording state", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::transportSetRecording, operationInputSchema(R"json({
             "type":"object","properties":{"recording":{"type":"boolean"}},
             "required":["recording"],"additionalProperties":false
         })json"),
         transportSchema());
     add("transport.setLoopEnabled", "Set transport loop state", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::transportSetLoopEnabled, operationInputSchema(R"json({
             "type":"object","properties":{"enabled":{"type":"boolean"}},
             "required":["enabled"],"additionalProperties":false
         })json"),
         transportSchema());
     add("transport.seek", "Seek the transport in beats", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::transportSeek, operationInputSchema(R"json({
             "type":"object","properties":{"positionBeats":{"type":"number","minimum":0}},
             "required":["positionBeats"],"additionalProperties":false
         })json"),
         transportSchema());
+    add("transport.seekRelative", "Move the transport by beats or bars, clamped at zero",
+        OperationAccess::Write, &handlers::transportSeekRelative, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "deltaBeats":{"type":"number"},
+                "deltaBars":{"type":"integer","minimum":-1000000,"maximum":1000000}
+            },
+            "oneOf":[{"required":["deltaBeats"]},{"required":["deltaBars"]}],
+            "additionalProperties":false
+        })json"),
+        transportSchema());
 
     add("session.get", "Get occupied session slots and play states", OperationAccess::Read,
-        emptyObjectSchema(), sessionSchema());
+        &handlers::sessionGet, emptyObjectSchema(), sessionSchema());
     add("session.launchClip", "Launch a session clip", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::sessionLaunchClip, operationInputSchema(R"json({
             "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
             "required":["clipId"],"additionalProperties":false
         })json"),
         sessionSchema());
     add("session.stopClip", "Stop a session clip", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::sessionStopClip, operationInputSchema(R"json({
             "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
             "required":["clipId"],"additionalProperties":false
         })json"),
         sessionSchema());
     add("session.stopTrack", "Stop the active session clip on a track", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::sessionStopTrack, operationInputSchema(R"json({
             "type":"object","properties":{"trackId":{"type":"integer","minimum":0}},
             "required":["trackId"],"additionalProperties":false
         })json"),
         sessionSchema());
-    add("session.stopAll", "Stop all session clips", OperationAccess::Write, emptyObjectSchema(),
-        sessionSchema());
+    add("session.stopAll", "Stop all session clips", OperationAccess::Write,
+        &handlers::sessionStopAll, emptyObjectSchema(), sessionSchema());
     add("session.launchScene", "Launch a session scene", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::sessionLaunchScene, operationInputSchema(R"json({
             "type":"object","properties":{"sceneIndex":{"type":"integer","minimum":0}},
             "required":["sceneIndex"],"additionalProperties":false
         })json"),
         sessionSchema());
 
+    add("automation.listLanes", "List every automation lane in the project", OperationAccess::Read,
+        &handlers::automationListLanes, emptyObjectSchema(), arraySchema(automationLaneSchema()));
     add("automation.getLane", "Get an automation lane", OperationAccess::Read,
-        operationInputSchema(R"json({
+        &handlers::automationGetLane, operationInputSchema(R"json({
             "type":"object","properties":{"laneId":{"type":"integer","minimum":0}},
             "required":["laneId"],"additionalProperties":false
         })json"),
         automationLaneSchema());
     add("automation.createLane", "Create an automation lane", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::automationCreateLane, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "target":{},
@@ -1358,7 +1683,7 @@ OperationRegistry::OperationRegistry() {
     operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
         "target", automationTargetSchema());
     add("automation.addPoint", "Add a point to an automation lane", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::automationAddPoint, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "laneId":{"type":"integer","minimum":0},
@@ -1371,11 +1696,146 @@ OperationRegistry::OperationRegistry() {
         })json"),
         automationLaneSchema());
     add("automation.clearLane", "Remove all points from an automation lane", OperationAccess::Write,
-        operationInputSchema(R"json({
+        &handlers::automationClearLane, operationInputSchema(R"json({
             "type":"object","properties":{"laneId":{"type":"integer","minimum":0}},
             "required":["laneId"],"additionalProperties":false
         })json"),
         automationLaneSchema());
+
+    // -----------------------------------------------------------------------
+    // Subscriptions (#1857)
+    //
+    // Declared here and executed by the transport. Subscribing is per-connection
+    // state and the dispatcher has no connections, but the contract — names,
+    // schemas, what a snapshot looks like — has to be one thing or the WebSocket
+    // and MCP adapters will grow two. `system.describe` therefore lists these
+    // like any other operation, marked so a client can tell that reaching them
+    // needs a transport that can push.
+    // -----------------------------------------------------------------------
+
+    auto addTransportScoped = [this](const char* name, const char* summary, juce::var input,
+                                     juce::var output) {
+        input = input.clone();
+        applyRequestLimits(input);
+        // `read`, like any other read: subscribing pushes the same projections
+        // the read operations return, so it cannot need less.
+        operations_.push_back({juce::String(name), juce::String(summary), OperationAccess::Read,
+                               Scope::Read, std::move(input), std::move(output), nullptr, true});
+    };
+
+    addTransportScoped(
+        "subscriptions.subscribe",
+        "Start receiving change events for the given topics, with an initial snapshot",
+        subscribeInputSchema(), subscriptionResultSchema(true));
+    addTransportScoped("subscriptions.unsubscribe",
+                       "Stop receiving change events; no topics means every topic",
+                       topicSelectionSchema(), subscriptionResultSchema(false));
+    addTransportScoped("subscriptions.list", "List the topics this connection is subscribed to",
+                       emptyObjectSchema(), subscriptionResultSchema(false));
+    addTransportScoped("subscriptions.resync",
+                       "Re-send a complete snapshot for the subscribed topics",
+                       topicSelectionSchema(), subscriptionResultSchema(true));
+
+    // -----------------------------------------------------------------------
+    // Permission policy (#1860)
+    //
+    // One table rather than an argument on forty multi-line `add` calls,
+    // because the thing a reviewer needs to check is not "does this operation
+    // declare a scope" but "is the *whole* division of the API into scopes the
+    // one we meant" — and that is a question you can only answer by reading the
+    // policy contiguously. `docs/remote-api-permissions.md` mirrors this list,
+    // and the conformance test compares the two.
+    //
+    // Reads are absent by design: `read` is the descriptor default and every
+    // client has it, so listing fifteen operations to say "yes, readable" would
+    // bury the fifteen decisions that actually matter. Writes are never absent —
+    // one that is keeps the `read` default, which the check below turns into a
+    // startup failure rather than a client discovering it can edit.
+    // -----------------------------------------------------------------------
+    struct ScopePolicy {
+        const char* operation;
+        Scope scope;
+    };
+    static constexpr ScopePolicy kWriteScopes[] = {
+        // Project content. Selection is here rather than in a scope of its own:
+        // it changes what the user is looking at and what their next keystroke
+        // acts on, which is not something a read-only client should reach.
+        {"project.setTempo", Scope::Edit},
+        {"project.setTimeSignature", Scope::Edit},
+        {"tracks.create", Scope::Edit},
+        {"tracks.update", Scope::Edit},
+        {"tracks.delete", Scope::Edit},
+        {"clips.createMidi", Scope::Edit},
+        {"clips.addMidiNote", Scope::Edit},
+        {"clips.delete", Scope::Edit},
+        {"racks.create", Scope::Edit},
+        {"racks.remove", Scope::Edit},
+        {"racks.setBypassed", Scope::Edit},
+        {"selection.set", Scope::Edit},
+        {"automation.createLane", Scope::Edit},
+        {"automation.addPoint", Scope::Edit},
+        {"automation.clearLane", Scope::Edit},
+
+        // The timeline. Separable from editing because a remote that only
+        // starts and stops playback is a thing people actually want, and it
+        // must not also be able to delete a track.
+        {"transport.play", Scope::Transport},
+        {"transport.stop", Scope::Transport},
+        {"transport.setRecording", Scope::Transport},
+        {"transport.setLoopEnabled", Scope::Transport},
+        {"transport.seek", Scope::Transport},
+        {"transport.seekRelative", Scope::Transport},
+
+        // Clip launching. Neither editing nor the timeline transport: a
+        // performance controller firing scenes changes no project content and
+        // does not move the playhead.
+        {"session.launchClip", Scope::Session},
+        {"session.stopClip", Scope::Session},
+        {"session.stopTrack", Scope::Session},
+        {"session.stopAll", Scope::Session},
+        {"session.launchScene", Scope::Session},
+    };
+
+    for (const auto& [name, scope] : kWriteScopes) {
+        const auto found =
+            std::find_if(operations_.begin(), operations_.end(),
+                         [&](const OperationDescriptor& op) { return op.name == name; });
+        // A policy entry naming an operation that does not exist is a rename
+        // that updated one side. Silently ignoring it would leave the renamed
+        // operation on the `read` default, which the check below catches — but
+        // this says which end is wrong.
+        if (found == operations_.end()) {
+            jassertfalse;
+            juce::Logger::writeToLog(juce::String("Remote API scope policy names an unknown "
+                                                  "operation: ") +
+                                     name);
+            continue;
+        }
+        found->requiredScope = scope;
+    }
+
+    // A declared operation with no implementation is a startup failure, not a
+    // runtime surprise. Before handlers lived on the descriptor there was
+    // nothing to catch it, and the registry advertised 36 operations that
+    // `system.describe` would happily list and no transport could execute. A
+    // transport-scoped operation is the one legitimate exception: its
+    // implementation lives in the adapter, so there is nothing to point at here.
+    //
+    // The scope check beside it is the same kind of guarantee for the same kind
+    // of mistake: a write that never reached the policy table above would be
+    // callable by every read-only client, and nothing else in the system would
+    // notice.
+    for (const auto& operation : operations_) {
+        jassert(operation.transportScoped == (operation.handler == nullptr));
+        if (!operation.transportScoped && operation.handler == nullptr)
+            juce::Logger::writeToLog("Remote API operation has no handler: " + operation.name);
+
+        const bool writeNeedsMoreThanRead =
+            operation.access == OperationAccess::Read || operation.requiredScope != Scope::Read;
+        jassert(writeNeedsMoreThanRead);
+        if (!writeNeedsMoreThanRead)
+            juce::Logger::writeToLog("Remote API write operation has no scope: " + operation.name);
+    }
 }
 
 const OperationRegistry& OperationRegistry::instance() {
@@ -1402,8 +1862,15 @@ juce::var OperationRegistry::describe() const {
         object->setProperty("name", operation.name);
         object->setProperty("summary", operation.summary);
         object->setProperty("access", operation.access == OperationAccess::Read ? "read" : "write");
+        // The scope a caller needs, so a client can tell "I may not do this"
+        // apart from "this does not exist" before it tries, and can present the
+        // user with what to grant rather than with a refusal.
+        object->setProperty("requiredScope", scopeName(operation.requiredScope));
         object->setProperty("inputSchema", operation.inputSchema.clone());
         object->setProperty("outputSchema", operation.outputSchema.clone());
+        // Always present rather than only when true: a client deciding whether
+        // it can call something should read a field, not infer one from silence.
+        object->setProperty("transportScoped", operation.transportScoped);
         operations.add(object);
     }
     result->setProperty("operations", operations);

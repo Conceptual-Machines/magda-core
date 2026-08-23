@@ -572,3 +572,51 @@ TEST_CASE("MoveMidiNoteBetweenClipsCommand keeps source note when destination in
     REQUIRE(source->midiNotes[0].noteNumber == 60);
     REQUIRE(dest->midiNotes.empty());
 }
+
+// Flatten unrolls a looped clip's notes across its whole length. It has to turn
+// looping off with them: while the flag stayed on, TE kept looping the first
+// cycle and getMidiVisibleRange clipped the note list to one loop length, so a
+// flattened clip played only its first loop however many cycles were written.
+TEST_CASE("flattenMidiClip - unrolled loops stop looping", "[midi][clip][flatten]") {
+    using namespace magda;
+
+    ClipInfo clip;
+    clip.setMidiContent();
+    setPlacementBeats(clip, 0.0, 16.0);
+    clip.loopEnabled = true;
+    clip.loopLengthBeats = 4.0;
+
+    MidiNote note;
+    note.noteNumber = 60;
+    note.startBeat = 0.0;
+    note.lengthBeats = 1.0;
+    note.velocity = 100;
+    clip.midiNotes.push_back(note);
+
+    ClipOperations::flattenMidiClip(clip);
+
+    SECTION("every cycle is written out") {
+        REQUIRE(clip.midiNotes.size() == 4);
+        CHECK(clip.midiNotes[0].startBeat == Catch::Approx(0.0));
+        CHECK(clip.midiNotes[1].startBeat == Catch::Approx(4.0));
+        CHECK(clip.midiNotes[2].startBeat == Catch::Approx(8.0));
+        CHECK(clip.midiNotes[3].startBeat == Catch::Approx(12.0));
+    }
+
+    SECTION("the clip stops looping, so all of it reaches the engine") {
+        CHECK_FALSE(clip.loopEnabled);
+        CHECK(clip.midiOffset == Catch::Approx(0.0));
+        CHECK(clip.midiTrimOffset == Catch::Approx(0.0));
+
+        // The visible range is what the sync writes notes from: it has to span
+        // the whole clip now, not one loop.
+        const auto range = ClipOperations::getMidiVisibleRange(clip);
+        CHECK(range.startBeat == Catch::Approx(0.0));
+        CHECK(range.lengthBeats == Catch::Approx(16.0));
+
+        for (const auto& flat : clip.midiNotes) {
+            auto visible = flat;
+            CHECK(ClipOperations::clipMidiNoteToVisibleRange(clip, visible));
+        }
+    }
+}

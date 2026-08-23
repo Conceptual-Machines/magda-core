@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "AudioClipTestHelpers.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipOperations.hpp"
 
@@ -27,9 +28,9 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
         // Shrink from left to 3.0 seconds (clip moves right by 1.0)
         ClipOperations::resizeContainerFromLeft(clip, 3.0);
@@ -38,7 +39,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         REQUIRE(clip.length == 3.0);
 
         // Audio offset advanced by 1.0 second (trim amount * speedRatio)
-        REQUIRE(clip.offset == Catch::Approx(1.0));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(1.0));
     }
 
     SECTION("Shrinking from left with speed ratio converts trim to file time") {
@@ -46,9 +47,10 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         clip.startTime = 0.0;
         clip.length = 8.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.0;
-        clip.speedRatio = 2.0;  // 2x faster (speedRatio = speed factor semantics)
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio =
+            2.0;  // 2x faster (speedRatio = speed factor semantics)
 
         // Shrink from left by 2.0 timeline seconds
         ClipOperations::resizeContainerFromLeft(clip, 6.0);
@@ -57,8 +59,8 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         REQUIRE(clip.length == 6.0);
 
         // File offset advances by 2.0 * 2.0 = 4.0 file seconds
-        REQUIRE(clip.offset == Catch::Approx(4.0));
-        REQUIRE(clip.speedRatio == 2.0);  // Unchanged
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(4.0));
+        REQUIRE(magda::test::audioEvent(clip).speedRatio == 2.0);  // Unchanged
     }
 
     SECTION("Expanding from left reveals earlier audio") {
@@ -66,9 +68,9 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         clip.startTime = 2.0;
         clip.length = 4.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 2.0;  // Previously trimmed
-        clip.speedRatio = 1.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(2.0);  // Previously trimmed
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
         // Expand from left to 6.0 seconds (clip moves left by 2.0)
         ClipOperations::resizeContainerFromLeft(clip, 6.0);
@@ -77,7 +79,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         REQUIRE(clip.length == 6.0);
 
         // Audio offset reduced (revealing earlier audio)
-        REQUIRE(clip.offset == Catch::Approx(0.0));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(0.0));
     }
 
     SECTION("Expanding from left clamps offset to 0") {
@@ -85,9 +87,9 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         clip.startTime = 2.0;
         clip.length = 4.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.5;  // Only 0.5s of offset available
-        clip.speedRatio = 1.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.5);  // Only 0.5s of offset available
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
         // Try to expand from left to 8.0 (would need 4.0s of offset reduction)
         ClipOperations::resizeContainerFromLeft(clip, 8.0);
@@ -96,7 +98,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         REQUIRE(clip.length == 8.0);
 
         // Offset clamped to 0.0 (can't go negative)
-        REQUIRE(clip.offset == 0.0);
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == 0.0);
     }
 
     SECTION("Expand past zero clamps startTime correctly") {
@@ -104,9 +106,9 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         clip.startTime = 1.0;
         clip.length = 4.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
         // Try to expand to 8.0 (would put startTime at -3.0, clamped to 0.0)
         ClipOperations::resizeContainerFromLeft(clip, 8.0);
@@ -148,9 +150,9 @@ TEST_CASE("ClipOperations::resizeContainerFromRight - audio data unchanged",
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 1.0;
-        clip.speedRatio = 1.5;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(1.0);
+        magda::test::audioEvent(clip).speedRatio = 1.5;
 
         ClipOperations::resizeContainerFromRight(clip, 3.0);
 
@@ -158,8 +160,8 @@ TEST_CASE("ClipOperations::resizeContainerFromRight - audio data unchanged",
         REQUIRE(clip.length == 3.0);
 
         // All audio properties unchanged
-        REQUIRE(clip.offset == 1.0);
-        REQUIRE(clip.speedRatio == 1.5);
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == 1.0);
+        REQUIRE(magda::test::audioEvent(clip).speedRatio == 1.5);
     }
 
     SECTION("Expanding from right does not modify audio fields") {
@@ -167,17 +169,17 @@ TEST_CASE("ClipOperations::resizeContainerFromRight - audio data unchanged",
         clip.startTime = 2.0;
         clip.length = 4.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
         ClipOperations::resizeContainerFromRight(clip, 8.0);
 
         REQUIRE(clip.startTime == 2.0);  // Unchanged
         REQUIRE(clip.length == 8.0);
 
-        REQUIRE(clip.offset == 0.0);
-        REQUIRE(clip.speedRatio == 1.0);
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == 0.0);
+        REQUIRE(magda::test::audioEvent(clip).speedRatio == 1.0);
     }
 
     SECTION("Minimum length enforced") {
@@ -201,30 +203,30 @@ TEST_CASE("ClipOperations - Sequential resizes maintain correct audio offset",
         clip.startTime = 0.0;
         clip.length = 8.0;  // 2 bars at 120 BPM = 8 beats
         clip.setAudioContent();
-        clip.audio().source.filePath = "kick_loop.wav";
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::giveAudioEvent(clip, "kick_loop.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
         // Remove 1 beat from left
         ClipOperations::resizeContainerFromLeft(clip, 7.0);
 
         REQUIRE(clip.startTime == 1.0);
         REQUIRE(clip.length == 7.0);
-        REQUIRE(clip.offset == Catch::Approx(1.0));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(1.0));
 
         // Remove another beat from left
         ClipOperations::resizeContainerFromLeft(clip, 6.0);
 
         REQUIRE(clip.startTime == 2.0);
         REQUIRE(clip.length == 6.0);
-        REQUIRE(clip.offset == Catch::Approx(2.0));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(2.0));
 
         // Remove another beat from left
         ClipOperations::resizeContainerFromLeft(clip, 5.0);
 
         REQUIRE(clip.startTime == 3.0);
         REQUIRE(clip.length == 5.0);
-        REQUIRE(clip.offset == Catch::Approx(3.0));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(3.0));
     }
 
     SECTION("Alternating left and right resizes") {
@@ -232,29 +234,30 @@ TEST_CASE("ClipOperations - Sequential resizes maintain correct audio offset",
         clip.startTime = 2.0;
         clip.length = 6.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
         // Shrink from left by 1.0
         ClipOperations::resizeContainerFromLeft(clip, 5.0);
         REQUIRE(clip.startTime == 3.0);
-        REQUIRE(clip.offset == Catch::Approx(1.0));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(1.0));
 
         // Expand from right — audio offset unchanged
         ClipOperations::resizeContainerFromRight(clip, 7.0);
         REQUIRE(clip.startTime == 3.0);
-        REQUIRE(clip.offset == Catch::Approx(1.0));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(1.0));
 
         // Expand from left — reveals earlier audio (reduces offset)
         ClipOperations::resizeContainerFromLeft(clip, 9.0);
         REQUIRE(clip.startTime == 1.0);
-        REQUIRE(clip.offset == Catch::Approx(0.0));  // Reduced by 1.0 (clamped from -1.0 to 0.0)
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() ==
+                Catch::Approx(0.0));  // Reduced by 1.0 (clamped from -1.0 to 0.0)
 
         // Shrink from right — audio offset unchanged
         ClipOperations::resizeContainerFromRight(clip, 5.0);
         REQUIRE(clip.startTime == 1.0);
-        REQUIRE(clip.offset == Catch::Approx(0.0));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(0.0));
     }
 }
 
@@ -403,11 +406,10 @@ TEST_CASE("Left resize with throttled drag updates - offset must use original st
      * content shifts by ~2 beats instead of staying aligned.
      *
      * Root cause: During drag, throttled updates modify clip.startTime and
-     * clip.length but NOT clip.offset. On mouseUp, the resize commit
-     * calls ClipOperations::resizeContainerFromLeft() which expects to
-     * operate on pre-drag state but receives post-drag state. The offset
-     * calculation uses the already-modified startTime, resulting in wrong
-     * delta.
+     * clip.length but NOT magda::test::audioEvent(clip).anchorSeconds(). On mouseUp, the resize
+     * commit calls ClipOperations::resizeContainerFromLeft() which expects to operate on pre-drag
+     * state but receives post-drag state. The offset calculation uses the already-modified
+     * startTime, resulting in wrong delta.
      *
      * Fix: The mouseUp handler must compute offset adjustment from
      * the ORIGINAL clip state captured at mouseDown, not from the
@@ -420,9 +422,9 @@ TEST_CASE("Left resize with throttled drag updates - offset must use original st
         originalState.startTime = 0.0;
         originalState.length = 4.0;
         originalState.setAudioContent();
-        originalState.audio().source.filePath = "test.wav";
-        originalState.offset = 0.0;
-        originalState.speedRatio = 1.0;
+        magda::test::giveAudioEvent(originalState, "test.wav");
+        magda::test::audioEvent(originalState).setAnchorSeconds(0.0);
+        magda::test::audioEvent(originalState).speedRatio = 1.0;
 
         // Simulate throttled drag updates (what ClipComponent does during drag)
         // These modify startTime and length but NOT offset
@@ -441,7 +443,8 @@ TEST_CASE("Left resize with throttled drag updates - offset must use original st
 
         // CORRECT approach (the fix): calculate delta from ORIGINAL state
         double correctDelta = finalStartTime - originalState.startTime;  // 1.0 - 0.0 = 1.0
-        double correctOffset = originalState.offset + correctDelta / originalState.speedRatio;
+        double correctOffset = magda::test::audioEvent(originalState).anchorSeconds() +
+                               correctDelta / magda::test::audioEvent(originalState).speedRatio;
 
         REQUIRE(correctDelta == Catch::Approx(1.0));
         REQUIRE(correctOffset == Catch::Approx(1.0));
@@ -457,16 +460,18 @@ TEST_CASE("Left resize with throttled drag updates - offset must use original st
         originalState.startTime = 0.0;
         originalState.length = 8.0;
         originalState.setAudioContent();
-        originalState.audio().source.filePath = "test.wav";
-        originalState.offset = 0.0;
-        originalState.speedRatio = 2.0;  // 2x slower (speedRatio = stretchFactor semantics)
+        magda::test::giveAudioEvent(originalState, "test.wav");
+        magda::test::audioEvent(originalState).setAnchorSeconds(0.0);
+        magda::test::audioEvent(originalState).speedRatio =
+            2.0;  // 2x slower (speedRatio = stretchFactor semantics)
 
         // User drags left edge right by 2 timeline seconds
         double finalStartTime = 2.0;
 
         // CORRECT approach: calculate from original state
         double correctDelta = finalStartTime - originalState.startTime;  // 2.0
-        double correctOffset = originalState.offset + correctDelta / originalState.speedRatio;
+        double correctOffset = magda::test::audioEvent(originalState).anchorSeconds() +
+                               correctDelta / magda::test::audioEvent(originalState).speedRatio;
 
         // 2.0 timeline seconds / 2.0 speedRatio = 1.0 file second offset
         REQUIRE(correctOffset == Catch::Approx(1.0));
@@ -478,9 +483,9 @@ TEST_CASE("Left resize with throttled drag updates - offset must use original st
         originalState.startTime = 0.0;
         originalState.length = 8.0;
         originalState.setAudioContent();
-        originalState.audio().source.filePath = "test.wav";
-        originalState.offset = 0.0;
-        originalState.speedRatio = 1.0;
+        magda::test::giveAudioEvent(originalState, "test.wav");
+        magda::test::audioEvent(originalState).setAnchorSeconds(0.0);
+        magda::test::audioEvent(originalState).speedRatio = 1.0;
 
         // Simulate multiple throttled updates during drag
         // User drags: 0.5s, then 1.0s, then 1.5s, finally 2.0s
@@ -500,7 +505,8 @@ TEST_CASE("Left resize with throttled drag updates - offset must use original st
 
         // CORRECT: Use original state for offset calculation
         double correctDelta = finalStartTime - originalState.startTime;
-        double correctOffset = originalState.offset + correctDelta / originalState.speedRatio;
+        double correctOffset = magda::test::audioEvent(originalState).anchorSeconds() +
+                               correctDelta / magda::test::audioEvent(originalState).speedRatio;
 
         REQUIRE(finalStartTime == 2.0);
         REQUIRE(correctOffset == Catch::Approx(2.0));
@@ -512,9 +518,9 @@ TEST_CASE("Left resize with throttled drag updates - offset must use original st
         originalState.startTime = 2.0;
         originalState.length = 4.0;
         originalState.setAudioContent();
-        originalState.audio().source.filePath = "test.wav";
-        originalState.offset = 2.0;  // Previously trimmed
-        originalState.speedRatio = 1.0;
+        magda::test::giveAudioEvent(originalState, "test.wav");
+        magda::test::audioEvent(originalState).setAnchorSeconds(2.0);  // Previously trimmed
+        magda::test::audioEvent(originalState).speedRatio = 1.0;
 
         // User drags left edge LEFT (expanding) by 2 seconds
         double finalStartTime = 0.0;
@@ -522,7 +528,8 @@ TEST_CASE("Left resize with throttled drag updates - offset must use original st
         // CORRECT: Calculate from original state
         double correctDelta = finalStartTime - originalState.startTime;  // -2.0
         double correctOffset =
-            juce::jmax(0.0, originalState.offset + correctDelta / originalState.speedRatio);
+            juce::jmax(0.0, magda::test::audioEvent(originalState).anchorSeconds() +
+                                correctDelta / magda::test::audioEvent(originalState).speedRatio);
 
         // 2.0 - 2.0 = 0.0 (reveals audio from beginning)
         REQUIRE(correctOffset == Catch::Approx(0.0));
@@ -617,16 +624,17 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart tracks offset for
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.0;
-        clip.loopStart = 0.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
         clip.loopEnabled = false;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
         ClipOperations::resizeContainerFromLeft(clip, 3.0);
 
-        REQUIRE(clip.offset == Catch::Approx(1.0));
-        REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(1.0));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() ==
+                Catch::Approx(magda::test::audioEvent(clip).anchorSeconds()));
     }
 
     SECTION("Expand from left: loopStart equals offset after resize") {
@@ -634,16 +642,17 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart tracks offset for
         clip.startTime = 2.0;
         clip.length = 4.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 2.0;
-        clip.loopStart = 2.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(2.0);
+        magda::test::audioEvent(clip).setLoopStartSeconds(2.0);
         clip.loopEnabled = false;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
         ClipOperations::resizeContainerFromLeft(clip, 6.0);
 
-        REQUIRE(clip.offset == Catch::Approx(0.0));
-        REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(0.0));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() ==
+                Catch::Approx(magda::test::audioEvent(clip).anchorSeconds()));
     }
 
     SECTION("Multiple left resizes: loopStart always tracks offset") {
@@ -651,15 +660,16 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart tracks offset for
         clip.startTime = 0.0;
         clip.length = 8.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.0;
-        clip.loopStart = 0.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
         clip.loopEnabled = false;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
         for (int i = 0; i < 5; ++i) {
             ClipOperations::resizeContainerFromLeft(clip, clip.length - 1.0);
-            REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+            REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() ==
+                    Catch::Approx(magda::test::audioEvent(clip).anchorSeconds()));
         }
     }
 
@@ -668,17 +678,18 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart tracks offset for
         clip.startTime = 0.0;
         clip.length = 8.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.0;
-        clip.loopStart = 0.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
         clip.loopEnabled = false;
-        clip.speedRatio = 2.0;
+        magda::test::audioEvent(clip).speedRatio = 2.0;
 
         ClipOperations::resizeContainerFromLeft(clip, 6.0);
 
         // 2.0 timeline delta * 2.0 speedRatio = 4.0 source offset
-        REQUIRE(clip.offset == Catch::Approx(4.0));
-        REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(4.0));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() ==
+                Catch::Approx(magda::test::audioEvent(clip).anchorSeconds()));
     }
 }
 
@@ -693,19 +704,20 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart unchanged for loo
         clip.startTime = 0.0;
         clip.length = 8.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 1.0;
-        clip.loopStart = 0.5;
-        clip.loopLength = 2.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(1.0);
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.5);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(2.0);
         clip.loopEnabled = true;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
-        double originalLoopStart = clip.loopStart;
+        double originalLoopStart = magda::test::audioEvent(clip).loopStartSeconds();
 
         ClipOperations::resizeContainerFromLeft(clip, 6.0);
 
         // loopStart must NOT change — it's the user-defined loop anchor
-        REQUIRE(clip.loopStart == Catch::Approx(originalLoopStart));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() ==
+                Catch::Approx(originalLoopStart));
         // offset should have been adjusted (wrapped within loop region)
         REQUIRE(clip.startTime == 2.0);
         REQUIRE(clip.length == 6.0);
@@ -716,18 +728,19 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart unchanged for loo
         clip.startTime = 4.0;
         clip.length = 4.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 1.5;
-        clip.loopStart = 0.5;
-        clip.loopLength = 2.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(1.5);
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.5);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(2.0);
         clip.loopEnabled = true;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
-        double originalLoopStart = clip.loopStart;
+        double originalLoopStart = magda::test::audioEvent(clip).loopStartSeconds();
 
         ClipOperations::resizeContainerFromLeft(clip, 6.0);
 
-        REQUIRE(clip.loopStart == Catch::Approx(originalLoopStart));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() ==
+                Catch::Approx(originalLoopStart));
     }
 
     SECTION("Multiple looped resizes: loopStart never changes") {
@@ -735,26 +748,29 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart unchanged for loo
         clip.startTime = 0.0;
         clip.length = 8.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 1.0;
-        clip.loopStart = 0.5;
-        clip.loopLength = 2.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(1.0);
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.5);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(2.0);
         clip.loopEnabled = true;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
-        double originalLoopStart = clip.loopStart;
+        double originalLoopStart = magda::test::audioEvent(clip).loopStartSeconds();
 
         // Shrink
         ClipOperations::resizeContainerFromLeft(clip, 6.0);
-        REQUIRE(clip.loopStart == Catch::Approx(originalLoopStart));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() ==
+                Catch::Approx(originalLoopStart));
 
         // Shrink more
         ClipOperations::resizeContainerFromLeft(clip, 4.0);
-        REQUIRE(clip.loopStart == Catch::Approx(originalLoopStart));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() ==
+                Catch::Approx(originalLoopStart));
 
         // Expand
         ClipOperations::resizeContainerFromLeft(clip, 7.0);
-        REQUIRE(clip.loopStart == Catch::Approx(originalLoopStart));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() ==
+                Catch::Approx(originalLoopStart));
     }
 
     SECTION("Looped offset wraps within loop region") {
@@ -762,12 +778,12 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart unchanged for loo
         clip.startTime = 0.0;
         clip.length = 8.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 1.0;
-        clip.loopStart = 0.0;
-        clip.loopLength = 2.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(1.0);
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(2.0);
         clip.loopEnabled = true;
-        clip.speedRatio = 1.0;
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
         // Shrink by 3 seconds — phaseDelta = 3.0, wraps within loopLength=2.0
         ClipOperations::resizeContainerFromLeft(clip, 5.0);
@@ -775,8 +791,9 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart unchanged for loo
         // offset should wrap: relOffset = 1.0-0.0 = 1.0, phaseDelta = 3.0
         // wrapPhase(1.0 + 3.0, 2.0) = wrapPhase(4.0, 2.0) = 0.0
         // new offset = loopStart + 0.0 = 0.0
-        REQUIRE(clip.offset == Catch::Approx(0.0));
-        REQUIRE(clip.loopStart == Catch::Approx(0.0));  // Unchanged
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(0.0));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() ==
+                Catch::Approx(0.0));  // Unchanged
     }
 }
 
@@ -791,15 +808,16 @@ TEST_CASE("ClipOperations::trimAudioFromLeft - loopStart tracks offset",
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.0;
-        clip.loopStart = 0.0;
-        clip.speedRatio = 1.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
         ClipOperations::trimAudioFromLeft(clip, 1.0);
 
-        REQUIRE(clip.offset == Catch::Approx(1.0));
-        REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(1.0));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() ==
+                Catch::Approx(magda::test::audioEvent(clip).anchorSeconds()));
     }
 
     SECTION("Trim outward (extend): loopStart equals offset") {
@@ -807,15 +825,16 @@ TEST_CASE("ClipOperations::trimAudioFromLeft - loopStart tracks offset",
         clip.startTime = 2.0;
         clip.length = 4.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 2.0;
-        clip.loopStart = 2.0;
-        clip.speedRatio = 1.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(2.0);
+        magda::test::audioEvent(clip).setLoopStartSeconds(2.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
         ClipOperations::trimAudioFromLeft(clip, -1.0);
 
-        REQUIRE(clip.offset == Catch::Approx(1.0));
-        REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(1.0));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() ==
+                Catch::Approx(magda::test::audioEvent(clip).anchorSeconds()));
     }
 
     SECTION("Trim with speed ratio: loopStart equals offset") {
@@ -823,16 +842,17 @@ TEST_CASE("ClipOperations::trimAudioFromLeft - loopStart tracks offset",
         clip.startTime = 0.0;
         clip.length = 8.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.0;
-        clip.loopStart = 0.0;
-        clip.speedRatio = 1.5;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.5;
 
         ClipOperations::trimAudioFromLeft(clip, 2.0);
 
         // sourceDelta = 2.0 * 1.5 = 3.0
-        REQUIRE(clip.offset == Catch::Approx(3.0));
-        REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(3.0));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() ==
+                Catch::Approx(magda::test::audioEvent(clip).anchorSeconds()));
     }
 
     SECTION("Trim clamps to zero: loopStart equals offset") {
@@ -840,16 +860,17 @@ TEST_CASE("ClipOperations::trimAudioFromLeft - loopStart tracks offset",
         clip.startTime = 1.0;
         clip.length = 4.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.5;
-        clip.loopStart = 0.5;
-        clip.speedRatio = 1.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.5);
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.5);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
 
         // Try to extend past start of file
         ClipOperations::trimAudioFromLeft(clip, -2.0);
 
-        REQUIRE(clip.offset == Catch::Approx(0.0));
-        REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(0.0));
+        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() ==
+                Catch::Approx(magda::test::audioEvent(clip).anchorSeconds()));
     }
 }
 
@@ -864,12 +885,12 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.0;
-        clip.offsetBeats = 0.0;
-        clip.speedRatio = 1.0;
-        clip.autoTempo = true;
-        clip.audio().interpretation.bpm = 140.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).setAnchorBeats(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
+        magda::test::audioEvent(clip).autoTempo = true;
+        magda::test::audioEvent(clip).interpBpm = 140.0;
 
         // Shrink by 1 second at 120 BPM
         ClipOperations::resizeContainerFromLeft(clip, 3.0, 120.0);
@@ -877,8 +898,8 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         // deltaBeats = 1.0 * 120/60 = 2.0 beats
         // offsetBeats = 0 + 2.0 = 2.0
         // offset (seconds) = 2.0 * 60/140 = 6/7
-        REQUIRE(clip.offsetBeats == Catch::Approx(2.0));
-        REQUIRE(clip.offset == Catch::Approx(120.0 / 140.0));
+        REQUIRE(magda::test::audioEvent(clip).anchorBeats() == Catch::Approx(2.0));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(120.0 / 140.0));
     }
 
     SECTION("Looped auto-tempo: offset wraps using beats") {
@@ -886,17 +907,17 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         clip.startTime = 0.0;
         clip.length = 8.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.0;
-        clip.offsetBeats = 0.0;
-        clip.loopStart = 0.0;
-        clip.loopStartBeats = 0.0;
-        clip.loopLength = 2.0;                      // 2 source seconds
-        clip.loopLengthBeats = 2.0 * 140.0 / 60.0;  // source beats
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).setAnchorBeats(0.0);
+        magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
+        magda::test::audioEvent(clip).setLoopStartBeats(0.0);
+        magda::test::audioEvent(clip).setLoopLengthSeconds(2.0);               // 2 source seconds
+        magda::test::audioEvent(clip).setLoopLengthBeats(2.0 * 140.0 / 60.0);  // source beats
         clip.loopEnabled = true;
-        clip.speedRatio = 1.0;
-        clip.autoTempo = true;
-        clip.audio().interpretation.bpm = 140.0;
+        magda::test::audioEvent(clip).speedRatio = 1.0;
+        magda::test::audioEvent(clip).autoTempo = true;
+        magda::test::audioEvent(clip).interpBpm = 140.0;
 
         // Shrink by 1 second at 120 BPM
         ClipOperations::resizeContainerFromLeft(clip, 7.0, 120.0);
@@ -904,8 +925,8 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         // deltaBeats = 1.0 * 120/60 = 2.0 project beats
         // wrapPhase(0 + 2.0, 4.667) = 2.0 beats
         // offset (seconds) = 2.0 * 60/140 = 6/7
-        REQUIRE(clip.offsetBeats == Catch::Approx(2.0));
-        REQUIRE(clip.offset == Catch::Approx(120.0 / 140.0));
+        REQUIRE(magda::test::audioEvent(clip).anchorBeats() == Catch::Approx(2.0));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(120.0 / 140.0));
     }
 
     SECTION("Non-auto-tempo still uses speedRatio") {
@@ -913,16 +934,16 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.0;
-        clip.speedRatio = 2.0;
-        clip.autoTempo = false;
-        clip.audio().interpretation.bpm = 140.0;
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 2.0;
+        magda::test::audioEvent(clip).autoTempo = false;
+        magda::test::audioEvent(clip).interpBpm = 140.0;
 
         ClipOperations::resizeContainerFromLeft(clip, 3.0, 120.0);
 
         // Should use speedRatio (2.0), not BPM ratio
-        REQUIRE(clip.offset == Catch::Approx(2.0));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(2.0));
     }
 
     SECTION("Auto-tempo with matching BPMs gives same result as speedRatio=1") {
@@ -930,16 +951,16 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.setAudioContent();
-        clip.audio().source.filePath = "test.wav";
-        clip.offset = 0.0;
-        clip.speedRatio = 1.0;
-        clip.autoTempo = true;
-        clip.audio().interpretation.bpm = 120.0;  // Same as project
+        magda::test::giveAudioEvent(clip, "test.wav");
+        magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+        magda::test::audioEvent(clip).speedRatio = 1.0;
+        magda::test::audioEvent(clip).autoTempo = true;
+        magda::test::audioEvent(clip).interpBpm = 120.0;  // Same as project
 
         ClipOperations::resizeContainerFromLeft(clip, 3.0, 120.0);
 
         // 120/120 = 1.0, same as speedRatio
-        REQUIRE(clip.offset == Catch::Approx(1.0));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(1.0));
     }
 }
 
@@ -972,23 +993,21 @@ TEST_CASE("Multi-clip left-resize preview recomputes every clip from its snapsho
         ClipInfo preview = snapshot;
         ClipOperations::resizeContainerFromLeft(preview,
                                                 juce::jmax(0.1, originalLength + lengthDelta), bpm);
-        if (!preview.loopEnabled && preview.isAudio())
-            preview.loopStart = preview.offset;
+        if (auto* event = preview.primaryEvent(); event != nullptr && !preview.loopEnabled)
+            event->loopStartSamples = event->sourceAnchorSamples;
         return preview;
     };
 
     SECTION("Every selected clip shifts by the same delta, whatever its own start") {
         ClipInfo dragged;
-        dragged.setAudioContent();
-        dragged.audio().source.filePath = "a.wav";
+        magda::test::giveAudioEvent(dragged, "a.wav");
         ClipOperations::setTimelinePlacement(dragged, 0.0, 4.0, bpm);
-        dragged.offset = 2.0;
+        magda::test::audioEvent(dragged).setAnchorSeconds(2.0);
 
         ClipInfo other;
-        other.setAudioContent();
-        other.audio().source.filePath = "b.wav";
+        magda::test::giveAudioEvent(other, "b.wav");
         ClipOperations::setTimelinePlacement(other, 10.0, 6.0, bpm);
-        other.offset = 3.0;
+        magda::test::audioEvent(other).setAnchorSeconds(3.0);
 
         // Drag the left handle right by 1 second: both clips shrink by 1
         const double lengthDelta = -1.0;
@@ -1006,18 +1025,20 @@ TEST_CASE("Multi-clip left-resize preview recomputes every clip from its snapsho
         REQUIRE(otherPreview.getTimelineEnd(bpm) == Catch::Approx(16.0));
 
         // Each clip trims its own audio from its own offset
-        REQUIRE(draggedPreview.offset == Catch::Approx(3.0));
-        REQUIRE(otherPreview.offset == Catch::Approx(4.0));
-        REQUIRE(draggedPreview.loopStart == Catch::Approx(draggedPreview.offset));
-        REQUIRE(otherPreview.loopStart == Catch::Approx(otherPreview.offset));
+        REQUIRE(magda::audioEventRef(draggedPreview).anchorSeconds() == Catch::Approx(3.0));
+        REQUIRE(magda::audioEventRef(otherPreview).anchorSeconds() == Catch::Approx(4.0));
+        REQUIRE(magda::audioEventRef(draggedPreview).loopStartSeconds() ==
+                Catch::Approx(magda::audioEventRef(draggedPreview).anchorSeconds()));
+        REQUIRE(magda::audioEventRef(otherPreview).loopStartSeconds() ==
+                Catch::Approx(magda::audioEventRef(otherPreview).anchorSeconds()));
     }
 
     SECTION("Successive ticks do not drift - final tick equals a single-shot resize") {
         ClipInfo snapshot;
         snapshot.setAudioContent();
-        snapshot.audio().source.filePath = "b.wav";
+        magda::test::giveAudioEvent(snapshot, "b.wav");
         ClipOperations::setTimelinePlacement(snapshot, 10.0, 6.0, bpm);
-        snapshot.offset = 3.0;
+        magda::test::audioEvent(snapshot).setAnchorSeconds(3.0);
 
         ClipInfo preview = snapshot;
         for (double delta : {-0.25, -0.5, -0.75, -1.0})
@@ -1027,13 +1048,14 @@ TEST_CASE("Multi-clip left-resize preview recomputes every clip from its snapsho
 
         REQUIRE(preview.getTimelineStart(bpm) == Catch::Approx(singleShot.getTimelineStart(bpm)));
         REQUIRE(preview.getTimelineLength(bpm) == Catch::Approx(singleShot.getTimelineLength(bpm)));
-        REQUIRE(preview.offset == Catch::Approx(singleShot.offset));
+        REQUIRE(magda::test::audioEvent(preview).anchorSeconds() ==
+                Catch::Approx(magda::audioEventRef(singleShot).anchorSeconds()));
 
         // Dragging back to where it started restores the original state
         ClipInfo backToStart = previewTick(snapshot, 6.0, 0.0);
         REQUIRE(backToStart.getTimelineStart(bpm) == Catch::Approx(10.0));
         REQUIRE(backToStart.getTimelineLength(bpm) == Catch::Approx(6.0));
-        REQUIRE(backToStart.offset == Catch::Approx(3.0));
+        REQUIRE(magda::audioEventRef(backToStart).anchorSeconds() == Catch::Approx(3.0));
     }
 
     SECTION("Non-looped MIDI accumulates midiTrimOffset once, not once per tick") {
@@ -1057,10 +1079,10 @@ TEST_CASE("Multi-clip left-resize preview recomputes every clip from its snapsho
         // originalLength + lengthDelta. The preview must land in the same place.
         ClipInfo snapshot;
         snapshot.setAudioContent();
-        snapshot.audio().source.filePath = "c.wav";
+        magda::test::giveAudioEvent(snapshot, "c.wav");
         ClipOperations::setTimelinePlacement(snapshot, 4.0, 5.0, bpm);
-        snapshot.offset = 1.0;
-        snapshot.speedRatio = 2.0;
+        magda::test::audioEvent(snapshot).setAnchorSeconds(1.0);
+        magda::test::audioEvent(snapshot).speedRatio = 2.0;
 
         const double lengthDelta = 1.5;  // expanding leftwards
 
@@ -1068,21 +1090,22 @@ TEST_CASE("Multi-clip left-resize preview recomputes every clip from its snapsho
 
         ClipInfo committed = snapshot;  // restored before the resize command runs
         ClipOperations::resizeContainerFromLeft(committed, 5.0 + lengthDelta, bpm);
-        if (!committed.loopEnabled && committed.isAudio())
-            committed.loopStart = committed.offset;
+        if (auto* event = committed.primaryEvent(); event != nullptr && !committed.loopEnabled)
+            event->loopStartSamples = event->sourceAnchorSamples;
 
         REQUIRE(preview.getTimelineStart(bpm) == Catch::Approx(committed.getTimelineStart(bpm)));
         REQUIRE(preview.getTimelineLength(bpm) == Catch::Approx(committed.getTimelineLength(bpm)));
-        REQUIRE(preview.offset == Catch::Approx(committed.offset));
-        REQUIRE(preview.loopStart == Catch::Approx(committed.loopStart));
+        REQUIRE(magda::test::audioEvent(preview).anchorSeconds() ==
+                Catch::Approx(magda::test::audioEvent(committed).anchorSeconds()));
+        REQUIRE(magda::test::audioEvent(preview).loopStartSeconds() ==
+                Catch::Approx(magda::test::audioEvent(committed).loopStartSeconds()));
     }
 
     SECTION("A short clip in the selection clamps instead of inverting") {
         ClipInfo shortClip;
-        shortClip.setAudioContent();
-        shortClip.audio().source.filePath = "d.wav";
+        magda::test::giveAudioEvent(shortClip, "d.wav");
         ClipOperations::setTimelinePlacement(shortClip, 8.0, 0.5, bpm);
-        shortClip.offset = 0.0;
+        magda::test::audioEvent(shortClip).setAnchorSeconds(0.0);
 
         // Drag right far past the short clip's own length
         ClipInfo preview = previewTick(shortClip, 0.5, -2.0);

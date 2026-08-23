@@ -2,11 +2,11 @@
 
 #if defined(MAGDA_HAVE_CLAP) && MAGDA_HAVE_CLAP
 
-#include <onnxruntime_cxx_api.h>
+    #include <onnxruntime_cxx_api.h>
 
-#include <array>
-#include <cmath>
-#include <vector>
+    #include <array>
+    #include <cmath>
+    #include <vector>
 
 namespace magda::media {
 
@@ -163,7 +163,9 @@ ClapTextEncoder::~ClapTextEncoder() = default;
 ClapTextEncoder::ClapTextEncoder(ClapTextEncoder&&) noexcept = default;
 ClapTextEncoder& ClapTextEncoder::operator=(ClapTextEncoder&&) noexcept = default;
 
-int ClapTextEncoder::dim() const noexcept { return 512; }
+int ClapTextEncoder::dim() const noexcept {
+    return 512;
+}
 
 const std::string& ClapTextEncoder::modelId() const noexcept {
     static const std::string kEmpty;

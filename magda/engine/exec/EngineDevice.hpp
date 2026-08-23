@@ -1,0 +1,177 @@
+#pragma once
+
+#include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_dsp/juce_dsp.h>
+
+#include <span>
+
+#include "exec/RenderContext.hpp"
+#include "param/ParamBlock.hpp"
+
+/**
+ * @file EngineDevice.hpp
+ * @brief The runtime objects a plan's leaf ops stand for.
+ *
+ * The plan is pure topology: a Device op names a section-aware device identity,
+ * it does not own a plugin, and a ClipAudio op names a track, not a file reader.
+ * The host binds the objects and outlives the plans that reference them, which
+ * is what lets the differ carry a live instrument across a structural change
+ * instead of rebuilding it.
+ */
+
+namespace magda::engine {
+
+/**
+ * @brief Encoded MIDI one source or device may write to one port over any
+ *        RenderContext::maxBlockSize samples of the timeline.
+ *
+ * The executor reserves storage for every MIDI port before the first block, so
+ * nothing on the audio thread has to grow a buffer. A port fed by a merge is
+ * sized from the sum of what feeds it; the chain has to end somewhere, and this
+ * is where: a producer that writes past this forces the very allocation the
+ * reservation exists to avoid. Debug builds assert on it at every write site.
+ *
+ * The budget is per span of samples rather than per callback, and the
+ * difference is not pedantry. Blocks may be shorter than the one the plan was
+ * prepared for, so a callback is not a fixed amount of time: a host delivering
+ * one sample at a time against a plan prepared for five hundred and twelve
+ * would fit five hundred and twelve callbacks inside the same stretch of
+ * timeline, and any storage sized from a per-callback figure would be short by
+ * that factor. Nothing noticed while every reservation covered one block; a
+ * delay line holds what is in flight across many, and it is what the amount of
+ * time a callback stands for has to be pinned down for.
+ *
+ * Every producer the engine has already works this way, because MIDI is
+ * positioned on the timeline rather than per call: a clip source renders the
+ * events its block's time range contains, live input delivers what arrived
+ * while that time passed, and a generator places notes at musical positions.
+ * Spelling it out is what lets storage be sized from it.
+ *
+ * The debug asserts at the write sites see one callback and so can only check
+ * the looser reading of this, which is all a producer can be caught at where it
+ * writes. What actually enforces the budget is downstream, at the one place a
+ * violation costs something: a delay line holding more than it reserved room
+ * for reports it (MidiDelayLine::hasOverflowed), in release as well as debug.
+ *
+ * The budget is bytes rather than events because a MIDI message is not a fixed
+ * size: one SysEx dump from a controller can outweigh a thousand notes, and a
+ * cap on the number of events would let it through. An event costs six bytes
+ * plus its own length, so a note or a controller change is nine, and this
+ * budget holds around four hundred and fifty of them.
+ */
+constexpr int kMaxMidiBytesPerPort = 4096;
+
+/// What one short message costs against kMaxMidiBytesPerPort.
+constexpr int kMidiShortMessageBytes = 9;
+
+/** Audio and MIDI handed to a device for one block. */
+struct DeviceBlock {
+    /// The device's audio input on entry, its output on exit. Devices process
+    /// in place: every op renders into its own buffer, so overwriting the input
+    /// cannot disturb another consumer of the same signal.
+    juce::dsp::AudioBlock<float> audio;
+
+    /// MIDI reaching the device. Empty when the plan left the slot unconnected.
+    const juce::MidiBuffer* midiIn = nullptr;
+
+    /// Where a MIDI-producing device writes, cleared before the call. Null when
+    /// the plan gave the device no MIDI output port. At most
+    /// kMaxMidiBytesPerPort of encoded MIDI; past that the buffer allocates.
+    juce::MidiBuffer* midiOut = nullptr;
+
+    /// Sidechain audio. A zero-channel block when the slot is unconnected, so
+    /// devices check getNumChannels() rather than assuming a source.
+    juce::dsp::AudioBlock<const float> sidechain;
+
+    /**
+     * @brief A multi-out instrument's further output pairs.
+     *
+     * `extraOutputs[k]` is pair k + 1: pair 0 is `audio` above, which is what
+     * the device's own chain carries on from. Empty for every device that is
+     * not multi-out, which is almost all of them.
+     *
+     * One block per pair the device declares, whether or not a MultiOut track
+     * was opened for it, so a device writes its outputs where its own layout
+     * says they go and never has to ask what is being listened to. That is what
+     * the current engine does too: the instrument writes every pin of the rack
+     * around it, and it is the RackInstance for a pair that decides whether
+     * anyone reads those pins. A pair no track opened is rendered and dropped.
+     *
+     * Each block arrives cleared, so a device that writes only the pairs it has
+     * material for leaves the rest silent rather than stale.
+     */
+    std::span<juce::dsp::AudioBlock<float>> extraOutputs;
+
+    /**
+     * @brief The device's parameters, resolved for this block (#2116).
+     *
+     * Indexed the way the device declared them, and already everything the
+     * device could want to know: the stored value, the automation curve over
+     * it and the modifiers linked to it have been resolved into one value
+     * stream per parameter, clamped, quantised, and in the parameter's own
+     * units. A device reads these and has no other way to find out what a
+     * parameter is, which is what keeps the precedence rules in one place
+     * (param/ParamResolve.hpp) rather than in every device.
+     *
+     * Resolved before this call and before the MIDI above is looked at, so an
+     * event at sample zero sees the value automation put there rather than the
+     * one from the block before.
+     *
+     * Empty for a device with no parameters, and for every device until the
+     * table is published against a plan.
+     */
+    DeviceParams params;
+
+    BlockInfo block;
+};
+
+/**
+ * @brief One device instance behind a Device op.
+ *
+ * Bound by DeviceKey, owned by the host. process() runs on the audio thread: no
+ * allocation, no locks, no file or GUI work.
+ */
+class EngineDevice {
+  public:
+    virtual ~EngineDevice() = default;
+
+    /// Called off the audio thread before the first block.
+    virtual void prepare(const RenderContext&) {}
+
+    /// Drop any tail state. Called off the audio thread.
+    virtual void reset() {}
+
+    /// Samples the device delays its output by. Read but not yet compensated:
+    /// latency compensation is its own slice, and the executor reports any
+    /// non-zero value from prepare() rather than pretending it is aligned.
+    virtual int latencySamples() const {
+        return 0;
+    }
+
+    virtual void process(DeviceBlock&) = 0;
+};
+
+/** An audio source behind a ClipAudio or AudioInput op. */
+class EngineAudioSource {
+  public:
+    virtual ~EngineAudioSource() = default;
+
+    virtual void prepare(const RenderContext&) {}
+
+    /// Fill @p out completely; it arrives uncleared.
+    virtual void render(const BlockInfo&, juce::dsp::AudioBlock<float> out) = 0;
+};
+
+/** A MIDI source behind a ClipMidi or MidiInput op. */
+class EngineMidiSource {
+  public:
+    virtual ~EngineMidiSource() = default;
+
+    virtual void prepare(const RenderContext&) {}
+
+    /// Add this block's events to @p out; it arrives cleared. At most
+    /// kMaxMidiBytesPerPort of encoded MIDI, SysEx included.
+    virtual void render(const BlockInfo&, juce::MidiBuffer& out) = 0;
+};
+
+}  // namespace magda::engine

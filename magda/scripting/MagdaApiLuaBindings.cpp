@@ -881,6 +881,22 @@ int lua_transport_set_position_beats(lua_State* L) {
     return 0;
 }
 
+// Relative seeking (#1987). Rewind and fast-forward buttons are relative by
+// nature, and every script that built one out of position_beats +
+// set_position_beats re-implemented the clamp at zero, and had to know the
+// meter to move by a bar. Both live on TransportApi now, so these are two
+// lines and the remote and OSC surfaces get the same behaviour.
+
+int lua_transport_seek_beats(lua_State* L) {
+    getApi(L)->transport().seekBeats(luaL_checknumber(L, 1));
+    return 0;
+}
+
+int lua_transport_seek_bars(lua_State* L) {
+    getApi(L)->transport().seekBars(static_cast<long long>(luaL_checkinteger(L, 1)));
+    return 0;
+}
+
 // ---- focused ---------------------------------------------------------------
 
 int lua_focused_has_focus(lua_State* L) {
@@ -1055,6 +1071,8 @@ const FnReg kTransportFns[] = {
     {"set_loop_enabled", lua_transport_set_loop_enabled},
     {"position_beats", lua_transport_position_beats},
     {"set_position_beats", lua_transport_set_position_beats},
+    {"seek_beats", lua_transport_seek_beats},
+    {"seek_bars", lua_transport_seek_bars},
     {nullptr, nullptr},
 };
 

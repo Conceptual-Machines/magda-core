@@ -271,13 +271,13 @@ void SessionClipScheduler::processStateEvents() {
     // symptom is "the UI looks wrong but no logs say why."
     if (uint32_t cmdDropped = audioMonitor_.commandQueue().getDroppedCount()) {
         DBG("SessionClip command queue dropped " << static_cast<int>(cmdDropped)
-                                                 << " push(es) — bursty scene launches exceeding "
+                                                 << " push(es) - bursty scene launches exceeding "
                                                     "queue size?");
         audioMonitor_.commandQueue().clearDroppedCount();
     }
     if (uint32_t stateDropped = audioMonitor_.stateQueue().getDroppedCount()) {
         DBG("SessionClip state queue dropped " << static_cast<int>(stateDropped)
-                                               << " push(es) — message thread fell behind audio");
+                                               << " push(es) - message thread fell behind audio");
         audioMonitor_.stateQueue().clearDroppedCount();
     }
 
@@ -331,7 +331,7 @@ void SessionClipScheduler::processStateEvents() {
     // Transport just stopped — stop all LaunchHandles so clips reset to start.
     // activeSessionClipId stays set (user intent preserved).
     if (wasTransportPlaying_ && !transportPlaying && hasActiveClips()) {
-        DBG("SessionClipScheduler: Transport stopped — stopping all LaunchHandles");
+        DBG("SessionClipScheduler: Transport stopped - stopping all LaunchHandles");
         for (const auto& track : tm.getTracks()) {
             ClipId clipId = track.activeSessionClipId;
             if (clipId == INVALID_CLIP_ID)
@@ -447,18 +447,18 @@ void SessionClipScheduler::updateLaunchTimings(ClipId clipId, const ClipInfo* cl
     if (bpm <= 0.0)
         bpm = 120.0;
 
-    if (clip->isAudio() && clip->autoTempo) {
+    const auto* event = clip->primaryEvent();
+    if (event != nullptr && event->autoTempo) {
         data.clipLengthBeats = clip->getLengthInBeats(bpm);
-        data.loopLengthBeats =
-            (clip->loopLengthBeats > 0.0) ? clip->loopLengthBeats : data.clipLengthBeats;
-    } else if (clip->isAudio()) {
-        double srcLength = clip->getSourceLoopLength() > 0.0
-                               ? clip->getSourceLoopLength()
-                               : clip->timelineToSource(clip->getTimelineLength(bpm));
-        double durationSeconds = srcLength / clip->speedRatio;
+        const double loopBeats = event->loopLengthBeats();
+        data.loopLengthBeats = loopBeats > 0.0 ? loopBeats : data.clipLengthBeats;
+    } else if (event != nullptr) {
+        const double srcLength = event->sourceLengthSeconds(clip->getTimelineLength(bpm));
+        double durationSeconds = srcLength / event->speedRatio;
         data.clipLengthBeats = durationSeconds * bpm / 60.0;
         data.loopLengthBeats = data.clipLengthBeats;
     } else {
+        // MIDI: the launch cycle is the clip length.
         data.clipLengthBeats = clip->getLengthInBeats(bpm);
         data.loopLengthBeats = data.clipLengthBeats;
     }

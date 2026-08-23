@@ -51,6 +51,32 @@ float applyCurve(BindingCurve curve, float normalized);
 float applyRange(const BindingRange& range, float normalizedAfterCurve);
 
 // ============================================================================
+// Inverses
+// ============================================================================
+
+/**
+ * @brief Recover the position a control must be at to produce `curved`.
+ *
+ * `invertCurve(c, applyCurve(c, x)) == x` for every curve and every x in
+ * [0,1]. OSC feedback (#2091) needs it: a bound address echoes where the
+ * surface's fader should sit, and what the model holds is the value at the far
+ * end of the curve.
+ *
+ * Every curve here is monotonic on [0,1], so each has one inverse and this is
+ * total rather than a best effort.
+ */
+float invertCurve(BindingCurve curve, float curved);
+
+/**
+ * @brief Recover the normalized-after-curve value that `applyRange` produced.
+ *
+ * A degenerate range — min equal to max — maps every position onto one value
+ * and therefore inverts to none of them. It answers 0, which is the position a
+ * fader sits at when nothing it can do changes anything.
+ */
+float invertRange(const BindingRange& range, float ranged);
+
+// ============================================================================
 // ToggleState
 // ============================================================================
 
@@ -78,5 +104,26 @@ struct ToggleState {
  * @return 1.0f when state.on is true, 0.0f otherwise.
  */
 float applyToggle(int rawValue, ToggleState& state);
+
+/**
+ * @brief Apply a binding mode to a value that arrived already normalized.
+ *
+ * The entry point for OSC sources, which send a float in [0,1] rather than a
+ * 7-bit step. Routing those through `applyMode` would mean quantising a fader
+ * to 128 positions on the way in and then dividing it back out — a resolution
+ * loss with nothing to show for it.
+ *
+ * Absolute passes the value through, clamped. Toggle flips on the rising edge
+ * across the half-way point, sharing `ToggleState` with the MIDI path so a
+ * parameter bound from either behaves identically.
+ *
+ * The relative modes fall back to absolute. They decode a *delta* out of a
+ * 7-bit word — two's complement, sign-and-magnitude, binary offset — and a
+ * value that arrives as a position on a 0..1 fader carries no such encoding.
+ * There is nothing to decode, so there is nothing to honour; the OSC learn
+ * path never produces them, and the settings UI does not offer them for an OSC
+ * source.
+ */
+TransformOutput applyModeNormalized(BindingMode mode, float normalized, ToggleState& state);
 
 }  // namespace magda

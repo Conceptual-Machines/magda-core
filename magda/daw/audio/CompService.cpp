@@ -217,8 +217,10 @@ void CompService::clearComp(ClipId clipId) {
     audio.compActive = false;
     const int idx = juce::jlimit(0, juce::jmax(0, static_cast<int>(audio.takes.size()) - 1),
                                  audio.currentTakeIndex);
-    if (idx < static_cast<int>(audio.takes.size()))
-        audio.source.filePath = audio.takes[idx].filePath;
+    if (idx < static_cast<int>(audio.takes.size())) {
+        if (auto* event = audio.primaryEvent())
+            event->sourceId = SourcePool::getInstance().acquire(audio.takes[idx].filePath);
+    }
     cm.forceNotifyClipPropertyChanged(clipId);
     cm.pushClipTakeUndo("Clear Comp", before);
 }
@@ -253,8 +255,12 @@ void CompService::renderComp(ClipId clipId) {
             auto* clip = cm.getClip(clipId);
             if (!clip || !clip->isAudio() || !clip->audio().compActive)
                 return;
-            clip->audio().source.filePath = path;
-            clip->audio().source.durationSeconds = dur;
+            auto* event = clip->primaryEvent();
+            if (event == nullptr)
+                return;
+            event->sourceId = SourcePool::getInstance().acquire(path);
+            if (auto* source = SourcePool::getInstance().getMutable(event->sourceId))
+                source->durationSeconds = dur;
             cm.forceNotifyClipPropertyChanged(clipId);
         });
     });

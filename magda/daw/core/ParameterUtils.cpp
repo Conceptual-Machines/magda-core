@@ -28,52 +28,71 @@ float computeSkew(float anchorPosition) {
     return std::log(anchorPosition) / std::log(0.5f);
 }
 
-// True when info.scaleAnchor is set and strictly inside (min, max).
-bool hasValidAnchor(const ParameterInfo& info) {
-    return info.scaleAnchor > info.minValue && info.scaleAnchor < info.maxValue;
+// True when the anchor is set and strictly inside (min, max).
+bool hasValidAnchor(const ParameterDomain& domain) {
+    return domain.scaleAnchor > domain.minValue && domain.scaleAnchor < domain.maxValue;
 }
 
 }  // namespace
 
+ParameterDomain domainOf(const ParameterInfo& info) {
+    ParameterDomain domain;
+    domain.scale = info.scale;
+    domain.minValue = info.minValue;
+    domain.maxValue = info.maxValue;
+    domain.skewFactor = info.skewFactor;
+    domain.scaleAnchor = info.scaleAnchor;
+    domain.choiceCount = static_cast<int>(info.choices.size());
+    return domain;
+}
+
+bool isStepped(const ParameterDomain& domain) {
+    return domain.scale == ParameterScale::Discrete || domain.scale == ParameterScale::Boolean;
+}
+
 float normalizedToReal(float normalized, const ParameterInfo& info) {
+    return normalizedToReal(normalized, domainOf(info));
+}
+
+float normalizedToReal(float normalized, const ParameterDomain& domain) {
     // Clamp input to valid range
     normalized = juce::jlimit(0.0f, 1.0f, normalized);
 
-    switch (info.scale) {
+    switch (domain.scale) {
         case ParameterScale::Linear: {
-            float range = info.maxValue - info.minValue;
-            if (hasValidAnchor(info) && range > 0.0f) {
-                float anchorPos = (info.scaleAnchor - info.minValue) / range;
+            float range = domain.maxValue - domain.minValue;
+            if (hasValidAnchor(domain) && range > 0.0f) {
+                float anchorPos = (domain.scaleAnchor - domain.minValue) / range;
                 float skew = computeSkew(anchorPos);
                 normalized = std::pow(normalized, skew);
             }
-            return info.minValue + normalized * range;
+            return domain.minValue + normalized * range;
         }
 
         case ParameterScale::Logarithmic: {
             // Fallback to linear when log is undefined (non-positive min).
-            if (info.minValue <= 0.0f) {
-                return info.minValue + normalized * (info.maxValue - info.minValue);
+            if (domain.minValue <= 0.0f) {
+                return domain.minValue + normalized * (domain.maxValue - domain.minValue);
             }
-            float logRange = std::log(info.maxValue / info.minValue);
-            if (hasValidAnchor(info)) {
+            float logRange = std::log(domain.maxValue / domain.minValue);
+            if (hasValidAnchor(domain)) {
                 // Place anchor at norm=0.5 in log space by skewing norm first.
-                float anchorLogPos = std::log(info.scaleAnchor / info.minValue) / logRange;
+                float anchorLogPos = std::log(domain.scaleAnchor / domain.minValue) / logRange;
                 float skew = computeSkew(anchorLogPos);
                 normalized = std::pow(normalized, skew);
             }
-            return info.minValue * std::exp(normalized * logRange);
+            return domain.minValue * std::exp(normalized * logRange);
         }
 
         case ParameterScale::Exponential:
-            return std::pow(normalized, info.skewFactor) * (info.maxValue - info.minValue) +
-                   info.minValue;
+            return std::pow(normalized, domain.skewFactor) * (domain.maxValue - domain.minValue) +
+                   domain.minValue;
 
         case ParameterScale::Discrete: {
-            if (info.choices.empty()) {
+            if (domain.choiceCount <= 0) {
                 return 0.0f;
             }
-            int index = static_cast<int>(std::round(normalized * (info.choices.size() - 1)));
+            int index = static_cast<int>(std::round(normalized * (domain.choiceCount - 1)));
             return static_cast<float>(index);
         }
 
@@ -87,34 +106,47 @@ float normalizedToReal(float normalized, const ParameterInfo& info) {
             constexpr float UNITY_DB = 0.0f;
 
             if (normalized <= 0.0f)
-                return info.minValue;
+                return domain.minValue;
             if (normalized >= 1.0f)
-                return info.maxValue;
+                return domain.maxValue;
 
             if (normalized < UNITY_POS) {
                 // Below unity: 0..0.75 maps to minValue..0dB
-                return info.minValue + (normalized / UNITY_POS) * (UNITY_DB - info.minValue);
+                return domain.minValue + (normalized / UNITY_POS) * (UNITY_DB - domain.minValue);
             } else {
                 // Above unity: 0.75..1.0 maps to 0dB..maxValue
-                return UNITY_DB +
-                       ((normalized - UNITY_POS) / (1.0f - UNITY_POS)) * (info.maxValue - UNITY_DB);
+                return UNITY_DB + ((normalized - UNITY_POS) / (1.0f - UNITY_POS)) *
+                                      (domain.maxValue - UNITY_DB);
             }
         }
 
         default:
-            return info.minValue + normalized * (info.maxValue - info.minValue);
+            return domain.minValue + normalized * (domain.maxValue - domain.minValue);
     }
 }
 
+float gainFromNormalized(float normalized, const ParameterInfo& info) {
+    return std::pow(10.0f, normalizedToReal(normalized, info) / 20.0f);
+}
+
+float normalizedFromGain(float gain, const ParameterInfo& info) {
+    const float dB = gain > 0.0f ? 20.0f * std::log10(gain) : info.minValue;
+    return realToNormalized(dB, info);
+}
+
 float realToNormalized(float real, const ParameterInfo& info) {
-    switch (info.scale) {
+    return realToNormalized(real, domainOf(info));
+}
+
+float realToNormalized(float real, const ParameterDomain& domain) {
+    switch (domain.scale) {
         case ParameterScale::Linear: {
-            float range = info.maxValue - info.minValue;
+            float range = domain.maxValue - domain.minValue;
             if (range == 0.0f)
                 return 0.0f;
-            float linPos = (real - info.minValue) / range;
-            if (hasValidAnchor(info)) {
-                float anchorPos = (info.scaleAnchor - info.minValue) / range;
+            float linPos = (real - domain.minValue) / range;
+            if (hasValidAnchor(domain)) {
+                float anchorPos = (domain.scaleAnchor - domain.minValue) / range;
                 float skew = computeSkew(anchorPos);
                 // Invert the forward skew (norm -> norm^skew) with norm -> norm^(1/skew).
                 linPos = std::pow(juce::jlimit(0.0f, 1.0f, linPos), 1.0f / skew);
@@ -124,18 +156,18 @@ float realToNormalized(float real, const ParameterInfo& info) {
 
         case ParameterScale::Logarithmic: {
             // Handle edge cases
-            if (info.minValue <= 0.0f || real <= 0.0f) {
-                float range = info.maxValue - info.minValue;
+            if (domain.minValue <= 0.0f || real <= 0.0f) {
+                float range = domain.maxValue - domain.minValue;
                 if (range == 0.0f)
                     return 0.0f;
-                return juce::jlimit(0.0f, 1.0f, (real - info.minValue) / range);
+                return juce::jlimit(0.0f, 1.0f, (real - domain.minValue) / range);
             }
-            float logRange = std::log(info.maxValue / info.minValue);
+            float logRange = std::log(domain.maxValue / domain.minValue);
             if (logRange == 0.0f)
                 return 0.0f;
-            float logPos = std::log(real / info.minValue) / logRange;
-            if (hasValidAnchor(info)) {
-                float anchorLogPos = std::log(info.scaleAnchor / info.minValue) / logRange;
+            float logPos = std::log(real / domain.minValue) / logRange;
+            if (hasValidAnchor(domain)) {
+                float anchorLogPos = std::log(domain.scaleAnchor / domain.minValue) / logRange;
                 float skew = computeSkew(anchorLogPos);
                 logPos = std::pow(juce::jlimit(0.0f, 1.0f, logPos), 1.0f / skew);
             }
@@ -143,19 +175,18 @@ float realToNormalized(float real, const ParameterInfo& info) {
         }
 
         case ParameterScale::Exponential: {
-            float range = info.maxValue - info.minValue;
-            if (range == 0.0f || info.skewFactor == 0.0f)
+            float range = domain.maxValue - domain.minValue;
+            if (range == 0.0f || domain.skewFactor == 0.0f)
                 return 0.0f;
-            float normalized = (real - info.minValue) / range;
-            return juce::jlimit(0.0f, 1.0f, std::pow(normalized, 1.0f / info.skewFactor));
+            float normalized = (real - domain.minValue) / range;
+            return juce::jlimit(0.0f, 1.0f, std::pow(normalized, 1.0f / domain.skewFactor));
         }
 
         case ParameterScale::Discrete: {
-            if (info.choices.empty())
+            if (domain.choiceCount <= 0)
                 return 0.0f;
-            int index = juce::jlimit(0, static_cast<int>(info.choices.size() - 1),
-                                     static_cast<int>(std::round(real)));
-            return static_cast<float>(index) / static_cast<float>(info.choices.size() - 1);
+            int index = juce::jlimit(0, domain.choiceCount - 1, static_cast<int>(std::round(real)));
+            return static_cast<float>(index) / static_cast<float>(domain.choiceCount - 1);
         }
 
         case ParameterScale::Boolean:
@@ -166,26 +197,26 @@ float realToNormalized(float real, const ParameterInfo& info) {
             constexpr float UNITY_POS = 0.75f;
             constexpr float UNITY_DB = 0.0f;
 
-            if (real <= info.minValue)
+            if (real <= domain.minValue)
                 return 0.0f;
-            if (real >= info.maxValue)
+            if (real >= domain.maxValue)
                 return 1.0f;
 
             if (real < UNITY_DB) {
                 // Below unity: minValue..0dB maps to 0..0.75
-                return UNITY_POS * (real - info.minValue) / (UNITY_DB - info.minValue);
+                return UNITY_POS * (real - domain.minValue) / (UNITY_DB - domain.minValue);
             } else {
                 // Above unity: 0dB..maxValue maps to 0.75..1.0
                 return UNITY_POS +
-                       (1.0f - UNITY_POS) * (real - UNITY_DB) / (info.maxValue - UNITY_DB);
+                       (1.0f - UNITY_POS) * (real - UNITY_DB) / (domain.maxValue - UNITY_DB);
             }
         }
 
         default: {
-            float range = info.maxValue - info.minValue;
+            float range = domain.maxValue - domain.minValue;
             if (range == 0.0f)
                 return 0.0f;
-            return juce::jlimit(0.0f, 1.0f, (real - info.minValue) / range);
+            return juce::jlimit(0.0f, 1.0f, (real - domain.minValue) / range);
         }
     }
 }
@@ -242,14 +273,50 @@ float modelToTeValue(ParameterModelValue model, const ParameterInfo& info) {
     return info.teMinValue + normalized.value * teSpan;
 }
 
+bool modelHoldsTeNativeValue(const ParameterInfo& info) {
+    // The branch normalizedToModelValue() / modelToNormalizedValue() take when
+    // they leave the value in TE's domain, named so widgets can ask the same
+    // question instead of guessing at the value's meaning.
+    return !infoMatchesTeRange(info) && !isDisplayMappedInternalValue(info);
+}
+
+int choiceIndexForModelValue(ParameterModelValue model, const ParameterInfo& info) {
+    const int count = static_cast<int>(info.choices.size());
+    if (count <= 0)
+        return -1;
+
+    if (modelHoldsTeNativeValue(info)) {
+        const float normalized = modelToNormalizedValue(model, info).value;
+        return juce::jlimit(
+            0, count - 1,
+            static_cast<int>(std::lround(normalized * static_cast<float>(count - 1))));
+    }
+
+    return juce::jlimit(0, count - 1, static_cast<int>(std::lround(model.value)));
+}
+
+ParameterModelValue modelValueForChoiceIndex(int index, const ParameterInfo& info) {
+    const int count = static_cast<int>(info.choices.size());
+    if (count <= 0)
+        return {0.0f};
+    index = juce::jlimit(0, count - 1, index);
+
+    if (modelHoldsTeNativeValue(info)) {
+        const float normalized =
+            count > 1 ? static_cast<float>(index) / static_cast<float>(count - 1) : 0.0f;
+        return normalizedToModelValue(ParameterNormalizedValue::clamped(normalized), info);
+    }
+
+    return {static_cast<float>(index)};
+}
+
+float modulationOffset(float modValue, float amount, bool bipolar) {
+    // modValue is 0-1, convert to -1 to +1 if bipolar, then scale by the depth.
+    return (bipolar ? (modValue * 2.0f - 1.0f) : modValue) * amount;
+}
+
 float applyModulation(float baseNormalized, float modValue, float amount, bool bipolar) {
-    // modValue is 0-1, convert to -1 to +1 if bipolar
-    float modOffset = bipolar ? (modValue * 2.0f - 1.0f) : modValue;
-
-    // amount is depth: how much of the mod affects the base
-    float delta = modOffset * amount;
-
-    return juce::jlimit(0.0f, 1.0f, baseNormalized + delta);
+    return juce::jlimit(0.0f, 1.0f, baseNormalized + modulationOffset(modValue, amount, bipolar));
 }
 
 float applyModulations(float baseNormalized,
@@ -257,8 +324,7 @@ float applyModulations(float baseNormalized,
     float result = baseNormalized;
 
     for (const auto& [modValue, amount] : modsAndAmounts) {
-        float modOffset = bipolar ? (modValue * 2.0f - 1.0f) : modValue;
-        result += modOffset * amount;
+        result += modulationOffset(modValue, amount, bipolar);
     }
 
     return juce::jlimit(0.0f, 1.0f, result);

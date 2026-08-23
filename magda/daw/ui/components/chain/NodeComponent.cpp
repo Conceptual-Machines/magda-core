@@ -3,6 +3,7 @@
 #include <BinaryData.h>
 
 #include "../../utils/SelectionPolicy.hpp"
+#include "ChainNodePathDrag.hpp"
 #include "ai/AIPanelComponent.hpp"
 #include "core/AutomationInfo.hpp"
 #include "core/GestureRouter.hpp"
@@ -21,29 +22,6 @@
 namespace magda::daw::ui {
 
 namespace {
-juce::String encodeStepTypes(const magda::ChainNodePath& path) {
-    juce::StringArray values;
-    for (const auto& step : path.steps)
-        values.add(juce::String(static_cast<int>(step.type)));
-    return values.joinIntoString(",");
-}
-
-juce::String encodeStepIds(const magda::ChainNodePath& path) {
-    juce::StringArray values;
-    for (const auto& step : path.steps)
-        values.add(juce::String(step.id));
-    return values.joinIntoString(",");
-}
-
-void writePathToDragInfo(juce::DynamicObject& obj, const magda::ChainNodePath& path,
-                         const juce::String& suffix = {}) {
-    obj.setProperty("trackId" + suffix, path.trackId);
-    obj.setProperty("topLevelDeviceId" + suffix, path.topLevelDeviceId);
-    obj.setProperty("isTrackLevel" + suffix, path.isTrackLevel);
-    obj.setProperty("stepTypes" + suffix, encodeStepTypes(path));
-    obj.setProperty("stepIds" + suffix, encodeStepIds(path));
-}
-
 juce::Image createChainNodeDragImage(const juce::String& label, int itemCount) {
     constexpr int width = 188;
     constexpr int height = 42;
@@ -1301,9 +1279,9 @@ void NodeComponent::mouseDrag(const juce::MouseEvent& e) {
                 auto* dragInfo = new juce::DynamicObject();
                 dragInfo->setProperty("type", paths.size() > 1 ? "chainElements" : "chainElement");
                 dragInfo->setProperty("pathCount", static_cast<int>(paths.size()));
-                writePathToDragInfo(*dragInfo, paths.front());
+                writeChainNodePathToDragInfo(*dragInfo, paths.front());
                 for (int i = 0; i < static_cast<int>(paths.size()); ++i)
-                    writePathToDragInfo(*dragInfo, paths[static_cast<size_t>(i)], juce::String(i));
+                    writeChainNodePathToDragInfo(*dragInfo, paths[static_cast<size_t>(i)], i);
 
                 const auto label =
                     paths.size() > 1 ? juce::String(paths.size()) + " Chain Items" : getNodeName();

@@ -148,11 +148,12 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
         // to source-file position. Only show cursors when the arrangement
         // playhead falls within this clip's time range.
         auto timelineDeltaToSourceDelta = [&](double timelineDelta) {
-            double sourceDuration = clip->audio().source.durationSeconds;
-            if (clip->autoTempo && clip->audio().interpretation.totalBeats > 0.0 &&
-                sourceDuration > 0.0 && projectBpm > 0.0) {
+            double sourceDuration = magda::audioEventRef(*clip).sourceDurationSeconds();
+            if (magda::audioEventRef(*clip).autoTempo &&
+                magda::audioEventRef(*clip).interpTotalBeats > 0.0 && sourceDuration > 0.0 &&
+                projectBpm > 0.0) {
                 double projectBeats = timelineDelta * projectBpm / 60.0;
-                return projectBeats * sourceDuration / clip->audio().interpretation.totalBeats;
+                return projectBeats * sourceDuration / magda::audioEventRef(*clip).interpTotalBeats;
             }
             return di.timelineToSource(timelineDelta);
         };
@@ -170,7 +171,8 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
 
         auto arrangementToSourceX = [&](double arrangementTime) -> int {
             double relTime = arrangementTime - clipStart;
-            double sourcePos = clip->offset + timelineDeltaToSourceDelta(relTime);
+            double sourcePos =
+                magda::audioEventRef(*clip).anchorSeconds() + timelineDeltaToSourceDelta(relTime);
             return sourcePositionToX(sourcePos);
         };
 
@@ -307,10 +309,15 @@ WaveformEditorContent::WaveformEditorContent() {
         // displayStart/displayEnd are in timeline seconds (from srcToTimeline in ClipDisplayInfo).
         // Reverse the transform to get source seconds.
         auto timelineToSrc = [&](double t) -> double {
-            if (clip->autoTempo && clip->loopLength > 0.0 && clip->loopLengthBeats > 0.0) {
-                return t * clip->loopLength / (clip->loopLengthBeats * 60.0 / bpm);
+            if (magda::audioEventRef(*clip).autoTempo &&
+                magda::audioEventRef(*clip).loopLengthSeconds() > 0.0 &&
+                magda::audioEventRef(*clip).loopLengthBeats() > 0.0) {
+                return t * magda::audioEventRef(*clip).loopLengthSeconds() /
+                       (magda::audioEventRef(*clip).loopLengthBeats() * 60.0 / bpm);
             }
-            return (clip->speedRatio > 0.0) ? t * clip->speedRatio : 0.0;
+            return (magda::audioEventRef(*clip).speedRatio > 0.0)
+                       ? t * magda::audioEventRef(*clip).speedRatio
+                       : 0.0;
         };
 
         double newLoopStart = timelineToSrc(displayStart);
@@ -936,7 +943,7 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
             }
 
             // Update warp mode state
-            bool warpEnabled = clip->warpEnabled;
+            bool warpEnabled = magda::audioEventRef(*clip).warpEnabled;
             gridComponent_->setWarpMode(warpEnabled);
 
             if (warpEnabled) {
@@ -958,9 +965,9 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
         }
 
         // Check if cached transients were invalidated (e.g. sensitivity changed)
-        if (clip->isAudio() && !clip->audio().source.filePath.isEmpty()) {
+        if (clip->isAudio() && !magda::audioEventRef(*clip).sourceFilePath().isEmpty()) {
             auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
-                clip->audio().source.filePath);
+                magda::audioEventRef(*clip).sourceFilePath());
             if (cached) {
                 gridComponent_->setTransientTimes(*cached);
                 transientsCached_ = true;
@@ -988,7 +995,7 @@ void WaveformEditorContent::transientsChanged(const juce::String& filePath) {
         setTransientsUpdating(false);
         return;
     }
-    if (clip->audio().source.filePath != filePath)
+    if (magda::audioEventRef(*clip).sourceFilePath() != filePath)
         return;
     auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(filePath);
     if (cached) {
@@ -1174,7 +1181,7 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
 
         // Update warp mode state
         if (clip) {
-            bool warpEnabled = clip->warpEnabled;
+            bool warpEnabled = magda::audioEventRef(*clip).warpEnabled;
             gridComponent_->setWarpMode(warpEnabled);
             wasWarpEnabled_ = warpEnabled;
 
@@ -1191,9 +1198,9 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
         }
 
         // Check for cached transients or request async detection.
-        if (clip && clip->isAudio() && !clip->audio().source.filePath.isEmpty()) {
+        if (clip && clip->isAudio() && !magda::audioEventRef(*clip).sourceFilePath().isEmpty()) {
             auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
-                clip->audio().source.filePath);
+                magda::audioEventRef(*clip).sourceFilePath());
             if (cached) {
                 gridComponent_->setTransientTimes(*cached);
                 transientsCached_ = true;
@@ -1319,9 +1326,9 @@ void WaveformEditorContent::updateGridSize() {
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         if (clip && timeRuler_) {
             double fileDuration = 0.0;
-            if (clip->audio().source.filePath.isNotEmpty()) {
+            if (magda::audioEventRef(*clip).sourceFilePath().isNotEmpty()) {
                 auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                    clip->audio().source.filePath);
+                    magda::audioEventRef(*clip).sourceFilePath());
                 if (thumbnail) {
                     fileDuration = thumbnail->getTotalLength();
                 }
@@ -1359,9 +1366,9 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
 
     // Get file duration for source extent calculation
     double fileDuration = 0.0;
-    if (clip.audio().source.filePath.isNotEmpty()) {
-        auto* thumbnail =
-            magda::AudioThumbnailManager::getInstance().getThumbnail(clip.audio().source.filePath);
+    if (audioEventRef(clip).sourceFilePath().isNotEmpty()) {
+        auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
+            audioEventRef(clip).sourceFilePath());
         if (thumbnail) {
             fileDuration = thumbnail->getTotalLength();
         }
@@ -1374,7 +1381,7 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
     // Update time ruler loop region (green when active, grey when disabled)
     // Display anchored at file start — loop markers at real source positions
     if (timeRuler_) {
-        bool showMarkers = clip.loopEnabled && clip.loopLength > 0.0;
+        bool showMarkers = clip.loopEnabled && audioEventRef(clip).loopLengthSeconds() > 0.0;
         bool loopIsActive = clip.loopEnabled;
         double loopStartPos = info.loopStartPositionSeconds;
         double loopLen = info.loopLengthSeconds;
@@ -1509,9 +1516,9 @@ void WaveformEditorContent::requestTransientDetection() {
     setTransientsUpdating(true);
     if (bridge->getTransientTimes(editingClipId_)) {
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-        if (clip && !clip->audio().source.filePath.isEmpty()) {
+        if (clip && !magda::audioEventRef(*clip).sourceFilePath().isEmpty()) {
             auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
-                clip->audio().source.filePath);
+                magda::audioEventRef(*clip).sourceFilePath());
             if (cached) {
                 gridComponent_->setTransientTimes(*cached);
                 setTransientsUpdating(false);

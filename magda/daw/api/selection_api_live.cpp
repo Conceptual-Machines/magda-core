@@ -78,4 +78,12 @@ void SelectionApiLive::clearNoteSelection() {
     SelectionManager::getInstance().clearNoteSelection();
 }
 
+void SelectionApiLive::selectAutomationLane(AutomationLaneId laneId) {
+    SelectionManager::getInstance().selectAutomationLane(laneId);
+}
+
+void SelectionApiLive::clearSelection() {
+    SelectionManager::getInstance().clearSelection();
+}
+
 }  // namespace magda

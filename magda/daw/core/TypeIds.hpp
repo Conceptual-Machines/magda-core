@@ -6,6 +6,14 @@ namespace magda {
 using DeviceId = int;
 constexpr DeviceId INVALID_DEVICE_ID = -1;
 
+/**
+ * @brief Which independently allocated device-id space a chain belongs to.
+ *
+ * Fx is the implicit default for legacy chain paths. Post-fx and mixer-analysis
+ * paths carry an explicit segment step.
+ */
+enum class ChainSegment { Fx, PostFx, MixerAnalysis };
+
 // Mod identifiers
 using ModId = int;
 constexpr ModId INVALID_MOD_ID = -1;

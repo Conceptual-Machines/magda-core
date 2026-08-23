@@ -72,8 +72,10 @@ double timelineEndSeconds(const ClipInfo& clip, double bpm) {
 void applyLeftResizePreview(ClipInfo& target, const ClipInfo& preview, double bpm) {
     ClipOperations::setTimelinePlacement(target, timelineStartSeconds(preview, bpm),
                                          timelineLengthSeconds(preview, bpm), bpm);
-    target.offset = preview.offset;
-    target.loopStart = preview.loopStart;
+    if (auto* targetEvent = target.primaryEvent()) {
+        targetEvent->sourceAnchorSamples = audioEventRef(preview).sourceAnchorSamples;
+        targetEvent->loopStartSamples = audioEventRef(preview).loopStartSamples;
+    }
     target.midiOffset = preview.midiOffset;
     // resizeContainerFromLeft accumulates the start move here, and the piano
     // roll positions notes through it. Leaving it behind makes the notes drift
@@ -87,8 +89,10 @@ void applyLeftResizePreview(ClipInfo& target, const ClipInfo& preview, double bp
 void restoreLeftResizePreview(ClipInfo& target, const ClipInfo& snapshot, double startSeconds,
                               double lengthSeconds, double bpm) {
     ClipOperations::setTimelinePlacement(target, startSeconds, lengthSeconds, bpm);
-    target.offset = snapshot.offset;
-    target.loopStart = snapshot.loopStart;
+    if (auto* targetEvent = target.primaryEvent()) {
+        targetEvent->sourceAnchorSamples = audioEventRef(snapshot).sourceAnchorSamples;
+        targetEvent->loopStartSamples = audioEventRef(snapshot).loopStartSamples;
+    }
     target.midiOffset = snapshot.midiOffset;
     target.midiTrimOffset = snapshot.midiTrimOffset;
 }
@@ -233,6 +237,74 @@ constexpr int kProgressionTargetBaseId = 400;
 // resize it afterwards; setCrossfadeRegionBeats clamps it into both clips.
 constexpr double kDefaultCrossfadeBeats = 0.5;
 
+// Rounded rect of `bounds`, but only the part of it that falls inside
+// `region`, with the corners kept where the clip's own corners are. `region`
+// must be real geometry (a show-through stretch, #2003) — never the repaint
+// damage rect, or a partial repaint redraws the shape around the damage
+// instead of around the clip (#2026).
+juce::Path makeClippedRoundedRectPath(juce::Rectangle<int> bounds, juce::Rectangle<int> region,
+                                      float radius) {
+    juce::Path path;
+
+    if (bounds.isEmpty() || region.isEmpty())
+        return path;
+
+    const bool drawLeftEdge = region.getX() <= bounds.getX();
+    const bool drawRightEdge = region.getRight() >= bounds.getRight();
+
+    if (!drawLeftEdge && !drawRightEdge) {
+        path.addRectangle(region.toFloat());
+        return path;
+    }
+
+    const float left = static_cast<float>(region.getX());
+    const float right = static_cast<float>(region.getRight());
+    const float top = static_cast<float>(region.getY());
+    const float bottom = static_cast<float>(region.getBottom());
+    const float boundsLeft = static_cast<float>(bounds.getX());
+    const float boundsRight = static_cast<float>(bounds.getRight());
+    const float r = juce::jmin(radius, 0.5f * static_cast<float>(region.getHeight()),
+                               0.5f * static_cast<float>(region.getWidth()));
+
+    path.startNewSubPath(drawLeftEdge ? boundsLeft + r : left, top);
+    path.lineTo(drawRightEdge ? boundsRight - r : right, top);
+
+    if (drawRightEdge)
+        path.quadraticTo(boundsRight, top, boundsRight, top + r);
+    else
+        path.lineTo(right, top);
+
+    path.lineTo(drawRightEdge ? boundsRight : right, drawRightEdge ? bottom - r : bottom);
+
+    if (drawRightEdge)
+        path.quadraticTo(boundsRight, bottom, boundsRight - r, bottom);
+    else
+        path.lineTo(right, bottom);
+
+    path.lineTo(drawLeftEdge ? boundsLeft + r : left, bottom);
+
+    if (drawLeftEdge)
+        path.quadraticTo(boundsLeft, bottom, boundsLeft, bottom - r);
+    else
+        path.lineTo(left, bottom);
+
+    path.lineTo(drawLeftEdge ? boundsLeft : left, drawLeftEdge ? top + r : top);
+
+    if (drawLeftEdge)
+        path.quadraticTo(boundsLeft, top, boundsLeft + r, top);
+    else
+        path.lineTo(left, top);
+
+    path.closeSubPath();
+    return path;
+}
+
+void fillClippedRoundedRect(juce::Graphics& g, juce::Rectangle<int> bounds,
+                            juce::Rectangle<int> region, juce::Colour colour, float radius) {
+    g.setColour(colour);
+    g.fillPath(makeClippedRoundedRectPath(bounds, region, radius));
+}
+
 void logArrangeRangeSelect(const juce::String& message) {
     const auto line = juce::Time::getCurrentTime().toString(true, true, true, true) +
                       " [ArrangeRangeSelect] " + message;
@@ -309,7 +381,8 @@ void ClipComponent::changeListenerCallback(juce::ChangeBroadcaster*) {
     // The thumbnail streamed in more samples. Repaint to fill the waveform
     // progressively, and drop the listener once it has finished loading.
     const auto* clip = getClipInfo();
-    updateWaveformLoadListener(clip != nullptr ? clip->audio().source.filePath : juce::String());
+    updateWaveformLoadListener(clip != nullptr ? magda::audioEventRef(*clip).sourceFilePath()
+                                               : juce::String());
     repaint();
 }
 
@@ -330,13 +403,15 @@ void ClipComponent::paint(juce::Graphics& g) {
     if (!bounds.intersects(g.getClipBounds()))
         return;
 
+    const auto overlaps = overlapDisplay(*clip);
+
     // Draw based on clip type
     if (isChordClip(*clip)) {
         paintChordClip(g, *clip, bounds);
     } else if (clip->isAudio()) {
-        paintAudioClip(g, *clip, bounds);
+        paintAudioClip(g, *clip, bounds, overlaps.showThrough);
     } else {
-        paintMidiClip(g, *clip, bounds);
+        paintMidiClip(g, *clip, bounds, overlaps.showThrough);
     }
 
     // Draw header (name, loop indicator)
@@ -344,20 +419,33 @@ void ClipComponent::paint(juce::Graphics& g) {
 
     const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
 
-    // Draw loop boundary corner cuts (after header so they cut through everything)
-    double srcLength = clip->loopLength;
-    if (clip->loopEnabled && srcLength > 0.0) {
+    // Draw loop boundary corner cuts (after header so they cut through
+    // everything). The toggle is the clip's; where the loop LENGTH comes from
+    // depends on content: MIDI keeps it in clip beats, audio derives it from
+    // the event's source region.
+    const auto* loopEvent = clip->primaryEvent();
+    const double beatsPerSecondForLoop = tempo / 60.0;
+    double loopCutLengthBeats = 0.0;
+    if (clip->loopEnabled) {
+        if (loopEvent == nullptr) {
+            loopCutLengthBeats = clip->loopLengthBeats;
+        } else if (const double srcLength = loopEvent->loopLengthSeconds(); srcLength > 0.0) {
+            loopCutLengthBeats = (loopEvent->autoTempo && loopEvent->loopLengthBeats() > 0.0)
+                                     ? loopEvent->loopLengthBeats()
+                                     : srcLength / loopEvent->speedRatio * beatsPerSecondForLoop;
+        }
+    }
+
+    if (loopCutLengthBeats > 0.0) {
         auto clipBounds = getLocalBounds();
-        double beatsPerSecond = tempo / 60.0;
+        double beatsPerSecond = beatsPerSecondForLoop;
         // During resize drag, use preview length so boundaries stay fixed
         double displayLength =
             (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip->getTimelineLength(tempo);
         double clipLengthInBeats = displayLength * beatsPerSecond;
         // Loop length in beats: use authoritative beat value for autoTempo,
         // otherwise derive from source length and speedRatio
-        double loopLengthBeats = (clip->autoTempo && clip->loopLengthBeats > 0.0)
-                                     ? clip->loopLengthBeats
-                                     : srcLength / clip->speedRatio * beatsPerSecond;
+        const double loopLengthBeats = loopCutLengthBeats;
         double beatRange = juce::jmax(1.0, clipLengthInBeats);
         int numBoundaries = static_cast<int>(clipLengthInBeats / loopLengthBeats);
         auto markerColour = juce::Colours::lightgrey;
@@ -415,6 +503,46 @@ void ClipComponent::paint(juce::Graphics& g) {
         }
     }
 
+    // Where another clip is playing with this one (#2003). An overlap that
+    // plays only the clip on top looks exactly like a single clip and is meant
+    // to: it sounds like one. An overlap that plays both does not, so it is
+    // hatched, on both clips of the pair. It stays inside the body: hatching
+    // the header too turned the clip into a black striped block that read as
+    // broken rather than as stacked.
+    if (!overlaps.bothPlay.empty() && parentPanel_ != nullptr) {
+        const auto body = bounds.withTrimmedTop(HEADER_HEIGHT);
+
+        for (const auto& range : overlaps.bothPlay) {
+            const auto region = coveringRangeBounds(range, body);
+            if (region.isEmpty())
+                continue;
+
+            juce::Graphics::ScopedSaveState clipped(g);
+            g.reduceClipRegion(region);
+
+            g.setColour(juce::Colours::black.withAlpha(0.22f));
+            g.fillRect(region);
+
+            // Diagonal hatch, one line every 6px, running the full height so it
+            // reads at any clip size.
+            g.setColour(juce::Colours::white.withAlpha(0.10f));
+            const float height = static_cast<float>(region.getHeight());
+            for (float x = static_cast<float>(region.getX()) - height;
+                 x < static_cast<float>(region.getRight()); x += 6.0f) {
+                g.drawLine(x, static_cast<float>(region.getBottom()), x + height,
+                           static_cast<float>(region.getY()), 1.0f);
+            }
+
+            // Edges of the covered stretch, so a cover starting or ending inside
+            // this clip has a readable boundary.
+            g.setColour(juce::Colours::white.withAlpha(0.28f));
+            g.drawVerticalLine(region.getX(), static_cast<float>(region.getY()),
+                               static_cast<float>(region.getBottom()));
+            g.drawVerticalLine(region.getRight() - 1, static_cast<float>(region.getY()),
+                               static_cast<float>(region.getBottom()));
+        }
+    }
+
     // Draw resize handles if selected
     if (isSelected_) {
         paintResizeHandles(g, bounds);
@@ -464,22 +592,23 @@ void ClipComponent::paint(juce::Graphics& g) {
 size_t ClipComponent::computeWaveformHash(const ClipInfo& clip) {
     size_t h = 0;
     auto combine = [&](size_t v) { h ^= v + 0x9e3779b9 + (h << 6) + (h >> 2); };
-    combine(std::hash<juce::String>{}(clip.audio().source.filePath));
+    combine(std::hash<juce::String>{}(audioEventRef(clip).sourceFilePath()));
     combine(std::hash<double>{}(clip.placement.lengthBeats));
-    combine(std::hash<double>{}(clip.offset));
-    combine(std::hash<double>{}(clip.speedRatio));
+    combine(std::hash<double>{}(audioEventRef(clip).anchorSeconds()));
+    combine(std::hash<double>{}(audioEventRef(clip).speedRatio));
     combine(std::hash<float>{}(clip.volumeDB));
     combine(std::hash<float>{}(clip.gainDB));
-    combine(std::hash<bool>{}(clip.isReversed));
+    combine(std::hash<bool>{}(audioEventRef(clip).reversed));
     combine(std::hash<bool>{}(clip.loopEnabled));
-    combine(std::hash<double>{}(clip.loopStart));
-    combine(std::hash<double>{}(clip.loopLength));
+    combine(std::hash<double>{}(audioEventRef(clip).loopStartSeconds()));
+    combine(std::hash<double>{}(audioEventRef(clip).loopLengthSeconds()));
     combine(std::hash<double>{}(clip.loopLengthBeats));
-    combine(std::hash<double>{}(clip.audio().interpretation.totalBeats));
-    combine(std::hash<bool>{}(clip.warpEnabled));
-    combine(std::hash<bool>{}(clip.autoTempo));
-    combine(std::hash<double>{}(clip.fadeIn));
-    combine(std::hash<double>{}(clip.fadeOut));
+    combine(std::hash<long long>{}(audioEventRef(clip).loopLengthSamples));
+    combine(std::hash<double>{}(audioEventRef(clip).interpTotalBeats));
+    combine(std::hash<bool>{}(audioEventRef(clip).warpEnabled));
+    combine(std::hash<bool>{}(audioEventRef(clip).autoTempo));
+    combine(std::hash<double>{}(audioEventRef(clip).fadeInSeconds));
+    combine(std::hash<double>{}(audioEventRef(clip).fadeOutSeconds));
     combine(static_cast<size_t>(clip.colour.getARGB()));
     return h;
 }
@@ -508,14 +637,15 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
     spec.colour = waveColourOverride.isTransparent() ? juce::Colours::black : waveColourOverride;
     spec.thick = isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
     if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
-        spec.previewOffset = resizePreviewClip_.offset;
-        spec.previewLoopStart = resizePreviewClip_.loopStart;
+        spec.previewOffset = audioEventRef(resizePreviewClip_).anchorSeconds();
+        spec.previewLoopStart = audioEventRef(resizePreviewClip_).loopStartSeconds();
     }
     daw::ui::paintClipWaveform(g, clip, clipId_, waveformArea, clipDisplayLength, spec);
 }
 
 void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
-                                   juce::Rectangle<int> bounds) {
+                                   juce::Rectangle<int> bounds,
+                                   const std::vector<BeatRange>& showThrough) {
     if (!bounds.intersects(g.getClipBounds()))
         return;
 
@@ -536,7 +666,7 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     // change listener is reliable regardless of mouse hover, unlike the old
     // poll timer which only repainted while hovered, so long loads no longer
     // look frozen until they finish.
-    updateWaveformLoadListener(clip.audio().source.filePath);
+    updateWaveformLoadListener(audioEventRef(clip).sourceFilePath());
 
     // Draw directly — no offscreen cache.  AudioThumbnail is already a
     // pre-computed waveform cache (512 samples/point) so drawing from it is fast.
@@ -546,10 +676,9 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     auto bgColour = deriveClipBody(clip.colour);
     if (ghosted)
         bgColour = bgColour.withAlpha(0.55f);
-    g.setColour(bgColour);
-    g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
+    paintClipBody(g, bounds, bgColour, showThrough);
 
-    if (clip.audio().source.filePath.isNotEmpty())
+    if (audioEventRef(clip).sourceFilePath().isNotEmpty())
         paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength,
                              ghosted ? juce::Colours::black.withAlpha(0.65f) : juce::Colour());
 
@@ -567,32 +696,88 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     }
 }
 
-ClipComponent::EffectiveFades ClipComponent::computeEffectiveFades(const ClipInfo& clip) const {
-    EffectiveFades fades;
-    fades.fadeInSeconds = clip.fadeIn;
-    fades.fadeOutSeconds = clip.fadeOut;
-    if (!clip.isAudio() || clip.view != ClipView::Arrangement)
-        return fades;
+bool ClipComponent::previewPlacementBeats(double tempo, double& startBeat,
+                                          double& lengthBeats) const {
+    const auto* clip = getClipInfo();
+    if (clip == nullptr || !isCurrentlyDragging() || isDuplicating_ || !isValidBpm(tempo))
+        return false;
 
-    auto& cm = ClipManager::getInstance();
+    const bool resizing = dragMode_ == DragMode::ResizeLeft || dragMode_ == DragMode::ResizeRight ||
+                          dragMode_ == DragMode::StretchLeft ||
+                          dragMode_ == DragMode::StretchRight ||
+                          dragMode_ == DragMode::CrossfadeIn || dragMode_ == DragMode::CrossfadeOut;
+
+    startBeat = previewStartTime_ * tempo / 60.0;
+    lengthBeats = (resizing && previewLength_ > 0.0) ? previewLength_ * tempo / 60.0
+                                                     : clip->placement.lengthBeats;
+    return true;
+}
+
+ClipComponent::OverlapDisplay ClipComponent::overlapDisplay(const ClipInfo& clip) const {
+    // Mid-drag the model still holds the placement the clip had when the mouse
+    // went down, so asking it draws the overlaps the clip used to have: they
+    // stay on screen for the whole gesture and only correct themselves on
+    // release — a fade hanging off a clip that has already been dragged clear,
+    // and one appearing under a clip on its way into the middle of another. The
+    // previewed lane answers for where the clips are right now (#2003).
+    if (parentPanel_ != nullptr) {
+        const auto previewLane = parentPanel_->previewLaneClips(clip.trackId);
+        if (!previewLane.empty()) {
+            return {computeBothPlayRanges(previewLane, clipId_),
+                    computeShowThroughRanges(previewLane, clipId_)};
+        }
+    }
+    return {bothPlayRanges_, showThroughRanges_};
+}
+
+ClipComponent::EffectiveFades ClipComponent::computeEffectiveFades(const ClipInfo& clip) const {
     const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-    if (auto xf = cm.getCrossfadeAtStart(clipId_)) {
-        fades.xfIn = xf;
-        fades.fadeInSeconds = xf->lengthBeats() * 60.0 / tempo;
+
+    // Previewed while a clip in this lane is being dragged, committed
+    // otherwise — the same distinction the overlap display makes.
+    if (parentPanel_ != nullptr) {
+        const auto previewLane = parentPanel_->previewLaneClips(clip.trackId);
+        if (!previewLane.empty())
+            return ClipManager::effectiveFadesIn(previewLane, clipId_, tempo);
     }
-    if (auto xf = cm.getCrossfadeAtEnd(clipId_)) {
-        fades.xfOut = xf;
-        fades.fadeOutSeconds = xf->lengthBeats() * 60.0 / tempo;
-    }
-    return fades;
+    return ClipManager::getInstance().getEffectiveFades(clipId_, tempo);
 }
 
 ClipId ClipComponent::findCrossfadeNeighbour(bool atStart) const {
     return ClipManager::getInstance().findCrossfadeNeighbour(clipId_, atStart);
 }
 
+void ClipComponent::paintClipBody(juce::Graphics& g, juce::Rectangle<int> bounds,
+                                  juce::Colour bgColour,
+                                  const std::vector<BeatRange>& showThrough) {
+    if (showThrough.empty()) {
+        g.setColour(bgColour);
+        g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
+        return;
+    }
+
+    // This clip is not silencing what it stands on, so its body must not hide
+    // it either: those stretches are left translucent and the clip underneath
+    // shows through, waveform or notes and all (#2003). This clip's own content
+    // is painted over the top afterwards, so both read in the overlap.
+    juce::RectangleList<int> solid(bounds);
+    for (const auto& range : showThrough) {
+        const auto region = coveringRangeBounds(range, bounds);
+        if (!region.isEmpty())
+            solid.subtract(region);
+    }
+    for (const auto& part : solid)
+        fillClippedRoundedRect(g, bounds, part, bgColour, CORNER_RADIUS);
+    for (const auto& range : showThrough) {
+        const auto region = coveringRangeBounds(range, bounds);
+        if (!region.isEmpty())
+            fillClippedRoundedRect(g, bounds, region, bgColour.withAlpha(0.28f), CORNER_RADIUS);
+    }
+}
+
 void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
-                                  juce::Rectangle<int> bounds) {
+                                  juce::Rectangle<int> bounds,
+                                  const std::vector<BeatRange>& showThrough) {
     if (!bounds.intersects(g.getClipBounds()))
         return;
 
@@ -601,8 +786,8 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
     auto bgColour = deriveClipBody(clip.colour);
     if (ghosted)
         bgColour = bgColour.withAlpha(0.55f);
-    g.setColour(bgColour);
-    g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
+
+    paintClipBody(g, bounds, bgColour, showThrough);
 
     auto noteArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
     paintMidiNotes(g, clip, noteArea,
@@ -625,12 +810,9 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
         (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip.getTimelineLength(tempo);
     double clipLengthInBeats = displayLength * beatsPerSecond;
 
-    double midiSrcLength =
-        clip.loopLength > 0.0 ? clip.loopLength : displayLength * clip.speedRatio;
-    double loopLengthBeats =
-        clip.loopLengthBeats > 0.0
-            ? clip.loopLengthBeats
-            : (midiSrcLength > 0.0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats);
+    // MIDI loops in clip beats on the container. There is no audio event here
+    // and no source region to consult.
+    double loopLengthBeats = clip.loopLengthBeats > 0.0 ? clip.loopLengthBeats : clipLengthInBeats;
 
     double midiOffset;
     if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
@@ -640,7 +822,7 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
         midiOffset = clip.loopEnabled ? clip.midiOffset : clip.midiTrimOffset;
     }
 
-    double loopStart = clip.loopStart * beatsPerSecond;
+    double loopStart = clip.loopStartBeats;
     double loopEnd = loopStart + loopLengthBeats;
 
     auto noteCanDisplay = [&](const MidiNote& note) {
@@ -808,11 +990,9 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
 
         // A looped clip tiles its source chords across the timeline, the same way
         // paintMidiNotes repeats notes.
-        const double srcLength =
-            clip.loopLength > 0.0 ? clip.loopLength : displayLength * clip.speedRatio;
+        // Chords annotate MIDI, so the loop is clip beats on the container.
         const double loopLengthBeats =
-            clip.loopLengthBeats > 0.0 ? clip.loopLengthBeats
-                                       : (srcLength > 0.0 ? srcLength * beatsPerSecond : beatRange);
+            clip.loopLengthBeats > 0.0 ? clip.loopLengthBeats : beatRange;
 
         if (clip.loopEnabled && loopLengthBeats > 0.5) {
             const int reps = static_cast<int>(std::ceil(beatRange / loopLengthBeats));
@@ -912,7 +1092,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     }
 
     // Musical mode indicator (auto-tempo)
-    if (clip.autoTempo && clip.isAudio() && headerArea.getWidth() > 16) {
+    if (audioEventRef(clip).autoTempo && clip.isAudio() && headerArea.getWidth() > 16) {
         auto musicalArea = headerArea.removeFromRight(14).reduced(2);
         g.setColour(headerForeground);
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
@@ -973,7 +1153,9 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
 
     // The counterpart curve of a crossfade (the other clip's fade across the
     // same overlap) — drawn by both components of the pair so the X reads the
-    // same whichever one is on top.
+    // same whichever one is on top. Only when the other clip crossfades too:
+    // with AUTO-XFADE on one side there is no X, just this clip's fade over a
+    // neighbour that plays flat through it (#2003).
     auto strokeCounterpartCurve = [&](float regionStartPx, float regionWidthPx, FadeCurve type,
                                       bool descending) {
         juce::Path curve;
@@ -1004,7 +1186,8 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
             // Trace the fade curve from right to left (gain 1→0)
             for (int i = NUM_STEPS; i >= 0; --i) {
                 float alpha = static_cast<float>(i) / static_cast<float>(NUM_STEPS);
-                float gain = computeFadeGain(alpha, static_cast<FadeCurve>(clip.fadeInType));
+                float gain =
+                    computeFadeGain(alpha, static_cast<FadeCurve>(audioEventRef(clip).fadeInType));
                 float x = areaLeft + alpha * fadeInPx;
                 float y = areaTop + (1.0f - gain) * areaHeight;
                 overlay.lineTo(x, y);
@@ -1018,7 +1201,8 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
             juce::Path curveLine;
             for (int i = 0; i <= NUM_STEPS; ++i) {
                 float alpha = static_cast<float>(i) / static_cast<float>(NUM_STEPS);
-                float gain = computeFadeGain(alpha, static_cast<FadeCurve>(clip.fadeInType));
+                float gain =
+                    computeFadeGain(alpha, static_cast<FadeCurve>(audioEventRef(clip).fadeInType));
                 float x = areaLeft + alpha * fadeInPx;
                 float y = areaTop + (1.0f - gain) * areaHeight;
                 if (i == 0)
@@ -1031,10 +1215,11 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
 
             // Crossfade: overlay the previous clip's fade-out curve (the X)
             if (fades.xfIn) {
-                auto* other = ClipManager::getInstance().getClip(fades.xfIn->leftClipId);
-                strokeCounterpartCurve(areaLeft, fadeInPx,
-                                       static_cast<FadeCurve>(other ? other->fadeOutType : 1),
-                                       true);
+                const auto* other = ClipManager::getInstance().getClip(fades.xfIn->leftClipId);
+                if (other != nullptr && other->autoCrossfade)
+                    strokeCounterpartCurve(
+                        areaLeft, fadeInPx,
+                        static_cast<FadeCurve>(audioEventRef(*other).fadeOutType), true);
             }
         }
     }
@@ -1057,8 +1242,8 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
             for (int i = NUM_STEPS; i >= 0; --i) {
                 float alpha = static_cast<float>(i) / static_cast<float>(NUM_STEPS);
                 // alpha=0 at fadeStart (gain=1), alpha=1 at areaRight (gain=0)
-                float gain =
-                    computeFadeGain(1.0f - alpha, static_cast<FadeCurve>(clip.fadeOutType));
+                float gain = computeFadeGain(
+                    1.0f - alpha, static_cast<FadeCurve>(audioEventRef(clip).fadeOutType));
                 float x = fadeStart + alpha * fadeOutPx;
                 float y = areaTop + (1.0f - gain) * areaHeight;
                 overlay.lineTo(x, y);
@@ -1072,8 +1257,8 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
             juce::Path curveLine;
             for (int i = 0; i <= NUM_STEPS; ++i) {
                 float alpha = static_cast<float>(i) / static_cast<float>(NUM_STEPS);
-                float gain =
-                    computeFadeGain(1.0f - alpha, static_cast<FadeCurve>(clip.fadeOutType));
+                float gain = computeFadeGain(
+                    1.0f - alpha, static_cast<FadeCurve>(audioEventRef(clip).fadeOutType));
                 float x = fadeStart + alpha * fadeOutPx;
                 float y = areaTop + (1.0f - gain) * areaHeight;
                 if (i == 0)
@@ -1086,10 +1271,11 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
 
             // Crossfade: overlay the next clip's fade-in curve (the X)
             if (fades.xfOut) {
-                auto* other = ClipManager::getInstance().getClip(fades.xfOut->rightClipId);
-                strokeCounterpartCurve(fadeStart, fadeOutPx,
-                                       static_cast<FadeCurve>(other ? other->fadeInType : 1),
-                                       false);
+                const auto* other = ClipManager::getInstance().getClip(fades.xfOut->rightClipId);
+                if (other != nullptr && other->autoCrossfade)
+                    strokeCounterpartCurve(fadeStart, fadeOutPx,
+                                           static_cast<FadeCurve>(audioEventRef(*other).fadeInType),
+                                           false);
             }
         }
     }
@@ -1478,13 +1664,13 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         dragStartLength_ = clip->getTimelineLength(tempo);
     }
     dragStartTrackId_ = clip->trackId;
-    dragStartAudioOffset_ = clip->offset;
+    dragStartAudioOffset_ = magda::audioEventRef(*clip).anchorSeconds();
 
     // Cache file duration for resize clamping
     dragStartFileDuration_ = 0.0;
-    if (clip->isAudio() && clip->audio().source.filePath.isNotEmpty()) {
-        auto* thumbnail =
-            AudioThumbnailManager::getInstance().getThumbnail(clip->audio().source.filePath);
+    if (clip->isAudio() && magda::audioEventRef(*clip).sourceFilePath().isNotEmpty()) {
+        auto* thumbnail = AudioThumbnailManager::getInstance().getThumbnail(
+            magda::audioEventRef(*clip).sourceFilePath());
         if (thumbnail)
             dragStartFileDuration_ = thumbnail->getTotalLength();
     }
@@ -1499,7 +1685,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     if (isSelected_ && isOnFadeInHandle(e.x, e.y)) {
         if (e.mods.isShiftDown()) {
             // Shift+click: cycle fade-in type (1→2→3→4→1)
-            int newType = (clip->fadeInType % 4) + 1;
+            int newType = (magda::audioEventRef(*clip).fadeInType % 4) + 1;
             UndoManager::getInstance().executeCommand(
                 std::make_unique<SetClipFadeInTypeCommand>(clipId_, newType));
             dragMode_ = DragMode::None;
@@ -1519,7 +1705,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             }
         }
         dragMode_ = DragMode::FadeIn;
-        dragStartFadeIn_ = clip->fadeIn;
+        dragStartFadeIn_ = magda::audioEventRef(*clip).fadeInSeconds;
         dragStartClipSnapshot_ = *clip;
         // Capture selected clips' state for multi-fade
         dragStartSelectedFadeSnapshots_.clear();
@@ -1540,7 +1726,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     if (isSelected_ && isOnFadeOutHandle(e.x, e.y)) {
         if (e.mods.isShiftDown()) {
             // Shift+click: cycle fade-out type (1→2→3→4→1)
-            int newType = (clip->fadeOutType % 4) + 1;
+            int newType = (magda::audioEventRef(*clip).fadeOutType % 4) + 1;
             UndoManager::getInstance().executeCommand(
                 std::make_unique<SetClipFadeOutTypeCommand>(clipId_, newType));
             dragMode_ = DragMode::None;
@@ -1560,7 +1746,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             }
         }
         dragMode_ = DragMode::FadeOut;
-        dragStartFadeOut_ = clip->fadeOut;
+        dragStartFadeOut_ = magda::audioEventRef(*clip).fadeOutSeconds;
         dragStartClipSnapshot_ = *clip;
         // Capture selected clips' state for multi-fade
         dragStartSelectedFadeSnapshots_.clear();
@@ -1604,9 +1790,10 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     // Shift+edge = stretch mode (time-stretches audio source or scales MIDI notes)
     if (isOnLeftEdge(e.x)) {
         if (e.mods.isShiftDown() &&
-            ((clip->isAudio() && clip->audio().source.filePath.isNotEmpty()) || clip->isMidi())) {
+            ((clip->isAudio() && magda::audioEventRef(*clip).sourceFilePath().isNotEmpty()) ||
+             clip->isMidi())) {
             dragMode_ = DragMode::StretchLeft;
-            dragStartSpeedRatio_ = clip->speedRatio;
+            dragStartSpeedRatio_ = magda::audioEventRef(*clip).speedRatio;
             dragStartClipSnapshot_ = *clip;
         } else {
             dragMode_ = DragMode::ResizeLeft;
@@ -1650,9 +1837,10 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         }
     } else if (isOnRightEdge(e.x)) {
         if (e.mods.isShiftDown() &&
-            ((clip->isAudio() && clip->audio().source.filePath.isNotEmpty()) || clip->isMidi())) {
+            ((clip->isAudio() && magda::audioEventRef(*clip).sourceFilePath().isNotEmpty()) ||
+             clip->isMidi())) {
             dragMode_ = DragMode::StretchRight;
-            dragStartSpeedRatio_ = clip->speedRatio;
+            dragStartSpeedRatio_ = magda::audioEventRef(*clip).speedRatio;
             dragStartClipSnapshot_ = *clip;
         } else {
             dragMode_ = DragMode::ResizeRight;
@@ -1929,7 +2117,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             resizePreviewClip_ = dragStartClipSnapshot_;
             ClipOperations::resizeContainerFromLeft(resizePreviewClip_, finalLength, tempoBPM);
             if (!resizePreviewClip_.loopEnabled && resizePreviewClip_.isAudio()) {
-                resizePreviewClip_.loopStart = resizePreviewClip_.offset;
+                if (auto* previewEvent = resizePreviewClip_.primaryEvent())
+                    previewEvent->loopStartSamples = previewEvent->sourceAnchorSamples;
             }
 
             // Throttled: sync to TE for waveform/audio playback
@@ -1955,8 +2144,10 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                         ClipInfo otherPreview = snapshotIt->second;
                         ClipOperations::resizeContainerFromLeft(
                             otherPreview, juce::jmax(0.1, origLen + lengthDelta), tempoBPM);
-                        if (!otherPreview.loopEnabled && otherPreview.isAudio())
-                            otherPreview.loopStart = otherPreview.offset;
+                        if (auto* otherEvent = otherPreview.primaryEvent();
+                            otherEvent != nullptr && !otherPreview.loopEnabled) {
+                            otherEvent->loopStartSamples = otherEvent->sourceAnchorSamples;
+                        }
 
                         applyLeftResizePreview(*otherClip, otherPreview, tempoBPM);
                         changedClips.push_back(cid);
@@ -2101,7 +2292,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 double newFadeIn = juce::jmax(0.0, fadeInPx / pps);
                 const auto* ci = getClipInfo();
                 double maxFadeIn =
-                    ci ? timelineLengthSeconds(*ci, tempoBPM) - ci->fadeOut : dragStartLength_;
+                    ci ? timelineLengthSeconds(*ci, tempoBPM) - audioEventRef(*ci).fadeOutSeconds
+                       : dragStartLength_;
                 newFadeIn = juce::jmin(newFadeIn, juce::jmax(0.0, maxFadeIn));
                 double fadeDelta = newFadeIn - dragStartFadeIn_;
                 auto& cm = ClipManager::getInstance();
@@ -2110,10 +2302,11 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                     const auto* c = cm.getClip(cid);
                     if (!c)
                         continue;
-                    double otherFade = juce::jmax(0.0, snap.fadeIn + fadeDelta);
-                    otherFade =
-                        juce::jmin(otherFade, juce::jmax(0.0, timelineLengthSeconds(*c, tempoBPM) -
-                                                                  c->fadeOut));
+                    double otherFade =
+                        juce::jmax(0.0, audioEventRef(snap).fadeInSeconds + fadeDelta);
+                    otherFade = juce::jmin(
+                        otherFade, juce::jmax(0.0, timelineLengthSeconds(*c, tempoBPM) -
+                                                       magda::audioEventRef(*c).fadeOutSeconds));
                     cm.setFadeIn(cid, otherFade);
                 }
                 repaint();
@@ -2131,7 +2324,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 double newFadeOut = juce::jmax(0.0, fadeOutPx / pps);
                 const auto* ci = getClipInfo();
                 double maxFadeOut =
-                    ci ? timelineLengthSeconds(*ci, tempoBPM) - ci->fadeIn : dragStartLength_;
+                    ci ? timelineLengthSeconds(*ci, tempoBPM) - audioEventRef(*ci).fadeInSeconds
+                       : dragStartLength_;
                 newFadeOut = juce::jmin(newFadeOut, juce::jmax(0.0, maxFadeOut));
                 double fadeDelta = newFadeOut - dragStartFadeOut_;
                 auto& cm = ClipManager::getInstance();
@@ -2140,10 +2334,11 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                     const auto* c = cm.getClip(cid);
                     if (!c)
                         continue;
-                    double otherFade = juce::jmax(0.0, snap.fadeOut + fadeDelta);
-                    otherFade =
-                        juce::jmin(otherFade, juce::jmax(0.0, timelineLengthSeconds(*c, tempoBPM) -
-                                                                  c->fadeIn));
+                    double otherFade =
+                        juce::jmax(0.0, audioEventRef(snap).fadeOutSeconds + fadeDelta);
+                    otherFade = juce::jmin(
+                        otherFade, juce::jmax(0.0, timelineLengthSeconds(*c, tempoBPM) -
+                                                       magda::audioEventRef(*c).fadeInSeconds));
                     cm.setFadeOut(cid, otherFade);
                 }
                 repaint();
@@ -2261,6 +2456,15 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
         default:
             break;
+    }
+
+    // A crossfade belongs to a pair, and only this component is repainting
+    // itself as it moves. The clip on the other side of the joint has to redraw
+    // too, or the fade it is about to gain or lose stays as it was until the
+    // mouse comes up (#2003). Throttled: this runs on every drag callback.
+    if (parentPanel_ != nullptr && crossfadeRepaintThrottle_.check()) {
+        if (const auto* dragged = getClipInfo())
+            parentPanel_->repaintClipsOnTrack(dragged->trackId);
     }
 
     // Emit real-time preview event via ClipManager (for global listeners like PianoRoll)
@@ -2507,20 +2711,21 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                         double fadeInPx = static_cast<double>(e.x - wfArea.getX());
                         finalFadeIn = juce::jmax(0.0, fadeInPx / pps);
                         const auto* ci = getClipInfo();
-                        double maxFadeIn =
-                            ci ? timelineLengthSeconds(*ci, commitTempoBPM) - ci->fadeOut
-                               : dragStartLength_;
+                        double maxFadeIn = ci ? timelineLengthSeconds(*ci, commitTempoBPM) -
+                                                    audioEventRef(*ci).fadeOutSeconds
+                                              : dragStartLength_;
                         finalFadeIn = juce::jmin(finalFadeIn, juce::jmax(0.0, maxFadeIn));
                     }
                 }
                 {
                     // Restore all clips to pre-drag state for correct undo capture
                     auto& cm = ClipManager::getInstance();
-                    if (auto* c = cm.getClip(clipId_))
-                        c->fadeIn = dragStartClipSnapshot_.fadeIn;
+                    if (auto* e = primaryEventOf(cm.getClip(clipId_)))
+                        e->fadeInSeconds =
+                            magda::audioEventRef(dragStartClipSnapshot_).fadeInSeconds;
                     for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_) {
-                        if (auto* c = cm.getClip(cid))
-                            c->fadeIn = snap.fadeIn;
+                        if (auto* e = primaryEventOf(cm.getClip(cid)))
+                            e->fadeInSeconds = audioEventRef(snap).fadeInSeconds;
                     }
 
                     double fadeDelta = finalFadeIn - dragStartFadeIn_;
@@ -2536,10 +2741,12 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                         const auto* c = cm.getClip(cid);
                         if (!c)
                             continue;
-                        double otherFade = juce::jmax(0.0, snap.fadeIn + fadeDelta);
+                        double otherFade =
+                            juce::jmax(0.0, audioEventRef(snap).fadeInSeconds + fadeDelta);
                         otherFade = juce::jmin(
-                            otherFade, juce::jmax(0.0, timelineLengthSeconds(*c, commitTempoBPM) -
-                                                           c->fadeOut));
+                            otherFade,
+                            juce::jmax(0.0, timelineLengthSeconds(*c, commitTempoBPM) -
+                                                magda::audioEventRef(*c).fadeOutSeconds));
                         cm.setFadeIn(cid, otherFade);
                         auto otherCmd = std::make_unique<SetFadeCommand>(cid, snap);
                         UndoManager::getInstance().executeCommand(std::move(otherCmd));
@@ -2564,20 +2771,21 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                         double fadeOutPx = static_cast<double>(wfArea.getRight() - e.x);
                         finalFadeOut = juce::jmax(0.0, fadeOutPx / pps);
                         const auto* ci = getClipInfo();
-                        double maxFadeOut =
-                            ci ? timelineLengthSeconds(*ci, commitTempoBPM) - ci->fadeIn
-                               : dragStartLength_;
+                        double maxFadeOut = ci ? timelineLengthSeconds(*ci, commitTempoBPM) -
+                                                     audioEventRef(*ci).fadeInSeconds
+                                               : dragStartLength_;
                         finalFadeOut = juce::jmin(finalFadeOut, juce::jmax(0.0, maxFadeOut));
                     }
                 }
                 {
                     // Restore all clips to pre-drag state for correct undo capture
                     auto& cm = ClipManager::getInstance();
-                    if (auto* c = cm.getClip(clipId_))
-                        c->fadeOut = dragStartClipSnapshot_.fadeOut;
+                    if (auto* e = primaryEventOf(cm.getClip(clipId_)))
+                        e->fadeOutSeconds =
+                            magda::audioEventRef(dragStartClipSnapshot_).fadeOutSeconds;
                     for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_) {
-                        if (auto* c = cm.getClip(cid))
-                            c->fadeOut = snap.fadeOut;
+                        if (auto* e = primaryEventOf(cm.getClip(cid)))
+                            e->fadeOutSeconds = audioEventRef(snap).fadeOutSeconds;
                     }
 
                     double fadeDelta = finalFadeOut - dragStartFadeOut_;
@@ -2593,10 +2801,11 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                         const auto* c = cm.getClip(cid);
                         if (!c)
                             continue;
-                        double otherFade = juce::jmax(0.0, snap.fadeOut + fadeDelta);
+                        double otherFade =
+                            juce::jmax(0.0, audioEventRef(snap).fadeOutSeconds + fadeDelta);
                         otherFade = juce::jmin(
-                            otherFade,
-                            juce::jmax(0.0, timelineLengthSeconds(*c, commitTempoBPM) - c->fadeIn));
+                            otherFade, juce::jmax(0.0, timelineLengthSeconds(*c, commitTempoBPM) -
+                                                           magda::audioEventRef(*c).fadeInSeconds));
                         cm.setFadeOut(cid, otherFade);
                         auto otherCmd = std::make_unique<SetFadeCommand>(cid, snap);
                         UndoManager::getInstance().executeCommand(std::move(otherCmd));
@@ -2938,6 +3147,50 @@ void ClipComponent::clipSelectionChanged(ClipId clipId) {
 // Selection
 // ============================================================================
 
+juce::Rectangle<int> ClipComponent::coveringRangeBounds(const BeatRange& range,
+                                                        juce::Rectangle<int> bounds) const {
+    if (parentPanel_ == nullptr)
+        return {};
+    const int clipLeft = getX();
+    const int from = parentPanel_->beatsToPixel(range.start.value) - clipLeft;
+    const int to = parentPanel_->beatsToPixel(range.end.value) - clipLeft;
+    return bounds.getIntersection(
+        juce::Rectangle<int>(from, bounds.getY(), juce::jmax(1, to - from), bounds.getHeight()));
+}
+
+namespace {
+
+/// Repaint only when the ranges actually moved: these are pushed on every lane
+/// update, most of which change nothing.
+bool sameRanges(const std::vector<BeatRange>& a, const std::vector<BeatRange>& b) {
+    if (a.size() != b.size())
+        return false;
+    constexpr double tolBeats = 1e-6;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (std::abs(a[i].start.value - b[i].start.value) >= tolBeats ||
+            std::abs(a[i].end.value - b[i].end.value) >= tolBeats) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace
+
+void ClipComponent::setBothPlayRanges(std::vector<BeatRange> ranges) {
+    if (sameRanges(ranges, bothPlayRanges_))
+        return;
+    bothPlayRanges_ = std::move(ranges);
+    repaint();
+}
+
+void ClipComponent::setShowThroughRanges(std::vector<BeatRange> ranges) {
+    if (sameRanges(ranges, showThroughRanges_))
+        return;
+    showThroughRanges_ = std::move(ranges);
+    repaint();
+}
+
 void ClipComponent::setSelected(bool selected) {
     if (isSelected_ != selected) {
         isSelected_ = selected;
@@ -3137,7 +3390,7 @@ void ClipComponent::showContextMenu() {
         auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
 
         auto hasWarpMarkers = [&](const ClipInfo* c, ClipId id) {
-            return c && c->isAudio() && c->warpEnabled && bridge &&
+            return c && c->isAudio() && magda::audioEventRef(*c).warpEnabled && bridge &&
                    bridge->getWarpMarkers(id).size() > 2;
         };
 
@@ -3191,8 +3444,9 @@ void ClipComponent::showContextMenu() {
         bool canEditExternally = false;
         if (!isMultiSelection && canEdit) {
             const auto* singleClip = getClipInfo();
-            canEditExternally = singleClip && singleClip->isAudio() &&
-                                juce::File(singleClip->audio().source.filePath).existsAsFile();
+            canEditExternally =
+                singleClip && singleClip->isAudio() &&
+                juce::File(magda::audioEventRef(*singleClip).sourceFilePath()).existsAsFile();
         }
         menu.addItem(21, "Edit in External Editor", canEditExternally);
 
@@ -3200,9 +3454,10 @@ void ClipComponent::showContextMenu() {
         bool canTranscribe = false;
         if (!isMultiSelection && canEdit) {
             const auto* singleClip = getClipInfo();
-            canTranscribe = singleClip && singleClip->isAudio() &&
-                            juce::File(singleClip->audio().source.filePath).existsAsFile() &&
-                            magda::transcription::TranscriptionService::getInstance().isAvailable();
+            canTranscribe =
+                singleClip && singleClip->isAudio() &&
+                juce::File(magda::audioEventRef(*singleClip).sourceFilePath()).existsAsFile() &&
+                magda::transcription::TranscriptionService::getInstance().isAvailable();
         }
         menu.addItem(22, "Transcribe to MIDI", canTranscribe);
 
@@ -3211,8 +3466,9 @@ void ClipComponent::showContextMenu() {
             bool canSplit = false;
             if (!isMultiSelection && canEdit) {
                 const auto* singleClip = getClipInfo();
-                canSplit = singleClip && singleClip->isAudio() &&
-                           juce::File(singleClip->audio().source.filePath).existsAsFile();
+                canSplit =
+                    singleClip && singleClip->isAudio() &&
+                    juce::File(magda::audioEventRef(*singleClip).sourceFilePath()).existsAsFile();
             }
             auto& stemService = magda::stems::StemSeparationService::getInstance();
             juce::PopupMenu stemMenu;
@@ -3288,6 +3544,32 @@ void ClipComponent::showContextMenu() {
                 menu.addItem(48, "Remove End Crossfade");
             menu.addSeparator();
         }
+    }
+
+    // Playing through an overlap (#2003). Shown only where there IS an overlap,
+    // since that is the only place it means anything, and offered for MIDI as
+    // well as audio — unlike a crossfade, which needs two waveforms.
+    const bool overlapsAnotherClip = [&] {
+        if (clipForMenu == nullptr || clipForMenu->view != ClipView::Arrangement)
+            return false;
+        const double start = clipForMenu->placement.startBeat;
+        const double end = clipForMenu->placement.endBeat();
+        for (ClipId other :
+             clipManager.getClipsOnTrack(clipForMenu->trackId, ClipView::Arrangement)) {
+            if (other == clipId_)
+                continue;
+            const auto* otherClip = clipManager.getClip(other);
+            if (otherClip == nullptr)
+                continue;
+            if (otherClip->placement.startBeat < end && start < otherClip->placement.endBeat())
+                return true;
+        }
+        return false;
+    }();
+
+    if (!isMultiSelection && canEdit && overlapsAnotherClip) {
+        menu.addItem(53, "Play Through Overlap", true, clipForMenu->overlapPlaysBoth);
+        menu.addSeparator();
     }
 
     // Enable/disable (#1736): disabled clips do not play.
@@ -3386,8 +3668,11 @@ void ClipComponent::showContextMenu() {
             menu.addSeparator();
         }
 
-        if (canRenderMidiLoop) {
-            menu.addItem(28, "Flatten MIDI Loop", canEdit);
+        const bool canFlattenStack = !FlattenClipStackCommand::collectStack(clipId_).empty();
+        if (canRenderMidiLoop || canFlattenStack) {
+            // One entry for both jobs: unroll this clip's loop, or fold the
+            // clips stacked with it into one (#2003).
+            menu.addItem(28, canFlattenStack ? "Flatten Clips" : "Flatten MIDI Loop", canEdit);
             menu.addSeparator();
         }
     }
@@ -3491,9 +3776,7 @@ void ClipComponent::showContextMenu() {
             auto* c = clipManager.getClip(clipId_);
             if (c && c->isAudio() && takeIndex >= 0 &&
                 takeIndex < static_cast<int>(c->audio().takes.size())) {
-                c->audio().currentTakeIndex = takeIndex;
-                c->audio().source.filePath = c->audio().takes[takeIndex].filePath;
-                clipManager.forceNotifyClipPropertyChanged(clipId_);
+                clipManager.setAudioClipCurrentTake(clipId_, takeIndex);
             }
             return;
         }
@@ -3655,9 +3938,24 @@ void ClipComponent::showContextMenu() {
                 break;
             }
 
-            case 28: {  // Flatten MIDI Loop (#1737)
+            case 53: {  // Play through overlap (#2003)
                 const auto* clip = clipManager.getClip(clipId_);
-                if (clip && clip->isMidi() && clip->loopEnabled && clip->loopLengthBeats > 0.0) {
+                if (clip != nullptr)
+                    clipManager.setOverlapPlaysBoth(clipId_, !clip->overlapPlaysBoth);
+                break;
+            }
+
+            case 28: {  // Flatten (#1737 loop unroll, #2003 stack merge)
+                const auto* clip = clipManager.getClip(clipId_);
+                if (clip == nullptr || !clip->isMidi())
+                    break;
+
+                // Overlapping clips fold into one; otherwise this is the
+                // single-clip loop unroll.
+                if (!FlattenClipStackCommand::collectStack(clipId_).empty()) {
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<FlattenClipStackCommand>(clipId_));
+                } else if (clip->loopEnabled && clip->loopLengthBeats > 0.0) {
                     UndoManager::getInstance().executeCommand(
                         std::make_unique<FlattenMidiClipCommand>(clipId_));
                 }

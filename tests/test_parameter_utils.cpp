@@ -911,3 +911,71 @@ TEST_CASE("ParameterUtils - model value passes through a matching TE range",
     REQUIRE(ParameterUtils::modelToTeValue(ParameterModelValue{440.0f}, info) ==
             Catch::Approx(440.0f));
 }
+
+// ============================================================================
+// Choice index <-> model value (discrete widgets)
+// ============================================================================
+
+// An internal device's discrete parameter stores the choice index itself.
+TEST_CASE("ParameterUtils - choice index is the model value for an internal discrete parameter",
+          "[parameter][conversion][model][discrete]") {
+    ParameterInfo info;
+    info.scale = ParameterScale::Discrete;
+    info.choices = {"Off", "Low", "High"};
+    info.minValue = 0.0f;
+    info.maxValue = 2.0f;
+    info.teMinValue = 0.0f;
+    info.teMaxValue = 2.0f;
+
+    REQUIRE_FALSE(ParameterUtils::modelHoldsTeNativeValue(info));
+    REQUIRE(ParameterUtils::choiceIndexForModelValue(ParameterModelValue{1.0f}, info) == 1);
+    REQUIRE(ParameterUtils::choiceIndexForModelValue(ParameterModelValue{2.4f}, info) == 2);
+    REQUIRE(ParameterUtils::choiceIndexForModelValue(ParameterModelValue{7.0f}, info) == 2);
+    REQUIRE(ParameterUtils::modelValueForChoiceIndex(2, info).value == Catch::Approx(2.0f));
+    REQUIRE(ParameterUtils::modelValueForChoiceIndex(-1, info).value == Catch::Approx(0.0f));
+}
+
+// Serum's "Bend Up" once a saved parameter config marks it discrete: 49
+// choices "-24".."24" over a display range of [0, 48], while TE still stores
+// the parameter normalized and the model keeps that normalized value. The
+// plugin at +2 semitones reports 26/48 = 0.54167; read as an index that is
+// choice 1 ("-23"), and written back as choice 1 it is 1.0, the top of the
+// range. That write is the "synth comes back two octaves up" report.
+TEST_CASE("ParameterUtils - choice index spreads a TE-native model value over the choices",
+          "[parameter][conversion][model][discrete]") {
+    ParameterInfo info;
+    info.scale = ParameterScale::Discrete;
+    for (int semitones = -24; semitones <= 24; ++semitones)
+        info.choices.push_back(juce::String(semitones));
+    info.minValue = 0.0f;
+    info.maxValue = 48.0f;
+    info.teMinValue = 0.0f;
+    info.teMaxValue = 1.0f;
+    info.displayText = std::make_shared<ParameterInfo::DisplayTextProvider>();
+
+    REQUIRE(ParameterUtils::modelHoldsTeNativeValue(info));
+
+    const float plusTwo = 26.0f / 48.0f;
+    REQUIRE(ParameterUtils::choiceIndexForModelValue(ParameterModelValue{plusTwo}, info) == 26);
+    REQUIRE(info.choices[26] == "2");
+
+    // And back: picking "+2" writes the value the plugin is already at, not 26.
+    const auto written = ParameterUtils::modelValueForChoiceIndex(26, info);
+    REQUIRE(written.value == Catch::Approx(plusTwo));
+
+    // Every choice survives the round trip, and every write stays in TE's range.
+    for (int index = 0; index < static_cast<int>(info.choices.size()); ++index) {
+        const auto model = ParameterUtils::modelValueForChoiceIndex(index, info);
+        INFO("choice " << index);
+        REQUIRE(model.value >= info.teMinValue);
+        REQUIRE(model.value <= info.teMaxValue);
+        REQUIRE(ParameterUtils::choiceIndexForModelValue(model, info) == index);
+    }
+}
+
+TEST_CASE("ParameterUtils - choice index without choices", "[parameter][conversion][discrete]") {
+    ParameterInfo info;
+    info.scale = ParameterScale::Discrete;
+    REQUIRE(ParameterUtils::choiceIndexForModelValue(ParameterModelValue{0.7f}, info) == -1);
+    REQUIRE(ParameterUtils::modelValueForChoiceIndex(3, info).value == Catch::Approx(0.0f));
+}

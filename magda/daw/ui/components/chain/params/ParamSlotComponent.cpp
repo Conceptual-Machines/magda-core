@@ -463,15 +463,19 @@ void ParamSlotComponent::setParamValue(double value) {
     // selection is driven explicitly) showing a stale choice until the whole
     // parameter list is rebuilt.
     syncDiscreteSelection(value);
+    syncBooleanToggle(value);
+}
+
+void ParamSlotComponent::syncBooleanToggle(double value) {
+    if (boolToggle_ && boolToggle_->isVisible())
+        boolToggle_->setToggleState(value >= 0.5, juce::dontSendNotification);
 }
 
 void ParamSlotComponent::syncDiscreteSelection(double value) {
-    const int count = static_cast<int>(paramInfo_.choices.size());
-    if (count <= 0)
+    const int selected = magda::ParameterUtils::choiceIndexForModelValue(
+        magda::ParameterModelValue{static_cast<float>(value)}, paramInfo_);
+    if (selected < 0)
         return;
-
-    // Discrete params carry the choice index as their value.
-    const int selected = juce::jlimit(0, count - 1, static_cast<int>(std::lround(value)));
 
     if (discreteCombo_ && discreteCombo_->isVisible())
         discreteCombo_->setSelectedItemIndex(selected, juce::dontSendNotification);
@@ -562,6 +566,16 @@ void ParamSlotComponent::setParameterInfo(const magda::ParameterInfo& info) {
         if (onValueChanged)
             onValueChanged(v);
     };
+    // The discrete widgets report a choice index. What that index means as a
+    // parameter value depends on the parameter: internal devices store the
+    // index, an external plugin with a saved discrete config stores TE's
+    // normalized value. Map it here, against the slot's current info.
+    auto deferChoiceToSlot = [this](double index) {
+        if (onValueChanged)
+            onValueChanged(magda::ParameterUtils::modelValueForChoiceIndex(
+                               static_cast<int>(std::lround(index)), paramInfo_)
+                               .value);
+    };
 
     if (info.scale == magda::ParameterScale::Boolean) {
         if (info.momentary) {
@@ -581,13 +595,13 @@ void ParamSlotComponent::setParameterInfo(const magda::ParameterInfo& info) {
         }
     } else if (info.scale == magda::ParameterScale::Discrete && !info.choices.empty()) {
         if (wantsSegmentedChoices(info)) {
-            rebuildChoiceButtons(info, deferToSlot);
+            rebuildChoiceButtons(info, deferChoiceToSlot);
         } else {
             if (!discreteCombo_) {
                 discreteCombo_ = std::make_unique<juce::ComboBox>();
                 addAndMakeVisible(*discreteCombo_);
             }
-            configureDiscreteCombo(*discreteCombo_, info, deferToSlot);
+            configureDiscreteCombo(*discreteCombo_, info, deferChoiceToSlot);
             discreteCombo_->setVisible(true);
         }
     } else {
@@ -611,10 +625,8 @@ void ParamSlotComponent::rebuildChoiceButtons(const magda::ParameterInfo& info,
         }
     }
 
-    // Discrete params carry the choice index as their value, matching what the
-    // dropdown reports through configureDiscreteCombo.
-    const int selected =
-        juce::jlimit(0, count - 1, static_cast<int>(std::lround(info.currentValue)));
+    const int selected = magda::ParameterUtils::choiceIndexForModelValue(
+        magda::ParameterModelValue{info.currentValue}, info);
     for (int i = 0; i < count; ++i) {
         auto& button = *choiceButtons_[static_cast<size_t>(i)];
         configureChoiceButton(button, info.choices[static_cast<size_t>(i)], i, count,

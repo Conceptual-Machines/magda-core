@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "AudioClipTestHelpers.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipOperations.hpp"
 
@@ -28,8 +29,6 @@ static ClipInfo makeMidiClip(double startTime, double length, bool looped = fals
     clip.loopEnabled = looped;
     clip.loopLengthBeats = loopLengthBeats;
     clip.view = ClipView::Arrangement;
-    clip.speedRatio = 1.0;
-    clip.offset = 0.0;
     return clip;
 }
 
@@ -137,29 +136,32 @@ TEST_CASE("MIDI left-resize non-looped - midiOffset stays unchanged even past ti
 }
 
 // ============================================================================
-// Non-looped MIDI: clip.offset must NOT be touched
+// Resizing a MIDI clip must not give it audio state
 // ============================================================================
 
-TEST_CASE("MIDI left-resize non-looped - clip.offset unchanged",
+TEST_CASE("MIDI left-resize non-looped - no audio source state appears",
           "[midi][resize][left][nonlooped][offset]") {
     double bpm = 120.0;
 
-    SECTION("Shrink does not modify clip.offset") {
+    // Since #1901 a MIDI clip has no audio event at all, so "the source read
+    // position is untouched" is checked structurally: the resize must not turn
+    // the clip into something carrying a source anchor.
+    SECTION("Shrink leaves the clip pure MIDI") {
         ClipInfo clip = makeMidiClip(0.0, 4.0);
-        clip.offset = 0.0;
 
         ClipOperations::resizeContainerFromLeft(clip, 3.0, bpm);
 
-        REQUIRE(clip.offset == 0.0);
+        REQUIRE(clip.isMidi());
+        REQUIRE(clip.primaryEvent() == nullptr);
     }
 
-    SECTION("Expand does not modify clip.offset") {
+    SECTION("Expand leaves the clip pure MIDI") {
         ClipInfo clip = makeMidiClip(2.0, 4.0);
-        clip.offset = 1.5;  // Some pre-existing value
 
         ClipOperations::resizeContainerFromLeft(clip, 6.0, bpm);
 
-        REQUIRE(clip.offset == 1.5);
+        REQUIRE(clip.isMidi());
+        REQUIRE(clip.primaryEvent() == nullptr);
     }
 }
 
@@ -225,16 +227,16 @@ TEST_CASE("MIDI left-resize looped - midiOffset wraps within loop",
     }
 }
 
-TEST_CASE("MIDI left-resize looped - clip.offset unchanged",
+TEST_CASE("MIDI left-resize looped - no audio source state appears",
           "[midi][resize][left][looped][offset]") {
     double bpm = 120.0;
 
     ClipInfo clip = makeMidiClip(0.0, 8.0, true, 4.0);
-    clip.offset = 0.0;
 
     ClipOperations::resizeContainerFromLeft(clip, 6.0, bpm);
 
-    REQUIRE(clip.offset == 0.0);
+    REQUIRE(clip.isMidi());
+    REQUIRE(clip.primaryEvent() == nullptr);
 }
 
 // ============================================================================

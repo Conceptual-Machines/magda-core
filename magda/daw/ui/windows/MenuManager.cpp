@@ -406,6 +406,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                          true, false);
             menu.addSeparator();
             menu.addItem(ControllerSettings, trEllipsis("menu.settings.controllers"), true, false);
+            menu.addItem(ConnectionSettings, trEllipsis("menu.settings.connections"), true, false);
             menu.addSeparator();
             menu.addItem(PluginSettings, trEllipsis("menu.settings.plugins"), true, false);
             break;
@@ -425,7 +426,11 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             menu.addItem(OpenManual, tr("menu.help.manual"), true, false);
             menu.addItem(CheckForUpdates, trEllipsis("menu.help.check_updates"), true, false);
             menu.addSeparator();
-            menu.addItem(About, tr("menu.help.about"), true, false);
+            menu.addItem(
+                About,
+                tr("menu.help.about")
+                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Magda)),
+                true, false);
             break;
         }
 
@@ -608,6 +613,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case ControllerSettings:
             if (callbacks_.onControllerSettings)
                 callbacks_.onControllerSettings();
+            break;
+        case ConnectionSettings:
+            if (callbacks_.onConnectionSettings)
+                callbacks_.onConnectionSettings();
             break;
 
         // View menu

@@ -69,6 +69,10 @@ inline juce::String nearestGridDivisionLabel(int numerator, int denominator) {
 // reduced mathematical fraction.
 class GridDivisionButton final : public juce::Button {
   public:
+    // The size the fraction is drawn at, published so a caller sizing the
+    // button measures the same font it will render with.
+    static constexpr float kFontSize = 10.0f;
+
     GridDivisionButton() : juce::Button("GridDivision") {
         setMouseCursor(juce::MouseCursor::PointingHandCursor);
     }
@@ -100,7 +104,7 @@ class GridDivisionButton final : public juce::Button {
         g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
 
         const auto alpha = isEnabled() ? 1.0f : 0.5f;
-        g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
+        g.setFont(FontManager::getInstance().getUIFontBold(kFontSize));
         const auto label = gridDivisionLabel(numerator_, denominator_);
         const int slash = label.indexOfChar('/');
         const auto numeratorText = label.substring(0, slash).trim();

@@ -602,7 +602,7 @@ FaustInstrumentPlugin::FaustInstrumentPlugin(const te::PluginCreationInfo& info)
     auto compiled = compileAndRebind(
         savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource), err);
     if (!compiled) {
-        DBG("FaustInstrumentPlugin: failed to compile saved source: " << err << " — using default");
+        DBG("FaustInstrumentPlugin: failed to compile saved source: " << err << " - using default");
         compiled = compileAndRebind(kDefaultDspSource, err);
     }
 

@@ -257,6 +257,15 @@ struct DeviceInfo {
     bool canReceiveMidi = false;  // true if TE plugin accepts MIDI input (for cross-track MIDI)
     bool producesMidi = false;    // true if the live plugin can output MIDI
 
+    // Audio channels the plugin reported (1 = mono, 2 = stereo), read from the
+    // live plugin via getChannelNames. Stereo until it is asked. The chain
+    // model wires from these: no audio input means the device is not connected
+    // to the bus, no audio output means nothing reaches what follows, and a
+    // mono device is given and read as mono. An instrument's input count is
+    // unused, since an instrument is never fed chain audio.
+    int audioInputChannels = 2;
+    int audioOutputChannels = 2;
+
     // "MIDI in thru": pass the chain's raw MIDI input past a MIDI-producing
     // plugin so downstream devices can receive both the original input and the
     // plugin's generated MIDI. Off means plugin MIDI output only; on means merge

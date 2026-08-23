@@ -414,6 +414,8 @@ target_sources(magda_daw PRIVATE
     racks/InstrumentRackManager.cpp
     racks/RackSyncManager.cpp
     modifiers/ModifierSync.cpp
+    automation/AutomationBake.cpp
+    automation/AutomationBake.hpp
     automation/ControlTargetResolver.cpp
     automation/ControlTargetResolver.hpp
     automation/AutomationPlaybackEngine.cpp
@@ -428,8 +430,16 @@ target_sources(magda_daw PRIVATE
     insert_capture/InsertRenderCaptureService.cpp
     ExternalInsertDeviceEnablement.cpp
     # Controller routing (issue #1050 -- Phase C)
+    controllers/ControllerParamReader.cpp
     controllers/ControllerParamWriter.cpp
     controllers/ControllerRouter.cpp
+    # OSC control surfaces (issue #1757)
+    osc/OscAddress.cpp
+    osc/OscFeedback.cpp
+    osc/OscPacket.cpp
+    osc/OscPeers.cpp
+    osc/OscRouter.cpp
+    osc/OscService.cpp
     # Headers (listed for IDE visibility)
     AudioBridge.hpp
     session/SessionClipScheduler.hpp

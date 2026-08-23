@@ -4,11 +4,11 @@
 #include <cmath>
 
 #include "../../core/AutomationManager.hpp"
-#include "../../core/ClipLaneFlattener.hpp"
 #include "../../core/ParameterInfo.hpp"
 #include "../../core/ParameterUtils.hpp"
 #include "../../core/TrackManager.hpp"
 #include "AudioBridge.hpp"
+#include "automation/AutomationBake.hpp"
 
 // INVARIANT — Parameter value representations across MAGDA:
 //
@@ -407,83 +407,13 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
             .value;
     };
 
-    // Bake: write ONE TE point per source MAGDA point. te::AutomationCurve
-    // already linearly interpolates between its stored points (matching
-    // MAGDA's Linear curve type), so the dense 10ms resampling we used to
-    // do was redundant — and each te::AutomationCurve::addPoint is ~2ms
-    // (valueTree mutation + listener fan-out), so 3000 samples = 6 seconds
-    // of main-thread stall per bake, which is what was locking up the UI
-    // after every automation edit. For bezier / step curves we inject a
-    // couple of helper points so TE's linear-only iterator still matches
-    // the MAGDA shape.
-    const std::vector<AutomationPoint>* sourcePoints = nullptr;
-    std::vector<AutomationPoint> clipFlattened;
-    if (lane.isAbsolute()) {
-        sourcePoints = &lane.absolutePoints;
-    } else if (lane.isClipBased()) {
-        // Unroll the lane's clips (loop iterations, gap holds, wrap jumps)
-        // into an absolute-style breakpoint list; the emission loop below
-        // then treats it exactly like an absolute lane. Its tessellation
-        // queries go through getValueAtBeat, which resolves clips natively.
-        clipFlattened = flattenClipLane(
-            lane, [&](AutomationClipId clipId) { return autoMgr.getClip(clipId); },
-            [&](double beat) { return autoMgr.getValueAtBeat(lane.id, beat); });
-        sourcePoints = &clipFlattened;
-    }
-
-    auto addTEPoint = [&](double beat, double normalizedValue) {
-        float teValue = convertValue(normalizedValue);
-        // Store as beats so tempo changes shift the curve with the grid
-        // instead of leaving it pinned at seconds offsets from bake time.
-        curve.addPoint(te::EditPosition{te::BeatPosition::fromBeats(beat)}, teValue, 0.0f, nullptr);
-    };
-
-    if (sourcePoints && !sourcePoints->empty()) {
-        constexpr double kStepEpsilon = 0.0001;  // tiny beat offset for step edges
-        constexpr int kBezierSegments = 12;      // coarse tessellation for bezier curves
-        for (size_t i = 0; i < sourcePoints->size(); ++i) {
-            const auto& point = (*sourcePoints)[i];
-
-            // Step curve: hold the previous segment's value right up to this
-            // point's position, then jump — TE's linear iterator otherwise
-            // ramps between the two points and lets the old value through.
-            if (i > 0 && (*sourcePoints)[i - 1].curveType == AutomationCurveType::Step) {
-                double preStepBeat = point.beatPosition - kStepEpsilon;
-                if (preStepBeat > (*sourcePoints)[i - 1].beatPosition)
-                    addTEPoint(preStepBeat, autoMgr.getValueAtBeat(lane.id, preStepBeat));
-            }
-
-            // Tessellate any non-straight segment so TE's linear iterator
-            // follows the shape. Bezier always needs it; Linear segments need
-            // it whenever tension is non-zero (the UI bends the slope via
-            // interpolateWithTension, which without tessellation would be
-            // baked as just the two endpoints and play back as a straight
-            // ramp regardless of the visible curve).
-            if (i > 0) {
-                const auto& prev = (*sourcePoints)[i - 1];
-                const bool isBezier = prev.curveType == AutomationCurveType::Bezier;
-                // The shaper bends a Linear segment via bezier handles (tension
-                // stays 0), so tessellate when either is set, else the bake
-                // writes a straight ramp regardless of the visible curve.
-                const bool hasShaper = !prev.outHandle.isZero() || !point.inHandle.isZero();
-                const bool isCurvedLinear = prev.curveType == AutomationCurveType::Linear &&
-                                            (std::abs(prev.tension) >= 0.001 || hasShaper);
-                const bool isHardCorner = prev.curveType == AutomationCurveType::HardCorner;
-                if (isBezier || isCurvedLinear || isHardCorner) {
-                    const double span = point.beatPosition - prev.beatPosition;
-                    if (span > 0.0) {
-                        for (int s = 1; s < kBezierSegments; ++s) {
-                            double t = static_cast<double>(s) / kBezierSegments;
-                            double beat = prev.beatPosition + span * t;
-                            addTEPoint(beat, autoMgr.getValueAtBeat(lane.id, beat));
-                        }
-                    }
-                }
-            }
-
-            addTEPoint(point.beatPosition, point.value);
-        }
-    }
+    // The shape, emitted as the breakpoints a linear iterator needs to
+    // describe it. Shared with the null-diff corpus (AutomationBake.hpp), which
+    // bakes a case's own lanes through the same code: two bakes would be a
+    // corpus that agrees with itself.
+    bakeLaneIntoCurve(
+        curve, lane, [&](AutomationClipId clipId) { return autoMgr.getClip(clipId); },
+        [&](double beat) { return autoMgr.getValueAtBeat(lane.id, beat); }, convertValue);
 
     // Force synchronous AutomationIterator rebuild. Without this, TE defers
     // the rebuild to a 10ms timer, during which the curve is invisible to the
@@ -723,22 +653,27 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
         target.kind == ControlTarget::Kind::TrackPan ||
         target.kind == ControlTarget::Kind::SendLevel) {
         ParameterInfo info = getParameterInfoForTarget(target);
-        float real = ParameterUtils::normalizedToReal(static_cast<float>(normalized), info);
+        const auto position = static_cast<float>(normalized);
 
         auto& trackMgr = TrackManager::getInstance();
         // Scope the re-entrancy flag so AudioBridge can distinguish this
         // automation-driven writeback from user-initiated fader/pan edits.
         AutomationManager::AutomationWriteScope writeScope;
         if (target.kind == ControlTarget::Kind::TrackVolume) {
-            // Target param range is in dB; convert back to linear gain.
-            float gain = std::pow(10.0f, real / 20.0f);
-            trackMgr.setTrackVolume(target.devicePath.trackId, gain, /*fromAutomation=*/true);
+            // Target param range is in dB; TrackManager holds linear gain. The
+            // same shared pair the controller writer and reader use, so a curve
+            // and a fader at one position resolve to one gain.
+            trackMgr.setTrackVolume(target.devicePath.trackId,
+                                    ParameterUtils::gainFromNormalized(position, info),
+                                    /*fromAutomation=*/true);
         } else if (target.kind == ControlTarget::Kind::TrackPan) {
-            trackMgr.setTrackPan(target.devicePath.trackId, real, /*fromAutomation=*/true);
+            trackMgr.setTrackPan(target.devicePath.trackId,
+                                 ParameterUtils::normalizedToReal(position, info),
+                                 /*fromAutomation=*/true);
         } else {
-            // SendLevel: same fader-dB → linear-gain mapping as TrackVolume.
-            float gain = std::pow(10.0f, real / 20.0f);
-            trackMgr.setSendLevel(target.devicePath.trackId, target.sendBusIndex, gain,
+            // SendLevel: same fader-dB to linear-gain mapping as TrackVolume.
+            trackMgr.setSendLevel(target.devicePath.trackId, target.sendBusIndex,
+                                  ParameterUtils::gainFromNormalized(position, info),
                                   /*fromAutomation=*/true);
         }
     } else if (target.kind == ControlTarget::Kind::DeviceMacro) {

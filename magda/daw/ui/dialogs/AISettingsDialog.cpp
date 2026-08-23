@@ -10,6 +10,7 @@
 #include "../../../agents/llm_presets.hpp"
 #include "../../../agents/model_downloader.hpp"
 #include "../../../agents/openai_url.hpp"
+#include "../../core/AppPaths.hpp"
 #include "../../core/Config.hpp"
 #include "../../media_db/MediaDbContext.hpp"
 #include "../../media_db/SampleTaggerDownloader.hpp"
@@ -995,12 +996,24 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         addAndMakeVisible(faustMcpToggle_);
 
-        faustMcpHint_.setText("Validates AI-generated Faust code before loading (requires npx)",
+        faustMcpHint_.setText("Validates AI-generated Faust code before loading. Requires npx "
+                              "(Node.js):",
                               juce::dontSendNotification);
         faustMcpHint_.setFont(FontManager::getInstance().getUIFont(10.5f));
         faustMcpHint_.setColour(juce::Label::textColourId,
                                 DarkTheme::getColour(DarkTheme::TEXT_DIM));
         addAndMakeVisible(faustMcpHint_);
+
+        // One link rather than three sets of per-OS steps: the official
+        // download page already offers the macOS, Windows and Linux installers
+        // and stays current on its own.
+        nodeDownloadLink_.setURL(juce::URL("https://nodejs.org/en/download"));
+        nodeDownloadLink_.setButtonText("nodejs.org/en/download");
+        nodeDownloadLink_.setFont(FontManager::getInstance().getUIFont(10.5f), false,
+                                  juce::Justification::centredLeft);
+        nodeDownloadLink_.setColour(juce::HyperlinkButton::textColourId,
+                                    DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        addAndMakeVisible(nodeDownloadLink_);
 
         // Advanced per-agent grid: one row per agent role.
         advancedHintLabel_.setText("Each agent uses its own provider and model. "
@@ -1061,6 +1074,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         bounds.removeFromTop(4);
         faustMcpToggle_.setBounds(bounds.removeFromTop(24));
         faustMcpHint_.setBounds(bounds.removeFromTop(18).withTrimmedLeft(24));
+        nodeDownloadLink_.setBounds(bounds.removeFromTop(16).withTrimmedLeft(24));
     }
 
     void layoutSimple(juce::Rectangle<int>& bounds, int rowH, int labelW) {
@@ -1698,6 +1712,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
     juce::Label mcpSectionLabel_;
     juce::ToggleButton faustMcpToggle_;
     juce::Label faustMcpHint_;
+    juce::HyperlinkButton nodeDownloadLink_;
 };
 
 // ============================================================================
@@ -2516,6 +2531,10 @@ AISettingsDialog::~AISettingsDialog() {
 
 void AISettingsDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+}
+
+void AISettingsDialog::lookAndFeelChanged() {
+    refreshHostWindowBackground(*this);
 }
 
 void AISettingsDialog::resized() {

@@ -122,6 +122,9 @@ option(MAGDA_BUILD_TESTS "Build tests" ON)
 option(MAGDA_BUILD_EXAMPLES "Build developer example tools (e.g. lua_smoke REPL)" OFF)
 option(MAGDA_BUILD_JUCE_ADAPTER "Build JUCE/Tracktion adapter" OFF)
 option(MAGDA_BUILD_FAUST_VEC_BENCH "Build the Faust scalar-vs-vector codegen benchmark" OFF)
+# The native engine (epic #1882) is dark: built and tested, never linked into
+# the app. On by default so it cannot drift away from the model it compiles.
+option(MAGDA_BUILD_NATIVE_ENGINE "Build the native audio engine target" ON)
 
 # CLAP semantic-search backend (ONNX Runtime). Forced off on Intel macOS because
 # upstream ORT dropped osx-x86_64 prebuilts in 1.26. The rest of the media DB
@@ -184,6 +187,11 @@ add_subdirectory(third_party/JUCE)
 # Tracktion Engine for DAW functionality (using local submodule)
 add_subdirectory(third_party/tracktion_engine)
 
+# SoundTouch — time stretching for the native engine (#1882, #2037). Vendored here
+# rather than borrowed from the Tracktion fork, which the engine may not include.
+# Signalsmith Stretch sits beside it and is header-only, so it needs no target.
+add_subdirectory(third_party/soundtouch)
+
 # LLM API client module (juce_core only)
 juce_add_module(${CMAKE_CURRENT_SOURCE_DIR}/third_party/juce-llm/juce_llm)
 
@@ -242,9 +250,17 @@ endif()
 # Lua's official source distribution ships no CMakeLists.txt, so
 # FetchContent_MakeAvailable just populates lua_SOURCE_DIR; the actual
 # static library is built by magda/scripting/CMakeLists.txt.
+#
+# Two URLs for one file, tried in order. www.lua.org is a single small host and
+# it has already gone unreachable from the self-hosted runners for long enough
+# to fail a build in configure; Debian's pool carries the pristine upstream
+# tarball, byte for byte, and the hash below is what proves it before anything
+# is unpacked. A mirror is only ever an availability question when the bytes
+# are pinned.
 FetchContent_Declare(
     lua
     URL https://www.lua.org/ftp/lua-5.4.7.tar.gz
+        http://deb.debian.org/debian/pool/main/l/lua5.4/lua5.4_5.4.7.orig.tar.gz
     URL_HASH SHA256=9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30
 )
 FetchContent_MakeAvailable(lua)
@@ -289,12 +305,64 @@ if(MAGDA_HAVE_CLAP)
     add_subdirectory(third_party/onnxruntime)
 endif()
 
+# cpp-httplib 0.52.0 — HTTP/WebSocket transport for the remote API (issue #1856).
+# Header-only on purpose: HTTPLIB_COMPILE splits the header with a Python script,
+# and the adapter includes it from a single TU behind a pimpl, so there is
+# nothing to gain for a new build prerequisite.
+#
+# OPENSSL, ZLIB, BROTLI and ZSTD all default to "use it if you find it", which
+# would make the build depend on whatever happens to be installed on the machine.
+# Forced off so every platform compiles the same thing; the remote API binds
+# loopback only, so there is no TLS to configure.
+set(HTTPLIB_COMPILE                  OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_INSTALL                  OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_TEST                     OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZLIB_IF_AVAILABLE    OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_BROTLI_IF_AVAILABLE  OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZSTD_IF_AVAILABLE    OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    cpp-httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG v0.52.0
+    PATCH_COMMAND ${CMAKE_COMMAND}
+                  -DHTTPLIB_SOURCE_DIR=<SOURCE_DIR>
+                  -DHTTPLIB_PATCH=${CMAKE_CURRENT_SOURCE_DIR}/patches/cpp-httplib-websocket-shutdown.patch
+                  -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch_cpp_httplib.cmake
+)
+FetchContent_MakeAvailable(cpp-httplib)
+
+# cpp-httplib is configured by macros read inside a header-only library, so a
+# #define in one .cpp changes the inline functions that translation unit sees and
+# nothing else. Two TUs in one executable disagreeing about a limit is an ODR
+# violation whose winner is chosen by the linker, so the values live here, once,
+# on the target every consumer already links.
+#
+# The payload cap governs how much of a frame is read into memory before any
+# handler sees it. The read timeout is a liveness backstop; the small local patch
+# above adds WebSocket::shutdown(), which wakes a blocked reader promptly without
+# running a second framed read on the stopping thread.
+target_compile_definitions(httplib INTERFACE
+    CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH=262144
+    CPPHTTPLIB_WEBSOCKET_READ_TIMEOUT_SECOND=3
+)
+
 # Simple agent system - no external dependencies needed
 
 # Product-based subdirectories
+# Before magda/daw: the app stages this binary into its bundle in a POST_BUILD
+# step, so the target has to exist by the time that directory is processed. The
+# bridge depends on nothing here in return — juce_core and cpp-httplib only.
+add_subdirectory(magda/mcp_bridge)
 add_subdirectory(magda/daw)
 add_subdirectory(magda/scripting)
 add_subdirectory(magda/agents)
+
+# Native audio engine — isolated from magda/daw on purpose, so it is added
+# after the model layer it compiles and links nothing else from it.
+if(MAGDA_BUILD_NATIVE_ENGINE)
+    add_subdirectory(magda/engine)
+endif()
 
 # Examples
 if(MAGDA_BUILD_EXAMPLES)

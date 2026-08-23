@@ -5,6 +5,9 @@
 target_sources(magda_daw PRIVATE
     Config.cpp
     AppPaths.cpp
+    ChainNodePath.cpp
+    ControlTarget.cpp
+    MixerStripOrder.cpp
     UIScale.cpp
     UpdateChecker.cpp
     ViewModeController.cpp
@@ -17,6 +20,7 @@ target_sources(magda_daw PRIVATE
     TrackManagerDevices.cpp
     ModulatorEngine.cpp
     ClipManager.cpp
+    SourcePool.cpp
     ChordProgressionConverter.cpp
     SessionLaunchService.cpp
     MidiChordMarkers.cpp
@@ -43,6 +47,7 @@ target_sources(magda_daw PRIVATE
     DrumkitManager.cpp
     DeviceCatalogMetadata.cpp
     LegacyDeviceAliases.cpp
+    DeviceParamMigrations.cpp
     PluginPreferences.cpp
     PluginCapabilities.cpp
     PluginPresetScanner.cpp

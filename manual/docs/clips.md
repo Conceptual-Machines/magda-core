@@ -131,6 +131,32 @@ Disabling a clip removes it from playback without deleting it. Right-click a cli
 
 The enabled state is per-clip: disabling one member of a [link group](#linked-ghost-clips) does not silence its ghost siblings.
 
+## Overlapping clips
+
+Arrangement clips stack rather than erase each other. Drag a clip onto one that is already there and the clip underneath keeps its position and its full contents; it is covered, not trimmed. Move the covering clip away again and the material underneath comes back on its own, because what a clip plays is worked out from the lane each time rather than stored.
+
+The clip on top owns the span it covers, and the one underneath plays what is left. A clip covered end to end plays nothing while staying exactly where it is. Which clip is on top is set when you place or move it, so the most recently moved clip wins, and the lane draws in that same order: what you see stacked is what you hear.
+
+Where a cover lands decides what the clip underneath becomes:
+
+- **Overlapping an edge** shortens it. The audible span pulls in to the edge of the cover, which is a shorter clip rather than a hole in one.
+- **Landing strictly inside it** leaves a hole. The clip keeps its start and end and goes silent across the covered span only. A MIDI clip plays around the hole by dropping the notes that start inside it; an audio clip carries the hole through to playback. Nothing is cut and nothing is split, so the material comes back intact when the cover moves away.
+
+A clip you disabled by hand covers nothing, because it is already silent. Letting it occlude would silence the clip below on behalf of silence.
+
+### Play Through Overlap
+
+To make both clips sound where they overlap, right-click either one and tick **Play Through Overlap**. The lane hatches the shared span to show it is playing both.
+
+Either clip can carry the switch, which matters because the clip you reach for when something goes quiet is the one that went quiet, and that is the one underneath.
+
+Asking for a [crossfade](#crossfades) turns it on for you, on both clips: right-click and choose **Crossfade with Previous Clip** or **Crossfade with Next Clip**, or drag a crossfade handle. Asking for a fade region is asking for both clips to be heard across it, so the gesture sets the fade and the play-through together.
+
+!!! note "The Auto Crossfade property does not do this"
+    **Auto Crossfade** marks a clip as eligible to crossfade; it does not create a fade region, and it leaves play-through alone. The same goes for the **Auto-crossfade new audio clips** preference, which only sets that property on new clips.
+
+    This matters because auto-crossfade cannot keep a covered clip audible on its own. It shapes an overlap that is already playing both, so audio fades into audio instead of both running flat. **Play Through Overlap** is what decides whether both sound; the crossfade only decides how they meet.
+
 ## Flatten MIDI Loop
 
 When a MIDI clip is looping, right-click it and choose **Flatten MIDI Loop** to write the repetitions out as real notes. The loop cycles (including any offset phase) are baked into actual MIDI across the clip's full length, looping is switched off, and the offset resets to zero. The clip stays a MIDI clip in place, ready for per-note editing in the [Piano Roll](panels/piano-roll.md); the operation is a single undoable step.

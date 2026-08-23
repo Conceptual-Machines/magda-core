@@ -44,6 +44,7 @@ class MainWindow : public juce::DocumentWindow,
     ~MainWindow() override;
 
     void closeButtonPressed() override;
+    void lookAndFeelChanged() override;
 
     // ProjectManagerListener
     void projectOpened(const ProjectInfo& info) override;
@@ -95,6 +96,7 @@ class MainWindow : public juce::DocumentWindow,
     // Last-applied density multiplier; -1 forces the first apply to run.
     float appliedDensityScale_ = -1.0f;
     std::string appliedFontFamily_;
+    double appliedFontScale_ = 1.0;
 
     // Hot-reload for user JSON themes: armed while a user theme is active,
     // idle for built-ins. activeThemeFile_ is the file currently watched.

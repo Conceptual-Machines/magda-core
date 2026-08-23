@@ -588,8 +588,6 @@ class AutomationManager : public TrackManagerListener {
     void dispatchAuthorityEvent(AutomationLaneId laneId, AutomationAuthorityEvent event);
 
     // Interpolation helpers
-    double interpolateLinear(double t, double v1, double v2) const;
-    double interpolateBezier(double t, const AutomationPoint& p1, const AutomationPoint& p2) const;
 
     // Point management helpers
     AutomationPoint* findPoint(std::vector<AutomationPoint>& points, AutomationPointId pointId);

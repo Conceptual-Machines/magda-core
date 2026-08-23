@@ -29,6 +29,19 @@ Config& Config::getInstance() {
     return instance;
 }
 
+RemoteApiSwitches remoteApiSwitchesFrom(const juce::var& remoteApiObject) {
+    RemoteApiSwitches switches;
+    auto* obj = remoteApiObject.getDynamicObject();
+    if (obj == nullptr)
+        return switches;
+
+    const bool legacy = obj->hasProperty("enabled") && bool(obj->getProperty("enabled"));
+    switches.websocket =
+        obj->hasProperty("websocket") ? bool(obj->getProperty("websocket")) : legacy;
+    switches.mcp = obj->hasProperty("mcp") ? bool(obj->getProperty("mcp")) : legacy;
+    return switches;
+}
+
 void Config::addRecentProject(const std::string& path) {
     // Remove existing entry if present (dedup)
     recentProjects.erase(std::remove(recentProjects.begin(), recentProjects.end(), path),
@@ -80,6 +93,25 @@ void Config::save() {
     root->setProperty("leftPanelWidth", leftPanelWidth);
     root->setProperty("rightPanelWidth", rightPanelWidth);
     root->setProperty("bottomPanelHeight", bottomPanelHeight);
+
+    // Panel tab layout (front tab + left-to-right order, by content-type id)
+    {
+        auto writeTabs = [](const PanelTabsConfig& tabs) {
+            auto* panelObj = new juce::DynamicObject();
+            panelObj->setProperty("active", toJuceString(tabs.activeTab));
+            juce::Array<juce::var> orderArray;
+            for (const auto& id : tabs.tabOrder)
+                orderArray.add(toJuceString(id));
+            panelObj->setProperty("order", orderArray);
+            return juce::var(panelObj);
+        };
+
+        auto* panelTabsObj = new juce::DynamicObject();
+        panelTabsObj->setProperty("left", writeTabs(leftPanelTabs));
+        panelTabsObj->setProperty("right", writeTabs(rightPanelTabs));
+        panelTabsObj->setProperty("bottom", writeTabs(bottomPanelTabs));
+        root->setProperty("panelTabs", juce::var(panelTabsObj));
+    }
 
     // Language
     root->setProperty("language", toJuceString(language));
@@ -201,6 +233,7 @@ void Config::save() {
     root->setProperty("browserTreeView", browserTreeView);
     root->setProperty("browserDefaultDirectory", toJuceString(browserDefaultDirectory));
     root->setProperty("browserLastView", toJuceString(browserLastView));
+    root->setProperty("pluginBrowserViewMode", toJuceString(pluginBrowserViewMode));
     root->setProperty("sampleTaggerModelsDir", toJuceString(sampleTaggerModelsDir));
     root->setProperty("commandModelModelsDir", toJuceString(commandModelModelsDir));
     root->setProperty("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
@@ -216,6 +249,40 @@ void Config::save() {
     root->setProperty("autoCheckUpdates", autoCheckUpdates);
     root->setProperty("lastUpdateCheckTimestamp",
                       static_cast<juce::int64>(lastUpdateCheckTimestamp));
+
+    // Remote API — nested "remoteApi" object. No token here by design; it is
+    // generated per run into a file only the user can read.
+    {
+        auto* remoteObj = new juce::DynamicObject();
+        remoteObj->setProperty("websocket", remoteApiWebSocketEnabled);
+        remoteObj->setProperty("mcp", remoteApiMcpEnabled);
+        // Still written, for a config that gets read by a build predating the
+        // split (#2142). An older MAGDA starts both transports from it, which
+        // is the same thing it did before there were two switches.
+        remoteObj->setProperty("enabled", remoteApiWebSocketEnabled || remoteApiMcpEnabled);
+        remoteObj->setProperty("port", remoteApiPort);
+        remoteObj->setProperty("mcpPort", remoteApiMcpPort);
+        juce::Array<juce::var> originArray;
+        for (const auto& origin : remoteApiAllowedOrigins)
+            originArray.add(toJuceString(origin));
+        remoteObj->setProperty("allowedOrigins", originArray);
+        // Per-client grants (#1860). Written only once something has been
+        // granted, so an install that never used the remote API keeps a config
+        // file without an empty array in it.
+        if (remoteApiClients.isArray() && remoteApiClients.getArray()->size() > 0)
+            remoteObj->setProperty("clients", remoteApiClients);
+        root->setProperty("remoteApi", juce::var(remoteObj));
+    }
+
+    // OSC control surfaces — nested "osc" object (#1757).
+    {
+        auto* oscObj = new juce::DynamicObject();
+        oscObj->setProperty("enabled", oscEnabled);
+        oscObj->setProperty("receivePort", oscReceivePort);
+        oscObj->setProperty("bindAddress", toJuceString(oscBindAddress));
+        oscObj->setProperty("feedbackPort", oscFeedbackPort);
+        root->setProperty("osc", juce::var(oscObj));
+    }
 
     // Recent projects
     juce::Array<juce::var> recentArray;
@@ -247,6 +314,8 @@ void Config::save() {
     root->setProperty("followPlayhead", followPlayhead);
     root->setProperty("chordPreviewOnByDefault", chordPreviewOnByDefault);
     root->setProperty("autoCrossfadeByDefault", autoCrossfadeByDefault);
+    root->setProperty("clipOverlapPlaysBoth", clipOverlapPlaysBoth);
+    root->setProperty("postFxPostFaderByDefault", postFxPostFaderByDefault);
 
     // Clip colour mode
     root->setProperty("clipColourMode", clipColourMode);
@@ -415,6 +484,24 @@ void Config::load() {
     leftPanelWidth = getInt("leftPanelWidth", leftPanelWidth);
     rightPanelWidth = getInt("rightPanelWidth", rightPanelWidth);
     bottomPanelHeight = getInt("bottomPanelHeight", bottomPanelHeight);
+
+    // Panel tab layout. Absent (a config written before this shipped) leaves
+    // the members empty, which PanelController reads as "use the defaults".
+    if (auto* panelTabsObj = obj->getProperty("panelTabs").getDynamicObject()) {
+        auto readTabs = [panelTabsObj](const char* key, PanelTabsConfig& out) {
+            auto* panelObj = panelTabsObj->getProperty(key).getDynamicObject();
+            if (panelObj == nullptr)
+                return;
+            out.activeTab = panelObj->getProperty("active").toString().toStdString();
+            out.tabOrder.clear();
+            if (const auto* orderArray = panelObj->getProperty("order").getArray())
+                for (const auto& id : *orderArray)
+                    out.tabOrder.push_back(id.toString().toStdString());
+        };
+        readTabs("left", leftPanelTabs);
+        readTabs("right", rightPanelTabs);
+        readTabs("bottom", bottomPanelTabs);
+    }
 
     language = getString("language", language);
     scrollbarOnLeft = getBool("scrollbarOnLeft", scrollbarOnLeft);
@@ -659,6 +746,7 @@ void Config::load() {
     browserTreeView = getBool("browserTreeView", browserTreeView);
     browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
     browserLastView = getString("browserLastView", browserLastView);
+    pluginBrowserViewMode = getString("pluginBrowserViewMode", pluginBrowserViewMode);
     sampleTaggerModelsDir = getString("sampleTaggerModelsDir", sampleTaggerModelsDir);
     commandModelModelsDir = getString("commandModelModelsDir", commandModelModelsDir);
     loadSampleTaggerOnStartup = getBool("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
@@ -671,6 +759,45 @@ void Config::load() {
     if (obj->hasProperty("lastUpdateCheckTimestamp"))
         lastUpdateCheckTimestamp = static_cast<int64_t>(
             static_cast<juce::int64>(obj->getProperty("lastUpdateCheckTimestamp")));
+
+    // Remote API — absent means the defaults, which leave the listener off.
+    if (obj->hasProperty("remoteApi")) {
+        if (auto* remoteObj = obj->getProperty("remoteApi").getDynamicObject()) {
+            const auto switches = remoteApiSwitchesFrom(obj->getProperty("remoteApi"));
+            remoteApiWebSocketEnabled = switches.websocket;
+            remoteApiMcpEnabled = switches.mcp;
+            if (remoteObj->hasProperty("port"))
+                remoteApiPort = remoteObj->getProperty("port");
+            if (remoteObj->hasProperty("mcpPort"))
+                remoteApiMcpPort = remoteObj->getProperty("mcpPort");
+            remoteApiAllowedOrigins.clear();
+            if (const auto* origins = remoteObj->getProperty("allowedOrigins").getArray())
+                for (const auto& origin : *origins)
+                    remoteApiAllowedOrigins.push_back(origin.toString().toStdString());
+            // Passed through untouched; `RemoteClientRegistry` owns the shape
+            // and drops anything it does not recognise.
+            remoteApiClients = remoteObj->getProperty("clients");
+        }
+    }
+
+    // OSC — absent means the defaults, which open no socket.
+    if (obj->hasProperty("osc")) {
+        if (auto* oscObj = obj->getProperty("osc").getDynamicObject()) {
+            if (oscObj->hasProperty("enabled"))
+                oscEnabled = oscObj->getProperty("enabled");
+            if (oscObj->hasProperty("receivePort"))
+                oscReceivePort = oscObj->getProperty("receivePort");
+            // An empty stored address would bind nothing at all, so it falls
+            // back to the default rather than silently disabling the listener.
+            if (oscObj->hasProperty("bindAddress")) {
+                auto address = oscObj->getProperty("bindAddress").toString();
+                if (address.isNotEmpty())
+                    oscBindAddress = address.toStdString();
+            }
+            if (oscObj->hasProperty("feedbackPort"))
+                oscFeedbackPort = oscObj->getProperty("feedbackPort");
+        }
+    }
     recentProjects = getStringArray("recentProjects");
     customPluginPaths = getStringArray("customPluginPaths");
     autoEnabledInsertInputs_ = getStringArray("autoEnabledInsertInputs");
@@ -682,6 +809,8 @@ void Config::load() {
     followPlayhead = getBool("followPlayhead", followPlayhead);
     chordPreviewOnByDefault = getBool("chordPreviewOnByDefault", chordPreviewOnByDefault);
     autoCrossfadeByDefault = getBool("autoCrossfadeByDefault", autoCrossfadeByDefault);
+    clipOverlapPlaysBoth = getBool("clipOverlapPlaysBoth", clipOverlapPlaysBoth);
+    postFxPostFaderByDefault = getBool("postFxPostFaderByDefault", postFxPostFaderByDefault);
 
     clipColourMode = getInt("clipColourMode", clipColourMode);
 
