@@ -240,12 +240,18 @@ device passes through, racks included. That matters more than it sounds: a devic
 reaches the engine only by that route, and racks are where instruments live, so stamping anywhere
 higher up would leave exactly the devices this section is about reading the defaults forever.
 
-A plugin that answers nothing is not recorded at all. `te::ExternalPlugin` fills neither channel
-list while it has no `AudioPluginInstance`, so a plugin still loading, or one whose scan is stale,
-reports nought in and nought out. The incumbent asks again on every rewire and recovers by itself;
-the model is told once and keeps it, so writing that reading down would wire a real device to no
-audio for the rest of the session. Reading a genuinely silent plugin as stereo costs a block of
-copying and no audio. The other way round costs the device.
+The counts are asked only of a plugin in a position to answer. `te::ExternalPlugin` fills neither
+channel list while it has no `AudioPluginInstance`, so a plugin still loading, or one whose scan is
+stale, reports nought in and nought out. The incumbent asks again on every rewire and recovers by
+itself; the model is told once and keeps it, so writing that reading down would wire a real device
+to no audio for the rest of the session.
+
+What is untrusted is a missing instance, not an empty answer. Nought in and nought out is a real
+reading for a MIDI-only plugin, `te::MidiPatchBay` and `te::MidiModifierPlugin` among them, and the
+incumbent wires those to no audio precisely because that is what they report. Treating an empty
+answer as no answer would guess stereo for them and put them in the audio path the incumbent leaves
+them out of, so the question asked is whether the plugin could answer, which only an external one
+can fail.
 
 **The delta is a `Subtract`,** between the processing and the trim, reading the device's output
 and the dry signal the device was handed; a rack gets the same op one level up, around its own

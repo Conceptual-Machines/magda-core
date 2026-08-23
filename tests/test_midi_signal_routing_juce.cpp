@@ -104,6 +104,8 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
             [this] { testRackSyncInstrumentInjectsAudioAndPassesMidiToFx(); });
         magda::test::runWithCleanJuceState(
             [this] { testPluginWithNoInstanceDoesNotRewriteChannelCounts(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testGenuinelySilentPluginIsRecordedAsSilent(); });
         magda::test::runWithCleanJuceState([this] { testRackDeviceStampsLiveChannelCounts(); });
         magda::test::runWithCleanJuceState(
             [this] { testRackSyncMidiSidechainFxDoesNotReceiveChainMidi(); });
@@ -743,6 +745,63 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
                          "A plugin that reports nothing must not rewrite the input width");
             expectEquals(canonical->audioOutputChannels, 2,
                          "A plugin that reports nothing must not rewrite the output width");
+        }
+
+        tm.deleteTrack(trackId);
+    }
+
+    void testGenuinelySilentPluginIsRecordedAsSilent() {
+        beginTest("A plugin that really has no audio is recorded as having none");
+
+        // The other side of the guard above. Nought in and nought out is a
+        // real reading for a MIDI-only plugin: te::MidiPatchBay overrides
+        // getChannelNames with an empty body. The incumbent wires those to no
+        // audio precisely because that is what they report, so guessing
+        // stereo for them would put them in the audio path it leaves them out
+        // of. What is untrusted is a missing instance, not an empty answer.
+        auto* editPtr = magda::test::getSharedEngine().getEdit();
+        expect(editPtr != nullptr, "The shared engine must have an Edit");
+        if (editPtr == nullptr)
+            return;
+
+        auto& tm = magda::TrackManager::getInstance();
+        const auto trackId = tm.createTrack("Silent For Real");
+        const auto rackId = tm.addRackToTrack(trackId, "Silent Rack");
+        auto* rackInfo = tm.getRack(trackId, rackId);
+        expect(rackInfo != nullptr, "Rack should have been added to the track");
+        if (rackInfo == nullptr || rackInfo->chains.empty())
+            return;
+
+        const auto chainId = rackInfo->chains[0].id;
+        auto device = makeInternalDevice(9921, "Patch Bay", "midiPatchBay");
+        rackInfo->chains[0].elements.push_back(magda::makeDeviceElement(device));
+
+        auto patchBay = editPtr->getPluginCache().createNewPlugin(te::MidiPatchBayPlugin::create());
+        expect(patchBay != nullptr, "A MIDI patch bay should be creatable");
+        if (patchBay == nullptr)
+            return;
+
+        juce::StringArray ins, outs;
+        patchBay->getChannelNames(&ins, &outs);
+        expectEquals(ins.size(), 0, "The patch bay should report no audio inputs");
+        expectEquals(outs.size(), 0, "The patch bay should report no audio outputs");
+        expect(dynamic_cast<te::ExternalPlugin*>(patchBay.get()) == nullptr,
+               "The patch bay is not an external plugin, so it can always answer");
+
+        const auto devicePath =
+            magda::ChainNodePath::rack(trackId, rackId).withChain(chainId).withDevice(device.id);
+        magda::test::getSharedEngine()
+            .getAudioBridge()
+            ->getPluginManager()
+            .registerRackPluginProcessor(devicePath, patchBay, device);
+
+        auto* canonical = tm.getDeviceInChainByPath(devicePath);
+        expect(canonical != nullptr, "The rack's device should resolve by path");
+        if (canonical != nullptr) {
+            expectEquals(canonical->audioInputChannels, 0,
+                         "A plugin that really has no audio input must be recorded with none");
+            expectEquals(canonical->audioOutputChannels, 0,
+                         "A plugin that really has no audio output must be recorded with none");
         }
 
         tm.deleteTrack(trackId);

@@ -134,27 +134,29 @@ void updateDeviceCapabilityFlags(DeviceInfo& device, te::Plugin& plugin) {
     // The channel counts the chain model compiles against, asked the way the
     // incumbent's chain wiring asks them.
     //
-    // A plugin whose instance is not there yet, or never will be, answers
-    // nothing rather than answering wrong: te::ExternalPlugin fills neither
-    // array when it has no AudioPluginInstance, so both come back empty. The
-    // incumbent asks again every time it rewires a chain and recovers on its
-    // own; the model is told once and keeps it, so a reading taken before the
-    // plugin arrived would leave a real device wired to no audio at all for
-    // the rest of the session.
+    // Asked only of a plugin in a position to answer. te::ExternalPlugin fills
+    // neither array while it has no AudioPluginInstance, and there is no else
+    // branch, so one still loading or with a stale scan behind it says nought
+    // in and nought out. Recorded, that wires a real device to no audio at
+    // all, and it sticks: the incumbent asks again every time it rewires a
+    // chain and recovers by itself, while the model is told once and keeps
+    // what it was told.
     //
-    // So nothing said means nothing recorded. What the fields already hold
-    // stands, and their default is the stereo the incumbent falls back to for
-    // a chain node whose plugin it cannot find. A plugin that really is
-    // silent on both sides is read as stereo and wired as a passthrough it
-    // writes nothing to, which costs a block of copying and no audio; the
-    // other way round costs the device.
+    // The question is whether the plugin can answer, not whether its answer
+    // was empty. Nought in and nought out is a real reading for a MIDI-only
+    // plugin, te::MidiPatchBay and te::MidiModifierPlugin among them, and the
+    // incumbent wires those to no audio precisely because that is what they
+    // report. Guessing stereo for them would put them in the audio path the
+    // incumbent leaves them out of. So only a missing instance is untrusted,
+    // and only an external plugin can have one.
     //
     // Same shape as the promoted flags above, and for the same reason: a
     // reading taken when the plugin is not there must never be able to take
     // routing away.
-    juce::StringArray audioInputs, audioOutputs;
-    plugin.getChannelNames(&audioInputs, &audioOutputs);
-    if (!audioInputs.isEmpty() || !audioOutputs.isEmpty()) {
+    const auto* external = dynamic_cast<const te::ExternalPlugin*>(&plugin);
+    if (external == nullptr || external->getAudioPluginInstance() != nullptr) {
+        juce::StringArray audioInputs, audioOutputs;
+        plugin.getChannelNames(&audioInputs, &audioOutputs);
         device.audioInputChannels = audioInputs.size();
         device.audioOutputChannels = audioOutputs.size();
     }
