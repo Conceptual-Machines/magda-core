@@ -20,6 +20,7 @@
 #include "TrackControlsPolicy.hpp"
 #include "core/AppPaths.hpp"
 #include "core/AutomationCommands.hpp"
+#include "core/ChordProgressionConverter.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/MidiChordMarkers.hpp"
 #include "core/PasteTargetResolver.hpp"
@@ -3445,26 +3446,6 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
             midiFiles.clear();
         }
 
-        // A progressions lane says yes to MIDI above, because a progression is
-        // a MIDI clip. Whether this material is one is a question about content
-        // rather than about kind, and here is where the content can be read.
-        if (traitsOf(track->type).userClips == UserClipAcceptance::Progressions) {
-            juce::StringArray progressions;
-            for (const auto& path : midiFiles)
-                if (!magda::daw::readChordMarkers(juce::File(path)).empty())
-                    progressions.add(path);
-
-            if (progressions.size() != midiFiles.size()) {
-                if (progressions.isEmpty()) {
-                    refuse("Only chord progressions can be placed on the chord track.");
-                    return;
-                }
-                refuse("Only chord progressions can be placed on the chord track, so the rest "
-                       "was left out.");
-            }
-            midiFiles = progressions;
-        }
-
         if (audioFiles.isEmpty() && midiFiles.isEmpty())
             return;
     }
@@ -3707,6 +3688,38 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                     }
                     ann.chordGroup = linkedAny ? groupId : 0;
                     clip->chordAnnotations.push_back(ann);
+                }
+
+                // A .mid that carried no CHORD: markers still becomes chords
+                // when it lands on the chord track, because that is what the
+                // track is for and it is what a user dropping one there means.
+                // The same detection the piano roll's own button runs, from the
+                // same converter, so a dropped progression and a detected one
+                // are the same thing.
+                //
+                // Only on that track: detecting over every imported .mid would
+                // annotate parts that are not harmony and were never asked to
+                // be read as it.
+                if (clip->chordAnnotations.empty() && !clip->midiNotes.empty()) {
+                    if (const auto* clipTrack = TrackManager::getInstance().getTrack(clipTrackId);
+                        clipTrack != nullptr &&
+                        traitsOf(clipTrack->type).userClips == UserClipAcceptance::Progressions) {
+                        for (const auto& detected :
+                             extractChordsFromNotes(clip->midiNotes, beatsPerBar)) {
+                            ClipInfo::ChordAnnotation ann;
+                            ann.beatPosition = detected.startBeat;
+                            ann.lengthBeats = detected.lengthBeats;
+                            ann.chordName = detected.name;
+
+                            const int groupId = clip->nextChordGroupId++;
+                            for (const auto noteIndex : detected.noteIndices)
+                                if (noteIndex < clip->midiNotes.size())
+                                    clip->midiNotes[noteIndex].chordGroup = groupId;
+
+                            ann.chordGroup = detected.noteIndices.empty() ? 0 : groupId;
+                            clip->chordAnnotations.push_back(ann);
+                        }
+                    }
                 }
 
                 ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId);

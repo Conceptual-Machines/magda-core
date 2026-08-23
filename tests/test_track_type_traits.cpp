@@ -132,8 +132,10 @@ TEST_CASE("A track answers for itself what its type declares", "[track][types]")
     CHECK(track.acceptsUserClip(ClipType::MIDI));
     CHECK_FALSE(track.acceptsUserClip(ClipType::Audio));
 
-    // A progression is a MIDI clip, so the type-level answer is yes and the
-    // content check happens at the drop, where the file can be read.
+    // A progression is a MIDI clip, so the chord lane says yes to MIDI. What
+    // makes the lane typed is what the import does with it -- a .mid without
+    // CHORD: markers has its chords detected on the way in -- rather than a
+    // refusal at the door.
     track.type = TrackType::Chord;
     CHECK(track.acceptsUserClip(ClipType::MIDI));
     CHECK_FALSE(track.acceptsUserClip(ClipType::Audio));
