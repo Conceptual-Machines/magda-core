@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <deque>
 #include <map>
 #include <memory>
@@ -103,6 +104,22 @@ class ConstantSource final : public EngineAudioSource {
 
   private:
     float level_;
+};
+
+/// A different steady level on each side, so anything that folds the pair down
+/// to one channel is visible in the output rather than hidden by symmetry.
+class StereoSource final : public EngineAudioSource {
+  public:
+    StereoSource(float left, float right) : left_(left), right_(right) {}
+
+    void render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) override {
+        juce::ignoreUnused(block);
+        for (std::size_t channel = 0; channel < out.getNumChannels(); ++channel)
+            out.getSingleChannelBlock(channel).fill(channel == 0 ? left_ : right_);
+    }
+
+  private:
+    float left_, right_;
 };
 
 /// One sample per timeline position, so two short blocks and one long block
@@ -2020,6 +2037,51 @@ TEST_CASE("A device is handed the channels it declared", "[engine][exec]") {
         CHECK(harness.outputSample(0) == approx(0.0f));
         CHECK(harness.outputSample(1) == approx(0.0f));
     }
+}
+
+TEST_CASE("An unbound device passes the chain on at full width", "[engine][exec]") {
+    // What the model last saw a plugin report is not a reason to narrow audio
+    // no plugin is processing. The current engine answers 2 and 2 for a chain
+    // node whose plugin it cannot find, so a device that failed to load is a
+    // straight passthrough whatever its channel counts say.
+    auto effect = makeEffect(7);
+    effect.audioInputChannels = GENERATE(0, 1, 2);
+    effect.audioOutputChannels = GENERATE(0, 1, 2);
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(effect));
+
+    Harness harness({track}, makeMaster());
+    StereoSource source(0.25f, 0.75f);
+    harness.bindings.clipAudio[1] = &source;
+
+    // Prepare says so itself, in the words the contract is written in.
+    const auto messages = harness.prepare();
+    REQUIRE(messages.size() == 1);
+    CHECK(messages[0].find("no device bound for D7, it passes audio through") != std::string::npos);
+    harness.render();
+
+    INFO("in=" << effect.audioInputChannels << " out=" << effect.audioOutputChannels);
+
+    if (effect.audioInputChannels > 0 && effect.audioOutputChannels == 0) {
+        // The one shape where the chain is not carried on: a device the model
+        // says reads the bus and writes nothing takes the bus with it, and
+        // that is the compiled graph rather than anything the executor does.
+        // Binding happens after compilation, so the compiler cannot know this
+        // device will not be there, and second-guessing the model would mean
+        // compiling a different graph for a plugin that may or may not load.
+        CHECK(harness.outputSample(0) == approx(0.0f));
+        CHECK(harness.outputSample(1) == approx(0.0f));
+        return;
+    }
+
+    // Everywhere the graph does carry the chain through, both sides arrive as
+    // they left: the device that never reads the bus leaves it flowing past,
+    // and the rest pass it through untouched because nothing is bound to
+    // touch it. In particular a mono device that failed to load does not fold
+    // the pair down to its left side.
+    CHECK(harness.outputSample(0) == approx(0.25f));
+    CHECK(harness.outputSample(1) == approx(0.75f));
 }
 
 TEST_CASE("An instrument sums with the audio already flowing past it", "[engine][exec]") {

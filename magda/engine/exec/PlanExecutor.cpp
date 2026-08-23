@@ -1279,6 +1279,17 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             else if (!writesInPlace(i))
                 audio.copyFrom(audioIn(op.inputs[0], numSamples));
 
+            // Nothing bound is the passthrough it has always been, at the full
+            // width of the bus. The widths below describe a plugin, and there
+            // is no plugin here: the current engine asks a chain node for its
+            // channel counts and answers 2 and 2 for a node whose plugin it
+            // cannot find, so a device that failed to load passes the chain on
+            // untouched rather than folding it down to what the model last
+            // saw the plugin report.
+            auto* device = deviceForOp_[i];
+            if (device == nullptr)
+                break;
+
             // The device is handed exactly the channels it declared: its input
             // width where it reads, its output width where it writes, and the
             // wider of the two to stand in. A mono device therefore sees a
@@ -1296,32 +1307,6 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // the side it only ever writes.
             for (auto channel = inputWidth; channel < blockWidth; ++channel)
                 audio.getSingleChannelBlock(channel).clear();
-
-            // Every port still fills its slot, because everything downstream
-            // reads slots stereo-wide: a mono port's one channel is heard on
-            // both sides, the way the current engine reads a one-pin source
-            // off pin 1 twice, and a port carrying nothing is silence rather
-            // than the input its buffer was prefilled with. A port whose
-            // device is not bound is widened too: what the plan says a port
-            // carries cannot depend on whether anything is there to write it.
-            const auto widenPortsToSlots = [&] {
-                for (std::size_t port = 0; port < op.outputs.size(); ++port) {
-                    const auto& output = op.outputs[port];
-                    if (output.kind != SignalKind::Audio || output.channels == 2)
-                        continue;
-                    auto slot = audioOut(id, static_cast<int>(port), numSamples);
-                    if (output.channels == 1)
-                        slot.getSingleChannelBlock(1).copyFrom(slot.getSingleChannelBlock(0));
-                    else
-                        slot.clear();
-                }
-            };
-
-            auto* device = deviceForOp_[i];
-            if (device == nullptr) {
-                widenPortsToSlots();
-                break;
-            }
 
             // No parameters yet: the table a device reads is resolved against a
             // plan and published with it, which is #2117. Until then a device
@@ -1356,7 +1341,21 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 device->process(deviceBlock);
             }
 
-            widenPortsToSlots();
+            // Every port still fills its slot, because everything downstream
+            // reads slots stereo-wide: a mono port's one channel is heard on
+            // both sides, the way the current engine reads a one-pin source
+            // off pin 1 twice, and a port carrying nothing is silence rather
+            // than the input its buffer was prefilled with.
+            for (std::size_t port = 0; port < op.outputs.size(); ++port) {
+                const auto& output = op.outputs[port];
+                if (output.kind != SignalKind::Audio || output.channels == 2)
+                    continue;
+                auto slot = audioOut(id, static_cast<int>(port), numSamples);
+                if (output.channels == 1)
+                    slot.getSingleChannelBlock(1).copyFrom(slot.getSingleChannelBlock(0));
+                else
+                    slot.clear();
+            }
             jassert(deviceMidiOut == nullptr || deviceMidiOut->data.size() <= kMaxMidiBytesPerPort);
             break;
         }

@@ -223,6 +223,11 @@ widened back over the slot afterwards. That last part is why widths live on `Dev
 everything downstream reads a slot at the bus's width, so a width anywhere else would be
 describing a boundary that is not there, and `validatePlan` says so.
 
+A width describes a plugin, so where there is no plugin there is no width. A device nothing is
+bound to stays the full-width passthrough it has always been, whatever the model last saw it
+report: the current engine answers 2 and 2 for a chain node whose plugin it cannot find, and a
+device that failed to load must not fold the chain down on its way past.
+
 **The delta is a `Subtract`,** between the processing and the trim, reading the device's output
 and the dry signal the device was handed; a rack gets the same op one level up, around its own
 fader. The dry edge is taken in front of whatever aligned the device's own input, so the
