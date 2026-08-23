@@ -102,6 +102,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
             [this] { testRackSyncRoutesChainOutputIndexToRackPins(); });
         magda::test::runWithCleanJuceState(
             [this] { testRackSyncInstrumentInjectsAudioAndPassesMidiToFx(); });
+        magda::test::runWithCleanJuceState([this] { testRackDeviceStampsLiveChannelCounts(); });
         magda::test::runWithCleanJuceState(
             [this] { testRackSyncMidiSidechainFxDoesNotReceiveChainMidi(); });
         magda::test::runWithCleanJuceState(
@@ -677,6 +678,55 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
                "Instrument right audio should be injected into the downstream FX");
 
         rackSync.removeRack(rack.id);
+    }
+
+    void testRackDeviceStampsLiveChannelCounts() {
+        beginTest("Rack sync stamps a contained device's live channel counts");
+
+        // The chain model compiles against these counts, and a device inside a
+        // rack reaches the engine only through registerRackPluginProcessor. If
+        // that stopped stamping them, every rack-contained device would keep
+        // whatever the model happened to hold, which for a project loaded
+        // without its plugins is the stereo default and for one edited in
+        // session is whatever was last saved.
+        //
+        // The internal plugins all report stereo, so the counts are seeded
+        // wrong on purpose: what is under test is that the live plugin gets
+        // the last word, not that any particular plugin is mono.
+        auto& tm = magda::TrackManager::getInstance();
+        const auto trackId = tm.createTrack("Rack Counts");
+        const auto rackId = tm.addRackToTrack(trackId, "Counts Rack");
+        auto* rackInfo = tm.getRack(trackId, rackId);
+        expect(rackInfo != nullptr, "Rack should have been added to the track");
+        if (rackInfo == nullptr || rackInfo->chains.empty())
+            return;
+
+        const auto chainId = rackInfo->chains[0].id;
+        auto fx = makeInternalDevice(9903, "Filter", "magda_filter");
+        fx.audioInputChannels = 1;
+        fx.audioOutputChannels = 1;
+        rackInfo->chains[0].elements.push_back(magda::makeDeviceElement(fx));
+
+        auto& rackSync = magda::test::getSharedEngine()
+                             .getAudioBridge()
+                             ->getPluginManager()
+                             .getRackSyncManager();
+        rackSync.removeRack(rackId);
+        rackSync.syncRack(trackId, *tm.getRack(trackId, rackId));
+
+        const auto devicePath =
+            magda::ChainNodePath::rack(trackId, rackId).withChain(chainId).withDevice(fx.id);
+        auto* canonical = tm.getDeviceInChainByPath(devicePath);
+        expect(canonical != nullptr, "The rack's device should resolve by path");
+        if (canonical != nullptr) {
+            expectEquals(canonical->audioInputChannels, 2,
+                         "Rack device should read its input width off the live plugin");
+            expectEquals(canonical->audioOutputChannels, 2,
+                         "Rack device should read its output width off the live plugin");
+        }
+
+        rackSync.removeRack(rackId);
+        tm.deleteTrack(trackId);
     }
 
     void testRackSyncMidiSidechainFxDoesNotReceiveChainMidi() {

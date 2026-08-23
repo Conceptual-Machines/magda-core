@@ -2239,6 +2239,16 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
     if (!plugin)
         return;
 
+    // What the plugin says it is, onto the canonical DeviceInfo. Here rather
+    // than beside the processor below, because this runs whether or not a
+    // device processor could be made: the capabilities and the channel counts
+    // come off the plugin, and the chain model compiles against them. This is
+    // the only place a rack-contained device passes through, so without it
+    // every device inside a rack would keep the stereo defaults and the chain
+    // model would never see the width of an instrument or a mono effect.
+    if (auto* canonical = TrackManager::getInstance().getDeviceInChainByPath(devicePath))
+        updateDeviceCapabilityFlags(*canonical, *plugin);
+
     auto processor =
         createDeviceProcessorForPlugin(deviceId, plugin, device.pluginId, &deviceTrackContext_);
 
