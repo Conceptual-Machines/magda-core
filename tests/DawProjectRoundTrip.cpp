@@ -393,6 +393,20 @@ const std::map<std::string, std::vector<Loss>>& lossTable() {
         {"param.hostwrite.modifier", {internalDevices(), trackModulation()}},
         {"macro.track", {internalDevices(), trackModulation()}},
         {"macro.device", {internalDevices()}},
+        // The rack cases (#2139). A rack is chains of internal devices, and the
+        // format has nowhere to put either half, so the same declaration covers
+        // the whole of it: the chain comes back empty and is restored wholesale.
+        {"rack.parallel", {internalDevices()}},
+        {"rack.chain.fader", {internalDevices()}},
+        {"rack.fader", {internalDevices()}},
+        {"rack.chain.mute", {internalDevices()}},
+        {"rack.chain.solo", {internalDevices()}},
+        {"rack.deltasolo.device", {internalDevices()}},
+        {"rack.deltasolo.rack", {internalDevices()}},
+        {"rack.nested", {internalDevices()}},
+        {"rack.aux", {internalDevices()}},
+        {"rack.mono", {internalDevices()}},
+        {"rack.instrument", {internalDevices()}},
         {"project.mixed", {internalDevices()}},
         {"midi.notes", {internalDevices()}},
         {"midi.cc", {internalDevices(), controllers()}},

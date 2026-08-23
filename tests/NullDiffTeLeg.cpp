@@ -12,17 +12,22 @@
 
 #include "NullDiffGain.hpp"
 #include "SharedTestEngine.hpp"
+#include "magda/daw/audio/PluginWindowBridge.hpp"
 #include "magda/daw/audio/TrackController.hpp"
 #include "magda/daw/audio/WarpMarkerManager.hpp"
 #include "magda/daw/audio/automation/AutomationBake.hpp"
 #include "magda/daw/audio/modifiers/ModifierSync.hpp"
+#include "magda/daw/audio/plugin_manager/PluginManager.hpp"
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
+#include "magda/daw/audio/racks/RackSyncManager.hpp"
 #include "magda/daw/audio/session/ClipSynchronizer.hpp"
+#include "magda/daw/audio/transport/TransportStateManager.hpp"
 #include "magda/daw/core/AutomationCurve.hpp"
 #include "magda/daw/core/ChainNode.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ParameterUtils.hpp"
+#include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/engine/OfflineRenderHelper.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
 #include "plan/PlanCompiler.hpp"
@@ -133,6 +138,18 @@ class MidiCapturePlugin final : public te::Plugin {
 /// binary.
 const char* const kCapturePluginId = "nulldiffmidicapture";
 
+/// What marks a device as the corpus's own rather than the product's.
+///
+/// The three devices in this file are registered in the app's registry because
+/// that is the only way either leg can create one, and they are hidden from the
+/// browser, but the registry is also what the device parameter freeze walks
+/// (test_device_param_schema_juce.cpp). That file is the product's contract
+/// about parameter order for saved automation and links, and a device that
+/// exists only inside a test binary has no business in it: recording them would
+/// freeze test fixtures as product schema, and leaving them out with no marker
+/// fails the freeze on every build.
+const char* const kCorpusDeviceTags[] = {"null-diff-corpus"};
+
 void registerCaptureDevice(magda::daw::audio::InternalPluginRegistry& registry) {
     magda::daw::audio::InternalPluginSpec spec;
     spec.pluginId = kCapturePluginId;
@@ -143,6 +160,8 @@ void registerCaptureDevice(magda::daw::audio::InternalPluginRegistry& registry) 
     spec.canCreateDetached = false;
     spec.canCreateOnTrack = false;
     spec.showInBrowser = false;
+    spec.tags = kCorpusDeviceTags;
+    spec.tagCount = static_cast<int>(std::size(kCorpusDeviceTags));
     spec.matchesPlugin = [](magda::daw::audio::DevicePluginRef plugin) {
         return dynamic_cast<MidiCapturePlugin*>(
                    magda::daw::audio::tracktion_adapter::pluginFromRef(plugin)) != nullptr;
@@ -169,7 +188,7 @@ const juce::Identifier kGainProperty("nulldiffGain");
 /// One parameter, a plain multiply, no smoothing. The value is read once at the
 /// top of the block, which is what an AutomatableParameter is; the engine's twin
 /// reads per sample, and the cases play silence wherever that could differ.
-class GainPlugin final : public te::Plugin {
+class GainPlugin : public te::Plugin {
   public:
     explicit GainPlugin(te::PluginCreationInfo info) : te::Plugin(info) {
         auto* undo = getUndoManager();
@@ -241,6 +260,54 @@ class GainPlugin final : public te::Plugin {
     juce::CachedValue<float> value_;
 };
 
+/// The narrow one (#2139).
+///
+/// One channel in and one out, which is the whole of what it is: the DSP is its
+/// base's, and what a mono case measures is the bus around the device rather
+/// than the device. Inside a rack the width is what the connection matrix reads
+/// off the plugin, so declaring it here is what makes the incumbent narrow at
+/// this point in the chain; the plan reads the same widths off the model.
+///
+/// The gain lands on the first channel alone, which is what a one-channel
+/// plugin can touch whatever width of buffer the graph hands it.
+class MonoGainPlugin final : public GainPlugin {
+  public:
+    explicit MonoGainPlugin(te::PluginCreationInfo info) : GainPlugin(std::move(info)) {}
+
+    static const char* getPluginName() {
+        return "Null Diff Mono Gain";
+    }
+
+    juce::String getName() const override {
+        return getPluginName();
+    }
+    juce::String getPluginType() override {
+        return kMonoGainPluginId;
+    }
+    juce::String getShortName(int) override {
+        return "NDMono";
+    }
+
+    void getChannelNames(juce::StringArray* ins, juce::StringArray* outs) override {
+        if (ins != nullptr)
+            ins->add(TRANS("Mono"));
+        if (outs != nullptr)
+            outs->add(TRANS("Mono"));
+    }
+
+    int getNumOutputChannelsGivenInputs(int) override {
+        return 1;
+    }
+
+    void applyToBuffer(const te::PluginRenderContext& context) override {
+        if (context.destBuffer == nullptr || context.destBuffer->getNumChannels() == 0)
+            return;
+
+        context.destBuffer->applyGain(0, context.bufferStartSample, context.bufferNumSamples,
+                                      gain->getCurrentValue());
+    }
+};
+
 void registerGainDevice(magda::daw::audio::InternalPluginRegistry& registry) {
     magda::daw::audio::InternalPluginSpec spec;
     spec.pluginId = kGainPluginId;
@@ -248,12 +315,22 @@ void registerGainDevice(magda::daw::audio::InternalPluginRegistry& registry) {
     spec.browserCategory = "Utility";
     spec.description = "A gain with one parameter, for the null-diff corpus.";
     spec.createMode = magda::daw::audio::InternalPluginCreateMode::FreshValueTree;
-    spec.canCreateDetached = false;
+    // Detached creation is what a rack needs: RackSyncManager builds its inner
+    // plugins through PluginManager::createPluginOnly, which refuses a spec
+    // that cannot be made off a track (#2139). Nothing else changes with it --
+    // the browser still never shows this device, and the track-level path
+    // still builds its own.
+    spec.canCreateDetached = true;
     spec.canCreateOnTrack = false;
     spec.showInBrowser = false;
+    spec.tags = kCorpusDeviceTags;
+    spec.tagCount = static_cast<int>(std::size(kCorpusDeviceTags));
+    // The narrow one derives from this one, so a bare dynamic_cast would claim
+    // it for this spec and it would be created two channels wide.
     spec.matchesPlugin = [](magda::daw::audio::DevicePluginRef plugin) {
-        return dynamic_cast<GainPlugin*>(
-                   magda::daw::audio::tracktion_adapter::pluginFromRef(plugin)) != nullptr;
+        auto* found = magda::daw::audio::tracktion_adapter::pluginFromRef(plugin);
+        return dynamic_cast<GainPlugin*>(found) != nullptr &&
+               dynamic_cast<MonoGainPlugin*>(found) == nullptr;
     };
     spec.createPlugin = [](const magda::daw::audio::DevicePluginCreationContext& context) {
         return magda::daw::audio::tracktion_adapter::pluginHandle(
@@ -263,7 +340,32 @@ void registerGainDevice(magda::daw::audio::InternalPluginRegistry& registry) {
     registry.registerPlugin(spec);
 }
 
+void registerMonoGainDevice(magda::daw::audio::InternalPluginRegistry& registry) {
+    magda::daw::audio::InternalPluginSpec spec;
+    spec.pluginId = kMonoGainPluginId;
+    spec.displayName = MonoGainPlugin::getPluginName();
+    spec.browserCategory = "Utility";
+    spec.description = "A one-channel gain, for the null-diff corpus.";
+    spec.createMode = magda::daw::audio::InternalPluginCreateMode::FreshValueTree;
+    spec.canCreateDetached = true;
+    spec.canCreateOnTrack = false;
+    spec.showInBrowser = false;
+    spec.tags = kCorpusDeviceTags;
+    spec.tagCount = static_cast<int>(std::size(kCorpusDeviceTags));
+    spec.matchesPlugin = [](magda::daw::audio::DevicePluginRef plugin) {
+        return dynamic_cast<MonoGainPlugin*>(
+                   magda::daw::audio::tracktion_adapter::pluginFromRef(plugin)) != nullptr;
+    };
+    spec.createPlugin = [](const magda::daw::audio::DevicePluginCreationContext& context) {
+        return magda::daw::audio::tracktion_adapter::pluginHandle(
+            new MonoGainPlugin(magda::daw::audio::tracktion_adapter::creationInfo(context)));
+    };
+
+    registry.registerPlugin(spec);
+}
+
 const bool gainDeviceRegistered = magda::daw::audio::registerDevicePack(registerGainDevice);
+const bool monoGainDeviceRegistered = magda::daw::audio::registerDevicePack(registerMonoGainDevice);
 
 /// Where a link's target lives, for the walker that wires modifiers and macros.
 ///
@@ -454,15 +556,75 @@ IncumbentRender renderIncumbent(const Case& value) {
         masterPlugin->setPan(value.master.pan);
     }
 
-    // --- the device with a parameter -----------------------------------------
+    // --- the devices and the racks -------------------------------------------
     //
     // One GainPlugin per model gain device, in chain order, at the head of the
     // track's plugin list so it sits where the plan puts its Device op. The
     // first device the corpus runs under both engines at all (#2123); every
     // other device in the model is still a thing neither leg runs.
+    //
+    // A rack in the same list is one element of it, at the position it holds
+    // there, and it is built by the app's own RackSyncManager (#2139). Not a
+    // second rack builder written for the harness: a rack is a te::RackType, a
+    // RackInstance, a VolumeAndPan per chain and a connection matrix over all
+    // of it, and the whole of that is what a rack case is comparing. Writing
+    // those by hand here would be a corpus agreeing with a second opinion
+    // about what a rack is, which is the thing this file has refused
+    // everywhere else.
+    //
+    // Its PluginManager is built over this render's own Edit rather than taken
+    // from an AudioBridge, because the Edit is this render's: the constructor
+    // is member initialisation and nothing else, and the manager is destroyed
+    // with the render that made it.
+
+    PluginWindowBridge pluginWindows;
+    TransportStateManager transportState;
+    PluginManager pluginManager(*engine, *edit, trackController, pluginWindows, transportState,
+                                TrackManager::getInstance());
+    auto& rackSync = pluginManager.getRackSyncManager();
 
     GainPluginLookup lookup;
     std::map<ChainNodePath, GainPlugin*> gains;
+
+    // Every gain device the case declares, by the path that addresses it. The
+    // host write at the end reads this rather than the track lists, so a device
+    // inside a rack is written the same way one on the track is.
+    std::map<ChainNodePath, const magda::DeviceInfo*> gainDevices;
+
+    // The gains a rack holds, found through the manager that built them.
+    //
+    // Recursive because a nested rack's devices are the enclosing rack's
+    // devices as far as the model's paths are concerned, and the manager keeps
+    // one map of inner plugins for the whole tree. The path is rebuilt on the
+    // way down so that a device is registered under the path a link's target
+    // carries, which is the only thing the modifier walker matches on.
+    std::function<void(const magda::RackInfo&, const ChainNodePath&)> registerRackGains =
+        [&](const magda::RackInfo& rack, const ChainNodePath& rackPath) {
+            for (const auto& chain : rack.chains) {
+                const auto chainPath = rackPath.withChain(chain.id);
+                for (const auto& element : chain.elements) {
+                    if (magda::isRack(element)) {
+                        const auto& nested = magda::getRack(element);
+                        registerRackGains(nested, chainPath.withRack(nested.id));
+                        continue;
+                    }
+
+                    const auto& device = magda::getDevice(element);
+                    if (!isGainDevice(device))
+                        continue;
+
+                    auto* plugin = rackSync.getInnerPlugin(device.id);
+                    auto* gain = dynamic_cast<GainPlugin*>(plugin);
+                    if (gain == nullptr)
+                        continue;
+
+                    const auto path = chainPath.withDevice(device.id);
+                    lookup.add(path, plugin);
+                    gains[path] = gain;
+                    gainDevices[path] = &device;
+                }
+            }
+        };
 
     for (const auto& track : value.tracks) {
         auto* audioTrack = trackController.getAudioTrack(track.id);
@@ -471,15 +633,28 @@ IncumbentRender renderIncumbent(const Case& value) {
 
         auto slot = 0;
         for (const auto& element : track.chain.fxChainElements) {
-            if (!magda::isDevice(element))
+            if (magda::isRack(element)) {
+                const auto& rack = magda::getRack(element);
+
+                auto rackInstance = rackSync.syncRack(track.id, rack);
+                if (rackInstance == nullptr) {
+                    result.failure = "rack " + std::to_string(rack.id) + " could not be built";
+                    ClipManager::getInstance().clearAllClips();
+                    ProjectManager::getInstance().setTempo(previousTempo);
+                    return result;
+                }
+
+                audioTrack->pluginList.insertPlugin(rackInstance, slot++, nullptr);
+                registerRackGains(rack, ChainNodePath::rack(track.id, rack.id));
                 continue;
+            }
 
             const auto& device = magda::getDevice(element);
             if (!isGainDevice(device))
                 continue;
 
             juce::ValueTree state(te::IDs::PLUGIN);
-            state.setProperty(te::IDs::type, kGainPluginId, nullptr);
+            state.setProperty(te::IDs::type, device.pluginId, nullptr);
 
             auto plugin = edit->getPluginCache().createNewPlugin(state);
             auto* gain = dynamic_cast<GainPlugin*>(plugin.get());
@@ -497,8 +672,20 @@ IncumbentRender renderIncumbent(const Case& value) {
             const auto path = ChainNodePath::topLevelDevice(track.id, device.id);
             lookup.add(path, plugin.get());
             gains[path] = gain;
+            gainDevices[path] = &device;
         }
     }
+
+    // The racks come down with the render that built them, before the Edit
+    // does. A RackType outliving its plugins unwinds TE's bookkeeping in the
+    // wrong order, the way the modulation teardown below has to for the same
+    // reason.
+    struct RackUnwind {
+        RackSyncManager& sync;
+        ~RackUnwind() {
+            sync.clear();
+        }
+    } rackUnwind{rackSync};
 
     // Where the modulation this render builds lives, and what unwinds it.
     //
@@ -762,20 +949,14 @@ IncumbentRender renderIncumbent(const Case& value) {
     // because it is what makes these cases pass: the fork's guard is a runtime
     // condition, so a write made before the render starts goes through either
     // call. The corpus was run both ways to find that out.
-    for (const auto& track : value.tracks) {
-        for (const auto& element : track.chain.fxChainElements) {
-            if (!magda::isDevice(element))
-                continue;
+    for (const auto& [path, device] : gainDevices) {
+        const auto found = gains.find(path);
+        if (found == gains.end())
+            continue;
 
-            const auto& device = magda::getDevice(element);
-            const auto found = gains.find(ChainNodePath::topLevelDevice(track.id, device.id));
-            if (found == gains.end())
-                continue;
-
-            const auto* info = device.parameters.empty() ? nullptr : &device.parameters.front();
-            found->second->gain->setParameterFromHost(
-                info == nullptr ? kGainDefault : info->currentValue, juce::dontSendNotification);
-        }
+        const auto* info = device->parameters.empty() ? nullptr : &device->parameters.front();
+        found->second->gain->setParameterFromHost(
+            info == nullptr ? kGainDefault : info->currentValue, juce::dontSendNotification);
     }
 
     // The capture devices, where the plan on the other side has them. Inserted

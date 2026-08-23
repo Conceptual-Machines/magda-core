@@ -179,6 +179,66 @@ TrackInfo gainTrackOn(TrackId trackId, DeviceId deviceId, const char* name, floa
     return track;
 }
 
+// --- racks -------------------------------------------------------------------
+//
+// A rack is the one structure in the chain that is not a list: parallel chains
+// over one input, each with its own fader and its own switches, summed at a
+// rack output that has a second fader with a different law behind it. Every
+// piece of that is built here out of the same gain device the parameter cases
+// run, so what a rack case measures is the topology rather than a new device.
+
+/// A rack chain holding gain devices in the order and at the values given.
+ChainInfo gainChain(ChainId id, const char* name,
+                    const std::vector<std::pair<DeviceId, float>>& gains) {
+    ChainInfo chain;
+    chain.id = id;
+    chain.name = name;
+    for (const auto& [deviceId, base] : gains)
+        chain.elements.emplace_back(gainDevice(deviceId, base));
+    return chain;
+}
+
+/// One gain device in a chain of its own, which is the common shape.
+ChainInfo gainChain(ChainId id, const char* name, DeviceId deviceId, float base) {
+    return gainChain(id, name, {{deviceId, base}});
+}
+
+/// A rack over the chains given, at unity and centred.
+RackInfo rackOf(RackId id, const char* name, std::vector<ChainInfo> chains) {
+    RackInfo rack;
+    rack.id = id;
+    rack.name = name;
+    rack.chains = std::move(chains);
+    return rack;
+}
+
+/// The instrument stand-in, as a chain element.
+///
+/// The same device `instrumentTrackOn` puts on a track: an instrument as far as
+/// the compiler is concerned, replaced in both legs by something that records
+/// what arrives rather than making a sound.
+DeviceInfo chainInstrument(DeviceId id) {
+    DeviceInfo device;
+    device.id = id;
+    device.name = "Capture";
+    device.deviceType = DeviceType::Instrument;
+    device.isInstrument = true;
+    device.canReceiveMidi = true;
+    device.format = PluginFormat::Internal;
+    return device;
+}
+
+/// A track whose FX chain is that one rack.
+TrackInfo rackTrack(TrackId trackId, const char* name, RackInfo rack) {
+    TrackInfo track;
+    track.id = trackId;
+    track.type = TrackType::Audio;
+    track.name = name;
+    track.audioOutputDevice = "master";
+    track.chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+    return track;
+}
+
 /// Where a link or a lane addresses that device's one parameter.
 ControlTarget gainTarget(TrackId trackId, DeviceId deviceId) {
     return ControlTarget::pluginParam(ChainNodePath::topLevelDevice(trackId, deviceId),
@@ -437,6 +497,19 @@ Case newMixCase(const char* name, const char* covers, std::vector<TrackInfo> tra
 /// reason the mixer cases are -- what these assert repeats every beat, and the
 /// invariance gate renders each case four more times.
 Case newParamCase(const char* name, const char* covers, TrackInfo track) {
+    std::vector<TrackInfo> tracks;
+    tracks.push_back(std::move(track));
+    auto value = newTrackCase(name, covers, std::move(tracks));
+    value.endBeat = 8.0;
+    return value;
+}
+
+/// A `rack.*` case: one track carrying one rack, two bars.
+///
+/// Two bars for the reason the mixer and parameter cases are: what a rack case
+/// asserts is a constant, and the invariance gate renders every case four more
+/// times (#2078).
+Case newRackCase(const char* name, const char* covers, TrackInfo track) {
     std::vector<TrackInfo> tracks;
     tracks.push_back(std::move(track));
     auto value = newTrackCase(name, covers, std::move(tracks));
@@ -1176,6 +1249,336 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         const auto source = writeSource(scratchDirectory, "macrodevice", impulses(0.5));
         value.sources.push_back(source);
         value.clips.push_back(audioClip(287, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    // --- racks -----------------------------------------------------------------
+    //
+    // The rack graph, through the oracle (#2139, slice 5 of #1892). Slices one
+    // to four put aux outputs, delta solo, nesting and channel counts into the
+    // compiler and pinned each against the plan goldens; goldens compare
+    // structure, and nothing had yet compared the sound.
+    //
+    // Every one of these is arithmetic over impulses, so the ordinary floor
+    // applies and a law that differs in the fourth decimal shows up. What makes
+    // them worth rendering rather than dumping is that a rack is where the two
+    // engines are built least alike: the incumbent wires a te::RackType, one
+    // VolumeAndPan per chain and a connection matrix, and the plan compiles a
+    // fader per chain, a mix and a fader over it. Two structures that agree op
+    // for op could still disagree about a value, and two that disagree about
+    // structure can still render the same samples. Only the render says which.
+    //
+    // The incumbent leg builds these through the app's own RackSyncManager
+    // rather than through a rack builder written for the harness, for the
+    // reason the mixer cases go through TrackController: the sync layer is part
+    // of what is being validated.
+    //
+    // **The chains of a rack all read the same input.** That is what a rack is,
+    // and it is why these cases cannot use the mixer's trick of giving every
+    // track different material: two chains are fed the same samples by
+    // construction. So the asymmetry is put in the chains themselves -- a
+    // different number of devices, a different value, a different pan -- and
+    // every case below is built so that swapping what its chains hold changes
+    // what comes out. A case whose chains are interchangeable asserts the sum
+    // and nothing about which chain did what.
+
+    {
+        // Two chains summing at the rack output, and serial order inside one of
+        // them. The second chain holds two devices rather than one so that the
+        // two are not interchangeable: 0.5 against 0.5 * 0.25 is 0.625 out of
+        // unity, and no swap of values between the chains reproduces it.
+        auto value =
+            newRackCase("rack.parallel", "parallel chains summed at the rack output",
+                        rackTrack(kTrack, "Parallel",
+                                  rackOf(700, "Parallel",
+                                         {gainChain(1, "One", 940, 0.5f),
+                                          gainChain(2, "Two", {{941, 0.5f}, {942, 0.25f}})})));
+
+        const auto source = writeSource(scratchDirectory, "rackparallel", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(300, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The chain fader's two halves, which are the track fader's laws and
+        // not the rack's: the volume is decibels through the fader curve, and
+        // the pan is the linear law that boosts the near side rather than
+        // attenuating the far one.
+        //
+        // One chain carries the volume and the other the pan, so the case reads
+        // both at once and neither can stand in for the other: a leg applying
+        // the pan law to the volume chain would move a channel that should not
+        // have moved.
+        auto rack = rackOf(701, "Chain Fader",
+                           {gainChain(1, "Down", 943, 1.0f), gainChain(2, "Left", 944, 0.5f)});
+        rack.chains[0].volume = -6.0f;
+        rack.chains[1].pan = -1.0f;
+
+        auto value =
+            newRackCase("rack.chain.fader", "the chain fader: decibels, and the linear pan law",
+                        rackTrack(kTrack, "Chain Fader", std::move(rack)));
+
+        const auto source = writeSource(scratchDirectory, "rackchainfader", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(301, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The rack's own fader, which is the other law: it is the rack
+        // instance's output levels rather than a fader, so the pan attenuates
+        // the far side instead of boosting the near one and the volume is
+        // decibels straight rather than through the fader curve. A leg that
+        // reused the chain law here would put the case's left channel 6 dB out.
+        //
+        // One chain, because what this measures is the fader over the mix and a
+        // second chain would only change what reaches it.
+        auto rack = rackOf(702, "Rack Fader", {gainChain(1, "One", 945, 0.5f)});
+        rack.volume = -6.0f;
+        rack.pan = 0.5f;
+
+        auto value = newRackCase("rack.fader", "the rack fader: decibels, and the far-side pan law",
+                                 rackTrack(kTrack, "Rack Fader", std::move(rack)));
+
+        const auto source = writeSource(scratchDirectory, "rackfader", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(302, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A muted chain contributes nothing, and its sibling still does. The
+        // two hold different values so that the case can tell which one
+        // survived: a leg that muted the wrong chain would render 0.25 where
+        // this expects 0.75.
+        auto rack = rackOf(703, "Chain Mute",
+                           {gainChain(1, "Heard", 946, 0.75f), gainChain(2, "Muted", 947, 0.25f)});
+        rack.chains[1].muted = true;
+
+        auto value = newRackCase("rack.chain.mute", "a muted chain contributes nothing",
+                                 rackTrack(kTrack, "Chain Mute", std::move(rack)));
+
+        const auto source = writeSource(scratchDirectory, "rackchainmute", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(303, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // Mute against a sibling's solo, which is the pair rather than either
+        // one: a soloed chain takes its siblings out of the mix, and a chain
+        // that is muted as well as unsoloed is out for two reasons at once. The
+        // third chain is what makes the answer a value rather than a flag --
+        // solo has to silence a plain sibling as well as a muted one, and a
+        // case with only the muted one could not tell the two rules apart.
+        auto rack = rackOf(704, "Chain Solo",
+                           {gainChain(1, "Solo", 948, 0.75f), gainChain(2, "Muted", 949, 0.5f),
+                            gainChain(3, "Other", 950, 0.25f)});
+        rack.chains[0].solo = true;
+        rack.chains[1].muted = true;
+
+        auto value =
+            newRackCase("rack.chain.solo", "a soloed chain against a muted and a plain one",
+                        rackTrack(kTrack, "Chain Solo", std::move(rack)));
+
+        const auto source = writeSource(scratchDirectory, "rackchainsolo", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(304, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // Delta solo at device scope: what the device added, which for a gain
+        // of 0.25 is the input at -0.75 of itself. Inverted rather than merely
+        // quieter, so a leg that took the difference the other way round is a
+        // sign flip rather than a level and the case says so at full scale.
+        //
+        // The sibling chain is at unity and carries no delta, so the rack's
+        // output is the sum of a difference and a passthrough. That is the
+        // arrangement the button is used in: delta on one device of one chain,
+        // with the rest of the rack still playing.
+        auto rack = rackOf(705, "Device Delta",
+                           {gainChain(1, "Delta", 951, 0.25f), gainChain(2, "Plain", 952, 1.0f)});
+        magda::getDevice(rack.chains[0].elements.front()).deltaSolo = true;
+
+        auto value =
+            newRackCase("rack.deltasolo.device", "delta solo on a device inside a rack chain",
+                        rackTrack(kTrack, "Device Delta", std::move(rack)));
+
+        const auto source = writeSource(scratchDirectory, "rackdeltadevice", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(305, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // Delta solo at rack scope, which subtracts the rack's own input from
+        // its output rather than one device's. Two chains, so that what is
+        // subtracted is the sum of both and not either alone: their total is
+        // 0.75, so the rack renders the input at -0.25 of itself, and a leg
+        // that took the difference against one chain would render silence or
+        // twice as much.
+        auto rack = rackOf(706, "Rack Delta",
+                           {gainChain(1, "One", 953, 0.5f), gainChain(2, "Two", 954, 0.25f)});
+        rack.deltaSolo = true;
+
+        auto value = newRackCase("rack.deltasolo.rack", "delta solo at rack scope",
+                                 rackTrack(kTrack, "Rack Delta", std::move(rack)));
+
+        const auto source = writeSource(scratchDirectory, "rackdeltarack", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(306, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A rack inside a chain of another rack, which is the case the op-key
+        // identity slice was written for (#2137): the inner rack's chains and
+        // devices are addressed through the path they sit at, and two racks
+        // holding a device with the same number are two different devices.
+        //
+        // The inner rack sits behind a device in the outer chain rather than
+        // alone in it, so the case also asserts the order of the two: 0.5 into
+        // an inner rack summing 0.5 and 0.25 is 0.375, and a leg that ran the
+        // rack first would render the same number, which is why the outer
+        // chain's sibling is here. It carries a value neither product can be
+        // confused with.
+        auto inner =
+            rackOf(708, "Inner", {gainChain(1, "One", 957, 0.5f), gainChain(2, "Two", 958, 0.25f)});
+
+        ChainInfo outerChain;
+        outerChain.id = 1;
+        outerChain.name = "Nesting";
+        outerChain.elements.emplace_back(gainDevice(955, 0.5f));
+        outerChain.elements.push_back(makeRackElement(std::move(inner)));
+
+        std::vector<ChainInfo> outerChains;
+        outerChains.push_back(std::move(outerChain));
+        outerChains.push_back(gainChain(2, "Sibling", 956, 0.125f));
+
+        auto value =
+            newRackCase("rack.nested", "a rack inside a chain of another rack",
+                        rackTrack(kTrack, "Nested", rackOf(707, "Outer", std::move(outerChains))));
+
+        const auto source = writeSource(scratchDirectory, "racknested", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(307, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A chain routed to an aux output of the rack, which reaches nothing in
+        // either engine: RackSyncManager wires it to output pins three and up
+        // and the rack instance on the track reads pins one and two, so there
+        // is no other end to it. The plan compiles nothing for such a chain and
+        // says so in a diagnostic.
+        //
+        // Written as a case because "both engines drop it" is a claim about the
+        // engines and not about the model, and the day one of them starts
+        // carrying an aux output is the day this has to be looked at rather
+        // than the day a project quietly changes. The audible chain is what
+        // makes the assertion a comparison instead of two silences agreeing.
+        auto rack =
+            rackOf(709, "Aux", {gainChain(1, "Main", 959, 0.5f), gainChain(2, "Aux", 960, 1.0f)});
+        rack.chains[1].outputIndex = 1;
+
+        auto value = newRackCase("rack.aux", "a chain routed to an aux output reaches nothing",
+                                 rackTrack(kTrack, "Aux", std::move(rack)));
+
+        // Named rather than suppressed: the plan is right to say so, and a case
+        // that stopped getting this diagnostic would be measuring a compiler
+        // that had started carrying the aux output without anybody deciding to.
+        value.expectedDiagnostics.push_back("rack 709 chain 2: aux output 1 reaches nothing");
+
+        const auto source = writeSource(scratchDirectory, "rackaux", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(308, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A mono device between stereo ones. What it measures is the bus rather
+        // than the device: the chain arrives stereo, narrows to one channel at
+        // the middle device, and widens again behind it, and both engines have
+        // to narrow and widen at the same points and in the same direction.
+        //
+        // The direction is the half a symmetric signal cannot ask about, which
+        // is why this is the one case in the corpus that plays noise on purpose:
+        // every other generator writes the same samples to both channels, and a
+        // fold of two identical channels is the identity whichever way it is
+        // done. With the two sides different, a device that read the right
+        // channel instead of the left, or summed the two instead of taking one,
+        // renders something this case can see.
+        //
+        // Behind it the chain is stereo again, and it has to be the same on both
+        // sides: a mono port's channel is copied to both, so the stereo device
+        // after it reads the narrow device's output twice rather than the
+        // original right channel once.
+        auto value = newRackCase(
+            "rack.mono", "a mono device between stereo ones",
+            rackTrack(
+                kTrack, "Mono",
+                rackOf(710, "Mono",
+                       {gainChain(1, "Narrowing", {{961, 0.5f}, {962, 0.5f}, {963, 0.5f}})})));
+
+        magda::getRack(value.tracks.front().chain.fxChainElements.front())
+            .chains.front()
+            .elements[1] = monoGainDevice(962, 0.5f);
+
+        auto material = noise();
+        material.seed = 0x9E3779B9u;
+        value.seed = material.seed;
+
+        const auto source = writeSource(scratchDirectory, "rackmono", material);
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(309, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // An instrument behind an audio source in the same chain. What it
+        // measures is one rule: an instrument's output is added to the bus it
+        // was handed rather than replacing it, so the audio already travelling
+        // the chain survives it.
+        //
+        // The instrument makes no sound in either leg -- it is the stand-in the
+        // MIDI cases use, and the incumbent instantiates nothing for it -- so
+        // what comes out is the gain in front of it and nothing else. That is
+        // exactly what makes the case sharp: a leg that let the instrument
+        // replace the bus would render silence, and half of full scale against
+        // silence is not a difference anybody has to measure carefully.
+        //
+        // The instrument is second so that the audio reaches it. First would
+        // ask a different and weaker question, because there would be nothing
+        // travelling the chain yet for it to be added to.
+        ChainInfo chain;
+        chain.id = 1;
+        chain.name = "Source then instrument";
+        chain.elements.emplace_back(gainDevice(964, 0.5f));
+        chain.elements.emplace_back(chainInstrument(965));
+
+        std::vector<ChainInfo> chains;
+        chains.push_back(std::move(chain));
+
+        auto value = newRackCase(
+            "rack.instrument", "an instrument behind an audio source in one chain",
+            rackTrack(kTrack, "Instrument", rackOf(711, "Instrument", std::move(chains))));
+
+        const auto source = writeSource(scratchDirectory, "rackinstrument", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(310, 0.0, 4.0, source));
 
         corpus.push_back(std::move(value));
     }

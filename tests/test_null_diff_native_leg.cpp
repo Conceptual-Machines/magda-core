@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <set>
@@ -47,12 +48,28 @@ TEST_CASE("Every case renders through the native engine", "[nulldiff][native]") 
 
         CHECK(rendered.failure.empty());
 
-        // Nothing the engine could not do. A snapshot that dropped a clip and a
-        // render that matched it are two bugs rather than none, so a diagnostic
-        // fails here whatever the audio did.
-        for (const auto& diagnostic : rendered.diagnostics)
+        // Nothing the engine could not do, beyond what the case declared it
+        // expects. A snapshot that dropped a clip and a render that matched it
+        // are two bugs rather than none, so a diagnostic fails here whatever the
+        // audio did; a case that is about a model the compiler is right to
+        // refuse names that refusal on itself (NullDiffCase.hpp), and each one
+        // it names has to have been reported.
+        auto diagnostics = rendered.diagnostics;
+        for (const auto& expected : value.expectedDiagnostics) {
+            const auto found = std::find_if(diagnostics.begin(), diagnostics.end(),
+                                            [&](const std::string& reported) {
+                                                return reported.find(expected) != std::string::npos;
+                                            });
+
+            INFO("expected diagnostic: " << expected);
+            CHECK(found != diagnostics.end());
+            if (found != diagnostics.end())
+                diagnostics.erase(found);
+        }
+
+        for (const auto& diagnostic : diagnostics)
             INFO(diagnostic);
-        CHECK(rendered.diagnostics.empty());
+        CHECK(diagnostics.empty());
 
         CHECK(rendered.starvedVoices == 0);
         CHECK(rendered.droppedMidiEvents == 0);

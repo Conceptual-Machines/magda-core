@@ -40,6 +40,19 @@ namespace magda::nulldiff {
 /// leg, hidden from the browser, and only ever inside a test binary.
 inline constexpr const char* kGainPluginId = "nulldiffgain";
 
+/// The same device, one channel wide (#2139).
+///
+/// A separate registration rather than a flag on the one above, because what
+/// makes a device mono is what its plugin reports when the graph asks how many
+/// channels it has, and that is a property of the type in both engines: the
+/// rack matrix reads it off the plugin at build time, and the plan reads it off
+/// the model. Two ids keep the two answers to one question.
+///
+/// The DSP is identical, which is the point: what a mono case measures is the
+/// bus narrowing and widening around the device, and a device that also sounded
+/// different would put a second variable in it.
+inline constexpr const char* kMonoGainPluginId = "nulldiffmonogain";
+
 /// The one parameter it has. Index zero, because a device reads its own
 /// parameters by the index it declared them at.
 inline constexpr int kGainParamIndex = 0;
@@ -87,9 +100,33 @@ inline magda::DeviceInfo gainDevice(magda::DeviceId id, float value = kGainDefau
     return device;
 }
 
-/// Whether @p device is one of these, asked the way both legs ask it.
+/**
+ * @brief The same device at one channel in and one channel out.
+ *
+ * The widths are on the model because that is where the plan reads them
+ * (PlanCompiler clamps `audioInputChannels` and `audioOutputChannels` to the
+ * bus), and the incumbent reads its own from the plugin. Both have to say the
+ * same thing or the case is measuring the disagreement between the two
+ * declarations rather than what the engines do with a narrow device.
+ */
+inline magda::DeviceInfo monoGainDevice(magda::DeviceId id, float value = kGainDefault) {
+    auto device = gainDevice(id, value);
+    device.name = "Null Diff Mono Gain";
+    device.pluginId = kMonoGainPluginId;
+    device.audioInputChannels = 1;
+    device.audioOutputChannels = 1;
+    return device;
+}
+
+/// Whether @p device is one of these, asked the way both legs ask it. Either
+/// width: they run the same gain, and what differs is the bus around it.
 inline bool isGainDevice(const magda::DeviceInfo& device) {
-    return device.pluginId == kGainPluginId;
+    return device.pluginId == kGainPluginId || device.pluginId == kMonoGainPluginId;
+}
+
+/// Whether it is the narrow one.
+inline bool isMonoGainDevice(const magda::DeviceInfo& device) {
+    return device.pluginId == kMonoGainPluginId;
 }
 
 }  // namespace magda::nulldiff
