@@ -47,19 +47,24 @@ DeviceProperties propertiesForRequiredDevice(const std::unique_ptr<MagdaDevice>&
 /// **Never move-assign a juce::MidiMessage that is already alive.** JUCE's move
 /// assignment overwrites the destination's pointer without freeing what it
 /// held, while the destructor frees on size alone, so moving into a live
-/// message that happened to be heap-allocated leaks its buffer. Copy assignment
-/// is the safe one: it reallocs what the destination holds, or frees it. Move
-/// *construction* is safe too, because there is no destination to leak, which
-/// is why decoding is push_back.
+/// message that happened to be heap-allocated leaks its buffer. Move
+/// *construction* is safe, because there is no destination to leak, which is
+/// why decoding is push_back.
+///
+/// std::swap is safe as well, and it is what everything that rearranges these
+/// uses. Its first move empties the source, so neither assignment after it has
+/// a live buffer to drop, and what it costs is two pointers rather than a
+/// realloc: copy assignment is also safe and reallocs whatever the destination
+/// holds, which on the audio thread is a heap operation nobody asked for.
 ///
 /// That rules out two things this would otherwise be written with.
 /// std::vector::erase shifts its tail down by move assignment, and every
 /// destination in that shift is live; std::stable_sort moves elements through a
 /// temporary and back, and whether a destination has been moved-from first is
-/// its implementation's business rather than a guarantee. So removal shifts by
-/// copy and sorting permutes an index list. Both are spelled out below rather
-/// than left to an algorithm, because what is wrong with the algorithm is
-/// invisible at the call site.
+/// its implementation's business rather than a guarantee. So removal walks the
+/// entry to the back by swapping and pops it, and sorting permutes an index
+/// list. Both are spelled out below rather than left to an algorithm, because
+/// what is wrong with the algorithm is invisible at the call site.
 ///
 /// A long message costs an allocation on the audio thread whichever way this is
 /// written, and that is the SDK boundary rather than this adapter: message()
@@ -101,19 +106,26 @@ class EngineMidiBufferView final : public DeviceMidiBuffer {
     }
 
     void setEvent(int index, DeviceMidiEvent event) override {
-        // Copied, not moved: the destination is live. See the class comment.
-        events_[static_cast<std::size_t>(index)] = event;
+        // Swapped rather than assigned. Copy assignment is safe where move
+        // assignment is not, but it reallocs the destination for a message that
+        // is on the heap, and the caller's parameter has already paid for a
+        // copy: swapping hands that buffer over and leaves the old one in a
+        // local that frees it. No heap operation of its own.
+        std::swap(events_[static_cast<std::size_t>(index)], event);
     }
 
     void removeEvent(int index) override {
         if (index < 0 || static_cast<std::size_t>(index) >= events_.size())
             return;
 
+        // Walked to the back by swapping, which exchanges pointers and touches
+        // no heap. A copy shift would realloc every entry it passed, and it was
+        // only there because vector::erase moves.
         for (std::size_t at = static_cast<std::size_t>(index); at + 1 < events_.size(); ++at)
-            events_[at] = events_[at + 1];
+            std::swap(events_[at], events_[at + 1]);
 
-        // Destroyed rather than left behind, so what the last entry held is
-        // freed by the destructor that owns it.
+        // The removed message is at the back now, and pop_back destroys it: the
+        // one free a removal owes.
         events_.pop_back();
     }
 
