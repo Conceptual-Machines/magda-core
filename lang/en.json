@@ -501,7 +501,7 @@
     "mcp.status_off": "Not listening",
     "mcp.field_caption": "{0} host configuration",
     "mcp.hint": "Paste this into your {0} host's config. It stays correct across restarts: the helper it names finds {1}'s current port and token each time, so neither has to be written down.",
-    "mcp.bridge_missing": "{1} could not find magda-mcp. Reinstalling {1} puts it back; otherwise replace the path below with wherever you have it. It finds {1} on its own, so it works from anywhere.",
+    "mcp.bridge_missing": "{1} could not find {0}. Reinstalling {1} puts it back; otherwise replace the path below with wherever you have it. It finds {1} on its own, so it works from anywhere.",
     "ws.blurb": "Lets a script, a control surface, or any other program drive this session over a {0}, and pushes changes back as they happen. It listens on this machine only, on its own port and with its own token.",
     "ws.enable": "Enable the {0} {1}",
     "ws.status_listening": "Listening on port {0}",

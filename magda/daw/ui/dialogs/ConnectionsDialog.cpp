@@ -563,8 +563,10 @@ class McpPage : public TransportPage {
         // Named as it will be typed, JSON-escaped so a Windows path's
         // backslashes survive being pasted.
         auto* server = new juce::DynamicObject();
-        server->setProperty("command", haveBridge ? bridge.getFullPathName()
-                                                  : juce::String("/path/to/magda-mcp"));
+        server->setProperty(
+            "command",
+            haveBridge ? bridge.getFullPathName()
+                       : "/path/to/" + magda::technicalText(magda::TechnicalTextToken::MagdaMcp));
         auto* servers = new juce::DynamicObject();
         servers->setProperty("magda", juce::var(server));
         auto* root = new juce::DynamicObject();
@@ -577,6 +579,7 @@ class McpPage : public TransportPage {
             snippet =
                 commentBlock(
                     key("bridge_missing")
+                        .replace("{0}", magda::technicalText(magda::TechnicalTextToken::MagdaMcp))
                         .replace("{1}", magda::technicalText(magda::TechnicalTextToken::Magda))) +
                 snippet;
         }
