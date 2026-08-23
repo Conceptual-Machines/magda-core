@@ -1937,8 +1937,13 @@ class PathsPage : public juce::Component {
         juce::AlertWindow::showAsync(
             juce::MessageBoxOptions()
                 .withIconType(juce::MessageBoxIconType::QuestionIcon)
-                .withTitle(tr(titleKey))
-                .withMessage(tr(messageKey).replace("{0}", oldPath).replace("{1}", newPath))
+                .withTitle(tr(titleKey).replace(
+                    "{0}", magda::technicalText(magda::TechnicalTextToken::Magda)))
+                .withMessage(
+                    tr(messageKey)
+                        .replace("{0}", oldPath)
+                        .replace("{1}", newPath)
+                        .replace("{2}", magda::technicalText(magda::TechnicalTextToken::Magda)))
                 .withButton(tr("preferences.paths.migration.button.copy"))
                 .withButton(tr("preferences.paths.migration.button.dont_copy"))
                 .withButton(tr("preferences.paths.migration.button.cancel")),
