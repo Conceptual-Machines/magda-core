@@ -50,6 +50,12 @@ DeviceProperties propertiesForRequiredDevice(const std::unique_ptr<MagdaDevice>&
 /// callback that missed its deadline. The engine treats the same violation the
 /// same way -- assert where it is written, count it where it costs something.
 ///
+/// This bound is a count of events and it is only half the rule. The port's
+/// budget is bytes, and the two part company on SysEx: a handful of dumps sit
+/// well inside any event count while being multiples of kMaxMidiBytesPerPort.
+/// The count is what keeps this vector from reallocating; the byte budget is
+/// enforced where it is actually spent, writing back onto the port.
+///
 /// One allocation this cannot rule out is a SysEx message, which juce::
 /// MidiMessage keeps on the heap and copies by allocating. That is the SDK's
 /// container rather than this adapter, and te::MidiMessageArray holds the same
@@ -280,7 +286,24 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
     // What the device left in the scratch, back onto the port. An event outside
     // the block lands on the nearest sample it has rather than being dropped: a
     // device that placed a note one sample past the end meant the note.
+    //
+    // Counted in bytes, because that is what the port's budget is and what the
+    // executor sized its storage from. The scratch's own guard is a count of
+    // events, which is the right bound for a vector and the wrong one for this:
+    // a device emitting SysEx stays far inside that count while going far past
+    // kMaxMidiBytesPerPort, and every byte over it grows a juce::MidiBuffer the
+    // executor reserved once and a delay line downstream sized to match.
+    int bytesWritten = 0;
+
     for (const auto& event : midiScratch_) {
+        const auto cost = kMidiEventOverheadBytes + event.message.getRawDataSize();
+        if (bytesWritten + cost > magda::engine::kMaxMidiBytesPerPort) {
+            jassertfalse;  // a device past the port's budget; see the view's comment
+            break;
+        }
+
+        bytesWritten += cost;
+
         const auto sample =
             static_cast<int>(std::llround(event.message.getTimeStamp() * sampleRate_));
         block.midiOut->addEvent(event.message, std::clamp(sample, 0, std::max(0, numSamples - 1)));

@@ -92,6 +92,49 @@ class CountingDevice final : public magda::daw::audio::MagdaDevice {
     int received = 0;
 };
 
+/// Emits whatever it was told to, however big.
+///
+/// A device is where the port's budget is spent, and SysEx is where spending it
+/// stops looking like spending events: a dump is one event and hundreds of
+/// bytes, so a device can sit far inside any event count while going far past
+/// the byte budget the executor sized the port from.
+class EmittingDevice final : public magda::daw::audio::MagdaDevice {
+  public:
+    EmittingDevice(int count, int dataBytes) : count_(count), payload_(dataBytes, 0x7f) {}
+
+    magda::daw::audio::DeviceProperties properties() const override {
+        magda::daw::audio::DeviceProperties properties;
+        properties.pluginId = "emitting";
+        properties.name = "Emitting";
+        properties.takesMidiInput = true;
+        return properties;
+    }
+
+    void process(magda::daw::audio::DeviceProcessContext& context) override {
+        if (context.midi == nullptr)
+            return;
+
+        context.midi->clear();
+        for (int event = 0; event < count_; ++event)
+            context.midi->addEvent({juce::MidiMessage::createSysExMessage(
+                                        payload_.data(), static_cast<int>(payload_.size())),
+                                    0});
+    }
+
+  private:
+    int count_;
+    std::vector<std::uint8_t> payload_;
+};
+
+/// What @p buffer costs against the port's budget, by the engine's own model:
+/// six bytes an event plus the event's own length.
+int budgetCostOf(const juce::MidiBuffer& buffer) {
+    int bytes = 0;
+    for (const auto metadata : buffer)
+        bytes += (magda::engine::kMidiShortMessageBytes - 3) + metadata.numBytes;
+    return bytes;
+}
+
 }  // namespace
 
 TEST_CASE("the engine can run every device that has moved to the SDK", "[engine][devices][2174]") {
@@ -264,4 +307,35 @@ TEST_CASE("the MIDI scratch holds every stream the port's budget admits",
     hosted.process(deviceBlock);
 
     CHECK(device->received == kWorstCaseEvents);
+}
+
+TEST_CASE("a device writing past the port's byte budget is cut off at the bytes",
+          "[engine][devices][2174]") {
+    // Sixty-six raw bytes an event, so seventy-two against the budget: fifty-six
+    // fit and the fifty-seventh does not. Nothing near the event cap the scratch
+    // is sized by, which is the point -- a guard counting events would let every
+    // one of these through and hand the port ten times what it reserved for.
+    constexpr int kPayloadBytes = 64;
+    constexpr int kEmitted = 200;
+
+    auto emitting = std::make_unique<EmittingDevice>(kEmitted, kPayloadBytes);
+    adapter::EngineMagdaDevice hosted(std::move(emitting), /*offlineRender=*/false);
+
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    Block block(context);
+    juce::MidiBuffer out;
+
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiOut = &out;
+    hosted.process(deviceBlock);
+
+    // Every event that landed is whole, and what landed fits the budget.
+    CHECK(budgetCostOf(out) <= magda::engine::kMaxMidiBytesPerPort);
+
+    // And it really was the bytes that stopped it, not the event cap: fewer
+    // events arrived than were emitted, and far fewer than the cap allows.
+    CHECK(out.getNumEvents() < kEmitted);
+    CHECK(out.getNumEvents() > 0);
 }
