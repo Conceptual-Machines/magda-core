@@ -17,10 +17,9 @@ void collectModulationTaps(const std::vector<magda::ChainElement>& elements,
         } else if (magda::isRack(element)) {
             const auto& rack = magda::getRack(element);
 
-            // A rack instance that contains itself is not compiled and its
-            // parameters are not carried, so there is no modifier under the
-            // loop to hear anything. A tap collected for one would be an
-            // ordering edge to a track nothing reads.
+            // Nothing under an instance that contains itself is compiled or
+            // carried, so a tap collected for one is an ordering edge to a
+            // track nothing reads.
             if (nesting.encloses(rack.id))
                 continue;
 

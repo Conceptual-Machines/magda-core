@@ -53,9 +53,8 @@ bool chainIsActive(const ChainInfo& chain) {
 
 /// Whether anything the compiler will actually emit consumes MIDI. Walks only
 /// the live elements, so a bypassed instrument does not keep the track's MIDI
-/// source ops in the plan with nothing to read them. A rack instance that
-/// contains itself is not one of them either: emitRack passes the signal
-/// through it, so nothing under it is there to read MIDI.
+/// source ops in the plan with nothing to read them, and neither does anything
+/// under a rack instance emitRack will pass the signal through.
 bool elementsConsumeMidi(const std::vector<ChainElement>& elements, RackNesting& nesting) {
     return std::ranges::any_of(elements, [&](const ChainElement& element) {
         if (isDevice(element)) {
@@ -80,10 +79,9 @@ bool elementsConsumeMidi(const std::vector<ChainElement>& elements, RackNesting&
 /// is what puts the trigger tap after it rather than in front of it. The fork
 /// asks the same question of the same subtree (rackContainsInstrumentSource).
 ///
-/// Only what will be emitted counts, which is the same list emission works
-/// from: a bypassed nested rack is transparent and a rack instance that
-/// contains itself is passed through, and neither makes a sound for the tap to
-/// sit behind.
+/// Only what will be emitted counts: a bypassed nested rack and one that
+/// contains itself are both passed through, and neither makes a sound for the
+/// tap to sit behind.
 bool rackHasInstrument(const RackInfo& rack, RackNesting& nesting) {
     if (nesting.encloses(rack.id))
         return false;
@@ -133,10 +131,9 @@ void collectSidechainSources(const std::vector<ChainElement>& elements,
                 collect(device.sidechain);
         } else if (isRack(element)) {
             const auto& rack = getRack(element);
-            // A rack instance that contains itself is passed through, so the
-            // sidechains under it are not connections either. Counting them
-            // would order this track behind a source it never reads, and the
-            // cycle breaker pays for that ordering with a real connection.
+            // An instance that is passed through connects no sidechain, and
+            // counting one orders this track behind a source it never reads -
+            // which the cycle breaker pays for with a real connection.
             if (rack.bypassed || nesting.encloses(rack.id))
                 continue;
 
@@ -296,10 +293,9 @@ class Compiler {
      */
     std::map<TrackId, PortRef> trackTriggerTap_;
 
-    /// The rack instances open around the point emission has reached. What
-    /// makes a rack that contains itself refusable at all: the model is a tree
-    /// of owned values, so the loop is not in the pointers, it is in the ids,
-    /// and an id is only a repeat relative to the instances it is inside.
+    /// The rack instances open around the point emission has reached. The model
+    /// is a tree of owned values, so the loop is in the ids rather than the
+    /// pointers, and an id is only a repeat relative to what it sits inside.
     RackNesting nesting_;
 
     /// The track whose trigger tap is still being looked for, and whether the
@@ -753,20 +749,10 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     if (rack.bypassed)
         return signal;
 
-    // A rack instance that contains itself, directly or through the instances
-    // between it and the repeat, is refused here rather than compiled to some
-    // depth. Compiling it would emit every op under the loop a second time
-    // under the key it already has, and the differ hash-joins on that key: a
-    // duplicate does not fail, it carries one op's runtime state into another.
-    // A depth limit would trade that for a plan that renders an arbitrary
-    // number of turns through a loop the project does not mean, which is a
-    // modelling error turned into a rendering one.
-    //
-    // The instance is passed through, the way a bypassed one is, so the rest of
-    // the chain still reaches the fader. Everything the compiler asks before
-    // emitting refuses the same instance (elementsConsumeMidi, rackHasInstrument
-    // and collectSidechainSources all carry the same nesting), so no dependency
-    // is discovered inside a loop that is not compiled.
+    // Refused rather than compiled to some depth (RackNesting.hpp), and passed
+    // through the way a bypassed one is, so the rest of the chain still reaches
+    // the fader. Every walk in front of emission carries the same nesting, so
+    // nothing inside a loop that is not compiled becomes a dependency.
     if (nesting_.encloses(rack.id)) {
         diagnose(nesting_.cycle(rack.id) + ", it is not compiled and the chain passes through it");
         return signal;

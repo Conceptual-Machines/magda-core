@@ -292,11 +292,9 @@ class Builder {
 
     ParamTable table_;
 
-    /// The rack instances open around the point the walk has reached. A rack
-    /// that contains itself is refused here for the same reason the plan
-    /// compiler refuses it, one layer up: a rack's macros and modifiers are
-    /// addressed by the rack's id, so the second instance claims every address
-    /// the first one has.
+    /// The rack instances open around the point the walk has reached. A rack's
+    /// macros and modifiers are addressed by its id, so a second instance
+    /// claims every address the first one has.
     RackNesting nesting_;
 
     std::span<const magda::AutomationLaneInfo> lanes_;
@@ -564,11 +562,9 @@ void Builder::walkFlat(const std::vector<magda::PostFxChainElement>& elements,
 }
 
 void Builder::walkRack(const magda::RackInfo& rack, magda::TrackId trackId) {
-    // The same instance the plan compiler passes over. Walking it would give
-    // the rack's own macros and modifiers a second node under one address, and
-    // every device under the loop one as well, so the table would report every
-    // address in the subtree as claimed twice and none of those reports would
-    // name the cause.
+    // The same instance the plan compiler passes over. Walking it would report
+    // every address in the subtree as claimed twice, with nothing naming the
+    // cause.
     if (nesting_.encloses(rack.id)) {
         diagnose(nesting_.cycle(rack.id) +
                  ", its parameters and everything under it are not carried");
