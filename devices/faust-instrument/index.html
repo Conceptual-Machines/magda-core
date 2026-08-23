@@ -601,6 +601,28 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/connections/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2017,6 +2039,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/osc-addresses/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    OSC Address Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/lua-scripting/" class="md-nav__link">
         
   
@@ -2215,13 +2259,13 @@
 </table>
 <p>Declare them as ordinary sliders and read them in your DSP. MAGDA drives them per voice and does not expose them as user parameters, so they never appear as knobs or automation targets. Every other control you declare becomes a parameter as usual.</p>
 <p>A minimal patch looks like this:</p>
-<div class="highlight"><pre><span></span><code>import(&quot;stdfaust.lib&quot;);
+<div class="highlight"><pre><span></span><code>import("stdfaust.lib");
 
-freq = hslider(&quot;freq&quot;, 440, 20, 20000, 0.01);
-gain = hslider(&quot;gain&quot;, 0.5, 0, 1, 0.01);
-gate = button(&quot;gate&quot;);
+freq = hslider("freq", 440, 20, 20000, 0.01);
+gain = hslider("gain", 0.5, 0, 1, 0.01);
+gate = button("gate");
 
-cutoff = hslider(&quot;Cutoff&quot;, 2000, 50, 12000, 1);
+cutoff = hslider("Cutoff", 2000, 50, 12000, 1);
 
 process = os.sawtooth(freq) * gain
         : fi.lowpass(2, cutoff)

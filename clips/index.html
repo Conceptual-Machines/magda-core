@@ -601,6 +601,28 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interface/connections/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -785,6 +807,30 @@
       Enabling and Disabling Clips
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overlapping-clips" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overlapping clips
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Overlapping clips">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#play-through-overlap" class="md-nav__link">
+    <span class="md-ellipsis">
+      Play Through Overlap
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2238,6 +2284,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../reference/osc-addresses/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    OSC Address Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../reference/lua-scripting/" class="md-nav__link">
         
   
@@ -2454,6 +2522,30 @@
       Enabling and Disabling Clips
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overlapping-clips" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overlapping clips
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Overlapping clips">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#play-through-overlap" class="md-nav__link">
+    <span class="md-ellipsis">
+      Play Through Overlap
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2893,6 +2985,24 @@
 <h2 id="enabling-and-disabling-clips">Enabling and Disabling Clips<a class="headerlink" href="#enabling-and-disabling-clips" title="Permanent link">&para;</a></h2>
 <p>Disabling a clip removes it from playback without deleting it. Right-click a clip and choose <strong>Disable Clip</strong> (or <strong>Enable Clip</strong> to bring it back), or press <span class="keys"><kbd class="key-0">0</kbd></span> with clips selected. A disabled clip is covered by a heavy dark overlay, including its header, so it reads as "off" at a glance, and it is excluded from the playback graph so it produces no sound.</p>
 <p>The enabled state is per-clip: disabling one member of a <a href="#linked-ghost-clips">link group</a> does not silence its ghost siblings.</p>
+<h2 id="overlapping-clips">Overlapping clips<a class="headerlink" href="#overlapping-clips" title="Permanent link">&para;</a></h2>
+<p>Arrangement clips stack rather than erase each other. Drag a clip onto one that is already there and the clip underneath keeps its position and its full contents; it is covered, not trimmed. Move the covering clip away again and the material underneath comes back on its own, because what a clip plays is worked out from the lane each time rather than stored.</p>
+<p>The clip on top owns the span it covers, and the one underneath plays what is left. A clip covered end to end plays nothing while staying exactly where it is. Which clip is on top is set when you place or move it, so the most recently moved clip wins, and the lane draws in that same order: what you see stacked is what you hear.</p>
+<p>Where a cover lands decides what the clip underneath becomes:</p>
+<ul>
+<li><strong>Overlapping an edge</strong> shortens it. The audible span pulls in to the edge of the cover, which is a shorter clip rather than a hole in one.</li>
+<li><strong>Landing strictly inside it</strong> leaves a hole. The clip keeps its start and end and goes silent across the covered span only. A MIDI clip plays around the hole by dropping the notes that start inside it; an audio clip carries the hole through to playback. Nothing is cut and nothing is split, so the material comes back intact when the cover moves away.</li>
+</ul>
+<p>A clip you disabled by hand covers nothing, because it is already silent. Letting it occlude would silence the clip below on behalf of silence.</p>
+<h3 id="play-through-overlap">Play Through Overlap<a class="headerlink" href="#play-through-overlap" title="Permanent link">&para;</a></h3>
+<p>To make both clips sound where they overlap, right-click either one and tick <strong>Play Through Overlap</strong>. The lane hatches the shared span to show it is playing both.</p>
+<p>Either clip can carry the switch, which matters because the clip you reach for when something goes quiet is the one that went quiet, and that is the one underneath.</p>
+<p>Asking for a <a href="#crossfades">crossfade</a> turns it on for you, on both clips: right-click and choose <strong>Crossfade with Previous Clip</strong> or <strong>Crossfade with Next Clip</strong>, or drag a crossfade handle. Asking for a fade region is asking for both clips to be heard across it, so the gesture sets the fade and the play-through together.</p>
+<div class="admonition note">
+<p class="admonition-title">The Auto Crossfade property does not do this</p>
+<p><strong>Auto Crossfade</strong> marks a clip as eligible to crossfade; it does not create a fade region, and it leaves play-through alone. The same goes for the <strong>Auto-crossfade new audio clips</strong> preference, which only sets that property on new clips.</p>
+<p>This matters because auto-crossfade cannot keep a covered clip audible on its own. It shapes an overlap that is already playing both, so audio fades into audio instead of both running flat. <strong>Play Through Overlap</strong> is what decides whether both sound; the crossfade only decides how they meet.</p>
+</div>
 <h2 id="flatten-midi-loop">Flatten MIDI Loop<a class="headerlink" href="#flatten-midi-loop" title="Permanent link">&para;</a></h2>
 <p>When a MIDI clip is looping, right-click it and choose <strong>Flatten MIDI Loop</strong> to write the repetitions out as real notes. The loop cycles (including any offset phase) are baked into actual MIDI across the clip's full length, looping is switched off, and the offset resets to zero. The clip stays a MIDI clip in place, ready for per-note editing in the <a href="../panels/piano-roll/">Piano Roll</a>; the operation is a single undoable step.</p>
 <h2 id="audio-clip-modes">Audio Clip Modes<a class="headerlink" href="#audio-clip-modes" title="Permanent link">&para;</a></h2>
@@ -2968,7 +3078,7 @@
 <h3 id="groove-via-dsl">Groove via DSL<a class="headerlink" href="#groove-via-dsl" title="Permanent link">&para;</a></h3>
 <p>You can also list and apply grooves using the DSL console:</p>
 <div class="highlight"><pre><span></span><code>groove.list()
-groove.set(template=&quot;Basic 8th Swing&quot;, strength=0.5)
+groove.set(template="Basic 8th Swing", strength=0.5)
 </code></pre></div>
 <h2 id="transcribe-audio-to-midi">Transcribe Audio to MIDI<a class="headerlink" href="#transcribe-audio-to-midi" title="Permanent link">&para;</a></h2>
 <p>MAGDA can detect the notes in an audio clip and turn them into MIDI. Right-click an audio clip and choose <strong>Transcribe to MIDI</strong>: the audio is analysed and a MIDI clip of the detected notes is created, ready to drive an instrument. It works on a single audio clip at a time and needs the clip's source file on disk.</p>

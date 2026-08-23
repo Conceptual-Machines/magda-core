@@ -16,7 +16,7 @@
         <link rel="prev" href="../dsl/">
       
       
-        <link rel="next" href="../lua-scripting/">
+        <link rel="next" href="../osc-addresses/">
       
       
       <link rel="icon" href="../../assets/images/magda-lisa.svg">
@@ -591,6 +591,28 @@
   
   <span class="md-ellipsis">
     Controllers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/connections/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Connections
     
   </span>
   
@@ -2129,6 +2151,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../osc-addresses/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    OSC Address Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../lua-scripting/" class="md-nav__link">
         
   
@@ -2417,19 +2461,19 @@
 <p>This page is a reference for anyone writing or editing a profile by hand — community contributors, advanced users, plugin authors. Most users never need to look at the JSON.</p>
 <h2 id="file-shape">File shape<a class="headerlink" href="#file-shape" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>{
-  &quot;id&quot;: &quot;novation.launchkey_mini_mk4.macros&quot;,
-  &quot;vendor&quot;: &quot;Novation&quot;,
-  &quot;name&quot;: &quot;Launchkey Mini MK4 — Macros&quot;,
+  "id": "novation.launchkey_mini_mk4.macros",
+  "vendor": "Novation",
+  "name": "Launchkey Mini MK4 — Macros",
 
-  &quot;controls&quot;: [
-    { &quot;controlId&quot;: &quot;knob_1&quot;, &quot;kind&quot;: &quot;knob&quot;, &quot;cc&quot;: 21, &quot;channel&quot;: 1 },
-    { &quot;controlId&quot;: &quot;knob_2&quot;, &quot;kind&quot;: &quot;knob&quot;, &quot;cc&quot;: 22, &quot;channel&quot;: 1 }
+  "controls": [
+    { "controlId": "knob_1", "kind": "knob", "cc": 21, "channel": 1 },
+    { "controlId": "knob_2", "kind": "knob", "cc": 22, "channel": 1 }
     // …
   ],
 
-  &quot;defaultBindings&quot;: [
-    { &quot;controlId&quot;: &quot;knob_1&quot;, &quot;resolverKind&quot;: &quot;focused.macro&quot;, &quot;args&quot;: { &quot;macroIndex&quot;: &quot;0&quot; } },
-    { &quot;controlId&quot;: &quot;knob_2&quot;, &quot;resolverKind&quot;: &quot;focused.macro&quot;, &quot;args&quot;: { &quot;macroIndex&quot;: &quot;1&quot; } }
+  "defaultBindings": [
+    { "controlId": "knob_1", "resolverKind": "focused.macro", "args": { "macroIndex": "0" } },
+    { "controlId": "knob_2", "resolverKind": "focused.macro", "args": { "macroIndex": "1" } }
     // …
   ]
 }
@@ -2561,25 +2605,25 @@
 </tbody>
 </table>
 <p>Example:</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">&quot;controlId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;knob_1&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;resolverKind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;focused.macro&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;macroIndex&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">"controlId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"knob_1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"resolverKind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"focused.macro"</span><span class="p">,</span><span class="w"> </span><span class="nt">"args"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"macroIndex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0"</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
 </code></pre></div>
 <p>The eight knobs of a typical 8-knob controller usually map to <code>macroIndex</code> <code>"0"</code> through <code>"7"</code> — they always land on the focused device's first eight macros, regardless of which track or device that is.</p>
 <h3 id="selectedvolume"><code>selected.volume</code><a class="headerlink" href="#selectedvolume" title="Permanent link">&para;</a></h3>
 <p>Drives the volume fader of the currently-selected track. No args.</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">&quot;controlId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;fader_1&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;resolverKind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;selected.volume&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span><span class="w"> </span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">"controlId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fader_1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"resolverKind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"selected.volume"</span><span class="p">,</span><span class="w"> </span><span class="nt">"args"</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span><span class="w"> </span><span class="p">}</span>
 </code></pre></div>
 <p>Useful for a generic-purpose volume fader on a controller — point it at the selected track and re-select tracks to "move" the fader.</p>
 <h3 id="selectedpan"><code>selected.pan</code><a class="headerlink" href="#selectedpan" title="Permanent link">&para;</a></h3>
 <p>Drives the pan of the currently-selected track. No args.</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">&quot;controlId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;encoder_pan&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;resolverKind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;selected.pan&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span><span class="w"> </span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">"controlId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"encoder_pan"</span><span class="p">,</span><span class="w"> </span><span class="nt">"resolverKind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"selected.pan"</span><span class="p">,</span><span class="w"> </span><span class="nt">"args"</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span><span class="w"> </span><span class="p">}</span>
 </code></pre></div>
 <h3 id="mastervolume"><code>master.volume</code><a class="headerlink" href="#mastervolume" title="Permanent link">&para;</a></h3>
 <p>Drives the master bus volume. No args.</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">&quot;controlId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;fader_master&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;resolverKind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;master.volume&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span><span class="w"> </span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">"controlId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fader_master"</span><span class="p">,</span><span class="w"> </span><span class="nt">"resolverKind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"master.volume"</span><span class="p">,</span><span class="w"> </span><span class="nt">"args"</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span><span class="w"> </span><span class="p">}</span>
 </code></pre></div>
 <h3 id="masterpan"><code>master.pan</code><a class="headerlink" href="#masterpan" title="Permanent link">&para;</a></h3>
 <p>Drives the master bus pan. No args.</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">&quot;controlId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;encoder_master_pan&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;resolverKind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;master.pan&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span><span class="w"> </span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">"controlId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"encoder_master_pan"</span><span class="p">,</span><span class="w"> </span><span class="nt">"resolverKind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"master.pan"</span><span class="p">,</span><span class="w"> </span><span class="nt">"args"</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span><span class="w"> </span><span class="p">}</span>
 </code></pre></div>
 <h2 id="multiple-profiles-per-controller">Multiple profiles per controller<a class="headerlink" href="#multiple-profiles-per-controller" title="Permanent link">&para;</a></h2>
 <p>A single piece of hardware doesn't have to be one profile. A Launchkey Mini might be useful in two different ways: knobs driving the focused device's macros, or knobs driving the selected track's volume / pan / sends. Each of those is a different <strong>intent</strong>, and each is its own profile JSON.</p>
@@ -2589,43 +2633,43 @@ novation.launchkey_mini_mk4.mix        ← knobs control selected-track mix
 </code></pre></div>
 <p>The <code>name</code> field uses the model name with the intent appended for clarity:</p>
 <div class="highlight"><pre><span></span><code>{
-  &quot;id&quot;: &quot;novation.launchkey_mini_mk4.mix&quot;,
-  &quot;vendor&quot;: &quot;Novation&quot;,
-  &quot;name&quot;: &quot;Launchkey Mini MK4 — Mix&quot;
+  "id": "novation.launchkey_mini_mk4.mix",
+  "vendor": "Novation",
+  "name": "Launchkey Mini MK4 — Mix"
 }
 </code></pre></div>
 <p>Each variant shows up as its own row in the Controllers dialog. A user picks the variant they want for the way they're working today; switching variants is one dialog visit, not a rebuild of the JSON.</p>
 <h2 id="a-complete-example">A complete example<a class="headerlink" href="#a-complete-example" title="Permanent link">&para;</a></h2>
 <p>A full profile for a hypothetical 8-knob, 1-fader, 1-pan-encoder controller:</p>
 <div class="highlight"><pre><span></span><code>{
-  &quot;id&quot;: &quot;acme.studio_8&quot;,
-  &quot;vendor&quot;: &quot;Acme&quot;,
-  &quot;name&quot;: &quot;Studio 8&quot;,
+  "id": "acme.studio_8",
+  "vendor": "Acme",
+  "name": "Studio 8",
 
-  &quot;controls&quot;: [
-    { &quot;controlId&quot;: &quot;knob_1&quot;, &quot;kind&quot;: &quot;knob&quot;, &quot;cc&quot;: 21, &quot;channel&quot;: 1 },
-    { &quot;controlId&quot;: &quot;knob_2&quot;, &quot;kind&quot;: &quot;knob&quot;, &quot;cc&quot;: 22, &quot;channel&quot;: 1 },
-    { &quot;controlId&quot;: &quot;knob_3&quot;, &quot;kind&quot;: &quot;knob&quot;, &quot;cc&quot;: 23, &quot;channel&quot;: 1 },
-    { &quot;controlId&quot;: &quot;knob_4&quot;, &quot;kind&quot;: &quot;knob&quot;, &quot;cc&quot;: 24, &quot;channel&quot;: 1 },
-    { &quot;controlId&quot;: &quot;knob_5&quot;, &quot;kind&quot;: &quot;knob&quot;, &quot;cc&quot;: 25, &quot;channel&quot;: 1 },
-    { &quot;controlId&quot;: &quot;knob_6&quot;, &quot;kind&quot;: &quot;knob&quot;, &quot;cc&quot;: 26, &quot;channel&quot;: 1 },
-    { &quot;controlId&quot;: &quot;knob_7&quot;, &quot;kind&quot;: &quot;knob&quot;, &quot;cc&quot;: 27, &quot;channel&quot;: 1 },
-    { &quot;controlId&quot;: &quot;knob_8&quot;, &quot;kind&quot;: &quot;knob&quot;, &quot;cc&quot;: 28, &quot;channel&quot;: 1 },
-    { &quot;controlId&quot;: &quot;fader_master&quot;, &quot;kind&quot;: &quot;slider&quot;, &quot;cc&quot;: 7,  &quot;channel&quot;: 1 },
-    { &quot;controlId&quot;: &quot;pan_encoder&quot;,  &quot;kind&quot;: &quot;knob&quot;,   &quot;cc&quot;: 10, &quot;channel&quot;: 1 }
+  "controls": [
+    { "controlId": "knob_1", "kind": "knob", "cc": 21, "channel": 1 },
+    { "controlId": "knob_2", "kind": "knob", "cc": 22, "channel": 1 },
+    { "controlId": "knob_3", "kind": "knob", "cc": 23, "channel": 1 },
+    { "controlId": "knob_4", "kind": "knob", "cc": 24, "channel": 1 },
+    { "controlId": "knob_5", "kind": "knob", "cc": 25, "channel": 1 },
+    { "controlId": "knob_6", "kind": "knob", "cc": 26, "channel": 1 },
+    { "controlId": "knob_7", "kind": "knob", "cc": 27, "channel": 1 },
+    { "controlId": "knob_8", "kind": "knob", "cc": 28, "channel": 1 },
+    { "controlId": "fader_master", "kind": "slider", "cc": 7,  "channel": 1 },
+    { "controlId": "pan_encoder",  "kind": "knob",   "cc": 10, "channel": 1 }
   ],
 
-  &quot;defaultBindings&quot;: [
-    { &quot;controlId&quot;: &quot;knob_1&quot;, &quot;resolverKind&quot;: &quot;focused.macro&quot;, &quot;args&quot;: { &quot;macroIndex&quot;: &quot;0&quot; } },
-    { &quot;controlId&quot;: &quot;knob_2&quot;, &quot;resolverKind&quot;: &quot;focused.macro&quot;, &quot;args&quot;: { &quot;macroIndex&quot;: &quot;1&quot; } },
-    { &quot;controlId&quot;: &quot;knob_3&quot;, &quot;resolverKind&quot;: &quot;focused.macro&quot;, &quot;args&quot;: { &quot;macroIndex&quot;: &quot;2&quot; } },
-    { &quot;controlId&quot;: &quot;knob_4&quot;, &quot;resolverKind&quot;: &quot;focused.macro&quot;, &quot;args&quot;: { &quot;macroIndex&quot;: &quot;3&quot; } },
-    { &quot;controlId&quot;: &quot;knob_5&quot;, &quot;resolverKind&quot;: &quot;focused.macro&quot;, &quot;args&quot;: { &quot;macroIndex&quot;: &quot;4&quot; } },
-    { &quot;controlId&quot;: &quot;knob_6&quot;, &quot;resolverKind&quot;: &quot;focused.macro&quot;, &quot;args&quot;: { &quot;macroIndex&quot;: &quot;5&quot; } },
-    { &quot;controlId&quot;: &quot;knob_7&quot;, &quot;resolverKind&quot;: &quot;focused.macro&quot;, &quot;args&quot;: { &quot;macroIndex&quot;: &quot;6&quot; } },
-    { &quot;controlId&quot;: &quot;knob_8&quot;, &quot;resolverKind&quot;: &quot;focused.macro&quot;, &quot;args&quot;: { &quot;macroIndex&quot;: &quot;7&quot; } },
-    { &quot;controlId&quot;: &quot;fader_master&quot;, &quot;resolverKind&quot;: &quot;master.volume&quot;, &quot;args&quot;: {} },
-    { &quot;controlId&quot;: &quot;pan_encoder&quot;,  &quot;resolverKind&quot;: &quot;selected.pan&quot;,  &quot;args&quot;: {} }
+  "defaultBindings": [
+    { "controlId": "knob_1", "resolverKind": "focused.macro", "args": { "macroIndex": "0" } },
+    { "controlId": "knob_2", "resolverKind": "focused.macro", "args": { "macroIndex": "1" } },
+    { "controlId": "knob_3", "resolverKind": "focused.macro", "args": { "macroIndex": "2" } },
+    { "controlId": "knob_4", "resolverKind": "focused.macro", "args": { "macroIndex": "3" } },
+    { "controlId": "knob_5", "resolverKind": "focused.macro", "args": { "macroIndex": "4" } },
+    { "controlId": "knob_6", "resolverKind": "focused.macro", "args": { "macroIndex": "5" } },
+    { "controlId": "knob_7", "resolverKind": "focused.macro", "args": { "macroIndex": "6" } },
+    { "controlId": "knob_8", "resolverKind": "focused.macro", "args": { "macroIndex": "7" } },
+    { "controlId": "fader_master", "resolverKind": "master.volume", "args": {} },
+    { "controlId": "pan_encoder",  "resolverKind": "selected.pan",  "args": {} }
   ]
 }
 </code></pre></div>

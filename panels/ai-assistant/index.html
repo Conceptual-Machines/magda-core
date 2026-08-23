@@ -601,6 +601,28 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/connections/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2207,6 +2229,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/osc-addresses/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    OSC Address Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/lua-scripting/" class="md-nav__link">
         
   
@@ -2673,17 +2717,17 @@
 </table>
 <h3 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h3>
 <p>Switch to the DSL tab, type a command, and press <span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-enter">Enter</kbd></span>:</p>
-<div class="highlight"><pre><span></span><code>track(name=&quot;Bass&quot;, new=true).clip.new(bar=1, length_bars=4)
+<div class="highlight"><pre><span></span><code>track(name="Bass", new=true).clip.new(bar=1, length_bars=4)
 </code></pre></div>
 <p>Type <code>help</code> and execute to see available commands.</p>
 <h2 id="dsl-quick-reference">DSL Quick Reference<a class="headerlink" href="#dsl-quick-reference" title="Permanent link">&para;</a></h2>
 <p>A few common commands to get started. For the full language reference, see <strong><a href="../../reference/dsl/">DSL Reference</a></strong>.</p>
-<div class="highlight"><pre><span></span><code>track(name=&quot;Bass&quot;, new=true).clip.new(bar=1, length_bars=4)
+<div class="highlight"><pre><span></span><code>track(name="Bass", new=true).clip.new(bar=1, length_bars=4)
   .notes.add_chord(root=C4, quality=major, beat=0, length=4)
   .notes.add(pitch=E2, beat=0, length=1, velocity=100)
-track(name=&quot;Bass&quot;).fx.add(name=&quot;compressor&quot;)
-track(name=&quot;Bass&quot;).track.set(volume_db=-6)
-groove.set(template=&quot;Basic 8th Swing&quot;, strength=0.5)
+track(name="Bass").fx.add(name="compressor")
+track(name="Bass").track.set(volume_db=-6)
+groove.set(template="Basic 8th Swing", strength=0.5)
 </code></pre></div>
 <h3 id="slash-commands">Slash Commands<a class="headerlink" href="#slash-commands" title="Permanent link">&para;</a></h3>
 <p>Prefix your message with a slash command to constrain the AI to a specific domain:</p>

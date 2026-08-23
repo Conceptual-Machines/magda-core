@@ -16,7 +16,7 @@
         <link rel="prev" href="../ai-settings/">
       
       
-        <link rel="next" href="../../tracks/">
+        <link rel="next" href="../connections/">
       
       
       <link rel="icon" href="../../assets/images/magda-lisa.svg">
@@ -792,6 +792,28 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../connections/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Connections
+    
+  </span>
+  
+
+      </a>
     </li>
   
 
@@ -2132,6 +2154,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/osc-addresses/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    OSC Address Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/lua-scripting/" class="md-nav__link">
         
   
@@ -2553,7 +2597,7 @@
 <p>The script is just Lua 5.4 (sandboxed — no <code>io</code>, <code>os</code>, <code>require</code>) with a <code>magda.*</code> API for talking back to the DAW: <code>magda.transport</code>, <code>magda.session</code>, <code>magda.tracks</code>, <code>magda.devices</code>, <code>magda.midi</code>. Define a top-level <code>on_midi(event)</code> and it fires for every event matching the assigned input port (or every input, if the port is left blank).</p>
 <div class="highlight"><pre><span></span><code><span class="c1">-- Toggle play/stop on a single CC.</span>
 <span class="kr">function</span><span class="w"> </span><span class="nf">on_midi</span><span class="p">(</span><span class="nv">e</span><span class="p">)</span>
-<span class="w">    </span><span class="kr">if</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">type</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s2">&quot;cc&quot;</span><span class="w"> </span><span class="ow">and</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">cc</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">117</span><span class="w"> </span><span class="ow">and</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">value</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="kr">then</span>
+<span class="w">    </span><span class="kr">if</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">type</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s2">"cc"</span><span class="w"> </span><span class="ow">and</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">cc</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">117</span><span class="w"> </span><span class="ow">and</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">value</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="kr">then</span>
 <span class="w">        </span><span class="kr">if</span><span class="w"> </span><span class="nv">magda</span><span class="p">.</span><span class="py">transport</span><span class="p">.</span><span class="nf">is_playing</span><span class="p">()</span><span class="w"> </span><span class="kr">then</span>
 <span class="w">            </span><span class="nv">magda</span><span class="p">.</span><span class="py">transport</span><span class="p">.</span><span class="nf">stop</span><span class="p">()</span>
 <span class="w">        </span><span class="kr">else</span>

@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/reference/lua-scripting/">
       
       
-        <link rel="prev" href="../controller-profile-format/">
+        <link rel="prev" href="../osc-addresses/">
       
       
         <link rel="next" href="../keyboard-shortcuts/">
@@ -591,6 +591,28 @@
   
   <span class="md-ellipsis">
     Controllers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/connections/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Connections
     
   </span>
   
@@ -1935,6 +1957,28 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../osc-addresses/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    OSC Address Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -2043,6 +2087,21 @@
       magda.transport
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="magda.transport">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rewind-and-fast-forward-buttons" class="md-nav__link">
+    <span class="md-ellipsis">
+      Rewind and fast-forward buttons
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
         
@@ -2347,6 +2406,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="magda.transport">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rewind-and-fast-forward-buttons" class="md-nav__link">
+    <span class="md-ellipsis">
+      Rewind and fast-forward buttons
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -2539,7 +2613,7 @@
 </table>
 <p>All three are called on the message thread. MIDI input arrives on the audio thread but is hopped to the message thread before <code>on_midi</code> fires, so the entire <code>magda.*</code> API is safe to call from anywhere.</p>
 <div class="highlight"><pre><span></span><code><span class="kr">function</span><span class="w"> </span><span class="nf">on_load</span><span class="p">()</span>
-<span class="w">  </span><span class="nv">magda</span><span class="p">.</span><span class="py">log</span><span class="p">.</span><span class="nf">info</span><span class="p">(</span><span class="s2">&quot;script loaded, MAGDA &quot;</span><span class="w"> </span><span class="o">..</span><span class="w"> </span><span class="nv">magda</span><span class="p">.</span><span class="py">app</span><span class="p">.</span><span class="nf">version</span><span class="p">())</span>
+<span class="w">  </span><span class="nv">magda</span><span class="p">.</span><span class="py">log</span><span class="p">.</span><span class="nf">info</span><span class="p">(</span><span class="s2">"script loaded, MAGDA "</span><span class="w"> </span><span class="o">..</span><span class="w"> </span><span class="nv">magda</span><span class="p">.</span><span class="py">app</span><span class="p">.</span><span class="nf">version</span><span class="p">())</span>
 <span class="kr">end</span>
 
 <span class="kr">function</span><span class="w"> </span><span class="nf">on_midi</span><span class="p">(</span><span class="nv">event</span><span class="p">)</span>
@@ -2690,8 +2764,65 @@
 <td>—</td>
 <td>Move the playhead</td>
 </tr>
+<tr>
+<td><code>magda.transport.seek_beats(delta)</code></td>
+<td>—</td>
+<td>Move the playhead by <code>delta</code> beats. Stops at the start of the project</td>
+</tr>
+<tr>
+<td><code>magda.transport.seek_bars(delta)</code></td>
+<td>—</td>
+<td>Move the playhead by <code>delta</code> bars, using the project's meter. Stops at the start of the project</td>
+</tr>
 </tbody>
 </table>
+<h4 id="rewind-and-fast-forward-buttons">Rewind and fast-forward buttons<a class="headerlink" href="#rewind-and-fast-forward-buttons" title="Permanent link">&para;</a></h4>
+<p><code>seek_beats</code> and <code>seek_bars</code> are the relative pair. They exist because a
+transport button is relative by nature: it says "back one bar", not "go to bar
+seven". Written with <code>set_position_beats</code> instead, every script re-derives the
+same two things — the clamp at the start of the project, and how long a bar
+is, which stops being four beats the moment the project is not in four.</p>
+<div class="highlight"><pre><span></span><code><span class="kr">function</span><span class="w"> </span><span class="nf">on_midi</span><span class="p">(</span><span class="nv">event</span><span class="p">)</span>
+<span class="w">  </span><span class="c1">-- MCU rewind and fast forward, as an Arturia KeyLab sends them.</span>
+<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">event</span><span class="p">.</span><span class="py">type</span><span class="w"> </span><span class="o">~=</span><span class="w"> </span><span class="s2">"note_on"</span><span class="w"> </span><span class="kr">then</span><span class="w"> </span><span class="kr">return</span><span class="w"> </span><span class="kr">end</span>
+
+<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">event</span><span class="p">.</span><span class="py">number</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mh">0x5B</span><span class="w"> </span><span class="kr">then</span>
+<span class="w">    </span><span class="nv">magda</span><span class="p">.</span><span class="py">transport</span><span class="p">.</span><span class="nf">seek_bars</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+<span class="w">  </span><span class="kr">elseif</span><span class="w"> </span><span class="nv">event</span><span class="p">.</span><span class="py">number</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mh">0x5C</span><span class="w"> </span><span class="kr">then</span>
+<span class="w">    </span><span class="nv">magda</span><span class="p">.</span><span class="py">transport</span><span class="p">.</span><span class="nf">seek_bars</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="w">  </span><span class="kr">end</span>
+<span class="kr">end</span>
+</code></pre></div>
+<p><strong>Holding the button to scrub.</strong> These buttons are usually held rather than
+tapped. MAGDA has no auto-repeat of its own, so the script drives it: remember
+which direction is held, and move on each tick.</p>
+<div class="highlight"><pre><span></span><code><span class="kd">local</span><span class="w"> </span><span class="nv">scrub</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span>
+<span class="kd">local</span><span class="w"> </span><span class="nv">BEATS_PER_SECOND</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8</span>
+
+<span class="kr">function</span><span class="w"> </span><span class="nf">on_midi</span><span class="p">(</span><span class="nv">event</span><span class="p">)</span>
+<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">event</span><span class="p">.</span><span class="py">number</span><span class="w"> </span><span class="o">~=</span><span class="w"> </span><span class="mh">0x5B</span><span class="w"> </span><span class="ow">and</span><span class="w"> </span><span class="nv">event</span><span class="p">.</span><span class="py">number</span><span class="w"> </span><span class="o">~=</span><span class="w"> </span><span class="mh">0x5C</span><span class="w"> </span><span class="kr">then</span><span class="w"> </span><span class="kr">return</span><span class="w"> </span><span class="kr">end</span>
+
+<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">event</span><span class="p">.</span><span class="py">type</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s2">"note_off"</span><span class="w"> </span><span class="kr">then</span>
+<span class="w">    </span><span class="nv">scrub</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">  </span><span class="kr">elseif</span><span class="w"> </span><span class="nv">event</span><span class="p">.</span><span class="py">type</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s2">"note_on"</span><span class="w"> </span><span class="kr">then</span>
+<span class="w">    </span><span class="nv">scrub</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="nv">event</span><span class="p">.</span><span class="py">number</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mh">0x5B</span><span class="p">)</span><span class="w"> </span><span class="ow">and</span><span class="w"> </span><span class="o">-</span><span class="mi">1</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">  </span><span class="kr">end</span>
+<span class="kr">end</span>
+
+<span class="kr">function</span><span class="w"> </span><span class="nf">on_tick</span><span class="p">(</span><span class="nv">dt</span><span class="p">)</span>
+<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">scrub</span><span class="w"> </span><span class="o">~=</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="kr">then</span>
+<span class="w">    </span><span class="nv">magda</span><span class="p">.</span><span class="py">transport</span><span class="p">.</span><span class="nf">seek_beats</span><span class="p">(</span><span class="nv">scrub</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nv">BEATS_PER_SECOND</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nv">dt</span><span class="p">)</span>
+<span class="w">  </span><span class="kr">end</span>
+<span class="kr">end</span>
+</code></pre></div>
+<p>Scale by <code>dt</code> rather than moving a fixed amount per tick: ticks arrive at about
+30 Hz, so a fixed beat per tick is thirty beats a second and the shuttle rate
+would change if that rate ever did. <code>BEATS_PER_SECOND</code> is then the number to
+tune, and it means what it says.</p>
+<p>A surface that repeats note-on while a button is held needs no <code>on_tick</code> at
+all — seek on each repeat and drop the <code>scrub</code> variable. Every repeat moves the
+playhead, because a relative seek is an edge rather than a value and nothing
+coalesces it away.</p>
 <h3 id="magdaproject"><code>magda.project</code><a class="headerlink" href="#magdaproject" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -3066,7 +3197,7 @@ the ordinary setters:</p>
 <h2 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">&para;</a></h2>
 <h3 id="sustain-pedal-launches-the-selected-session-clip">Sustain pedal launches the selected session clip<a class="headerlink" href="#sustain-pedal-launches-the-selected-session-clip" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><span class="kr">function</span><span class="w"> </span><span class="nf">on_midi</span><span class="p">(</span><span class="nv">e</span><span class="p">)</span>
-<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">type</span><span class="w"> </span><span class="o">~=</span><span class="w"> </span><span class="s2">&quot;cc&quot;</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">number</span><span class="w"> </span><span class="o">~=</span><span class="w"> </span><span class="mi">64</span><span class="w"> </span><span class="kr">then</span><span class="w"> </span><span class="kr">return</span><span class="w"> </span><span class="kr">end</span>
+<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">type</span><span class="w"> </span><span class="o">~=</span><span class="w"> </span><span class="s2">"cc"</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">number</span><span class="w"> </span><span class="o">~=</span><span class="w"> </span><span class="mi">64</span><span class="w"> </span><span class="kr">then</span><span class="w"> </span><span class="kr">return</span><span class="w"> </span><span class="kr">end</span>
 
 <span class="w">  </span><span class="kd">local</span><span class="w"> </span><span class="nv">track</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nv">magda</span><span class="p">.</span><span class="py">selection</span><span class="p">.</span><span class="nf">track</span><span class="p">()</span>
 <span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="ow">not</span><span class="w"> </span><span class="nv">track</span><span class="w"> </span><span class="kr">then</span><span class="w"> </span><span class="kr">return</span><span class="w"> </span><span class="kr">end</span>
@@ -3081,7 +3212,7 @@ the ordinary setters:</p>
 </code></pre></div>
 <h3 id="eight-knobs-map-to-track-volumes">Eight knobs map to track volumes<a class="headerlink" href="#eight-knobs-map-to-track-volumes" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><span class="kr">function</span><span class="w"> </span><span class="nf">on_midi</span><span class="p">(</span><span class="nv">e</span><span class="p">)</span>
-<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">type</span><span class="w"> </span><span class="o">~=</span><span class="w"> </span><span class="s2">&quot;cc&quot;</span><span class="w"> </span><span class="kr">then</span><span class="w"> </span><span class="kr">return</span><span class="w"> </span><span class="kr">end</span>
+<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">type</span><span class="w"> </span><span class="o">~=</span><span class="w"> </span><span class="s2">"cc"</span><span class="w"> </span><span class="kr">then</span><span class="w"> </span><span class="kr">return</span><span class="w"> </span><span class="kr">end</span>
 <span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">number</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">number</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">8</span><span class="w"> </span><span class="kr">then</span><span class="w"> </span><span class="kr">return</span><span class="w"> </span><span class="kr">end</span>
 
 <span class="w">  </span><span class="nv">magda</span><span class="p">.</span><span class="py">tracks</span><span class="p">.</span><span class="nf">set_volume</span><span class="p">(</span><span class="nv">e</span><span class="p">.</span><span class="py">number</span><span class="p">,</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">value</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">127.0</span><span class="p">)</span>
@@ -3097,9 +3228,9 @@ the ordinary setters:</p>
 <span class="w">  </span><span class="nv">was_playing</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nv">playing</span>
 
 <span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">playing</span><span class="w"> </span><span class="kr">then</span>
-<span class="w">    </span><span class="nv">magda</span><span class="p">.</span><span class="py">midi</span><span class="p">.</span><span class="nf">send_note_on</span><span class="p">(</span><span class="s2">&quot;@default&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nv">PLAY_NOTE</span><span class="p">,</span><span class="w"> </span><span class="mi">127</span><span class="p">)</span>
+<span class="w">    </span><span class="nv">magda</span><span class="p">.</span><span class="py">midi</span><span class="p">.</span><span class="nf">send_note_on</span><span class="p">(</span><span class="s2">"@default"</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nv">PLAY_NOTE</span><span class="p">,</span><span class="w"> </span><span class="mi">127</span><span class="p">)</span>
 <span class="w">  </span><span class="kr">else</span>
-<span class="w">    </span><span class="nv">magda</span><span class="p">.</span><span class="py">midi</span><span class="p">.</span><span class="nf">send_note_off</span><span class="p">(</span><span class="s2">&quot;@default&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nv">PLAY_NOTE</span><span class="p">)</span>
+<span class="w">    </span><span class="nv">magda</span><span class="p">.</span><span class="py">midi</span><span class="p">.</span><span class="nf">send_note_off</span><span class="p">(</span><span class="s2">"@default"</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nv">PLAY_NOTE</span><span class="p">)</span>
 <span class="w">  </span><span class="kr">end</span>
 <span class="kr">end</span>
 </code></pre></div>
