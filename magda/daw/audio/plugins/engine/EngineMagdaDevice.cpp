@@ -11,16 +11,25 @@ namespace magda::daw::audio::engine_adapter {
 
 namespace {
 
+/// What an encoded event costs before its own bytes.
+///
+/// The engine states the cost model rather than exporting this: an event costs
+/// six bytes plus its length, which is what makes a note or a controller change
+/// kMidiShortMessageBytes. Derived from that pair so the two cannot drift.
+constexpr int kMidiEventOverheadBytes =
+    magda::engine::kMidiShortMessageBytes - 3;  // a short message is three bytes of data
+
 /// How many events the MIDI scratch is sized for.
 ///
-/// The engine's per-port budget, read in events rather than in bytes: a port
-/// carries at most kMaxMidiBytesPerPort of encoded MIDI and a short message
-/// costs kMidiShortMessageBytes of it, so nothing that respects the budget can
-/// hand this more events than that. A device that pushed past it would grow
-/// the vector on the audio thread, which is the allocation the reservation
-/// exists to avoid.
+/// The engine's per-port budget converted at the *cheapest* event, not the
+/// typical one. The budget is bytes, and the smallest message there is has one
+/// byte of data -- a clock, a start, a stop -- so a port that respects
+/// kMaxMidiBytesPerPort to the byte can still carry far more events than the
+/// same budget divided by the cost of a note. Sizing from the note is what
+/// leaves a stream that is entirely legal growing this vector on the audio
+/// thread, which is the allocation the reservation exists to avoid.
 constexpr int kMidiScratchEvents =
-    magda::engine::kMaxMidiBytesPerPort / magda::engine::kMidiShortMessageBytes;
+    magda::engine::kMaxMidiBytesPerPort / (kMidiEventOverheadBytes + 1);
 
 DeviceProperties propertiesForRequiredDevice(const std::unique_ptr<MagdaDevice>& device) {
     jassert(device != nullptr);
@@ -33,6 +42,18 @@ DeviceProperties propertiesForRequiredDevice(const std::unique_ptr<MagdaDevice>&
 /// The engine's port is a juce::MidiBuffer, which is a byte stream and cannot
 /// be addressed by index or edited in place, so the block's events are decoded
 /// into the scratch on the way in and encoded back out of it afterwards.
+///
+/// The vector never grows. Its capacity covers every stream the port's budget
+/// admits, so what is refused here is a producer past that budget rather than
+/// an ordinary block, and refusing is what the alternative costs: growing it
+/// would allocate on the audio thread, and one dropped event is cheaper than a
+/// callback that missed its deadline. The engine treats the same violation the
+/// same way -- assert where it is written, count it where it costs something.
+///
+/// One allocation this cannot rule out is a SysEx message, which juce::
+/// MidiMessage keeps on the heap and copies by allocating. That is the SDK's
+/// container rather than this adapter, and te::MidiMessageArray holds the same
+/// type on the same terms, so it is a cost both hosts pay identically.
 class EngineMidiBufferView final : public DeviceMidiBuffer {
   public:
     explicit EngineMidiBufferView(std::vector<DeviceMidiEvent>& events) : events_(events) {}
@@ -58,6 +79,11 @@ class EngineMidiBufferView final : public DeviceMidiBuffer {
     }
 
     void addEvent(DeviceMidiEvent event) override {
+        if (events_.size() >= events_.capacity()) {
+            jassertfalse;  // a device past the port's budget; see the class comment
+            return;
+        }
+
         events_.push_back(std::move(event));
     }
 
@@ -212,6 +238,11 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
 
         if (block.midiIn != nullptr)
             for (const auto metadata : *block.midiIn) {
+                if (midiScratch_.size() >= midiScratch_.capacity()) {
+                    jassertfalse;  // a producer past the port's budget
+                    break;
+                }
+
                 auto message = metadata.getMessage();
                 // Seconds from the start of the block, which is what a device
                 // reads on both sides: the fork stamps its events that way and

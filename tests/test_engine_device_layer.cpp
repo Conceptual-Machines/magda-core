@@ -70,6 +70,28 @@ float peakOf(const juce::AudioBuffer<float>& buffer) {
     return buffer.getMagnitude(0, buffer.getNumSamples());
 }
 
+/// Counts what it was handed, and nothing else.
+///
+/// The adapter's MIDI path cannot be measured through a real device: what a
+/// synth does with a clock byte is its own business, and a device that ignored
+/// half its input would look exactly like an adapter that dropped half.
+class CountingDevice final : public magda::daw::audio::MagdaDevice {
+  public:
+    magda::daw::audio::DeviceProperties properties() const override {
+        magda::daw::audio::DeviceProperties properties;
+        properties.pluginId = "counting";
+        properties.name = "Counting";
+        properties.takesMidiInput = true;
+        return properties;
+    }
+
+    void process(magda::daw::audio::DeviceProcessContext& context) override {
+        received = context.midi != nullptr ? context.midi->size() : 0;
+    }
+
+    int received = 0;
+};
+
 }  // namespace
 
 TEST_CASE("the engine can run every device that has moved to the SDK", "[engine][devices][2174]") {
@@ -204,4 +226,42 @@ TEST_CASE("the plan's resolved values reach the device's parameters", "[engine][
     device->process(deviceBlock);
 
     CHECK(hosted->device().parameterValue(0) == Catch::Approx(position).margin(1.0e-5));
+}
+
+TEST_CASE("the MIDI scratch holds every stream the port's budget admits",
+          "[engine][devices][2174]") {
+    // The budget is bytes and the cheapest event is one byte of data, so the
+    // most events a legal block can carry is the budget divided by that, not by
+    // what a note costs. A scratch sized from the note is three quarters of the
+    // way there, and the quarter it is short by is a stream the adapter would
+    // have to grow the vector for -- an allocation on the audio thread, for
+    // input that broke no rule.
+    //
+    // Realtime bytes are what makes this reachable rather than theoretical: a
+    // clock at speed is exactly this shape.
+    constexpr int kEventOverheadBytes = magda::engine::kMidiShortMessageBytes - 3;
+    constexpr int kWorstCaseEvents =
+        magda::engine::kMaxMidiBytesPerPort / (kEventOverheadBytes + 1);
+
+    auto counting = std::make_unique<CountingDevice>();
+    auto* device = counting.get();
+
+    adapter::EngineMagdaDevice hosted(std::move(counting), /*offlineRender=*/false);
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    Block block(context);
+    for (int event = 0; event < kWorstCaseEvents; ++event)
+        block.midi.addEvent(juce::MidiMessage::midiClock(), event % context.maxBlockSize);
+
+    // What was really encoded, checked rather than assumed: the assertion below
+    // is only about the adapter if the buffer it reads is as full as the budget
+    // allows.
+    REQUIRE(block.midi.data.size() <= magda::engine::kMaxMidiBytesPerPort);
+    REQUIRE(block.midi.getNumEvents() == kWorstCaseEvents);
+
+    auto deviceBlock = block.deviceBlock();
+    hosted.process(deviceBlock);
+
+    CHECK(device->received == kWorstCaseEvents);
 }
