@@ -30,7 +30,7 @@ is. When the two disagree, the headers are right and this file is stale.
 | **Engine core: plan, executor, PDC** | [#1889](https://github.com/Conceptual-Machines/magda-core/issues/1889) | **all 10 slices done** |
 | **Arranger clip playback** | [#1890](https://github.com/Conceptual-Machines/magda-core/issues/1890) | **all 7 slices done** |
 | **Parameters, modifiers, macros, automation** | [#1891](https://github.com/Conceptual-Machines/magda-core/issues/1891) | **all 8 slices done** |
-| Rack graph: pins, summing, multi-out, nesting | [#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892) | not started |
+| Rack graph: pins, summing, multi-out, nesting | [#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892) | 3 of 5 slices done |
 | External plugin hosting and hardware inserts | [#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893) | not started |
 | Clip launcher and session playback | [#1894](https://github.com/Conceptual-Machines/magda-core/issues/1894) | not started |
 | Live input, monitoring, recording | [#1895](https://github.com/Conceptual-Machines/magda-core/issues/1895) | not started |
@@ -68,6 +68,17 @@ macros at track, rack and device scope
 ([#2121](https://github.com/Conceptual-Machines/magda-core/issues/2121)),
 value read-back taps ([#2122](https://github.com/Conceptual-Machines/magda-core/issues/2122)),
 parity cases ([#2123](https://github.com/Conceptual-Machines/magda-core/issues/2123)).
+
+Racks, slice by slice: aux outputs and multi-out tracks
+([#2135](https://github.com/Conceptual-Machines/magda-core/issues/2135)),
+delta solo at device and rack scope
+([#2136](https://github.com/Conceptual-Machines/magda-core/issues/2136)),
+nesting, recursion and op-key identity
+([#2137](https://github.com/Conceptual-Machines/magda-core/issues/2137)).
+Open: pins, channel counts and implicit summing
+([#2138](https://github.com/Conceptual-Machines/magda-core/issues/2138)),
+parity cases for rack topologies
+([#2139](https://github.com/Conceptual-Machines/magda-core/issues/2139)).
 
 Validation, slice by slice. Done: whole-project cases and the tiered oracle
 ([#2075](https://github.com/Conceptual-Machines/magda-core/issues/2075)),
@@ -271,6 +282,27 @@ turning it on compiles nothing.
 **Every op has a key.** `T1/D7:deviceGain` is the model location plus the structural role, and
 `validatePlan` proves keys are unique. That key is how a new plan recognises an op in the old
 one, which is the whole of section 4.
+
+A key names the **innermost** rack: a device two racks deep is `T1/R8/C20/D7`, the rack and chain
+it is in rather than the route down to it. That is what bounds what a nesting change costs.
+Wrapping a device in a new rack re-keys that device's own ops and rebuilds the chain fader that
+now reads the new instance; the rack around it, the chain beside it and the whole track above it
+keep the keys they had and carry. Adding a level above an existing nesting re-keys nothing under
+it at all. The seam steps rather than fades, because the op the old signal came from is one of the
+ones that moved and the crossfade pass has no old side left to ramp from.
+`tests/goldens/plan/edit-nest-device.txt` is that blast radius written out. The parameter system
+resolves against the same rule from the other end - a macro on a device two racks deep belongs to
+the nearer of them (`ParamKey`'s `fillScope`) - so a device and its parameters move together.
+
+**A rack instance that contains itself is refused.** The model is a tree of owned values, so the
+loop is in the ids rather than in the pointers: the same `RackId` open twice on one path.
+Refused rather than depth-limited, because compiling it to any depth emits every op under the
+loop a second time under the key it already has, and a duplicate key does not fail the differ,
+it carries one op's runtime state into another. The instance is passed through the way a
+bypassed one is and the cycle is named in the plan's diagnostics. Every walk the compiler makes
+before emitting - what consumes MIDI, what a sidechain depends on, where an instrument is, and
+the parameter table beside it - refuses the same instance, so a track is never ordered behind a
+dependency the plan does not connect. The rule is stated once, in `plan/RackNesting.hpp`.
 
 The op vocabulary is deliberately small: `ClipAudio`, `ClipMidi`, `AudioInput`, `MidiInput`,
 `Device`, `MixAudio`, `MergeMidi`, `Subtract`, `Delay`, `Crossfade`, `Gain`, `Fader`, `SendTap`,
@@ -849,10 +881,13 @@ runner; and none of the migration half exists.
 Worth knowing before reading the code and wondering where something is:
 
 - **Racks, the rest of them** ([#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892)).
-  The ordinary shape already compiles: `PlanCompiler::emitRack` emits chain faders, the rack
-  mix, its MIDI merges and its output fader, nested racks included, and the compiler and
-  executor tests cover them. What is missing is the full pin graph, auxiliary and multi-output
-  routing, and parity for what those imply.
+  `PlanCompiler::emitRack` emits chain faders, the rack mix, its MIDI merges and its output
+  fader; nesting, its recursion case and the identity a nesting change has to leave alone are
+  settled, and so are aux outputs, multi-out tracks and delta solo at both scopes. What is
+  missing is the pin-level connection graph and the channel model, which is stereo everywhere
+  and needs not to be ([#2138](https://github.com/Conceptual-Machines/magda-core/issues/2138)),
+  and the parity corpus for rack topologies
+  ([#2139](https://github.com/Conceptual-Machines/magda-core/issues/2139)).
 - **External plugins** ([#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893)).
   A `Device` op resolves to whatever the host hands the store. Nothing hosts VST3 yet.
 - **Launcher and recording** ([#1894](https://github.com/Conceptual-Machines/magda-core/issues/1894),

@@ -490,6 +490,59 @@ Fixture reorderDevices() {
     return value;
 }
 
+/// An edit that changes the nesting (#2137). A device is wrapped in a rack
+/// where it stood, which is what the model's own wrapChainElementsInRack does
+/// to a selection of one, and the golden is the whole blast radius written out:
+/// the device is somewhere else so its slot is re-keyed, the chain fader now
+/// reads the new instance so it rebuilds, and everything above and beside it
+/// keeps the key it had. ChainSite carries the innermost rack and chain, and
+/// this is what that costs when the innermost changes.
+Fixture nestDevice() {
+    Fixture value;
+    value.name = "edit-nest-device";
+    value.covers = "op identity across a nesting change: what a level added below re-keys";
+
+    const auto rackWith = [](std::vector<ChainElement> elements) {
+        auto rack = std::make_unique<RackInfo>();
+        rack->id = 5;
+        ChainInfo chain;
+        chain.id = 10;
+        chain.elements = std::move(elements);
+        rack->chains.push_back(std::move(chain));
+        return rack;
+    };
+
+    std::vector<ChainElement> before;
+    before.push_back(makeDeviceElement(effect(7)));
+    before.push_back(makeDeviceElement(effect(8)));
+
+    value.tracks = {track(1)};
+    value.tracks[0].chain.fxChainElements.push_back(ChainElement{rackWith(std::move(before))});
+    value.master = master();
+    value.options = withoutMeters();
+
+    // The device in front of the wrap reports latency, so the dry edge of the
+    // instance that appears has a real distance to wait for. It is the one that
+    // does not move, because a fixture states its latencies once and both plans
+    // have to be able to name the op it means.
+    value.deviceLatency = {{deviceAt(1, 7, 5, 10), 64}};
+
+    auto wrapper = std::make_unique<RackInfo>();
+    wrapper->id = 6;
+    ChainInfo wrapped;
+    wrapped.id = 11;
+    wrapped.elements.push_back(makeDeviceElement(effect(8)));
+    wrapper->chains.push_back(std::move(wrapped));
+
+    std::vector<ChainElement> after;
+    after.push_back(makeDeviceElement(effect(7)));
+    after.push_back(ChainElement{std::move(wrapper)});
+
+    value.editedTracks = {track(1)};
+    value.editedTracks[0].chain.fxChainElements.push_back(ChainElement{rackWith(std::move(after))});
+    return value;
+}
+
 }  // namespace
 
 std::vector<Fixture> planFixtures() {
@@ -510,6 +563,7 @@ std::vector<Fixture> planFixtures() {
     fixtures.push_back(insertDevice());
     fixtures.push_back(removeDevice());
     fixtures.push_back(reorderDevices());
+    fixtures.push_back(nestDevice());
     return fixtures;
 }
 

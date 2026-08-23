@@ -14,6 +14,7 @@
 #include "core/TrackChain.hpp"
 #include "core/TrackInfo.hpp"
 #include "param/ModSources.hpp"
+#include "plan/RackNesting.hpp"
 #include "plan/TrackRouting.hpp"
 
 namespace magda::engine {
@@ -53,17 +54,22 @@ bool chainIsActive(const ChainInfo& chain) {
 
 /// Whether anything the compiler will actually emit consumes MIDI. Walks only
 /// the live elements, so a bypassed instrument does not keep the track's MIDI
-/// source ops in the plan with nothing to read them.
-bool elementsConsumeMidi(const std::vector<ChainElement>& elements) {
-    return std::ranges::any_of(elements, [](const ChainElement& element) {
+/// source ops in the plan with nothing to read them, and neither does anything
+/// under a rack instance emitRack will pass the signal through.
+bool elementsConsumeMidi(const std::vector<ChainElement>& elements, RackNesting& nesting) {
+    return std::ranges::any_of(elements, [&](const ChainElement& element) {
         if (isDevice(element)) {
             const auto& device = getDevice(element);
             return !device.bypassed && consumesMidi(device);
         }
         if (isRack(element)) {
             const auto& rack = getRack(element);
-            return !rack.bypassed && std::ranges::any_of(rack.chains, [](const ChainInfo& chain) {
-                return chainIsActive(chain) && elementsConsumeMidi(chain.elements);
+            if (rack.bypassed || nesting.encloses(rack.id))
+                return false;
+
+            const RackNesting::Scope scope{nesting, rack.id};
+            return std::ranges::any_of(rack.chains, [&](const ChainInfo& chain) {
+                return chainIsActive(chain) && elementsConsumeMidi(chain.elements, nesting);
             });
         }
         return false;
@@ -73,17 +79,27 @@ bool elementsConsumeMidi(const std::vector<ChainElement>& elements) {
 /// Whether a rack produces the track's sound rather than processing it, which
 /// is what puts the trigger tap after it rather than in front of it. The fork
 /// asks the same question of the same subtree (rackContainsInstrumentSource).
-bool rackHasInstrument(const RackInfo& rack) {
-    return std::ranges::any_of(rack.chains, [](const ChainInfo& chain) {
+///
+/// Only what will be emitted counts: a bypassed nested rack and one that
+/// contains itself are both passed through, and neither makes a sound for the
+/// tap to sit behind.
+bool rackHasInstrument(const RackInfo& rack, RackNesting& nesting) {
+    if (nesting.encloses(rack.id))
+        return false;
+
+    const RackNesting::Scope scope{nesting, rack.id};
+    return std::ranges::any_of(rack.chains, [&](const ChainInfo& chain) {
         if (!chainIsActive(chain))
             return false;
-        return std::ranges::any_of(chain.elements, [](const ChainElement& element) {
+        return std::ranges::any_of(chain.elements, [&](const ChainElement& element) {
             if (isDevice(element)) {
                 const auto& device = getDevice(element);
                 return !device.bypassed && device.isInstrument;
             }
-            if (isRack(element))
-                return rackHasInstrument(getRack(element));
+            if (isRack(element)) {
+                const auto& nested = getRack(element);
+                return !nested.bypassed && rackHasInstrument(nested, nesting);
+            }
             return false;
         });
     });
@@ -102,7 +118,8 @@ bool sectionConsumesMidi(const std::vector<PostFxChainElement>& section) {
 /// bypassed device is not a dependency, and treating it as one can invent a
 /// cycle that costs a real connection when the cycle breaker resolves it.
 void collectSidechainSources(const std::vector<ChainElement>& elements,
-                             std::optional<SidechainConfig::Type> type, std::set<TrackId>& out) {
+                             std::optional<SidechainConfig::Type> type, std::set<TrackId>& out,
+                             RackNesting& nesting) {
     const auto collect = [&](const SidechainConfig& sidechain) {
         if (sidechain.isActive() && (!type.has_value() || sidechain.type == *type))
             out.insert(sidechain.sourceTrackId);
@@ -115,11 +132,16 @@ void collectSidechainSources(const std::vector<ChainElement>& elements,
                 collect(device.sidechain);
         } else if (isRack(element)) {
             const auto& rack = getRack(element);
-            if (rack.bypassed)
+            // An instance that is passed through connects no sidechain, and
+            // counting one orders this track behind a source it never reads -
+            // which the cycle breaker pays for with a real connection.
+            if (rack.bypassed || nesting.encloses(rack.id))
                 continue;
+
+            const RackNesting::Scope scope{nesting, rack.id};
             for (const auto& chain : rack.chains)
                 if (chainIsActive(chain))
-                    collectSidechainSources(chain.elements, type, out);
+                    collectSidechainSources(chain.elements, type, out, nesting);
         }
     }
 }
@@ -138,8 +160,10 @@ void collectSidechainSources(const TrackInfo& track, std::optional<SidechainConf
     // This walks exactly what emitTrack emits, which is the point: emission
     // resolves a sidechain on any device in any section, so collection has to
     // reach every section too or the two can silently drift apart.
-    if (track.chain.enabled)
-        collectSidechainSources(track.chain.fxChainElements, type, out);
+    if (track.chain.enabled) {
+        RackNesting nesting;
+        collectSidechainSources(track.chain.fxChainElements, type, out, nesting);
+    }
 
     collectSidechainSources(track.chain.postFxChainElements, type, out);
     collectSidechainSources(track.chain.mixerAnalysisElements, type, out);
@@ -269,6 +293,11 @@ class Compiler {
      * alone, and a plan reading one point for both would lose that.
      */
     std::map<TrackId, PortRef> trackTriggerTap_;
+
+    /// The rack instances open around the point emission has reached. The model
+    /// is a tree of owned values, so the loop is in the ids rather than the
+    /// pointers, and an id is only a repeat relative to what it sits inside.
+    RackNesting nesting_;
 
     /// The track whose trigger tap is still being looked for, and whether the
     /// instrument that ends the search has gone by. Top level only, because the
@@ -619,8 +648,27 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     const auto targets = multiOutTargets_.find({site.trackId, device.id});
     const bool hasTargets = ownsMultiOutPairs && targets != multiOutTargets_.end();
 
-    if (device.bypassed)
+    if (device.bypassed) {
+        // Bypass removes the device from the plan, so there is no output to
+        // measure a difference against and the chain passes through unchanged,
+        // which is what the current engine does: bypass reaches it as
+        // `Plugin::setEnabled(false)` and PluginNode's delta subtraction is
+        // guarded on the plugin being enabled.
+        //
+        // The model's own setters cannot produce this pair - bypassing clears
+        // delta solo and enabling delta solo clears bypass, for devices and for
+        // racks (TrackManager::setDeviceBypassed and the rest) - so a project
+        // holding both came in through deserialisation, which writes the two
+        // fields straight into the struct. Reported rather than ignored,
+        // because the delta button will be lit over a device that is passing
+        // its input through, and nothing else would say why.
+        if (device.deltaSolo)
+            diagnose("device " + std::to_string(device.id) + " on track " +
+                     std::to_string(site.trackId) +
+                     ": delta solo on a bypassed device measures nothing, the chain passes "
+                     "through unchanged");
         return signal;
+    }
 
     const auto node = routing::makeRoutingNode(device);
 
@@ -699,6 +747,20 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
 
     ChainSignal out;
 
+    // A transparent tap has no slot at all. Its output is its input, so the
+    // difference it would take is silence whatever the signal, and the model
+    // cannot ask for it: the delta button belongs to DeviceType::Effect alone
+    // (DeviceSlotHeaderSpec's `visibility.delta`), and nothing else writes the
+    // flag. A stored project can still carry one, because the field is
+    // serialised on every device, and that is worth a word rather than a
+    // silence - the plan hands back the chain where the flag asks for nothing
+    // at all.
+    if (transparent && device.deltaSolo)
+        diagnose("device " + std::to_string(device.id) + " on track " +
+                 std::to_string(site.trackId) +
+                 ": delta solo on an analysis device has nothing to subtract, the chain passes "
+                 "through unchanged");
+
     // No audio output means no gain or meter ops. A device that never read the
     // bus leaves it flowing; one that did read it leaves nothing behind.
     if (!transparent && outputWidth == 0) {
@@ -765,8 +827,27 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
 }
 
 ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, ChainSignal signal) {
-    if (rack.bypassed)
+    if (rack.bypassed) {
+        // The device case one level up, and unreachable the same way: the
+        // model's setters keep a rack's bypass and its delta solo apart, so
+        // both together arrived from a stored project.
+        if (rack.deltaSolo)
+            diagnose("rack " + std::to_string(rack.id) +
+                     ": delta solo on a bypassed rack measures nothing, the chain passes through "
+                     "unchanged");
         return signal;
+    }
+
+    // Refused rather than compiled to some depth (RackNesting.hpp), and passed
+    // through the way a bypassed one is, so the rest of the chain still reaches
+    // the fader. Every walk in front of emission carries the same nesting, so
+    // nothing inside a loop that is not compiled becomes a dependency.
+    if (nesting_.encloses(rack.id)) {
+        diagnose(nesting_.cycle(rack.id) + ", it is not compiled and the chain passes through it");
+        return signal;
+    }
+
+    const RackNesting::Scope scope{nesting_, rack.id};
 
     // A rack-level sidechain drives the rack's own followers and triggered
     // modifiers. It is still not a signal edge into the rack, because a rack
@@ -889,7 +970,7 @@ ChainSignal Compiler::emitElements(const std::vector<ChainElement>& elements, co
             signal = emitDevice(device, site, signal);
         } else if (isRack(element)) {
             const auto& rack = getRack(element);
-            endsTheSearch = !rack.bypassed && rackHasInstrument(rack);
+            endsTheSearch = !rack.bypassed && rackHasInstrument(rack, nesting_);
             signal = emitRack(rack, site, signal);
         }
 
@@ -1317,7 +1398,8 @@ RenderPlan compileRenderPlan(const std::vector<TrackInfo>& tracks, const TrackIn
 
 bool chainConsumesMidi(const TrackInfo& track) {
     // Chain power gates the insert chain; the flat sections sit outside it.
-    return (track.chain.enabled && elementsConsumeMidi(track.chain.fxChainElements)) ||
+    RackNesting nesting;
+    return (track.chain.enabled && elementsConsumeMidi(track.chain.fxChainElements, nesting)) ||
            sectionConsumesMidi(track.chain.postFxChainElements) ||
            sectionConsumesMidi(track.chain.mixerAnalysisElements);
 }

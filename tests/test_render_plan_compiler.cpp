@@ -1353,7 +1353,6 @@ TEST_CASE("Every device slot and every rack carries the subtract a delta is take
 
         const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
         requireWellFormed(plan);
-        CHECK(plan.diagnostics.empty());
 
         // The chain, not silence, which is parity: bypass reaches the current
         // engine as `Plugin::setEnabled(false)`, and PluginNode skips the
@@ -1361,6 +1360,69 @@ TEST_CASE("Every device slot and every rack carries the subtract a delta is take
         // that does nothing is silence because subtracting its input from its
         // output leaves nothing, not because the flag is on.
         CHECK(countRole(plan, OpRole::DeviceDelta) == 0);
+
+        // And the pair is reported, because it is a pair the model's own
+        // setters refuse to make: this one was written by hand, the way
+        // deserialisation writes it.
+        REQUIRE(plan.diagnostics.size() == 1);
+        CHECK(plan.diagnostics.front().find("delta solo on a bypassed device measures nothing") !=
+              std::string::npos);
+    }
+
+    SECTION("a bypassed rack is the same one level up") {
+        RackInfo rack;
+        rack.id = 4;
+        rack.bypassed = true;
+        rack.deltaSolo = true;
+        ChainInfo chain;
+        chain.id = 10;
+        chain.elements.push_back(makeDeviceElement(makeEffect(7)));
+        rack.chains.push_back(std::move(chain));
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        CHECK(countRole(plan, OpRole::RackDelta) == 0);
+        REQUIRE(plan.diagnostics.size() == 1);
+        CHECK(plan.diagnostics.front().find("delta solo on a bypassed rack measures nothing") !=
+              std::string::npos);
+    }
+
+    SECTION("an analysis device has no difference to take, and says so") {
+        // The delta button is DeviceType::Effect alone, so this flag cannot be
+        // set from the UI at all. It can be stored, because the field is
+        // serialised on every device, and a plan that quietly handed back the
+        // chain would leave the project saying one thing and the engine doing
+        // another with nothing in between to notice.
+        auto analysis = makeEffect(7);
+        analysis.deviceType = DeviceType::Analysis;
+        analysis.deltaSolo = true;
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(analysis));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        CHECK(countRole(plan, OpRole::DeviceDelta) == 0);
+        REQUIRE(plan.diagnostics.size() == 1);
+        CHECK(plan.diagnostics.front().find(
+                  "delta solo on an analysis device has nothing to subtract") != std::string::npos);
+    }
+
+    SECTION("an analysis device without the flag is not reported at all") {
+        auto analysis = makeEffect(7);
+        analysis.deviceType = DeviceType::Analysis;
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(analysis));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(plan.diagnostics.empty());
     }
 }
 

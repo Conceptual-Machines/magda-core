@@ -128,6 +128,15 @@ enum class EditKind : std::uint8_t {
     AddInstrument,
     RemoveDevice,
     MoveDevice,
+
+    // The two nesting changes (#2137). MoveDevice reorders a device inside the
+    // list it is already in, which is where it stays keyed; these two move it
+    // to a different one, which is the edit op-key identity has something to
+    // say about. A device carries its rack and chain in every key its slot
+    // emits, so what has to hold is that nothing else moves with it.
+    MoveDeviceToSite,
+    WrapDeviceInRack,
+
     BypassDevice,
     DeltaSoloDevice,
     SetDeviceLatency,
@@ -159,6 +168,9 @@ constexpr int kNumEditKinds = static_cast<int>(EditKind::RouteTrack) + 1;
 struct Edit {
     EditKind kind = EditKind::AddDevice;
 
+    /// Where the edit acts. For the kinds that put something somewhere - the
+    /// adds, and MoveDeviceToSite - this is the destination; for the rest it is
+    /// the track the edit was drawn against.
     Site site;
 
     /// The object the edit names, wherever the project keeps it.
