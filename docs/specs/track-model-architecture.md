@@ -35,14 +35,24 @@ The track model is the single source of truth. Views are lenses that present and
 
 ```cpp
 enum class TrackType {
-    Audio,      // Audio clips, recording
-    Instrument, // MIDI → plugin → audio
-    MIDI,       // MIDI only, routes to other tracks
-    Group,      // Contains child tracks, routing hub
-    Aux,        // Receives from sends
-    Master      // Final output
+    Media = 0,     // Clips of any kind, instruments, effects, input
+    Group = 3,     // Contains child tracks, routing hub
+    Aux = 4,       // Receives from sends
+    Master = 5,    // Final output
+    MultiOut = 6,  // Output track for a multi-out instrument pair
+    Chord = 7      // Singleton chord-progression track, monitor-only
 };
 ```
+
+This began as `Audio`, `Instrument` and `MIDI` as three separate types. They
+collapsed into one hybrid track, which kept the name `Audio` and so read as a
+statement about content for years after it had stopped being one; it is `Media`
+now. The ordinals that Instrument and MIDI used are skipped rather than reused,
+because the numbers are written into every `.mgd` and are pinned
+(`tests/test_persisted_enum_pins.cpp`).
+
+What each type can do is declared once in `TrackTypeTraits`, not re-derived per
+call site. See `magda/daw/core/TrackTypes.hpp`.
 
 ### 1.2 Track Hierarchy
 

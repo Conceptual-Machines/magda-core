@@ -414,7 +414,7 @@ bool InstructionExecutor::executeTrack(const TrackOp& op) {
         }
 
         auto createCmd = std::make_unique<CreateTrackCommand>(
-            TrackType::Audio, op.name.isEmpty() ? trackName : op.name);
+            TrackType::Media, op.name.isEmpty() ? trackName : op.name);
         auto* createPtr = createCmd.get();
         api_.undo().executeCommand(std::move(createCmd));
         currentTrackId_ = createPtr->getCreatedTrackId();
@@ -429,7 +429,7 @@ bool InstructionExecutor::executeTrack(const TrackOp& op) {
         return true;
     }
 
-    auto createCmd = std::make_unique<CreateTrackCommand>(TrackType::Audio, op.name);
+    auto createCmd = std::make_unique<CreateTrackCommand>(TrackType::Media, op.name);
     auto* createPtr = createCmd.get();
     api_.undo().executeCommand(std::move(createCmd));
     currentTrackId_ = createPtr->getCreatedTrackId();

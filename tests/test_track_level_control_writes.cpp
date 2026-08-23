@@ -69,7 +69,7 @@ TEST_CASE("track volume writes do not leak into the master channel", "[controlle
     auto& tm = TrackManager::getInstance();
 
     const float masterBefore = tm.getMasterChannel().volume;
-    const TrackId id = tm.createTrack("Drums", TrackType::Audio);
+    const TrackId id = tm.createTrack("Drums", TrackType::Media);
     tm.setTrackVolume(id, 0.25f);
 
     const auto* track = tm.getTrack(id);

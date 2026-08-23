@@ -32,7 +32,7 @@ namespace {
 
 constexpr double kSampleRate = 44100.0;
 
-TrackInfo makeTrack(TrackId id, TrackType type = TrackType::Audio) {
+TrackInfo makeTrack(TrackId id, TrackType type = TrackType::Media) {
     TrackInfo track;
     track.id = id;
     track.type = type;

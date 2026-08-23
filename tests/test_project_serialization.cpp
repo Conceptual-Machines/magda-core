@@ -529,7 +529,7 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         auto& projectManager = ProjectManager::getInstance();
         REQUIRE(projectManager.newProject());
 
-        auto trackId = TrackManager::getInstance().createTrack("Audio Track", TrackType::Audio);
+        auto trackId = TrackManager::getInstance().createTrack("Audio Track", TrackType::Media);
 
         auto sourceFile =
             projectManager.getRecordingsDirectory().getChildFile("unsaved_recording.wav");
@@ -594,7 +594,7 @@ TEST_CASE("Audio clip serialization separates source facts from interpretation",
           "[project][serialization][audio]") {
     ProjectTestFixture fixture;
 
-    auto trackId = TrackManager::getInstance().createTrack("Audio", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("Audio", TrackType::Media);
 
     ClipInfo clip;
     clip.id = 42;
@@ -683,7 +683,7 @@ TEST_CASE("Audio clip serialization separates source facts from interpretation",
 TEST_CASE("Session clip follow action settings roundtrip", "[project][serialization][session]") {
     ProjectTestFixture fixture;
 
-    auto trackId = TrackManager::getInstance().createTrack("MIDI", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("MIDI", TrackType::Media);
 
     ClipInfo clip;
     clip.id = 91;
@@ -732,7 +732,7 @@ TEST_CASE("Clip enabled state roundtrips and missing property defaults to enable
           "[project][serialization][clip]") {
     ProjectTestFixture fixture;
 
-    auto trackId = TrackManager::getInstance().createTrack("MIDI", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("MIDI", TrackType::Media);
 
     ClipInfo clip;
     clip.id = 93;
@@ -778,7 +778,7 @@ TEST_CASE("Looped MIDI clip serialization preserves loop region separate from pl
           "[project][serialization][midi][loop]") {
     ProjectTestFixture fixture;
 
-    auto trackId = TrackManager::getInstance().createTrack("MIDI", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("MIDI", TrackType::Media);
 
     ClipInfo clip;
     clip.id = 92;
@@ -838,7 +838,7 @@ TEST_CASE("Saving a MIDI clip to the media library writes and indexes a generate
     ProjectTestFixture fixture;
     ScopedTestDataDir dataDir("magda-midi-library-test");
 
-    auto trackId = TrackManager::getInstance().createTrack("MIDI Track", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("MIDI Track", TrackType::Media);
     auto clipId =
         ClipManager::getInstance().createMidiClipBeats(trackId, 0.0, 4.0, ClipView::Arrangement);
     REQUIRE(clipId != INVALID_CLIP_ID);
@@ -888,7 +888,7 @@ TEST_CASE("Saved audio library warp markers survive BPM mismatch re-import",
     auto sourceFile = dataDir.dir.getChildFile("drum_loop_135bpm.wav");
     REQUIRE(sourceFile.replaceWithText("not decoded in this regression test"));
 
-    auto trackId = TrackManager::getInstance().createTrack("Audio Track", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("Audio Track", TrackType::Media);
     auto clipId = ClipManager::getInstance().createAudioClip(
         trackId, 0.0, 4.0, sourceFile.getFullPathName(), ClipView::Arrangement, 120.0);
     REQUIRE(clipId != INVALID_CLIP_ID);
@@ -989,7 +989,7 @@ TEST_CASE("MidiFileWriter writes MIDI clip data to a stable destination",
 TEST_CASE("Clip serialization validates type and audio schema", "[project][serialization][audio]") {
     ProjectTestFixture fixture;
 
-    auto trackId = TrackManager::getInstance().createTrack("Track", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("Track", TrackType::Media);
 
     ClipInfo clip;
     clip.id = 7;
@@ -1155,7 +1155,7 @@ TEST_CASE("Automation serialization uses beat-domain property names",
           "[project][serialization][automation][beats]") {
     ProjectTestFixture fixture;
 
-    auto trackId = TrackManager::getInstance().createTrack("Automation", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("Automation", TrackType::Media);
     auto& automation = AutomationManager::getInstance();
     const auto target = ControlTarget::trackVolume(trackId);
     auto laneId = automation.createLane(target, AutomationLaneType::ClipBased);
@@ -1265,7 +1265,7 @@ TEST_CASE("Automation serialization persists only explicit disablement",
           "[project][serialization][automation][authority]") {
     ProjectTestFixture fixture;
 
-    const auto trackId = TrackManager::getInstance().createTrack("Automation", TrackType::Audio);
+    const auto trackId = TrackManager::getInstance().createTrack("Automation", TrackType::Media);
     auto& automation = AutomationManager::getInstance();
     const auto laneId =
         automation.createLane(ControlTarget::trackVolume(trackId), AutomationLaneType::Absolute);
@@ -1361,8 +1361,8 @@ TEST_CASE("Project with Tracks", "[project][serialization][tracks]") {
         auto& projectManager = ProjectManager::getInstance();
 
         // Create a couple tracks
-        trackManager.createTrack("Audio 1", TrackType::Audio);
-        trackManager.createTrack("MIDI 1", TrackType::Audio);
+        trackManager.createTrack("Audio 1", TrackType::Media);
+        trackManager.createTrack("MIDI 1", TrackType::Media);
 
         REQUIRE(trackManager.getTracks().size() == 2);
 
@@ -1386,9 +1386,9 @@ TEST_CASE("Project with Tracks", "[project][serialization][tracks]") {
         const auto& tracks = trackManager.getTracks();
         REQUIRE(tracks.size() == 2);
         REQUIRE(tracks[0].name == "Audio 1");
-        REQUIRE(tracks[0].type == TrackType::Audio);
+        REQUIRE(tracks[0].type == TrackType::Media);
         REQUIRE(tracks[1].name == "MIDI 1");
-        REQUIRE(tracks[1].type == TrackType::Audio);
+        REQUIRE(tracks[1].type == TrackType::Media);
 
         // Cleanup
         trackManager.clearAllTracks();
@@ -1431,7 +1431,7 @@ TEST_CASE("normalizeForType clears input state on input-less tracks",
 
     SECTION("Input-taking track keeps its input state") {
         TrackInfo audio;
-        audio.type = TrackType::Audio;
+        audio.type = TrackType::Media;
         audio.recordArmed = true;
         audio.inputMonitor = InputMonitorMode::In;
         audio.midiInputDevice = "all";
@@ -1511,7 +1511,7 @@ TEST_CASE("Project Manager State", "[project][manager]") {
         REQUIRE(projectManager.hasUnsavedChanges() == false);
 
         // Make a change
-        trackManager.createTrack("Test", TrackType::Audio);
+        trackManager.createTrack("Test", TrackType::Media);
         projectManager.markDirty();
 
         REQUIRE(projectManager.hasUnsavedChanges() == true);
@@ -1631,7 +1631,7 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         auto& clipManager = ClipManager::getInstance();
 
         // Create a track
-        auto trackId = trackManager.createTrack("Test MIDI Track", TrackType::Audio);
+        auto trackId = trackManager.createTrack("Test MIDI Track", TrackType::Media);
         auto* track = trackManager.getTrack(trackId);
         REQUIRE(track != nullptr);
 
@@ -1688,7 +1688,7 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         // Verify the track was restored
         const auto& tracks = trackManager.getTracks();
         REQUIRE(tracks.size() == 1);
-        REQUIRE(tracks[0].type == TrackType::Audio);
+        REQUIRE(tracks[0].type == TrackType::Media);
 
         // Verify the device was restored
         REQUIRE(tracks[0].chain.fxChainElements.size() == 1);
@@ -1714,7 +1714,7 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         auto& trackManager = TrackManager::getInstance();
 
         // Create a track
-        auto trackId = trackManager.createTrack("Test Audio Track", TrackType::Audio);
+        auto trackId = trackManager.createTrack("Test Audio Track", TrackType::Media);
 
         // Add a rack to the track
         auto rackId = trackManager.addRackToTrack(trackId, "Test Rack");
@@ -1804,7 +1804,7 @@ TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginSt
     SECTION("pluginState is serialized and deserialized") {
         auto& trackManager = TrackManager::getInstance();
 
-        auto trackId = trackManager.createTrack("Plugin State Track", TrackType::Audio);
+        auto trackId = trackManager.createTrack("Plugin State Track", TrackType::Media);
 
         DeviceInfo device;
         device.id = 1;
@@ -1840,7 +1840,7 @@ TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginSt
         auto& trackManager = TrackManager::getInstance();
         auto& projectManager = ProjectManager::getInstance();
 
-        auto trackId = trackManager.createTrack("No State Track", TrackType::Audio);
+        auto trackId = trackManager.createTrack("No State Track", TrackType::Media);
 
         DeviceInfo device;
         device.id = 1;
@@ -1870,7 +1870,7 @@ TEST_CASE("TrackInfo persistent runtime seeds roundtrip", "[project][serializati
     ProjectTestFixture fixture;
 
     auto& trackManager = TrackManager::getInstance();
-    auto trackId = trackManager.createTrack("Session Track", TrackType::Audio);
+    auto trackId = trackManager.createTrack("Session Track", TrackType::Media);
     auto* track = trackManager.getTrack(trackId);
     REQUIRE(track != nullptr);
     track->volume = 0.25f;
@@ -1916,7 +1916,7 @@ TEST_CASE("TrackInfo mixer layout commands undo redo",
 
     auto& trackManager = TrackManager::getInstance();
     auto& undoManager = UndoManager::getInstance();
-    auto trackId = trackManager.createTrack("Resizable", TrackType::Audio);
+    auto trackId = trackManager.createTrack("Resizable", TrackType::Media);
     auto* track = trackManager.getTrack(trackId);
     REQUIRE(track != nullptr);
 
@@ -1974,7 +1974,7 @@ TEST_CASE("DeviceInfo panel UI state roundtrip", "[project][serialization][devic
     ProjectTestFixture fixture;
 
     auto& trackManager = TrackManager::getInstance();
-    auto trackId = trackManager.createTrack("Device Track", TrackType::Audio);
+    auto trackId = trackManager.createTrack("Device Track", TrackType::Media);
 
     DeviceInfo device;
     device.id = 23;
@@ -2009,7 +2009,7 @@ TEST_CASE("Device channel counts survive a project roundtrip", "[project][serial
     ProjectTestFixture fixture;
 
     auto& trackManager = TrackManager::getInstance();
-    auto trackId = trackManager.createTrack("Channel Counts", TrackType::Audio);
+    auto trackId = trackManager.createTrack("Channel Counts", TrackType::Media);
 
     DeviceInfo mono;
     mono.id = 31;
@@ -2114,7 +2114,7 @@ TEST_CASE("Section-scoped device ids survive project roundtrip",
     ProjectTestFixture fixture;
 
     auto& trackManager = TrackManager::getInstance();
-    auto trackId = trackManager.createTrack("Section IDs", TrackType::Audio);
+    auto trackId = trackManager.createTrack("Section IDs", TrackType::Media);
 
     DeviceInfo fx;
     fx.name = "FX";
@@ -2160,7 +2160,7 @@ TEST_CASE("Post-FX parameter selections survive project roundtrip",
     ProjectTestFixture fixture;
 
     auto& trackManager = TrackManager::getInstance();
-    auto trackId = trackManager.createTrack("Post FX Params", TrackType::Audio);
+    auto trackId = trackManager.createTrack("Post FX Params", TrackType::Media);
 
     DeviceInfo fx;
     fx.name = "FX";
@@ -2211,8 +2211,8 @@ TEST_CASE("Mixer analysis plugin state survives project roundtrip",
 
     auto& trackManager = TrackManager::getInstance();
     auto& projectManager = ProjectManager::getInstance();
-    auto firstTrackId = trackManager.createTrack("First", TrackType::Audio);
-    auto secondTrackId = trackManager.createTrack("Second", TrackType::Audio);
+    auto firstTrackId = trackManager.createTrack("First", TrackType::Media);
+    auto secondTrackId = trackManager.createTrack("Second", TrackType::Media);
 
     DeviceInfo firstScope;
     firstScope.name = "Oscilloscope";
@@ -2275,7 +2275,7 @@ TEST_CASE("Master mixer analysis plugin state survives project roundtrip",
     REQUIRE(masterTrack->chain.mixerAnalysisElements[0].device.pluginState ==
             juce::String("<PLUGIN type=\"oscilloscope\" traceColour=\"3\"/>"));
 
-    auto childTrackId = trackManager.createTrack("Later Track", TrackType::Audio);
+    auto childTrackId = trackManager.createTrack("Later Track", TrackType::Media);
     DeviceInfo siblingScope = scope;
     siblingScope.pluginState = "<PLUGIN type=\"oscilloscope\" traceColour=\"6\"/>";
     REQUIRE(trackManager.addDeviceToMixerAnalysis(childTrackId, siblingScope) == 2);
@@ -2287,7 +2287,7 @@ TEST_CASE("Post-fx device params are not automation targets",
 
     auto& trackManager = TrackManager::getInstance();
     auto& automationManager = AutomationManager::getInstance();
-    auto trackId = trackManager.createTrack("Automation Section IDs", TrackType::Audio);
+    auto trackId = trackManager.createTrack("Automation Section IDs", TrackType::Media);
 
     DeviceInfo fx;
     fx.name = "FX";
@@ -2321,7 +2321,7 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     ProjectTestFixture fixture;
 
     auto& trackManager = TrackManager::getInstance();
-    auto trackId = trackManager.createTrack("Parameter Track", TrackType::Audio);
+    auto trackId = trackManager.createTrack("Parameter Track", TrackType::Media);
 
     ParameterInfo param;
     param.paramIndex = 12;
@@ -2430,7 +2430,7 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
 TEST_CASE("MIDI controller curve metadata roundtrip", "[project][serialization][midi]") {
     ProjectTestFixture fixture;
 
-    auto trackId = TrackManager::getInstance().createTrack("MIDI", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("MIDI", TrackType::Media);
 
     ClipInfo clip;
     clip.id = 51;
@@ -2560,7 +2560,7 @@ TEST_CASE("Saved automation targets keep the flag that makes a track path valid"
     automation.clearAll();
     tracks.clearAllTracks();
 
-    const auto trackId = tracks.createTrack("Bass", TrackType::Audio);
+    const auto trackId = tracks.createTrack("Bass", TrackType::Media);
 
     AutomationTarget target;
     target.kind = ControlTarget::Kind::TrackVolume;

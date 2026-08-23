@@ -3895,7 +3895,7 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         for (const auto& filePath : audioFiles) {
             juce::String trackName = juce::File(filePath).getFileNameWithoutExtension();
             auto cmd =
-                std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName, insertAfter);
+                std::make_unique<CreateTrackCommand>(TrackType::Media, trackName, insertAfter);
             auto* cmdPtr = cmd.get();
             UndoManager::getInstance().executeCommand(std::move(cmd));
             TrackId trackId = cmdPtr->getCreatedTrackId();
@@ -4179,7 +4179,7 @@ void SessionView::itemDropped(const SourceDetails& details) {
             TrackManager::getInstance().addDeviceToTrack(trackId, device);
         } else {
             // Drop past last track — create new track with plugin
-            TrackType trackType = TrackType::Audio;
+            TrackType trackType = TrackType::Media;
             juce::String pluginName = obj->getProperty("name").toString();
             auto cmd =
                 std::make_unique<CreateTrackWithDeviceCommand>(pluginName, trackType, device);

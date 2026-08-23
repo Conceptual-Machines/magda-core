@@ -29,8 +29,8 @@ TEST_CASE("FocusedApiLive cycleDevice selects top-level devices on the selected 
     auto& tm = TrackManager::getInstance();
     auto& sel = SelectionManager::getInstance();
 
-    const auto otherTrack = tm.createTrack("Other", TrackType::Audio);
-    const auto selectedTrack = tm.createTrack("Selected", TrackType::Audio);
+    const auto otherTrack = tm.createTrack("Other", TrackType::Media);
+    const auto selectedTrack = tm.createTrack("Selected", TrackType::Media);
 
     const auto otherDevice = tm.addDeviceToTrack(otherTrack, makeDevice("Other EQ"));
     const auto firstDevice = tm.addDeviceToTrack(selectedTrack, makeDevice("EQ"));

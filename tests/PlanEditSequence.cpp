@@ -233,7 +233,7 @@ DeviceInfo instrument(DeviceId id) {
 TrackInfo audioTrack(TrackId id) {
     TrackInfo track;
     track.id = id;
-    track.type = TrackType::Audio;
+    track.type = TrackType::Media;
     track.name = "Track " + juce::String(id);
     track.audioOutputDevice = "master";
     track.chain.mixerAnalysisElements.push_back(PostFxChainElement{captureDevice(id)});

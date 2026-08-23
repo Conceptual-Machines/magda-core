@@ -56,7 +56,7 @@ constexpr double kSourceSeconds = 12.0;
 TrackInfo plainTrack() {
     TrackInfo track;
     track.id = kTrack;
-    track.type = TrackType::Audio;
+    track.type = TrackType::Media;
     track.name = "Null Diff";
     track.audioOutputDevice = "master";
     return track;
@@ -70,7 +70,7 @@ TrackInfo plainTrack() {
 TrackInfo instrumentTrackOn(TrackId trackId, DeviceId deviceId, const char* name) {
     TrackInfo track;
     track.id = trackId;
-    track.type = TrackType::Audio;
+    track.type = TrackType::Media;
     track.name = name;
     track.audioOutputDevice = "master";
 
@@ -160,7 +160,7 @@ TrackInfo masterTrack() {
 TrackInfo mixTrack(TrackId id, const char* name) {
     TrackInfo track;
     track.id = id;
-    track.type = TrackType::Audio;
+    track.type = TrackType::Media;
     track.name = name;
     track.audioOutputDevice = "master";
     return track;
@@ -172,7 +172,7 @@ TrackInfo mixTrack(TrackId id, const char* name) {
 TrackInfo gainTrackOn(TrackId trackId, DeviceId deviceId, const char* name, float base) {
     TrackInfo track;
     track.id = trackId;
-    track.type = TrackType::Audio;
+    track.type = TrackType::Media;
     track.name = name;
     track.audioOutputDevice = "master";
     track.chain.fxChainElements.emplace_back(gainDevice(deviceId, base));

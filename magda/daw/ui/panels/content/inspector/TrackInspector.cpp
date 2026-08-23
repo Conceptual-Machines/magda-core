@@ -1603,7 +1603,7 @@ void TrackInspector::showAddSendMenu() {
 
     addTracksOfType(magda::TrackType::Aux);
     addTracksOfType(magda::TrackType::Group);
-    addTracksOfType(magda::TrackType::Audio);
+    addTracksOfType(magda::TrackType::Media);
 
     if (menu.getNumItems() == 0) {
         menu.addItem(-1, "(No available tracks)", false);

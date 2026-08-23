@@ -39,8 +39,8 @@ TEST_CASE("Automation lanes and their targets are enumerable through the facade"
     auto& tracks = TrackManager::getInstance();
     auto& automation = AutomationManager::getInstance();
 
-    const auto trackA = tracks.createTrack("A", TrackType::Audio);
-    const auto trackB = tracks.createTrack("B", TrackType::Audio);
+    const auto trackA = tracks.createTrack("A", TrackType::Media);
+    const auto trackB = tracks.createTrack("B", TrackType::Media);
 
     const auto laneA = automation.createLane(volumeTarget(trackA), AutomationLaneType::Absolute);
     const auto laneB = automation.createLane(volumeTarget(trackB), AutomationLaneType::Absolute);
@@ -67,7 +67,7 @@ TEST_CASE("Edit-scoped lanes are enumerable even though no track owns them",
           "[automation-api][enumeration]") {
     resetState();
     auto& automation = AutomationManager::getInstance();
-    const auto trackId = TrackManager::getInstance().createTrack("A", TrackType::Audio);
+    const auto trackId = TrackManager::getInstance().createTrack("A", TrackType::Media);
 
     const auto trackLane =
         automation.createLane(volumeTarget(trackId), AutomationLaneType::Absolute);
@@ -87,7 +87,7 @@ TEST_CASE("Edit-scoped lanes are enumerable even though no track owns them",
 TEST_CASE("Bulk point writes are one undo step", "[automation-api][bulk]") {
     resetState();
     auto& automation = AutomationManager::getInstance();
-    const auto trackId = TrackManager::getInstance().createTrack("A", TrackType::Audio);
+    const auto trackId = TrackManager::getInstance().createTrack("A", TrackType::Media);
     const auto laneId = automation.createLane(volumeTarget(trackId), AutomationLaneType::Absolute);
 
     AutomationApiLive api;
@@ -124,7 +124,7 @@ TEST_CASE("Bulk point writes are one undo step", "[automation-api][bulk]") {
 TEST_CASE("Bulk point writes replace rather than append", "[automation-api][bulk]") {
     resetState();
     auto& automation = AutomationManager::getInstance();
-    const auto trackId = TrackManager::getInstance().createTrack("A", TrackType::Audio);
+    const auto trackId = TrackManager::getInstance().createTrack("A", TrackType::Media);
     const auto laneId = automation.createLane(volumeTarget(trackId), AutomationLaneType::Absolute);
 
     AutomationApiLive api;
@@ -154,7 +154,7 @@ TEST_CASE("Bulk point writes replace rather than append", "[automation-api][bulk
 TEST_CASE("Bulk point writes are refused where they do not apply", "[automation-api][bulk]") {
     resetState();
     auto& automation = AutomationManager::getInstance();
-    const auto trackId = TrackManager::getInstance().createTrack("A", TrackType::Audio);
+    const auto trackId = TrackManager::getInstance().createTrack("A", TrackType::Media);
     AutomationApiLive api;
 
     SECTION("unknown lane") {
@@ -174,7 +174,7 @@ TEST_CASE("Bulk point writes are refused where they do not apply", "[automation-
 TEST_CASE("Deleting a lane through the facade is undoable", "[automation-api][bulk]") {
     resetState();
     auto& automation = AutomationManager::getInstance();
-    const auto trackId = TrackManager::getInstance().createTrack("A", TrackType::Audio);
+    const auto trackId = TrackManager::getInstance().createTrack("A", TrackType::Media);
     const auto laneId = automation.createLane(volumeTarget(trackId), AutomationLaneType::Absolute);
 
     AutomationApiLive api;

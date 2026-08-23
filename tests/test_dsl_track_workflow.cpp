@@ -15,7 +15,7 @@ void addTrack(test::MockMagdaApi& api, TrackId id, const juce::String& name) {
     TrackInfo t;
     t.id = id;
     t.name = name;
-    t.type = TrackType::Audio;
+    t.type = TrackType::Media;
     api.tracks_.tracks.push_back(t);
     api.tracks_.nextId = std::max(api.tracks_.nextId, id + 1);
 }
@@ -37,9 +37,9 @@ TEST_CASE("DSL filter(tracks) groups every track and is undoable", "[dsl][tracks
     auto& tm = TrackManager::getInstance();
     tm.clearAllTracks();
     UndoManager::getInstance().clearHistory();
-    auto k = tm.createTrack("Kick", TrackType::Audio);
-    auto s = tm.createTrack("Snare", TrackType::Audio);
-    auto b = tm.createTrack("Bass", TrackType::Audio);
+    auto k = tm.createTrack("Kick", TrackType::Media);
+    auto s = tm.createTrack("Snare", TrackType::Media);
+    auto b = tm.createTrack("Bass", TrackType::Media);
 
     MagdaApiLive api;
     dsl::Interpreter interp(api);
@@ -127,9 +127,9 @@ TEST_CASE("DSL groups explicit track ids and chains colour onto the group",
     auto& tm = TrackManager::getInstance();
     tm.clearAllTracks();
     UndoManager::getInstance().clearHistory();
-    auto k = tm.createTrack("Kick", TrackType::Audio);
-    auto s = tm.createTrack("Snare", TrackType::Audio);
-    auto h = tm.createTrack("Hat", TrackType::Audio);
+    auto k = tm.createTrack("Kick", TrackType::Media);
+    auto s = tm.createTrack("Snare", TrackType::Media);
+    auto h = tm.createTrack("Hat", TrackType::Media);
 
     MagdaApiLive api;
     dsl::Interpreter interp(api);
@@ -170,11 +170,11 @@ TEST_CASE("DSL explicit track ids stay stable after grouping reorders tracks",
     auto& tm = TrackManager::getInstance();
     tm.clearAllTracks();
     UndoManager::getInstance().clearHistory();
-    auto k = tm.createTrack("Kick", TrackType::Audio);
-    auto s = tm.createTrack("Snare", TrackType::Audio);
-    auto b = tm.createTrack("Bass", TrackType::Audio);
-    auto lv = tm.createTrack("Lead Vox", TrackType::Audio);
-    auto dv = tm.createTrack("Double Vox", TrackType::Audio);
+    auto k = tm.createTrack("Kick", TrackType::Media);
+    auto s = tm.createTrack("Snare", TrackType::Media);
+    auto b = tm.createTrack("Bass", TrackType::Media);
+    auto lv = tm.createTrack("Lead Vox", TrackType::Media);
+    auto dv = tm.createTrack("Double Vox", TrackType::Media);
 
     MagdaApiLive api;
     dsl::Interpreter interp(api);

@@ -33,7 +33,7 @@ void assertMessageThread() {
 
 juce::String trackTypeName(TrackType type) {
     switch (type) {
-        case TrackType::Audio:
+        case TrackType::Media:
             return "audio";
         case TrackType::Group:
             return "group";

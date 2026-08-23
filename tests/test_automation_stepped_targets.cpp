@@ -24,7 +24,7 @@ void resetState() {
 /// automation target pointing at it.
 AutomationTarget targetForParamWithScale(ParameterScale scale) {
     auto& tm = TrackManager::getInstance();
-    const auto trackId = tm.createTrack("T", TrackType::Audio);
+    const auto trackId = tm.createTrack("T", TrackType::Media);
 
     ParameterInfo param;
     param.paramIndex = 0;
@@ -79,7 +79,7 @@ TEST_CASE("Discrete plugin params are not treated as switches", "[automation][st
 TEST_CASE("Track volume does not want stepped automation", "[automation][stepped]") {
     resetState();
     auto& tm = TrackManager::getInstance();
-    const auto trackId = tm.createTrack("T", TrackType::Audio);
+    const auto trackId = tm.createTrack("T", TrackType::Media);
     CHECK_FALSE(targetWantsSteppedAutomation(ControlTarget::trackVolume(trackId)));
 }
 

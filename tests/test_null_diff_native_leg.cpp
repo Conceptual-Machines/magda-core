@@ -96,7 +96,7 @@ TEST_CASE("A routed MIDI source is not captured", "[nulldiff][native]") {
 
     TrackInfo source;
     source.id = 1;
-    source.type = TrackType::Audio;
+    source.type = TrackType::Media;
     source.name = "Source";
     source.audioOutputDevice = "master";
     {
@@ -111,7 +111,7 @@ TEST_CASE("A routed MIDI source is not captured", "[nulldiff][native]") {
 
     TrackInfo destination;
     destination.id = 2;
-    destination.type = TrackType::Audio;
+    destination.type = TrackType::Media;
     destination.name = "Synth";
     destination.audioOutputDevice = "master";
     // What makes the source a source: an internal MIDI route, live only while
@@ -188,7 +188,7 @@ TEST_CASE("An eligible track with nothing to play is still captured", "[nulldiff
     const auto instrumentTrack = [](TrackId trackId, DeviceId deviceId, const char* name) {
         TrackInfo track;
         track.id = trackId;
-        track.type = TrackType::Audio;
+        track.type = TrackType::Media;
         track.name = name;
         track.audioOutputDevice = "master";
 

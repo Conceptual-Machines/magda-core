@@ -80,7 +80,7 @@ static_assert(time_stretch_mode::kSignalsmith == 15);
 
 // --- Tracks ------------------------------------------------------------------
 
-static_assert(static_cast<int>(TrackType::Audio) == 0);
+static_assert(static_cast<int>(TrackType::Media) == 0);
 static_assert(static_cast<int>(TrackType::Group) == 3);
 static_assert(static_cast<int>(TrackType::Aux) == 4);
 static_assert(static_cast<int>(TrackType::Master) == 5);
@@ -286,7 +286,7 @@ std::vector<Pin> allPins() {
         PIN(MidiCurveType, Step, 0),
         PIN(MidiCurveType, Linear, 1),
         PIN(MidiCurveType, Bezier, 2),
-        PIN(TrackType, Audio, 0),
+        PIN(TrackType, Media, 0),
         PIN(TrackType, Group, 3),
         PIN(TrackType, Aux, 4),
         PIN(TrackType, Master, 5),

@@ -478,7 +478,7 @@ void MainView::setupComponents() {
     setupCornerButton(addTrackButton, "AddTrack", BinaryData::add_svg, BinaryData::add_svgSize);
     addTrackButton->onClick = []() {
         UndoManager::getInstance().executeCommand(
-            std::make_unique<CreateTrackCommand>(TrackType::Audio));
+            std::make_unique<CreateTrackCommand>(TrackType::Media));
     };
     addTrackButton->setTooltip("Add track");
 

@@ -363,7 +363,7 @@ TEST_CASE("An epsilon is bought by a plugin, not declared", "[nulldiff][blocksiz
 
         TrackInfo track;
         track.id = 1;
-        track.type = TrackType::Audio;
+        track.type = TrackType::Media;
         track.name = "Track";
         track.audioOutputDevice = "master";
 

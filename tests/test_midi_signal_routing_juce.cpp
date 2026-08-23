@@ -1487,7 +1487,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
         auto& trackManager = magda::TrackManager::getInstance();
         const auto targetTrackId = trackManager.createTrack("Step Sequencer Pattern Paste Target",
-                                                            magda::TrackType::Audio);
+                                                            magda::TrackType::Media);
         const auto targetColour = juce::Colour(0xff3366aa);
         trackManager.setTrackColour(targetTrackId, targetColour);
 
@@ -1580,7 +1580,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
         auto& trackManager = magda::TrackManager::getInstance();
         const auto targetTrackId = trackManager.createTrack("Poly Sequencer Pattern Paste Target",
-                                                            magda::TrackType::Audio);
+                                                            magda::TrackType::Media);
         const auto targetColour = juce::Colour(0xff8844aa);
         trackManager.setTrackColour(targetTrackId, targetColour);
 

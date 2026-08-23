@@ -20,7 +20,7 @@
 namespace magda::goldens {
 namespace {
 
-TrackInfo track(TrackId id, TrackType type = TrackType::Audio) {
+TrackInfo track(TrackId id, TrackType type = TrackType::Media) {
     TrackInfo value;
     value.id = id;
     value.type = type;

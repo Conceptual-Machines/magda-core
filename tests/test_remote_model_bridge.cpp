@@ -55,7 +55,7 @@ TEST_CASE("A track created outside the remote API reaches subscribers", "[remote
     // The case the bridge exists for: this is what the MAGDA UI does, with no
     // remote client involved. Without the bridge a subscriber would never hear
     // about it.
-    TrackManager::getInstance().createTrack("From the UI", TrackType::Audio);
+    TrackManager::getInstance().createTrack("From the UI", TrackType::Media);
     fixture.service.changes().flush();
 
     REQUIRE(fixture.sawTopic(Topic::Tracks));
@@ -69,7 +69,7 @@ TEST_CASE("A locally committed change makes a client's expected revision stale",
     // A client reads the revision, the user then edits in the UI, and the
     // client's write must not silently land on changed state.
     const auto clientView = fixture.service.currentRevision();
-    TrackManager::getInstance().createTrack("Meanwhile", TrackType::Audio);
+    TrackManager::getInstance().createTrack("Meanwhile", TrackType::Media);
 
     auto context = fullyGrantedContext();
     context.expectedRevision = clientView;
@@ -89,7 +89,7 @@ TEST_CASE("A locally committed change makes a client's expected revision stale",
 
 TEST_CASE("Device notifications land on the devices topic", "[remote][bridge]") {
     BridgeFixture fixture;
-    const auto trackId = TrackManager::getInstance().createTrack("FX", TrackType::Audio);
+    const auto trackId = TrackManager::getInstance().createTrack("FX", TrackType::Media);
     fixture.service.changes().flush();
     fixture.seen.clear();
 
@@ -101,7 +101,7 @@ TEST_CASE("Device notifications land on the devices topic", "[remote][bridge]") 
 
 TEST_CASE("A burst of model notifications coalesces to one delivery", "[remote][bridge]") {
     BridgeFixture fixture;
-    const auto trackId = TrackManager::getInstance().createTrack("Busy", TrackType::Audio);
+    const auto trackId = TrackManager::getInstance().createTrack("Busy", TrackType::Media);
     fixture.service.changes().flush();
     fixture.seen.clear();
 
@@ -125,7 +125,7 @@ TEST_CASE("Destroying the bridge detaches it from the model", "[remote][bridge][
     fixture.seen.clear();
 
     // Must not notify, and must not touch the destroyed listener.
-    TrackManager::getInstance().createTrack("After detach", TrackType::Audio);
+    TrackManager::getInstance().createTrack("After detach", TrackType::Media);
     fixture.service.changes().flush();
 
     REQUIRE(fixture.seen.empty());
@@ -151,7 +151,7 @@ TEST_CASE("A shut-down service ignores model notifications", "[remote][bridge][l
     fixture.service.shutdown();
     fixture.seen.clear();
 
-    TrackManager::getInstance().createTrack("After shutdown", TrackType::Audio);
+    TrackManager::getInstance().createTrack("After shutdown", TrackType::Media);
     fixture.service.changes().flush();
 
     REQUIRE(fixture.seen.empty());
@@ -164,7 +164,7 @@ TEST_CASE("Clip and track notifications also invalidate the session grid", "[rem
     // The session grid is projected out of the clips and keyed by track, so a
     // subscriber watching only `session` has to hear about both. Marking only
     // the obvious topic would leave it showing a grid the project no longer has.
-    TrackManager::getInstance().createTrack("Drums", TrackType::Audio);
+    TrackManager::getInstance().createTrack("Drums", TrackType::Media);
     ClipManager::getInstance().clearAllClips();
     fixture.service.changes().flush();
 

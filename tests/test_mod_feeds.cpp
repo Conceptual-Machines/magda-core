@@ -523,7 +523,7 @@ TEST_CASE("A modulation feed does not order the tracks", "[engine][mod][feeds]")
     listener.chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
 
     auto sink = makeTrack(2);
-    sink.type = TrackType::Audio;
+    sink.type = TrackType::Media;
 
     // Declared source-last, which is the order that used to invent the cycle.
     const std::vector<TrackInfo> tracks{sink, listener};
@@ -561,7 +561,7 @@ TEST_CASE("A modifier added as a follower listens at the far end", "[engine][mod
     auto& manager = TrackManager::getInstance();
     manager.clearAllTracks();
 
-    const auto trackId = manager.createTrack("Source", TrackType::Audio);
+    const auto trackId = manager.createTrack("Source", TrackType::Media);
     const auto path = ChainNodePath::trackLevel(trackId);
 
     manager.addMod(path, 0, ModType::Follower, LFOWaveform::Sine);

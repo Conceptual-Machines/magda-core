@@ -81,7 +81,7 @@ TEST_CASE("SetClipPropertyCommand restores setter side effects", "[undo][clip][p
     ClipManager::getInstance().clearAllClips();
     TrackManager::getInstance().clearAllTracks();
 
-    auto trackId = TrackManager::getInstance().createTrack("Track", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("Track", TrackType::Media);
     auto clipId = ClipManager::getInstance().createAudioClip(trackId, 0.0, 4.0, "test.wav",
                                                              ClipView::Arrangement);
     auto* clip = ClipManager::getInstance().getClip(clipId);

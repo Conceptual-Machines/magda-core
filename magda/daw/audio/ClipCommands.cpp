@@ -2362,7 +2362,7 @@ void BounceToNewTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
     juce::String trackName =
         sourceClipName.isNotEmpty() ? sourceClipName + " (bounced)" : "Bounced";
-    newTrackId_ = trackManager.createTrack(trackName, TrackType::Audio);
+    newTrackId_ = trackManager.createTrack(trackName, TrackType::Media);
 
     // Move new track to position after source track
     int sourceIndex = trackManager.getTrackIndex(sourceTrackId);
@@ -2923,7 +2923,7 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
     auto& trackManager = TrackManager::getInstance();
     juce::String clipName =
         clip.name.isNotEmpty() ? clip.name : audioFile.getFileNameWithoutExtension();
-    TrackId newTrackId = trackManager.createTrack("Drum Grid - " + clipName, TrackType::Audio);
+    TrackId newTrackId = trackManager.createTrack("Drum Grid - " + clipName, TrackType::Media);
     if (newTrackId == INVALID_TRACK_ID)
         return;
 

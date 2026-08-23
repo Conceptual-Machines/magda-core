@@ -99,7 +99,7 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             const auto before = fixture.service.currentRevision();
             // Not routed through the dispatcher, so the re-entrancy guard must
             // not suppress it — this is what the bridge exists for.
-            TrackManager::getInstance().createTrack("By hand", TrackType::Audio);
+            TrackManager::getInstance().createTrack("By hand", TrackType::Media);
             expect(fixture.service.currentRevision() > before);
         }
 
@@ -107,7 +107,7 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
         {
             Fixture fixture;
             const auto trackId =
-                TrackManager::getInstance().createTrack("Automated", TrackType::Audio);
+                TrackManager::getInstance().createTrack("Automated", TrackType::Media);
             const auto before = fixture.service.currentRevision();
 
             {
@@ -328,7 +328,7 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
         {
             Fixture fixture;
             const auto trackId =
-                TrackManager::getInstance().createTrack("Device host", TrackType::Audio);
+                TrackManager::getInstance().createTrack("Device host", TrackType::Media);
 
             auto* path = new juce::DynamicObject();
             path->setProperty("trackId", static_cast<int>(trackId));
@@ -407,7 +407,7 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
     };
 
     static AutomationLaneId createLane(AutomationLaneType type) {
-        const auto trackId = TrackManager::getInstance().createTrack("Auto", TrackType::Audio);
+        const auto trackId = TrackManager::getInstance().createTrack("Auto", TrackType::Media);
         AutomationTarget target;
         target.kind = ControlTarget::Kind::TrackVolume;
         target.devicePath = ChainNodePath::trackLevel(trackId);

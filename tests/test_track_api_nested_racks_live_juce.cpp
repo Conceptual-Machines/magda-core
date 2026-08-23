@@ -29,7 +29,7 @@ class TrackApiNestedRacksLiveTest final : public juce::UnitTest {
             Fixture fixture;
             TrackApiLive api;
 
-            const auto track = api.createTrack("Bus", TrackType::Audio);
+            const auto track = api.createTrack("Bus", TrackType::Media);
             const auto outerRack = api.addRackToTrack(track, "Outer");
             expect(outerRack != INVALID_RACK_ID);
 
@@ -79,7 +79,7 @@ class TrackApiNestedRacksLiveTest final : public juce::UnitTest {
             Fixture fixture;
             TrackApiLive api;
 
-            const auto track = api.createTrack("Bus", TrackType::Audio);
+            const auto track = api.createTrack("Bus", TrackType::Media);
             const auto outerRack = api.addRackToTrack(track, "Outer");
             const auto outerRackPath = ChainNodePath::rack(track, outerRack);
             const auto outerChainPath =
@@ -114,7 +114,7 @@ class TrackApiNestedRacksLiveTest final : public juce::UnitTest {
             Fixture fixture;
             TrackApiLive api;
 
-            const auto track = api.createTrack("Bus", TrackType::Audio);
+            const auto track = api.createTrack("Bus", TrackType::Media);
             const auto rackId = api.addRackToTrack(track, "Outer");
             const auto rackPath = ChainNodePath::rack(track, rackId);
             const auto chainId = api.getRackByPath(rackPath)->chains.front().id;
@@ -135,7 +135,7 @@ class TrackApiNestedRacksLiveTest final : public juce::UnitTest {
             Fixture fixture;
             TrackApiLive api;
 
-            const auto track = api.createTrack("Bus", TrackType::Audio);
+            const auto track = api.createTrack("Bus", TrackType::Media);
             const auto rackId = api.addRackToTrack(track, "Outer");
             const auto rackPath = ChainNodePath::rack(track, rackId);
             const auto chainId = api.getRackByPath(rackPath)->chains.front().id;
@@ -203,7 +203,7 @@ class TrackApiNestedRacksLiveTest final : public juce::UnitTest {
             Fixture fixture;
             TrackApiLive api;
 
-            const auto track = api.createTrack("Bus", TrackType::Audio);
+            const auto track = api.createTrack("Bus", TrackType::Media);
             const auto rackA = api.addRackToTrack(track, "A");
             const auto rackB = api.addRackToTrack(track, "B");
             const auto pathA = ChainNodePath::rack(track, rackA);
@@ -278,7 +278,7 @@ class TrackApiNestedRacksLiveTest final : public juce::UnitTest {
             TrackManager& model = TrackManager::getInstance();
             TrackApiLive api;
 
-            const auto track = api.createTrack("Bus", TrackType::Audio);
+            const auto track = api.createTrack("Bus", TrackType::Media);
             const auto rackId = api.addRackToTrack(track, "Outer");
             const auto rackPath = ChainNodePath::rack(track, rackId);
             const auto chain1 = api.getRackByPath(rackPath)->chains.front().id;

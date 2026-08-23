@@ -120,7 +120,7 @@ class PostFxFaderOrderTest final : public juce::UnitTest {
             return f;
 
         auto& tm = TrackManager::getInstance();
-        f.trackId = tm.createTrack("PostFx", TrackType::Audio);
+        f.trackId = tm.createTrack("PostFx", TrackType::Media);
         const auto deviceId = tm.addDeviceToPostFx(f.trackId, makePostFxDevice());
         f.devicePath = ChainNodePath::postFxDevice(f.trackId, deviceId);
         f.bridge->syncTrackPlugins(f.trackId);
@@ -205,7 +205,7 @@ class PostFxFaderOrderTest final : public juce::UnitTest {
             return;
 
         auto& tm = TrackManager::getInstance();
-        const auto trackId = tm.createTrack("Levels", TrackType::Audio);
+        const auto trackId = tm.createTrack("Levels", TrackType::Media);
 
         DeviceInfo levels;
         levels.name = "Levels";
@@ -335,7 +335,7 @@ class PostFxFaderOrderTest final : public juce::UnitTest {
             return;
 
         auto& tm = TrackManager::getInstance();
-        const auto trackId = tm.createTrack("Sends", TrackType::Audio);
+        const auto trackId = tm.createTrack("Sends", TrackType::Media);
 
         SendInfo pre;
         pre.busIndex = 0;
@@ -408,7 +408,7 @@ class PostFxFaderOrderTest final : public juce::UnitTest {
         // instrument declares its output pairs and activating one creates the
         // child track and its link. A hand-made link is not enough — the sync
         // path resolves the source device and returns early without it.
-        const auto sourceId = tm.createTrack("Source", TrackType::Audio);
+        const auto sourceId = tm.createTrack("Source", TrackType::Media);
         DeviceInfo instrument;
         instrument.name = "MultiOutSynth";
         instrument.format = PluginFormat::Internal;

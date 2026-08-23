@@ -3401,22 +3401,15 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
         if (!track)
             return;
 
-        // Block drops on group/aux tracks (no clip timeline)
-        if (track->type == TrackType::Group || track->type == TrackType::Aux) {
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::AlertWindow::WarningIcon, "Drop Failed",
-                "Files cannot be dropped on group or aux tracks.");
+        // One question about the target, and none at all about the file. A
+        // Media track is hybrid, so what is dropped decides which clip gets
+        // made and never whether it is allowed. A Drum Grid on the chain used
+        // to refuse every dropped file here, which made the track likeliest to
+        // want a .mid the one that would not take one (#2172).
+        if (!track->acceptsUserClips()) {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Drop Failed",
+                                                   "Clips cannot be placed on this track.");
             return;
-        }
-
-        // Block drops on tracks with a DrumGrid plugin
-        for (const auto& element : track->chain.fxChainElements) {
-            if (isDevice(element) && getDevice(element).pluginId.containsIgnoreCase("drumgrid")) {
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::AlertWindow::WarningIcon, "Drop Failed",
-                    "Files cannot be dropped on Drum Grid tracks.");
-                return;
-            }
         }
     }
     // If targetTrackId is still INVALID, we'll create a new track below
@@ -3455,7 +3448,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
 
                 juce::String trackName = audioFile.getFileNameWithoutExtension();
                 auto createTrackCmd =
-                    std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName, insertAfter);
+                    std::make_unique<CreateTrackCommand>(TrackType::Media, trackName, insertAfter);
                 auto* createTrackPtr = createTrackCmd.get();
                 UndoManager::getInstance().executeCommand(std::move(createTrackCmd));
                 TrackId clipTrackId = createTrackPtr->getCreatedTrackId();
@@ -3585,7 +3578,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                         trackName += " " + juce::String(listIdx + 1);
 
                     auto createTrackCmd =
-                        std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName);
+                        std::make_unique<CreateTrackCommand>(TrackType::Media, trackName);
                     auto* createTrackPtr = createTrackCmd.get();
                     UndoManager::getInstance().executeCommand(std::move(createTrackCmd));
                     clipTrackId = createTrackPtr->getCreatedTrackId();
@@ -3758,7 +3751,7 @@ void TrackContentPanel::itemDropped(const SourceDetails& details) {
 
     if (auto* obj = details.description.getDynamicObject()) {
         auto device = TrackManager::deviceInfoFromPluginObject(*obj);
-        TrackType trackType = TrackType::Audio;
+        TrackType trackType = TrackType::Media;
         juce::String pluginName = obj->getProperty("name").toString();
         auto cmd = std::make_unique<CreateTrackWithDeviceCommand>(pluginName, trackType, device);
         UndoManager::getInstance().executeCommand(std::move(cmd));

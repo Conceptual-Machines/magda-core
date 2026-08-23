@@ -2921,7 +2921,7 @@ void MixerView::itemDropped(const SourceDetails& details) {
         }
     } else {
         // Drop on empty area — create new track with plugin
-        TrackType trackType = TrackType::Audio;
+        TrackType trackType = TrackType::Media;
         juce::String pluginName = obj->getProperty("name").toString();
         auto cmd = std::make_unique<CreateTrackWithDeviceCommand>(pluginName, trackType, device);
         UndoManager::getInstance().executeCommand(std::move(cmd));

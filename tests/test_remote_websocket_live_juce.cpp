@@ -135,7 +135,7 @@ class RemoteWebSocketLiveTest final : public juce::UnitTest {
 
             // Not through the API — this is the user doing something in MAGDA
             // while a client is connected, which is what the model bridge is for.
-            TrackManager::getInstance().createTrack("By hand", TrackType::Audio);
+            TrackManager::getInstance().createTrack("By hand", TrackType::Media);
 
             const auto reply = fixture.exchange(requestJson("tracks.list", object({})));
             const auto* tracks = reply["result"].getArray();
@@ -158,7 +158,7 @@ class RemoteWebSocketLiveTest final : public juce::UnitTest {
             // pump — and the hop from a model listener to a socket write — is
             // actually exercised.
             const auto pushed = fixture.subscribeThenObserve({"tracks"}, [] {
-                TrackManager::getInstance().createTrack("By hand", TrackType::Audio);
+                TrackManager::getInstance().createTrack("By hand", TrackType::Media);
             });
 
             expect(pushed["method"].toString() == "subscriptions.event");

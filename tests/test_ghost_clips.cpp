@@ -25,7 +25,7 @@ static void resetState() {
 }
 
 static TrackId createTrack(const char* name = "Track") {
-    return TrackManager::getInstance().createTrack(name, TrackType::Audio);
+    return TrackManager::getInstance().createTrack(name, TrackType::Media);
 }
 
 static ClipId createMidi(TrackId trackId, double start, double length,

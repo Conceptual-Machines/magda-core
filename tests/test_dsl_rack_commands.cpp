@@ -11,7 +11,7 @@ using Catch::Approx;
 TEST_CASE("DSL creates and configures a rack and its chains", "[dsl][racks]") {
     auto& tracks = TrackManager::getInstance();
     tracks.clearAllTracks();
-    const auto trackId = tracks.createTrack("Bass", TrackType::Audio);
+    const auto trackId = tracks.createTrack("Bass", TrackType::Media);
 
     MagdaApiLive api;
     dsl::Interpreter interpreter(api);
@@ -47,7 +47,7 @@ TEST_CASE("DSL creates and configures a rack and its chains", "[dsl][racks]") {
 TEST_CASE("DSL fx.add after rack.new lands inside the rack chain", "[dsl][racks]") {
     auto& tracks = TrackManager::getInstance();
     tracks.clearAllTracks();
-    const auto trackId = tracks.createTrack("Bass", TrackType::Audio);
+    const auto trackId = tracks.createTrack("Bass", TrackType::Media);
 
     MagdaApiLive api;
     dsl::Interpreter interpreter(api);

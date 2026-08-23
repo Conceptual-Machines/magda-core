@@ -41,7 +41,7 @@ AutomationTarget panTarget(TrackId id) {
 TEST_CASE("AutomationManager touch baseline: set / get / clear round-trip",
           "[automation][modes][touch-baseline]") {
     resetState();
-    auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Media);
     auto& mgr = AutomationManager::getInstance();
     auto target = volumeTarget(trackId);
 
@@ -59,7 +59,7 @@ TEST_CASE("AutomationManager touch baseline: set / get / clear round-trip",
 TEST_CASE("AutomationManager touch baseline: setting twice overwrites the value",
           "[automation][modes][touch-baseline]") {
     resetState();
-    auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Media);
     auto& mgr = AutomationManager::getInstance();
     auto target = volumeTarget(trackId);
 
@@ -72,7 +72,7 @@ TEST_CASE("AutomationManager touch baseline: setting twice overwrites the value"
 TEST_CASE("AutomationManager touch baseline: per-target storage is independent",
           "[automation][modes][touch-baseline]") {
     resetState();
-    auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Media);
     auto& mgr = AutomationManager::getInstance();
     auto vol = volumeTarget(trackId);
     auto pan = panTarget(trackId);
@@ -91,7 +91,7 @@ TEST_CASE("AutomationManager touch baseline: per-target storage is independent",
 TEST_CASE("AutomationManager: getUserTouchedTargets reflects current set",
           "[automation][modes][touch-baseline]") {
     resetState();
-    auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Media);
     auto& mgr = AutomationManager::getInstance();
 
     REQUIRE(mgr.getUserTouchedTargets().empty());
@@ -116,7 +116,7 @@ TEST_CASE("AutomationManager seeds device macro lanes from the live macro value"
     resetState();
 
     auto& trackManager = TrackManager::getInstance();
-    auto trackId = trackManager.createTrack("T", TrackType::Audio);
+    auto trackId = trackManager.createTrack("T", TrackType::Media);
 
     DeviceInfo device;
     device.name = "Filter";

@@ -184,7 +184,7 @@ TEST_CASE("Command state exposes bounded selected-track and selected-device cont
     TrackInfo track;
     track.id = 42;
     track.name = "Selected Synth";
-    track.type = TrackType::Audio;
+    track.type = TrackType::Media;
 
     DeviceInfo synth;
     synth.id = 7;
@@ -263,7 +263,7 @@ TEST_CASE("DSL fx.add executes documented internal-device compatibility aliases"
         REQUIRE(expected != nullptr);
 
         const auto trackId =
-            tracks.createTrack("DSL alias " + juce::String(static_cast<int>(i)), TrackType::Audio);
+            tracks.createTrack("DSL alias " + juce::String(static_cast<int>(i)), TrackType::Media);
         const auto command = "track(id=" + juce::String(static_cast<int>(i) + 1) +
                              ").fx.add(name=\"" + alias + "\")";
 
@@ -289,7 +289,7 @@ TEST_CASE("InstructionExecutor executes documented internal-device compatibility
         REQUIRE(expected != nullptr);
 
         const auto trackId = tracks.createTrack(
-            "Compact alias " + juce::String(static_cast<int>(i)), TrackType::Audio);
+            "Compact alias " + juce::String(static_cast<int>(i)), TrackType::Media);
         const auto compact = "FX " + juce::String(static_cast<int>(i) + 1) + " " + alias;
         const auto instructions = parser.parse(compact);
 

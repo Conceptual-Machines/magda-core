@@ -86,7 +86,7 @@ TEST_CASE("magda.tracks.create routes to TrackApi", "[lua_bindings][tracks]") {
     REQUIRE(id.has_value());
     REQUIRE(mock.tracks_.created.size() == 1);
     REQUIRE(mock.tracks_.created[0].name == "Drums");
-    REQUIRE(mock.tracks_.created[0].type == magda::TrackType::Audio);
+    REQUIRE(mock.tracks_.created[0].type == magda::TrackType::Media);
     REQUIRE(*id == mock.tracks_.created[0].id);
 }
 
@@ -102,7 +102,7 @@ TEST_CASE("magda.tracks.create accepts every track-type alias", "[lua_bindings][
     REQUIRE(rt.eval("magda.tracks.create('mo', 'multi_out')"));
 
     REQUIRE(mock.tracks_.created.size() == 5);
-    REQUIRE(mock.tracks_.created[0].type == magda::TrackType::Audio);
+    REQUIRE(mock.tracks_.created[0].type == magda::TrackType::Media);
     REQUIRE(mock.tracks_.created[1].type == magda::TrackType::Group);
     REQUIRE(mock.tracks_.created[2].type == magda::TrackType::Aux);
     REQUIRE(mock.tracks_.created[3].type == magda::TrackType::Master);
@@ -171,7 +171,7 @@ TEST_CASE("magda.tracks.list returns a snapshot table per track", "[lua_bindings
     magda::TrackInfo a;
     a.id = 1;
     a.name = "Drums";
-    a.type = magda::TrackType::Audio;
+    a.type = magda::TrackType::Media;
     a.volume = 0.8f;
     a.pan = -0.2f;
     a.muted = true;
@@ -210,7 +210,7 @@ TEST_CASE("magda.tracks.master returns the master track", "[lua_bindings][tracks
     magda::TrackInfo ordinary;
     ordinary.id = 1;
     ordinary.name = "Drums";
-    ordinary.type = magda::TrackType::Audio;
+    ordinary.type = magda::TrackType::Media;
     mock.tracks_.tracks.push_back(ordinary);
 
     LuaRuntime rt;

@@ -3648,7 +3648,7 @@ static juce::String applyFourOscPresetToFocusedDevice(magda::MagdaApi& api,
         newDevice.deviceType = magda::DeviceType::Instrument;
         newDevice.format = magda::PluginFormat::Internal;
 
-        const auto trackId = tm.createTrack(trackName, magda::TrackType::Audio);
+        const auto trackId = tm.createTrack(trackName, magda::TrackType::Media);
         if (trackId == magda::INVALID_TRACK_ID)
             return "(could not create track for preset)";
         const auto deviceId = tm.addDeviceToTrack(trackId, newDevice);
