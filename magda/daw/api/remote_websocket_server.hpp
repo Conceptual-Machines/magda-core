@@ -39,7 +39,7 @@ class SubscriptionHub;
  *
  *     {"jsonrpc":"2.0","id":7,"method":"tracks.rename","params":{...},
  *      "meta":{"expectedRevision":42,"deadlineMs":5000,
- *              "idempotencyKey":"0f7c1a2b-3d4e-5f60-8a9b-cbd0e1f23456"}}
+ *              "idempotencyKey":"example-key"}}
  *
  * It cannot live inside `params`, because operation schemas are declared with
  * `additionalProperties:false` and would reject it as an unknown field. A
