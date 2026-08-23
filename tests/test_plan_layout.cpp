@@ -188,7 +188,7 @@ void requireNoLiveOverlap(const Layout& layout) {
             const auto flat = layout.flat(static_cast<OpId>(i), static_cast<int>(port));
             if (canonical[flat] != flat)
                 continue;
-            ports[{plan.ops[i].outputs[port], layout.buffers.portSlots[flat]}].push_back(flat);
+            ports[{plan.ops[i].outputs[port].kind, layout.buffers.portSlots[flat]}].push_back(flat);
         }
 
     INFO(magda::engine::dumpPlan(plan));

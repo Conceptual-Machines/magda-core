@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <deque>
 #include <map>
 #include <memory>
@@ -105,6 +106,22 @@ class ConstantSource final : public EngineAudioSource {
     float level_;
 };
 
+/// A different level on each side, so anything that collapses the pair to one
+/// channel shows up instead of being hidden by symmetry.
+class StereoSource final : public EngineAudioSource {
+  public:
+    StereoSource(float left, float right) : left_(left), right_(right) {}
+
+    void render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) override {
+        juce::ignoreUnused(block);
+        for (std::size_t channel = 0; channel < out.getNumChannels(); ++channel)
+            out.getSingleChannelBlock(channel).fill(channel == 0 ? left_ : right_);
+    }
+
+  private:
+    float left_, right_;
+};
+
 /// One sample per timeline position, so two short blocks and one long block
 /// over the same range are comparable sample for sample.
 class RampSource final : public EngineAudioSource {
@@ -203,6 +220,46 @@ class NoteToDcInstrument final : public EngineDevice {
 
   private:
     float level_ = 0.0f;
+};
+
+/// Records how wide its block was and writes a different level on each
+/// channel, so both what it was given and what it wrote can be checked.
+class WidthProbeDevice final : public EngineDevice {
+  public:
+    explicit WidthProbeDevice(std::vector<float> perChannel) : perChannel_(std::move(perChannel)) {}
+
+    void process(DeviceBlock& block) override {
+        channelsSeen = static_cast<int>(block.audio.getNumChannels());
+        inputSeen.assign(block.audio.getNumChannels(), 0.0f);
+        for (std::size_t channel = 0; channel < block.audio.getNumChannels(); ++channel) {
+            inputSeen[channel] = block.audio.getSample(static_cast<int>(channel), 0);
+            if (channel < perChannel_.size())
+                block.audio.getSingleChannelBlock(channel).fill(perChannel_[channel]);
+        }
+    }
+
+    int channelsSeen = -1;
+    std::vector<float> inputSeen;
+
+  private:
+    std::vector<float> perChannel_;
+};
+
+/// Fills every channel with a constant, ignoring its input, the way an
+/// instrument generates rather than processes.
+class ConstantInstrument final : public EngineDevice {
+  public:
+    explicit ConstantInstrument(float level) : level_(level) {}
+
+    void process(DeviceBlock& block) override {
+        inputSeen = block.audio.getNumChannels() > 0 ? block.audio.getSample(0, 0) : 0.0f;
+        block.audio.fill(level_);
+    }
+
+    float inputSeen = 0.0f;
+
+  private:
+    float level_;
 };
 
 /// One sample at timeline position zero and silence everywhere else, so where
@@ -413,6 +470,19 @@ struct Harness {
                 return static_cast<OpId>(i);
         FAIL("plan has no op with the requested role");
         return magda::engine::INVALID_OP_ID;
+    }
+
+    /// The meter on one device's slot, for tracks with more than one.
+    float takeMeterForDevice(DeviceId deviceId) {
+        for (const auto& op : plan.ops) {
+            if (op.key.role != OpRole::DeviceMeter || op.key.deviceId != deviceId)
+                continue;
+            const auto found = meters.find(op.key);
+            REQUIRE(found != meters.end());
+            return found->second->read().loudest();
+        }
+        FAIL("plan has no device meter for the device");
+        return 0.0f;
     }
 
     /// Takes the tap's level, which is what reading a meter does: it reports
@@ -906,7 +976,11 @@ TEST_CASE("A rack chain out of the mix contributes neither audio nor MIDI", "[en
 
         harness.prepareCleanly();
         harness.render();
-        CHECK(harness.outputSample() == approx(0.25f + instrumentLevel));
+        // The rack's input reaches every chain and the chains are summed. The
+        // empty chain passes it through, and the instrument's chain adds the
+        // instrument to it rather than replacing it, which is what the current
+        // engine's parallel rack wiring does with the same model.
+        CHECK(harness.outputSample() == approx(0.25f + 0.25f + instrumentLevel));
     }
 
     SECTION("the second chain is muted") {
@@ -1473,7 +1547,12 @@ TEST_CASE("Block size does not change where delayed MIDI lands", "[engine][exec]
     const auto renderNotes = [](const std::vector<int>& blockSizes) {
         auto track = makeTrack(1);
         track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
-        track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(8)));
+        // A MIDI-consuming effect rather than an instrument. An instrument is
+        // never fed the chain, so there is no delayed audio ahead of it for its
+        // MIDI to line up with.
+        auto reader = makeEffect(8);
+        reader.canReceiveMidi = true;
+        track.chain.fxChainElements.push_back(makeDeviceElement(reader));
 
         Harness harness({track}, makeMaster());
         ConstantSource audio(0.0f);
@@ -1499,8 +1578,8 @@ TEST_CASE("Block size does not change where delayed MIDI lands", "[engine][exec]
     const auto whole = renderNotes({kBlockSize, kBlockSize, kBlockSize, kBlockSize});
     const auto split = renderNotes({1, 7, kBlockSize, 3, 1, 40, 20, kBlockSize, 60, 24});
 
-    // The instrument's audio arrives 80 samples late, so its MIDI is held to
-    // meet it: a note at t is seen at t + 80, however the blocks were cut.
+    // The reader's audio arrives 80 samples late, so its MIDI is held to meet
+    // it: a note at t is seen at t + 80, however the blocks were cut.
     REQUIRE_FALSE(whole.empty());
     for (const auto position : whole)
         CHECK(position % 23 == 80 % 23);
@@ -1520,7 +1599,9 @@ TEST_CASE("Block size does not change where delayed MIDI lands", "[engine][exec]
 
         auto track = makeTrack(1);
         track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
-        track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(8)));
+        auto reader = makeEffect(8);
+        reader.canReceiveMidi = true;
+        track.chain.fxChainElements.push_back(makeDeviceElement(reader));
 
         Harness harness({track}, makeMaster());
         ConstantSource audio(0.0f);
@@ -1848,4 +1929,198 @@ TEST_CASE("A multi-out pair the device stops writing goes silent", "[engine][exe
 
     // The main pair is unaffected: it is written every block.
     CHECK(harness.takeMeterFor(OpRole::TrackMeter, 1) == approx(0.1f));
+}
+
+TEST_CASE("A device is handed the channels it declared", "[engine][exec]") {
+    SECTION("a mono device sees one channel and is heard on both") {
+        auto effect = makeEffect(7);
+        effect.audioInputChannels = 1;
+        effect.audioOutputChannels = 1;
+
+        auto track = makeTrack(1);
+        track.chain.fxChainElements.push_back(makeDeviceElement(effect));
+
+        Harness harness({track}, makeMaster());
+        ConstantSource source(0.5f);
+        WidthProbeDevice device({0.25f, 0.75f});
+        harness.bindings.clipAudio[1] = &source;
+        harness.bindings.devices[DeviceKey{7}] = &device;
+
+        harness.prepareCleanly();
+        harness.render();
+
+        CHECK(device.channelsSeen == 1);
+        REQUIRE(device.inputSeen.size() == 1);
+        CHECK(device.inputSeen[0] == approx(0.5f));
+
+        // The one channel it wrote, on both sides of the slot: the way the
+        // current engine reads a one-pin source off pin 1 twice.
+        CHECK(harness.outputSample(0) == approx(0.25f));
+        CHECK(harness.outputSample(1) == approx(0.25f));
+    }
+
+    SECTION("a device with one input and two outputs never sees the far side") {
+        auto effect = makeEffect(7);
+        effect.audioInputChannels = 1;
+
+        auto track = makeTrack(1);
+        track.chain.fxChainElements.push_back(makeDeviceElement(effect));
+
+        Harness harness({track}, makeMaster());
+        ConstantSource source(0.5f);
+        WidthProbeDevice device({0.25f, 0.75f});
+        harness.bindings.clipAudio[1] = &source;
+        harness.bindings.devices[DeviceKey{7}] = &device;
+
+        harness.prepareCleanly();
+        harness.render();
+
+        // Two channels to write, but only the first was ever connected on the
+        // way in: the second starts silent rather than holding the bus.
+        CHECK(device.channelsSeen == 2);
+        REQUIRE(device.inputSeen.size() == 2);
+        CHECK(device.inputSeen[0] == approx(0.5f));
+        CHECK(device.inputSeen[1] == approx(0.0f));
+
+        CHECK(harness.outputSample(0) == approx(0.25f));
+        CHECK(harness.outputSample(1) == approx(0.75f));
+    }
+
+    SECTION("a device with no audio input is handed no audio at all") {
+        auto generator = makeEffect(7);
+        generator.audioInputChannels = 0;
+
+        auto track = makeTrack(1);
+        track.chain.fxChainElements.push_back(makeDeviceElement(generator));
+
+        Harness harness({track}, makeMaster());
+        ConstantSource source(0.5f);
+        WidthProbeDevice device({0.25f, 0.25f});
+        harness.bindings.clipAudio[1] = &source;
+        harness.bindings.devices[DeviceKey{7}] = &device;
+
+        harness.prepareCleanly();
+        harness.render();
+
+        REQUIRE(device.inputSeen.size() == 2);
+        CHECK(device.inputSeen[0] == approx(0.0f));
+
+        // And the bus flows past it untouched, which is the whole point of not
+        // wiring it: the source reaches the output, the generator does not.
+        CHECK(harness.outputSample(0) == approx(0.5f));
+        CHECK(harness.outputSample(1) == approx(0.5f));
+    }
+
+    SECTION("a device with no audio output leaves nothing behind it") {
+        auto sink = makeEffect(7);
+        sink.audioOutputChannels = 0;
+
+        auto track = makeTrack(1);
+        track.chain.fxChainElements.push_back(makeDeviceElement(sink));
+
+        Harness harness({track}, makeMaster());
+        ConstantSource source(0.5f);
+        WidthProbeDevice device({0.25f, 0.25f});
+        harness.bindings.clipAudio[1] = &source;
+        harness.bindings.devices[DeviceKey{7}] = &device;
+
+        harness.prepareCleanly();
+        harness.render();
+
+        // It still reads the bus, and still runs.
+        REQUIRE(device.inputSeen.size() == 2);
+        CHECK(device.inputSeen[0] == approx(0.5f));
+
+        CHECK(harness.outputSample(0) == approx(0.0f));
+        CHECK(harness.outputSample(1) == approx(0.0f));
+    }
+}
+
+TEST_CASE("An unbound device passes the chain on at full width", "[engine][exec]") {
+    // What the model last saw is no reason to narrow audio that no plugin is
+    // processing. The current engine answers 2 and 2 for a chain node whose
+    // plugin it cannot find, so a device that failed to load passes audio
+    // through whatever its channel counts say.
+    // Every width a missing device can reach a plan with. A zero output count
+    // is not one of them: it is never saved, because it silences the chain on
+    // its own, so it only reaches a plan while its plugin is loaded.
+    auto effect = makeEffect(7);
+    effect.audioInputChannels = GENERATE(0, 1, 2);
+    effect.audioOutputChannels = GENERATE(1, 2);
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(effect));
+
+    Harness harness({track}, makeMaster());
+    StereoSource source(0.25f, 0.75f);
+    harness.bindings.clipAudio[1] = &source;
+
+    // Prepare reports it too.
+    const auto messages = harness.prepare();
+    REQUIRE(messages.size() == 1);
+    CHECK(messages[0].find("no device bound for D7, it passes audio through") != std::string::npos);
+    harness.render();
+
+    INFO("in=" << effect.audioInputChannels << " out=" << effect.audioOutputChannels);
+
+    // Both sides come out as they went in. A mono device that failed to load
+    // must not collapse the pair onto its left channel.
+    CHECK(harness.outputSample(0) == approx(0.25f));
+    CHECK(harness.outputSample(1) == approx(0.75f));
+}
+
+TEST_CASE("An instrument sums with the audio already flowing past it", "[engine][exec]") {
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(8)));
+
+    Harness harness({track}, makeMaster());
+    ConstantSource source(0.5f);
+    NoteSource notes(60);
+    GainDevice effect(0.5f);
+    ConstantInstrument instrument(0.125f);
+    harness.bindings.clipAudio[1] = &source;
+    harness.bindings.clipMidi[1] = &notes;
+    harness.bindings.devices[DeviceKey{7}] = &effect;
+    harness.bindings.devices[DeviceKey{8}] = &instrument;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    // The effect's 0.25 is not lost. The current engine adds an instrument to
+    // the audio bus without clearing it, so the two are summed.
+    CHECK(harness.outputSample(0) == approx(0.25f + 0.125f));
+    CHECK(harness.outputSample(1) == approx(0.25f + 0.125f));
+
+    // And the instrument never saw the bus it summed into.
+    CHECK(instrument.inputSeen == approx(0.0f));
+}
+
+TEST_CASE("An instrument's slot trims and meters the instrument alone", "[engine][exec]") {
+    auto instrument = makeInstrument(8);
+    instrument.gainValue = 0.5f;
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+    track.chain.fxChainElements.push_back(makeDeviceElement(instrument));
+
+    Harness harness({track}, makeMaster());
+    ConstantSource source(0.5f);
+    NoteSource notes(60);
+    GainDevice effect(1.0f);
+    ConstantInstrument generator(0.25f);
+    harness.bindings.clipAudio[1] = &source;
+    harness.bindings.clipMidi[1] = &notes;
+    harness.bindings.devices[DeviceKey{7}] = &effect;
+    harness.bindings.devices[DeviceKey{8}] = &generator;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    // The trim scales the instrument, not the 0.5 flowing past it. The current
+    // engine puts the trim and the meter on the plugin itself, inside the
+    // wrapper that does the summing.
+    CHECK(harness.outputSample(0) == approx(0.5f + 0.125f));
+
+    CHECK(harness.takeMeterForDevice(8) == approx(0.125f));
 }

@@ -130,6 +130,27 @@ void updateDeviceCapabilityFlags(DeviceInfo& device, te::Plugin& plugin) {
     if (snapshot.hasMidiInput && !device.isInstrument)
         device.canReceiveMidi = true;
     device.producesMidi = snapshot.hasMidiOutput;
+
+    // The channel counts the chain model compiles against, asked the way the
+    // incumbent's chain wiring asks them.
+    //
+    // Only asked of a plugin that can answer. te::ExternalPlugin fills neither
+    // array while it has no AudioPluginInstance, so one still loading reports
+    // 0 and 0. Storing that would leave a working device connected to no audio
+    // for the rest of the session, because the model is told once and keeps
+    // it, while the current engine asks again on every rewire.
+    //
+    // What we distrust is a missing instance, not an empty answer. 0 and 0 is
+    // correct for a MIDI-only plugin such as te::MidiPatchBay, and the current
+    // engine gives those no audio because that is what they report. Only an
+    // external plugin can be missing its instance.
+    const auto* external = dynamic_cast<const te::ExternalPlugin*>(&plugin);
+    if (external == nullptr || external->getAudioPluginInstance() != nullptr) {
+        juce::StringArray audioInputs, audioOutputs;
+        plugin.getChannelNames(&audioInputs, &audioOutputs);
+        device.audioInputChannels = audioInputs.size();
+        device.audioOutputChannels = audioOutputs.size();
+    }
 }
 
 // Faust's processor owns a dynamic canSidechain flag, while the generic
@@ -2231,6 +2252,14 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
     const auto deviceId = devicePath.getDeviceId();
     if (!plugin)
         return;
+
+    // What the plugin reports, onto the canonical DeviceInfo. Before the
+    // processor below, since this has to run even when no processor could be
+    // made: the counts come off the plugin, not off the processor. Every
+    // rack-contained device passes through here and nowhere else, so without
+    // this they would all keep the stereo defaults.
+    if (auto* canonical = TrackManager::getInstance().getDeviceInChainByPath(devicePath))
+        updateDeviceCapabilityFlags(*canonical, *plugin);
 
     auto processor =
         createDeviceProcessorForPlugin(deviceId, plugin, device.pluginId, &deviceTrackContext_);

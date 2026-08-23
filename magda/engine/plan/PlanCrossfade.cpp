@@ -14,7 +14,7 @@ SignalKind kindOf(const RenderPlan& plan, const PortRef& ref) {
         return SignalKind::Midi;
     const auto& outputs = plan.ops[static_cast<std::size_t>(ref.op)].outputs;
     const auto port = static_cast<std::size_t>(ref.port);
-    return port < outputs.size() ? outputs[port] : SignalKind::Midi;
+    return port < outputs.size() ? outputs[port].kind : SignalKind::Midi;
 }
 
 /// Whether two edges, one in each plan, name the same producer and port. Keys
@@ -191,7 +191,7 @@ bool Pass::resolveSide(std::size_t consumer, const PortRef& oldSide, bool mustBe
         return false;
 
     const auto port = static_cast<std::size_t>(oldSide.port);
-    if (port >= producerOp.outputs.size() || producerOp.outputs[port] != SignalKind::Audio)
+    if (port >= producerOp.outputs.size() || producerOp.outputs[port].kind != SignalKind::Audio)
         return false;
 
     // What it is computing, not only that it is still there. A producer whose

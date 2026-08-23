@@ -221,6 +221,49 @@ Four is the usual shape rather than a rule: an analysis device is a transparent 
 no trim, no tap and no difference to take, so it compiles to a bare process op, and a compile
 with device meters switched off emits no meter ops at all.
 
+**A device says how wide it is, and the chain wiring follows.** A plan port carries a channel
+count as well as a kind (`PortDesc`), and a `Device` op says what it reads off the bus
+(`PlanOp::audioInputChannels`) as well as what its output port carries. The counts come from the
+plugin, asked the way the current engine's chain wiring asks them (`getChannelNames`), and they
+decide four things it already decides: a device reporting no audio input is not wired to the bus
+at all, so the bus flows past it and its own slot ends nowhere; a device reporting no audio
+output leaves nothing for the next stage to read; an instrument is never handed the bus, and its
+slot ends in a `MixAudio` that sums it into whatever was already flowing rather than replacing
+it; and a device narrower than the bus is handed only the channels it declared, its own output
+widened back over the slot afterwards. That last part is why widths live on `Device` ops alone:
+everything downstream reads a slot at the bus's width, so a width anywhere else would be
+describing a boundary that is not there, and `validatePlan` says so.
+
+A width describes a plugin, so where there is no plugin there is no width. A device nothing is
+bound to stays the full-width passthrough it has always been, whatever the model last saw it
+report: the current engine answers 2 and 2 for a chain node whose plugin it cannot find, and a
+device that failed to load must not fold the chain down on its way past.
+
+That is also why a zero output count is never written to a project. The counts are persisted so
+that a plan is right the moment a project opens, before every plugin has been instantiated, which
+is why the capability flags beside them are persisted too. Those are only ever written when they
+are true, so a stale one can loosen routing but never take it away, and a count that can silence
+the chain behind it has to obey the same rule: zero comes back from the live plugin or not at
+all, on the way in as well as on the way out.
+
+The stamping happens in `PluginManager::registerRackPluginProcessor`, which is the one place every
+device passes through, racks included. That matters more than it sounds: a device inside a rack
+reaches the engine only by that route, and racks are where instruments live, so stamping anywhere
+higher up would leave exactly the devices this section is about reading the defaults forever.
+
+The counts are asked only of a plugin in a position to answer. `te::ExternalPlugin` fills neither
+channel list while it has no `AudioPluginInstance`, so a plugin still loading, or one whose scan is
+stale, reports nought in and nought out. The incumbent asks again on every rewire and recovers by
+itself; the model is told once and keeps it, so writing that reading down would wire a real device
+to no audio for the rest of the session.
+
+What is untrusted is a missing instance, not an empty answer. Nought in and nought out is a real
+reading for a MIDI-only plugin, `te::MidiPatchBay` and `te::MidiModifierPlugin` among them, and the
+incumbent wires those to no audio precisely because that is what they report. Treating an empty
+answer as no answer would guess stereo for them and put them in the audio path the incumbent leaves
+them out of, so the question asked is whether the plugin could answer, which only an external one
+can fail.
+
 **The delta is a `Subtract`,** between the processing and the trim, reading the device's output
 and the dry signal the device was handed; a rack gets the same op one level up, around its own
 fader. The dry edge is taken in front of whatever aligned the device's own input, so the

@@ -27,8 +27,11 @@ struct RenderContext {
     /// block (block size is an I/O batching concept, never a precision one).
     int maxBlockSize = 512;
 
-    /// Channels on every audio port. Stereo throughout: the model has no mono
-    /// tracks and the plan carries no channel layouts.
+    /// Channels on every audio slot. Stereo throughout: the model has no mono
+    /// tracks. A narrow port is a device's declared width, not a smaller
+    /// buffer; the executor gives that device the channels it declared and
+    /// copies what it wrote back across the slot, so every reader sees this
+    /// width (#2138).
     int numChannels = 2;
 
     bool operator==(const RenderContext&) const = default;

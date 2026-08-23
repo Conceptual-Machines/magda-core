@@ -537,6 +537,16 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     // true (old projects) and an explicit user-disabled false must survive.
     obj->setProperty("midiInThru", device.midiInThru);
 
+    // Audio channel counts, only when they differ from the stereo default.
+    // Never a zero output count: that is the one value that silences the chain
+    // behind the device, and on a machine where the plugin is missing it would
+    // do so for no reason. Same rule as the flags above, which are only written
+    // when true: a stale saved value must not be able to take routing away.
+    if (device.audioInputChannels != 2)
+        obj->setProperty("audioInputChannels", device.audioInputChannels);
+    if (device.audioOutputChannels != 2 && device.audioOutputChannels > 0)
+        obj->setProperty("audioOutputChannels", device.audioOutputChannels);
+
     // Per-instance drum kit rows
     if (!device.kitRows.empty()) {
         juce::Array<juce::var> kitArray;
@@ -728,6 +738,15 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     auto midiInThruVar = obj->getProperty("midiInThru");
     if (!midiInThruVar.isVoid()) {
         outDevice.midiInThru = static_cast<bool>(midiInThruVar);
+    }
+    if (obj->hasProperty("audioInputChannels"))
+        outDevice.audioInputChannels = static_cast<int>(obj->getProperty("audioInputChannels"));
+    if (obj->hasProperty("audioOutputChannels")) {
+        // Checked on the way in too, so a hand-edited or older project cannot
+        // silence a chain either. Zero comes from the live plugin or not at all.
+        const auto outputs = static_cast<int>(obj->getProperty("audioOutputChannels"));
+        if (outputs > 0)
+            outDevice.audioOutputChannels = outputs;
     }
 
     // Plugin native state

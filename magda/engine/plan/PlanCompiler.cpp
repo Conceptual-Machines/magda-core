@@ -1,6 +1,7 @@
 #include "plan/PlanCompiler.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <set>
@@ -191,7 +192,7 @@ class Compiler {
 
   private:
     OpId addOp(OpKind kind, const OpKey& key, std::vector<PortRef> inputs,
-               std::vector<SignalKind> outputs);
+               std::vector<PortDesc> outputs);
     void diagnose(std::string message);
 
     const TrackInfo* findTrack(TrackId id) const;
@@ -331,7 +332,7 @@ class Compiler {
 };
 
 OpId Compiler::addOp(OpKind kind, const OpKey& key, std::vector<PortRef> inputs,
-                     std::vector<SignalKind> outputs) {
+                     std::vector<PortDesc> outputs) {
     PlanOp op;
     op.kind = kind;
     op.key = key;
@@ -601,13 +602,19 @@ std::vector<PortRef> Compiler::alignInputs(const OpKey& key, OpKind kind,
         if (!input.valid())
             continue;
 
+        // The kind it carries, at the bus's width whatever the producer
+        // declared. A width belongs to the device boundary it describes: the
+        // executor widens a narrow device port over its slot before anything
+        // reads it, so a delay behind a mono device is carrying the bus and
+        // saying otherwise would spread a device's shape across the plan.
         const auto& producer = plan_.ops[static_cast<std::size_t>(input.op)];
         OpKey delayKey = key;
         delayKey.role = role;
         delayKey.index = static_cast<int>(slot);
-        input = PortRef{addOp(OpKind::Delay, delayKey, {input},
-                              {producer.outputs[static_cast<std::size_t>(input.port)]}),
-                        0};
+        input =
+            PortRef{addOp(OpKind::Delay, delayKey, {input},
+                          {PortDesc{producer.outputs[static_cast<std::size_t>(input.port)].kind}}),
+                    0};
     }
 
     return inputs;
@@ -690,22 +697,44 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     }
 
     const auto producesMidi = node.outputsPluginMidi();
-    std::vector<SignalKind> outputs{SignalKind::Audio};
+
+    // Channel widths, read off the plugin the way RackSyncManager reads them.
+    // A transparent tap keeps full stereo: its output is its input, so
+    // narrowing it would narrow the chain rather than the device.
+    const bool transparent = isTransparentTap(device);
+    const bool injector = !transparent && node.injectsAudio();
+    const auto inputWidth = transparent ? 2
+                            : injector  ? 0
+                                        : std::clamp(device.audioInputChannels, 0, 2);
+    const auto outputWidth = transparent ? 2 : std::clamp(device.audioOutputChannels, 0, 2);
+
+    std::vector<PortDesc> outputs{
+        PortDesc{SignalKind::Audio, static_cast<std::uint8_t>(outputWidth)}};
     if (producesMidi)
         outputs.push_back(SignalKind::Midi);
 
     // The further pairs are ports on the same op, after the main audio and any
     // MIDI. They carry the device's raw output: the slot's gain trim and meter
     // are the main pair's, and the current engine puts them on the instance the
-    // track's chain reads rather than on the one an output pair gets.
+    // track's chain reads rather than on the one an output pair gets. Pair p's
+    // width is what pair p + 1 declares; pair 0 is the main output.
     const auto firstMultiOutPort = static_cast<int>(outputs.size());
-    outputs.insert(outputs.end(), static_cast<std::size_t>(multiOutPairCount), SignalKind::Audio);
+    for (int pair = 0; pair < multiOutPairCount; ++pair) {
+        const auto& declared = device.multiOut.outputPairs[static_cast<std::size_t>(pair + 1)];
+        outputs.push_back(
+            {SignalKind::Audio, static_cast<std::uint8_t>(std::clamp(declared.numChannels, 0, 2))});
+    }
+
+    // Only a device that reads the bus is connected to it.
+    const PortRef audioIn = inputWidth > 0 ? signal.audio : noInput();
 
     OpKey key{site.trackId,          site.rackId, site.chainId, device.id,
               OpRole::DeviceProcess, 0,           site.segment};
-    const auto processOp = addOp(
-        OpKind::Device, key, alignInputs(key, OpKind::Device, {signal.audio, midiIn, sidechainIn}),
-        std::move(outputs));
+    const auto processOp =
+        addOp(OpKind::Device, key, alignInputs(key, OpKind::Device, {audioIn, midiIn, sidechainIn}),
+              std::move(outputs));
+    plan_.ops[static_cast<std::size_t>(processOp)].audioInputChannels =
+        static_cast<std::uint8_t>(audioIn.valid() ? inputWidth : 0);
 
     // Pair n is port firstMultiOutPort + n - 1. A pair no track opened stays
     // unread, which is what the current engine does with a pin no RackInstance
@@ -717,21 +746,8 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
                     PortRef{processOp, firstMultiOutPort + pairIndex - 1});
 
     ChainSignal out;
-    out.audio = PortRef{processOp, 0};
 
-    // A slot is four ops rather than three, and the first of them is where its
-    // delta is taken: the device's output minus the dry signal it was handed.
-    // The dry edge is that signal rather than the device's own input slot,
-    // which may already carry a delay lining the audio up with a sidechain: a
-    // delay reading a delay would count that edge's compensation twice, and
-    // taken from in front of it the subtract's own delay resolves to the whole
-    // distance instead, the input alignment and the device's latency together.
-    //
-    // Ahead of the slot's gain and meter, which is where the current engine
-    // subtracts it too: those are MAGDA's own and sit outside the plugin, so
-    // what they trim and report is the delta while one is being heard.
-    //
-    // A transparent tap has none of the four. Its output is its input, so the
+    // A transparent tap has no slot at all. Its output is its input, so the
     // difference it would take is silence whatever the signal, and the model
     // cannot ask for it: the delta button belongs to DeviceType::Effect alone
     // (DeviceSlotHeaderSpec's `visibility.delta`), and nothing else writes the
@@ -739,22 +755,57 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     // serialised on every device, and that is worth a word rather than a
     // silence - the plan hands back the chain where the flag asks for nothing
     // at all.
-    if (isTransparentTap(device) && device.deltaSolo)
+    if (transparent && device.deltaSolo)
         diagnose("device " + std::to_string(device.id) + " on track " +
                  std::to_string(site.trackId) +
                  ": delta solo on an analysis device has nothing to subtract, the chain passes "
                  "through unchanged");
 
-    if (!isTransparentTap(device)) {
+    // No audio output means no gain or meter ops. A device that never read the
+    // bus leaves it flowing; one that did read it leaves nothing behind.
+    if (!transparent && outputWidth == 0) {
+        out.audio = (injector || inputWidth == 0) ? signal.audio : noInput();
+    } else if (transparent) {
+        out.audio = PortRef{processOp, 0};
+    } else {
+        PortRef wet{processOp, 0};
+
+        // A slot is four ops rather than three, and the first of them is where
+        // its delta is taken: the device's output minus the dry signal it was
+        // handed. The dry edge is that signal rather than the device's own
+        // input slot, which may already carry a delay lining the audio up with
+        // a sidechain: a delay reading a delay would count that edge's
+        // compensation twice, and taken from in front of it the subtract's own
+        // delay resolves to the whole distance instead, the input alignment
+        // and the device's latency together. A device that was handed nothing
+        // has nothing to subtract, so its delta is its whole output.
+        //
+        // Ahead of the slot's gain and meter, which is where the current
+        // engine subtracts it too: those are MAGDA's own and sit outside the
+        // plugin, so what they trim and report is the delta while one is
+        // being heard.
         key.role = OpRole::DeviceDelta;
-        out.audio = emitDelta(key, out.audio, signal.audio);
+        wet = emitDelta(key, wet, inputWidth > 0 ? signal.audio : noInput());
 
         key.role = OpRole::DeviceGain;
-        out.audio = PortRef{addOp(OpKind::Gain, key, {out.audio}, {SignalKind::Audio}), 0};
+        wet = PortRef{addOp(OpKind::Gain, key, {wet}, {SignalKind::Audio}), 0};
 
         if (options_.deviceMeters) {
             key.role = OpRole::DeviceMeter;
-            out.audio = PortRef{addOp(OpKind::Meter, key, {out.audio}, {SignalKind::Audio}), 0};
+            wet = PortRef{addOp(OpKind::Meter, key, {wet}, {SignalKind::Audio}), 0};
+        }
+
+        // Where the chain carries on from. An instrument's output is added to
+        // the bus rather than replacing it. That happens after the gain and
+        // meter because the current engine puts both on the plugin itself, so
+        // they measure the instrument alone.
+        //
+        // A device that never read the bus leaves it alone. Its own output
+        // goes nowhere, but it still runs, and its MIDI may still be used.
+        out.audio = injector || inputWidth > 0 ? wet : signal.audio;
+        if (injector && signal.audio.valid()) {
+            key.role = OpRole::DeviceInject;
+            out.audio = emitMix(key, {signal.audio, wet});
         }
     }
 
@@ -860,7 +911,7 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
         // because those ops key on the nested rack rather than on this chain.
         const OpKey faderKey{site.trackId,           rack.id, chain.id,    INVALID_DEVICE_ID,
                              OpRole::RackChainFader, 0,       site.segment};
-        std::vector<SignalKind> faderOutputs{SignalKind::Audio};
+        std::vector<PortDesc> faderOutputs{SignalKind::Audio};
         if (generatesMidi)
             faderOutputs.push_back(SignalKind::Midi);
 
