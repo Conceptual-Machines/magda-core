@@ -131,9 +131,9 @@ Fixture channelWidths() {
     value.covers = "what a device declares it reads and writes, and what the bus does around it";
     value.tracks = {track(1)};
 
-    // The four shapes the chain model has to tell apart, in one chain: a mono
-    // device, one not wired to the bus at all, one that leaves nothing behind
-    // it, and an instrument summing onto what flowed past.
+    // The four cases the chain model has to tell apart, in one chain: a mono
+    // device, one not connected to the bus, one that leaves nothing behind it,
+    // and an instrument adding to what flowed past.
     auto mono = effect(7);
     mono.audioInputChannels = 1;
     mono.audioOutputChannels = 1;

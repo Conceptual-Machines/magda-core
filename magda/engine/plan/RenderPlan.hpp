@@ -48,21 +48,21 @@ constexpr OpId INVALID_OP_ID = -1;
 enum class SignalKind : std::uint8_t { Audio, Midi };
 
 /**
- * @brief One output port: what it carries, and for audio, at what width.
+ * @brief One output port: what it carries, and for audio, how wide.
  *
  * The bus is stereo, so a port is at most stereo. A mono port is one channel
- * that every reader hears on both sides of its stereo slot, the way the
- * current engine reads a one-pin source off pin 1 twice; the producer's op
- * widens it, so nothing downstream has to know. Zero channels is a port that
- * carries nothing: the shape an op keeps so port positions stay put when a
- * device reports no audio output at all.
+ * that every reader hears on both sides of its slot, the way the current
+ * engine reads a one-pin source off pin 1 twice. The producing op copies it
+ * across, so nothing downstream has to know. Zero channels means the port
+ * carries nothing; it is kept so port positions do not shift when a device
+ * reports no audio output.
  */
 struct PortDesc {
     SignalKind kind = SignalKind::Audio;
     std::uint8_t channels = 2;
 
-    // Implicit, so the existing {SignalKind::Audio} port lists still say what
-    // they meant: a plain kind is the bus at full width.
+    // Implicit, so existing {SignalKind::Audio} port lists still mean what they
+    // did: a bare kind is the bus at full width.
     PortDesc(SignalKind k = SignalKind::Audio)
         : kind(k), channels(k == SignalKind::Audio ? 2 : 0) {}
     PortDesc(SignalKind k, std::uint8_t c) : kind(k), channels(c) {}
@@ -353,13 +353,11 @@ struct PlanOp {
     std::vector<PortRef> inputs;
     std::vector<PortDesc> outputs;
 
-    /// Channels of audio a Device op reads off its first input port. The port
-    /// itself is the chain's and stays stereo; a device declaring one input
-    /// channel is handed only the first, which is the current engine wiring
-    /// pin 1 and leaving pin 2 unconnected, not a downmix. Zero for every
-    /// other op kind, and for a device whose audio input is not connected:
-    /// an instrument never reads the bus, and a device reporting no audio
-    /// input is not wired to it.
+    /// Channels of audio a Device op reads from its first input port. The port
+    /// belongs to the chain and stays stereo; a device declaring one input
+    /// channel gets only the first. That matches the current engine, which
+    /// wires pin 1 and leaves pin 2 unconnected. It is not a downmix. Zero for
+    /// every other op kind, and for a device not connected to the bus at all.
     std::uint8_t audioInputChannels = 0;
 };
 

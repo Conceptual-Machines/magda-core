@@ -257,14 +257,12 @@ struct DeviceInfo {
     bool canReceiveMidi = false;  // true if TE plugin accepts MIDI input (for cross-track MIDI)
     bool producesMidi = false;    // true if the live plugin can output MIDI
 
-    // Audio channel counts the plugin reported at load (1 = mono, 2 = stereo),
-    // stamped from the live plugin the way RackSyncManager asks it
-    // (getChannelNames). 2/2 until then, which is also what a device stays
-    // where the host never asks. The chain model reads these: a device with no
-    // audio input is not wired to the bus, one with no audio output starves
-    // what follows, and a mono device is handed and read as mono. An
-    // instrument's input count is moot, because an instrument is never fed
-    // chain audio: its output sums with the bus instead.
+    // Audio channels the plugin reported (1 = mono, 2 = stereo), read from the
+    // live plugin via getChannelNames. Stereo until it is asked. The chain
+    // model wires from these: no audio input means the device is not connected
+    // to the bus, no audio output means nothing reaches what follows, and a
+    // mono device is given and read as mono. An instrument's input count is
+    // unused, since an instrument is never fed chain audio.
     int audioInputChannels = 2;
     int audioOutputChannels = 2;
 

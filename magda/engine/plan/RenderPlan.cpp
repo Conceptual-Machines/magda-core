@@ -406,11 +406,10 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
                                    toString(actual.kind) + ", expected " + toString(expected));
         }
 
-        // Widths. A width describes a device boundary and nothing else: what a
-        // plugin was asked to read and what it says it wrote. Everywhere else
-        // a port is the bus, because the executor widens a narrow device port
-        // over its slot before anything downstream reads it. A MIDI port has
-        // no channels to declare at all.
+        // Widths describe a device and nothing else: what a plugin was asked
+        // to read, and what it says it wrote. Every other port is the bus,
+        // because the executor copies a narrow device port across its slot
+        // before anything reads it. A MIDI port has no channels to declare.
         for (const auto output : op.outputs) {
             if (output.kind == SignalKind::Midi) {
                 if (output.channels != 0)

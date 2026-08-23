@@ -134,25 +134,16 @@ void updateDeviceCapabilityFlags(DeviceInfo& device, te::Plugin& plugin) {
     // The channel counts the chain model compiles against, asked the way the
     // incumbent's chain wiring asks them.
     //
-    // Asked only of a plugin in a position to answer. te::ExternalPlugin fills
-    // neither array while it has no AudioPluginInstance, and there is no else
-    // branch, so one still loading or with a stale scan behind it says nought
-    // in and nought out. Recorded, that wires a real device to no audio at
-    // all, and it sticks: the incumbent asks again every time it rewires a
-    // chain and recovers by itself, while the model is told once and keeps
-    // what it was told.
+    // Only asked of a plugin that can answer. te::ExternalPlugin fills neither
+    // array while it has no AudioPluginInstance, so one still loading reports
+    // 0 and 0. Storing that would leave a working device connected to no audio
+    // for the rest of the session, because the model is told once and keeps
+    // it, while the current engine asks again on every rewire.
     //
-    // The question is whether the plugin can answer, not whether its answer
-    // was empty. Nought in and nought out is a real reading for a MIDI-only
-    // plugin, te::MidiPatchBay and te::MidiModifierPlugin among them, and the
-    // incumbent wires those to no audio precisely because that is what they
-    // report. Guessing stereo for them would put them in the audio path the
-    // incumbent leaves them out of. So only a missing instance is untrusted,
-    // and only an external plugin can have one.
-    //
-    // Same shape as the promoted flags above, and for the same reason: a
-    // reading taken when the plugin is not there must never be able to take
-    // routing away.
+    // What we distrust is a missing instance, not an empty answer. 0 and 0 is
+    // correct for a MIDI-only plugin such as te::MidiPatchBay, and the current
+    // engine gives those no audio because that is what they report. Only an
+    // external plugin can be missing its instance.
     const auto* external = dynamic_cast<const te::ExternalPlugin*>(&plugin);
     if (external == nullptr || external->getAudioPluginInstance() != nullptr) {
         juce::StringArray audioInputs, audioOutputs;
@@ -2262,13 +2253,11 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
     if (!plugin)
         return;
 
-    // What the plugin says it is, onto the canonical DeviceInfo. Here rather
-    // than beside the processor below, because this runs whether or not a
-    // device processor could be made: the capabilities and the channel counts
-    // come off the plugin, and the chain model compiles against them. This is
-    // the only place a rack-contained device passes through, so without it
-    // every device inside a rack would keep the stereo defaults and the chain
-    // model would never see the width of an instrument or a mono effect.
+    // What the plugin reports, onto the canonical DeviceInfo. Before the
+    // processor below, since this has to run even when no processor could be
+    // made: the counts come off the plugin, not off the processor. Every
+    // rack-contained device passes through here and nowhere else, so without
+    // this they would all keep the stereo defaults.
     if (auto* canonical = TrackManager::getInstance().getDeviceInChainByPath(devicePath))
         updateDeviceCapabilityFlags(*canonical, *plugin);
 

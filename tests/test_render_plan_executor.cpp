@@ -106,8 +106,8 @@ class ConstantSource final : public EngineAudioSource {
     float level_;
 };
 
-/// A different steady level on each side, so anything that folds the pair down
-/// to one channel is visible in the output rather than hidden by symmetry.
+/// A different level on each side, so anything that collapses the pair to one
+/// channel shows up instead of being hidden by symmetry.
 class StereoSource final : public EngineAudioSource {
   public:
     StereoSource(float left, float right) : left_(left), right_(right) {}
@@ -222,9 +222,8 @@ class NoteToDcInstrument final : public EngineDevice {
     float level_ = 0.0f;
 };
 
-/// Reports the width of the block it was handed, and writes a different level
-/// on every channel of it, so what a device was given and what it wrote are
-/// both readable downstream.
+/// Records how wide its block was and writes a different level on each
+/// channel, so both what it was given and what it wrote can be checked.
 class WidthProbeDevice final : public EngineDevice {
   public:
     explicit WidthProbeDevice(std::vector<float> perChannel) : perChannel_(std::move(perChannel)) {}
@@ -246,8 +245,8 @@ class WidthProbeDevice final : public EngineDevice {
     std::vector<float> perChannel_;
 };
 
-/// A constant on every channel it is given, whatever it was handed. What an
-/// instrument does: it generates rather than processes.
+/// Fills every channel with a constant, ignoring its input, the way an
+/// instrument generates rather than processes.
 class ConstantInstrument final : public EngineDevice {
   public:
     explicit ConstantInstrument(float level) : level_(level) {}
@@ -473,8 +472,7 @@ struct Harness {
         return magda::engine::INVALID_OP_ID;
     }
 
-    /// The tap on one device's slot, where a track has more than one meter and
-    /// the role alone would not say which.
+    /// The meter on one device's slot, for tracks with more than one.
     float takeMeterForDevice(DeviceId deviceId) {
         for (const auto& op : plan.ops) {
             if (op.key.role != OpRole::DeviceMeter || op.key.deviceId != deviceId)
@@ -978,10 +976,10 @@ TEST_CASE("A rack chain out of the mix contributes neither audio nor MIDI", "[en
 
         harness.prepareCleanly();
         harness.render();
-        // The rack's input flows through every chain and the chains sum: the
-        // empty chain passes it through, and the instrument's chain injects
-        // the instrument onto it rather than replacing it, which is what the
-        // current engine's parallel rack wiring makes of the same model.
+        // The rack's input reaches every chain and the chains are summed. The
+        // empty chain passes it through, and the instrument's chain adds the
+        // instrument to it rather than replacing it, which is what the current
+        // engine's parallel rack wiring does with the same model.
         CHECK(harness.outputSample() == approx(0.25f + 0.25f + instrumentLevel));
     }
 
@@ -1549,10 +1547,9 @@ TEST_CASE("Block size does not change where delayed MIDI lands", "[engine][exec]
     const auto renderNotes = [](const std::vector<int>& blockSizes) {
         auto track = makeTrack(1);
         track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
-        // A MIDI-consuming effect rather than an instrument: an instrument is
-        // never fed the chain, so there is no latent audio edge ahead of it
-        // for its MIDI to meet; what holds an instrument's audio to the bus is
-        // the inject mix, not a delay on its input.
+        // A MIDI-consuming effect rather than an instrument. An instrument is
+        // never fed the chain, so there is no delayed audio ahead of it for its
+        // MIDI to line up with.
         auto reader = makeEffect(8);
         reader.canReceiveMidi = true;
         track.chain.fxChainElements.push_back(makeDeviceElement(reader));
@@ -2040,14 +2037,13 @@ TEST_CASE("A device is handed the channels it declared", "[engine][exec]") {
 }
 
 TEST_CASE("An unbound device passes the chain on at full width", "[engine][exec]") {
-    // What the model last saw a plugin report is not a reason to narrow audio
-    // no plugin is processing. The current engine answers 2 and 2 for a chain
-    // node whose plugin it cannot find, so a device that failed to load is a
-    // straight passthrough whatever its channel counts say.
-    // Every width a device that is not there can reach a plan with. A zero
-    // output count is not among them: it is never persisted, because it is the
-    // one value that silences the chain on its own, so it reaches a plan only
-    // while the plugin that reported it is loaded.
+    // What the model last saw is no reason to narrow audio that no plugin is
+    // processing. The current engine answers 2 and 2 for a chain node whose
+    // plugin it cannot find, so a device that failed to load passes audio
+    // through whatever its channel counts say.
+    // Every width a missing device can reach a plan with. A zero output count
+    // is not one of them: it is never saved, because it silences the chain on
+    // its own, so it only reaches a plan while its plugin is loaded.
     auto effect = makeEffect(7);
     effect.audioInputChannels = GENERATE(0, 1, 2);
     effect.audioOutputChannels = GENERATE(1, 2);
@@ -2059,7 +2055,7 @@ TEST_CASE("An unbound device passes the chain on at full width", "[engine][exec]
     StereoSource source(0.25f, 0.75f);
     harness.bindings.clipAudio[1] = &source;
 
-    // Prepare says so itself, in the words the contract is written in.
+    // Prepare reports it too.
     const auto messages = harness.prepare();
     REQUIRE(messages.size() == 1);
     CHECK(messages[0].find("no device bound for D7, it passes audio through") != std::string::npos);
@@ -2067,10 +2063,8 @@ TEST_CASE("An unbound device passes the chain on at full width", "[engine][exec]
 
     INFO("in=" << effect.audioInputChannels << " out=" << effect.audioOutputChannels);
 
-    // Both sides arrive as they left: the device that never reads the bus
-    // leaves it flowing past, and the rest pass it through untouched because
-    // nothing is bound to touch it. In particular a mono device that failed to
-    // load does not fold the pair down to its left side.
+    // Both sides come out as they went in. A mono device that failed to load
+    // must not collapse the pair onto its left channel.
     CHECK(harness.outputSample(0) == approx(0.25f));
     CHECK(harness.outputSample(1) == approx(0.75f));
 }
@@ -2093,9 +2087,8 @@ TEST_CASE("An instrument sums with the audio already flowing past it", "[engine]
     harness.prepareCleanly();
     harness.render();
 
-    // The effect's 0.25 does not disappear into the instrument: the two sum,
-    // which is what the current engine's chain wiring does with an instrument
-    // it pushes onto the audio bus without clearing it.
+    // The effect's 0.25 is not lost. The current engine adds an instrument to
+    // the audio bus without clearing it, so the two are summed.
     CHECK(harness.outputSample(0) == approx(0.25f + 0.125f));
     CHECK(harness.outputSample(1) == approx(0.25f + 0.125f));
 
@@ -2124,9 +2117,9 @@ TEST_CASE("An instrument's slot trims and meters the instrument alone", "[engine
     harness.prepareCleanly();
     harness.render();
 
-    // The slot's trim scales the instrument, not the 0.5 flowing past it: the
-    // current engine hangs the trim and the tap off the plugin's own node,
-    // inside the wrapper that does the summing.
+    // The trim scales the instrument, not the 0.5 flowing past it. The current
+    // engine puts the trim and the meter on the plugin itself, inside the
+    // wrapper that does the summing.
     CHECK(harness.outputSample(0) == approx(0.5f + 0.125f));
 
     CHECK(harness.takeMeterForDevice(8) == approx(0.125f));

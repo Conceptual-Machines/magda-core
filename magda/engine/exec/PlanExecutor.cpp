@@ -1279,32 +1279,27 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             else if (!writesInPlace(i))
                 audio.copyFrom(audioIn(op.inputs[0], numSamples));
 
-            // Nothing bound is the passthrough it has always been, at the full
-            // width of the bus. The widths below describe a plugin, and there
-            // is no plugin here: the current engine asks a chain node for its
-            // channel counts and answers 2 and 2 for a node whose plugin it
-            // cannot find, so a device that failed to load passes the chain on
-            // untouched rather than folding it down to what the model last
-            // saw the plugin report.
+            // No device bound means pass the audio through unchanged, at full
+            // width. The widths below describe a plugin, and there is none
+            // here: the current engine answers 2 and 2 for a chain node whose
+            // plugin it cannot find.
             auto* device = deviceForOp_[i];
             if (device == nullptr)
                 break;
 
-            // The device is handed exactly the channels it declared: its input
-            // width where it reads, its output width where it writes, and the
-            // wider of the two to stand in. A mono device therefore sees a
-            // one-channel block rather than being handed stereo and read back
-            // as if it had written both sides of it.
+            // The device gets exactly the channels it declared, sized to the
+            // wider of what it reads and what it writes. So a mono device sees
+            // one channel instead of being handed stereo and read back as if
+            // it had written both sides.
             const auto inputWidth =
                 static_cast<std::size_t>(op.inputs[0].valid() ? op.audioInputChannels : 0);
             const auto outputWidth = static_cast<std::size_t>(op.outputs.front().channels);
             const auto blockWidth = std::max(inputWidth, outputWidth);
 
-            // A channel the device writes but does not read starts silent
-            // rather than holding the bus: the pin it stands for is one the
-            // current engine leaves unconnected on the way in, so a one-in
-            // two-out device must not find the chain's right side waiting on
-            // the side it only ever writes.
+            // A channel the device writes but does not read starts silent. The
+            // current engine leaves that pin unconnected on the way in, so a
+            // one-in two-out device must not find the bus on its second
+            // channel.
             for (auto channel = inputWidth; channel < blockWidth; ++channel)
                 audio.getSingleChannelBlock(channel).clear();
 
@@ -1341,11 +1336,11 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 device->process(deviceBlock);
             }
 
-            // Every port still fills its slot, because everything downstream
-            // reads slots stereo-wide: a mono port's one channel is heard on
-            // both sides, the way the current engine reads a one-pin source
-            // off pin 1 twice, and a port carrying nothing is silence rather
-            // than the input its buffer was prefilled with.
+            // Everything downstream reads slots at full width, so each port
+            // has to fill one. A mono port's channel is copied to both sides,
+            // the way the current engine reads a one-pin source off pin 1
+            // twice. A port carrying nothing is cleared, so it does not hand
+            // on the input the buffer was filled with.
             for (std::size_t port = 0; port < op.outputs.size(); ++port) {
                 const auto& output = op.outputs[port];
                 if (output.kind != SignalKind::Audio || output.channels == 2)

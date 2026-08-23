@@ -688,11 +688,10 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         beginTest("A plugin with no instance leaves the channel counts alone");
 
         // te::ExternalPlugin fills neither channel-name array when it has no
-        // AudioPluginInstance, so it answers nought in and nought out: the
-        // shape of a plugin still loading, or one whose scan is stale. The
-        // incumbent asks again on every rewire and recovers; the model is told
-        // once and keeps it, so recording that reading would leave a real
-        // device wired to no audio at all for the rest of the session.
+        // AudioPluginInstance, so it reports 0 in and 0 out. That is what a
+        // plugin still loading looks like. Storing it would leave a working
+        // device connected to no audio for the rest of the session, since the
+        // model is told once and keeps it.
         auto* editPtr = magda::test::getSharedEngine().getEdit();
         expect(editPtr != nullptr, "The shared engine must have an Edit");
         if (editPtr == nullptr)
@@ -753,12 +752,11 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
     void testGenuinelySilentPluginIsRecordedAsSilent() {
         beginTest("A plugin that really has no audio is recorded as having none");
 
-        // The other side of the guard above. Nought in and nought out is a
-        // real reading for a MIDI-only plugin: te::MidiPatchBay overrides
-        // getChannelNames with an empty body. The incumbent wires those to no
-        // audio precisely because that is what they report, so guessing
-        // stereo for them would put them in the audio path it leaves them out
-        // of. What is untrusted is a missing instance, not an empty answer.
+        // The other side of the check above. 0 and 0 is a correct answer for a
+        // MIDI-only plugin: te::MidiPatchBay overrides getChannelNames with an
+        // empty body. The current engine gives those no audio because that is
+        // what they report, so assuming stereo would put them in the audio path
+        // it leaves them out of.
         auto* editPtr = magda::test::getSharedEngine().getEdit();
         expect(editPtr != nullptr, "The shared engine must have an Edit");
         if (editPtr == nullptr)
@@ -810,16 +808,14 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
     void testRackDeviceStampsLiveChannelCounts() {
         beginTest("Rack sync stamps a contained device's live channel counts");
 
-        // The chain model compiles against these counts, and a device inside a
-        // rack reaches the engine only through registerRackPluginProcessor. If
-        // that stopped stamping them, every rack-contained device would keep
-        // whatever the model happened to hold, which for a project loaded
-        // without its plugins is the stereo default and for one edited in
-        // session is whatever was last saved.
+        // The chain model wires from these counts, and a device inside a rack
+        // reaches the engine only through registerRackPluginProcessor. If that
+        // stopped recording them, every rack device would keep whatever the
+        // model happened to hold.
         //
         // The internal plugins all report stereo, so the counts are seeded
-        // wrong on purpose: what is under test is that the live plugin gets
-        // the last word, not that any particular plugin is mono.
+        // wrong on purpose. What is under test is that the live plugin has the
+        // last word, not that any particular plugin is mono.
         auto& tm = magda::TrackManager::getInstance();
         const auto trackId = tm.createTrack("Rack Counts");
         const auto rackId = tm.addRackToTrack(trackId, "Counts Rack");

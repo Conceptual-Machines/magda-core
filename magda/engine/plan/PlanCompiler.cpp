@@ -650,15 +650,9 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
 
     const auto producesMidi = node.outputsPluginMidi();
 
-    // The channel contract, which is the one the current engine wires chains
-    // by (RackSyncManager): an instrument is never fed the bus, its output sums
-    // into it; a device reporting no audio input is not wired to it, so the
-    // bus flows past; a device reporting no audio output leaves nothing to
-    // carry on from; and a device narrower than the bus reads and writes only
-    // its own channels, which the port widths below carry and the executor
-    // maps back onto the stereo slot. None of it applies to a transparent
-    // tap: its output is its input, so it keeps the full bus whatever the
-    // device would report.
+    // Channel widths, read off the plugin the way RackSyncManager reads them.
+    // A transparent tap keeps full stereo: its output is its input, so
+    // narrowing it would narrow the chain rather than the device.
     const bool transparent = isTransparentTap(device);
     const bool injector = !transparent && node.injectsAudio();
     const auto inputWidth = transparent ? 2
@@ -675,7 +669,7 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     // MIDI. They carry the device's raw output: the slot's gain trim and meter
     // are the main pair's, and the current engine puts them on the instance the
     // track's chain reads rather than on the one an output pair gets. Pair p's
-    // width is what pair p + 1 declares, pair 0 being the main output above.
+    // width is what pair p + 1 declares; pair 0 is the main output.
     const auto firstMultiOutPort = static_cast<int>(outputs.size());
     for (int pair = 0; pair < multiOutPairCount; ++pair) {
         const auto& declared = device.multiOut.outputPairs[static_cast<std::size_t>(pair + 1)];
@@ -683,9 +677,7 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
             {SignalKind::Audio, static_cast<std::uint8_t>(std::clamp(declared.numChannels, 0, 2))});
     }
 
-    // The bus edge exists only for a device that reads it: an instrument is
-    // handed silence to stand its input block up on, and anything downstream
-    // still hears what flowed in.
+    // Only a device that reads the bus is connected to it.
     const PortRef audioIn = inputWidth > 0 ? signal.audio : noInput();
 
     OpKey key{site.trackId,          site.rackId, site.chainId, device.id,
@@ -707,10 +699,8 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
 
     ChainSignal out;
 
-    // A device with nothing to output has no slot tail either, there being
-    // nothing to trim or to meter. What the chain does past it is the input
-    // width's to say: a device that never read the bus leaves it flowing,
-    // anything else starves what follows.
+    // No audio output means no gain or meter ops. A device that never read the
+    // bus leaves it flowing; one that did read it leaves nothing behind.
     if (!transparent && outputWidth == 0) {
         out.audio = (injector || inputWidth == 0) ? signal.audio : noInput();
     } else if (transparent) {
@@ -725,9 +715,8 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
         // a sidechain: a delay reading a delay would count that edge's
         // compensation twice, and taken from in front of it the subtract's own
         // delay resolves to the whole distance instead, the input alignment
-        // and the device's latency together. A device handed nothing has
-        // nothing to take off it: an instrument's delta, and that of a device
-        // not wired to the bus, is its whole output.
+        // and the device's latency together. A device that was handed nothing
+        // has nothing to subtract, so its delta is its whole output.
         //
         // Ahead of the slot's gain and meter, which is where the current
         // engine subtracts it too: those are MAGDA's own and sit outside the
@@ -744,18 +733,13 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
             wet = PortRef{addOp(OpKind::Meter, key, {wet}, {SignalKind::Audio}), 0};
         }
 
-        // Where the chain carries on from. An instrument's output sums into
-        // the bus that flowed past it rather than replacing it, which is the
-        // passthrough the current engine wraps an instrument in, made an op.
-        // After the trim and the tap, not before: the current engine hangs
-        // both off the plugin's own node, inside the wrapper, so what they
-        // scale and report is the instrument rather than everything the bus
-        // was already carrying.
+        // Where the chain carries on from. An instrument's output is added to
+        // the bus rather than replacing it. That happens after the gain and
+        // meter because the current engine puts both on the plugin itself, so
+        // they measure the instrument alone.
         //
-        // A device never wired to the bus leaves it alone entirely, and its
-        // own output is the slot's dead end: the meter still has something to
-        // read, and the device still runs, which its MIDI below may be the
-        // point of.
+        // A device that never read the bus leaves it alone. Its own output
+        // goes nowhere, but it still runs, and its MIDI may still be used.
         out.audio = injector || inputWidth > 0 ? wet : signal.audio;
         if (injector && signal.audio.valid()) {
             key.role = OpRole::DeviceInject;

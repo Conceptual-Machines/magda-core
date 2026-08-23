@@ -2046,11 +2046,10 @@ TEST_CASE("Device channel counts survive a project roundtrip", "[project][serial
 }
 
 TEST_CASE("A zero output count is never written to a project", "[project][serialization][device]") {
-    // The one count that can silence the chain behind a device on its own. It
-    // has to come from a plugin that is actually there: read back on a machine
-    // where the plugin is missing, it would starve a chain the current engine
-    // would have passed straight through, since that asks the live plugin and
-    // answers stereo where it finds none.
+    // The one count that can silence the chain behind a device. It has to come
+    // from a plugin that is really there: on a machine where the plugin is
+    // missing it would starve a chain the current engine would have passed
+    // straight through.
     DeviceInfo silentDevice;
     silentDevice.id = 34;
     silentDevice.name = "MIDI Only";
@@ -2071,8 +2070,8 @@ TEST_CASE("A zero output count is never written to a project", "[project][serial
 }
 
 TEST_CASE("A zero output count already on disk is ignored", "[project][serialization][device]") {
-    // Guarded on the way in as well as out, so a project written by hand or by
-    // an older build cannot silence a chain either.
+    // Checked on the way in too, so a hand-edited or older project cannot
+    // silence a chain either.
     DeviceInfo device;
     device.id = 35;
     device.name = "Hand Edited";
@@ -2090,10 +2089,9 @@ TEST_CASE("A zero output count already on disk is ignored", "[project][serializa
 
 TEST_CASE("A device with no channel counts written loads as stereo",
           "[project][serialization][device]") {
-    // What a project saved before the counts existed looks like. Stereo is
-    // both the field's default and what the current engine's chain wiring
-    // falls back to when it cannot ask the plugin, so an old project keeps
-    // the graph it had.
+    // What a project saved before the counts existed looks like. Stereo is the
+    // default and also what the current engine falls back to when it cannot ask
+    // the plugin, so an old project keeps the graph it had.
     DeviceInfo device;
     device.id = 33;
     device.name = "Legacy";
