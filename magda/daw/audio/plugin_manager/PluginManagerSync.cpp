@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <map>
 #include <set>
 #include <unordered_set>
@@ -2546,12 +2547,24 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
         const bool isExternalInsert =
             daw::audio::internalPluginHasTag(device.pluginId, "external-insert");
         if (device.isInstrument && !isExternalInsert) {
-            // Detect multi-output capability
+            // Detect multi-output capability.
+            //
+            // The two named types answer through their own API, and everything
+            // else is asked the question every te::Plugin already answers: how
+            // many channels it writes given the two it is offered. That last
+            // branch used to not exist, so an internal instrument with more
+            // than two outputs was wrapped as stereo and its further pins never
+            // existed -- a type test standing in for a capability query. It is
+            // inert for the fleet as it stands, since every internal instrument
+            // answers two, and it is what lets one that does not be wrapped for
+            // what it is (#2174).
             int numOutputChannels = 2;
             if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
                 numOutputChannels = extPlugin->getNumOutputs();
             } else if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get())) {
                 numOutputChannels = drumGrid->getNumOutputChannels();
+            } else {
+                numOutputChannels = std::max(2, plugin->getNumOutputChannelsGivenInputs(2));
             }
 
             // Remember the plugin's position before wrapping removes it from the track
