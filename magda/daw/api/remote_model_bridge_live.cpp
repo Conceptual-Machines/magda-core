@@ -66,10 +66,16 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
         service_.noteModelChanged({Topic::Tracks, Topic::Session});
     }
     void trackPropertyChanged(int) override {
-        service_.noteModelChanged(Topic::Tracks);
+        if (AutomationManager::getInstance().isApplyingAutomationWrite())
+            service_.noteModelActivity(Topic::Tracks);
+        else
+            service_.noteModelChanged(Topic::Tracks);
     }
     void masterChannelChanged() override {
-        service_.noteModelChanged(Topic::Tracks);
+        if (AutomationManager::getInstance().isApplyingAutomationWrite())
+            service_.noteModelActivity(Topic::Tracks);
+        else
+            service_.noteModelChanged(Topic::Tracks);
     }
     void trackSelectionChanged(TrackId) override {
         service_.noteModelChanged(Topic::Selection);
@@ -192,6 +198,9 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
         service_.projectReplaced();
     }
     void projectSaved(const ProjectInfo&) override {
+        service_.noteModelChanged(Topic::Project);
+    }
+    void projectPropertiesChanged() override {
         service_.noteModelChanged(Topic::Project);
     }
 

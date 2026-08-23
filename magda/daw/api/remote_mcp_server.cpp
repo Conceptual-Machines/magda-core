@@ -250,20 +250,25 @@ struct EventStream {
     Take take(std::chrono::milliseconds timeout, std::string& frame) {
         std::unique_lock<std::mutex> lock(mutex);
         ready.wait_for(lock, timeout, [this] { return closed || !outbox.empty(); });
+        if (!outbox.empty()) {
+            frame = std::move(outbox.front());
+            outbox.pop_front();
+            return Take::Frame;
+        }
         if (closed)
             return Take::Closed;
-        if (outbox.empty())
-            return Take::KeepAlive;
-        frame = std::move(outbox.front());
-        outbox.pop_front();
-        return Take::Frame;
+        return Take::KeepAlive;
     }
 
-    void close() {
+    void close(std::string terminalFrame = {}) {
         {
             const std::lock_guard<std::mutex> lock(mutex);
-            closed = true;
+            if (closed)
+                return;
             outbox.clear();
+            if (!terminalFrame.empty())
+                outbox.push_back(std::move(terminalFrame));
+            closed = true;
         }
         ready.notify_all();
     }
@@ -322,6 +327,8 @@ struct Session {
 // ===========================================================================
 
 struct RemoteMcpServer::Impl {
+    struct Waiter;
+
     Impl(RemoteApiService& apiService, Options serverOptions, SubscriptionHub* hub)
         : options(std::move(serverOptions)),
           subscriptions(hub),
@@ -353,6 +360,9 @@ struct RemoteMcpServer::Impl {
 
     mutable std::mutex sessionMutex;
     std::unordered_map<std::string, Session> sessions;
+
+    mutable std::mutex waiterMutex;
+    std::vector<std::weak_ptr<Waiter>> waiters;
 
     /**
      * A single token bucket rather than one per client.
@@ -449,6 +459,15 @@ struct RemoteMcpServer::Impl {
                 ++it;
             }
         }
+    }
+
+    void collectIdleSessions() {
+        std::vector<juce::String> collected;
+        {
+            const std::lock_guard<std::mutex> lock(sessionMutex);
+            collectIdleSessionsLocked(collected);
+        }
+        noteSessionsClosed(collected);
     }
 
     std::optional<juce::String> createSession(const juce::String& version,
@@ -664,11 +683,17 @@ struct RemoteMcpServer::Impl {
                         return live->publish(event.topic, *protocol);
                     return false;
                 },
-                [weak](const juce::String&) {
-                    // Marking is all a foreign thread may do; the provider
-                    // notices on its next wait and unwinds the connection.
-                    if (auto live = weak.lock())
-                        live->close();
+                [weak, protocol](const juce::String&) {
+                    // Closing the outbox is safe under the hub's lock; the
+                    // provider drains this terminal result and its cleanup then
+                    // deregisters the stream without re-entering the hub here.
+                    if (auto live = weak.lock()) {
+                        std::string terminal;
+                        if (!live->subscriptionId.isVoid() && !live->subscriptionId.isUndefined()) {
+                            terminal = sseData(protocol->listenClosedResult(live->subscriptionId));
+                        }
+                        live->close(std::move(terminal));
+                    }
                 });
         }
 
@@ -715,7 +740,10 @@ struct RemoteMcpServer::Impl {
             subscriptions->removeClient(stream->subscriber);
             stream->subscriber = 0;
         }
-        stream->close();
+        std::string terminal;
+        if (!stream->subscriptionId.isVoid() && !stream->subscriptionId.isUndefined())
+            terminal = sseData(endpoint.listenClosedResult(stream->subscriptionId));
+        stream->close(std::move(terminal));
 
         {
             const std::lock_guard<std::mutex> lock(streamMutex);
@@ -967,6 +995,52 @@ struct RemoteMcpServer::Impl {
         McpReply reply;
     };
 
+    bool registerWaiter(const std::shared_ptr<Waiter>& waiter) {
+        const std::lock_guard<std::mutex> lock(waiterMutex);
+        // Synchronises with cancelWaiters(): a handler that reaches this point
+        // after stop() has already swept the list must not add an unwakeable
+        // waiter behind that sweep.
+        if (!running.load())
+            return false;
+        waiters.erase(std::remove_if(waiters.begin(), waiters.end(),
+                                     [](const auto& weak) { return weak.expired(); }),
+                      waiters.end());
+        waiters.push_back(waiter);
+        return true;
+    }
+
+    void unregisterWaiter(const std::shared_ptr<Waiter>& waiter) {
+        const std::lock_guard<std::mutex> lock(waiterMutex);
+        waiters.erase(std::remove_if(waiters.begin(), waiters.end(),
+                                     [&](const auto& weak) {
+                                         const auto live = weak.lock();
+                                         return live == nullptr || live == waiter;
+                                     }),
+                      waiters.end());
+    }
+
+    void cancelWaiters() {
+        std::vector<std::shared_ptr<Waiter>> live;
+        {
+            const std::lock_guard<std::mutex> lock(waiterMutex);
+            for (const auto& weak : waiters)
+                if (auto waiter = weak.lock())
+                    live.push_back(std::move(waiter));
+            waiters.clear();
+        }
+        for (const auto& waiter : live) {
+            {
+                const std::lock_guard<std::mutex> lock(waiter->mutex);
+                if (waiter->done)
+                    continue;
+                waiter->reply =
+                    McpReply::fail(MCP_INTERNAL_ERROR, "Request cancelled while server stopped");
+                waiter->done = true;
+            }
+            waiter->ready.notify_one();
+        }
+    }
+
     /**
      * @brief Run one call and write its reply, on this pool thread.
      *
@@ -978,9 +1052,19 @@ struct RemoteMcpServer::Impl {
     void executeAndReply(const McpEndpoint::Call& call, const juce::var& id,
                          httplib::Response& response) {
         auto waiter = std::make_shared<Waiter>();
+        if (!registerWaiter(waiter)) {
+            writeJson(response, httplib::StatusCode::ServiceUnavailable_503,
+                      jsonRpcError(id, McpError{MCP_INTERNAL_ERROR,
+                                                "Server is stopping",
+                                                {},
+                                                httplib::StatusCode::ServiceUnavailable_503}));
+            return;
+        }
         endpoint.handle(call, [waiter](McpReply reply) {
             {
                 const std::lock_guard<std::mutex> lock(waiter->mutex);
+                if (waiter->done)
+                    return;
                 waiter->reply = std::move(reply);
                 waiter->done = true;
             }
@@ -996,12 +1080,15 @@ struct RemoteMcpServer::Impl {
             const auto limit =
                 std::chrono::milliseconds(options.defaultDeadlineMs) + std::chrono::seconds(2);
             if (!waiter->ready.wait_for(lock, limit, [&] { return waiter->done; })) {
+                unregisterWaiter(waiter);
                 writeJson(response, httplib::StatusCode::OK_200,
                           jsonRpcError(id, McpError{MCP_INTERNAL_ERROR,
                                                     "The request was not answered in time"}));
                 return;
             }
         }
+
+        unregisterWaiter(waiter);
 
         const auto& reply = waiter->reply;
         if (reply.failed()) {
@@ -1120,32 +1207,7 @@ struct RemoteMcpServer::Impl {
     }
 
     void handlePost(const httplib::Request& request, httplib::Response& response) {
-        if (!admit()) {
-            auditRefusal("rate limit exceeded");
-            writeJson(response, httplib::StatusCode::TooManyRequests_429,
-                      jsonRpcError({}, McpError{MCP_INVALID_REQUEST, "Rate limit exceeded"}));
-            return;
-        }
-
-        if (inFlight.fetch_add(1) >= options.maxConcurrentRequests) {
-            inFlight.fetch_sub(1);
-            writeJson(
-                response, httplib::StatusCode::ServiceUnavailable_503,
-                jsonRpcError({}, McpError{MCP_INVALID_REQUEST, "Too many requests in flight"}));
-            return;
-        }
-        struct InFlightGuard {
-            std::atomic<int>& counter;
-            ~InFlightGuard() {
-                counter.fetch_sub(1);
-            }
-        } guard{inFlight};
-
-        if (request.body.size() > options.maxBodyBytes) {
-            writeJson(response, httplib::StatusCode::PayloadTooLarge_413,
-                      jsonRpcError({}, McpError{MCP_INVALID_REQUEST, "Request body too large"}));
-            return;
-        }
+        collectIdleSessions();
 
         juce::var parsed;
         if (juce::JSON::parse(
@@ -1154,11 +1216,59 @@ struct RemoteMcpServer::Impl {
                 .failed() ||
             parsed.getDynamicObject() == nullptr) {
             writeJson(response, httplib::StatusCode::BadRequest_400,
-                      jsonRpcError({}, McpError{MCP_PARSE_ERROR, "Malformed JSON"}));
+                      jsonRpcError({}, McpError{MCP_PARSE_ERROR,
+                                                "Malformed JSON",
+                                                {},
+                                                httplib::StatusCode::BadRequest_400}));
+            return;
+        }
+        const auto id = parsed["id"];
+
+        if (!running.load()) {
+            writeJson(response, httplib::StatusCode::ServiceUnavailable_503,
+                      jsonRpcError(id, McpError{MCP_INTERNAL_ERROR,
+                                                "Server is stopping",
+                                                {},
+                                                httplib::StatusCode::ServiceUnavailable_503}));
             return;
         }
 
-        const auto id = parsed["id"];
+        // Admission failures still answer the request that was refused. The
+        // body is already in memory at this point, so losing its id would make
+        // the bridge forward an uncorrelated id:null error and strand the host.
+        if (request.body.size() > options.maxBodyBytes) {
+            writeJson(response, httplib::StatusCode::PayloadTooLarge_413,
+                      jsonRpcError(id, McpError{MCP_INVALID_REQUEST,
+                                                "Request body too large",
+                                                {},
+                                                httplib::StatusCode::PayloadTooLarge_413}));
+            return;
+        }
+        if (!admit()) {
+            auditRefusal("rate limit exceeded");
+            writeJson(response, httplib::StatusCode::TooManyRequests_429,
+                      jsonRpcError(id, McpError{MCP_INVALID_REQUEST,
+                                                "Rate limit exceeded",
+                                                {},
+                                                httplib::StatusCode::TooManyRequests_429}));
+            return;
+        }
+
+        if (inFlight.fetch_add(1) >= options.maxConcurrentRequests) {
+            inFlight.fetch_sub(1);
+            writeJson(response, httplib::StatusCode::ServiceUnavailable_503,
+                      jsonRpcError(id, McpError{MCP_INVALID_REQUEST,
+                                                "Too many requests in flight",
+                                                {},
+                                                httplib::StatusCode::ServiceUnavailable_503}));
+            return;
+        }
+        struct InFlightGuard {
+            std::atomic<int>& counter;
+            ~InFlightGuard() {
+                counter.fetch_sub(1);
+            }
+        } guard{inFlight};
 
         // MCP is JSON-RPC 2.0, and the envelope is checked before anything is
         // routed. Without this a request carrying no `jsonrpc` at all — or a
@@ -1388,7 +1498,10 @@ bool RemoteMcpServer::start() {
         return false;
     }
 
-    impl_->server.set_payload_max_length(impl_->options.maxBodyBytes);
+    // Leave enough headroom for the route to parse the envelope and correlate
+    // an ordinary oversized request with its JSON-RPC id. cpp-httplib remains a
+    // hard backstop against arbitrarily large bodies.
+    impl_->server.set_payload_max_length(impl_->options.maxBodyBytes + 64 * 1024);
 
     // Sized rather than defaulted. A request handler blocks its pool thread
     // while the message thread works, and every open SSE stream holds one for
@@ -1417,12 +1530,6 @@ bool RemoteMcpServer::start() {
 
     // Registered before the listener opens and cleared in stop(), so the
     // settings UI can never route a disconnect to a server that has gone away.
-    if (impl_->options.clients != nullptr) {
-        impl_->options.clients->setDisconnectHandler(
-            TRANSPORT_MCP,
-            [this](const juce::String& handle) { return impl_->disconnectByHandle(handle); });
-    }
-
     // Two different calls, and they are easy to confuse: bind_to_any_port's
     // second parameter is socket flags, not a port.
     const auto address = impl_->options.address.toStdString();
@@ -1438,6 +1545,12 @@ bool RemoteMcpServer::start() {
         DBG("RemoteMcpServer: failed to bind " + impl_->options.address + ":" +
             juce::String(impl_->options.port));
         return false;
+    }
+
+    if (impl_->options.clients != nullptr) {
+        impl_->options.clients->setDisconnectHandler(
+            TRANSPORT_MCP,
+            [this](const juce::String& handle) { return impl_->disconnectByHandle(handle); });
     }
 
     impl_->port.store(port);
@@ -1457,6 +1570,10 @@ void RemoteMcpServer::stop() {
     // its streams and sessions down.
     if (impl_->options.clients != nullptr)
         impl_->options.clients->setDisconnectHandler(TRANSPORT_MCP, nullptr);
+
+    // Requests already dispatched may be waiting for a completion posted to
+    // this same message thread. Wake their pool threads before joining them.
+    impl_->cancelWaiters();
 
     // Streams first. Each is a pool thread parked in its content provider, and
     // closing the outbox is what wakes it — `server.stop()` alone would leave

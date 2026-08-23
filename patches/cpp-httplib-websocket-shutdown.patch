@@ -1,0 +1,23 @@
+diff --git a/httplib.h b/httplib.h
+index ed3b7e4..0942e93 100644
+--- a/httplib.h
++++ b/httplib.h
+@@ -4215,5 +4215,6 @@ public:
+   bool send(const char *data, size_t len);
+   void close(CloseStatus status = CloseStatus::Normal,
+              const std::string &reason = "");
++  void shutdown();
+   const Request &request() const;
+   bool is_open() const;
+@@ -21189,5 +21190,11 @@ inline void WebSocket::close(CloseStatus status, const std::string &reason) {
+   }
+ }
++inline void WebSocket::shutdown() {
++  closed_ = true;
++  ping_cv_.notify_all();
++  detail::shutdown_socket(strm_.socket());
++}
++
+ inline WebSocket::~WebSocket() {
+   {
+     std::lock_guard<std::mutex> lock(ping_mutex_);

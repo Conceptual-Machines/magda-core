@@ -769,7 +769,7 @@ TEST_CASE("Limits hold: body size, concurrency, and rate", "[remote][mcp-http][l
 
     httplib::Client client(base(server));
 
-    // A body over the cap is refused before anything parses it.
+    // The envelope is parsed first so an admission refusal can retain its id.
     auto params = juce::var(new juce::DynamicObject());
     params.getDynamicObject()->setProperty("name", juce::String::repeatedString("x", 4096));
     auto oversized = client.Post("/mcp", modernHeaders("tools/call", "x"),
@@ -1127,6 +1127,14 @@ TEST_CASE("Shutdown ends streams, drops sessions, and joins every thread",
     REQUIRE(server.streamCount() == 0);
     REQUIRE(server.sessionCount() == 0);
     REQUIRE(hub.clientCount() == 0);
+
+    // A finite stream ends with an MCP result, not just EOF. Otherwise a host
+    // that waits for the terminal result keeps the listen call open forever
+    // even though the HTTP body has ended.
+    REQUIRE(stream.waitFor(2));
+    const auto terminal = stream.events().at(1);
+    REQUIRE(terminal["resultType"].toString() == "complete");
+    REQUIRE(static_cast<int>(terminal["_meta"][MCP_META_SUBSCRIPTION_ID]) == 1);
 
     stream.close();
 

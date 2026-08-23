@@ -621,7 +621,9 @@ TEST_CASE("A surface that appears is snapshotted, and the one already there is n
     rig.projector->tick();
     REQUIRE(rig.sink().messages.empty());
 
-    const auto second = rig.router->peers().admit("10.0.0.5", 2000);
+    // Well beyond the silence threshold for the first surface. A generation
+    // change caused by this new peer must not look like the first peer resumed.
+    const auto second = rig.router->peers().admit("10.0.0.5", 7000);
     REQUIRE(second != rig.peer);
     rig.projector->tick();
 
@@ -631,6 +633,24 @@ TEST_CASE("A surface that appears is snapshotted, and the one already there is n
     REQUIRE(joined->find("/magda/transport/play") != nullptr);
 
     REQUIRE(rig.sink().messages.empty());
+}
+
+TEST_CASE("A surface returning after five seconds receives a fresh snapshot", "[osc][feedback]") {
+    ProjectorRig rig;
+    rig.addTrack("Drums");
+    rig.markTracksChanged();
+    rig.projector->tick();
+    rig.sink().clear();
+
+    const auto settled = rig.router->peers().generation();
+    const auto arrival = rig.router->peers().intern(kSurfaceHost, 7000);
+    REQUIRE(arrival.id == rig.peer);
+    REQUIRE(arrival.answerable);
+    REQUIRE(rig.router->peers().generation() == settled + 1);
+
+    rig.projector->tick();
+    REQUIRE(rig.sink().find("/magda/track/1/volume") != nullptr);
+    REQUIRE(rig.sink().find("/magda/transport/play") != nullptr);
 }
 
 TEST_CASE("A value from one surface is suppressed to it and sent to the other", "[osc][feedback]") {

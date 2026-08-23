@@ -325,6 +325,10 @@ FetchContent_Declare(
     cpp-httplib
     GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
     GIT_TAG v0.52.0
+    PATCH_COMMAND ${CMAKE_COMMAND}
+                  -DHTTPLIB_SOURCE_DIR=<SOURCE_DIR>
+                  -DHTTPLIB_PATCH=${CMAKE_CURRENT_SOURCE_DIR}/patches/cpp-httplib-websocket-shutdown.patch
+                  -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch_cpp_httplib.cmake
 )
 FetchContent_MakeAvailable(cpp-httplib)
 
@@ -335,10 +339,9 @@ FetchContent_MakeAvailable(cpp-httplib)
 # on the target every consumer already links.
 #
 # The payload cap governs how much of a frame is read into memory before any
-# handler sees it. The read timeout is how long a connection's reader may sit in
-# read() before it comes up for air, and therefore how long shutdown can take:
-# cpp-httplib offers no way to interrupt a blocked reader, so this is the
-# cancellation quantum (see remote_websocket_server.cpp).
+# handler sees it. The read timeout is a liveness backstop; the small local patch
+# above adds WebSocket::shutdown(), which wakes a blocked reader promptly without
+# running a second framed read on the stopping thread.
 target_compile_definitions(httplib INTERFACE
     CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH=262144
     CPPHTTPLIB_WEBSOCKET_READ_TIMEOUT_SECOND=3

@@ -317,10 +317,10 @@ class Bridge {
         // to be answered with SSE, so the non-streaming path below still handles
         // an SSE body it did not expect — it just gets to do it after the fact.
         if (method == "subscriptions/listen") {
-            // A stream never completes on its own, so no read timeout may apply
-            // to it. Cancellation and shutdown both stop the client instead,
-            // which is prompt regardless.
-            client->set_read_timeout(0, 0);
+            // Zero means an immediate poll in cpp-httplib, not infinity. Use a
+            // practically unbounded timeout and keep Client::stop() as the
+            // prompt cancellation mechanism.
+            client->set_read_timeout(24 * 60 * 60, 0);
             registerStream(id, client);
 
             // Per request, not shared. Two concurrent listen streams both feed
@@ -355,7 +355,7 @@ class Bridge {
             if (!isEventStream(*result)) {
                 const auto raw = stream->raw();
                 if (!raw.empty())
-                    emitRaw(raw);
+                    emitOrCorrelateFailure(id, result->status, raw);
                 else
                     fail(id, "The server refused the subscription with an empty response");
             }
@@ -386,7 +386,9 @@ class Bridge {
         // fails every subsequent call for the life of the host process. Since
         // hiding a restart is the entire reason this bridge exists, it
         // re-handshakes on the host's behalf and retries.
-        if (result->status == httplib::StatusCode::NotFound_404 && !currentSession().empty()) {
+        if (result->status == httplib::StatusCode::NotFound_404 &&
+            responseErrorMessage(result->body) == "Unknown or expired session" &&
+            !currentSession().empty()) {
             clearSession();
             reestablishSession(endpoint);
             return false;
@@ -403,7 +405,7 @@ class Bridge {
             return true;
         }
 
-        emitRaw(result->body);
+        emitOrCorrelateFailure(id, result->status, result->body);
         return true;
     }
 
@@ -514,6 +516,34 @@ class Bridge {
 
         std::lock_guard<std::mutex> lock(outputMutex_);
         std::cout << juce::JSON::toString(reply, true).toStdString() << '\n' << std::flush;
+    }
+
+    static juce::String responseErrorMessage(const std::string& body) {
+        juce::var parsed;
+        if (juce::JSON::parse(juce::String::fromUTF8(body.data(), static_cast<int>(body.size())),
+                              parsed)
+                .failed())
+            return {};
+        return parsed["error"]["message"].toString();
+    }
+
+    void emitOrCorrelateFailure(const juce::var& requestId, int status, const std::string& body) {
+        juce::var parsed;
+        const auto parsedOk =
+            juce::JSON::parse(juce::String::fromUTF8(body.data(), static_cast<int>(body.size())),
+                              parsed)
+                .wasOk();
+        const auto responseId = parsedOk ? parsed["id"] : juce::var{};
+        if (status >= 400 && !requestId.isVoid() && !requestId.isUndefined() &&
+            (responseId.isVoid() || responseId.isUndefined())) {
+            auto message = parsedOk ? parsed["error"]["message"].toString() : juce::String();
+            if (message.isEmpty())
+                message =
+                    "The MCP endpoint refused the request (HTTP " + juce::String(status) + ")";
+            fail(requestId, message);
+            return;
+        }
+        emitRaw(body);
     }
 
     // -----------------------------------------------------------------------

@@ -43,7 +43,11 @@ void OscSenderSink::disconnect() {
 bool OscSenderSink::send(const juce::String& address, float value) {
     if (!connected_)
         return false;
-    return sender_.send(juce::OSCMessage(juce::OSCAddressPattern(address), value));
+    try {
+        return sender_.send(juce::OSCMessage(juce::OSCAddressPattern(address), value));
+    } catch (const juce::OSCFormatError&) {
+        return false;
+    }
 }
 
 // ============================================================================

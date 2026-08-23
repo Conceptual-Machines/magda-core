@@ -82,13 +82,14 @@ std::optional<DeviceInfo> deviceFromCatalogId(const juce::String& catalogId) {
     if (const auto* spec = daw::audio::compiled::findCompiledPluginSpec(catalogId))
         return fromSpec(spec->displayName, spec->isInstrument);
 
-    if (const auto* spec = daw::audio::findInternalPluginSpec(catalogId))
+    if (const auto* spec = daw::audio::findInternalPluginSpec(catalogId);
+        spec != nullptr && spec->showInBrowser)
         return fromSpec(spec->displayName, spec->isInstrument);
 
     // External plugins are loaded from the scan record, which carries the
     // fileOrIdentifier the host needs and the catalogue deliberately omits.
     PluginApiLive plugins;
-    for (const auto& scanned : plugins.getAllExternalPlugins()) {
+    for (const auto& scanned : plugins.getExternalPlugins()) {
         if (scanned.pluginId == catalogId || scanned.uniqueId == catalogId)
             return scanned;
     }

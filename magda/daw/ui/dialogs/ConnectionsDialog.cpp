@@ -310,6 +310,7 @@ class TransportPage : public juce::Component, private juce::Timer {
         }
         message += " " + tr("connections.rotate_reconnect");
 
+        juce::Component::SafePointer<TransportPage> safeThis(this);
         juce::AlertWindow::showAsync(
             juce::MessageBoxOptions()
                 .withIconType(juce::MessageBoxIconType::QuestionIcon)
@@ -317,15 +318,15 @@ class TransportPage : public juce::Component, private juce::Timer {
                 .withMessage(message)
                 .withButton(tr("connections.rotate_confirm"))
                 .withButton(tr("connections.rotate_cancel")),
-            [this](int result) {
-                if (result != 1)
+            [safeThis](int result) {
+                if (result != 1 || safeThis == nullptr)
                     return;
                 // Re-fetched rather than captured: this callback runs after the
                 // dialog returns, and the host can be gone by then — the user
                 // may have switched the transport off while the box was up.
                 if (auto* live = magda::remote::activeHost())
-                    live->rotateToken(transport_);
-                refresh();
+                    live->rotateToken(safeThis->transport_);
+                safeThis->refresh();
             });
     }
 

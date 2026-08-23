@@ -633,8 +633,7 @@ void McpEndpoint::handle(const Call& call, Completion onComplete) {
             onComplete(McpReply::fail(MCP_METHOD_NOT_FOUND,
                                       "server/discover requires protocol version 2026-07-28 or "
                                       "later; this connection negotiated " +
-                                          call.protocolVersion,
-                                      404));
+                                          call.protocolVersion));
             return;
         }
         onComplete(McpReply::ok(discoverResult()));
@@ -733,10 +732,11 @@ void McpEndpoint::handle(const Call& call, Completion onComplete) {
         return;
     }
 
-    // MCP pins the status for this one: `404` with a JSON-RPC body is what
-    // separates "this server does not have that method" from "there is no MCP
-    // endpoint here", which is the probe a dual-era client uses.
-    onComplete(McpReply::fail(MCP_METHOD_NOT_FOUND, "Unknown method: " + call.method, 404));
+    // In the session-based transport a 404 means the session itself is gone and
+    // forces a re-initialize. Only the stateless revision uses 404 as its
+    // method-not-found signal.
+    onComplete(
+        McpReply::fail(MCP_METHOD_NOT_FOUND, "Unknown method: " + call.method, modern ? 404 : 200));
 }
 
 void McpEndpoint::callTool(const Call& call, Completion onComplete) {

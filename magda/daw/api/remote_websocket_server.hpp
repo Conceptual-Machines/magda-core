@@ -38,12 +38,15 @@ class SubscriptionHub;
  * top-level `meta` sibling of `params`:
  *
  *     {"jsonrpc":"2.0","id":7,"method":"tracks.rename","params":{...},
- *      "meta":{"expectedRevision":42,"deadlineMs":5000}}
+ *      "meta":{"expectedRevision":42,"deadlineMs":5000,
+ *              "idempotencyKey":"0f7c1a2b-3d4e-5f60-8a9b-cbd0e1f23456"}}
  *
  * It cannot live inside `params`, because operation schemas are declared with
  * `additionalProperties:false` and would reject it as an unknown field. A
  * sibling member is also what JSON-RPC's own extensibility rules expect, and
  * clients that do not send one simply get the defaults.
+ * JSON-RPC `id` is only a response-correlation id and may be reused; retries
+ * are deduplicated only when `meta.idempotencyKey` is explicitly supplied.
  *
  * A reply mirrors that shape: `result` is the operation's output verbatim, and
  * `meta` beside it carries `revision` and `apiVersion`. Meta cannot live inside
@@ -126,12 +129,9 @@ class SubscriptionHub;
  * `stop()` closes the listener, marks every connection closed, and joins every
  * thread it started. It is safe to call twice, and the destructor calls it.
  *
- * Shutdown is bounded rather than immediate. cpp-httplib exposes no way to
- * interrupt a reader blocked in `read()` — there is no socket handle on the
- * request or the socket, and `set_socket_options` reaches only the listening
- * socket — and its `close()` reads as well as writes, so calling it from the
- * stopping thread would put two threads in one buffered stream. Each reader
- * therefore notices on its own, within one read timeout of a few seconds.
+ * Shutdown is prompt. MAGDA's pinned cpp-httplib carries a small `shutdown()`
+ * extension that performs the OS socket shutdown without a second framed read;
+ * `stop()` and an explicit disconnect use it to wake the connection's reader.
  *
  * ## What a client has to do
  *
@@ -165,10 +165,9 @@ class RemoteWebSocketServer {
         /// anonymous access.
         juce::String bearerToken;
 
-        /// Browser origins permitted to upgrade. Empty means no browser may
-        /// connect; a native client sends no `Origin` at all and is unaffected.
-        /// Absent from a request is not the same as unrecognised — the first is
-        /// a non-browser client, the second is a page we did not authorise.
+        /// Browser origins permitted to upgrade. A browser supplies the bearer
+        /// token as the `token` query parameter because the WebSocket API cannot
+        /// set Authorization; native clients continue to use that header.
         std::vector<juce::String> allowedOrigins;
 
         /**
@@ -189,7 +188,7 @@ class RemoteWebSocketServer {
         /// Frames above this are refused and the connection is closed with
         /// `MessageTooBig`. Requests are small; anything large is a mistake or
         /// an attack.
-        std::size_t maxFrameBytes = std::size_t{256} * 1024;
+        std::size_t maxFrameBytes = std::size_t{240} * 1024;
 
         /// Requests accepted per connection before the dispatcher has answered
         /// the earlier ones. Handlers are serialized by the service, so this

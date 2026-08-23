@@ -538,6 +538,8 @@ void ProjectManager::setTempo(double tempo) {
     if (currentProject_.tempo != clampedTempo) {
         currentProject_.tempo = clampedTempo;
         markDirty();
+        for (auto* listener : listeners_)
+            listener->projectPropertiesChanged();
     }
 }
 
@@ -549,6 +551,8 @@ void ProjectManager::setTimeSignature(int numerator, int denominator) {
         currentProject_.timeSignatureNumerator = clampedNumerator;
         currentProject_.timeSignatureDenominator = clampedDenominator;
         markDirty();
+        for (auto* listener : listeners_)
+            listener->projectPropertiesChanged();
     }
 }
 
@@ -559,6 +563,8 @@ void ProjectManager::setLoopSettings(bool enabled, double startBeats, double end
         currentProject_.loopStartBeats = startBeats;
         currentProject_.loopEndBeats = endBeats;
         markDirty();
+        for (auto* listener : listeners_)
+            listener->projectPropertiesChanged();
     }
 }
 

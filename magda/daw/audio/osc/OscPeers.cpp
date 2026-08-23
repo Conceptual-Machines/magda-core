@@ -31,36 +31,50 @@ OscPeers::Arrival OscPeers::intern(juce::StringRef host, juce::int64 nowMs) {
     if (host.isEmpty())
         return {};
 
-    const juce::ScopedLock lock(lock_);
+    bool resumed = false;
+    bool found = false;
+    OscPeerId id = kNoOscPeer;
+    bool answerable = false;
+    {
+        const juce::ScopedLock lock(lock_);
 
-    for (int i = 0; i < kMaxPeers; ++i) {
-        auto& entry = entries_[static_cast<std::size_t>(i)];
-        if (entry.used && entry.host == host) {
+        for (int i = 0; i < kMaxPeers; ++i) {
+            auto& entry = entries_[static_cast<std::size_t>(i)];
+            if (entry.used && entry.host == host) {
+                found = true;
+                answerable = entry.answerable();
+                resumed = answerable && nowMs - entry.lastSeenMs >= 5000;
+                if (resumed)
+                    ++entry.resumptions;
+                entry.lastSeenMs = nowMs;
+                ++entry.datagrams;
+                id = entry.id;
+                break;
+            }
+        }
+        if (!found) {
+            const int chosen = slotForUnvalidatedHost();
+            if (chosen < 0)
+                return {};  // every slot is a surface; this host waits for `admit`
+
+            // No id: see the header. A host that has said nothing MAGDA understood is
+            // counted so the settings list can show it, and named so it can be
+            // recognised on its next datagram, but it is not given a number, so a
+            // spoofed flood cannot consume them.
+            auto& entry = entries_[static_cast<std::size_t>(chosen)];
+            entry.used = true;
+            entry.id = kNoOscPeer;
+            entry.host = host;  // the one allocation, once per host per session
+            entry.firstSeenMs = nowMs;
             entry.lastSeenMs = nowMs;
-            ++entry.datagrams;
-            return Arrival{.id = entry.id, .answerable = entry.answerable()};
+            entry.resumptions = 0;
+            entry.datagrams = 1;
         }
     }
 
-    const int chosen = slotForUnvalidatedHost();
-    if (chosen < 0)
-        return {};  // every slot is a surface; this host waits for `admit`
-
-    // No id: see the header. A host that has said nothing MAGDA understood is
-    // counted so the settings list can show it, and named so it can be
-    // recognised on its next datagram, but it is not given a number, so a
-    // spoofed flood cannot consume them.
-    auto& entry = entries_[static_cast<std::size_t>(chosen)];
-    entry.used = true;
-    entry.id = kNoOscPeer;
-    entry.host = host;  // the one allocation, once per host per session
-    entry.firstSeenMs = nowMs;
-    entry.lastSeenMs = nowMs;
-    entry.datagrams = 1;
-
-    // No generation bump either: nothing that is answered has changed. One noise
-    // entry replacing another must not make the projector walk its fleet.
-    return {};
+    if (resumed)
+        generation_.fetch_add(1, std::memory_order_release);
+    return Arrival{.id = id, .answerable = answerable};
 }
 
 OscPeerId OscPeers::admit(juce::StringRef host, juce::int64 nowMs) {
@@ -118,6 +132,7 @@ OscPeerId OscPeers::admit(juce::StringRef host, juce::int64 nowMs) {
             entry.host = host;
             entry.firstSeenMs = nowMs;
             entry.lastSeenMs = nowMs;
+            entry.resumptions = 0;
             entry.datagrams = 1;
             admitted = entry.id;
             changed = true;
@@ -144,6 +159,7 @@ std::vector<OscPeers::Peer> OscPeers::snapshot() const {
                              .host = entry.host,
                              .firstSeenMs = entry.firstSeenMs,
                              .lastSeenMs = entry.lastSeenMs,
+                             .resumptions = entry.resumptions,
                              .datagrams = entry.datagrams,
                              .answerable = entry.answerable()});
     }

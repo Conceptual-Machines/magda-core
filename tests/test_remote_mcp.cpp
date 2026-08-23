@@ -339,7 +339,9 @@ TEST_CASE("server/discover advertises every supported version and the real capab
     const auto legacy = run(harness.endpoint, legacyCall("server/discover"));
     REQUIRE(legacy.failed());
     REQUIRE(legacy.error->code == MCP_METHOD_NOT_FOUND);
-    REQUIRE(legacy.error->httpStatus == 404);
+    // In the handshake era 404 means the session itself is gone. A method the
+    // negotiated revision does not support is a JSON-RPC error over HTTP 200.
+    REQUIRE(legacy.error->httpStatus == 200);
 }
 
 TEST_CASE("initialize belongs to the legacy era only", "[remote-api][mcp]") {

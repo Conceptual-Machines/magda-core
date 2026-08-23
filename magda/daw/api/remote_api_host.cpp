@@ -17,6 +17,7 @@
 #if JUCE_WINDOWS
     #include <windows.h>
 #else
+    #include <fcntl.h>
     #include <sys/stat.h>
     #include <unistd.h>
 
@@ -135,15 +136,18 @@ bool writeTokenFile(const juce::File& file, const juce::String& wsToken, int por
                     const juce::String& mcpToken, int mcpPort) {
     file.getParentDirectory().createDirectory();
     file.deleteFile();
+#if JUCE_WINDOWS
     if (!file.create().wasOk())
         return false;
-
-#if !JUCE_WINDOWS
-    if (chmod(file.getFullPathName().toRawUTF8(), S_IRUSR | S_IWUSR) != 0) {
-        // Refuse rather than leave a readable credential behind.
-        file.deleteFile();
+#else
+    // Set the final permissions in the creating syscall. Creating as 0644 and
+    // chmodding afterwards leaves a window in which another local user can
+    // open the inode and keep reading it after the credential is written.
+    const auto descriptor =
+        ::open(file.getFullPathName().toRawUTF8(), O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
+    if (descriptor < 0)
         return false;
-    }
+    ::close(descriptor);
 #endif
 
     auto* payload = new juce::DynamicObject();

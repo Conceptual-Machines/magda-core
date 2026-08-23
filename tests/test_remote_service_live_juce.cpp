@@ -13,6 +13,7 @@
 #include "magda/daw/core/SelectionManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
+#include "magda/daw/project/ProjectManager.hpp"
 
 // Remote API driven against the live facade and the real singletons, so these
 // assert on what actually happens to the project rather than on what a mock
@@ -100,6 +101,35 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             // not suppress it — this is what the bridge exists for.
             TrackManager::getInstance().createTrack("By hand", TrackType::Audio);
             expect(fixture.service.currentRevision() > before);
+        }
+
+        beginTest("Automation-driven mixer motion does not advance the revision");
+        {
+            Fixture fixture;
+            const auto trackId =
+                TrackManager::getInstance().createTrack("Automated", TrackType::Audio);
+            const auto before = fixture.service.currentRevision();
+
+            {
+                AutomationManager::AutomationWriteScope automationWrite;
+                TrackManager::getInstance().setTrackVolume(trackId, 0.5f, true);
+            }
+
+            expect(fixture.service.currentRevision() == before);
+        }
+
+        beginTest("A local project-property edit advances the revision");
+        {
+            Fixture fixture;
+            auto& project = ProjectManager::getInstance();
+            const auto originalTempo = project.getCurrentProjectInfo().tempo;
+            const auto nextTempo = originalTempo == 123.0 ? 124.0 : 123.0;
+            const auto before = fixture.service.currentRevision();
+
+            project.setTempo(nextTempo);
+
+            expect(fixture.service.currentRevision() == before + 1);
+            project.setTempo(originalTempo);
         }
 
         beginTest("A live write is reachable through the real facade");
@@ -290,6 +320,35 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
 
             // The shape is valid, but the track it names does not exist, so the
             // lane would be created against nothing.
+            expect(!response.ok);
+            expectEquals(toString(response.error.code), juce::String("not_found"));
+        }
+
+        beginTest("A lane targeting a device that does not exist is refused");
+        {
+            Fixture fixture;
+            const auto trackId =
+                TrackManager::getInstance().createTrack("Device host", TrackType::Audio);
+
+            auto* path = new juce::DynamicObject();
+            path->setProperty("trackId", static_cast<int>(trackId));
+            path->setProperty("section", "fx");
+            path->setProperty("trackLevel", false);
+            path->setProperty("topLevelDeviceId", 9999);
+            path->setProperty("steps", juce::Array<juce::var>{});
+
+            auto* target = new juce::DynamicObject();
+            target->setProperty("kind", "plugin_param");
+            target->setProperty("devicePath", juce::var(path));
+            target->setProperty("parameterIndex", 0);
+            target->setProperty("modId", -1);
+            target->setProperty("modParameterIndex", -1);
+            target->setProperty("sendBusIndex", -1);
+
+            const auto response =
+                fixture.run("automation.createLane",
+                            object({{"target", juce::var(target)}, {"type", "absolute"}}));
+
             expect(!response.ok);
             expectEquals(toString(response.error.code), juce::String("not_found"));
         }

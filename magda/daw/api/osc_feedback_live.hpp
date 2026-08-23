@@ -196,6 +196,7 @@ class OscFeedbackProjector : private ConfigListener, private BindingRegistryList
     struct Surface {
         osc::OscPeerId peer = osc::kNoOscPeer;
         juce::String host;
+        std::uint64_t resumptions = 0;
         std::unique_ptr<osc::OscFeedback> feedback;
         std::vector<BoundAddress> bound;
     };

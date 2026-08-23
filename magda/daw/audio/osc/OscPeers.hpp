@@ -101,6 +101,10 @@ class OscPeers {
         juce::String host;
         juce::int64 firstSeenMs = 0;
         juce::int64 lastSeenMs = 0;
+        /// Number of times this answerable peer spoke after at least five
+        /// seconds of silence. Lets the projector distinguish this peer's
+        /// restart from a generation change caused by some other peer.
+        std::uint64_t resumptions = 0;
         /// Datagrams, not accepted messages: this counts what arrived from the
         /// peer, including what the router went on to reject.
         std::uint64_t datagrams = 0;
@@ -162,8 +166,9 @@ class OscPeers {
 
     int count() const;
 
-    /// Bumped when a peer becomes answerable, when an answerable peer is
-    /// displaced, and by `clear`. Deliberately *not* bumped by traffic from a
+    /// Bumped when a peer becomes answerable, resumes after five seconds,
+    /// when an answerable peer is displaced, and by `clear`. Deliberately not
+    /// bumped by ordinary traffic from a
     /// host that has said nothing usable: a spoofed flood would otherwise make
     /// the projector rebuild its fleet every tick without ever creating a
     /// surface.
@@ -186,6 +191,7 @@ class OscPeers {
         juce::String host;
         juce::int64 firstSeenMs = 0;
         juce::int64 lastSeenMs = 0;
+        std::uint64_t resumptions = 0;
         std::uint64_t datagrams = 0;
 
         bool answerable() const {

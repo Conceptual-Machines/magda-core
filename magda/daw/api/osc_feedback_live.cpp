@@ -116,14 +116,21 @@ OscFeedbackProjector::OscFeedbackProjector(MagdaApi& api, remote::ChangeSource& 
     // The router's drain is on the message thread, same as the tick, so both of
     // these reach straight into the tables with nothing in between.
     router_.setFeedbackTap([this](OscPeerId peer, int slot, float value) {
-        if (auto* surface = surfaceFor(peer))
+        if (auto* surface = surfaceFor(peer)) {
             surface->feedback->noteReceived(slot, value);
+            // The model listener that will normally dirty these projections is
+            // delivered by another timer. Make this drain's next feedback tick
+            // project the received value while its echo marker is still live.
+            mixerDirty_ = true;
+            macrosDirty_ = true;
+        }
     });
     router_.setBindingFeedbackTap([this](OscPeerId peer, const juce::String& address, float value) {
         if (auto* surface = surfaceFor(peer)) {
             auto& entry = boundEntryFor(*surface, address);
             entry.lastReceived = value;
             entry.echoed = true;
+            bindingsDirty_ = true;
         }
     });
 
@@ -257,12 +264,20 @@ void OscFeedbackProjector::syncSurfaces() {
         if (!peer.answerable)
             continue;
 
-        const bool known =
-            std::any_of(surfaces_.begin(), surfaces_.end(), [&peer](const Surface& surface) {
+        auto known =
+            std::find_if(surfaces_.begin(), surfaces_.end(), [&peer](const Surface& surface) {
                 return surface.peer == peer.id && surface.host == peer.host;
             });
-        if (known)
+        if (known != surfaces_.end()) {
+            if (peer.resumptions != known->resumptions) {
+                known->feedback->requestSnapshot();
+                for (auto& entry : known->bound)
+                    entry.hasSent = false;
+                mixerDirty_ = macrosDirty_ = bindingsDirty_ = true;
+            }
+            known->resumptions = peer.resumptions;
             continue;
+        }
 
         auto sink = factory_(peer.host, feedbackPort_);
         if (sink == nullptr) {
@@ -278,6 +293,7 @@ void OscFeedbackProjector::syncSurfaces() {
         Surface surface;
         surface.peer = peer.id;
         surface.host = peer.host;
+        surface.resumptions = peer.resumptions;
         surface.feedback = std::make_unique<osc::OscFeedback>(std::move(sink));
         // A surface that has just been heard from has been told nothing, and
         // this is the event #2091 could only guess at.

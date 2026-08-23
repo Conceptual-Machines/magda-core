@@ -8,6 +8,7 @@
 
 #include <httplib.h>
 
+#include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <string>
@@ -166,9 +167,9 @@ TEST_CASE("Origin is checked only when the client sends one", "[remote][websocke
     }
 
     SECTION("a listed browser origin is allowed") {
-        auto headers = authorised();
+        httplib::Headers headers;
         headers.emplace("Origin", kOrigin);
-        httplib::ws::WebSocketClient client(endpoint(server), headers);
+        httplib::ws::WebSocketClient client(endpoint(server) + "?token=" + kToken, headers);
         REQUIRE(client.connect());
     }
 
@@ -183,6 +184,30 @@ TEST_CASE("Origin is checked only when the client sends one", "[remote][websocke
     // client is destroyed first and its socket shutdown wakes the reader at
     // once. Stopping while a client is still connected would instead wait out
     // the read timeout, which is what the shutdown test below measures.
+}
+
+TEST_CASE("Reusing a JSON-RPC id does not replay an unrelated write",
+          "[remote][websocket][idempotency]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    RemoteWebSocketServer server(service, testOptions());
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+
+    REQUIRE(
+        roundTrip(client,
+                  R"({"jsonrpc":"2.0","id":1,"method":"project.setTempo","params":{"tempo":120}})")
+            ["error"]
+                .isVoid());
+    REQUIRE(
+        roundTrip(client,
+                  R"({"jsonrpc":"2.0","id":1,"method":"project.setTempo","params":{"tempo":140}})")
+            ["error"]
+                .isVoid());
+    REQUIRE(api.project_.info.tempo == 140.0);
 }
 
 TEST_CASE("A request round-trips as JSON-RPC 2.0", "[remote][websocket][framing]") {
@@ -334,6 +359,31 @@ TEST_CASE("Shutdown closes live connections and joins every thread",
 
     // Idempotent: the destructor calls it too.
     server.stop();
+}
+
+TEST_CASE("Shutdown wakes a client that is actively answering heartbeat pings",
+          "[remote][websocket][lifecycle]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    RemoteWebSocketServer server(service, testOptions());
+    REQUIRE(server.start());
+
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+
+    std::atomic<bool> reading{false};
+    std::thread reader([&] {
+        reading.store(true);
+        std::string ignored;
+        client.read(ignored);
+    });
+    while (!reading.load())
+        std::this_thread::yield();
+
+    server.stop();
+    reader.join();
+    REQUIRE(server.connectionCount() == 0);
 }
 
 TEST_CASE("meta.deadlineMs may only shorten the deadline", "[remote][websocket][limits][errors]") {

@@ -45,6 +45,10 @@ class ProjectManagerListener {
     virtual void projectDirtyStateChanged(bool isDirty) {
         juce::ignoreUnused(isDirty);
     }
+
+    /// Tempo, time signature, loop settings, or another persisted project
+    /// property changed without replacing the project.
+    virtual void projectPropertiesChanged() {}
 };
 
 /**

@@ -249,7 +249,7 @@ const juce::var& deviceSchema() {
                 "devicePath":{},
                 "name":{"type":"string"},
                 "type":{"type":"string","enum":["instrument","effect","midi","analysis"]},
-                "format":{"type":"string","enum":["vst3","au","vst","internal"]},
+                "format":{"type":"string","enum":["vst3","au","lv2","internal"]},
                 "instrument":{"type":"boolean"},
                 "bypassed":{"type":"boolean"},
                 "gainDb":{"type":"number"}

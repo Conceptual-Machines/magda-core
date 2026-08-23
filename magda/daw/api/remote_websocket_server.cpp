@@ -410,6 +410,11 @@ struct Connection {
         ready.notify_all();
     }
 
+    void shutdown() {
+        markClosed();
+        socket.shutdown();
+    }
+
     /**
      * @brief Take one request slot, or say why not.
      *
@@ -534,25 +539,19 @@ struct RemoteWebSocketServer::Impl {
     /**
      * @brief Close one connection by handle, for the settings UI's disconnect.
      *
-     * Marking is all that is available and all that is needed. The reader owns
-     * the socket, so no other thread may close it; but `markClosed` empties the
-     * outbox and the read loop tests it after every read, so from this instant
-     * no further request from that client executes. The socket itself goes
-     * within one read timeout.
+     * OS shutdown wakes the framed reader without starting a second read. Keep
+     * `liveMutex` held across it: the connection owns only a reference to the
+     * handler's stack WebSocket, and the reader removes itself from `live`
+     * immediately before that WebSocket is destroyed.
      */
     bool disconnectByHandle(const juce::String& handle) {
-        std::shared_ptr<Connection> target;
-        {
-            const std::lock_guard<std::mutex> lock(liveMutex);
-            const auto found =
-                std::find_if(live.begin(), live.end(), [&](const std::shared_ptr<Connection>& c) {
-                    return c->handle == handle;
-                });
-            if (found == live.end())
-                return false;
-            target = *found;
-        }
-        target->markClosed();
+        const std::lock_guard<std::mutex> lock(liveMutex);
+        const auto found =
+            std::find_if(live.begin(), live.end(),
+                         [&](const std::shared_ptr<Connection>& c) { return c->handle == handle; });
+        if (found == live.end())
+            return false;
+        (*found)->shutdown();
         return true;
     }
 
@@ -592,8 +591,13 @@ struct RemoteWebSocketServer::Impl {
      */
     httplib::Server::HandlerResponse authorise(const httplib::Request& request,
                                                httplib::Response& response) {
-        if (!isAuthorised(juce::String(request.get_header_value("Authorization")),
-                          options.bearerToken)) {
+        const auto fromBrowser = request.has_header("Origin");
+        const auto browserToken = request.has_param("token")
+                                      ? juce::String(request.get_param_value("token"))
+                                      : juce::String();
+        const auto headerAuthorised = isAuthorised(
+            juce::String(request.get_header_value("Authorization")), options.bearerToken);
+        if (!headerAuthorised && (!fromBrowser || browserToken != options.bearerToken)) {
             // The reason, never the credential. `redactSecrets` would mask a
             // `Bearer …` value anyway; not building the string in the first
             // place is the version that cannot be got wrong later.
@@ -762,17 +766,23 @@ struct RemoteWebSocketServer::Impl {
         context.clientName = connection->clientName;
         context.transport = TRANSPORT_WEBSOCKET;
         context.scopes = scopes;
-        // Scoped by connection so two clients reusing id 1 do not collide in the
-        // dispatcher's idempotency cache, and typed so that one client's numeric
-        // 1 and string "1" — different requests under JSON-RPC — cannot either.
-        context.requestId = context.clientId + ":" + idKey;
-
         // Operation schemas are declared additionalProperties:false, so anything
         // that is not operation input has to arrive beside params rather than
         // inside it.
         const auto meta = parsed["meta"];
         auto deadlineMs = options.defaultDeadlineMs;
         if (meta.getDynamicObject() != nullptr) {
+            if (const auto key = meta["idempotencyKey"]; !key.isVoid()) {
+                if (!key.isString() || key.toString().isEmpty() || key.toString().length() > 256) {
+                    refuse(connection, id, kInvalidRequest,
+                           "meta.idempotencyKey must be a non-empty string of at most 256 "
+                           "characters");
+                    return;
+                }
+                // JSON-RPC ids correlate one exchange; they are allowed to be
+                // reused and therefore cannot safely double as retry keys.
+                context.requestId = key.toString();
+            }
             if (const auto expected = meta["expectedRevision"]; !expected.isVoid()) {
                 const auto revision =
                     jsonInteger(expected, 0, std::numeric_limits<juce::int64>::max());
@@ -853,12 +863,7 @@ struct RemoteWebSocketServer::Impl {
                 [connection](const SubscriptionEvent& event) {
                     return connection->enqueueEvent(notificationFor(event));
                 },
-                [connection](const juce::String&) {
-                    // Marking is all a foreign thread may do. The reader owns
-                    // the socket and notices within one read timeout, which is
-                    // the same shutdown path stop() uses.
-                    connection->markClosed();
-                });
+                [connection](const juce::String&) { connection->shutdown(); });
         }
 
         std::thread writer([connection] {
@@ -950,6 +955,10 @@ bool RemoteWebSocketServer::start() {
         DBG("RemoteWebSocketServer: refusing to start without a bearer token");
         return false;
     }
+    if (impl_->options.maxFrameBytes >= CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH) {
+        DBG("RemoteWebSocketServer: maxFrameBytes must be below cpp-httplib's frame cap");
+        return false;
+    }
 
     impl_->server.set_pre_routing_handler(
         [this](const httplib::Request& request, httplib::Response& response) {
@@ -975,14 +984,6 @@ bool RemoteWebSocketServer::start() {
             impl_->runConnection(ws, juce::String(request.get_param_value("client")));
         });
 
-    // Registered before the listener opens and cleared in stop(), so the
-    // settings UI can never route a disconnect to a server that has gone away.
-    if (impl_->options.clients != nullptr) {
-        impl_->options.clients->setDisconnectHandler(
-            TRANSPORT_WEBSOCKET,
-            [this](const juce::String& handle) { return impl_->disconnectByHandle(handle); });
-    }
-
     // Two different calls, and they are easy to confuse: bind_to_any_port's
     // second parameter is socket flags, not a port, so passing a configured port
     // there would bind somewhere else entirely.
@@ -999,6 +1000,12 @@ bool RemoteWebSocketServer::start() {
         DBG("RemoteWebSocketServer: failed to bind " + impl_->options.address + ":" +
             juce::String(impl_->options.port));
         return false;
+    }
+
+    if (impl_->options.clients != nullptr) {
+        impl_->options.clients->setDisconnectHandler(
+            TRANSPORT_WEBSOCKET,
+            [this](const juce::String& handle) { return impl_->disconnectByHandle(handle); });
     }
 
     impl_->port.store(port);
@@ -1019,16 +1026,12 @@ void RemoteWebSocketServer::stop() {
     if (impl_->options.clients != nullptr)
         impl_->options.clients->setDisconnectHandler(TRANSPORT_WEBSOCKET, nullptr);
 
-    // Only mark the connections; do not touch their sockets. `close()` writes a
-    // Close frame and then reads, waiting for the peer's echo, so calling it
-    // here would put this thread into the same buffered stream the connection's
-    // own thread is already blocked reading. Each reader instead notices within
-    // one read timeout and closes its own socket, which is the one thread
-    // allowed to.
+    // OS shutdown is safe across threads and wakes the one framed reader; unlike
+    // WebSocket::close(), it does not start a competing read for a Close echo.
     {
         const std::lock_guard<std::mutex> lock(impl_->liveMutex);
         for (const auto& connection : impl_->live)
-            connection->markClosed();
+            connection->shutdown();
     }
 
     impl_->server.stop();

@@ -11,6 +11,7 @@
 #include "../core/ClipCommands.hpp"
 #include "../core/ClipInfo.hpp"
 #include "../core/ControlTarget.hpp"
+#include "../core/DeviceInfo.hpp"
 #include "../core/MidiNoteCommands.hpp"
 #include "../core/TrackCommands.hpp"
 #include "../core/TrackInfo.hpp"
@@ -189,13 +190,76 @@ std::optional<AutomationTarget> toAutomationTarget(const juce::var& json) {
     return target;
 }
 
-/// Whether the track a target addresses still exists. Edit-scoped targets
-/// (tempo) name no track and are always resolvable.
+/// Whether every model object named by a target still exists. Edit-scoped
+/// targets (tempo) name no model object and are always resolvable.
 bool targetResolves(MagdaApi& api, const AutomationTarget& target) {
     if (target.isEditScoped())
         return true;
     const auto trackId = target.devicePath.trackId;
-    return trackId != INVALID_TRACK_ID && api.tracks().getTrack(trackId) != nullptr;
+    const auto* track = api.tracks().getTrack(trackId);
+    if (trackId == INVALID_TRACK_ID || track == nullptr)
+        return false;
+
+    if (target.kind == ControlTarget::Kind::PluginParam) {
+        if (api.devices().getDevice(target.devicePath) == nullptr)
+            return false;
+        const auto parameters = api.devices().getDeviceParameters(target.devicePath);
+        return std::any_of(parameters.begin(), parameters.end(), [&target](const auto& parameter) {
+            return parameter.index == target.paramIndex;
+        });
+    }
+
+    if (target.kind == ControlTarget::Kind::TrackVolume ||
+        target.kind == ControlTarget::Kind::TrackPan)
+        return target.devicePath.getType() == ChainNodeType::Track;
+    if (target.kind == ControlTarget::Kind::SendLevel) {
+        if (target.devicePath.getType() != ChainNodeType::Track)
+            return false;
+        return std::any_of(track->sends.begin(), track->sends.end(), [&target](const auto& send) {
+            return send.busIndex == target.sendBusIndex;
+        });
+    }
+
+    const MacroArray* macros = nullptr;
+    const ModArray* mods = nullptr;
+    switch (target.devicePath.getType()) {
+        case ChainNodeType::Track: {
+            macros = &track->macros;
+            mods = &track->mods;
+            break;
+        }
+        case ChainNodeType::Rack: {
+            const auto* rack = api.tracks().getRackByPath(target.devicePath);
+            if (rack == nullptr)
+                return false;
+            macros = &rack->macros;
+            mods = &rack->mods;
+            break;
+        }
+        case ChainNodeType::TopLevelDevice:
+        case ChainNodeType::Device: {
+            const auto* device = api.devices().getDevice(target.devicePath);
+            if (device == nullptr)
+                return false;
+            macros = &device->macros;
+            mods = &device->mods;
+            break;
+        }
+        default:
+            return false;
+    }
+
+    if (target.kind == ControlTarget::Kind::DeviceMacro)
+        return target.paramIndex >= 0 &&
+               static_cast<std::size_t>(target.paramIndex) < macros->size();
+    if (target.kind == ControlTarget::Kind::ModParam) {
+        const auto found = std::find_if(mods->begin(), mods->end(), [&target](const auto& mod) {
+            return mod.id == target.modId;
+        });
+        return found != mods->end() && target.modParamIndex == 0;
+    }
+
+    return false;
 }
 
 }  // namespace
