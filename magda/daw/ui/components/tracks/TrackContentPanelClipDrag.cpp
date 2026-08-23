@@ -1,12 +1,14 @@
 // TrackContentPanel — Multi-clip drag, time selection clip handling, and clip ghost methods.
 // Split from TrackContentPanel.cpp for file-size compliance.
 
+#include <algorithm>
 #include <limits>
 
 #include "../../interaction/ClipNudge.hpp"
 #include "../clips/ClipComponent.hpp"
 #include "TrackContentPanel.hpp"
 #include "core/ClipCommands.hpp"
+#include "core/ClipPlacementPolicy.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TempoUtils.hpp"
@@ -339,9 +341,18 @@ void TrackContentPanel::finishMultiClipDrag() {
                 juce::jlimit(0, numTracks - 1, dragInfo.originalTrackIndex + trackDelta);
             TrackId targetTrackId = visibleTrackIds_[static_cast<size_t>(targetIdx)];
             if (targetTrackId != dragInfo.originalTrackId) {
-                auto trackCmd =
-                    std::make_unique<MoveClipToTrackCommand>(dragInfo.clipId, targetTrackId);
-                UndoManager::getInstance().executeCommand(std::move(trackCmd));
+                // Asked before the command is built, not because the command
+                // would let it through -- it refuses the same targets -- but
+                // because a refused command is still an undo step that does
+                // nothing, and the clip stays where it was either way.
+                const auto* target = TrackManager::getInstance().getTrack(targetTrackId);
+                const auto* dragged = ClipManager::getInstance().getClip(dragInfo.clipId);
+                if (target != nullptr && dragged != nullptr &&
+                    trackAcceptsClip(*target, *dragged)) {
+                    auto trackCmd =
+                        std::make_unique<MoveClipToTrackCommand>(dragInfo.clipId, targetTrackId);
+                    UndoManager::getInstance().executeCommand(std::move(trackCmd));
+                }
             }
         }
 
@@ -402,18 +413,19 @@ void TrackContentPanel::cancelMultiClipDrag() {
 
 namespace {
 
-// Tracks a nudge may move a clip onto. Group and aux tracks are buses with no
-// clip timeline, the master track has no lane, and the chord track is a
-// singleton whose clips are chord progressions — a MIDI clip landing there
-// would change meaning. Multi-out tracks look like ordinary lanes but are
-// owned by a device's output pair: deactivateMultiOutPair() erases the track
-// outright without touching its clips, so anything parked there is orphaned
-// the moment the user switches that output off. Vertical nudging steps over
-// all of them.
-bool canHostNudgedClips(const TrackInfo& track) {
-    return track.type != TrackType::Group && track.type != TrackType::Aux &&
-           track.type != TrackType::Master && track.type != TrackType::Chord &&
-           track.type != TrackType::MultiOut;
+// Tracks a nudge may move this selection onto, which is the same question a
+// file drop and a clip drag ask, of the same table (TrackTypes.hpp).
+//
+// Asked with the selection in hand rather than of the track alone, because a
+// lane can accept one kind and not another: a multi-out lane takes MIDI, whose
+// notes play the parent instrument, and has nothing to do with audio. A mixed
+// selection therefore needs a track that accepts every kind in it, since a
+// nudge moves the selection as one block and cannot leave half of it behind.
+bool canHostNudgedClips(const TrackInfo& track, const std::vector<const ClipInfo*>& moving) {
+    for (const auto* clip : moving)
+        if (clip == nullptr || !trackAcceptsClip(track, *clip))
+            return false;
+    return !moving.empty();
 }
 
 // The clips a nudge acts on: the arrangement half of the selection. Session
@@ -543,10 +555,22 @@ bool TrackContentPanel::nudgeSelectedClipsToAdjacentTrack(int direction) {
     // the model out of step with its rendered audio. Skipping them (rather
     // than refusing) keeps a frozen lane from walling off the tracks below it.
     auto& trackManager = TrackManager::getInstance();
+    auto& clipManager = ClipManager::getInstance();
+
+    // What is moving, so a destination can be judged against it. The clips
+    // themselves rather than their kinds: a chord lane takes a MIDI clip that
+    // is already a progression and not one that merely could have been, and a
+    // kind cannot tell those apart.
+    std::vector<const ClipInfo*> moving;
+    moving.reserve(clips.size());
+    for (const ClipId clipId : clips)
+        if (const auto* clip = clipManager.getClip(clipId))
+            moving.push_back(clip);
+
     std::vector<TrackId> hostTrackIds;
     for (TrackId trackId : visibleTrackIds_) {
         const auto* track = trackManager.getTrack(trackId);
-        if (track != nullptr && canHostNudgedClips(*track) && !track->frozen)
+        if (track != nullptr && canHostNudgedClips(*track, moving) && !track->frozen)
             hostTrackIds.push_back(trackId);
     }
     if (hostTrackIds.size() < 2)
@@ -559,7 +583,6 @@ bool TrackContentPanel::nudgeSelectedClipsToAdjacentTrack(int direction) {
     std::vector<ClipTrackIndex> moves;
     moves.reserve(clips.size());
 
-    auto& clipManager = ClipManager::getInstance();
     int minTrackIndex = std::numeric_limits<int>::max();
     int maxTrackIndex = std::numeric_limits<int>::min();
     for (ClipId clipId : clips) {

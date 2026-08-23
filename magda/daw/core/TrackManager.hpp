@@ -200,7 +200,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     static TrackId createTrackWithPlugin(const juce::DynamicObject& pluginObj);
 
     // Track operations
-    TrackId createTrack(const juce::String& name = "", TrackType type = TrackType::Audio);
+    TrackId createTrack(const juce::String& name = "", TrackType type = TrackType::Media);
     TrackId createGroupTrack(const juce::String& name = "");
 
     // Chord track is a strict singleton (TrackType::Chord). It lives in the
@@ -243,7 +243,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // 1-based position of a track among its siblings (0 if not found).
     int getTrackSiblingPosition(TrackId trackId) const;
     TrackId createTrackInGroup(TrackId groupId, const juce::String& name = "",
-                               TrackType type = TrackType::Audio);
+                               TrackType type = TrackType::Media);
     std::vector<TrackId> getChildTracks(TrackId groupId) const;
     std::vector<TrackId> getTopLevelTracks() const;
     std::vector<TrackId> getAllDescendants(TrackId trackId) const;

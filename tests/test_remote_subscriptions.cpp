@@ -133,7 +133,7 @@ TrackInfo makeTrack(TrackId id, const juce::String& name) {
     TrackInfo track;
     track.id = id;
     track.name = name;
-    track.type = TrackType::Audio;
+    track.type = TrackType::Media;
     return track;
 }
 

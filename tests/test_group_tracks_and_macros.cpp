@@ -248,9 +248,9 @@ TEST_CASE("Group selected tracks creates group before selected tracks",
           "[group_track][selection]") {
     GroupMacroTestFixture fixture;
 
-    auto firstId = fixture.tm().createTrack("Drums", TrackType::Audio);
-    auto secondId = fixture.tm().createTrack("Bass", TrackType::Audio);
-    auto thirdId = fixture.tm().createTrack("Lead", TrackType::Audio);
+    auto firstId = fixture.tm().createTrack("Drums", TrackType::Media);
+    auto secondId = fixture.tm().createTrack("Bass", TrackType::Media);
+    auto thirdId = fixture.tm().createTrack("Lead", TrackType::Media);
 
     auto groupId = fixture.tm().groupTracks({thirdId, firstId, secondId}, "Selected Group");
 
@@ -271,8 +271,8 @@ TEST_CASE("Group selected tracks creates group before selected tracks",
 TEST_CASE("Ungroup track restores children and deletes empty group", "[group_track][selection]") {
     GroupMacroTestFixture fixture;
 
-    auto firstId = fixture.tm().createTrack("Drums", TrackType::Audio);
-    auto secondId = fixture.tm().createTrack("Bass", TrackType::Audio);
+    auto firstId = fixture.tm().createTrack("Drums", TrackType::Media);
+    auto secondId = fixture.tm().createTrack("Bass", TrackType::Media);
     auto groupId = fixture.tm().groupTracks({firstId, secondId}, "Selected Group");
 
     auto childIds = fixture.tm().ungroupTrack(groupId);
@@ -290,9 +290,9 @@ TEST_CASE("Group selected child tracks creates nested group inside parent",
     GroupMacroTestFixture fixture;
 
     auto parentId = fixture.tm().createGroupTrack("Parent");
-    auto firstId = fixture.tm().createTrackInGroup(parentId, "Drums", TrackType::Audio);
-    auto secondId = fixture.tm().createTrackInGroup(parentId, "Bass", TrackType::Audio);
-    auto thirdId = fixture.tm().createTrackInGroup(parentId, "Lead", TrackType::Audio);
+    auto firstId = fixture.tm().createTrackInGroup(parentId, "Drums", TrackType::Media);
+    auto secondId = fixture.tm().createTrackInGroup(parentId, "Bass", TrackType::Media);
+    auto thirdId = fixture.tm().createTrackInGroup(parentId, "Lead", TrackType::Media);
 
     auto nestedGroupId = fixture.tm().groupTracks({secondId, firstId}, "Nested Group");
 
@@ -323,13 +323,13 @@ TEST_CASE("Audio and Instrument tracks accept instruments", "[group_track][instr
     instrument.isInstrument = true;
 
     SECTION("Audio track accepts instrument") {
-        auto trackId = fixture.tm().createTrack("Audio", TrackType::Audio);
+        auto trackId = fixture.tm().createTrack("Audio", TrackType::Media);
         auto id = fixture.tm().addDeviceToTrack(trackId, instrument);
         REQUIRE(id != INVALID_DEVICE_ID);
     }
 
     SECTION("Instrument track accepts instrument") {
-        auto trackId = fixture.tm().createTrack("Inst", TrackType::Audio);
+        auto trackId = fixture.tm().createTrack("Inst", TrackType::Media);
         auto id = fixture.tm().addDeviceToTrack(trackId, instrument);
         REQUIRE(id != INVALID_DEVICE_ID);
     }

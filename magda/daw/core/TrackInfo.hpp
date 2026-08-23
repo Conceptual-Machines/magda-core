@@ -41,7 +41,7 @@ enum class TrackPlaybackMode { Arrangement, Session };
  */
 struct TrackInfo {
     TrackId id = INVALID_TRACK_ID;      // Unique identifier
-    TrackType type = TrackType::Audio;  // Track type
+    TrackType type = TrackType::Media;  // Track type
     juce::String name;                  // Track name
     juce::Colour colour;                // Track color
 
@@ -224,20 +224,42 @@ struct TrackInfo {
         return parentId == INVALID_TRACK_ID;
     }
 
-    // True for tracks that take external audio/MIDI input and can be recorded /
-    // monitored. Aux send buses and Group summing tracks only pass signal from
-    // elsewhere, so they never take external input. Single source of truth for
-    // the input/record/monitor guards across TrackManager and MidiInputRouter.
+    // Both of these used to be their own list of types to exclude, and the two
+    // lists differed by one member. They now read the same table every other
+    // question reads (TrackTypes.hpp), which is what stops them drifting.
     bool takesExternalInput() const {
-        return type != TrackType::Aux && type != TrackType::Group;
+        return traitsOf(type).takesExternalInput;
     }
 
-    // True for tracks that can host an instrument device. Aux/Group summing
-    // buses and the Master track only process signal from elsewhere, so they
-    // never host instruments. Single source of truth for the instrument-add
-    // guards across TrackManager (track and rack-chain add paths).
     bool canHostInstrument() const {
-        return type != TrackType::Aux && type != TrackType::Group && type != TrackType::Master;
+        return traitsOf(type).hostsInstrument;
+    }
+
+    // Whether a user may put a clip of this kind on the track: drop a file on
+    // it, drag one in, nudge one over. See UserClipAcceptance for why this
+    // takes the kind rather than answering yes or no for the whole track.
+    //
+    // A Progressions lane answers yes to MIDI, because a progression is a MIDI
+    // clip. Whether the material really is a progression is a question about
+    // content, so it is asked where the content is readable -- at the drop,
+    // which has the file.
+    bool acceptsUserClip(ClipType clipType) const {
+        switch (traitsOf(type).userClips) {
+            case UserClipAcceptance::None:
+                return false;
+            case UserClipAcceptance::Any:
+                return true;
+            case UserClipAcceptance::MidiOnly:
+            case UserClipAcceptance::Progressions:
+                return clipType == ClipType::MIDI;
+        }
+        return false;
+    }
+
+    // Whether anything at all may be placed here, for the callers that have no
+    // clip in hand yet.
+    bool acceptsAnyUserClip() const {
+        return traitsOf(type).userClips != UserClipAcceptance::None;
     }
 
     // Enforce the track-type invariants on this struct's own fields. Input-less

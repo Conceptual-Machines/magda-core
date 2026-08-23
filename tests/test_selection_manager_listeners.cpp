@@ -35,9 +35,9 @@ TEST_CASE("SelectionManager - clip range selection follows visible track order",
     tm.clearAllTracks();
     sm.clearSelection();
 
-    TrackId firstCreated = tm.createTrack("First", TrackType::Audio);
-    TrackId secondCreated = tm.createTrack("Second", TrackType::Audio);
-    TrackId thirdCreated = tm.createTrack("Third", TrackType::Audio);
+    TrackId firstCreated = tm.createTrack("First", TrackType::Media);
+    TrackId secondCreated = tm.createTrack("Second", TrackType::Media);
+    TrackId thirdCreated = tm.createTrack("Third", TrackType::Media);
 
     tm.moveTrack(thirdCreated, 0);
 
@@ -75,7 +75,7 @@ TEST_CASE("SelectionManager - note range selection uses anchored time and pitch 
     tm.clearAllTracks();
     sm.clearSelection();
 
-    TrackId trackId = tm.createTrack("Notes", TrackType::Audio);
+    TrackId trackId = tm.createTrack("Notes", TrackType::Media);
     ClipId clipId = cm.createMidiClip(trackId, 0.0, 8.0, ClipView::Arrangement);
     auto* clip = cm.getClip(clipId);
     REQUIRE(clip != nullptr);
@@ -119,8 +119,8 @@ TEST_CASE("SelectionManager - track toggle ignores stale track set from other se
     tm.clearAllTracks();
     sm.clearSelection();
 
-    TrackId first = tm.createTrack("First", TrackType::Audio);
-    TrackId second = tm.createTrack("Second", TrackType::Audio);
+    TrackId first = tm.createTrack("First", TrackType::Media);
+    TrackId second = tm.createTrack("Second", TrackType::Media);
     ClipId clipId = cm.createMidiClip(first, 0.0, 2.0, ClipView::Arrangement);
 
     sm.selectTrack(first);
@@ -147,8 +147,8 @@ TEST_CASE("SelectionManager - track and clip multi-selections are mutually exclu
     tm.clearAllTracks();
     sm.clearSelection();
 
-    TrackId trackA = tm.createTrack("A", TrackType::Audio);
-    TrackId trackB = tm.createTrack("B", TrackType::Audio);
+    TrackId trackA = tm.createTrack("A", TrackType::Media);
+    TrackId trackB = tm.createTrack("B", TrackType::Media);
     ClipId clipA = cm.createMidiClip(trackA, 0.0, 2.0, ClipView::Arrangement);
     ClipId clipB = cm.createMidiClip(trackA, 2.0, 2.0, ClipView::Arrangement);
 

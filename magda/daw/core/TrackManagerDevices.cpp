@@ -707,9 +707,7 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
     }
 
     if (auto* destinationTrack = getTrack(destinationChainPath.trackId)) {
-        const bool destinationCannotHostInstruments = destinationTrack->type == TrackType::Aux ||
-                                                      destinationTrack->type == TrackType::Group ||
-                                                      destinationTrack->type == TrackType::Master;
+        const bool destinationCannotHostInstruments = !destinationTrack->canHostInstrument();
         if (destinationCannotHostInstruments && elementContainsInstrument(*sourceIt)) {
             return false;
         }

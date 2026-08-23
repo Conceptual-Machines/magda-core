@@ -118,7 +118,7 @@ HandlerResult notFound(const juce::String& what, int id) {
 
 std::optional<TrackType> parseTrackType(const juce::String& type) {
     if (type == "audio")
-        return TrackType::Audio;
+        return TrackType::Media;
     if (type == "group")
         return TrackType::Group;
     if (type == "aux")

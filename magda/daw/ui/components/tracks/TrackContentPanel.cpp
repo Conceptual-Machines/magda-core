@@ -20,7 +20,9 @@
 #include "TrackControlsPolicy.hpp"
 #include "core/AppPaths.hpp"
 #include "core/AutomationCommands.hpp"
+#include "core/ChordProgressionConverter.hpp"
 #include "core/ClipCommands.hpp"
+#include "core/ClipPlacementPolicy.hpp"
 #include "core/MidiChordMarkers.hpp"
 #include "core/PasteTargetResolver.hpp"
 #include "core/SelectionManager.hpp"
@@ -2475,6 +2477,13 @@ void TrackContentPanel::rebuildClipComponents() {
         };
 
         clipComp->onClipMovedToTrack = [](ClipId id, TrackId newTrackId) {
+            // The same question the command asks, asked first so a refused move
+            // is not an undo step that does nothing.
+            const auto* target = TrackManager::getInstance().getTrack(newTrackId);
+            const auto* dragged = ClipManager::getInstance().getClip(id);
+            if (target == nullptr || dragged == nullptr || !trackAcceptsClip(*target, *dragged))
+                return;
+
             auto cmd = std::make_unique<MoveClipToTrackCommand>(id, newTrackId);
             UndoManager::getInstance().executeCommand(std::move(cmd));
         };
@@ -3394,34 +3403,8 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
 
     TrackId targetTrackId = INVALID_TRACK_ID;
 
-    if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
-        // Dropped on an existing track
-        targetTrackId = visibleTrackIds_[trackIndex];
-        auto* track = TrackManager::getInstance().getTrack(targetTrackId);
-        if (!track)
-            return;
-
-        // Block drops on group/aux tracks (no clip timeline)
-        if (track->type == TrackType::Group || track->type == TrackType::Aux) {
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::AlertWindow::WarningIcon, "Drop Failed",
-                "Files cannot be dropped on group or aux tracks.");
-            return;
-        }
-
-        // Block drops on tracks with a DrumGrid plugin
-        for (const auto& element : track->chain.fxChainElements) {
-            if (isDevice(element) && getDevice(element).pluginId.containsIgnoreCase("drumgrid")) {
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::AlertWindow::WarningIcon, "Drop Failed",
-                    "Files cannot be dropped on Drum Grid tracks.");
-                return;
-            }
-        }
-    }
-    // If targetTrackId is still INVALID, we'll create a new track below
-
-    // Separate audio and MIDI files
+    // Which kind each file is, worked out before the target is vetted: what a
+    // track accepts is per kind, so the check below needs to know what it has.
     juce::StringArray audioFiles, midiFiles;
     for (const auto& filePath : files) {
         if (filePath.endsWithIgnoreCase(".mid") || filePath.endsWithIgnoreCase(".midi"))
@@ -3431,6 +3414,50 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                  filePath.endsWithIgnoreCase(".ogg") || filePath.endsWithIgnoreCase(".flac"))
             audioFiles.add(filePath);
     }
+
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
+        // Dropped on an existing track
+        targetTrackId = visibleTrackIds_[trackIndex];
+        auto* track = TrackManager::getInstance().getTrack(targetTrackId);
+        if (!track)
+            return;
+
+        // What the target accepts, asked of the table every other path asks
+        // (TrackTypes.hpp). Nothing here is a question about the Drum Grid: a
+        // Media track is hybrid and takes both kinds, and a chain device used
+        // to refuse every dropped file here, which made the track likeliest to
+        // want a .mid the one that would not take one (#2172).
+        const auto refuse = [](const juce::String& why) {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Drop Failed",
+                                                   why);
+        };
+
+        if (!audioFiles.isEmpty() && !track->acceptsUserClip(ClipType::Audio)) {
+            if (midiFiles.isEmpty()) {
+                refuse("Audio clips cannot be placed on this track.");
+                return;
+            }
+
+            // A mixed drop still imports what the track does take, and says
+            // what it left. Refusing all of it because one file was the wrong
+            // kind is the shape of the bug this replaces.
+            refuse("Audio clips cannot be placed on this track, so only the MIDI was imported.");
+            audioFiles.clear();
+        }
+
+        if (!midiFiles.isEmpty() && !track->acceptsUserClip(ClipType::MIDI)) {
+            if (audioFiles.isEmpty()) {
+                refuse("MIDI clips cannot be placed on this track.");
+                return;
+            }
+            refuse("MIDI clips cannot be placed on this track, so only the audio was imported.");
+            midiFiles.clear();
+        }
+
+        if (audioFiles.isEmpty() && midiFiles.isEmpty())
+            return;
+    }
+    // If targetTrackId is still INVALID, we'll create a new track below
 
     int importedCount = 0;
 
@@ -3455,7 +3482,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
 
                 juce::String trackName = audioFile.getFileNameWithoutExtension();
                 auto createTrackCmd =
-                    std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName, insertAfter);
+                    std::make_unique<CreateTrackCommand>(TrackType::Media, trackName, insertAfter);
                 auto* createTrackPtr = createTrackCmd.get();
                 UndoManager::getInstance().executeCommand(std::move(createTrackCmd));
                 TrackId clipTrackId = createTrackPtr->getCreatedTrackId();
@@ -3585,7 +3612,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                         trackName += " " + juce::String(listIdx + 1);
 
                     auto createTrackCmd =
-                        std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName);
+                        std::make_unique<CreateTrackCommand>(TrackType::Media, trackName);
                     auto* createTrackPtr = createTrackCmd.get();
                     UndoManager::getInstance().executeCommand(std::move(createTrackCmd));
                     clipTrackId = createTrackPtr->getCreatedTrackId();
@@ -3669,6 +3696,38 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                     }
                     ann.chordGroup = linkedAny ? groupId : 0;
                     clip->chordAnnotations.push_back(ann);
+                }
+
+                // A .mid that carried no CHORD: markers still becomes chords
+                // when it lands on the chord track, because that is what the
+                // track is for and it is what a user dropping one there means.
+                // The same detection the piano roll's own button runs, from the
+                // same converter, so a dropped progression and a detected one
+                // are the same thing.
+                //
+                // Only on that track: detecting over every imported .mid would
+                // annotate parts that are not harmony and were never asked to
+                // be read as it.
+                if (clip->chordAnnotations.empty() && !clip->midiNotes.empty()) {
+                    if (const auto* clipTrack = TrackManager::getInstance().getTrack(clipTrackId);
+                        clipTrack != nullptr &&
+                        traitsOf(clipTrack->type).userClips == UserClipAcceptance::Progressions) {
+                        for (const auto& detected :
+                             extractChordsFromNotes(clip->midiNotes, beatsPerBar)) {
+                            ClipInfo::ChordAnnotation ann;
+                            ann.beatPosition = detected.startBeat;
+                            ann.lengthBeats = detected.lengthBeats;
+                            ann.chordName = detected.name;
+
+                            const int groupId = clip->nextChordGroupId++;
+                            for (const auto noteIndex : detected.noteIndices)
+                                if (noteIndex < clip->midiNotes.size())
+                                    clip->midiNotes[noteIndex].chordGroup = groupId;
+
+                            ann.chordGroup = detected.noteIndices.empty() ? 0 : groupId;
+                            clip->chordAnnotations.push_back(ann);
+                        }
+                    }
                 }
 
                 ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId);
@@ -3758,7 +3817,7 @@ void TrackContentPanel::itemDropped(const SourceDetails& details) {
 
     if (auto* obj = details.description.getDynamicObject()) {
         auto device = TrackManager::deviceInfoFromPluginObject(*obj);
-        TrackType trackType = TrackType::Audio;
+        TrackType trackType = TrackType::Media;
         juce::String pluginName = obj->getProperty("name").toString();
         auto cmd = std::make_unique<CreateTrackWithDeviceCommand>(pluginName, trackType, device);
         UndoManager::getInstance().executeCommand(std::move(cmd));

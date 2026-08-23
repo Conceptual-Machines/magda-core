@@ -248,7 +248,7 @@ void StemSeparationService::splitClipIntoStems(ClipId sourceClipId, Engine engin
         TrackId after = sourceTrackId;
         for (const auto& stemName : stemNamesFor(engine)) {
             auto trackCmd =
-                std::make_unique<magda::CreateTrackCommand>(TrackType::Audio, stemName, after);
+                std::make_unique<magda::CreateTrackCommand>(TrackType::Media, stemName, after);
             auto* trackPtr = trackCmd.get();
             undo.executeCommand(std::move(trackCmd));
             const TrackId trackId = trackPtr->getCreatedTrackId();

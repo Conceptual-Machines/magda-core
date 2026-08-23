@@ -14,7 +14,7 @@ using Catch::Approx;
 static ClipId makeClip(const std::vector<std::pair<double, double>>& notes, int pitch = 60) {
     auto& clipManager = ClipManager::getInstance();
     ClipId clipId =
-        clipManager.createMidiClip(TrackManager::getInstance().createTrack("T", TrackType::Audio),
+        clipManager.createMidiClip(TrackManager::getInstance().createTrack("T", TrackType::Media),
                                    0.0, 64.0, ClipView::Arrangement);
     auto* clip = clipManager.getClip(clipId);
     for (const auto& [start, len] : notes) {

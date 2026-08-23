@@ -33,7 +33,7 @@ static void resetState() {
     TrackManager::getInstance().clearAllTracks();
 }
 
-static TrackId createTrack(const char* name = "Track", TrackType type = TrackType::Audio) {
+static TrackId createTrack(const char* name = "Track", TrackType type = TrackType::Media) {
     return TrackManager::getInstance().createTrack(name, type);
 }
 
@@ -222,7 +222,7 @@ TEST_CASE("DuplicateClipCommand - session undo removes duplicate only",
 
 TEST_CASE("DuplicateClipCommand - audio clip", "[clip][command][duplicate]") {
     resetState();
-    TrackId track = createTrack("Audio Track", TrackType::Audio);
+    TrackId track = createTrack("Audio Track", TrackType::Media);
     ClipId original = createAudio(track, 1.0, 3.0);
 
     DuplicateClipCommand cmd(original);
@@ -248,7 +248,7 @@ TEST_CASE("DuplicateClipCommand - audio clip startBeats stays in sync with start
     proj.setTempo(90.0);
     REQUIRE(proj.getCurrentProjectInfo().tempo == Catch::Approx(90.0));
 
-    TrackId track = createTrack("Audio Track", TrackType::Audio);
+    TrackId track = createTrack("Audio Track", TrackType::Media);
     ClipId original = createAudio(track, 2.0, 4.0);
 
     auto* origBeforeDup = ClipManager::getInstance().getClip(original);
@@ -315,7 +315,7 @@ TEST_CASE("copyTimeRangeToClipboard + paste - preserves internal clip spacing",
     const double originalTempo = proj.getCurrentProjectInfo().tempo;
     proj.setTempo(90.0);
 
-    TrackId track = createTrack("Audio Track", TrackType::Audio);
+    TrackId track = createTrack("Audio Track", TrackType::Media);
     // Selection [2.0, 6.0] (4 seconds = 6 beats at 90 BPM).
     // Two audio clips inside the range, 0.5s of internal gap.
     ClipId a = createAudio(track, 2.0, 1.5);  // ends at 3.5
@@ -356,7 +356,7 @@ TEST_CASE("copyTimeRangeToClipboard + paste - trimmed audio keeps beat placement
     const double originalTempo = proj.getCurrentProjectInfo().tempo;
     proj.setTempo(90.0);
 
-    TrackId track = createTrack("Audio Track", TrackType::Audio);
+    TrackId track = createTrack("Audio Track", TrackType::Media);
     ClipId sourceId = createAudio(track, 1.0, 8.0);
 
     auto& cm = ClipManager::getInstance();
@@ -395,7 +395,7 @@ TEST_CASE(
     const double originalTempo = proj.getCurrentProjectInfo().tempo;
     proj.setTempo(120.0);
 
-    TrackId track = createTrack("Audio Track", TrackType::Audio);
+    TrackId track = createTrack("Audio Track", TrackType::Media);
     ClipId sourceId = createAudio(track, 1.0, 2.0);
 
     auto& cm = ClipManager::getInstance();
@@ -442,7 +442,7 @@ TEST_CASE("copyTimeRangeToClipboard + paste - exact beat slice keeps waveform id
     const double originalTempo = proj.getCurrentProjectInfo().tempo;
     proj.setTempo(120.0);
 
-    TrackId track = createTrack("Audio Track", TrackType::Audio);
+    TrackId track = createTrack("Audio Track", TrackType::Media);
     ClipId sourceId = createAudio(track, 0.5, 0.5);
 
     auto& cm = ClipManager::getInstance();
@@ -787,7 +787,7 @@ TEST_CASE("JoinClipsCommand - canExecute validation", "[clip][command][join]") {
     }
 
     SECTION("Cannot join clips of different types") {
-        TrackId audioTrack = createTrack("Audio", TrackType::Audio);
+        TrackId audioTrack = createTrack("Audio", TrackType::Media);
         ClipId midi = createMidi(track1, 0.0, 2.0);
         ClipId audio = createAudio(audioTrack, 2.0, 2.0);
         JoinClipsCommand cmd(midi, audio);
@@ -1673,7 +1673,7 @@ TEST_CASE("resolveOverlaps - covering a clip leaves it whole and gives it back",
     proj.setTempo(120.0);
 
     auto& cm = ClipManager::getInstance();
-    TrackId track = createTrack("Track", TrackType::Audio);
+    TrackId track = createTrack("Track", TrackType::Media);
 
     SECTION("covered end to end") {
         ClipId covered = createAudio(track, 2.0, 2.0);  // [4,8] beats
@@ -1726,8 +1726,8 @@ TEST_CASE("resolveOverlaps - a clip dropped inside another leaves it whole",
     proj.setTempo(120.0);
 
     auto& cm = ClipManager::getInstance();
-    TrackId trackC = createTrack("Long", TrackType::Audio);
-    TrackId trackS = createTrack("Source", TrackType::Audio);
+    TrackId trackC = createTrack("Long", TrackType::Media);
+    TrackId trackS = createTrack("Source", TrackType::Media);
 
     ClipId longClip = createAudio(trackC, 0.0, 8.0);  // [0,16] beats
     ClipId source = createAudio(trackS, 0.0, 2.0);    // [0,4] beats
@@ -1774,7 +1774,7 @@ TEST_CASE("resolveOverlaps - dropping a clip inside a MIDI clip keeps it whole",
     proj.setTempo(120.0);
 
     auto& cm = ClipManager::getInstance();
-    TrackId track = createTrack("Track", TrackType::Audio);
+    TrackId track = createTrack("Track", TrackType::Media);
 
     // [0,16] beats with a note before, under and after the drop.
     ClipId part = createMidi(track, 0.0, 8.0, {2.0, 8.0, 14.0});
@@ -1921,7 +1921,7 @@ TEST_CASE("FlattenClipStackCommand - commits what the stack plays into one clip"
     config.setClipOverlapPlaysBoth(false);
 
     auto& cm = ClipManager::getInstance();
-    TrackId track = createTrack("Track", TrackType::Audio);
+    TrackId track = createTrack("Track", TrackType::Media);
 
     // [0,16] with notes at 2, 8 and 14; the drop covers [6,10], so the note at
     // 8 is the one nobody hears.
@@ -1987,7 +1987,7 @@ TEST_CASE("FlattenClipStackCommand - only offers itself when there is a stack to
     proj.setTempo(120.0);
 
     auto& cm = ClipManager::getInstance();
-    TrackId track = createTrack("Track", TrackType::Audio);
+    TrackId track = createTrack("Track", TrackType::Media);
 
     SECTION("abutting clips are not a stack") {
         ClipId a = createMidi(track, 0.0, 4.0, {0.0});

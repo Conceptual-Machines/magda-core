@@ -50,7 +50,7 @@ TEST_CASE("NativeProjectDocumentAdapter captures current manager state",
     info.name = "Adapter Capture";
     info.tempo = 132.0;
 
-    auto trackId = TrackManager::getInstance().createTrack("Keys", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("Keys", TrackType::Media);
     auto clipId = ClipManager::getInstance().createMidiClipBeats(trackId, 4.0, 2.0);
     auto* clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip != nullptr);
@@ -439,7 +439,7 @@ TEST_CASE("ProjectSerializer exports and stages dawproject archives",
     info.version = "0.serializer";
     info.tempo = 126.0;
 
-    auto trackId = TrackManager::getInstance().createTrack("Arp", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("Arp", TrackType::Media);
     auto clipId = ClipManager::getInstance().createMidiClipBeats(trackId, 0.0, 2.0);
     auto* clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip != nullptr);
@@ -1033,7 +1033,7 @@ TEST_CASE("DawProjectXmlAdapter exports master role and send routing and roundtr
     TrackInfo audio;
     audio.id = 1;
     audio.name = "Audio 1";
-    audio.type = TrackType::Audio;
+    audio.type = TrackType::Media;
 
     TrackInfo aux;
     aux.id = 2;

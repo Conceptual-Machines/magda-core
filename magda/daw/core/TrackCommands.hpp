@@ -11,7 +11,7 @@ namespace magda {
  */
 class CreateTrackCommand : public UndoableCommand {
   public:
-    explicit CreateTrackCommand(TrackType type = TrackType::Audio,
+    explicit CreateTrackCommand(TrackType type = TrackType::Media,
                                 const juce::String& name = juce::String(),
                                 TrackId afterTrackId = INVALID_TRACK_ID);
 

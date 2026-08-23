@@ -1958,7 +1958,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
         case newAudioTrack: {
             TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
-            auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio, juce::String(),
+            auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Media, juce::String(),
                                                             selectedTrack);
             UndoManager::getInstance().executeCommand(std::move(cmd));
             return true;

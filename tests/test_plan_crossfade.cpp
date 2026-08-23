@@ -64,7 +64,7 @@ BlockInfo blockAt(std::int64_t timelineSample, int numSamples) {
     return block;
 }
 
-TrackInfo makeTrack(TrackId id, TrackType type = TrackType::Audio) {
+TrackInfo makeTrack(TrackId id, TrackType type = TrackType::Media) {
     TrackInfo track;
     track.id = id;
     track.type = type;

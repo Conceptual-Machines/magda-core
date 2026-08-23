@@ -1822,14 +1822,14 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
 
 TrackType Interpreter::parseTrackType(const Params& params) {
     if (!params.has("type"))
-        return TrackType::Audio;
+        return TrackType::Media;
 
     std::string typeStr = params.get("type");
     if (typeStr == "group")
         return TrackType::Group;
     if (typeStr == "aux")
         return TrackType::Aux;
-    return TrackType::Audio;
+    return TrackType::Media;
 }
 
 int Interpreter::findTrackByName(const juce::String& name) const {

@@ -118,7 +118,7 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
                 continue;
             if (trackManager.wouldCreateInputRoutingCycle(currentTrackId, t.id))
                 continue;
-            if (t.type == TrackType::Audio || t.type == TrackType::Group ||
+            if (t.type == TrackType::Media || t.type == TrackType::Group ||
                 t.type == TrackType::Aux) {
                 trackOptions.push_back({id, t.name});
                 if (outInputTrackMapping)
@@ -204,7 +204,7 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
         }
 
         for (const auto& t : allTracks) {
-            if (t.type != TrackType::Audio || t.id == currentTrackId)
+            if (t.type != TrackType::Media || t.id == currentTrackId)
                 continue;
             // Hide source track from its own multi-out tracks
             if (t.id == multiOutSourceId)
@@ -278,7 +278,7 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
         }
         id = 400;
         for (const auto& t : allTracks) {
-            if (t.type == TrackType::Audio && t.id != currentTrackId) {
+            if (t.type == TrackType::Media && t.id != currentTrackId) {
                 if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
                     continue;
                 outTrackMapping[id++] = t.id;
@@ -324,7 +324,7 @@ inline void populateMidiInputOptions(RoutingSelector* selector, MidiBridge* midi
                 continue;
             // Chord tracks are valid MIDI sources: their progression clip
             // plays live and drives instrument tracks (issue #1507)
-            if (t.type != TrackType::Audio && t.type != TrackType::Chord)
+            if (t.type != TrackType::Media && t.type != TrackType::Chord)
                 continue;
             if (trackManager.wouldCreateInputRoutingCycle(currentTrackId, t.id))
                 continue;
@@ -374,7 +374,7 @@ inline void populateMidiOutputOptions(RoutingSelector* selector, MidiBridge* mid
         for (const auto& t : allTracks) {
             if (t.id == currentTrackId)
                 continue;
-            if (t.type != TrackType::Audio)
+            if (t.type != TrackType::Media)
                 continue;
             // The edge created is candidate ← current (candidate listens to
             // the current track), so the candidate is the destination here.

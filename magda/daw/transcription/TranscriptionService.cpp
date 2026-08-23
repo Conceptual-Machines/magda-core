@@ -252,7 +252,7 @@ void TranscriptionService::transcribeAudioClip(ClipId sourceClipId, Completion o
 
             auto trackCmd = std::make_unique<magda::CreateTrackWithDeviceCommand>(
                 sourceName.isNotEmpty() ? sourceName : juce::String("Transcription"),
-                TrackType::Audio, makeFourOscDevice());
+                TrackType::Media, makeFourOscDevice());
             auto* trackPtr = trackCmd.get();
             magda::UndoManager::getInstance().executeCommand(std::move(trackCmd));
             const TrackId newTrackId = trackPtr->getCreatedTrackId();

@@ -22,7 +22,7 @@ struct InternalRoutingFixture {
     }
 
     TrackId createTrack(const juce::String& name = "Track") {
-        return tm().createTrack(name, TrackType::Audio);
+        return tm().createTrack(name, TrackType::Media);
     }
 
     static juce::String trackInput(TrackId id) {

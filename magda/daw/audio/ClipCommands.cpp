@@ -17,6 +17,7 @@
 #include "audio/racks/InstrumentRackManager.hpp"
 #include "core/ClipOcclusion.hpp"
 #include "core/ClipOperations.hpp"
+#include "core/ClipPlacementPolicy.hpp"
 #include "core/Config.hpp"
 #include "core/ControlTarget.hpp"
 #include "core/TrackManager.hpp"
@@ -520,7 +521,16 @@ MoveClipToTrackCommand::MoveClipToTrackCommand(ClipId clipId, TrackId newTrackId
 
 bool MoveClipToTrackCommand::canExecute() const {
     auto* clip = ClipManager::getInstance().getClip(clipId_);
-    return clip && newTrackId_ != INVALID_TRACK_ID;
+    if (clip == nullptr || newTrackId_ == INVALID_TRACK_ID)
+        return false;
+
+    // Where a clip may go is decided here rather than only at the gestures that
+    // move one. A drag and a nudge can each decline to offer a bad target, and
+    // both did so separately, which is how they came to disagree; the command
+    // is the one place the API, the scripting layer and the next caller all go
+    // through.
+    const auto* track = TrackManager::getInstance().getTrack(newTrackId_);
+    return track != nullptr && trackAcceptsClip(*track, *clip);
 }
 
 void MoveClipToTrackCommand::execute() {
@@ -2362,7 +2372,7 @@ void BounceToNewTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
     juce::String trackName =
         sourceClipName.isNotEmpty() ? sourceClipName + " (bounced)" : "Bounced";
-    newTrackId_ = trackManager.createTrack(trackName, TrackType::Audio);
+    newTrackId_ = trackManager.createTrack(trackName, TrackType::Media);
 
     // Move new track to position after source track
     int sourceIndex = trackManager.getTrackIndex(sourceTrackId);
@@ -2923,7 +2933,7 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
     auto& trackManager = TrackManager::getInstance();
     juce::String clipName =
         clip.name.isNotEmpty() ? clip.name : audioFile.getFileNameWithoutExtension();
-    TrackId newTrackId = trackManager.createTrack("Drum Grid - " + clipName, TrackType::Audio);
+    TrackId newTrackId = trackManager.createTrack("Drum Grid - " + clipName, TrackType::Media);
     if (newTrackId == INVALID_TRACK_ID)
         return;
 

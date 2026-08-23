@@ -822,7 +822,7 @@ void MainWindow::setupMenuCallbacks() {
 
     // Track menu callbacks - all track operations go through the undo system
     callbacks.onAddTrack = []() {
-        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio);
+        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Media);
         UndoManager::getInstance().executeCommand(std::move(cmd));
     };
 

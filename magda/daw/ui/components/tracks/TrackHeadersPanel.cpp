@@ -2971,7 +2971,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
 
         addSendTargets(TrackType::Aux);
         addSendTargets(TrackType::Group);
-        addSendTargets(TrackType::Audio);
+        addSendTargets(TrackType::Media);
 
         if (hasOptions) {
             menu.addSubMenu(tr("tracks.add_send"), sendMenu);
@@ -2990,7 +2990,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     }
 
     // Freeze/Unfreeze (for regular tracks only)
-    if (track->type == TrackType::Audio) {
+    if (track->type == TrackType::Media) {
         menu.addSeparator();
         menu.addItem(ToggleFreeze, track->frozen ? tr("tracks.unfreeze") : tr("tracks.freeze"));
     }
@@ -3071,7 +3071,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                 UndoManager::getInstance().executeCommand(std::move(cmd));
             } else if (result == AddAudioTrack) {
                 UndoManager::getInstance().executeCommand(
-                    std::make_unique<CreateTrackCommand>(TrackType::Audio));
+                    std::make_unique<CreateTrackCommand>(TrackType::Media));
             } else if (result == AddGroupTrack) {
                 UndoManager::getInstance().executeCommand(
                     std::make_unique<CreateTrackCommand>(TrackType::Group));
@@ -3138,7 +3138,7 @@ void TrackHeadersPanel::showAddTrackContextMenu(juce::Point<int> position) {
                            localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
                        [](int result) {
                            juce::PopupMenu::dismissAllActiveMenus();
-                           TrackType type = TrackType::Audio;
+                           TrackType type = TrackType::Media;
                            if (result == AddGroup)
                                type = TrackType::Group;
                            else if (result == AddAux)
@@ -3728,7 +3728,7 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
             } else {
                 compoundScope = std::make_unique<CompoundOperationScope>(
                     copy ? "Copy Devices to New Track" : "Move Devices to New Track");
-                auto create = std::make_unique<CreateTrackCommand>(TrackType::Audio, "Track");
+                auto create = std::make_unique<CreateTrackCommand>(TrackType::Media, "Track");
                 auto* createPtr = create.get();
                 UndoManager::getInstance().executeCommand(std::move(create));
                 targetTrackId = createPtr->getCreatedTrackId();
@@ -3771,7 +3771,7 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
                                                << trackId);
     } else {
         // Dropped on empty area → create new track with plugin
-        TrackType trackType = TrackType::Audio;
+        TrackType trackType = TrackType::Media;
         juce::String pluginName = obj->getProperty("name").toString();
         auto cmd = std::make_unique<CreateTrackWithDeviceCommand>(pluginName, trackType, device);
         UndoManager::getInstance().executeCommand(std::move(cmd));

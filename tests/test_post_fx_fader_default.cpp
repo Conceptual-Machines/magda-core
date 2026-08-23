@@ -19,7 +19,7 @@ struct PostFxDefaultFixture {
 
     bool sideOfNewTrack(bool preferPostFader) {
         Config::getInstance().setPostFxPostFaderByDefault(preferPostFader);
-        const auto trackId = TrackManager::getInstance().createTrack("PostFx", TrackType::Audio);
+        const auto trackId = TrackManager::getInstance().createTrack("PostFx", TrackType::Media);
         return TrackManager::getInstance().isPostFxPostFader(trackId);
     }
 

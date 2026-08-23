@@ -24,7 +24,7 @@ TrackId freshTrack(const juce::String& name) {
     auto& tracks = TrackManager::getInstance();
     tracks.clearAllTracks();
     UndoManager::getInstance().clearHistory();
-    return tracks.createTrack(name, TrackType::Audio);
+    return tracks.createTrack(name, TrackType::Media);
 }
 
 }  // namespace
@@ -79,7 +79,7 @@ TEST_CASE("Live device lookup rejects paths that address nothing", "[device-api]
 TEST_CASE("Device parameters are reported in real units", "[device-api][inspection]") {
     auto& tracks = TrackManager::getInstance();
     tracks.clearAllTracks();
-    const auto trackId = tracks.createTrack("Synth", TrackType::Audio);
+    const auto trackId = tracks.createTrack("Synth", TrackType::Media);
 
     DeviceInfo device;
     device.name = "Filter";

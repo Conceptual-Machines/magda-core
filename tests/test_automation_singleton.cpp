@@ -29,7 +29,7 @@ void resetState() {
 }
 
 TrackId makeTrack(const juce::String& name) {
-    return TrackManager::getInstance().createTrack(name, TrackType::Audio);
+    return TrackManager::getInstance().createTrack(name, TrackType::Media);
 }
 
 AutomationTarget volumeTarget(TrackId id) {

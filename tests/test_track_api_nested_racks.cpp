@@ -39,7 +39,7 @@ struct TopLevel {
 
 TopLevel makeTopLevel(MockMagdaApi& api) {
     TopLevel built;
-    built.track = api.tracks().createTrack("Bus", TrackType::Audio);
+    built.track = api.tracks().createTrack("Bus", TrackType::Media);
     built.rack = api.tracks().addRackToTrack(built.track, "Outer");
     REQUIRE(built.rack != INVALID_RACK_ID);
 

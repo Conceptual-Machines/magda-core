@@ -44,7 +44,7 @@ void resetState() {
 }
 
 TrackId createTrack() {
-    return TrackManager::getInstance().createTrack("Track", TrackType::Audio);
+    return TrackManager::getInstance().createTrack("Track", TrackType::Media);
 }
 
 // Creates an audio clip with source headroom on both sides (offset 10 s into a

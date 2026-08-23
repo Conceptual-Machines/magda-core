@@ -276,7 +276,7 @@ AutomationPoint bakedPoint(double beat, double value) {
 TEST_CASE("replacePointsInRange - replaces inside, preserves outside", "[automation][bake]") {
     resetManagers();
     auto& autoMgr = AutomationManager::getInstance();
-    auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Media);
     auto target = ControlTarget::trackVolume(trackId);
 
     auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
@@ -323,7 +323,7 @@ TEST_CASE("BakeModulationCommand - execute/undo round-trip with link disable",
     auto& autoMgr = AutomationManager::getInstance();
     auto& undoMgr = UndoManager::getInstance();
 
-    auto trackId = tracks.createTrack("T", TrackType::Audio);
+    auto trackId = tracks.createTrack("T", TrackType::Media);
     auto path = ChainNodePath::trackLevel(trackId);
     auto target = ControlTarget::trackVolume(trackId);
 
@@ -392,7 +392,7 @@ TEST_CASE("BakeModulationToClipCommand - activates the lane and restores disable
     auto& autoMgr = AutomationManager::getInstance();
     auto& undoMgr = UndoManager::getInstance();
 
-    const auto trackId = tracks.createTrack("T", TrackType::Audio);
+    const auto trackId = tracks.createTrack("T", TrackType::Media);
     const auto path = ChainNodePath::trackLevel(trackId);
     const auto target = ControlTarget::trackVolume(trackId);
 
@@ -455,7 +455,7 @@ TEST_CASE("BakeModulationCommand - new lane is part of the bake transition", "[a
     auto& autoMgr = AutomationManager::getInstance();
     auto& undoMgr = UndoManager::getInstance();
 
-    const auto trackId = tracks.createTrack("T", TrackType::Audio);
+    const auto trackId = tracks.createTrack("T", TrackType::Media);
     const auto path = ChainNodePath::trackLevel(trackId);
     const auto target = ControlTarget::trackVolume(trackId);
     tracks.addMod(path, 0, ModType::LFO);
@@ -502,7 +502,7 @@ TEST_CASE("BakeModulationToClipCommand - undo restores lane preparation state",
     auto& autoMgr = AutomationManager::getInstance();
     auto& undoMgr = UndoManager::getInstance();
 
-    const auto trackId = tracks.createTrack("T", TrackType::Audio);
+    const auto trackId = tracks.createTrack("T", TrackType::Media);
     const auto path = ChainNodePath::trackLevel(trackId);
     const auto target = ControlTarget::trackVolume(trackId);
     tracks.addMod(path, 0, ModType::LFO);
@@ -555,7 +555,7 @@ TEST_CASE("BakeModulationCommand - undo does not re-enable links that were alrea
     auto& autoMgr = AutomationManager::getInstance();
     auto& undoMgr = UndoManager::getInstance();
 
-    auto trackId = tracks.createTrack("T", TrackType::Audio);
+    auto trackId = tracks.createTrack("T", TrackType::Media);
     auto path = ChainNodePath::trackLevel(trackId);
     auto target = ControlTarget::trackVolume(trackId);
 

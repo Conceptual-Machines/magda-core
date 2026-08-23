@@ -1165,7 +1165,7 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                     trackElement->getStringAttribute("name", "Track " + juce::String(track.id));
                 track.colour = colourFromDawProject(trackElement->getStringAttribute("color"));
                 const auto contentType = trackElement->getStringAttribute("contentType");
-                track.type = contentType.contains("tracks") ? TrackType::Group : TrackType::Audio;
+                track.type = contentType.contains("tracks") ? TrackType::Group : TrackType::Media;
                 track.parentId = parentId;
                 const size_t trackIndex = document.tracks.size();
 

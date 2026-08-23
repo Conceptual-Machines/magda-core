@@ -27,7 +27,7 @@ namespace magda {
  * the header column learned to skip them and the content column did not.
  */
 inline bool occupiesArrangementRow(TrackType type) {
-    return type != TrackType::Aux;
+    return traitsOf(type).occupiesArrangementRow;
 }
 
 struct TrackControlsPolicy {
@@ -73,7 +73,7 @@ struct TrackControlsPolicy {
         p.gain = true;
         p.meter = true;
         switch (type) {
-            case TrackType::Audio:
+            case TrackType::Media:
                 // Regular hybrid track — everything. This includes multi-out
                 // parents (type Audio with children): they host the instrument,
                 // so they keep record/monitor and their input routing.

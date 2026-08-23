@@ -106,7 +106,7 @@ std::optional<int> parsePositiveInt(const juce::String& text) {
 std::optional<magda::TrackType> parseTrackType(const juce::String& text) {
     auto normalized = text.trim().toLowerCase();
     if (normalized == "audio" || normalized == "midi")
-        return magda::TrackType::Audio;
+        return magda::TrackType::Media;
     if (normalized == "group")
         return magda::TrackType::Group;
     if (normalized == "aux")

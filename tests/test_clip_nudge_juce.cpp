@@ -57,10 +57,10 @@ struct NudgeFixture {
 
     NudgeFixture() {
         auto& trackManager = TrackManager::getInstance();
-        topTrack = trackManager.createTrack("Top", TrackType::Audio);
+        topTrack = trackManager.createTrack("Top", TrackType::Media);
         groupTrack = trackManager.createTrack("Group", TrackType::Group);
-        middleTrack = trackManager.createTrack("Middle", TrackType::Audio);
-        bottomTrack = trackManager.createTrack("Bottom", TrackType::Audio);
+        middleTrack = trackManager.createTrack("Middle", TrackType::Media);
+        bottomTrack = trackManager.createTrack("Bottom", TrackType::Media);
 
         panel.setSize(2000, 400);
         panel.setTempo(testTempoBPM);

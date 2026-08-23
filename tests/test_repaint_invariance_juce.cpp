@@ -160,7 +160,7 @@ class RepaintInvarianceTests : public juce::UnitTest {
             // The ghost outlines in the report were the lane border: drawn
             // around the damaged rectangle, it boxed in the clip's old bounds.
             PaintFixture fixture;
-            TrackManager::getInstance().createTrack("Lane", TrackType::Audio);
+            TrackManager::getInstance().createTrack("Lane", TrackType::Media);
             fixture.panel.tracksChanged();
             fixture.panel.setSize(400, 200);
 

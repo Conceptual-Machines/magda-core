@@ -3318,7 +3318,7 @@ void ClipComponent::showContextMenu() {
     std::vector<TrackId> progressionTargets;
     if (isChord && !isMultiSelection) {
         for (const auto& t : TrackManager::getInstance().getTracks())
-            if (t.type == TrackType::Audio)
+            if (t.type == TrackType::Media)
                 progressionTargets.push_back(t.id);
     }
 

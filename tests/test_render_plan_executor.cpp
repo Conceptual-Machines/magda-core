@@ -58,7 +58,7 @@ std::int64_t timelineSampleOf(const BlockInfo& block) {
     return std::llround(block.startBeat * kSamplesPerBeat);
 }
 
-TrackInfo makeTrack(TrackId id, TrackType type = TrackType::Audio) {
+TrackInfo makeTrack(TrackId id, TrackType type = TrackType::Media) {
     TrackInfo track;
     track.id = id;
     track.type = type;

@@ -22,9 +22,9 @@ struct ReorderFixture {
 
 TEST_CASE("moveTrackToPosition reorders top-level tracks", "[tracks][reorder]") {
     ReorderFixture fx;
-    auto a = fx.tm().createTrack("A", TrackType::Audio);
-    auto b = fx.tm().createTrack("B", TrackType::Audio);
-    auto c = fx.tm().createTrack("C", TrackType::Audio);
+    auto a = fx.tm().createTrack("A", TrackType::Media);
+    auto b = fx.tm().createTrack("B", TrackType::Media);
+    auto c = fx.tm().createTrack("C", TrackType::Media);
 
     SECTION("move last to the front") {
         fx.tm().moveTrackToPosition(c, 1);
@@ -49,9 +49,9 @@ TEST_CASE("moveTrackToPosition reorders top-level tracks", "[tracks][reorder]") 
 
 TEST_CASE("moveTrackToPosition reorders within a group, not across", "[tracks][reorder][group]") {
     ReorderFixture fx;
-    auto k = fx.tm().createTrack("Kick", TrackType::Audio);
-    auto s = fx.tm().createTrack("Snare", TrackType::Audio);
-    auto h = fx.tm().createTrack("Hat", TrackType::Audio);
+    auto k = fx.tm().createTrack("Kick", TrackType::Media);
+    auto s = fx.tm().createTrack("Snare", TrackType::Media);
+    auto h = fx.tm().createTrack("Hat", TrackType::Media);
 
     auto group = fx.tm().groupTracks({k, s, h}, "Drums");
     REQUIRE(group != INVALID_TRACK_ID);
@@ -71,9 +71,9 @@ TEST_CASE("MoveTrackCommand reorders and undo restores the original position",
           "[tracks][reorder][undo]") {
     ReorderFixture fx;
     UndoManager::getInstance().clearHistory();
-    auto a = fx.tm().createTrack("A", TrackType::Audio);
-    auto b = fx.tm().createTrack("B", TrackType::Audio);
-    auto c = fx.tm().createTrack("C", TrackType::Audio);
+    auto a = fx.tm().createTrack("A", TrackType::Media);
+    auto b = fx.tm().createTrack("B", TrackType::Media);
+    auto c = fx.tm().createTrack("C", TrackType::Media);
 
     UndoManager::getInstance().executeCommand(std::make_unique<MoveTrackCommand>(c, 1));
     REQUIRE(fx.tm().getTopLevelTracks() == std::vector<TrackId>{c, a, b});
@@ -89,9 +89,9 @@ TEST_CASE("MoveTrackCommand reorders and undo restores the original position",
 TEST_CASE("GroupTracksCommand / UngroupTrackCommand round-trip", "[tracks][group][undo]") {
     ReorderFixture fx;
     UndoManager::getInstance().clearHistory();
-    auto a = fx.tm().createTrack("A", TrackType::Audio);
-    auto b = fx.tm().createTrack("B", TrackType::Audio);
-    auto c = fx.tm().createTrack("C", TrackType::Audio);
+    auto a = fx.tm().createTrack("A", TrackType::Media);
+    auto b = fx.tm().createTrack("B", TrackType::Media);
+    auto c = fx.tm().createTrack("C", TrackType::Media);
 
     SECTION("group, undo dissolves, redo regroups") {
         UndoManager::getInstance().executeCommand(
@@ -122,9 +122,9 @@ TEST_CASE("GroupTracksCommand / UngroupTrackCommand round-trip", "[tracks][group
 
 TEST_CASE("getTrackSiblingPosition is 1-based among siblings", "[tracks][reorder]") {
     ReorderFixture fx;
-    auto a = fx.tm().createTrack("A", TrackType::Audio);
-    auto b = fx.tm().createTrack("B", TrackType::Audio);
-    auto c = fx.tm().createTrack("C", TrackType::Audio);
+    auto a = fx.tm().createTrack("A", TrackType::Media);
+    auto b = fx.tm().createTrack("B", TrackType::Media);
+    auto c = fx.tm().createTrack("C", TrackType::Media);
 
     REQUIRE(fx.tm().getTrackSiblingPosition(a) == 1);
     REQUIRE(fx.tm().getTrackSiblingPosition(c) == 3);

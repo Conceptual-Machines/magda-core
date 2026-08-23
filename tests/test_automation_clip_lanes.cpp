@@ -21,7 +21,7 @@ struct ClipLaneFixture {
     ClipLaneFixture() {
         AutomationManager::getInstance().clearAll();
         TrackManager::getInstance().clearAllTracks();
-        auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Audio);
+        auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Media);
         laneId = AutomationManager::getInstance().getOrCreateLane(
             ControlTarget::trackVolume(trackId), AutomationLaneType::ClipBased);
     }
@@ -318,7 +318,7 @@ TEST_CASE("convertLaneToClipBased wraps points into one clip", "[automation][cli
     AutomationManager::getInstance().clearAll();
     TrackManager::getInstance().clearAllTracks();
     auto& mgr = AutomationManager::getInstance();
-    auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Media);
     auto laneId =
         mgr.getOrCreateLane(ControlTarget::trackVolume(trackId), AutomationLaneType::Absolute);
     mgr.clearLanePoints(laneId);
@@ -373,7 +373,7 @@ TEST_CASE("ConvertAutomationLaneTypeCommand - undo restores exact state",
     UndoManager::getInstance().clearHistory();
     auto& mgr = AutomationManager::getInstance();
     auto& undoMgr = UndoManager::getInstance();
-    auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Audio);
+    auto trackId = TrackManager::getInstance().createTrack("T", TrackType::Media);
     auto laneId =
         mgr.getOrCreateLane(ControlTarget::trackVolume(trackId), AutomationLaneType::Absolute);
     mgr.clearLanePoints(laneId);
@@ -490,7 +490,7 @@ TEST_CASE("New clips inherit the track colour", "[automation][cliplane]") {
     mgr.clearAll();
     trackMgr.clearAllTracks();
 
-    const auto trackId = trackMgr.createTrack("T", TrackType::Audio);
+    const auto trackId = trackMgr.createTrack("T", TrackType::Media);
     trackMgr.setTrackColour(trackId, juce::Colour(0xFFAB4321));
     const auto laneId =
         mgr.getOrCreateLane(ControlTarget::trackVolume(trackId), AutomationLaneType::ClipBased);

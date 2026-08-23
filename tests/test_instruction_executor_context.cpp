@@ -36,7 +36,7 @@ void resetState() {
 }
 
 TrackId makeTrack(const juce::String& name) {
-    return TrackManager::getInstance().createTrack(name, TrackType::Audio);
+    return TrackManager::getInstance().createTrack(name, TrackType::Media);
 }
 
 std::vector<Instruction> parseOrFail(CompactParser& p, const juce::String& text) {

@@ -48,7 +48,7 @@ class ArrangementRowAlignmentTest final : public juce::UnitTest {
 
         expect(!occupiesArrangementRow(TrackType::Aux), "aux belongs in its own strip");
 
-        for (const auto type : {TrackType::Audio, TrackType::Group, TrackType::Chord,
+        for (const auto type : {TrackType::Media, TrackType::Group, TrackType::Chord,
                                 TrackType::Master, TrackType::MultiOut}) {
             expect(occupiesArrangementRow(type),
                    "every non-aux type keeps its row: " + juce::String(static_cast<int>(type)));
@@ -60,9 +60,9 @@ class ArrangementRowAlignmentTest final : public juce::UnitTest {
 
         test::resetJuceProjectState();
         auto& trackManager = TrackManager::getInstance();
-        trackManager.createTrack("Audio", TrackType::Audio);
+        trackManager.createTrack("Audio", TrackType::Media);
         trackManager.createTrack("Send", TrackType::Aux);
-        trackManager.createTrack("Below", TrackType::Audio);
+        trackManager.createTrack("Below", TrackType::Media);
 
         TrackContentPanel panel;
         panel.setSize(2000, 400);
@@ -77,8 +77,8 @@ class ArrangementRowAlignmentTest final : public juce::UnitTest {
 
         test::resetJuceProjectState();
         auto& trackManager = TrackManager::getInstance();
-        trackManager.createTrack("First", TrackType::Audio);
-        trackManager.createTrack("Second", TrackType::Audio);
+        trackManager.createTrack("First", TrackType::Media);
+        trackManager.createTrack("Second", TrackType::Media);
 
         TrackContentPanel withoutAux;
         withoutAux.setSize(2000, 400);
@@ -89,9 +89,9 @@ class ArrangementRowAlignmentTest final : public juce::UnitTest {
         // Its row must not exist, so the second audio track keeps its position —
         // which is what keeps it level with its header.
         test::resetJuceProjectState();
-        trackManager.createTrack("First", TrackType::Audio);
+        trackManager.createTrack("First", TrackType::Media);
         trackManager.createTrack("Send", TrackType::Aux);
-        trackManager.createTrack("Second", TrackType::Audio);
+        trackManager.createTrack("Second", TrackType::Media);
 
         TrackContentPanel withAux;
         withAux.setSize(2000, 400);
