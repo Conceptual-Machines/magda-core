@@ -228,6 +228,13 @@ bound to stays the full-width passthrough it has always been, whatever the model
 report: the current engine answers 2 and 2 for a chain node whose plugin it cannot find, and a
 device that failed to load must not fold the chain down on its way past.
 
+That is also why a zero output count is never written to a project. The counts are persisted so
+that a plan is right the moment a project opens, before every plugin has been instantiated, which
+is why the capability flags beside them are persisted too. Those are only ever written when they
+are true, so a stale one can loosen routing but never take it away, and a count that can silence
+the chain behind it has to obey the same rule: zero comes back from the live plugin or not at
+all, on the way in as well as on the way out.
+
 **The delta is a `Subtract`,** between the processing and the trim, reading the device's output
 and the dry signal the device was handed; a rack gets the same op one level up, around its own
 fader. The dry edge is taken in front of whatever aligned the device's own input, so the

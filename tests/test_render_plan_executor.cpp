@@ -2044,9 +2044,13 @@ TEST_CASE("An unbound device passes the chain on at full width", "[engine][exec]
     // no plugin is processing. The current engine answers 2 and 2 for a chain
     // node whose plugin it cannot find, so a device that failed to load is a
     // straight passthrough whatever its channel counts say.
+    // Every width a device that is not there can reach a plan with. A zero
+    // output count is not among them: it is never persisted, because it is the
+    // one value that silences the chain on its own, so it reaches a plan only
+    // while the plugin that reported it is loaded.
     auto effect = makeEffect(7);
     effect.audioInputChannels = GENERATE(0, 1, 2);
-    effect.audioOutputChannels = GENERATE(0, 1, 2);
+    effect.audioOutputChannels = GENERATE(1, 2);
 
     auto track = makeTrack(1);
     track.chain.fxChainElements.push_back(makeDeviceElement(effect));
@@ -2063,23 +2067,10 @@ TEST_CASE("An unbound device passes the chain on at full width", "[engine][exec]
 
     INFO("in=" << effect.audioInputChannels << " out=" << effect.audioOutputChannels);
 
-    if (effect.audioInputChannels > 0 && effect.audioOutputChannels == 0) {
-        // The one shape where the chain is not carried on: a device the model
-        // says reads the bus and writes nothing takes the bus with it, and
-        // that is the compiled graph rather than anything the executor does.
-        // Binding happens after compilation, so the compiler cannot know this
-        // device will not be there, and second-guessing the model would mean
-        // compiling a different graph for a plugin that may or may not load.
-        CHECK(harness.outputSample(0) == approx(0.0f));
-        CHECK(harness.outputSample(1) == approx(0.0f));
-        return;
-    }
-
-    // Everywhere the graph does carry the chain through, both sides arrive as
-    // they left: the device that never reads the bus leaves it flowing past,
-    // and the rest pass it through untouched because nothing is bound to
-    // touch it. In particular a mono device that failed to load does not fold
-    // the pair down to its left side.
+    // Both sides arrive as they left: the device that never reads the bus
+    // leaves it flowing past, and the rest pass it through untouched because
+    // nothing is bound to touch it. In particular a mono device that failed to
+    // load does not fold the pair down to its left side.
     CHECK(harness.outputSample(0) == approx(0.25f));
     CHECK(harness.outputSample(1) == approx(0.75f));
 }

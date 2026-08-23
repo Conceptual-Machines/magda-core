@@ -2045,6 +2045,49 @@ TEST_CASE("Device channel counts survive a project roundtrip", "[project][serial
     CHECK(loadedStereo.audioOutputChannels == 2);
 }
 
+TEST_CASE("A zero output count is never written to a project", "[project][serialization][device]") {
+    // The one count that can silence the chain behind a device on its own. It
+    // has to come from a plugin that is actually there: read back on a machine
+    // where the plugin is missing, it would starve a chain the current engine
+    // would have passed straight through, since that asks the live plugin and
+    // answers stereo where it finds none.
+    DeviceInfo silentDevice;
+    silentDevice.id = 34;
+    silentDevice.name = "MIDI Only";
+    silentDevice.pluginId = "internal.midionly";
+    silentDevice.format = PluginFormat::Internal;
+    silentDevice.audioInputChannels = 1;
+    silentDevice.audioOutputChannels = 0;
+
+    const auto json = ProjectSerializer::serializeDeviceInfo(silentDevice);
+    REQUIRE(json.isObject());
+    CHECK(json.getDynamicObject()->hasProperty("audioInputChannels"));
+    CHECK_FALSE(json.getDynamicObject()->hasProperty("audioOutputChannels"));
+
+    DeviceInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(json, loaded));
+    CHECK(loaded.audioInputChannels == 1);
+    CHECK(loaded.audioOutputChannels == 2);
+}
+
+TEST_CASE("A zero output count already on disk is ignored", "[project][serialization][device]") {
+    // Guarded on the way in as well as out, so a project written by hand or by
+    // an older build cannot silence a chain either.
+    DeviceInfo device;
+    device.id = 35;
+    device.name = "Hand Edited";
+    device.pluginId = "internal.handedited";
+    device.format = PluginFormat::Internal;
+
+    auto json = ProjectSerializer::serializeDeviceInfo(device);
+    REQUIRE(json.isObject());
+    json.getDynamicObject()->setProperty("audioOutputChannels", 0);
+
+    DeviceInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(json, loaded));
+    CHECK(loaded.audioOutputChannels == 2);
+}
+
 TEST_CASE("A device with no channel counts written loads as stereo",
           "[project][serialization][device]") {
     // What a project saved before the counts existed looks like. Stereo is

@@ -538,10 +538,17 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("midiInThru", device.midiInThru);
 
     // Audio channel counts, only when the plugin reported something other than
-    // the stereo the field defaults to.
+    // the stereo the field defaults to. A zero output count is the exception
+    // and is never written: it is the one value that silences the chain behind
+    // the device on its own, and read back on a machine where the plugin is
+    // missing it would do that with nothing to justify it. The current engine
+    // asks the live plugin and answers stereo where it finds none, so a count
+    // that can take audio away has to come from a plugin that is actually
+    // there. The same reason the flags above are only ever written when true:
+    // a stale serialized value must not be able to take routing away.
     if (device.audioInputChannels != 2)
         obj->setProperty("audioInputChannels", device.audioInputChannels);
-    if (device.audioOutputChannels != 2)
+    if (device.audioOutputChannels != 2 && device.audioOutputChannels > 0)
         obj->setProperty("audioOutputChannels", device.audioOutputChannels);
 
     // Per-instance drum kit rows
@@ -738,8 +745,14 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     }
     if (obj->hasProperty("audioInputChannels"))
         outDevice.audioInputChannels = static_cast<int>(obj->getProperty("audioInputChannels"));
-    if (obj->hasProperty("audioOutputChannels"))
-        outDevice.audioOutputChannels = static_cast<int>(obj->getProperty("audioOutputChannels"));
+    if (obj->hasProperty("audioOutputChannels")) {
+        // Guarded on the way in as well as out, so a project written by hand
+        // or by an older build cannot silence a chain either. Zero comes back
+        // from the live plugin or not at all.
+        const auto outputs = static_cast<int>(obj->getProperty("audioOutputChannels"));
+        if (outputs > 0)
+            outDevice.audioOutputChannels = outputs;
+    }
 
     // Plugin native state
     if (obj->hasProperty("pluginState"))
