@@ -6,13 +6,16 @@
 #include <memory>
 #include <vector>
 
+#include "NullDiffGain.hpp"
 #include "core/ParameterUtils.hpp"
 #include "exec/EngineDevice.hpp"
+#include "exec/PlanExecutor.hpp"
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
 #include "param/ParamBlock.hpp"
+#include "plan/PlanCompiler.hpp"
 
 /**
  * @file test_engine_device_layer.cpp
@@ -124,6 +127,18 @@ class EmittingDevice final : public magda::daw::audio::MagdaDevice {
   private:
     int count_;
     std::vector<std::uint8_t> payload_;
+};
+
+/// Records what the executor told it, and renders nothing.
+class BoundProbe final : public magda::engine::EngineDevice {
+  public:
+    void process(magda::engine::DeviceBlock&) override {}
+
+    void setMidiInputBoundBytes(int bytes) override {
+        bound = bytes;
+    }
+
+    int bound = -1;
 };
 
 /// What @p buffer costs against the port's budget, by the engine's own model:
@@ -338,4 +353,80 @@ TEST_CASE("a device writing past the port's byte budget is cut off at the bytes"
     // events arrived than were emitted, and far fewer than the cap allows.
     CHECK(out.getNumEvents() < kEmitted);
     CHECK(out.getNumEvents() > 0);
+}
+
+TEST_CASE("the adapter carries a merged input, not one producer's worth",
+          "[engine][devices][2174]") {
+    // kMaxMidiBytesPerPort is what one producer may write. A device's input
+    // port is often a merge, and the executor sums the bound through the MIDI
+    // graph for exactly that reason, so a scratch sized from the constant drops
+    // the tail of anything arriving on a track with more than one source. The
+    // adapter has to size from what it is told.
+    constexpr int kEventOverheadBytes = magda::engine::kMidiShortMessageBytes - 3;
+    constexpr int kBound = 3 * magda::engine::kMaxMidiBytesPerPort;
+    constexpr int kEvents = kBound / (kEventOverheadBytes + 1);
+
+    auto counting = std::make_unique<CountingDevice>();
+    auto* device = counting.get();
+
+    adapter::EngineMagdaDevice hosted(std::move(counting), /*offlineRender=*/false);
+    const auto context = contextFor();
+    hosted.prepare(context);
+    hosted.setMidiInputBoundBytes(kBound);
+
+    Block block(context);
+    for (int event = 0; event < kEvents; ++event)
+        block.midi.addEvent(juce::MidiMessage::midiClock(), event % context.maxBlockSize);
+
+    REQUIRE(block.midi.getNumEvents() == kEvents);
+    REQUIRE(kEvents > magda::engine::kMaxMidiBytesPerPort / (kEventOverheadBytes + 1));
+
+    auto deviceBlock = block.deviceBlock();
+    hosted.process(deviceBlock);
+
+    CHECK(device->received == kEvents);
+}
+
+TEST_CASE("the executor tells a device what can reach its MIDI input", "[engine][devices][2174]") {
+    // The bound is the engine's fact and no device can work it out for itself,
+    // so it has to arrive. Asserted at the boundary rather than through a
+    // render: what would go wrong silently is nobody saying anything.
+    magda::TrackInfo instrument;
+    instrument.id = 1;
+    instrument.type = magda::TrackType::Media;
+    instrument.name = "Instrument";
+    instrument.chain.fxChainElements.emplace_back(magda::nulldiff::synthDevice(10));
+
+    magda::TrackInfo effect;
+    effect.id = 2;
+    effect.type = magda::TrackType::Media;
+    effect.name = "Effect";
+    effect.chain.fxChainElements.emplace_back(magda::nulldiff::gainDevice(20));
+
+    magda::TrackInfo master;
+    master.id = magda::MASTER_TRACK_ID;
+    master.type = magda::TrackType::Master;
+    master.name = "Master";
+
+    const auto plan = magda::engine::compileRenderPlan({instrument, effect}, master);
+
+    BoundProbe synthProbe;
+    BoundProbe gainProbe;
+
+    magda::engine::PlanBindings bindings;
+    for (const auto& op : plan.ops)
+        if (op.kind == magda::engine::OpKind::Device)
+            bindings.devices[op.key.deviceKey()] =
+                op.key.deviceId == 10 ? static_cast<magda::engine::EngineDevice*>(&synthProbe)
+                                      : static_cast<magda::engine::EngineDevice*>(&gainProbe);
+
+    magda::engine::PlanExecutor executor;
+    executor.prepare(plan, bindings, contextFor(), nullptr, nullptr);
+    REQUIRE(executor.isPrepared());
+
+    // The instrument is fed through the track's MIDI merge, so it is told what
+    // that merge can carry. The gain has no MIDI input at all and is told so,
+    // rather than being left at whatever it assumed.
+    CHECK(synthProbe.bound >= magda::engine::kMaxMidiBytesPerPort);
+    CHECK(gainProbe.bound == 0);
 }

@@ -86,6 +86,7 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
 
     void prepare(const magda::engine::RenderContext& context) override;
     void reset() override;
+    void setMidiInputBoundBytes(int bytes) override;
     int latencySamples() const override;
     void process(magda::engine::DeviceBlock& block) override;
 
@@ -101,6 +102,7 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
 
   private:
     void writeParameters(const magda::engine::DeviceParams& params);
+    void sizeMidiScratch();
 
     std::unique_ptr<MagdaDevice> device_;
     DeviceProperties properties_;
@@ -117,7 +119,18 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
 
     std::vector<ParameterMapping> parameters_;
     std::vector<float*> channels_;
+
+    /// The SDK's MIDI buffer, as storage that outlives the block: the entries
+    /// stay alive so a long message reuses what it already holds, and only the
+    /// first `midiLive_` of them are this block's. See the view in the .cpp.
     std::vector<DeviceMidiEvent> midiScratch_;
+    int midiLive_ = 0;
+
+    /// What the executor said can reach the input port, which is the sum
+    /// through the MIDI graph rather than one producer's budget. The constant
+    /// until it says otherwise, so a host that never tells us is no worse off
+    /// than before it could.
+    int midiInputBoundBytes_ = magda::engine::kMaxMidiBytesPerPort;
 
     double sampleRate_ = 44100.0;
     int latencySamples_ = 0;

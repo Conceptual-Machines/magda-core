@@ -625,6 +625,26 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     for (std::size_t slot = 0; slot < midiSlots_.size(); ++slot)
         midiSlots_[slot].ensureSize(static_cast<std::size_t>(midiByteBounds_[slot]));
 
+    // Tell every bound device how much MIDI can reach it, now that the sums are
+    // known and while there is still a thread that may allocate.
+    //
+    // A device that buffers its input cannot work this out for itself:
+    // kMaxMidiBytesPerPort is what one producer may write, and a device fed by
+    // a merge is fed the sum of several. Sizing from the constant is how a
+    // device on a track with two MIDI sources silently drops the second one's
+    // tail. The executor is the only thing that knows, so it is the thing that
+    // says.
+    for (std::size_t i = 0; i < numOps; ++i) {
+        auto* device = deviceForOp_[i];
+        if (device == nullptr)
+            continue;
+
+        const auto& op = plan.ops[i];
+        const auto hasMidiIn = op.inputs.size() > 1 && op.inputs[1].valid();
+        device->setMidiInputBoundBytes(
+            hasMidiIn ? midiByteBounds_[static_cast<std::size_t>(slotFor(op.inputs[1]))] : 0);
+    }
+
     // Delay lines, for the edges that turned out to need one. A plan with no
     // latency in it allocates nothing here, which is the whole point of
     // resolving the counts before anything is sized.
