@@ -5,11 +5,9 @@
 #include <utility>
 #include <vector>
 
-// For the AppImage-safe /proc/self/exe lookup in RemoteApiPage::bridgeExecutable.
+// For the access(X_OK) check on the staged bridge in McpPage.
 #if !JUCE_WINDOWS && !JUCE_MAC
     #include <unistd.h>
-
-    #include <climits>
 #endif
 
 #include "../../api/remote_api_host.hpp"
@@ -18,6 +16,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
+#include "core/AppPaths.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
@@ -395,21 +394,22 @@ class McpPage : public TransportPage {
     /**
      * @brief Where this install's bridge lives.
      *
-     * The same resolution `PluginScanCoordinator::getScannerExecutable()` uses,
-     * and for the same reasons — this is the second helper binary MAGDA stages
-     * beside itself, and "beside itself" means something different on each
-     * platform.
+     * A user pastes whatever this returns into their MCP host's config, so the
+     * requirement is stronger than "find the binary": the path has to still be
+     * valid tomorrow, in another process, with MAGDA closed. Two of the three
+     * platforms cannot meet that with the copy staged beside MAGDA, and each
+     * fails differently — see the branches below.
      *
-     * `paths::executableDir()` is deliberately not used: it is built on JUCE's
-     * `currentApplicationFile`, which for a bundled Mac app returns the `.app`
-     * itself, so its parent is `/Applications` rather than the directory holding
-     * the binary. And on Linux that same call goes through `dladdr`, which
-     * inside an AppImage yields the user's download folder rather than the
-     * mounted `usr/bin`.
+     * `appBundle` is only good enough for the fallbacks. `currentApplicationFile`
+     * returns the `.app` itself on macOS, so its parent is `/Applications` rather
+     * than the directory holding the binary; on Linux it resolves through
+     * `dladdr` to argv[0], which under an AppImage is the outer launcher. Where
+     * the real binary's directory is what's wanted, `paths::executableDir()`
+     * handles both.
      *
-     * A user pastes whatever this returns into their MCP host's config, so a
-     * plausible-but-wrong path is the worst outcome available: it fails at
-     * launch, inside another application, with no hint of where it came from.
+     * A plausible-but-wrong path is the worst outcome available here: it fails
+     * at launch, inside another application, with no hint of where it came from.
+     * Every branch returns something that exists or nothing at all.
      */
     static juce::File bridgeExecutable() {
         const auto appBundle = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
@@ -422,37 +422,137 @@ class McpPage : public TransportPage {
         // Unbundled, as a console or test build produces.
         return appBundle.getParentDirectory().getChildFile("magda-mcp");
 #elif JUCE_WINDOWS
+        // Installed under %ProgramData%, deliberately not beside MAGDA.exe. The
+        // default install path is C:\Program Files\MAGDA, and an MCP host that
+        // splits its configured command on whitespace rather than taking an argv
+        // array turns that space into two broken arguments. %ProgramData% is a
+        // fixed name on every supported Windows and carries no user name, so it
+        // is space-free whoever is logged in.
+        if (const auto installed = commonDataBridge(); installed.existsAsFile())
+            return installed;
+        // A build tree, where the bridge is staged beside the host binary.
         return appBundle.getParentDirectory().getChildFile("magda-mcp.exe");
 #else
-        // Inside an AppImage there is no usable answer. The bridge is in there,
-        // under a /tmp/.mount_… path — but that mount is torn down when MAGDA
-        // exits and gets a different name every launch, so publishing it would
-        // hand the user a command that stops existing the moment they quit. The
-        // Linux release ships `magda-mcp` as its own asset for exactly this
-        // reason, and the page says so instead of guessing.
+        // Inside an AppImage the bridge is present, but only at a /tmp/.mount_…
+        // path: torn down when MAGDA exits, and named differently every launch.
+        // An MCP host stores an absolute path and runs it on its own schedule,
+        // so that path is worthless to it. Stage a copy that outlives the mount.
         if (isRunningFromAppImage())
-            return {};
+            return stagedBridgeExecutable();
 
-        // Resolve the real binary rather than argv[0]: even outside an AppImage,
-        // JUCE's lookup goes through dladdr, which on glibc yields argv[0].
-        char buffer[PATH_MAX];
-        if (const auto length = ::readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
-            length > 0) {
-            buffer[length] = '\0';
-            const juce::File selfExe(juce::String::fromUTF8(buffer));
-            if (const auto sibling = selfExe.getParentDirectory().getChildFile("magda-mcp");
-                sibling.existsAsFile())
-                return sibling;
-        }
+        // `paths::executableDir()` resolves /proc/self/exe rather than argv[0],
+        // which is what an ordinary install needs and what a build tree gets too.
+        if (const auto sibling = paths::executableDir().getChildFile("magda-mcp");
+            sibling.existsAsFile())
+            return sibling;
         return appBundle.getParentDirectory().getChildFile("magda-mcp");
 #endif
     }
+
+#if JUCE_WINDOWS
+    /// Where the installer puts the bridge: `commonApplicationDataDirectory` is
+    /// %ProgramData%, and `magda-installer.nsi` writes `MAGDA\bin` under it.
+    static juce::File commonDataBridge() {
+        return juce::File::getSpecialLocation(juce::File::commonApplicationDataDirectory)
+            .getChildFile("MAGDA")
+            .getChildFile("bin")
+            .getChildFile("magda-mcp.exe");
+    }
+#endif
 
 #if !JUCE_WINDOWS && !JUCE_MAC
     /// The type-2 AppImage runtime exports both of these; neither is set for an
     /// ordinary install.
     static bool isRunningFromAppImage() {
         return std::getenv("APPIMAGE") != nullptr || std::getenv("APPDIR") != nullptr;
+    }
+
+    /// Whether this process could actually exec the file. `juce::File` can set
+    /// the execute bit but not ask about it, and the question here is the
+    /// effective one — owner, group, and mode together — which is what
+    /// `access(2)` answers.
+    static bool isExecutable(const juce::File& file) {
+        return ::access(file.getFullPathName().toRawUTF8(), X_OK) == 0;
+    }
+
+    /**
+     * @brief The AppImage's bridge, copied to a path that outlives the mount.
+     *
+     * `dataDir()` is the natural home. It already outlives any one run, and the
+     * bridge resolves it independently — `MAGDA_DATA_DIR`, then `config.json`,
+     * then the OS default — to find the discovery record. A copy sitting there
+     * is no further from MAGDA than one sitting beside it.
+     *
+     * Re-staged whenever the copy no longer matches the binary in the mount, so
+     * upgrading the AppImage upgrades the bridge without the user having to know
+     * a copy was ever made. Size plus modification time identifies the build —
+     * the squashfs carries the build's timestamps, so a rebuild moves both — and
+     * the execute bit is checked alongside them, because a copy that is the
+     * right build but no longer runnable is no more use than a stale one.
+     *
+     * Returns {} if the copy cannot be made, which the page renders as its
+     * "point this somewhere yourself" fallback rather than a path that will not
+     * run.
+     *
+     * Done once per session. `fieldText()` runs on a one-second timer for as
+     * long as the page is open, and a data dir that cannot be written to would
+     * otherwise mean a failed multi-megabyte copy every tick — on the message
+     * thread. A stage that did not work now will not work a second from now.
+     * (This also pins the answer if the data dir is repointed in Preferences,
+     * which already needs a restart to take full effect.)
+     */
+    static juce::File stagedBridgeExecutable() {
+        static const juce::File staged = stageBridgeOutOfAppImage();
+        return staged;
+    }
+
+    static juce::File stageBridgeOutOfAppImage() {
+        const auto source = paths::executableDir().getChildFile("magda-mcp");
+        if (!source.existsAsFile())
+            return {};
+
+        const auto staged = paths::dataDir().getChildFile("bin").getChildFile("magda-mcp");
+
+        // Size and mtime say it is the right build; the execute bit says a host
+        // can actually launch it. A restored backup, an rsync without -p, or a
+        // move across filesystems can preserve the first two and drop the third,
+        // and publishing a path that cannot be executed fails inside the host
+        // with nothing pointing back here. Repair the bit if it is ours to
+        // repair, and re-stage from scratch if it is not.
+        if (staged.existsAsFile() && staged.getSize() == source.getSize() &&
+            staged.getLastModificationTime() == source.getLastModificationTime() &&
+            (isExecutable(staged) || staged.setExecutePermission(true)))
+            return staged;
+
+        if (!staged.getParentDirectory().createDirectory())
+            return {};
+
+        // Build the replacement beside the destination, then rename over it.
+        // JUCE's POSIX copy deletes the destination before it starts writing, so
+        // copying straight onto `staged` would throw away a working bridge to
+        // make room for one that might not finish — and that path is the one
+        // every already-configured host has been told to launch. rename(2)
+        // within a directory is atomic, so a host starting mid-upgrade gets
+        // either the old bridge or the new one, never a partial file.
+        const auto incoming = staged.getSiblingFile("magda-mcp.incoming").getNonexistentSibling();
+
+        // The copy is a stream copy into a fresh file, so it carries neither the
+        // execute bit nor the timestamp and both have to be put back: the first
+        // to run at all, the second so the next launch can tell this copy from
+        // the one a newer AppImage would bring.
+        if (!source.copyFileTo(incoming) || !incoming.setExecutePermission(true) ||
+            !incoming.moveFileTo(staged)) {
+            incoming.deleteFile();
+            return {};
+        }
+
+        // Best-effort, and deliberately not a reason to fail: a filesystem that
+        // will not take a timestamp costs a re-stage on each launch, which is
+        // wasteful but works. Failing here would leave the user with no bridge
+        // at all over a field that only feeds the freshness check.
+        staged.setLastModificationTime(source.getLastModificationTime());
+
+        return staged;
     }
 #endif
 

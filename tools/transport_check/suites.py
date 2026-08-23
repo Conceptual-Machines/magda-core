@@ -248,25 +248,48 @@ def run_discovery(context: Context, others: list[discovery.Record]) -> None:
             ),
         )
 
-    # -- packaging: is the bridge staged beside the executable? ------------
+    # -- packaging: is the bridge where the settings page will point? -------
+
+    def bridge_location(exe: Path) -> tuple[Path, str]:
+        """Mirror of `McpPage::bridgeExecutable` — where the page sends a host.
+
+        Two platforms deliberately do not publish the copy beside MAGDA: Windows
+        because the space in `C:\\Program Files` breaks hosts that split their
+        configured command on whitespace, Linux because an AppImage's mount is
+        gone the moment MAGDA exits.
+        """
+        if sys.platform == "win32":
+            program_data = Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData"))
+            installed = program_data / "MAGDA" / "bin" / bridge_name()
+            if installed.exists():
+                return installed, "installed under %ProgramData%"
+            return exe.parent / bridge_name(), "build tree, beside MAGDA"
+        if ".mount_" in str(exe):
+            return (
+                discovery.data_dir(context.data_dir) / "bin" / bridge_name(),
+                "staged out of the AppImage",
+            )
+        return exe.parent / bridge_name(), "beside MAGDA"
 
     def staged() -> tuple[Status, str, dict]:
         exe = executable_for_pid(record.pid)
         if exe is None:
             return unclear(f"could not resolve the executable behind pid {record.pid}")
-        if "/tmp/.mount_" in str(exe) or ".mount_" in str(exe):
-            return unclear(
-                f"running from an AppImage ({exe}); the settings page is expected to "
-                "show a placeholder here and publish magda-mcp as a separate asset"
-            )
-        candidate = exe.parent / bridge_name()
+        candidate, where = bridge_location(exe)
         if not candidate.exists():
+            # Staging out of an AppImage is lazy — MAGDA writes the copy when the
+            # MCP page is first opened — so a fresh run legitimately has nothing
+            # there yet. That is not the same finding as a packaging miss.
+            if ".mount_" in str(exe):
+                return unclear(
+                    f"{candidate} not staged yet; open the MCP settings page once"
+                )
             return fail(f"{candidate} does not exist", expected=str(candidate))
         if sys.platform != "win32" and not os.access(candidate, os.X_OK):
             return fail(f"{candidate} is not executable")
-        return ok(str(candidate), path=str(candidate))
+        return ok(f"{candidate} ({where})", path=str(candidate))
 
-    runner.check("magda-mcp is staged beside the MAGDA executable", staged)
+    runner.check("magda-mcp is where the settings page points", staged)
 
 
 # ---------------------------------------------------------------------------

@@ -30,7 +30,7 @@ HARNESS = Path(__file__).resolve().parent
 
 #: The one check the stub cannot satisfy, so it fails in every run including
 #: the baseline. See `selftest.EXPECTED_FAILURES`.
-ALWAYS_FAILS = {"magda-mcp is staged beside the MAGDA executable"}
+ALWAYS_FAILS = {"magda-mcp is where the settings page points"}
 
 #: (what is broken, the text to replace in selftest.py, what to replace it with)
 MUTATIONS: list[tuple[str, str, str]] = [
