@@ -3401,22 +3401,15 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
         if (!track)
             return;
 
-        // Block drops on group/aux tracks (no clip timeline)
-        if (track->type == TrackType::Group || track->type == TrackType::Aux) {
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::AlertWindow::WarningIcon, "Drop Failed",
-                "Files cannot be dropped on group or aux tracks.");
+        // The only question worth asking of the target, and the same one the
+        // clip drag and the keyboard nudge ask (TrackInfo::canHostClips).
+        // Nothing here inspects what is being dropped: a track is hybrid, so
+        // the kind of file decides what clip gets made, never whether it is
+        // allowed (#2172).
+        if (!track->canHostClips()) {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Drop Failed",
+                                                   "Files cannot be dropped on this track.");
             return;
-        }
-
-        // Block drops on tracks with a DrumGrid plugin
-        for (const auto& element : track->chain.fxChainElements) {
-            if (isDevice(element) && getDevice(element).pluginId.containsIgnoreCase("drumgrid")) {
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::AlertWindow::WarningIcon, "Drop Failed",
-                    "Files cannot be dropped on Drum Grid tracks.");
-                return;
-            }
         }
     }
     // If targetTrackId is still INVALID, we'll create a new track below
