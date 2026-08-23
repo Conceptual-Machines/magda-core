@@ -81,6 +81,24 @@ struct Case {
     /// pinned rather than tolerated. Empty for a Null verdict.
     std::string mechanism;
 
+    /// The compiler diagnostics this case's project is expected to produce, as
+    /// substrings of them.
+    ///
+    /// A diagnostic normally makes a case unmeasurable, and that is the right
+    /// default: it says the plan could not carry something the model asked for,
+    /// so whatever was rendered is not the project. A few cases are about a
+    /// model the compiler is right to refuse, and there the diagnostic is the
+    /// parity rather than an obstacle to it -- a rack chain routed to an aux
+    /// output reaches nothing in either engine, and the plan says so out loud
+    /// instead of dropping it silently.
+    ///
+    /// Declared as an expectation rather than a suppression, so it is asserted
+    /// in both directions: a case that stops producing the diagnostic it named
+    /// fails as loudly as one that produces a diagnostic it did not. The
+    /// alternative -- a flag that ignores diagnostics -- would let a real
+    /// refusal appear on such a case and be read as the expected one.
+    std::vector<std::string> expectedDiagnostics;
+
     // --- the project ---------------------------------------------------------
 
     std::vector<TrackInfo> tracks;

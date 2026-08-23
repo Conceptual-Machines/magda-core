@@ -371,6 +371,34 @@ Loss trackModulation() {
             }};
 }
 
+Loss multiOutRouting() {
+    return {.field = "TrackInfo::type, TrackInfo::multiOutLink",
+            .reason = "an instrument's further output pairs have no DAWproject representation, "
+                      "and neither does a track whose whole content is one of them. The format "
+                      "gives a channel one audio output and a destination; a MultiOut track is "
+                      "a second reader of a device that lives on another track, which is a "
+                      "relationship between a track and a device rather than between two "
+                      "channels. It comes back as an ordinary audio track with no link",
+            .restore = [](Case& imported, const Case& original) {
+                bool restored = false;
+
+                for (auto& track : imported.tracks)
+                    for (const auto& source : original.tracks) {
+                        if (source.name != track.name)
+                            continue;
+                        if (track.type == source.type &&
+                            track.multiOutLink.has_value() == source.multiOutLink.has_value())
+                            continue;
+
+                        track.type = source.type;
+                        track.multiOutLink = source.multiOutLink;
+                        restored = true;
+                    }
+
+                return restored;
+            }};
+}
+
 const std::map<std::string, std::vector<Loss>>& lossTable() {
     static const std::map<std::string, std::vector<Loss>> table{
         {"fades.curves", {fades()}},
@@ -393,6 +421,21 @@ const std::map<std::string, std::vector<Loss>>& lossTable() {
         {"param.hostwrite.modifier", {internalDevices(), trackModulation()}},
         {"macro.track", {internalDevices(), trackModulation()}},
         {"macro.device", {internalDevices()}},
+        // The rack cases (#2139). A rack is chains of internal devices, and the
+        // format has nowhere to put either half, so the same declaration covers
+        // the whole of it: the chain comes back empty and is restored wholesale.
+        {"rack.parallel", {internalDevices()}},
+        {"rack.chain.fader", {internalDevices()}},
+        {"rack.fader", {internalDevices()}},
+        {"rack.chain.mute", {internalDevices()}},
+        {"rack.chain.solo", {internalDevices()}},
+        {"rack.deltasolo.device", {internalDevices()}},
+        {"rack.deltasolo.rack", {internalDevices()}},
+        {"rack.nested", {internalDevices()}},
+        {"rack.aux", {internalDevices()}},
+        {"rack.mono", {internalDevices()}},
+        {"rack.instrument", {internalDevices()}},
+        {"multiout.pair", {internalDevices(), multiOutRouting()}},
         {"project.mixed", {internalDevices()}},
         {"midi.notes", {internalDevices()}},
         {"midi.cc", {internalDevices(), controllers()}},

@@ -12,17 +12,24 @@
 
 #include "NullDiffGain.hpp"
 #include "SharedTestEngine.hpp"
+#include "magda/daw/audio/PluginWindowBridge.hpp"
 #include "magda/daw/audio/TrackController.hpp"
 #include "magda/daw/audio/WarpMarkerManager.hpp"
 #include "magda/daw/audio/automation/AutomationBake.hpp"
 #include "magda/daw/audio/modifiers/ModifierSync.hpp"
+#include "magda/daw/audio/plugin_manager/PluginManager.hpp"
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
+#include "magda/daw/audio/racks/InstrumentRackManager.hpp"
+#include "magda/daw/audio/racks/RackSyncManager.hpp"
 #include "magda/daw/audio/session/ClipSynchronizer.hpp"
+#include "magda/daw/audio/transport/TransportStateManager.hpp"
 #include "magda/daw/core/AutomationCurve.hpp"
 #include "magda/daw/core/ChainNode.hpp"
+#include "magda/daw/core/ChainRoutingModel.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ParameterUtils.hpp"
+#include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/engine/OfflineRenderHelper.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
 #include "plan/PlanCompiler.hpp"
@@ -133,6 +140,18 @@ class MidiCapturePlugin final : public te::Plugin {
 /// binary.
 const char* const kCapturePluginId = "nulldiffmidicapture";
 
+/// What marks a device as the corpus's own rather than the product's.
+///
+/// The three devices in this file are registered in the app's registry because
+/// that is the only way either leg can create one, and they are hidden from the
+/// browser, but the registry is also what the device parameter freeze walks
+/// (test_device_param_schema_juce.cpp). That file is the product's contract
+/// about parameter order for saved automation and links, and a device that
+/// exists only inside a test binary has no business in it: recording them would
+/// freeze test fixtures as product schema, and leaving them out with no marker
+/// fails the freeze on every build.
+const char* const kCorpusDeviceTags[] = {"null-diff-corpus"};
+
 void registerCaptureDevice(magda::daw::audio::InternalPluginRegistry& registry) {
     magda::daw::audio::InternalPluginSpec spec;
     spec.pluginId = kCapturePluginId;
@@ -143,6 +162,8 @@ void registerCaptureDevice(magda::daw::audio::InternalPluginRegistry& registry) 
     spec.canCreateDetached = false;
     spec.canCreateOnTrack = false;
     spec.showInBrowser = false;
+    spec.tags = kCorpusDeviceTags;
+    spec.tagCount = static_cast<int>(std::size(kCorpusDeviceTags));
     spec.matchesPlugin = [](magda::daw::audio::DevicePluginRef plugin) {
         return dynamic_cast<MidiCapturePlugin*>(
                    magda::daw::audio::tracktion_adapter::pluginFromRef(plugin)) != nullptr;
@@ -169,7 +190,7 @@ const juce::Identifier kGainProperty("nulldiffGain");
 /// One parameter, a plain multiply, no smoothing. The value is read once at the
 /// top of the block, which is what an AutomatableParameter is; the engine's twin
 /// reads per sample, and the cases play silence wherever that could differ.
-class GainPlugin final : public te::Plugin {
+class GainPlugin : public te::Plugin {
   public:
     explicit GainPlugin(te::PluginCreationInfo info) : te::Plugin(info) {
         auto* undo = getUndoManager();
@@ -241,6 +262,272 @@ class GainPlugin final : public te::Plugin {
     juce::CachedValue<float> value_;
 };
 
+/// The narrow one (#2139).
+///
+/// One channel in and one out, which is the whole of what it is: the DSP is its
+/// base's, and what a mono case measures is the bus around the device rather
+/// than the device. Inside a rack the width is what the connection matrix reads
+/// off the plugin, so declaring it here is what makes the incumbent narrow at
+/// this point in the chain; the plan reads the same widths off the model.
+///
+/// The gain lands on the first channel alone, which is what a one-channel
+/// plugin can touch whatever width of buffer the graph hands it.
+class MonoGainPlugin final : public GainPlugin {
+  public:
+    explicit MonoGainPlugin(te::PluginCreationInfo info) : GainPlugin(std::move(info)) {}
+
+    static const char* getPluginName() {
+        return "Null Diff Mono Gain";
+    }
+
+    juce::String getName() const override {
+        return getPluginName();
+    }
+    juce::String getPluginType() override {
+        return kMonoGainPluginId;
+    }
+    juce::String getShortName(int) override {
+        return "NDMono";
+    }
+
+    void getChannelNames(juce::StringArray* ins, juce::StringArray* outs) override {
+        if (ins != nullptr)
+            ins->add(TRANS("Mono"));
+        if (outs != nullptr)
+            outs->add(TRANS("Mono"));
+    }
+
+    int getNumOutputChannelsGivenInputs(int) override {
+        return 1;
+    }
+
+    void applyToBuffer(const te::PluginRenderContext& context) override {
+        if (context.destBuffer == nullptr || context.destBuffer->getNumChannels() == 0)
+            return;
+
+        context.destBuffer->applyGain(0, context.bufferStartSample, context.bufferNumSamples,
+                                      gain->getCurrentValue());
+    }
+};
+
+// =============================================================================
+// The instrument (#2139)
+// =============================================================================
+
+/// The incumbent's half of the instrument contract in NullDiffGain.hpp.
+///
+/// A synth rather than an effect, and not only because the current engine's
+/// multi-out path wants one: an instrument is the device that generates
+/// instead of processing, and both engines route audio around it rather than
+/// into it. Its width is the only thing its two subclasses differ by.
+class ImpulseSynthPlugin : public te::Plugin {
+  public:
+    explicit ImpulseSynthPlugin(te::PluginCreationInfo info) : te::Plugin(info) {}
+
+    ~ImpulseSynthPlugin() override {
+        notifyListenersOfDeletion();
+    }
+
+    /// How many channels this one writes: two for the plain instrument, four
+    /// for the multi-out one. The rack matrix reads it off the plugin and the
+    /// plan reads the same figure off the model.
+    virtual int channelCount() const = 0;
+
+    juce::String getSelectableDescription() override {
+        return getName();
+    }
+
+    bool takesAudioInput() override {
+        return false;
+    }
+    bool takesMidiInput() override {
+        return true;
+    }
+    bool isSynth() override {
+        return true;
+    }
+    bool producesAudioWhenNoAudioInput() override {
+        return true;
+    }
+    bool canBeAddedToClip() override {
+        return false;
+    }
+    bool canBeAddedToRack() override {
+        return true;
+    }
+    bool needsConstantBufferSize() override {
+        return false;
+    }
+
+    void getChannelNames(juce::StringArray* ins, juce::StringArray* outs) override {
+        // No audio in: neither engine feeds an instrument one, and saying
+        // otherwise would have the rack matrix wire a bus this device never
+        // reads.
+        juce::ignoreUnused(ins);
+
+        if (outs != nullptr)
+            for (int channel = 1; channel <= channelCount(); ++channel)
+                outs->add("Out " + juce::String(channel));
+    }
+
+    int getNumOutputChannelsGivenInputs(int) override {
+        return channelCount();
+    }
+
+    void initialise(const te::PluginInitialisationInfo& info) override {
+        sampleRate_ = info.sampleRate;
+    }
+    void deinitialise() override {}
+
+    void applyToBuffer(const te::PluginRenderContext& context) override {
+        if (context.destBuffer == nullptr)
+            return;
+
+        // A synth writes rather than processes, so the block starts silent:
+        // whatever the graph left in this buffer is not this device's.
+        context.destBuffer->clear(context.bufferStartSample, context.bufferNumSamples);
+
+        if (context.bufferForMidiMessages == nullptr)
+            return;
+
+        for (auto& message : *context.bufferForMidiMessages) {
+            if (!message.isNoteOn())
+                continue;
+
+            // TE stamps a message in seconds from the start of the block, and
+            // the corpus's other MIDI cases are what pin that this lands on the
+            // same sample the engine puts it on.
+            const auto at = context.bufferStartSample +
+                            static_cast<int>(std::llround(message.getTimeStamp() * sampleRate_));
+            if (at < context.bufferStartSample ||
+                at >= context.bufferStartSample + context.bufferNumSamples)
+                continue;
+
+            const auto level = static_cast<float>(message.getVelocity()) / 127.0f;
+
+            // Pair 0 on the first two channels, every further pair at the
+            // declared scale. A two-channel one has no further pair and writes
+            // the first alone.
+            for (int channel = 0; channel < channelCount(); ++channel)
+                write(*context.destBuffer, channel, at,
+                      channel < 2 ? level : level * kMultiOutSecondPairScale);
+        }
+    }
+
+    void restorePluginStateFromValueTree(const juce::ValueTree&) override {}
+
+  private:
+    static void write(juce::AudioBuffer<float>& target, int channel, int sample, float level) {
+        if (channel < target.getNumChannels())
+            target.addSample(channel, sample, level);
+    }
+
+    double sampleRate_ = 44100.0;
+};
+
+/// The plain one, at the width every other device in the corpus has.
+class SynthPlugin final : public ImpulseSynthPlugin {
+  public:
+    explicit SynthPlugin(te::PluginCreationInfo info) : ImpulseSynthPlugin(std::move(info)) {}
+
+    static const char* getPluginName() {
+        return "Null Diff Synth";
+    }
+
+    juce::String getName() const override {
+        return getPluginName();
+    }
+    juce::String getPluginType() override {
+        return kSynthPluginId;
+    }
+    juce::String getShortName(int) override {
+        return "NDSynth";
+    }
+
+    int channelCount() const override {
+        return 2;
+    }
+};
+
+/// The one with two further channels, so the multi-out wrapper has pins three
+/// and four to wire to the rack outputs a second RackInstance reads.
+class MultiOutSynthPlugin final : public ImpulseSynthPlugin {
+  public:
+    explicit MultiOutSynthPlugin(te::PluginCreationInfo info)
+        : ImpulseSynthPlugin(std::move(info)) {}
+
+    static const char* getPluginName() {
+        return "Null Diff Multi Out";
+    }
+
+    juce::String getName() const override {
+        return getPluginName();
+    }
+    juce::String getPluginType() override {
+        return kMultiOutPluginId;
+    }
+    juce::String getShortName(int) override {
+        return "NDMulti";
+    }
+
+    int channelCount() const override {
+        return 4;
+    }
+};
+
+void registerSynthDevice(magda::daw::audio::InternalPluginRegistry& registry) {
+    magda::daw::audio::InternalPluginSpec spec;
+    spec.pluginId = kSynthPluginId;
+    spec.displayName = SynthPlugin::getPluginName();
+    spec.browserCategory = "Utility";
+    spec.description = "A MIDI-driven instrument, for the null-diff corpus.";
+    spec.createMode = magda::daw::audio::InternalPluginCreateMode::FreshValueTree;
+    spec.canCreateDetached = true;
+    spec.canCreateOnTrack = false;
+    spec.showInBrowser = false;
+    spec.isInstrument = true;
+    spec.tags = kCorpusDeviceTags;
+    spec.tagCount = static_cast<int>(std::size(kCorpusDeviceTags));
+    spec.matchesPlugin = [](magda::daw::audio::DevicePluginRef plugin) {
+        return dynamic_cast<SynthPlugin*>(
+                   magda::daw::audio::tracktion_adapter::pluginFromRef(plugin)) != nullptr;
+    };
+    spec.createPlugin = [](const magda::daw::audio::DevicePluginCreationContext& context) {
+        return magda::daw::audio::tracktion_adapter::pluginHandle(
+            new SynthPlugin(magda::daw::audio::tracktion_adapter::creationInfo(context)));
+    };
+
+    registry.registerPlugin(spec);
+}
+
+void registerMultiOutDevice(magda::daw::audio::InternalPluginRegistry& registry) {
+    magda::daw::audio::InternalPluginSpec spec;
+    spec.pluginId = kMultiOutPluginId;
+    spec.displayName = MultiOutSynthPlugin::getPluginName();
+    spec.browserCategory = "Utility";
+    spec.description = "A four-channel instrument, for the null-diff corpus.";
+    spec.createMode = magda::daw::audio::InternalPluginCreateMode::FreshValueTree;
+    spec.canCreateDetached = true;
+    spec.canCreateOnTrack = false;
+    spec.showInBrowser = false;
+    spec.isInstrument = true;
+    spec.tags = kCorpusDeviceTags;
+    spec.tagCount = static_cast<int>(std::size(kCorpusDeviceTags));
+    spec.matchesPlugin = [](magda::daw::audio::DevicePluginRef plugin) {
+        return dynamic_cast<MultiOutSynthPlugin*>(
+                   magda::daw::audio::tracktion_adapter::pluginFromRef(plugin)) != nullptr;
+    };
+    spec.createPlugin = [](const magda::daw::audio::DevicePluginCreationContext& context) {
+        return magda::daw::audio::tracktion_adapter::pluginHandle(
+            new MultiOutSynthPlugin(magda::daw::audio::tracktion_adapter::creationInfo(context)));
+    };
+
+    registry.registerPlugin(spec);
+}
+
+const bool synthDeviceRegistered = magda::daw::audio::registerDevicePack(registerSynthDevice);
+const bool multiOutDeviceRegistered = magda::daw::audio::registerDevicePack(registerMultiOutDevice);
+
 void registerGainDevice(magda::daw::audio::InternalPluginRegistry& registry) {
     magda::daw::audio::InternalPluginSpec spec;
     spec.pluginId = kGainPluginId;
@@ -248,12 +535,22 @@ void registerGainDevice(magda::daw::audio::InternalPluginRegistry& registry) {
     spec.browserCategory = "Utility";
     spec.description = "A gain with one parameter, for the null-diff corpus.";
     spec.createMode = magda::daw::audio::InternalPluginCreateMode::FreshValueTree;
-    spec.canCreateDetached = false;
+    // Detached creation is what a rack needs: RackSyncManager builds its inner
+    // plugins through PluginManager::createPluginOnly, which refuses a spec
+    // that cannot be made off a track (#2139). Nothing else changes with it --
+    // the browser still never shows this device, and the track-level path
+    // still builds its own.
+    spec.canCreateDetached = true;
     spec.canCreateOnTrack = false;
     spec.showInBrowser = false;
+    spec.tags = kCorpusDeviceTags;
+    spec.tagCount = static_cast<int>(std::size(kCorpusDeviceTags));
+    // The narrow one derives from this one, so a bare dynamic_cast would claim
+    // it for this spec and it would be created two channels wide.
     spec.matchesPlugin = [](magda::daw::audio::DevicePluginRef plugin) {
-        return dynamic_cast<GainPlugin*>(
-                   magda::daw::audio::tracktion_adapter::pluginFromRef(plugin)) != nullptr;
+        auto* found = magda::daw::audio::tracktion_adapter::pluginFromRef(plugin);
+        return dynamic_cast<GainPlugin*>(found) != nullptr &&
+               dynamic_cast<MonoGainPlugin*>(found) == nullptr;
     };
     spec.createPlugin = [](const magda::daw::audio::DevicePluginCreationContext& context) {
         return magda::daw::audio::tracktion_adapter::pluginHandle(
@@ -263,7 +560,32 @@ void registerGainDevice(magda::daw::audio::InternalPluginRegistry& registry) {
     registry.registerPlugin(spec);
 }
 
+void registerMonoGainDevice(magda::daw::audio::InternalPluginRegistry& registry) {
+    magda::daw::audio::InternalPluginSpec spec;
+    spec.pluginId = kMonoGainPluginId;
+    spec.displayName = MonoGainPlugin::getPluginName();
+    spec.browserCategory = "Utility";
+    spec.description = "A one-channel gain, for the null-diff corpus.";
+    spec.createMode = magda::daw::audio::InternalPluginCreateMode::FreshValueTree;
+    spec.canCreateDetached = true;
+    spec.canCreateOnTrack = false;
+    spec.showInBrowser = false;
+    spec.tags = kCorpusDeviceTags;
+    spec.tagCount = static_cast<int>(std::size(kCorpusDeviceTags));
+    spec.matchesPlugin = [](magda::daw::audio::DevicePluginRef plugin) {
+        return dynamic_cast<MonoGainPlugin*>(
+                   magda::daw::audio::tracktion_adapter::pluginFromRef(plugin)) != nullptr;
+    };
+    spec.createPlugin = [](const magda::daw::audio::DevicePluginCreationContext& context) {
+        return magda::daw::audio::tracktion_adapter::pluginHandle(
+            new MonoGainPlugin(magda::daw::audio::tracktion_adapter::creationInfo(context)));
+    };
+
+    registry.registerPlugin(spec);
+}
+
 const bool gainDeviceRegistered = magda::daw::audio::registerDevicePack(registerGainDevice);
+const bool monoGainDeviceRegistered = magda::daw::audio::registerDevicePack(registerMonoGainDevice);
 
 /// Where a link's target lives, for the walker that wires modifiers and macros.
 ///
@@ -454,15 +776,82 @@ IncumbentRender renderIncumbent(const Case& value) {
         masterPlugin->setPan(value.master.pan);
     }
 
-    // --- the device with a parameter -----------------------------------------
+    // --- the devices and the racks -------------------------------------------
     //
     // One GainPlugin per model gain device, in chain order, at the head of the
     // track's plugin list so it sits where the plan puts its Device op. The
     // first device the corpus runs under both engines at all (#2123); every
     // other device in the model is still a thing neither leg runs.
+    //
+    // A rack in the same list is one element of it, at the position it holds
+    // there, and it is built by the app's own RackSyncManager (#2139). Not a
+    // second rack builder written for the harness: a rack is a te::RackType, a
+    // RackInstance, a VolumeAndPan per chain and a connection matrix over all
+    // of it, and the whole of that is what a rack case is comparing. Writing
+    // those by hand here would be a corpus agreeing with a second opinion
+    // about what a rack is, which is the thing this file has refused
+    // everywhere else.
+    //
+    // Its PluginManager is built over this render's own Edit rather than taken
+    // from an AudioBridge, because the Edit is this render's: the constructor
+    // is member initialisation and nothing else, and the manager is destroyed
+    // with the render that made it.
+
+    PluginWindowBridge pluginWindows;
+    TransportStateManager transportState;
+    PluginManager pluginManager(*engine, *edit, trackController, pluginWindows, transportState,
+                                TrackManager::getInstance());
+    auto& rackSync = pluginManager.getRackSyncManager();
+    auto& rackManager = pluginManager.getInstrumentRackManager();
+
+    // The multi-out instruments this render installed, by the id a MultiOut
+    // track's link names. Collected while walking the chains rather than looked
+    // up in TrackManager the way the app does: the corpus's projects are case
+    // values and never reach that singleton.
+    std::map<DeviceId, const magda::DeviceInfo*> multiOutSources;
 
     GainPluginLookup lookup;
     std::map<ChainNodePath, GainPlugin*> gains;
+
+    // Every gain device the case declares, by the path that addresses it. The
+    // host write at the end reads this rather than the track lists, so a device
+    // inside a rack is written the same way one on the track is.
+    std::map<ChainNodePath, const magda::DeviceInfo*> gainDevices;
+
+    // The gains a rack holds, found through the manager that built them.
+    //
+    // Recursive because a nested rack's devices are the enclosing rack's
+    // devices as far as the model's paths are concerned, and the manager keeps
+    // one map of inner plugins for the whole tree. The path is rebuilt on the
+    // way down so that a device is registered under the path a link's target
+    // carries, which is the only thing the modifier walker matches on.
+    std::function<void(const magda::RackInfo&, const ChainNodePath&)> registerRackGains =
+        [&](const magda::RackInfo& rack, const ChainNodePath& rackPath) {
+            for (const auto& chain : rack.chains) {
+                const auto chainPath = rackPath.withChain(chain.id);
+                for (const auto& element : chain.elements) {
+                    if (magda::isRack(element)) {
+                        const auto& nested = magda::getRack(element);
+                        registerRackGains(nested, chainPath.withRack(nested.id));
+                        continue;
+                    }
+
+                    const auto& device = magda::getDevice(element);
+                    if (!isGainDevice(device))
+                        continue;
+
+                    auto* plugin = rackSync.getInnerPlugin(device.id);
+                    auto* gain = dynamic_cast<GainPlugin*>(plugin);
+                    if (gain == nullptr)
+                        continue;
+
+                    const auto path = chainPath.withDevice(device.id);
+                    lookup.add(path, plugin);
+                    gains[path] = gain;
+                    gainDevices[path] = &device;
+                }
+            }
+        };
 
     for (const auto& track : value.tracks) {
         auto* audioTrack = trackController.getAudioTrack(track.id);
@@ -471,15 +860,70 @@ IncumbentRender renderIncumbent(const Case& value) {
 
         auto slot = 0;
         for (const auto& element : track.chain.fxChainElements) {
-            if (!magda::isDevice(element))
+            if (magda::isRack(element)) {
+                const auto& rack = magda::getRack(element);
+
+                auto rackInstance = rackSync.syncRack(track.id, rack);
+                if (rackInstance == nullptr) {
+                    result.failure = "rack " + std::to_string(rack.id) + " could not be built";
+                    ClipManager::getInstance().clearAllClips();
+                    ProjectManager::getInstance().setTempo(previousTempo);
+                    return result;
+                }
+
+                audioTrack->pluginList.insertPlugin(rackInstance, slot++, nullptr);
+                registerRackGains(rack, ChainNodePath::rack(track.id, rack.id));
                 continue;
+            }
 
             const auto& device = magda::getDevice(element);
+
+            if (isMultiOutSynthDevice(device)) {
+                // The same six calls PluginManagerSync makes for a multi-out
+                // instrument, in the order it makes them: create, wrap, insert
+                // the wrapper where the plugin was, then record the wrapping so
+                // an output pair can be asked for later. The app's own detection
+                // reads the channel count off an ExternalPlugin or a DrumGrid
+                // and would answer two for this device, so the count is passed
+                // from the model here; every step after it is the app's.
+                juce::ValueTree state(te::IDs::PLUGIN);
+                state.setProperty(te::IDs::type, device.pluginId, nullptr);
+
+                auto plugin = edit->getPluginCache().createNewPlugin(state);
+                if (dynamic_cast<MultiOutSynthPlugin*>(plugin.get()) == nullptr) {
+                    result.failure = "the multi-out device could not be created";
+                    ClipManager::getInstance().clearAllClips();
+                    ProjectManager::getInstance().setTempo(previousTempo);
+                    return result;
+                }
+
+                const auto passRawMidi =
+                    magda::routing::makeRoutingNode(device).passesRawMidiInput();
+                auto wrapper = rackManager.wrapMultiOutInstrument(
+                    plugin, device.multiOut.totalOutputChannels, passRawMidi);
+                if (wrapper == nullptr) {
+                    result.failure = "the multi-out instrument could not be wrapped";
+                    ClipManager::getInstance().clearAllClips();
+                    ProjectManager::getInstance().setTempo(previousTempo);
+                    return result;
+                }
+
+                audioTrack->pluginList.insertPlugin(wrapper, slot++, nullptr);
+
+                auto* wrapperInstance = dynamic_cast<te::RackInstance*>(wrapper.get());
+                rackManager.recordWrapping(
+                    ChainNodePath::topLevelDevice(track.id, device.id),
+                    wrapperInstance != nullptr ? wrapperInstance->type : te::RackType::Ptr(),
+                    plugin, wrapper, true, device.multiOut.totalOutputChannels);
+                multiOutSources[device.id] = &device;
+                continue;
+            }
+
             if (!isGainDevice(device))
                 continue;
 
             juce::ValueTree state(te::IDs::PLUGIN);
-            state.setProperty(te::IDs::type, kGainPluginId, nullptr);
+            state.setProperty(te::IDs::type, device.pluginId, nullptr);
 
             auto plugin = edit->getPluginCache().createNewPlugin(state);
             auto* gain = dynamic_cast<GainPlugin*>(plugin.get());
@@ -497,8 +941,69 @@ IncumbentRender renderIncumbent(const Case& value) {
             const auto path = ChainNodePath::topLevelDevice(track.id, device.id);
             lookup.add(path, plugin.get());
             gains[path] = gain;
+            gainDevices[path] = &device;
         }
     }
+
+    // --- the output pairs a MultiOut track reads -------------------------------
+    //
+    // After every source track, because the instance a pair is read through is
+    // made from the wrapper the source track's instrument was put inside, and a
+    // MultiOut track can sit anywhere in the case's list.
+    //
+    // The pair the track names rather than every pair the device has: an
+    // instance is what makes a pair audible, and a pair nobody opened is
+    // rendered into the wrapper's pins and read by nothing. That is the
+    // engine's rule too, and it is the half of this a render can compare.
+
+    for (const auto& track : value.tracks) {
+        if (track.type != TrackType::MultiOut || !track.multiOutLink.has_value())
+            continue;
+
+        auto* audioTrack = trackController.getAudioTrack(track.id);
+        if (audioTrack == nullptr)
+            continue;
+
+        const auto& link = *track.multiOutLink;
+        const auto* source = multiOutSources.count(link.sourceDeviceId) == 0
+                                 ? nullptr
+                                 : multiOutSources.at(link.sourceDeviceId);
+        if (source == nullptr || link.outputPairIndex < 0 ||
+            link.outputPairIndex >= static_cast<int>(source->multiOut.outputPairs.size())) {
+            result.failure = "a MultiOut track names an output pair this project does not have";
+            ClipManager::getInstance().clearAllClips();
+            ProjectManager::getInstance().setTempo(previousTempo);
+            return result;
+        }
+
+        const auto& pair =
+            source->multiOut.outputPairs[static_cast<std::size_t>(link.outputPairIndex)];
+
+        auto instance = rackManager.createOutputInstance(link.sourceDeviceId, link.outputPairIndex,
+                                                         pair.firstPin, pair.numChannels);
+        if (instance == nullptr) {
+            result.failure = "the output pair's rack instance could not be created";
+            ClipManager::getInstance().clearAllClips();
+            ProjectManager::getInstance().setTempo(previousTempo);
+            return result;
+        }
+
+        // At the head, where every other device this leg installs goes. Not at
+        // the end: a track's plugin list carries its fader, and a source
+        // inserted behind it is panned and faded by nothing.
+        audioTrack->pluginList.insertPlugin(instance, 0, nullptr);
+    }
+
+    // The racks come down with the render that built them, before the Edit
+    // does. A RackType outliving its plugins unwinds TE's bookkeeping in the
+    // wrong order, the way the modulation teardown below has to for the same
+    // reason.
+    struct RackUnwind {
+        RackSyncManager& sync;
+        ~RackUnwind() {
+            sync.clear();
+        }
+    } rackUnwind{rackSync};
 
     // Where the modulation this render builds lives, and what unwinds it.
     //
@@ -762,20 +1267,14 @@ IncumbentRender renderIncumbent(const Case& value) {
     // because it is what makes these cases pass: the fork's guard is a runtime
     // condition, so a write made before the render starts goes through either
     // call. The corpus was run both ways to find that out.
-    for (const auto& track : value.tracks) {
-        for (const auto& element : track.chain.fxChainElements) {
-            if (!magda::isDevice(element))
-                continue;
+    for (const auto& [path, device] : gainDevices) {
+        const auto found = gains.find(path);
+        if (found == gains.end())
+            continue;
 
-            const auto& device = magda::getDevice(element);
-            const auto found = gains.find(ChainNodePath::topLevelDevice(track.id, device.id));
-            if (found == gains.end())
-                continue;
-
-            const auto* info = device.parameters.empty() ? nullptr : &device.parameters.front();
-            found->second->gain->setParameterFromHost(
-                info == nullptr ? kGainDefault : info->currentValue, juce::dontSendNotification);
-        }
+        const auto* info = device->parameters.empty() ? nullptr : &device->parameters.front();
+        found->second->gain->setParameterFromHost(
+            info == nullptr ? kGainDefault : info->currentValue, juce::dontSendNotification);
     }
 
     // The capture devices, where the plan on the other side has them. Inserted

@@ -140,6 +140,45 @@ class GainDevice final : public EngineDevice {
     }
 };
 
+/// The engine's half of the instrument contract in NullDiffGain.hpp (#2139).
+///
+/// One sample per note-on into pair 0, half of it into pair 1. The pairs the
+/// plan gave it and no others: `extraOutputs` is one block per pair the device
+/// declared, cleared on the way in, so a pair nothing opened is written and
+/// dropped rather than skipped here.
+class ImpulseSynthDevice final : public EngineDevice {
+  public:
+    void process(DeviceBlock& block) override {
+        if (block.midiIn == nullptr)
+            return;
+
+        const auto numSamples = static_cast<int>(block.audio.getNumSamples());
+
+        for (const auto metadata : *block.midiIn) {
+            const auto message = metadata.getMessage();
+            if (!message.isNoteOn())
+                continue;
+
+            const auto at = metadata.samplePosition;
+            if (at < 0 || at >= numSamples)
+                continue;
+
+            const auto level = static_cast<float>(message.getVelocity()) / 127.0f;
+            write(block.audio, at, level);
+
+            for (auto& pair : block.extraOutputs)
+                write(pair, at, level * kMultiOutSecondPairScale);
+        }
+    }
+
+  private:
+    static void write(juce::dsp::AudioBlock<float>& target, int sample, float level) {
+        for (std::size_t channel = 0; channel < target.getNumChannels(); ++channel)
+            target.setSample(static_cast<int>(channel), sample,
+                             target.getSample(static_cast<int>(channel), sample) + level);
+    }
+};
+
 /// Every device the case declares, by the identity the plan addresses it with.
 ///
 /// Keyed by DeviceKey and not by DeviceId: an id is unique within a chain
@@ -287,6 +326,7 @@ NativeRender renderNative(const Case& value) {
     std::map<TrackId, std::unique_ptr<ClipMidiSource>> midiSources;
     std::vector<std::unique_ptr<Passthrough>> passthroughs;
     std::vector<std::unique_ptr<GainDevice>> gains;
+    std::vector<std::unique_ptr<ImpulseSynthDevice>> synths;
 
     const auto modelDevices = devicesIn(value);
 
@@ -331,6 +371,14 @@ NativeRender renderNative(const Case& value) {
                 // the incumbent really does instantiate its twin.
                 const auto found = modelDevices.find(op.key.deviceKey());
                 const auto* model = found == modelDevices.end() ? nullptr : found->second;
+
+                if (model != nullptr && isImpulseSynthDevice(*model)) {
+                    auto device = std::make_unique<ImpulseSynthDevice>();
+                    device->prepare(context);
+                    bindings.devices[op.key.deviceKey()] = device.get();
+                    synths.push_back(std::move(device));
+                    break;
+                }
 
                 if (model != nullptr && isGainDevice(*model)) {
                     auto device = std::make_unique<GainDevice>();

@@ -1,5 +1,6 @@
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <set>
@@ -425,7 +426,17 @@ class NullDiffCorpusTests : public juce::UnitTest {
         //    really are the same sound. Their envelope lock is not yet reliable
         //    on all of them, because the search window holds too few swells to
         //    be sure of, and no bound goes in until it is.
+        //  - rack.nested does not fail over a bound at all: the incumbent
+        //    renders a nested rack as if it were not there. RackInstance's own
+        //    applyToBuffer is empty and the processing lives in
+        //    RackInstanceNode, which only EditNodeBuilder substitutes; the rack
+        //    graph's own node builder wraps every plugin it holds in a plain
+        //    PluginNode, so a rack inside a rack is built, connected and then
+        //    passed straight through. The engine processes it, so the case is
+        //    the engine being right rather than a bound nobody has justified,
+        //    and it comes off this list when the fork is fixed (#2171).
         const std::set<std::string> underCalibration{
+            "rack.nested",
             "rate.48k",
             "speed.ratio",
             "fades.speedramp",
@@ -597,9 +608,28 @@ class NullDiffCorpusTests : public juce::UnitTest {
             report.unmeasurable = "incumbent leg: " + incumbent.failure;
             return report;
         }
-        if (!native.diagnostics.empty()) {
-            report.unmeasurable =
-                "the engine could not honour the case: " + native.diagnostics.front();
+        // The diagnostics this case declared it expects are struck off first,
+        // and each has to have been reported: a case that names one and does not
+        // get it is measuring a plan that no longer refuses what the case is
+        // about (NullDiffCase.hpp).
+        auto diagnostics = native.diagnostics;
+        for (const auto& expected : value.expectedDiagnostics) {
+            const auto found =
+                std::find_if(diagnostics.begin(), diagnostics.end(), [&](const std::string& value) {
+                    return value.find(expected) != std::string::npos;
+                });
+
+            if (found == diagnostics.end()) {
+                report.unmeasurable =
+                    "the case expects the plan to report \"" + expected + "\", and it did not";
+                return report;
+            }
+
+            diagnostics.erase(found);
+        }
+
+        if (!diagnostics.empty()) {
+            report.unmeasurable = "the engine could not honour the case: " + diagnostics.front();
             return report;
         }
         if (!incumbent.renderedInFloat) {

@@ -99,6 +99,14 @@ juce::StringArray collectSchema(te::Edit& edit) {
             spec->createMode == audio::InternalPluginCreateMode::Unsupported)
             continue;
 
+        // The null-diff corpus registers its own devices so that both engines
+        // can create one (NullDiffTeLeg.cpp). They live only inside this test
+        // binary, and this file is the product's contract about parameter
+        // order for saved automation and links: freezing a test fixture in it
+        // would put a corpus device under a promise made to projects on disk.
+        if (audio::internalPluginHasTag(*spec, "null-diff-corpus"))
+            continue;
+
         auto plugin = audio::tracktion_adapter::createInternalPlugin(*spec, edit);
         if (plugin == nullptr)
             continue;
