@@ -422,6 +422,14 @@ std::string toString(const Edit& edit) {
         case EditKind::MoveDevice:
             out << "moveDevice D" << edit.deviceId << " to " << edit.position;
             break;
+        case EditKind::MoveDeviceToSite:
+            out << "moveDeviceToSite D" << edit.deviceId << " into " << site() << " at "
+                << edit.position;
+            break;
+        case EditKind::WrapDeviceInRack:
+            out << "wrapDeviceInRack D" << edit.deviceId << " in R" << edit.rackId << "/C"
+                << edit.chainId;
+            break;
         case EditKind::BypassDevice:
             out << "bypassDevice D" << edit.deviceId << " " << (edit.flag ? "on" : "off");
             break;
@@ -551,6 +559,70 @@ bool apply(const Edit& edit, Project& project) {
             return true;
         }
 
+        case EditKind::MoveDeviceToSite: {
+            DeviceAt at;
+            if (!findDevice(project, edit.deviceId, at))
+                return false;
+
+            // Resolved before the device leaves, and safe to hold across the
+            // erase: a chain's element list lives in a heap RackInfo, so moving
+            // the owning pointers around in the source list does not move it.
+            auto* destination = siteElements(project, edit.site);
+            if (destination == nullptr || destination == at.container)
+                return false;
+
+            auto element = std::move((*at.container)[at.index]);
+            at.container->erase(at.container->begin() + static_cast<std::ptrdiff_t>(at.index));
+
+            // A connection in a generated project only ever points earlier in
+            // project order, which is what keeps any sequence from producing a
+            // routing cycle. A device carries its sidechain with it, and a move
+            // to another track can land it on the track it keys off or in front
+            // of it; that sidechain goes the way a removed track's sends go.
+            if (edit.site.trackId != at.trackId) {
+                auto& sidechain = getDevice(element).sidechain;
+                if (sidechain.isActive() && trackIndex(project, sidechain.sourceTrackId) >=
+                                                trackIndex(project, edit.site.trackId))
+                    sidechain = SidechainConfig{};
+            }
+
+            destination->insert(destination->begin() + static_cast<std::ptrdiff_t>(clampPosition(
+                                                           edit.position, destination->size())),
+                                std::move(element));
+            return true;
+        }
+
+        case EditKind::WrapDeviceInRack: {
+            RackAt existing;
+            if (findRack(project, edit.rackId, existing))
+                return false;
+
+            DeviceAt at;
+            if (!findDevice(project, edit.deviceId, at))
+                return false;
+
+            // In the slot it was standing in, which is what the model's own
+            // wrapChainElementsInRack does to a selection of one: the device
+            // ends up one level down and everything around it stays put.
+            auto rack = std::make_unique<RackInfo>();
+            rack->id = edit.rackId;
+            rack->name = "Rack " + juce::String(edit.rackId);
+
+            ChainInfo chain;
+            chain.id = edit.chainId;
+            chain.name = "Chain " + juce::String(chain.id);
+            chain.elements.push_back(std::move((*at.container)[at.index]));
+            rack->chains.push_back(std::move(chain));
+
+            (*at.container)[at.index] = ChainElement{std::move(rack)};
+            return true;
+        }
+
+        // Bypass and delta solo are one switch with three positions, not two
+        // switches: TrackManager clears each when the other is set, for devices
+        // and for racks. A generator that set them independently would build a
+        // project no user can reach, and the compiler reports that pair rather
+        // than compiling it.
         case EditKind::BypassDevice: {
             DeviceAt at;
             if (!findDevice(project, edit.deviceId, at))
@@ -560,6 +632,8 @@ bool apply(const Edit& edit, Project& project) {
             if (device.bypassed == edit.flag)
                 return false;
             device.bypassed = edit.flag;
+            if (edit.flag)
+                device.deltaSolo = false;
             return true;
         }
 
@@ -572,6 +646,8 @@ bool apply(const Edit& edit, Project& project) {
             if (device.deltaSolo == edit.flag)
                 return false;
             device.deltaSolo = edit.flag;
+            if (edit.flag)
+                device.bypassed = false;
             return true;
         }
 
@@ -815,10 +891,19 @@ std::set<TrackId> touched(const Edit& edit, const Project& before) {
 
         case EditKind::RemoveDevice:
         case EditKind::MoveDevice:
+        case EditKind::WrapDeviceInRack:
         case EditKind::BypassDevice:
         case EditKind::DeltaSoloDevice:
         case EditKind::SetDeviceLatency:
             add(ownerOfDevice(edit.deviceId));
+            break;
+
+        // Both ends, because the device leaves one track's plan and arrives in
+        // another's. Read off the project as it stands, which is where the
+        // device still is.
+        case EditKind::MoveDeviceToSite:
+            add(ownerOfDevice(edit.deviceId));
+            add(edit.site.trackId);
             break;
 
         case EditKind::RemoveRack: {
@@ -990,6 +1075,25 @@ std::vector<Edit> generate(std::uint64_t seed, int length) {
                     usable = true;
                     break;
 
+                case EditKind::MoveDeviceToSite:
+                    if (inventory.devices.empty() || sites.empty())
+                        break;
+                    edit.deviceId = rng.pick(inventory.devices).first;
+                    edit.site = rng.pick(sites);
+                    edit.position = rng.below(6);
+                    usable = true;
+                    break;
+
+                case EditKind::WrapDeviceInRack:
+                    if (inventory.devices.empty() ||
+                        static_cast<int>(inventory.racks.size()) >= kMaxRacks)
+                        break;
+                    edit.deviceId = rng.pick(inventory.devices).first;
+                    edit.rackId = nextRack;
+                    edit.chainId = nextChain;
+                    usable = true;
+                    break;
+
                 case EditKind::RemoveDevice:
                 case EditKind::MoveDevice:
                 case EditKind::BypassDevice:
@@ -1150,6 +1254,10 @@ std::vector<Edit> generate(std::uint64_t seed, int length) {
             case EditKind::AddChain:
                 ++nextChain;
                 ++nextDevice;
+                break;
+            case EditKind::WrapDeviceInRack:
+                ++nextRack;
+                ++nextChain;
                 break;
             default:
                 break;

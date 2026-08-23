@@ -9,6 +9,7 @@
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
 #include "param/ModSources.hpp"
+#include "plan/RackNesting.hpp"
 
 namespace magda::engine {
 
@@ -290,6 +291,12 @@ class Builder {
     }
 
     ParamTable table_;
+
+    /// The rack instances open around the point the walk has reached. A rack's
+    /// macros and modifiers are addressed by its id, so a second instance
+    /// claims every address the first one has.
+    RackNesting nesting_;
+
     std::span<const magda::AutomationLaneInfo> lanes_;
     std::span<const magda::AutomationClipInfo> clips_;
     std::vector<Node> nodes_;
@@ -555,6 +562,17 @@ void Builder::walkFlat(const std::vector<magda::PostFxChainElement>& elements,
 }
 
 void Builder::walkRack(const magda::RackInfo& rack, magda::TrackId trackId) {
+    // The same instance the plan compiler passes over. Walking it would report
+    // every address in the subtree as claimed twice, with nothing naming the
+    // cause.
+    if (nesting_.encloses(rack.id)) {
+        diagnose(nesting_.cycle(rack.id) +
+                 ", its parameters and everything under it are not carried");
+        return;
+    }
+
+    const RackNesting::Scope scope{nesting_, rack.id};
+
     Node node;
     node.scope.scope = ParamKey::Scope::Rack;
     node.scope.trackId = trackId;

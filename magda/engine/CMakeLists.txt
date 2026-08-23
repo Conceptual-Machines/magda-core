@@ -41,12 +41,14 @@ add_library(magda_engine STATIC
     clip/FadeCurves.hpp
     clip/WarpMap.hpp
     plan/RenderPlan.cpp
+    plan/RackNesting.cpp
     plan/PlanCompiler.cpp
     plan/PlanDiff.cpp
     plan/PlanCrossfade.cpp
     plan/PlanDump.cpp
     plan/PlanDiffDump.cpp
     plan/RenderPlan.hpp
+    plan/RackNesting.hpp
     plan/PlanCompiler.hpp
     plan/PlanDiff.hpp
     plan/PlanCrossfade.hpp
