@@ -327,6 +327,25 @@ TEST_CASE("Two project sources that share a name are refused", "[nulldiff][fixtu
     // Still not a collision when it is one file: the same path twice, whatever
     // case it is written in, is what a v1 project produces for two clips.
     CHECK(refuseIndistinguishableSources({"/packs/a/Loop.wav", "/packs/a/Loop.wav"}).empty());
+
+    // Both separators, on every host. A path in a saved project belongs to the
+    // machine that saved it, and juce::File cuts on the separator of the machine
+    // reading it: a Windows runner asked for the name of a macOS path handed
+    // back the whole path, so every manifest lookup missed and the load refused
+    // a fixture that was fine. CI found that; these are what would have.
+    //
+    // Asserted in both directions rather than the one that broke, because the
+    // corpus is checked in on macOS and read on Windows and Linux, and a project
+    // saved on Windows is a fixture somebody will add.
+    CHECK_FALSE(refuseIndistinguishableSources({"/packs/a/loop.wav", "/packs/b/loop.wav"}).empty());
+    CHECK_FALSE(refuseIndistinguishableSources({"C:\\packs\\a\\loop.wav", "C:\\packs\\b\\loop.wav"})
+                    .empty());
+    CHECK_FALSE(
+        refuseIndistinguishableSources({"/packs/a/loop.wav", "C:\\packs\\b\\loop.wav"}).empty());
+
+    // And two names that really are different stay different under both.
+    CHECK(refuseIndistinguishableSources({"C:\\packs\\a\\loop.wav", "C:\\packs\\a\\kick.wav"})
+              .empty());
 }
 
 TEST_CASE("Two names the filesystem calls one file are counted, not compared",

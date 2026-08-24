@@ -54,9 +54,19 @@ std::string quoted(const juce::String& text) {
 }
 
 /// The last component of a path that may name a volume this machine has never
-/// had. Built without checking, because checking is what it cannot do.
+/// had, and a machine that is not this one.
+///
+/// Split here rather than by juce::File, which cuts on the separator of the host
+/// doing the reading: getSeparatorChar() is a backslash on Windows, so a project
+/// saved on macOS hands it a path of forward slashes and it hands back the whole
+/// path as the name. Every manifest lookup then misses and the load refuses a
+/// fixture that is fine, which is what CI found. The mirror holds too, a project
+/// saved on Windows and read on macOS.
+///
+/// A path in a saved project belongs to the machine that saved it, so both
+/// separators are cut whatever this one uses.
 juce::String fileNameOf(const juce::String& path) {
-    return juce::File::createFileWithoutCheckingPath(path).getFileName();
+    return path.fromLastOccurrenceOf("/", false, false).fromLastOccurrenceOf("\\", false, false);
 }
 
 using Declarations = std::map<juce::String, const FixtureSource*>;
