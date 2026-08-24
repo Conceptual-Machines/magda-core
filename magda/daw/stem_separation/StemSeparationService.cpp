@@ -233,7 +233,7 @@ void StemSeparationService::splitClipIntoStems(ClipId sourceClipId, Engine engin
     const int sceneIndex = clip->sceneIndex;
     const double bpm = projectBpm();
 
-    const juce::File stemsRoot = ProjectManager::getInstance().getStemsDirectory();
+    const juce::File rendersRoot = ProjectManager::getInstance().getRendersDirectory();
 
     // Phase 1, immediately on the message thread: the empty stem tracks and
     // their group appear the moment the user clicks, so the track area
@@ -284,7 +284,7 @@ void StemSeparationService::splitClipIntoStems(ClipId sourceClipId, Engine engin
     };
 
     pool_->addJob([this, sourceClipId, engine, filePath, baseName, sourceTrackId, startBeat,
-                   sceneIndex, bpm, stemsRoot, stemTrackIds, groupId, report = std::move(report),
+                   sceneIndex, bpm, rendersRoot, stemTrackIds, groupId, report = std::move(report),
                    failAndCleanup = std::move(failAndCleanup),
                    enqueueGeneration = cancelGeneration_.load()]() {
         // Cancelled iff cancelAll() ran after this job was enqueued.
@@ -334,8 +334,8 @@ void StemSeparationService::splitClipIntoStems(ClipId sourceClipId, Engine engin
                 return;
             }
 
-            // One folder per split: <media>/stems/<source> - <engine>/
-            juce::File dir = stemsRoot.getChildFile(baseName + " - " + separator->modelId());
+            // One folder per split: <media>/renders/<source> - <engine>/
+            juce::File dir = rendersRoot.getChildFile(baseName + " - " + separator->modelId());
             if (dir.exists())
                 dir = dir.getNonexistentSibling();
             if (!dir.createDirectory().wasOk()) {

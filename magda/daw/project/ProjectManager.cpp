@@ -4,8 +4,11 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <algorithm>
+#include <functional>
+#include <map>
 #include <unordered_set>
 
+#include "../audio/AudioThumbnailManager.hpp"
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/Config.hpp"
@@ -18,13 +21,29 @@
 
 namespace magda {
 
-// Subdirectory names used by the media directory
+// The media directory has three roots, each with a distinct meaning to the
+// user: what they recorded, what MAGDA computed from the timeline, and what
+// they brought in from outside. kMediaSubdirs is the single source of truth —
+// creation and migration both read it, and every accessor below derives from
+// it (#2170).
 static const char* const kRecordingsDir = "recordings";
 static const char* const kRendersDir = "renders";
-static const char* const kBouncesDir = "bounces";
-static const char* const kExternalEditsDir = "external-edits";
 static const char* const kImportedDir = "imported";
-static const char* const kStemsDir = "stems";
+static const char* const kMediaSubdirs[] = {kRecordingsDir, kRendersDir, kImportedDir};
+
+// Roots retired by #2170, and the surviving root each one folds into.
+struct LegacyMediaSubdir {
+    const char* from;
+    const char* to;
+};
+static const LegacyMediaSubdir kLegacyMediaSubdirs[] = {
+    {"bounces", kRendersDir},
+    {"external-edits", kImportedDir},
+    {"stems", kRendersDir},
+};
+// Written into the media root when a fold actually moves something, so a later
+// load can tell where a file went instead of guessing from its name (#2170).
+static const char* const kMediaMovesFile = ".magda-media-moves.json";
 static const char* const kTempRootDir = "MAGDA";
 static const char* const kTempPrefix = "UnsavedProject_";
 static constexpr int kStaleTempDays = 7;
@@ -64,6 +83,158 @@ void resetTransportForProjectBoundary() {
     audioEngine->deactivateAllSessionClips();
     audioEngine->setLooping(false);
     audioEngine->locate(0.0);
+}
+
+// Paths are recorded relative to the media root, with '/' separators, so the
+// record survives the project folder being moved, renamed, or opened on another
+// platform. Returns an empty string for a path outside the tree.
+juce::String mediaRelativePath(const juce::File& mediaRoot, const juce::File& file) {
+    if (!file.isAChildOf(mediaRoot))
+        return {};
+    return file.getRelativePathFrom(mediaRoot).replaceCharacter('\\', '/');
+}
+
+std::map<juce::String, juce::String> readMediaMoves(const juce::File& mediaRoot) {
+    std::map<juce::String, juce::String> record;
+    const auto file = mediaRoot.getChildFile(kMediaMovesFile);
+    if (!file.existsAsFile())
+        return record;
+
+    const auto parsed = juce::JSON::parse(file.loadFileAsString());
+    if (auto* object = parsed.getDynamicObject())
+        for (const auto& entry : object->getProperties())
+            record[entry.name.toString()] = entry.value.toString();
+    return record;
+}
+
+void writeMediaMoves(const juce::File& mediaRoot,
+                     const std::map<juce::String, juce::String>& record) {
+    auto object = std::make_unique<juce::DynamicObject>();
+    for (const auto& [from, to] : record)
+        object->setProperty(from, to);
+    mediaRoot.getChildFile(kMediaMovesFile)
+        .replaceWithText(juce::JSON::toString(juce::var(object.release())));
+}
+
+// What to do with a file whose destination name is already taken. Never
+// overwrite either way: clobbering would destroy a file some other clip still
+// points at.
+enum class OnCollision {
+    // Land beside it under a unique name. For a move that writes its new paths
+    // out in the same operation, so nothing may be left behind.
+    Uniquify,
+    // Leave the file where it is. For the legacy fold, whose new paths only
+    // reach the .mgd when the user next saves — a file that stays put keeps the
+    // path already in the .mgd valid, and keeps every file that did move
+    // resolvable by name alone.
+    Skip,
+};
+
+// Move every file under srcDir into dstDir, nested structure intact, recording
+// where each one landed so the references to it can follow.
+void moveMediaTree(const juce::File& srcDir, const juce::File& dstDir,
+                   std::map<juce::String, juce::String>& moves, OnCollision onCollision) {
+    if (!srcDir.isDirectory() || srcDir == dstDir)
+        return;
+
+    dstDir.createDirectory();
+
+    // Snapshot the listing before moving anything — iterating a directory while
+    // emptying it is not something every platform defines.
+    for (const auto& srcFile : srcDir.findChildFiles(juce::File::findFiles, true)) {
+        auto dstFile = dstDir.getChildFile(srcFile.getRelativePathFrom(srcDir));
+        dstFile.getParentDirectory().createDirectory();
+        if (dstFile.exists()) {
+            if (onCollision == OnCollision::Skip)
+                continue;
+            dstFile = dstFile.getNonexistentSibling();
+        }
+        if (srcFile.moveFileTo(dstFile))
+            moves[srcFile.getFullPathName()] = dstFile.getFullPathName();
+    }
+
+    // Only the empty skeleton is left once every file has moved out. A skipped
+    // collision keeps the directory alive, and the next load tries it again.
+    if (srcDir.findChildFiles(juce::File::findFiles, true).isEmpty())
+        srcDir.deleteRecursively();
+}
+
+// Re-point everything that can name a media file — pooled clip sources, take
+// paths, and sampler/drum-pad samples — through `resolve`, which returns the
+// new path for a file that moved or an empty string for one that did not.
+// Returns true if anything was re-pointed.
+bool relinkMediaPaths(const std::function<juce::String(const juce::String&)>& resolve) {
+    auto& clipManager = ClipManager::getInstance();
+    auto& pool = SourcePool::getInstance();
+    auto& thumbs = AudioThumbnailManager::getInstance();
+
+    std::vector<ClipId> updatedClipIds;
+    std::unordered_set<SourceId> relinkedSources;
+
+    for (const auto& clipInfo : clipManager.getClips()) {
+        if (!clipInfo.isAudio())
+            continue;
+
+        bool touched = false;
+
+        // Sources are pooled per file, so a moved file is relinked once however
+        // many clips reference it; the clip loop only decides which clips need
+        // re-notifying.
+        for (const auto& event : clipInfo.audio().events) {
+            const auto oldPath = event.sourceFilePath();
+            const auto newPath = resolve(oldPath);
+            if (newPath.isEmpty())
+                continue;
+
+            touched = true;
+            if (event.sourceId == INVALID_SOURCE_ID ||
+                !relinkedSources.insert(event.sourceId).second)
+                continue;
+
+            const auto owner = pool.relink(event.sourceId, newPath);
+            if (owner != INVALID_SOURCE_ID && owner != event.sourceId) {
+                // The destination was already pooled under another source: move
+                // the events across rather than leaving two entries claiming
+                // one file.
+                clipManager.repointEventsToSource(event.sourceId, owner);
+            }
+            thumbs.invalidateFile(oldPath);
+            thumbs.invalidateFile(newPath);
+        }
+
+        if (auto* clip = clipManager.getClip(clipInfo.id)) {
+            for (auto& take : clip->audio().takes) {
+                const auto newPath = resolve(take.filePath);
+                if (newPath.isEmpty())
+                    continue;
+                thumbs.invalidateFile(take.filePath);
+                thumbs.invalidateFile(newPath);
+                take.filePath = newPath;
+                touched = true;
+            }
+        }
+
+        if (touched)
+            updatedClipIds.push_back(clipInfo.id);
+    }
+
+    if (!updatedClipIds.empty())
+        clipManager.forceNotifyMultipleClipPropertiesChanged(updatedClipIds);
+
+    // Collected samples live in imported/, so a media tree that moves takes the
+    // samplers and drum pads pointing into it along too.
+    bool relinkedSamplers = false;
+    if (auto* audioEngine = TrackManager::getInstance().getAudioEngine()) {
+        for (auto& reference : audioEngine->getSamplerMediaReferences()) {
+            const auto newPath = resolve(reference.source.getFullPathName());
+            if (newPath.isNotEmpty()) {
+                reference.replace(juce::File(newPath));
+                relinkedSamplers = true;
+            }
+        }
+    }
+
+    return !updatedClipIds.empty() || relinkedSamplers;
 }
 
 }  // namespace
@@ -155,10 +326,6 @@ bool ProjectManager::saveProject() {
 }
 
 bool ProjectManager::saveProjectAs(const juce::File& file) {
-    // Capture live plugin state before serializing
-    if (onBeforeSave)
-        onBeforeSave();
-
     // Ensure the .mgd file lives inside a wrapper folder named after the project.
     // If the user picked /path/to/MyProject.mgd, wrap it as /path/to/MyProject/MyProject.mgd.
     // If it's already inside a matching folder, use it as-is.
@@ -186,6 +353,14 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
     if (oldMediaDir != juce::File() && oldMediaDir != targetMediaDir && oldMediaDir.isDirectory()) {
         migrateMediaFiles(oldMediaDir, targetMediaDir);
     }
+
+    // Capture live plugin state before serializing. Runs after the migration
+    // above, not before it: the migration re-points samplers and drum pads at
+    // the files it just moved, and a state captured before that would freeze
+    // the pre-move paths into the .mgd, leaving their samples missing when the
+    // saved project is reopened.
+    if (onBeforeSave)
+        onBeforeSave();
 
     // Prepare updated project info without mutating currentProject_ yet
     ProjectInfo newProject = currentProject_;
@@ -278,6 +453,10 @@ bool ProjectManager::loadProject(const juce::File& file,
     // commands reference track/clip ids that are gone.
     UndoManager::getInstance().clearHistory();
     clearDirty();
+
+    // Projects saved before #2170 still have the retired media roots on disk.
+    // Runs after clearDirty() so the dirty flag it raises survives.
+    foldLegacyMediaDirectories(mediaDirectory_);
 
     // If we recovered from autosave, mark dirty so the user can save properly
     if (fileToLoad != file) {
@@ -474,6 +653,11 @@ void ProjectManager::loadProjectAsync(const juce::File& file,
                 // one — its commands reference ids that are gone.
                 UndoManager::getInstance().clearHistory();
                 clearDirty();
+
+                // Projects saved before #2170 still have the retired media
+                // roots on disk. Runs after clearDirty() so the dirty flag it
+                // raises survives.
+                foldLegacyMediaDirectories(mediaDirectory_);
 
                 if (recoveredFromAutosave) {
                     markDirty();
@@ -679,28 +863,10 @@ juce::File ProjectManager::getRendersDirectory() const {
     return mediaDirectory_.getChildFile(kRendersDir);
 }
 
-juce::File ProjectManager::getBouncesDirectory() const {
-    if (mediaDirectory_ == juce::File())
-        return {};
-    return mediaDirectory_.getChildFile(kBouncesDir);
-}
-
-juce::File ProjectManager::getExternalEditsDirectory() const {
-    if (mediaDirectory_ == juce::File())
-        return {};
-    return mediaDirectory_.getChildFile(kExternalEditsDir);
-}
-
 juce::File ProjectManager::getImportedDirectory() const {
     if (mediaDirectory_ == juce::File())
         return {};
     return mediaDirectory_.getChildFile(kImportedDir);
-}
-
-juce::File ProjectManager::getStemsDirectory() const {
-    if (mediaDirectory_ == juce::File())
-        return {};
-    return mediaDirectory_.getChildFile(kStemsDir);
 }
 
 void ProjectManager::createTempMediaDirectory() {
@@ -727,8 +893,7 @@ void ProjectManager::createTempMediaDirectory() {
 void ProjectManager::ensureMediaSubdirectories(const juce::File& mediaRoot) {
     if (mediaRoot == juce::File())
         return;
-    const char* subdirs[] = {kRecordingsDir, kRendersDir, kBouncesDir, kExternalEditsDir};
-    for (auto* subdir : subdirs) {
+    for (auto* subdir : kMediaSubdirs) {
         mediaRoot.getChildFile(subdir).createDirectory();
     }
 }
@@ -737,71 +902,25 @@ void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::Fil
     if (!oldDir.isDirectory() || oldDir == newDir)
         return;
 
-    auto oldPath = oldDir.getFullPathName();
-    auto newPath = newDir.getFullPathName();
-    std::vector<ClipId> updatedClipIds;
+    // Uniquify rather than skip: the .mgd is written from the relinked model at
+    // the end of this same save, so a file that lands under a new name is
+    // recorded correctly, and nothing may be stranded in the directory being
+    // left behind.
+    std::map<juce::String, juce::String> moves;
+    for (auto* subdir : kMediaSubdirs)
+        moveMediaTree(oldDir.getChildFile(subdir), newDir.getChildFile(subdir), moves,
+                      OnCollision::Uniquify);
 
-    // Move files from each subdirectory
-    const char* subdirs[] = {kRecordingsDir, kRendersDir, kBouncesDir, kExternalEditsDir};
-    for (auto* subdir : subdirs) {
-        auto srcDir = oldDir.getChildFile(subdir);
-        auto dstDir = newDir.getChildFile(subdir);
-        dstDir.createDirectory();
+    // A Save-As from a project opened before #2170 can still be carrying the
+    // retired roots, so fold them on the way across rather than stranding them.
+    for (const auto& legacy : kLegacyMediaSubdirs)
+        moveMediaTree(oldDir.getChildFile(legacy.from), newDir.getChildFile(legacy.to), moves,
+                      OnCollision::Uniquify);
 
-        if (srcDir.isDirectory()) {
-            for (const auto& entry : juce::RangedDirectoryIterator(srcDir, false)) {
-                auto srcFile = entry.getFile();
-                auto dstFile = dstDir.getChildFile(srcFile.getFileName());
-                srcFile.moveFileTo(dstFile);
-            }
-        }
-    }
-
-    // Update clip audio paths that reference the old media directory
-    auto& clipManager = ClipManager::getInstance();
-    auto updateClipPaths = [&](const std::vector<ClipInfo>& clips) {
-        // Sources are pooled per file, so a moved file is relinked once even
-        // when several clips reference it; the clip loop only decides which
-        // clips need re-notifying.
-        auto& pool = SourcePool::getInstance();
-        std::unordered_set<SourceId> relinked;
-        for (const auto& clipInfo : clips) {
-            const auto* event = clipInfo.primaryEvent();
-            if (event == nullptr)
-                continue;
-            const auto sourcePath = event->sourceFilePath();
-            const bool sourceMoved = sourcePath.isNotEmpty() && sourcePath.startsWith(oldPath);
-            bool anyTakeMoved = false;
-            for (const auto& take : clipInfo.audio().takes) {
-                if (take.filePath.startsWith(oldPath)) {
-                    anyTakeMoved = true;
-                    break;
-                }
-            }
-            if (!sourceMoved && !anyTakeMoved)
-                continue;
-            auto* clip = clipManager.getClip(clipInfo.id);
-            if (clip) {
-                if (sourceMoved && relinked.insert(event->sourceId).second) {
-                    const auto moved = event->sourceId;
-                    const auto owner =
-                        pool.relink(moved, sourcePath.replace(oldPath, newPath, false));
-                    if (owner != INVALID_SOURCE_ID && owner != moved)
-                        clipManager.repointEventsToSource(moved, owner);
-                }
-                for (auto& take : clip->audio().takes)
-                    if (take.filePath.startsWith(oldPath))
-                        take.filePath = take.filePath.replace(oldPath, newPath, false);
-                updatedClipIds.push_back(clip->id);
-            }
-        }
-    };
-
-    updateClipPaths(clipManager.getArrangementClips());
-    updateClipPaths(clipManager.getSessionClips());
-
-    if (!updatedClipIds.empty())
-        clipManager.forceNotifyMultipleClipPropertiesChanged(updatedClipIds);
+    relinkMediaPaths([&moves](const juce::String& path) -> juce::String {
+        const auto it = moves.find(path);
+        return it == moves.end() ? juce::String() : it->second;
+    });
 
     // Remove old temp directory if it's empty or under the temp root
     auto tempRoot =
@@ -809,6 +928,58 @@ void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::Fil
     if (oldDir.isAChildOf(tempRoot)) {
         oldDir.deleteRecursively();
     }
+}
+
+void ProjectManager::foldLegacyMediaDirectories(const juce::File& mediaRoot) {
+    if (mediaRoot == juce::File() || !mediaRoot.isDirectory())
+        return;
+
+    auto record = readMediaMoves(mediaRoot);
+
+    std::map<juce::String, juce::String> moves;
+    for (const auto& legacy : kLegacyMediaSubdirs)
+        moveMediaTree(mediaRoot.getChildFile(legacy.from), mediaRoot.getChildFile(legacy.to), moves,
+                      OnCollision::Skip);
+
+    // Record what moved before relinking. The new paths only reach the .mgd
+    // when the user next saves, so without this the next load would have
+    // nothing but a filename to go on.
+    if (!moves.empty()) {
+        for (const auto& [from, to] : moves) {
+            const auto fromRel = mediaRelativePath(mediaRoot, juce::File(from));
+            const auto toRel = mediaRelativePath(mediaRoot, juce::File(to));
+            if (fromRel.isNotEmpty() && toRel.isNotEmpty())
+                record[fromRel] = toRel;
+        }
+        writeMediaMoves(mediaRoot, record);
+    }
+
+    const auto resolve = [&moves, &record, &mediaRoot](const juce::String& path) -> juce::String {
+        const auto it = moves.find(path);
+        if (it != moves.end())
+            return it->second;
+
+        // A project folded on an earlier load but never saved still names the
+        // old location in its .mgd. Only the record of what a fold actually
+        // moved can say where the file went: a destination that merely shares
+        // the name may be an unrelated file, and the .mgd may name something
+        // that was already missing before any fold ran.
+        const auto relative = mediaRelativePath(mediaRoot, juce::File(path));
+        if (relative.isEmpty())
+            return {};
+
+        const auto recorded = record.find(relative);
+        if (recorded == record.end())
+            return {};
+
+        const auto moved = mediaRoot.getChildFile(recorded->second);
+        return moved.existsAsFile() ? moved.getFullPathName() : juce::String();
+    };
+
+    // The paths in the .mgd on disk still name folders that just went away, so
+    // the project genuinely differs from its file until it is saved again.
+    if (relinkMediaPaths(resolve))
+        markDirty();
 }
 
 void ProjectManager::cleanupStaleTempDirectories() {

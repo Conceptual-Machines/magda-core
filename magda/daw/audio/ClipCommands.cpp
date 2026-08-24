@@ -1248,7 +1248,8 @@ void RenderClipCommand::execute() {
     juce::String trackName = trackInfo ? trackInfo->name : "Track";
     juce::String clipName =
         clip->name.isNotEmpty() ? clip->name : sourceFile.getFileNameWithoutExtension();
-    renderedFile_ = rendersDir.getChildFile(expandRenderPattern(clipName, trackName) + ".wav");
+    renderedFile_ =
+        rendersDir.getNonexistentChildFile(expandRenderPattern(clipName, trackName), ".wav", false);
 
     const double projectBPM = currentProjectBpm();
     const double renderStart = clip->getTimelineStart(projectBPM);
@@ -1403,8 +1404,8 @@ void RenderTimeSelectionCommand::execute() {
         juce::String trackName = trackInfo ? trackInfo->name : "Track";
         auto* firstClipInfo = clipManager.getClip(overlappingIds[0]);
         juce::String clipName = firstClipInfo ? firstClipInfo->name : trackName;
-        trackState.renderedFile =
-            rendersDir.getChildFile(expandRenderPattern(clipName, trackName) + ".wav");
+        trackState.renderedFile = rendersDir.getNonexistentChildFile(
+            expandRenderPattern(clipName, trackName), ".wav", false);
 
         const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
         OfflineRenderRequest request;
@@ -2068,23 +2069,23 @@ void BounceInPlaceCommand::execute() {
         return;
     }
 
-    // Determine output file path — always the project's bounces directory.
+    // Determine output file path — always the project's renders directory.
     // A bounce file is referenced by a clip inside the project, so it must live
     // in the project media tree (so save/collect/move keeps it). It must NOT
     // honour Config::getRenderFolder(): that is the global Export-to-file
     // folder, and letting it hijack bounce output drops the file outside the
     // project (e.g. on the Desktop) where the project can't track it.
-    auto bouncesDir = ProjectManager::getInstance().getBouncesDirectory();
-    if (bouncesDir == juce::File())
-        bouncesDir = engine_->getEditFile().getParentDirectory().getChildFile("bounces");
+    auto rendersDir = ProjectManager::getInstance().getRendersDirectory();
+    if (rendersDir == juce::File())
+        rendersDir = engine_->getEditFile().getParentDirectory().getChildFile("renders");
     // Verify the destination is actually writable before handing the renderer a
     // dead destFile. On a read-only / unavailable project media tree the render
     // would otherwise fail with only a DBG line and no bounced clip, leaving the
     // user with nothing and no explanation. Bail with a visible error instead.
     // Safe to return here: the transport hasn't been touched yet.
-    if (bouncesDir.createDirectory().failed() || !bouncesDir.hasWriteAccess()) {
+    if (rendersDir.createDirectory().failed() || !rendersDir.hasWriteAccess()) {
         errorMessage_ =
-            "Bounce failed: can't write to the bounces folder:\n" + bouncesDir.getFullPathName();
+            "Bounce failed: can't write to the renders folder:\n" + rendersDir.getFullPathName();
         juce::Logger::writeToLog(errorMessage_);
         return;
     }
@@ -2093,7 +2094,12 @@ void BounceInPlaceCommand::execute() {
         auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
         juce::String trackName = trackInfo ? trackInfo->name : "Track";
         juce::String clipName = clip->name.isNotEmpty() ? clip->name : "clip";
-        renderedFile_ = bouncesDir.getChildFile(expandBouncePattern(clipName, trackName) + ".wav");
+        // Renders and bounces share this folder and expand independently
+        // configurable patterns, so the two can name the same file. Claim a
+        // free name: overwriting would leave another clip playing this audio
+        // and let undo delete a file it does not own.
+        renderedFile_ = rendersDir.getNonexistentChildFile(expandBouncePattern(clipName, trackName),
+                                                           ".wav", false);
     }
 
     // Match the original bounce lifecycle: stop before capture or FX bypass,
@@ -2278,23 +2284,23 @@ void BounceToNewTrackCommand::execute() {
     const auto sourceClipColour = clip->colour;
     const auto sourceTrackId = clip->trackId;
 
-    // Determine output file path — always the project's bounces directory.
+    // Determine output file path — always the project's renders directory.
     // A bounce file is referenced by a clip inside the project, so it must live
     // in the project media tree (so save/collect/move keeps it). It must NOT
     // honour Config::getRenderFolder(): that is the global Export-to-file
     // folder, and letting it hijack bounce output drops the file outside the
     // project (e.g. on the Desktop) where the project can't track it.
-    auto bouncesDir = ProjectManager::getInstance().getBouncesDirectory();
-    if (bouncesDir == juce::File())
-        bouncesDir = engine_->getEditFile().getParentDirectory().getChildFile("bounces");
+    auto rendersDir = ProjectManager::getInstance().getRendersDirectory();
+    if (rendersDir == juce::File())
+        rendersDir = engine_->getEditFile().getParentDirectory().getChildFile("renders");
     // Verify the destination is actually writable before handing the renderer a
     // dead destFile. On a read-only / unavailable project media tree the render
     // would otherwise fail with only a DBG line and no bounced clip, leaving the
     // user with nothing and no explanation. Bail with a visible error instead.
     // Safe to return here: the transport hasn't been touched yet.
-    if (bouncesDir.createDirectory().failed() || !bouncesDir.hasWriteAccess()) {
+    if (rendersDir.createDirectory().failed() || !rendersDir.hasWriteAccess()) {
         errorMessage_ =
-            "Bounce failed: can't write to the bounces folder:\n" + bouncesDir.getFullPathName();
+            "Bounce failed: can't write to the renders folder:\n" + rendersDir.getFullPathName();
         juce::Logger::writeToLog(errorMessage_);
         return;
     }
@@ -2303,7 +2309,12 @@ void BounceToNewTrackCommand::execute() {
         auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
         juce::String trackName = trackInfo ? trackInfo->name : "Track";
         juce::String clipName = clip->name.isNotEmpty() ? clip->name : "clip";
-        renderedFile_ = bouncesDir.getChildFile(expandBouncePattern(clipName, trackName) + ".wav");
+        // Renders and bounces share this folder and expand independently
+        // configurable patterns, so the two can name the same file. Claim a
+        // free name: overwriting would leave another clip playing this audio
+        // and let undo delete a file it does not own.
+        renderedFile_ = rendersDir.getNonexistentChildFile(expandBouncePattern(clipName, trackName),
+                                                           ".wav", false);
     }
 
     PlaybackResumeScope playbackScope(*engine_);

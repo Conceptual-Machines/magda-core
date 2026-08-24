@@ -190,6 +190,19 @@ class MagdaSamplerPlugin : public te::Plugin {
     //==============================================================================
     // Sample loading
     void loadSample(const juce::File& file);
+
+    /**
+     * @brief Point the sampler at the same audio in a new location.
+     *
+     * loadSample() treats its argument as a newly chosen sample: it re-derives
+     * the root note from file metadata and resets the sample and loop markers.
+     * That is wrong for a file that merely moved — collecting media or folding
+     * the project media tree would silently undo a custom root note or a
+     * trimmed/looped region — so this reloads the audio and puts those
+     * interpretation settings back.
+     */
+    void relocateSample(const juce::File& file);
+
     juce::File getSampleFile() const;
     const juce::AudioBuffer<float>* getWaveform() const;
     double getSampleLengthSeconds() const;

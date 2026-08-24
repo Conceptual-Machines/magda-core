@@ -583,6 +583,39 @@ void MagdaSamplerPlugin::loadSample(const juce::File& file) {
     loopEndValue = loopEndClamped;
 }
 
+void MagdaSamplerPlugin::relocateSample(const juce::File& file) {
+    // See the header: the audio is unchanged, only its path moved, so how the
+    // user set the sampler up to interpret it has to survive the reload.
+    const int savedRootNote = rootNoteValue.get();
+    const float savedStart = sampleStartValue.get();
+    const float savedEnd = sampleEndValue.get();
+    const float savedLoopStart = loopStartValue.get();
+    const float savedLoopEnd = loopEndValue.get();
+
+    loadSample(file);
+
+    // loadSample() only adopts the path once it has a reader for it. If it
+    // bailed, it also reset nothing, so there is nothing to put back.
+    if (getSampleFile() != file)
+        return;
+
+    setRootNote(savedRootNote);
+
+    // Same audio means the saved markers still fit, but clamp anyway rather
+    // than trust that the file on the other end is byte-identical.
+    const auto maxLen = static_cast<float>(getSampleLengthSeconds());
+    const auto restore = [maxLen](const te::AutomatableParameter::Ptr& param,
+                                  juce::CachedValue<float>& cached, float saved) {
+        const float clamped = clampToParameterRange(param, juce::jmin(saved, maxLen));
+        param->setParameterFromHost(clamped, juce::dontSendNotification);
+        cached = clamped;
+    };
+    restore(sampleStartParam, sampleStartValue, savedStart);
+    restore(sampleEndParam, sampleEndValue, savedEnd);
+    restore(loopStartParam, loopStartValue, savedLoopStart);
+    restore(loopEndParam, loopEndValue, savedLoopEnd);
+}
+
 juce::File MagdaSamplerPlugin::getSampleFile() const {
     return juce::File(samplePathValue.get());
 }
