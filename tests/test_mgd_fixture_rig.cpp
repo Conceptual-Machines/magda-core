@@ -219,6 +219,55 @@ TEST_CASE("Two project sources that share a name are refused", "[nulldiff][fixtu
     CHECK(refuseIndistinguishableSources({"/packs/a/Loop.wav", "/packs/a/Loop.wav"}).empty());
 }
 
+TEST_CASE("Two names the filesystem calls one file are counted, not compared",
+          "[nulldiff][fixture]") {
+    // The premise the load's collision check rests on, asserted against a real
+    // directory rather than described in a comment.
+    //
+    // "cafe" with an acute accent has two spellings in Unicode: one code point,
+    // or an "e" followed by a combining accent. macOS stores whichever it was
+    // given, so a project referencing one pack that used each produces two paths
+    // that differ as strings, fold differently, and name one file. Every string
+    // comparison misses that, including a comparison of the paths the writer
+    // returned, which is what this used to do.
+    //
+    // So the load counts what its own directory holds after each write instead.
+    // This is what says the count can tell them apart: whatever the filesystem
+    // does with the pair, the number of files is the number of distinct sounds.
+    auto directory = scratch().getChildFile("normalisation");
+    directory.deleteRecursively();
+    directory.createDirectory();
+
+    const auto composed = juce::String::fromUTF8("caf\xc3\xa9");
+    const auto decomposed = juce::String::fromUTF8("cafe\xcc\x81");
+    REQUIRE(composed != decomposed);
+    CHECK(composed.toLowerCase() != decomposed.toLowerCase());
+
+    MaterialSpec spec;
+    spec.kind = MaterialKind::Impulses;
+    spec.durationSeconds = 0.25;
+
+    const auto first = writeMaterial(directory, composed, spec);
+    const auto second = writeMaterial(directory, decomposed, spec);
+    REQUIRE(first.existsAsFile());
+    REQUIRE(second.existsAsFile());
+
+    // Whatever this machine did, the count says it: one file where the two
+    // spellings met, two where they did not. The load refuses on the first.
+    const auto held = directory.getNumberOfChildFiles(juce::File::findFiles);
+    REQUIRE((held == 1 || held == 2));
+
+    // Where they met, the two paths the writer handed back are still two
+    // different strings, and that is the whole finding. The check that compared
+    // those paths saw two files and let the pair through; only the count knew
+    // better. On a filesystem that keeps them apart there is nothing here to
+    // catch, which is why this asserts what happened rather than which.
+    if (held == 1)
+        CHECK(first.getFullPathName() != second.getFullPathName());
+
+    directory.deleteRecursively();
+}
+
 TEST_CASE("Each fixture's material is its own", "[nulldiff][fixture]") {
     const PoolUnwind unwind;
 

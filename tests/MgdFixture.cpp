@@ -113,11 +113,6 @@ std::string writeAndRepoint(const std::vector<Source*>& sources, const Declarati
                             const juce::File& directory, std::vector<juce::File>& written) {
     auto& pool = SourcePool::getInstance();
 
-    // What each written file was written for, so the check below can name the
-    // pair rather than the count. Keyed on the file the writer produced,
-    // because that is the thing two sources can end up sharing.
-    std::map<juce::String, juce::String> writtenFor;
-
     for (auto* source : sources) {
         const auto name = fileNameOf(source->filePath);
         const auto* declaration = declared.at(name);
@@ -128,21 +123,25 @@ std::string writeAndRepoint(const std::vector<Source*>& sources, const Declarati
         if (!facts.readable)
             return "the material written for " + quoted(name) + " does not read back";
 
-        // The same question the name check asked, asked again of the answer.
-        // That one predicts what the filesystem will do with two names; this one
-        // reads back what it did, so a collapse through anything the prediction
-        // does not model -- a separator, a symlink, a normalisation form -- is
-        // still refused rather than rendered.
+        // Whether the write landed on a file that was already there, asked of
+        // the directory rather than of the path.
         //
-        // Keyed on the original path so that two entries for one file, which a
-        // v1 project produces and the source install is right to collapse, are
-        // not mistaken for two files sharing one.
-        const auto original = source->filePath;
-        if (const auto [claimed, first] = writtenFor.emplace(file.getFullPathName(), original);
-            !first && claimed->second != original)
-            return "the stand-ins for " + quoted(claimed->second) + " and " + quoted(original) +
-                   " are the same file on this filesystem, so the two would collapse into one "
-                   "source and their clips would play the same sound";
+        // The name check ahead of this predicts what the filesystem will do with
+        // two names, and a prediction made out of strings can only model what
+        // strings can express. Case it can, by folding. Unicode normalisation it
+        // cannot: macOS stores some names decomposed and some composed, so two
+        // Splice packs with an accented character produce two paths that differ
+        // as strings, fold differently, and name one file. Comparing the written
+        // paths would miss exactly that, because they differ as strings too.
+        //
+        // Counting does not care why two names met. The directory belongs to
+        // this fixture and was emptied before the first write, so after n writes
+        // it holds n files or two of them are one file.
+        const auto grewTo = directory.getNumberOfChildFiles(juce::File::findFiles);
+        if (grewTo != static_cast<int>(written.size()) + 1)
+            return "the stand-in written for " + quoted(source->filePath) + " as " + quoted(name) +
+                   " landed on a file already written for another source, so the two would "
+                   "collapse into one and their clips would play the same sound";
 
         source->filePath = file.getFullPathName();
         source->sampleRate = facts.sampleRate;
@@ -203,6 +202,13 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
     // at once.
     const auto materialDirectory = scratchDirectory.getChildFile(
         juce::String(fixture.declaration.name).replaceCharacters("/\\:", "___"));
+
+    // Emptied, not just created. writeMaterial overwrites for the reason #2040
+    // gives -- a run that reused a file from a previous run with different
+    // contents is the one failure nobody would think to look for -- and the
+    // collision check below counts what the directory holds, which only means
+    // anything if everything in it was written by this load.
+    materialDirectory.deleteRecursively();
     materialDirectory.createDirectory();
 
     const auto file = fixtureCorpusDir().getChildFile(fixture.file);

@@ -172,8 +172,14 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
  * is conservative on a case-sensitive filesystem on purpose: a corpus that
  * refuses a fixture on Linux and accepts it on macOS is worse than one that
  * refuses it everywhere, because the failure would arrive on somebody else's
- * machine. The load asks the same question again of the files it actually
- * wrote, so a collapse through anything this does not model is still refused.
+ * machine.
+ *
+ * Folding is all a comparison of strings can do, and it is not everything the
+ * filesystem does: macOS stores some names decomposed and some composed, so two
+ * paths can differ as strings, fold differently, and still name one file. The
+ * load catches that by counting what its own directory holds after each write
+ * rather than by comparing another pair of strings, which would miss it for the
+ * same reason this does.
  *
  * Refused rather than papered over with a unique suffix, and the difference
  * matters. Making the writes distinct would stop the collapse and leave the
