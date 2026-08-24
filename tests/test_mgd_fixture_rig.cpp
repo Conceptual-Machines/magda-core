@@ -129,24 +129,33 @@ TEST_CASE("Every source reads back as what the manifest asked for", "[nulldiff][
         const auto loaded = loadFixture(fixture, scratch());
         INFO(loaded.failure);
         REQUIRE(loaded.ok);
+        // One stand-in per source the manifest names, whatever the project did.
+        // A project may name one file twice and those share a stand-in, so this
+        // counts declarations rather than staged sources.
         REQUIRE(loaded.written.size() == fixture.sources.size());
 
-        for (std::size_t i = 0; i < loaded.written.size(); ++i) {
-            const auto& file = loaded.written[i];
-            const auto& declared = fixture.sources[i].material;
-            INFO(fixture.sources[i].fileName << ": " << fixture.sources[i].covers);
+        for (const auto& declared : fixture.sources) {
+            INFO(declared.fileName << ": " << declared.covers);
 
+            // Looked up by name rather than by position. The order a project
+            // stages its sources in is the order it was saved in, and the order
+            // a manifest lists them is whatever reads best; pairing the two by
+            // index is a coincidence that holds until a fixture is reordered.
+            const auto found = loaded.written.find(juce::String(declared.fileName));
+            REQUIRE(found != loaded.written.end());
+
+            const auto& file = found->second;
             REQUIRE(file.existsAsFile());
 
             const std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
             REQUIRE(reader != nullptr);
-            CHECK(reader->sampleRate == declared.sampleRate);
+            CHECK(reader->sampleRate == declared.material.sampleRate);
 
             // Whole samples rather than seconds. A duration that does not land
             // on a sample boundary is rounded by the writer, and asserting the
             // seconds back would be asserting the rounding.
-            const auto expected =
-                static_cast<juce::int64>(declared.durationSeconds * declared.sampleRate);
+            const auto expected = static_cast<juce::int64>(declared.material.durationSeconds *
+                                                           declared.material.sampleRate);
             CHECK(reader->lengthInSamples == expected);
         }
 
@@ -288,8 +297,8 @@ TEST_CASE("Each fixture's material is its own", "[nulldiff][fixture]") {
         INFO(loaded.failure);
         REQUIRE(loaded.ok);
 
-        for (const auto& file : loaded.written) {
-            INFO(file.getFullPathName());
+        for (const auto& [name, file] : loaded.written) {
+            INFO(name << " -> " << file.getFullPathName());
             CHECK(everyPath.insert(file.getFullPathName()).second);
             all.push_back(file);
         }

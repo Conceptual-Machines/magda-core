@@ -110,12 +110,29 @@ std::string matchSources(const MgdFixture& fixture, const std::vector<Source*>& 
  * other than what it declared.
  */
 std::string writeAndRepoint(const std::vector<Source*>& sources, const Declarations& declared,
-                            const juce::File& directory, std::vector<juce::File>& written) {
+                            const juce::File& directory,
+                            std::map<juce::String, juce::File>& written) {
     auto& pool = SourcePool::getInstance();
 
+    // The stand-in already written for a path, so a project that names one file
+    // twice gets one file back. That is not a corner case: a v2 project can
+    // carry a pooled table entry beside a v1 clip that migrated to the same
+    // path, which is the pair installStagedSources exists to collapse. Two
+    // names for one sound is one sound.
+    std::map<juce::String, juce::File> byOriginalPath;
+
     for (auto* source : sources) {
-        const auto name = fileNameOf(source->filePath);
+        const auto original = source->filePath;
+        const auto name = fileNameOf(original);
         const auto* declaration = declared.at(name);
+
+        if (const auto seen = byOriginalPath.find(original); seen != byOriginalPath.end()) {
+            const auto facts = factsOf(seen->second);
+            source->filePath = seen->second.getFullPathName();
+            source->sampleRate = facts.sampleRate;
+            source->durationSeconds = facts.durationSeconds;
+            continue;
+        }
 
         const auto file = writeMaterial(directory, name.upToLastOccurrenceOf(".", false, false),
                                         declaration->material);
@@ -130,16 +147,20 @@ std::string writeAndRepoint(const std::vector<Source*>& sources, const Declarati
         // two names, and a prediction made out of strings can only model what
         // strings can express. Case it can, by folding. Unicode normalisation it
         // cannot: macOS stores some names decomposed and some composed, so two
-        // Splice packs with an accented character produce two paths that differ
-        // as strings, fold differently, and name one file. Comparing the written
+        // packs with an accented character produce two paths that differ as
+        // strings, fold differently, and name one file. Comparing the written
         // paths would miss exactly that, because they differ as strings too.
         //
         // Counting does not care why two names met. The directory belongs to
-        // this fixture and was emptied before the first write, so after n writes
-        // it holds n files or two of them are one file.
-        const auto grewTo = directory.getNumberOfChildFiles(juce::File::findFiles);
-        if (grewTo != static_cast<int>(written.size()) + 1)
-            return "the stand-in written for " + quoted(source->filePath) + " as " + quoted(name) +
+        // this fixture and was emptied before the first write, so it holds one
+        // file per distinct source or two of them are one file.
+        //
+        // Counted against the distinct paths rather than against the sources,
+        // because a repeated path is meant to reuse its file and would
+        // otherwise be refused for doing what it was asked to do.
+        const auto distinct = static_cast<int>(byOriginalPath.size()) + 1;
+        if (directory.getNumberOfChildFiles(juce::File::findFiles) != distinct)
+            return "the stand-in written for " + quoted(original) + " as " + quoted(name) +
                    " landed on a file already written for another source, so the two would "
                    "collapse into one and their clips would play the same sound";
 
@@ -151,7 +172,9 @@ std::string writeAndRepoint(const std::vector<Source*>& sources, const Declarati
         // the install path acquires by path and would otherwise open the file a
         // second time to learn what the reader just said.
         pool.seedFactsForTesting(source->filePath, facts.durationSeconds, facts.sampleRate);
-        written.push_back(file);
+
+        byOriginalPath.emplace(original, file);
+        written.emplace(name, file);
     }
 
     return {};
@@ -296,6 +319,27 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
         fact.sampleRate = pooled.sampleRate;
         fact.durationSeconds = pooled.durationSeconds;
         result.value.sources.push_back(fact);
+    }
+
+    // One pooled source per source the manifest names, checked rather than
+    // assumed, because both ways of being wrong are silent.
+    //
+    // Too few means two sources collapsed somewhere past the checks above and
+    // two clips are now playing one sound. Too many means the install did not
+    // collapse a pair it should have, and a repeated path is holding two ids
+    // where the project had one.
+    //
+    // On every fixture, forever, rather than in a test that names one: the
+    // reuse branch above has no fixture exercising it today, since a repeated
+    // path needs a v2 table entry beside a v1 clip on the same file and none of
+    // the projects here has that shape. This is what will catch it the day one
+    // arrives.
+    if (result.value.sources.size() != fixture.sources.size()) {
+        result.failure = "the project ended up with " +
+                         std::to_string(result.value.sources.size()) + " sources where the " +
+                         "manifest names " + std::to_string(fixture.sources.size());
+        result.value = {};
+        return result;
     }
 
     result.ok = true;

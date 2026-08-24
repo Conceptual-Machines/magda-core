@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -134,9 +135,15 @@ struct FixtureLoad {
     /// The case, ready for either leg. Meaningless unless @c ok.
     Case value;
 
-    /// What the rig wrote, in the order the manifest names them. Carried so a
-    /// test can check the files back without reproducing the naming.
-    std::vector<juce::File> written;
+    /// The stand-in written for each source the manifest names, keyed by that
+    /// name. Carried so a caller can check the files back without reproducing
+    /// the naming, and keyed rather than ordered because the order a project
+    /// stages its sources in is not the order a manifest lists them.
+    ///
+    /// One entry per manifest source, never per staged source. A project may
+    /// name one file twice -- a v2 table entry beside a v1 clip that migrated
+    /// to the same path -- and those are one sound sharing one stand-in.
+    std::map<juce::String, juce::File> written;
 };
 
 /**
