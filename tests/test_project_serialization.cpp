@@ -670,6 +670,93 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
 
         // The .mgd on disk still names the folders that just went away.
         REQUIRE(projectManager.isDirty());
+
+        // Saving is what makes the fold durable, and it leaves the project
+        // clean again. Left dirty, the next test's newProject() would block on
+        // the unsaved-changes dialog, since ProjectManager is a singleton and
+        // Catch2 sections share it.
+        REQUIRE(projectManager.saveProject());
+        REQUIRE_FALSE(projectManager.isDirty());
+
+        StagedProjectData staged;
+        REQUIRE(ProjectSerializer::loadAndStage(actualFile, staged));
+        juce::StringArray savedPaths;
+        for (const auto& clip : staged.clips)
+            if (clip.isAudio())
+                savedPaths.add(magda::audioEventRef(clip).sourceFilePath());
+        REQUIRE(savedPaths.contains(foldedBounce.getFullPathName()));
+        REQUIRE(savedPaths.contains(foldedEdit.getFullPathName()));
+        REQUIRE(savedPaths.contains(foldedStem.getFullPathName()));
+    }
+
+    SECTION("Plugin state is captured after the media migration") {
+        // onBeforeSave snapshots sampler and drum-pad sample paths. Capturing
+        // it before the migration would freeze the pre-move paths into the
+        // .mgd, leaving those samples missing when the project is reopened.
+        auto& projectManager = ProjectManager::getInstance();
+        REQUIRE(projectManager.newProject());
+
+        auto sourceFile = projectManager.getImportedDirectory().getChildFile("sample.wav");
+        REQUIRE(sourceFile.getParentDirectory().createDirectory());
+        REQUIRE(sourceFile.replaceWithText("placeholder audio"));
+
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
+        auto expectedFile = actualFile.getParentDirectory()
+                                .getChildFile(actualFile.getFileNameWithoutExtension() + "_Media")
+                                .getChildFile("imported")
+                                .getChildFile("sample.wav");
+
+        bool sawMigratedMedia = false;
+        projectManager.onBeforeSave = [&sawMigratedMedia, expectedFile]() {
+            sawMigratedMedia = expectedFile.existsAsFile();
+        };
+        const bool saved = projectManager.saveProjectAs(tempFile);
+        projectManager.onBeforeSave = nullptr;
+
+        REQUIRE(saved);
+        REQUIRE(sawMigratedMedia);
+    }
+
+    SECTION("Folding leaves a colliding legacy file where it is") {
+        auto& projectManager = ProjectManager::getInstance();
+        REQUIRE(projectManager.newProject());
+
+        auto trackId = TrackManager::getInstance().createTrack("Audio Track", TrackType::Media);
+
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
+        auto mediaDir = actualFile.getParentDirectory().getChildFile(
+            actualFile.getFileNameWithoutExtension() + "_Media");
+
+        auto renderFile = mediaDir.getChildFile("renders").getChildFile("kick.wav");
+        auto bounceFile = mediaDir.getChildFile("bounces").getChildFile("kick.wav");
+        REQUIRE(renderFile.getParentDirectory().createDirectory());
+        REQUIRE(bounceFile.getParentDirectory().createDirectory());
+        REQUIRE(renderFile.replaceWithText("the render"));
+        REQUIRE(bounceFile.replaceWithText("the bounce"));
+
+        REQUIRE(ClipManager::getInstance().createAudioClipBeats(
+                    trackId, 0.0, 4.0, bounceFile.getFullPathName(), ClipView::Arrangement,
+                    120.0) != INVALID_CLIP_ID);
+
+        REQUIRE(projectManager.saveProjectAs(tempFile));
+        REQUIRE(projectManager.loadProject(actualFile));
+
+        // Nothing overwritten, nothing renamed, nothing substituted: the clip
+        // keeps pointing at the path its .mgd already names, so a later load
+        // that finds the folder gone cannot mistake the render for the bounce.
+        REQUIRE(bounceFile.existsAsFile());
+        REQUIRE(bounceFile.loadFileAsString() == "the bounce");
+        REQUIRE(renderFile.loadFileAsString() == "the render");
+        REQUIRE_FALSE(mediaDir.getChildFile("renders").getChildFile("kick_2.wav").exists());
+
+        auto clips = ClipManager::getInstance().getClips();
+        REQUIRE(clips.size() == 1);
+        REQUIRE(magda::audioEventRef(clips[0]).sourceFilePath() == bounceFile.getFullPathName());
+
+        // Nothing moved, so there is nothing the .mgd is out of date about.
+        REQUIRE_FALSE(projectManager.isDirty());
     }
 
     SECTION("Project info serialization roundtrip") {

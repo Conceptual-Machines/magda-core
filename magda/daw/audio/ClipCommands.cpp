@@ -1248,7 +1248,8 @@ void RenderClipCommand::execute() {
     juce::String trackName = trackInfo ? trackInfo->name : "Track";
     juce::String clipName =
         clip->name.isNotEmpty() ? clip->name : sourceFile.getFileNameWithoutExtension();
-    renderedFile_ = rendersDir.getChildFile(expandRenderPattern(clipName, trackName) + ".wav");
+    renderedFile_ =
+        rendersDir.getNonexistentChildFile(expandRenderPattern(clipName, trackName), ".wav", false);
 
     const double projectBPM = currentProjectBpm();
     const double renderStart = clip->getTimelineStart(projectBPM);
@@ -1403,8 +1404,8 @@ void RenderTimeSelectionCommand::execute() {
         juce::String trackName = trackInfo ? trackInfo->name : "Track";
         auto* firstClipInfo = clipManager.getClip(overlappingIds[0]);
         juce::String clipName = firstClipInfo ? firstClipInfo->name : trackName;
-        trackState.renderedFile =
-            rendersDir.getChildFile(expandRenderPattern(clipName, trackName) + ".wav");
+        trackState.renderedFile = rendersDir.getNonexistentChildFile(
+            expandRenderPattern(clipName, trackName), ".wav", false);
 
         const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
         OfflineRenderRequest request;
@@ -2093,7 +2094,12 @@ void BounceInPlaceCommand::execute() {
         auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
         juce::String trackName = trackInfo ? trackInfo->name : "Track";
         juce::String clipName = clip->name.isNotEmpty() ? clip->name : "clip";
-        renderedFile_ = rendersDir.getChildFile(expandBouncePattern(clipName, trackName) + ".wav");
+        // Renders and bounces share this folder and expand independently
+        // configurable patterns, so the two can name the same file. Claim a
+        // free name: overwriting would leave another clip playing this audio
+        // and let undo delete a file it does not own.
+        renderedFile_ = rendersDir.getNonexistentChildFile(expandBouncePattern(clipName, trackName),
+                                                           ".wav", false);
     }
 
     // Match the original bounce lifecycle: stop before capture or FX bypass,
@@ -2303,7 +2309,12 @@ void BounceToNewTrackCommand::execute() {
         auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
         juce::String trackName = trackInfo ? trackInfo->name : "Track";
         juce::String clipName = clip->name.isNotEmpty() ? clip->name : "clip";
-        renderedFile_ = rendersDir.getChildFile(expandBouncePattern(clipName, trackName) + ".wav");
+        // Renders and bounces share this folder and expand independently
+        // configurable patterns, so the two can name the same file. Claim a
+        // free name: overwriting would leave another clip playing this audio
+        // and let undo delete a file it does not own.
+        renderedFile_ = rendersDir.getNonexistentChildFile(expandBouncePattern(clipName, trackName),
+                                                           ".wav", false);
     }
 
     PlaybackResumeScope playbackScope(*engine_);

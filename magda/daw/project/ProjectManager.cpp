@@ -82,13 +82,24 @@ void resetTransportForProjectBoundary() {
     audioEngine->locate(0.0);
 }
 
+// What to do with a file whose destination name is already taken. Never
+// overwrite either way: clobbering would destroy a file some other clip still
+// points at.
+enum class OnCollision {
+    // Land beside it under a unique name. For a move that writes its new paths
+    // out in the same operation, so nothing may be left behind.
+    Uniquify,
+    // Leave the file where it is. For the legacy fold, whose new paths only
+    // reach the .mgd when the user next saves — a file that stays put keeps the
+    // path already in the .mgd valid, and keeps every file that did move
+    // resolvable by name alone.
+    Skip,
+};
+
 // Move every file under srcDir into dstDir, nested structure intact, recording
-// where each one landed so the references to it can follow. A name already
-// taken at the destination is uniquified rather than overwritten: folding two
-// media roots into one can collide, and clobbering would destroy the file some
-// other clip still points at.
+// where each one landed so the references to it can follow.
 void moveMediaTree(const juce::File& srcDir, const juce::File& dstDir,
-                   std::map<juce::String, juce::String>& moves) {
+                   std::map<juce::String, juce::String>& moves, OnCollision onCollision) {
     if (!srcDir.isDirectory() || srcDir == dstDir)
         return;
 
@@ -99,13 +110,17 @@ void moveMediaTree(const juce::File& srcDir, const juce::File& dstDir,
     for (const auto& srcFile : srcDir.findChildFiles(juce::File::findFiles, true)) {
         auto dstFile = dstDir.getChildFile(srcFile.getRelativePathFrom(srcDir));
         dstFile.getParentDirectory().createDirectory();
-        if (dstFile.exists())
+        if (dstFile.exists()) {
+            if (onCollision == OnCollision::Skip)
+                continue;
             dstFile = dstFile.getNonexistentSibling();
+        }
         if (srcFile.moveFileTo(dstFile))
             moves[srcFile.getFullPathName()] = dstFile.getFullPathName();
     }
 
-    // Only the empty skeleton is left once every file has moved out.
+    // Only the empty skeleton is left once every file has moved out. A skipped
+    // collision keeps the directory alive, and the next load tries it again.
     if (srcDir.findChildFiles(juce::File::findFiles, true).isEmpty())
         srcDir.deleteRecursively();
 }
@@ -277,10 +292,6 @@ bool ProjectManager::saveProject() {
 }
 
 bool ProjectManager::saveProjectAs(const juce::File& file) {
-    // Capture live plugin state before serializing
-    if (onBeforeSave)
-        onBeforeSave();
-
     // Ensure the .mgd file lives inside a wrapper folder named after the project.
     // If the user picked /path/to/MyProject.mgd, wrap it as /path/to/MyProject/MyProject.mgd.
     // If it's already inside a matching folder, use it as-is.
@@ -308,6 +319,14 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
     if (oldMediaDir != juce::File() && oldMediaDir != targetMediaDir && oldMediaDir.isDirectory()) {
         migrateMediaFiles(oldMediaDir, targetMediaDir);
     }
+
+    // Capture live plugin state before serializing. Runs after the migration
+    // above, not before it: the migration re-points samplers and drum pads at
+    // the files it just moved, and a state captured before that would freeze
+    // the pre-move paths into the .mgd, leaving their samples missing when the
+    // saved project is reopened.
+    if (onBeforeSave)
+        onBeforeSave();
 
     // Prepare updated project info without mutating currentProject_ yet
     ProjectInfo newProject = currentProject_;
@@ -849,14 +868,20 @@ void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::Fil
     if (!oldDir.isDirectory() || oldDir == newDir)
         return;
 
+    // Uniquify rather than skip: the .mgd is written from the relinked model at
+    // the end of this same save, so a file that lands under a new name is
+    // recorded correctly, and nothing may be stranded in the directory being
+    // left behind.
     std::map<juce::String, juce::String> moves;
     for (auto* subdir : kMediaSubdirs)
-        moveMediaTree(oldDir.getChildFile(subdir), newDir.getChildFile(subdir), moves);
+        moveMediaTree(oldDir.getChildFile(subdir), newDir.getChildFile(subdir), moves,
+                      OnCollision::Uniquify);
 
     // A Save-As from a project opened before #2170 can still be carrying the
     // retired roots, so fold them on the way across rather than stranding them.
     for (const auto& legacy : kLegacyMediaSubdirs)
-        moveMediaTree(oldDir.getChildFile(legacy.from), newDir.getChildFile(legacy.to), moves);
+        moveMediaTree(oldDir.getChildFile(legacy.from), newDir.getChildFile(legacy.to), moves,
+                      OnCollision::Uniquify);
 
     relinkMediaPaths([&moves](const juce::String& path) -> juce::String {
         const auto it = moves.find(path);
@@ -877,8 +902,8 @@ void ProjectManager::foldLegacyMediaDirectories(const juce::File& mediaRoot) {
 
     std::map<juce::String, juce::String> moves;
     for (const auto& legacy : kLegacyMediaSubdirs)
-        moveMediaTree(mediaRoot.getChildFile(legacy.from), mediaRoot.getChildFile(legacy.to),
-                      moves);
+        moveMediaTree(mediaRoot.getChildFile(legacy.from), mediaRoot.getChildFile(legacy.to), moves,
+                      OnCollision::Skip);
 
     const auto rootPath = mediaRoot.getFullPathName();
     const auto resolve = [&moves, &rootPath, &mediaRoot](const juce::String& path) -> juce::String {
@@ -887,15 +912,19 @@ void ProjectManager::foldLegacyMediaDirectories(const juce::File& mediaRoot) {
             return it->second;
 
         // A project folded on an earlier load but never saved still names the
-        // retired folders in its .mgd. Those files moved back then, so follow
-        // them to where they live now — unless the fold had to rename, in which
-        // case the file is genuinely ambiguous and the clip stays unresolved
-        // until the user saves.
+        // retired folders in its .mgd, so follow the name into the replacement
+        // root. That is unambiguous only because the fold skips collisions: a
+        // file that would have had to share a name never moved, so a name that
+        // has left the retired root and is present in the replacement can only
+        // be the same file. Uniquifying here instead would let a stale path
+        // land on an unrelated file that merely shares its name.
         for (const auto& legacy : kLegacyMediaSubdirs) {
             const auto prefix = rootPath + juce::File::getSeparatorString() + legacy.from +
                                 juce::File::getSeparatorString();
             if (!path.startsWith(prefix))
                 continue;
+            if (juce::File(path).existsAsFile())
+                return {};  // Skipped by the fold — it still lives where it says.
 
             const auto moved =
                 mediaRoot.getChildFile(legacy.to).getChildFile(path.substring(prefix.length()));
