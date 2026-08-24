@@ -508,6 +508,7 @@ target_sources(magda_juce_tests PRIVATE
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp
     test_drum_grid_serialization_juce.cpp
+    test_sampler_relocate_juce.cpp
     test_device_services_juce.cpp
     test_device_param_schema_juce.cpp
     # pluginState v1 -> v2 over the legacy corpus (#2079). Here rather than in

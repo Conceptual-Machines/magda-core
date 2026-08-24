@@ -110,8 +110,10 @@ std::vector<SamplerMediaReference> TracktionEngineWrapper::getSamplerMediaRefere
         tracktion::Plugin::Ptr keepAlive(sampler);
         references.push_back(
             {sampler->getSampleFile(), [keepAlive](const juce::File& replacement) {
+                 // relocateSample, not loadSample: the file moved, the user's
+                 // root note and trim/loop markers did not.
                  if (auto* live = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(keepAlive.get()))
-                     live->loadSample(replacement);
+                     live->relocateSample(replacement);
              }});
     };
 

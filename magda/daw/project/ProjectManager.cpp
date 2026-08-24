@@ -41,6 +41,9 @@ static const LegacyMediaSubdir kLegacyMediaSubdirs[] = {
     {"external-edits", kImportedDir},
     {"stems", kRendersDir},
 };
+// Written into the media root when a fold actually moves something, so a later
+// load can tell where a file went instead of guessing from its name (#2170).
+static const char* const kMediaMovesFile = ".magda-media-moves.json";
 static const char* const kTempRootDir = "MAGDA";
 static const char* const kTempPrefix = "UnsavedProject_";
 static constexpr int kStaleTempDays = 7;
@@ -80,6 +83,37 @@ void resetTransportForProjectBoundary() {
     audioEngine->deactivateAllSessionClips();
     audioEngine->setLooping(false);
     audioEngine->locate(0.0);
+}
+
+// Paths are recorded relative to the media root, with '/' separators, so the
+// record survives the project folder being moved, renamed, or opened on another
+// platform. Returns an empty string for a path outside the tree.
+juce::String mediaRelativePath(const juce::File& mediaRoot, const juce::File& file) {
+    if (!file.isAChildOf(mediaRoot))
+        return {};
+    return file.getRelativePathFrom(mediaRoot).replaceCharacter('\\', '/');
+}
+
+std::map<juce::String, juce::String> readMediaMoves(const juce::File& mediaRoot) {
+    std::map<juce::String, juce::String> record;
+    const auto file = mediaRoot.getChildFile(kMediaMovesFile);
+    if (!file.existsAsFile())
+        return record;
+
+    const auto parsed = juce::JSON::parse(file.loadFileAsString());
+    if (auto* object = parsed.getDynamicObject())
+        for (const auto& entry : object->getProperties())
+            record[entry.name.toString()] = entry.value.toString();
+    return record;
+}
+
+void writeMediaMoves(const juce::File& mediaRoot,
+                     const std::map<juce::String, juce::String>& record) {
+    auto object = std::make_unique<juce::DynamicObject>();
+    for (const auto& [from, to] : record)
+        object->setProperty(from, to);
+    mediaRoot.getChildFile(kMediaMovesFile)
+        .replaceWithText(juce::JSON::toString(juce::var(object.release())));
 }
 
 // What to do with a file whose destination name is already taken. Never
@@ -900,38 +934,46 @@ void ProjectManager::foldLegacyMediaDirectories(const juce::File& mediaRoot) {
     if (mediaRoot == juce::File() || !mediaRoot.isDirectory())
         return;
 
+    auto record = readMediaMoves(mediaRoot);
+
     std::map<juce::String, juce::String> moves;
     for (const auto& legacy : kLegacyMediaSubdirs)
         moveMediaTree(mediaRoot.getChildFile(legacy.from), mediaRoot.getChildFile(legacy.to), moves,
                       OnCollision::Skip);
 
-    const auto rootPath = mediaRoot.getFullPathName();
-    const auto resolve = [&moves, &rootPath, &mediaRoot](const juce::String& path) -> juce::String {
+    // Record what moved before relinking. The new paths only reach the .mgd
+    // when the user next saves, so without this the next load would have
+    // nothing but a filename to go on.
+    if (!moves.empty()) {
+        for (const auto& [from, to] : moves) {
+            const auto fromRel = mediaRelativePath(mediaRoot, juce::File(from));
+            const auto toRel = mediaRelativePath(mediaRoot, juce::File(to));
+            if (fromRel.isNotEmpty() && toRel.isNotEmpty())
+                record[fromRel] = toRel;
+        }
+        writeMediaMoves(mediaRoot, record);
+    }
+
+    const auto resolve = [&moves, &record, &mediaRoot](const juce::String& path) -> juce::String {
         const auto it = moves.find(path);
         if (it != moves.end())
             return it->second;
 
         // A project folded on an earlier load but never saved still names the
-        // retired folders in its .mgd, so follow the name into the replacement
-        // root. That is unambiguous only because the fold skips collisions: a
-        // file that would have had to share a name never moved, so a name that
-        // has left the retired root and is present in the replacement can only
-        // be the same file. Uniquifying here instead would let a stale path
-        // land on an unrelated file that merely shares its name.
-        for (const auto& legacy : kLegacyMediaSubdirs) {
-            const auto prefix = rootPath + juce::File::getSeparatorString() + legacy.from +
-                                juce::File::getSeparatorString();
-            if (!path.startsWith(prefix))
-                continue;
-            if (juce::File(path).existsAsFile())
-                return {};  // Skipped by the fold — it still lives where it says.
+        // old location in its .mgd. Only the record of what a fold actually
+        // moved can say where the file went: a destination that merely shares
+        // the name may be an unrelated file, and the .mgd may name something
+        // that was already missing before any fold ran.
+        const auto relative = mediaRelativePath(mediaRoot, juce::File(path));
+        if (relative.isEmpty())
+            return {};
 
-            const auto moved =
-                mediaRoot.getChildFile(legacy.to).getChildFile(path.substring(prefix.length()));
-            if (moved.existsAsFile())
-                return moved.getFullPathName();
-        }
-        return {};
+        const auto recorded = record.find(relative);
+        if (recorded == record.end())
+            return {};
+
+        const auto moved = mediaRoot.getChildFile(recorded->second);
+        return moved.existsAsFile() ? moved.getFullPathName() : juce::String();
     };
 
     // The paths in the .mgd on disk still name folders that just went away, so
