@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaDimensionCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -46,8 +47,8 @@ void CompiledDimensionView::setCompiledPlugin(
 }
 
 void CompiledDimensionView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaDimensionCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaDimensionCompiledPlugin>(plugin));
 }
 
 void CompiledDimensionView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -67,8 +68,8 @@ void CompiledDimensionView::resampleFromDevice() {
 void CompiledDimensionView::timerCallback() {
     if (compiledPlugin_ != nullptr) {
         auto read = [this](int slot, float fallback) {
-            if (auto* p = compiledPlugin_->getSlotParameter(slot))
-                return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
+            if (auto p = compiledPlugin_->getSlotParameter(slot))
+                return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
             return fallback;
         };
         engine_ = juce::jlimit(0, Plugin::kEngineCount - 1,

@@ -1,15 +1,9 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
-#include <array>
 #include <atomic>
-#include <memory>
 #include <vector>
 
-#include "../FaustParamPool.hpp"
-#include "core/ParameterInfo.hpp"
-#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "plugins/compiled/MagdaCompiledEffect.hpp"
 
 class dsp;
 
@@ -32,50 +26,12 @@ namespace magda::daw::audio::compiled {
  * user's settings. Engine-specific zones (SC HPF on Clean, FBFF/Style on
  * Glue) are written only when present on each engine.
  */
-class MagdaCompressorCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
+class MagdaCompressorCompiledPlugin : public MagdaCompiledEffect {
   public:
     static const char* xmlTypeName;
 
-    explicit MagdaCompressorCompiledPlugin(const te::PluginCreationInfo& info);
-    ~MagdaCompressorCompiledPlugin() override;
+    MagdaCompressorCompiledPlugin();
 
-    juce::String getName() const override;
-    juce::String getPluginType() override;
-    juce::String getShortName(int) override;
-    juce::String getSelectableDescription() override;
-
-    void initialise(const te::PluginInitialisationInfo& info) override;
-    void deinitialise() override;
-    void reset() override;
-    void applyToBuffer(const te::PluginRenderContext& fc) override;
-
-    bool takesMidiInput() override {
-        return false;
-    }
-    bool takesAudioInput() override {
-        return true;
-    }
-    bool isSynth() override {
-        return false;
-    }
-    bool canSidechain() override {
-        return true;
-    }
-    int getNumOutputChannelsGivenInputs(int) override {
-        return 2;
-    }
-    void getChannelNames(juce::StringArray* ins, juce::StringArray* outs) override;
-    bool producesAudioWhenNoAudioInput() override {
-        return false;
-    }
-    double getTailLength() const override {
-        return 0.0;
-    }
-
-    // Slot ordering — engine first (top-level mode switch), then the
-    // compressor surface, then engine-specific tail. DSP `[idx:N]` values
-    // mirror these (with idx 0 reserved for Engine, which lives only in the
-    // wrapper).
     static constexpr int kEngineSlot = 0;
     static constexpr int kThresholdSlot = 1;
     static constexpr int kRatioSlot = 2;
@@ -93,15 +49,10 @@ class MagdaCompressorCompiledPlugin : public te::Plugin, public ICompiledFaustPl
     static constexpr int kAutogainSlot = 14;
     static constexpr int kHostSlotCount = 15;
     static constexpr int kUseSidechainHiddenSlot = 63;
-
     enum class CompressorEngine { Clean = 0, Glue = 1 };
     static constexpr int kEngineCount = 2;
 
-    te::AutomatableParameter* getSlotParameter(int slotIndex) const;
-
-    float displayValueToNativeValue(int slotIndex, float displayValue) const;
-    float nativeValueToDisplayValue(int slotIndex, float nativeValue) const;
-
+    // Audio-thread metering taps for the transfer-curve view.
     float getInputPeakDb() const {
         return inputPeakDb_.load(std::memory_order_relaxed);
     }
@@ -118,55 +69,41 @@ class MagdaCompressorCompiledPlugin : public te::Plugin, public ICompiledFaustPl
         return usingExternalSidechain_.load(std::memory_order_relaxed);
     }
 
-    int activeEngineIndex() const;
+    juce::String devicePluginId() const override {
+        return xmlTypeName;
+    }
+    juce::String deviceName() const override {
+        return "Compressor";
+    }
+    juce::String deviceShortName() const override {
+        return "Comp";
+    }
 
-    using HostSlotInfo = CompiledHostSlotInfo;
-    const HostSlotInfo& getSlotInfo(int slotIndex) const;
-
-    // ICompiledFaustPlugin
-    int hostSlotCount() const override {
-        return kHostSlotCount;
+  protected:
+    ::dsp* createEngineDsp(int engineIndex) const override;
+    std::vector<HostSlotInfo> slotInfos() const override;
+    const char* slotIdPrefix() const override {
+        return "magda_compressor_";
     }
-    const CompiledHostSlotInfo& hostSlotInfo(int slotIndex) const override {
-        return getSlotInfo(slotIndex);
+    int engineCount() const override {
+        return kEngineCount;
     }
-    DeviceParameterHandle hostSlotParameter(int slotIndex) const override {
-        return tracktion_adapter::parameterHandle(getSlotParameter(slotIndex));
+    int engineSlot() const override {
+        return kEngineSlot;
     }
-    float displayToNormalized(int slotIndex, float displayValue) const override {
-        return displayValueToNativeValue(slotIndex, displayValue);
+    bool wantsSidechain() const override {
+        return true;
     }
-    float normalizedToDisplay(int slotIndex, float normalizedValue) const override {
-        return nativeValueToDisplayValue(slotIndex, normalizedValue);
+    int outputChannelCount() const override {
+        return 2;
     }
+    int inputChannelCount() const override {
+        return 3;  // Left, Right, and the key.
+    }
+    void beforeCompute(DeviceProcessContext& context, int engineIndex) override;
+    void afterCompute(DeviceProcessContext& context, int engineIndex) override;
 
   private:
-    void buildHostParameters();
-    void rebuildEngineState(int sampleRate);
-
-    // Per-engine state. zones_[slotIndex] is the FAUSTFLOAT* into this
-    // engine's DSP for that host slot, or null if the engine doesn't expose
-    // that slot (Glue has no SC HPF; Clean has no FBFF/Style; neither exposes
-    // Engine).
-    struct EngineState {
-        std::unique_ptr<::dsp> dsp;
-        std::array<FAUSTFLOAT*, kHostSlotCount> zones{};
-        FAUSTFLOAT* useSidechainZone = nullptr;
-        int numInputs = 0;
-        int numOutputs = 0;
-    };
-    std::array<EngineState, kEngineCount> engines_;
-    std::atomic<int> activeEngine_{0};
-
-    std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
-    std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
-    std::array<juce::CachedValue<float>, kHostSlotCount> hostCached_;
-
-    juce::AudioBuffer<float> scratchIn_;
-    juce::AudioBuffer<float> scratchOut_;
-    std::vector<float*> inPtrs_;
-    std::vector<float*> outPtrs_;
-
     std::atomic<float> inputPeakDb_{-120.0f};
     std::atomic<float> keyPeakDb_{-120.0f};
     std::atomic<float> outputPeakDb_{-120.0f};

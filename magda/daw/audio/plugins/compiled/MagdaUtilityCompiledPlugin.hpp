@@ -1,46 +1,16 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
+#include <vector>
 
-#include <array>
-
-#include "core/ParameterInfo.hpp"
-#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "plugins/compiled/MagdaCompiledEffect.hpp"
 
 namespace magda::daw::audio::compiled {
 
-class MagdaUtilityCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
+class MagdaUtilityCompiledPlugin : public MagdaCompiledEffect {
   public:
     static const char* xmlTypeName;
 
-    explicit MagdaUtilityCompiledPlugin(const te::PluginCreationInfo& info);
-    ~MagdaUtilityCompiledPlugin() override;
-
-    juce::String getName() const override;
-    juce::String getPluginType() override;
-    juce::String getShortName(int) override;
-    juce::String getSelectableDescription() override;
-
-    void initialise(const te::PluginInitialisationInfo& info) override;
-    void deinitialise() override;
-    void reset() override;
-    void applyToBuffer(const te::PluginRenderContext& fc) override;
-
-    bool takesMidiInput() override {
-        return false;
-    }
-    bool takesAudioInput() override {
-        return true;
-    }
-    bool isSynth() override {
-        return false;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return false;
-    }
-    double getTailLength() const override {
-        return 0.0;
-    }
+    MagdaUtilityCompiledPlugin();
 
     static constexpr int kGainSlot = 0;
     static constexpr int kPanSlot = 1;
@@ -52,39 +22,26 @@ class MagdaUtilityCompiledPlugin : public te::Plugin, public ICompiledFaustPlugi
     static constexpr int kFlipRSlot = 7;
     static constexpr int kHostSlotCount = 8;
 
-    te::AutomatableParameter* getSlotParameter(int slotIndex) const;
+    juce::String devicePluginId() const override {
+        return xmlTypeName;
+    }
+    juce::String deviceName() const override {
+        return "Utility";
+    }
+    juce::String deviceShortName() const override {
+        return "Util";
+    }
 
-    float displayValueToNativeValue(int slotIndex, float displayValue) const;
-    float nativeValueToDisplayValue(int slotIndex, float nativeValue) const;
-
-    using HostSlotInfo = CompiledHostSlotInfo;
-    const HostSlotInfo& getSlotInfo(int slotIndex) const;
-
-    int hostSlotCount() const override {
-        return kHostSlotCount;
+  protected:
+    std::vector<HostSlotInfo> slotInfos() const override;
+    const char* slotIdPrefix() const override {
+        return "magda_utility_";
     }
-    const CompiledHostSlotInfo& hostSlotInfo(int slotIndex) const override {
-        return getSlotInfo(slotIndex);
-    }
-    DeviceParameterHandle hostSlotParameter(int slotIndex) const override {
-        return tracktion_adapter::parameterHandle(getSlotParameter(slotIndex));
-    }
-    float displayToNormalized(int slotIndex, float displayValue) const override {
-        return displayValueToNativeValue(slotIndex, displayValue);
-    }
-    float normalizedToDisplay(int slotIndex, float normalizedValue) const override {
-        return nativeValueToDisplayValue(slotIndex, normalizedValue);
-    }
+    void onReset() override;
+    void processAudio(DeviceProcessContext& context) override;
 
   private:
-    void buildHostParameters();
-    float slotDisplayValue(int slotIndex) const;
-
-    std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
-    std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
-    std::array<juce::CachedValue<float>, kHostSlotCount> hostCached_;
-
-    int sampleRate_ = 44100;
+    // One-pole state for the Low Mono crossover, audio thread only.
     float lowMonoLpL1_ = 0.0f;
     float lowMonoLpL2_ = 0.0f;
     float lowMonoLpR1_ = 0.0f;

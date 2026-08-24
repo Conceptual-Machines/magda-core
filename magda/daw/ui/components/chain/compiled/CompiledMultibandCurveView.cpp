@@ -5,6 +5,7 @@
 
 #include "../../../utils/CurveLabelLayout.hpp"
 #include "audio/plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/GestureRouter.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
@@ -103,8 +104,8 @@ void CompiledMultibandCurveView::timerCallback() {
     auto readSlot = [this](int slot, float fallback) {
         if (compiledPlugin_ == nullptr)
             return valueForSlot(deviceSnapshot_, slot, fallback);
-        if (auto* p = compiledPlugin_->getSlotParameter(slot))
-            return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(slot))
+            return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
         return fallback;
     };
 
@@ -935,8 +936,8 @@ const CompiledPresentationSpec& getMagdaMultibandPresentation() {
 }
 
 void CompiledMultibandCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaMultibandCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaMultibandCompiledPlugin>(plugin));
 }
 
 }  // namespace magda::daw::ui

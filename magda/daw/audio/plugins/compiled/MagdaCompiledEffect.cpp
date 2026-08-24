@@ -149,6 +149,7 @@ void MagdaCompiledEffect::createEngines(int sampleRate) {
 
             HarvestedControl harvested;
             harvested.idx = control.idx;
+            harvested.slotIndex = slotForDspIdx(control.idx);
             harvested.zone = control.zone;
             harvested.gateSlotIndex = control.gateSlotIndex;
             harvested.gateNegated = control.gateNegated;
@@ -173,8 +174,8 @@ void MagdaCompiledEffect::bindSlots() {
     for (auto& engine : engines_) {
         engine.zonesBySlot.assign(static_cast<size_t>(hostSlotCountValue()), nullptr);
         for (const auto& harvested : engine.harvested)
-            if (harvested.idx < hostSlotCountValue())
-                engine.zonesBySlot[static_cast<size_t>(harvested.idx)] = harvested.zone;
+            if (harvested.slotIndex >= 0 && harvested.slotIndex < hostSlotCountValue())
+                engine.zonesBySlot[static_cast<size_t>(harvested.slotIndex)] = harvested.zone;
     }
 }
 
@@ -182,14 +183,16 @@ void MagdaCompiledEffect::applyHarvestedGates() {
     // After slotInfos(), never before: a device builds its table with
     // designated initializers, which zero every field it does not name, so a
     // gate written in first would be wiped by the device's own table.
-    for (int slotIndex = 0; slotIndex < hostSlotCountValue(); ++slotIndex) {
-        const auto* harvested = harvestedForIdx(slotIndex);
-        if (harvested == nullptr || harvested->gateSlotIndex < 0)
-            continue;
+    for (const auto& engine : engines_) {
+        for (const auto& harvested : engine.harvested) {
+            if (harvested.gateSlotIndex < 0 || harvested.slotIndex < 0 ||
+                harvested.slotIndex >= hostSlotCountValue())
+                continue;
 
-        auto& slot = hostSlotInfo_[static_cast<size_t>(slotIndex)];
-        slot.gateSlotIndex = harvested->gateSlotIndex;
-        slot.gateNegated = harvested->gateNegated;
+            auto& slot = hostSlotInfo_[static_cast<size_t>(harvested.slotIndex)];
+            slot.gateSlotIndex = slotForDspIdx(harvested.gateSlotIndex);
+            slot.gateNegated = harvested.gateNegated;
+        }
     }
 }
 
@@ -327,11 +330,12 @@ DeviceProperties MagdaCompiledEffect::properties() const {
         .takesMidiInput = wantsMidiInput(),
         .takesAudioInput = true,
         .isSynth = false,
-        .producesAudioWithoutInput = false,
+        .producesAudioWithoutInput = producesAudioWithoutInput(),
         .canSidechain = wantsSidechain(),
         .latencySeconds = latencySeconds(),
         .tailLengthSeconds = tailSeconds(),
         .outputChannelCount = outputChannelCount(),
+        .inputChannelCount = inputChannelCount(),
     };
 }
 
@@ -388,8 +392,8 @@ void MagdaCompiledEffect::writeZones(DeviceProcessContext& context) {
             continue;
 
         for (const auto& harvested : engine.harvested) {
-            const int slotIndex = harvested.idx;
-            if (slotIndex >= hostSlotCountValue() || harvested.zone == nullptr)
+            const int slotIndex = harvested.slotIndex;
+            if (slotIndex < 0 || slotIndex >= hostSlotCountValue() || harvested.zone == nullptr)
                 continue;
 
             const float normalized = getSlotParameter(slotIndex).currentValue();
@@ -466,6 +470,14 @@ void MagdaCompiledEffect::computeEngine(int engineIndex, DeviceProcessContext& c
         for (int i = 0; i < numSamples; ++i)
             out[i] = sanitise(out[i]);
     }
+
+    // A device that declares a fixed output width owns exactly that many
+    // channels, so anything above them is not its output -- it is the input it
+    // was handed, and passing that through would leak the dry signal around a
+    // widener that was asked to replace it.
+    if (outputChannelCount() > 0)
+        for (int channel = numOutputs; channel < hostChannels; ++channel)
+            context.audio->clear(channel, startSample, numSamples);
 }
 
 void MagdaCompiledEffect::processAudio(DeviceProcessContext& context) {

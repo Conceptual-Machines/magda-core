@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaUtilityCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/components/mixer/LevelMeterScale.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -166,14 +167,10 @@ void CompiledUtilityView::updateFromDevice(const magda::DeviceInfo& device,
 }
 
 void CompiledUtilityView::writeParameter(int slotIndex, float displayValue) {
-    if (compiledPlugin_ != nullptr) {
-        if (auto* param = compiledPlugin_->getSlotParameter(slotIndex)) {
-            const float normalized =
-                compiledPlugin_->displayValueToNativeValue(slotIndex, displayValue);
-            param->setParameterFromHost(normalized, juce::sendNotificationSync);
-        }
-    }
-
+    // Through the model, like every other parameter edit in the chain. The
+    // device's own value is a mirror the host pushes into before each block, so
+    // writing it here would be overwritten by the next one and would skip
+    // automation, undo and the macro links on the way (#2192).
     if (onParameterChanged)
         onParameterChanged(slotIndex, displayValue);
 }
@@ -387,8 +384,8 @@ void CompiledUtilityView::resized() {
 }
 
 void CompiledUtilityView::bindPlugin(te::Plugin* plugin) {
-    compiledPlugin_ =
-        dynamic_cast<magda::daw::audio::compiled::MagdaUtilityCompiledPlugin*>(plugin);
+    compiledPlugin_ = magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+        magda::daw::audio::compiled::MagdaUtilityCompiledPlugin>(plugin);
 }
 
 const CompiledPresentationSpec& getMagdaUtilityPresentation() {

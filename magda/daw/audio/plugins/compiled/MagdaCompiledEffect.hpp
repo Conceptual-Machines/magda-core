@@ -155,12 +155,25 @@ class MagdaCompiledEffect : public CompiledFaustDevice {
     virtual int engineSlot() const {
         return -1;
     }
+    /// Which host slot a dsp control's [idx:N] drives, and which slot a
+    /// `[gate:N]` refers to. The identity by default: a device pins its dsp
+    /// indices to its slot indices. A device whose table interleaves
+    /// wrapper-only controls (the Filter's Engine and Limit) says otherwise.
+    /// Return -1 for a dsp index no host slot owns.
+    virtual int slotForDspIdx(int idx) const {
+        return idx;
+    }
 
     // ---- Properties -------------------------------------------------------
     virtual bool wantsMidiInput() const {
         return false;
     }
     virtual bool wantsSidechain() const {
+        return false;
+    }
+    /// Whether the host should keep pumping the device once dry input stops. A
+    /// device with a tail in its delay lines says yes, or the trail is cut.
+    virtual bool producesAudioWithoutInput() const {
         return false;
     }
     virtual double tailSeconds() const {
@@ -172,6 +185,11 @@ class MagdaCompiledEffect : public CompiledFaustDevice {
     /// Fixed output width, or 0 to follow the input. See
     /// DeviceProperties::outputChannelCount.
     virtual int outputChannelCount() const {
+        return 0;
+    }
+    /// Input channels the device reads, sidechain key included, or 0 to let the
+    /// host decide. See DeviceProperties::inputChannelCount.
+    virtual int inputChannelCount() const {
         return 0;
     }
     /// Whether a stopped->playing edge clears the dsp. An LFO-driven effect
@@ -215,7 +233,8 @@ class MagdaCompiledEffect : public CompiledFaustDevice {
   private:
     /// What one dsp control declared about itself.
     struct HarvestedControl {
-        int idx = -1;
+        int idx = -1;        ///< The dsp's own [idx:N].
+        int slotIndex = -1;  ///< The host slot it drives, via slotForDspIdx().
         float* zone = nullptr;
         std::vector<float> menuValues;
         std::vector<juce::String> menuLabels;

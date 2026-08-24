@@ -1,53 +1,21 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include <array>
+#include <vector>
 
-#include "core/ParameterInfo.hpp"
-#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "plugins/compiled/MagdaCompiledEffect.hpp"
 
 namespace magda::daw::audio::compiled {
 
 /**
  * @brief Native 3-band dynamics processor with a single flexible transfer curve per band.
  */
-class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
+class MagdaMultibandCompiledPlugin : public MagdaCompiledEffect {
   public:
     static const char* xmlTypeName;
 
-    explicit MagdaMultibandCompiledPlugin(const te::PluginCreationInfo& info);
-    ~MagdaMultibandCompiledPlugin() override;
+    MagdaMultibandCompiledPlugin();
 
-    juce::String getName() const override;
-    juce::String getPluginType() override;
-    juce::String getShortName(int) override;
-    juce::String getSelectableDescription() override;
-
-    void initialise(const te::PluginInitialisationInfo& info) override;
-    void deinitialise() override;
-    void reset() override;
-    void applyToBuffer(const te::PluginRenderContext& fc) override;
-
-    bool takesMidiInput() override {
-        return false;
-    }
-    bool takesAudioInput() override {
-        return true;
-    }
-    bool isSynth() override {
-        return false;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return false;
-    }
-    double getTailLength() const override {
-        return 0.0;
-    }
-
-    // Slots 0-11 are the compact grid controls.
-    // Slots 12-35 are per-band curve controls edited from the custom panel.
-    // Slots 36-37 are crossover frequencies.
     static constexpr int kAmountSlot = 0;
     static constexpr int kAttackSlot = 1;
     static constexpr int kReleaseSlot = 2;
@@ -88,43 +56,41 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     static constexpr int kHighXoSlot = 37;
     static constexpr int kHostSlotCount = 38;
 
-    te::AutomatableParameter* getSlotParameter(int slotIndex) const;
-
-    float displayValueToNativeValue(int slotIndex, float displayValue) const;
-    float nativeValueToDisplayValue(int slotIndex, float nativeValue) const;
-
-    using HostSlotInfo = CompiledHostSlotInfo;
-    const HostSlotInfo& getSlotInfo(int slotIndex) const;
-
+    /// "Collapse knobs" toggle, persisted on the device's state so the user's
+    /// preferred slot layout survives a project reload.
     bool isCurveCollapsed() const {
-        return curveCollapsed_.get();
+        return curveCollapsed_;
     }
     void setCurveCollapsed(bool collapsed) {
         curveCollapsed_ = collapsed;
     }
 
-    // ICompiledFaustPlugin
-    int hostSlotCount() const override {
-        return kHostSlotCount;
+    void flushState(juce::ValueTree& state) override;
+    void restoreState(const juce::ValueTree& state) override;
+
+    juce::String devicePluginId() const override {
+        return xmlTypeName;
     }
-    const CompiledHostSlotInfo& hostSlotInfo(int slotIndex) const override {
-        return getSlotInfo(slotIndex);
+    juce::String deviceName() const override {
+        return "Multiband Dynamics";
     }
-    DeviceParameterHandle hostSlotParameter(int slotIndex) const override {
-        return tracktion_adapter::parameterHandle(getSlotParameter(slotIndex));
+    juce::String deviceShortName() const override {
+        return "Dynamics";
     }
-    float displayToNormalized(int slotIndex, float displayValue) const override {
-        return displayValueToNativeValue(slotIndex, displayValue);
+
+  protected:
+    std::vector<HostSlotInfo> slotInfos() const override;
+    const char* slotIdPrefix() const override {
+        return "magda_multiband_";
     }
-    float normalizedToDisplay(int slotIndex, float normalizedValue) const override {
-        return nativeValueToDisplayValue(slotIndex, normalizedValue);
+    int outputChannelCount() const override {
+        return 2;
     }
+    void onPrepare(double sampleRate, int maximumBlockSize) override;
+    void onReset() override;
+    void processAudio(DeviceProcessContext& context) override;
 
   private:
-    void buildHostParameters();
-    float slotDisplayValue(int slotIndex) const;
-    void updateCrossoverCoefficients(float lowXoHz, float highXoHz);
-
     struct Biquad {
         void setLowPass(double sampleRate, double frequency);
         void setHighPass(double sampleRate, double frequency);
@@ -146,12 +112,10 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
         Biquad highHp1, highHp2;
     };
 
-    std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
-    std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
-    std::array<juce::CachedValue<float>, kHostSlotCount> hostCached_;
-    juce::CachedValue<bool> curveCollapsed_;
+    bool curveCollapsed_ = true;
 
-    double sampleRate_ = 44100.0;
+    void updateCrossoverCoefficients(float lowXoHz, float highXoHz);
+
     std::array<CrossoverState, 2> crossovers_;
     std::array<std::array<float, 3>, 2> envelopes_{};
     std::array<std::array<float, 3>, 2> gainDb_{};

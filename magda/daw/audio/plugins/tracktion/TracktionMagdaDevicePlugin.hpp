@@ -41,6 +41,7 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
     bool producesAudioWhenNoAudioInput() override;
     bool canSidechain() override;
     int getNumOutputChannelsGivenInputs(int numInputChannels) override;
+    void getChannelNames(juce::StringArray* inputs, juce::StringArray* outputs) override;
     double getLatencySeconds() override;
     double getTailLength() const override;
 

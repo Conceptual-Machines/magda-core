@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaLimiterCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -47,8 +48,8 @@ void CompiledLimiterCurveView::setCompiledPlugin(
 }
 
 void CompiledLimiterCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaLimiterCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaLimiterCompiledPlugin>(plugin));
 }
 
 void CompiledLimiterCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -63,8 +64,8 @@ void CompiledLimiterCurveView::timerCallback() {
     auto readPluginSlot = [this](int slot, float fallback) {
         if (compiledPlugin_ == nullptr)
             return fallback;
-        if (auto* p = compiledPlugin_->getSlotParameter(slot))
-            return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(slot))
+            return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
         return fallback;
     };
 

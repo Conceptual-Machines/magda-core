@@ -352,8 +352,9 @@ set(_magda_neutral_base_device_sources
 # effects share MagdaCompiledEffect; both lists are just "who has crossed".
 foreach(_magda_neutral_device IN ITEMS
         Bell Clap Djembe FM Hat Kick Marimba Snare Tom
-        Bitcrusher Chorus Clipper Delay Flanger FreqShift
-        GateExpander GrainDelay Grit Mod Phaser RingMod Saturator)
+        Bitcrusher Chorus Clipper Compressor Delay Dimension Filter Flanger
+        FreqShift GateExpander GrainDelay Grit Mod Phaser Pitch Reverb RingMod
+        Eq Limiter Multiband Saturator Utility)
     list(APPEND _magda_neutral_base_device_sources
         "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/Magda${_magda_neutral_device}CompiledPlugin.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/Magda${_magda_neutral_device}CompiledPlugin.hpp"
