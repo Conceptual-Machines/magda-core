@@ -430,8 +430,8 @@ void PolySynthUI::timerCallback() {
         return;
 
     const auto readDisplayValue = [this](int slot, float fallback) {
-        if (auto* parameter = livePlugin_->getSlotParameter(slot)) {
-            return livePlugin_->nativeValueToDisplayValue(slot, parameter->getCurrentValue());
+        if (auto parameter = livePlugin_->getSlotParameter(slot)) {
+            return livePlugin_->nativeValueToDisplayValue(slot, parameter.currentValue());
         }
         return fallback;
     };

@@ -351,7 +351,7 @@ set(_magda_neutral_base_device_sources
 # engine is running it (#2192). Instruments share MagdaCompiledPolyInstrument,
 # effects share MagdaCompiledEffect; both lists are just "who has crossed".
 foreach(_magda_neutral_device IN ITEMS
-        Bell Clap Djembe FM Hat Kick Marimba Snare Tom
+        Bell Clap Djembe FM Hat Kick Marimba PolySynth Snare Tom
         Bitcrusher Chorus Clipper Compressor Delay Dimension Filter Flanger
         FreqShift GateExpander GrainDelay Grit Mod Phaser Pitch Reverb RingMod
         Eq Limiter Multiband Saturator Utility)
