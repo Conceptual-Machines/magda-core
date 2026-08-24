@@ -1,6 +1,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <map>
 #include <set>
 #include <vector>
 
@@ -167,6 +168,106 @@ TEST_CASE("Every source reads back as what the manifest asked for", "[nulldiff][
             CHECK(source.sampleRate > 0.0);
             CHECK(source.durationSeconds > 0.0);
         }
+    }
+}
+
+TEST_CASE("Two fixtures held at once both stay resolvable", "[nulldiff][fixture]") {
+    const PoolUnwind unwind;
+
+    // A Case carries source ids and nothing else, and the legs resolve them
+    // through the global pool. The app's install clears that pool and resets its
+    // allocator to one, which is right for an app with one project open: load a
+    // second fixture and the first would come back holding ids that now name the
+    // second's audio, silently, with every clip still pointing somewhere.
+    //
+    // Two fixtures, held together, is the only arrangement that can see it.
+    REQUIRE(mgdFixtures().size() >= 2);
+
+    const auto first = loadFixture(mgdFixtures()[0], scratch());
+    INFO(first.failure);
+    REQUIRE(first.ok);
+
+    // What the first case claims, recorded before anything else is loaded.
+    std::map<SourceId, juce::String> claimed;
+    for (const auto& source : first.value.sources)
+        claimed[source.id] = source.path;
+    REQUIRE_FALSE(claimed.empty());
+
+    const auto second = loadFixture(mgdFixtures()[1], scratch());
+    INFO(second.failure);
+    REQUIRE(second.ok);
+
+    auto& pool = SourcePool::getInstance();
+
+    // Every id the first case holds still names the file it named. This is the
+    // assertion: not that the pool has something under that id, but that it has
+    // the same thing.
+    for (const auto& [id, path] : claimed) {
+        INFO(path);
+        const auto* pooled = pool.get(id);
+        REQUIRE(pooled != nullptr);
+        CHECK(pooled->filePath == path);
+    }
+
+    // And the second case's ids are its own rather than the first's reissued.
+    for (const auto& source : second.value.sources) {
+        INFO(source.path);
+        const auto* pooled = pool.get(source.id);
+        REQUIRE(pooled != nullptr);
+        CHECK(pooled->filePath == source.path);
+        CHECK(claimed.find(source.id) == claimed.end());
+    }
+
+    // The clips agree with the sources: every event resolves to a file the case
+    // says it plays. An id that survived while its clip moved would pass the
+    // checks above and still render the wrong audio.
+    const auto eventsResolve = [&pool](const Case& value) {
+        std::set<juce::String> declared;
+        for (const auto& source : value.sources)
+            declared.insert(source.path);
+
+        auto ok = true;
+        for (const auto& clip : value.clips) {
+            if (!clip.isAudio())
+                continue;
+            for (const auto& event : clip.audio().events) {
+                const auto* pooled = pool.get(event.sourceId);
+                ok = ok && pooled != nullptr && declared.count(pooled->filePath) == 1;
+            }
+        }
+        return ok;
+    };
+
+    CHECK(eventsResolve(first.value));
+    CHECK(eventsResolve(second.value));
+}
+
+TEST_CASE("A project that hosts a plugin is not a fixture here", "[nulldiff][fixture]") {
+    const PoolUnwind unwind;
+
+    // Half the legacy corpus hosts one, and none of it can be held to a null:
+    // without the plugin installed both legs render a passthrough and agree
+    // about nothing, and with it installed only one leg can host it. #2175 is
+    // where those go.
+    //
+    // Asserted against a real one rather than described, because the rule is
+    // about what is in the file and the file is right here.
+    MgdFixture hosted;
+    hosted.file = "legacy/projects/0.13.0-retrovid.mgd";
+    hosted.savedBy = "0.13.0-rc1";
+    hosted.declaration = mgdFixtures().front().declaration;
+    hosted.declaration.name = "project.hosted";
+
+    const auto loaded = loadFixture(hosted, scratch());
+    CHECK_FALSE(loaded.ok);
+    CHECK(loaded.failure.find("Retrospect") != std::string::npos);
+
+    // And no fixture the corpus actually carries trips it.
+    for (const auto& fixture : mgdFixtures()) {
+        INFO(fixture.file);
+        const auto good = loadFixture(fixture, scratch());
+        INFO(good.failure);
+        CHECK(good.ok);
     }
 }
 

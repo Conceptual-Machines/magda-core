@@ -51,9 +51,20 @@ these or save its own. The rule, recorded per fixture in
 `MgdFixture::isMigrationFixture`:
 
 **Reuse where a project earns its place by being a real arrangement** that
-nobody would have written down. That is the whole value of this directory: four
-tracks at 92 bpm with two bounces of its own clips in it is a shape a
-hand-written case never has.
+nobody would have written down. That is the whole value of this directory:
+eight tracks carrying sixty-eight MIDI clips, one audio clip and an automation
+lane is a shape a hand-written case never has.
+
+**Never reuse one that hosts a plugin.** Roughly half of these do: retrovid and
+envfollower carry Retrospect, groups carries Pro-L 2, overlaps carries Pianoteq.
+A project with a VST3 in it has no verdict a null-diff corpus can hold it to.
+Without the plugin installed both legs render a passthrough and pass by agreeing
+about nothing; with it installed the incumbent hosts it and the native engine
+cannot, so whether the case passes becomes a fact about the machine that ran it.
+Those projects belong to #2175, with the invariant tier and a gate that calls an
+absent plugin unmeasurable rather than equal. The fixture rig refuses them
+outright, because a tier is a field somebody fills in and the plugin format is a
+fact about the file.
 
 **Save new where the material has to be designed.** A fixture reused from here
 can never be asked for one bar more, for a source that suits a case better, or

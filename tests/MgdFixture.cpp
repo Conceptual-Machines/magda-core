@@ -180,6 +180,116 @@ std::string writeAndRepoint(const std::vector<Source*>& sources, const Declarati
     return {};
 }
 
+/// Every device anywhere in a track's chain, racks and flat sections included.
+void everyDevice(const std::vector<ChainElement>& elements, std::vector<const DeviceInfo*>& out) {
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            out.push_back(&magda::getDevice(element));
+        } else if (magda::isRack(element)) {
+            for (const auto& chain : magda::getRack(element).chains)
+                everyDevice(chain.elements, out);
+        }
+    }
+}
+
+void everyDevice(const TrackInfo& track, std::vector<const DeviceInfo*>& out) {
+    everyDevice(track.chain.fxChainElements, out);
+    for (const auto* section :
+         {&track.chain.postFxChainElements, &track.chain.mixerAnalysisElements})
+        for (const auto& element : *section)
+            out.push_back(&element.device);
+}
+
+/**
+ * @brief Why this project cannot be a fixture here, if it hosts a plugin.
+ *
+ * A project with a VST3 in it has no verdict a corpus can hold it to. Without
+ * the plugin installed both legs render a passthrough and pass by agreeing
+ * about nothing, which is the silence-nulls-against-silence failure wearing a
+ * different hat. With it installed the incumbent hosts it and the native leg
+ * cannot (#1893), so whether the case passes is a fact about the machine that
+ * ran it.
+ *
+ * #2175 is where those projects go, with the invariant tier and a gate that
+ * calls an absent plugin unmeasurable rather than equal. Refused here rather
+ * than left to whoever writes a manifest, because the tier is a field somebody
+ * fills in and the format is a fact about the file.
+ */
+std::string refuseHostedPlugins(const StagedProjectData& staged) {
+    std::vector<const DeviceInfo*> devices;
+    for (const auto& track : staged.tracks)
+        everyDevice(track, devices);
+    if (staged.masterTrack != nullptr)
+        everyDevice(*staged.masterTrack, devices);
+
+    for (const auto* device : devices)
+        if (device->format != magda::PluginFormat::Internal)
+            return "the project hosts " + quoted(device->name) +
+                   ", which is not an internal device, so neither engine owes the other a "
+                   "sample on it: see #2175 for the tier those projects get";
+
+    return {};
+}
+
+/**
+ * @brief Put @p held back in the pool beside what the install just left, and
+ *        move this project's sources to ids nothing else is using.
+ *
+ * The install owns the pool it was handed: it cleared it, and what it left is
+ * this project under ids that came out of an allocator reset to one. Both facts
+ * are right for an app with one project open and wrong for a corpus holding
+ * several cases, whose Cases carry ids and nothing else.
+ *
+ * So the previous contents go back first, which lifts the allocator above every
+ * id already spoken for, and then each of this project's sources is acquired
+ * afresh. A path already in @p held keeps the id it had there, because it is the
+ * same file and two ids for one file is the collapse this rig spends its time
+ * refusing.
+ *
+ * The clips follow. A pure substitution, not the install's remap: that one
+ * rescales sample positions because a v1 nominal rate can differ from the
+ * probed one, and here the two ids name the same path with the same facts, so
+ * there is nothing to rescale.
+ */
+std::string renumberOntoPool(const std::vector<Source>& held, std::vector<ClipInfo>& clips) {
+    auto& pool = SourcePool::getInstance();
+    const auto mine = pool.snapshot();
+
+    pool.clear();
+    for (const auto& source : held)
+        pool.insert(source);
+
+    std::map<SourceId, SourceId> moved;
+    for (const auto& source : mine) {
+        const auto id = pool.acquire(source.filePath);
+        if (id == INVALID_SOURCE_ID)
+            return "the pool would not take " + quoted(source.filePath) + " back";
+
+        if (auto* pooled = pool.getMutable(id); pooled != nullptr) {
+            if (pooled->durationSeconds <= 0.0)
+                pooled->durationSeconds = source.durationSeconds;
+            if (pooled->sampleRate <= 0.0)
+                pooled->sampleRate = source.sampleRate;
+        }
+
+        if (id != source.id)
+            moved[source.id] = id;
+    }
+
+    if (moved.empty())
+        return {};
+
+    for (auto& clip : clips) {
+        if (!clip.isAudio())
+            continue;
+        for (auto& event : clip.audio().events)
+            if (const auto it = moved.find(event.sourceId); it != moved.end())
+                event.sourceId = it->second;
+    }
+
+    return {};
+}
+
 }  // namespace
 
 std::string refuseIndistinguishableSources(const std::vector<juce::String>& paths) {
@@ -248,6 +358,11 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
         return result;
     }
 
+    if (auto refusal = refuseHostedPlugins(staged); !refusal.empty()) {
+        result.failure = std::move(refusal);
+        return result;
+    }
+
     auto sources = everySource(staged);
 
     std::vector<juce::String> paths;
@@ -289,8 +404,30 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
     // remaps the events that referenced the provisional ones -- which is a
     // paragraph of behaviour a second implementation would get subtly wrong and
     // then agree with itself about.
+    //
+    // Then put back what it cleared, and renumber. That half is the corpus's
+    // problem rather than the app's: the app has one project open, so clearing
+    // the pool is exactly right for it and fatal here. `clear()` resets the id
+    // allocator to one, so two fixtures both come back holding source id 1 for
+    // different files, and a Case carries nothing but those numbers. Load the
+    // second and the first silently starts resolving its clips to the second's
+    // audio; load either and the code-built corpus, whose ids were handed out by
+    // the same allocator, starts resolving to a fixture's.
+    //
+    // Renumbering rather than asking callers to reinstall before rendering. The
+    // rest of the corpus already holds every case's sources in the pool at once,
+    // and a fixture that was only valid while it was the most recent thing
+    // loaded would be a second contract for whoever holds a corpus of them
+    // (#2081) to get right on every path.
+    const auto held = SourcePool::getInstance().snapshot();
+
     ProjectSerializer::installStagedSources(staged.sources, staged.legacySources, staged.clips);
     ProjectSerializer::resolveStagedSources(staged.sources);
+
+    if (auto refusal = renumberOntoPool(held, staged.clips); !refusal.empty()) {
+        result.failure = std::move(refusal);
+        return result;
+    }
 
     // --- the case ------------------------------------------------------------
     //
@@ -312,12 +449,23 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
     // 120 would put every clip somewhere the person who saved it never heard.
     result.value.tempo = {TempoPoint{.beat = 0.0, .bpm = staged.info.tempo}};
 
-    for (const auto& pooled : SourcePool::getInstance().snapshot()) {
+    // This project's sources, found by the files the rig wrote for it, rather
+    // than everything the pool holds. The pool now carries other cases' sources
+    // too, and a Case listing those would be claiming to play them.
+    auto& pool = SourcePool::getInstance();
+    for (const auto& [name, file] : result.written) {
+        const auto id = pool.findByPath(file.getFullPathName());
+        const auto* pooled = id != INVALID_SOURCE_ID ? pool.get(id) : nullptr;
+        if (pooled == nullptr) {
+            result.failure = "the stand-in written for " + quoted(name) + " is not pooled";
+            return result;
+        }
+
         SourceFact fact;
-        fact.id = pooled.id;
-        fact.path = pooled.filePath;
-        fact.sampleRate = pooled.sampleRate;
-        fact.durationSeconds = pooled.durationSeconds;
+        fact.id = pooled->id;
+        fact.path = pooled->filePath;
+        fact.sampleRate = pooled->sampleRate;
+        fact.durationSeconds = pooled->durationSeconds;
         result.value.sources.push_back(fact);
     }
 

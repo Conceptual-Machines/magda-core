@@ -43,10 +43,10 @@
  * case is reading wants steps.
  *
  * The durations are not the originals and are not trying to be. A source is
- * long enough that the clip reading it does not run out, and no longer: the
- * original was eleven or twenty-nine seconds of somebody's Splice library, and
- * writing thirty seconds of tone to stand in for a clip that plays four bars of
- * it would cost the run a second of disk per fixture for nothing.
+ * long enough that the clip reading it does not run out, and no longer. The
+ * original was eleven seconds of somebody's Splice library; writing thirty
+ * seconds of tone to stand in for a clip that plays four bars of it would cost
+ * the run a second of disk per fixture for nothing.
  */
 
 namespace magda::nulldiff {
@@ -88,59 +88,66 @@ Case declarationFor(const char* name, const char* covers, double endBeat) {
 std::vector<MgdFixture> build() {
     std::vector<MgdFixture> fixtures;
 
+    // Both of these are internal-device projects, and that is a requirement
+    // rather than what was to hand. A project hosting a VST3 cannot be held to a
+    // null: without the plugin installed both legs render a passthrough and pass
+    // by agreeing about nothing, and with it installed the incumbent hosts it
+    // while the native leg cannot, so the verdict becomes a fact about the
+    // machine. #2175 reserves those projects for the invariant tier and an
+    // absent-plugin gate, and they belong there rather than here.
+    //
+    // Half the legacy corpus is out on that rule -- retrovid and envfollower
+    // carry Retrospect, groups carries Pro-L 2, overlaps carries Pianoteq -- and
+    // the check is `format`, which is VST3 at zero and Internal at three.
+
     {
-        // A real arrangement, and the first thing in the corpus that nobody
-        // wrote down: four tracks, nine clips at 92 bpm, and eight sources off
-        // three different dead volumes -- an external SSD, a home Music folder,
-        // and a bounces directory under a project that no longer exists. Two of
-        // the eight are bounces of other clips in the same project, which is a
-        // shape a case built in code would never have thought to have.
-        //
-        // Reused rather than saved: it earns its place by being an arrangement
-        // rather than a demonstration, and being a migration fixture costs this
-        // case nothing it wanted.
+        // The arrangement: eight tracks and sixty-nine clips at 120 bpm, one of
+        // them audio and the rest MIDI, with an automation lane over the top.
+        // That shape is the argument for loading a project at all. Nobody
+        // writing a case in code produces sixty-eight MIDI clips across eight
+        // tracks to see what happens; somebody making a demo does.
         MgdFixture fixture;
-        fixture.file = "legacy/projects/0.13.0-retrovid.mgd";
-        fixture.savedBy = "0.13.0-rc1";
+        fixture.file = "legacy/projects/0.15.0-demo.mgd";
+        fixture.savedBy = "0.15.0-9-gf444267f";
+        fixture.isMigrationFixture = true;
+        fixture.declaration =
+            declarationFor("project.demo", "eight tracks and sixty-nine clips at 120 bpm", 32.0);
+
+        // A tone, because the clip reading it is stretched: the project plays a
+        // loop recorded at one tempo inside an arrangement at another, and
+        // impulses through two different stretchers report the distance between
+        // two interpolators rather than anything about the clip.
+        fixture.sources = {
+            {.fileName = "SA_MU_89_electric_guitar_loop_arp_chillin_vibrato_Emin.wav",
+             .material = toneFor(14.0, 220.0),
+             .covers = "a guitar loop the arrangement stretched from 82 to 120"},
+        };
+
+        fixtures.push_back(std::move(fixture));
+    }
+
+    {
+        // A second project, and the point of it is that there are two. A Case
+        // carries source ids and nothing else, so two of them loaded at once is
+        // the arrangement under which those ids either stay meaningful or
+        // quietly start naming each other's audio. One fixture can never show
+        // that.
+        //
+        // Small on purpose: two tracks, two clips, two automation lanes. What it
+        // adds is a second project and an automation lane, not more surface.
+        MgdFixture fixture;
+        fixture.file = "legacy/projects/0.11.1-automation.mgd";
+        fixture.savedBy = "0.11.1-119-gbe8377ce0";
         fixture.isMigrationFixture = true;
         fixture.declaration = declarationFor(
-            "project.retrovid", "a four-track arrangement at 92 bpm over eight sources", 32.0);
+            "project.automation", "two tracks under two automation lanes at 120 bpm", 16.0);
 
-        // Impulses almost throughout: these clips play at the project's own
-        // tempo and what the corpus wants off them is where they land. The two
-        // exceptions are the ones the project stretched, and a stretched clip
-        // fed impulses reports the distance between two interpolators.
-        //
-        // The intervals differ per source on purpose. Equal grids sum exactly
-        // whatever order they are added in, so eight identical sources would
-        // agree by arithmetic rather than by the two engines placing the same
-        // things in the same places.
+        // Impulses: this clip plays at its own rate, so where it lands is the
+        // whole of what a render would be asserting.
         fixture.sources = {
-            {.fileName = "SA_MU_118_electric_guitar_loop_funky_wah_Amaj.wav",
-             .material = toneFor(18.0, 220.0),
-             .covers = "a guitar loop the project stretched from 118 to 92"},
-            {.fileName = "mdh_drm120_touch_stp.wav",
-             .material = impulsesFor(6.0, 0.25),
-             .covers = "a drum loop at its own rate"},
-            {.fileName = "SLS_O_65_guitar_soul_serenade_Cmin.wav",
-             .material = toneFor(32.0, 330.0),
-             .covers = "a 65 bpm loop stretched to 92, the widest ratio in the project"},
-            {.fileName = "BS_NCS3_140_bass_growl_leap_Dbmin.wav",
-             .material = impulsesFor(8.0, 0.3),
-             .covers = "a bass one-shot"},
-            {.fileName = "TAMUZ_TD_90_drum_best_simple_trashy.wav",
-             .material = impulsesFor(23.0, 0.5),
-             .covers = "the longest loop, near enough the project tempo to play unstretched"},
-            {.fileName = "DS_OT_fx_riser_dark_20260701_153831.wav",
-             .material = impulsesFor(9.0, 0.7),
-             .covers =
-                 "a bounce of the riser below, which is what makes two sources name one sound"},
-            {.fileName = "mdh_drm120_touch_stp_(copy)_20260701_145457.wav",
-             .material = impulsesFor(19.0, 0.35),
-             .covers = "a bounce of the drum loop above, under a name with brackets in it"},
-            {.fileName = "DS_OT_fx_riser_dark.wav",
-             .material = impulsesFor(3.0, 0.2),
-             .covers = "the riser itself, a short one-shot"},
+            {.fileName = "HeartBreaker Layered Master-bounce-10.wav",
+             .material = impulsesFor(4.0, 0.25),
+             .covers = "a bounced break, played unstretched"},
         };
 
         fixtures.push_back(std::move(fixture));

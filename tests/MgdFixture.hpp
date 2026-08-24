@@ -72,6 +72,22 @@
  *
  * So is a project whose sources cannot be told apart by the only part of a path
  * a manifest can name. See @ref refuseIndistinguishableSources.
+ *
+ * And so is a project that hosts an external plugin. Without the plugin
+ * installed both legs render a passthrough and agree about nothing; with it
+ * installed the incumbent hosts it and the native leg cannot, so the verdict
+ * becomes a fact about the machine. #2175 reserves those for the invariant tier
+ * and an absent-plugin gate, which is a different slice and a different verdict.
+ *
+ * ## A loaded fixture keeps its ids
+ *
+ * A `Case` carries source ids and nothing else; the legs resolve them through
+ * the global `SourcePool`. The app's install clears that pool and resets its id
+ * allocator, which is right for an app with one project open and fatal for a
+ * corpus holding several cases: two fixtures would both come back holding id 1
+ * for different files. The rig therefore puts back what the install cleared and
+ * moves this project's sources to ids nothing else is using, so every case
+ * loaded stays resolvable while the others are.
  */
 
 namespace magda::nulldiff {
@@ -107,7 +123,7 @@ struct FixtureSource {
  * a project different from the one on disk.
  */
 struct MgdFixture {
-    /// Relative to the corpus root, e.g. "legacy/projects/0.13.0-retrovid.mgd".
+    /// Relative to the corpus root, e.g. "legacy/projects/0.15.0-demo.mgd".
     const char* file = "";
 
     /// The version string the saving build wrote, as a fact about the file
