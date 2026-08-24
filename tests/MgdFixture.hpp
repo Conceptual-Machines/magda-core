@@ -8,6 +8,7 @@
 
 #include "NullDiffCase.hpp"
 #include "NullDiffMaterial.hpp"
+#include "core/Source.hpp"
 
 /**
  * @file MgdFixture.hpp
@@ -160,6 +161,39 @@ struct FixtureLoad {
     /// name one file twice -- a v2 table entry beside a v1 clip that migrated
     /// to the same path -- and those are one sound sharing one stand-in.
     std::map<juce::String, juce::File> written;
+};
+
+/**
+ * @brief Put the pool back the way it was found.
+ *
+ * The rig drives the app's own source install, and that install clears the pool
+ * before repopulating it: correctly, because loading a project is exactly when
+ * the previous project's sources stop being pooled. In a test binary the pool is
+ * shared with everything else in the run, so a fixture loaded there would
+ * otherwise pull the code-built corpus's sources out from under it and leave
+ * every SourceFact in it pointing at an id nobody holds.
+ *
+ * Snapshot and restore rather than clear, because clearing is what causes the
+ * problem rather than what fixes it, and `insert` preserves ids so what goes
+ * back is what was there. Ordering is not a defence: the corpus builds itself
+ * lazily and once.
+ *
+ * Here rather than in one test file because every caller of loadFixture needs
+ * it, and a correctness guard nobody can see from the function it guards is one
+ * that gets copied slightly wrong.
+ */
+class PooledSourcesUnwind {
+  public:
+    PooledSourcesUnwind();
+    ~PooledSourcesUnwind();
+
+    PooledSourcesUnwind(const PooledSourcesUnwind&) = delete;
+    PooledSourcesUnwind& operator=(const PooledSourcesUnwind&) = delete;
+    PooledSourcesUnwind(PooledSourcesUnwind&&) = delete;
+    PooledSourcesUnwind& operator=(PooledSourcesUnwind&&) = delete;
+
+  private:
+    std::vector<magda::Source> held_;
 };
 
 /**

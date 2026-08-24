@@ -328,6 +328,15 @@ std::string refuseIndistinguishableSources(const std::vector<juce::String>& path
     return {};
 }
 
+PooledSourcesUnwind::PooledSourcesUnwind() : held_(SourcePool::getInstance().snapshot()) {}
+
+PooledSourcesUnwind::~PooledSourcesUnwind() {
+    auto& pool = SourcePool::getInstance();
+    pool.clear();
+    for (const auto& source : held_)
+        pool.insert(source);
+}
+
 juce::File fixtureCorpusDir() {
     return juce::File(MAGDA_TEST_CORPUS_DIR);
 }
