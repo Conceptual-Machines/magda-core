@@ -367,6 +367,13 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_null_diff_corpus.cpp)
     list(APPEND TEST_SOURCES test_null_diff_native_leg.cpp)
 
+    # The .mgd fixture rig (#2173): a real project turned into a case. Model
+    # only, like the corpus beside it -- the load produces model values and this
+    # slice renders nothing, so neither leg is involved.
+    list(APPEND TEST_SOURCES MgdFixture.cpp)
+    list(APPEND TEST_SOURCES MgdFixtures.cpp)
+    list(APPEND TEST_SOURCES test_mgd_fixture_rig.cpp)
+
     # The device layer under the engine (#2174): the app's own catalogs asked
     # for a Device op's device, and a shipped device rendered through the
     # adapter. The engine's half alone -- what the two hosts do with one device
@@ -449,6 +456,11 @@ target_compile_definitions(magda_tests
     # real user files that must never be regenerated, and an intended change to
     # the frozen order has to show up as a reviewable diff.
     MAGDA_LEGACY_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/corpus/legacy"
+    # The root the .mgd fixtures name a file under (#2173). One level above the
+    # legacy corpus rather than inside it, because a fixture can be a legacy
+    # project reused or one saved for the render corpus, and where it lives is
+    # part of what a manifest says.
+    MAGDA_TEST_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/corpus"
     MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt"
 )
 
