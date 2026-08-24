@@ -71,12 +71,16 @@ jobs:
         # Use default security queries (security-extended adds ~30% more time)
         # queries: security-extended
 
+    # No trailing hyphen on the restore key: the action appends one of its own
+    # when append-timestamp is on, which it is by default, so a key written with
+    # one can never prefix-match anything the action saves. See the Windows job
+    # in ci.yml for the arithmetic.
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
         key: ${{ runner.os }}-codeql-ccache-content-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-codeql-ccache-content-
+          ${{ runner.os }}-codeql-ccache-content
 
     # Build the project for CodeQL analysis
     - name: Configure CMake

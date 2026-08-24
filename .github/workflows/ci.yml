@@ -941,12 +941,29 @@ jobs:
     # ccache for MSVC. The Debug build uses /Z7 (embedded debug info, no shared
     # PDB), which is what makes MSVC objects cacheable - /Zi could not be cached
     # and broke the earlier sccache attempt. Mirrors the Linux job.
+    #
+    # No trailing hyphen on the restore key, and that is the whole of it. The
+    # action prefixes every key with its variant and, because append-timestamp
+    # defaults to true, appends a hyphen of its own:
+    #
+    #   restoreKeys = inputs.restoreKeys.map(k => variant + "-" + k + "-")
+    #
+    # so a restore key written with one produced the prefix
+    # "ccache-Windows-ccache-content--" while saves land under
+    # "ccache-Windows-ccache-content-<sha>-<timestamp>". Two hyphens against
+    # one, so the lookup matched nothing: every Windows run since this was added
+    # reported "No cache found." in a third of a second and then compiled all
+    # 1271 objects with ccache reporting a 0% hit rate, on every branch and on
+    # both runners, while saving a gigabyte nothing could ever read back.
+    #
+    # The primary key never matches either, by design: the action appends the
+    # timestamp after it, so restoring is the restore key's job alone.
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
         key: ${{ runner.os }}-ccache-content-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-ccache-content-
+          ${{ runner.os }}-ccache-content
         max-size: 3G
         variant: ccache
 
