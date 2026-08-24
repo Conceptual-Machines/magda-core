@@ -297,6 +297,19 @@ set(_magda_tracktion_device_adapter_sources
 )
 list(REMOVE_ITEM _magda_device_pack_sources ${_magda_tracktion_device_adapter_sources})
 
+# The native engine's half of the same job (#2174): one device implementation,
+# hosted by whichever engine is running it. Kept out of the pack sweep above for
+# the same reason the Tracktion adapters are -- an adapter is host code, not a
+# device -- and out of magda_tracktion_compat_devices as well, since the whole
+# point of it is that it names no Tracktion type.
+set(_magda_engine_device_adapter_sources
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineDeviceFactory.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineDeviceFactory.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineMagdaDevice.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineMagdaDevice.hpp"
+)
+list(REMOVE_ITEM _magda_device_pack_sources ${_magda_engine_device_adapter_sources})
+
 set(_magda_base_device_support_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/FaustResources.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/FaustResources.hpp"
@@ -365,6 +378,33 @@ target_sources(magda_base_devices PRIVATE
 target_sources(magda_tracktion_compat_devices PRIVATE
     ${_magda_legacy_tracktion_device_sources}
 )
+
+# The device layer under the native engine (#2174).
+#
+# Its own static library rather than sources in magda_daw, because the app does
+# not link the engine yet and this is the one piece of host code that has to see
+# both sides: the frozen device SDK and the engine's executor. The symmetry with
+# magda_tracktion_compat_devices is the point -- each target is one engine's
+# lifecycle adapter over the same MagdaDevice.
+#
+# It reaches findCompiledPluginSpec(), which the compatibility target still
+# owns; the declaration is in a neutral header and the definition resolves at
+# the final link, the same arrangement magda_engine has with the JUCE modules.
+if(MAGDA_BUILD_NATIVE_ENGINE)
+    add_library(magda_engine_devices STATIC ${_magda_engine_device_adapter_sources})
+    add_library(magda::engine_devices ALIAS magda_engine_devices)
+
+    target_compile_features(magda_engine_devices PRIVATE cxx_std_20)
+    target_include_directories(magda_engine_devices PRIVATE ${CMAKE_SOURCE_DIR})
+    # magda_engine is added after magda/daw (it links the model layer this
+    # directory defines), so this names it before it exists. A plain target name
+    # resolves at generate time, which is what makes that legal.
+    target_link_libraries(magda_engine_devices
+        PUBLIC
+        magda_device_sdk
+        magda_engine
+    )
+endif()
 
 target_sources(magda_daw PRIVATE
     AudioBridge.cpp

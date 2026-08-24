@@ -141,6 +141,25 @@ class EngineDevice {
     /// Drop any tail state. Called off the audio thread.
     virtual void reset() {}
 
+    /**
+     * @brief The most encoded MIDI that can reach this device in one block.
+     *
+     * Called off the audio thread when a plan is prepared, before any block, by
+     * the executor that knows the answer. A device that buffers its input sizes
+     * that buffer from this and nothing else.
+     *
+     * Not kMaxMidiBytesPerPort. That is one producer's budget, and a device's
+     * input port is often a merge: the executor sums the bound through the MIDI
+     * graph precisely because fan-in outgrows any fixed figure, and a device
+     * that assumed the per-producer cap would drop everything past it on a
+     * track with more sources than one. Zero for a device the plan gave no MIDI
+     * input.
+     *
+     * Ignored by default, because most devices read the block's buffer where it
+     * lies and never need to know how big it can get.
+     */
+    virtual void setMidiInputBoundBytes(int) {}
+
     /// Samples the device delays its output by. Read but not yet compensated:
     /// latency compensation is its own slice, and the executor reports any
     /// non-zero value from prepare() rather than pretending it is aligned.

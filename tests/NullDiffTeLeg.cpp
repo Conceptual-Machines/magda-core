@@ -483,7 +483,11 @@ void registerSynthDevice(magda::daw::audio::InternalPluginRegistry& registry) {
     spec.description = "A MIDI-driven instrument, for the null-diff corpus.";
     spec.createMode = magda::daw::audio::InternalPluginCreateMode::FreshValueTree;
     spec.canCreateDetached = true;
-    spec.canCreateOnTrack = false;
+    // True since #2174: the sync is what installs these now, and
+    // loadDeviceAsPlugin refuses a spec that cannot be made on a track. What
+    // keeps them out of the app is showInBrowser, and they are only ever
+    // registered inside a test binary anyway.
+    spec.canCreateOnTrack = true;
     spec.showInBrowser = false;
     spec.isInstrument = true;
     spec.tags = kCorpusDeviceTags;
@@ -508,7 +512,11 @@ void registerMultiOutDevice(magda::daw::audio::InternalPluginRegistry& registry)
     spec.description = "A four-channel instrument, for the null-diff corpus.";
     spec.createMode = magda::daw::audio::InternalPluginCreateMode::FreshValueTree;
     spec.canCreateDetached = true;
-    spec.canCreateOnTrack = false;
+    // True since #2174: the sync is what installs these now, and
+    // loadDeviceAsPlugin refuses a spec that cannot be made on a track. What
+    // keeps them out of the app is showInBrowser, and they are only ever
+    // registered inside a test binary anyway.
+    spec.canCreateOnTrack = true;
     spec.showInBrowser = false;
     spec.isInstrument = true;
     spec.tags = kCorpusDeviceTags;
@@ -541,7 +549,11 @@ void registerGainDevice(magda::daw::audio::InternalPluginRegistry& registry) {
     // the browser still never shows this device, and the track-level path
     // still builds its own.
     spec.canCreateDetached = true;
-    spec.canCreateOnTrack = false;
+    // True since #2174: the sync is what installs these now, and
+    // loadDeviceAsPlugin refuses a spec that cannot be made on a track. What
+    // keeps them out of the app is showInBrowser, and they are only ever
+    // registered inside a test binary anyway.
+    spec.canCreateOnTrack = true;
     spec.showInBrowser = false;
     spec.tags = kCorpusDeviceTags;
     spec.tagCount = static_cast<int>(std::size(kCorpusDeviceTags));
@@ -568,7 +580,11 @@ void registerMonoGainDevice(magda::daw::audio::InternalPluginRegistry& registry)
     spec.description = "A one-channel gain, for the null-diff corpus.";
     spec.createMode = magda::daw::audio::InternalPluginCreateMode::FreshValueTree;
     spec.canCreateDetached = true;
-    spec.canCreateOnTrack = false;
+    // True since #2174: the sync is what installs these now, and
+    // loadDeviceAsPlugin refuses a spec that cannot be made on a track. What
+    // keeps them out of the app is showInBrowser, and they are only ever
+    // registered inside a test binary anyway.
+    spec.canCreateOnTrack = true;
     spec.showInBrowser = false;
     spec.tags = kCorpusDeviceTags;
     spec.tagCount = static_cast<int>(std::size(kCorpusDeviceTags));
@@ -586,59 +602,6 @@ void registerMonoGainDevice(magda::daw::audio::InternalPluginRegistry& registry)
 
 const bool gainDeviceRegistered = magda::daw::audio::registerDevicePack(registerGainDevice);
 const bool monoGainDeviceRegistered = magda::daw::audio::registerDevicePack(registerMonoGainDevice);
-
-/// Where a link's target lives, for the walker that wires modifiers and macros.
-///
-/// A lookup rather than a sync: the wiring is still ModifierSyncWalker's, which
-/// is the point. The app's own lookup is PluginManager's; this resolves the
-/// only devices this leg installs.
-///
-/// Keyed by the whole path, not by the device id in it. An id is unique within
-/// a chain segment and not across the hierarchy (#1899), so matching on the
-/// number would wire a rack-inner or post-FX target onto the top-level plugin.
-class GainPluginLookup final : public magda::TargetPluginLookup {
-  public:
-    void add(const magda::ChainNodePath& path, te::Plugin* plugin) {
-        plugins_[path] = plugin;
-    }
-
-    te::Plugin* getPlugin(const magda::ChainNodePath& path) const override {
-        const auto found = plugins_.find(path);
-        return found == plugins_.end() ? nullptr : found->second;
-    }
-
-  private:
-    std::map<magda::ChainNodePath, te::Plugin*> plugins_;
-};
-
-/// Where one scope's modifiers and macros live. The walker writes into
-/// references it is handed; in the app these sit on PluginManager's synced
-/// device records, here they last the length of a render.
-struct ScopeModifiers {
-    std::map<magda::ModId, te::Modifier::Ptr> modifiers;
-    std::map<magda::ModId, std::unique_ptr<magda::CurveSnapshotHolder>> curveSnapshots;
-    std::map<int, te::MacroParameter*> macroParams;
-
-    magda::ModifierSyncState state() {
-        return magda::ModifierSyncState{modifiers, curveSnapshots, macroParams};
-    }
-};
-
-/// Whether @p node is worth building TE state for. A track with the default
-/// sixteen empty macros and no modifiers gets none.
-bool carriesModulation(const magda::ConstChainNode& node) {
-    if (node.mods != nullptr)
-        for (const auto& mod : *node.mods)
-            if (mod.enabled && mod.isLinked())
-                return true;
-
-    if (node.macros != nullptr)
-        for (const auto& macro : *node.macros)
-            if (macro.isLinked())
-                return true;
-
-    return false;
-}
 
 void pumpMessageThread(int milliseconds) {
     if (auto* manager = juce::MessageManager::getInstanceWithoutCreating())
@@ -747,6 +710,37 @@ IncumbentRender renderIncumbent(const Case& value) {
     for (const auto& track : value.tracks)
         trackController.ensureTrackMapping(track.id, track.name);
 
+    // --- the project, where the app's own sync reads it from ------------------
+    //
+    // PluginManager takes a TrackManager& and then does not use it: its sync
+    // path reaches TrackManager::getInstance() forty-eight times between
+    // PluginManagerSync and RackSyncManager. So a case's tracks go into the
+    // singleton, which is what the app's device path reads, and a leg that
+    // populated a local instance instead would watch that path read an empty
+    // one and install nothing.
+    //
+    // The same arrangement the leg already has with ClipManager, and the idiom
+    // a dozen other files in this binary use: fill it, run, clear it. Cleared
+    // through a guard rather than at each return, because there are seven of
+    // those and a case that left its tracks behind would be found by whichever
+    // test ran next.
+    struct TrackManagerUnwind {
+        ~TrackManagerUnwind() {
+            TrackManager::getInstance().clearAllTracks();
+        }
+    } trackManagerUnwind;
+
+    auto& trackManager = TrackManager::getInstance();
+    trackManager.clearAllTracks();
+
+    for (const auto& track : value.tracks)
+        trackManager.restoreTrack(track);
+
+    // The master is not in that vector: TrackManager keeps it as its own
+    // TrackInfo, which getTrack returns for MASTER_TRACK_ID.
+    if (auto* master = trackManager.getTrack(MASTER_TRACK_ID))
+        *master = value.master;
+
     // --- the mixer ------------------------------------------------------------
     //
     // The same four calls AudioBridge::trackPropertyChanged makes, in the order
@@ -778,19 +772,17 @@ IncumbentRender renderIncumbent(const Case& value) {
 
     // --- the devices and the racks -------------------------------------------
     //
-    // One GainPlugin per model gain device, in chain order, at the head of the
-    // track's plugin list so it sits where the plan puts its Device op. The
-    // first device the corpus runs under both engines at all (#2123); every
-    // other device in the model is still a thing neither leg runs.
+    // The app's own device path, driven rather than copied (#2174). Every
+    // device the model declares is created the way the app creates it, in the
+    // segment and at the position the model puts it, racks and their inner
+    // plugins and multi-out wrappers included, because all of that is what
+    // PluginManager::syncAllPlugins does with a project.
     //
-    // A rack in the same list is one element of it, at the position it holds
-    // there, and it is built by the app's own RackSyncManager (#2139). Not a
-    // second rack builder written for the harness: a rack is a te::RackType, a
-    // RackInstance, a VolumeAndPan per chain and a connection matrix over all
-    // of it, and the whole of that is what a rack case is comparing. Writing
-    // those by hand here would be a corpus agreeing with a second opinion
-    // about what a rack is, which is the thing this file has refused
-    // everywhere else.
+    // This is the boundary the corpus refused to cross until now, and the
+    // refusal was right while the alternative was writing plugins straight into
+    // the leg: a second sync is something that can agree with itself while both
+    // engines are wrong. What makes crossing it safe is that this is not a
+    // second sync. It is the first one, called.
     //
     // Its PluginManager is built over this render's own Edit rather than taken
     // from an AudioBridge, because the Edit is this render's: the constructor
@@ -802,37 +794,48 @@ IncumbentRender renderIncumbent(const Case& value) {
     PluginManager pluginManager(*engine, *edit, trackController, pluginWindows, transportState,
                                 TrackManager::getInstance());
     auto& rackSync = pluginManager.getRackSyncManager();
-    auto& rackManager = pluginManager.getInstrumentRackManager();
 
-    // The multi-out instruments this render installed, by the id a MultiOut
-    // track's link names. Collected while walking the chains rather than looked
-    // up in TrackManager the way the app does: the corpus's projects are case
-    // values and never reach that singleton.
-    std::map<DeviceId, const magda::DeviceInfo*> multiOutSources;
+    pluginManager.syncAllPlugins();
 
-    GainPluginLookup lookup;
+    /// Where a link's target lives, answered by the manager that installed it.
+    ///
+    /// The app's own lookup rather than a map this file fills: a target is a
+    /// path, and which plugin a path names is exactly what PluginManager knows.
+    class SyncedPluginLookup final : public magda::TargetPluginLookup {
+      public:
+        explicit SyncedPluginLookup(PluginManager& manager) : manager_(manager) {}
+
+        te::Plugin* getPlugin(const magda::ChainNodePath& path) const override {
+            return manager_.getPlugin(path).get();
+        }
+
+      private:
+        PluginManager& manager_;
+    } lookup(pluginManager);
+
+    // The gain devices this project has, by the path that addresses them, with
+    // the plugin the sync installed for each.
+    //
+    // Still collected, because the automation bake and the host write below
+    // both address a parameter and the corpus's gain is the only device whose
+    // parameter either of them knows. Resolved through the manager rather than
+    // recorded while installing, which is what lets the walk be over the model
+    // alone: a device inside a rack is found the same way one on a track is.
     std::map<ChainNodePath, GainPlugin*> gains;
-
-    // Every gain device the case declares, by the path that addresses it. The
-    // host write at the end reads this rather than the track lists, so a device
-    // inside a rack is written the same way one on the track is.
     std::map<ChainNodePath, const magda::DeviceInfo*> gainDevices;
 
-    // The gains a rack holds, found through the manager that built them.
-    //
-    // Recursive because a nested rack's devices are the enclosing rack's
-    // devices as far as the model's paths are concerned, and the manager keeps
-    // one map of inner plugins for the whole tree. The path is rebuilt on the
-    // way down so that a device is registered under the path a link's target
-    // carries, which is the only thing the modifier walker matches on.
-    std::function<void(const magda::RackInfo&, const ChainNodePath&)> registerRackGains =
+    // A rack's devices, down through nested racks, under the path a link's
+    // target carries. Rebuilt on the way down rather than derived from the
+    // device id, because an id is unique within a chain segment and not across
+    // the hierarchy (#1899).
+    std::function<void(const magda::RackInfo&, const ChainNodePath&)> collectRackGains =
         [&](const magda::RackInfo& rack, const ChainNodePath& rackPath) {
             for (const auto& chain : rack.chains) {
                 const auto chainPath = rackPath.withChain(chain.id);
                 for (const auto& element : chain.elements) {
                     if (magda::isRack(element)) {
                         const auto& nested = magda::getRack(element);
-                        registerRackGains(nested, chainPath.withRack(nested.id));
+                        collectRackGains(nested, chainPath.withRack(nested.id));
                         continue;
                     }
 
@@ -840,159 +843,37 @@ IncumbentRender renderIncumbent(const Case& value) {
                     if (!isGainDevice(device))
                         continue;
 
-                    auto* plugin = rackSync.getInnerPlugin(device.id);
-                    auto* gain = dynamic_cast<GainPlugin*>(plugin);
-                    if (gain == nullptr)
-                        continue;
-
                     const auto path = chainPath.withDevice(device.id);
-                    lookup.add(path, plugin);
-                    gains[path] = gain;
-                    gainDevices[path] = &device;
+                    if (auto* gain =
+                            dynamic_cast<GainPlugin*>(pluginManager.getPlugin(path).get())) {
+                        gains[path] = gain;
+                        gainDevices[path] = &device;
+                    }
                 }
             }
         };
 
-    for (const auto& track : value.tracks) {
-        auto* audioTrack = trackController.getAudioTrack(track.id);
-        if (audioTrack == nullptr)
-            continue;
-
-        auto slot = 0;
+    // A track's own list is not a chain path: a top-level device is addressed
+    // by topLevelDevice() rather than by a Device step under the track, and the
+    // two do not compare equal.
+    for (const auto& track : value.tracks)
         for (const auto& element : track.chain.fxChainElements) {
             if (magda::isRack(element)) {
                 const auto& rack = magda::getRack(element);
-
-                auto rackInstance = rackSync.syncRack(track.id, rack);
-                if (rackInstance == nullptr) {
-                    result.failure = "rack " + std::to_string(rack.id) + " could not be built";
-                    ClipManager::getInstance().clearAllClips();
-                    ProjectManager::getInstance().setTempo(previousTempo);
-                    return result;
-                }
-
-                audioTrack->pluginList.insertPlugin(rackInstance, slot++, nullptr);
-                registerRackGains(rack, ChainNodePath::rack(track.id, rack.id));
+                collectRackGains(rack, ChainNodePath::rack(track.id, rack.id));
                 continue;
             }
 
             const auto& device = magda::getDevice(element);
-
-            if (isMultiOutSynthDevice(device)) {
-                // The same six calls PluginManagerSync makes for a multi-out
-                // instrument, in the order it makes them: create, wrap, insert
-                // the wrapper where the plugin was, then record the wrapping so
-                // an output pair can be asked for later. The app's own detection
-                // reads the channel count off an ExternalPlugin or a DrumGrid
-                // and would answer two for this device, so the count is passed
-                // from the model here; every step after it is the app's.
-                juce::ValueTree state(te::IDs::PLUGIN);
-                state.setProperty(te::IDs::type, device.pluginId, nullptr);
-
-                auto plugin = edit->getPluginCache().createNewPlugin(state);
-                if (dynamic_cast<MultiOutSynthPlugin*>(plugin.get()) == nullptr) {
-                    result.failure = "the multi-out device could not be created";
-                    ClipManager::getInstance().clearAllClips();
-                    ProjectManager::getInstance().setTempo(previousTempo);
-                    return result;
-                }
-
-                const auto passRawMidi =
-                    magda::routing::makeRoutingNode(device).passesRawMidiInput();
-                auto wrapper = rackManager.wrapMultiOutInstrument(
-                    plugin, device.multiOut.totalOutputChannels, passRawMidi);
-                if (wrapper == nullptr) {
-                    result.failure = "the multi-out instrument could not be wrapped";
-                    ClipManager::getInstance().clearAllClips();
-                    ProjectManager::getInstance().setTempo(previousTempo);
-                    return result;
-                }
-
-                audioTrack->pluginList.insertPlugin(wrapper, slot++, nullptr);
-
-                auto* wrapperInstance = dynamic_cast<te::RackInstance*>(wrapper.get());
-                rackManager.recordWrapping(
-                    ChainNodePath::topLevelDevice(track.id, device.id),
-                    wrapperInstance != nullptr ? wrapperInstance->type : te::RackType::Ptr(),
-                    plugin, wrapper, true, device.multiOut.totalOutputChannels);
-                multiOutSources[device.id] = &device;
-                continue;
-            }
-
             if (!isGainDevice(device))
                 continue;
 
-            juce::ValueTree state(te::IDs::PLUGIN);
-            state.setProperty(te::IDs::type, device.pluginId, nullptr);
-
-            auto plugin = edit->getPluginCache().createNewPlugin(state);
-            auto* gain = dynamic_cast<GainPlugin*>(plugin.get());
-            if (gain == nullptr) {
-                result.failure = "the gain device could not be created";
-                ClipManager::getInstance().clearAllClips();
-                ProjectManager::getInstance().setTempo(previousTempo);
-                return result;
-            }
-
-            audioTrack->pluginList.insertPlugin(plugin, slot++, nullptr);
-
-            // The path the model addresses it by, which is what a lane's target
-            // and a link's target both carry.
             const auto path = ChainNodePath::topLevelDevice(track.id, device.id);
-            lookup.add(path, plugin.get());
-            gains[path] = gain;
-            gainDevices[path] = &device;
+            if (auto* gain = dynamic_cast<GainPlugin*>(pluginManager.getPlugin(path).get())) {
+                gains[path] = gain;
+                gainDevices[path] = &device;
+            }
         }
-    }
-
-    // --- the output pairs a MultiOut track reads -------------------------------
-    //
-    // After every source track, because the instance a pair is read through is
-    // made from the wrapper the source track's instrument was put inside, and a
-    // MultiOut track can sit anywhere in the case's list.
-    //
-    // The pair the track names rather than every pair the device has: an
-    // instance is what makes a pair audible, and a pair nobody opened is
-    // rendered into the wrapper's pins and read by nothing. That is the
-    // engine's rule too, and it is the half of this a render can compare.
-
-    for (const auto& track : value.tracks) {
-        if (track.type != TrackType::MultiOut || !track.multiOutLink.has_value())
-            continue;
-
-        auto* audioTrack = trackController.getAudioTrack(track.id);
-        if (audioTrack == nullptr)
-            continue;
-
-        const auto& link = *track.multiOutLink;
-        const auto* source = multiOutSources.count(link.sourceDeviceId) == 0
-                                 ? nullptr
-                                 : multiOutSources.at(link.sourceDeviceId);
-        if (source == nullptr || link.outputPairIndex < 0 ||
-            link.outputPairIndex >= static_cast<int>(source->multiOut.outputPairs.size())) {
-            result.failure = "a MultiOut track names an output pair this project does not have";
-            ClipManager::getInstance().clearAllClips();
-            ProjectManager::getInstance().setTempo(previousTempo);
-            return result;
-        }
-
-        const auto& pair =
-            source->multiOut.outputPairs[static_cast<std::size_t>(link.outputPairIndex)];
-
-        auto instance = rackManager.createOutputInstance(link.sourceDeviceId, link.outputPairIndex,
-                                                         pair.firstPin, pair.numChannels);
-        if (instance == nullptr) {
-            result.failure = "the output pair's rack instance could not be created";
-            ClipManager::getInstance().clearAllClips();
-            ProjectManager::getInstance().setTempo(previousTempo);
-            return result;
-        }
-
-        // At the head, where every other device this leg installs goes. Not at
-        // the end: a track's plugin list carries its fader, and a source
-        // inserted behind it is panned and faded by nothing.
-        audioTrack->pluginList.insertPlugin(instance, 0, nullptr);
-    }
 
     // The racks come down with the render that built them, before the Edit
     // does. A RackType outliving its plugins unwinds TE's bookkeeping in the
@@ -1005,36 +886,24 @@ IncumbentRender renderIncumbent(const Case& value) {
         }
     } rackUnwind{rackSync};
 
-    // Where the modulation this render builds lives, and what unwinds it.
-    //
-    // Declared ahead of both sections that fill them because destruction order
-    // is load bearing: the teardown reaches into the scope maps, and everything
-    // has to be gone before the Edit is. A macro destroyed while its list is
-    // already tearing down, or one holding a populated curve, unwinds TE's
-    // bookkeeping in the wrong order.
+    // What unwinds the curves this render bakes.
     //
     // A guard rather than loops at the end, because a proxy that never arrives
-    // returns from the middle of the wait below.
-    std::map<TrackId, ScopeModifiers> trackModulation;
-    std::map<ChainNodePath, ScopeModifiers> deviceModulation;
-    std::vector<std::unique_ptr<magda::CurveSnapshotHolder>> deferredHolders;
-
+    // returns from the middle of the wait below. The modulation half of this is
+    // gone with the section that built it: the sync owns those now, and
+    // PluginManager takes them down with itself.
     struct Unwind {
         std::vector<te::AutomatableParameter*> bakedParams;
-        std::vector<std::function<void()>> modulation;
 
         ~Unwind() {
             for (auto* param : bakedParams) {
                 param->getCurve().clear(nullptr);
                 param->updateStream();
             }
-            for (auto& tearDown : modulation)
-                tearDown();
         }
     } unwind;
 
     auto& bakedParams = unwind.bakedParams;
-    auto& tearDownModulation = unwind.modulation;
 
     // --- automation ----------------------------------------------------------
     //
@@ -1086,177 +955,19 @@ IncumbentRender renderIncumbent(const Case& value) {
 
     // --- modifiers and macros ------------------------------------------------
     //
-    // The app's own walker, at the two scopes a track can carry without a rack:
-    // the track itself and each top-level device. Both take the track's
-    // modifier and macro lists, which is what
-    // PluginManager::syncDeviceModifiers hands them for a non-instrument
-    // device. Rack scope needs a te::RackType only RackSyncManager builds, so
-    // it is refused below rather than skipped (#1892).
-    // What the walker would drop in silence, refused out loud first: it wires
-    // nothing for a target this leg has no plugin for, while the native table
-    // resolves it and modulates. That is a modulated render compared against an
-    // unmodulated one, and where the target is inaudible it is a false null.
-    const auto unwirable = [&](const ControlTarget& target, const ChainNodePath& scopePath,
-                               const magda::ModArray& scopeMods) -> std::string {
-        switch (target.kind) {
-            case ControlTarget::Kind::PluginParam:
-                if (gains.count(target.devicePath) == 0)
-                    return "a device this leg does not install: " +
-                           target.devicePath.toString().toStdString();
-                return {};
-
-            case ControlTarget::Kind::ModParam:
-                // Same scope, asked of the path rather than of the id.
-                // resolveSameScopeModParam looks the modifier up by id alone,
-                // so a target naming another scope is wired to whichever local
-                // modifier shares its number while the native table resolves
-                // the whole path to a different parameter. The two then differ
-                // over a link both of them think they honoured.
-                if (target.devicePath != scopePath)
-                    return "a modifier in another scope (" +
-                           target.devicePath.toString().toStdString() +
-                           "), which the walker resolves by id alone";
-
-                // Rate is the only parameter the native table gives a modifier;
-                // the walker also resolves index 1 to depth.
-                if (target.modParamIndex != 0)
-                    return "a modifier parameter that is not its Rate";
-
-                for (const auto& mod : scopeMods)
-                    if (mod.id == target.modId && mod.enabled)
-                        return {};
-                return "a modifier this scope does not have, or one that is off";
-
-            default:
-                // A fader, a send, a macro. The native table carries the first
-                // two; the walker wires none of them.
-                return std::string("a ") + magda::toString(target.kind) +
-                       " target, which this leg cannot wire";
-        }
-    };
-
-    const auto refuseUnwirableLinks = [&](const magda::ConstChainNode& node,
-                                          const ChainNodePath& scopePath) -> std::string {
-        static const magda::ModArray noMods;
-        const auto& mods = node.mods == nullptr ? noMods : *node.mods;
-
-        for (const auto& mod : mods)
-            if (mod.enabled)
-                for (const auto& link : mod.links)
-                    if (link.enabled && link.isValid())
-                        if (auto why = unwirable(link.target, scopePath, mods); !why.empty())
-                            return "a modifier links to " + why;
-
-        if (node.macros != nullptr)
-            for (const auto& macro : *node.macros)
-                for (const auto& link : macro.links)
-                    if (link.target.isValid())
-                        if (auto why = unwirable(link.target, scopePath, mods); !why.empty())
-                            return "a macro links to " + why;
-
-        return {};
-    };
-
-    for (const auto& track : value.tracks) {
-        auto* audioTrack = trackController.getAudioTrack(track.id);
-        if (audioTrack == nullptr)
-            continue;
-
-        auto* modifierList = audioTrack->getModifierList();
-        auto* macroList = &audioTrack->getMacroParameterListForWriting();
-
-        // Every plugin the walker may have to scrub a stale assignment off.
-        const auto forEachPlugin = [audioTrack](const std::function<void(te::Plugin*)>& visit) {
-            for (auto* plugin : audioTrack->pluginList)
-                visit(plugin);
-        };
-
-        const auto sync = [&](magda::ConstChainNode node, ScopeModifiers& scope) {
-            magda::ModifierSyncContext ctx;
-            ctx.modifierList = modifierList;
-            ctx.macroList = macroList;
-            ctx.lookup = &lookup;
-            ctx.forEachScopePlugin = forEachPlugin;
-            ctx.hasCrossTrackSidechain = false;
-
-            auto state = scope.state();
-            magda::ModifierSyncWalker::syncStructure(node, ctx, state, deferredHolders);
-
-            // Torn down through the same walker handed an empty node, which
-            // is the path a bypassed device already takes.
-            tearDownModulation.emplace_back([&scope, ctx, this_node = node]() mutable {
-                this_node.mods = nullptr;
-                this_node.macros = nullptr;
-                std::vector<std::unique_ptr<magda::CurveSnapshotHolder>> discarded;
-                auto state = scope.state();
-                magda::ModifierSyncWalker::syncStructure(this_node, ctx, state, discarded);
-            });
-        };
-
-        const auto refuse = [&](const std::string& why) {
-            result.failure = why;
-            ClipManager::getInstance().clearAllClips();
-            ProjectManager::getInstance().setTempo(previousTempo);
-        };
-
-        magda::ConstChainNode trackNode;
-        trackNode.scope = magda::ChainScope::Track;
-        trackNode.trackId = track.id;
-        trackNode.mods = &track.mods;
-        trackNode.macros = &track.macros;
-
-        if (carriesModulation(trackNode)) {
-            if (auto why = refuseUnwirableLinks(trackNode, ChainNodePath::trackLevel(track.id));
-                !why.empty()) {
-                refuse(why);
-                return result;
-            }
-            sync(trackNode, trackModulation[track.id]);
-        }
-
-        // A rack's own modifiers and macros need a te::RackType this leg does
-        // not build (#1892). Refused rather than skipped.
-        for (const auto& element : track.chain.fxChainElements) {
-            if (!magda::isRack(element))
-                continue;
-
-            const auto& rack = magda::getRack(element);
-            magda::ConstChainNode rackNode;
-            rackNode.scope = magda::ChainScope::Rack;
-            rackNode.mods = &rack.mods;
-            rackNode.macros = &rack.macros;
-
-            if (carriesModulation(rackNode)) {
-                refuse("a rack carries modulation, which this leg cannot sync");
-                return result;
-            }
-        }
-
-        for (const auto& element : track.chain.fxChainElements) {
-            if (!magda::isDevice(element))
-                continue;
-
-            const auto& device = magda::getDevice(element);
-
-            magda::ConstChainNode deviceNode;
-            deviceNode.scope = magda::ChainScope::Device;
-            deviceNode.trackId = track.id;
-            deviceNode.deviceId = device.id;
-            deviceNode.mods = &device.mods;
-            deviceNode.macros = &device.macros;
-            deviceNode.params = &device.parameters;
-
-            if (carriesModulation(deviceNode)) {
-                const auto devicePath = ChainNodePath::topLevelDevice(track.id, device.id);
-
-                if (auto why = refuseUnwirableLinks(deviceNode, devicePath); !why.empty()) {
-                    refuse(why);
-                    return result;
-                }
-                sync(deviceNode, deviceModulation[devicePath]);
-            }
-        }
-    }
+    // Nothing here. The sync above wires them, at every scope the model has,
+    // because PluginManager::syncTrackPlugins calls syncDeviceModifiers with
+    // the track's modifier and macro lists (#2174).
+    //
+    // This file used to drive ModifierSyncWalker itself, at the two scopes a
+    // track can carry without a rack, and refuse the rest out loud: rack scope
+    // wanted a te::RackType only RackSyncManager builds, and a link whose
+    // target this leg had no plugin for would have been wired to nothing while
+    // the native table resolved it and modulated. Both refusals were about
+    // devices this leg did not install. It installs them now, so they are gone
+    // rather than relaxed -- the difference matters, because a refusal removed
+    // while its cause remains is how a modulated render comes to be compared
+    // against an unmodulated one and called a null.
 
     // --- the host write ------------------------------------------------------
     //

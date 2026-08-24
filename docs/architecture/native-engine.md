@@ -870,9 +870,19 @@ cell now, which is the unit the voice actually drives it in.
 
 What the rig still does not cover is the rest of
 [#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896): no case carries a device
-either engine ships, because nothing yet runs one of those under both of them, and the gain
-device the parameter cases play through was written for the corpus; the interactive paths have no
-runner; and none of the migration half exists.
+either engine ships, and the gain device the parameter cases play through was written for the
+corpus; the interactive paths have no runner; and none of the migration half exists.
+
+The first of those has moved half its distance
+([#2174](https://github.com/Conceptual-Machines/magda-core/issues/2174)). The native leg no
+longer stands in for a device it was handed: a `Device` op is bound through the app's own
+catalogs, so every device that has moved to the SDK runs under the engine, and one that has not
+is reported as a device the engine cannot run rather than passed through in silence. What is
+still one-sided is the other leg. The incumbent instantiates the two devices the corpus declares
+and nothing else, so a case carrying a shipped device would be comparing a rendered device
+against a device nobody built, which is a residual that says nothing about either engine. Driving
+the app's own device path from that leg is what makes such a case worth writing, and it is what
+rack-scope macros, sends and the envelope follower are each waiting on.
 
 ---
 
@@ -880,16 +890,17 @@ runner; and none of the migration half exists.
 
 Worth knowing before reading the code and wondering where something is:
 
-- **Racks, the rest of them** ([#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892)).
-  `PlanCompiler::emitRack` emits chain faders, the rack mix, its MIDI merges and its output
-  fader; nesting, its recursion case and the identity a nesting change has to leave alone are
-  settled, and so are aux outputs, multi-out tracks and delta solo at both scopes. What is
-  missing is the pin-level connection graph and the channel model, which is stereo everywhere
-  and needs not to be ([#2138](https://github.com/Conceptual-Machines/magda-core/issues/2138)),
-  and the parity corpus for rack topologies
-  ([#2139](https://github.com/Conceptual-Machines/magda-core/issues/2139)).
+- **The rest of the device layer**
+  ([#2174](https://github.com/Conceptual-Machines/magda-core/issues/2174)). The engine now runs
+  the devices MAGDA ships: `magda_engine_devices` hosts a `MagdaDevice` behind a `Device` op the
+  way `magda_tracktion_compat_devices` hosts one behind a `te::Plugin`, so a device is written
+  once and both engines run that one. What has not moved to the SDK the engine cannot run, and
+  the factory says so rather than standing something in. The corpus still contains no case with
+  one in it: the incumbent leg instantiates only the two devices the corpus declares, and until
+  it drives the app's own device path a case with a shipped device would be comparing something
+  against nothing. Rack-scope macros, sends and the envelope follower queue behind that.
 - **External plugins** ([#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893)).
-  A `Device` op resolves to whatever the host hands the store. Nothing hosts VST3 yet.
+  A `Device` op for one resolves to nothing. Nothing hosts VST3 yet.
 - **Launcher and recording** ([#1894](https://github.com/Conceptual-Machines/magda-core/issues/1894),
   [#1895](https://github.com/Conceptual-Machines/magda-core/issues/1895)).
 - **Wiring the ports to the model.** The native transient detector, the loop-info parse and the
@@ -900,9 +911,10 @@ Worth knowing before reading the code and wondering where something is:
 - **The rest of the validation harness**
   ([#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896)). The rig exists and
   section 7 describes it, whole-project cases and the tiers above them (#2075), the plan goldens
-  (#2076), the differ properties (#2077) and the block-size gate (#2078) included. Missing: the
-  migrators (#2079), the DAWproject cross-check (#2080), a real-project corpus (#2081), and the
-  parity envelope suite that gates cutover (#2082).
+  (#2076), the differ properties (#2077), the block-size gate (#2078) and the DAWproject
+  cross-check (#2080) included. Missing: the migrators (#2079), a real-project corpus (#2081) and
+  the rig a real project reaches it through (#2173, #2174, #2175), and the parity envelope suite
+  that gates cutover (#2082).
 
 ---
 
@@ -919,6 +931,14 @@ Worth knowing before reading the code and wondering where something is:
 
 Every one of those files opens with a comment explaining why it exists. Read that before the
 code; most of them answer the question you are about to ask.
+
+One piece of the engine's world lives outside that tree on purpose. A device is neither the
+engine's nor the current engine's -- it is MAGDA's, written against the device SDK -- so the
+lifecycle adapter that runs one belongs to whichever host is running it, and there is one per
+host: `magda/daw/audio/plugins/tracktion/` for the incumbent and
+`magda/daw/audio/plugins/engine/` for this one (`magda_engine_devices`). Neither is a device. The
+boundary check on `magda_engine` is what keeps them out of it: an adapter that lived in the
+engine would be the engine knowing what a MAGDA device is.
 
 ---
 
