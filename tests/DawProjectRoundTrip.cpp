@@ -421,6 +421,19 @@ const std::map<std::string, std::vector<Loss>>& lossTable() {
         {"param.hostwrite.modifier", {internalDevices(), trackModulation()}},
         {"macro.track", {internalDevices(), trackModulation()}},
         {"macro.device", {internalDevices()}},
+        // Rack-scope macros and a device-scope follower both ride inside the
+        // chain -- on RackInfo::macros and on DeviceInfo::mods -- so the one
+        // declaration that loses the chain loses them with it, and restoring
+        // the chain puts them back. Neither wants trackModulation() beside it:
+        // that covers what rides on TrackInfo, and a declared loss that finds
+        // nothing to restore fails here rather than sitting in the table.
+        //
+        // The three send cases are deliberately absent. DAWproject has sends
+        // and aux channels of its own, so they make the trip intact, and that
+        // is a result rather than an omission: the format carries the one piece
+        // of mixer topology the corpus has.
+        {"macro.rack", {internalDevices()}},
+        {"mod.follower", {internalDevices()}},
         // The rack cases (#2139). A rack is chains of internal devices, and the
         // format has nowhere to put either half, so the same declaration covers
         // the whole of it: the chain comes back empty and is restored wholesale.

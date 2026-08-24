@@ -36,7 +36,7 @@ juce::File scratch() {
 TEST_CASE("The corpus builds and covers what the slice claims", "[nulldiff][corpus]") {
     const auto corpus = sharedCorpus(scratch());
 
-    REQUIRE(corpus.size() == 50);
+    REQUIRE(corpus.size() == 55);
 
     std::set<std::string> names;
     for (const auto& value : corpus)
@@ -68,6 +68,9 @@ TEST_CASE("The corpus builds and covers what the slice claims", "[nulldiff][corp
                                  "mix.solo",
                                  "mix.master",
                                  "mix.volume.clamp",
+                                 "send.postfader",
+                                 "send.prefader",
+                                 "send.mute",
                                  "param.base",
                                  "param.automation",
                                  "param.modifier",
@@ -76,6 +79,8 @@ TEST_CASE("The corpus builds and covers what the slice claims", "[nulldiff][corp
                                  "param.hostwrite.modifier",
                                  "macro.track",
                                  "macro.device",
+                                 "macro.rack",
+                                 "mod.follower",
                                  "rack.parallel",
                                  "rack.chain.fader",
                                  "rack.fader",
