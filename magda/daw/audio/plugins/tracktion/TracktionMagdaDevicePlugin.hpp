@@ -40,6 +40,7 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
     bool isSynth() override;
     bool producesAudioWhenNoAudioInput() override;
     bool canSidechain() override;
+    int getNumOutputChannelsGivenInputs(int numInputChannels) override;
     double getLatencySeconds() override;
     double getTailLength() const override;
 

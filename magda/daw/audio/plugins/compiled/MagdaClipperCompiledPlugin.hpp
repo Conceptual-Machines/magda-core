@@ -1,15 +1,9 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
-#include <array>
 #include <atomic>
-#include <memory>
 #include <vector>
 
-#include "../FaustParamPool.hpp"
-#include "core/ParameterInfo.hpp"
-#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "plugins/compiled/MagdaCompiledEffect.hpp"
 
 class dsp;
 
@@ -22,38 +16,11 @@ namespace magda::daw::audio::compiled {
  * picks one of five ADAA curves from aa.lib (Hard / Soft / Tanh /
  * Hyperbolic / Sine) and drives the input into it.
  */
-class MagdaClipperCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
+class MagdaClipperCompiledPlugin : public MagdaCompiledEffect {
   public:
     static const char* xmlTypeName;
 
-    explicit MagdaClipperCompiledPlugin(const te::PluginCreationInfo& info);
-    ~MagdaClipperCompiledPlugin() override;
-
-    juce::String getName() const override;
-    juce::String getPluginType() override;
-    juce::String getShortName(int) override;
-    juce::String getSelectableDescription() override;
-
-    void initialise(const te::PluginInitialisationInfo& info) override;
-    void deinitialise() override;
-    void reset() override;
-    void applyToBuffer(const te::PluginRenderContext& fc) override;
-
-    bool takesMidiInput() override {
-        return false;
-    }
-    bool takesAudioInput() override {
-        return true;
-    }
-    bool isSynth() override {
-        return false;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return false;
-    }
-    double getTailLength() const override {
-        return 0.0;
-    }
+    MagdaClipperCompiledPlugin();
 
     static constexpr int kDriveSlot = 0;
     static constexpr int kModeSlot = 1;
@@ -63,55 +30,27 @@ class MagdaClipperCompiledPlugin : public te::Plugin, public ICompiledFaustPlugi
     enum class ClipperMode { Hard = 0, Soft, Tanh, Hyperbolic, Sine };
     static constexpr int kModeCount = 5;
 
-    te::AutomatableParameter* getSlotParameter(int slotIndex) const;
-
-    float displayValueToNativeValue(int slotIndex, float displayValue) const;
-    float nativeValueToDisplayValue(int slotIndex, float nativeValue) const;
-
     // Audio-thread metering tap for the transfer-curve dot.
     float getInputPeakDb() const {
         return inputPeakDb_.load(std::memory_order_relaxed);
     }
 
-    using HostSlotInfo = CompiledHostSlotInfo;
-    const HostSlotInfo& getSlotInfo(int slotIndex) const;
+    juce::String devicePluginId() const override {
+        return xmlTypeName;
+    }
+    juce::String deviceName() const override {
+        return "Clipper";
+    }
 
-    // ICompiledFaustPlugin
-    int hostSlotCount() const override {
-        return kHostSlotCount;
+  protected:
+    ::dsp* createEngineDsp(int engineIndex) const override;
+    std::vector<HostSlotInfo> slotInfos() const override;
+    const char* slotIdPrefix() const override {
+        return "magda_clipper_";
     }
-    const CompiledHostSlotInfo& hostSlotInfo(int slotIndex) const override {
-        return getSlotInfo(slotIndex);
-    }
-    DeviceParameterHandle hostSlotParameter(int slotIndex) const override {
-        return tracktion_adapter::parameterHandle(getSlotParameter(slotIndex));
-    }
-    float displayToNormalized(int slotIndex, float displayValue) const override {
-        return displayValueToNativeValue(slotIndex, displayValue);
-    }
-    float normalizedToDisplay(int slotIndex, float normalizedValue) const override {
-        return nativeValueToDisplayValue(slotIndex, normalizedValue);
-    }
+    void beforeCompute(DeviceProcessContext& context, int engineIndex) override;
 
   private:
-    void buildHostParameters();
-    void rebuildEngineState(int sampleRate);
-
-    std::unique_ptr<::dsp> dsp_;
-    int numInputs_ = 0;
-    int numOutputs_ = 0;
-
-    std::array<FAUSTFLOAT*, kHostSlotCount> zones_{};
-
-    std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
-    std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
-    std::array<juce::CachedValue<float>, kHostSlotCount> hostCached_;
-
-    juce::AudioBuffer<float> scratchIn_;
-    juce::AudioBuffer<float> scratchOut_;
-    std::vector<float*> inPtrs_;
-    std::vector<float*> outPtrs_;
-
     std::atomic<float> inputPeakDb_{-120.0f};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaClipperCompiledPlugin)

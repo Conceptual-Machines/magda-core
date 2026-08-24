@@ -21,6 +21,11 @@ struct DeviceProperties {
     bool canSidechain = false;
     double latencySeconds = 0.0;
     double tailLengthSeconds = 0.0;
+    /// Output channels the device always produces, whatever it is handed. Zero
+    /// means it follows its input, which is what most effects do; a device sets
+    /// this when its DSP has a fixed output width (a mono-in/stereo-out
+    /// widener, a stereo-only dynamics stage).
+    int outputChannelCount = 0;
 };
 
 struct DevicePrepareContext {

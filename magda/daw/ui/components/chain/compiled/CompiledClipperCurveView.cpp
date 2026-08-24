@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaClipperCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -88,8 +89,8 @@ void CompiledClipperCurveView::setCompiledPlugin(
 }
 
 void CompiledClipperCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaClipperCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaClipperCompiledPlugin>(plugin));
 }
 
 void CompiledClipperCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -104,9 +105,7 @@ void CompiledClipperCurveView::timerCallback() {
     auto readPluginSlot = [this](int slot, float fallback) {
         if (compiledPlugin_ == nullptr)
             return fallback;
-        if (auto* p = compiledPlugin_->getSlotParameter(slot))
-            return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
-        return fallback;
+        return compiledPlugin_->slotDisplayValue(slot);
     };
 
     float drive = driveDb_;

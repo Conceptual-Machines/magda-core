@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -66,19 +67,17 @@ void CompiledSaturatorCurveView::timerCallback() {
     int mode = modeIndex_;
 
     if (compiledPlugin_ != nullptr) {
-        if (auto* p = compiledPlugin_->getSlotParameter(Sat::kDriveSlot))
-            drive =
-                compiledPlugin_->nativeValueToDisplayValue(Sat::kDriveSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Sat::kBiasSlot))
-            bias = compiledPlugin_->nativeValueToDisplayValue(Sat::kBiasSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Sat::kOutputSlot))
-            output =
-                compiledPlugin_->nativeValueToDisplayValue(Sat::kOutputSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Sat::kMixSlot))
-            mix = compiledPlugin_->nativeValueToDisplayValue(Sat::kMixSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Sat::kModeSlot))
+        if (auto p = compiledPlugin_->getSlotParameter(Sat::kDriveSlot))
+            drive = compiledPlugin_->nativeValueToDisplayValue(Sat::kDriveSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Sat::kBiasSlot))
+            bias = compiledPlugin_->nativeValueToDisplayValue(Sat::kBiasSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Sat::kOutputSlot))
+            output = compiledPlugin_->nativeValueToDisplayValue(Sat::kOutputSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Sat::kMixSlot))
+            mix = compiledPlugin_->nativeValueToDisplayValue(Sat::kMixSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Sat::kModeSlot))
             mode = static_cast<int>(std::round(
-                compiledPlugin_->nativeValueToDisplayValue(Sat::kModeSlot, p->getCurrentValue())));
+                compiledPlugin_->nativeValueToDisplayValue(Sat::kModeSlot, p.currentValue())));
     } else {
         drive = valueForSlot(deviceSnapshot_, Sat::kDriveSlot, drive);
         bias = valueForSlot(deviceSnapshot_, Sat::kBiasSlot, bias);
@@ -230,8 +229,8 @@ const CompiledPresentationSpec& getMagdaSaturatorPresentation() {
 }
 
 void CompiledSaturatorCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaSaturatorCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaSaturatorCompiledPlugin>(plugin));
 }
 
 }  // namespace magda::daw::ui

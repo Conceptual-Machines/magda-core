@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaFlangerCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -58,8 +59,8 @@ void CompiledFlangerCurveView::setCompiledPlugin(
 }
 
 void CompiledFlangerCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaFlangerCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaFlangerCompiledPlugin>(plugin));
 }
 
 void CompiledFlangerCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -86,8 +87,8 @@ void CompiledFlangerCurveView::timerCallback() {
     auto readPluginSlot = [this](int slot, float fallback) {
         if (compiledPlugin_ == nullptr)
             return fallback;
-        if (auto* p = compiledPlugin_->getSlotParameter(slot))
-            return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(slot))
+            return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
         return fallback;
     };
 
@@ -107,8 +108,8 @@ void CompiledFlangerCurveView::timerCallback() {
         feedback = readPluginSlot(Flanger::kFeedbackSlot, feedback);
         mix = readPluginSlot(Flanger::kMixSlot, mix);
         width = readPluginSlot(Flanger::kWidthSlot, width);
-        if (auto* p = compiledPlugin_->getSlotParameter(Flanger::kDivisionSlot)) {
-            const float norm = p->getCurrentValue();
+        if (auto p = compiledPlugin_->getSlotParameter(Flanger::kDivisionSlot)) {
+            const float norm = p.currentValue();
             const auto& info = compiledPlugin_->getSlotInfo(Flanger::kDivisionSlot);
             const int count = static_cast<int>(info.choices.size());
             const int idx =
@@ -243,9 +244,9 @@ void CompiledFlangerCurveView::paint(juce::Graphics& g) {
         if (compiledPlugin_ != nullptr) {
             const auto& info = compiledPlugin_->getSlotInfo(
                 magda::daw::audio::compiled::MagdaFlangerCompiledPlugin::kDivisionSlot);
-            if (auto* p = compiledPlugin_->getSlotParameter(
+            if (auto p = compiledPlugin_->getSlotParameter(
                     magda::daw::audio::compiled::MagdaFlangerCompiledPlugin::kDivisionSlot)) {
-                const float norm = p->getCurrentValue();
+                const float norm = p.currentValue();
                 const int count = static_cast<int>(info.choices.size());
                 if (count > 0) {
                     const int idx = juce::jlimit(

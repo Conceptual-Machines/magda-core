@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -60,20 +61,17 @@ void CompiledDelayCurveView::timerCallback() {
     float bpm = bpm_;
 
     if (compiledPlugin_ != nullptr) {
-        if (auto* p = compiledPlugin_->getSlotParameter(Delay::kTimeSlot))
-            time =
-                compiledPlugin_->nativeValueToDisplayValue(Delay::kTimeSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Delay::kFeedbackSlot))
-            fb = compiledPlugin_->nativeValueToDisplayValue(Delay::kFeedbackSlot,
-                                                            p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Delay::kCrossSlot))
-            cross =
-                compiledPlugin_->nativeValueToDisplayValue(Delay::kCrossSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Delay::kSyncSlot))
-            sync = p->getCurrentValue() >= 0.5f;
-        if (auto* p = compiledPlugin_->getSlotParameter(Delay::kDivisionSlot)) {
+        if (auto p = compiledPlugin_->getSlotParameter(Delay::kTimeSlot))
+            time = compiledPlugin_->nativeValueToDisplayValue(Delay::kTimeSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Delay::kFeedbackSlot))
+            fb = compiledPlugin_->nativeValueToDisplayValue(Delay::kFeedbackSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Delay::kCrossSlot))
+            cross = compiledPlugin_->nativeValueToDisplayValue(Delay::kCrossSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Delay::kSyncSlot))
+            sync = p.currentValue() >= 0.5f;
+        if (auto p = compiledPlugin_->getSlotParameter(Delay::kDivisionSlot)) {
             divIdx = static_cast<int>(std::round(compiledPlugin_->nativeValueToDisplayValue(
-                Delay::kDivisionSlot, p->getCurrentValue())));
+                Delay::kDivisionSlot, p.currentValue())));
         }
         bpm = compiledPlugin_->currentBpm();
     } else {
@@ -238,7 +236,8 @@ const CompiledPresentationSpec& getMagdaDelayPresentation() {
 }
 
 void CompiledDelayCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(dynamic_cast<magda::daw::audio::compiled::MagdaDelayCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaDelayCompiledPlugin>(plugin));
 }
 
 }  // namespace magda::daw::ui

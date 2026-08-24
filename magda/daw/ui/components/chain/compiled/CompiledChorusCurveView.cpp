@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -46,8 +47,8 @@ void CompiledChorusCurveView::setCompiledPlugin(
 }
 
 void CompiledChorusCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaChorusCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaChorusCompiledPlugin>(plugin));
 }
 
 void CompiledChorusCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -74,8 +75,8 @@ void CompiledChorusCurveView::timerCallback() {
     auto readPluginSlot = [this](int slot, float fallback) {
         if (compiledPlugin_ == nullptr)
             return fallback;
-        if (auto* p = compiledPlugin_->getSlotParameter(slot))
-            return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(slot))
+            return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
         return fallback;
     };
 
@@ -94,8 +95,8 @@ void CompiledChorusCurveView::timerCallback() {
         rateHz = readPluginSlot(Chorus::kRateSlot, rateHz);
         depth = readPluginSlot(Chorus::kDepthSlot, depth);
         width = readPluginSlot(Chorus::kWidthSlot, width);
-        if (auto* p = compiledPlugin_->getSlotParameter(Chorus::kDivisionSlot)) {
-            const float norm = p->getCurrentValue();
+        if (auto p = compiledPlugin_->getSlotParameter(Chorus::kDivisionSlot)) {
+            const float norm = p.currentValue();
             const auto& info = compiledPlugin_->getSlotInfo(Chorus::kDivisionSlot);
             const int count = static_cast<int>(info.choices.size());
             const int idx =
@@ -213,9 +214,9 @@ void CompiledChorusCurveView::paint(juce::Graphics& g) {
         if (compiledPlugin_ != nullptr) {
             const auto& info = compiledPlugin_->getSlotInfo(
                 magda::daw::audio::compiled::MagdaChorusCompiledPlugin::kDivisionSlot);
-            if (auto* p = compiledPlugin_->getSlotParameter(
+            if (auto p = compiledPlugin_->getSlotParameter(
                     magda::daw::audio::compiled::MagdaChorusCompiledPlugin::kDivisionSlot)) {
-                const float norm = p->getCurrentValue();
+                const float norm = p.currentValue();
                 const int count = static_cast<int>(info.choices.size());
                 if (count > 0) {
                     const int idx = juce::jlimit(

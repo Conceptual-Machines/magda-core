@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaBitcrusherCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -39,8 +40,8 @@ void CompiledBitcrusherEditorView::setCompiledPlugin(
 }
 
 void CompiledBitcrusherEditorView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaBitcrusherCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaBitcrusherCompiledPlugin>(plugin));
 }
 
 void CompiledBitcrusherEditorView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -57,8 +58,8 @@ void CompiledBitcrusherEditorView::resampleFromDevice() {
 void CompiledBitcrusherEditorView::timerCallback() {
     if (compiledPlugin_ != nullptr) {
         auto read = [this](int slot, float fallback) {
-            if (auto* p = compiledPlugin_->getSlotParameter(slot))
-                return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
+            if (auto p = compiledPlugin_->getSlotParameter(slot))
+                return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
             return fallback;
         };
         bits_ = read(Plugin::kBitsSlot, bits_);

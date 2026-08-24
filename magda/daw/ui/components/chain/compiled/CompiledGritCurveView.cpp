@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaGritCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -72,18 +73,17 @@ void CompiledGritCurveView::timerCallback() {
     int mode = modeIndex_;
 
     if (compiledPlugin_ != nullptr) {
-        if (auto* p = compiledPlugin_->getSlotParameter(Grit::kFrequencySlot))
-            freq = compiledPlugin_->nativeValueToDisplayValue(Grit::kFrequencySlot,
-                                                              p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Grit::kWidthSlot))
-            width =
-                compiledPlugin_->nativeValueToDisplayValue(Grit::kWidthSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Grit::kAmountSlot))
+        if (auto p = compiledPlugin_->getSlotParameter(Grit::kFrequencySlot))
+            freq =
+                compiledPlugin_->nativeValueToDisplayValue(Grit::kFrequencySlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Grit::kWidthSlot))
+            width = compiledPlugin_->nativeValueToDisplayValue(Grit::kWidthSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Grit::kAmountSlot))
             amount =
-                compiledPlugin_->nativeValueToDisplayValue(Grit::kAmountSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Grit::kModeSlot)) {
+                compiledPlugin_->nativeValueToDisplayValue(Grit::kAmountSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Grit::kModeSlot)) {
             mode = static_cast<int>(std::round(
-                compiledPlugin_->nativeValueToDisplayValue(Grit::kModeSlot, p->getCurrentValue())));
+                compiledPlugin_->nativeValueToDisplayValue(Grit::kModeSlot, p.currentValue())));
         }
     } else {
         freq = valueForSlot(deviceSnapshot_, Grit::kFrequencySlot, freq);
@@ -204,7 +204,8 @@ const CompiledPresentationSpec& getMagdaGritPresentation() {
 }
 
 void CompiledGritCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(dynamic_cast<magda::daw::audio::compiled::MagdaGritCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaGritCompiledPlugin>(plugin));
 }
 
 }  // namespace magda::daw::ui

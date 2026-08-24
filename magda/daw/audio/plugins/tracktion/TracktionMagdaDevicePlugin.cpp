@@ -15,6 +15,33 @@ DeviceProperties propertiesForRequiredDevice(const std::unique_ptr<MagdaDevice>&
     return device->properties();
 }
 
+/**
+ * The edit's tempo sequence, read through the SDK's tempo contract.
+ *
+ * Queried on the audio thread, which is where the compiled devices that need a
+ * BPM have always queried it: the tempo-synced effects each called
+ * `edit.tempoSequence.getBpmAt()` from their own applyToBuffer() before they
+ * were ported (#2192). This changes who holds the reference, not when the call
+ * happens. A snapshot taken on the message thread would be the better contract
+ * and belongs with the state slice rather than with the device ports.
+ */
+class TracktionTempoMapView final : public DeviceTempoMap {
+  public:
+    explicit TracktionTempoMapView(te::TempoSequence& tempoSequence)
+        : tempoSequence_(tempoSequence) {}
+
+    double beatsAtSeconds(double seconds) const override {
+        return tempoSequence_.toBeats(tracktion::TimePosition::fromSeconds(seconds)).inBeats();
+    }
+
+    double bpmAtSeconds(double seconds) const override {
+        return tempoSequence_.getBpmAt(tracktion::TimePosition::fromSeconds(seconds));
+    }
+
+  private:
+    te::TempoSequence& tempoSequence_;
+};
+
 class TracktionMidiBufferView final : public DeviceMidiBuffer {
   public:
     explicit TracktionMidiBufferView(te::MidiMessageArray& midi) : midi_(midi) {}
@@ -121,13 +148,12 @@ void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& co
     if (context.bufferForMidiMessages != nullptr)
         midi.emplace(*context.bufferForMidiMessages);
 
+    TracktionTempoMapView tempoMap{edit.tempoSequence};
+
     DeviceProcessContext deviceContext{
         .audio = context.destBuffer,
         .midi = midi ? &*midi : nullptr,
-        // TempoSequence queries are not guaranteed real-time safe. Leave the
-        // optional map absent until the adapter can supply an immutable
-        // message-thread snapshot.
-        .tempoMap = nullptr,
+        .tempoMap = &tempoMap,
         .startSample = context.bufferStartSample,
         .numSamples = context.bufferNumSamples,
         .midiTimeOffsetSeconds = context.midiBufferOffset,
@@ -158,6 +184,10 @@ bool TracktionMagdaDevicePlugin::producesAudioWhenNoAudioInput() {
 
 bool TracktionMagdaDevicePlugin::canSidechain() {
     return properties_.canSidechain;
+}
+
+int TracktionMagdaDevicePlugin::getNumOutputChannelsGivenInputs(int numInputChannels) {
+    return properties_.outputChannelCount > 0 ? properties_.outputChannelCount : numInputChannels;
 }
 
 double TracktionMagdaDevicePlugin::getLatencySeconds() {

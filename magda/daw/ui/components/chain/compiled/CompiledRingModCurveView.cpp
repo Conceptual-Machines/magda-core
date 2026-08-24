@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaRingModCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -57,8 +58,8 @@ void CompiledRingModCurveView::setCompiledPlugin(
 }
 
 void CompiledRingModCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaRingModCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaRingModCompiledPlugin>(plugin));
 }
 
 void CompiledRingModCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -85,8 +86,8 @@ void CompiledRingModCurveView::timerCallback() {
     auto readPluginSlot = [this](int slot, float fallback) {
         if (compiledPlugin_ == nullptr)
             return fallback;
-        if (auto* p = compiledPlugin_->getSlotParameter(slot))
-            return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(slot))
+            return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
         return fallback;
     };
 
@@ -106,8 +107,8 @@ void CompiledRingModCurveView::timerCallback() {
         mix = readPluginSlot(RM::kMixSlot, mix);
         width = readPluginSlot(RM::kWidthSlot, width);
         source = static_cast<int>(std::round(readPluginSlot(RM::kSourceSlot, source)));
-        if (auto* p = compiledPlugin_->getSlotParameter(RM::kDivisionSlot)) {
-            const float norm = p->getCurrentValue();
+        if (auto p = compiledPlugin_->getSlotParameter(RM::kDivisionSlot)) {
+            const float norm = p.currentValue();
             const auto& info = compiledPlugin_->getSlotInfo(RM::kDivisionSlot);
             const int count = static_cast<int>(info.choices.size());
             const int idx =
