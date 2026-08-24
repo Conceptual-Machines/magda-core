@@ -791,6 +791,14 @@ void DarkTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {
     laf.setColour(juce::TextEditor::backgroundColourId, getColour(SURFACE));
     laf.setColour(juce::TextEditor::outlineColourId, getColour(BORDER));
     laf.setColour(juce::TextEditor::focusedOutlineColourId, getColour(ACCENT_PRIMARY));
+    // A selection has to be spelled out here. V4 derives its two halves from
+    // opposite ends of the scheme, the fill from `defaultFill` and the text
+    // from `highlightedText`, so it pairs a BUTTON_NORMAL wash with
+    // ICON_ON_ACCENT lettering. Neither role is meant for the other: on Dark
+    // that is near-black on near-black, and on Light it is white on a pale
+    // surface. Either way the selected text disappears.
+    laf.setColour(juce::TextEditor::highlightColourId, getColour(ACCENT_PRIMARY).withAlpha(0.4f));
+    laf.setColour(juce::TextEditor::highlightedTextColourId, getColour(TEXT_PRIMARY));
     laf.setColour(juce::CaretComponent::caretColourId, getColour(TEXT_PRIMARY));
 
     // Button colors
