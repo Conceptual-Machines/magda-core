@@ -113,6 +113,11 @@ std::string writeAndRepoint(const std::vector<Source*>& sources, const Declarati
                             const juce::File& directory, std::vector<juce::File>& written) {
     auto& pool = SourcePool::getInstance();
 
+    // What each written file was written for, so the check below can name the
+    // pair rather than the count. Keyed on the file the writer produced,
+    // because that is the thing two sources can end up sharing.
+    std::map<juce::String, juce::String> writtenFor;
+
     for (auto* source : sources) {
         const auto name = fileNameOf(source->filePath);
         const auto* declaration = declared.at(name);
@@ -122,6 +127,22 @@ std::string writeAndRepoint(const std::vector<Source*>& sources, const Declarati
         const auto facts = factsOf(file);
         if (!facts.readable)
             return "the material written for " + quoted(name) + " does not read back";
+
+        // The same question the name check asked, asked again of the answer.
+        // That one predicts what the filesystem will do with two names; this one
+        // reads back what it did, so a collapse through anything the prediction
+        // does not model -- a separator, a symlink, a normalisation form -- is
+        // still refused rather than rendered.
+        //
+        // Keyed on the original path so that two entries for one file, which a
+        // v1 project produces and the source install is right to collapse, are
+        // not mistaken for two files sharing one.
+        const auto original = source->filePath;
+        if (const auto [claimed, first] = writtenFor.emplace(file.getFullPathName(), original);
+            !first && claimed->second != original)
+            return "the stand-ins for " + quoted(claimed->second) + " and " + quoted(original) +
+                   " are the same file on this filesystem, so the two would collapse into one "
+                   "source and their clips would play the same sound";
 
         source->filePath = file.getFullPathName();
         source->sampleRate = facts.sampleRate;
@@ -143,8 +164,18 @@ std::string refuseIndistinguishableSources(const std::vector<juce::String>& path
     std::map<juce::String, juce::String> byName;
 
     for (const auto& path : paths) {
+        // Folded, because the question is whether two names can name one file
+        // and the answer belongs to the filesystem the stand-ins are written
+        // to. macOS and Windows both answer yes by default, so "Loop.wav" and
+        // "loop.wav" are one file there and two here: comparing them exactly
+        // would let the pair through and then write the second over the first.
+        //
+        // Conservative on a case-sensitive filesystem, deliberately. A corpus
+        // that refuses a fixture on Linux and accepts it on macOS is worse than
+        // one that refuses it everywhere, because the failure would arrive on
+        // somebody else's machine.
         const auto name = fileNameOf(path);
-        const auto [existing, inserted] = byName.emplace(name, path);
+        const auto [existing, inserted] = byName.emplace(name.toLowerCase(), path);
         if (!inserted && existing->second != path)
             return "the project plays two different files both called " + quoted(name) + " (" +
                    existing->second.toStdString() + " and " + path.toStdString() +

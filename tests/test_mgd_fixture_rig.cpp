@@ -205,6 +205,18 @@ TEST_CASE("Two project sources that share a name are refused", "[nulldiff][fixtu
     CHECK(refusal.find("loop.wav") != std::string::npos);
     CHECK(refusal.find("/packs/a/") != std::string::npos);
     CHECK(refusal.find("/packs/b/") != std::string::npos);
+
+    // Case folded, because whether two names are one file belongs to the
+    // filesystem the stand-ins are written to and macOS and Windows both say
+    // yes. Compared exactly, this pair passed the guard and then wrote the
+    // second file over the first: two sources, one sound, and a null against an
+    // incumbent doing the same thing.
+    CHECK_FALSE(refuseIndistinguishableSources({"/packs/a/Loop.wav", "/packs/b/loop.wav"}).empty());
+    CHECK_FALSE(refuseIndistinguishableSources({"/packs/a/LOOP.WAV", "/packs/b/loop.wav"}).empty());
+
+    // Still not a collision when it is one file: the same path twice, whatever
+    // case it is written in, is what a v1 project produces for two clips.
+    CHECK(refuseIndistinguishableSources({"/packs/a/Loop.wav", "/packs/a/Loop.wav"}).empty());
 }
 
 TEST_CASE("Each fixture's material is its own", "[nulldiff][fixture]") {

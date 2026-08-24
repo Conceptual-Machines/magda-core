@@ -167,6 +167,14 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
  * path: the two clips would come out playing the same thing, and the case would
  * render something the project never was.
  *
+ * Compared with case folded, because whether two names can name one file is the
+ * filesystem's question and macOS and Windows both answer yes by default. That
+ * is conservative on a case-sensitive filesystem on purpose: a corpus that
+ * refuses a fixture on Linux and accepts it on macOS is worse than one that
+ * refuses it everywhere, because the failure would arrive on somebody else's
+ * machine. The load asks the same question again of the files it actually
+ * wrote, so a collapse through anything this does not model is still refused.
+ *
  * Refused rather than papered over with a unique suffix, and the difference
  * matters. Making the writes distinct would stop the collapse and leave the
  * manifest still unable to say which of the two is the drum loop and which is
