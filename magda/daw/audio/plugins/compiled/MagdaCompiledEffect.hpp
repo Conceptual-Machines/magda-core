@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
+#include "core/ParameterUtils.hpp"
 #include "plugins/compiled/CompiledFaustInterface.hpp"
 
 // The Faust dsp is forward-declared via its own base so this header does not
@@ -223,6 +224,14 @@ class MagdaCompiledEffect : public CompiledFaustDevice {
     int engineInputCount(int engineIndex) const;
     int engineOutputCount(int engineIndex) const;
     magda::ParameterInfo infoForSlot(int slotIndex) const;
+    /// The slot's conversion domain, cached when the table was built.
+    ///
+    /// What the audio thread converts through. ParameterInfo carries the slot's
+    /// name, unit and choice list, and building one per slot per block copies
+    /// that choice vector -- a heap allocation, in process(), on every discrete
+    /// parameter of every device. ParameterDomain is the same conversion with
+    /// none of the strings.
+    const magda::ParameterUtils::ParameterDomain& domainForSlot(int slotIndex) const;
     /// Runs the given engine's dsp over the context's buffer, in place.
     void computeEngine(int engineIndex, DeviceProcessContext& context);
 
@@ -267,6 +276,7 @@ class MagdaCompiledEffect : public CompiledFaustDevice {
     std::vector<EngineState> engines_;
 
     std::vector<HostSlotInfo> hostSlotInfo_;
+    std::vector<magda::ParameterUtils::ParameterDomain> slotDomains_;
     // Individually allocated so a DeviceParameterHandle handed out early stays
     // valid if the slot container is ever extended.
     std::vector<std::unique_ptr<CompiledParameterValue>> hostParams_;

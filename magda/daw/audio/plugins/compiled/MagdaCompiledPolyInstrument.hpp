@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
+#include "core/ParameterUtils.hpp"
 #include "plugins/compiled/CompiledFaustInterface.hpp"
 
 // mydsp_poly (Faust's polyphonic voice allocator) and the single-voice dsp are
@@ -165,6 +166,11 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
     void buildHostParameters();
     void rebuildEngineState(int sampleRate);
     magda::ParameterInfo infoForSlot(int slotIndex) const;
+    /// The slot's conversion domain, cached when the table was built. What the
+    /// audio thread converts through: a ParameterInfo built per slot per block
+    /// copies the slot's choice list, which allocates, and a synth fans out
+    /// forty of them every callback.
+    const magda::ParameterUtils::ParameterDomain& domainForSlot(int slotIndex) const;
     float slotRealValue(int slotIndex) const;
 
     // ---- Voice-mode (Mono/Legato/glide) handling, active only when
@@ -229,6 +235,7 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
 
     std::vector<HostSlotInfo> voiceSlotInfos_;  // cached from the hook
     std::vector<HostSlotInfo> hostSlotInfo_;    // voice macros + Gain
+    std::vector<magda::ParameterUtils::ParameterDomain> slotDomains_;
     // Individually allocated so every DeviceParameterHandle remains stable
     // even if the slot container is extended in a future migration.
     std::vector<std::unique_ptr<CompiledParameterValue>> hostParams_;

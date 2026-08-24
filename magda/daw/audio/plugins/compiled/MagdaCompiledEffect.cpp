@@ -225,14 +225,29 @@ float MagdaCompiledEffect::menuValueForChoice(int idx, int choiceIndex) const {
 }
 
 void MagdaCompiledEffect::buildHostParameters() {
+    // The domains first: every conversion after this one reads them, including
+    // the ones on the audio thread, which is the point of caching them.
+    slotDomains_.clear();
+    slotDomains_.reserve(hostSlotInfo_.size());
+    for (int slotIndex = 0; slotIndex < hostSlotCountValue(); ++slotIndex)
+        slotDomains_.push_back(magda::ParameterUtils::domainOf(infoForSlot(slotIndex)));
+
     hostParams_.clear();
     hostParams_.reserve(hostSlotInfo_.size());
 
     for (int slotIndex = 0; slotIndex < hostSlotCountValue(); ++slotIndex) {
         const auto& slot = hostSlotInfo_[static_cast<size_t>(slotIndex)];
         hostParams_.push_back(std::make_unique<CompiledParameterValue>(
-            magda::ParameterUtils::realToNormalized(slot.defaultValue, infoForSlot(slotIndex))));
+            magda::ParameterUtils::realToNormalized(slot.defaultValue, domainForSlot(slotIndex))));
     }
+}
+
+const magda::ParameterUtils::ParameterDomain& MagdaCompiledEffect::domainForSlot(
+    int slotIndex) const {
+    static const magda::ParameterUtils::ParameterDomain kEmpty;
+    if (slotIndex < 0 || slotIndex >= static_cast<int>(slotDomains_.size()))
+        return kEmpty;
+    return slotDomains_[static_cast<size_t>(slotIndex)];
 }
 
 magda::ParameterInfo MagdaCompiledEffect::infoForSlot(int slotIndex) const {
@@ -279,13 +294,13 @@ juce::String MagdaCompiledEffect::hostSlotId(int slotIndex) const {
 float MagdaCompiledEffect::displayValueToNativeValue(int slotIndex, float displayValue) const {
     if (slotIndex < 0 || slotIndex >= hostSlotCountValue())
         return displayValue;
-    return magda::ParameterUtils::realToNormalized(displayValue, infoForSlot(slotIndex));
+    return magda::ParameterUtils::realToNormalized(displayValue, domainForSlot(slotIndex));
 }
 
 float MagdaCompiledEffect::nativeValueToDisplayValue(int slotIndex, float nativeValue) const {
     if (slotIndex < 0 || slotIndex >= hostSlotCountValue())
         return nativeValue;
-    return magda::ParameterUtils::normalizedToReal(nativeValue, infoForSlot(slotIndex));
+    return magda::ParameterUtils::normalizedToReal(nativeValue, domainForSlot(slotIndex));
 }
 
 float MagdaCompiledEffect::slotDisplayValue(int slotIndex) const {
@@ -410,7 +425,7 @@ void MagdaCompiledEffect::writeZones(DeviceProcessContext& context) {
             }
 
             *harvested.zone = static_cast<FAUSTFLOAT>(
-                magda::ParameterUtils::normalizedToReal(normalized, infoForSlot(slotIndex)));
+                magda::ParameterUtils::normalizedToReal(normalized, domainForSlot(slotIndex)));
         }
 
         if (engine.projectTempoZone != nullptr)

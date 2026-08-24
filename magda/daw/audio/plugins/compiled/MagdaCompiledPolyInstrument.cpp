@@ -226,23 +226,37 @@ magda::ParameterInfo MagdaCompiledPolyInstrument::infoForSlot(int slotIndex) con
     return info;
 }
 
+const magda::ParameterUtils::ParameterDomain& MagdaCompiledPolyInstrument::domainForSlot(
+    int slotIndex) const {
+    static const magda::ParameterUtils::ParameterDomain kEmpty;
+    if (slotIndex < 0 || slotIndex >= static_cast<int>(slotDomains_.size()))
+        return kEmpty;
+    return slotDomains_[static_cast<size_t>(slotIndex)];
+}
+
 float MagdaCompiledPolyInstrument::slotRealValue(int slotIndex) const {
     if (slotIndex < 0 || slotIndex >= hostSlotCountValue())
         return 0.0f;
     const float norm = hostParams_[static_cast<size_t>(slotIndex)]->getCurrentValue();
-    return magda::ParameterUtils::normalizedToReal(norm, infoForSlot(slotIndex));
+    return magda::ParameterUtils::normalizedToReal(norm, domainForSlot(slotIndex));
 }
 
 void MagdaCompiledPolyInstrument::buildHostParameters() {
     hostSlotInfo_ = slotInfos();
 
+    // The domains first: every conversion after this one reads them, including
+    // the per-block fan-out onto the voices.
+    slotDomains_.clear();
+    slotDomains_.reserve(hostSlotInfo_.size());
+    for (int i = 0; i < hostSlotCountValue(); ++i)
+        slotDomains_.push_back(magda::ParameterUtils::domainOf(infoForSlot(i)));
+
     hostParams_.clear();
     hostParams_.reserve(static_cast<size_t>(hostSlotCountValue()));
     for (int i = 0; i < hostSlotCountValue(); ++i) {
         const auto& slot = hostSlotInfo_[static_cast<size_t>(i)];
-        const auto info = infoForSlot(i);
         hostParams_.push_back(std::make_unique<CompiledParameterValue>(
-            magda::ParameterUtils::realToNormalized(slot.defaultValue, info)));
+            magda::ParameterUtils::realToNormalized(slot.defaultValue, domainForSlot(i))));
     }
 }
 
@@ -509,14 +523,14 @@ float MagdaCompiledPolyInstrument::displayValueToNativeValue(int slotIndex,
                                                              float displayValue) const {
     if (slotIndex < 0 || slotIndex >= hostSlotCountValue())
         return displayValue;
-    return magda::ParameterUtils::realToNormalized(displayValue, infoForSlot(slotIndex));
+    return magda::ParameterUtils::realToNormalized(displayValue, domainForSlot(slotIndex));
 }
 
 float MagdaCompiledPolyInstrument::nativeValueToDisplayValue(int slotIndex,
                                                              float nativeValue) const {
     if (slotIndex < 0 || slotIndex >= hostSlotCountValue())
         return nativeValue;
-    return magda::ParameterUtils::normalizedToReal(nativeValue, infoForSlot(slotIndex));
+    return magda::ParameterUtils::normalizedToReal(nativeValue, domainForSlot(slotIndex));
 }
 
 }  // namespace magda::daw::audio::compiled

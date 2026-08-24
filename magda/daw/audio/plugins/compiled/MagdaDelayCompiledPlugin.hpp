@@ -52,6 +52,11 @@ class MagdaDelayCompiledPlugin : public MagdaCompiledEffect {
     const char* slotIdPrefix() const override {
         return "magda_delay_";
     }
+    bool producesAudioWithoutInput() const override {
+        // Dry input stopping does not mean the device is done: the delay line still has up to four
+        // seconds of echoes in it, and a host that stops pumping here cuts them off.
+        return true;
+    }
     double tailSeconds() const override {
         // Matches the dsp's MAX_DELAY_SAMPLES / SR worst case.
         return 4.0;

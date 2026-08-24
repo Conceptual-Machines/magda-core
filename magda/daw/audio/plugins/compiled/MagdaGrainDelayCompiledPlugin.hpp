@@ -50,6 +50,11 @@ class MagdaGrainDelayCompiledPlugin : public MagdaCompiledEffect {
     const char* slotIdPrefix() const override {
         return "magda_grain_delay_";
     }
+    bool producesAudioWithoutInput() const override {
+        // Dry input stopping does not mean the device is done: the grain cloud still has up to four
+        // seconds of grains in it, and a host that stops pumping here cuts them off.
+        return true;
+    }
     double tailSeconds() const override {
         return 4.0;
     }
