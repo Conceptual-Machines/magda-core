@@ -200,27 +200,32 @@ int TracktionMagdaDevicePlugin::getNumOutputChannelsGivenInputs(int numInputChan
 
 void TracktionMagdaDevicePlugin::getChannelNames(juce::StringArray* inputs,
                                                  juce::StringArray* outputs) {
-    if (properties_.inputChannelCount <= 0 && properties_.outputChannelCount <= 0) {
-        te::Plugin::getChannelNames(inputs, outputs);
-        return;
-    }
+    // The base answers first, and a declared width replaces that side and only
+    // that side. A device that names its inputs and not its outputs (or the
+    // other way round) still gets the host's answer for the half it left alone:
+    // reporting zero channels there would tell the model the device is not
+    // connected to the bus at all.
+    te::Plugin::getChannelNames(inputs, outputs);
 
-    // The model counts these to decide how a device is wired, so a device that
-    // declared its widths answers for itself. Inputs past the output width are
-    // the key, which is the SDK's sidechain layout.
-    const auto name = [](int index, int mainChannels) {
-        if (index >= mainChannels)
+    // Inputs past the output width are the key, which is the SDK's sidechain
+    // layout.
+    const auto name = [this](int index) {
+        if (properties_.outputChannelCount > 0 && index >= properties_.outputChannelCount)
             return juce::String("Sidechain");
         return juce::String(index == 0 ? "Left" : "Right");
     };
 
-    if (inputs != nullptr)
+    if (inputs != nullptr && properties_.inputChannelCount > 0) {
+        inputs->clear();
         for (int index = 0; index < properties_.inputChannelCount; ++index)
-            inputs->add(name(index, properties_.outputChannelCount));
+            inputs->add(name(index));
+    }
 
-    if (outputs != nullptr)
+    if (outputs != nullptr && properties_.outputChannelCount > 0) {
+        outputs->clear();
         for (int index = 0; index < properties_.outputChannelCount; ++index)
-            outputs->add(name(index, properties_.outputChannelCount));
+            outputs->add(name(index));
+    }
 }
 
 double TracktionMagdaDevicePlugin::getLatencySeconds() {
