@@ -166,6 +166,42 @@ TrackInfo mixTrack(TrackId id, const char* name) {
     return track;
 }
 
+/// The return side of a send: an ordinary track carrying no clips, whose
+/// `auxBusIndex` is what makes the incumbent give it an AuxReturnPlugin and what
+/// an older project's send names its destination by.
+///
+/// `TrackType::Aux` alongside it because that is what the app stores, and for no
+/// other reason: neither engine reads the type here, the incumbent builds the
+/// same te::AudioTrack for it as for any other, and the plan routes it off
+/// `audioOutputDevice` like the rest. Written the way a project writes it so the
+/// case is a project rather than the subset of one the two legs happen to read.
+TrackInfo auxTrack(TrackId trackId, const char* name, int busIndex) {
+    TrackInfo track;
+    track.id = trackId;
+    track.type = TrackType::Aux;
+    track.name = name;
+    track.audioOutputDevice = "master";
+    track.auxBusIndex = busIndex;
+    return track;
+}
+
+/// A send from a track to @p destination, at @p level, tapped either side of the
+/// fader.
+///
+/// Both the bus index and the destination id are set, because the two engines
+/// read different ones: the incumbent matches an AuxSendPlugin's bus number
+/// against an AuxReturnPlugin's, and the plan resolves `destTrackId` and only
+/// falls back to the bus when a project predates the field. A case that set one
+/// would be handing one leg a send and the other nothing.
+SendInfo sendTo(TrackId destination, int busIndex, float level, bool preFader) {
+    SendInfo send;
+    send.busIndex = busIndex;
+    send.destTrackId = destination;
+    send.level = level;
+    send.preFader = preFader;
+    return send;
+}
+
 /// A track carrying one gain device, the only device either engine really runs
 /// (#2123, NullDiffGain.hpp). The parameter's stored value is the case's, which
 /// is what a host write is; a case that leaves it at unity has none in it.
@@ -291,6 +327,45 @@ ModInfo squareLfo(ModId id, const ControlTarget& target, float amount, bool temp
     mod.tempoSync = tempoSynced;
     mod.syncDivision = SyncDivision::Whole;
     mod.triggerMode = LFOTriggerMode::Transport;
+
+    ModLink link;
+    link.target = target;
+    link.amount = amount;
+    link.bipolar = false;
+    link.enabled = true;
+    mod.links.push_back(link);
+
+    return mod;
+}
+
+/// An envelope follower over whatever its scope listens to, driving @p target.
+///
+/// Its times are the shortest the two engines both honour rather than the
+/// model's defaults, and that is the case's design rather than a preference.
+/// The detector reduces a block to one peak in both engines, so a follower's
+/// output is a function of the block grid wherever the source's amplitude is
+/// moving -- which the block-size gate would report as the engine failing to be
+/// a function of timeline position (#2078), and it would be right. A millisecond
+/// either side settles the envelope inside a block at every size the gate
+/// renders at, so the only grid-dependent stretch is the one at the very start,
+/// and the case's material is silent there.
+///
+/// The input gain is not a default either. It is the one stage both engines
+/// place by hand: TE's own gain is held at unity and the decibels are applied
+/// source-side, before the band limits and before detection, because a level
+/// that has been detected has no frequency content left to filter
+/// (ModFollower.hpp, applyFollowerProperties). A follower at 0 dB would render
+/// the same whether either engine had done that or not.
+ModInfo envelopeFollower(ModId id, const ControlTarget& target, float amount, float gainDb) {
+    ModInfo mod;
+    mod.id = id;
+    mod.name = "Follower " + juce::String(static_cast<int>(id) + 1);
+    mod.type = ModType::Follower;
+    mod.enabled = true;
+    mod.followerGainDb = gainDb;
+    mod.followerAttackMs = 1.0f;
+    mod.followerHoldMs = 0.0f;
+    mod.followerReleaseMs = 1.0f;
 
     ModLink link;
     link.target = target;
@@ -849,11 +924,11 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     // gone with it, and
     // mix.summing carries a fourth track to keep the case that found it.
     //
-    // Sends are absent on purpose. The native leg could render one today, and
-    // the incumbent's live on te::AuxSendPlugin instances that PluginManagerSync
-    // creates from a PluginManager and the device layer behind it. Writing those
-    // plugins straight into the leg would be the second sync this corpus refuses
-    // to have. They belong with the rest of the routing graph, in #1892.
+    // Sends are below rather than absent. They used to be absent because the
+    // incumbent's live on te::AuxSendPlugin instances PluginManagerSync creates
+    // from a PluginManager, and writing those into the leg would have been the
+    // second sync this corpus refuses to have. The leg drives that manager now
+    // (#2174), so the sends are the manager's rather than the harness's.
 
     {
         // Four tracks, which is where the node-identity collision in #2085 used
@@ -1043,6 +1118,114 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         corpus.push_back(std::move(value));
     }
 
+    // --- sends -----------------------------------------------------------------
+    //
+    // A send is the mixer's one piece of topology: everything above routes a
+    // track to exactly one place, and a send is the track reaching a second one
+    // without leaving the first. The two engines build it least alike of
+    // anything in this section -- the incumbent hangs an AuxSendPlugin in the
+    // source's plugin list and an AuxReturnPlugin at the head of the
+    // destination's, and the two find each other by bus number through TE's own
+    // aux routing; the plan emits a SendTap op and queues its port onto the
+    // destination track's pending inputs, so the sum happens where every other
+    // sum in the plan happens. Nothing about those two descriptions makes them
+    // agree, which is why they are rendered.
+    //
+    // Nothing here is panned, and that is a correction rather than an omission.
+    // These cases were first written with the source hard left and the return
+    // hard right, so that the dry path and the send path could be read out of
+    // different channels. A post-fader tap is taken after the fader and the
+    // fader is where the pan is applied, so what reached the return was already
+    // hard left; the return's own hard right then multiplied it away, and both
+    // post-fader cases rendered silence down the path they existed to measure
+    // while still nulling against an incumbent doing the same thing. A case
+    // that agrees with itself about nothing is the one failure a null-diff
+    // corpus cannot see.
+    //
+    // So the dry and the send sum at the master and each case is read as one
+    // total. What distinguishes them is the total: the same project renders
+    // three quarters with the tap after the fader and unity with it before, and
+    // the muted one renders the send alone. Impulses, so the ordinary floor
+    // applies and a level wrong in the fourth decimal shows up.
+
+    {
+        // Where the tap sits, read off the fader it sits after.
+        //
+        // The source's fader is at half and its send at half, so the dry path
+        // carries a half and the return carries a quarter of what the clip
+        // played: three quarters of an impulse at the master. The pair with
+        // send.prefader below is the case, because those two projects are
+        // identical but for the flag and the total is what the flag decides. A
+        // leg that ignored it would render one of the two correctly, and one of
+        // two is not a coincidence either way.
+        auto source = mixTrack(1, "Source");
+        source.volume = 0.5f;
+        source.sends.push_back(sendTo(2, 0, 0.5f, false));
+
+        auto value = newMixCase("send.postfader", "a post-fader send carries the fader with it",
+                                {std::move(source), auxTrack(2, "Return", 0)});
+
+        const auto material = writeSource(scratchDirectory, "sendpost", impulses(0.25));
+        value.sources.push_back(material);
+        value.clips.push_back(audioClipOn(1, 330, 0.0, 4.0, material));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The same project with the flag turned over: the tap is ahead of the
+        // fader, so the return carries half of what the clip played rather than
+        // a quarter of it while the dry path is unchanged at a half, and the
+        // master sums to unity rather than three quarters.
+        //
+        // The fader is what makes the two readable. With the source at unity
+        // both flags render the same samples and the pair would assert that a
+        // send exists rather than where it is tapped.
+        auto source = mixTrack(1, "Source");
+        source.volume = 0.5f;
+        source.sends.push_back(sendTo(2, 0, 0.5f, true));
+
+        auto value = newMixCase("send.prefader", "a pre-fader send is tapped ahead of the fader",
+                                {std::move(source), auxTrack(2, "Return", 0)});
+
+        const auto material = writeSource(scratchDirectory, "sendpre", impulses(0.25));
+        value.sources.push_back(material);
+        value.clips.push_back(audioClipOn(1, 331, 0.0, 4.0, material));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A muted track keeps feeding its aux, which is a claim the plan makes
+        // in a comment (PlanValues.cpp, OpRole::SendTap) and nothing had
+        // rendered. The send taps ahead of the muting stage in both engines, and
+        // the current one only zeroes an aux send when it stops processing the
+        // track's contents at all, which MAGDA never does: it processes muted
+        // tracks so their meters stay alive.
+        //
+        // Post-fader, because that is the tap the claim is least obvious for: a
+        // pre-fader send sits ahead of the fader as well as the mute and would
+        // pass whatever the mute did.
+        //
+        // The mute takes the dry path out, so what reaches the master is the
+        // send and nothing else: half an impulse, through a fader left at
+        // unity. That makes the total say both halves of the claim at once. A
+        // leg whose mute reached the send renders silence, and a leg whose mute
+        // reached nothing renders the impulse and a half.
+        auto source = mixTrack(1, "Muted");
+        source.muted = true;
+        source.sends.push_back(sendTo(2, 0, 0.5f, false));
+
+        auto value = newMixCase("send.mute", "a muted track still feeds its aux",
+                                {std::move(source), auxTrack(2, "Return", 0)});
+
+        const auto material = writeSource(scratchDirectory, "sendmute", impulses(0.25));
+        value.sources.push_back(material);
+        value.clips.push_back(audioClipOn(1, 332, 0.0, 4.0, material));
+
+        corpus.push_back(std::move(value));
+    }
+
     // --- parameters, automation, modifiers and macros --------------------------
     //
     // The first cases that run a device under both engines, and therefore the
@@ -1058,29 +1241,27 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     // every jump is what makes the ordinary floor apply rather than a
     // tolerance. Choose the material so a residual can only be a bug.
     //
-    // **Rack scope is missing from the macro cases**, and deliberately. A
-    // rack's macros live on a te::RackType that RackSyncManager builds out of a
-    // PluginManager, and writing one into the leg is the second sync this
-    // corpus refuses to have. It is the boundary sends stop at, and it moves
-    // with #1892.
+    // **All three macro scopes are here**, rack included. Rack scope used to be
+    // missing because a rack's macros live on a te::RackType only
+    // RackSyncManager builds out of a PluginManager, which was the boundary the
+    // sends stopped at too; the leg drives that manager now (#2174).
     //
-    // **Three of the four modifier engines are not here either**, each after
-    // being tried rather than for want of a case.
+    // **Two of the four modifier engines are still not here**, each after being
+    // tried rather than for want of a case.
     //
     // The random walk cannot be nulled by anybody: the fork seeds from the
     // clock, so it does not render the same numbers twice (ModRandom.hpp).
     //
-    // The envelope follower is fed by a FollowerSourceTapPlugin PluginManager
-    // installs, so without the device layer the fork's follower is handed
-    // nothing. Same boundary as the sends.
-    //
-    // The envelope has no gate a render can open. Its note gate is behind that
-    // same boundary, and its transport gate is the fork asking
-    // TransportControl::isPlaying(), which is false throughout every offline
-    // render: a transport-gated envelope does nothing in a bounce there, while
-    // the engine plays it. The case was written and renders 0.625 against
-    // silence; pinning it would ask the engine to reproduce a bug. The LFO
-    // carries this dimension instead, in both rate modes.
+    // The envelope has one gate a render cannot open and one this slice did not
+    // try. Its transport gate is the fork asking TransportControl::isPlaying(),
+    // which is false throughout every offline render: a transport-gated
+    // envelope does nothing in a bounce there while the engine plays it. That
+    // case was written and renders 0.625 against silence, and pinning it would
+    // ask the engine to reproduce a bug. Its note gate was behind the device
+    // layer, which has moved (#2174); whether the fork's MIDI monitor opens it
+    // in an offline render is untested rather than settled, and it belongs with
+    // whoever writes it. The LFO carries this dimension meanwhile, in both rate
+    // modes.
 
     {
         auto value = newParamCase("param.base", "a device parameter's stored value, heard",
@@ -1233,6 +1414,106 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         const auto source = writeSource(scratchDirectory, "macrodevice", impulses(0.5));
         value.sources.push_back(source);
         value.clips.push_back(audioClip(287, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The third scope, and the one that was out of reach: a rack's macros
+        // live on a te::RackType that only RackSyncManager builds.
+        //
+        // Two chains, and only the first one's device is linked. That is what
+        // makes the case able to say the macro resolved at rack scope rather
+        // than merely that something modulated: chain one's gain is a quarter
+        // stored and 0.625 driven, chain two's is a fixed quarter, and the sum
+        // is 0.875 rather than the 0.5 a leg that left the link unresolved
+        // would render. Neither the macro's own position nor the base appears in
+        // the answer.
+        auto rack = rackOf(712, "Rack Macro",
+                           {gainChain(1, "Driven", 966, 0.25f), gainChain(2, "Fixed", 967, 0.25f)});
+        linkMacro(rack.macros, 0, 0.75f,
+                  ControlTarget::pluginParam(ChainNodePath::chainDevice(kTrack, 712, 1, 966),
+                                             kGainParamIndex),
+                  0.5f);
+
+        auto value =
+            newParamCase("macro.rack", "a rack macro driving a device in one of its chains",
+                         rackTrack(kTrack, "Rack Macro", std::move(rack)));
+
+        const auto source = writeSource(scratchDirectory, "macrorack", impulses(0.5));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(288, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The envelope follower, which is the one modifier that is not a
+        // function of time: it answers "how loud is that", and the that is
+        // audio the modifier does not own. Until the device layer moved (#2174)
+        // the fork's follower was handed nothing at all here, because what feeds
+        // it is a FollowerSourceTapPlugin PluginManager installs on the source
+        // track, and this corpus had no PluginManager.
+        //
+        // Two tracks, and the modifier is on neither one's own scope: the
+        // follower sits on the target's gain device, and that device's audio
+        // sidechain names the source. That is the cross-track shape, and it is
+        // the one worth rendering -- a follower listening to its own track
+        // drives a device whose output it is downstream of, which is a loop in
+        // both engines and a case about feedback rather than about following.
+        //
+        // **What this case pins is the steady state, and deliberately not the
+        // envelope's timing.** The source's material is a square wave, so its
+        // magnitude is one constant for the whole render and every block's peak
+        // is the same number whatever the block grid is. That is what lets the
+        // case null at all: the engines read the source a block apart -- the
+        // plan resolves every parameter at the top of a block, so what a
+        // follower follows is the block before this one (ModFollower.hpp) --
+        // and a lag makes no difference to a level that is not moving. A case
+        // built on a swell would be measuring that lag, and measuring it
+        // against a fork whose own ordering is the graph's rather than a rule.
+        //
+        // The chain of numbers is therefore readable end to end: the square is
+        // at half, the follower's input gain takes 6 dB off it, and the link
+        // carries the whole of what is left onto a parameter stored at zero. So
+        // the device's gain settles at a quarter, which is not the source's
+        // level, not the parameter's base and not unity: a leg that dropped the
+        // input gain would render a half, and one that dropped the follower
+        // would render silence.
+        //
+        // The target's clip starts a beat in. The one stretch of this render
+        // that does depend on the block grid is the first block of it, where
+        // the detector has no previous block to have read and the envelope
+        // starts from zero; half a second is longer than the largest block the
+        // invariance gate renders at, by an order of magnitude.
+        auto source = mixTrack(1, "Source");
+
+        auto target = gainTrackOn(2, 968, "Target", 0.0f);
+        auto& device = magda::getDevice(target.chain.fxChainElements.front());
+        device.sidechain.type = SidechainConfig::Type::Audio;
+        device.sidechain.sourceTrackId = 1;
+        device.mods.push_back(envelopeFollower(0, gainTarget(2, 968), 1.0f, -6.0f));
+
+        auto value = newTrackCase("mod.follower",
+                                  "an envelope follower over another track's post-fader level",
+                                  {std::move(source), std::move(target)});
+        value.endBeat = 8.0;
+
+        // The square is what the follower is following, and a square is the one
+        // material whose peak is the same in every block: |x| never moves, so
+        // the detector's answer is a constant and the two engines' block grids
+        // have nothing to disagree about.
+        const auto square = writeSource(scratchDirectory, "followersource", steps());
+        value.sources.push_back(square);
+        value.clips.push_back(audioClipOn(1, 333, 0.0, 8.0, square));
+
+        // A tone on the target, because what the follower does to it has to be
+        // legible in the residual: a modulated square would put two constants
+        // on top of each other and a level error would look like a level error
+        // in either of them.
+        const auto carrier = writeSource(scratchDirectory, "followercarrier", tone());
+        value.sources.push_back(carrier);
+        value.clips.push_back(audioClipOn(2, 334, 1.0, 7.0, carrier));
 
         corpus.push_back(std::move(value));
     }

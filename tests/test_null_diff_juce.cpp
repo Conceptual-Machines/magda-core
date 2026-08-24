@@ -51,6 +51,15 @@ juce::File scratchDirectory() {
     return root;
 }
 
+/// The largest magnitude anywhere in @p buffer, which is all the silence guard
+/// below needs: it asks whether a render happened, not how loud it was.
+float peakOf(const juce::AudioBuffer<float>& buffer) {
+    float peak = 0.0f;
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        peak = std::max(peak, buffer.getMagnitude(channel, 0, buffer.getNumSamples()));
+    return peak;
+}
+
 /**
  * @brief What the suite has to complain about, given a run.
  *
@@ -724,6 +733,37 @@ class NullDiffCorpusTests : public juce::UnitTest {
             }
 
             report.passed = midiHeld;
+            return report;
+        }
+
+        // Two silences agree. Every comparison below measures how far the two
+        // renders sit apart and nothing measures whether either of them is a
+        // render at all, so a case that reaches the master with nothing on it
+        // nulls perfectly and asserts nothing -- and it does so at the ordinary
+        // floor, printed as an ordinary pass, which is the one failure a
+        // null-diff corpus cannot see by reading its own report.
+        //
+        // The corpus already knew this by hand: rack.aux carries an audible
+        // chain beside the one it expects to be dropped, "so the assertion is a
+        // comparison instead of two silences agreeing". This is that sentence
+        // enforced rather than repeated per case.
+        //
+        // What it does not reach is a path silenced inside a render that is not
+        // silent, and that is worth writing down because it is what actually
+        // happened here: the send cases were first written with the source hard
+        // left and the return hard right, and a post-fader tap is taken after
+        // the fader, which is where the pan is applied -- so the return was
+        // handed a hard-left signal and panned it away. The dry path was still
+        // audible, so this guard would have passed them. Catching that needs a
+        // case to declare what level it expects to render, which is a change to
+        // every case in the corpus and not this one's. Until then it is the
+        // reason the send cases are read as one total rather than by channel.
+        //
+        // Both legs, because either one alone would let the other's silence
+        // through, and a case where one leg renders nothing is a difference the
+        // residual below already reports loudly.
+        if (peakOf(native.audio) <= 0.0f && peakOf(incumbent.audio) <= 0.0f) {
+            report.unmeasurable = "the case asserts nothing: both renders are silent";
             return report;
         }
 
