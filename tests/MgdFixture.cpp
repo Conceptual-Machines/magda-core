@@ -110,15 +110,15 @@ std::string matchSources(const MgdFixture& fixture, const std::vector<Source*>& 
  * other than what it declared.
  */
 std::string writeAndRepoint(const std::vector<Source*>& sources, const Declarations& declared,
-                            const juce::File& scratchDirectory, std::vector<juce::File>& written) {
+                            const juce::File& directory, std::vector<juce::File>& written) {
     auto& pool = SourcePool::getInstance();
 
     for (auto* source : sources) {
         const auto name = fileNameOf(source->filePath);
         const auto* declaration = declared.at(name);
 
-        const auto file = writeMaterial(
-            scratchDirectory, name.upToLastOccurrenceOf(".", false, false), declaration->material);
+        const auto file = writeMaterial(directory, name.upToLastOccurrenceOf(".", false, false),
+                                        declaration->material);
         const auto facts = factsOf(file);
         if (!facts.readable)
             return "the material written for " + quoted(name) + " does not read back";
@@ -139,13 +139,40 @@ std::string writeAndRepoint(const std::vector<Source*>& sources, const Declarati
 
 }  // namespace
 
+std::string refuseIndistinguishableSources(const std::vector<juce::String>& paths) {
+    std::map<juce::String, juce::String> byName;
+
+    for (const auto& path : paths) {
+        const auto name = fileNameOf(path);
+        const auto [existing, inserted] = byName.emplace(name, path);
+        if (!inserted && existing->second != path)
+            return "the project plays two different files both called " + quoted(name) + " (" +
+                   existing->second.toStdString() + " and " + path.toStdString() +
+                   "), and a manifest names a source by that alone, so one would stand in for "
+                   "both";
+    }
+
+    return {};
+}
+
 juce::File fixtureCorpusDir() {
     return juce::File(MAGDA_TEST_CORPUS_DIR);
 }
 
 FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDirectory) {
     FixtureLoad result;
-    scratchDirectory.createDirectory();
+
+    // Each fixture writes into its own directory under the scratch root, named
+    // for the case. Two fixtures are allowed to reference files with the same
+    // name -- they are different projects and nothing ties their sources
+    // together -- and a flat scratch directory would have the second one
+    // overwrite the first's material. The first fixture's Case would still be
+    // holding a path, and that path would now be playing the other project's
+    // sound. Loading them one at a time hides it; #2081 holds a corpus of them
+    // at once.
+    const auto materialDirectory = scratchDirectory.getChildFile(
+        juce::String(fixture.declaration.name).replaceCharacters("/\\:", "___"));
+    materialDirectory.createDirectory();
 
     const auto file = fixtureCorpusDir().getChildFile(fixture.file);
     if (!file.existsAsFile()) {
@@ -162,6 +189,16 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
     }
 
     auto sources = everySource(staged);
+
+    std::vector<juce::String> paths;
+    paths.reserve(sources.size());
+    for (const auto* source : sources)
+        paths.push_back(source->filePath);
+
+    if (auto refusal = refuseIndistinguishableSources(paths); !refusal.empty()) {
+        result.failure = std::move(refusal);
+        return result;
+    }
 
     Declarations declared;
     if (auto refusal = matchSources(fixture, sources, declared); !refusal.empty()) {
@@ -181,7 +218,7 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
     // a spec whose duration does not survive the writer is a case rendering
     // something other than what it declared.
 
-    if (auto refusal = writeAndRepoint(sources, declared, scratchDirectory, result.written);
+    if (auto refusal = writeAndRepoint(sources, declared, materialDirectory, result.written);
         !refusal.empty()) {
         result.failure = std::move(refusal);
         return result;

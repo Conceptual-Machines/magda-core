@@ -181,6 +181,65 @@ TEST_CASE("A source the manifest does not name fails rather than passing quietly
     CHECK(loaded.failure.find(dropped) != std::string::npos);
 }
 
+TEST_CASE("Two project sources that share a name are refused", "[nulldiff][fixture]") {
+    // The collision a manifest cannot express. A manifest names a source by the
+    // last component of its path, so two different files called loop.wav are one
+    // declaration, one written file, and -- because the source install dedups by
+    // canonical path -- one pooled source. Two clips would come out playing the
+    // same sound and the case would render a project that never existed, at the
+    // ordinary floor, against an incumbent doing the same thing.
+    //
+    // Checked against paths rather than through a load, because provoking it
+    // through one would mean checking in a project built to break the rig, and
+    // the rule is about what a fixture can be rather than about reading one.
+    CHECK(refuseIndistinguishableSources({}).empty());
+    CHECK(refuseIndistinguishableSources({"/packs/a/loop.wav", "/packs/a/kick.wav"}).empty());
+
+    // The same file named twice is not a collision. A v1 project stages one
+    // entry per clip, so two clips playing one file arrive as two paths, and
+    // refusing that would refuse the ordinary case.
+    CHECK(refuseIndistinguishableSources({"/packs/a/loop.wav", "/packs/a/loop.wav"}).empty());
+
+    const auto refusal = refuseIndistinguishableSources({"/packs/a/loop.wav", "/packs/b/loop.wav"});
+    CHECK_FALSE(refusal.empty());
+    CHECK(refusal.find("loop.wav") != std::string::npos);
+    CHECK(refusal.find("/packs/a/") != std::string::npos);
+    CHECK(refusal.find("/packs/b/") != std::string::npos);
+}
+
+TEST_CASE("Each fixture's material is its own", "[nulldiff][fixture]") {
+    const PoolUnwind unwind;
+
+    // Two fixtures are allowed to reference files with the same name: they are
+    // different projects and nothing ties their sources together. A flat scratch
+    // directory would let the second overwrite the first's material, leaving the
+    // first case holding a path that now plays the other project's sound.
+    //
+    // Loading them one at a time hides that, which is what this asserts against:
+    // every file any fixture wrote is still there, and still unique, after all of
+    // them have been loaded.
+    std::set<juce::String> everyPath;
+    std::vector<juce::File> all;
+
+    for (const auto& fixture : mgdFixtures()) {
+        INFO(fixture.declaration.name);
+        const auto loaded = loadFixture(fixture, scratch());
+        INFO(loaded.failure);
+        REQUIRE(loaded.ok);
+
+        for (const auto& file : loaded.written) {
+            INFO(file.getFullPathName());
+            CHECK(everyPath.insert(file.getFullPathName()).second);
+            all.push_back(file);
+        }
+    }
+
+    for (const auto& file : all) {
+        INFO(file.getFullPathName());
+        CHECK(file.existsAsFile());
+    }
+}
+
 TEST_CASE("A declaration nothing claims fails too", "[nulldiff][fixture]") {
     const PoolUnwind unwind;
 

@@ -68,6 +68,9 @@
  * is a declaration that has stopped being true. That is the rule the DAWproject
  * loss table already lives by, and for the same reason -- a lossy mapping is a
  * fine thing to have written down and a bad thing to discover.
+ *
+ * So is a project whose sources cannot be told apart by the only part of a path
+ * a manifest can name. See @ref refuseIndistinguishableSources.
  */
 
 namespace magda::nulldiff {
@@ -147,6 +150,35 @@ struct FixtureLoad {
  * neither is anything else that reads the pool while it runs.
  */
 FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDirectory);
+
+/**
+ * @brief Why @p paths cannot be stood in for, or empty if they can.
+ *
+ * A manifest names a source by the last component of its path, because the rest
+ * of it names a volume that is gone and a manifest carrying somebody's home
+ * directory would have to be rewritten the day the project moved -- which is
+ * exactly what a migration fixture may never do.
+ *
+ * That leaves one thing a project can do that a manifest cannot express: play
+ * two different files that happen to share a name. `/packA/loop.wav` and
+ * `/packB/loop.wav` are two sounds, and every part of the rig would treat them
+ * as one. They would match the same declaration, be written to the same file,
+ * and then collapse for real in the source install, which dedups by canonical
+ * path: the two clips would come out playing the same thing, and the case would
+ * render something the project never was.
+ *
+ * Refused rather than papered over with a unique suffix, and the difference
+ * matters. Making the writes distinct would stop the collapse and leave the
+ * manifest still unable to say which of the two is the drum loop and which is
+ * the riser, so both would silently take one MaterialSpec. A corpus that cannot
+ * describe a project should say so, and a fixture that needs this is a reason
+ * to extend the key rather than to let one stand in for both.
+ *
+ * Exposed rather than kept inside the load because it is a rule about what a
+ * fixture can be, not a step in reading one, and because provoking it through a
+ * load would mean checking in a project built to break it.
+ */
+std::string refuseIndistinguishableSources(const std::vector<juce::String>& paths);
 
 /// Where the fixtures live, as configured by CMake.
 juce::File fixtureCorpusDir();
