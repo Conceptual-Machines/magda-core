@@ -423,8 +423,14 @@ void BarsBeatsTicksLabel::SegmentLabel::startEditing() {
                        DarkTheme::getColour(DarkTheme::SURFACE));
     editor_->setColour(juce::TextEditor::textColourId,
                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    // The field opens with everything selected, so the accent covers the whole
+    // value at an opaque strength. Text sitting on it is on-accent content, not
+    // text on a surface, and TEXT_PRIMARY is the wrong end of the palette for
+    // that on a light theme.
     editor_->setColour(juce::TextEditor::highlightColourId,
                        DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    editor_->setColour(juce::TextEditor::highlightedTextColourId,
+                       DarkTheme::getColour(DarkTheme::ICON_ON_ACCENT));
     editor_->setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     editor_->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
 

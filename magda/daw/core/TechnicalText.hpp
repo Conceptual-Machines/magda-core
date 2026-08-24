@@ -43,6 +43,7 @@ enum class TechnicalTextToken {
     Osc,
     Api,
     Mcp,
+    MagdaMcp,
     WebSocket,
 };
 
@@ -121,6 +122,10 @@ inline juce::String technicalText(TechnicalTextToken token) {
             return "API";
         case TechnicalTextToken::Mcp:
             return "MCP";
+        // The bridge executable's own name, which is a filename on disk and
+        // stays that in every locale.
+        case TechnicalTextToken::MagdaMcp:
+            return "magda-mcp";
         case TechnicalTextToken::WebSocket:
             return "WebSocket";
     }

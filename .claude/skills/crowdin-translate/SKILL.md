@@ -16,17 +16,23 @@ Translation pipeline for MAGDA. Source of truth is `lang/en.json`; Crowdin holds
 
 ## The standing rule
 
-**Don't write non-English translations yourself.** The default workflow is:
+**By default, don't write non-English translations yourself.** The default workflow is:
 1. Edit `lang/en.json` with the new key + English text.
 2. Push the branch - GitHub Action uploads sources to Crowdin automatically.
 3. Crowdin translators (humans) fill in the other locales.
 4. Workflow opens a `l10n_crowdin_*` PR with the new translations.
 
-This is the rule because Luca doesn't speak the target locales and the project has volunteer translators on Crowdin. Drafting Chinese / French / etc. yourself bypasses them.
+The default exists because the project has volunteer translators on Crowdin, and silently drafting locales they own bypasses them.
 
-## When the user explicitly overrides
+## When Luca asks for a locale, write it
 
-The user may ask to push a specific locale's translation directly via the CLI - usually when they have a string already verified or want to ship something without waiting for the translator pipeline. In that case, follow the **Push a specific translation** flow below.
+**This is not a rule to re-litigate.** If Luca names locales - "add the missing string in ja/zh/ru", "translate this into Japanese", "fill the gap" - write them and push them. Do not ask whether he is sure, do not offer leaving it to the translators as an alternative, do not raise that you cannot personally verify the language. He knows. He is asking anyway, and being asked the same question every time is the friction this section exists to remove.
+
+Write the translation, say plainly what you wrote and what it means in English so it can be checked at a glance, and push it via the **Push a specific translation** flow below. One line of "here is the back-translation" is useful. A paragraph of hedging is not.
+
+The one thing still worth raising, because it changes what the correct text *is* rather than whether to write it: **when an English source string is rewritten, existing translations often describe the old behaviour, not just the old wording.** Check what the locale text actually says before editing it. Carrying a stale sentence forward with a placeholder swapped in fills the gap on Crowdin while shipping the wrong instruction, which is worse than the gap - it looks finished. Retranslate from the current English instead.
+
+Real example: `mcp.bridge_missing` was rewritten from "Download magda-mcp from the {1} release..." to "{1} could not find {0}. Reinstalling {1} puts it back...". The ja/ru/zh entries still said "download it from the release" long after the English stopped saying so.
 
 ## Credentials
 

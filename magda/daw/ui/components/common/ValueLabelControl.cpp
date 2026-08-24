@@ -179,8 +179,13 @@ void ValueLabelControl::showEditor(const juce::String& initialText) {
                        DarkTheme::getColour(DarkTheme::SURFACE));
     editor_->setColour(juce::TextEditor::textColourId,
                        customTextColour_.value_or(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)));
+    // Opens fully selected, so the accent covers the whole value at an opaque
+    // strength and the text on it is on-accent content. A caller's custom text
+    // colour is chosen against SURFACE and does not carry over.
     editor_->setColour(juce::TextEditor::highlightColourId,
                        DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    editor_->setColour(juce::TextEditor::highlightedTextColourId,
+                       DarkTheme::getColour(DarkTheme::ICON_ON_ACCENT));
     editor_->setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     editor_->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
 
