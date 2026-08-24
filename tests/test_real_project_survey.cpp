@@ -178,18 +178,34 @@ TEST_CASE("What the legacy projects would cost as render cases", "[nulldiff][sur
     report << "\nclean and renderable: " << juce::String(usable) << " of "
            << juce::String(static_cast<int>(rows.size())) << "\n";
 
-    // Every distinct diagnostic once, which is the list of what stands between
-    // these projects and being cases.
-    std::map<std::string, int> reasons;
+    // Every distinct reason once, against the projects it stops rather than the
+    // number of times it was said.
+    //
+    // Counted per project, and that is the correction: a project with three
+    // 4osc instances reports the same missing device three times, so tallying
+    // the diagnostics counts instances and calling the total "projects"
+    // overstates every row of the table. What decides whether a port unblocks a
+    // case is how many projects wait on it, so both are printed and the project
+    // count leads.
+    std::map<std::string, std::set<std::string>> projectsPerReason;
+    std::map<std::string, int> timesSaid;
     for (const auto& row : rows) {
-        if (!row.loaded)
-            reasons[row.refusal.substr(0, 72)]++;
-        for (const auto& diagnostic : row.diagnostics)
-            reasons[diagnostic.substr(0, 72)]++;
+        if (!row.loaded) {
+            const auto reason = row.refusal.substr(0, 72);
+            projectsPerReason[reason].insert(row.file);
+            timesSaid[reason]++;
+        }
+        for (const auto& diagnostic : row.diagnostics) {
+            const auto reason = diagnostic.substr(0, 72);
+            projectsPerReason[reason].insert(row.file);
+            timesSaid[reason]++;
+        }
     }
-    report << "\nreasons, with how many projects each covers:\n";
-    for (const auto& [reason, count] : reasons)
-        report << "  " << juce::String(count).paddedLeft(' ', 3) << "  " << juce::String(reason)
+
+    report << "\nreasons: projects stopped, times reported, reason\n";
+    for (const auto& [reason, projects] : projectsPerReason)
+        report << "  " << juce::String(static_cast<int>(projects.size())).paddedLeft(' ', 3) << "  "
+               << juce::String(timesSaid[reason]).paddedLeft(' ', 4) << "  " << juce::String(reason)
                << "\n";
 
     WARN(report.toStdString());
