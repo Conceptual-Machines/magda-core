@@ -101,7 +101,7 @@ juce::File midiLibraryFileForClip(const ClipInfo& clip, const juce::File& midiDi
     return midiDir.getNonexistentChildFile(safeName + "_" + juce::String(clip.id), ".mid");
 }
 
-juce::File externalEditFileForClip(const ClipInfo& clip, const juce::File& editsDir,
+juce::File externalEditFileForClip(const ClipInfo& clip, const juce::File& destDir,
                                    const juce::File& sourceFile) {
     auto safeName = juce::File::createLegalFileName(clip.name);
     if (safeName.isEmpty()) {
@@ -110,7 +110,7 @@ juce::File externalEditFileForClip(const ClipInfo& clip, const juce::File& edits
     if (safeName.isEmpty()) {
         safeName = "audio_clip";
     }
-    return editsDir.getNonexistentChildFile(safeName, sourceFile.getFileExtension(), false);
+    return destDir.getNonexistentChildFile(safeName, sourceFile.getFileExtension(), false);
 }
 
 bool isLaunchableExternalAudioEditor(const juce::File& editor) {
@@ -999,15 +999,17 @@ bool ClipManager::editAudioClipSourceInExternalEditor(ClipId clipId, juce::Strin
         return false;
     }
 
-    auto editsDir = ProjectManager::getInstance().getExternalEditsDirectory();
-    if (editsDir == juce::File() || !editsDir.createDirectory()) {
-        errorMessage = "Could not create the project external-edits folder.";
+    // The edit copy is audio that came from outside this timeline, so it lands
+    // beside the collected media rather than in a root of its own (#2170).
+    auto importedDir = ProjectManager::getInstance().getImportedDirectory();
+    if (importedDir == juce::File() || !importedDir.createDirectory()) {
+        errorMessage = "Could not create the project imported media folder.";
         return false;
     }
 
-    const auto editFile = externalEditFileForClip(*clip, editsDir, sourceFile);
+    const auto editFile = externalEditFileForClip(*clip, importedDir, sourceFile);
     if (!sourceFile.copyFileTo(editFile) || !editFile.existsAsFile()) {
-        errorMessage = "Could not copy the clip source into the project external-edits folder.";
+        errorMessage = "Could not copy the clip source into the project imported media folder.";
         return false;
     }
 

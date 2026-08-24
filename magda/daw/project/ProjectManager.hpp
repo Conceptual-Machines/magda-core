@@ -283,35 +283,21 @@ class ProjectManager : private juce::Timer {
     juce::File getRecordingsDirectory() const;
 
     /**
-     * @brief Get the renders subdirectory
+     * @brief Get the renders subdirectory.
+     *
+     * Everything MAGDA computed from the timeline: clip and track renders,
+     * comp renders, bounces, and one sub-folder per stem split (#1288).
      */
     juce::File getRendersDirectory() const;
 
     /**
-     * @brief Get the bounces subdirectory
-     */
-    juce::File getBouncesDirectory() const;
-
-    /**
-     * @brief Get the copy-on-edit external sample edits subdirectory
-     */
-    juce::File getExternalEditsDirectory() const;
-
-    /**
-     * @brief Get the collected/imported media subdirectory.
+     * @brief Get the imported media subdirectory.
      *
-     * Where "Collect files" copies externally-referenced audio (clip sources,
-     * sampler and drum-pad samples) so the project is self-contained (#1407).
+     * Everything that arrived from outside the timeline: audio copied in by
+     * "Collect files" (clip sources, sampler and drum-pad samples, #1407) and
+     * the copy-on-edit files handed to an external audio editor.
      */
     juce::File getImportedDirectory() const;
-
-    /**
-     * @brief Get the stem separation output subdirectory (#1288).
-     *
-     * Where "Split into Stems" writes the separated stem WAVs, one
-     * sub-folder per split.
-     */
-    juce::File getStemsDirectory() const;
 
     /**
      * @brief Delete temp media directories older than 7 days.
@@ -387,6 +373,17 @@ class ProjectManager : private juce::Timer {
      * @brief Migrate media files from old directory to new, updating clip paths
      */
     void migrateMediaFiles(const juce::File& oldDir, const juce::File& newDir);
+
+    /**
+     * @brief Fold the media roots retired by #2170 into the surviving three.
+     *
+     * A project saved before the collapse still has bounces/, external-edits/
+     * and stems/ on disk. Their contents move into renders/ and imported/ and
+     * every clip, take and sampler reference follows. Marks the project dirty
+     * when anything moved: the .mgd on disk still names folders that just
+     * went away.
+     */
+    void foldLegacyMediaDirectories(const juce::File& mediaRoot);
 };
 
 }  // namespace magda

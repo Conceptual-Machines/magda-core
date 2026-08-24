@@ -560,6 +560,118 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         REQUIRE(expectedFile.existsAsFile());
     }
 
+    SECTION("Save As moves nested media content and relinks it") {
+        // Stem splits nest one level below their root, and the pre-#2170
+        // migration iterator was non-recursive, so they were left behind.
+        auto& projectManager = ProjectManager::getInstance();
+        REQUIRE(projectManager.newProject());
+
+        auto trackId = TrackManager::getInstance().createTrack("Audio Track", TrackType::Media);
+
+        auto splitDir = projectManager.getRendersDirectory().getChildFile("Vocals - htdemucs");
+        REQUIRE(splitDir.createDirectory());
+        auto stemFile = splitDir.getChildFile("vocals.wav");
+        REQUIRE(stemFile.replaceWithText("placeholder audio"));
+
+        auto clipId = ClipManager::getInstance().createAudioClipBeats(
+            trackId, 0.0, 4.0, stemFile.getFullPathName(), ClipView::Arrangement, 120.0);
+        REQUIRE(clipId != INVALID_CLIP_ID);
+
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
+        REQUIRE(projectManager.saveProjectAs(tempFile));
+
+        auto expectedFile = projectManager.getRendersDirectory()
+                                .getChildFile("Vocals - htdemucs")
+                                .getChildFile("vocals.wav");
+        REQUIRE(expectedFile.existsAsFile());
+        REQUIRE_FALSE(stemFile.existsAsFile());
+
+        StagedProjectData staged;
+        REQUIRE(ProjectSerializer::loadAndStage(actualFile, staged));
+        REQUIRE(staged.clips.size() == 1);
+        REQUIRE(magda::audioEventRef(staged.clips[0]).sourceFilePath() ==
+                expectedFile.getFullPathName());
+    }
+
+    SECTION("A saved project declares exactly the three media roots") {
+        auto& projectManager = ProjectManager::getInstance();
+        REQUIRE(projectManager.newProject());
+
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        REQUIRE(projectManager.saveProjectAs(tempFile));
+
+        auto mediaDir = projectManager.getMediaDirectory();
+        REQUIRE(mediaDir.getChildFile("recordings").isDirectory());
+        REQUIRE(mediaDir.getChildFile("renders").isDirectory());
+        REQUIRE(mediaDir.getChildFile("imported").isDirectory());
+        REQUIRE_FALSE(mediaDir.getChildFile("bounces").exists());
+        REQUIRE_FALSE(mediaDir.getChildFile("external-edits").exists());
+        REQUIRE_FALSE(mediaDir.getChildFile("stems").exists());
+    }
+
+    SECTION("Loading folds the retired media roots and relinks the clips") {
+        auto& projectManager = ProjectManager::getInstance();
+        REQUIRE(projectManager.newProject());
+
+        auto trackId = TrackManager::getInstance().createTrack("Audio Track", TrackType::Media);
+
+        // Build a project laid out the pre-#2170 way: the clips point straight
+        // at the retired roots inside the media tree the save is about to
+        // create, so nothing folds them until the load does.
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
+        auto mediaDir = actualFile.getParentDirectory().getChildFile(
+            actualFile.getFileNameWithoutExtension() + "_Media");
+
+        auto bounceFile = mediaDir.getChildFile("bounces").getChildFile("kick.wav");
+        auto editFile = mediaDir.getChildFile("external-edits").getChildFile("vox.wav");
+        auto stemFile = mediaDir.getChildFile("stems")
+                            .getChildFile("Vocals - htdemucs")
+                            .getChildFile("vocals.wav");
+        for (const auto& legacyFile : {bounceFile, editFile, stemFile}) {
+            REQUIRE(legacyFile.getParentDirectory().createDirectory());
+            REQUIRE(legacyFile.replaceWithText("placeholder audio"));
+        }
+
+        for (const auto& legacyFile : {bounceFile, editFile, stemFile}) {
+            REQUIRE(ClipManager::getInstance().createAudioClipBeats(
+                        trackId, 0.0, 4.0, legacyFile.getFullPathName(), ClipView::Arrangement,
+                        120.0) != INVALID_CLIP_ID);
+        }
+
+        REQUIRE(projectManager.saveProjectAs(tempFile));
+        REQUIRE(bounceFile.existsAsFile());
+
+        REQUIRE(projectManager.loadProject(actualFile));
+
+        // Retired roots are gone, their content folded into the survivors.
+        REQUIRE_FALSE(mediaDir.getChildFile("bounces").exists());
+        REQUIRE_FALSE(mediaDir.getChildFile("external-edits").exists());
+        REQUIRE_FALSE(mediaDir.getChildFile("stems").exists());
+
+        auto foldedBounce = mediaDir.getChildFile("renders").getChildFile("kick.wav");
+        auto foldedEdit = mediaDir.getChildFile("imported").getChildFile("vox.wav");
+        auto foldedStem = mediaDir.getChildFile("renders")
+                              .getChildFile("Vocals - htdemucs")
+                              .getChildFile("vocals.wav");
+        REQUIRE(foldedBounce.existsAsFile());
+        REQUIRE(foldedEdit.existsAsFile());
+        REQUIRE(foldedStem.existsAsFile());
+
+        juce::StringArray clipPaths;
+        for (const auto& clip : ClipManager::getInstance().getClips())
+            if (clip.isAudio())
+                clipPaths.add(magda::audioEventRef(clip).sourceFilePath());
+        REQUIRE(clipPaths.size() == 3);
+        REQUIRE(clipPaths.contains(foldedBounce.getFullPathName()));
+        REQUIRE(clipPaths.contains(foldedEdit.getFullPathName()));
+        REQUIRE(clipPaths.contains(foldedStem.getFullPathName()));
+
+        // The .mgd on disk still names the folders that just went away.
+        REQUIRE(projectManager.isDirty());
+    }
+
     SECTION("Project info serialization roundtrip") {
         ProjectInfo info;
         info.name = "Test Project";
