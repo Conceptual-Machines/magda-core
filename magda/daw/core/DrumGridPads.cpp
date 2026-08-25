@@ -11,9 +11,8 @@ namespace {
 
 namespace ds = device_state;
 
-/// What a Drum Grid calls its own state. These are the device's property names,
-/// not the engine's: they are the same in a v2 document and in the pre-v2 XML
-/// because the bridge carries a nested tree's properties across unchanged.
+/// A Drum Grid's own property names. The same in a v2 document and in pre-v2
+/// XML: the bridge carries a nested tree's properties across unchanged.
 constexpr const char* kDrumGridId = "drumgrid";
 const juce::Identifier kChain("CHAIN");
 const juce::Identifier kPlugin("PLUGIN");
@@ -29,48 +28,36 @@ const juce::Identifier kPadSolo("padSolo");
 const juce::Identifier kPadBypassed("padBypassed");
 const juce::Identifier kBusOutput("busOutput");
 const juce::Identifier kType("type");
-/// Tracktion saves every external plugin under one type name and keeps the real
-/// identity in these. `format` is the plugin format ("VST3", "AudioUnit"), NOT
-/// what `type` says.
+/// Tracktion saves every external plugin under one `type`, with the real
+/// identity in these. `format` is the plugin format ("VST3", "AudioUnit").
 const juce::Identifier kExternalName("name");
 const juce::Identifier kManufacturer("manufacturer");
 const juce::Identifier kFormat("format");
 const juce::Identifier kFilename("filename");
 const juce::Identifier kEnabled("enabled");
-/// The DeviceId a Drum Grid allocated for a pad's plugin and saved with it.
-/// TrackManager's id allocator already reads this same property out of pad
-/// state so a newly created device cannot be given an id a pad is using.
+/// The DeviceId a Drum Grid allocated for a pad's plugin. TrackManager's id
+/// allocator reads the same property, so ids cannot be handed out twice.
 const juce::Identifier kPluginDeviceId("magdaDeviceId");
+/// Whether a pad's plugin is an instrument, as the plugin itself answered.
+const juce::Identifier kPluginIsInstrument("magdaIsInstrument");
 
-/// A Drum Grid writes 60 for a chain whose note range it has not been told, so
-/// that is what an absent range reads as rather than ChainInfo's own default.
-/// A pad always has a range: the middle-C fallback is the device's, and keeping
-/// it here means a chain restored from state never claims the whole keyboard by
-/// accident.
+/// What a Drum Grid writes for a chain whose note range it was not told. Used
+/// instead of ChainInfo's default, which means "every note".
 constexpr int kFallbackNote = 60;
 
-/// One pad's device, carrying what the compiler needs to key and bind it.
+/// One pad's device.
 ///
-/// A projected device is a real device or it is useless. The plan keys an op on
-/// the DeviceId (`OpKey`), and routes on whether the device is an instrument,
-/// consumes MIDI or is bypassed, so a device projected with those left at their
-/// defaults would give every pad the same key and route none of them: sixty-four
-/// ops that collide and a Drum Grid that still does not render.
-///
-/// None of it is invented. The DeviceId is the one the Drum Grid allocated and
-/// saved with the pad, which is why the id allocator has to read the same
-/// property; the rest comes from the plugin registry, which is where a device's
-/// identity lives for every other device in the model too.
-DeviceInfo deviceFromNode(const ds::Node& node, bool isPadInstrumentSlot) {
+/// The plan keys an op on the DeviceId and routes on the instrument, MIDI and
+/// bypass flags, so all of them have to be real: left at their defaults, every
+/// pad keys the same op and none of them route.
+DeviceInfo deviceFromNode(const ds::Node& node) {
     DeviceInfo device;
 
     const auto savedType = node.props[kType].toString();
     device.pluginId = savedType;
     device.name = savedType;
 
-    // A pad saved by an older build can name a device by a load alias rather
-    // than the id it has now, so the alias-aware lookup goes first and the
-    // canonical id is taken from whatever it resolves to.
+    // Alias-aware first, so a pad saved under a retired device name resolves.
     const auto* spec = daw::audio::findInternalPluginSpecForLoadType(savedType);
     if (spec == nullptr)
         spec = daw::audio::findInternalPluginSpec(savedType);
@@ -83,17 +70,13 @@ DeviceInfo deviceFromNode(const ds::Node& node, bool isPadInstrumentSlot) {
         device.isInstrument = spec->isInstrument;
         device.deviceType = spec->isInstrument ? DeviceType::Instrument : DeviceType::Effect;
 
-        // Without this the device keeps PluginFormat's VST3 default and every
-        // path that asks reads an internal device as an external one: it would
-        // claim a floating editor window it does not have, and the creation
-        // paths would try to instantiate it from external identifiers it has
-        // never had.
+        // Left at PluginFormat's VST3 default, an internal device is read as
+        // external: it claims an editor window it has not got, and creation
+        // tries to instantiate it from identifiers it has never had.
         device.format = PluginFormat::Internal;
     } else {
-        // No spec means an external plugin. Tracktion saves all of them under
-        // one type name, so `type` identifies nothing on its own and the real
-        // identity is in the properties beside it: a pad holding Kick 2 would
-        // otherwise project as an effect called "vst".
+        // No spec means an external plugin, whose `type` is the same string for
+        // all of them. The identity is in the properties beside it.
         const auto externalName = node.props[kExternalName].toString();
         if (externalName.isNotEmpty())
             device.name = externalName;
@@ -102,39 +85,36 @@ DeviceInfo deviceFromNode(const ds::Node& node, bool isPadInstrumentSlot) {
         device.fileOrIdentifier = node.props[kFilename].toString();
         device.format = pluginFormatFromName(node.props[kFormat].toString());
 
-        // The path, not the type name. JUCE's identifier string is what the app
-        // uses for a scanned plugin and it cannot be rebuilt from what is saved
-        // here, so the file is the honest identifier; leaving the type name in
-        // place would key every external pad plugin in the project the same.
-        // uniqueId stays empty on purpose: the `uniqueId` saved here is
-        // Tracktion's own hash, not the JUCE identifier DeviceInfo::uniqueId
-        // means, and putting one where the other is expected would send every
-        // capability lookup to the wrong entry.
+        // The file, because JUCE's identifier string cannot be rebuilt from
+        // what is saved here and the shared `type` would key every external pad
+        // plugin alike. uniqueId stays empty: the saved `uniqueId` is
+        // Tracktion's hash, not the JUCE identifier DeviceInfo::uniqueId means,
+        // and capability lookups key on that field.
         if (device.fileOrIdentifier.isNotEmpty())
             device.pluginId = device.fileOrIdentifier;
 
-        // Nothing saved says whether an external plugin is an instrument, and
-        // the scan is not available here. The pad's own shape is: a Drum Grid
-        // loads a pad's instrument into the first slot and adds FX after it, so
-        // the first plugin in a pad chain is the instrument. Without this a pad
-        // whose instrument is external routes no MIDI and the pad is silent.
-        if (isPadInstrumentSlot) {
+        // Only the plugin can answer this, so the Drum Grid asks it and saves
+        // the answer. Position does not answer it: an effect can be inserted at
+        // index 0, and plugins can be moved and removed.
+        //
+        // Absent means a pad this build has not restored yet, and is left false
+        // rather than guessed: the flag drives MIDI consumption and the
+        // instrument injector, so a wrong answer misroutes the pad.
+        const auto* savedIsInstrument = node.props.getVarPointer(kPluginIsInstrument);
+        if (savedIsInstrument != nullptr && static_cast<bool>(*savedIsInstrument)) {
             device.isInstrument = true;
             device.deviceType = DeviceType::Instrument;
         }
     }
 
-    // The id the pad was saved with. A pad whose state predates it is left
-    // invalid rather than given a made-up one: the compiler reports a device it
-    // cannot key, which is a diagnosis, where a minted id would collide with a
-    // real device and be a silent wrong render.
+    // Left invalid when the state predates it. A minted id would collide with a
+    // real device and render the wrong thing silently.
     const auto* savedId = node.props.getVarPointer(kPluginDeviceId);
     if (savedId != nullptr)
         device.id = static_cast<DeviceId>(static_cast<int>(*savedId));
 
     // The engine's `enabled` is MAGDA's `bypassed`. The bridge strips it at the
-    // root because DeviceInfo owns that fact there; on a nested pad plugin it
-    // survives, and this is the DeviceInfo that owns it.
+    // root, where DeviceInfo already owns it, but keeps it on a nested plugin.
     const auto* enabled = node.props.getVarPointer(kEnabled);
     if (enabled != nullptr)
         device.bypassed = !static_cast<bool>(*enabled);
@@ -144,8 +124,8 @@ DeviceInfo deviceFromNode(const ds::Node& node, bool isPadInstrumentSlot) {
     doc.root = node;
     device.pluginState = ds::encode(doc);
 
-    // Fills the MIDI and audio capabilities the router asks about from the same
-    // cache every other device in the model is filled from.
+    // The MIDI and audio capabilities the router asks about, from the cache
+    // every other device is filled from.
     applyCachedCapabilitiesToDevice(device);
 
     return device;
@@ -182,21 +162,15 @@ ChainInfo chainFromNode(const ds::Node& node) {
     chain.bypassed = boolProp(node, kPadBypassed, false);
     chain.outputIndex = intProp(node, kBusOutput, 0);
 
-    bool firstPlugin = true;
-    for (const auto& child : node.children) {
-        if (child.type != kPlugin.toString())
-            continue;
-        chain.elements.push_back(deviceFromNode(child, firstPlugin));
-        firstPlugin = false;
-    }
+    for (const auto& child : node.children)
+        if (child.type == kPlugin.toString())
+            chain.elements.push_back(deviceFromNode(child));
 
     return chain;
 }
 
-/// The pre-v2 shape, read through the same code by turning the XML back into
-/// document nodes. A legacy tree carries engine ids and engine children that a
-/// document does not, and none of them are read here, so nothing has to strip
-/// them.
+/// Pre-v2 state, turned back into document nodes so one reader handles both.
+/// The engine ids and children a legacy tree carries are simply not read.
 ds::Node nodeFromXml(const juce::XmlElement& xml) {
     ds::Node node;
     node.type = xml.getTagName();
@@ -238,9 +212,8 @@ std::unique_ptr<RackInfo> readPadRack(const juce::String& pluginId,
     if (const auto doc = ds::decode(pluginState))
         return rackFromRoot(doc->root);
 
-    // Not a document this build reads. Only pre-v2 engine XML is worth trying:
-    // anything else, a newer schema included, has to be left alone rather than
-    // guessed at.
+    // Anything else, a newer schema included, is left alone rather than guessed
+    // at.
     if (!ds::looksLikeLegacyEngineState(pluginState))
         return nullptr;
 

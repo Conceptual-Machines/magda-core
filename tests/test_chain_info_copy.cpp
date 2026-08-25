@@ -2,17 +2,13 @@
 
 #include "magda/daw/core/RackInfo.hpp"
 
-// ChainInfo copies through hand-written operations, because a chain element can
-// be a nested rack held by unique_ptr and that has to be deep copied. Every
-// other field has to be listed by hand there, and one that is forgotten is lost
-// silently on the first copy rather than failing to build.
+// ChainInfo's copy operations are hand written, because a chain element can be a
+// nested rack held by unique_ptr. Every other field is listed by hand there, and
+// a forgotten one is lost silently rather than failing to build: the note range
+// was, when pads arrived (#2192).
 //
-// The note range was forgotten exactly that way when pads arrived (#2192): a
-// DeviceInfo is copied by value all over the app, so every pad in a copied
-// padRack came back answering to every note instead of its own.
-//
-// This sets every field to something that is not its default and copies both
-// ways. A field added to ChainInfo and not to the copy operations fails here.
+// Every field is set to something that is not its default and copied both ways,
+// so the next field forgotten there fails here.
 
 namespace {
 

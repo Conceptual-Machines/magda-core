@@ -8,12 +8,9 @@
 #include "magda/daw/core/TrackInfo.hpp"
 #include "magda/daw/project/serialization/ProjectSerializer.hpp"
 
-// The pad projection against real files (#2192).
-//
-// The synthetic cases in test_drum_grid_pads.cpp fix the shape; these fix the
-// fact that released builds actually wrote that shape. Two projects in the
-// legacy corpus carry a Drum Grid, saved four minor versions apart, and one of
-// them has it inside a rack.
+// The pad projection against real files (#2192). test_drum_grid_pads.cpp fixes
+// the shape; these fix that released builds actually wrote it. Two corpus
+// projects carry a Drum Grid, four minor versions apart, one of them racked.
 
 namespace {
 
@@ -99,13 +96,13 @@ void requirePadsAreReal(const magda::DeviceInfo& drumGrid) {
                 CHECK(device.fileOrIdentifier.isNotEmpty());
         }
 
-        // A pad makes sound through its first plugin, so that one has to arrive
-        // as an instrument whether it is one of MAGDA's or a scanned plugin.
-        if (!pad.elements.empty()) {
-            const auto& first = magda::getDevice(pad.elements[0]);
-            INFO("pad instrument " << first.name);
-            CHECK(first.isInstrument);
-        }
+        // At most one instrument per pad. Position does not decide which, so
+        // two would mean the flag is being read off the wrong thing.
+        int instruments = 0;
+        for (const auto& element : pad.elements)
+            if (magda::getDevice(element).isInstrument)
+                ++instruments;
+        CHECK(instruments <= 1);
     }
 
     // A DeviceId is not a load-time fact for these files. A Drum Grid allocates

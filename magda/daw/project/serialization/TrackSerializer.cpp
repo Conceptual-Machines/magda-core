@@ -754,9 +754,7 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     if (obj->hasProperty("pluginState"))
         outDevice.pluginState = obj->getProperty("pluginState").toString();
 
-    // A pad-per-chain device keeps its pads inside that state. Project the
-    // model's view of them now the state is in hand, so the compiler can expand
-    // a Drum Grid rather than stopping at it (#2192).
+    // A pad-per-chain device keeps its pads inside that state (#2192).
     refreshPadRack(outDevice);
 
     // Per-instance drum kit rows

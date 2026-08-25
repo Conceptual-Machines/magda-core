@@ -59,6 +59,7 @@ const juce::Identifier DrumGridPlugin::busOutputId("busOutput");
 const juce::Identifier DrumGridPlugin::mixerExpandedId("mixerExpanded");
 const juce::Identifier DrumGridPlugin::multiOutEnabledId("multiOutEnabled");
 const juce::Identifier DrumGridPlugin::pluginDeviceIdProp("magdaDeviceId");
+const juce::Identifier DrumGridPlugin::pluginIsInstrumentProp("magdaIsInstrument");
 
 //==============================================================================
 DrumGridPlugin::DrumGridPlugin(const te::PluginCreationInfo& info,
@@ -600,6 +601,7 @@ void DrumGridPlugin::installSinglePadPlugin(Chain& chain, te::Plugin::Ptr plugin
 
     // Assign a stable DeviceId for macro/mod linking.
     plugin->state.setProperty(pluginDeviceIdProp, deviceIdAllocator_.allocateDeviceId(), nullptr);
+    plugin->state.setProperty(pluginIsInstrumentProp, plugin->isSynth(), nullptr);
 
     // Initialise BEFORE the plugin can become visible to the audio thread.
     initialisePluginIfNeeded(*plugin, sampleRate_, blockSize_);
@@ -766,6 +768,7 @@ void DrumGridPlugin::addPluginToChain(int chainIndex, const juce::PluginDescript
 
     // Assign a stable DeviceId for macro/mod linking
     plugin->state.setProperty(pluginDeviceIdProp, deviceIdAllocator_.allocateDeviceId(), nullptr);
+    plugin->state.setProperty(pluginIsInstrumentProp, plugin->isSynth(), nullptr);
 
     auto chainTree = findChainTree(chainIndex);
     if (chainTree.isValid()) {
@@ -814,6 +817,7 @@ void DrumGridPlugin::addInternalPluginToChain(int chainIndex, const juce::String
 
     // Assign a stable DeviceId for macro/mod linking
     plugin->state.setProperty(pluginDeviceIdProp, deviceIdAllocator_.allocateDeviceId(), nullptr);
+    plugin->state.setProperty(pluginIsInstrumentProp, plugin->isSynth(), nullptr);
 
     auto chainTree = findChainTree(chainIndex);
     if (chainTree.isValid()) {
@@ -1191,6 +1195,10 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
                     int restoredId = pluginState.getProperty(pluginDeviceIdProp);
                     deviceIdAllocator_.ensureDeviceIdAbove(restoredId);
                 }
+
+                // Written every time, not only when absent: a saved flag can
+                // describe a plugin that has since been swapped.
+                pluginState.setProperty(pluginIsInstrumentProp, plugin->isSynth(), nullptr);
 
                 chain->plugins.push_back(plugin);
 

@@ -228,6 +228,7 @@ TEST_CASE("An external pad plugin keeps its real identity", "[drumgrid][pads]") 
     external.props.set("filename", "/Plug-Ins/VST3/Kick 2.vst3");
     external.props.set("uniqueId", "db742358");
     external.props.set("magdaDeviceId", 1020);
+    external.props.set("magdaIsInstrument", true);
     pad.children.push_back(external);
     doc.root.children.push_back(pad);
 
@@ -251,13 +252,11 @@ TEST_CASE("An external pad plugin keeps its real identity", "[drumgrid][pads]") 
     // means, so it must not be copied into it.
     CHECK(device.uniqueId != "db742358");
 
-    // A pad's first plugin is its instrument. Without this the pad routes no
-    // MIDI and is silent.
     CHECK(device.isInstrument);
     CHECK(device.deviceType == magda::DeviceType::Instrument);
 }
 
-TEST_CASE("An external effect after a pad's instrument is not an instrument", "[drumgrid][pads]") {
+TEST_CASE("An external effect in a pad is not an instrument", "[drumgrid][pads]") {
     ds::Doc doc;
     doc.deviceType = "drumgrid";
     doc.root.type = "PLUGIN";
@@ -280,4 +279,74 @@ TEST_CASE("An external effect after a pad's instrument is not an instrument", "[
     CHECK(effect.name == "Pro-Q 4");
     CHECK_FALSE(effect.isInstrument);
     CHECK(effect.deviceType == magda::DeviceType::Effect);
+}
+
+TEST_CASE("A pad's instrument is found by its flag, not its position", "[drumgrid][pads]") {
+    // The model lets an effect be inserted at index 0, and lets plugins be moved
+    // and removed. Reading position as the instrument would have this EQ
+    // consuming the pad's MIDI and the sampler under it treated as an effect.
+    ds::Doc doc;
+    doc.deviceType = "drumgrid";
+    doc.root.type = "PLUGIN";
+
+    auto pad = padNode(0, 36, 36, 36);
+    pad.children.clear();
+
+    ds::Node effect;
+    effect.type = "PLUGIN";
+    effect.props.set("type", "vst");
+    effect.props.set("name", "Pro-Q 4");
+    effect.props.set("format", "VST3");
+    effect.props.set("filename", "/Plug-Ins/VST3/Pro-Q 4.vst3");
+    effect.props.set("magdaIsInstrument", false);
+    pad.children.push_back(effect);
+
+    ds::Node instrument;
+    instrument.type = "PLUGIN";
+    instrument.props.set("type", "vst");
+    instrument.props.set("name", "Kick 2");
+    instrument.props.set("format", "VST3");
+    instrument.props.set("filename", "/Plug-Ins/VST3/Kick 2.vst3");
+    instrument.props.set("magdaIsInstrument", true);
+    pad.children.push_back(instrument);
+
+    doc.root.children.push_back(pad);
+
+    const auto rack = magda::readPadRack("drumgrid", ds::encode(doc));
+    REQUIRE(rack != nullptr);
+    REQUIRE(rack->chains[0].elements.size() == 2);
+
+    const auto& first = magda::getDevice(rack->chains[0].elements[0]);
+    CHECK(first.name == "Pro-Q 4");
+    CHECK_FALSE(first.isInstrument);
+    CHECK(first.deviceType == magda::DeviceType::Effect);
+
+    const auto& second = magda::getDevice(rack->chains[0].elements[1]);
+    CHECK(second.name == "Kick 2");
+    CHECK(second.isInstrument);
+    CHECK(second.deviceType == magda::DeviceType::Instrument);
+}
+
+TEST_CASE("An external pad plugin with no saved flag is not called an instrument",
+          "[drumgrid][pads]") {
+    // A wrong answer misroutes the pad; a missing one is a device the compiler
+    // can report.
+    ds::Doc doc;
+    doc.deviceType = "drumgrid";
+    doc.root.type = "PLUGIN";
+
+    auto pad = padNode(0, 36, 36, 36);
+    pad.children.clear();
+
+    ds::Node unknown;
+    unknown.type = "PLUGIN";
+    unknown.props.set("type", "vst");
+    unknown.props.set("name", "Kick 2");
+    unknown.props.set("filename", "/Plug-Ins/VST3/Kick 2.vst3");
+    pad.children.push_back(unknown);
+    doc.root.children.push_back(pad);
+
+    const auto rack = magda::readPadRack("drumgrid", ds::encode(doc));
+    REQUIRE(rack != nullptr);
+    CHECK_FALSE(magda::getDevice(rack->chains[0].elements[0]).isInstrument);
 }

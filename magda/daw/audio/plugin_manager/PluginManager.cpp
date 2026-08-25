@@ -452,9 +452,9 @@ void PluginManager::captureAllPluginStates() {
 
             // Always overwrite pluginState (even if empty) to avoid stale state.
             devInfo->pluginState = stateStr;
-            // A pad-per-chain device's pads follow its state. This is where they
-            // become keyable: a Drum Grid allocates a DeviceId per pad plugin
-            // when it restores one, so the ids exist here and not at load (#2192).
+            // Pads follow the state they live in. Also where they become
+            // keyable: a Drum Grid allocates a pad plugin's DeviceId when it
+            // restores it, so the ids exist here and not at load (#2192).
             refreshPadRack(*devInfo);
             captureVst3Info(*devInfo, capturedExt);
             if (sd.processor != nullptr)
