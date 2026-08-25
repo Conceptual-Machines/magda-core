@@ -191,6 +191,10 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
     // still-monitored live input that fed it), so unbalanced deliveries must
     // never strand a sounding voice.
     void releasePolyVoicesForPitch(int pitch);
+    /// Takes the held-note stack's storage, off the audio thread.
+    void reserveHeldNotes();
+    /// One entry per MIDI pitch, which handleMonoNoteOn() keeps it to.
+    static constexpr int kMaxHeldNotes = 128;
 
     std::unique_ptr<::dsp_poly> poly_;
     // Dedicated single voice for Mono/Legato (the poly allocator skips idle

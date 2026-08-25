@@ -151,9 +151,21 @@ std::vector<MagdaCompiledPolyInstrument::HostSlotInfo> MagdaCompiledPolyInstrume
     return infos;
 }
 
+void MagdaCompiledPolyInstrument::reserveHeldNotes() {
+    // Mono and Legato push onto the held-note stack from process(), so its
+    // storage is taken on a thread that may allocate. handleMonoNoteOn() keeps
+    // one entry per pitch, so the whole MIDI range is the most it can ever hold
+    // and this is the only allocation it needs.
+    //
+    // Done at construction as well as in prepare(), so the guarantee does not
+    // rest on a host having called prepare() first.
+    heldNotes_.reserve(kMaxHeldNotes);
+}
+
 void MagdaCompiledPolyInstrument::initInstrument() {
     // The table first: the zone binding below runs over it, and a device with a
     // panel of its own decides how wide it is.
+    reserveHeldNotes();
     voiceSlotInfos_ = voiceSlotInfos();
     buildHostParameters();
 
@@ -262,10 +274,7 @@ void MagdaCompiledPolyInstrument::buildHostParameters() {
 
 void MagdaCompiledPolyInstrument::prepare(const DevicePrepareContext& context) {
     rebuildEngineState(static_cast<int>(context.sampleRate));
-    // Mono and Legato push onto this from process(), so its storage is taken
-    // here rather than at the first note. One entry per MIDI pitch is the whole
-    // range and nothing can ask for more.
-    heldNotes_.reserve(128);
+    reserveHeldNotes();
     scratchOut_.setSize(std::max(numOutputs_, 2), context.maximumBlockSize, false, true, true);
     outPtrs_.assign(static_cast<size_t>(std::max(numOutputs_, 2)), nullptr);
     limEnv_ = 0.0f;
@@ -312,6 +321,23 @@ void MagdaCompiledPolyInstrument::releasePolyVoicesForPitch(int pitch) {
 bool MagdaCompiledPolyInstrument::handleMonoNoteOn(int note, int velocity, int mode) {
     const float g = static_cast<float>(velocity) / 127.0f;
     const bool wasEmpty = heldNotes_.empty();
+
+    // One entry per pitch, so a repeat note-on for a pitch already down moves it
+    // to the top of the stack rather than adding a second copy of it.
+    //
+    // Two reasons, and the second is why the stack can be sized once and never
+    // grown. A pitch held twice needs two note-offs to be let go, and one of the
+    // two is all an unbalanced stream sends -- the same duplicate on/off
+    // delivery releasePolyVoicesForPitch() exists to survive on the poly side,
+    // where a recorded clip playing back merged with the live input that fed it
+    // sends a pitch twice. Appending would strand it here as permanently held.
+    // And appending has no bound: MIDI note numbers stop at 128 but note-ons do
+    // not, so the stack would keep growing and reallocate under process().
+    for (auto it = heldNotes_.begin(); it != heldNotes_.end(); ++it)
+        if (it->note == note) {
+            heldNotes_.erase(it);
+            break;
+        }
     heldNotes_.push_back({note, g});
     if (monoFreqZone_)
         *monoFreqZone_ = midiNoteToHz(note);
