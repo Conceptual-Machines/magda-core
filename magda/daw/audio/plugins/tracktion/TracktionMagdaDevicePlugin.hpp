@@ -53,6 +53,11 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
     void syncParametersToDevice();
 
     std::unique_ptr<MagdaDevice> device_;
+    /// Handed to the parameter conversion lambdas, which an automation curve can
+    /// keep alive past this plugin. Nulled in the destructor, so a stale
+    /// parameter falls back to the metadata it was built with instead of
+    /// calling into a device that is gone.
+    std::shared_ptr<MagdaDevice*> deviceHandle_;
     const DeviceProperties properties_;
     std::vector<std::unique_ptr<juce::CachedValue<float>>> parameterValues_;
     std::vector<te::AutomatableParameter::Ptr> parameters_;

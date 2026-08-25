@@ -98,12 +98,14 @@ TracktionMagdaDevicePlugin::TracktionMagdaDevicePlugin(const te::PluginCreationI
                                                        std::unique_ptr<MagdaDevice> device)
     : te::Plugin(info),
       device_(std::move(device)),
+      deviceHandle_(std::make_shared<MagdaDevice*>(device_.get())),
       properties_(propertiesForRequiredDevice(device_)) {
     buildParameters();
     device_->restoreState(state);
 }
 
 TracktionMagdaDevicePlugin::~TracktionMagdaDevicePlugin() {
+    *deviceHandle_ = nullptr;
     notifyListenersOfDeletion();
     for (auto& parameter : parameters_)
         if (parameter)
@@ -291,15 +293,27 @@ void TracktionMagdaDevicePlugin::buildParameters() {
         auto cachedValue = std::make_unique<juce::CachedValue<float>>();
         cachedValue->referTo(state, juce::Identifier(id), getUndoManager(), defaultValue);
 
+        // Read from the device rather than from a copy taken here. Almost every
+        // device's parameter metadata is fixed for its lifetime and the two are
+        // the same thing, but the runtime Faust device rebinds its pool on every
+        // compile: a captured copy would leave the host formatting, parsing and
+        // scaling the slot against a patch that is no longer loaded.
+        const auto live = [handle = deviceHandle_, index, info]() {
+            auto* device = *handle;
+            return device != nullptr ? device->parameterInfo(index) : info;
+        };
+
         auto parameter = addParam(
             id, info.name, {0.0f, 1.0f},
-            [info](float value) {
-                return ParameterUtils::formatValue(ParameterUtils::normalizedToReal(value, info),
-                                                   info);
+            [live](float value) {
+                const auto current = live();
+                return ParameterUtils::formatValue(ParameterUtils::normalizedToReal(value, current),
+                                                   current);
             },
-            [info](const juce::String& text) {
-                const auto value = ParameterUtils::parseValue(text, info);
-                return value ? ParameterUtils::realToNormalized(*value, info) : 0.0f;
+            [live](const juce::String& text) {
+                const auto current = live();
+                const auto value = ParameterUtils::parseValue(text, current);
+                return value ? ParameterUtils::realToNormalized(*value, current) : 0.0f;
             });
         parameter->attachToCurrentValue(*cachedValue);
 

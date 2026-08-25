@@ -8,8 +8,10 @@
 #include "magda/daw/audio/plugins/AudioSidechainMonitorPlugin.hpp"
 #include "magda/daw/audio/plugins/FaustPlugin.hpp"
 #include "magda/daw/audio/plugins/MidiReceivePlugin.hpp"
+#include "magda/daw/audio/plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/audio/processors/internal/NativeDeviceProcessors.hpp"
+#include "magda/daw/core/ParameterUtils.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
@@ -23,6 +25,14 @@ constexpr const char* kSidechainDsp = R"FAUST(
 // load-bearing: compile() only skips its automatic import when the source
 // already mentions the library, and the test binary has no faustlibraries dir.
 process(mainL, mainR, sideL, sideR) = mainL + sideL, mainR + sideR;
+)FAUST";
+
+/// One named control with a range nothing defaults to, so a host parameter
+/// still carrying the metadata it was built with is obvious on sight.
+constexpr const char* kNamedControlDsp = R"FAUST(
+// Self-contained test DSP; see the load-bearing "stdfaust.lib" note above.
+cutoff = hslider("Cutoff [unit:Hz] [idx:0]", 5000, 500, 9000, 1);
+process = *(cutoff / 9000.0), *(cutoff / 9000.0);
 )FAUST";
 
 constexpr const char* kStereoDsp = R"FAUST(
@@ -188,6 +198,44 @@ class FaustSidechainTest final : public juce::UnitTest {
         device.canSidechain = true;
         processor.populateParameters(device);
         expect(!device.canSidechain, "DeviceInfo should remove the stale capability");
+
+        beginTest("A recompile is visible on the host's own parameters");
+
+        // The pool rebinds on every compile, so a slot's name, range and unit
+        // are only as old as the last source. The host builds one parameter per
+        // slot once and keeps it for the device's lifetime, which is what makes
+        // a macro or automation lane survive a recompile -- but the metadata
+        // behind it has to follow the device, or the fork formats, parses and
+        // scales the slot against a patch that is no longer loaded.
+        {
+            auto namedPlugin = createFaustEffect(*edit);
+            auto* namedHost = namedPlugin.get();
+            auto* namedFaust =
+                audio::tracktion_adapter::deviceFromPlugin<audio::FaustPlugin>(namedPlugin.get());
+            expect(namedFaust != nullptr, "Faust effect should be created");
+
+            if (namedFaust != nullptr) {
+                juce::String namedError;
+                expect(namedFaust->loadDspSource("Named control", kNamedControlDsp, namedError),
+                       "Named-control DSP should compile: " + namedError);
+
+                auto* slot = audio::compiled::tracktionParameterForSlot(namedHost, 0);
+                expect(slot != nullptr, "Slot zero should have a host parameter");
+
+                if (slot != nullptr) {
+                    // Halfway up a 500..9000 range is 4750, and the device says
+                    // so. The host parameter has to say the same thing.
+                    const auto deviceText = magda::ParameterUtils::formatValue(
+                        magda::ParameterUtils::normalizedToReal(0.5f, namedFaust->parameterInfo(0)),
+                        namedFaust->parameterInfo(0));
+                    expectEquals(slot->valueToString(0.5f), deviceText,
+                                 "Host parameter text should follow the recompiled slot");
+                    expectEquals(namedFaust->parameterInfo(0).name, juce::String("Cutoff"),
+                                 "The device should report the recompiled slot's name");
+                }
+            }
+            namedPlugin->deleteFromParent();
+        }
 
         beginTest("Project load clears a serialized sidechain from a stereo Faust DSP");
 
