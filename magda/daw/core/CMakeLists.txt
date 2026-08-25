@@ -7,6 +7,7 @@ target_sources(magda_daw PRIVATE
     AppPaths.cpp
     ChainNodePath.cpp
     DeviceInfo.cpp
+    DrumGridPads.cpp
     ControlTarget.cpp
     MixerStripOrder.cpp
     UIScale.cpp
