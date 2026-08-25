@@ -8,6 +8,7 @@
 #include "magda/daw/audio/plugins/AudioSidechainMonitorPlugin.hpp"
 #include "magda/daw/audio/plugins/FaustPlugin.hpp"
 #include "magda/daw/audio/plugins/MidiReceivePlugin.hpp"
+#include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/audio/processors/internal/NativeDeviceProcessors.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
@@ -82,7 +83,10 @@ class FaustSidechainTest final : public juce::UnitTest {
             return;
 
         auto plugin = createFaustEffect(*edit);
-        auto* faust = dynamic_cast<audio::FaustPlugin*>(plugin.get());
+        // The chain holds the host's wrapper; the device is inside it. Engine
+        // calls go to `host`, device calls to `faust` (#2192).
+        auto* host = plugin.get();
+        auto* faust = audio::tracktion_adapter::deviceFromPlugin<audio::FaustPlugin>(plugin.get());
         expect(faust != nullptr, "Runtime Faust effect should be created");
         if (!faust)
             return;
@@ -93,11 +97,11 @@ class FaustSidechainTest final : public juce::UnitTest {
         if (!loaded)
             return;
 
-        expect(faust->canSidechain(), "A four-input Faust effect should accept a sidechain");
+        expect(host->canSidechain(), "A four-input Faust effect should accept a sidechain");
 
         juce::StringArray inputs;
         juce::StringArray outputs;
-        faust->getChannelNames(&inputs, &outputs);
+        host->getChannelNames(&inputs, &outputs);
         expectEquals(inputs.size(), 4);
         expectEquals(outputs.size(), 2);
         expectEquals(inputs[2], juce::String("Sidechain Left"));
@@ -114,7 +118,7 @@ class FaustSidechainTest final : public juce::UnitTest {
         initInfo.startTime = tracktion::TimePosition();
         initInfo.sampleRate = 44100.0;
         initInfo.blockSizeSamples = kBlockSize;
-        faust->baseClassInitialise(initInfo);
+        host->baseClassInitialise(initInfo);
 
         juce::AudioBuffer<float> buffer(4, kBlockSize);
         for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
@@ -126,7 +130,7 @@ class FaustSidechainTest final : public juce::UnitTest {
             tracktion::TimeRange(tracktion::TimePosition(),
                                  tracktion::TimePosition::fromSeconds(kBlockSize / 44100.0)),
             true, false, false, false);
-        faust->applyToBuffer(context);
+        host->applyToBuffer(context);
 
         expectWithinAbsoluteError(buffer.getSample(0, 0), 0.4f, 0.0001f,
                                   "Left output should include sidechain left");
@@ -139,7 +143,7 @@ class FaustSidechainTest final : public juce::UnitTest {
         expect(faust->loadDspSource("Mono sidechain test", kMonoSidechainDsp, error),
                "Three-input DSP should compile: " + error);
         inputs.clear();
-        faust->getChannelNames(&inputs, nullptr);
+        host->getChannelNames(&inputs, nullptr);
         expectEquals(inputs.size(), 3);
         expectEquals(inputs[2], juce::String("Sidechain"));
 
@@ -149,7 +153,7 @@ class FaustSidechainTest final : public juce::UnitTest {
         expect(faust->loadDspSource("Wide input test", kNineInputDsp, error),
                "Nine-input DSP should compile: " + error);
         inputs.clear();
-        faust->getChannelNames(&inputs, nullptr);
+        host->getChannelNames(&inputs, nullptr);
         expectEquals(inputs.size(), 9);
         const auto& diagnostics = faust->getLastRebindDiagnostics();
         expect(!diagnostics.empty(), "Wide runtime patch should report its scratch requirement");
@@ -157,7 +161,7 @@ class FaustSidechainTest final : public juce::UnitTest {
             expect(diagnostics.front().containsIgnoreCase("reload"),
                    "Wide runtime patch diagnostic should explain how to activate it");
         const float beforeWideRender = buffer.getSample(0, 0);
-        faust->applyToBuffer(context);
+        host->applyToBuffer(context);
         expectWithinAbsoluteError(buffer.getSample(0, 0), beforeWideRender, 0.0001f,
                                   "An undersized scratch buffer should leave audio untouched");
 
@@ -167,18 +171,18 @@ class FaustSidechainTest final : public juce::UnitTest {
         expect(tracks.size() >= 2, "Test edit should contain a source track");
         if (tracks.size() < 2)
             return;
-        faust->setSidechainSourceID(tracks[1]->itemID);
-        expect(faust->getSidechainSourceID().isValid(), "Sidechain source should be assigned");
+        host->setSidechainSourceID(tracks[1]->itemID);
+        expect(host->getSidechainSourceID().isValid(), "Sidechain source should be assigned");
 
         error.clear();
         expect(faust->loadDspSource("Stereo test", kStereoDsp, error),
                "Stereo DSP should compile: " + error);
-        expect(!faust->canSidechain(), "A stereo Faust effect should not accept a sidechain");
-        expect(!faust->getSidechainSourceID().isValid(),
+        expect(!host->canSidechain(), "A stereo Faust effect should not accept a sidechain");
+        expect(!host->getSidechainSourceID().isValid(),
                "Dropping extra inputs should clear the live sidechain source");
 
         inputs.clear();
-        faust->getChannelNames(&inputs, nullptr);
+        host->getChannelNames(&inputs, nullptr);
         expectEquals(inputs.size(), 2);
 
         device.canSidechain = true;
@@ -255,7 +259,8 @@ class FaustSidechainTest final : public juce::UnitTest {
             bridge->syncTrackPlugins(failedDestinationTrackId);
 
             auto failedPlugin = bridge->getPlugin(failedPath);
-            auto* failedFaust = dynamic_cast<audio::FaustPlugin*>(failedPlugin.get());
+            auto* failedFaust =
+                audio::tracktion_adapter::deviceFromPlugin<audio::FaustPlugin>(failedPlugin.get());
             expect(failedFaust != nullptr, "Failed saved source should retain its Faust plugin");
             if (failedFaust)
                 expect(!failedFaust->activeDspMatchesSource(),

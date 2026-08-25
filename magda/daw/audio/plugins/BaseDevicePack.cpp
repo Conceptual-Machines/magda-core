@@ -424,13 +424,13 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
                    .loadAliases = kFaustAliases,
                    .loadAliasCount = static_cast<int>(std::size(kFaustAliases)),
-                   .matchesPlugin = matches<FaustPlugin>,
+                   .matchesPlugin = matchesDevice<FaustPlugin>,
                    .createProcessor = makeProcessor<FaustProcessor>,
                    .showInBrowser = true,
                    .tags = kFaustTags,
                    .tagCount = static_cast<int>(std::size(kFaustTags)),
                    .createInSession = createValueTreePlugin,
-                   .createPlugin = createPlugin<FaustPlugin>});
+                   .createDevice = createDevice<FaustPlugin>});
     add(registry, {.pluginId = FaustInstrumentPlugin::xmlTypeName,
                    .displayName = "Faust Instrument",
                    .browserCategory = "Custom DSP",

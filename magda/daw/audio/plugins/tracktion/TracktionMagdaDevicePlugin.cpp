@@ -196,11 +196,19 @@ bool TracktionMagdaDevicePlugin::producesAudioWhenNoAudioInput() {
 }
 
 bool TracktionMagdaDevicePlugin::canSidechain() {
-    return properties_.canSidechain;
+    // Live, not cached. Most devices' properties are fixed for their lifetime,
+    // but the runtime Faust device recompiles to a different channel width and
+    // the host has to follow it. Dropping the extra inputs also drops the route
+    // that fed them, which nothing downstream would otherwise clear.
+    const auto live = device_->properties();
+    if (!live.canSidechain && getSidechainSourceID().isValid())
+        setSidechainSourceID({});
+    return live.canSidechain;
 }
 
 int TracktionMagdaDevicePlugin::getNumOutputChannelsGivenInputs(int numInputChannels) {
-    return properties_.outputChannelCount > 0 ? properties_.outputChannelCount : numInputChannels;
+    const auto outputs = device_->properties().outputChannelCount;
+    return outputs > 0 ? outputs : numInputChannels;
 }
 
 void TracktionMagdaDevicePlugin::getChannelNames(juce::StringArray* inputs,
@@ -212,23 +220,30 @@ void TracktionMagdaDevicePlugin::getChannelNames(juce::StringArray* inputs,
     // connected to the bus at all.
     te::Plugin::getChannelNames(inputs, outputs);
 
+    const auto live = device_->properties();
+
     // Inputs past the output width are the key, which is the SDK's sidechain
-    // layout.
-    const auto name = [this](int index) {
-        if (properties_.outputChannelCount > 0 && index >= properties_.outputChannelCount)
-            return juce::String("Sidechain");
+    // layout. A stereo key is named per side; a single one is just the key.
+    const int keyChannels = std::max(0, live.inputChannelCount - live.outputChannelCount);
+    const auto name = [&](int index) {
+        if (live.outputChannelCount > 0 && index >= live.outputChannelCount) {
+            if (keyChannels < 2)
+                return juce::String("Sidechain");
+            return juce::String(index == live.outputChannelCount ? "Sidechain Left"
+                                                                 : "Sidechain Right");
+        }
         return juce::String(index == 0 ? "Left" : "Right");
     };
 
-    if (inputs != nullptr && properties_.inputChannelCount > 0) {
+    if (inputs != nullptr && live.inputChannelCount > 0) {
         inputs->clear();
-        for (int index = 0; index < properties_.inputChannelCount; ++index)
+        for (int index = 0; index < live.inputChannelCount; ++index)
             inputs->add(name(index));
     }
 
-    if (outputs != nullptr && properties_.outputChannelCount > 0) {
+    if (outputs != nullptr && live.outputChannelCount > 0) {
         outputs->clear();
-        for (int index = 0; index < properties_.outputChannelCount; ++index)
+        for (int index = 0; index < live.outputChannelCount; ++index)
             outputs->add(name(index));
     }
 }

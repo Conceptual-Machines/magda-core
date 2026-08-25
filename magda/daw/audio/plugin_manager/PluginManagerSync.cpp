@@ -34,6 +34,7 @@
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 #include "plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "plugins/tracktion/TracktionInternalPluginAdapter.hpp"
+#include "plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "processors/DeviceProcessor.hpp"
 #include "processors/DeviceProcessorFactory.hpp"
 #include "transport/TransportStateManager.hpp"
@@ -160,7 +161,7 @@ void updateDeviceCapabilityFlags(DeviceInfo& device, te::Plugin& plugin) {
 // Return the id instead of changing TrackManager inline: its notification path
 // must run after callers are finished with their borrowed DeviceInfo pointer.
 DeviceId clearStaleFaustAudioSidechain(const DeviceInfo& device, te::Plugin* plugin) {
-    auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin);
+    auto* faust = daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::FaustPlugin>(plugin);
     if (faust == nullptr || !faust->activeDspMatchesSource() || device.canSidechain ||
         !device.sidechain.isActive() || device.sidechain.type != SidechainConfig::Type::Audio)
         return INVALID_DEVICE_ID;

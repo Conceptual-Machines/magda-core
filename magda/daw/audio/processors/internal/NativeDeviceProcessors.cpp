@@ -7,6 +7,7 @@
 #include "plugins/FaustParamInfo.hpp"
 #include "plugins/FaustParamPool.hpp"
 #include "plugins/FaustPlugin.hpp"
+#include "plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "processors/ParameterDisplayTextProvider.hpp"
 
 namespace magda {
@@ -119,7 +120,8 @@ FaustProcessor::FaustProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
     : DeviceProcessor(deviceId, std::move(plugin)) {}
 
 int FaustProcessor::getParameterCount() const {
-    auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin_.get());
+    auto* faust =
+        daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::FaustPlugin>(plugin_.get());
     if (faust == nullptr) {
         DBG("[FaustProcessor] getParameterCount: plugin cast NULL");
         return 0;
@@ -130,7 +132,8 @@ int FaustProcessor::getParameterCount() const {
 }
 
 ParameterInfo FaustProcessor::getParameterInfo(int index) const {
-    auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin_.get());
+    auto* faust =
+        daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::FaustPlugin>(plugin_.get());
     if (faust == nullptr || index < 0 || index >= daw::audio::FaustParamPool::kSize)
         return {};
     return daw::audio::paramInfoFromSlot(faust->getPool().slot(index));
@@ -138,12 +141,13 @@ ParameterInfo FaustProcessor::getParameterInfo(int index) const {
 
 void FaustProcessor::populateParameters(DeviceInfo& info) const {
     info.parameters.clear();
-    auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin_.get());
+    auto* faust =
+        daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::FaustPlugin>(plugin_.get());
     if (faust == nullptr) {
         DBG("[FaustProcessor] populateParameters: plugin cast NULL");
         return;
     }
-    info.canSidechain = faust->canSidechain();
+    info.canSidechain = faust->properties().canSidechain;
     // Only push active, non-hidden slots so the standard ParamGridComponent
     // shows populated cells only. Each ParameterInfo carries its real slot
     // index in `paramIndex`, so links / automation / MIDI Learn still

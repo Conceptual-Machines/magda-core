@@ -9,6 +9,7 @@
 #include "FaustResources.hpp"
 #include "FaustUIHarvester.hpp"
 #include "faust/dsp/dsp.h"
+#include "plugins/FaustParamInfo.hpp"
 
 namespace magda::daw::audio {
 
@@ -280,7 +281,6 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compileAndRebind(const juc
 void FaustPlugin::initialiseUnsetPoolValues(
     const std::vector<FaustParamPool::ActiveBindingDescriptor>& bindings,
     const std::array<FaustParamSlot, FaustParamPool::kSize>& previousSlots) {
-    auto* um = getUndoManager();
     for (const auto& binding : bindings) {
         const int slotIndex = binding.slotIndex;
         if (slotIndex < 0 || slotIndex >= FaustParamPool::kSize)
@@ -293,54 +293,31 @@ void FaustPlugin::initialiseUnsetPoolValues(
         if (sameControl || restoredBeforeFirstBind)
             continue;
 
-        const float normalisedDefault = normaliseDefaultForSlot(pool_.slot(slotIndex));
-        auto& cached = poolCached_[static_cast<size_t>(slotIndex)];
-        cached.setValue(normalisedDefault, um);
-
-        auto& param = poolParams_[static_cast<size_t>(slotIndex)];
-        if (param)
-            param->updateFromAttachedValue();
+        poolValues_[static_cast<size_t>(slotIndex)].store(
+            normaliseDefaultForSlot(pool_.slot(slotIndex)), std::memory_order_relaxed);
     }
+    refreshPoolDomains();
 }
 
-FaustPlugin::FaustPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) {
-    // Pre-create the lifetime-stable pool of AutomatableParameters. Each
-    // slot's parameter is normalized 0..1; the audio thread denormalizes
-    // per active binding's frozen metadata when writing to zones.
-    poolParams_.resize(FaustParamPool::kSize);
-    auto* um = getUndoManager();
-    juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
-    for (int i = 0; i < FaustParamPool::kSize; ++i) {
-        const auto id = poolParamId(i);
-        poolValueWasRestored_[static_cast<size_t>(i)] = state.hasProperty(juce::Identifier(id));
-        poolCached_[static_cast<size_t>(i)].referTo(this->state, juce::Identifier(id), um, 0.0f);
-        poolParams_[static_cast<size_t>(i)] = addParam(id, id, normalisedRange);
-        poolParams_[static_cast<size_t>(i)]->attachToCurrentValue(
-            poolCached_[static_cast<size_t>(i)]);
-    }
-
-    const auto savedSource = state.getProperty("dspSource", juce::String()).toString();
-    const auto savedName = state.getProperty("dspName", juce::String()).toString();
+FaustPlugin::FaustPlugin() {
+    // The pool is lifetime-stable and starts empty; a saved source arrives
+    // later through restoreState(), which recompiles and rebinds onto the same
+    // slots. Construction settles on the default patch so the device is
+    // answerable before any project has been loaded into it.
+    for (auto& value : poolValues_)
+        value.store(0.0f, std::memory_order_relaxed);
 
     juce::String err;
-    auto compiled = compileAndRebind(
-        savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource), err);
+    auto compiled = compileAndRebind(kDefaultDspSource, err);
     activeDspMatchesSource_ = compiled != nullptr;
-    if (!compiled) {
-        DBG("FaustPlugin: failed to compile saved source: " << err << " - using default");
-        compiled = compileAndRebind(kDefaultDspSource, err);
-    }
 
-    dspSource_ = savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource);
-    dspName_ = savedName.isNotEmpty() ? savedName : juce::String("Passthrough");
+    dspSource_ = kDefaultDspSource;
+    dspName_ = "Passthrough";
     // Derived, not restored: the source is the only thing that has to persist.
     viewName_ = readCustomViewName(dspSource_);
 
     reservePointerScratch(compiled);
     std::atomic_store(&active_, compiled);
-
-    state.setProperty("dspSource", dspSource_, nullptr);
-    state.setProperty("dspName", dspName_, nullptr);
 
     retireTimer_.startTimer(100);
 
@@ -350,12 +327,7 @@ FaustPlugin::FaustPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) 
 }
 
 FaustPlugin::~FaustPlugin() {
-    notifyListenersOfDeletion();
     retireTimer_.stopTimer();
-    for (auto& p : poolParams_) {
-        if (p)
-            p->detachFromCurrentValue();
-    }
     // Drop the active state and any retired ones synchronously here on the
     // message thread; ~Plugin guarantees the audio thread has stopped calling
     // applyToBuffer by the time we run.
@@ -394,11 +366,10 @@ bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& so
     std::atomic_store(&active_, compiled);
     activeDspMatchesSource_ = true;
 
-    // A stereo-only replacement can no longer consume TE's appended source
-    // channels. Drop the live routing immediately; refreshDeviceParameters()
-    // clears the corresponding DeviceInfo selection after a UI/API compile.
-    if (compiled->dspIn <= 2)
-        setSidechainSourceID({});
+    // A stereo-only replacement can no longer consume the host's appended key
+    // channels. The device says so through properties().canSidechain, which the
+    // host re-reads when refreshDeviceParameters() runs after a compile; there
+    // is nothing for the device itself to unroute.
 
     if (previous) {
         const juce::ScopedLock lk(retiredLock_);
@@ -408,8 +379,6 @@ bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& so
     dspName_ = name;
     dspSource_ = source;
     viewName_ = readCustomViewName(source);
-    state.setProperty("dspName", dspName_, getUndoManager());
-    state.setProperty("dspSource", dspSource_, getUndoManager());
 
     DBG("FaustPlugin::loadDspSource ok name=" << name << " in=" << compiled->dspIn
                                               << " out=" << compiled->dspOut
@@ -424,12 +393,10 @@ void FaustPlugin::stageSourceForEditing(const juce::String& name, const juce::St
     activeDspMatchesSource_ = false;
     dspName_ = name;
     dspSource_ = source;
-    state.setProperty("dspName", dspName_, getUndoManager());
-    state.setProperty("dspSource", dspSource_, getUndoManager());
 }
 
-void FaustPlugin::initialise(const te::PluginInitialisationInfo& info) {
-    currentSampleRate_ = static_cast<int>(info.sampleRate);
+void FaustPlugin::prepare(const DevicePrepareContext& context) {
+    currentSampleRate_ = static_cast<int>(context.sampleRate);
 
     if (auto state = std::atomic_load(&active_)) {
         if (state->dsp)
@@ -438,50 +405,30 @@ void FaustPlugin::initialise(const te::PluginInitialisationInfo& info) {
 
     const int dspIn = std::atomic_load(&active_) ? std::atomic_load(&active_)->dspIn : 0;
     const int maxChannels = std::max(dspIn, 8);
-    scratchIn_.setSize(maxChannels, info.blockSizeSamples, false, true, false);
+    scratchIn_.setSize(maxChannels, context.maximumBlockSize, false, true, false);
 
-    DBG("FaustPlugin::initialise sr=" << currentSampleRate_
-                                      << " blockSize=" << info.blockSizeSamples);
+    DBG("FaustPlugin::prepare sr=" << currentSampleRate_
+                                   << " blockSize=" << context.maximumBlockSize);
 }
 
-bool FaustPlugin::canSidechain() {
-    const auto active = std::atomic_load(&active_);
-    return active && active->dspIn > 2;
-}
-
-void FaustPlugin::getChannelNames(juce::StringArray* inputs, juce::StringArray* outputs) {
+DeviceProperties FaustPlugin::properties() const {
+    // The channel counts are the compiled dsp's own, and more inputs than
+    // outputs is how this device says it takes a sidechain key.
     const auto active = std::atomic_load(&active_);
     const int inputCount = active ? active->dspIn : 2;
     const int outputCount = active ? active->dspOut : 2;
 
-    if (inputs) {
-        for (int channel = 0; channel < inputCount; ++channel) {
-            if (channel == 0)
-                inputs->add("Left");
-            else if (channel == 1)
-                inputs->add("Right");
-            else if (channel == 2)
-                inputs->add(inputCount == 3 ? "Sidechain" : "Sidechain Left");
-            else if (channel == 3)
-                inputs->add("Sidechain Right");
-            else
-                inputs->add("Input " + juce::String(channel + 1));
-        }
-    }
-
-    if (outputs) {
-        for (int channel = 0; channel < outputCount; ++channel) {
-            if (channel == 0)
-                outputs->add("Left");
-            else if (channel == 1)
-                outputs->add("Right");
-            else
-                outputs->add("Output " + juce::String(channel + 1));
-        }
-    }
+    return {
+        .pluginId = xmlTypeName,
+        .name = getPluginName(),
+        .shortName = "Faust",
+        .canSidechain = inputCount > 2,
+        .outputChannelCount = outputCount,
+        .inputChannelCount = inputCount,
+    };
 }
 
-void FaustPlugin::deinitialise() {}
+void FaustPlugin::release() {}
 
 void FaustPlugin::reset() {
     if (auto state = std::atomic_load(&active_)) {
@@ -497,8 +444,8 @@ void FaustPlugin::reservePointerScratch(const std::shared_ptr<FaustState>& state
     outPtrs_.reserve(static_cast<size_t>(std::max(0, state->dspOut)));
 }
 
-void FaustPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (!fc.destBuffer || fc.bufferNumSamples <= 0)
+void FaustPlugin::process(DeviceProcessContext& context) {
+    if (context.audio == nullptr || context.numSamples <= 0)
         return;
 
     auto active = std::atomic_load(&active_);
@@ -519,10 +466,8 @@ void FaustPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         // CachedValue stored on the AutomatableParameter.
         if (b.role != FaustControlRole::User)
             continue;
-        const auto& param = poolParams_[static_cast<size_t>(b.slotIndex)];
-        if (!param)
-            continue;
-        const float normalized = param->getCurrentValue();
+        const float normalized =
+            poolValues_[static_cast<size_t>(b.slotIndex)].load(std::memory_order_relaxed);
         *b.zone = static_cast<FAUSTFLOAT>(denormalizeForBinding(b, normalized));
     }
 
@@ -536,15 +481,17 @@ void FaustPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
             if (!b.zone || b.role != FaustControlRole::ProjectTempo)
                 continue;
             if (cachedBpm < 0.0) {
-                cachedBpm = edit.tempoSequence.getBpmAt(fc.editTime.getStart());
+                cachedBpm = context.tempoMap != nullptr
+                                ? context.tempoMap->bpmAtSeconds(context.timelineStartSeconds)
+                                : 120.0;
             }
             *b.zone = static_cast<FAUSTFLOAT>(cachedBpm);
         }
     }
 
-    const int hostChannels = fc.destBuffer->getNumChannels();
-    const int n = fc.bufferNumSamples;
-    const int start = fc.bufferStartSample;
+    const int hostChannels = context.audio->getNumChannels();
+    const int n = context.numSamples;
+    const int start = context.startSample;
 
     if (hostChannels <= 0 || active->dspIn <= 0 || active->dspOut <= 0)
         return;
@@ -558,7 +505,7 @@ void FaustPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     for (int ch = 0; ch < active->dspIn; ++ch) {
         float* dst = scratchIn_.getWritePointer(ch);
         if (ch < hostChannels) {
-            const float* src = fc.destBuffer->getReadPointer(ch, start);
+            const float* src = context.audio->getReadPointer(ch, start);
             std::copy(src, src + n, dst);
         } else {
             std::fill(dst, dst + n, 0.0f);
@@ -568,7 +515,7 @@ void FaustPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
     const int writableOut = std::min(active->dspOut, hostChannels);
     for (int ch = 0; ch < writableOut; ++ch)
-        outPtrs_[static_cast<size_t>(ch)] = fc.destBuffer->getWritePointer(ch, start);
+        outPtrs_[static_cast<size_t>(ch)] = context.audio->getWritePointer(ch, start);
     for (int ch = writableOut; ch < active->dspOut; ++ch)
         outPtrs_[static_cast<size_t>(ch)] =
             scratchIn_.getWritePointer(ch % scratchIn_.getNumChannels());
@@ -576,7 +523,16 @@ void FaustPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     active->dsp->compute(n, inPtrs_.data(), outPtrs_.data());
 }
 
-void FaustPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
+void FaustPlugin::flushState(juce::ValueTree& state) {
+    state.setProperty("dspName", dspName_, nullptr);
+    state.setProperty("dspSource", dspSource_, nullptr);
+    for (int i = 0; i < FaustParamPool::kSize; ++i)
+        state.setProperty(juce::Identifier(poolParamId(i)),
+                          poolValues_[static_cast<size_t>(i)].load(std::memory_order_relaxed),
+                          nullptr);
+}
+
+void FaustPlugin::restoreState(const juce::ValueTree& v) {
     const auto savedSource = v.getProperty("dspSource", juce::String()).toString();
     const auto savedName = v.getProperty("dspName", juce::String()).toString();
 
@@ -588,21 +544,45 @@ void FaustPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
         }
     }
 
-    // Pool param values are bound to the plugin's state ValueTree under
-    // stable IDs (param_01 … param_64), so restoring those properties
-    // automatically refreshes each AutomatableParameter via
-    // updateFromAttachedValue below.
-    for (size_t i = 0; i < poolCached_.size(); ++i) {
-        const auto id = poolParamId(static_cast<int>(i));
-        if (auto p = v.getPropertyPointer(juce::Identifier(id)))
-            poolCached_[i] = static_cast<float>(*p);
-        else
-            poolCached_[i].resetToDefault();
+    // Pool values are saved under stable ids (param_01 ... param_64), which is
+    // what lets a macro or automation lane keep pointing at the same control
+    // across a recompile.
+    for (int i = 0; i < FaustParamPool::kSize; ++i) {
+        const auto id = poolParamId(i);
+        const auto* saved = v.getPropertyPointer(juce::Identifier(id));
+        poolValueWasRestored_[static_cast<size_t>(i)] = saved != nullptr;
+        poolValues_[static_cast<size_t>(i)].store(
+            saved != nullptr ? static_cast<float>(*saved) : 0.0f, std::memory_order_relaxed);
     }
-    for (auto& p : poolParams_) {
-        if (p)
-            p->updateFromAttachedValue();
-    }
+    refreshPoolDomains();
+}
+
+void FaustPlugin::refreshPoolDomains() {
+    for (int i = 0; i < FaustParamPool::kSize; ++i)
+        poolDomains_[static_cast<size_t>(i)] =
+            ParameterUtils::domainOf(paramInfoFromSlot(pool_.slot(i)));
+}
+
+ParameterInfo FaustPlugin::parameterInfo(int index) const {
+    if (index < 0 || index >= FaustParamPool::kSize)
+        return {};
+    auto info = paramInfoFromSlot(pool_.slot(index));
+    info.paramIndex = index;
+    info.stableId = poolParamId(index);
+    return info;
+}
+
+float FaustPlugin::parameterValue(int index) const {
+    if (index < 0 || index >= FaustParamPool::kSize)
+        return 0.0f;
+    return poolValues_[static_cast<size_t>(index)].load(std::memory_order_relaxed);
+}
+
+void FaustPlugin::setParameterValue(int index, float value) {
+    if (index < 0 || index >= FaustParamPool::kSize)
+        return;
+    poolValues_[static_cast<size_t>(index)].store(juce::jlimit(0.0f, 1.0f, value),
+                                                  std::memory_order_relaxed);
 }
 
 }  // namespace magda::daw::audio
