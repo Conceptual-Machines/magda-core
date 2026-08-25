@@ -7,9 +7,11 @@
 #include <vector>
 
 #include "NullDiffGain.hpp"
+#include "core/DeviceState.hpp"
 #include "core/ParameterUtils.hpp"
 #include "exec/EngineDevice.hpp"
 #include "exec/PlanExecutor.hpp"
+#include "magda/daw/audio/plugins/FaustPlugin.hpp"
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
@@ -598,4 +600,42 @@ TEST_CASE("one note-off releases a pitch that was pressed many times", "[engine]
     // appended would still be holding three hundred and ninety-nine of them and
     // sitting at full sustain here.
     CHECK(releasedPeak < heldPeak * 0.05f);
+}
+
+TEST_CASE("a device built for the engine gets the state the project saved",
+          "[engine][devices][2192]") {
+    // Parameters reach a device through the plan's value layer, so for most
+    // devices there is nothing else to carry and the factory carried nothing.
+    // The runtime Faust device breaks that: its dsp source is state, not a
+    // parameter, and a device built without it runs the default passthrough.
+    // That is a render of a project nobody saved, which is the one thing the
+    // factory must not do quietly.
+    constexpr const char* kSource = R"FAUST(
+// Self-contained test DSP. The literal "stdfaust.lib" in this comment is
+// load-bearing: the compile step only skips its automatic import when the
+// source already mentions the library.
+process = *(0.25), *(0.25);
+)FAUST";
+
+    magda::device_state::Doc doc;
+    doc.deviceType = "faust";
+    doc.root.props.set("dspSource", kSource);
+    doc.root.props.set("dspName", "Saved patch");
+
+    magda::DeviceInfo model;
+    model.pluginId = "faust";
+    model.pluginState = magda::device_state::encode(doc);
+    REQUIRE(model.pluginState.isNotEmpty());
+
+    auto device = adapter::createEngineDevice(model);
+    REQUIRE(device != nullptr);
+
+    auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(device.get());
+    REQUIRE(hosted != nullptr);
+
+    auto* faust = dynamic_cast<magda::daw::audio::FaustPlugin*>(&hosted->device());
+    REQUIRE(faust != nullptr);
+
+    CHECK(faust->getDspSource().contains("*(0.25)"));
+    CHECK(faust->getDspName() == juce::String("Saved patch"));
 }

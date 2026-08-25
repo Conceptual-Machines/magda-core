@@ -4,6 +4,10 @@
 
 #include "processors/base/AutomatablePluginProcessor.hpp"
 
+namespace magda::daw::audio {
+class ToneGeneratorPlugin;
+}
+
 namespace magda {
 
 namespace te = tracktion;
@@ -67,7 +71,9 @@ class ToneGeneratorProcessor : public DeviceProcessor {
     void applyGain() override;
 
   private:
-    te::ToneGeneratorPlugin* getTonePlugin() const;
+    daw::audio::ToneGeneratorPlugin* getToneDevice() const;
+    void setSlotDisplayValue(int slot, float displayValue) const;
+    float slotDisplayValue(int slot, float fallback) const;
     bool initialized_ = false;
 };
 

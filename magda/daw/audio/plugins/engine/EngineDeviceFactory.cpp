@@ -2,6 +2,7 @@
 
 #include <utility>
 
+#include "core/DeviceState.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 #include "plugins/engine/EngineMagdaDevice.hpp"
@@ -49,6 +50,40 @@ std::unique_ptr<MagdaDevice> createSdkDevice(const juce::String& pluginId) {
     return {};
 }
 
+/// The saved node, as the tree MagdaDevice::restoreState() takes.
+juce::ValueTree treeFromNode(const magda::device_state::Node& node) {
+    juce::ValueTree tree(node.type.isNotEmpty() ? juce::Identifier(node.type)
+                                                : juce::Identifier("PLUGIN"));
+    for (int i = 0; i < node.props.size(); ++i)
+        tree.setProperty(node.props.getName(i), node.props.getValueAt(i), nullptr);
+    for (const auto& child : node.children)
+        if (child.type.isNotEmpty())
+            tree.appendChild(treeFromNode(child), nullptr);
+    return tree;
+}
+
+/// Hand the device whatever the project saved for it.
+///
+/// Parameters are not this: the plan's value layer resolves every one of them
+/// per block and the adapter writes them before each process() call. What this
+/// carries is everything else -- the runtime Faust device's dsp source, an EQ's
+/// collapsed curve -- without which a device built here runs its defaults and
+/// renders a project nobody saved. A device with no saved state, or state from a
+/// schema this build refuses, keeps those defaults, which is what the fork does
+/// with the same document.
+void restoreSavedState(MagdaDevice& device, const juce::String& savedState) {
+    if (savedState.isEmpty())
+        return;
+
+    const auto doc = magda::device_state::decode(savedState);
+    if (!doc)
+        return;
+
+    auto tree = treeFromNode(doc->root);
+    tree.setProperty(typeProperty(), doc->deviceType, nullptr);
+    device.restoreState(tree);
+}
+
 }  // namespace
 
 std::unique_ptr<magda::engine::EngineDevice> createEngineDevice(const magda::DeviceInfo& device,
@@ -56,6 +91,11 @@ std::unique_ptr<magda::engine::EngineDevice> createEngineDevice(const magda::Dev
     auto sdkDevice = createSdkDevice(device.pluginId);
     if (sdkDevice == nullptr)
         return {};
+
+    // Before the adapter, not after. EngineMagdaDevice snapshots the device's
+    // parameter metadata when it is constructed, so a device that restores its
+    // state later would be mapped against the parameters it had before.
+    restoreSavedState(*sdkDevice, device.pluginState);
 
     return std::make_unique<EngineMagdaDevice>(std::move(sdkDevice), offlineRender);
 }

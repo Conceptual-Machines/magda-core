@@ -42,6 +42,46 @@ class TracktionTempoMapView final : public DeviceTempoMap {
     te::TempoSequence& tempoSequence_;
 };
 
+/**
+ * A host parameter that asks the device what it is called.
+ *
+ * te::AutomatableParameter holds its name in a const member set at
+ * construction, which is right for a device whose parameters are fixed and
+ * wrong for one that rebinds them: the runtime Faust device recompiles and slot
+ * one stops being "(slot 1)" and starts being "Cutoff". getParameterName() is
+ * virtual, so the name follows the device the same way the value conversion
+ * does.
+ */
+class DeviceParameter final : public te::AutomatableParameter {
+  public:
+    DeviceParameter(const juce::String& paramID, const juce::String& name, te::Plugin& plugin,
+                    juce::NormalisableRange<float> range,
+                    std::shared_ptr<MagdaDevice*> deviceHandle, int index)
+        : te::AutomatableParameter(paramID, name, plugin, range),
+          deviceHandle_(std::move(deviceHandle)),
+          index_(index) {}
+
+    juce::String getParameterName() const override {
+        const auto live = liveName();
+        return live.isNotEmpty() ? live : te::AutomatableParameter::getParameterName();
+    }
+
+    juce::String getParameterShortName(int suggestedLength) const override {
+        const auto live = liveName();
+        return live.isNotEmpty() ? live
+                                 : te::AutomatableParameter::getParameterShortName(suggestedLength);
+    }
+
+  private:
+    juce::String liveName() const {
+        auto* device = *deviceHandle_;
+        return device != nullptr ? device->parameterInfo(index_).name : juce::String();
+    }
+
+    std::shared_ptr<MagdaDevice*> deviceHandle_;
+    int index_ = 0;
+};
+
 class TracktionMidiBufferView final : public DeviceMidiBuffer {
   public:
     explicit TracktionMidiBufferView(te::MidiMessageArray& midi) : midi_(midi) {}
@@ -98,12 +138,14 @@ TracktionMagdaDevicePlugin::TracktionMagdaDevicePlugin(const te::PluginCreationI
                                                        std::unique_ptr<MagdaDevice> device)
     : te::Plugin(info),
       device_(std::move(device)),
+      deviceHandle_(std::make_shared<MagdaDevice*>(device_.get())),
       properties_(propertiesForRequiredDevice(device_)) {
     buildParameters();
     device_->restoreState(state);
 }
 
 TracktionMagdaDevicePlugin::~TracktionMagdaDevicePlugin() {
+    *deviceHandle_ = nullptr;
     notifyListenersOfDeletion();
     for (auto& parameter : parameters_)
         if (parameter)
@@ -138,6 +180,11 @@ void TracktionMagdaDevicePlugin::deinitialise() {
 }
 
 void TracktionMagdaDevicePlugin::reset() {
+    // Parameters first. A device that seeds smoothing state from one in reset()
+    // -- the sidechain sets its gain follower to wherever the duck currently
+    // sits -- would otherwise read whatever it was constructed with, because
+    // nothing has pushed the host's values into it yet.
+    syncParametersToDevice();
     device_->reset();
 }
 
@@ -191,11 +238,19 @@ bool TracktionMagdaDevicePlugin::producesAudioWhenNoAudioInput() {
 }
 
 bool TracktionMagdaDevicePlugin::canSidechain() {
-    return properties_.canSidechain;
+    // Live, not cached. Most devices' properties are fixed for their lifetime,
+    // but the runtime Faust device recompiles to a different channel width and
+    // the host has to follow it. Dropping the extra inputs also drops the route
+    // that fed them, which nothing downstream would otherwise clear.
+    const auto live = device_->properties();
+    if (!live.canSidechain && getSidechainSourceID().isValid())
+        setSidechainSourceID({});
+    return live.canSidechain;
 }
 
 int TracktionMagdaDevicePlugin::getNumOutputChannelsGivenInputs(int numInputChannels) {
-    return properties_.outputChannelCount > 0 ? properties_.outputChannelCount : numInputChannels;
+    const auto outputs = device_->properties().outputChannelCount;
+    return outputs > 0 ? outputs : numInputChannels;
 }
 
 void TracktionMagdaDevicePlugin::getChannelNames(juce::StringArray* inputs,
@@ -207,23 +262,30 @@ void TracktionMagdaDevicePlugin::getChannelNames(juce::StringArray* inputs,
     // connected to the bus at all.
     te::Plugin::getChannelNames(inputs, outputs);
 
+    const auto live = device_->properties();
+
     // Inputs past the output width are the key, which is the SDK's sidechain
-    // layout.
-    const auto name = [this](int index) {
-        if (properties_.outputChannelCount > 0 && index >= properties_.outputChannelCount)
-            return juce::String("Sidechain");
+    // layout. A stereo key is named per side; a single one is just the key.
+    const int keyChannels = std::max(0, live.inputChannelCount - live.outputChannelCount);
+    const auto name = [&](int index) {
+        if (live.outputChannelCount > 0 && index >= live.outputChannelCount) {
+            if (keyChannels < 2)
+                return juce::String("Sidechain");
+            return juce::String(index == live.outputChannelCount ? "Sidechain Left"
+                                                                 : "Sidechain Right");
+        }
         return juce::String(index == 0 ? "Left" : "Right");
     };
 
-    if (inputs != nullptr && properties_.inputChannelCount > 0) {
+    if (inputs != nullptr && live.inputChannelCount > 0) {
         inputs->clear();
-        for (int index = 0; index < properties_.inputChannelCount; ++index)
+        for (int index = 0; index < live.inputChannelCount; ++index)
             inputs->add(name(index));
     }
 
-    if (outputs != nullptr && properties_.outputChannelCount > 0) {
+    if (outputs != nullptr && live.outputChannelCount > 0) {
         outputs->clear();
-        for (int index = 0; index < properties_.outputChannelCount; ++index)
+        for (int index = 0; index < live.outputChannelCount; ++index)
             outputs->add(name(index));
     }
 }
@@ -271,16 +333,29 @@ void TracktionMagdaDevicePlugin::buildParameters() {
         auto cachedValue = std::make_unique<juce::CachedValue<float>>();
         cachedValue->referTo(state, juce::Identifier(id), getUndoManager(), defaultValue);
 
-        auto parameter = addParam(
-            id, info.name, {0.0f, 1.0f},
-            [info](float value) {
-                return ParameterUtils::formatValue(ParameterUtils::normalizedToReal(value, info),
-                                                   info);
-            },
-            [info](const juce::String& text) {
-                const auto value = ParameterUtils::parseValue(text, info);
-                return value ? ParameterUtils::realToNormalized(*value, info) : 0.0f;
-            });
+        // Read from the device rather than from a copy taken here. Almost every
+        // device's parameter metadata is fixed for its lifetime and the two are
+        // the same thing, but the runtime Faust device rebinds its pool on every
+        // compile: a captured copy would leave the host formatting, parsing and
+        // scaling the slot against a patch that is no longer loaded.
+        const auto live = [handle = deviceHandle_, index, info]() {
+            auto* device = *handle;
+            return device != nullptr ? device->parameterInfo(index) : info;
+        };
+
+        te::AutomatableParameter::Ptr parameter = new DeviceParameter(
+            id, info.name, *this, juce::NormalisableRange<float>{0.0f, 1.0f}, deviceHandle_, index);
+        parameter->valueToStringFunction = [live](float value) {
+            const auto current = live();
+            return ParameterUtils::formatValue(ParameterUtils::normalizedToReal(value, current),
+                                               current);
+        };
+        parameter->stringToValueFunction = [live](const juce::String& text) {
+            const auto current = live();
+            const auto value = ParameterUtils::parseValue(text, current);
+            return value ? ParameterUtils::realToNormalized(*value, current) : 0.0f;
+        };
+        addAutomatableParameter(parameter);
         parameter->attachToCurrentValue(*cachedValue);
 
         parameterValues_.push_back(std::move(cachedValue));

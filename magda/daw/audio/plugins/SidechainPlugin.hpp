@@ -1,17 +1,18 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
+#include <array>
+
+#include "core/ParameterUtils.hpp"
+#include "plugins/MagdaDevice.hpp"
 
 namespace magda::daw::audio {
-
-namespace te = tracktion::engine;
 
 /**
  * @brief "Sidechain" insert device: a gain stage ducked by a bundled curve
  *        modulator, MIDI-triggered from a chosen source track (issue #1591).
  *
  * The classic MIDI-triggered volume-shaper / sidechain pump, no compressor
- * involved. The plugin itself is deliberately dumb: it smooths and applies its
+ * involved. The device itself is deliberately dumb: it smooths and applies its
  * `gain` parameter. Everything dynamic comes from the existing modulation
  * infrastructure - the device's DeviceInfo is seeded at creation with an LFO
  * mod (custom duck curve, MIDI trigger, one-shot) linked to `gain` at full
@@ -24,65 +25,54 @@ namespace te = tracktion::engine;
  * governs how fast gain may fall (into the duck), release how fast it may
  * recover.
  */
-class SidechainPlugin : public te::Plugin {
+class SidechainPlugin : public MagdaDevice {
   public:
-    explicit SidechainPlugin(const te::PluginCreationInfo& info);
-    ~SidechainPlugin() override;
+    SidechainPlugin();
 
     static const char* xmlTypeName;
 
-    // Index of `gain` in getAutomatableParameters(). The creation-time mod
-    // seeding and the faceplate both address the param by this index.
+    // Index of `gain` in the slot table. The creation-time mod seeding and the
+    // faceplate both address the param by this index.
     static constexpr int kGainParamIndex = 0;
     static constexpr int kAttackParamIndex = 1;
     static constexpr int kReleaseParamIndex = 2;
     static constexpr int kChannelModeParamIndex = 3;
+    static constexpr int kParamCount = 4;
 
     enum class ChannelMode { Stereo = 0, Sides };
 
     static const char* getPluginName() {
         return "Sidechain";
     }
-    juce::String getName() const override {
-        return getPluginName();
-    }
-    juce::String getPluginType() override {
-        return xmlTypeName;
-    }
-    juce::String getShortName(int) override {
-        return "SC";
-    }
-    juce::String getSelectableDescription() override {
-        return getName();
+
+    DeviceProperties properties() const override {
+        return {
+            .pluginId = xmlTypeName,
+            .name = getPluginName(),
+            .shortName = "SC",
+        };
     }
 
-    void initialise(const te::PluginInitialisationInfo& info) override;
-    void deinitialise() override {}
+    void prepare(const DevicePrepareContext& context) override;
     void reset() override;
-    void applyToBuffer(const te::PluginRenderContext& fc) override;
+    void process(DeviceProcessContext& context) override;
 
-    bool takesMidiInput() override {
-        return false;
+    int parameterCount() const override {
+        return kParamCount;
     }
-    bool takesAudioInput() override {
-        return true;
-    }
-    bool isSynth() override {
-        return false;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return false;
-    }
-    double getTailLength() const override {
-        return 0.0;
-    }
-
-    void restorePluginStateFromValueTree(const juce::ValueTree& v) override;
-
-    juce::CachedValue<float> gainValue, attackValue, releaseValue, channelModeValue;
-    te::AutomatableParameter::Ptr gainParam, attackParam, releaseParam, channelModeParam;
+    ParameterInfo parameterInfo(int index) const override;
+    float parameterValue(int index) const override;
+    void setParameterValue(int index, float value) override;
 
   private:
+    /// The parameter's display-domain value, converted through the cached
+    /// domain rather than a freshly built ParameterInfo: this runs per block on
+    /// the audio thread, and a ParameterInfo carries strings that allocate.
+    float displayValue(int index) const;
+
+    std::array<float, kParamCount> values_{};
+    std::array<ParameterUtils::ParameterDomain, kParamCount> domains_{};
+
     double sampleRate_ = 44100.0;
     float currentGain_ = 1.0f;  // audio-thread smoothing state
 

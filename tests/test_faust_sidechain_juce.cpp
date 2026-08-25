@@ -8,7 +8,10 @@
 #include "magda/daw/audio/plugins/AudioSidechainMonitorPlugin.hpp"
 #include "magda/daw/audio/plugins/FaustPlugin.hpp"
 #include "magda/daw/audio/plugins/MidiReceivePlugin.hpp"
+#include "magda/daw/audio/plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/audio/processors/internal/NativeDeviceProcessors.hpp"
+#include "magda/daw/core/ParameterUtils.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
@@ -22,6 +25,14 @@ constexpr const char* kSidechainDsp = R"FAUST(
 // load-bearing: compile() only skips its automatic import when the source
 // already mentions the library, and the test binary has no faustlibraries dir.
 process(mainL, mainR, sideL, sideR) = mainL + sideL, mainR + sideR;
+)FAUST";
+
+/// One named control with a range nothing defaults to, so a host parameter
+/// still carrying the metadata it was built with is obvious on sight.
+constexpr const char* kNamedControlDsp = R"FAUST(
+// Self-contained test DSP; see the load-bearing "stdfaust.lib" note above.
+cutoff = hslider("Cutoff [unit:Hz] [idx:0]", 5000, 500, 9000, 1);
+process = *(cutoff / 9000.0), *(cutoff / 9000.0);
 )FAUST";
 
 constexpr const char* kStereoDsp = R"FAUST(
@@ -82,7 +93,10 @@ class FaustSidechainTest final : public juce::UnitTest {
             return;
 
         auto plugin = createFaustEffect(*edit);
-        auto* faust = dynamic_cast<audio::FaustPlugin*>(plugin.get());
+        // The chain holds the host's wrapper; the device is inside it. Engine
+        // calls go to `host`, device calls to `faust` (#2192).
+        auto* host = plugin.get();
+        auto* faust = audio::tracktion_adapter::deviceFromPlugin<audio::FaustPlugin>(plugin.get());
         expect(faust != nullptr, "Runtime Faust effect should be created");
         if (!faust)
             return;
@@ -93,11 +107,11 @@ class FaustSidechainTest final : public juce::UnitTest {
         if (!loaded)
             return;
 
-        expect(faust->canSidechain(), "A four-input Faust effect should accept a sidechain");
+        expect(host->canSidechain(), "A four-input Faust effect should accept a sidechain");
 
         juce::StringArray inputs;
         juce::StringArray outputs;
-        faust->getChannelNames(&inputs, &outputs);
+        host->getChannelNames(&inputs, &outputs);
         expectEquals(inputs.size(), 4);
         expectEquals(outputs.size(), 2);
         expectEquals(inputs[2], juce::String("Sidechain Left"));
@@ -114,7 +128,7 @@ class FaustSidechainTest final : public juce::UnitTest {
         initInfo.startTime = tracktion::TimePosition();
         initInfo.sampleRate = 44100.0;
         initInfo.blockSizeSamples = kBlockSize;
-        faust->baseClassInitialise(initInfo);
+        host->baseClassInitialise(initInfo);
 
         juce::AudioBuffer<float> buffer(4, kBlockSize);
         for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
@@ -126,7 +140,7 @@ class FaustSidechainTest final : public juce::UnitTest {
             tracktion::TimeRange(tracktion::TimePosition(),
                                  tracktion::TimePosition::fromSeconds(kBlockSize / 44100.0)),
             true, false, false, false);
-        faust->applyToBuffer(context);
+        host->applyToBuffer(context);
 
         expectWithinAbsoluteError(buffer.getSample(0, 0), 0.4f, 0.0001f,
                                   "Left output should include sidechain left");
@@ -139,7 +153,7 @@ class FaustSidechainTest final : public juce::UnitTest {
         expect(faust->loadDspSource("Mono sidechain test", kMonoSidechainDsp, error),
                "Three-input DSP should compile: " + error);
         inputs.clear();
-        faust->getChannelNames(&inputs, nullptr);
+        host->getChannelNames(&inputs, nullptr);
         expectEquals(inputs.size(), 3);
         expectEquals(inputs[2], juce::String("Sidechain"));
 
@@ -149,7 +163,7 @@ class FaustSidechainTest final : public juce::UnitTest {
         expect(faust->loadDspSource("Wide input test", kNineInputDsp, error),
                "Nine-input DSP should compile: " + error);
         inputs.clear();
-        faust->getChannelNames(&inputs, nullptr);
+        host->getChannelNames(&inputs, nullptr);
         expectEquals(inputs.size(), 9);
         const auto& diagnostics = faust->getLastRebindDiagnostics();
         expect(!diagnostics.empty(), "Wide runtime patch should report its scratch requirement");
@@ -157,7 +171,7 @@ class FaustSidechainTest final : public juce::UnitTest {
             expect(diagnostics.front().containsIgnoreCase("reload"),
                    "Wide runtime patch diagnostic should explain how to activate it");
         const float beforeWideRender = buffer.getSample(0, 0);
-        faust->applyToBuffer(context);
+        host->applyToBuffer(context);
         expectWithinAbsoluteError(buffer.getSample(0, 0), beforeWideRender, 0.0001f,
                                   "An undersized scratch buffer should leave audio untouched");
 
@@ -167,23 +181,63 @@ class FaustSidechainTest final : public juce::UnitTest {
         expect(tracks.size() >= 2, "Test edit should contain a source track");
         if (tracks.size() < 2)
             return;
-        faust->setSidechainSourceID(tracks[1]->itemID);
-        expect(faust->getSidechainSourceID().isValid(), "Sidechain source should be assigned");
+        host->setSidechainSourceID(tracks[1]->itemID);
+        expect(host->getSidechainSourceID().isValid(), "Sidechain source should be assigned");
 
         error.clear();
         expect(faust->loadDspSource("Stereo test", kStereoDsp, error),
                "Stereo DSP should compile: " + error);
-        expect(!faust->canSidechain(), "A stereo Faust effect should not accept a sidechain");
-        expect(!faust->getSidechainSourceID().isValid(),
+        expect(!host->canSidechain(), "A stereo Faust effect should not accept a sidechain");
+        expect(!host->getSidechainSourceID().isValid(),
                "Dropping extra inputs should clear the live sidechain source");
 
         inputs.clear();
-        faust->getChannelNames(&inputs, nullptr);
+        host->getChannelNames(&inputs, nullptr);
         expectEquals(inputs.size(), 2);
 
         device.canSidechain = true;
         processor.populateParameters(device);
         expect(!device.canSidechain, "DeviceInfo should remove the stale capability");
+
+        beginTest("A recompile is visible on the host's own parameters");
+
+        // The pool rebinds on every compile, so a slot's name, range and unit
+        // are only as old as the last source. The host builds one parameter per
+        // slot once and keeps it for the device's lifetime, which is what makes
+        // a macro or automation lane survive a recompile -- but the metadata
+        // behind it has to follow the device, or the fork formats, parses and
+        // scales the slot against a patch that is no longer loaded.
+        {
+            auto namedPlugin = createFaustEffect(*edit);
+            auto* namedHost = namedPlugin.get();
+            auto* namedFaust =
+                audio::tracktion_adapter::deviceFromPlugin<audio::FaustPlugin>(namedPlugin.get());
+            expect(namedFaust != nullptr, "Faust effect should be created");
+
+            if (namedFaust != nullptr) {
+                juce::String namedError;
+                expect(namedFaust->loadDspSource("Named control", kNamedControlDsp, namedError),
+                       "Named-control DSP should compile: " + namedError);
+
+                auto* slot = audio::compiled::tracktionParameterForSlot(namedHost, 0);
+                expect(slot != nullptr, "Slot zero should have a host parameter");
+
+                if (slot != nullptr) {
+                    // Halfway up a 500..9000 range is 4750, and the device says
+                    // so. The host parameter has to say the same thing.
+                    const auto deviceText = magda::ParameterUtils::formatValue(
+                        magda::ParameterUtils::normalizedToReal(0.5f, namedFaust->parameterInfo(0)),
+                        namedFaust->parameterInfo(0));
+                    expectEquals(slot->valueToString(0.5f), deviceText,
+                                 "Host parameter text should follow the recompiled slot");
+                    expectEquals(namedFaust->parameterInfo(0).name, juce::String("Cutoff"),
+                                 "The device should report the recompiled slot's name");
+                    expectEquals(slot->getParameterName(), juce::String("Cutoff"),
+                                 "Host parameter name should follow the recompiled slot");
+                }
+            }
+            namedPlugin->deleteFromParent();
+        }
 
         beginTest("Project load clears a serialized sidechain from a stereo Faust DSP");
 
@@ -255,7 +309,8 @@ class FaustSidechainTest final : public juce::UnitTest {
             bridge->syncTrackPlugins(failedDestinationTrackId);
 
             auto failedPlugin = bridge->getPlugin(failedPath);
-            auto* failedFaust = dynamic_cast<audio::FaustPlugin*>(failedPlugin.get());
+            auto* failedFaust =
+                audio::tracktion_adapter::deviceFromPlugin<audio::FaustPlugin>(failedPlugin.get());
             expect(failedFaust != nullptr, "Failed saved source should retain its Faust plugin");
             if (failedFaust)
                 expect(!failedFaust->activeDspMatchesSource(),

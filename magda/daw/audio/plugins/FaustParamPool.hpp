@@ -60,10 +60,9 @@ struct HarvestedOutput {
  * into slots, marks the rest inactive, and returns a binding
  * descriptor list for the audio thread to consume via FaustState.
  *
- * The pool itself does NOT own any te::AutomatableParameter — those
- * are owned by FaustPlugin (and live for the plugin's lifetime, which
- * is what gives macro / mod / automation links their stable home).
- * The pool only owns the slot metadata table.
+ * The pool itself owns no parameter values — those belong to FaustPlugin and
+ * live for the device's lifetime, which is what gives macro / mod / automation
+ * links their stable home. The pool only owns the slot metadata table.
  *
  * Routing rules (full spec in docs/architecture/faust-param-pool.md):
  *   1. First pass — every harvested control with a valid `[idx:N]`

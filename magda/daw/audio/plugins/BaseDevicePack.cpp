@@ -25,6 +25,7 @@
 #include "plugins/SidechainPlugin.hpp"
 #include "plugins/SpectrumAnalyzerPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
+#include "plugins/ToneGeneratorPlugin.hpp"
 #include "plugins/TrackMeasurementPlugin.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 #include "plugins/mutable/MutableCloudsPlugin.hpp"
@@ -32,6 +33,7 @@
 #include "plugins/mutable/MutableRingsPlugin.hpp"
 #include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 #include "plugins/tracktion/TracktionDeviceStateBridge.hpp"
+#include "plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "processors/DeviceProcessor.hpp"
 #include "processors/internal/MidiDeviceProcessors.hpp"
 #include "processors/internal/NativeDeviceProcessors.hpp"
@@ -45,6 +47,17 @@ namespace ta = tracktion_adapter;
 
 template <typename PluginType> bool matches(DevicePluginRef plugin) {
     return dynamic_cast<PluginType*>(ta::pluginFromRef(plugin)) != nullptr;
+}
+
+/// The same question for a device the host adapter wraps: what the chain holds
+/// is the wrapper, and the device is inside it.
+template <typename DeviceType> bool matchesDevice(DevicePluginRef plugin) {
+    return ta::deviceFromPlugin<DeviceType>(ta::pluginFromRef(plugin)) != nullptr;
+}
+
+template <typename DeviceType>
+std::unique_ptr<MagdaDevice> createDevice(const DevicePluginCreationContext&) {
+    return std::make_unique<DeviceType>();
 }
 
 template <typename ProcessorType>
@@ -168,6 +181,7 @@ void add(InternalPluginRegistry& registry, InternalPluginSpec spec) {
 constexpr const char* kLowpassAliases[] = {"lowpass"};
 constexpr const char* kFourOscAliases[] = {"4osc", "4OSC Synth"};
 constexpr const char* kToneAliases[] = {"tone", "tonegenerator"};
+constexpr const char* kToneTags[] = {"utility", "test", "tone"};
 constexpr const char* kMeterAliases[] = {"meter", "levelmeter"};
 constexpr const char* kOscilloscopeAliases[] = {"scope"};
 constexpr const char* kSpectrumAliases[] = {"spectrum", "analyzer"};
@@ -238,7 +252,7 @@ void registerTracktionDevices(InternalPluginRegistry& registry) {
          .tagCount = static_cast<int>(std::size(kTracktionTags)),
          .createInSession = createTracktionPlugin});
     add(registry,
-        {.pluginId = te::ToneGeneratorPlugin::xmlTypeName,
+        {.pluginId = ToneGeneratorPlugin::xmlTypeName,
          .displayName = "Test Tone",
          .browserCategory = "Utility",
          .description =
@@ -246,12 +260,13 @@ void registerTracktionDevices(InternalPluginRegistry& registry) {
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
          .loadAliases = kToneAliases,
          .loadAliasCount = static_cast<int>(std::size(kToneAliases)),
-         .matchesPlugin = matches<te::ToneGeneratorPlugin>,
+         .matchesPlugin = matchesDevice<ToneGeneratorPlugin>,
          .createProcessor = makeProcessor<ToneGeneratorProcessor>,
          .showInBrowser = true,
-         .tags = kTracktionTags,
-         .tagCount = static_cast<int>(std::size(kTracktionTags)),
-         .createInSession = createTracktionPlugin});
+         .tags = kToneTags,
+         .tagCount = static_cast<int>(std::size(kToneTags)),
+         .createInSession = createValueTreePlugin,
+         .createDevice = createDevice<ToneGeneratorPlugin>});
     add(registry, {.pluginId = te::LevelMeterPlugin::xmlTypeName,
                    .displayName = "Level Meter",
                    .browserCategory = "Meter",
@@ -378,14 +393,14 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
                    .loadAliases = kSidechainAliases,
                    .loadAliasCount = static_cast<int>(std::size(kSidechainAliases)),
-                   .matchesPlugin = matches<SidechainPlugin>,
+                   .matchesPlugin = matchesDevice<SidechainPlugin>,
                    .createProcessor = makeProcessor<SidechainProcessor>,
                    .showInBrowser = true,
                    .tags = kSidechainTags,
                    .tagCount = static_cast<int>(std::size(kSidechainTags)),
                    .defaultModulationParamIndex = SidechainPlugin::kGainParamIndex,
                    .createInSession = createValueTreePlugin,
-                   .createPlugin = createPlugin<SidechainPlugin>});
+                   .createDevice = createDevice<SidechainPlugin>});
     add(registry,
         {.pluginId = MagdaConvolutionPlugin::xmlTypeName,
          .displayName = "IR Reverb",
@@ -412,13 +427,13 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
                    .loadAliases = kFaustAliases,
                    .loadAliasCount = static_cast<int>(std::size(kFaustAliases)),
-                   .matchesPlugin = matches<FaustPlugin>,
+                   .matchesPlugin = matchesDevice<FaustPlugin>,
                    .createProcessor = makeProcessor<FaustProcessor>,
                    .showInBrowser = true,
                    .tags = kFaustTags,
                    .tagCount = static_cast<int>(std::size(kFaustTags)),
                    .createInSession = createValueTreePlugin,
-                   .createPlugin = createPlugin<FaustPlugin>});
+                   .createDevice = createDevice<FaustPlugin>});
     add(registry, {.pluginId = FaustInstrumentPlugin::xmlTypeName,
                    .displayName = "Faust Instrument",
                    .browserCategory = "Custom DSP",

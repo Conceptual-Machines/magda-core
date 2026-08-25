@@ -457,6 +457,22 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
 
     result.value = fixture.declaration;
     result.value.tracks = std::move(staged.tracks);
+
+    // A master, always, whether or not the file carries one.
+    //
+    // The masterTrack section is younger than most of this corpus: fourteen of
+    // the twenty-two projects predate it, and their absence of one means the
+    // master held no plugins worth saving, not that the project has no master.
+    // TrackManager builds its own with MASTER_TRACK_ID before any project is
+    // loaded, so the app has never seen a project without one, and a rig that
+    // left this default-constructed was handing the compiler a master whose id
+    // is INVALID_TRACK_ID. Every track then routes to a master that is not the
+    // one it was given, which is what "output routes to missing track -2" was
+    // reporting: the compiler was right and its input was wrong.
+    result.value.master = TrackInfo{};
+    result.value.master.id = MASTER_TRACK_ID;
+    result.value.master.type = TrackType::Master;
+    result.value.master.name = "Master";
     if (staged.masterTrack != nullptr)
         result.value.master = *staged.masterTrack;
     result.value.clips = std::move(staged.clips);

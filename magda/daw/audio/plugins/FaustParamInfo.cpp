@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 
-#include "FaustInstrumentPlugin.hpp"
 #include "FaustParamPool.hpp"
 
 namespace magda::daw::audio {
@@ -74,7 +73,7 @@ magda::ParameterInfo bendRangeInfo() {
     info.group = kHostParamGroup;
     info.unit = "st";
     info.minValue = 0.0f;
-    info.maxValue = FaustInstrumentPlugin::kMaxBendSemitones;
+    info.maxValue = kMaxBendSemitones;
     // 2 semitones each way is what almost every synth ships with, and what a
     // patch author will assume when they reach for the wheel.
     info.defaultValue = 2.0f;

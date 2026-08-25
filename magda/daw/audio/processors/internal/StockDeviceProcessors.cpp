@@ -3,6 +3,10 @@
 #include <cmath>
 #include <utility>
 
+#include "core/ParameterUtils.hpp"
+#include "plugins/ToneGeneratorPlugin.hpp"
+#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "processors/ParameterInfoBuilder.hpp"
 
 namespace magda {
@@ -30,8 +34,35 @@ void ToneGeneratorProcessor::initializeDefaults() {
     initialized_ = true;
 }
 
-te::ToneGeneratorPlugin* ToneGeneratorProcessor::getTonePlugin() const {
-    return dynamic_cast<te::ToneGeneratorPlugin*>(plugin_.get());
+// The device is MAGDA's now and the chain holds the host's wrapper around it,
+// so the parameters are reached by slot rather than by the retired plugin's
+// named members. The accessors below keep their old units -- Hz, linear level,
+// the waveform enum -- because their callers are written against those; the
+// conversion to the slot's normalized position happens here.
+
+daw::audio::ToneGeneratorPlugin* ToneGeneratorProcessor::getToneDevice() const {
+    return daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::ToneGeneratorPlugin>(
+        plugin_.get());
+}
+
+void ToneGeneratorProcessor::setSlotDisplayValue(int slot, float displayValue) const {
+    auto* device = getToneDevice();
+    auto* param = daw::audio::compiled::tracktionParameterForSlot(plugin_.get(), slot);
+    if (device == nullptr || param == nullptr)
+        return;
+
+    param->setParameterFromHost(
+        ParameterUtils::realToNormalized(displayValue, device->parameterInfo(slot)),
+        juce::dontSendNotification);
+}
+
+float ToneGeneratorProcessor::slotDisplayValue(int slot, float fallback) const {
+    auto* device = getToneDevice();
+    auto* param = daw::audio::compiled::tracktionParameterForSlot(plugin_.get(), slot);
+    if (device == nullptr || param == nullptr)
+        return fallback;
+
+    return ParameterUtils::normalizedToReal(param->getCurrentValue(), device->parameterInfo(slot));
 }
 
 void ToneGeneratorProcessor::setParameter(const juce::String& paramName, float value) {
@@ -164,72 +195,43 @@ void ToneGeneratorProcessor::setParameterByIndex(int paramIndex, float value) {
 }
 
 void ToneGeneratorProcessor::setFrequency(float hz) {
-    if (auto* tone = getTonePlugin()) {
-        // Clamp to valid range
-        hz = juce::jlimit(20.0f, 20000.0f, hz);
-
-        // Set via AutomatableParameter - this is the proper Tracktion Engine way
-        // The parameter will automatically sync to the CachedValue
-        if (tone->frequencyParam) {
-            tone->frequencyParam->setParameterFromHost(hz, juce::dontSendNotification);
-        }
-    }
+    setSlotDisplayValue(daw::audio::ToneGeneratorPlugin::kFrequencyParamIndex,
+                        juce::jlimit(20.0f, 20000.0f, hz));
 }
 
 float ToneGeneratorProcessor::getFrequency() const {
-    if (auto* tone = getTonePlugin()) {
-        return tone->frequency;
-    }
-    return 440.0f;
+    return slotDisplayValue(daw::audio::ToneGeneratorPlugin::kFrequencyParamIndex, 440.0f);
 }
 
 void ToneGeneratorProcessor::setLevel(float level) {
-    if (auto* tone = getTonePlugin()) {
-        // Set via AutomatableParameter - proper Tracktion Engine way
-        if (tone->levelParam) {
-            tone->levelParam->setParameterFromHost(level, juce::dontSendNotification);
-        }
-    }
+    // The caller's level is linear; the device's is dB.
+    setSlotDisplayValue(daw::audio::ToneGeneratorPlugin::kLevelParamIndex,
+                        juce::Decibels::gainToDecibels(level, -60.0f));
 }
 
 float ToneGeneratorProcessor::getLevel() const {
-    if (auto* tone = getTonePlugin()) {
-        return tone->level;
-    }
-    return 0.25f;
+    const float db = slotDisplayValue(daw::audio::ToneGeneratorPlugin::kLevelParamIndex, -12.0f);
+    return db <= -60.0f ? 0.0f : juce::Decibels::decibelsToGain(db, -60.0f);
 }
 
 void ToneGeneratorProcessor::setOscType(int teOscType) {
-    if (auto* tone = getTonePlugin()) {
-        // TE enum: 0=sin, 1=triangle, 2=sawUp, 3=sawDown, 4=square, 5=noise
-        float teType = static_cast<float>(juce::jlimit(0, 5, teOscType));
-        if (tone->oscTypeParam) {
-            tone->oscTypeParam->setParameterFromHost(teType, juce::dontSendNotification);
-        }
-    }
+    setSlotDisplayValue(daw::audio::ToneGeneratorPlugin::kWaveformParamIndex,
+                        static_cast<float>(juce::jlimit(0, 5, teOscType)));
 }
 
 int ToneGeneratorProcessor::getOscType() const {
-    if (auto* tone = getTonePlugin()) {
-        return juce::jlimit(0, 5, static_cast<int>(tone->oscType));
-    }
-    return 0;
+    return juce::jlimit(0, 5,
+                        static_cast<int>(std::lround(slotDisplayValue(
+                            daw::audio::ToneGeneratorPlugin::kWaveformParamIndex, 0.0f))));
 }
 
 void ToneGeneratorProcessor::setBandLimit(bool bandLimited) {
-    if (auto* tone = getTonePlugin()) {
-        if (tone->bandLimitParam) {
-            tone->bandLimitParam->setParameterFromHost(bandLimited ? 1.0f : 0.0f,
-                                                       juce::dontSendNotification);
-        }
-    }
+    setSlotDisplayValue(daw::audio::ToneGeneratorPlugin::kBandLimitParamIndex,
+                        bandLimited ? 1.0f : 0.0f);
 }
 
 bool ToneGeneratorProcessor::getBandLimit() const {
-    if (auto* tone = getTonePlugin()) {
-        return static_cast<float>(tone->bandLimit) >= 0.5f;
-    }
-    return false;
+    return slotDisplayValue(daw::audio::ToneGeneratorPlugin::kBandLimitParamIndex, 0.0f) >= 0.5f;
 }
 
 void ToneGeneratorProcessor::applyGain() {

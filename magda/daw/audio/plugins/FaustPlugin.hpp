@@ -1,7 +1,5 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include <array>
 #include <atomic>
 #include <memory>
@@ -9,6 +7,8 @@
 
 #include "FaustParamPool.hpp"
 #include "IFaustEditorModel.hpp"
+#include "core/ParameterUtils.hpp"
+#include "plugins/MagdaDevice.hpp"
 
 // libfaust types are forward-declared here so consumers don't need the Faust
 // runtime headers on their include path. Implementation pulls them in.
@@ -17,22 +17,18 @@ class dsp_factory;
 
 namespace magda::daw::audio {
 
-namespace te = tracktion::engine;
-
 // Hosts a libfaust interpreter-compiled DSP. The .dsp source is held in
 // plugin state and (re)compiled at construction / on user load.
 //
-// Parameters live in a fixed pool of FaustParamPool::kSize stable
-// AutomatableParameters created at construction time. Each slot's
-// AutomatableParameter is normalized 0..1 and persists for the
-// plugin's lifetime; on a DSP swap the live controls are routed into
-// slots and the audio thread denormalizes per-slot to real units when
-// writing the zone. This keeps macro / mod / MIDI Learn / automation
-// links pinned to slot indices that survive a recompile — see
-// docs/architecture/faust-param-pool.md.
-class FaustPlugin : public te::Plugin, public IFaustEditorModel {
+// Parameters live in a fixed pool of FaustParamPool::kSize stable slots
+// created at construction time. Each slot is normalized 0..1 and persists for
+// the device's lifetime; on a DSP swap the live controls are routed into slots
+// and the audio thread denormalizes per-slot to real units when writing the
+// zone. This keeps macro / mod / MIDI Learn / automation links pinned to slot
+// indices that survive a recompile — see docs/architecture/faust-param-pool.md.
+class FaustPlugin : public MagdaDevice, public IFaustEditorModel {
   public:
-    FaustPlugin(const te::PluginCreationInfo& info);
+    FaustPlugin();
     ~FaustPlugin() override;
 
     static const char* getPluginName() {
@@ -40,45 +36,29 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     }
     static const char* xmlTypeName;
 
-    juce::String getName() const override {
-        return getPluginName();
-    }
-    juce::String getPluginType() override {
-        return xmlTypeName;
-    }
-    juce::String getShortName(int) override {
-        return "Faust";
-    }
-    juce::String getSelectableDescription() override {
-        return getName();
-    }
+    DeviceProperties properties() const override;
 
-    void initialise(const te::PluginInitialisationInfo& info) override;
-    void deinitialise() override;
+    void prepare(const DevicePrepareContext& context) override;
+    void release() override;
     void reset() override;
+    void process(DeviceProcessContext& context) override;
 
-    void applyToBuffer(const te::PluginRenderContext& fc) override;
+    int parameterCount() const override {
+        return FaustParamPool::kSize;
+    }
+    ParameterInfo parameterInfo(int index) const override;
+    float parameterValue(int index) const override;
+    void setParameterValue(int index, float value) override;
 
-    bool takesMidiInput() override {
-        return false;
-    }
-    bool takesAudioInput() override {
-        return true;
-    }
-    bool isSynth() override {
-        return false;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return false;
-    }
-    bool canSidechain() override;
-    void getChannelNames(juce::StringArray* inputs, juce::StringArray* outputs) override;
-    double getTailLength() const override {
-        return 0.0;
-    }
+    void flushState(juce::ValueTree& state) override;
+    void restoreState(const juce::ValueTree& state) override;
 
-    void restorePluginStateFromValueTree(const juce::ValueTree&) override;
+  private:
+    /// Re-cache the conversion domain of every pool slot. Called whenever the
+    /// slot table changes, so process() never builds one.
+    void refreshPoolDomains();
 
+  public:
     // Compile `source` with the interpreter backend, swap in the new DSP,
     // and persist source+name to plugin state. Returns true on success;
     // on failure `errorOut` carries the libfaust error message and the
@@ -180,15 +160,14 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     // libc++ does not yet implement std::atomic<std::shared_ptr<T>>.
     std::shared_ptr<FaustState> active_;
 
-    // Lifetime-stable parameter pool. Slot table is mutated on the
-    // message thread; AutomatableParameter values are read wait-free
-    // from the audio thread via `getCurrentValue()`.
+    // Lifetime-stable parameter pool. The slot table is mutated on the message
+    // thread; the values below are read wait-free from the audio thread.
     FaustParamPool pool_;
-    // CachedValue is non-copyable/non-movable — kept in a std::array
-    // (fixed-size, in-place) rather than a vector. AutomatableParameter
-    // pointers are reference-counted, vector is fine.
-    std::vector<te::AutomatableParameter::Ptr> poolParams_;
-    std::array<juce::CachedValue<float>, FaustParamPool::kSize> poolCached_;
+    // Normalized 0..1 per slot, and the domain each was last bound with. The
+    // domain is cached because process() denormalizes every active binding
+    // every block, and building a ParameterInfo there would allocate.
+    std::array<std::atomic<float>, FaustParamPool::kSize> poolValues_{};
+    std::array<ParameterUtils::ParameterDomain, FaustParamPool::kSize> poolDomains_{};
     std::array<bool, FaustParamPool::kSize> poolValueWasRestored_{};
 
     // Retired states pending destruction on the message thread. After a

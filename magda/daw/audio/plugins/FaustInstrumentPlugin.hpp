@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 
+#include "FaustParamInfo.hpp"
 #include "FaustParamPool.hpp"
 #include "IFaustEditorModel.hpp"
 
@@ -111,7 +112,7 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
     static constexpr int kHostParamCount = 3;
 
     // Widest bend the range parameter can ask for, in semitones either way.
-    static constexpr float kMaxBendSemitones = 24.0f;
+    static constexpr float kMaxBendSemitones = magda::daw::audio::kMaxBendSemitones;
 
     // Read access for the processor / parameter-info bridge.
     const FaustParamPool& getPool() const override {
