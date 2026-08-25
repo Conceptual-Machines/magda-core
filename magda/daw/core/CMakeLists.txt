@@ -6,6 +6,7 @@ target_sources(magda_daw PRIVATE
     Config.cpp
     AppPaths.cpp
     ChainNodePath.cpp
+    DeviceInfo.cpp
     ControlTarget.cpp
     MixerStripOrder.cpp
     UIScale.cpp

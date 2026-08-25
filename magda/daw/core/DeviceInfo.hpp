@@ -13,6 +13,42 @@
 
 namespace magda {
 
+struct RackInfo;
+
+/**
+ * @brief Value-semantic owner for a device's pad chains.
+ *
+ * RackInfo is incomplete here -- RackInfo.hpp includes this header, so it
+ * cannot be included back -- and DeviceInfo is copied by value throughout the
+ * app. A bare unique_ptr would make DeviceInfo non-copyable and a shared_ptr
+ * would make two copies of a device share one set of pads. This owns the rack,
+ * copies it deep, and keeps its own rule of five out of line so DeviceInfo
+ * needs none of its own.
+ */
+class PadRack {
+  public:
+    PadRack();
+    ~PadRack();
+    PadRack(const PadRack& other);
+    PadRack& operator=(const PadRack& other);
+    PadRack(PadRack&& other) noexcept;
+    PadRack& operator=(PadRack&& other) noexcept;
+
+    explicit operator bool() const {
+        return rack_ != nullptr;
+    }
+    RackInfo* get() const {
+        return rack_.get();
+    }
+    RackInfo* operator->() const {
+        return rack_.get();
+    }
+    void reset(std::unique_ptr<RackInfo> rack);
+
+  private:
+    std::unique_ptr<RackInfo> rack_;
+};
+
 /**
  * @brief Plugin format enumeration
  *
@@ -250,6 +286,22 @@ struct DeviceInfo {
     // here; PluginPreferences keeps a user-global mirror that's stamped onto
     // new instances when they're created. See KitRow.hpp.
     std::vector<KitRow> kitRows;
+
+    /**
+     * A pad-per-chain device's pads, as chains keyed by note range (#2192).
+     *
+     * Null for every device that is not one. A Drum Grid's pads used to live
+     * inside its engine plugin state as engine XML, which meant nothing but the
+     * engine could see them: the plan compiler could not expand them the way it
+     * expands a rack, so the whole device stopped at a Device op that no native
+     * engine could bind.
+     *
+     * They are chains because that is what they are. ChainInfo already carries
+     * a pad's level, pan, mute, solo, bypass and output; the note range it
+     * gained alongside this is the only thing a pad has that a rack chain does
+     * not.
+     */
+    PadRack padRack;
 
     // Sidechain configuration (e.g., compressor key input)
     SidechainConfig sidechain;

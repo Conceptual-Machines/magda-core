@@ -70,6 +70,24 @@ struct ChainInfo {
     float volume = 0.0f;  // Chain volume in dB (0 = unity)
     float pan = 0.0f;     // Chain pan (-1 to 1)
 
+    /**
+     * The MIDI notes this chain answers to, for a rack whose chains are keyed
+     * by pitch rather than run in parallel: a Drum Grid's pads (#2192).
+     *
+     * `lowNote` > `highNote` means the chain takes everything, which is what a
+     * plain parallel rack chain does and what every chain built before pads
+     * lived in the model reads as. `rootNote` is the pitch the range is
+     * transposed onto before the chain sees it, so a sampler mapped at C0
+     * plays from whichever pad triggered it.
+     */
+    int lowNote = 0;
+    int highNote = -1;
+    int rootNote = 0;
+
+    bool answersToEveryNote() const {
+        return lowNote > highNote;
+    }
+
     // UI state
     bool expanded = true;
 
