@@ -25,6 +25,7 @@
 #include "plugins/SidechainPlugin.hpp"
 #include "plugins/SpectrumAnalyzerPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
+#include "plugins/ToneGeneratorPlugin.hpp"
 #include "plugins/TrackMeasurementPlugin.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 #include "plugins/mutable/MutableCloudsPlugin.hpp"
@@ -180,6 +181,7 @@ void add(InternalPluginRegistry& registry, InternalPluginSpec spec) {
 constexpr const char* kLowpassAliases[] = {"lowpass"};
 constexpr const char* kFourOscAliases[] = {"4osc", "4OSC Synth"};
 constexpr const char* kToneAliases[] = {"tone", "tonegenerator"};
+constexpr const char* kToneTags[] = {"utility", "test", "tone"};
 constexpr const char* kMeterAliases[] = {"meter", "levelmeter"};
 constexpr const char* kOscilloscopeAliases[] = {"scope"};
 constexpr const char* kSpectrumAliases[] = {"spectrum", "analyzer"};
@@ -250,7 +252,7 @@ void registerTracktionDevices(InternalPluginRegistry& registry) {
          .tagCount = static_cast<int>(std::size(kTracktionTags)),
          .createInSession = createTracktionPlugin});
     add(registry,
-        {.pluginId = te::ToneGeneratorPlugin::xmlTypeName,
+        {.pluginId = ToneGeneratorPlugin::xmlTypeName,
          .displayName = "Test Tone",
          .browserCategory = "Utility",
          .description =
@@ -258,12 +260,13 @@ void registerTracktionDevices(InternalPluginRegistry& registry) {
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
          .loadAliases = kToneAliases,
          .loadAliasCount = static_cast<int>(std::size(kToneAliases)),
-         .matchesPlugin = matches<te::ToneGeneratorPlugin>,
+         .matchesPlugin = matchesDevice<ToneGeneratorPlugin>,
          .createProcessor = makeProcessor<ToneGeneratorProcessor>,
          .showInBrowser = true,
-         .tags = kTracktionTags,
-         .tagCount = static_cast<int>(std::size(kTracktionTags)),
-         .createInSession = createTracktionPlugin});
+         .tags = kToneTags,
+         .tagCount = static_cast<int>(std::size(kToneTags)),
+         .createInSession = createValueTreePlugin,
+         .createDevice = createDevice<ToneGeneratorPlugin>});
     add(registry, {.pluginId = te::LevelMeterPlugin::xmlTypeName,
                    .displayName = "Level Meter",
                    .browserCategory = "Meter",

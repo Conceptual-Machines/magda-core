@@ -348,6 +348,8 @@ set(_magda_neutral_base_device_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SidechainPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SpectrumAnalyzerPlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SpectrumAnalyzerPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ToneGeneratorPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ToneGeneratorPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/CompiledFaustInterface.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/CompiledPluginRegistry.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledEffect.cpp"
