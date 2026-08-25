@@ -262,6 +262,10 @@ void MagdaCompiledPolyInstrument::buildHostParameters() {
 
 void MagdaCompiledPolyInstrument::prepare(const DevicePrepareContext& context) {
     rebuildEngineState(static_cast<int>(context.sampleRate));
+    // Mono and Legato push onto this from process(), so its storage is taken
+    // here rather than at the first note. One entry per MIDI pitch is the whole
+    // range and nothing can ask for more.
+    heldNotes_.reserve(128);
     scratchOut_.setSize(std::max(numOutputs_, 2), context.maximumBlockSize, false, true, true);
     outPtrs_.assign(static_cast<size_t>(std::max(numOutputs_, 2)), nullptr);
     limEnv_ = 0.0f;

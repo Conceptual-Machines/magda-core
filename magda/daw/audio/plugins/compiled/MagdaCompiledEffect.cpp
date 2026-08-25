@@ -490,9 +490,18 @@ void MagdaCompiledEffect::computeEngine(int engineIndex, DeviceProcessContext& c
     // channels, so anything above them is not its output -- it is the input it
     // was handed, and passing that through would leak the dry signal around a
     // widener that was asked to replace it.
-    if (outputChannelCount() > 0)
-        for (int channel = numOutputs; channel < hostChannels; ++channel)
+    //
+    // The key is not the device's to clear, though. It arrives as channels of
+    // this buffer but it belongs to whatever produced it, the engine hands it
+    // over read-only, and the same source may be fanned out to other ops: zeroing
+    // it here would empty their input from under them. Stop at the first key
+    // channel when there is one.
+    if (outputChannelCount() > 0) {
+        const int firstForeignChannel =
+            context.sidechainInputChannel >= 0 ? context.sidechainInputChannel : hostChannels;
+        for (int channel = numOutputs; channel < firstForeignChannel; ++channel)
             context.audio->clear(channel, startSample, numSamples);
+    }
 }
 
 void MagdaCompiledEffect::processAudio(DeviceProcessContext& context) {
