@@ -42,6 +42,46 @@ class TracktionTempoMapView final : public DeviceTempoMap {
     te::TempoSequence& tempoSequence_;
 };
 
+/**
+ * A host parameter that asks the device what it is called.
+ *
+ * te::AutomatableParameter holds its name in a const member set at
+ * construction, which is right for a device whose parameters are fixed and
+ * wrong for one that rebinds them: the runtime Faust device recompiles and slot
+ * one stops being "(slot 1)" and starts being "Cutoff". getParameterName() is
+ * virtual, so the name follows the device the same way the value conversion
+ * does.
+ */
+class DeviceParameter final : public te::AutomatableParameter {
+  public:
+    DeviceParameter(const juce::String& paramID, const juce::String& name, te::Plugin& plugin,
+                    juce::NormalisableRange<float> range,
+                    std::shared_ptr<MagdaDevice*> deviceHandle, int index)
+        : te::AutomatableParameter(paramID, name, plugin, range),
+          deviceHandle_(std::move(deviceHandle)),
+          index_(index) {}
+
+    juce::String getParameterName() const override {
+        const auto live = liveName();
+        return live.isNotEmpty() ? live : te::AutomatableParameter::getParameterName();
+    }
+
+    juce::String getParameterShortName(int suggestedLength) const override {
+        const auto live = liveName();
+        return live.isNotEmpty() ? live
+                                 : te::AutomatableParameter::getParameterShortName(suggestedLength);
+    }
+
+  private:
+    juce::String liveName() const {
+        auto* device = *deviceHandle_;
+        return device != nullptr ? device->parameterInfo(index_).name : juce::String();
+    }
+
+    std::shared_ptr<MagdaDevice*> deviceHandle_;
+    int index_ = 0;
+};
+
 class TracktionMidiBufferView final : public DeviceMidiBuffer {
   public:
     explicit TracktionMidiBufferView(te::MidiMessageArray& midi) : midi_(midi) {}
@@ -303,18 +343,19 @@ void TracktionMagdaDevicePlugin::buildParameters() {
             return device != nullptr ? device->parameterInfo(index) : info;
         };
 
-        auto parameter = addParam(
-            id, info.name, {0.0f, 1.0f},
-            [live](float value) {
-                const auto current = live();
-                return ParameterUtils::formatValue(ParameterUtils::normalizedToReal(value, current),
-                                                   current);
-            },
-            [live](const juce::String& text) {
-                const auto current = live();
-                const auto value = ParameterUtils::parseValue(text, current);
-                return value ? ParameterUtils::realToNormalized(*value, current) : 0.0f;
-            });
+        te::AutomatableParameter::Ptr parameter = new DeviceParameter(
+            id, info.name, *this, juce::NormalisableRange<float>{0.0f, 1.0f}, deviceHandle_, index);
+        parameter->valueToStringFunction = [live](float value) {
+            const auto current = live();
+            return ParameterUtils::formatValue(ParameterUtils::normalizedToReal(value, current),
+                                               current);
+        };
+        parameter->stringToValueFunction = [live](const juce::String& text) {
+            const auto current = live();
+            const auto value = ParameterUtils::parseValue(text, current);
+            return value ? ParameterUtils::realToNormalized(*value, current) : 0.0f;
+        };
+        addAutomatableParameter(parameter);
         parameter->attachToCurrentValue(*cachedValue);
 
         parameterValues_.push_back(std::move(cachedValue));

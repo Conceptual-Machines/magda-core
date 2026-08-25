@@ -232,6 +232,8 @@ class FaustSidechainTest final : public juce::UnitTest {
                                  "Host parameter text should follow the recompiled slot");
                     expectEquals(namedFaust->parameterInfo(0).name, juce::String("Cutoff"),
                                  "The device should report the recompiled slot's name");
+                    expectEquals(slot->getParameterName(), juce::String("Cutoff"),
+                                 "Host parameter name should follow the recompiled slot");
                 }
             }
             namedPlugin->deleteFromParent();
