@@ -35,6 +35,7 @@ int arityOf(OpKind kind) {
         case OpKind::SendTap:
         case OpKind::Meter:
         case OpKind::Output:
+        case OpKind::MidiNoteGate:
             return 1;
         case OpKind::ModSource:
             return 2;  // the source's audio at this tap's point, the source's MIDI
@@ -58,6 +59,8 @@ const char* toString(OpKind kind) {
             return "MixAudio";
         case OpKind::MergeMidi:
             return "MergeMidi";
+        case OpKind::MidiNoteGate:
+            return "MidiNoteGate";
         case OpKind::Subtract:
             return "Subtract";
         case OpKind::Delay:
@@ -106,6 +109,8 @@ const char* toString(OpRole role) {
             return "deviceMeter";
         case OpRole::ChainMidiMerge:
             return "chainMidiMerge";
+        case OpRole::PadNoteGate:
+            return "padNoteGate";
         case OpRole::RackChainFader:
             return "rackChainFader";
         case OpRole::RackMix:
@@ -392,7 +397,7 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
             }
             // A delay carries whatever reaches it, so its own output port is
             // what its input has to agree with.
-            const bool midiSlot = op.kind == OpKind::MergeMidi ||
+            const bool midiSlot = op.kind == OpKind::MergeMidi || op.kind == OpKind::MidiNoteGate ||
                                   ((op.kind == OpKind::Device || op.kind == OpKind::Fader ||
                                     op.kind == OpKind::ModSource) &&
                                    slot == 1);

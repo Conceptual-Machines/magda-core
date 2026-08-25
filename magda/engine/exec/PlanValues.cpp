@@ -457,6 +457,12 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::DeviceProcess:
         case OpRole::DeviceMeter:
         case OpRole::ChainMidiMerge:
+        // A note gate's range and transposition are topology, compiled into the
+        // op. What it does read from here is the silence the block above sets
+        // for a chain taken out of the mix, so a muted pad passes no notes
+        // rather than passing them to a silenced fader.
+        case OpRole::PadNoteGate:
+        case OpRole::DeviceInject:
         case OpRole::RackMix:
         case OpRole::RackMidiMix:
         case OpRole::TrackMeter:

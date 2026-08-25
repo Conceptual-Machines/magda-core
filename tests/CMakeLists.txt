@@ -299,6 +299,8 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES test_render_plan_executor.cpp)
     list(APPEND TEST_SOURCES test_parallel_executor.cpp)
     list(APPEND TEST_SOURCES test_plan_layout.cpp)
+    # The note-range gate a pad chain needs (#2200).
+    list(APPEND TEST_SOURCES test_plan_note_gate.cpp)
     list(APPEND TEST_SOURCES test_plan_diff.cpp)
     # Rack nesting, recursion and op-key identity (#2137). Reaches the parameter
     # table as well as the plan, because the nearest-scope rule the two resolve

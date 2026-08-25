@@ -1266,6 +1266,52 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             break;
         }
 
+        case OpKind::MidiNoteGate: {
+            // A pad answers to a contiguous range of notes and plays them from
+            // its own root, so a sampler mapped at C0 sounds from whichever pad
+            // triggered it. Both halves are here because they are one decision:
+            // an event is either this pad's, in which case it arrives
+            // transposed, or it is not and this pad never sees it.
+            auto& out = midiOut(id, 0);
+            out.clear();
+
+            if (value.silent)
+                break;
+
+            const int low = op.noteGateLow;
+            const int high = op.noteGateHigh;
+            const int transpose = op.noteGateTranspose;
+
+            for (const auto metadata : midiIn(op.inputs[0])) {
+                auto message = metadata.getMessage();
+
+                // Everything that is not a note carries no pitch to gate on and
+                // is the chain's business as much as any pad's: a sustain pedal
+                // or a pitch bend reaches every pad, which is what the current
+                // engine does with them too.
+                if (!message.isNoteOnOrOff() && !message.isAftertouch()) {
+                    out.addEvent(message, metadata.samplePosition);
+                    continue;
+                }
+
+                const int note = message.getNoteNumber();
+                if (note < low || note > high)
+                    continue;
+
+                // Clamped rather than dropped. A transposed note past the end of
+                // the keyboard is a pad configured to play higher than MIDI
+                // goes, and the note it asked for is the nearest one that
+                // exists; dropping it would leave a pad that triggers nothing
+                // and looks broken.
+                message.setNoteNumber(std::clamp(note + transpose, 0, 127));
+                out.addEvent(message, metadata.samplePosition);
+            }
+
+            if (auto* tap = midiTapForOp_[i]; tap != nullptr)
+                tap->write(out, block);
+            break;
+        }
+
         case OpKind::Device: {
             auto audio = audioOut(id, 0, numSamples);
             const auto producesMidi =
