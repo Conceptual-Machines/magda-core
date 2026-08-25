@@ -28,11 +28,18 @@ namespace ds = magda::device_state;
 /// stripping it there would leave a tree that `getOrCreatePluginFor` cannot
 /// instantiate, so the pad would come back empty.
 bool isRootEngineOwnedProperty(const juce::Identifier& id) {
-    static const std::array<juce::Identifier, 12> engineOwned{
+    // `parameters` is the engine's own pre-v2 blob of parameter state. The
+    // engine deletes it on the next flush, so a capture that recorded it wrote
+    // a document that could not reproduce itself: the property was there the
+    // first time and gone the second. It is also exactly the engine-shaped
+    // parameter state v2 exists to keep out of a MAGDA file, so it is dropped
+    // here with the rest (#2192).
+    static const std::array<juce::Identifier, 13> engineOwned{
         te::IDs::id,           te::IDs::type,           te::IDs::enabled,
         te::IDs::process,      te::IDs::frozen,         te::IDs::quickParamName,
         te::IDs::windowPos,    te::IDs::windowX,        te::IDs::windowY,
         te::IDs::windowLocked, te::IDs::masterPluginID, te::IDs::sidechainSourceID,
+        te::IDs::parameters,
     };
     return std::find(engineOwned.begin(), engineOwned.end(), id) != engineOwned.end();
 }
