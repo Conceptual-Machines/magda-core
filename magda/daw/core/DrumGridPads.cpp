@@ -29,6 +29,13 @@ const juce::Identifier kPadSolo("padSolo");
 const juce::Identifier kPadBypassed("padBypassed");
 const juce::Identifier kBusOutput("busOutput");
 const juce::Identifier kType("type");
+/// Tracktion saves every external plugin under one type name and keeps the real
+/// identity in these. `format` is the plugin format ("VST3", "AudioUnit"), NOT
+/// what `type` says.
+const juce::Identifier kExternalName("name");
+const juce::Identifier kManufacturer("manufacturer");
+const juce::Identifier kFormat("format");
+const juce::Identifier kFilename("filename");
 const juce::Identifier kEnabled("enabled");
 /// The DeviceId a Drum Grid allocated for a pad's plugin and saved with it.
 /// TrackManager's id allocator already reads this same property out of pad
@@ -54,7 +61,7 @@ constexpr int kFallbackNote = 60;
 /// saved with the pad, which is why the id allocator has to read the same
 /// property; the rest comes from the plugin registry, which is where a device's
 /// identity lives for every other device in the model too.
-DeviceInfo deviceFromNode(const ds::Node& node) {
+DeviceInfo deviceFromNode(const ds::Node& node, bool isPadInstrumentSlot) {
     DeviceInfo device;
 
     const auto savedType = node.props[kType].toString();
@@ -75,6 +82,46 @@ DeviceInfo deviceFromNode(const ds::Node& node) {
             device.name = spec->displayName;
         device.isInstrument = spec->isInstrument;
         device.deviceType = spec->isInstrument ? DeviceType::Instrument : DeviceType::Effect;
+
+        // Without this the device keeps PluginFormat's VST3 default and every
+        // path that asks reads an internal device as an external one: it would
+        // claim a floating editor window it does not have, and the creation
+        // paths would try to instantiate it from external identifiers it has
+        // never had.
+        device.format = PluginFormat::Internal;
+    } else {
+        // No spec means an external plugin. Tracktion saves all of them under
+        // one type name, so `type` identifies nothing on its own and the real
+        // identity is in the properties beside it: a pad holding Kick 2 would
+        // otherwise project as an effect called "vst".
+        const auto externalName = node.props[kExternalName].toString();
+        if (externalName.isNotEmpty())
+            device.name = externalName;
+
+        device.manufacturer = node.props[kManufacturer].toString();
+        device.fileOrIdentifier = node.props[kFilename].toString();
+        device.format = pluginFormatFromName(node.props[kFormat].toString());
+
+        // The path, not the type name. JUCE's identifier string is what the app
+        // uses for a scanned plugin and it cannot be rebuilt from what is saved
+        // here, so the file is the honest identifier; leaving the type name in
+        // place would key every external pad plugin in the project the same.
+        // uniqueId stays empty on purpose: the `uniqueId` saved here is
+        // Tracktion's own hash, not the JUCE identifier DeviceInfo::uniqueId
+        // means, and putting one where the other is expected would send every
+        // capability lookup to the wrong entry.
+        if (device.fileOrIdentifier.isNotEmpty())
+            device.pluginId = device.fileOrIdentifier;
+
+        // Nothing saved says whether an external plugin is an instrument, and
+        // the scan is not available here. The pad's own shape is: a Drum Grid
+        // loads a pad's instrument into the first slot and adds FX after it, so
+        // the first plugin in a pad chain is the instrument. Without this a pad
+        // whose instrument is external routes no MIDI and the pad is silent.
+        if (isPadInstrumentSlot) {
+            device.isInstrument = true;
+            device.deviceType = DeviceType::Instrument;
+        }
     }
 
     // The id the pad was saved with. A pad whose state predates it is left
@@ -135,9 +182,13 @@ ChainInfo chainFromNode(const ds::Node& node) {
     chain.bypassed = boolProp(node, kPadBypassed, false);
     chain.outputIndex = intProp(node, kBusOutput, 0);
 
-    for (const auto& child : node.children)
-        if (child.type == kPlugin.toString())
-            chain.elements.push_back(deviceFromNode(child));
+    bool firstPlugin = true;
+    for (const auto& child : node.children) {
+        if (child.type != kPlugin.toString())
+            continue;
+        chain.elements.push_back(deviceFromNode(child, firstPlugin));
+        firstPlugin = false;
+    }
 
     return chain;
 }

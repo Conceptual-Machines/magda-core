@@ -194,3 +194,90 @@ TEST_CASE("A copied device does not share its pads", "[drumgrid][pads]") {
     CHECK(copy.padRack->chains[1].highNote == 40);
     CHECK_FALSE(copy.padRack->chains[1].answersToEveryNote());
 }
+
+TEST_CASE("A projected internal pad device is internal", "[drumgrid][pads]") {
+    const auto rack = magda::readPadRack("drumgrid", encodedDrumGridWithPads());
+    REQUIRE(rack != nullptr);
+
+    const auto& device = magda::getDevice(rack->chains[0].elements[0]);
+
+    // Left at PluginFormat's VST3 default, an internal device claims a floating
+    // editor window it does not have and the creation paths try to instantiate
+    // it from external identifiers it has never had.
+    CHECK(device.format == magda::PluginFormat::Internal);
+    CHECK_FALSE(device.hasEditorWindow());
+    CHECK(device.getFormatString() == "Internal");
+}
+
+TEST_CASE("An external pad plugin keeps its real identity", "[drumgrid][pads]") {
+    ds::Doc doc;
+    doc.deviceType = "drumgrid";
+    doc.root.type = "PLUGIN";
+
+    auto pad = padNode(0, 36, 36, 36);
+    pad.children.clear();
+
+    // What Tracktion actually saves: one type name for every external plugin,
+    // with the format and the identity in the properties beside it.
+    ds::Node external;
+    external.type = "PLUGIN";
+    external.props.set("type", "vst");
+    external.props.set("name", "Kick 2");
+    external.props.set("manufacturer", "Sonic Academy");
+    external.props.set("format", "VST3");
+    external.props.set("filename", "/Plug-Ins/VST3/Kick 2.vst3");
+    external.props.set("uniqueId", "db742358");
+    external.props.set("magdaDeviceId", 1020);
+    pad.children.push_back(external);
+    doc.root.children.push_back(pad);
+
+    const auto rack = magda::readPadRack("drumgrid", ds::encode(doc));
+    REQUIRE(rack != nullptr);
+    REQUIRE(rack->chains[0].elements.size() == 1);
+
+    const auto& device = magda::getDevice(rack->chains[0].elements[0]);
+    CHECK(device.name == "Kick 2");
+    CHECK(device.manufacturer == "Sonic Academy");
+    CHECK(device.format == magda::PluginFormat::VST3);
+    CHECK(device.fileOrIdentifier == "/Plug-Ins/VST3/Kick 2.vst3");
+    CHECK(device.id == 1020);
+
+    // The type name identifies nothing: every external plugin in the project
+    // carries the same one.
+    CHECK(device.pluginId != "vst");
+    CHECK(device.pluginId.isNotEmpty());
+
+    // Tracktion's own hash is not the JUCE identifier DeviceInfo::uniqueId
+    // means, so it must not be copied into it.
+    CHECK(device.uniqueId != "db742358");
+
+    // A pad's first plugin is its instrument. Without this the pad routes no
+    // MIDI and is silent.
+    CHECK(device.isInstrument);
+    CHECK(device.deviceType == magda::DeviceType::Instrument);
+}
+
+TEST_CASE("An external effect after a pad's instrument is not an instrument", "[drumgrid][pads]") {
+    ds::Doc doc;
+    doc.deviceType = "drumgrid";
+    doc.root.type = "PLUGIN";
+
+    auto pad = padNode(0, 36, 36, 36);
+    ds::Node fx;
+    fx.type = "PLUGIN";
+    fx.props.set("type", "vst");
+    fx.props.set("name", "Pro-Q 4");
+    fx.props.set("format", "VST3");
+    fx.props.set("filename", "/Plug-Ins/VST3/FabFilter Pro-Q 4.vst3");
+    pad.children.push_back(fx);
+    doc.root.children.push_back(pad);
+
+    const auto rack = magda::readPadRack("drumgrid", ds::encode(doc));
+    REQUIRE(rack != nullptr);
+    REQUIRE(rack->chains[0].elements.size() == 2);
+
+    const auto& effect = magda::getDevice(rack->chains[0].elements[1]);
+    CHECK(effect.name == "Pro-Q 4");
+    CHECK_FALSE(effect.isInstrument);
+    CHECK(effect.deviceType == magda::DeviceType::Effect);
+}

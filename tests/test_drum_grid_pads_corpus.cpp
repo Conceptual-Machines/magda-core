@@ -2,6 +2,7 @@
 #include <set>
 
 #include "LegacyCorpus.hpp"
+#include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
 #include "magda/daw/core/RackInfo.hpp"
 #include "magda/daw/core/TrackInfo.hpp"
@@ -76,8 +77,34 @@ void requirePadsAreReal(const magda::DeviceInfo& drumGrid) {
         for (const auto& element : pad.elements) {
             REQUIRE(magda::isDevice(element));
             const auto& device = magda::getDevice(element);
-            INFO("pad device " << device.pluginId);
+            INFO("pad device " << device.name << " / " << device.pluginId);
             CHECK(device.pluginId.isNotEmpty());
+
+            // Non-empty is not enough, and checking only that is what let the
+            // real external plugins in this corpus project through as an effect
+            // called "vst". Tracktion saves every external plugin under that one
+            // type name, so it identifies nothing and must never survive as
+            // either the id or the display name.
+            CHECK(device.pluginId != "vst");
+            CHECK(device.name != "vst");
+            CHECK(device.name.isNotEmpty());
+
+            // Internal and external are the two cases, and each has to come out
+            // as itself: an internal device left on PluginFormat's VST3 default
+            // claims an editor window it has not got, and an external one needs
+            // the file it was loaded from.
+            if (magda::daw::audio::findInternalPluginSpec(device.pluginId) != nullptr)
+                CHECK(device.format == magda::PluginFormat::Internal);
+            else
+                CHECK(device.fileOrIdentifier.isNotEmpty());
+        }
+
+        // A pad makes sound through its first plugin, so that one has to arrive
+        // as an instrument whether it is one of MAGDA's or a scanned plugin.
+        if (!pad.elements.empty()) {
+            const auto& first = magda::getDevice(pad.elements[0]);
+            INFO("pad instrument " << first.name);
+            CHECK(first.isInstrument);
         }
     }
 
