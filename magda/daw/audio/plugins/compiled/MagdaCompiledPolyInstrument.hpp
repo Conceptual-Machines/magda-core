@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
+#include "core/ParameterUtils.hpp"
 #include "plugins/compiled/CompiledFaustInterface.hpp"
 
 // mydsp_poly (Faust's polyphonic voice allocator) and the single-voice dsp are
@@ -67,19 +68,18 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
     int voiceSlotCount() const {
         return static_cast<int>(voiceSlotInfos_.size());
     }
-    // Control slots follow the voice macros: Gain always, then Voice Mode when
-    // the device supports mono/legato.
-    int gainSlot() const {
+    // Where the control slots sit. The defaults put them after the voice macros
+    // -- Gain always, then Voice Mode when the device supports mono/legato --
+    // which is the layout slotInfos() composes for a drum voice. A device with
+    // a panel of its own overrides slotInfos() and says where they went.
+    virtual int gainSlot() const {
         return voiceSlotCount();
     }
-    int voiceModeSlot() const {
+    virtual int voiceModeSlot() const {
         return hasVoiceModes() ? voiceSlotCount() + 1 : -1;
     }
-    int controlSlotCount() const {
-        return hasVoiceModes() ? 2 : 1;
-    }
     int hostSlotCountValue() const {
-        return voiceSlotCount() + controlSlotCount();
+        return static_cast<int>(hostSlotInfo_.size());
     }
 
     DeviceParameterHandle getSlotParameter(int slotIndex) const;
@@ -122,8 +122,21 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
     // base wraps it in mydsp_poly.
     virtual ::dsp* createVoiceDsp() const = 0;
     // The voice-macro slots, in [idx:0..N-1] order. Their count defines where
-    // the Gain control slot begins.
-    virtual std::vector<HostSlotInfo> voiceSlotInfos() const = 0;
+    // the Gain control slot begins. A device that overrides slotInfos()
+    // outright has no use for this and returns nothing.
+    virtual std::vector<HostSlotInfo> voiceSlotInfos() const {
+        return {};
+    }
+    /// The whole slot table. The default is the voice macros followed by Gain,
+    /// and Voice Mode where the device has one, which is what a struck voice
+    /// wants. A device whose dsp pins controls the host does not own -- a synth
+    /// with a filter section and its own output stage -- returns its own table
+    /// and names the control slots through gainSlot() / voiceModeSlot().
+    ///
+    /// Any slot the dsp declares an [idx:N] for is fanned out to the voices;
+    /// the rest are wrapper-only. Return -1 from gainSlot() when the dsp
+    /// applies the output gain itself.
+    virtual std::vector<HostSlotInfo> slotInfos() const;
     // Parameter-id prefix, e.g. "magda_kick_". Must be stable (it keys state).
     virtual const char* slotIdPrefix() const = 0;
     virtual juce::String devicePluginId() const = 0;
@@ -153,6 +166,11 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
     void buildHostParameters();
     void rebuildEngineState(int sampleRate);
     magda::ParameterInfo infoForSlot(int slotIndex) const;
+    /// The slot's conversion domain, cached when the table was built. What the
+    /// audio thread converts through: a ParameterInfo built per slot per block
+    /// copies the slot's choice list, which allocates, and a synth fans out
+    /// forty of them every callback.
+    const magda::ParameterUtils::ParameterDomain& domainForSlot(int slotIndex) const;
     float slotRealValue(int slotIndex) const;
 
     // ---- Voice-mode (Mono/Legato/glide) handling, active only when
@@ -173,6 +191,10 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
     // still-monitored live input that fed it), so unbalanced deliveries must
     // never strand a sounding voice.
     void releasePolyVoicesForPitch(int pitch);
+    /// Takes the held-note stack's storage, off the audio thread.
+    void reserveHeldNotes();
+    /// One entry per MIDI pitch, which handleMonoNoteOn() keeps it to.
+    static constexpr int kMaxHeldNotes = 128;
 
     std::unique_ptr<::dsp_poly> poly_;
     // Dedicated single voice for Mono/Legato (the poly allocator skips idle
@@ -187,6 +209,12 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
     float* monoGainZone_ = nullptr;
     float* monoGateZone_ = nullptr;
     std::vector<float*> monoZonesBySlot_;
+    // Every voice's pitch-bend zone, plus the mono voice's. Driven from the
+    // wheel rather than from a slot: bend is a performance input, not a
+    // parameter, and a dsp that declares no `bend` control simply has none.
+    std::vector<float*> voiceBendZones_;
+    float* monoBendZone_ = nullptr;
+    float currentBend_ = 0.0f;
     struct HeldNote {
         int note = 0;
         float gain = 0.0f;
@@ -211,6 +239,7 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
 
     std::vector<HostSlotInfo> voiceSlotInfos_;  // cached from the hook
     std::vector<HostSlotInfo> hostSlotInfo_;    // voice macros + Gain
+    std::vector<magda::ParameterUtils::ParameterDomain> slotDomains_;
     // Individually allocated so every DeviceParameterHandle remains stable
     // even if the slot container is extended in a future migration.
     std::vector<std::unique_ptr<CompiledParameterValue>> hostParams_;

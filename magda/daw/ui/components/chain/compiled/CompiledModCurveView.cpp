@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaModCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -47,7 +48,8 @@ void CompiledModCurveView::setCompiledPlugin(
 }
 
 void CompiledModCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(dynamic_cast<magda::daw::audio::compiled::MagdaModCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaModCompiledPlugin>(plugin));
 }
 
 void CompiledModCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -92,8 +94,8 @@ void CompiledModCurveView::timerCallback() {
     auto readPluginSlot = [this](int slot, float fallback) {
         if (compiledPlugin_ == nullptr)
             return fallback;
-        if (auto* p = compiledPlugin_->getSlotParameter(slot))
-            return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(slot))
+            return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
         return fallback;
     };
 
@@ -113,8 +115,8 @@ void CompiledModCurveView::timerCallback() {
         depth = readPluginSlot(Mod::kDepthSlot, depth);
         // Division — the host slot stores an index into divisionChoiceValues_;
         // ask the plugin for the underlying Faust value.
-        if (auto* p = compiledPlugin_->getSlotParameter(Mod::kDivisionSlot)) {
-            const float norm = p->getCurrentValue();
+        if (auto p = compiledPlugin_->getSlotParameter(Mod::kDivisionSlot)) {
+            const float norm = p.currentValue();
             const auto& info = compiledPlugin_->getSlotInfo(Mod::kDivisionSlot);
             const int count = static_cast<int>(info.choices.size());
             const int idx =
@@ -238,9 +240,9 @@ void CompiledModCurveView::paint(juce::Graphics& g) {
         if (compiledPlugin_ != nullptr) {
             const auto& info = compiledPlugin_->getSlotInfo(
                 magda::daw::audio::compiled::MagdaModCompiledPlugin::kDivisionSlot);
-            if (auto* p = compiledPlugin_->getSlotParameter(
+            if (auto p = compiledPlugin_->getSlotParameter(
                     magda::daw::audio::compiled::MagdaModCompiledPlugin::kDivisionSlot)) {
-                const float norm = p->getCurrentValue();
+                const float norm = p.currentValue();
                 const int count = static_cast<int>(info.choices.size());
                 if (count > 0) {
                     const int idx = juce::jlimit(

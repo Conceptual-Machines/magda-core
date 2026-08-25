@@ -5,6 +5,7 @@
 
 #include "../../../utils/CurveLabelLayout.hpp"
 #include "audio/plugins/compiled/MagdaEqCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/GestureRouter.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
@@ -266,7 +267,8 @@ void CompiledEqCurveView::setCompiledPlugin(
 }
 
 void CompiledEqCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(dynamic_cast<magda::daw::audio::compiled::MagdaEqCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaEqCompiledPlugin>(plugin));
 }
 
 void CompiledEqCurveView::updateFromDevice(const magda::DeviceInfo& device) {

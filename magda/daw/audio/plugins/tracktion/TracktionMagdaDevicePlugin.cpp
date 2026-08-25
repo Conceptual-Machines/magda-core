@@ -15,6 +15,33 @@ DeviceProperties propertiesForRequiredDevice(const std::unique_ptr<MagdaDevice>&
     return device->properties();
 }
 
+/**
+ * The edit's tempo sequence, read through the SDK's tempo contract.
+ *
+ * Queried on the audio thread, which is where the compiled devices that need a
+ * BPM have always queried it: the tempo-synced effects each called
+ * `edit.tempoSequence.getBpmAt()` from their own applyToBuffer() before they
+ * were ported (#2192). This changes who holds the reference, not when the call
+ * happens. A snapshot taken on the message thread would be the better contract
+ * and belongs with the state slice rather than with the device ports.
+ */
+class TracktionTempoMapView final : public DeviceTempoMap {
+  public:
+    explicit TracktionTempoMapView(te::TempoSequence& tempoSequence)
+        : tempoSequence_(tempoSequence) {}
+
+    double beatsAtSeconds(double seconds) const override {
+        return tempoSequence_.toBeats(tracktion::TimePosition::fromSeconds(seconds)).inBeats();
+    }
+
+    double bpmAtSeconds(double seconds) const override {
+        return tempoSequence_.getBpmAt(tracktion::TimePosition::fromSeconds(seconds));
+    }
+
+  private:
+    te::TempoSequence& tempoSequence_;
+};
+
 class TracktionMidiBufferView final : public DeviceMidiBuffer {
   public:
     explicit TracktionMidiBufferView(te::MidiMessageArray& midi) : midi_(midi) {}
@@ -121,13 +148,20 @@ void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& co
     if (context.bufferForMidiMessages != nullptr)
         midi.emplace(*context.bufferForMidiMessages);
 
+    TracktionTempoMapView tempoMap{edit.tempoSequence};
+
+    // The fork appends the key to the plugin's own channels, so the device's
+    // declared width is where it starts.
+    const int sidechainChannel =
+        getSidechainSourceID().isValid()
+            ? (properties_.outputChannelCount > 0 ? properties_.outputChannelCount : 2)
+            : -1;
+
     DeviceProcessContext deviceContext{
         .audio = context.destBuffer,
+        .sidechainInputChannel = sidechainChannel,
         .midi = midi ? &*midi : nullptr,
-        // TempoSequence queries are not guaranteed real-time safe. Leave the
-        // optional map absent until the adapter can supply an immutable
-        // message-thread snapshot.
-        .tempoMap = nullptr,
+        .tempoMap = &tempoMap,
         .startSample = context.bufferStartSample,
         .numSamples = context.bufferNumSamples,
         .midiTimeOffsetSeconds = context.midiBufferOffset,
@@ -158,6 +192,40 @@ bool TracktionMagdaDevicePlugin::producesAudioWhenNoAudioInput() {
 
 bool TracktionMagdaDevicePlugin::canSidechain() {
     return properties_.canSidechain;
+}
+
+int TracktionMagdaDevicePlugin::getNumOutputChannelsGivenInputs(int numInputChannels) {
+    return properties_.outputChannelCount > 0 ? properties_.outputChannelCount : numInputChannels;
+}
+
+void TracktionMagdaDevicePlugin::getChannelNames(juce::StringArray* inputs,
+                                                 juce::StringArray* outputs) {
+    // The base answers first, and a declared width replaces that side and only
+    // that side. A device that names its inputs and not its outputs (or the
+    // other way round) still gets the host's answer for the half it left alone:
+    // reporting zero channels there would tell the model the device is not
+    // connected to the bus at all.
+    te::Plugin::getChannelNames(inputs, outputs);
+
+    // Inputs past the output width are the key, which is the SDK's sidechain
+    // layout.
+    const auto name = [this](int index) {
+        if (properties_.outputChannelCount > 0 && index >= properties_.outputChannelCount)
+            return juce::String("Sidechain");
+        return juce::String(index == 0 ? "Left" : "Right");
+    };
+
+    if (inputs != nullptr && properties_.inputChannelCount > 0) {
+        inputs->clear();
+        for (int index = 0; index < properties_.inputChannelCount; ++index)
+            inputs->add(name(index));
+    }
+
+    if (outputs != nullptr && properties_.outputChannelCount > 0) {
+        outputs->clear();
+        for (int index = 0; index < properties_.outputChannelCount; ++index)
+            outputs->add(name(index));
+    }
 }
 
 double TracktionMagdaDevicePlugin::getLatencySeconds() {

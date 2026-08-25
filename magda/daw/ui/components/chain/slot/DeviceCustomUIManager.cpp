@@ -1880,7 +1880,8 @@ void DeviceCustomUIManager::refreshLivePluginBindings() {
     if (polySynthUI_ != nullptr) {
         daw::audio::compiled::MagdaPolySynthCompiledPlugin* synth = nullptr;
         if (auto plugin = getLivePlugin())
-            synth = dynamic_cast<daw::audio::compiled::MagdaPolySynthCompiledPlugin*>(plugin.get());
+            synth = daw::audio::tracktion_adapter::deviceFromPlugin<
+                daw::audio::compiled::MagdaPolySynthCompiledPlugin>(plugin.get());
         polySynthUI_->setLivePlugin(synth);
     }
 

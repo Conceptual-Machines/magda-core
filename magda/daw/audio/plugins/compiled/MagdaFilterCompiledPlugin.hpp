@@ -1,15 +1,8 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
-#include <array>
-#include <atomic>
-#include <memory>
 #include <vector>
 
-#include "../FaustParamPool.hpp"
-#include "core/ParameterInfo.hpp"
-#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "plugins/compiled/MagdaCompiledEffect.hpp"
 
 class dsp;
 
@@ -37,41 +30,12 @@ namespace magda::daw::audio::compiled {
  * all four (LP/BP/HP/Notch); Korg 35 LP+HP; Sallen-Key LP+BP+HP;
  * Ladder is LP-only. Unsupported modes fall back to LP for the engine.
  */
-class MagdaFilterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
+class MagdaFilterCompiledPlugin : public MagdaCompiledEffect {
   public:
     static const char* xmlTypeName;
 
-    explicit MagdaFilterCompiledPlugin(const te::PluginCreationInfo& info);
-    ~MagdaFilterCompiledPlugin() override;
+    MagdaFilterCompiledPlugin();
 
-    juce::String getName() const override;
-    juce::String getPluginType() override;
-    juce::String getShortName(int) override;
-    juce::String getSelectableDescription() override;
-
-    void initialise(const te::PluginInitialisationInfo& info) override;
-    void deinitialise() override;
-    void reset() override;
-    void applyToBuffer(const te::PluginRenderContext& fc) override;
-
-    bool takesMidiInput() override {
-        return false;
-    }
-    bool takesAudioInput() override {
-        return true;
-    }
-    bool isSynth() override {
-        return false;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return false;
-    }
-    double getTailLength() const override {
-        return 0.0;
-    }
-
-    // Slot-indexed accessors for host params. Used by the curve view +
-    // processor.
     static constexpr int kCutoffSlot = 0;
     static constexpr int kResonanceSlot = 1;
     static constexpr int kDriveSlot = 2;
@@ -79,92 +43,45 @@ class MagdaFilterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin
     static constexpr int kModeSlot = 4;
     static constexpr int kLimitSlot = 5;
     static constexpr int kHostSlotCount = 6;
-
     enum class FilterFamily { SVF, Ladder, Korg35, Oberheim, SallenKey, Diode };
     static constexpr int kEngineCount = 6;
 
-    te::AutomatableParameter* getSlotParameter(int slotIndex) const;
-
-    // Convert between display value (slider Hz / index) and the te native
-    // (normalized 0..1) value for a given host slot. Mirrors the
-    // MagdaFilterCompiledPlugin API so the curve view + processor work the
-    // same way.
-    float displayValueToNativeValue(int slotIndex, float displayValue) const;
-    float nativeValueToDisplayValue(int slotIndex, float nativeValue) const;
-
-    // The host slots, exposed as ParameterInfo so the processor can
-    // populate device.parameters. Kind / range / scale baked here once at
-    // construction.
-    using HostSlotInfo = CompiledHostSlotInfo;
-    const HostSlotInfo& getSlotInfo(int slotIndex) const;
-
-    // Live engine index, derived from the host Engine param. Used by the
-    // host glue (CompiledFaustProcessor / DeviceSlotComponent) to keep the
-    // Mode slot's choice list in sync with the active engine's actual
-    // mode set (e.g. Korg 35 = LP/HP, Sallen-Key = LP/BP/HP, Ladder = LP).
-    int activeEngineIndex() const;
+    /// The modes @p engineIndex can actually produce. Each family's Faust
+    /// source declares only its own set, and the host's dropdown mirrors that
+    /// so it never offers a mode with no branch behind it.
     std::vector<juce::String> modeChoicesForEngine(int engineIndex) const;
 
-    // ICompiledFaustPlugin
-    int hostSlotCount() const override {
-        return kHostSlotCount;
-    }
-    const CompiledHostSlotInfo& hostSlotInfo(int slotIndex) const override {
-        return getSlotInfo(slotIndex);
-    }
-    DeviceParameterHandle hostSlotParameter(int slotIndex) const override {
-        return tracktion_adapter::parameterHandle(getSlotParameter(slotIndex));
-    }
-    float displayToNormalized(int slotIndex, float displayValue) const override {
-        return displayValueToNativeValue(slotIndex, displayValue);
-    }
-    float normalizedToDisplay(int slotIndex, float normalizedValue) const override {
-        return nativeValueToDisplayValue(slotIndex, normalizedValue);
-    }
     int engineAwareModeSlot() const override {
         return kModeSlot;
     }
-    int activeEngine() const override {
-        return activeEngineIndex();
-    }
     std::vector<juce::String> modeChoicesForActiveEngine() const override {
-        return modeChoicesForEngine(activeEngineIndex());
+        return modeChoicesForEngine(activeEngine());
     }
+
+    juce::String devicePluginId() const override {
+        return xmlTypeName;
+    }
+    juce::String deviceName() const override {
+        return "Filter";
+    }
+
+  protected:
+    ::dsp* createEngineDsp(int engineIndex) const override;
+    std::vector<HostSlotInfo> slotInfos() const override;
+    const char* slotIdPrefix() const override {
+        return "magda_filter_";
+    }
+    int engineCount() const override {
+        return kEngineCount;
+    }
+    int engineSlot() const override {
+        return kEngineSlot;
+    }
+    int slotForDspIdx(int idx) const override;
+    void writeExtraZones(int engineIndex) override;
+    void afterCompute(DeviceProcessContext& context, int engineIndex) override;
 
   private:
-    struct EngineDsp;
-
-    void buildHostParameters();
-    void rebuildEngineState(int sampleRate);
-    void writeSharedZones();  // cutoff/res/drive into all engines
-    void writeModeZone(int engineIndex);
-
-    // Per-engine state — the dsp + the harvested binding for cutoff /
-    // resonance / drive / mode (as float* pointers into the dsp). One
-    // entry per FilterFamily.
-    struct EngineState {
-        std::unique_ptr<::dsp> dsp;
-        FAUSTFLOAT* cutoffZone = nullptr;
-        FAUSTFLOAT* resZone = nullptr;
-        FAUSTFLOAT* driveZone = nullptr;
-        FAUSTFLOAT* modeZone = nullptr;       // null if engine has no mode
-        std::vector<float> modeChoiceValues;  // sorted underlying values for mode
-        int sampleRate = 44100;
-        int numInputs = 0;
-        int numOutputs = 0;
-    };
-    std::array<EngineState, kEngineCount> engines_;
-    std::atomic<int> activeEngine_{0};
-
-    std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
-    std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
-    std::array<juce::CachedValue<float>, kHostSlotCount> hostCached_;
-
-    juce::AudioBuffer<float> scratchIn_;
-    juce::AudioBuffer<float> scratchOut_;
-    std::vector<float*> inPtrs_;
-    std::vector<float*> outPtrs_;
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaFilterCompiledPlugin)
 };
 

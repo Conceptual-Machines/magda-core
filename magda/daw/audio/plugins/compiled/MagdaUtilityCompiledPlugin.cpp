@@ -3,9 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
-#include "core/ParameterUtils.hpp"
+#include "core/ParameterInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
-#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -13,162 +12,82 @@ const char* MagdaUtilityCompiledPlugin::xmlTypeName = "magda_utility";
 
 namespace {
 
-magda::ParameterInfo parameterInfoForSlot(const CompiledHostSlotInfo& s) {
-    magda::ParameterInfo info;
-    info.minValue = s.minValue;
-    info.maxValue = s.maxValue;
-    info.defaultValue = s.defaultValue;
-    info.unit = s.unit;
-    info.scale = s.scale;
-    if (std::isfinite(s.scaleAnchor))
-        info.scaleAnchor = s.scaleAnchor;
-    info.choices = s.choices;
-    return info;
-}
-
-float onePoleAlpha(float cutoffHz, int sampleRate) {
-    const float sr = static_cast<float>(std::max(1, sampleRate));
+float onePoleAlpha(float cutoffHz, double sampleRate) {
+    const float sr = static_cast<float>(std::max(1.0, sampleRate));
     const float cutoff = juce::jlimit(20.0f, sr * 0.45f, cutoffHz);
     return 1.0f - std::exp(-2.0f * juce::MathConstants<float>::pi * cutoff / sr);
 }
 
-float sanitise(float sample) {
-    return std::isfinite(sample) ? juce::jlimit(-16.0f, 16.0f, sample) : 0.0f;
-}
-
 }  // namespace
 
-MagdaUtilityCompiledPlugin::MagdaUtilityCompiledPlugin(const te::PluginCreationInfo& info)
-    : te::Plugin(info) {
-    buildHostParameters();
+MagdaUtilityCompiledPlugin::MagdaUtilityCompiledPlugin() {
+    initEffect();
 }
 
-MagdaUtilityCompiledPlugin::~MagdaUtilityCompiledPlugin() {
-    notifyListenersOfDeletion();
-    for (auto& p : hostParams_)
-        if (p)
-            p->detachFromCurrentValue();
+std::vector<MagdaUtilityCompiledPlugin::HostSlotInfo> MagdaUtilityCompiledPlugin::slotInfos()
+    const {
+    std::vector<HostSlotInfo> infos(kHostSlotCount);
+    infos[kGainSlot] = {.name = "Gain",
+                        .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
+                        .scale = magda::ParameterScale::FaderDB,
+                        .minValue = -60.0f,
+                        .maxValue = 12.0f,
+                        .defaultValue = 0.0f};
+    infos[kPanSlot] = {.name = "Pan",
+                       .scale = magda::ParameterScale::Linear,
+                       .minValue = -1.0f,
+                       .maxValue = 1.0f,
+                       .defaultValue = 0.0f};
+    infos[kWidthSlot] = {.name = "Width",
+                         .unit = magda::technicalText(magda::TechnicalTextToken::Percent),
+                         .scale = magda::ParameterScale::Linear,
+                         .minValue = 0.0f,
+                         .maxValue = 200.0f,
+                         .defaultValue = 100.0f};
+    infos[kLowMonoFreqSlot] = {.name = "Low Mono Freq",
+                               .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
+                               .scale = magda::ParameterScale::Logarithmic,
+                               .minValue = 20.0f,
+                               .maxValue = 500.0f,
+                               .defaultValue = 120.0f,
+                               .scaleAnchor = 120.0f};
+    infos[kMonoSlot] = {.name = "Mono",
+                        .scale = magda::ParameterScale::Boolean,
+                        .minValue = 0.0f,
+                        .maxValue = 1.0f,
+                        .defaultValue = 0.0f};
+    infos[kLowMonoSlot] = {.name = "Low Mono",
+                           .scale = magda::ParameterScale::Boolean,
+                           .minValue = 0.0f,
+                           .maxValue = 1.0f,
+                           .defaultValue = 0.0f};
+    infos[kFlipLSlot] = {.name = "Flip L",
+                         .scale = magda::ParameterScale::Boolean,
+                         .minValue = 0.0f,
+                         .maxValue = 1.0f,
+                         .defaultValue = 0.0f};
+    infos[kFlipRSlot] = {.name = "Flip R",
+                         .scale = magda::ParameterScale::Boolean,
+                         .minValue = 0.0f,
+                         .maxValue = 1.0f,
+                         .defaultValue = 0.0f};
+
+    return infos;
 }
 
-juce::String MagdaUtilityCompiledPlugin::getName() const {
-    return "Utility";
-}
-juce::String MagdaUtilityCompiledPlugin::getPluginType() {
-    return xmlTypeName;
-}
-juce::String MagdaUtilityCompiledPlugin::getShortName(int) {
-    return "Util";
-}
-juce::String MagdaUtilityCompiledPlugin::getSelectableDescription() {
-    return "Utility";
-}
-
-void MagdaUtilityCompiledPlugin::buildHostParameters() {
-    hostSlotInfo_[kGainSlot] = {.name = "Gain",
-                                .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
-                                .scale = magda::ParameterScale::FaderDB,
-                                .minValue = -60.0f,
-                                .maxValue = 12.0f,
-                                .defaultValue = 0.0f};
-    hostSlotInfo_[kPanSlot] = {.name = "Pan",
-                               .scale = magda::ParameterScale::Linear,
-                               .minValue = -1.0f,
-                               .maxValue = 1.0f,
-                               .defaultValue = 0.0f};
-    hostSlotInfo_[kWidthSlot] = {.name = "Width",
-                                 .unit = magda::technicalText(magda::TechnicalTextToken::Percent),
-                                 .scale = magda::ParameterScale::Linear,
-                                 .minValue = 0.0f,
-                                 .maxValue = 200.0f,
-                                 .defaultValue = 100.0f};
-    hostSlotInfo_[kLowMonoFreqSlot] = {.name = "Low Mono Freq",
-                                       .unit =
-                                           magda::technicalText(magda::TechnicalTextToken::Hertz),
-                                       .scale = magda::ParameterScale::Logarithmic,
-                                       .minValue = 20.0f,
-                                       .maxValue = 500.0f,
-                                       .defaultValue = 120.0f,
-                                       .scaleAnchor = 120.0f};
-    hostSlotInfo_[kMonoSlot] = {.name = "Mono",
-                                .scale = magda::ParameterScale::Boolean,
-                                .minValue = 0.0f,
-                                .maxValue = 1.0f,
-                                .defaultValue = 0.0f};
-    hostSlotInfo_[kLowMonoSlot] = {.name = "Low Mono",
-                                   .scale = magda::ParameterScale::Boolean,
-                                   .minValue = 0.0f,
-                                   .maxValue = 1.0f,
-                                   .defaultValue = 0.0f};
-    hostSlotInfo_[kFlipLSlot] = {.name = "Flip L",
-                                 .scale = magda::ParameterScale::Boolean,
-                                 .minValue = 0.0f,
-                                 .maxValue = 1.0f,
-                                 .defaultValue = 0.0f};
-    hostSlotInfo_[kFlipRSlot] = {.name = "Flip R",
-                                 .scale = magda::ParameterScale::Boolean,
-                                 .minValue = 0.0f,
-                                 .maxValue = 1.0f,
-                                 .defaultValue = 0.0f};
-
-    juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
-    auto* undoManager = getUndoManager();
-
-    for (int i = 0; i < kHostSlotCount; ++i) {
-        const auto& slot = hostSlotInfo_[static_cast<size_t>(i)];
-        const juce::String id = "magda_utility_" + slot.name.toLowerCase().replace(" ", "_");
-        const auto info = parameterInfoForSlot(slot);
-        const float defaultNormalised =
-            magda::ParameterUtils::realToNormalized(slot.defaultValue, info);
-        hostCached_[static_cast<size_t>(i)].referTo(state, juce::Identifier(id), undoManager,
-                                                    defaultNormalised);
-
-        auto param = addParam(
-            id, slot.name, normalisedRange,
-            [info](float normalised) {
-                const float real = magda::ParameterUtils::normalizedToReal(normalised, info);
-                return magda::ParameterUtils::formatValue(real, info);
-            },
-            [info](const juce::String& text) {
-                auto parsed = magda::ParameterUtils::parseValue(text, info);
-                if (parsed)
-                    return magda::ParameterUtils::realToNormalized(*parsed, info);
-                return 0.0f;
-            });
-        param->attachToCurrentValue(hostCached_[static_cast<size_t>(i)]);
-        hostParams_[static_cast<size_t>(i)] = param;
-    }
-}
-
-void MagdaUtilityCompiledPlugin::initialise(const te::PluginInitialisationInfo& info) {
-    sampleRate_ = std::max(1, static_cast<int>(std::round(info.sampleRate)));
-    reset();
-}
-
-void MagdaUtilityCompiledPlugin::deinitialise() {}
-
-void MagdaUtilityCompiledPlugin::reset() {
+void MagdaUtilityCompiledPlugin::onReset() {
     lowMonoLpL1_ = 0.0f;
     lowMonoLpL2_ = 0.0f;
     lowMonoLpR1_ = 0.0f;
     lowMonoLpR2_ = 0.0f;
 }
 
-float MagdaUtilityCompiledPlugin::slotDisplayValue(int slotIndex) const {
-    if (slotIndex < 0 || slotIndex >= kHostSlotCount ||
-        !hostParams_[static_cast<size_t>(slotIndex)])
-        return 0.0f;
-    const auto info = parameterInfoForSlot(hostSlotInfo_[static_cast<size_t>(slotIndex)]);
-    return magda::ParameterUtils::normalizedToReal(
-        hostParams_[static_cast<size_t>(slotIndex)]->getCurrentValue(), info);
-}
-
-void MagdaUtilityCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (!fc.destBuffer || fc.bufferNumSamples <= 0)
-        return;
-
-    const int numSamples = fc.bufferNumSamples;
-    const int startSample = fc.bufferStartSample;
-    const int hostChannels = fc.destBuffer->getNumChannels();
+void MagdaUtilityCompiledPlugin::processAudio(DeviceProcessContext& context) {
+    // No Faust engine: gain, pan, M/S width and the Low Mono fold are a few
+    // lines of arithmetic each, so this is the whole block.
+    const int numSamples = context.numSamples;
+    const int startSample = context.startSample;
+    const int hostChannels = context.audio->getNumChannels();
     if (hostChannels <= 0)
         return;
 
@@ -176,17 +95,17 @@ void MagdaUtilityCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc
     const float gain = gainDb <= -59.99f ? 0.0f : juce::Decibels::decibelsToGain(gainDb);
     const float pan = juce::jlimit(-1.0f, 1.0f, slotDisplayValue(kPanSlot));
     const float width = juce::jlimit(0.0f, 200.0f, slotDisplayValue(kWidthSlot)) * 0.01f;
-    const float lowMonoFreq = slotDisplayValue(kLowMonoFreqSlot);
     const bool mono = slotDisplayValue(kMonoSlot) >= 0.5f;
     const bool lowMono = slotDisplayValue(kLowMonoSlot) >= 0.5f && !mono;
     const float flipL = slotDisplayValue(kFlipLSlot) >= 0.5f ? -1.0f : 1.0f;
     const float flipR = slotDisplayValue(kFlipRSlot) >= 0.5f ? -1.0f : 1.0f;
     const float panGainL = pan <= 0.0f ? 1.0f : 1.0f - pan;
     const float panGainR = pan >= 0.0f ? 1.0f : 1.0f + pan;
-    const float lowMonoAlpha = onePoleAlpha(lowMonoFreq, sampleRate_);
+    const float lowMonoAlpha =
+        onePoleAlpha(slotDisplayValue(kLowMonoFreqSlot), currentSampleRate());
 
-    float* left = fc.destBuffer->getWritePointer(0, startSample);
-    float* right = hostChannels > 1 ? fc.destBuffer->getWritePointer(1, startSample) : nullptr;
+    float* left = context.audio->getWritePointer(0, startSample);
+    float* right = hostChannels > 1 ? context.audio->getWritePointer(1, startSample) : nullptr;
 
     for (int i = 0; i < numSamples; ++i) {
         float l = left[i] * flipL * gain;
@@ -221,41 +140,13 @@ void MagdaUtilityCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc
             right[i] = sanitise(r);
     }
 
-    for (int ch = 2; ch < hostChannels; ++ch) {
-        float* out = fc.destBuffer->getWritePointer(ch, startSample);
+    // Anything past the stereo pair takes the gain trim and nothing else: the
+    // rest of this device is a stereo image, and there is no image to shape.
+    for (int channel = 2; channel < hostChannels; ++channel) {
+        float* out = context.audio->getWritePointer(channel, startSample);
         for (int i = 0; i < numSamples; ++i)
             out[i] = sanitise(out[i] * gain);
     }
-}
-
-te::AutomatableParameter* MagdaUtilityCompiledPlugin::getSlotParameter(int slotIndex) const {
-    if (slotIndex < 0 || slotIndex >= kHostSlotCount)
-        return nullptr;
-    return hostParams_[static_cast<size_t>(slotIndex)].get();
-}
-
-const MagdaUtilityCompiledPlugin::HostSlotInfo& MagdaUtilityCompiledPlugin::getSlotInfo(
-    int slotIndex) const {
-    static const HostSlotInfo kEmpty;
-    if (slotIndex < 0 || slotIndex >= kHostSlotCount)
-        return kEmpty;
-    return hostSlotInfo_[static_cast<size_t>(slotIndex)];
-}
-
-float MagdaUtilityCompiledPlugin::displayValueToNativeValue(int slotIndex,
-                                                            float displayValue) const {
-    if (slotIndex < 0 || slotIndex >= kHostSlotCount)
-        return displayValue;
-    return magda::ParameterUtils::realToNormalized(
-        displayValue, parameterInfoForSlot(hostSlotInfo_[static_cast<size_t>(slotIndex)]));
-}
-
-float MagdaUtilityCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
-                                                            float nativeValue) const {
-    if (slotIndex < 0 || slotIndex >= kHostSlotCount)
-        return nativeValue;
-    return magda::ParameterUtils::normalizedToReal(
-        nativeValue, parameterInfoForSlot(hostSlotInfo_[static_cast<size_t>(slotIndex)]));
 }
 
 constexpr AliasSpec kUtilAliases[] = {
@@ -276,9 +167,8 @@ const CompiledPluginSpec& getMagdaUtilitySpec() {
             "Low Mono sums only the bass below the Low Mono Freq cutoff, "
             "tightening sub content while preserving stereo highs. "
             "Flip L / Flip R invert per-channel polarity for phase tweaks.",
-        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
-            return tracktion_adapter::pluginHandle(
-                new MagdaUtilityCompiledPlugin(tracktion_adapter::creationInfo(context)));
+        .createDevice = [](const DevicePluginCreationContext&) -> std::unique_ptr<MagdaDevice> {
+            return std::make_unique<MagdaUtilityCompiledPlugin>();
         },
         .aliasKey = "utility",
         .aliases = kUtilAliases,

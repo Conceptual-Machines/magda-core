@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/ParameterUtils.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -44,8 +45,8 @@ float modulatedValueForSlot(const magda::DeviceInfo& device, int slotIndex, floa
                             const ParamLinkContext* linkContext,
                             magda::daw::audio::compiled::MagdaFilterCompiledPlugin* plugin) {
     if (plugin != nullptr) {
-        if (auto* param = plugin->getSlotParameter(slotIndex))
-            return plugin->nativeValueToDisplayValue(slotIndex, param->getCurrentValue());
+        if (auto param = plugin->getSlotParameter(slotIndex))
+            return plugin->nativeValueToDisplayValue(slotIndex, param.currentValue());
     }
 
     const auto* param = paramForSlot(device, slotIndex);
@@ -429,8 +430,8 @@ const CompiledPresentationSpec& getMagdaFilterPresentation() {
 }
 
 void CompiledFilterCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaFilterCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaFilterCompiledPlugin>(plugin));
 }
 
 }  // namespace magda::daw::ui

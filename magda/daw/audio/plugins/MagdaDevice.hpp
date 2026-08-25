@@ -21,6 +21,15 @@ struct DeviceProperties {
     bool canSidechain = false;
     double latencySeconds = 0.0;
     double tailLengthSeconds = 0.0;
+    /// Output channels the device always produces, whatever it is handed. Zero
+    /// means it follows its input, which is what most effects do; a device sets
+    /// this when its DSP has a fixed output width (a mono-in/stereo-out
+    /// widener, a stereo-only dynamics stage).
+    int outputChannelCount = 0;
+    /// Input channels the device reads, sidechain key included. Zero means the
+    /// host decides. What the model wires from: a device asking for more inputs
+    /// than it outputs is asking for a key.
+    int inputChannelCount = 0;
 };
 
 struct DevicePrepareContext {
@@ -81,6 +90,17 @@ class DeviceMidiBuffer {
 
 struct DeviceProcessContext {
     juce::AudioBuffer<float>* audio = nullptr;
+    /**
+     * First channel of @ref audio carrying the device's sidechain key, or -1
+     * when the host routed nothing to it.
+     *
+     * The key arrives as further channels of the same buffer, after the ones
+     * the device reads and writes as its own signal, which is how MAGDA's
+     * compiled dynamics DSPs are written and what both hosts can supply
+     * without a copy. A device with no sidechain never sees anything above its
+     * own width.
+     */
+    int sidechainInputChannel = -1;
     DeviceMidiBuffer* midi = nullptr;
     const DeviceTempoMap* tempoMap = nullptr;
     int startSample = 0;

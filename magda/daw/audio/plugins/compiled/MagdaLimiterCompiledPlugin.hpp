@@ -1,13 +1,9 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
-#include <array>
 #include <atomic>
 #include <vector>
 
-#include "core/ParameterInfo.hpp"
-#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "plugins/compiled/MagdaCompiledEffect.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -51,38 +47,11 @@ class MagdaLimiterDspCore {
  * Output is a post-limiter trim and is restricted to negative gain, so it can
  * only reduce the emitted level after limiting.
  */
-class MagdaLimiterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
+class MagdaLimiterCompiledPlugin : public MagdaCompiledEffect {
   public:
     static const char* xmlTypeName;
 
-    explicit MagdaLimiterCompiledPlugin(const te::PluginCreationInfo& info);
-    ~MagdaLimiterCompiledPlugin() override;
-
-    juce::String getName() const override;
-    juce::String getPluginType() override;
-    juce::String getShortName(int) override;
-    juce::String getSelectableDescription() override;
-
-    void initialise(const te::PluginInitialisationInfo& info) override;
-    void deinitialise() override;
-    void reset() override;
-    void applyToBuffer(const te::PluginRenderContext& fc) override;
-
-    bool takesMidiInput() override {
-        return false;
-    }
-    bool takesAudioInput() override {
-        return true;
-    }
-    bool isSynth() override {
-        return false;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return false;
-    }
-    double getTailLength() const override {
-        return 0.0;
-    }
+    MagdaLimiterCompiledPlugin();
 
     static constexpr int kThresholdSlot = 0;
     static constexpr int kAttackSlot = 1;
@@ -90,12 +59,7 @@ class MagdaLimiterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugi
     static constexpr int kOutputSlot = 3;
     static constexpr int kHostSlotCount = 4;
 
-    te::AutomatableParameter* getSlotParameter(int slotIndex) const;
-
-    float displayValueToNativeValue(int slotIndex, float displayValue) const;
-    float nativeValueToDisplayValue(int slotIndex, float nativeValue) const;
-
-    // Audio-thread metering taps, read by the curve view via 33 ms timer.
+    // Audio-thread metering taps, read by the curve view on its timer.
     float getInputPeakDb() const {
         return inputPeakDb_.load(std::memory_order_relaxed);
     }
@@ -106,34 +70,25 @@ class MagdaLimiterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugi
         return gainReductionDb_.load(std::memory_order_relaxed);
     }
 
-    using HostSlotInfo = CompiledHostSlotInfo;
-    const HostSlotInfo& getSlotInfo(int slotIndex) const;
+    juce::String devicePluginId() const override {
+        return xmlTypeName;
+    }
+    juce::String deviceName() const override {
+        return "Limiter";
+    }
 
-    // ICompiledFaustPlugin
-    int hostSlotCount() const override {
-        return kHostSlotCount;
+  protected:
+    std::vector<HostSlotInfo> slotInfos() const override;
+    const char* slotIdPrefix() const override {
+        return "magda_limiter_";
     }
-    const CompiledHostSlotInfo& hostSlotInfo(int slotIndex) const override {
-        return getSlotInfo(slotIndex);
-    }
-    DeviceParameterHandle hostSlotParameter(int slotIndex) const override {
-        return tracktion_adapter::parameterHandle(getSlotParameter(slotIndex));
-    }
-    float displayToNormalized(int slotIndex, float displayValue) const override {
-        return displayValueToNativeValue(slotIndex, displayValue);
-    }
-    float normalizedToDisplay(int slotIndex, float normalizedValue) const override {
-        return nativeValueToDisplayValue(slotIndex, normalizedValue);
-    }
+    void onPrepare(double sampleRate, int maximumBlockSize) override;
+    void onRelease() override;
+    void onReset() override;
+    void processAudio(DeviceProcessContext& context) override;
 
   private:
-    void buildHostParameters();
-
     MagdaLimiterDspCore limiter_;
-
-    std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
-    std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
-    std::array<juce::CachedValue<float>, kHostSlotCount> hostCached_;
 
     std::atomic<float> inputPeakDb_{-120.0f};
     std::atomic<float> outputPeakDb_{-120.0f};

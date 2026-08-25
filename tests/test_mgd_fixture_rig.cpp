@@ -51,22 +51,6 @@ juce::File scratch() {
 /// back is what was there. Ordering is not a defence: the corpus builds itself
 /// lazily and once, so whether it survives would depend on which test ran
 /// first.
-struct PoolUnwind {
-    PoolUnwind() : held_(SourcePool::getInstance().snapshot()) {}
-
-    ~PoolUnwind() {
-        auto& pool = SourcePool::getInstance();
-        pool.clear();
-        for (const auto& source : held_)
-            pool.insert(source);
-    }
-
-    PoolUnwind(const PoolUnwind&) = delete;
-    PoolUnwind& operator=(const PoolUnwind&) = delete;
-
-  private:
-    std::vector<Source> held_;
-};
 
 }  // namespace
 
@@ -87,7 +71,7 @@ TEST_CASE("Every fixture names a file that is there", "[nulldiff][fixture]") {
 }
 
 TEST_CASE("A fixture loads into a case", "[nulldiff][fixture]") {
-    const PoolUnwind unwind;
+    const PooledSourcesUnwind unwind;
 
     for (const auto& fixture : mgdFixtures()) {
         INFO(fixture.declaration.name);
@@ -119,7 +103,7 @@ TEST_CASE("A fixture loads into a case", "[nulldiff][fixture]") {
 }
 
 TEST_CASE("Every source reads back as what the manifest asked for", "[nulldiff][fixture]") {
-    const PoolUnwind unwind;
+    const PooledSourcesUnwind unwind;
 
     juce::AudioFormatManager formats;
     formats.registerBasicFormats();
@@ -172,7 +156,7 @@ TEST_CASE("Every source reads back as what the manifest asked for", "[nulldiff][
 }
 
 TEST_CASE("Two fixtures held at once both stay resolvable", "[nulldiff][fixture]") {
-    const PoolUnwind unwind;
+    const PooledSourcesUnwind unwind;
 
     // A Case carries source ids and nothing else, and the legs resolve them
     // through the global pool. The app's install clears that pool and resets its
@@ -243,7 +227,7 @@ TEST_CASE("Two fixtures held at once both stay resolvable", "[nulldiff][fixture]
 }
 
 TEST_CASE("A project that hosts a plugin is not a fixture here", "[nulldiff][fixture]") {
-    const PoolUnwind unwind;
+    const PooledSourcesUnwind unwind;
 
     // Half the legacy corpus hosts one, and none of it can be held to a null:
     // without the plugin installed both legs render a passthrough and agree
@@ -273,7 +257,7 @@ TEST_CASE("A project that hosts a plugin is not a fixture here", "[nulldiff][fix
 
 TEST_CASE("A source the manifest does not name fails rather than passing quietly",
           "[nulldiff][fixture]") {
-    const PoolUnwind unwind;
+    const PooledSourcesUnwind unwind;
 
     // The failure this rig is built around, provoked rather than described: drop
     // one declaration and the load has to refuse. Without the check the case
@@ -398,7 +382,7 @@ TEST_CASE("Two names the filesystem calls one file are counted, not compared",
 }
 
 TEST_CASE("Each fixture's material is its own", "[nulldiff][fixture]") {
-    const PoolUnwind unwind;
+    const PooledSourcesUnwind unwind;
 
     // Two fixtures are allowed to reference files with the same name: they are
     // different projects and nothing ties their sources together. A flat scratch
@@ -431,7 +415,7 @@ TEST_CASE("Each fixture's material is its own", "[nulldiff][fixture]") {
 }
 
 TEST_CASE("A declaration nothing claims fails too", "[nulldiff][fixture]") {
-    const PoolUnwind unwind;
+    const PooledSourcesUnwind unwind;
 
     // The other direction, and it is not symmetry for its own sake. A manifest
     // entry no source claims is a declaration that has stopped being true, which

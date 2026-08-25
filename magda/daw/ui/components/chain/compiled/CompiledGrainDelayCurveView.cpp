@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -59,29 +60,29 @@ void CompiledGrainDelayCurveView::timerCallback() {
     float bpm = bpm_;
 
     if (compiledPlugin_ != nullptr) {
-        if (auto* p = compiledPlugin_->getSlotParameter(GrainDelay::kTimeSlot))
-            time = compiledPlugin_->nativeValueToDisplayValue(GrainDelay::kTimeSlot,
-                                                              p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(GrainDelay::kSizeSlot))
-            size = compiledPlugin_->nativeValueToDisplayValue(GrainDelay::kSizeSlot,
-                                                              p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(GrainDelay::kPitchSlot))
+        if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kTimeSlot))
+            time =
+                compiledPlugin_->nativeValueToDisplayValue(GrainDelay::kTimeSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kSizeSlot))
+            size =
+                compiledPlugin_->nativeValueToDisplayValue(GrainDelay::kSizeSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kPitchSlot))
             pitch = compiledPlugin_->nativeValueToDisplayValue(GrainDelay::kPitchSlot,
-                                                               p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(GrainDelay::kSpraySlot))
+                                                               p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kSpraySlot))
             spray = compiledPlugin_->nativeValueToDisplayValue(GrainDelay::kSpraySlot,
-                                                               p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(GrainDelay::kFeedbackSlot))
+                                                               p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kFeedbackSlot))
             fb = compiledPlugin_->nativeValueToDisplayValue(GrainDelay::kFeedbackSlot,
-                                                            p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(GrainDelay::kMixSlot))
-            mix = compiledPlugin_->nativeValueToDisplayValue(GrainDelay::kMixSlot,
-                                                             p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(GrainDelay::kSyncSlot))
-            sync = p->getCurrentValue() >= 0.5f;
-        if (auto* p = compiledPlugin_->getSlotParameter(GrainDelay::kDivisionSlot)) {
+                                                            p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kMixSlot))
+            mix =
+                compiledPlugin_->nativeValueToDisplayValue(GrainDelay::kMixSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kSyncSlot))
+            sync = p.currentValue() >= 0.5f;
+        if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kDivisionSlot)) {
             divIdx = static_cast<int>(std::round(compiledPlugin_->nativeValueToDisplayValue(
-                GrainDelay::kDivisionSlot, p->getCurrentValue())));
+                GrainDelay::kDivisionSlot, p.currentValue())));
         }
         bpm = compiledPlugin_->currentBpm();
     } else {
@@ -284,8 +285,8 @@ const CompiledPresentationSpec& getMagdaGrainDelayPresentation() {
 }
 
 void CompiledGrainDelayCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaGrainDelayCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaGrainDelayCompiledPlugin>(plugin));
 }
 
 }  // namespace magda::daw::ui

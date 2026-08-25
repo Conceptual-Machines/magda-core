@@ -1,15 +1,11 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include <array>
 #include <atomic>
-#include <memory>
 #include <vector>
 
 #include "analysis/AudioTapBuffer.hpp"
-#include "core/ParameterInfo.hpp"
-#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "plugins/compiled/MagdaCompiledEffect.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -28,44 +24,16 @@ namespace magda::daw::audio::compiled {
  *   5*band + 4 → Q       (0.1..10)
  *   40         → Output  (dB, -24..+12)
  */
-class MagdaEqCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
+class MagdaEqCompiledPlugin : public MagdaCompiledEffect {
   public:
     static const char* xmlTypeName;
 
-    explicit MagdaEqCompiledPlugin(const te::PluginCreationInfo& info);
-    ~MagdaEqCompiledPlugin() override;
-
-    juce::String getName() const override;
-    juce::String getPluginType() override;
-    juce::String getShortName(int) override;
-    juce::String getSelectableDescription() override;
-
-    void initialise(const te::PluginInitialisationInfo& info) override;
-    void deinitialise() override;
-    void reset() override;
-    void applyToBuffer(const te::PluginRenderContext& fc) override;
-
-    bool takesMidiInput() override {
-        return false;
-    }
-    bool takesAudioInput() override {
-        return true;
-    }
-    bool isSynth() override {
-        return false;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return false;
-    }
-    double getTailLength() const override {
-        return 0.0;
-    }
+    MagdaEqCompiledPlugin();
 
     static constexpr int kBandCount = 8;
     static constexpr int kSlotsPerBand = 5;                         // Enabled, Type, Freq, Gain, Q
     static constexpr int kOutputSlot = kBandCount * kSlotsPerBand;  // 40
     static constexpr int kHostSlotCount = kOutputSlot + 1;          // 41
-
     enum class BandType {
         Highpass = 0,
         LowShelf = 1,
@@ -75,28 +43,13 @@ class MagdaEqCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
         Notch = 5
     };
     static constexpr int kBandTypeCount = 6;
-
-    // Sub-slot offsets within a band.
     static constexpr int kBandEnabledOffset = 0;
     static constexpr int kBandTypeOffset = 1;
     static constexpr int kBandFreqOffset = 2;
     static constexpr int kBandGainOffset = 3;
     static constexpr int kBandQOffset = 4;
 
-    static int bandSlot(int band, int offset) {
-        return band * kSlotsPerBand + offset;
-    }
-
-    te::AutomatableParameter* getSlotParameter(int slotIndex) const;
-
-    float displayValueToNativeValue(int slotIndex, float displayValue) const;
-    float nativeValueToDisplayValue(int slotIndex, float nativeValue) const;
-
-    using HostSlotInfo = CompiledHostSlotInfo;
-    const HostSlotInfo& getSlotInfo(int slotIndex) const;
-
-    // Live per-band state for the curve view — these are the smoothed
-    // values currently driving the audio thread.
+    /// Live per-band state: the values currently driving the audio thread.
     struct BandSnapshot {
         bool enabled = false;
         BandType type = BandType::Bell;
@@ -105,7 +58,9 @@ class MagdaEqCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
         float q = 1.0f;
     };
     BandSnapshot getBandSnapshot(int band) const;
-    float getOutputDb() const;
+    float getOutputDb() const {
+        return slotDisplayValue(kOutputSlot);
+    }
     const magda::daw::audio::AudioTapBuffer& getPreSpectrumTapBuffer() const {
         return preSpectrumTap_;
     }
@@ -113,36 +68,21 @@ class MagdaEqCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
         return postSpectrumTap_;
     }
     double getSampleRate() const {
-        return sampleRate_.load(std::memory_order_relaxed);
+        return currentSampleRate();
     }
 
-    /// "Collapse knobs" toggle persisted on the plugin's state ValueTree
-    /// so the user's preferred slot layout survives project reload.
-    /// Defaults to true (curve takes the full slot body) since the curve
-    /// is the EQ's primary surface.
+    /// "Collapse knobs" toggle, persisted on the device's state so the user's
+    /// preferred slot layout survives a project reload. Defaults to true: the
+    /// curve is the EQ's primary surface.
     bool isCurveCollapsed() const {
-        return curveCollapsed_.get();
+        return curveCollapsed_;
     }
     void setCurveCollapsed(bool collapsed) {
         curveCollapsed_ = collapsed;
     }
 
-    // ICompiledFaustPlugin
-    int hostSlotCount() const override {
-        return kHostSlotCount;
-    }
-    const CompiledHostSlotInfo& hostSlotInfo(int slotIndex) const override {
-        return getSlotInfo(slotIndex);
-    }
-    DeviceParameterHandle hostSlotParameter(int slotIndex) const override {
-        return tracktion_adapter::parameterHandle(getSlotParameter(slotIndex));
-    }
-    float displayToNormalized(int slotIndex, float displayValue) const override {
-        return displayValueToNativeValue(slotIndex, displayValue);
-    }
-    float normalizedToDisplay(int slotIndex, float normalizedValue) const override {
-        return nativeValueToDisplayValue(slotIndex, normalizedValue);
-    }
+    void flushState(juce::ValueTree& state) override;
+    void restoreState(const juce::ValueTree& state) override;
 
     struct BiquadState {
         float x1 = 0.0f;
@@ -151,22 +91,35 @@ class MagdaEqCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
         float y2 = 0.0f;
     };
 
-  private:
-    void buildHostParameters();
-    void rebuildEngineState(int sampleRate);
-    float readSlotDisplayValue(int slotIndex) const;
-    BandSnapshot readBandSnapshot(int band) const;
+    static int bandSlot(int band, int offset) {
+        return band * kSlotsPerBand + offset;
+    }
 
-    std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
-    std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
-    std::array<juce::CachedValue<float>, kHostSlotCount> hostCached_;
-    juce::CachedValue<bool> curveCollapsed_;
+    juce::String devicePluginId() const override {
+        return xmlTypeName;
+    }
+    juce::String deviceName() const override {
+        return "EQ";
+    }
+
+  protected:
+    std::vector<HostSlotInfo> slotInfos() const override;
+    const char* slotIdPrefix() const override {
+        return "magda_eq_";
+    }
+    juce::String slotId(int slotIndex) const override;
+    void onPrepare(double sampleRate, int maximumBlockSize) override;
+    void onRelease() override;
+    void onReset() override;
+    void processAudio(DeviceProcessContext& context) override;
+
+  private:
+    bool curveCollapsed_ = true;
 
     std::vector<float> preTapScratch_;
     std::vector<float> postTapScratch_;
     magda::daw::audio::AudioTapBuffer preSpectrumTap_{8192};
     magda::daw::audio::AudioTapBuffer postSpectrumTap_{8192};
-    std::atomic<double> sampleRate_{44100.0};
     std::array<std::vector<BiquadState>, kBandCount> biquadStates_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaEqCompiledPlugin)

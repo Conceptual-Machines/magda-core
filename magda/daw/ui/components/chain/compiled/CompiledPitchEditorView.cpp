@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaPitchCompiledPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -53,7 +54,8 @@ void CompiledPitchEditorView::setCompiledPlugin(
 }
 
 void CompiledPitchEditorView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(dynamic_cast<magda::daw::audio::compiled::MagdaPitchCompiledPlugin*>(plugin));
+    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                      magda::daw::audio::compiled::MagdaPitchCompiledPlugin>(plugin));
 }
 
 void CompiledPitchEditorView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -73,8 +75,8 @@ void CompiledPitchEditorView::resampleFromDevice() {
 void CompiledPitchEditorView::timerCallback() {
     if (compiledPlugin_ != nullptr) {
         auto read = [this](int slot, float fallback) {
-            if (auto* p = compiledPlugin_->getSlotParameter(slot))
-                return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
+            if (auto p = compiledPlugin_->getSlotParameter(slot))
+                return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
             return fallback;
         };
         engine_ = juce::jlimit(0, Plugin::kEngineCount - 1,

@@ -374,6 +374,11 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES MgdFixtures.cpp)
     list(APPEND TEST_SOURCES test_mgd_fixture_rig.cpp)
 
+    # What the legacy projects would cost as render cases (#2081). A survey
+    # rather than a corpus: it declares no tier and asserts no residual, and
+    # reports what stands between each project and being a case.
+    list(APPEND TEST_SOURCES test_real_project_survey.cpp)
+
     # The device layer under the engine (#2174): the app's own catalogs asked
     # for a Device op's device, and a shipped device rendered through the
     # adapter. The engine's half alone -- what the two hosts do with one device

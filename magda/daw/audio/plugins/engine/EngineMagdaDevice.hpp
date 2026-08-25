@@ -30,13 +30,9 @@
  * once would differ from it by however much the curve moves across a block, on
  * every automated parameter, in every project.
  *
- * Three things the device SDK does not carry yet, named here rather than
+ * Two things the device SDK does not carry yet, named here rather than
  * silently dropped, because each is a divergence the day a device wants it:
  *
- * - **Sidechain audio.** DeviceProcessContext has no sidechain buffer, so
- *   DeviceBlock::sidechain stops here. No MagdaDevice reads one today (the
- *   sidechain fleet is still Tracktion-native), and the SDK has to grow the
- *   input before one can.
  * - **Further output pairs.** A MagdaDevice declares no channel layout beyond
  *   what it writes into the buffer it is handed, so DeviceBlock::extraOutputs
  *   is left cleared. Multi-out is a te::RackType wrapper in the incumbent and
@@ -46,12 +42,11 @@
  *   flag beside the events and the engine's juce::MidiBuffer does not. A device
  *   that sets it is writing to something nothing downstream reads here.
  *
- * The tempo map goes the other way. The fork's adapter passes null because
- * TempoSequence queries are not guaranteed real-time safe; the engine's map is
- * an immutable snapshot the transport already holds for the length of the
- * callback, so this passes it. Nothing reads it yet in either host, which is
- * why that is a difference in what is offered rather than a divergence in what
- * is rendered.
+ * Sidechain audio used to be a third. DeviceBlock::sidechain now reaches the
+ * device as further channels of its own buffer, after the ones it owns, with
+ * DeviceProcessContext::sidechainInputChannel saying where they start -- the
+ * layout MAGDA's compiled dynamics DSPs already read and the one the fork
+ * hands them (#2192).
  */
 
 namespace magda::daw::audio::engine_adapter {

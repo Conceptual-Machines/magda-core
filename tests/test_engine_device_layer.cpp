@@ -184,6 +184,21 @@ int budgetCostOf(const juce::MidiBuffer& buffer) {
     return bytes;
 }
 
+/// The slot @p device calls @p name, or -1.
+int slotNamed(const magda::daw::audio::MagdaDevice& device, const juce::String& name) {
+    for (int slot = 0; slot < device.parameterCount(); ++slot)
+        if (device.parameterInfo(slot).name == name)
+            return slot;
+    return -1;
+}
+
+/// Set a slot from its display value rather than its normalised position, so a
+/// test reads in the units the device documents.
+void setDisplayValue(magda::daw::audio::MagdaDevice& device, int slot, float displayValue) {
+    const auto info = device.parameterInfo(slot);
+    device.setParameterValue(slot, magda::ParameterUtils::realToNormalized(displayValue, info));
+}
+
 }  // namespace
 
 TEST_CASE("the engine can run every device that has moved to the SDK", "[engine][devices][2174]") {
@@ -503,4 +518,84 @@ TEST_CASE("a device may rewrite, reorder and drop long messages", "[engine][devi
     }
 
     CHECK(marks == std::vector<std::uint8_t>{0x33, 0x11});
+}
+
+TEST_CASE("one note-off releases a pitch that was pressed many times", "[engine][devices][2192]") {
+    // The mono and legato voice keeps a stack of what is held, and a note-on
+    // for a pitch already on it moves that pitch to the top rather than adding
+    // a second copy. Two things rest on that.
+    //
+    // The audible one is here: a pitch held twice would need two note-offs to
+    // be let go, and an unbalanced stream sends one. Those streams are ordinary
+    // -- a recorded clip playing back merged with the live input that fed it
+    // sends every note twice -- and the poly path has releasePolyVoicesForPitch()
+    // for exactly this. The mono path had nothing, so the note hung.
+    //
+    // The other is that the stack is then bounded by the MIDI range and can be
+    // sized once, off the audio thread, instead of growing under process().
+    // That is what the repeat count below is for: it is past any bound the
+    // stack could be given, so a stack that appended would have grown.
+    magda::DeviceInfo model;
+    model.pluginId = "magda_fm";
+
+    auto device = adapter::createEngineDevice(model);
+    REQUIRE(device != nullptr);
+
+    auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(device.get());
+    REQUIRE(hosted != nullptr);
+    auto& sdk = hosted->device();
+
+    const int voiceModeSlot = slotNamed(sdk, "Voice Mode");
+    const int sustainSlot = slotNamed(sdk, "Amp Sustain");
+    const int releaseSlot = slotNamed(sdk, "Amp Release");
+    const int attackSlot = slotNamed(sdk, "Amp Attack");
+    REQUIRE(voiceModeSlot >= 0);
+    REQUIRE(sustainSlot >= 0);
+    REQUIRE(releaseSlot >= 0);
+    REQUIRE(attackSlot >= 0);
+
+    const auto context = contextFor();
+    device->prepare(context);
+
+    // Mono, held at full sustain so a note that never releases stays audible,
+    // with the envelope's ends short enough to settle inside a few blocks.
+    setDisplayValue(sdk, voiceModeSlot, 1.0f);  // Poly / Mono / Legato
+    setDisplayValue(sdk, sustainSlot, 1.0f);
+    setDisplayValue(sdk, attackSlot, 1.0f);
+    setDisplayValue(sdk, releaseSlot, 1.0f);
+
+    constexpr int kNote = 60;
+    constexpr int kRepeats = 400;
+
+    Block pressed(context);
+    for (int repeat = 0; repeat < kRepeats; ++repeat)
+        pressed.midi.addEvent(juce::MidiMessage::noteOn(1, kNote, 1.0f), 0);
+    auto pressedBlock = pressed.deviceBlock();
+    device->process(pressedBlock);
+
+    Block held(context);
+    auto heldBlock = held.deviceBlock();
+    device->process(heldBlock);
+    const float heldPeak = peakOf(held.buffer);
+
+    // The note has to be sounding, or the release below proves nothing.
+    REQUIRE(heldPeak > 0.0f);
+
+    Block lifted(context);
+    lifted.midi.addEvent(juce::MidiMessage::noteOff(1, kNote), 0);
+    auto liftedBlock = lifted.deviceBlock();
+    device->process(liftedBlock);
+
+    float releasedPeak = 0.0f;
+    for (int block = 0; block < 8; ++block) {
+        Block quiet(context);
+        auto quietBlock = quiet.deviceBlock();
+        device->process(quietBlock);
+        releasedPeak = peakOf(quiet.buffer);
+    }
+
+    // One note-off, four hundred note-ons: the voice is released. A stack that
+    // appended would still be holding three hundred and ninety-nine of them and
+    // sitting at full sustain here.
+    CHECK(releasedPeak < heldPeak * 0.05f);
 }
