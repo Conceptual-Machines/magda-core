@@ -7,6 +7,8 @@
 #include "magda/daw/audio/plugin_manager/PluginManager.hpp"
 #include "magda/daw/audio/plugins/SidechainMonitorPlugin.hpp"
 #include "magda/daw/audio/plugins/SidechainPlugin.hpp"
+#include "magda/daw/audio/plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 
 namespace te = tracktion;
@@ -72,7 +74,8 @@ class MasterSidechainTest final : public juce::UnitTest {
         bridge->syncTrackPlugins(magda::MASTER_TRACK_ID);
 
         auto sidechain = bridge->getPlugin(path);
-        expect(dynamic_cast<magda::daw::audio::SidechainPlugin*>(sidechain.get()) != nullptr,
+        expect(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                   magda::daw::audio::SidechainPlugin>(sidechain.get()) != nullptr,
                "Master path should resolve to the Sidechain plugin");
 
         auto* masterTrack = wrapper.getEdit() ? wrapper.getEdit()->getMasterTrack() : nullptr;
@@ -108,7 +111,13 @@ class MasterSidechainTest final : public juce::UnitTest {
         expect(sourceMonitor != nullptr,
                "A master sidechain destination should retain its source monitor");
 
-        auto* sidechainPlugin = dynamic_cast<magda::daw::audio::SidechainPlugin*>(sidechain.get());
+        // The chain holds the host's wrapper and the device is inside it, so
+        // the te-side calls below go to the wrapper and the identity check
+        // goes through it (#2192).
+        auto* sidechainPlugin = magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                                    magda::daw::audio::SidechainPlugin>(sidechain.get()) != nullptr
+                                    ? sidechain.get()
+                                    : nullptr;
         if (sourceMonitor && sidechainPlugin && wrapper.getEdit()) {
             beginTest("Master sidechain ducks audio from a source MIDI note");
 
@@ -131,7 +140,13 @@ class MasterSidechainTest final : public juce::UnitTest {
             wrapper.getEdit()->updateModifierTimers(te::TimePosition::fromSeconds(0.0), numSamples);
             sidechainPlugin->updateParameterStreams(te::TimePosition::fromSeconds(0.0));
 
-            expectWithinAbsoluteError(sidechainPlugin->gainParam->getCurrentValue(), 0.0f, 0.0001f,
+            auto* gainParam = magda::daw::audio::compiled::tracktionParameterForSlot(
+                sidechainPlugin, magda::daw::audio::SidechainPlugin::kGainParamIndex);
+            expect(gainParam != nullptr, "Sidechain should expose its gain parameter");
+            if (gainParam == nullptr)
+                return;
+
+            expectWithinAbsoluteError(gainParam->getCurrentValue(), 0.0f, 0.0001f,
                                       "Source note should drive the master Sidechain gain target");
 
             juce::AudioBuffer<float> masterBuffer(2, numSamples);
@@ -174,15 +189,26 @@ class MasterSidechainTest final : public juce::UnitTest {
             return;
 
         auto plugin = createSidechainPlugin(*edit);
-        auto* sidechain = dynamic_cast<magda::daw::audio::SidechainPlugin*>(plugin.get());
-        expect(sidechain != nullptr, "Sidechain plugin should be constructible");
-        if (!sidechain)
+        auto* device = magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+            magda::daw::audio::SidechainPlugin>(plugin.get());
+        expect(device != nullptr, "Sidechain device should be constructible");
+        if (device == nullptr)
             return;
 
-        sidechain->gainParam->setParameterFromHost(0.0f, juce::dontSendNotification);
-        sidechain->channelModeParam->setParameterFromHost(
-            static_cast<float>(magda::daw::audio::SidechainPlugin::ChannelMode::Sides),
-            juce::dontSendNotification);
+        auto* sidechain = plugin.get();
+        using Sidechain = magda::daw::audio::SidechainPlugin;
+        auto* gainParam = magda::daw::audio::compiled::tracktionParameterForSlot(
+            sidechain, Sidechain::kGainParamIndex);
+        auto* channelModeParam = magda::daw::audio::compiled::tracktionParameterForSlot(
+            sidechain, Sidechain::kChannelModeParamIndex);
+        expect(gainParam != nullptr && channelModeParam != nullptr,
+               "Sidechain should expose its gain and channel-mode parameters");
+        if (gainParam == nullptr || channelModeParam == nullptr)
+            return;
+
+        gainParam->setParameterFromHost(0.0f, juce::dontSendNotification);
+        channelModeParam->setParameterFromHost(static_cast<float>(Sidechain::ChannelMode::Sides),
+                                               juce::dontSendNotification);
         sidechain->reset();
 
         juce::AudioBuffer<float> buffer(4, 3);

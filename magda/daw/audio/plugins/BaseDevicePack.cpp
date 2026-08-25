@@ -32,6 +32,7 @@
 #include "plugins/mutable/MutableRingsPlugin.hpp"
 #include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 #include "plugins/tracktion/TracktionDeviceStateBridge.hpp"
+#include "plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "processors/DeviceProcessor.hpp"
 #include "processors/internal/MidiDeviceProcessors.hpp"
 #include "processors/internal/NativeDeviceProcessors.hpp"
@@ -45,6 +46,17 @@ namespace ta = tracktion_adapter;
 
 template <typename PluginType> bool matches(DevicePluginRef plugin) {
     return dynamic_cast<PluginType*>(ta::pluginFromRef(plugin)) != nullptr;
+}
+
+/// The same question for a device the host adapter wraps: what the chain holds
+/// is the wrapper, and the device is inside it.
+template <typename DeviceType> bool matchesDevice(DevicePluginRef plugin) {
+    return ta::deviceFromPlugin<DeviceType>(ta::pluginFromRef(plugin)) != nullptr;
+}
+
+template <typename DeviceType>
+std::unique_ptr<MagdaDevice> createDevice(const DevicePluginCreationContext&) {
+    return std::make_unique<DeviceType>();
 }
 
 template <typename ProcessorType>
@@ -378,14 +390,14 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
                    .loadAliases = kSidechainAliases,
                    .loadAliasCount = static_cast<int>(std::size(kSidechainAliases)),
-                   .matchesPlugin = matches<SidechainPlugin>,
+                   .matchesPlugin = matchesDevice<SidechainPlugin>,
                    .createProcessor = makeProcessor<SidechainProcessor>,
                    .showInBrowser = true,
                    .tags = kSidechainTags,
                    .tagCount = static_cast<int>(std::size(kSidechainTags)),
                    .defaultModulationParamIndex = SidechainPlugin::kGainParamIndex,
                    .createInSession = createValueTreePlugin,
-                   .createPlugin = createPlugin<SidechainPlugin>});
+                   .createDevice = createDevice<SidechainPlugin>});
     add(registry,
         {.pluginId = MagdaConvolutionPlugin::xmlTypeName,
          .displayName = "IR Reverb",

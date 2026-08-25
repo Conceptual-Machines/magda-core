@@ -138,6 +138,11 @@ void TracktionMagdaDevicePlugin::deinitialise() {
 }
 
 void TracktionMagdaDevicePlugin::reset() {
+    // Parameters first. A device that seeds smoothing state from one in reset()
+    // -- the sidechain sets its gain follower to wherever the duck currently
+    // sits -- would otherwise read whatever it was constructed with, because
+    // nothing has pushed the host's values into it yet.
+    syncParametersToDevice();
     device_->reset();
 }
 
