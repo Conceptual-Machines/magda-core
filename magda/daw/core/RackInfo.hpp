@@ -108,6 +108,9 @@ struct ChainInfo {
           bypassed(other.bypassed),
           volume(other.volume),
           pan(other.pan),
+          lowNote(other.lowNote),
+          highNote(other.highNote),
+          rootNote(other.rootNote),
           expanded(other.expanded) {
         elements.reserve(other.elements.size());
         for (const auto& element : other.elements) {
@@ -126,6 +129,9 @@ struct ChainInfo {
             bypassed = other.bypassed;
             volume = other.volume;
             pan = other.pan;
+            lowNote = other.lowNote;
+            highNote = other.highNote;
+            rootNote = other.rootNote;
             expanded = other.expanded;
             elements.clear();
             elements.reserve(other.elements.size());
