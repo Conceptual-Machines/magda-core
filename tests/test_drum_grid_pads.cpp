@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <set>
 
 #include "magda/daw/core/DeviceInfo.hpp"
 #include "magda/daw/core/DeviceState.hpp"
@@ -33,6 +34,8 @@ ds::Node padNode(int index, int lowNote, int highNote, int rootNote) {
     ds::Node plugin;
     plugin.type = "PLUGIN";
     plugin.props.set("type", "magdasampler");
+    plugin.props.set("magdaDeviceId", 900 + index);
+    plugin.props.set("enabled", false);
     node.children.push_back(plugin);
 
     return node;
@@ -71,7 +74,48 @@ TEST_CASE("A Drum Grid's pads are read out of a v2 document", "[drumgrid][pads]"
 
     REQUIRE(second.elements.size() == 1);
     REQUIRE(magda::isDevice(second.elements[0]));
-    CHECK(magda::getDevice(second.elements[0]).pluginId == "magdasampler");
+
+    // A projected device has to be a real one. The plan keys an op on the
+    // DeviceId and routes on the instrument flag, so a pad device that kept the
+    // defaults would collide with every other pad and route nowhere.
+    const auto& padDevice = magda::getDevice(second.elements[0]);
+    CHECK(padDevice.pluginId == "magdasampler");
+    CHECK(padDevice.id == 901);
+    CHECK(padDevice.isInstrument);
+    CHECK(padDevice.deviceType == magda::DeviceType::Instrument);
+    CHECK(padDevice.bypassed);
+    CHECK(padDevice.name == "Sampler");
+}
+
+TEST_CASE("Each pad's device keeps its own id", "[drumgrid][pads]") {
+    const auto rack = magda::readPadRack("drumgrid", encodedDrumGridWithPads());
+    REQUIRE(rack != nullptr);
+    REQUIRE(rack->chains.size() == 2);
+
+    std::set<magda::DeviceId> ids;
+    for (const auto& chain : rack->chains) {
+        REQUIRE(chain.elements.size() == 1);
+        ids.insert(magda::getDevice(chain.elements[0]).id);
+    }
+
+    CHECK(ids.size() == 2);
+    CHECK(ids.count(magda::INVALID_DEVICE_ID) == 0);
+}
+
+TEST_CASE("A pad device saved with no id stays invalid rather than inventing one",
+          "[drumgrid][pads]") {
+    ds::Doc doc;
+    doc.deviceType = "drumgrid";
+    doc.root.type = "PLUGIN";
+
+    auto pad = padNode(0, 36, 36, 36);
+    pad.children[0].props.remove("magdaDeviceId");
+    doc.root.children.push_back(pad);
+
+    const auto rack = magda::readPadRack("drumgrid", ds::encode(doc));
+    REQUIRE(rack != nullptr);
+    REQUIRE(rack->chains[0].elements.size() == 1);
+    CHECK(magda::getDevice(rack->chains[0].elements[0]).id == magda::INVALID_DEVICE_ID);
 }
 
 TEST_CASE("A Drum Grid's pads are read out of pre-v2 engine XML", "[drumgrid][pads]") {

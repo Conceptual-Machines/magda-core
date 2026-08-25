@@ -1,7 +1,9 @@
 #include "DrumGridPads.hpp"
 
 #include "DeviceState.hpp"
+#include "PluginCapabilities.hpp"
 #include "RackInfo.hpp"
+#include "audio/plugins/InternalPluginRegistry.hpp"
 
 namespace magda {
 
@@ -27,6 +29,11 @@ const juce::Identifier kPadSolo("padSolo");
 const juce::Identifier kPadBypassed("padBypassed");
 const juce::Identifier kBusOutput("busOutput");
 const juce::Identifier kType("type");
+const juce::Identifier kEnabled("enabled");
+/// The DeviceId a Drum Grid allocated for a pad's plugin and saved with it.
+/// TrackManager's id allocator already reads this same property out of pad
+/// state so a newly created device cannot be given an id a pad is using.
+const juce::Identifier kPluginDeviceId("magdaDeviceId");
 
 /// A Drum Grid writes 60 for a chain whose note range it has not been told, so
 /// that is what an absent range reads as rather than ChainInfo's own default.
@@ -35,21 +42,64 @@ const juce::Identifier kType("type");
 /// accident.
 constexpr int kFallbackNote = 60;
 
-/// One pad's device, as far as the model needs it here.
+/// One pad's device, carrying what the compiler needs to key and bind it.
 ///
-/// A pad's plugin keeps its own state as the node it was saved as, re-encoded
-/// so it reads exactly like any other device's. What it is NOT given is a
-/// DeviceId: ids are allocated by the app against a project, and a projection
-/// that minted its own would collide with them.
+/// A projected device is a real device or it is useless. The plan keys an op on
+/// the DeviceId (`OpKey`), and routes on whether the device is an instrument,
+/// consumes MIDI or is bypassed, so a device projected with those left at their
+/// defaults would give every pad the same key and route none of them: sixty-four
+/// ops that collide and a Drum Grid that still does not render.
+///
+/// None of it is invented. The DeviceId is the one the Drum Grid allocated and
+/// saved with the pad, which is why the id allocator has to read the same
+/// property; the rest comes from the plugin registry, which is where a device's
+/// identity lives for every other device in the model too.
 DeviceInfo deviceFromNode(const ds::Node& node) {
     DeviceInfo device;
-    device.pluginId = node.props[kType].toString();
-    device.name = device.pluginId;
+
+    const auto savedType = node.props[kType].toString();
+    device.pluginId = savedType;
+    device.name = savedType;
+
+    // A pad saved by an older build can name a device by a load alias rather
+    // than the id it has now, so the alias-aware lookup goes first and the
+    // canonical id is taken from whatever it resolves to.
+    const auto* spec = daw::audio::findInternalPluginSpecForLoadType(savedType);
+    if (spec == nullptr)
+        spec = daw::audio::findInternalPluginSpec(savedType);
+
+    if (spec != nullptr) {
+        if (spec->pluginId != nullptr)
+            device.pluginId = spec->pluginId;
+        if (spec->displayName != nullptr)
+            device.name = spec->displayName;
+        device.isInstrument = spec->isInstrument;
+        device.deviceType = spec->isInstrument ? DeviceType::Instrument : DeviceType::Effect;
+    }
+
+    // The id the pad was saved with. A pad whose state predates it is left
+    // invalid rather than given a made-up one: the compiler reports a device it
+    // cannot key, which is a diagnosis, where a minted id would collide with a
+    // real device and be a silent wrong render.
+    const auto* savedId = node.props.getVarPointer(kPluginDeviceId);
+    if (savedId != nullptr)
+        device.id = static_cast<DeviceId>(static_cast<int>(*savedId));
+
+    // The engine's `enabled` is MAGDA's `bypassed`. The bridge strips it at the
+    // root because DeviceInfo owns that fact there; on a nested pad plugin it
+    // survives, and this is the DeviceInfo that owns it.
+    const auto* enabled = node.props.getVarPointer(kEnabled);
+    if (enabled != nullptr)
+        device.bypassed = !static_cast<bool>(*enabled);
 
     ds::Doc doc;
     doc.deviceType = device.pluginId;
     doc.root = node;
     device.pluginState = ds::encode(doc);
+
+    // Fills the MIDI and audio capabilities the router asks about from the same
+    // cache every other device in the model is filled from.
+    applyCachedCapabilitiesToDevice(device);
 
     return device;
 }

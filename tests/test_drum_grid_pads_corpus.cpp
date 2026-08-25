@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <set>
 
 #include "LegacyCorpus.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
@@ -71,7 +72,33 @@ void requirePadsAreReal(const magda::DeviceInfo& drumGrid) {
         CHECK(pad.highNote <= 127);
         CHECK(pad.rootNote >= 0);
         CHECK(pad.rootNote <= 127);
+
+        for (const auto& element : pad.elements) {
+            REQUIRE(magda::isDevice(element));
+            const auto& device = magda::getDevice(element);
+            INFO("pad device " << device.pluginId);
+            CHECK(device.pluginId.isNotEmpty());
+        }
     }
+
+    // A DeviceId is not a load-time fact for these files. A Drum Grid allocates
+    // one per pad plugin when it restores it, so a project saved before that
+    // plugin was ever instantiated carries none, and both corpus projects are
+    // that old. What load must guarantee is that the ids it DOES find are
+    // distinct: an id read from the file and duplicated across pads would key
+    // two ops the same and bind one pad's parameters to another's.
+    std::set<magda::DeviceId> ids;
+    int withIds = 0;
+    for (const auto& pad : drumGrid.padRack->chains) {
+        for (const auto& element : pad.elements) {
+            const auto id = magda::getDevice(element).id;
+            if (id == magda::INVALID_DEVICE_ID)
+                continue;
+            ++withIds;
+            ids.insert(id);
+        }
+    }
+    CHECK(static_cast<int>(ids.size()) == withIds);
 }
 
 }  // namespace
