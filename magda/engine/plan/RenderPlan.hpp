@@ -374,6 +374,17 @@ struct PlanOp {
     std::uint8_t noteGateLow = 0;
     std::uint8_t noteGateHigh = 127;
     std::int8_t noteGateTranspose = 0;
+
+    /// A pad fader's level and pan, as parameter indices of the device that
+    /// owns the pad (OpKey::deviceId).
+    ///
+    /// A rack chain's fader is not addressable in the model and keeps whatever
+    /// the value table published. A Drum Grid's pads are the exception: their
+    /// level and pan are real automatable parameters of the Drum Grid, so a lane,
+    /// a macro or a modifier can play over them and the fader has to read the
+    /// table like a track's does. -1 for every other fader.
+    int padLevelParam = -1;
+    int padPanParam = -1;
 };
 
 /**

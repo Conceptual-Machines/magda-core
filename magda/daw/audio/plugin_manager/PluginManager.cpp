@@ -14,6 +14,7 @@
 #include "../TrackController.hpp"
 #include "../TracktionHelpers.hpp"
 #include "../Vst3Preset.hpp"
+#include "../plugins/DrumGridPadParameters.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
 #include "modifiers/ModifierSync.hpp"
@@ -456,6 +457,8 @@ void PluginManager::captureAllPluginStates() {
             // keyable: a Drum Grid allocates a pad plugin's DeviceId when it
             // restores it, so the ids exist here and not at load (#2192).
             refreshPadRack(*devInfo);
+            if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(sd.plugin.get()))
+                daw::audio::populatePadDeviceParameters(*devInfo, *drumGrid);
             captureVst3Info(*devInfo, capturedExt);
             if (sd.processor != nullptr)
                 sd.processor->populateParameters(*devInfo);
@@ -494,6 +497,8 @@ void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
 
     devInfo->pluginState = stateStr;
     refreshPadRack(*devInfo);
+    if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin))
+        daw::audio::populatePadDeviceParameters(*devInfo, *drumGrid);
     captureVst3Info(*devInfo, capturedExt);
     if (it->second.processor)
         it->second.processor->populateParameters(*devInfo);

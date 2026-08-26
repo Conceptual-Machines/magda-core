@@ -540,6 +540,21 @@ void Builder::walkElements(const std::vector<magda::ChainElement>& elements, mag
             node.device = &device;
             node.sidechainSource = sidechainSourceOf(device.sidechain);
             nodes_.push_back(node);
+
+            // A pad rack's chains hold devices like any other rack's, and the
+            // plan compiles them, so their parameters, macros and mods need
+            // addresses or nothing consumes them.
+            //
+            // Addressed under the owning device's id, not the pad rack's. A
+            // stored link to a pad device names the Drum Grid there -- see the
+            // chainDevice path syncDrumGridPadPlugins and the ADSR macro links
+            // are built with -- and ParamKey carries the rack id, so addressing
+            // these under the pad rack's own synthetic id would put them where
+            // no link can find them. The rack itself gets no node: it is
+            // synthesized, so it owns no macros or modifiers to address.
+            if (device.padRack)
+                for (const auto& pad : device.padRack->chains)
+                    walkElements(pad.elements, trackId, device.id);
         } else if (magda::isRack(element)) {
             walkRack(magda::getRack(element), trackId);
         }

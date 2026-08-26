@@ -5,6 +5,7 @@
 #include <set>
 #include <unordered_map>
 
+#include "core/DrumGridPads.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
 #include "param/ParamTableCompiler.hpp"
@@ -71,10 +72,18 @@ const RackInfo* findRackIn(const RackInfo& rack, RackId rackId) {
 }
 
 const RackInfo* findRackIn(const std::vector<ChainElement>& elements, RackId rackId) {
-    for (const auto& element : elements)
-        if (isRack(element))
+    for (const auto& element : elements) {
+        if (isRack(element)) {
             if (const auto* found = findRackIn(getRack(element), rackId))
                 return found;
+            continue;
+        }
+        // A pad rack hangs off its device rather than sitting in the chain, and
+        // its chains carry mute, solo and a fader like any other's.
+        if (const auto& device = getDevice(element); device.padRack)
+            if (const auto* found = findRackIn(*device.padRack.get(), rackId))
+                return found;
+    }
     return nullptr;
 }
 
@@ -100,12 +109,21 @@ const DeviceInfo* findDeviceIn(const std::vector<PostFxChainElement>& elements, 
 
 /// Whether a rack chain is in the mix. Solo is relative to its siblings, which
 /// is why chain activity cannot be answered from the chain alone.
+///
+/// A pad rack counts solo only on pads that have something to run. That is the
+/// Drum Grid's own rule, and it matters because removing a pad's last plugin
+/// leaves the chain behind: an empty soloed pad would otherwise silence every
+/// populated pad beside it, where the device plays them.
 bool isChainActive(const RackInfo& rack, const ChainInfo& chain) {
     if (chain.muted)
         return false;
-    const auto anySolo =
-        std::ranges::any_of(rack.chains, [](const ChainInfo& c) { return c.solo; });
-    return !anySolo || chain.solo;
+
+    const auto counts = [pads = isPadRackId(rack.id)](const ChainInfo& c) {
+        return c.solo && (!pads || !c.elements.empty());
+    };
+
+    const auto anySolo = std::ranges::any_of(rack.chains, counts);
+    return !anySolo || counts(chain);
 }
 
 class Resolver {
@@ -170,8 +188,22 @@ class Resolver {
     /// outer chain disconnected.
     void collectSilencedRacks(const std::vector<ChainElement>& elements, bool insideInactiveChain) {
         for (const auto& element : elements) {
-            if (!isRack(element))
+            if (!isRack(element)) {
+                // A pad rack hangs off its device rather than sitting in the
+                // chain, and an inactive chain silences its pads the same way it
+                // silences a nested rack's chains. Without this a Drum Grid in a
+                // muted chain keeps its pad devices running behind a silent
+                // fader, advancing tails and publishing meters.
+                if (const auto& device = getDevice(element); device.padRack) {
+                    const auto& pads = *device.padRack.get();
+                    if (insideInactiveChain)
+                        silencedRacks_.insert(pads.id);
+                    for (const auto& pad : pads.chains)
+                        collectSilencedRacks(pad.elements,
+                                             insideInactiveChain || !isChainActive(pads, pad));
+                }
                 continue;
+            }
 
             const auto& rack = getRack(element);
             if (insideInactiveChain)

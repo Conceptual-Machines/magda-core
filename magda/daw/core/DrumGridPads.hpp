@@ -4,8 +4,11 @@
 
 #include <memory>
 
+#include "TypeIds.hpp"
+
 namespace magda {
 
+struct ChainInfo;
 struct DeviceInfo;
 struct RackInfo;
 
@@ -34,5 +37,24 @@ void refreshPadRack(DeviceInfo& device);
 
 /// True when devices of this type keep their chains as pads.
 bool isPadRackDevice(const juce::String& pluginId);
+
+/// The parameter slot a pad's level and pan live in, or -1 when the pad's range
+/// starts outside the grid.
+///
+/// A Drum Grid registers padLevelN and padPanN for a fixed N per pad and reaches
+/// them by the pad's bottom note, not by the order its chains were made: a pad
+/// added first can hold chain 0 and still drive slot 17. Anything binding a pad
+/// to those parameters has to ask the same question the device does.
+int padParameterSlot(const ChainInfo& pad);
+
+/// True when @p rackId names a pad rack rather than one the app allocated.
+bool isPadRackId(RackId rackId);
+
+/// The RackId a pad rack owned by `deviceId` carries.
+///
+/// Negative, and never INVALID_RACK_ID. Rack ids the app allocates start at 1,
+/// so the negative space is free and a pad rack can be keyed and looked up like
+/// any other rack without an allocator that does not reach here.
+RackId padRackIdFor(DeviceId deviceId);
 
 }  // namespace magda
