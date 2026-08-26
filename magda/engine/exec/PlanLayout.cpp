@@ -106,6 +106,8 @@ std::optional<std::size_t> inPlaceInputOf(const PlanOp& op) {
         case OpKind::AudioInput:
         case OpKind::MidiInput:
         case OpKind::MergeMidi:
+        case OpKind::MidiNoteGate:
+        case OpKind::ModSource:
         case OpKind::Output:
             return std::nullopt;
     }

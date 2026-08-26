@@ -111,15 +111,16 @@ enum class OpKind : std::uint8_t {
     Device,      ///< a device instance (instrument, effect, MIDI or analysis)
     MixAudio,   ///< ordered sum of audio inputs (summing order is compiled, never scheduling order)
     MergeMidi,  ///< ordered merge of MIDI inputs
-    Subtract,   ///< one audio input minus another: what a delta solo hears
-    Delay,      ///< latency compensation on one edge; the sample count is bound at prepare time
-    Crossfade,  ///< an edge as it was and as it is, ramped from one to the other
-    Gain,       ///< scalar gain
-    Fader,      ///< volume + pan, and the MIDI its stage passes on
-    SendTap,    ///< pre/post-fader tap feeding another track
-    Meter,      ///< level tap read by the UI
-    ModSource,  ///< a track's signal as the modulation system reads it
-    Output,     ///< hardware output
+    MidiNoteGate,  ///< passes a note range through, transposed onto a root
+    Subtract,      ///< one audio input minus another: what a delta solo hears
+    Delay,         ///< latency compensation on one edge; the sample count is bound at prepare time
+    Crossfade,     ///< an edge as it was and as it is, ramped from one to the other
+    Gain,          ///< scalar gain
+    Fader,         ///< volume + pan, and the MIDI its stage passes on
+    SendTap,       ///< pre/post-fader tap feeding another track
+    Meter,         ///< level tap read by the UI
+    ModSource,     ///< a track's signal as the modulation system reads it
+    Output,        ///< hardware output
 };
 
 /**
@@ -142,6 +143,7 @@ enum class OpRole : std::uint8_t {
     DeviceGain,       ///< the device slot's gain trim
     DeviceMeter,      ///< the device slot's level tap
     ChainMidiMerge,   ///< raw chain MIDI merged with a device's MIDI output
+    PadNoteGate,      ///< one pad chain's note range and transposition
     RackChainFader,   ///< one rack chain's volume + pan
     RackMix,          ///< sum of a rack's chains
     RackMidiMix,      ///< merge of a rack's chain MIDI outputs
@@ -359,6 +361,19 @@ struct PlanOp {
     /// wires pin 1 and leaves pin 2 unconnected. It is not a downmix. Zero for
     /// every other op kind, and for a device not connected to the bus at all.
     std::uint8_t audioInputChannels = 0;
+
+    /// The notes a MidiNoteGate passes, inclusive, and the semitone shift it
+    /// applies to what it passes.
+    ///
+    /// Topology rather than a value: a note range is not something a mixer move
+    /// can touch, so it belongs here beside audioInputChannels rather than in
+    /// the value table, and editing a pad's range recompiles the way adding a
+    /// device does. `noteGateTranspose` is `rootNote - lowNote`, resolved at
+    /// compile time so the audio thread adds one number instead of doing the
+    /// arithmetic per event. Zero for every other op kind.
+    std::uint8_t noteGateLow = 0;
+    std::uint8_t noteGateHigh = 127;
+    std::int8_t noteGateTranspose = 0;
 };
 
 /**
