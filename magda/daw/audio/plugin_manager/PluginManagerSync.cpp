@@ -692,16 +692,29 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                     teTrack->pluginList.insertPlugin(rackInstance, -1, nullptr);
                 }
 
-                // Register inner plugins in our device-to-plugin maps for parameter access
-                for (const auto& chain : rackInfo.chains) {
-                    const auto chainPath =
-                        ChainNodePath::rack(trackId, rackInfo.id).withChain(chain.id);
-                    for (const auto& chainElement : chain.elements) {
-                        if (isDevice(chainElement)) {
-                            const auto& device = getDevice(chainElement);
-                            const auto devicePath = chainPath.withDevice(device.id);
-                            auto* innerPlugin = rackSyncManager_.getInnerPlugin(device.id);
-                            if (innerPlugin) {
+                // Register inner plugins in our device-to-plugin maps for
+                // parameter access. Nested racks are walked too, the way
+                // RackSyncManager loads them: a device inside one has an inner
+                // plugin like any other, and without an entry here nothing that
+                // works off syncedDevices_ can reach it. That included filling
+                // a Drum Grid nested that deep from its pads (#2207).
+                std::function<void(const RackInfo&, const ChainNodePath&)> registerInner =
+                    [&](const RackInfo& rack, const ChainNodePath& rackPath) {
+                        for (const auto& chain : rack.chains) {
+                            const auto chainPath = rackPath.withChain(chain.id);
+                            for (const auto& chainElement : chain.elements) {
+                                if (isRack(chainElement)) {
+                                    const auto& nested = getRack(chainElement);
+                                    registerInner(nested, chainPath.withRack(nested.id));
+                                    continue;
+                                }
+
+                                const auto& device = getDevice(chainElement);
+                                const auto devicePath = chainPath.withDevice(device.id);
+                                auto* innerPlugin = rackSyncManager_.getInnerPlugin(device.id);
+                                if (innerPlugin == nullptr)
+                                    continue;
+
                                 juce::ScopedLock lock(pluginLock_);
                                 auto& sd = syncedDevices_[devicePath];
                                 sd.trackId = trackId;
@@ -709,8 +722,8 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                                 pluginToDevice_[innerPlugin] = devicePath;
                             }
                         }
-                    }
-                }
+                    };
+                registerInner(rackInfo, ChainNodePath::rack(trackId, rackInfo.id));
             }
         }
     }
@@ -741,21 +754,9 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     // plugins in syncedDevices_ before macro/mod sync. Drum Grid device macros
     // can target pad samplers, and those targets must already be visible to
     // PluginManager for the link resolver to bind them.
-    {
-        std::vector<std::pair<ChainNodePath, daw::audio::DrumGridPlugin*>> drumGrids;
-        {
-            juce::ScopedLock lock(pluginLock_);
-            for (const auto& [devicePath, sd] : syncedDevices_) {
-                if (sd.trackId != trackId)
-                    continue;
-                if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(sd.plugin.get()))
-                    drumGrids.push_back({devicePath, dg});
-            }
-        }
-        for (auto& [devicePath, dg] : drumGrids) {
-            syncDrumGridPads(devicePath, *dg);
-            syncDrumGridPadPlugins(devicePath, dg);
-        }
+    for (auto& [devicePath, dg] : drumGridsOnTrack(trackId)) {
+        syncDrumGridPads(devicePath, *dg);
+        syncDrumGridPadPlugins(devicePath, dg);
     }
 
     // Sync device-level + track-level modifiers AND macros via the
@@ -2783,6 +2784,21 @@ void PluginManager::drumGridChainsChanged(daw::audio::DrumGridPlugin* plugin) {
             self->syncDrumGridMultiOutTracks(matchedPath, dg);
         }
     });
+}
+
+std::vector<std::pair<ChainNodePath, daw::audio::DrumGridPlugin*>> PluginManager::drumGridsOnTrack(
+    TrackId trackId) {
+    std::vector<std::pair<ChainNodePath, daw::audio::DrumGridPlugin*>> drumGrids;
+
+    juce::ScopedLock lock(pluginLock_);
+    for (const auto& [devicePath, sd] : syncedDevices_) {
+        if (sd.trackId != trackId)
+            continue;
+        if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(sd.plugin.get()))
+            drumGrids.push_back({devicePath, dg});
+    }
+
+    return drumGrids;
 }
 
 void PluginManager::syncDrumGridPads(const ChainNodePath& drumGridPath,

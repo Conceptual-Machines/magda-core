@@ -435,8 +435,10 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // Re-derive a pad-per-chain device's rack id and re-key its pad devices,
     // for a copy that arrived carrying the ids of the device it came from.
     // Both ids are DeviceIds in disguise, so a copy that kept them would key
-    // the original's ops (#2207).
-    void rekeyPads(DeviceInfo& device);
+    // the original's ops (#2207). `remap`, when given, collects the pad
+    // devices' old-to-new ids so a caller that also rewrites paths can follow
+    // them.
+    void rekeyPads(DeviceInfo& device, std::map<DeviceId, DeviceId>* remap = nullptr);
 
     // ========================================================================
     // Pad-per-chain devices (#2207)

@@ -188,6 +188,15 @@ void remapDuplicatedElements(std::vector<ChainElement>& elements, const ChainNod
             }
             remapDuplicatedLinks(device.macros, device.mods, devicePath, remap);
             device.pluginState = stripDuplicateRuntimePluginState(device.pluginState);
+
+            // A device's pads are chains it owns, so they are walked like a
+            // rack's: their devices carry state to strip, and the grid's links
+            // into them were remapped by the call above (#2207).
+            if (device.pads) {
+                const auto padsPath = devicePath.parentChain().withRack(device.pads->id);
+                for (auto& pad : device.pads->chains)
+                    remapDuplicatedElements(pad.elements, padsPath.withChain(pad.id), remap);
+            }
         } else if (magda::isRack(element)) {
             auto& rack = magda::getRack(element);
             auto rackPath = parentPath.isTrackLevel ? ChainNodePath::rack(remap.newTrackId, rack.id)
@@ -957,6 +966,16 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
                 const auto oldDeviceId = device.id;
                 device.id = nextFxDeviceId_++;
                 remap.devices[oldDeviceId] = device.id;
+
+                // The pads a device owns are keyed on its id too, so they are
+                // re-keyed with it: left alone, the duplicate's pad devices
+                // would share the original's runtime, and its pad rack id would
+                // no longer be the one derived from its device id, which is how
+                // every pad path is built (#2207).
+                if (device.pads) {
+                    remap.racks[padRackIdFor(oldDeviceId)] = padRackIdFor(device.id);
+                    rekeyPads(device, &remap.devices);
+                }
             } else if (magda::isRack(element)) {
                 auto& rack = magda::getRack(element);
                 const auto oldRackId = rack.id;
@@ -3306,7 +3325,7 @@ DeviceInfo TrackManager::prepareNewDevice(const DeviceInfo& device) {
     return newDevice;
 }
 
-void TrackManager::rekeyPads(DeviceInfo& device) {
+void TrackManager::rekeyPads(DeviceInfo& device, std::map<DeviceId, DeviceId>* remap) {
     if (!device.pads)
         return;
 
@@ -3316,10 +3335,22 @@ void TrackManager::rekeyPads(DeviceInfo& device) {
     // would run whichever it saw last (#2207).
     stampPadRackId(device);
 
-    for (auto& pad : device.pads->chains)
-        for (auto& element : pad.elements)
-            if (magda::isDevice(element))
-                magda::getDevice(element).id = allocateDeviceId();
+    for (auto& pad : device.pads->chains) {
+        for (auto& element : pad.elements) {
+            if (!magda::isDevice(element))
+                continue;
+
+            auto& padDevice = magda::getDevice(element);
+            const auto oldId = padDevice.id;
+            padDevice.id = allocateDeviceId();
+
+            // Reported so a caller that also rewrites paths can follow the pad
+            // devices, which is what keeps a macro or a mod on the grid pointing
+            // at the pad it was linked to.
+            if (remap != nullptr && oldId != INVALID_DEVICE_ID)
+                (*remap)[oldId] = padDevice.id;
+        }
+    }
 }
 
 void TrackManager::allocatePadDeviceIds() {

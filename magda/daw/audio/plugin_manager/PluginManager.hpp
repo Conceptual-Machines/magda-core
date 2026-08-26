@@ -588,6 +588,12 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
      */
     void setMacroValue(const ChainNodePath& devicePath, int macroIndex, float value);
 
+    /// Every Drum Grid synced on @p trackId, with the path it was synced at.
+    /// A grid can sit on the track, in a rack, or in a rack inside a rack, so
+    /// this asks the synced-device map rather than walking the model.
+    std::vector<std::pair<ChainNodePath, daw::audio::DrumGridPlugin*>> drumGridsOnTrack(
+        TrackId trackId);
+
     /**
      * @brief Fill a Drum Grid's chains and plugins from the pads the model holds
      *
