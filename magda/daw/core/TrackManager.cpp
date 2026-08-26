@@ -12,6 +12,7 @@
 #include "ClipManager.hpp"
 #include "Config.hpp"
 #include "DeviceState.hpp"
+#include "DrumGridPads.hpp"
 #include "ModulatorEngine.hpp"
 #include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
@@ -2444,6 +2445,36 @@ void TrackManager::setRackExpanded(TrackId trackId, RackId rackId, bool expanded
 // Chain Management
 // ============================================================================
 
+namespace {
+
+/// The rack @p rackId names among @p elements: one sitting in the list, or the
+/// pads a device in it owns.
+///
+/// A pad rack hangs off its device rather than being an element of its own, so
+/// a Rack step naming one has to look through the devices as well. Its id comes
+/// out of the negative space no allocated rack uses, so the two can never be
+/// confused (#2207).
+RackInfo* findRackAmong(std::vector<ChainElement>& elements, RackId rackId) {
+    for (auto& element : elements) {
+        if (magda::isRack(element)) {
+            if (magda::getRack(element).id == rackId)
+                return &magda::getRack(element);
+            continue;
+        }
+
+        auto& device = magda::getDevice(element);
+        if (device.pads && device.pads->id == rackId)
+            return device.pads.get();
+    }
+    return nullptr;
+}
+
+const RackInfo* findRackAmong(const std::vector<ChainElement>& elements, RackId rackId) {
+    return findRackAmong(const_cast<std::vector<ChainElement>&>(elements), rackId);
+}
+
+}  // namespace
+
 RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
     auto* track = getTrack(rackPath.trackId);
     if (!track) {
@@ -2511,13 +2542,7 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
                 // lives in the chain the previous step reached.
                 auto& elements =
                     currentChain != nullptr ? currentChain->elements : track->chain.fxChainElements;
-                RackInfo* found = nullptr;
-                for (auto& element : elements) {
-                    if (magda::isRack(element) && magda::getRack(element).id == step.id) {
-                        found = &magda::getRack(element);
-                        break;
-                    }
-                }
+                RackInfo* found = findRackAmong(elements, step.id);
                 if (found == nullptr)
                     return nullptr;
                 currentRack = found;
@@ -2852,25 +2877,15 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
 
         switch (step.type) {
             case ChainStepType::Rack: {
-                if (currentChain == nullptr) {
-                    // Top-level rack in track's chainElements
-                    for (const auto& element : track->chain.fxChainElements) {
-                        if (magda::isRack(element) && magda::getRack(element).id == step.id) {
-                            currentRack = &magda::getRack(element);
-                            pathNames.add(currentRack->name);
-                            break;
-                        }
-                    }
-                } else {
-                    // Nested rack within a chain
-                    for (const auto& element : currentChain->elements) {
-                        if (magda::isRack(element) && magda::getRack(element).id == step.id) {
-                            currentRack = &magda::getRack(element);
-                            currentChain = nullptr;  // Reset chain context
-                            pathNames.add(currentRack->name);
-                            break;
-                        }
-                    }
+                // A top-level rack lives in the track's own list, a nested one
+                // in the chain the previous step reached; either way a device's
+                // pads answer to a Rack step too (#2207).
+                const auto& elements =
+                    currentChain != nullptr ? currentChain->elements : track->chain.fxChainElements;
+                if (const auto* found = findRackAmong(elements, step.id)) {
+                    currentRack = found;
+                    currentChain = nullptr;  // Reset chain context
+                    pathNames.add(currentRack->name);
                 }
                 break;
             }
@@ -3122,6 +3137,15 @@ void TrackManager::refreshIdCountersFromTracks() {
         if (std::holds_alternative<DeviceInfo>(element)) {
             const auto& device = std::get<DeviceInfo>(element);
             maxFxDeviceId = std::max(maxFxDeviceId, device.id);
+            // A pad device's id comes out of the same counter, so a Drum Grid's
+            // pads have to be scanned or the next device added anywhere on the
+            // project reuses one of theirs (#2207).
+            if (device.pads)
+                for (const auto& pad : device.pads->chains)
+                    for (const auto& padElement : pad.elements)
+                        if (magda::isDevice(padElement))
+                            maxFxDeviceId =
+                                std::max(maxFxDeviceId, magda::getDevice(padElement).id);
             scanEmbeddedDeviceIds(device.pluginState, maxFxDeviceId);
         } else if (std::holds_alternative<std::unique_ptr<RackInfo>>(element)) {
             const auto& rackPtr = std::get<std::unique_ptr<RackInfo>>(element);
@@ -3274,11 +3298,67 @@ void TrackManager::notifyDeviceAdded(const ChainNodePath& devicePath, const Devi
 DeviceInfo TrackManager::prepareNewDevice(const DeviceInfo& device) {
     DeviceInfo newDevice = device;
     newDevice.id = nextFxDeviceId_++;
+    rekeyPads(newDevice);
     applyCachedCapabilitiesToDevice(newDevice);
     stampDefaultKitIfMissing(newDevice);
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
     return newDevice;
+}
+
+void TrackManager::rekeyPads(DeviceInfo& device) {
+    if (!device.pads)
+        return;
+
+    // Both the pad rack's id and its devices' are DeviceIds in disguise, so a
+    // copied Drum Grid that kept them would key the ops of the one it was
+    // copied from: the plan would emit two devices onto one op and the executor
+    // would run whichever it saw last (#2207).
+    stampPadRackId(device);
+
+    for (auto& pad : device.pads->chains)
+        for (auto& element : pad.elements)
+            if (magda::isDevice(element))
+                magda::getDevice(element).id = allocateDeviceId();
+}
+
+void TrackManager::allocatePadDeviceIds() {
+    const auto keyPads = [this](DeviceInfo& device) {
+        if (!device.pads)
+            return;
+
+        stampPadRackId(device);
+
+        // Only the ones that have none. A project saved since pads moved into
+        // the model carries every id it allocated, and minting a second one for
+        // a pad that already has one would orphan whatever names it.
+        for (auto& pad : device.pads->chains)
+            for (auto& element : pad.elements)
+                if (magda::isDevice(element) && magda::getDevice(element).id == INVALID_DEVICE_ID)
+                    magda::getDevice(element).id = allocateDeviceId();
+    };
+
+    const auto walkElements = [&keyPads](std::vector<ChainElement>& elements, auto& self) -> void {
+        for (auto& element : elements) {
+            if (magda::isDevice(element))
+                keyPads(magda::getDevice(element));
+            else if (magda::isRack(element))
+                for (auto& chain : magda::getRack(element).chains)
+                    self(chain.elements, self);
+        }
+    };
+
+    const auto walkTrack = [&](TrackInfo& track) {
+        walkElements(track.chain.fxChainElements, walkElements);
+        for (auto& element : track.chain.postFxChainElements)
+            keyPads(element.device);
+        for (auto& element : track.chain.mixerAnalysisElements)
+            keyPads(element.device);
+    };
+
+    for (auto& track : tracks_)
+        walkTrack(track);
+    walkTrack(masterTrack_);
 }
 
 void TrackManager::notifyDeviceModifiersChanged(TrackId trackId) {

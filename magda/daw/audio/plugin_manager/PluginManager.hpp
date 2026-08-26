@@ -589,6 +589,15 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
     void setMacroValue(const ChainNodePath& devicePath, int macroIndex, float value);
 
     /**
+     * @brief Fill a Drum Grid's chains and plugins from the pads the model holds
+     *
+     * The model → engine direction, and the only one there is for pad structure
+     * (#2207). Runs on every sync pass; the grid short-circuits when nothing
+     * about the pads has changed.
+     */
+    void syncDrumGridPads(const ChainNodePath& drumGridPath, daw::audio::DrumGridPlugin& drumGrid);
+
+    /**
      * @brief Sync multi-out tracks for a DrumGrid device
      * Activates/deactivates multi-out pairs to match current non-empty chains.
      */

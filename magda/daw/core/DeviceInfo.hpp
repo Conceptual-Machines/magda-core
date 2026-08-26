@@ -288,20 +288,19 @@ struct DeviceInfo {
     std::vector<KitRow> kitRows;
 
     /**
-     * A pad-per-chain device's pads, as chains keyed by note range (#2192).
+     * A pad-per-chain device's pads, as chains keyed by note range (#2207).
      *
-     * Null for every device that is not one. A Drum Grid's pads used to live
-     * inside its engine plugin state as engine XML, which meant nothing but the
-     * engine could see them: the plan compiler could not expand them the way it
-     * expands a rack, so the whole device stopped at a Device op that no native
-     * engine could bind.
+     * Null for every device that is not one. This is the device's pads: the
+     * project file saves them, every pad edit writes them, the plan compiler
+     * expands them, and `DrumGridPlugin` is filled from them. Nothing reads
+     * them back out of the plugin, so nothing can drift.
      *
      * They are chains because that is what they are. ChainInfo already carries
      * a pad's level, pan, mute, solo, bypass and output; the note range it
      * gained alongside this is the only thing a pad has that a rack chain does
      * not.
      */
-    PadRack padRack;
+    PadRack pads;
 
     // Sidechain configuration (e.g., compressor key input)
     SidechainConfig sidechain;

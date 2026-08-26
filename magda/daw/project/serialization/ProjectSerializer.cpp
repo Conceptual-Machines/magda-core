@@ -701,6 +701,10 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
             // After all tracks are restored, ensure TrackManager ID counters
             // (track/device/rack/chain) are updated to avoid ID collisions.
             trackManager.refreshIdCountersFromTracks();
+
+            // Then hand an id to every pad device saved before pads had them,
+            // now that the counters are past everything the project named.
+            trackManager.allocatePadDeviceIds();
         }  // trackBatch closes here: TE AudioTracks now exist.
 
         // Restore clips (synced into the now-existing TE tracks when clipBatch

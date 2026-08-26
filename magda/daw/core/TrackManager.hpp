@@ -432,6 +432,45 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // nextMixerAnalysisDeviceId_) and so do their own prep.
     DeviceInfo prepareNewDevice(const DeviceInfo& device);
 
+    // Re-derive a pad-per-chain device's rack id and re-key its pad devices,
+    // for a copy that arrived carrying the ids of the device it came from.
+    // Both ids are DeviceIds in disguise, so a copy that kept them would key
+    // the original's ops (#2207).
+    void rekeyPads(DeviceInfo& device);
+
+    // ========================================================================
+    // Pad-per-chain devices (#2207)
+    //
+    // A Drum Grid's pads are a rack the device owns, so a pad is an ordinary
+    // chain: `padChainPath()` addresses one, and adding, removing, reordering,
+    // muting, soloing and fading a pad go through the same calls a rack chain
+    // does. Only what is particular to a pad lives here.
+    // ========================================================================
+
+    /// The path addressing one of @p gridPath's pad chains.
+    static ChainNodePath padChainPath(const ChainNodePath& gridPath, ChainId padChainId);
+
+    /// The pads @p gridPath's device owns, or null when it has none.
+    RackInfo* getPads(const ChainNodePath& gridPath);
+    const RackInfo* getPads(const ChainNodePath& gridPath) const;
+
+    /// The pad chain answering to pad @p padIndex, or null.
+    const ChainInfo* getPad(const ChainNodePath& gridPath, int padIndex) const;
+
+    /// The pad chain answering to pad @p padIndex, made if it is not there yet.
+    /// INVALID_CHAIN_ID when the device does not keep its chains as pads.
+    ChainId ensurePad(const ChainNodePath& gridPath, int padIndex);
+
+    /// Put @p device on pad @p padIndex on its own, replacing whatever it held.
+    DeviceId setPadDevice(const ChainNodePath& gridPath, int padIndex, const DeviceInfo& device);
+
+    /// Take pad @p padIndex off the grid. A chain shared with neighbouring pads
+    /// is left alone: it is their sound too.
+    void clearPad(const ChainNodePath& gridPath, int padIndex);
+
+    /// Trade what two pads answer to, so a sound moves between them.
+    void swapPads(const ChainNodePath& gridPath, int padA, int padB);
+
     // Wrap a device in a new rack (device moves into the rack's first chain)
     RackId wrapDeviceInRack(TrackId trackId, DeviceId deviceId,
                             const juce::String& rackName = "Rack");
@@ -855,6 +894,15 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
      * ID counters are updated to avoid reusing IDs that exist in loaded tracks.
      */
     void refreshIdCountersFromTracks();
+
+    /// Give every pad device that has none a DeviceId, once the whole project
+    /// is loaded and the counters are past everything it saved.
+    ///
+    /// A Drum Grid saved before its pads carried ids projects them without one,
+    /// and a device with no id cannot be keyed: the plan refuses the pad rather
+    /// than emit two ops under one key. This is where that is healed, in the
+    /// model, so nothing downstream has to (#2207).
+    void allocatePadDeviceIds();
 
     /**
      * @brief Notify all listeners that devices on a track changed

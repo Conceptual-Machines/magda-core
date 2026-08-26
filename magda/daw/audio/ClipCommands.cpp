@@ -20,6 +20,7 @@
 #include "core/ClipPlacementPolicy.hpp"
 #include "core/Config.hpp"
 #include "core/ControlTarget.hpp"
+#include "core/DrumGridPads.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magda {
@@ -2992,10 +2993,15 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
         return;
     }
 
-    // Load samples to pads and set region boundaries
+    // Load samples to pads and set region boundaries. The pad goes into the
+    // model and the plugin follows by sync; the region boundaries are the
+    // sampler's own parameters and are set on it once it exists (#2207).
+    const auto gridPath = ChainNodePath::topLevelDevice(newTrackId, drumGridDeviceId);
     for (int i = 0; i < numSlices; ++i) {
         const auto& slice = slices[static_cast<size_t>(i)];
-        drumGrid->loadSampleToPad(i, audioFile);
+        trackManager.setPadDevice(gridPath, i,
+                                  padSamplerDevice(audioFile.getFullPathName(),
+                                                   daw::audio::DrumGridPlugin::baseNote + i));
 
         auto* chain = drumGrid->getChainForNote(daw::audio::DrumGridPlugin::baseNote + i);
         if (chain && !chain->plugins.empty()) {

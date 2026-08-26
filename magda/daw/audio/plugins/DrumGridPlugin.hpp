@@ -4,10 +4,17 @@
 
 #include <array>
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <vector>
 
 #include "plugins/DeviceServices.hpp"
+
+namespace magda {
+struct ChainInfo;
+struct DeviceInfo;
+struct RackInfo;
+}  // namespace magda
 
 namespace magda::daw::audio {
 
@@ -20,10 +27,17 @@ namespace te = tracktion::engine;
  * Each chain maps to a contiguous range of MIDI notes (pads) and hosts its own
  * plugin chain (instrument + FX). All chain outputs are mixed internally to a
  * single stereo output that flows to the track's mixer channel.
+ *
+ * The chains are a mirror, not a model. Which pads exist and what sits on them
+ * is `DeviceInfo::pads`, and `syncFromModel()` is the only thing that writes
+ * them here, exactly as `RackSyncManager` fills a `te::RackType` from a
+ * `RackInfo` (#2207). Nothing on this class edits a pad and nothing reads one
+ * back out: an edit made here instead would be invisible to the plan, to undo
+ * and to the project file until something happened to capture it.
  */
 class DrumGridPlugin : public te::Plugin, private juce::Timer {
   public:
-    DrumGridPlugin(const te::PluginCreationInfo&, DeviceIdAllocator&);
+    explicit DrumGridPlugin(const te::PluginCreationInfo&);
     ~DrumGridPlugin() override;
 
     //==============================================================================
@@ -80,6 +94,12 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
         int highNote = 60;  // top of MIDI note range (inclusive)
         int rootNote = 60;  // remap base: instrumentNote = rootNote + (incoming - lowNote)
         juce::String name;
+        // Backing for the CachedValues below, and nothing else. Deliberately
+        // NOT a child of the plugin's `state`: the pads are the model's, and a
+        // copy of them under `state` would be captured into the device's saved
+        // state and handed to Tracktion's graph builder as nested plugins
+        // (#2207).
+        juce::ValueTree tree;
         std::vector<te::Plugin::Ptr> plugins;
         std::vector<float> pluginGains;  // per-plugin linear gain (parallel to plugins[])
         juce::CachedValue<float> level;
@@ -130,33 +150,27 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     void restorePluginStateFromValueTree(const juce::ValueTree&) override;
 
     //==============================================================================
-    // Chain management
-    int addChain(int lowNote, int highNote, int rootNote, const juce::String& name);
-    void removeChain(int chainIndex);
+    /// Builds the engine plugin a pad device names, or null when it cannot be
+    /// built. Supplied by the host, which is the only side that knows how to
+    /// resolve a `DeviceInfo` to a plugin (internal spec, compiled device,
+    /// scanned external) and how to seat its saved patch.
+    using PadPluginFactory = std::function<te::Plugin::Ptr(const magda::DeviceInfo&)>;
+
+    /// Make the grid's chains and plugins match @p pads.
+    ///
+    /// The one way in. Chains and plugins are created, dropped and reordered to
+    /// match the model, and every pad property is written from it; a plugin the
+    /// model still names is kept, so a pad that did not change is not rebuilt
+    /// and does not glitch. Cheap on every sync pass: with no structural change
+    /// it only refreshes properties.
+    void syncFromModel(const magda::RackInfo& pads, const PadPluginFactory& makePlugin);
+
+    //==============================================================================
+    // Chain reads. Everything here answers questions about the mirror the sync
+    // built; none of it edits a pad.
     const std::vector<std::unique_ptr<Chain>>& getChains() const;
     const Chain* getChainForNote(int midiNote) const;
     const Chain* getChainByIndex(int chainIndex) const;
-    Chain* getChainByIndexMutable(int chainIndex);
-
-    // Update note range for an existing chain
-    void setChainNoteRange(int chainIndex, int lowNote, int highNote, int rootNote);
-
-    // Convenience pad-level API (finds/creates single-note chain for padIndex)
-    void loadSampleToPad(int padIndex, const juce::File& file);
-    void loadPluginToPad(int padIndex, const juce::PluginDescription& desc);
-    void loadInternalPluginToPad(int padIndex, const juce::String& pluginId);
-    void clearPad(int padIndex);
-
-    // Swap the chains of two pads (or move if only one has a chain)
-    void swapPadChains(int padIndexA, int padIndexB);
-
-    // FX chain management on chains
-    void addPluginToChain(int chainIndex, const juce::PluginDescription& desc,
-                          int insertIndex = -1);
-    void addInternalPluginToChain(int chainIndex, const juce::String& pluginId,
-                                  int insertIndex = -1);
-    void removePluginFromChain(int chainIndex, int pluginIndex);
-    void movePluginInChain(int chainIndex, int fromIndex, int toIndex);
     int getChainPluginCount(int chainIndex) const;
     te::Plugin* getChainPlugin(int chainIndex, int pluginIndex) const;
 
@@ -171,9 +185,8 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     };
     std::pair<float, float> consumeChainPeak(int chainIndex);
 
-    // Per-plugin gain and peak metering within a chain
+    // Per-plugin peak metering within a chain
     static constexpr int maxFxPerChain = 8;
-    void setChainPluginGain(int chainIndex, int pluginIndex, float gainLinear);
     float getChainPluginGain(int chainIndex, int pluginIndex) const;
     std::pair<float, float> consumeChainPluginPeak(int chainIndex, int pluginIndex);
 
@@ -185,21 +198,16 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
         mixerExpanded_ = expanded;
     }
 
-    // Multi-out mode toggle (persisted in ValueTree)
+    // Multi-out mode toggle (persisted in ValueTree). A pad's bus is
+    // `ChainInfo::outputIndex` and is assigned in the model like every other
+    // pad property; this is the grid's own switch, not a pad's (#2207).
     bool isMultiOutEnabled() const {
         return multiOutEnabled_.get();
     }
-    void setMultiOutEnabled(bool enabled);
 
-    // Multi-out bus management
     int getNumOutputChannels() const {
         return maxBusOutputs * 2;
     }
-    void setChainBusOutput(int chainIndex, int busIndex);
-    void assignBusOutputs();
-    void fullReassignBusOutputs();
-    int getNextFreeBus() const;
-    int getActiveBusCount() const;
 
     // Trigger graph rebuild when chain configuration changes
     void notifyGraphRebuildNeeded();
@@ -216,19 +224,16 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
         listeners_.remove(l);
     }
 
-    // Per-chain-plugin DeviceId for macro/mod linking
+    // The model DeviceId the pad plugin at this position carries. The one thing
+    // the model and the mirror are guaranteed to agree on, so everything that
+    // has to pair the two goes through it.
     int getPluginDeviceId(int chainIndex, int pluginIndex) const;
 
-    // Legacy pad-level FX API (delegates to chain-based methods)
-    void addPluginToPad(int padIndex, const juce::PluginDescription& desc, int insertIndex = -1);
-    void removePluginFromPad(int padIndex, int pluginIndex);
-    void movePluginInPad(int padIndex, int fromIndex, int toIndex);
+    // Pad-level reads (delegate to the chain covering the pad's note)
     int getPadPluginCount(int padIndex) const;
     te::Plugin* getPadPlugin(int padIndex, int pluginIndex) const;
 
   private:
-    DeviceIdAllocator& deviceIdAllocator_;
-
     // Immutable, audio-thread-readable view of one chain. Holds owning Plugin::Ptr
     // copies so the graph stays alive for the duration of a process block even if
     // the message thread is concurrently rebuilding chains_. Note-range / remap
@@ -279,22 +284,37 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     // juce::Timer — drives drainRetired() while anything is pending retirement.
     void timerCallback() override;
 
-    // Replace a pad chain's entire plugin list with a single freshly-created
-    // plugin, race-free: initialises the new plugin, publishes the new snapshot,
-    // and only then deinitialises/frees the old plugins (after the audio thread
-    // has let go of them). Used by the loadXxxToPad() entry points.
-    void installSinglePadPlugin(Chain& chain, te::Plugin::Ptr plugin, const juce::String& name);
+    // --- syncFromModel helpers. Nothing else may call these: together they are
+    // the single write path from the model into the mirror.
+
+    // The Chain carrying @p index, detached from chains_, or a fresh one, with
+    // @p created saying which.
+    std::unique_ptr<Chain> takeChain(int index, bool& created);
+
+    // Write a pad's properties onto its Chain. Returns true when it moved
+    // something the audio thread reads out of the published snapshot, which is
+    // what decides whether the snapshot has to be republished.
+    bool applyPadProperties(Chain& chain, const magda::ChainInfo& pad, bool created);
+
+    // Make @p chain's plugins match the pad's devices, in model order. Anything
+    // the model dropped is handed to @p reap for retirement rather than freed
+    // here: the audio thread may still be on a snapshot that names it.
+    void syncPadPlugins(Chain& chain, const magda::ChainInfo& pad,
+                        const PadPluginFactory& makePlugin, std::vector<te::Plugin::Ptr>& reap);
+
+    // What the mirror was last built from, so a sync pass that changes nothing
+    // does nothing. Structure only: pad ids, their devices, and the order of
+    // both. Properties are cheap to write and are refreshed every pass.
+    static juce::String padStructureFingerprint(const magda::RackInfo& pads);
+    juce::String padFingerprint_;
 
     // AutomatableParameters for per-pad level and pan (macro/mod targets)
     // Fixed indexing: padIndex * 2 = level, padIndex * 2 + 1 = pan
     std::array<te::AutomatableParameter::Ptr, maxPads> levelParams_;
     std::array<te::AutomatableParameter::Ptr, maxPads> panParams_;
 
-    // Sync existing chain CachedValues → AutomatableParams
-    void syncParamFromChain(int chainIndex);
-
-    // ValueTree::Listener — sync CachedValue changes to AutomatableParams
-    void valueTreePropertyChanged(juce::ValueTree& tree, const juce::Identifier& property) override;
+    // Sync a chain's CachedValues → AutomatableParams
+    void syncParamFromChain(const Chain& chain);
 
     std::vector<std::unique_ptr<Chain>> chains_;
 
@@ -342,17 +362,12 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     static const juce::Identifier busOutputId;
     static const juce::Identifier mixerExpandedId;
     static const juce::Identifier multiOutEnabledId;
+    /// The model DeviceId of the pad device a plugin was built for, stamped by
+    /// the sync. The mirror carries no other model state: everything else is
+    /// read from the `RackInfo` each pass (#2207).
     static const juce::Identifier pluginDeviceIdProp;
-    /// Whether a pad's plugin is an instrument, as the plugin itself answers.
-    /// Saved because nothing outside the engine can ask an external plugin, and
-    /// position does not answer it: an effect can be inserted at index 0, and
-    /// plugins can be moved and removed (#2192).
-    static const juce::Identifier pluginIsInstrumentProp;
 
-    Chain* findChainForNote(int midiNote);
-    Chain* findOrCreateChainForPad(int padIndex);
-    void removeChainFromState(int chainIndex);
-    juce::ValueTree findChainTree(int chainIndex) const;
+    Chain* getChainByIndexMutable(int chainIndex);
     void notifyChainsChanged();
 
     juce::ListenerList<Listener> listeners_;

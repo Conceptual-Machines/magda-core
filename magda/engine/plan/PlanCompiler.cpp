@@ -970,7 +970,7 @@ int deviceParamIndex(const DeviceInfo& device, const std::string& stableId) {
 /// render under an engine that cannot host one.
 ChainSignal Compiler::emitPadRack(const DeviceInfo& device, const ChainSite& site,
                                   ChainSignal signal) {
-    const auto& pads = *device.padRack.get();
+    const auto& pads = *device.pads.get();
 
     if (device.bypassed)
         return signal;
@@ -1125,8 +1125,8 @@ ChainSignal Compiler::emitElements(const std::vector<ChainElement>& elements, co
         if (isDevice(element)) {
             const auto& device = getDevice(element);
             endsTheSearch = !device.bypassed && device.isInstrument;
-            signal = device.padRack ? emitPadRack(device, site, signal)
-                                    : emitDevice(device, site, signal);
+            signal =
+                device.pads ? emitPadRack(device, site, signal) : emitDevice(device, site, signal);
         } else if (isRack(element)) {
             const auto& rack = getRack(element);
             endsTheSearch = !rack.bypassed && rackHasInstrument(rack, nesting_);

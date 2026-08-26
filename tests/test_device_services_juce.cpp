@@ -85,16 +85,14 @@ class DeviceServicesInjectionTest final : public juce::UnitTest {
         audio::registerDeviceServices(audio::DeviceSessionKey::fromAddress(edit.get()), services);
 
         {
+            // A Drum Grid comes up with no pads and allocates no ids of its
+            // own: which pads exist and what sits on them is model state, and
+            // it is filled from there (#2207).
             auto drumPlugin = createCustomPlugin(*edit, audio::DrumGridPlugin::xmlTypeName);
             auto* drumGrid = dynamic_cast<audio::DrumGridPlugin*>(drumPlugin.get());
             expect(drumGrid != nullptr);
-            if (drumGrid != nullptr) {
-                drumGrid->loadInternalPluginToPad(0, "magda_kick");
-                const auto* chain = drumGrid->getChainForNote(audio::DrumGridPlugin::baseNote);
-                expect(chain != nullptr);
-                if (chain != nullptr)
-                    expectEquals(drumGrid->getPluginDeviceId(chain->index, 0), 700);
-            }
+            if (drumGrid != nullptr)
+                expect(drumGrid->getChains().empty());
 
             auto oscPlugin = createCustomPlugin(*edit, audio::OscilloscopePlugin::xmlTypeName);
             auto* oscilloscope =
