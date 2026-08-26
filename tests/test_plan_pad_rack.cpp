@@ -5,6 +5,7 @@
 #include "core/DrumGridPads.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
+#include "exec/PlanValues.hpp"
 #include "exec/RuntimeStateStore.hpp"
 #include "param/ParamTableCompiler.hpp"
 #include "plan/PlanCompiler.hpp"
@@ -376,4 +377,63 @@ TEST_CASE("A pad fader on a device with no pad parameters binds nothing",
             CHECK(op->padLevelParam == -1);
             CHECK(op->padPanParam == -1);
         }
+}
+
+TEST_CASE("An empty soloed pad does not silence the populated ones", "[engine][plan][padrack]") {
+    // Removing a pad's last plugin leaves the chain behind. The Drum Grid counts
+    // solo only on pads that have something to run, so an empty soloed pad plays
+    // every populated pad beside it; treating it as a solo would silence them.
+    auto empty = makePad(1, 38, 40, 60, 102);
+    empty.elements.clear();
+    empty.solo = true;
+
+    auto drumGrid = makeDrumGrid(10, {makePad(0, 36, 36, 60, 101), std::move(empty)});
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(std::move(drumGrid));
+
+    const auto plan = magda::engine::compileRenderPlan({track}, makeMaster(), {});
+
+    magda::engine::PlanValues values;
+    magda::engine::resolvePlanValues(plan, {track}, makeMaster(), values);
+
+    bool sawPopulatedPad = false;
+    for (std::size_t i = 0; i < plan.ops.size(); ++i) {
+        const auto& op = plan.ops[i];
+        if (op.kind != OpKind::Fader || op.key.role != OpRole::RackChainFader)
+            continue;
+        if (op.key.chainId != 0)
+            continue;
+
+        sawPopulatedPad = true;
+        CHECK_FALSE(values.ops[i].silent);
+    }
+
+    CHECK(sawPopulatedPad);
+}
+
+TEST_CASE("A populated soloed pad still silences its siblings", "[engine][plan][padrack]") {
+    auto soloed = makePad(1, 38, 40, 60, 102);
+    soloed.solo = true;
+
+    auto drumGrid = makeDrumGrid(10, {makePad(0, 36, 36, 60, 101), std::move(soloed)});
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(std::move(drumGrid));
+
+    const auto plan = magda::engine::compileRenderPlan({track}, makeMaster(), {});
+
+    magda::engine::PlanValues values;
+    magda::engine::resolvePlanValues(plan, {track}, makeMaster(), values);
+
+    for (std::size_t i = 0; i < plan.ops.size(); ++i) {
+        const auto& op = plan.ops[i];
+        if (op.kind != OpKind::Fader || op.key.role != OpRole::RackChainFader)
+            continue;
+
+        if (op.key.chainId == 0)
+            CHECK(values.ops[i].silent);
+        else if (op.key.chainId == 1)
+            CHECK_FALSE(values.ops[i].silent);
+    }
 }

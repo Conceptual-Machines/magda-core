@@ -214,6 +214,10 @@ RackId padRackIdFor(DeviceId deviceId) {
     return -(deviceId + 2);
 }
 
+bool isPadRackId(RackId rackId) {
+    return rackId < INVALID_RACK_ID;
+}
+
 bool isPadRackDevice(const juce::String& pluginId) {
     return pluginId == kDrumGridId;
 }

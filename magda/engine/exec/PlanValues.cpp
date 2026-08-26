@@ -5,6 +5,7 @@
 #include <set>
 #include <unordered_map>
 
+#include "core/DrumGridPads.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
 #include "param/ParamTableCompiler.hpp"
@@ -108,12 +109,21 @@ const DeviceInfo* findDeviceIn(const std::vector<PostFxChainElement>& elements, 
 
 /// Whether a rack chain is in the mix. Solo is relative to its siblings, which
 /// is why chain activity cannot be answered from the chain alone.
+///
+/// A pad rack counts solo only on pads that have something to run. That is the
+/// Drum Grid's own rule, and it matters because removing a pad's last plugin
+/// leaves the chain behind: an empty soloed pad would otherwise silence every
+/// populated pad beside it, where the device plays them.
 bool isChainActive(const RackInfo& rack, const ChainInfo& chain) {
     if (chain.muted)
         return false;
-    const auto anySolo =
-        std::ranges::any_of(rack.chains, [](const ChainInfo& c) { return c.solo; });
-    return !anySolo || chain.solo;
+
+    const auto counts = [pads = isPadRackId(rack.id)](const ChainInfo& c) {
+        return c.solo && (!pads || !c.elements.empty());
+    };
+
+    const auto anySolo = std::ranges::any_of(rack.chains, counts);
+    return !anySolo || counts(chain);
 }
 
 class Resolver {

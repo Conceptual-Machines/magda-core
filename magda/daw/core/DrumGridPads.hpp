@@ -47,6 +47,9 @@ bool isPadRackDevice(const juce::String& pluginId);
 /// to those parameters has to ask the same question the device does.
 int padParameterSlot(const ChainInfo& pad);
 
+/// True when @p rackId names a pad rack rather than one the app allocated.
+bool isPadRackId(RackId rackId);
+
 /// The RackId a pad rack owned by `deviceId` carries.
 ///
 /// Negative, and never INVALID_RACK_ID. Rack ids the app allocates start at 1,
