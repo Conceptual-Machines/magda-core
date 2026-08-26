@@ -4,6 +4,8 @@
 
 #include <memory>
 
+#include "TypeIds.hpp"
+
 namespace magda {
 
 struct DeviceInfo;
@@ -34,5 +36,12 @@ void refreshPadRack(DeviceInfo& device);
 
 /// True when devices of this type keep their chains as pads.
 bool isPadRackDevice(const juce::String& pluginId);
+
+/// The RackId a pad rack owned by `deviceId` carries.
+///
+/// Negative, and never INVALID_RACK_ID. Rack ids the app allocates start at 1,
+/// so the negative space is free and a pad rack can be keyed and looked up like
+/// any other rack without an allocator that does not reach here.
+RackId padRackIdFor(DeviceId deviceId);
 
 }  // namespace magda

@@ -237,6 +237,7 @@ class Compiler {
                              ChainSignal signal);
     ChainSignal emitDevice(const DeviceInfo& device, const ChainSite& site, ChainSignal signal);
     ChainSignal emitRack(const RackInfo& rack, const ChainSite& site, ChainSignal signal);
+    ChainSignal emitPadRack(const DeviceInfo& device, const ChainSite& site, ChainSignal signal);
 
     /// Delta solo: @p wet minus @p dry, which is what the device or rack the
     /// key names added to the signal. Both sides go through alignInputs, so
@@ -952,6 +953,91 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     return out;
 }
 
+/// A pad-per-chain device, expanded the way a rack is.
+///
+/// The device itself never becomes an op. Its pads are chains, and each one is
+/// an instrument chain: it reads no audio, takes the notes its range claims, and
+/// what it makes is summed with its siblings and injected into the bus. That is
+/// what lets a Drum Grid render under an engine that cannot host one.
+ChainSignal Compiler::emitPadRack(const DeviceInfo& device, const ChainSite& site,
+                                  ChainSignal signal) {
+    const auto& pads = *device.padRack.get();
+
+    if (device.bypassed)
+        return signal;
+
+    std::vector<PortRef> padAudio;
+
+    for (const auto& pad : pads.chains) {
+        if (pad.bypassed)
+            continue;
+
+        const ChainSite padSite{site.trackId, pads.id, pad.id, site.segment};
+
+        // The pad's own notes, transposed onto its root. A pad with no range
+        // takes everything, which is what a plain parallel chain does.
+        PortRef padMidi = signal.midi;
+        if (padMidi.valid() && !pad.answersToEveryNote()) {
+            const OpKey gateKey{site.trackId,        pads.id, pad.id,      device.id,
+                                OpRole::PadNoteGate, 0,       site.segment};
+            const auto gateOp = addOp(OpKind::MidiNoteGate, gateKey, {padMidi}, {SignalKind::Midi});
+            auto& gate = plan_.ops[static_cast<std::size_t>(gateOp)];
+            gate.noteGateLow = static_cast<std::uint8_t>(std::clamp(pad.lowNote, 0, 127));
+            gate.noteGateHigh = static_cast<std::uint8_t>(std::clamp(pad.highNote, 0, 127));
+            gate.noteGateTranspose =
+                static_cast<std::int8_t>(std::clamp(pad.rootNote - pad.lowNote, -127, 127));
+            padMidi = PortRef{gateOp, 0};
+        }
+
+        // A pad plugin's DeviceId arrives when the Drum Grid restores it, so a
+        // project that has not been opened since carries none. Two such devices
+        // in one pad would key the same op, and a plan that does not validate
+        // costs the whole project rather than the pad.
+        const auto unkeyable = std::ranges::find_if(pad.elements, [](const ChainElement& element) {
+            return isDevice(element) && getDevice(element).id == INVALID_DEVICE_ID;
+        });
+        if (unkeyable != pad.elements.end()) {
+            diagnose("device " + std::to_string(device.id) + " on track " +
+                     std::to_string(site.trackId) + " pad " + std::to_string(pad.id) +
+                     ": a plugin has no device id, so the pad is not compiled");
+            continue;
+        }
+
+        // No audio in: a pad generates rather than processes, so the bus flows
+        // past it the way it flows past an instrument.
+        const auto padOut = emitElements(pad.elements, padSite, ChainSignal{noInput(), padMidi});
+
+        const OpKey faderKey{site.trackId,           pads.id, pad.id,      INVALID_DEVICE_ID,
+                             OpRole::RackChainFader, 0,       site.segment};
+        const auto faderOp = addOp(OpKind::Fader, faderKey,
+                                   alignInputs(faderKey, OpKind::Fader, {padOut.audio, noInput()}),
+                                   {SignalKind::Audio});
+        padAudio.push_back(PortRef{faderOp, 0});
+    }
+
+    if (padAudio.empty())
+        return signal;
+
+    // No device id, the way a rack's own mix carries none. The inject below is
+    // the same location and differs only in role, and the latency delays that
+    // land on a mix's inputs keep the id but not the role, so sharing it would
+    // key one mix's delays onto the other's.
+    const OpKey mixKey{site.trackId,    pads.id, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
+                       OpRole::RackMix, 0,       site.segment};
+    const auto mixed = emitMix(mixKey, padAudio);
+
+    ChainSignal out = signal;
+    if (signal.audio.valid()) {
+        const OpKey injectKey{site.trackId,         pads.id, INVALID_CHAIN_ID, device.id,
+                              OpRole::DeviceInject, 0,       site.segment};
+        out.audio = emitMix(injectKey, {signal.audio, mixed});
+    } else {
+        out.audio = mixed;
+    }
+
+    return out;
+}
+
 ChainSignal Compiler::emitElements(const std::vector<ChainElement>& elements, const ChainSite& site,
                                    ChainSignal signal) {
     // Only the track's own list, and only while a trigger tap is still wanted.
@@ -967,7 +1053,8 @@ ChainSignal Compiler::emitElements(const std::vector<ChainElement>& elements, co
         if (isDevice(element)) {
             const auto& device = getDevice(element);
             endsTheSearch = !device.bypassed && device.isInstrument;
-            signal = emitDevice(device, site, signal);
+            signal = device.padRack ? emitPadRack(device, site, signal)
+                                    : emitDevice(device, site, signal);
         } else if (isRack(element)) {
             const auto& rack = getRack(element);
             endsTheSearch = !rack.bypassed && rackHasInstrument(rack, nesting_);

@@ -71,10 +71,18 @@ const RackInfo* findRackIn(const RackInfo& rack, RackId rackId) {
 }
 
 const RackInfo* findRackIn(const std::vector<ChainElement>& elements, RackId rackId) {
-    for (const auto& element : elements)
-        if (isRack(element))
+    for (const auto& element : elements) {
+        if (isRack(element)) {
             if (const auto* found = findRackIn(getRack(element), rackId))
                 return found;
+            continue;
+        }
+        // A pad rack hangs off its device rather than sitting in the chain, and
+        // its chains carry mute, solo and a fader like any other's.
+        if (const auto& device = getDevice(element); device.padRack)
+            if (const auto* found = findRackIn(*device.padRack.get(), rackId))
+                return found;
+    }
     return nullptr;
 }
 

@@ -200,6 +200,10 @@ std::unique_ptr<RackInfo> rackFromRoot(const ds::Node& root) {
 
 }  // namespace
 
+RackId padRackIdFor(DeviceId deviceId) {
+    return -(deviceId + 2);
+}
+
 bool isPadRackDevice(const juce::String& pluginId) {
     return pluginId == kDrumGridId;
 }
@@ -231,6 +235,8 @@ void refreshPadRack(DeviceInfo& device) {
     }
 
     device.padRack.reset(readPadRack(device.pluginId, device.pluginState));
+    if (device.padRack)
+        device.padRack->id = padRackIdFor(device.id);
 }
 
 }  // namespace magda
