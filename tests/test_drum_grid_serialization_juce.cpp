@@ -802,6 +802,29 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
         expectEquals(withParameters, padDevices,
                      "Every pad device must carry its plugin's parameters");
 
+        // And carry them in real units. A device behind the SDK exposes its
+        // Tracktion parameters normalized, so reading those directly would
+        // record every parameter as 0 to 1 and the native engine, which takes
+        // this metadata at face value, would render a kick's pitch as a fraction
+        // of a Hz clamped to the parameter's minimum.
+        bool sawRealRange = false;
+        for (const auto& pad : device.padRack->chains) {
+            for (const auto& element : pad.elements) {
+                if (!magda::isDevice(element))
+                    continue;
+                for (const auto& param : magda::getDevice(element).parameters) {
+                    if (param.maxValue > 1.01f) {
+                        sawRealRange = true;
+                        expect(param.currentValue >= param.minValue &&
+                                   param.currentValue <= param.maxValue,
+                               "A parameter's value must sit inside its own range");
+                    }
+                }
+            }
+        }
+        expect(sawRealRange,
+               "A compiled pad voice must report at least one parameter in real units");
+
         juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
     }
 };

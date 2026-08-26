@@ -3,19 +3,26 @@
 #include "core/DeviceInfo.hpp"
 #include "core/RackInfo.hpp"
 #include "plugins/DrumGridPlugin.hpp"
-#include "processors/ParameterInfoBuilder.hpp"
+#include "processors/DeviceProcessorFactory.hpp"
+#include "processors/base/DeviceProcessor.hpp"
 
 namespace magda::daw::audio {
 
 namespace {
 
-void fillFrom(DeviceInfo& device, te::Plugin& plugin) {
+/// Through the device's own processor, which is how every other device in the
+/// model gets its parameters.
+///
+/// Not from the Tracktion parameters directly: a device behind the SDK exposes
+/// those normalized, so reading them would record a kick's 220 Hz pitch as 0.17
+/// with a 0 to 1 range. The native engine takes the model's metadata at face
+/// value, so it would then render 0.17 Hz clamped to the parameter's minimum.
+/// The processor is what knows the real range.
+void fillFrom(DeviceInfo& device, te::Plugin::Ptr plugin) {
     device.parameters.clear();
 
-    const auto params = plugin.getAutomatableParameters();
-    for (int i = 0; i < params.size(); ++i)
-        if (params[i] != nullptr)
-            device.parameters.push_back(makeInfoFromTeParam(i, params[i]));
+    if (auto processor = createDeviceProcessorForPlugin(device.id, plugin, device.pluginId))
+        processor->populateParameters(device);
 }
 
 /// The pad chain the model holds for @p chainIndex, or null.
@@ -53,7 +60,7 @@ void populatePadDeviceParameters(DeviceInfo& device, DrumGridPlugin& plugin) {
             if (!magda::isDevice(element))
                 continue;
             if (slot < chain->plugins.size() && chain->plugins[slot] != nullptr)
-                fillFrom(magda::getDevice(element), *chain->plugins[slot]);
+                fillFrom(magda::getDevice(element), chain->plugins[slot]);
             ++slot;
         }
     }
