@@ -45,6 +45,11 @@ DeviceInfo makePadInstrument(DeviceId id) {
     device.deviceType = DeviceType::Instrument;
     device.format = PluginFormat::Internal;
     device.audioOutputChannels = 2;
+    // What capture puts there. The projection reads a pad's parameter VALUES out
+    // of the saved state but not their names, ranges or count, so a pad device
+    // reaches the compiler with parameters only once the Drum Grid has been in
+    // hand (populatePadDeviceParameters). Without them the table allocates no
+    // window and the device runs at its defaults.
     device.parameters.push_back(ParameterInfo(0, "Level", "", 0.0f, 1.0f, 0.5f));
     return device;
 }

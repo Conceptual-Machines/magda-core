@@ -5,9 +5,13 @@
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioBridge.hpp"
 #include "magda/daw/audio/TracktionHelpers.hpp"
+#include "magda/daw/audio/plugins/DrumGridPadParameters.hpp"
 #include "magda/daw/audio/plugins/DrumGridPlugin.hpp"
 #include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
+#include "magda/daw/audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/DrumGridPads.hpp"
+#include "magda/daw/core/RackInfo.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
 #include "magda/daw/project/serialization/ProjectSerializer.hpp"
@@ -730,6 +734,74 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
         cm.clearAllClips();
         tm.clearAllTracks();
         tm.setAudioEngine(nullptr);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+        runPadParameterProjection();
+    }
+
+    /// A pad's device carries the plugin's parameters (#2200).
+    ///
+    /// The projection reads a Drum Grid's pads out of its saved state, which
+    /// holds a plugin's parameter values but not their names, ranges or count:
+    /// only the plugin answers those. Without them the parameter table allocates
+    /// no window for a pad's device, and the engine's factory restores
+    /// everything EXCEPT parameters, so a native-capable plugin in a pad would
+    /// run at its defaults rather than at what the project saved.
+    void runPadParameterProjection() {
+        beginTest("A pad's device carries its plugin's parameters");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
+        expect(edit != nullptr, "Test edit must be created");
+        if (!edit)
+            return;
+
+        auto plugin = createCustomPlugin(*edit, DrumGridPlugin::xmlTypeName);
+        auto* drumGrid = dynamic_cast<DrumGridPlugin*>(plugin.get());
+        expect(drumGrid != nullptr, "DrumGrid plugin must be created");
+        if (drumGrid == nullptr)
+            return;
+
+        constexpr int padIndex = 3;
+        drumGrid->loadInternalPluginToPad(padIndex, "magda_kick");
+
+        magda::DeviceInfo device;
+        device.id = 7;
+        device.pluginId = DrumGridPlugin::xmlTypeName;
+        device.pluginState =
+            magda::daw::audio::tracktion_adapter::captureInternalDeviceState(*plugin, {});
+
+        magda::refreshPadRack(device);
+        expect(static_cast<bool>(device.padRack), "The projection must find the pads");
+        if (!device.padRack)
+            return;
+
+        // The projection alone leaves them empty: the values are in the state,
+        // the parameters are not.
+        for (const auto& pad : device.padRack->chains)
+            for (const auto& element : pad.elements)
+                if (magda::isDevice(element))
+                    expect(magda::getDevice(element).parameters.empty(),
+                           "The projection must not invent parameters");
+
+        magda::daw::audio::populatePadDeviceParameters(device, *drumGrid);
+
+        int padDevices = 0;
+        int withParameters = 0;
+        for (const auto& pad : device.padRack->chains) {
+            for (const auto& element : pad.elements) {
+                if (!magda::isDevice(element))
+                    continue;
+                ++padDevices;
+                if (!magda::getDevice(element).parameters.empty())
+                    ++withParameters;
+            }
+        }
+
+        expect(padDevices > 0, "The pad must project a device");
+        expectEquals(withParameters, padDevices,
+                     "Every pad device must carry its plugin's parameters");
+
         juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
     }
 };
