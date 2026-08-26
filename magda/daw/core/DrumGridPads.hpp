@@ -8,6 +8,7 @@
 
 namespace magda {
 
+struct ChainInfo;
 struct DeviceInfo;
 struct RackInfo;
 
@@ -36,6 +37,15 @@ void refreshPadRack(DeviceInfo& device);
 
 /// True when devices of this type keep their chains as pads.
 bool isPadRackDevice(const juce::String& pluginId);
+
+/// The parameter slot a pad's level and pan live in, or -1 when the pad's range
+/// starts outside the grid.
+///
+/// A Drum Grid registers padLevelN and padPanN for a fixed N per pad and reaches
+/// them by the pad's bottom note, not by the order its chains were made: a pad
+/// added first can hold chain 0 and still drive slot 17. Anything binding a pad
+/// to those parameters has to ask the same question the device does.
+int padParameterSlot(const ChainInfo& pad);
 
 /// The RackId a pad rack owned by `deviceId` carries.
 ///

@@ -302,41 +302,62 @@ TEST_CASE("A bypassed Drum Grid keeps its pad devices' runtimes", "[engine][plan
     CHECK(named(102));
 }
 
-TEST_CASE("A pad fader is bound to the Drum Grid's own level and pan parameters",
-          "[engine][plan][padrack]") {
-    // A rack chain's fader keeps whatever the value table published, because a
-    // rack chain is not addressable in the model. A Drum Grid's pads are the
-    // exception: their level and pan are real parameters of the Drum Grid, so a
-    // lane, a macro or a modifier over them has to reach the fader.
-    auto drumGrid = makeDrumGrid(10, {makePad(0, 36, 36, 60, 101), makePad(1, 38, 40, 60, 102)});
+TEST_CASE("A pad fader binds by the pad's slot, not by its chain id", "[engine][plan][padrack]") {
+    // A Drum Grid reaches padLevelN and padPanN by the pad's bottom note, not by
+    // the order its chains were made, so the two differ whenever pads were not
+    // added in note order. Binding by chain id would have this pad, which sits
+    // at slot 13, reading slot 0's level.
+    //
+    // Pad 0 here is chain id 0 at note 24, which is slot 0 -- the case where the
+    // two agree, and the one that hid this.
+    auto drumGrid = makeDrumGrid(10, {makePad(0, 24, 24, 60, 101), makePad(1, 37, 37, 60, 102)});
+
     const auto padParam = [](int index, const char* stableId, float min, float max) {
         ParameterInfo param(index, stableId, "", min, max, 0.0f);
         param.stableId = stableId;
         return param;
     };
-    drumGrid.parameters.push_back(padParam(0, "padLevel0", -60.0f, 12.0f));
-    drumGrid.parameters.push_back(padParam(1, "padPan0", -1.0f, 1.0f));
-    drumGrid.parameters.push_back(padParam(2, "padLevel1", -60.0f, 12.0f));
-    drumGrid.parameters.push_back(padParam(3, "padPan1", -1.0f, 1.0f));
+    // The device declares a fixed pair per pad, in slot order.
+    for (int slot = 0; slot < 20; ++slot) {
+        drumGrid.parameters.push_back(
+            padParam(slot * 2, ("padLevel" + std::to_string(slot)).c_str(), -60.0f, 12.0f));
+        drumGrid.parameters.push_back(
+            padParam(slot * 2 + 1, ("padPan" + std::to_string(slot)).c_str(), -1.0f, 1.0f));
+    }
 
     const auto plan = compileWith(std::move(drumGrid));
 
-    const auto faders = opsOfKind(plan, OpKind::Fader);
     std::vector<const magda::engine::PlanOp*> padFaders;
-    for (const auto* op : faders)
+    for (const auto* op : opsOfKind(plan, OpKind::Fader))
         if (op->key.role == OpRole::RackChainFader)
             padFaders.push_back(op);
 
     REQUIRE(padFaders.size() == 2);
-
-    // Keyed to the owning device, which is how the executor reaches its window.
     CHECK(padFaders[0]->key.deviceId == 10);
-    CHECK(padFaders[1]->key.deviceId == 10);
 
+    // Note 24 is slot 0: parameters 0 and 1.
     CHECK(padFaders[0]->padLevelParam == 0);
     CHECK(padFaders[0]->padPanParam == 1);
-    CHECK(padFaders[1]->padLevelParam == 2);
-    CHECK(padFaders[1]->padPanParam == 3);
+
+    // Note 37 is slot 13, whatever its chain id: parameters 26 and 27. Chain id
+    // 1 would have read 2 and 3.
+    CHECK(padFaders[1]->padLevelParam == 26);
+    CHECK(padFaders[1]->padPanParam == 27);
+}
+
+TEST_CASE("A pad whose range starts below the grid binds nothing", "[engine][plan][padrack]") {
+    // No slot to read, so the fader keeps the published value rather than
+    // reading whichever parameter a negative index landed on.
+    auto drumGrid = makeDrumGrid(10, {makePad(0, 12, 12, 60, 101)});
+    ParameterInfo level(0, "padLevel0", "", -60.0f, 12.0f, 0.0f);
+    level.stableId = "padLevel0";
+    drumGrid.parameters.push_back(level);
+
+    const auto plan = compileWith(std::move(drumGrid));
+
+    for (const auto* op : opsOfKind(plan, OpKind::Fader))
+        if (op->key.role == OpRole::RackChainFader)
+            CHECK(op->padLevelParam == -1);
 }
 
 TEST_CASE("A pad fader on a device with no pad parameters binds nothing",

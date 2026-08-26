@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/ChainRoutingModel.hpp"
+#include "core/DrumGridPads.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackChain.hpp"
 #include "core/TrackInfo.hpp"
@@ -1028,12 +1029,18 @@ ChainSignal Compiler::emitPadRack(const DeviceInfo& device, const ChainSite& sit
                                    {SignalKind::Audio});
 
         // A pad's level and pan are the Drum Grid's own parameters, so a lane, a
-        // macro or a modifier over them has to reach this fader. Found by stable
-        // id rather than by arithmetic over the pad index, so a device that lays
-        // its pads out differently still resolves.
-        auto& fader = plan_.ops[static_cast<std::size_t>(faderOp)];
-        fader.padLevelParam = deviceParamIndex(device, "padLevel" + std::to_string(pad.id));
-        fader.padPanParam = deviceParamIndex(device, "padPan" + std::to_string(pad.id));
+        // macro or a modifier over them has to reach this fader.
+        //
+        // By the pad's slot, which is its bottom note, and NOT by its chain id:
+        // the device reaches these parameters the same way, and the two differ
+        // whenever pads were not made in note order. Resolved by stable id from
+        // there, so a device that declares none binds nothing and keeps the
+        // published value.
+        if (const auto slot = padParameterSlot(pad); slot >= 0) {
+            auto& fader = plan_.ops[static_cast<std::size_t>(faderOp)];
+            fader.padLevelParam = deviceParamIndex(device, "padLevel" + std::to_string(slot));
+            fader.padPanParam = deviceParamIndex(device, "padPan" + std::to_string(slot));
+        }
 
         busAudio[pad.outputIndex].push_back(PortRef{faderOp, 0});
     }

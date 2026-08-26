@@ -45,6 +45,11 @@ const juce::Identifier kPluginIsInstrument("magdaIsInstrument");
 /// instead of ChainInfo's default, which means "every note".
 constexpr int kFallbackNote = 60;
 
+/// The note the grid's first pad answers to, and how many pads it has. The
+/// device's own, and what turns a pad's bottom note into its parameter slot.
+constexpr int kPadBaseNote = 24;
+constexpr int kMaxPads = 64;
+
 /// One pad's device.
 ///
 /// The plan keys an op on the DeviceId and routes on the instrument, MIDI and
@@ -199,6 +204,11 @@ std::unique_ptr<RackInfo> rackFromRoot(const ds::Node& root) {
 }
 
 }  // namespace
+
+int padParameterSlot(const ChainInfo& pad) {
+    const auto slot = pad.lowNote - kPadBaseNote;
+    return slot >= 0 && slot < kMaxPads ? slot : -1;
+}
 
 RackId padRackIdFor(DeviceId deviceId) {
     return -(deviceId + 2);
