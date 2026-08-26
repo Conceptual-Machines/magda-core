@@ -1,5 +1,6 @@
 #include "plugins/DrumGridPadParameters.hpp"
 
+#include "TracktionHelpers.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/RackInfo.hpp"
 #include "plugins/DrumGridPlugin.hpp"
@@ -18,11 +19,19 @@ namespace {
 /// with a 0 to 1 range. The native engine takes the model's metadata at face
 /// value, so it would then render 0.17 Hz clamped to the parameter's minimum.
 /// The processor is what knows the real range.
+///
+/// The channel counts come from the same plugin, because nothing else can say
+/// them: the saved state does not record a width, and the plan compiler sizes a
+/// device's output with what the model holds. Left at the DeviceInfo default a
+/// mono pad voice is compiled as though it were stereo.
 void fillFrom(DeviceInfo& device, te::Plugin::Ptr plugin) {
     device.parameters.clear();
 
     if (auto processor = createDeviceProcessorForPlugin(device.id, plugin, device.pluginId))
         processor->populateParameters(device);
+
+    if (plugin != nullptr)
+        applyLiveChannelCounts(device, *plugin);
 }
 
 /// The pad chain the model holds for @p chainIndex, or null.

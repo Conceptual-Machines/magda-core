@@ -404,6 +404,8 @@ constexpr FieldContract kPadDeviceContract[] = {
     {"parameters", Carriage::FromLiveGrid},
     {"wrapperParameters", Carriage::FromLiveGrid},
     {"meters", Carriage::FromLiveGrid},
+    {"audioInputChannels", Carriage::FromLiveGrid},
+    {"audioOutputChannels", Carriage::FromLiveGrid},
 
     {"macros", Carriage::CannotOwn},
     {"mods", Carriage::CannotOwn},
@@ -415,8 +417,6 @@ constexpr FieldContract kPadDeviceContract[] = {
     {"gainValue", Carriage::CannotOwn},
     {"gainDb", Carriage::CannotOwn},
 
-    {"audioInputChannels", Carriage::StateSilent},
-    {"audioOutputChannels", Carriage::StateSilent},
     {"canSidechain", Carriage::StateSilent},
     {"uniqueId", Carriage::StateSilent},
     {"vst3ClassId", Carriage::StateSilent},

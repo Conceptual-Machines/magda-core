@@ -41,7 +41,9 @@ struct RackInfo;
  * Carried, out of the live grid: `parameters`, refilled by
  * `populatePadDeviceParameters()` (#2200) because only the plugin knows a
  * parameter's name and range, along with the `wrapperParameters` and `meters`
- * that same processor call fills.
+ * that same processor call fills, and `audioInputChannels` and
+ * `audioOutputChannels`, which the plugin is asked for in the same pass (#2205)
+ * because the plan compiler sizes a device's ports with them.
  *
  * Absent because a pad device cannot own it: `macros`, `mods`, `sidechain`,
  * `multiOut`, `deltaSolo`, `midiInThru`, `kitRows`, `gainValue` and `gainDb`.
@@ -50,10 +52,11 @@ struct RackInfo;
  * Drum Grid's state. The grid's own macros are unaffected, because they sit on
  * the grid's `DeviceInfo` and merely target a pad device's parameters.
  *
- * Absent because the saved state does not say: `audioInputChannels`,
- * `audioOutputChannels`, `canSidechain`, `uniqueId`, `vst3ClassId` and
- * `vst3Preset`. Only the live plugin answers these, and the live pass asks it
- * for parameters alone.
+ * Absent because the saved state does not say: `canSidechain`, `uniqueId`,
+ * `vst3ClassId` and `vst3Preset`. Only the live plugin answers these, and it is
+ * not asked. Anything else that only a live plugin can answer belongs in the
+ * pass above, which is where the channel counts had to go: left at the stereo
+ * default they had every mono pad voice compiled as though it were stereo.
  *
  * Absent because it is UI or session state a pad has no surface for:
  * `expanded`, `modPanelOpen`, `gainPanelOpen`, `paramPanelOpen`, `aiPanelOpen`,
@@ -61,13 +64,6 @@ struct RackInfo;
  * `miniMixerParameters`, `aiSoundDesignerParameters`, `aiSoundDesignerPrompt`,
  * `browserCategoryOverride`, `currentParameterPage`, `loadState`, and `padRack`
  * itself, since a pad holds no pads.
- *
- * `audioOutputChannels` is the nearest one to mattering: the plan compiler
- * clamps a device's output width with it, so a mono pad voice is compiled as
- * though it were stereo. The state cannot answer it, so closing it means asking
- * the live grid for channel counts where it already asks for parameters, or
- * making pads first-class chains (#2204), which removes the projection and this
- * list with it.
  *
  * Carrying a new field is never enough on its own: every walk that collects it
  * has to descend into `padRack` too (`ModSources`, `SidechainTraversal`, the

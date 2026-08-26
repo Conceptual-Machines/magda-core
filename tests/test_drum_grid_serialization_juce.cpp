@@ -1,6 +1,9 @@
 #include <juce_core/juce_core.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <algorithm>
+#include <vector>
+
 #include "JuceTestStateGuard.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioBridge.hpp"
@@ -904,6 +907,119 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
         }
 
         juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+        runPadChannelCounts();
+    }
+
+    /// A pad's device carries its plugin's channel counts (#2205).
+    ///
+    /// The plan compiler sizes a device's ports with them and the saved state
+    /// records no width, so a pad device left at DeviceInfo's stereo default
+    /// has the engine reading channels the device never wrote and missing the
+    /// ones it did: a sidechaining FX in a pad is fed two inputs where it
+    /// declares three, and a mono voice would be summed as though it were
+    /// stereo.
+    void runPadChannelCounts() {
+        beginTest("A pad's device carries its plugin's channel counts");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
+        expect(edit != nullptr, "Test edit must be created");
+        if (!edit)
+            return;
+
+        auto plugin = createCustomPlugin(*edit, DrumGridPlugin::xmlTypeName);
+        auto* drumGrid = dynamic_cast<DrumGridPlugin*>(plugin.get());
+        expect(drumGrid != nullptr, "DrumGrid plugin must be created");
+        if (drumGrid == nullptr)
+            return;
+
+        // A voice and an FX whose width is not the default, so a projection
+        // that carried nothing would still be wrong about one of them.
+        constexpr int padIndex = 3;
+        drumGrid->loadInternalPluginToPad(padIndex, "magda_kick");
+
+        auto* chain = drumGrid->getChainForNote(DrumGridPlugin::baseNote + padIndex);
+        expect(chain != nullptr, "The kick pad chain must exist");
+        if (chain == nullptr)
+            return;
+        drumGrid->addInternalPluginToChain(chain->index, "magda_compressor");
+
+        magda::DeviceInfo device;
+        device.id = 7;
+        device.pluginId = DrumGridPlugin::xmlTypeName;
+        device.pluginState =
+            magda::daw::audio::tracktion_adapter::captureInternalDeviceState(*plugin, {});
+
+        magda::refreshPadRack(device);
+        expect(static_cast<bool>(device.padRack), "The projection must find the pads");
+        if (!device.padRack)
+            return;
+
+        // What the live plugins answer, read through the grid rather than
+        // through the projection, so the two sides are compared and not one of
+        // them with itself.
+        struct LiveWidths {
+            magda::DeviceId id = magda::INVALID_DEVICE_ID;
+            int inputs = 0;
+            int outputs = 0;
+        };
+        std::vector<LiveWidths> live;
+
+        for (const auto& padChain : drumGrid->getChains()) {
+            if (padChain == nullptr)
+                continue;
+
+            for (int i = 0; i < static_cast<int>(padChain->plugins.size()); ++i) {
+                const auto& padPlugin = padChain->plugins[static_cast<std::size_t>(i)];
+                if (padPlugin == nullptr)
+                    continue;
+
+                juce::StringArray inputs, outputs;
+                padPlugin->getChannelNames(&inputs, &outputs);
+                live.push_back({drumGrid->getPluginDeviceId(padChain->index, i), inputs.size(),
+                                outputs.size()});
+            }
+        }
+
+        expectEquals(static_cast<int>(live.size()), 2, "The pad must hold the voice and the FX");
+
+        // Otherwise the comparison below passes on a projection that carries
+        // nothing, because every width would happen to be the default.
+        const auto defaults = magda::DeviceInfo{};
+        expect(std::any_of(live.begin(), live.end(),
+                           [&defaults](const LiveWidths& widths) {
+                               return widths.inputs != defaults.audioInputChannels ||
+                                      widths.outputs != defaults.audioOutputChannels;
+                           }),
+               "One of the pad's plugins must report a width DeviceInfo does not default to");
+
+        magda::daw::audio::populatePadDeviceParameters(device, *drumGrid);
+
+        int checked = 0;
+        for (const auto& pad : device.padRack->chains) {
+            for (const auto& element : pad.elements) {
+                if (!magda::isDevice(element))
+                    continue;
+
+                const auto& padDevice = magda::getDevice(element);
+                const auto found =
+                    std::find_if(live.begin(), live.end(), [&padDevice](const LiveWidths& widths) {
+                        return widths.id == padDevice.id;
+                    });
+                if (found == live.end())
+                    continue;
+
+                ++checked;
+                expectEquals(padDevice.audioInputChannels, found->inputs,
+                             "A pad device's input width must be its plugin's");
+                expectEquals(padDevice.audioOutputChannels, found->outputs,
+                             "A pad device's output width must be its plugin's");
+            }
+        }
+
+        expectEquals(checked, static_cast<int>(live.size()),
+                     "Every live pad plugin must reach a projected device");
 
         juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
     }
