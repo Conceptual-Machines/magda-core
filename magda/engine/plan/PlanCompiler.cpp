@@ -953,6 +953,14 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     return out;
 }
 
+/// The index of the parameter @p device declares under @p stableId, or -1.
+int deviceParamIndex(const DeviceInfo& device, const std::string& stableId) {
+    const auto found = std::ranges::find_if(device.parameters, [&](const ParameterInfo& param) {
+        return param.stableId.toStdString() == stableId;
+    });
+    return found == device.parameters.end() ? -1 : found->paramIndex;
+}
+
 /// A pad-per-chain device, expanded the way a rack is.
 ///
 /// The device itself never becomes an op. Its pads are chains, and each one is
@@ -1010,11 +1018,23 @@ ChainSignal Compiler::emitPadRack(const DeviceInfo& device, const ChainSite& sit
         // past it the way it flows past an instrument.
         const auto padOut = emitElements(pad.elements, padSite, ChainSignal{noInput(), padMidi});
 
-        const OpKey faderKey{site.trackId,           pads.id, pad.id,      INVALID_DEVICE_ID,
+        // Keyed with the device that owns the pad, so the executor can reach its
+        // parameters. A rack's own chain faders carry no device id, so the two
+        // never collide.
+        const OpKey faderKey{site.trackId,           pads.id, pad.id,      device.id,
                              OpRole::RackChainFader, 0,       site.segment};
         const auto faderOp = addOp(OpKind::Fader, faderKey,
                                    alignInputs(faderKey, OpKind::Fader, {padOut.audio, noInput()}),
                                    {SignalKind::Audio});
+
+        // A pad's level and pan are the Drum Grid's own parameters, so a lane, a
+        // macro or a modifier over them has to reach this fader. Found by stable
+        // id rather than by arithmetic over the pad index, so a device that lays
+        // its pads out differently still resolves.
+        auto& fader = plan_.ops[static_cast<std::size_t>(faderOp)];
+        fader.padLevelParam = deviceParamIndex(device, "padLevel" + std::to_string(pad.id));
+        fader.padPanParam = deviceParamIndex(device, "padPan" + std::to_string(pad.id));
+
         busAudio[pad.outputIndex].push_back(PortRef{faderOp, 0});
     }
 

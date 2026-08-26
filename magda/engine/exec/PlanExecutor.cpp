@@ -360,6 +360,21 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 mixerParamForOp_[i].gain = params->find(key);
                 key.kind = ParamKey::Kind::TrackPan;
                 mixerParamForOp_[i].pan = params->find(key);
+            } else if (op.kind == OpKind::Fader && op.key.role == OpRole::RackChainFader &&
+                       op.padLevelParam >= 0) {
+                // The exception to the line above: a Drum Grid's pad level and
+                // pan are real parameters of the device that owns the pad, so a
+                // lane over them has to reach this fader. Read through the
+                // owner's window, which is indexed by the device's own
+                // parameter index.
+                const auto window = params->windowFor(op.key.deviceKey());
+                const auto slot = [&](int index) {
+                    return index >= 0 && index < window.count
+                               ? static_cast<ParamId>(window.first + index)
+                               : INVALID_PARAM_ID;
+                };
+                mixerParamForOp_[i].gain = slot(op.padLevelParam);
+                mixerParamForOp_[i].pan = slot(op.padPanParam);
             } else if (op.kind == OpKind::SendTap) {
                 key.kind = ParamKey::Kind::SendLevel;
                 key.index = op.key.index;

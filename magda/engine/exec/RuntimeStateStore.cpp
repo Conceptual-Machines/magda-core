@@ -49,7 +49,17 @@ void collectDeviceIds(const std::vector<ChainElement>& elements, ChainSegment se
                       std::set<DeviceKey>& out) {
     for (const auto& element : elements) {
         if (isDevice(element)) {
-            out.emplace(segment, getDevice(element).id);
+            const auto& device = getDevice(element);
+            out.emplace(segment, device.id);
+
+            // A pad rack's devices are the user's the same way a nested rack's
+            // are. Bypass and chain power take their ops out of the plan, and a
+            // device named by neither the plan nor this set has its runtime
+            // released: re-enabling would rebuild the plugins and lose their
+            // tails and state.
+            if (device.padRack)
+                for (const auto& pad : device.padRack->chains)
+                    collectDeviceIds(pad.elements, segment, out);
         } else if (isRack(element)) {
             for (const auto& chain : getRack(element).chains)
                 collectDeviceIds(chain.elements, segment, out);

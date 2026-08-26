@@ -5,6 +5,7 @@
 #include "core/DrumGridPads.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
+#include "exec/RuntimeStateStore.hpp"
 #include "param/ParamTableCompiler.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanDump.hpp"
@@ -279,4 +280,74 @@ TEST_CASE("A pad's devices reach the parameter table", "[engine][plan][padrack]"
     };
     CHECK(addressed(101));
     CHECK(addressed(102));
+}
+
+TEST_CASE("A bypassed Drum Grid keeps its pad devices' runtimes", "[engine][plan][padrack]") {
+    // Bypass takes the pad Device ops out of the plan. If the model id set does
+    // not name the pad devices either, their runtimes are released and
+    // re-enabling rebuilds the plugins, losing their tails and state.
+    auto drumGrid = makeDrumGrid(10, {makePad(0, 36, 36, 60, 101), makePad(1, 38, 40, 60, 102)});
+    drumGrid.bypassed = true;
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(std::move(drumGrid));
+
+    const auto ids = magda::engine::collectRuntimeStateIds({track}, makeMaster());
+
+    const auto named = [&](DeviceId deviceId) {
+        return ids.devices.contains(magda::engine::DeviceKey{ChainSegment::Fx, deviceId});
+    };
+    CHECK(named(10));
+    CHECK(named(101));
+    CHECK(named(102));
+}
+
+TEST_CASE("A pad fader is bound to the Drum Grid's own level and pan parameters",
+          "[engine][plan][padrack]") {
+    // A rack chain's fader keeps whatever the value table published, because a
+    // rack chain is not addressable in the model. A Drum Grid's pads are the
+    // exception: their level and pan are real parameters of the Drum Grid, so a
+    // lane, a macro or a modifier over them has to reach the fader.
+    auto drumGrid = makeDrumGrid(10, {makePad(0, 36, 36, 60, 101), makePad(1, 38, 40, 60, 102)});
+    const auto padParam = [](int index, const char* stableId, float min, float max) {
+        ParameterInfo param(index, stableId, "", min, max, 0.0f);
+        param.stableId = stableId;
+        return param;
+    };
+    drumGrid.parameters.push_back(padParam(0, "padLevel0", -60.0f, 12.0f));
+    drumGrid.parameters.push_back(padParam(1, "padPan0", -1.0f, 1.0f));
+    drumGrid.parameters.push_back(padParam(2, "padLevel1", -60.0f, 12.0f));
+    drumGrid.parameters.push_back(padParam(3, "padPan1", -1.0f, 1.0f));
+
+    const auto plan = compileWith(std::move(drumGrid));
+
+    const auto faders = opsOfKind(plan, OpKind::Fader);
+    std::vector<const magda::engine::PlanOp*> padFaders;
+    for (const auto* op : faders)
+        if (op->key.role == OpRole::RackChainFader)
+            padFaders.push_back(op);
+
+    REQUIRE(padFaders.size() == 2);
+
+    // Keyed to the owning device, which is how the executor reaches its window.
+    CHECK(padFaders[0]->key.deviceId == 10);
+    CHECK(padFaders[1]->key.deviceId == 10);
+
+    CHECK(padFaders[0]->padLevelParam == 0);
+    CHECK(padFaders[0]->padPanParam == 1);
+    CHECK(padFaders[1]->padLevelParam == 2);
+    CHECK(padFaders[1]->padPanParam == 3);
+}
+
+TEST_CASE("A pad fader on a device with no pad parameters binds nothing",
+          "[engine][plan][padrack]") {
+    // Resolved by stable id, so a device that declares none simply keeps the
+    // published value rather than reading whatever sits at that index.
+    const auto plan = compileWith(makeDrumGrid(10, {makePad(0, 36, 36, 60, 101)}));
+
+    for (const auto* op : opsOfKind(plan, OpKind::Fader))
+        if (op->key.role == OpRole::RackChainFader) {
+            CHECK(op->padLevelParam == -1);
+            CHECK(op->padPanParam == -1);
+        }
 }
