@@ -2,11 +2,13 @@
 #include <string>
 #include <vector>
 
+#include "core/ControlTarget.hpp"
 #include "core/DrumGridPads.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
 #include "exec/PlanValues.hpp"
 #include "exec/RuntimeStateStore.hpp"
+#include "param/ParamKey.hpp"
 #include "param/ParamTableCompiler.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanDump.hpp"
@@ -436,4 +438,44 @@ TEST_CASE("A populated soloed pad still silences its siblings", "[engine][plan][
         else if (op.key.chainId == 1)
             CHECK_FALSE(values.ops[i].silent);
     }
+}
+
+TEST_CASE("A macro on a pad device's parameter resolves", "[engine][plan][padrack]") {
+    // A stored link to a pad device names the Drum Grid in the rack slot of its
+    // path (the chainDevice path syncDrumGridPadPlugins and the ADSR macro links
+    // are built with). ParamKey carries the rack id, so addressing pad devices
+    // under the pad rack's own synthetic id would put them where no link can
+    // find them, and every macro, mod and lane on a pad would silently do
+    // nothing.
+    constexpr DeviceId kDrumGrid = 10;
+    constexpr DeviceId kPadDevice = 101;
+    constexpr ChainId kPad = 0;
+
+    auto drumGrid = makeDrumGrid(kDrumGrid, {makePad(kPad, 36, 36, 60, kPadDevice)});
+
+    magda::MacroLink link;
+    link.target = magda::ControlTarget::pluginParam(
+        magda::ChainNodePath::chainDevice(1, kDrumGrid, kPad, kPadDevice), 0);
+    link.amount = 1.0f;
+    drumGrid.macros[0].links.push_back(link);
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(std::move(drumGrid));
+
+    const auto plan = magda::engine::compileRenderPlan({track}, makeMaster(), {});
+    const auto table = magda::engine::compileParamTable(plan, {track}, makeMaster());
+
+    for (const auto& diagnostic : table.diagnostics)
+        UNSCOPED_INFO("param table: " << diagnostic);
+
+    const auto unresolved =
+        std::ranges::any_of(table.diagnostics, [](const std::string& diagnostic) {
+            return diagnostic.find("which the project does not have") != std::string::npos;
+        });
+    CHECK_FALSE(unresolved);
+
+    // And the address the link names is one the table actually carries.
+    const auto key = magda::engine::paramKeyFor(link.target);
+    REQUIRE(key.has_value());
+    CHECK(table.find(*key) != magda::engine::INVALID_PARAM_ID);
 }
