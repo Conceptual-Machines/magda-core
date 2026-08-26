@@ -20,19 +20,20 @@ namespace magda {
 // ============================================================================
 
 ChainNodePath TrackManager::padChainPath(const ChainNodePath& gridPath, ChainId padChainId) {
-    ChainNodePath path;
-    path.trackId = gridPath.trackId;
-    path.steps = gridPath.steps;
-
-    // The rack step names the pads, so the device step it hangs off is dropped:
-    // a top-level Drum Grid has no step at all (its id lives in
-    // `topLevelDeviceId`), and a nested one is reached through its chain.
-    if (!path.steps.empty() && path.steps.back().type == ChainStepType::Device)
-        path.steps.pop_back();
-
-    path.steps.push_back({ChainStepType::Rack, padRackIdFor(gridPath.getDeviceId())});
-    path.steps.push_back({ChainStepType::Chain, padChainId});
-    return path;
+    // Flat, and named by the DEVICE's own id: `Rack(gridDeviceId) > Chain(pad)`,
+    // whatever the grid itself is nested in.
+    //
+    // This is the shape a pad device's address has always had, and three other
+    // things build or store it: the ADSR macro links the slicer generates
+    // (ClipCommands), the addresses the native parameter table compiles
+    // (ParamTableCompiler), and every link a project has already saved. A
+    // plugin lookup is an exact path match, so a different spelling here would
+    // leave all of them pointing at nothing (#2207).
+    //
+    // The synthetic negative id is still what `RackInfo::id` holds, because the
+    // plan keys its ops on it and `isPadRackId()` is how the executor tells a
+    // pad rack from an allocated one. `getRackByPath()` resolves either.
+    return ChainNodePath::chain(gridPath.trackId, gridPath.getDeviceId(), padChainId);
 }
 
 RackInfo* TrackManager::getPads(const ChainNodePath& gridPath) {

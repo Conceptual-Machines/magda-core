@@ -452,6 +452,11 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     /// The path addressing one of @p gridPath's pad chains.
     static ChainNodePath padChainPath(const ChainNodePath& gridPath, ChainId padChainId);
 
+    /// The rack @p rackPath names, allowing for a pad rack's flat path.
+    /// `getRackByPath` answers first; only an id no rack claims falls through
+    /// to the Drum Grid that owns it.
+    RackInfo* getPadRackByPath(const ChainNodePath& rackPath);
+
     /// The pads @p gridPath's device owns, or null when it has none.
     RackInfo* getPads(const ChainNodePath& gridPath);
     const RackInfo* getPads(const ChainNodePath& gridPath) const;

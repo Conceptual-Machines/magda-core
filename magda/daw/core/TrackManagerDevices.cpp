@@ -237,9 +237,10 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
     for (size_t i = 0; i < chainPath.steps.size() - 1; ++i) {
         rackPath.steps.push_back(chainPath.steps[i]);
     }
-
-    // Get the parent rack
-    if (auto* rack = getRackByPath(rackPath)) {
+    // Get the parent rack. getPadRackByPath, not getRackByPath: a Drum Grid's
+    // pads are a chain container too, and their path names the device rather
+    // than a rack sitting in the list (#2207).
+    if (auto* rack = getPadRackByPath(rackPath)) {
         // Find the chain within the rack
         ChainInfo* chain = nullptr;
         for (auto& c : rack->chains) {
@@ -293,7 +294,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
     }
 
     // Get the parent rack
-    if (auto* rack = getRackByPath(rackPath)) {
+    if (auto* rack = getPadRackByPath(rackPath)) {
         // Find the chain within the rack
         ChainInfo* chain = nullptr;
         for (auto& c : rack->chains) {
@@ -383,7 +384,7 @@ void TrackManager::moveElementInChainByPath(const ChainNodePath& chainPath, int 
     }
 
     // Get the parent rack (mutable)
-    RackInfo* rack = getRackByPath(rackPath);
+    RackInfo* rack = getPadRackByPath(rackPath);
     if (!rack) {
         return;
     }

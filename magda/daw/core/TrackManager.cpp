@@ -193,7 +193,7 @@ void remapDuplicatedElements(std::vector<ChainElement>& elements, const ChainNod
             // rack's: their devices carry state to strip, and the grid's links
             // into them were remapped by the call above (#2207).
             if (device.pads) {
-                const auto padsPath = devicePath.parentChain().withRack(device.pads->id);
+                const auto padsPath = devicePath.parentChain().withRack(device.id);
                 for (auto& pad : device.pads->chains)
                     remapDuplicatedElements(pad.elements, padsPath.withChain(pad.id), remap);
             }
@@ -973,6 +973,10 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
                 // no longer be the one derived from its device id, which is how
                 // every pad path is built (#2207).
                 if (device.pads) {
+                    // Both ids a pad path can be spelled with: the device's own,
+                    // which is what a saved link carries, and the synthetic one
+                    // the plan keys its ops on.
+                    remap.racks[oldDeviceId] = device.id;
                     remap.racks[padRackIdFor(oldDeviceId)] = padRackIdFor(device.id);
                     rekeyPads(device, &remap.devices);
                 }
@@ -2470,26 +2474,59 @@ namespace {
 /// pads a device in it owns.
 ///
 /// A pad rack hangs off its device rather than being an element of its own, so
-/// a Rack step naming one has to look through the devices as well. Its id comes
-/// out of the negative space no allocated rack uses, so the two can never be
-/// confused (#2207).
+/// a Rack step naming one has to look through the devices as well. This matches
+/// only the synthetic negative id `RackInfo::id` holds; the device-id spelling
+/// a pad path actually uses is resolved by `getPadRackByPath()`, which reaches
+/// a Drum Grid at any depth (#2207).
+///
+/// An allocated rack is matched first and across the whole list, so it always
+/// wins over anything found among the devices.
 RackInfo* findRackAmong(std::vector<ChainElement>& elements, RackId rackId) {
+    for (auto& element : elements)
+        if (magda::isRack(element) && magda::getRack(element).id == rackId)
+            return &magda::getRack(element);
+
     for (auto& element : elements) {
-        if (magda::isRack(element)) {
-            if (magda::getRack(element).id == rackId)
-                return &magda::getRack(element);
+        if (!magda::isDevice(element))
             continue;
-        }
 
         auto& device = magda::getDevice(element);
-        if (device.pads && device.pads->id == rackId)
+        if (!device.pads)
+            continue;
+
+        if (device.pads->id == rackId)
             return device.pads.get();
     }
+
     return nullptr;
 }
 
 const RackInfo* findRackAmong(const std::vector<ChainElement>& elements, RackId rackId) {
     return findRackAmong(const_cast<std::vector<ChainElement>&>(elements), rackId);
+}
+
+/// The pads @p rackId names anywhere on the track, or null.
+///
+/// A pad path is flat: `Rack(gridDeviceId) > Chain(pad) > Device(padDevice)`,
+/// with no steps for whatever the Drum Grid itself is nested in. Every producer
+/// of one spells it that way, so a grid inside a rack is addressed exactly like
+/// a grid on the track, and the step-by-step walk cannot follow it. This is the
+/// search that can (#2207).
+RackInfo* findPadsInTrack(std::vector<ChainElement>& elements, RackId rackId) {
+    for (auto& element : elements) {
+        if (magda::isRack(element)) {
+            for (auto& chain : magda::getRack(element).chains)
+                if (auto* found = findPadsInTrack(chain.elements, rackId))
+                    return found;
+            continue;
+        }
+
+        auto& device = magda::getDevice(element);
+        if (device.pads && (device.id == rackId || device.pads->id == rackId))
+            return device.pads.get();
+    }
+
+    return nullptr;
 }
 
 }  // namespace
@@ -2612,6 +2649,25 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
     return currentRack;
 }
 
+RackInfo* TrackManager::getPadRackByPath(const ChainNodePath& rackPath) {
+    if (auto* rack = getRackByPath(rackPath))
+        return rack;
+
+    // A pad path names the Drum Grid's device id and nothing about where the
+    // grid sits, so a grid inside a rack has a path the walk above cannot
+    // follow. Only ever reached for an id no rack claims, so an allocated rack
+    // still answers first and this cannot take a lookup away from one (#2207).
+    if (rackPath.isTrackLevel || rackPath.topLevelDeviceId != INVALID_DEVICE_ID)
+        return nullptr;
+    if (rackPath.steps.size() != 1 || rackPath.steps.front().type != ChainStepType::Rack)
+        return nullptr;
+
+    auto* track = getTrack(rackPath.trackId);
+    return track != nullptr
+               ? findPadsInTrack(track->chain.fxChainElements, rackPath.steps.front().id)
+               : nullptr;
+}
+
 const RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) const {
     // const version - delegates to non-const via const_cast (safe since we return const*)
     return const_cast<TrackManager*>(this)->getRackByPath(rackPath);
@@ -2704,7 +2760,7 @@ ChainInfo* TrackManager::getChainByPath(const ChainNodePath& chainPath) {
     for (size_t i = 0; i + 1 < chainPath.steps.size(); ++i)
         rackPath.steps.push_back(chainPath.steps[i]);
 
-    if (auto* rack = getRackByPath(rackPath)) {
+    if (auto* rack = getPadRackByPath(rackPath)) {
         for (auto& chain : rack->chains) {
             if (chain.id == chainId)
                 return &chain;
