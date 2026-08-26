@@ -5,6 +5,7 @@
 #include "core/DrumGridPads.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
+#include "param/ParamTableCompiler.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanDump.hpp"
 #include "plan/RenderPlan.hpp"
@@ -43,6 +44,7 @@ DeviceInfo makePadInstrument(DeviceId id) {
     device.deviceType = DeviceType::Instrument;
     device.format = PluginFormat::Internal;
     device.audioOutputChannels = 2;
+    device.parameters.push_back(ParameterInfo(0, "Level", "", 0.0f, 1.0f, 0.5f));
     return device;
 }
 
@@ -218,4 +220,63 @@ TEST_CASE("A pad device with no id is reported, not compiled to a broken plan",
         return diagnostic.find("no device id") != std::string::npos;
     });
     CHECK(said);
+}
+
+TEST_CASE("A pad's mix keeps the Drum Grid's slot gain and meter", "[engine][plan][padrack]") {
+    // An expanded Drum Grid is still a device in the chain: what it made has to
+    // pass its slot's gain and meter before it reaches the bus, the way every
+    // other instrument's output does.
+    const auto plan = compileWith(makeDrumGrid(10, {makePad(0, 36, 36, 60, 101)}));
+
+    const auto gains = opsOfKind(plan, OpKind::Gain);
+    const auto slotGain = std::ranges::find_if(gains, [](const magda::engine::PlanOp* op) {
+        return op->key.role == OpRole::DeviceGain && op->key.deviceId == 10;
+    });
+    REQUIRE(slotGain != gains.end());
+
+    const auto meters = opsOfKind(plan, OpKind::Meter);
+    CHECK(std::ranges::any_of(meters, [](const magda::engine::PlanOp* op) {
+        return op->key.role == OpRole::DeviceMeter && op->key.deviceId == 10;
+    }));
+}
+
+TEST_CASE("Pads on an unclaimed bus are reported, not folded into the main mix",
+          "[engine][plan][padrack]") {
+    // The model says these pads play somewhere else. Mixing them into the
+    // device's own output would render a project nobody saved.
+    auto aux = makePad(1, 38, 40, 60, 102);
+    aux.outputIndex = 2;
+
+    const auto plan = compileWith(makeDrumGrid(10, {makePad(0, 36, 36, 60, 101), std::move(aux)}));
+
+    CHECK(std::ranges::any_of(plan.diagnostics, [](const std::string& diagnostic) {
+        return diagnostic.find("bus 2 reaches no track") != std::string::npos;
+    }));
+
+    // The main mix takes one pad, not both.
+    const auto mixes = opsOfKind(plan, OpKind::MixAudio);
+    const auto mainMix = std::ranges::find_if(mixes, [](const magda::engine::PlanOp* op) {
+        return op->key.role == OpRole::RackMix && op->key.index == 0;
+    });
+    if (mainMix != mixes.end())
+        CHECK((*mainMix)->inputs.size() == 1);
+}
+
+TEST_CASE("A pad's devices reach the parameter table", "[engine][plan][padrack]") {
+    // Without the pad-rack walk, a pad device's parameters, macros and mods have
+    // no address and nothing consumes them.
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(
+        makeDrumGrid(10, {makePad(0, 36, 36, 60, 101), makePad(1, 38, 40, 60, 102)}));
+
+    const auto plan = magda::engine::compileRenderPlan({track}, makeMaster(), {});
+    const auto table = magda::engine::compileParamTable(plan, {track}, makeMaster());
+
+    const auto addressed = [&](DeviceId deviceId) {
+        return std::ranges::any_of(table.keys, [deviceId](const magda::engine::ParamKey& key) {
+            return key.device.deviceId == deviceId;
+        });
+    };
+    CHECK(addressed(101));
+    CHECK(addressed(102));
 }

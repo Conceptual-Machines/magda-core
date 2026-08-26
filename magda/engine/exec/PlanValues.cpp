@@ -178,8 +178,22 @@ class Resolver {
     /// outer chain disconnected.
     void collectSilencedRacks(const std::vector<ChainElement>& elements, bool insideInactiveChain) {
         for (const auto& element : elements) {
-            if (!isRack(element))
+            if (!isRack(element)) {
+                // A pad rack hangs off its device rather than sitting in the
+                // chain, and an inactive chain silences its pads the same way it
+                // silences a nested rack's chains. Without this a Drum Grid in a
+                // muted chain keeps its pad devices running behind a silent
+                // fader, advancing tails and publishing meters.
+                if (const auto& device = getDevice(element); device.padRack) {
+                    const auto& pads = *device.padRack.get();
+                    if (insideInactiveChain)
+                        silencedRacks_.insert(pads.id);
+                    for (const auto& pad : pads.chains)
+                        collectSilencedRacks(pad.elements,
+                                             insideInactiveChain || !isChainActive(pads, pad));
+                }
                 continue;
+            }
 
             const auto& rack = getRack(element);
             if (insideInactiveChain)

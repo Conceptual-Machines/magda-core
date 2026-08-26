@@ -540,6 +540,12 @@ void Builder::walkElements(const std::vector<magda::ChainElement>& elements, mag
             node.device = &device;
             node.sidechainSource = sidechainSourceOf(device.sidechain);
             nodes_.push_back(node);
+
+            // A pad rack's chains hold devices like any other rack's, and the
+            // plan compiles them, so their parameters, macros and mods need
+            // addresses or nothing consumes them.
+            if (device.padRack)
+                walkRack(*device.padRack.get(), trackId);
         } else if (magda::isRack(element)) {
             walkRack(magda::getRack(element), trackId);
         }
