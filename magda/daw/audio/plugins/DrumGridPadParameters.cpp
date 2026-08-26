@@ -37,6 +37,19 @@ ChainInfo* findPad(RackInfo& pads, int chainIndex) {
     return nullptr;
 }
 
+/// The live plugin carrying @p deviceId, or null.
+///
+/// The Drum Grid stamps the id onto a pad plugin's state when it creates or
+/// restores it, and the projection reads that same property, so this is the one
+/// thing the two sides are guaranteed to agree on.
+te::Plugin::Ptr findPluginById(DrumGridPlugin& grid, const DrumGridPlugin::Chain& chain,
+                               DeviceId deviceId) {
+    for (int i = 0; i < static_cast<int>(chain.plugins.size()); ++i)
+        if (grid.getPluginDeviceId(chain.index, i) == deviceId)
+            return chain.plugins[static_cast<std::size_t>(i)];
+    return {};
+}
+
 }  // namespace
 
 void populatePadDeviceParameters(DeviceInfo& device, DrumGridPlugin& plugin) {
@@ -53,15 +66,21 @@ void populatePadDeviceParameters(DeviceInfo& device, DrumGridPlugin& plugin) {
         if (pad == nullptr)
             continue;
 
-        // Position within the pad, which is the order both the device and the
-        // projection keep them in.
-        std::size_t slot = 0;
+        // By DeviceId, not by position. A plugin the engine could not create is
+        // left out of the chain while its node stays in the state the projection
+        // reads, so one missing plugin would shift every match after it: a valid
+        // plugin's parameters onto the device that failed, and the valid device
+        // left at its defaults.
         for (auto& element : pad->elements) {
             if (!magda::isDevice(element))
                 continue;
-            if (slot < chain->plugins.size() && chain->plugins[slot] != nullptr)
-                fillFrom(magda::getDevice(element), chain->plugins[slot]);
-            ++slot;
+
+            auto& padDevice = magda::getDevice(element);
+            if (padDevice.id == INVALID_DEVICE_ID)
+                continue;
+
+            if (auto live = findPluginById(plugin, *chain, padDevice.id))
+                fillFrom(padDevice, live);
         }
     }
 }

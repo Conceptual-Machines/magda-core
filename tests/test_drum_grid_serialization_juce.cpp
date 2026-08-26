@@ -825,6 +825,86 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
         expect(sawRealRange,
                "A compiled pad voice must report at least one parameter in real units");
 
+        runPadPluginMatching();
+    }
+
+    /// Pad plugins are matched by DeviceId, not by position (#2200).
+    ///
+    /// A plugin the engine could not create is left out of the chain while its
+    /// node stays in the saved state the projection reads. Matching by position
+    /// would then shift every device after it, handing a valid plugin's
+    /// parameters to the device that failed and leaving the valid one at its
+    /// defaults.
+    void runPadPluginMatching() {
+        beginTest("Pad plugins are matched by device id, not by position");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
+        expect(edit != nullptr, "Test edit must be created");
+        if (!edit)
+            return;
+
+        auto plugin = createCustomPlugin(*edit, DrumGridPlugin::xmlTypeName);
+        auto* drumGrid = dynamic_cast<DrumGridPlugin*>(plugin.get());
+        expect(drumGrid != nullptr, "DrumGrid plugin must be created");
+        if (drumGrid == nullptr)
+            return;
+
+        constexpr int padIndex = 2;
+        drumGrid->loadInternalPluginToPad(padIndex, "magda_kick");
+
+        auto* chain = drumGrid->getChainForNote(DrumGridPlugin::baseNote + padIndex);
+        expect(chain != nullptr, "Pad chain must exist");
+        if (chain == nullptr || chain->plugins.empty())
+            return;
+
+        const auto liveId = drumGrid->getPluginDeviceId(chain->index, 0);
+        expect(liveId != magda::INVALID_DEVICE_ID, "The pad's plugin must carry a device id");
+
+        magda::DeviceInfo device;
+        device.id = 7;
+        device.pluginId = DrumGridPlugin::xmlTypeName;
+        device.pluginState =
+            magda::daw::audio::tracktion_adapter::captureInternalDeviceState(*plugin, {});
+
+        magda::refreshPadRack(device);
+        expect(static_cast<bool>(device.padRack), "The projection must find the pads");
+        if (!device.padRack)
+            return;
+
+        // A device the live chain has no plugin for, standing where one that
+        // failed to create would: ahead of the real one, so a positional match
+        // would hand it the kick's parameters.
+        for (auto& pad : device.padRack->chains) {
+            if (pad.elements.empty())
+                continue;
+
+            magda::DeviceInfo missing;
+            missing.id = 9999;
+            missing.pluginId = "magda_kick";
+            pad.elements.insert(pad.elements.begin(), missing);
+            break;
+        }
+
+        magda::daw::audio::populatePadDeviceParameters(device, *drumGrid);
+
+        for (const auto& pad : device.padRack->chains) {
+            for (const auto& element : pad.elements) {
+                if (!magda::isDevice(element))
+                    continue;
+
+                const auto& padDevice = magda::getDevice(element);
+                if (padDevice.id == 9999)
+                    expect(padDevice.parameters.empty(),
+                           "A device with no live plugin must get no parameters");
+                else if (padDevice.id == liveId)
+                    expect(!padDevice.parameters.empty(),
+                           "The device the live plugin belongs to must still get its parameters");
+            }
+        }
+
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
         juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
     }
 };
