@@ -24,6 +24,56 @@ struct RackInfo;
  * project file changes shape.
  */
 
+/**
+ * What a projected pad device carries, and what it does not (#2205).
+ *
+ * A pad's plugin has no `DeviceInfo` outside this projection, so what the
+ * projection fills is the whole of it. It is also thrown away and rebuilt from
+ * `pluginState` on every capture, so a field written onto a projected device
+ * from anywhere else is gone by the next one. That leaves two sources, and this
+ * is all of both.
+ *
+ * Carried, out of the saved state: `pluginId`, `name`, `manufacturer`,
+ * `format`, `fileOrIdentifier`, `isInstrument`, `deviceType`, `id`, `bypassed`
+ * and `pluginState`, plus the MIDI capability flags `canReceiveMidi` and
+ * `producesMidi`, which come from the capability cache keyed on that identity.
+ *
+ * Carried, out of the live grid: `parameters`, refilled by
+ * `populatePadDeviceParameters()` (#2200) because only the plugin knows a
+ * parameter's name and range, along with the `wrapperParameters` and `meters`
+ * that same processor call fills, and `audioInputChannels` and
+ * `audioOutputChannels`, which the plugin is asked for in the same pass (#2205)
+ * because the plan compiler sizes a device's ports with them.
+ *
+ * Absent because a pad device cannot own it: `macros`, `mods`, `sidechain`,
+ * `multiOut`, `deltaSolo`, `midiInThru`, `kitRows`, `gainValue` and `gainDb`.
+ * Every one of them is written through a path that reaches a device in the
+ * chain model, and a pad plugin is not in the chain model: it lives inside the
+ * Drum Grid's state. The grid's own macros are unaffected, because they sit on
+ * the grid's `DeviceInfo` and merely target a pad device's parameters.
+ *
+ * Absent because the saved state does not say: `canSidechain`, `uniqueId`,
+ * `vst3ClassId` and `vst3Preset`. Only the live plugin answers these, and it is
+ * not asked. Anything else that only a live plugin can answer belongs in the
+ * pass above, which is where the channel counts had to go: left at the stereo
+ * default they had every mono pad voice compiled as though it were stereo.
+ *
+ * Absent because it is UI or session state a pad has no surface for:
+ * `expanded`, `modPanelOpen`, `gainPanelOpen`, `paramPanelOpen`, `aiPanelOpen`,
+ * `aiPanelOutput`, `aiConversation`, `visibleParameters`,
+ * `miniMixerParameters`, `aiSoundDesignerParameters`, `aiSoundDesignerPrompt`,
+ * `browserCategoryOverride`, `currentParameterPage`, `loadState`, and `padRack`
+ * itself, since a pad holds no pads.
+ *
+ * Carrying a new field is never enough on its own: every walk that collects it
+ * has to descend into `padRack` too (`ModSources`, `SidechainTraversal`, the
+ * macro and modifier syncs). Miss one and the field is carried but never read,
+ * which looks exactly like it working.
+ *
+ * test_drum_grid_pads.cpp classifies every `DeviceInfo` field against the lists
+ * above, and fails when `DeviceInfo` grows one they do not name.
+ */
+
 /// The pads saved for `pluginId` in `pluginState`, as a rack of chains.
 ///
 /// Null for a device that is not pad-per-chain, one with no pads saved, and

@@ -9,7 +9,8 @@ namespace magda::daw::audio {
 class DrumGridPlugin;
 
 /**
- * Fill the parameters of the devices projected from @p plugin's pads (#2200).
+ * Fill what only the live plugin can answer on the devices projected from
+ * @p plugin's pads: their parameters (#2200) and their channel counts (#2205).
  *
  * The pads reach the model as a projection of the device's saved state, which
  * carries a plugin's parameter values but not its names, ranges or count: only
@@ -17,6 +18,11 @@ class DrumGridPlugin;
  * for a pad's device, and a native-capable plugin inside a pad runs at its
  * defaults rather than at what the project saved, because the engine's factory
  * restores everything EXCEPT parameters and expects the table to supply them.
+ *
+ * The channel counts are the same story: the state records no width, and the
+ * plan compiler sizes a device's ports with what the model holds, so a mono pad
+ * voice left at DeviceInfo's stereo default is compiled as though it were
+ * stereo.
  *
  * Called where the pads are projected from a live device, which is the same
  * point their DeviceIds and instrument flags arrive at.

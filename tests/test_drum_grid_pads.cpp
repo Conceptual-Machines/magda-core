@@ -1,5 +1,11 @@
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+#include <cctype>
+#include <cstring>
+#include <iterator>
 #include <set>
+#include <string>
+#include <vector>
 
 #include "magda/daw/core/DeviceInfo.hpp"
 #include "magda/daw/core/DeviceState.hpp"
@@ -349,4 +355,361 @@ TEST_CASE("An external pad plugin with no saved flag is not called an instrument
     const auto rack = magda::readPadRack("drumgrid", ds::encode(doc));
     REQUIRE(rack != nullptr);
     CHECK_FALSE(magda::getDevice(rack->chains[0].elements[0]).isInstrument);
+}
+
+// The projection's field contract (#2205).
+//
+// A pad plugin has no DeviceInfo anywhere but this projection, so the fields
+// `deviceFromNode()` fills are the whole of what a pad device is. Nothing in
+// the type system says which those are: add a field to DeviceInfo and it simply
+// arrives on a projected pad device at its default, and whatever was attached
+// to it does nothing, with no crash and no diagnostic to say so.
+//
+// So the contract is written out in DrumGridPads.hpp and classified here.
+// Reading DeviceInfo's members out of the header is unusual and is the point:
+// the fact being checked is which fields exist, which no runtime value reports.
+
+namespace {
+
+/// Where a projected pad device's value for a field comes from, or why it has
+/// none. The reasons are the ones DrumGridPads.hpp gives.
+enum class Carriage {
+    FromState,     ///< Read out of the Drum Grid's saved state.
+    FromLiveGrid,  ///< Refilled from the live plugin by populatePadDeviceParameters().
+    CannotOwn,     ///< Written only through a path that reaches the chain model.
+    StateSilent,   ///< Only the live plugin could answer it, and it is not asked.
+    UiOnly,        ///< UI or session state a pad device has no surface for.
+};
+
+struct FieldContract {
+    const char* field;
+    Carriage carriage;
+};
+
+/// Every field of DeviceInfo, and what a projected pad device does with it.
+constexpr FieldContract kPadDeviceContract[] = {
+    {"id", Carriage::FromState},
+    {"name", Carriage::FromState},
+    {"pluginId", Carriage::FromState},
+    {"manufacturer", Carriage::FromState},
+    {"format", Carriage::FromState},
+    {"isInstrument", Carriage::FromState},
+    {"deviceType", Carriage::FromState},
+    {"fileOrIdentifier", Carriage::FromState},
+    {"bypassed", Carriage::FromState},
+    {"pluginState", Carriage::FromState},
+    {"canReceiveMidi", Carriage::FromState},
+    {"producesMidi", Carriage::FromState},
+
+    {"parameters", Carriage::FromLiveGrid},
+    {"wrapperParameters", Carriage::FromLiveGrid},
+    {"meters", Carriage::FromLiveGrid},
+    {"audioInputChannels", Carriage::FromLiveGrid},
+    {"audioOutputChannels", Carriage::FromLiveGrid},
+
+    {"macros", Carriage::CannotOwn},
+    {"mods", Carriage::CannotOwn},
+    {"sidechain", Carriage::CannotOwn},
+    {"multiOut", Carriage::CannotOwn},
+    {"deltaSolo", Carriage::CannotOwn},
+    {"midiInThru", Carriage::CannotOwn},
+    {"kitRows", Carriage::CannotOwn},
+    {"gainValue", Carriage::CannotOwn},
+    {"gainDb", Carriage::CannotOwn},
+
+    {"canSidechain", Carriage::StateSilent},
+    {"uniqueId", Carriage::StateSilent},
+    {"vst3ClassId", Carriage::StateSilent},
+    {"vst3Preset", Carriage::StateSilent},
+
+    {"browserCategoryOverride", Carriage::UiOnly},
+    {"expanded", Carriage::UiOnly},
+    {"modPanelOpen", Carriage::UiOnly},
+    {"gainPanelOpen", Carriage::UiOnly},
+    {"paramPanelOpen", Carriage::UiOnly},
+    {"aiPanelOpen", Carriage::UiOnly},
+    {"aiPanelOutput", Carriage::UiOnly},
+    {"aiConversation", Carriage::UiOnly},
+    {"visibleParameters", Carriage::UiOnly},
+    {"miniMixerParameters", Carriage::UiOnly},
+    {"aiSoundDesignerParameters", Carriage::UiOnly},
+    {"aiSoundDesignerPrompt", Carriage::UiOnly},
+    {"currentParameterPage", Carriage::UiOnly},
+    {"loadState", Carriage::UiOnly},
+    {"padRack", Carriage::UiOnly},
+};
+
+/// The source with its comments, string and character literals removed, so a
+/// brace or a semicolon inside one cannot be read as structure.
+std::string withoutCommentsAndLiterals(const std::string& text) {
+    const auto starts = [&text](std::size_t at, const char* token) {
+        return text.compare(at, std::strlen(token), token) == 0;
+    };
+
+    std::string out;
+    out.reserve(text.size());
+
+    for (std::size_t i = 0; i < text.size();) {
+        if (starts(i, "//")) {
+            while (i < text.size() && text[i] != '\n')
+                ++i;
+        } else if (starts(i, "/*")) {
+            i += 2;
+            while (i < text.size() && !starts(i, "*/"))
+                ++i;
+            i = std::min(i + 2, text.size());
+        } else if (text[i] == '"' || text[i] == '\'') {
+            const auto quote = text[i++];
+            while (i < text.size() && text[i] != quote)
+                i += text[i] == '\\' ? 2 : 1;
+            ++i;
+        } else {
+            out += text[i++];
+        }
+    }
+
+    return out;
+}
+
+/// The declared name in `juce::String name` or `int channels = 2`: the last
+/// identifier before the initialiser, whatever the type in front of it is.
+std::string lastIdentifier(const std::string& declarator) {
+    std::string current, last;
+
+    for (const auto c : declarator) {
+        if (std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_') {
+            current += c;
+            continue;
+        }
+        if (!current.empty())
+            last = current;
+        current.clear();
+    }
+
+    return current.empty() ? last : current;
+}
+
+/// Every data member declared directly in `struct name`, in declaration order.
+///
+/// Member functions are not members here, and neither is anything a body
+/// contains: only the depth the struct's own declarations sit at is read.
+std::vector<std::string> fieldsOfStruct(const std::string& source, const std::string& name) {
+    std::vector<std::string> fields;
+    const auto declaration = "struct " + name;
+
+    // Past any forward declaration: the body is the one an opening brace
+    // follows.
+    std::size_t body = std::string::npos;
+    for (auto at = source.find(declaration); at != std::string::npos;
+         at = source.find(declaration, at + 1)) {
+        auto after = at + declaration.size();
+        while (after < source.size() &&
+               std::isspace(static_cast<unsigned char>(source[after])) != 0)
+            ++after;
+        if (after < source.size() && source[after] == '{') {
+            body = after;
+            break;
+        }
+    }
+
+    if (body == std::string::npos)
+        return fields;
+
+    int depth = 0;
+    std::string statement, beforeBrace;
+
+    for (auto i = body; i < source.size(); ++i) {
+        const auto c = source[i];
+
+        if (c == '{') {
+            if (depth == 1)
+                beforeBrace = statement;
+            ++depth;
+            continue;
+        }
+
+        if (c == '}') {
+            if (--depth == 0)
+                break;
+            // A brace after a member function's parameter list opens its body,
+            // and the declaration ends with it. Anywhere else it is a member's
+            // initialiser, and the declaration runs on to its semicolon.
+            if (depth == 1)
+                statement =
+                    beforeBrace.find('(') == std::string::npos ? beforeBrace : std::string();
+            continue;
+        }
+
+        if (depth != 1)
+            continue;
+
+        if (c != ';') {
+            statement += c;
+            continue;
+        }
+
+        const auto declarator = statement.substr(0, statement.find('='));
+        statement.clear();
+
+        // A '(' ahead of any initialiser makes it a function declaration.
+        if (declarator.find('(') != std::string::npos)
+            continue;
+
+        if (auto field = lastIdentifier(declarator); !field.empty())
+            fields.push_back(std::move(field));
+    }
+
+    return fields;
+}
+
+std::string headerText(const juce::String& path) {
+    const auto file = juce::File(MAGDA_REPO_ROOT).getChildFile(path);
+    REQUIRE(file.existsAsFile());
+    return file.loadFileAsString().toStdString();
+}
+
+/// The stretch of the contract in DrumGridPads.hpp that lists one carriage's
+/// fields: from the sentence introducing it to whatever comes next.
+std::string contractSection(const std::string& header, Carriage carriage) {
+    // In the order the header states them, so each section ends where the next
+    // begins and the last one runs to the end of the block.
+    constexpr struct {
+        Carriage carriage;
+        const char* opening;
+    } kSections[] = {
+        {Carriage::FromState, "Carried, out of the saved state:"},
+        {Carriage::FromLiveGrid, "Carried, out of the live grid:"},
+        {Carriage::CannotOwn, "Absent because a pad device cannot own it:"},
+        {Carriage::StateSilent, "Absent because the saved state does not say:"},
+        {Carriage::UiOnly, "Absent because it is UI or session state"},
+    };
+
+    for (std::size_t i = 0; i < std::size(kSections); ++i) {
+        if (kSections[i].carriage != carriage)
+            continue;
+
+        const auto from = header.find(kSections[i].opening);
+        if (from == std::string::npos)
+            return {};
+
+        const auto to = i + 1 < std::size(kSections) ? header.find(kSections[i + 1].opening, from)
+                                                     : header.find("*/", from);
+        return header.substr(from, to == std::string::npos ? std::string::npos : to - from);
+    }
+
+    return {};
+}
+
+bool classified(const std::string& field) {
+    return std::any_of(std::begin(kPadDeviceContract), std::end(kPadDeviceContract),
+                       [&field](const FieldContract& entry) { return field == entry.field; });
+}
+
+}  // namespace
+
+TEST_CASE("Every DeviceInfo field is classified by the pad projection's contract",
+          "[drumgrid][pads][contract]") {
+    const auto fields = fieldsOfStruct(
+        withoutCommentsAndLiterals(headerText("magda/daw/core/DeviceInfo.hpp")), "DeviceInfo");
+
+    // If this trips, the scanner stopped finding the struct rather than the
+    // struct losing its fields.
+    REQUIRE(fields.size() > 20);
+
+    std::vector<std::string> unclassified;
+    for (const auto& field : fields)
+        if (!classified(field))
+            unclassified.push_back(field);
+
+    if (!unclassified.empty()) {
+        std::string report =
+            "DeviceInfo has fields the Drum Grid pad projection has not been taught about:\n";
+        for (const auto& field : unclassified)
+            report += "  " + field + "\n";
+        report +=
+            "\nDecide whether a projected pad device carries each one, say so in the contract "
+            "in DrumGridPads.hpp, and add it to kPadDeviceContract. Carrying one also means "
+            "teaching every walk that collects it to descend into padRack.";
+        UNSCOPED_INFO(report);
+    }
+    CHECK(unclassified.empty());
+
+    std::vector<std::string> stale;
+    for (const auto& entry : kPadDeviceContract)
+        if (std::find(fields.begin(), fields.end(), entry.field) == fields.end())
+            stale.push_back(entry.field);
+
+    if (!stale.empty()) {
+        std::string report =
+            "The pad projection's contract names fields DeviceInfo no longer has:\n";
+        for (const auto& field : stale)
+            report += "  " + field + "\n";
+        UNSCOPED_INFO(report);
+    }
+    CHECK(stale.empty());
+}
+
+TEST_CASE("The contract in DrumGridPads.hpp names every field where it classifies it",
+          "[drumgrid][pads][contract]") {
+    // The table above is what fails the build; the header is where someone
+    // reads why. A field classified in one and missing from the other leaves
+    // the reason unwritten, which is the state this contract exists to end.
+    const auto header = headerText("magda/daw/core/DrumGridPads.hpp");
+
+    std::vector<std::string> undocumented;
+    for (const auto& entry : kPadDeviceContract) {
+        const auto section = contractSection(header, entry.carriage);
+        if (section.find("`" + std::string(entry.field) + "`") == std::string::npos)
+            undocumented.push_back(entry.field);
+    }
+
+    if (!undocumented.empty()) {
+        std::string report =
+            "Fields the table classifies that the matching paragraph of DrumGridPads.hpp does "
+            "not name:\n";
+        for (const auto& field : undocumented)
+            report += "  " + field + "\n";
+        UNSCOPED_INFO(report);
+    }
+    CHECK(undocumented.empty());
+}
+
+TEST_CASE("The field scanner reads declarations and not bodies", "[drumgrid][pads][contract]") {
+    // Without this the guard above is worth nothing: a scanner that counted a
+    // member function's locals would demand they be classified, and one that
+    // stopped at the first function body would never see the fields after it.
+    const std::string source = R"(
+struct DeviceInfo {
+    int declared = 0;
+    juce::String name;  // int inAComment;
+    std::vector<int> braceInitialised{};
+    MacroArray macros = createDefaultMacros();
+
+    int findParameterByIndex(int index) {
+        int local = 0;
+        return local;
+    }
+
+    juce::String getFormatString() const { return "}; int inALiteral;"; }
+
+    int afterABody = 1;
+};
+)";
+
+    const auto fields = fieldsOfStruct(withoutCommentsAndLiterals(source), "DeviceInfo");
+    CHECK(fields ==
+          std::vector<std::string>{"declared", "name", "braceInitialised", "macros", "afterABody"});
+}
+
+TEST_CASE("The field scanner skips a forward declaration", "[drumgrid][pads][contract]") {
+    const std::string source = R"(
+struct DeviceInfo;
+struct Other { int notMine = 0; };
+struct DeviceInfo {
+    int mine = 0;
+};
+)";
+
+    CHECK(fieldsOfStruct(withoutCommentsAndLiterals(source), "DeviceInfo") ==
+          std::vector<std::string>{"mine"});
 }
