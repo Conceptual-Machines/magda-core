@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "../../core/DrumGridPads.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/aliases/AutoAliasGenerator.hpp"
@@ -451,6 +452,10 @@ void PluginManager::captureAllPluginStates() {
 
             // Always overwrite pluginState (even if empty) to avoid stale state.
             devInfo->pluginState = stateStr;
+            // Pads follow the state they live in. Also where they become
+            // keyable: a Drum Grid allocates a pad plugin's DeviceId when it
+            // restores it, so the ids exist here and not at load (#2192).
+            refreshPadRack(*devInfo);
             captureVst3Info(*devInfo, capturedExt);
             if (sd.processor != nullptr)
                 sd.processor->populateParameters(*devInfo);
@@ -488,6 +493,7 @@ void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
     }
 
     devInfo->pluginState = stateStr;
+    refreshPadRack(*devInfo);
     captureVst3Info(*devInfo, capturedExt);
     if (it->second.processor)
         it->second.processor->populateParameters(*devInfo);

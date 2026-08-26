@@ -343,6 +343,11 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     static const juce::Identifier mixerExpandedId;
     static const juce::Identifier multiOutEnabledId;
     static const juce::Identifier pluginDeviceIdProp;
+    /// Whether a pad's plugin is an instrument, as the plugin itself answers.
+    /// Saved because nothing outside the engine can ask an external plugin, and
+    /// position does not answer it: an effect can be inserted at index 0, and
+    /// plugins can be moved and removed (#2192).
+    static const juce::Identifier pluginIsInstrumentProp;
 
     Chain* findChainForNote(int midiNote);
     Chain* findOrCreateChainForPad(int padIndex);

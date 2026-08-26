@@ -34,6 +34,9 @@ set(TEST_SOURCES
     test_control_target.cpp
     test_tempo_sequence_ripple_math.cpp
     test_chain_fingerprint.cpp
+    test_chain_info_copy.cpp
+    test_drum_grid_pads.cpp
+    test_drum_grid_pads_corpus.cpp
     test_chain_routing_model.cpp
     test_post_fx_chain.cpp
     test_group_tracks_and_macros.cpp

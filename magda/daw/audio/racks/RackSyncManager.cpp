@@ -1,5 +1,6 @@
 #include "racks/RackSyncManager.hpp"
 
+#include "../../core/DrumGridPads.hpp"
 #include "TracktionHelpers.hpp"
 #include "core/ChainRoutingModel.hpp"
 #include "core/TrackManager.hpp"
@@ -522,6 +523,8 @@ void RackSyncManager::capturePluginStates(SyncedRack& synced) {
         }
 
         devInfo->pluginState = stateStr;
+        // As on a track: pads follow the state they live in (#2192).
+        refreshPadRack(*devInfo);
         pluginManager_.refreshDeviceParameters(devicePath);
     }
 }
