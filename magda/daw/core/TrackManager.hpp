@@ -505,7 +505,22 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
 
     /// Which output a pad plays out of: 0 is the grid's own mix, 1+ a multi-out
     /// bus. `ChainInfo::outputIndex`, the same field a rack chain routes with.
-    void setPadOutput(const ChainNodePath& gridPath, int padIndex, int outputIndex);
+    ///
+    /// False, and refused, for a bus on a grid that is not a top-level device.
+    /// A multi-out child track is fed by an output instance the instrument rack
+    /// manager makes for a wrapped top-level instrument; a grid inside a MAGDA
+    /// rack is loaded by RackSyncManager and has no such entry, so the bus
+    /// would name a track nothing reaches (#2211).
+    bool setPadOutput(const ChainNodePath& gridPath, int padIndex, int outputIndex);
+
+    /// Whether a bus can be assigned to @p gridPath's pads at all.
+    bool padBusesAvailable(const ChainNodePath& gridPath) const;
+
+    /// Whether @p padIndex's chain could take this range: inside the grid's own
+    /// notes, and clear of every other pad chain's. Asked before the edit so a
+    /// refused range does not become an undo step that changed nothing.
+    bool padNoteRangeIsFree(const ChainNodePath& gridPath, int padIndex, int lowNote,
+                            int highNote) const;
 
     /// The notes a pad answers to, and the one its sampler is rooted on.
     ///

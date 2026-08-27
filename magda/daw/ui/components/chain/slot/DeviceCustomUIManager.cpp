@@ -1247,7 +1247,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         if (auto* chain = dg->getChainForNote(midiNote)) {
             drumGridUI_->updatePadInfo(padIndex, getChainDisplayName(*chain), chain->mute.get(),
                                        chain->solo.get(), chain->level.get(), chain->pan.get(),
-                                       chain->index, chain->bypassed.get());
+                                       chain->index, chain->bypassed.get(), chain->busOutput.get());
         } else {
             drumGridUI_->updatePadInfo(padIndex, "", false, false, 0.0f, 0.0f, -1);
         }
@@ -1359,8 +1359,19 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         return {pad->lowNote, pad->highNote, pad->rootNote};
     };
 
-    drumGridUI_->onPadRangeChanged = [postPadEdit](int padIndex, int lowNote, int highNote,
-                                                   int rootNote) {
+    drumGridUI_->onPadRangeChanged = [this, postPadEdit, gridPath](int padIndex, int lowNote,
+                                                                   int highNote, int rootNote) {
+        // A range has to stay inside the grid's own notes and clear of every
+        // other pad's. Asked before the edit, so a refused range snaps the row
+        // back rather than leaving it showing something the model never took,
+        // and does not become an undo step that changed nothing.
+        if (!magda::TrackManager::getInstance().padNoteRangeIsFree(gridPath(), padIndex, lowNote,
+                                                                   highNote)) {
+            if (drumGridUI_ != nullptr)
+                drumGridUI_->refreshRangeRows();
+            return;
+        }
+
         postPadEdit("Set Pad Key Range",
                     [padIndex, lowNote, highNote, rootNote](const magda::ChainNodePath& grid) {
                         magda::TrackManager::getInstance().setPadNoteRange(grid, padIndex, lowNote,
@@ -2359,7 +2370,7 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
                         drumGridUI_->updatePadInfo(padIdx, displayName, chain->mute.get(),
                                                    chain->solo.get(), chain->level.get(),
                                                    chain->pan.get(), chain->index,
-                                                   chain->bypassed.get());
+                                                   chain->bypassed.get(), chain->busOutput.get());
                     }
                 }
             }

@@ -760,6 +760,64 @@ TEST_CASE("A pad's range cannot reach a note another pad already answers to",
     CHECK(tm.getPad(gridPath, 0)->highNote == note + 1);
 }
 
+TEST_CASE("A pad's range has to stay inside the notes the grid shows",
+          "[drumgrid][pads][commands]") {
+    // The grid shows kPadCount pads from kPadBaseNote and builds its rows from
+    // those notes. A chain retuned clear of them keeps playing and disappears
+    // from the UI, with no way left to edit or delete it.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+    const auto note = padNoteFor(0);
+
+    CHECK_FALSE(tm.padNoteRangeIsFree(gridPath, 0, 0, kPadBaseNote - 1));
+    CHECK_FALSE(tm.setPadNoteRange(gridPath, 0, 0, kPadBaseNote - 1, 0));
+    CHECK(tm.getPad(gridPath, 0)->lowNote == note);
+
+    const auto lastNote = padNoteFor(kPadCount - 1);
+    CHECK_FALSE(tm.setPadNoteRange(gridPath, 0, lastNote + 1, 127, lastNote + 1));
+    CHECK(tm.getPad(gridPath, 0)->lowNote == note);
+}
+
+TEST_CASE("A pad on a grid inside a rack cannot be put on a bus", "[drumgrid][pads][commands]") {
+    // A multi-out child track is fed by the output instance InstrumentRackManager
+    // makes when it wraps a top-level instrument. A grid inside a MAGDA rack is
+    // loaded by RackSyncManager and has no entry there, so a bus would name a
+    // track nothing reaches and the pads on it would go silent.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto rackId = tm.addRackToTrack(trackId, "Rack");
+    const auto rackChainId = tm.addChainToRack(ChainNodePath::rack(trackId, rackId));
+    const auto rackChainPath = ChainNodePath::chain(trackId, rackId, rackChainId);
+    const auto nestedGridId = tm.addDeviceToChainByPath(rackChainPath, drumGridDevice());
+    REQUIRE(nestedGridId != INVALID_DEVICE_ID);
+
+    const auto nestedGridPath = rackChainPath.withDevice(nestedGridId);
+    REQUIRE(tm.setPadDevice(nestedGridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+
+    CHECK_FALSE(tm.padBusesAvailable(nestedGridPath));
+    CHECK_FALSE(tm.setPadOutput(nestedGridPath, 0, 1));
+    CHECK(tm.getPad(nestedGridPath, 0)->outputIndex == 0);
+
+    // Back to the grid's own mix is always allowed, nested or not.
+    CHECK(tm.setPadOutput(nestedGridPath, 0, 0));
+
+    // A top-level grid takes one.
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Snare")) != INVALID_DEVICE_ID);
+    CHECK(tm.padBusesAvailable(gridPath));
+    CHECK(tm.setPadOutput(gridPath, 0, 2));
+    CHECK(tm.getPad(gridPath, 0)->outputIndex == 2);
+}
+
 TEST_CASE("A pad chain answering to more than one note can still be deleted",
           "[drumgrid][pads][commands]") {
     // clearPad() is the pad's own delete and leaves a chain shared with its

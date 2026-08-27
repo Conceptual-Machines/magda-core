@@ -4,6 +4,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
+#include <atomic>
 #include <functional>
 #include <memory>
 
@@ -157,6 +158,10 @@ class DrumGridUI : public juce::Component,
     /** Rebuild visible chain rows from padInfos_. */
     void rebuildChainRows();
 
+    /** Re-read the key range rows from the model. Called after an edit the
+        model refused, so the row shows the range it actually kept (#2211). */
+    void refreshRangeRows();
+
     /** Show or hide the chains panel. */
     void setChainsPanelVisible(bool visible);
 
@@ -245,7 +250,15 @@ class DrumGridUI : public juce::Component,
     };
 
     std::array<PadInfo, kTotalPads> padInfos_;
-    int faderGesture_ = 0;
+
+    // Process-wide and monotonic. A token local to one DrumGridUI restarts at
+    // zero every time the component is rebuilt -- reopening the device UI,
+    // switching tracks -- and none of that is an undoable action, so the last
+    // fader command can still be on top of the undo stack when the first drag
+    // in the new UI arrives. Reusing the token would fold two sessions into
+    // one step (#2211).
+    static std::atomic<int> nextFaderGesture_;
+    int faderGesture_ = nextFaderGesture_.fetch_add(1);
     int selectedPad_ = 0;
     int currentPage_ = 0;
 
@@ -315,7 +328,6 @@ class DrumGridUI : public juce::Component,
     //==============================================================================
     void setDetailCollapsed(bool collapsed);
     void refreshPadButtons();
-    void refreshRangeRows();
     void refreshDetailPanel();
     void goToPrevPage();
     void goToNextPage();

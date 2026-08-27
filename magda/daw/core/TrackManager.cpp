@@ -872,9 +872,14 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
         tracks_.push_back(std::move(newTrack));
     }
 
-    // Re-fetch pointers after insert (vector reallocation invalidates them)
+    // Re-fetch pointers after insert (vector reallocation invalidates them).
+    // Through the same lookup as above: the flat one misses a device inside a
+    // rack, and this dereferences what it answers (#2211).
     parentTrack = getTrack(parentTrackId);
-    device = getDevice(parentTrackId, deviceId);
+    device = multiOutDevice(*this, parentTrackId, deviceId);
+    if (device == nullptr || pairIndex >= static_cast<int>(device->multiOut.outputPairs.size()))
+        return INVALID_TRACK_ID;
+
     auto& pairRef = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
 
     // Update the output pair state

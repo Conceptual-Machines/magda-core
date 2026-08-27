@@ -334,10 +334,24 @@ void TrackManager::setPadBypassed(const ChainNodePath& gridPath, int padIndex, b
     }
 }
 
-void TrackManager::setPadOutput(const ChainNodePath& gridPath, int padIndex, int outputIndex) {
+bool TrackManager::padBusesAvailable(const ChainNodePath& gridPath) const {
+    // A multi-out child track is fed by the output instance
+    // InstrumentRackManager makes when it wraps a top-level instrument. A grid
+    // inside a MAGDA rack is loaded by RackSyncManager instead and has no entry
+    // there, so nothing would carry a bus off it: the pads on that bus would
+    // simply go silent. Refused until that route exists (#2211).
+    return gridPath.getType() == ChainNodeType::TopLevelDevice;
+}
+
+bool TrackManager::setPadOutput(const ChainNodePath& gridPath, int padIndex, int outputIndex) {
+    if (outputIndex != 0 && !padBusesAvailable(gridPath))
+        return false;
+
     auto* pad = mutablePad(gridPath, padIndex);
-    if (pad == nullptr || pad->outputIndex == outputIndex)
-        return;
+    if (pad == nullptr)
+        return false;
+    if (pad->outputIndex == outputIndex)
+        return true;
 
     pad->outputIndex = outputIndex;
 
@@ -345,6 +359,40 @@ void TrackManager::setPadOutput(const ChainNodePath& gridPath, int padIndex, int
     // whether the grid needs a multi-out child track for it, and that is
     // settled by the device sync (PluginManager::syncDrumGridMultiOutTracks).
     notifyTrackDevicesChanged(gridPath.trackId);
+    return true;
+}
+
+bool TrackManager::padNoteRangeIsFree(const ChainNodePath& gridPath, int padIndex, int lowNote,
+                                      int highNote) const {
+    const auto* pads = getPads(gridPath);
+    if (pads == nullptr)
+        return false;
+
+    const auto* pad = findPadChain(*pads, padIndex);
+    if (pad == nullptr)
+        return false;
+
+    const auto low = juce::jlimit(0, 127, std::min(lowNote, highNote));
+    const auto high = juce::jlimit(0, 127, std::max(lowNote, highNote));
+
+    // Reachable. The grid shows kPadCount pads from kPadBaseNote, and its rows
+    // are built from those notes: a chain moved clear of them keeps playing and
+    // disappears from the UI, with no way left to edit or delete it.
+    if (high < kPadBaseNote || low > kPadBaseNote + kPadCount - 1)
+        return false;
+
+    // One note, one owner. Every chain whose range covers an incoming note
+    // plays it, so an overlap layers two sounds the UI has no way to tell
+    // apart: the rows show the last chain to claim a note and the setters
+    // reach the first, so a row would edit a chain other than the one it
+    // shows. Refused rather than silently normalised, so the row snaps back
+    // to what the model kept.
+    for (const auto& other : pads->chains)
+        if (other.id != pad->id && !other.answersToEveryNote() && low <= other.highNote &&
+            high >= other.lowNote)
+            return false;
+
+    return true;
 }
 
 bool TrackManager::setPadNoteRange(const ChainNodePath& gridPath, int padIndex, int lowNote,
@@ -364,16 +412,8 @@ bool TrackManager::setPadNoteRange(const ChainNodePath& gridPath, int padIndex, 
     if (pad->lowNote == low && pad->highNote == high && pad->rootNote == root)
         return true;
 
-    // One note, one owner. Every chain whose range covers an incoming note
-    // plays it, so an overlap layers two sounds the UI has no way to tell
-    // apart: the rows show the last chain to claim a note and the setters
-    // reach the first, so a row would edit a chain other than the one it
-    // shows. Refused rather than silently normalised, so the slider snaps
-    // back to what the model kept.
-    for (const auto& other : pads->chains)
-        if (other.id != pad->id && !other.answersToEveryNote() && low <= other.highNote &&
-            high >= other.lowNote)
-            return false;
+    if (!padNoteRangeIsFree(gridPath, padIndex, low, high))
+        return false;
 
     pad->lowNote = low;
     pad->highNote = high;

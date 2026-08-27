@@ -18,6 +18,8 @@ namespace te = tracktion::engine;
 
 namespace magda::daw::ui {
 
+std::atomic<int> DrumGridUI::nextFaderGesture_{0};
+
 // =============================================================================
 // PadButton
 // =============================================================================
@@ -261,7 +263,7 @@ DrumGridUI::DrumGridUI() {
         if (onPadLevelChanged)
             onPadLevelChanged(selectedPad_, static_cast<float>(value));
     };
-    levelSlider_.onDragEnd = [this]() { ++faderGesture_; };
+    levelSlider_.onDragEnd = [this]() { faderGesture_ = nextFaderGesture_.fetch_add(1); };
     addAndMakeVisible(levelSlider_);
 
     // Pan slider (-1 to +1)
@@ -289,7 +291,7 @@ DrumGridUI::DrumGridUI() {
         if (onPadPanChanged)
             onPadPanChanged(selectedPad_, static_cast<float>(value));
     };
-    panSlider_.onDragEnd = [this]() { ++faderGesture_; };
+    panSlider_.onDragEnd = [this]() { faderGesture_ = nextFaderGesture_.fetch_add(1); };
     addAndMakeVisible(panSlider_);
 
     // Mute/Solo buttons
@@ -994,7 +996,7 @@ void DrumGridUI::rebuildChainRows() {
             if (onPadPanChanged)
                 onPadPanChanged(padIndex, val);
         };
-        row->onFaderGestureEnd = [this]() { ++faderGesture_; };
+        row->onFaderGestureEnd = [this]() { faderGesture_ = nextFaderGesture_.fetch_add(1); };
         row->onMuteChanged = [this](int padIndex, bool val) {
             padInfos_[static_cast<size_t>(padIndex)].mute = val;
             if (onPadMuteChanged)

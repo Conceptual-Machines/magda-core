@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include "core/DrumGridPads.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -16,9 +17,14 @@ PadChainRangeRowComponent::PadChainRangeRowComponent(int padIndex) : padIndex_(p
     addAndMakeVisible(nameLabel_);
 
     // Helper to set up a note slider (0-127, displayed as note names)
+    // Only the notes the grid shows. A chain retuned clear of them keeps
+    // playing and disappears from the rows, with no way left to edit or delete
+    // it; the model refuses such a range, and the slider does not offer it
+    // (#2211).
     auto setupNoteSlider = [this](TextSlider& slider) {
-        slider.setRange(0.0, 127.0, 1.0);
-        slider.setValue(60.0, juce::dontSendNotification);
+        slider.setRange(static_cast<double>(kPadBaseNote),
+                        static_cast<double>(kPadBaseNote + kPadCount - 1), 1.0);
+        slider.setValue(static_cast<double>(kPadBaseNote), juce::dontSendNotification);
         slider.setShowFillIndicator(false);
         slider.setValueFormatter([](double v) { return midiNoteToName(static_cast<int>(v)); });
         slider.setValueParser([](const juce::String& text) {
