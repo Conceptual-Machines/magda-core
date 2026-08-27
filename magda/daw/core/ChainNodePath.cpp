@@ -88,7 +88,7 @@ bool fromVar(const juce::var& v, ChainNodePath& out) {
             if (!readRequiredInt(*stepObj, "type", rawType))
                 return false;
             if (rawType < static_cast<int>(ChainStepType::Rack) ||
-                rawType > static_cast<int>(ChainStepType::Segment))
+                rawType > static_cast<int>(ChainStepType::PadChain))
                 return false;
 
             ChainPathStep step;
@@ -105,6 +105,19 @@ bool fromVar(const juce::var& v, ChainNodePath& out) {
                     step.id > static_cast<int>(ChainSegment::MixerAnalysis))
                     return false;
             }
+
+            // The pad steps come as a leading pair. A pad path names its owning
+            // grid by DeviceId rather than by a route to it, so PadRack is always
+            // step 0 and PadChain always step 1; accepting either anywhere else
+            // would readmit exactly the ambiguity the types exist to remove.
+            if (step.type == ChainStepType::PadRack && i != 0)
+                return false;
+            if (step.type == ChainStepType::PadChain &&
+                (i != 1 || path.steps.front().type != ChainStepType::PadRack))
+                return false;
+            if (i == 1 && path.steps.front().type == ChainStepType::PadRack &&
+                step.type != ChainStepType::PadChain)
+                return false;
 
             path.steps.push_back(step);
         }
