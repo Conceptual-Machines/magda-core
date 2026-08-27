@@ -352,6 +352,61 @@ TEST_CASE("A project saved before the pad step types still resolves and is retyp
     CHECK(migrated.isPadOwned());
 }
 
+TEST_CASE("A load retypes an address a rack answers only the prefix of",
+          "[drumgrid][pads][path][migration]") {
+    // The tie-break is the whole route, not the leading pair. A rack and a grid
+    // can share both leading numbers while the leaf device exists only on the
+    // pad, and the old resolver walked the rack tree, failed to find the leaf in
+    // the chain it landed in, and fell through to the pad route. Left untyped,
+    // duplication would move the owner id through the racks map and break the
+    // link.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto rackId = tm.addRackToTrack(trackId, "FX Rack");
+    const auto rackChainId = tm.addChainToRack(ChainNodePath::rack(trackId, rackId));
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    REQUIRE(rackId == gridId);
+
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+    const auto voiceId = tm.setPadDevice(gridPath, 0, padVoice("Kick"));
+    REQUIRE(voiceId != INVALID_DEVICE_ID);
+
+    auto* pad = tm.getPad(gridPath, 0);
+    REQUIRE(pad != nullptr);
+    tm.getPadChain(gridPath, pad->id)->id = rackChainId;
+
+    // The rack chain exists and shares both numbers, but holds nothing, so the
+    // leaf is answered only by the pad.
+    const auto* rackChain = tm.getChain(trackId, rackId, rackChainId);
+    REQUIRE(rackChain != nullptr);
+    REQUIRE(rackChain->elements.empty());
+
+    const auto typed = TrackManager::padChainPath(gridPath, rackChainId).withDevice(voiceId);
+    const auto legacy = asLegacySpelling(typed);
+
+    // Untyped, it already resolves through the pad, which is what the migration
+    // has to agree with.
+    const auto* resolved = tm.getDeviceInChainByPath(legacy);
+    REQUIRE(resolved != nullptr);
+    CHECK(resolved->id == voiceId);
+
+    auto* track = tm.getTrack(trackId);
+    REQUIRE(track != nullptr);
+    MacroLink link;
+    link.target = ControlTarget::pluginParam(legacy, 0);
+    track->macros[0].links.push_back(link);
+
+    std::vector<TrackInfo> tracks{*track};
+    std::vector<AutomationLaneInfo> lanes;
+    pad_paths::migrateLegacyPadPaths(tracks, nullptr, lanes);
+
+    const auto& migrated = tracks[0].macros[0].links[0].target.devicePath;
+    CHECK(migrated == typed);
+    CHECK(migrated.isPadOwned());
+}
+
 TEST_CASE("A load leaves an address an allocated rack can account for alone",
           "[drumgrid][pads][path][migration]") {
     // The tie-break the untyped spelling had: the ordinary rack route was tried
