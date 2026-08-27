@@ -123,6 +123,14 @@ bool fromVar(const juce::var& v, ChainNodePath& out) {
         }
     }
 
+    // A PadRack with nothing after it is not an address. The pair is the whole
+    // point: alone, the step names the pad rack, which nothing resolves, and
+    // getType() would report the path as an ordinary Rack whose id is a
+    // DeviceId, which is the ambiguity the types exist to remove. The in-loop
+    // checks cannot catch it, because there is no second step to check.
+    if (!path.steps.empty() && path.steps.back().type == ChainStepType::PadRack)
+        return false;
+
     if (obj->hasProperty("isTrackLevel")) {
         const auto flag = obj->getProperty("isTrackLevel");
         if (!flag.isBool())

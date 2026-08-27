@@ -361,6 +361,11 @@ TEST_CASE("Misplaced pad steps are rejected rather than loaded",
     // And a PadRack is always followed by one.
     CHECK_FALSE(fromVar(encode({{ChainStepType::PadRack, 1}, {ChainStepType::Chain, 1}}), out));
 
+    // Including when the input simply ends: a lone PadRack has no second step
+    // for the checks above to reject, and getType() would report it as an
+    // ordinary Rack whose id is really a DeviceId.
+    CHECK_FALSE(fromVar(encode({{ChainStepType::PadRack, 1}}), out));
+
     // The well-formed pair loads.
     CHECK(fromVar(encode({{ChainStepType::PadRack, 1}, {ChainStepType::PadChain, 1}}), out));
     CHECK(out.isPadOwned());
