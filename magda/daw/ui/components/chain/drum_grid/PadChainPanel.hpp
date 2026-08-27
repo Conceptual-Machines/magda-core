@@ -51,6 +51,10 @@ class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
             magda::INVALID_DEVICE_ID;  // MAGDA DeviceId for macro/mod linking
         std::function<std::pair<float, float>()> getMeterLevels;
         std::function<void(float)> onGainDbChanged;
+        /// The pad device's power, and where a toggle of it goes. Model state:
+        /// the slot reports, TrackManager decides, the sync applies (#2207).
+        bool bypassed = false;
+        std::function<void(bool)> onPowerChanged;
     };
 
     PadChainPanel();

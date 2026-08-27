@@ -1,7 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/ControlTarget.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
+#include "magda/daw/core/MacroInfo.hpp"
 #include "magda/daw/core/RackInfo.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
@@ -280,4 +282,129 @@ TEST_CASE("A duplicated Drum Grid keeps nothing of the original's pad keys",
     REQUIRE(copiedPad->elements.size() == 1);
     CHECK(getDevice(copiedPad->elements[0]).id != voiceId);
     CHECK(getDevice(copiedPad->elements[0]).id != INVALID_DEVICE_ID);
+}
+
+TEST_CASE("A duplicated grid's links follow its pads, and leave a like-numbered rack alone",
+          "[drumgrid][pads][commands]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+
+    // A rack numbered like the grid, holding a device with a link pointing at
+    // it. This is what a shared rack remap would corrupt.
+    const auto rackId = tm.addRackToTrack(trackId, "FX Rack");
+    const auto rackChainId = tm.addChainToRack(ChainNodePath::rack(trackId, rackId));
+    DeviceInfo rackDevice;
+    rackDevice.name = "Filter";
+    rackDevice.pluginId = "magda_filter";
+    rackDevice.format = PluginFormat::Internal;
+    const auto rackDeviceId = tm.addDeviceToChain(trackId, rackId, rackChainId, rackDevice);
+    REQUIRE(rackDeviceId != INVALID_DEVICE_ID);
+
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    constexpr int padIndex = 0;
+    const auto voiceId = tm.setPadDevice(gridPath, padIndex, padVoice("Kick"));
+    const auto* pad = tm.getPad(gridPath, padIndex);
+    REQUIRE(pad != nullptr);
+
+    // The grid's own macro reaches into its pad, spelled the way a pad device
+    // address is spelled: Rack(gridDeviceId) > Chain(pad) > Device(pad device).
+    const auto padDevicePath = TrackManager::padChainPath(gridPath, pad->id).withDevice(voiceId);
+    {
+        auto* grid = tm.getDevice(trackId, gridId);
+        REQUIRE(grid != nullptr);
+        MacroLink link;
+        link.target = ControlTarget::pluginParam(padDevicePath, 0);
+        link.amount = 1.0f;
+        grid->macros[0].links.push_back(link);
+    }
+
+    // A track macro reaching the rack device, through a rack whose number the
+    // grid shares.
+    const auto rackDevicePath =
+        ChainNodePath::chainDevice(trackId, rackId, rackChainId, rackDeviceId);
+    {
+        auto* track = tm.getTrack(trackId);
+        REQUIRE(track != nullptr);
+        MacroLink link;
+        link.target = ControlTarget::pluginParam(rackDevicePath, 0);
+        link.amount = 1.0f;
+        track->macros[0].links.push_back(link);
+    }
+
+    const auto copyTrackId = tm.duplicateTrack(trackId, true);
+    REQUIRE(copyTrackId != INVALID_TRACK_ID);
+
+    const auto* copyTrack = tm.getTrack(copyTrackId);
+    REQUIRE(copyTrack != nullptr);
+
+    const DeviceInfo* copiedGrid = nullptr;
+    const RackInfo* copiedRack = nullptr;
+    for (const auto& element : copyTrack->chain.fxChainElements) {
+        if (isDevice(element) && getDevice(element).pads)
+            copiedGrid = &getDevice(element);
+        else if (isRack(element))
+            copiedRack = &getRack(element);
+    }
+    REQUIRE(copiedGrid != nullptr);
+    REQUIRE(copiedRack != nullptr);
+
+    // The grid's link followed its pad onto the copy's own ids.
+    const auto* copiedPad = findPadChain(*copiedGrid->pads.get(), padIndex);
+    REQUIRE(copiedPad != nullptr);
+    REQUIRE(copiedPad->elements.size() == 1);
+    const auto copiedVoiceId = getDevice(copiedPad->elements[0]).id;
+
+    REQUIRE_FALSE(copiedGrid->macros[0].links.empty());
+    const auto& padLink = copiedGrid->macros[0].links[0].target.devicePath;
+    REQUIRE(padLink.steps.size() == 3);
+    CHECK(padLink.steps[0].id == copiedGrid->id);
+    CHECK(padLink.steps[2].id == copiedVoiceId);
+    CHECK(padLink.steps[2].id != voiceId);
+
+    // And the rack's link followed the rack, not the grid: the two shared a
+    // number, and a remap keyed on that number alone would have moved it.
+    REQUIRE_FALSE(copyTrack->macros[0].links.empty());
+    const auto& rackLink = copyTrack->macros[0].links[0].target.devicePath;
+    REQUIRE(rackLink.steps.size() == 3);
+    CHECK(rackLink.steps[0].id == copiedRack->id);
+
+    // The chain the device was added to, which is not the rack's first: a rack
+    // is made with one already.
+    const ChainInfo* copiedRackChain = nullptr;
+    for (const auto& chain : copiedRack->chains)
+        if (!chain.elements.empty())
+            copiedRackChain = &chain;
+    REQUIRE(copiedRackChain != nullptr);
+
+    CHECK(rackLink.steps[1].id == copiedRackChain->id);
+    CHECK(rackLink.steps[2].id == getDevice(copiedRackChain->elements[0]).id);
+    CHECK(rackLink.steps[2].id != rackDeviceId);
+}
+
+TEST_CASE("A pad device's power is model state", "[drumgrid][pads][commands]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    constexpr int padIndex = 0;
+    const auto voiceId = tm.setPadDevice(gridPath, padIndex, padVoice("Kick"));
+    const auto* pad = tm.getPad(gridPath, padIndex);
+    REQUIRE(pad != nullptr);
+    CHECK_FALSE(getDevice(pad->elements[0]).bypassed);
+
+    // Powering a pad device off writes the model, which is what a save reads
+    // and what the sync puts back onto the plugin. Toggling the plugin alone
+    // used to be lost on reload.
+    tm.setPadDeviceBypassed(gridPath, pad->id, voiceId, true);
+    CHECK(getDevice(tm.getPad(gridPath, padIndex)->elements[0]).bypassed);
+
+    tm.setPadDeviceBypassed(gridPath, pad->id, voiceId, false);
+    CHECK_FALSE(getDevice(tm.getPad(gridPath, padIndex)->elements[0]).bypassed);
 }

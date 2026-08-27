@@ -74,11 +74,14 @@ PadDeviceSlot::PadDeviceSlot() {
         DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
     onButton_->setActive(true);
     onButton_->onClick = [this]() {
-        if (plugin_) {
-            bool active = onButton_->getToggleState();
-            onButton_->setActive(active);
-            plugin_->setEnabled(active);
-        }
+        const bool active = onButton_->getToggleState();
+        onButton_->setActive(active);
+
+        // Reported, not applied. A pad device's power is model state, and the
+        // sync writes it onto the plugin; setting the plugin here instead is
+        // what used to make it vanish on reload (#2207).
+        if (onPowerChanged)
+            onPowerChanged(active);
     };
     addAndMakeVisible(*onButton_);
 
@@ -113,6 +116,14 @@ PadDeviceSlot::~PadDeviceSlot() {
 
 void PadDeviceSlot::setGainDb(float db) {
     gainSlider_.setValue(static_cast<double>(db), juce::dontSendNotification);
+}
+
+void PadDeviceSlot::setPowered(bool powered) {
+    if (onButton_ == nullptr)
+        return;
+
+    onButton_->setToggleState(powered, juce::dontSendNotification);
+    onButton_->setActive(powered);
 }
 
 void PadDeviceSlot::timerCallback() {

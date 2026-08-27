@@ -225,6 +225,8 @@ void PadChainPanel::rebuildSlots() {
         slot->getMeterLevels = info.getMeterLevels;
         slot->onGainDbChanged = info.onGainDbChanged;
         slot->setGainDb(info.gainDb);
+        slot->onPowerChanged = info.onPowerChanged;
+        slot->setPowered(!info.bypassed);
 
         // Set plugin content
         if (info.isSampler) {

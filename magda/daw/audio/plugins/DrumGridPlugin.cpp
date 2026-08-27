@@ -509,6 +509,25 @@ void DrumGridPlugin::syncPadPlugins(Chain& chain, const magda::ChainInfo& pad,
 
     chain.plugins = std::move(ordered);
     chain.pluginGains = std::move(gains);
+
+    applyPadPluginPower(chain, pad);
+}
+
+void DrumGridPlugin::applyPadPluginPower(Chain& chain, const magda::ChainInfo& pad) {
+    // A pad device's power is model state like everything else on a pad, so it
+    // is written on every sync pass and not only when the plugin is made: a
+    // plugin the sync kept would otherwise hold whatever it was last toggled
+    // to, and nothing else writes it now (#2207).
+    for (const auto& element : pad.elements) {
+        if (!magda::isDevice(element))
+            continue;
+
+        const auto& padDevice = magda::getDevice(element);
+        for (const auto& plugin : chain.plugins)
+            if (plugin != nullptr &&
+                static_cast<int>(plugin->state.getProperty(pluginDeviceIdProp, -1)) == padDevice.id)
+                plugin->setEnabled(!padDevice.bypassed);
+    }
 }
 
 void DrumGridPlugin::syncFromModel(const magda::RackInfo& pads,
@@ -547,9 +566,12 @@ void DrumGridPlugin::syncFromModel(const magda::RackInfo& pads,
         }
         chains_ = std::move(ordered);
     } else {
-        for (const auto& pad : pads.chains)
-            if (auto* chain = getChainByIndexMutable(pad.id))
+        for (const auto& pad : pads.chains) {
+            if (auto* chain = getChainByIndexMutable(pad.id)) {
                 rangeMoved |= applyPadProperties(*chain, pad, false);
+                applyPadPluginPower(*chain, pad);
+            }
+        }
     }
 
     // The snapshot carries the plugin list and the note ranges, so anything

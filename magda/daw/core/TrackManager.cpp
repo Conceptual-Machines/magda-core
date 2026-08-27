@@ -973,12 +973,19 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
                 // no longer be the one derived from its device id, which is how
                 // every pad path is built (#2207).
                 if (device.pads) {
-                    // Both ids a pad path can be spelled with: the device's own,
-                    // which is what a saved link carries, and the synthetic one
-                    // the plan keys its ops on.
-                    remap.racks[oldDeviceId] = device.id;
+                    // Only the synthetic id goes into the shared rack map. A pad
+                    // path spells its rack step with the grid's own DeviceId, and
+                    // rack ids come out of a counter that also starts at 1, so
+                    // putting that number in here would rewrite the paths of any
+                    // rack that happens to share it. The grid's own links onto
+                    // its pads are retargeted below instead, where the whole
+                    // path can be matched (#2207).
                     remap.racks[padRackIdFor(oldDeviceId)] = padRackIdFor(device.id);
-                    rekeyPads(device, &remap.devices);
+
+                    std::map<DeviceId, DeviceId> padDevices;
+                    rekeyPads(device, &padDevices);
+                    retargetPadLinks(device, oldDeviceId, padDevices);
+                    remap.devices.insert(padDevices.begin(), padDevices.end());
                 }
             } else if (magda::isRack(element)) {
                 auto& rack = magda::getRack(element);

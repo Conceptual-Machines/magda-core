@@ -302,6 +302,11 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     void syncPadPlugins(Chain& chain, const magda::ChainInfo& pad,
                         const PadPluginFactory& makePlugin, std::vector<te::Plugin::Ptr>& reap);
 
+    // Write each pad device's power onto the plugin built for it. Runs on every
+    // pass: a bypass toggle changes no structure, so the rebuild above does not
+    // see it.
+    void applyPadPluginPower(Chain& chain, const magda::ChainInfo& pad);
+
     // What the mirror was last built from, so a sync pass that changes nothing
     // does nothing. Structure only: pad ids, their devices, and the order of
     // both. Properties are cheap to write and are refreshed every pass.

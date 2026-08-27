@@ -125,6 +125,26 @@ void TrackManager::removeDeviceFromPad(const ChainNodePath& gridPath, ChainId pa
     notifyTrackDevicesChanged(gridPath.trackId);
 }
 
+void TrackManager::setPadDeviceBypassed(const ChainNodePath& gridPath, ChainId padChainId,
+                                        DeviceId deviceId, bool bypassed) {
+    auto* pad = getPadChain(gridPath, padChainId);
+    if (pad == nullptr)
+        return;
+
+    for (auto& element : pad->elements) {
+        if (!magda::isDevice(element) || magda::getDevice(element).id != deviceId)
+            continue;
+
+        auto& device = magda::getDevice(element);
+        if (device.bypassed == bypassed)
+            return;
+
+        device.bypassed = bypassed;
+        notifyTrackDevicesChanged(gridPath.trackId);
+        return;
+    }
+}
+
 void TrackManager::moveDeviceInPad(const ChainNodePath& gridPath, ChainId padChainId, int fromIndex,
                                    int toIndex) {
     auto* pad = getPadChain(gridPath, padChainId);

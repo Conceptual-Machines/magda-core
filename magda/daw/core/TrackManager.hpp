@@ -484,6 +484,10 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void moveDeviceInPad(const ChainNodePath& gridPath, ChainId padChainId, int fromIndex,
                          int toIndex);
 
+    /// Power a device on a pad's chain off or on.
+    void setPadDeviceBypassed(const ChainNodePath& gridPath, ChainId padChainId, DeviceId deviceId,
+                              bool bypassed);
+
     /// A pad's fader, pan and switches.
     void setPadVolume(const ChainNodePath& gridPath, int padIndex, float volume);
     void setPadPan(const ChainNodePath& gridPath, int padIndex, float pan);

@@ -1465,7 +1465,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
 
     // Provide plugin slot info for each pad (via its chain)
     padChain.getPluginSlots =
-        [getDrumGrid](int padIndex) -> std::vector<PadChainPanel::PluginSlotInfo> {
+        [getDrumGrid, gridPath](int padIndex) -> std::vector<PadChainPanel::PluginSlotInfo> {
         std::vector<PadChainPanel::PluginSlotInfo> result;
         auto* dg = getDrumGrid();
         if (!dg)
@@ -1475,6 +1475,22 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         auto* chain = dg->getChainForNote(midiNote);
         if (!chain)
             return result;
+
+        auto& tm = magda::TrackManager::getInstance();
+        const auto grid = gridPath();
+        const auto* pad = tm.getPad(grid, padIndex);
+        const auto padChainId = pad != nullptr ? pad->id : magda::INVALID_CHAIN_ID;
+
+        // What the model says a pad device is, matched by id. Only what the
+        // model cannot hold is read off the plugin (#2207).
+        const auto modelDevice = [pad](magda::DeviceId deviceId) -> const magda::DeviceInfo* {
+            if (pad == nullptr)
+                return nullptr;
+            for (const auto& element : pad->elements)
+                if (magda::isDevice(element) && magda::getDevice(element).id == deviceId)
+                    return &magda::getDevice(element);
+            return nullptr;
+        };
 
         for (int pluginIndex = 0; pluginIndex < static_cast<int>(chain->plugins.size());
              ++pluginIndex) {
@@ -1488,6 +1504,20 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             info.device = projectPadPluginDevice(info.deviceId, plugin);
             info.isSampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get()) != nullptr;
             info.name = info.device.name.isNotEmpty() ? info.device.name : plugin->getName();
+
+            if (const auto* device = modelDevice(info.deviceId)) {
+                info.bypassed = device->bypassed;
+                info.gainDb = device->gainDb;
+                info.device.bypassed = device->bypassed;
+            }
+
+            if (padChainId != magda::INVALID_CHAIN_ID) {
+                info.onPowerChanged = [grid, padChainId, deviceId = info.deviceId](bool powered) {
+                    magda::TrackManager::getInstance().setPadDeviceBypassed(grid, padChainId,
+                                                                            deviceId, !powered);
+                };
+            }
+
             result.push_back(info);
         }
         return result;
