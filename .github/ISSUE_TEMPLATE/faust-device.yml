@@ -1,0 +1,51 @@
+# A device shared from magda.land/community/devices.
+#
+# This exists for its `labels:` line. The submission page could put the whole
+# issue in a link, but GitHub only honours a `labels=` query parameter for
+# people who already have permission to label -- "you must have the proper
+# permissions for any action to use the equivalent query parameter" -- so a
+# contributor's submission would arrive bare and stay unpublished. A template
+# carries its labels itself, for whoever opens it.
+#
+# The fields are prefilled from the page by query parameter, one per field id:
+#   ?template=faust-device.yml&title=...&source=...&notes=...
+#
+# `render: faust` is what puts the source in a fenced block, which is what the
+# gallery reads it back out of. Everything else about the device -- its name,
+# its author, what it does -- is read from the DSP's own `declare` lines, so
+# the file stays the single source of truth and there is nothing to keep in
+# step with it.
+name: Share a Faust device
+description: A device you wrote, to be listed on magda.land for anyone to play and download
+title: "Faust device: "
+labels: ["faust-device"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Devices are usually sent from
+        [magda.land/community/devices](https://magda.land/community/devices/),
+        which compiles yours in your browser first and fills this in for you.
+        You can also paste one here directly.
+
+        Give the DSP a `declare name`, `declare author` and
+        `declare description` — that is where the listing gets its title, your
+        credit, and the text under it.
+
+  - type: textarea
+    id: source
+    attributes:
+      label: The device
+      description: The whole .dsp file.
+      render: faust
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything worth saying about it
+      description: Optional. What it is for, what to turn first, what it was modelled on.
+    validations:
+      required: false
