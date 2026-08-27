@@ -1516,6 +1516,10 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
                     magda::TrackManager::getInstance().setPadDeviceBypassed(grid, padChainId,
                                                                             deviceId, !powered);
                 };
+                info.onGainDbChanged = [grid, padChainId, deviceId = info.deviceId](float gainDb) {
+                    magda::TrackManager::getInstance().setPadDeviceGainDb(grid, padChainId,
+                                                                          deviceId, gainDb);
+                };
             }
 
             result.push_back(info);

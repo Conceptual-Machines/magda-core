@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <map>
 
 #include "DrumGridPads.hpp"
@@ -140,6 +141,28 @@ void TrackManager::setPadDeviceBypassed(const ChainNodePath& gridPath, ChainId p
             return;
 
         device.bypassed = bypassed;
+        notifyTrackDevicesChanged(gridPath.trackId);
+        return;
+    }
+}
+
+void TrackManager::setPadDeviceGainDb(const ChainNodePath& gridPath, ChainId padChainId,
+                                      DeviceId deviceId, float gainDb) {
+    auto* pad = getPadChain(gridPath, padChainId);
+    if (pad == nullptr)
+        return;
+
+    for (auto& element : pad->elements) {
+        if (!magda::isDevice(element) || magda::getDevice(element).id != deviceId)
+            continue;
+
+        auto& device = magda::getDevice(element);
+        device.gainDb = gainDb;
+        device.gainValue = std::pow(10.0f, gainDb / 20.0f);
+
+        // trackDevicesChanged, not devicePropertyChanged: the grid is filled
+        // from the model by the track sync, and that is what carries a pad
+        // device's gain onto the plugin it runs.
         notifyTrackDevicesChanged(gridPath.trackId);
         return;
     }

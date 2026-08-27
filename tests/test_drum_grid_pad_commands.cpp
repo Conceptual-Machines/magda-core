@@ -385,6 +385,29 @@ TEST_CASE("A duplicated grid's links follow its pads, and leave a like-numbered 
     CHECK(rackLink.steps[2].id != rackDeviceId);
 }
 
+TEST_CASE("A pad device's gain is model state", "[drumgrid][pads][commands]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    constexpr int padIndex = 0;
+    const auto voiceId = tm.setPadDevice(gridPath, padIndex, padVoice("Kick"));
+    const auto* pad = tm.getPad(gridPath, padIndex);
+    REQUIRE(pad != nullptr);
+
+    tm.setPadDeviceGainDb(gridPath, pad->id, voiceId, -6.0f);
+
+    const auto& device = getDevice(tm.getPad(gridPath, padIndex)->elements[0]);
+    CHECK(device.gainDb == -6.0f);
+
+    // Both, because the audio path reads the linear one and the slider the dB.
+    CHECK(device.gainValue > 0.50f);
+    CHECK(device.gainValue < 0.51f);
+}
+
 TEST_CASE("A pad device's power is model state", "[drumgrid][pads][commands]") {
     resetState();
     auto& tm = TrackManager::getInstance();
