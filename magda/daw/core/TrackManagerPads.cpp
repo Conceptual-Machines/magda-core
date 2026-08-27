@@ -317,38 +317,4 @@ ChainInfo* TrackManager::mutablePad(const ChainNodePath& gridPath, int padIndex)
     return pads != nullptr ? findPadChain(*pads, padIndex) : nullptr;
 }
 
-void TrackManager::retargetPadLinks(DeviceInfo& device, DeviceId oldDeviceId,
-                                    const std::map<DeviceId, DeviceId>& padDevices) {
-    if (padDevices.empty())
-        return;
-
-    // A pad device's address is `Rack(gridDeviceId) > Chain(pad) > Device(pad
-    // device)`. Both ends are checked before either is rewritten, so a link
-    // that merely passes through a rack numbered like the old grid is left
-    // alone: it names no pad device this copy re-keyed.
-    const auto retarget = [&](ControlTarget& target) {
-        auto& path = target.devicePath;
-        if (path.steps.size() != 3 || path.steps[0].type != ChainStepType::Rack ||
-            path.steps[1].type != ChainStepType::Chain ||
-            path.steps[2].type != ChainStepType::Device)
-            return;
-        if (path.steps[0].id != oldDeviceId)
-            return;
-
-        const auto found = padDevices.find(path.steps[2].id);
-        if (found == padDevices.end())
-            return;
-
-        path.steps[0].id = device.id;
-        path.steps[2].id = found->second;
-    };
-
-    for (auto& macro : device.macros)
-        for (auto& link : macro.links)
-            retarget(link.target);
-    for (auto& mod : device.mods)
-        for (auto& link : mod.links)
-            retarget(link.target);
-}
-
 }  // namespace magda

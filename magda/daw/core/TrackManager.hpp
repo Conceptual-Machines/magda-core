@@ -440,13 +440,6 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // them.
     void rekeyPads(DeviceInfo& device, std::map<DeviceId, DeviceId>* remap = nullptr);
 
-    // Follow a copied grid's own macro and mod links onto its re-keyed pads.
-    // Matched on the whole path rather than through the shared id maps: a pad
-    // path's rack step is a DeviceId, and rewriting every Rack step that shares
-    // that number would move an unrelated rack's links with it (#2207).
-    static void retargetPadLinks(DeviceInfo& device, DeviceId oldDeviceId,
-                                 const std::map<DeviceId, DeviceId>& padDevices);
-
     // The pad chain answering to a pad, mutable. Private because a pad property
     // is set through the setters above, which notify.
     ChainInfo* mutablePad(const ChainNodePath& gridPath, int padIndex);

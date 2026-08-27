@@ -24,13 +24,54 @@ namespace magda {
 
 namespace {
 
+/// What one pad-per-chain device's pads were re-keyed to.
+struct DuplicatePadRemap {
+    DeviceId newOwnerId = INVALID_DEVICE_ID;
+    std::map<DeviceId, DeviceId> devices;  ///< old pad DeviceId -> new
+};
+
 struct DuplicateIdRemap {
     TrackId oldTrackId = INVALID_TRACK_ID;
     TrackId newTrackId = INVALID_TRACK_ID;
     std::map<DeviceId, DeviceId> devices;
     std::map<RackId, RackId> racks;
     std::map<ChainId, ChainId> chains;
+    /// Keyed by the OLD DeviceId of the device that owns the pads.
+    std::map<DeviceId, DuplicatePadRemap> pads;
 };
+
+/// Rewrite @p path if it addresses a pad device, and say whether it did.
+///
+/// A pad device's address is `Rack(gridDeviceId) > Chain(pad) > Device(pad
+/// device)`. None of its three steps may go through the ordinary maps:
+///
+///  - The rack step is a DeviceId, and rack ids come out of a counter that also
+///    starts at 1, so `remap.racks` would send it to whatever rack shares the
+///    number.
+///  - The chain step is a pad chain id, rack-local and untouched by
+///    duplication, so `remap.chains` would move it for the same reason.
+///
+/// Both ends are matched before either is rewritten, so a link that merely
+/// passes through a rack numbered like a grid is left to the ordinary remap
+/// (#2207).
+bool remapDuplicatedPadPath(ChainNodePath& path, const DuplicateIdRemap& remap) {
+    if (path.steps.size() != 3 || path.steps[0].type != ChainStepType::Rack ||
+        path.steps[1].type != ChainStepType::Chain || path.steps[2].type != ChainStepType::Device)
+        return false;
+
+    const auto owner = remap.pads.find(path.steps[0].id);
+    if (owner == remap.pads.end())
+        return false;
+
+    const auto device = owner->second.devices.find(path.steps[2].id);
+    if (device == owner->second.devices.end())
+        return false;
+
+    path.trackId = remap.newTrackId;
+    path.steps[0].id = owner->second.newOwnerId;
+    path.steps[2].id = device->second;
+    return true;
+}
 
 template <typename Id> bool remapDuplicateId(const std::map<Id, Id>& ids, int& value) {
     auto it = ids.find(value);
@@ -42,6 +83,11 @@ template <typename Id> bool remapDuplicateId(const std::map<Id, Id>& ids, int& v
 
 void remapDuplicatedPath(ChainNodePath& path, const DuplicateIdRemap& remap) {
     if (!path.isValid())
+        return;
+
+    // Pads first, and nothing else runs for one: every step of a pad path would
+    // be moved by the wrong map.
+    if (remapDuplicatedPadPath(path, remap))
         return;
 
     bool touched = false;
@@ -973,19 +1019,18 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
                 // no longer be the one derived from its device id, which is how
                 // every pad path is built (#2207).
                 if (device.pads) {
-                    // Only the synthetic id goes into the shared rack map. A pad
-                    // path spells its rack step with the grid's own DeviceId, and
-                    // rack ids come out of a counter that also starts at 1, so
-                    // putting that number in here would rewrite the paths of any
-                    // rack that happens to share it. The grid's own links onto
-                    // its pads are retargeted below instead, where the whole
-                    // path can be matched (#2207).
+                    // The synthetic negative id is safe in the shared rack map;
+                    // the grid's own DeviceId, which is what a pad path actually
+                    // spells its rack step with, is not. That one is recorded as
+                    // a pad remap so `remapDuplicatedPadPath` can rewrite a whole
+                    // pad path at once, wherever the link that carries it lives:
+                    // on the grid, on a rack, or on the track (#2207).
                     remap.racks[padRackIdFor(oldDeviceId)] = padRackIdFor(device.id);
 
-                    std::map<DeviceId, DeviceId> padDevices;
-                    rekeyPads(device, &padDevices);
-                    retargetPadLinks(device, oldDeviceId, padDevices);
-                    remap.devices.insert(padDevices.begin(), padDevices.end());
+                    DuplicatePadRemap pads;
+                    pads.newOwnerId = device.id;
+                    rekeyPads(device, &pads.devices);
+                    remap.pads[oldDeviceId] = std::move(pads);
                 }
             } else if (magda::isRack(element)) {
                 auto& rack = magda::getRack(element);
