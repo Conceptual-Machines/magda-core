@@ -965,7 +965,13 @@ bool ProjectSerializer::deserializeChainInfo(const juce::var& json, ChainInfo& o
 
     outChain.id = obj->getProperty("id");
     outChain.name = obj->getProperty("name").toString();
-    outChain.outputIndex = obj->getProperty("outputIndex");
+
+    // Normalised on the way in, not trusted. A pad's bus is what the plan
+    // compiler routes from, and it silences a pad on a bus that reaches no
+    // track rather than folding it into the device's mix, so a saved value
+    // outside the range the buses exist in would lose the audio (#2211).
+    outChain.outputIndex =
+        juce::jlimit(0, kPadBusCount - 1, static_cast<int>(obj->getProperty("outputIndex")));
     outChain.muted = obj->getProperty("muted");
     outChain.solo = obj->getProperty("solo");
     outChain.bypassed = obj->getProperty("bypassed");

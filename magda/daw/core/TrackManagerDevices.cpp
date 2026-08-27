@@ -16,12 +16,48 @@ namespace magda {
 
 namespace {
 
+struct PresetPadRemap {
+    DeviceId newOwnerId = INVALID_DEVICE_ID;
+    std::map<DeviceId, DeviceId> devices;
+};
+
 struct PresetIdRemap {
     TrackId trackId = INVALID_TRACK_ID;
     std::map<DeviceId, DeviceId> devices;
     std::map<RackId, RackId> racks;
     std::map<ChainId, ChainId> chains;
+    /// Keyed by the OLD DeviceId of the device that owns the pads.
+    std::map<DeviceId, PresetPadRemap> pads;
 };
+
+/// Rewrite @p path if it addresses a pad device, and say whether it did.
+///
+/// The same shape `remapDuplicatedPadPath()` handles for a duplicated track,
+/// and for the same reason: a pad device's address is
+/// `Rack(gridDeviceId) > Chain(pad) > Device(padDevice)`, and none of its steps
+/// may go through the ordinary maps. The rack step is a DeviceId, and rack ids
+/// come out of a counter that also starts at 1; the chain step is a pad chain
+/// id, rack-local and untouched by copying. Both ends are matched before either
+/// is rewritten, so a link merely passing through a rack numbered like a grid
+/// is left to the ordinary remap (#2211).
+bool remapPresetPadPath(ChainNodePath& path, const PresetIdRemap& remap) {
+    if (path.steps.size() != 3 || path.steps[0].type != ChainStepType::Rack ||
+        path.steps[1].type != ChainStepType::Chain || path.steps[2].type != ChainStepType::Device)
+        return false;
+
+    const auto owner = remap.pads.find(path.steps[0].id);
+    if (owner == remap.pads.end())
+        return false;
+
+    const auto device = owner->second.devices.find(path.steps[2].id);
+    if (device == owner->second.devices.end())
+        return false;
+
+    path.trackId = remap.trackId;
+    path.steps[0].id = owner->second.newOwnerId;
+    path.steps[2].id = device->second;
+    return true;
+}
 
 bool targetPointsAtDevice(const ControlTarget& target, DeviceId deviceId) {
     return deviceId != INVALID_DEVICE_ID && target.devicePath.getDeviceId() == deviceId;
@@ -56,6 +92,11 @@ template <typename Id> bool remapId(std::map<Id, Id> const& ids, int& value) {
 
 void remapPresetPath(ChainNodePath& path, const PresetIdRemap& remap) {
     bool touched = false;
+
+    // Pads first, and nothing else runs for one: every step of a pad path would
+    // be moved by the wrong map.
+    if (remapPresetPadPath(path, remap))
+        return;
 
     if (path.isTrackLevel) {
         path.trackId = remap.trackId;
@@ -139,6 +180,12 @@ void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const Preset
             auto& device = magda::getDevice(element);
             remapPresetLinks(device.macros, device.mods, remap);
             device.pluginState = stripPresetRuntimePluginState(device.pluginState);
+
+            // A pad device is an ordinary DeviceInfo and owns macros and mods
+            // like any other, so a copy's have to be retargeted too (#2211).
+            if (device.pads)
+                for (auto& pad : device.pads->chains)
+                    remapPresetLinksRecursive(pad.elements, remap);
         } else if (magda::isRack(element)) {
             remapRackPresetLinks(magda::getRack(element), remap);
         }
@@ -672,6 +719,34 @@ static void reassignCopiedElementIds(TrackManager& tm, std::vector<ChainElement>
                 const auto oldId = device.id;
                 device.id = tm.allocateDeviceId();
                 remap.devices[oldId] = device.id;
+
+                // A pad-per-chain device's pads are its own: their DeviceIds and
+                // the rack id derived from the owner's would otherwise key the
+                // ops of the device this was copied from, and the copy's links
+                // would still name the original's pads. Pad chain ids are
+                // rack-local and stay as they are, which is what keeps a macro,
+                // a mod or an automation lane naming one still naming it.
+                if (device.pads) {
+                    stampPadRackId(device);
+                    auto& padRemap = remap.pads[oldId];
+                    padRemap.newOwnerId = device.id;
+
+                    for (auto& pad : device.pads->chains) {
+                        // The devices directly on the pad are the ones a pad
+                        // path names, so their old ids are noted before the walk
+                        // replaces them. Anything deeper is inside an ordinary
+                        // rack and goes through the ordinary maps.
+                        std::vector<DeviceId> padDeviceIds;
+                        for (const auto& padElement : pad.elements)
+                            if (magda::isDevice(padElement))
+                                padDeviceIds.push_back(magda::getDevice(padElement).id);
+
+                        reassignIds(pad.elements);
+
+                        for (const auto padDeviceId : padDeviceIds)
+                            padRemap.devices[padDeviceId] = remap.devices[padDeviceId];
+                    }
+                }
             } else if (magda::isRack(element)) {
                 auto& rack = magda::getRack(element);
                 const auto oldRackId = rack.id;
@@ -745,6 +820,18 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
     if (sourceType == ChainStepType::Rack &&
         chainPathContainsRack(destinationChainPath, sourceElementPath)) {
         return false;
+    }
+
+    // Refused for the same reason a wrap is: dropping a grid into a rack takes
+    // it somewhere no bus is carried, so the move would have to put every pad
+    // back on the main mix and take its child tracks down, and that clean-up is
+    // not part of the undoable step the move is. Undo would return the grid to
+    // the top level with its routing gone. Reordering within the track's own
+    // list is not a placement change and stays allowed (#2211).
+    if (destinationChainPath.getType() != ChainNodeType::Track) {
+        const auto* moved = getDeviceInChainByPath(sourceElementPath);
+        if (moved != nullptr && anyPadOnABus(*moved))
+            return false;
     }
 
     auto* sourceElements = getElementContainerForChainPath(*this, sourceChainPath);
