@@ -3,11 +3,13 @@
 #include <juce_data_structures/juce_data_structures.h>
 
 #include <algorithm>
+#include <functional>
 #include <unordered_set>
 
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/DeviceParamMigrations.hpp"
+#include "../../core/DrumGridPads.hpp"
 #include "../../core/LegacyDeviceAliases.hpp"
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TrackManager.hpp"
@@ -110,6 +112,67 @@ bool ProjectSerializer::loadDawProjectAndStage(const juce::File& file, StagedPro
     outData = NativeProjectDocumentAdapter::toStagedProjectData(document);
     return true;
 }
+
+namespace {
+
+/// Give every pad device with no id one, from a counter past every DeviceId the
+/// staged project already names.
+///
+/// Self-contained: staging has no TrackManager behind it, and the ids only have
+/// to be unique within the project. `refreshIdCountersFromTracks` reads them at
+/// commit and moves the live counter past them (#2207).
+void allocateStagedPadDeviceIds(std::vector<TrackInfo>& tracks, TrackInfo* masterTrack) {
+    DeviceId next = 0;
+    std::vector<DeviceInfo*> unkeyed;
+
+    std::function<void(std::vector<ChainElement>&)> walk =
+        [&](std::vector<ChainElement>& elements) {
+            for (auto& element : elements) {
+                if (isRack(element)) {
+                    for (auto& chain : getRack(element).chains)
+                        walk(chain.elements);
+                    continue;
+                }
+
+                auto& device = getDevice(element);
+                next = std::max(next, device.id + 1);
+
+                if (!device.pads)
+                    continue;
+
+                stampPadRackId(device);
+                for (auto& pad : device.pads->chains) {
+                    for (auto& padElement : pad.elements) {
+                        if (!isDevice(padElement))
+                            continue;
+                        auto& padDevice = getDevice(padElement);
+                        if (padDevice.id == INVALID_DEVICE_ID)
+                            unkeyed.push_back(&padDevice);
+                        else
+                            next = std::max(next, padDevice.id + 1);
+                    }
+                }
+            }
+        };
+
+    const auto walkTrack = [&](TrackInfo& track) {
+        walk(track.chain.fxChainElements);
+        for (auto& element : track.chain.postFxChainElements)
+            next = std::max(next, element.device.id + 1);
+        for (auto& element : track.chain.mixerAnalysisElements)
+            next = std::max(next, element.device.id + 1);
+    };
+
+    for (auto& track : tracks)
+        walkTrack(track);
+    if (masterTrack != nullptr)
+        walkTrack(*masterTrack);
+
+    for (auto* device : unkeyed)
+        device->id = next++;
+}
+
+}  // namespace
 
 bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& outData) {
     try {
@@ -296,6 +359,13 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         device_param_migrations::applyParamIndexMigrations(
             outData.tracks, outData.masterTrack.get(), outData.automationLanes,
             outData.automationClips);
+
+        // Then an id for every pad device saved before pads had them. On the
+        // staged model, not at commit: a pad with no id cannot be keyed, so the
+        // plan refuses it, and everything that reads a staged project without
+        // committing one -- the null-diff survey, the corpus tests -- would see
+        // a Drum Grid with no pads at all (#2207).
+        allocateStagedPadDeviceIds(outData.tracks, outData.masterTrack.get());
 
         // Parameter aliases (UserProject layer -- opaque pass-through to AliasRegistry)
         if (obj->hasProperty("paramAliases"))
@@ -701,10 +771,6 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
             // After all tracks are restored, ensure TrackManager ID counters
             // (track/device/rack/chain) are updated to avoid ID collisions.
             trackManager.refreshIdCountersFromTracks();
-
-            // Then hand an id to every pad device saved before pads had them,
-            // now that the counters are past everything the project named.
-            trackManager.allocatePadDeviceIds();
         }  // trackBatch closes here: TE AudioTracks now exist.
 
         // Restore clips (synced into the now-existing TE tracks when clipBatch

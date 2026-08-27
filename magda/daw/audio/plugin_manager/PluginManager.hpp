@@ -253,6 +253,17 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
     void registerRackPluginProcessor(const ChainNodePath& devicePath, te::Plugin::Ptr plugin,
                                      const DeviceInfo& device);
 
+    /// As above, with the canonical DeviceInfo supplied rather than looked up
+    /// by path. A pad device is reached through the Drum Grid that owns it: its
+    /// path's rack component is a DeviceId, which a Rack step cannot tell from
+    /// a rack of the same number (#2207).
+    void registerRackPluginProcessor(const ChainNodePath& devicePath, te::Plugin::Ptr plugin,
+                                     const DeviceInfo& device, DeviceInfo* canonical);
+
+    /// The model's device for a pad plugin path, through @p drumGridPath.
+    static DeviceInfo* padDeviceFor(const ChainNodePath& drumGridPath,
+                                    const ChainNodePath& padDevicePath);
+
     /**
      * @brief Refresh DeviceInfo.parameters for a device whose processor's
      *        parameter set changed at runtime.
@@ -602,6 +613,15 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
      * about the pads has changed.
      */
     void syncDrumGridPads(const ChainNodePath& drumGridPath, daw::audio::DrumGridPlugin& drumGrid);
+
+    /**
+     * @brief Capture each live pad plugin's patch into the model's pad device
+     *
+     * The engine to model direction, and the only one there is: what pads exist
+     * and what sits on them travels the other way (#2207).
+     */
+    void captureDrumGridPads(const ChainNodePath& drumGridPath,
+                             daw::audio::DrumGridPlugin& drumGrid);
 
     /**
      * @brief Sync multi-out tracks for a DrumGrid device

@@ -107,26 +107,26 @@ void requirePadsAreReal(const magda::DeviceInfo& drumGrid) {
         CHECK(instruments <= 1);
     }
 
-    // A DeviceId may be absent in these files: the pre-#2207 Drum Grid
-    // allocated one per pad plugin when it restored it, so a project saved
-    // before that plugin was ever instantiated carries none. Those are handed
-    // ids by TrackManager::allocatePadDeviceIds() once the whole project is
-    // loaded, which is past this staging step. What staging must guarantee is
-    // that the ids it DOES find are distinct: an id read from the file and
-    // duplicated across pads would key two ops the same and bind one pad's
-    // parameters to another's.
+    // Every pad device has an id, and no two share one. A DeviceId was not a
+    // load-time fact for these files: the pre-#2207 Drum Grid allocated one per
+    // pad plugin when it restored it, so a project saved before that plugin was
+    // ever instantiated carries none. Staging hands those out now, because a
+    // pad with no id cannot be keyed and the plan refuses it -- so anything
+    // that reads a staged project without committing it would see a Drum Grid
+    // with no pads at all. A duplicate would be worse still: two ops under one
+    // key, binding one pad's parameters to another's.
     std::set<magda::DeviceId> ids;
-    int withIds = 0;
+    int padDevices = 0;
     for (const auto& pad : drumGrid.pads->chains) {
         for (const auto& element : pad.elements) {
             const auto id = magda::getDevice(element).id;
-            if (id == magda::INVALID_DEVICE_ID)
-                continue;
-            ++withIds;
+            INFO("pad device " << magda::getDevice(element).name);
+            CHECK(id != magda::INVALID_DEVICE_ID);
+            ++padDevices;
             ids.insert(id);
         }
     }
-    CHECK(static_cast<int>(ids.size()) == withIds);
+    CHECK(static_cast<int>(ids.size()) == padDevices);
 }
 
 }  // namespace

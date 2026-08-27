@@ -1180,14 +1180,15 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         return devicePath_;
     };
 
-    // The path of the chain behind a pad, or an invalid path when the pad is
-    // empty. Every pad property goes through it, because a pad is a chain.
-    auto padPath = [gridPath](int padIndex) -> magda::ChainNodePath {
+    // The chain id behind a pad, or INVALID_CHAIN_ID when the pad is empty.
+    // Pad edits take the grid's path and this, never a rack path: a pad's rack
+    // component is the grid's DeviceId and would be ambiguous with a real rack
+    // (#2207).
+    auto padChainId = [gridPath](int padIndex) -> magda::ChainId {
         auto& tm = magda::TrackManager::getInstance();
-        const auto grid = gridPath();
-        if (const auto* pad = tm.getPad(grid, padIndex))
-            return magda::TrackManager::padChainPath(grid, pad->id);
-        return {};
+        if (const auto* pad = tm.getPad(gridPath(), padIndex))
+            return pad->id;
+        return magda::INVALID_CHAIN_ID;
     };
 
     // Helper to get display name for first plugin in chain
@@ -1263,24 +1264,24 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
 
     // A pad's fader, pan and switches are its chain's, so they are set the way
     // any other chain's are.
-    drumGridUI_->onPadLevelChanged = [padPath](int padIndex, float levelDb) {
-        magda::TrackManager::getInstance().setChainVolume(padPath(padIndex), levelDb);
+    drumGridUI_->onPadLevelChanged = [gridPath](int padIndex, float levelDb) {
+        magda::TrackManager::getInstance().setPadVolume(gridPath(), padIndex, levelDb);
     };
 
-    drumGridUI_->onPadPanChanged = [padPath](int padIndex, float pan) {
-        magda::TrackManager::getInstance().setChainPan(padPath(padIndex), pan);
+    drumGridUI_->onPadPanChanged = [gridPath](int padIndex, float pan) {
+        magda::TrackManager::getInstance().setPadPan(gridPath(), padIndex, pan);
     };
 
-    drumGridUI_->onPadMuteChanged = [padPath](int padIndex, bool muted) {
-        magda::TrackManager::getInstance().setChainMuted(padPath(padIndex), muted);
+    drumGridUI_->onPadMuteChanged = [gridPath](int padIndex, bool muted) {
+        magda::TrackManager::getInstance().setPadMuted(gridPath(), padIndex, muted);
     };
 
-    drumGridUI_->onPadSoloChanged = [padPath](int padIndex, bool soloed) {
-        magda::TrackManager::getInstance().setChainSolo(padPath(padIndex), soloed);
+    drumGridUI_->onPadSoloChanged = [gridPath](int padIndex, bool soloed) {
+        magda::TrackManager::getInstance().setPadSolo(gridPath(), padIndex, soloed);
     };
 
-    drumGridUI_->onPadBypassChanged = [padPath](int padIndex, bool bypassed) {
-        magda::TrackManager::getInstance().setChainBypassed(padPath(padIndex), bypassed);
+    drumGridUI_->onPadBypassChanged = [gridPath](int padIndex, bool bypassed) {
+        magda::TrackManager::getInstance().setPadBypassed(gridPath(), padIndex, bypassed);
     };
 
     // Plugin drag and drop onto pads: an instrument replaces the pad
@@ -1505,14 +1506,10 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             if (auto* dg = getDrumGrid())
                 updatePadFromChain(dg, padIndex);
         } else {
-            const auto padChainId = tm.ensurePad(grid, padIndex);
-            if (padChainId == INVALID_CHAIN_ID)
+            const auto chainId = tm.ensurePad(grid, padIndex);
+            if (chainId == INVALID_CHAIN_ID)
                 return;
-            const auto chainPath = magda::TrackManager::padChainPath(grid, padChainId);
-            if (insertIdx < 0)
-                tm.addDeviceToChainByPath(chainPath, device);
-            else
-                tm.addDeviceToChainByPath(chainPath, device, insertIdx);
+            tm.addDeviceToPad(grid, chainId, device, insertIdx);
         }
 
         drumGridUI_->getPadChainPanel().refresh();
@@ -1556,10 +1553,11 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     };
 
     // Remove plugin from chain
-    padChain.onPluginRemoved = [getDrumGrid, updatePadFromChain, gridPath,
-                                padPath](int padIndex, int pluginIndex) {
+    padChain.onPluginRemoved = [getDrumGrid, updatePadFromChain, gridPath](int padIndex,
+                                                                           int pluginIndex) {
         auto& tm = magda::TrackManager::getInstance();
-        const auto* pad = tm.getPad(gridPath(), padIndex);
+        const auto grid = gridPath();
+        const auto* pad = tm.getPad(grid, padIndex);
         if (pad == nullptr)
             return;
 
@@ -1567,16 +1565,15 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         if (pluginIndex < 0 || pluginIndex >= static_cast<int>(devices.size()))
             return;
 
-        tm.removeDeviceFromChainByPath(
-            padPath(padIndex).withDevice(devices[static_cast<size_t>(pluginIndex)]->id));
+        tm.removeDeviceFromPad(grid, pad->id, devices[static_cast<size_t>(pluginIndex)]->id);
         if (auto* dg = getDrumGrid())
             updatePadFromChain(dg, padIndex);
     };
 
     // Reorder plugins in chain
-    padChain.onPluginMoved = [padPath](int padIndex, int fromIdx, int toIdx) {
-        magda::TrackManager::getInstance().moveElementInChainByPath(padPath(padIndex), fromIdx,
-                                                                    toIdx);
+    padChain.onPluginMoved = [gridPath, padChainId](int padIndex, int fromIdx, int toIdx) {
+        magda::TrackManager::getInstance().moveDeviceInPad(gridPath(), padChainId(padIndex),
+                                                           fromIdx, toIdx);
     };
 
     // Forward sample operations from PadDeviceSlot -> the model

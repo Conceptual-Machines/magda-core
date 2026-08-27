@@ -2470,63 +2470,22 @@ void TrackManager::setRackExpanded(TrackId trackId, RackId rackId, bool expanded
 
 namespace {
 
-/// The rack @p rackId names among @p elements: one sitting in the list, or the
-/// pads a device in it owns.
+/// The rack @p rackId names among @p elements.
 ///
-/// A pad rack hangs off its device rather than being an element of its own, so
-/// a Rack step naming one has to look through the devices as well. This matches
-/// only the synthetic negative id `RackInfo::id` holds; the device-id spelling
-/// a pad path actually uses is resolved by `getPadRackByPath()`, which reaches
-/// a Drum Grid at any depth (#2207).
-///
-/// An allocated rack is matched first and across the whole list, so it always
-/// wins over anything found among the devices.
+/// Allocated racks only. A Drum Grid's pads are a rack too, but their address
+/// is the grid's own DeviceId, and rack ids and device ids come out of counters
+/// that both start at 1, so a Rack step cannot tell the two apart. Nothing
+/// resolves a pad through one: `TrackManager::getPads()` reaches them through
+/// the device that owns them, which is unambiguous (#2207).
 RackInfo* findRackAmong(std::vector<ChainElement>& elements, RackId rackId) {
     for (auto& element : elements)
         if (magda::isRack(element) && magda::getRack(element).id == rackId)
             return &magda::getRack(element);
-
-    for (auto& element : elements) {
-        if (!magda::isDevice(element))
-            continue;
-
-        auto& device = magda::getDevice(element);
-        if (!device.pads)
-            continue;
-
-        if (device.pads->id == rackId)
-            return device.pads.get();
-    }
-
     return nullptr;
 }
 
 const RackInfo* findRackAmong(const std::vector<ChainElement>& elements, RackId rackId) {
     return findRackAmong(const_cast<std::vector<ChainElement>&>(elements), rackId);
-}
-
-/// The pads @p rackId names anywhere on the track, or null.
-///
-/// A pad path is flat: `Rack(gridDeviceId) > Chain(pad) > Device(padDevice)`,
-/// with no steps for whatever the Drum Grid itself is nested in. Every producer
-/// of one spells it that way, so a grid inside a rack is addressed exactly like
-/// a grid on the track, and the step-by-step walk cannot follow it. This is the
-/// search that can (#2207).
-RackInfo* findPadsInTrack(std::vector<ChainElement>& elements, RackId rackId) {
-    for (auto& element : elements) {
-        if (magda::isRack(element)) {
-            for (auto& chain : magda::getRack(element).chains)
-                if (auto* found = findPadsInTrack(chain.elements, rackId))
-                    return found;
-            continue;
-        }
-
-        auto& device = magda::getDevice(element);
-        if (device.pads && (device.id == rackId || device.pads->id == rackId))
-            return device.pads.get();
-    }
-
-    return nullptr;
 }
 
 }  // namespace
@@ -2649,25 +2608,6 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
     return currentRack;
 }
 
-RackInfo* TrackManager::getPadRackByPath(const ChainNodePath& rackPath) {
-    if (auto* rack = getRackByPath(rackPath))
-        return rack;
-
-    // A pad path names the Drum Grid's device id and nothing about where the
-    // grid sits, so a grid inside a rack has a path the walk above cannot
-    // follow. Only ever reached for an id no rack claims, so an allocated rack
-    // still answers first and this cannot take a lookup away from one (#2207).
-    if (rackPath.isTrackLevel || rackPath.topLevelDeviceId != INVALID_DEVICE_ID)
-        return nullptr;
-    if (rackPath.steps.size() != 1 || rackPath.steps.front().type != ChainStepType::Rack)
-        return nullptr;
-
-    auto* track = getTrack(rackPath.trackId);
-    return track != nullptr
-               ? findPadsInTrack(track->chain.fxChainElements, rackPath.steps.front().id)
-               : nullptr;
-}
-
 const RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) const {
     // const version - delegates to non-const via const_cast (safe since we return const*)
     return const_cast<TrackManager*>(this)->getRackByPath(rackPath);
@@ -2760,7 +2700,7 @@ ChainInfo* TrackManager::getChainByPath(const ChainNodePath& chainPath) {
     for (size_t i = 0; i + 1 < chainPath.steps.size(); ++i)
         rackPath.steps.push_back(chainPath.steps[i]);
 
-    if (auto* rack = getPadRackByPath(rackPath)) {
+    if (auto* rack = getRackByPath(rackPath)) {
         for (auto& chain : rack->chains) {
             if (chain.id == chainId)
                 return &chain;
@@ -3407,45 +3347,6 @@ void TrackManager::rekeyPads(DeviceInfo& device, std::map<DeviceId, DeviceId>* r
                 (*remap)[oldId] = padDevice.id;
         }
     }
-}
-
-void TrackManager::allocatePadDeviceIds() {
-    const auto keyPads = [this](DeviceInfo& device) {
-        if (!device.pads)
-            return;
-
-        stampPadRackId(device);
-
-        // Only the ones that have none. A project saved since pads moved into
-        // the model carries every id it allocated, and minting a second one for
-        // a pad that already has one would orphan whatever names it.
-        for (auto& pad : device.pads->chains)
-            for (auto& element : pad.elements)
-                if (magda::isDevice(element) && magda::getDevice(element).id == INVALID_DEVICE_ID)
-                    magda::getDevice(element).id = allocateDeviceId();
-    };
-
-    const auto walkElements = [&keyPads](std::vector<ChainElement>& elements, auto& self) -> void {
-        for (auto& element : elements) {
-            if (magda::isDevice(element))
-                keyPads(magda::getDevice(element));
-            else if (magda::isRack(element))
-                for (auto& chain : magda::getRack(element).chains)
-                    self(chain.elements, self);
-        }
-    };
-
-    const auto walkTrack = [&](TrackInfo& track) {
-        walkElements(track.chain.fxChainElements, walkElements);
-        for (auto& element : track.chain.postFxChainElements)
-            keyPads(element.device);
-        for (auto& element : track.chain.mixerAnalysisElements)
-            keyPads(element.device);
-    };
-
-    for (auto& track : tracks_)
-        walkTrack(track);
-    walkTrack(masterTrack_);
 }
 
 void TrackManager::notifyDeviceModifiersChanged(TrackId trackId) {

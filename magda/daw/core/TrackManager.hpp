@@ -440,6 +440,17 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // them.
     void rekeyPads(DeviceInfo& device, std::map<DeviceId, DeviceId>* remap = nullptr);
 
+    // Follow a copied grid's own macro and mod links onto its re-keyed pads.
+    // Matched on the whole path rather than through the shared id maps: a pad
+    // path's rack step is a DeviceId, and rewriting every Rack step that shares
+    // that number would move an unrelated rack's links with it (#2207).
+    static void retargetPadLinks(DeviceInfo& device, DeviceId oldDeviceId,
+                                 const std::map<DeviceId, DeviceId>& padDevices);
+
+    // The pad chain answering to a pad, mutable. Private because a pad property
+    // is set through the setters above, which notify.
+    ChainInfo* mutablePad(const ChainNodePath& gridPath, int padIndex);
+
     // ========================================================================
     // Pad-per-chain devices (#2207)
     //
@@ -452,17 +463,33 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     /// The path addressing one of @p gridPath's pad chains.
     static ChainNodePath padChainPath(const ChainNodePath& gridPath, ChainId padChainId);
 
-    /// The rack @p rackPath names, allowing for a pad rack's flat path.
-    /// `getRackByPath` answers first; only an id no rack claims falls through
-    /// to the Drum Grid that owns it.
-    RackInfo* getPadRackByPath(const ChainNodePath& rackPath);
-
     /// The pads @p gridPath's device owns, or null when it has none.
     RackInfo* getPads(const ChainNodePath& gridPath);
     const RackInfo* getPads(const ChainNodePath& gridPath) const;
 
     /// The pad chain answering to pad @p padIndex, or null.
     const ChainInfo* getPad(const ChainNodePath& gridPath, int padIndex) const;
+
+    /// The pad chain carrying @p padChainId, or null.
+    ChainInfo* getPadChain(const ChainNodePath& gridPath, ChainId padChainId);
+
+    /// Add @p device to a pad's chain, at @p insertIndex (-1 appends).
+    DeviceId addDeviceToPad(const ChainNodePath& gridPath, ChainId padChainId,
+                            const DeviceInfo& device, int insertIndex = -1);
+
+    /// Take a device off a pad's chain.
+    void removeDeviceFromPad(const ChainNodePath& gridPath, ChainId padChainId, DeviceId deviceId);
+
+    /// Reorder a pad's chain.
+    void moveDeviceInPad(const ChainNodePath& gridPath, ChainId padChainId, int fromIndex,
+                         int toIndex);
+
+    /// A pad's fader, pan and switches.
+    void setPadVolume(const ChainNodePath& gridPath, int padIndex, float volume);
+    void setPadPan(const ChainNodePath& gridPath, int padIndex, float pan);
+    void setPadMuted(const ChainNodePath& gridPath, int padIndex, bool muted);
+    void setPadSolo(const ChainNodePath& gridPath, int padIndex, bool solo);
+    void setPadBypassed(const ChainNodePath& gridPath, int padIndex, bool bypassed);
 
     /// The pad chain answering to pad @p padIndex, made if it is not there yet.
     /// INVALID_CHAIN_ID when the device does not keep its chains as pads.
@@ -901,15 +928,6 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
      * ID counters are updated to avoid reusing IDs that exist in loaded tracks.
      */
     void refreshIdCountersFromTracks();
-
-    /// Give every pad device that has none a DeviceId, once the whole project
-    /// is loaded and the counters are past everything it saved.
-    ///
-    /// A Drum Grid saved before its pads carried ids projects them without one,
-    /// and a device with no id cannot be keyed: the plan refuses the pad rather
-    /// than emit two ops under one key. This is where that is healed, in the
-    /// model, so nothing downstream has to (#2207).
-    void allocatePadDeviceIds();
 
     /**
      * @brief Notify all listeners that devices on a track changed

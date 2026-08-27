@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <map>
 
 #include "DrumGridPads.hpp"
 #include "RackInfo.hpp"
@@ -10,13 +11,17 @@ namespace magda {
 // ============================================================================
 // Pad-per-chain devices (#2207)
 //
-// A Drum Grid's pads are a rack it owns, so the chain commands already on
-// TrackManager do most of the work: `padChainPath()` turns a pad into an
-// ordinary chain path, and adding, removing, reordering, muting, soloing and
-// fading a pad go through the same calls a rack chain does. What is left here
-// is the handful of things only a pad has: it is found by the note it answers
-// to, it is made on demand when something is dropped on it, and two of them can
-// trade places.
+// A Drum Grid's pads are a rack the device owns, and every operation here
+// reaches them through that device: `getPads()` resolves the grid by its own
+// path and takes `DeviceInfo::pads`.
+//
+// Never through a Rack step. A pad's engine address spells the rack component
+// with the grid's own DeviceId (`padChainPath`), and rack ids and device ids
+// come out of counters that both start at 1, so `Rack(1)` is as much rack 1 as
+// it is Drum Grid 1's pads. Resolving a pad edit that way would send it to an
+// unrelated rack whenever the two numbers met. The address is kept for what it
+// has always been used for, an exact-match key and a stored link target, and
+// the model is reached the unambiguous way.
 // ============================================================================
 
 ChainNodePath TrackManager::padChainPath(const ChainNodePath& gridPath, ChainId padChainId) {
@@ -45,6 +50,16 @@ const RackInfo* TrackManager::getPads(const ChainNodePath& gridPath) const {
     return const_cast<TrackManager*>(this)->getPads(gridPath);
 }
 
+ChainInfo* TrackManager::getPadChain(const ChainNodePath& gridPath, ChainId padChainId) {
+    auto* pads = getPads(gridPath);
+    if (pads == nullptr)
+        return nullptr;
+
+    const auto found = std::ranges::find_if(
+        pads->chains, [padChainId](const ChainInfo& chain) { return chain.id == padChainId; });
+    return found == pads->chains.end() ? nullptr : &*found;
+}
+
 const ChainInfo* TrackManager::getPad(const ChainNodePath& gridPath, int padIndex) const {
     const auto* pads = getPads(gridPath);
     return pads != nullptr ? findPadChain(*pads, padIndex) : nullptr;
@@ -68,21 +83,79 @@ ChainId TrackManager::ensurePad(const ChainNodePath& gridPath, int padIndex) {
     return id;
 }
 
+DeviceId TrackManager::addDeviceToPad(const ChainNodePath& gridPath, ChainId padChainId,
+                                      const DeviceInfo& device, int insertIndex) {
+    auto* pad = getPadChain(gridPath, padChainId);
+    if (pad == nullptr)
+        return INVALID_DEVICE_ID;
+
+    if (auto* track = getTrack(gridPath.trackId);
+        track != nullptr && !track->canHostInstrument() && device.isInstrument)
+        return INVALID_DEVICE_ID;
+
+    auto newDevice = prepareNewDevice(device);
+    const auto devicePath = padChainPath(gridPath, padChainId).withDevice(newDevice.id);
+    seedSidechainModIfMissing(newDevice, devicePath);
+
+    const auto at = insertIndex < 0
+                        ? static_cast<int>(pad->elements.size())
+                        : std::clamp(insertIndex, 0, static_cast<int>(pad->elements.size()));
+    pad->elements.insert(pad->elements.begin() + at, makeDeviceElement(newDevice));
+
+    notifyTrackDevicesChanged(gridPath.trackId);
+    notifyDeviceAdded(devicePath, newDevice);
+    return newDevice.id;
+}
+
+void TrackManager::removeDeviceFromPad(const ChainNodePath& gridPath, ChainId padChainId,
+                                       DeviceId deviceId) {
+    auto* pad = getPadChain(gridPath, padChainId);
+    if (pad == nullptr)
+        return;
+
+    const auto found = std::ranges::find_if(pad->elements, [deviceId](const ChainElement& element) {
+        return magda::isDevice(element) && magda::getDevice(element).id == deviceId;
+    });
+    if (found == pad->elements.end())
+        return;
+
+    SelectionManager::getInstance().clearSelectionForDeletedChainNode(
+        padChainPath(gridPath, padChainId).withDevice(deviceId));
+    pad->elements.erase(found);
+    notifyTrackDevicesChanged(gridPath.trackId);
+}
+
+void TrackManager::moveDeviceInPad(const ChainNodePath& gridPath, ChainId padChainId, int fromIndex,
+                                   int toIndex) {
+    auto* pad = getPadChain(gridPath, padChainId);
+    if (pad == nullptr)
+        return;
+
+    const auto count = static_cast<int>(pad->elements.size());
+    if (fromIndex < 0 || fromIndex >= count || toIndex < 0 || toIndex >= count ||
+        fromIndex == toIndex)
+        return;
+
+    auto moved = std::move(pad->elements[static_cast<std::size_t>(fromIndex)]);
+    pad->elements.erase(pad->elements.begin() + fromIndex);
+    pad->elements.insert(pad->elements.begin() + toIndex, std::move(moved));
+    notifyTrackDevicesChanged(gridPath.trackId);
+}
+
 DeviceId TrackManager::setPadDevice(const ChainNodePath& gridPath, int padIndex,
                                     const DeviceInfo& device) {
     const auto padChainId = ensurePad(gridPath, padIndex);
     if (padChainId == INVALID_CHAIN_ID)
         return INVALID_DEVICE_ID;
 
-    const auto chainPath = padChainPath(gridPath, padChainId);
-
-    auto* pad = getChainByPath(chainPath);
+    auto* pad = getPadChain(gridPath, padChainId);
     if (pad == nullptr)
         return INVALID_DEVICE_ID;
 
     // Dropping an instrument on a pad replaces the pad, effects and all: that
     // is what the pad's slot means. Selections pointing into what is going away
     // are cleared first, the same as any other device removal.
+    const auto chainPath = padChainPath(gridPath, padChainId);
     for (const auto& element : pad->elements)
         if (magda::isDevice(element))
             SelectionManager::getInstance().clearSelectionForDeletedChainNode(
@@ -92,7 +165,7 @@ DeviceId TrackManager::setPadDevice(const ChainNodePath& gridPath, int padIndex,
     // Named after what is on it, which is what the grid shows on the pad.
     pad->name = device.name;
 
-    return addDeviceToChainByPath(chainPath, device);
+    return addDeviceToPad(gridPath, padChainId, device);
 }
 
 void TrackManager::clearPad(const ChainNodePath& gridPath, int padIndex) {
@@ -158,6 +231,81 @@ void TrackManager::swapPads(const ChainNodePath& gridPath, int padA, int padB) {
     }
 
     notifyTrackDevicesChanged(gridPath.trackId);
+}
+
+/// A pad's fader, pan and switches are its chain's, set the unambiguous way.
+void TrackManager::setPadVolume(const ChainNodePath& gridPath, int padIndex, float volume) {
+    if (auto* pad = mutablePad(gridPath, padIndex)) {
+        pad->volume = juce::jlimit(-60.0f, 6.0f, volume);
+        notifyTrackPropertyChanged(gridPath.trackId);
+    }
+}
+
+void TrackManager::setPadPan(const ChainNodePath& gridPath, int padIndex, float pan) {
+    if (auto* pad = mutablePad(gridPath, padIndex)) {
+        pad->pan = juce::jlimit(-1.0f, 1.0f, pan);
+        notifyTrackPropertyChanged(gridPath.trackId);
+    }
+}
+
+void TrackManager::setPadMuted(const ChainNodePath& gridPath, int padIndex, bool muted) {
+    if (auto* pad = mutablePad(gridPath, padIndex)) {
+        pad->muted = muted;
+        notifyTrackDevicesChanged(gridPath.trackId);
+    }
+}
+
+void TrackManager::setPadSolo(const ChainNodePath& gridPath, int padIndex, bool solo) {
+    if (auto* pad = mutablePad(gridPath, padIndex)) {
+        pad->solo = solo;
+        notifyTrackDevicesChanged(gridPath.trackId);
+    }
+}
+
+void TrackManager::setPadBypassed(const ChainNodePath& gridPath, int padIndex, bool bypassed) {
+    if (auto* pad = mutablePad(gridPath, padIndex)) {
+        pad->bypassed = bypassed;
+        notifyTrackDevicesChanged(gridPath.trackId);
+    }
+}
+
+ChainInfo* TrackManager::mutablePad(const ChainNodePath& gridPath, int padIndex) {
+    auto* pads = getPads(gridPath);
+    return pads != nullptr ? findPadChain(*pads, padIndex) : nullptr;
+}
+
+void TrackManager::retargetPadLinks(DeviceInfo& device, DeviceId oldDeviceId,
+                                    const std::map<DeviceId, DeviceId>& padDevices) {
+    if (padDevices.empty())
+        return;
+
+    // A pad device's address is `Rack(gridDeviceId) > Chain(pad) > Device(pad
+    // device)`. Both ends are checked before either is rewritten, so a link
+    // that merely passes through a rack numbered like the old grid is left
+    // alone: it names no pad device this copy re-keyed.
+    const auto retarget = [&](ControlTarget& target) {
+        auto& path = target.devicePath;
+        if (path.steps.size() != 3 || path.steps[0].type != ChainStepType::Rack ||
+            path.steps[1].type != ChainStepType::Chain ||
+            path.steps[2].type != ChainStepType::Device)
+            return;
+        if (path.steps[0].id != oldDeviceId)
+            return;
+
+        const auto found = padDevices.find(path.steps[2].id);
+        if (found == padDevices.end())
+            return;
+
+        path.steps[0].id = device.id;
+        path.steps[2].id = found->second;
+    };
+
+    for (auto& macro : device.macros)
+        for (auto& link : macro.links)
+            retarget(link.target);
+    for (auto& mod : device.mods)
+        for (auto& link : mod.links)
+            retarget(link.target);
 }
 
 }  // namespace magda

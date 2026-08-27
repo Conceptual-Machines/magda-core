@@ -523,6 +523,8 @@ void RackSyncManager::capturePluginStates(SyncedRack& synced) {
         }
 
         devInfo->pluginState = stateStr;
+        if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get()))
+            pluginManager_.captureDrumGridPads(devicePath, *drumGrid);
         pluginManager_.refreshDeviceParameters(devicePath);
     }
 }

@@ -452,10 +452,10 @@ void PluginManager::captureAllPluginStates() {
 
             // Always overwrite pluginState (even if empty) to avoid stale state.
             // A Drum Grid's captured state is its own properties only: its pads
-            // are model state and are not in the tree (#2207). Their plugins
-            // are synced devices in their own right, so this same loop reaches
-            // each of them at its own path.
+            // are model state and are not in the tree (#2207).
             devInfo->pluginState = stateStr;
+            if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(sd.plugin.get()))
+                captureDrumGridPads(devicePath, *drumGrid);
             captureVst3Info(*devInfo, capturedExt);
             if (sd.processor != nullptr)
                 sd.processor->populateParameters(*devInfo);
@@ -493,6 +493,8 @@ void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
     }
 
     devInfo->pluginState = stateStr;
+    if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin))
+        captureDrumGridPads(devicePath, *drumGrid);
     captureVst3Info(*devInfo, capturedExt);
     if (it->second.processor)
         it->second.processor->populateParameters(*devInfo);
