@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <map>
+#include <set>
 
 #include "../audio/AudioBridge.hpp"
 #include "../audio/TracktionHelpers.hpp"
@@ -19,6 +20,9 @@ namespace {
 struct PresetPadRemap {
     DeviceId newOwnerId = INVALID_DEVICE_ID;
     std::map<DeviceId, DeviceId> devices;
+    /// The owner's pad chain ids. Unchanged by copying, and what tells a pad
+    /// prefix from a rack that merely shares the owner's number.
+    std::set<ChainId> chains;
 };
 
 struct PresetIdRemap {
@@ -29,6 +33,14 @@ struct PresetIdRemap {
     /// Keyed by the OLD DeviceId of the device that owns the pads.
     std::map<DeviceId, PresetPadRemap> pads;
 };
+
+template <typename Id> bool remapId(std::map<Id, Id> const& ids, int& value) {
+    auto it = ids.find(value);
+    if (it == ids.end())
+        return false;
+    value = it->second;
+    return true;
+}
 
 /// Rewrite @p path if it addresses a pad device, and say whether it did.
 ///
@@ -41,21 +53,51 @@ struct PresetIdRemap {
 /// is rewritten, so a link merely passing through a rack numbered like a grid
 /// is left to the ordinary remap (#2211).
 bool remapPresetPadPath(ChainNodePath& path, const PresetIdRemap& remap) {
-    if (path.steps.size() != 3 || path.steps[0].type != ChainStepType::Rack ||
-        path.steps[1].type != ChainStepType::Chain || path.steps[2].type != ChainStepType::Device)
+    if (path.steps.size() < 3 || path.steps[0].type != ChainStepType::Rack ||
+        path.steps[1].type != ChainStepType::Chain)
         return false;
 
     const auto owner = remap.pads.find(path.steps[0].id);
     if (owner == remap.pads.end())
         return false;
 
-    const auto device = owner->second.devices.find(path.steps[2].id);
-    if (device == owner->second.devices.end())
+    // A pad device, named directly by the pad's chain.
+    if (path.steps.size() == 3 && path.steps[2].type == ChainStepType::Device) {
+        const auto device = owner->second.devices.find(path.steps[2].id);
+        if (device == owner->second.devices.end())
+            return false;
+
+        path.trackId = remap.trackId;
+        path.steps[0].id = owner->second.newOwnerId;
+        path.steps[2].id = device->second;
+        return true;
+    }
+
+    // Or something further down, inside a rack the pad's chain holds. The
+    // prefix is still the pad's and still has to come from the pad map; what
+    // follows is an ordinary route and was re-keyed with the ordinary ones.
+    if (!owner->second.chains.contains(path.steps[1].id))
         return false;
 
     path.trackId = remap.trackId;
     path.steps[0].id = owner->second.newOwnerId;
-    path.steps[2].id = device->second;
+
+    for (std::size_t index = 2; index < path.steps.size(); ++index) {
+        auto& step = path.steps[index];
+        switch (step.type) {
+            case ChainStepType::Rack:
+                remapId(remap.racks, step.id);
+                break;
+            case ChainStepType::Chain:
+                remapId(remap.chains, step.id);
+                break;
+            case ChainStepType::Device:
+                remapId(remap.devices, step.id);
+                break;
+            case ChainStepType::Segment:
+                break;
+        }
+    }
     return true;
 }
 
@@ -80,14 +122,6 @@ void retargetPresetLinks(MacroArray& macros, ModArray& mods, DeviceId presetDevi
         for (auto& link : mod.links)
             retargetPresetLink(link.target, presetDeviceId, liveDevicePath);
     }
-}
-
-template <typename Id> bool remapId(std::map<Id, Id> const& ids, int& value) {
-    auto it = ids.find(value);
-    if (it == ids.end())
-        return false;
-    value = it->second;
-    return true;
 }
 
 void remapPresetPath(ChainNodePath& path, const PresetIdRemap& remap) {
@@ -720,6 +754,16 @@ static void reassignCopiedElementIds(TrackManager& tm, std::vector<ChainElement>
                 device.id = tm.allocateDeviceId();
                 remap.devices[oldId] = device.id;
 
+                // The copy owns no child tracks yet. Inheriting the source's
+                // pair state would leave the sync thinking they were already
+                // made, so it would build none and the copy's pads on a bus
+                // would be silent while the link still named the original.
+                // `duplicateTrack()` clears them for the same reason.
+                for (auto& pair : device.multiOut.outputPairs) {
+                    pair.active = false;
+                    pair.trackId = INVALID_TRACK_ID;
+                }
+
                 // A pad-per-chain device's pads are its own: their DeviceIds and
                 // the rack id derived from the owner's would otherwise key the
                 // ops of the device this was copied from, and the copy's links
@@ -732,6 +776,8 @@ static void reassignCopiedElementIds(TrackManager& tm, std::vector<ChainElement>
                     padRemap.newOwnerId = device.id;
 
                     for (auto& pad : device.pads->chains) {
+                        padRemap.chains.insert(pad.id);
+
                         // The devices directly on the pad are the ones a pad
                         // path names, so their old ids are noted before the walk
                         // replaces them. Anything deeper is inside an ordinary
@@ -828,7 +874,13 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
     // not part of the undoable step the move is. Undo would return the grid to
     // the top level with its routing gone. Reordering within the track's own
     // list is not a placement change and stays allowed (#2211).
-    if (destinationChainPath.getType() != ChainNodeType::Track) {
+    // Only reordering within the same track's own list leaves the placement
+    // alone. A track-level destination on another track moves the pair state
+    // with the device while the existing child track still links to the track
+    // it came from, so the sync finds the pair already active, makes nothing,
+    // and the pad goes quiet.
+    if (destinationChainPath.getType() != ChainNodeType::Track ||
+        destinationChainPath.trackId != sourceElementPath.trackId) {
         const auto* moved = getDeviceInChainByPath(sourceElementPath);
         if (moved != nullptr && anyPadOnABus(*moved))
             return false;

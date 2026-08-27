@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <map>
+#include <set>
 #include <unordered_set>
 
 #include "../audio/AudioBridge.hpp"
@@ -28,6 +29,9 @@ namespace {
 struct DuplicatePadRemap {
     DeviceId newOwnerId = INVALID_DEVICE_ID;
     std::map<DeviceId, DeviceId> devices;  ///< old pad DeviceId -> new
+    /// The owner's pad chain ids. Unchanged by duplication, and what tells a
+    /// pad prefix from a rack that merely shares the owner's number.
+    std::set<ChainId> chains;
 };
 
 struct DuplicateIdRemap {
@@ -39,6 +43,14 @@ struct DuplicateIdRemap {
     /// Keyed by the OLD DeviceId of the device that owns the pads.
     std::map<DeviceId, DuplicatePadRemap> pads;
 };
+
+template <typename Id> bool remapDuplicateId(const std::map<Id, Id>& ids, int& value) {
+    auto it = ids.find(value);
+    if (it == ids.end())
+        return false;
+    value = it->second;
+    return true;
+}
 
 /// Rewrite @p path if it addresses a pad device, and say whether it did.
 ///
@@ -55,29 +67,51 @@ struct DuplicateIdRemap {
 /// passes through a rack numbered like a grid is left to the ordinary remap
 /// (#2207).
 bool remapDuplicatedPadPath(ChainNodePath& path, const DuplicateIdRemap& remap) {
-    if (path.steps.size() != 3 || path.steps[0].type != ChainStepType::Rack ||
-        path.steps[1].type != ChainStepType::Chain || path.steps[2].type != ChainStepType::Device)
+    if (path.steps.size() < 3 || path.steps[0].type != ChainStepType::Rack ||
+        path.steps[1].type != ChainStepType::Chain)
         return false;
 
     const auto owner = remap.pads.find(path.steps[0].id);
     if (owner == remap.pads.end())
         return false;
 
-    const auto device = owner->second.devices.find(path.steps[2].id);
-    if (device == owner->second.devices.end())
+    // A pad device, named directly by the pad's chain.
+    if (path.steps.size() == 3 && path.steps[2].type == ChainStepType::Device) {
+        const auto device = owner->second.devices.find(path.steps[2].id);
+        if (device == owner->second.devices.end())
+            return false;
+
+        path.trackId = remap.newTrackId;
+        path.steps[0].id = owner->second.newOwnerId;
+        path.steps[2].id = device->second;
+        return true;
+    }
+
+    // Or something further down, inside a rack the pad's chain holds. The
+    // prefix is still the pad's; what follows is an ordinary route and moves
+    // with the ordinary maps.
+    if (!owner->second.chains.contains(path.steps[1].id))
         return false;
 
     path.trackId = remap.newTrackId;
     path.steps[0].id = owner->second.newOwnerId;
-    path.steps[2].id = device->second;
-    return true;
-}
 
-template <typename Id> bool remapDuplicateId(const std::map<Id, Id>& ids, int& value) {
-    auto it = ids.find(value);
-    if (it == ids.end())
-        return false;
-    value = it->second;
+    for (std::size_t index = 2; index < path.steps.size(); ++index) {
+        auto& step = path.steps[index];
+        switch (step.type) {
+            case ChainStepType::Rack:
+                remapDuplicateId(remap.racks, step.id);
+                break;
+            case ChainStepType::Chain:
+                remapDuplicateId(remap.chains, step.id);
+                break;
+            case ChainStepType::Device:
+                remapDuplicateId(remap.devices, step.id);
+                break;
+            case ChainStepType::Segment:
+                break;
+        }
+    }
     return true;
 }
 
@@ -1051,9 +1085,31 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
                     // on the grid, on a rack, or on the track (#2207).
                     remap.racks[padRackIdFor(oldDeviceId)] = padRackIdFor(device.id);
 
+                    stampPadRackId(device);
+
                     DuplicatePadRemap pads;
                     pads.newOwnerId = device.id;
-                    rekeyPads(device, &pads.devices);
+
+                    for (auto& pad : device.pads->chains) {
+                        pads.chains.insert(pad.id);
+
+                        // The devices directly on the pad are the ones a pad
+                        // path names, so their old ids are noted before the walk
+                        // replaces them. Anything deeper is inside an ordinary
+                        // rack and moves with the ordinary maps, which is why
+                        // the walk runs over the whole chain rather than only
+                        // its devices.
+                        std::vector<DeviceId> padDeviceIds;
+                        for (const auto& padElement : pad.elements)
+                            if (magda::isDevice(padElement))
+                                padDeviceIds.push_back(magda::getDevice(padElement).id);
+
+                        reassignIds(pad.elements);
+
+                        for (const auto padDeviceId : padDeviceIds)
+                            pads.devices[padDeviceId] = remap.devices[padDeviceId];
+                    }
+
                     remap.pads[oldDeviceId] = std::move(pads);
                 }
             } else if (magda::isRack(element)) {

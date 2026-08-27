@@ -945,6 +945,129 @@ TEST_CASE("A copied Drum Grid's pads get ids of their own", "[drumgrid][pads][co
     CHECK(tm.findDevicePath(clonedVoice.id).getDeviceId() == clonedVoice.id);
 }
 
+TEST_CASE("A grid with a pad on a bus is not dragged to another track",
+          "[drumgrid][pads][commands]") {
+    // A track-level destination on another track is still a placement change:
+    // the pair state moves with the device while the child track it made still
+    // links to the track it came from, so the sync finds the pair active, makes
+    // nothing, and the pad goes quiet.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto otherTrackId = tm.createTrack("Other");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+    REQUIRE(tm.setPadOutput(gridPath, 0, 1));
+
+    CHECK_FALSE(tm.moveChainElement(gridPath, ChainNodePath::trackLevel(otherTrackId), 0));
+    CHECK(tm.findDevicePath(gridId) == gridPath);
+
+    REQUIRE(tm.setPadOutput(gridPath, 0, 0));
+    CHECK(tm.moveChainElement(gridPath, ChainNodePath::trackLevel(otherTrackId), 0));
+}
+
+TEST_CASE("A copied grid owns no child tracks yet", "[drumgrid][pads][commands]") {
+    // Inheriting the source's pair state would leave the sync thinking the
+    // child tracks were already made, so it would build none for the copy and
+    // its pad on a bus would be silent while the link named the original.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+
+    {
+        auto* grid = tm.getDeviceInChainByPath(gridPath);
+        REQUIRE(grid != nullptr);
+        grid->multiOut.isMultiOut = true;
+        grid->multiOut.outputPairs.resize(2);
+        grid->multiOut.outputPairs[1].active = true;
+        grid->multiOut.outputPairs[1].trackId = trackId;
+    }
+
+    std::vector<ChainElement> copied;
+    copied.push_back(makeDeviceElement(*tm.getDeviceInChainByPath(gridPath)));
+    REQUIRE(tm.insertChainElementsByPath(ChainNodePath::trackLevel(trackId), std::move(copied), 1,
+                                         /*reassignIds=*/true));
+
+    const auto& clone = getDevice(tm.getTrack(trackId)->chain.fxChainElements[1]);
+    REQUIRE(clone.multiOut.outputPairs.size() == 2);
+    CHECK_FALSE(clone.multiOut.outputPairs[1].active);
+    CHECK(clone.multiOut.outputPairs[1].trackId == INVALID_TRACK_ID);
+
+    // The original keeps its own.
+    CHECK(tm.getDeviceInChainByPath(gridPath)->multiOut.outputPairs[1].active);
+}
+
+TEST_CASE("A copied link into a rack inside a pad follows the copy", "[drumgrid][pads][commands]") {
+    // A pad's chain holds racks like any other, so a link can name something
+    // deeper than the pad's own devices. Its prefix is still the pad's and has
+    // to come from the pad remap; what follows moves with the ordinary maps.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+
+    const auto padChainId = tm.getPad(gridPath, 0)->id;
+    constexpr RackId kInnerRack = 77;
+    constexpr ChainId kInnerChain = 3;
+    constexpr DeviceId kNested = 4242;
+
+    {
+        RackInfo inner;
+        inner.id = kInnerRack;
+        ChainInfo innerChain;
+        innerChain.id = kInnerChain;
+        auto nested = padVoice("Nested");
+        nested.id = kNested;
+        innerChain.elements.push_back(makeDeviceElement(nested));
+        inner.chains.push_back(std::move(innerChain));
+        tm.getPadChain(gridPath, padChainId)->elements.push_back(makeRackElement(std::move(inner)));
+
+        auto* grid = tm.getDeviceInChainByPath(gridPath);
+        REQUIRE(grid != nullptr);
+        MacroLink link;
+        link.target = ControlTarget::pluginParam(TrackManager::padChainPath(gridPath, padChainId)
+                                                     .withRack(kInnerRack)
+                                                     .withChain(kInnerChain)
+                                                     .withDevice(kNested),
+                                                 0);
+        link.amount = 1.0f;
+        grid->macros[0].links.push_back(link);
+    }
+
+    std::vector<ChainElement> copied;
+    copied.push_back(makeDeviceElement(*tm.getDeviceInChainByPath(gridPath)));
+    REQUIRE(tm.insertChainElementsByPath(ChainNodePath::trackLevel(trackId), std::move(copied), 1,
+                                         /*reassignIds=*/true));
+
+    const auto& clone = getDevice(tm.getTrack(trackId)->chain.fxChainElements[1]);
+    const auto& clonedRack = getRack(clone.pads->chains[0].elements[1]);
+    const auto& clonedNested = getDevice(clonedRack.chains[0].elements[0]);
+
+    // Every id moved, and the link names the copy's own.
+    CHECK(clonedRack.id != kInnerRack);
+    CHECK(clonedNested.id != kNested);
+    CHECK(clone.macros[0].links[0].target.devicePath ==
+          TrackManager::padChainPath(ChainNodePath::topLevelDevice(trackId, clone.id),
+                                     clone.pads->chains[0].id)
+              .withRack(clonedRack.id)
+              .withChain(clonedRack.chains[0].id)
+              .withDevice(clonedNested.id));
+
+    // And both copies resolve to their own nested device.
+    CHECK(tm.getDeviceInChainByPath(clone.macros[0].links[0].target.devicePath) != nullptr);
+    CHECK(tm.findDevicePath(kNested).getDeviceId() == kNested);
+}
+
 TEST_CASE("Pads on a grid that is already nested are put back on the main mix",
           "[drumgrid][pads][commands]") {
     // A project can be loaded with a nested grid whose pads are on buses, from
