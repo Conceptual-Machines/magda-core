@@ -466,6 +466,12 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     /// through the generic lookup like any other device path (#2211).
     DeviceInfo* getDeviceInPadByPath(const ChainNodePath& devicePath);
 
+    /// The pad chain @p chainPath names, or null when it names none.
+    ///
+    /// `getChainByPath()` dispatches to this for a pad-owned address, so a pad
+    /// chain is looked up through the generic call like any other chain (#2219).
+    ChainInfo* getChainInPadByPath(const ChainNodePath& chainPath);
+
     /// Replace those pads wholesale. Undo's counterpart to every pad edit
     /// below, which is why it lives with them rather than on the command
     /// (`EditPadsCommand`, #2211).

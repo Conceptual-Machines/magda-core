@@ -52,6 +52,7 @@ target_sources(magda_daw PRIVATE
     DeviceCatalogMetadata.cpp
     LegacyDeviceAliases.cpp
     DeviceParamMigrations.cpp
+    PadPathMigration.cpp
     PluginPreferences.cpp
     PluginCapabilities.cpp
     PluginPresetScanner.cpp

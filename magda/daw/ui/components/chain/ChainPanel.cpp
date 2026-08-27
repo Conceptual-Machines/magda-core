@@ -497,9 +497,9 @@ void ChainPanel::showChain(const magda::ChainNodePath& chainPath) {
     // The path should end with a Chain step
     if (!chainPath.steps.empty()) {
         for (const auto& step : chainPath.steps) {
-            if (step.type == magda::ChainStepType::Rack) {
+            if (magda::isRackStep(step.type)) {
                 rackId_ = step.id;
-            } else if (step.type == magda::ChainStepType::Chain) {
+            } else if (magda::isChainStep(step.type)) {
                 chainId_ = step.id;
             }
         }

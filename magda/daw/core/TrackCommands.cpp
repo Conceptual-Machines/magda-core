@@ -582,12 +582,17 @@ void PasteChainElementsCommand::execute() {
     if (!track)
         return;
 
-    const auto& destinationElements =
-        destinationChainPath_.steps.empty()
-            ? track->chain.fxChainElements
-            : tm.getChain(destinationChainPath_.trackId, destinationChainPath_.getRackId(),
-                          destinationChainPath_.getChainId())
-                  ->elements;
+    // By path rather than by extracted ids: the destination can be nested to any
+    // depth, and it can be a pad chain, whose owner step is a DeviceId that no
+    // rack lookup answers to (#2219).
+    const auto* destinationChain =
+        destinationChainPath_.steps.empty() ? nullptr : tm.getChainByPath(destinationChainPath_);
+    if (!destinationChainPath_.steps.empty() && destinationChain == nullptr)
+        return;
+
+    const auto& destinationElements = destinationChainPath_.steps.empty()
+                                          ? track->chain.fxChainElements
+                                          : destinationChain->elements;
     const int start = std::clamp(requestedIndex, 0, static_cast<int>(destinationElements.size()));
     for (int i = 0; i < static_cast<int>(templateElements_.size()) &&
                     start + i < static_cast<int>(destinationElements.size());

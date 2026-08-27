@@ -25,23 +25,12 @@ namespace magda {
 
 namespace {
 
-/// What one pad-per-chain device's pads were re-keyed to.
-struct DuplicatePadRemap {
-    DeviceId newOwnerId = INVALID_DEVICE_ID;
-    std::map<DeviceId, DeviceId> devices;  ///< old pad DeviceId -> new
-    /// The owner's pad chain ids. Unchanged by duplication, and what tells a
-    /// pad prefix from a rack that merely shares the owner's number.
-    std::set<ChainId> chains;
-};
-
 struct DuplicateIdRemap {
     TrackId oldTrackId = INVALID_TRACK_ID;
     TrackId newTrackId = INVALID_TRACK_ID;
     std::map<DeviceId, DeviceId> devices;
     std::map<RackId, RackId> racks;
     std::map<ChainId, ChainId> chains;
-    /// Keyed by the OLD DeviceId of the device that owns the pads.
-    std::map<DeviceId, DuplicatePadRemap> pads;
 };
 
 template <typename Id> bool remapDuplicateId(const std::map<Id, Id>& ids, int& value) {
@@ -52,76 +41,8 @@ template <typename Id> bool remapDuplicateId(const std::map<Id, Id>& ids, int& v
     return true;
 }
 
-/// Rewrite @p path if it addresses a pad device, and say whether it did.
-///
-/// A pad device's address is `Rack(gridDeviceId) > Chain(pad) > Device(pad
-/// device)`. None of its three steps may go through the ordinary maps:
-///
-///  - The rack step is a DeviceId, and rack ids come out of a counter that also
-///    starts at 1, so `remap.racks` would send it to whatever rack shares the
-///    number.
-///  - The chain step is a pad chain id, rack-local and untouched by
-///    duplication, so `remap.chains` would move it for the same reason.
-///
-/// Both ends are matched before either is rewritten, so a link that merely
-/// passes through a rack numbered like a grid is left to the ordinary remap
-/// (#2207).
-bool remapDuplicatedPadPath(ChainNodePath& path, const DuplicateIdRemap& remap) {
-    if (path.steps.size() < 3 || path.steps[0].type != ChainStepType::Rack ||
-        path.steps[1].type != ChainStepType::Chain)
-        return false;
-
-    const auto owner = remap.pads.find(path.steps[0].id);
-    if (owner == remap.pads.end())
-        return false;
-
-    // A pad device, named directly by the pad's chain.
-    if (path.steps.size() == 3 && path.steps[2].type == ChainStepType::Device) {
-        const auto device = owner->second.devices.find(path.steps[2].id);
-        if (device == owner->second.devices.end())
-            return false;
-
-        path.trackId = remap.newTrackId;
-        path.steps[0].id = owner->second.newOwnerId;
-        path.steps[2].id = device->second;
-        return true;
-    }
-
-    // Or something further down, inside a rack the pad's chain holds. The
-    // prefix is still the pad's; what follows is an ordinary route and moves
-    // with the ordinary maps.
-    if (!owner->second.chains.contains(path.steps[1].id))
-        return false;
-
-    path.trackId = remap.newTrackId;
-    path.steps[0].id = owner->second.newOwnerId;
-
-    for (std::size_t index = 2; index < path.steps.size(); ++index) {
-        auto& step = path.steps[index];
-        switch (step.type) {
-            case ChainStepType::Rack:
-                remapDuplicateId(remap.racks, step.id);
-                break;
-            case ChainStepType::Chain:
-                remapDuplicateId(remap.chains, step.id);
-                break;
-            case ChainStepType::Device:
-                remapDuplicateId(remap.devices, step.id);
-                break;
-            case ChainStepType::Segment:
-                break;
-        }
-    }
-    return true;
-}
-
 void remapDuplicatedPath(ChainNodePath& path, const DuplicateIdRemap& remap) {
     if (!path.isValid())
-        return;
-
-    // Pads first, and nothing else runs for one: every step of a pad path would
-    // be moved by the wrong map.
-    if (remapDuplicatedPadPath(path, remap))
         return;
 
     bool touched = false;
@@ -144,6 +65,15 @@ void remapDuplicatedPath(ChainNodePath& path, const DuplicateIdRemap& remap) {
             case ChainStepType::Device:
                 touched = remapDuplicateId(remap.devices, step.id) || touched;
                 break;
+            case ChainStepType::PadRack:
+                // A PadRack step carries the owning grid's DeviceId, so it moves
+                // with the devices map like any other device id. Saying so in
+                // the type is what removed the shape-matching pad remapper this
+                // used to need (#2219).
+                touched = remapDuplicateId(remap.devices, step.id) || touched;
+                break;
+            case ChainStepType::PadChain:
+                break;  // Pad chain ids are rack-local and survive duplication
             case ChainStepType::Segment:
                 break;  // Segment steps carry no remappable ID
         }
@@ -1077,40 +1007,23 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
                 // no longer be the one derived from its device id, which is how
                 // every pad path is built (#2207).
                 if (device.pads) {
-                    // The synthetic negative id is safe in the shared rack map;
-                    // the grid's own DeviceId, which is what a pad path actually
-                    // spells its rack step with, is not. That one is recorded as
-                    // a pad remap so `remapDuplicatedPadPath` can rewrite a whole
-                    // pad path at once, wherever the link that carries it lives:
-                    // on the grid, on a rack, or on the track (#2207).
+                    // The synthetic negative id is what `RackInfo::id` holds and
+                    // is safe in the shared rack map. The grid's own DeviceId,
+                    // which is what a pad path spells its owner step with, moves
+                    // with the devices map above instead -- a PadRack step says
+                    // it is a DeviceId, so nothing has to keep a second map to
+                    // tell it apart from a rack sharing the number (#2219).
                     remap.racks[padRackIdFor(oldDeviceId)] = padRackIdFor(device.id);
 
                     stampPadRackId(device);
 
-                    DuplicatePadRemap pads;
-                    pads.newOwnerId = device.id;
-
-                    for (auto& pad : device.pads->chains) {
-                        pads.chains.insert(pad.id);
-
-                        // The devices directly on the pad are the ones a pad
-                        // path names, so their old ids are noted before the walk
-                        // replaces them. Anything deeper is inside an ordinary
-                        // rack and moves with the ordinary maps, which is why
-                        // the walk runs over the whole chain rather than only
-                        // its devices.
-                        std::vector<DeviceId> padDeviceIds;
-                        for (const auto& padElement : pad.elements)
-                            if (magda::isDevice(padElement))
-                                padDeviceIds.push_back(magda::getDevice(padElement).id);
-
+                    // A pad's own elements are re-keyed by the ordinary walk:
+                    // the devices on it land in `remap.devices` like any other,
+                    // and its chain id is rack-local and stays as it is, which
+                    // is what keeps a macro, a mod or an automation lane naming
+                    // one still naming it.
+                    for (auto& pad : device.pads->chains)
                         reassignIds(pad.elements);
-
-                        for (const auto padDeviceId : padDeviceIds)
-                            pads.devices[padDeviceId] = remap.devices[padDeviceId];
-                    }
-
-                    remap.pads[oldDeviceId] = std::move(pads);
                 }
             } else if (magda::isRack(element)) {
                 auto& rack = magda::getRack(element);
@@ -2679,6 +2592,12 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
         const bool isLast = index + 1 == rackPath.steps.size();
 
         switch (step.type) {
+            // A PadRack names a device rather than a chain element, so
+            // `findRackAmong` will not find it and this returns null, which is
+            // what a Rack step carrying a grid's id did before the pad types
+            // existed. Pads are reached through `getPads()` and
+            // `getDeviceInPadByPath()` instead (#2219).
+            case ChainStepType::PadRack:
             case ChainStepType::Rack: {
                 // Valid at track level, or immediately inside a chain. A Rack
                 // straight after a Rack is the sideways move above.
@@ -2696,6 +2615,7 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
                 currentChain = nullptr;  // Reset chain context
                 break;
             }
+            case ChainStepType::PadChain:
             case ChainStepType::Chain: {
                 // Only ever directly inside a rack. A Chain after a Chain would
                 // hop between siblings.
@@ -2811,6 +2731,11 @@ void TrackManager::removeChainByPath(const ChainNodePath& chainPath) {
 }
 
 ChainInfo* TrackManager::getChainByPath(const ChainNodePath& chainPath) {
+    // A pad chain hangs off a device rather than off a rack in the chain tree,
+    // and its typed address says so, so it needs no walk (#2219).
+    if (chainPath.isPadOwned())
+        return getChainInPadByPath(chainPath);
+
     if (chainPath.steps.empty() || chainPath.steps.back().type != ChainStepType::Chain)
         return nullptr;
 
@@ -3023,10 +2948,12 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
         const auto& step = path.steps[i];
 
         switch (step.type) {
+            case ChainStepType::PadRack:
             case ChainStepType::Rack: {
                 // A top-level rack lives in the track's own list, a nested one
-                // in the chain the previous step reached; either way a device's
-                // pads answer to a Rack step too (#2207).
+                // in the chain the previous step reached. A PadRack names a
+                // device, so it finds nothing here and contributes no name,
+                // exactly as the untyped spelling did (#2219).
                 const auto& elements =
                     currentChain != nullptr ? currentChain->elements : track->chain.fxChainElements;
                 if (const auto* found = findRackAmong(elements, step.id)) {
@@ -3036,6 +2963,7 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
                 }
                 break;
             }
+            case ChainStepType::PadChain:
             case ChainStepType::Chain: {
                 if (currentRack != nullptr) {
                     for (const auto& chain : currentRack->chains) {

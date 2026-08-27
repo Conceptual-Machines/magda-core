@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <functional>
+#include <map>
+#include <set>
 #include <unordered_set>
 
 #include "../../core/AutomationManager.hpp"
@@ -11,6 +13,7 @@
 #include "../../core/DeviceParamMigrations.hpp"
 #include "../../core/DrumGridPads.hpp"
 #include "../../core/LegacyDeviceAliases.hpp"
+#include "../../core/PadPathMigration.hpp"
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/ViewModeState.hpp"
@@ -367,6 +370,12 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         // a Drum Grid with no pads at all (#2207).
         allocateStagedPadDeviceIds(outData.tracks, outData.masterTrack.get());
 
+        // Then the pad addresses saved before pad ownership was a step type.
+        // After the id allocation above, because a pad chain is matched by the
+        // id of the device that owns it (#2219).
+        pad_paths::migrateLegacyPadPaths(outData.tracks, outData.masterTrack.get(),
+                                         outData.automationLanes);
+
         // Parameter aliases (UserProject layer -- opaque pass-through to AliasRegistry)
         if (obj->hasProperty("paramAliases"))
             outData.info.paramAliases = obj->getProperty("paramAliases");
@@ -678,6 +687,10 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     device_param_migrations::applyParamIndexMigrations(
         stagedTracks, hasMasterTrack ? &stagedMasterTrack : nullptr, stagedAutomation,
         stagedAutomationClips);
+
+    // Then the pad addresses saved before pad ownership was a step type (#2219).
+    pad_paths::migrateLegacyPadPaths(stagedTracks, hasMasterTrack ? &stagedMasterTrack : nullptr,
+                                     stagedAutomation);
 
     // Stage 2: All components validated successfully - now commit to managers atomically
     installStagedSources(stagedSources, stagedLegacySources, stagedClips);
