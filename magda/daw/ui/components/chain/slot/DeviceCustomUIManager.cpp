@@ -1342,7 +1342,18 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     // The pad's output bus. `ChainInfo::outputIndex` is model state, and the
     // device sync turns a pad on a bus into a multi-out child track, so the row
     // selector only ever had to write the model (#2211).
-    drumGridUI_->onPadOutputChanged = [postPadEdit](int padIndex, int busIndex) {
+    drumGridUI_->onPadOutputChanged = [this, postPadEdit, gridPath](int padIndex, int busIndex) {
+        // Refused for a grid inside a rack: nothing carries a bus off one, so
+        // the pads on it would go silent. Asked before the edit, the same way a
+        // range is, so a refusal snaps the row back to Main rather than leaving
+        // it showing a bus the model never took, and does not become an undo
+        // step that changed nothing.
+        if (busIndex != 0 && !magda::TrackManager::getInstance().padBusesAvailable(gridPath())) {
+            if (drumGridUI_ != nullptr)
+                drumGridUI_->rebuildChainRows();
+            return;
+        }
+
         postPadEdit("Set Pad Output", [padIndex, busIndex](const magda::ChainNodePath& grid) {
             magda::TrackManager::getInstance().setPadOutput(grid, padIndex, busIndex);
         });

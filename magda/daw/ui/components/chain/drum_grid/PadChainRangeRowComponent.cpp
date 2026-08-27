@@ -17,13 +17,8 @@ PadChainRangeRowComponent::PadChainRangeRowComponent(int padIndex) : padIndex_(p
     addAndMakeVisible(nameLabel_);
 
     // Helper to set up a note slider (0-127, displayed as note names)
-    // Only the notes the grid shows. A chain retuned clear of them keeps
-    // playing and disappears from the rows, with no way left to edit or delete
-    // it; the model refuses such a range, and the slider does not offer it
-    // (#2211).
-    auto setupNoteSlider = [this](TextSlider& slider) {
-        slider.setRange(static_cast<double>(kPadBaseNote),
-                        static_cast<double>(kPadBaseNote + kPadCount - 1), 1.0);
+    auto setupNoteSlider = [this](TextSlider& slider, int minNote, int maxNote) {
+        slider.setRange(static_cast<double>(minNote), static_cast<double>(maxNote), 1.0);
         slider.setValue(static_cast<double>(kPadBaseNote), juce::dontSendNotification);
         slider.setShowFillIndicator(false);
         slider.setValueFormatter([](double v) { return midiNoteToName(static_cast<int>(v)); });
@@ -38,9 +33,17 @@ PadChainRangeRowComponent::PadChainRangeRowComponent(int padIndex) : padIndex_(p
         addAndMakeVisible(slider);
     };
 
-    setupNoteSlider(lowNoteSlider_);
-    setupNoteSlider(highNoteSlider_);
-    setupNoteSlider(rootNoteSlider_);
+    // The endpoints reach only the notes the grid shows: a chain retuned clear
+    // of them keeps playing and disappears from the rows, with no way left to
+    // edit or delete it, and the model refuses such a range (#2211).
+    setupNoteSlider(lowNoteSlider_, kPadBaseNote, kPadBaseNote + kPadCount - 1);
+    setupNoteSlider(highNoteSlider_, kPadBaseNote, kPadBaseNote + kPadCount - 1);
+
+    // The root is not an endpoint. It is the pitch the range is transposed onto
+    // before the chain sees it (DrumGridPlugin::processChain), so it decides
+    // nothing about reachability and keeps the whole MIDI range: a sample whose
+    // natural pitch sits outside the displayed pads is a valid mapping.
+    setupNoteSlider(rootNoteSlider_, 0, 127);
 
     // Committed when the drag ends, not on every update. A pad's note range is
     // model state, and writing it notifies trackDevicesChanged, which rebuilds

@@ -343,6 +343,25 @@ bool TrackManager::padBusesAvailable(const ChainNodePath& gridPath) const {
     return gridPath.getType() == ChainNodeType::TopLevelDevice;
 }
 
+bool TrackManager::resetPadBuses(const ChainNodePath& gridPath) {
+    auto* pads = getPads(gridPath);
+    if (pads == nullptr)
+        return false;
+
+    bool moved = false;
+    for (auto& pad : pads->chains) {
+        if (pad.outputIndex == 0)
+            continue;
+        pad.outputIndex = 0;
+        moved = true;
+    }
+
+    if (moved)
+        notifyTrackDevicesChanged(gridPath.trackId);
+
+    return moved;
+}
+
 bool TrackManager::setPadOutput(const ChainNodePath& gridPath, int padIndex, int outputIndex) {
     if (outputIndex != 0 && !padBusesAvailable(gridPath))
         return false;

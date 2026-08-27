@@ -262,8 +262,13 @@ DrumGridUI::DrumGridUI() {
     levelSlider_.onValueChanged = [this](double value) {
         if (onPadLevelChanged)
             onPadLevelChanged(selectedPad_, static_cast<float>(value));
+        // A typed value or a reset has no drag to end, so it closes its own
+        // gesture here. Without this, two typed values on the same fader keep
+        // the same token and fold into one undo step (#2211).
+        if (!levelSlider_.isBeingDragged())
+            endFaderGesture();
     };
-    levelSlider_.onDragEnd = [this]() { faderGesture_ = nextFaderGesture_.fetch_add(1); };
+    levelSlider_.onDragEnd = [this]() { endFaderGesture(); };
     addAndMakeVisible(levelSlider_);
 
     // Pan slider (-1 to +1)
@@ -290,8 +295,10 @@ DrumGridUI::DrumGridUI() {
     panSlider_.onValueChanged = [this](double value) {
         if (onPadPanChanged)
             onPadPanChanged(selectedPad_, static_cast<float>(value));
+        if (!panSlider_.isBeingDragged())
+            endFaderGesture();
     };
-    panSlider_.onDragEnd = [this]() { faderGesture_ = nextFaderGesture_.fetch_add(1); };
+    panSlider_.onDragEnd = [this]() { endFaderGesture(); };
     addAndMakeVisible(panSlider_);
 
     // Mute/Solo buttons
@@ -996,7 +1003,7 @@ void DrumGridUI::rebuildChainRows() {
             if (onPadPanChanged)
                 onPadPanChanged(padIndex, val);
         };
-        row->onFaderGestureEnd = [this]() { faderGesture_ = nextFaderGesture_.fetch_add(1); };
+        row->onFaderGestureEnd = [this]() { endFaderGesture(); };
         row->onMuteChanged = [this](int padIndex, bool val) {
             padInfos_[static_cast<size_t>(padIndex)].mute = val;
             if (onPadMuteChanged)
@@ -1032,7 +1039,13 @@ void DrumGridUI::rebuildChainRows() {
                 onPadOutputChanged(padIndex, busIndex);
         };
 
-        row->setSelected(i == selectedPad_);
+        // By chain, the same comparison setSelectedPad() makes. A row is named
+        // by the lowest pad its chain covers, so selecting any other note of a
+        // ranged chain left the next rebuild unselecting its only row, and the
+        // range editor under it went unlaid out (#2211).
+        row->setSelected(info.chainIndex >= 0 &&
+                         info.chainIndex ==
+                             padInfos_[static_cast<size_t>(selectedPad_)].chainIndex);
         chainRows_.push_back(std::move(row));
 
         // --- Key range row ---
@@ -1058,6 +1071,10 @@ void DrumGridUI::rebuildChainRows() {
     repaint();
     if (onLayoutChanged)
         onLayoutChanged();
+}
+
+void DrumGridUI::endFaderGesture() {
+    faderGesture_ = nextFaderGesture_.fetch_add(1);
 }
 
 void DrumGridUI::refreshRangeRows() {

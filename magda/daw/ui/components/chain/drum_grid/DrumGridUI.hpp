@@ -328,6 +328,9 @@ class DrumGridUI : public juce::Component,
     //==============================================================================
     void setDetailCollapsed(bool collapsed);
     void refreshPadButtons();
+
+    /// Close the current fader gesture, so the next edit is a new undo step.
+    void endFaderGesture();
     void refreshDetailPanel();
     void goToPrevPage();
     void goToNextPage();

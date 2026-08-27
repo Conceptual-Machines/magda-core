@@ -818,6 +818,43 @@ TEST_CASE("A pad on a grid inside a rack cannot be put on a bus", "[drumgrid][pa
     CHECK(tm.getPad(gridPath, 0)->outputIndex == 2);
 }
 
+TEST_CASE("Pads are put back on the main mix when their grid stops being top level",
+          "[drumgrid][pads][commands]") {
+    // padBusesAvailable only guards a new assignment. A grid can cross into a
+    // placement where buses do not work after one was made -- wrapping it in a
+    // rack moves it and keeps its pads -- and a project can be loaded already
+    // like that, leaving a pad pointed at a bus nothing carries.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+    REQUIRE(tm.setPadDevice(gridPath, 1, padVoice("Snare")) != INVALID_DEVICE_ID);
+    REQUIRE(tm.setPadOutput(gridPath, 0, 1));
+    REQUIRE(tm.setPadOutput(gridPath, 1, 2));
+
+    // Wrapping keeps the pads and their buses, and the grid is no longer a
+    // top-level device.
+    const auto rackId = tm.wrapDeviceInRack(trackId, gridId);
+    REQUIRE(rackId != INVALID_RACK_ID);
+
+    const auto nestedGridPath = tm.findDevicePath(gridId);
+    REQUIRE(nestedGridPath.isValid());
+    REQUIRE_FALSE(tm.padBusesAvailable(nestedGridPath));
+    REQUIRE(tm.getPad(nestedGridPath, 0)->outputIndex == 1);
+
+    // What the device sync does about it.
+    CHECK(tm.resetPadBuses(nestedGridPath));
+    CHECK(tm.getPad(nestedGridPath, 0)->outputIndex == 0);
+    CHECK(tm.getPad(nestedGridPath, 1)->outputIndex == 0);
+
+    // And it says so only when something actually moved.
+    CHECK_FALSE(tm.resetPadBuses(nestedGridPath));
+}
+
 TEST_CASE("A pad chain answering to more than one note can still be deleted",
           "[drumgrid][pads][commands]") {
     // clearPad() is the pad's own delete and leaves a chain shared with its

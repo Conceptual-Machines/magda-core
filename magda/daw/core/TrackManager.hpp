@@ -516,6 +516,15 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     /// Whether a bus can be assigned to @p gridPath's pads at all.
     bool padBusesAvailable(const ChainNodePath& gridPath) const;
 
+    /// Put every pad back on the grid's own mix. True when any of them moved.
+    ///
+    /// A grid can cross into a placement where buses do not work after the
+    /// assignment was made -- `wrapDeviceInRack()` moves it into a rack and
+    /// keeps its pads -- and a project can be loaded already in that state. The
+    /// device sync calls this so a pad never stays pointed at a bus nothing
+    /// carries (#2211).
+    bool resetPadBuses(const ChainNodePath& gridPath);
+
     /// Whether @p padIndex's chain could take this range: inside the grid's own
     /// notes, and clear of every other pad chain's. Asked before the edit so a
     /// refused range does not become an undo step that changed nothing.
