@@ -36,9 +36,26 @@ PadChainRangeRowComponent::PadChainRangeRowComponent(int padIndex) : padIndex_(p
     setupNoteSlider(highNoteSlider_);
     setupNoteSlider(rootNoteSlider_);
 
-    lowNoteSlider_.onValueChanged = [this](double) { fireRangeChanged(); };
-    highNoteSlider_.onValueChanged = [this](double) { fireRangeChanged(); };
-    rootNoteSlider_.onValueChanged = [this](double) { fireRangeChanged(); };
+    // Committed when the drag ends, not on every update. A pad's note range is
+    // model state, and writing it notifies trackDevicesChanged, which rebuilds
+    // the track's chain components: this row and this slider among them.
+    // Firing per update would free the slider before its own mouseUp and cut
+    // the drag off after the first delta (#2211). A typed or clicked value
+    // still commits at once, because that is not a drag.
+    const auto commitIfSettled = [this](TextSlider& slider) {
+        return [this, &slider](double) {
+            if (!slider.isBeingDragged())
+                fireRangeChanged();
+        };
+    };
+
+    lowNoteSlider_.onValueChanged = commitIfSettled(lowNoteSlider_);
+    highNoteSlider_.onValueChanged = commitIfSettled(highNoteSlider_);
+    rootNoteSlider_.onValueChanged = commitIfSettled(rootNoteSlider_);
+
+    lowNoteSlider_.onDragEnd = [this]() { fireRangeChanged(); };
+    highNoteSlider_.onDragEnd = [this]() { fireRangeChanged(); };
+    rootNoteSlider_.onDragEnd = [this]() { fireRangeChanged(); };
 }
 
 PadChainRangeRowComponent::~PadChainRangeRowComponent() = default;

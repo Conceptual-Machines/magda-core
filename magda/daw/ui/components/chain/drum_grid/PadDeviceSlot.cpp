@@ -90,10 +90,21 @@ PadDeviceSlot::PadDeviceSlot() {
     gainSlider_.setRange(-60.0, 12.0, 0.1);
     gainSlider_.setValue(0.0, juce::dontSendNotification);
     gainSlider_.setShowFillIndicator(false);
-    gainSlider_.onValueChanged = [this](double value) {
+    // Committed when the drag ends, not on every update. A pad device's gain is
+    // model state, and writing it notifies trackDevicesChanged, which rebuilds
+    // the track's chain components: this slot and this slider among them.
+    // Firing per update would free the slider before its own mouseUp and cut
+    // the drag off after the first delta (#2211). The readout still tracks the
+    // mouse; only the model write waits.
+    const auto commitGain = [this]() {
         if (onGainDbChanged)
-            onGainDbChanged(static_cast<float>(value));
+            onGainDbChanged(static_cast<float>(gainSlider_.getValue()));
     };
+    gainSlider_.onValueChanged = [this, commitGain](double) {
+        if (!gainSlider_.isBeingDragged())
+            commitGain();
+    };
+    gainSlider_.onDragEnd = commitGain;
     addAndMakeVisible(gainSlider_);
 
     // Level meter (right edge of content area)

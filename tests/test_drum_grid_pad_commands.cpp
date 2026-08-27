@@ -646,6 +646,51 @@ TEST_CASE("A pad device resolves through the generic path lookup", "[drumgrid][p
           nullptr);
 }
 
+TEST_CASE("A device inside a rack inside a pad resolves too", "[drumgrid][pads][commands]") {
+    // A pad's chain holds elements like any other chain, racks included, and
+    // every walk that reaches a pad recurses through them. The synthetic
+    // prefix is the pad's; the rest of the address is an ordinary route.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    constexpr int padIndex = 1;
+    REQUIRE(tm.setPadDevice(gridPath, padIndex, padVoice("Tom")) != INVALID_DEVICE_ID);
+
+    auto* pad = tm.getPad(gridPath, padIndex);
+    REQUIRE(pad != nullptr);
+    const auto padChainId = pad->id;
+
+    // Built on the model directly: no pad command makes one today, and the
+    // point is that the address resolves wherever the model can express it.
+    constexpr DeviceId kNested = 4242;
+    RackInfo inner;
+    inner.id = 77;
+    inner.name = "Pad Rack";
+    ChainInfo innerChain;
+    innerChain.id = 3;
+    auto nested = padVoice("Nested");
+    nested.id = kNested;
+    innerChain.elements.push_back(makeDeviceElement(nested));
+    inner.chains.push_back(std::move(innerChain));
+    tm.getPadChain(gridPath, padChainId)->elements.push_back(makeRackElement(std::move(inner)));
+
+    const auto path = tm.findDevicePath(kNested);
+    REQUIRE(path.isValid());
+    CHECK(path == TrackManager::padChainPath(gridPath, padChainId)
+                      .withRack(77)
+                      .withChain(3)
+                      .withDevice(kNested));
+
+    const auto* resolved = tm.getDeviceInChainByPath(path);
+    REQUIRE(resolved != nullptr);
+    CHECK(resolved->id == kNested);
+    CHECK(resolved->name == "Nested");
+}
+
 TEST_CASE("A dragged pad fader is one undo step, not one per move",
           "[drumgrid][pads][commands][undo]") {
     resetState();

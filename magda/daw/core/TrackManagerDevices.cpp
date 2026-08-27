@@ -184,6 +184,43 @@ DeviceInfo* findUniqueBareDeviceIdMatch(TrackInfo& masterTrack, std::vector<Trac
     return matches.size() == 1 ? matches.front() : nullptr;
 }
 
+/// Follow @p path from @p index inside @p elements, ending on its Device step.
+///
+/// The ordinary `Rack > Chain > ... > Device` alternation, walked from wherever
+/// the caller has already got to. A pad's chain holds elements like any other,
+/// racks included, so the tail of a pad device's address is an ordinary route.
+DeviceInfo* followChainSteps(std::vector<ChainElement>& elements, const ChainNodePath& path,
+                             std::size_t index) {
+    if (index >= path.steps.size())
+        return nullptr;
+
+    const auto& step = path.steps[index];
+
+    if (step.type == ChainStepType::Device) {
+        // A Device step is a leaf: anything after it describes no route.
+        if (index + 1 != path.steps.size())
+            return nullptr;
+        for (auto& element : elements)
+            if (magda::isDevice(element) && magda::getDevice(element).id == step.id)
+                return &magda::getDevice(element);
+        return nullptr;
+    }
+
+    if (step.type != ChainStepType::Rack || index + 1 >= path.steps.size() ||
+        path.steps[index + 1].type != ChainStepType::Chain)
+        return nullptr;
+
+    for (auto& element : elements) {
+        if (!magda::isRack(element) || magda::getRack(element).id != step.id)
+            continue;
+        for (auto& chain : magda::getRack(element).chains)
+            if (chain.id == path.steps[index + 1].id)
+                return followChainSteps(chain.elements, path, index + 2);
+        return nullptr;
+    }
+    return nullptr;
+}
+
 /// The device @p deviceId names, searched for its pads rather than itself.
 ///
 /// A grid can sit anywhere a device can, including inside a rack chain, so the
@@ -1113,11 +1150,13 @@ DeviceInfo* TrackManager::getDeviceInPadByPath(const ChainNodePath& devicePath) 
     // Rack > Chain > Device space comes out of one counter, so the leaf id
     // names one device in the whole project, and whichever route reaches it
     // reaches the same one (#2211).
-    if (devicePath.steps.size() != 3)
+    // `Rack(gridDeviceId) > Chain(pad)` is the synthetic prefix; everything past
+    // it is an ordinary route, because a pad's chain holds racks like any other
+    // chain does and every walk that reaches a pad recurses through them.
+    if (devicePath.steps.size() < 3)
         return nullptr;
     if (devicePath.steps[0].type != ChainStepType::Rack ||
-        devicePath.steps[1].type != ChainStepType::Chain ||
-        devicePath.steps[2].type != ChainStepType::Device)
+        devicePath.steps[1].type != ChainStepType::Chain)
         return nullptr;
 
     auto* track = getTrack(devicePath.trackId);
@@ -1128,14 +1167,10 @@ DeviceInfo* TrackManager::getDeviceInPadByPath(const ChainNodePath& devicePath) 
     if (owner == nullptr)
         return nullptr;
 
-    for (auto& pad : owner->pads->chains) {
-        if (pad.id != devicePath.steps[1].id)
-            continue;
-        for (auto& element : pad.elements)
-            if (magda::isDevice(element) && magda::getDevice(element).id == devicePath.steps[2].id)
-                return &magda::getDevice(element);
-        return nullptr;
-    }
+    for (auto& pad : owner->pads->chains)
+        if (pad.id == devicePath.steps[1].id)
+            return followChainSteps(pad.elements, devicePath, 2);
+
     return nullptr;
 }
 
