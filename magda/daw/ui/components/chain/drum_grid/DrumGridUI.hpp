@@ -96,6 +96,13 @@ class DrumGridUI : public juce::Component,
     /** Called when pad pan changes. (padIndex, pan -1..1) */
     std::function<void(int, float)> onPadPanChanged;
 
+    /** Which fader drag the level and pan callbacks currently belong to.
+        Bumped when a drag ends, so consecutive gestures on the same fader are
+        separate undo steps rather than one merged run (#2211). */
+    int getFaderGesture() const {
+        return faderGesture_;
+    }
+
     /** Called when pad mute changes. (padIndex, muted) */
     std::function<void(int, bool)> onPadMuteChanged;
 
@@ -238,6 +245,7 @@ class DrumGridUI : public juce::Component,
     };
 
     std::array<PadInfo, kTotalPads> padInfos_;
+    int faderGesture_ = 0;
     int selectedPad_ = 0;
     int currentPage_ = 0;
 

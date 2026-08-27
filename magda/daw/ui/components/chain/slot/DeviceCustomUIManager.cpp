@@ -1182,21 +1182,26 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         return devicePath_;
     };
 
-    // One undoable pad edit, run now. `EditPadsCommand` snapshots the grid's
-    // pad rack, so any edit -- one pad's switch, two pads trading places, a
-    // whole chain replaced -- comes back in one step (#2211).
-    auto padEdit = [gridPath](const juce::String& description,
-                              std::function<void(const magda::ChainNodePath&)> edit,
-                              const juce::String& mergeKey = {}) {
+    // A pad's fader, run now: the sound has to follow the mouse, and a fader
+    // notifies trackPropertyChanged, which by design does not rebuild the chain
+    // components. `SetPadFaderCommand` stores the one value it changed rather
+    // than snapshotting the pad rack, which is what makes it cheap enough to
+    // run per mouse move, and coalesces within a drag (#2211).
+    auto padFader = [this, gridPath](int padIndex, magda::SetPadFaderCommand::Target target,
+                                     float value) {
         const auto grid = gridPath();
-        if (!grid.isValid())
+        if (!grid.isValid() || drumGridUI_ == nullptr)
             return;
-        magda::editPads(
-            grid, description, [grid, edit = std::move(edit)]() { edit(grid); }, mergeKey);
+        magda::setPadFader(grid, padIndex, target, value, drumGridUI_->getFaderGesture());
     };
 
-    // The same, posted rather than run now, and with a follow-up that runs only
-    // if there is still a UI to run it on.
+    // One undoable pad edit, posted rather than run now, with a follow-up that
+    // runs only if there is still a UI to run it on.
+    //
+    // `EditPadsCommand` snapshots the grid's pad rack, so any edit -- one pad's
+    // switch, two pads trading places, a whole chain replaced -- comes back in
+    // one step. Everything reaching it is one command per click or per gesture,
+    // so the snapshot is never taken per mouse move (#2211).
     //
     // Every pad edit but a fader notifies trackDevicesChanged, and the track's
     // chain rebuild that follows destroys this slot, this UI, and the row whose
@@ -1205,17 +1210,15 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     // resolver reads this manager and the rebuild may have taken it by then.
     auto postPadEdit = [this, gridPath](const juce::String& description,
                                         std::function<void(const magda::ChainNodePath&)> edit,
-                                        std::function<void()> then = {},
-                                        const juce::String& mergeKey = {}) {
+                                        std::function<void()> then = {}) {
         const auto grid = gridPath();
         if (!grid.isValid())
             return;
 
         juce::MessageManager::callAsync(
             [safeUi = juce::Component::SafePointer<DrumGridUI>(drumGridUI_.get()), grid,
-             description, mergeKey, edit = std::move(edit), then = std::move(then)]() {
-                magda::editPads(
-                    grid, description, [grid, edit]() { edit(grid); }, mergeKey);
+             description, edit = std::move(edit), then = std::move(then)]() {
+                magda::editPads(grid, description, [grid, edit]() { edit(grid); });
                 if (then && safeUi != nullptr)
                     then();
             });
@@ -1292,7 +1295,9 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         postPadEdit(
             "Clear Pad",
             [padIndex](const magda::ChainNodePath& grid) {
-                magda::TrackManager::getInstance().clearPad(grid, padIndex);
+                auto& tm = magda::TrackManager::getInstance();
+                if (const auto* pad = tm.getPad(grid, padIndex))
+                    tm.removePadChain(grid, pad->id);
             },
             [this, padIndex]() {
                 drumGridUI_->updatePadInfo(padIndex, "", false, false, 0.0f, 0.0f, -1);
@@ -1305,22 +1310,12 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     // The faders are run now, not posted: they notify trackPropertyChanged,
     // which by design does not rebuild the chain, and a fader wants the sound
     // to move under the mouse. They coalesce into one undo step per drag.
-    drumGridUI_->onPadLevelChanged = [padEdit](int padIndex, float levelDb) {
-        padEdit(
-            "Set Pad Level",
-            [padIndex, levelDb](const magda::ChainNodePath& grid) {
-                magda::TrackManager::getInstance().setPadVolume(grid, padIndex, levelDb);
-            },
-            "padLevel:" + juce::String(padIndex));
+    drumGridUI_->onPadLevelChanged = [padFader](int padIndex, float levelDb) {
+        padFader(padIndex, magda::SetPadFaderCommand::Target::Volume, levelDb);
     };
 
-    drumGridUI_->onPadPanChanged = [padEdit](int padIndex, float pan) {
-        padEdit(
-            "Set Pad Pan",
-            [padIndex, pan](const magda::ChainNodePath& grid) {
-                magda::TrackManager::getInstance().setPadPan(grid, padIndex, pan);
-            },
-            "padPan:" + juce::String(padIndex));
+    drumGridUI_->onPadPanChanged = [padFader](int padIndex, float pan) {
+        padFader(padIndex, magda::SetPadFaderCommand::Target::Pan, pan);
     };
 
     drumGridUI_->onPadMuteChanged = [postPadEdit](int padIndex, bool muted) {
@@ -1434,12 +1429,17 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             cb.onLayoutChanged();
     };
 
-    // Delete from chain row — same as clear
+    // Delete from a chain row removes the chain the row stands for, whatever
+    // range it answers to. `clearPad()` is the pad's own delete and refuses a
+    // chain shared with its neighbours, which after a range edit would leave a
+    // widened chain with no way off the grid at all (#2211).
     drumGridUI_->onPadDeleteRequested = [this, postPadEdit](int padIndex) {
         postPadEdit(
-            "Clear Pad",
+            "Delete Pad Chain",
             [padIndex](const magda::ChainNodePath& grid) {
-                magda::TrackManager::getInstance().clearPad(grid, padIndex);
+                auto& tm = magda::TrackManager::getInstance();
+                if (const auto* pad = tm.getPad(grid, padIndex))
+                    tm.removePadChain(grid, pad->id);
             },
             [this, padIndex]() {
                 drumGridUI_->updatePadInfo(padIndex, "", false, false, 0.0f, 0.0f, -1);
@@ -1645,13 +1645,11 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
                 };
                 info.onGainDbChanged = [postPadEdit, padChainId,
                                         deviceId = info.deviceId](float gainDb) {
-                    postPadEdit(
-                        "Set Pad Device Gain",
-                        [padChainId, deviceId, gainDb](const magda::ChainNodePath& grid) {
-                            magda::TrackManager::getInstance().setPadDeviceGainDb(grid, padChainId,
-                                                                                  deviceId, gainDb);
-                        },
-                        {}, "padDeviceGain:" + juce::String(deviceId));
+                    postPadEdit("Set Pad Device Gain",
+                                [padChainId, deviceId, gainDb](const magda::ChainNodePath& grid) {
+                                    magda::TrackManager::getInstance().setPadDeviceGainDb(
+                                        grid, padChainId, deviceId, gainDb);
+                                });
                 };
             }
 

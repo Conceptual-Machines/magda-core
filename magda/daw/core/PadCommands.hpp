@@ -38,13 +38,8 @@ class EditPadsCommand : public UndoableCommand {
   public:
     /// @p edit runs against the live model, addressed by @p gridPath. It runs
     /// once: redo restores the snapshot it produced.
-    ///
-    /// @p mergeKey coalesces: two consecutive edits carrying the same non-empty
-    /// key on the same grid collapse into one undo step, so a fader drag is one
-    /// step back to where it started rather than one per mouse move. Empty
-    /// never merges.
     EditPadsCommand(const ChainNodePath& gridPath, juce::String description,
-                    std::function<void()> edit, juce::String mergeKey = {});
+                    std::function<void()> edit);
 
     void execute() override;
     void undo() override;
@@ -52,14 +47,10 @@ class EditPadsCommand : public UndoableCommand {
         return description_;
     }
 
-    bool canMergeWith(const UndoableCommand* other) const override;
-    void mergeWith(const UndoableCommand* other) override;
-
   private:
     ChainNodePath gridPath_;
     juce::String description_;
     std::function<void()> edit_;
-    juce::String mergeKey_;
     PadRack padsBefore_;
     PadRack padsAfter_;
     bool executed_ = false;
@@ -67,6 +58,54 @@ class EditPadsCommand : public UndoableCommand {
 
 /// Run @p edit as one undoable step on @p gridPath's pads.
 void editPads(const ChainNodePath& gridPath, const juce::String& description,
-              std::function<void()> edit, const juce::String& mergeKey = {});
+              std::function<void()> edit);
+
+/**
+ * @brief A pad's fader or pan, undone by putting the old value back (#2211).
+ *
+ * Separate from `EditPadsCommand` because a fader ticks and the sound has to
+ * follow the mouse, so this is the one pad edit that cannot wait for the drag
+ * to end. Taking a pad-rack snapshot per mouse move would mean flushing every
+ * pad plugin's live state into the model to make the snapshot honest and then
+ * deep-copying the whole rack, which is the right price for a structural edit
+ * and far too much for a mouse move.
+ *
+ * One value in, one value out, which is the shape `SetTrackVolumeCommand`
+ * already has for a track's fader.
+ */
+class SetPadFaderCommand : public UndoableCommand {
+  public:
+    enum class Target { Volume, Pan };
+
+    /// @p gesture bounds the merging. Two edits coalesce only while they carry
+    /// the same one, so a drag is a single undo step and the next drag on the
+    /// same fader is another. `UndoManager` merges adjacent commands with no
+    /// timeout of its own, so without this one Undo would walk back every
+    /// gesture since something else last intervened.
+    SetPadFaderCommand(const ChainNodePath& gridPath, int padIndex, Target target, float value,
+                       int gesture);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override;
+
+    bool canMergeWith(const UndoableCommand* other) const override;
+    void mergeWith(const UndoableCommand* other) override;
+
+  private:
+    void apply(float value) const;
+
+    ChainNodePath gridPath_;
+    int padIndex_ = -1;
+    Target target_ = Target::Volume;
+    float oldValue_ = 0.0f;
+    float newValue_ = 0.0f;
+    int gesture_ = 0;
+    bool valid_ = false;
+};
+
+/// Set a pad's fader or pan as one undoable step, coalescing within @p gesture.
+void setPadFader(const ChainNodePath& gridPath, int padIndex, SetPadFaderCommand::Target target,
+                 float value, int gesture);
 
 }  // namespace magda

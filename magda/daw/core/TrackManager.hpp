@@ -511,8 +511,23 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     ///
     /// A pad is keyed by pitch, so this is the one pad property with no rack
     /// equivalent: a plain chain answers to everything.
-    void setPadNoteRange(const ChainNodePath& gridPath, int padIndex, int lowNote, int highNote,
+    ///
+    /// Refused, and false, when the range would reach a note another pad chain
+    /// already answers to. A note has one owner: the grid plays every chain
+    /// whose range covers an incoming note, and the rows, the faders and the
+    /// switches all address a pad by finding the chain covering its note, so a
+    /// second claimant would leave a row editing a chain other than the one it
+    /// shows (#2211).
+    bool setPadNoteRange(const ChainNodePath& gridPath, int padIndex, int lowNote, int highNote,
                          int rootNote);
+
+    /// Take a pad chain off the grid by id, whatever range it answers to.
+    ///
+    /// `clearPad()` is the pad's own delete and leaves a chain shared with
+    /// neighbouring pads alone. This is the chain's: a row stands for a chain,
+    /// so its delete has to be able to remove one that answers to more than a
+    /// single note.
+    void removePadChain(const ChainNodePath& gridPath, ChainId padChainId);
 
     /// The pad chain answering to pad @p padIndex, made if it is not there yet.
     /// INVALID_CHAIN_ID when the device does not keep its chains as pads.

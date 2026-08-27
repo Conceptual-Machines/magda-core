@@ -261,6 +261,7 @@ DrumGridUI::DrumGridUI() {
         if (onPadLevelChanged)
             onPadLevelChanged(selectedPad_, static_cast<float>(value));
     };
+    levelSlider_.onDragEnd = [this]() { ++faderGesture_; };
     addAndMakeVisible(levelSlider_);
 
     // Pan slider (-1 to +1)
@@ -288,6 +289,7 @@ DrumGridUI::DrumGridUI() {
         if (onPadPanChanged)
             onPadPanChanged(selectedPad_, static_cast<float>(value));
     };
+    panSlider_.onDragEnd = [this]() { ++faderGesture_; };
     addAndMakeVisible(panSlider_);
 
     // Mute/Solo buttons
@@ -992,6 +994,7 @@ void DrumGridUI::rebuildChainRows() {
             if (onPadPanChanged)
                 onPadPanChanged(padIndex, val);
         };
+        row->onFaderGestureEnd = [this]() { ++faderGesture_; };
         row->onMuteChanged = [this](int padIndex, bool val) {
             padInfos_[static_cast<size_t>(padIndex)].mute = val;
             if (onPadMuteChanged)

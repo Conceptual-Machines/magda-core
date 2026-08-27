@@ -35,11 +35,8 @@ PadRack snapshotPads(const ChainNodePath& gridPath) {
 }  // namespace
 
 EditPadsCommand::EditPadsCommand(const ChainNodePath& gridPath, juce::String description,
-                                 std::function<void()> edit, juce::String mergeKey)
-    : gridPath_(gridPath),
-      description_(std::move(description)),
-      edit_(std::move(edit)),
-      mergeKey_(std::move(mergeKey)) {}
+                                 std::function<void()> edit)
+    : gridPath_(gridPath), description_(std::move(description)), edit_(std::move(edit)) {}
 
 void EditPadsCommand::execute() {
     auto& tm = TrackManager::getInstance();
@@ -74,27 +71,69 @@ void EditPadsCommand::undo() {
     TrackManager::getInstance().setPads(gridPath_, padsBefore_);
 }
 
-bool EditPadsCommand::canMergeWith(const UndoableCommand* other) const {
-    if (mergeKey_.isEmpty())
-        return false;
-
-    const auto* otherEdit = dynamic_cast<const EditPadsCommand*>(other);
-    return otherEdit != nullptr && otherEdit->gridPath_ == gridPath_ &&
-           otherEdit->mergeKey_ == mergeKey_;
-}
-
-void EditPadsCommand::mergeWith(const UndoableCommand* other) {
-    // The later state is where redo lands; the state to come back to stays the
-    // one this command was made against, which is the point of merging. The
-    // other command has already run by the time this is called.
-    if (const auto* otherEdit = dynamic_cast<const EditPadsCommand*>(other))
-        padsAfter_ = otherEdit->padsAfter_;
-}
-
 void editPads(const ChainNodePath& gridPath, const juce::String& description,
-              std::function<void()> edit, const juce::String& mergeKey) {
+              std::function<void()> edit) {
     UndoManager::getInstance().executeCommand(
-        std::make_unique<EditPadsCommand>(gridPath, description, std::move(edit), mergeKey));
+        std::make_unique<EditPadsCommand>(gridPath, description, std::move(edit)));
+}
+
+// ============================================================================
+// SetPadFaderCommand
+// ============================================================================
+
+SetPadFaderCommand::SetPadFaderCommand(const ChainNodePath& gridPath, int padIndex, Target target,
+                                       float value, int gesture)
+    : gridPath_(gridPath),
+      padIndex_(padIndex),
+      target_(target),
+      newValue_(value),
+      gesture_(gesture) {
+    if (const auto* pad = TrackManager::getInstance().getPad(gridPath_, padIndex_)) {
+        oldValue_ = target_ == Target::Volume ? pad->volume : pad->pan;
+        valid_ = true;
+    }
+}
+
+void SetPadFaderCommand::apply(float value) const {
+    auto& tm = TrackManager::getInstance();
+    if (target_ == Target::Volume)
+        tm.setPadVolume(gridPath_, padIndex_, value);
+    else
+        tm.setPadPan(gridPath_, padIndex_, value);
+}
+
+void SetPadFaderCommand::execute() {
+    if (valid_)
+        apply(newValue_);
+}
+
+void SetPadFaderCommand::undo() {
+    if (valid_)
+        apply(oldValue_);
+}
+
+juce::String SetPadFaderCommand::getDescription() const {
+    return target_ == Target::Volume ? "Set Pad Level" : "Set Pad Pan";
+}
+
+bool SetPadFaderCommand::canMergeWith(const UndoableCommand* other) const {
+    const auto* otherFader = dynamic_cast<const SetPadFaderCommand*>(other);
+    return otherFader != nullptr && otherFader->gridPath_ == gridPath_ &&
+           otherFader->padIndex_ == padIndex_ && otherFader->target_ == target_ &&
+           otherFader->gesture_ == gesture_;
+}
+
+void SetPadFaderCommand::mergeWith(const UndoableCommand* other) {
+    // The value to redo to moves on; the one to come back to stays where the
+    // gesture started, which is the point of merging.
+    if (const auto* otherFader = dynamic_cast<const SetPadFaderCommand*>(other))
+        newValue_ = otherFader->newValue_;
+}
+
+void setPadFader(const ChainNodePath& gridPath, int padIndex, SetPadFaderCommand::Target target,
+                 float value, int gesture) {
+    UndoManager::getInstance().executeCommand(
+        std::make_unique<SetPadFaderCommand>(gridPath, padIndex, target, value, gesture));
 }
 
 }  // namespace magda

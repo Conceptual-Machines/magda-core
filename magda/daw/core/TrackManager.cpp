@@ -803,6 +803,25 @@ void TrackManager::deleteTrack(TrackId trackId) {
 // Multi-Output Management
 // =============================================================================
 
+namespace {
+
+/// The multi-out device @p deviceId names, wherever it sits on @p parentTrackId.
+///
+/// `getDevice(trackId, deviceId)` walks the track's flat lists only, so a
+/// multi-out instrument inside a rack chain answered nothing and its pairs
+/// could never be activated. A Drum Grid reaches this on any pad given a bus,
+/// and nesting one in a rack is explicitly supported (#2211).
+DeviceInfo* multiOutDevice(TrackManager& tm, TrackId parentTrackId, DeviceId deviceId) {
+    if (auto* device = tm.getDevice(parentTrackId, deviceId))
+        return device;
+
+    const auto path = tm.findDevicePath(deviceId);
+    return path.isValid() && path.trackId == parentTrackId ? tm.getDeviceInChainByPath(path)
+                                                           : nullptr;
+}
+
+}  // namespace
+
 TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId deviceId,
                                            int pairIndex) {
     auto* parentTrack = getTrack(parentTrackId);
@@ -810,7 +829,7 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
         return INVALID_TRACK_ID;
 
     // Find the device
-    DeviceInfo* device = getDevice(parentTrackId, deviceId);
+    DeviceInfo* device = multiOutDevice(*this, parentTrackId, deviceId);
     if (!device || !device->multiOut.isMultiOut)
         return INVALID_TRACK_ID;
 
@@ -874,7 +893,7 @@ void TrackManager::deactivateMultiOutPair(TrackId parentTrackId, DeviceId device
     if (!parentTrack)
         return;
 
-    DeviceInfo* device = getDevice(parentTrackId, deviceId);
+    DeviceInfo* device = multiOutDevice(*this, parentTrackId, deviceId);
     if (!device || !device->multiOut.isMultiOut)
         return;
 
@@ -907,7 +926,7 @@ void TrackManager::deactivateAllMultiOutPairs(TrackId parentTrackId, DeviceId de
     // Re-fetch device pointer each iteration since deactivateMultiOutPair
     // calls tracks_.erase() which can invalidate pointers
     for (int i = 0;; ++i) {
-        DeviceInfo* device = getDevice(parentTrackId, deviceId);
+        DeviceInfo* device = multiOutDevice(*this, parentTrackId, deviceId);
         if (!device || !device->multiOut.isMultiOut)
             break;
         if (i >= static_cast<int>(device->multiOut.outputPairs.size()))

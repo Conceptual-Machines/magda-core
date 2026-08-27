@@ -706,18 +706,85 @@ TEST_CASE("A dragged pad fader is one undo step, not one per move",
         TrackManager::getInstance().setPadDevice(gridPath, padIndex, padVoice("Kick"));
     });
 
+    using Target = SetPadFaderCommand::Target;
+
     for (float db : {-1.0f, -2.0f, -3.0f, -4.0f})
-        editPads(
-            gridPath, "Set Pad Level",
-            [gridPath, db]() { TrackManager::getInstance().setPadVolume(gridPath, padIndex, db); },
-            "padLevel:0");
+        setPadFader(gridPath, padIndex, Target::Volume, db, /*gesture=*/1);
 
     CHECK(tm.getPad(gridPath, padIndex)->volume == -4.0f);
 
-    // One step back to where the drag started, not four.
+    // The next drag is a new gesture, so it does not fold into the last one.
+    // UndoManager merges adjacent commands with no timeout of its own, so
+    // without the gesture one Undo would walk back both drags.
+    setPadFader(gridPath, padIndex, Target::Volume, -8.0f, /*gesture=*/2);
+
+    REQUIRE(undo.undo());
+    CHECK(tm.getPad(gridPath, padIndex)->volume == -4.0f);
+
+    // One step back to where the first drag started, not four.
     REQUIRE(undo.undo());
     CHECK(tm.getPad(gridPath, padIndex)->volume == 0.0f);
 
-    // A different pad's fader is its own step.
-    CHECK(tm.getPad(gridPath, padIndex) != nullptr);
+    // And pan is its own step, not the level's.
+    setPadFader(gridPath, padIndex, Target::Pan, -0.5f, /*gesture=*/3);
+    setPadFader(gridPath, padIndex, Target::Volume, -2.0f, /*gesture=*/3);
+    REQUIRE(undo.undo());
+    CHECK(tm.getPad(gridPath, padIndex)->volume == 0.0f);
+    CHECK(tm.getPad(gridPath, padIndex)->pan == -0.5f);
+}
+
+TEST_CASE("A pad's range cannot reach a note another pad already answers to",
+          "[drumgrid][pads][commands]") {
+    // Every chain whose range covers an incoming note plays it, and every row,
+    // fader and switch addresses a pad by finding the chain covering its note.
+    // A second claimant would leave a row editing a chain other than the one it
+    // shows, so the range is refused instead.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+    REQUIRE(tm.setPadDevice(gridPath, 2, padVoice("Snare")) != INVALID_DEVICE_ID);
+
+    const auto note = padNoteFor(0);
+
+    // Up to, but not into, pad 2.
+    CHECK(tm.setPadNoteRange(gridPath, 0, note, note + 1, note));
+    CHECK(tm.getPad(gridPath, 0)->highNote == note + 1);
+
+    // One note further would reach pad 2's, and is refused whole.
+    CHECK_FALSE(tm.setPadNoteRange(gridPath, 0, note, note + 2, note));
+    CHECK(tm.getPad(gridPath, 0)->highNote == note + 1);
+}
+
+TEST_CASE("A pad chain answering to more than one note can still be deleted",
+          "[drumgrid][pads][commands]") {
+    // clearPad() is the pad's own delete and leaves a chain shared with its
+    // neighbours alone, which after a range edit left a widened chain with no
+    // way off the grid at all.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+    const auto note = padNoteFor(0);
+    REQUIRE(tm.setPadNoteRange(gridPath, 0, note, note + 2, note));
+
+    const auto padChainId = tm.getPad(gridPath, 0)->id;
+
+    // The pad's own clear refuses it: the chain is its neighbours' sound too.
+    tm.clearPad(gridPath, 0);
+    CHECK(tm.getPad(gridPath, 0) != nullptr);
+
+    // The chain's delete takes it.
+    tm.removePadChain(gridPath, padChainId);
+    CHECK(tm.getPad(gridPath, 0) == nullptr);
+    CHECK(tm.getPad(gridPath, 1) == nullptr);
+    CHECK(tm.getPad(gridPath, 2) == nullptr);
 }

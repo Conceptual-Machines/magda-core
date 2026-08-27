@@ -43,6 +43,9 @@ class PadChainRowComponent : public juce::Component {
     std::function<void(int padIndex)> onClicked;
     std::function<void(int padIndex, float)> onLevelChanged;
     std::function<void(int padIndex, float)> onPanChanged;
+    /// A level or pan drag has ended. What follows belongs to a new gesture,
+    /// and so to a new undo step (#2211).
+    std::function<void()> onFaderGestureEnd;
     std::function<void(int padIndex, bool)> onMuteChanged;
     std::function<void(int padIndex, bool)> onSoloChanged;
     std::function<void(int padIndex)> onDeleteClicked;

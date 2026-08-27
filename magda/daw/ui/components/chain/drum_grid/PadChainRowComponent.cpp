@@ -25,6 +25,13 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
         if (onLevelChanged)
             onLevelChanged(padIndex_, static_cast<float>(value));
     };
+    // The fader writes the model as it moves, so the sound follows the mouse.
+    // The drag's end is reported separately: it closes the undo step the moves
+    // coalesce into (#2211).
+    levelSlider_.onDragEnd = [this]() {
+        if (onFaderGestureEnd)
+            onFaderGestureEnd();
+    };
     addAndMakeVisible(levelSlider_);
 
     // Pan text slider (L/C/R format)
@@ -34,6 +41,10 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
     panSlider_.onValueChanged = [this](double value) {
         if (onPanChanged)
             onPanChanged(padIndex_, static_cast<float>(value));
+    };
+    panSlider_.onDragEnd = [this]() {
+        if (onFaderGestureEnd)
+            onFaderGestureEnd();
     };
     addAndMakeVisible(panSlider_);
 

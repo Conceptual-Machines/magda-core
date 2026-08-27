@@ -2971,7 +2971,11 @@ void PluginManager::syncDrumGridMultiOutTracks(const ChainNodePath& drumGridPath
     const auto trackId = drumGridPath.trackId;
     const auto deviceId = drumGridPath.getDeviceId();
     auto& tm = TrackManager::getInstance();
-    auto* devInfo = tm.getDevice(trackId, deviceId);
+
+    // By path, not by (track, device): the flat lookup misses a grid nested in
+    // a rack, which is a placement the model supports and the pad bus selector
+    // can now reach (#2211).
+    auto* devInfo = tm.getDeviceInChainByPath(drumGridPath);
     if (!devInfo || !devInfo->multiOut.isMultiOut)
         return;
 

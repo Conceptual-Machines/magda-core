@@ -347,22 +347,59 @@ void TrackManager::setPadOutput(const ChainNodePath& gridPath, int padIndex, int
     notifyTrackDevicesChanged(gridPath.trackId);
 }
 
-void TrackManager::setPadNoteRange(const ChainNodePath& gridPath, int padIndex, int lowNote,
+bool TrackManager::setPadNoteRange(const ChainNodePath& gridPath, int padIndex, int lowNote,
                                    int highNote, int rootNote) {
-    auto* pad = mutablePad(gridPath, padIndex);
+    auto* pads = getPads(gridPath);
+    if (pads == nullptr)
+        return false;
+
+    auto* pad = findPadChain(*pads, padIndex);
     if (pad == nullptr)
-        return;
+        return false;
 
     const auto low = juce::jlimit(0, 127, std::min(lowNote, highNote));
     const auto high = juce::jlimit(0, 127, std::max(lowNote, highNote));
     const auto root = juce::jlimit(0, 127, rootNote);
 
     if (pad->lowNote == low && pad->highNote == high && pad->rootNote == root)
-        return;
+        return true;
+
+    // One note, one owner. Every chain whose range covers an incoming note
+    // plays it, so an overlap layers two sounds the UI has no way to tell
+    // apart: the rows show the last chain to claim a note and the setters
+    // reach the first, so a row would edit a chain other than the one it
+    // shows. Refused rather than silently normalised, so the slider snaps
+    // back to what the model kept.
+    for (const auto& other : pads->chains)
+        if (other.id != pad->id && !other.answersToEveryNote() && low <= other.highNote &&
+            high >= other.lowNote)
+            return false;
 
     pad->lowNote = low;
     pad->highNote = high;
     pad->rootNote = root;
+    notifyTrackDevicesChanged(gridPath.trackId);
+    return true;
+}
+
+void TrackManager::removePadChain(const ChainNodePath& gridPath, ChainId padChainId) {
+    auto* pads = getPads(gridPath);
+    if (pads == nullptr)
+        return;
+
+    const auto found = std::ranges::find_if(
+        pads->chains, [padChainId](const ChainInfo& chain) { return chain.id == padChainId; });
+    if (found == pads->chains.end())
+        return;
+
+    const auto chainPath = padChainPath(gridPath, padChainId);
+    for (const auto& element : found->elements)
+        if (magda::isDevice(element))
+            SelectionManager::getInstance().clearSelectionForDeletedChainNode(
+                chainPath.withDevice(magda::getDevice(element).id));
+    SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
+
+    pads->chains.erase(found);
     notifyTrackDevicesChanged(gridPath.trackId);
 }
 
