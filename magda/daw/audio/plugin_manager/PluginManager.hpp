@@ -253,6 +253,17 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
     void registerRackPluginProcessor(const ChainNodePath& devicePath, te::Plugin::Ptr plugin,
                                      const DeviceInfo& device);
 
+    /// As above, with the canonical DeviceInfo supplied rather than looked up
+    /// by path. A pad device is reached through the Drum Grid that owns it: its
+    /// path's rack component is a DeviceId, which a Rack step cannot tell from
+    /// a rack of the same number (#2207).
+    void registerRackPluginProcessor(const ChainNodePath& devicePath, te::Plugin::Ptr plugin,
+                                     const DeviceInfo& device, DeviceInfo* canonical);
+
+    /// The model's device for a pad plugin path, through @p drumGridPath.
+    static DeviceInfo* padDeviceFor(const ChainNodePath& drumGridPath,
+                                    const ChainNodePath& padDevicePath);
+
     /**
      * @brief Refresh DeviceInfo.parameters for a device whose processor's
      *        parameter set changed at runtime.
@@ -587,6 +598,30 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
      * @brief Set a device macro parameter value on the TE MacroParameter
      */
     void setMacroValue(const ChainNodePath& devicePath, int macroIndex, float value);
+
+    /// Every Drum Grid synced on @p trackId, with the path it was synced at.
+    /// A grid can sit on the track, in a rack, or in a rack inside a rack, so
+    /// this asks the synced-device map rather than walking the model.
+    std::vector<std::pair<ChainNodePath, daw::audio::DrumGridPlugin*>> drumGridsOnTrack(
+        TrackId trackId);
+
+    /**
+     * @brief Fill a Drum Grid's chains and plugins from the pads the model holds
+     *
+     * The model → engine direction, and the only one there is for pad structure
+     * (#2207). Runs on every sync pass; the grid short-circuits when nothing
+     * about the pads has changed.
+     */
+    void syncDrumGridPads(const ChainNodePath& drumGridPath, daw::audio::DrumGridPlugin& drumGrid);
+
+    /**
+     * @brief Capture each live pad plugin's patch into the model's pad device
+     *
+     * The engine to model direction, and the only one there is: what pads exist
+     * and what sits on them travels the other way (#2207).
+     */
+    void captureDrumGridPads(const ChainNodePath& drumGridPath,
+                             daw::audio::DrumGridPlugin& drumGrid);
 
     /**
      * @brief Sync multi-out tracks for a DrumGrid device

@@ -1,6 +1,7 @@
 #include <juce_core/juce_core.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "PadSyncTestSupport.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
 #include "magda/daw/audio/plugins/DeviceServices.hpp"
@@ -207,24 +208,27 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
     }
 
     void testNestedDeviceSurvives(te::Edit& edit) {
-        beginTest("Nested devices keep their identity through capture and restore");
+        beginTest("A Drum Grid's document carries its own properties and not its pads");
 
-        // DrumGrid persists each pad's device as a nested PLUGIN and rebuilds it
-        // with getOrCreatePluginFor, which needs the nested `type`. The engine's
-        // own plugin-state vocabulary is only dropped at the document root; a
-        // recursive strip would leave every pad chain empty on reload.
+        // The pads are model state (#2207): the device's saved document is its
+        // own properties alone. A second copy inside it is what the ownership
+        // flip ends, and it is also what Tracktion's graph builder used to be
+        // handed as nested plugins.
         auto source = createPlugin(edit, audio::DrumGridPlugin::xmlTypeName);
         auto* sourceGrid = dynamic_cast<audio::DrumGridPlugin*>(source.get());
         expect(sourceGrid != nullptr);
         if (sourceGrid == nullptr)
             return;
 
-        sourceGrid->loadInternalPluginToPad(0, "magda_kick");
-        const auto* sourceChain = sourceGrid->getChainForNote(audio::DrumGridPlugin::baseNote);
-        expect(sourceChain != nullptr, "pad chain was not created");
-        if (sourceChain == nullptr)
-            return;
-        expect(!sourceChain->plugins.empty(), "pad has no plugin to capture");
+        magda::DeviceInfo gridDevice;
+        gridDevice.id = 1;
+        gridDevice.pluginId = audio::DrumGridPlugin::xmlTypeName;
+        magda::test::setPadDevice(gridDevice, *sourceGrid, 0,
+                                  magda::test::padDeviceFor("magda_kick", 100), edit);
+
+        const auto* chain = sourceGrid->getChainForNote(audio::DrumGridPlugin::baseNote);
+        expect(chain != nullptr, "pad chain was not created");
+        expect(chain != nullptr && !chain->plugins.empty(), "pad has no plugin");
 
         const auto state = ta::captureInternalDeviceState(*source, {});
         source->deleteFromParent();
@@ -234,38 +238,13 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         if (!doc)
             return;
 
-        // The nested plugin's device id must still be in the document, otherwise
-        // the id allocator cannot avoid reusing it.
-        bool sawNestedType = false;
+        bool sawPadNode = false;
         ds::forEachNode(doc->root, [&](const ds::Node& node) {
-            if (node.type == "PLUGIN" && node.props.contains(juce::Identifier("type")))
-                sawNestedType = true;
+            if (node.type == "PLUGIN" || node.type == "CHAIN")
+                sawPadNode = true;
         });
-        expect(sawNestedType, "nested plugin lost its device type in the document");
-
-        auto restoredTree = ta::devicePluginTreeFromState(state);
-        expect(restoredTree.isValid());
-
-        // Mirror PluginManager::createPluginOnly: DrumGrid is a FreshValueTree
-        // device, so it is constructed empty and then populated from the saved
-        // state - the constructor rebuilds chains, but only
-        // restorePluginStateFromValueTree instantiates the pad plugins.
-        auto restored = createPlugin(edit, audio::DrumGridPlugin::xmlTypeName);
-        expect(restored != nullptr);
-        if (restored == nullptr)
-            return;
-        restored->restorePluginStateFromValueTree(restoredTree);
-
-        auto* restoredGrid = dynamic_cast<audio::DrumGridPlugin*>(restored.get());
-        expect(restoredGrid != nullptr);
-        if (restoredGrid != nullptr) {
-            const auto* chain = restoredGrid->getChainForNote(audio::DrumGridPlugin::baseNote);
-            expect(chain != nullptr, "pad chain did not survive restore");
-            if (chain != nullptr)
-                expect(!chain->plugins.empty(), "pad lost its plugin on restore");
-        }
-
-        restored->deleteFromParent();
+        expect(!sawPadNode, "the captured document carries a second copy of the pads");
+        expect(!state.contains("magda_kick"), "the captured document names a pad's device");
     }
 
     void testBinaryPropertySurvives(te::Edit& edit) {

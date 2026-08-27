@@ -8,9 +8,11 @@
 #include "magda/daw/core/TrackInfo.hpp"
 #include "magda/daw/project/serialization/ProjectSerializer.hpp"
 
-// The pad projection against real files (#2192). test_drum_grid_pads.cpp fixes
-// the shape; these fix that released builds actually wrote it. Two corpus
-// projects carry a Drum Grid, four minor versions apart, one of them racked.
+// Reading real released files' pads into the model (#2192, migrated by #2207).
+// test_drum_grid_pads.cpp fixes the shape; these fix that released builds
+// actually wrote it. Two corpus projects carry a Drum Grid, four minor versions
+// apart, one of them racked, and both predate the model owning its pads: they
+// arrive through the load-time migration.
 
 namespace {
 
@@ -55,14 +57,14 @@ magda::StagedProjectData loadCorpusProject(const char* file) {
 
 void requirePadsAreReal(const magda::DeviceInfo& drumGrid) {
     INFO("drum grid device " << drumGrid.name);
-    REQUIRE(static_cast<bool>(drumGrid.padRack));
-    REQUIRE_FALSE(drumGrid.padRack->chains.empty());
+    REQUIRE(static_cast<bool>(drumGrid.pads));
+    REQUIRE_FALSE(drumGrid.pads->chains.empty());
 
-    for (const auto& pad : drumGrid.padRack->chains) {
+    for (const auto& pad : drumGrid.pads->chains) {
         INFO("pad " << pad.name);
-        // A pad answers to a real range. The whole point of the projection is
-        // that the compiler can key a chain by pitch, so a pad that came back
-        // taking every note would be the projection silently not working.
+        // A pad answers to a real range. The whole point is that the compiler
+        // can key a chain by pitch, so a pad that came back taking every note
+        // would be the migration silently not working.
         CHECK_FALSE(pad.answersToEveryNote());
         CHECK(pad.lowNote >= 0);
         CHECK(pad.lowNote <= 127);
@@ -105,24 +107,26 @@ void requirePadsAreReal(const magda::DeviceInfo& drumGrid) {
         CHECK(instruments <= 1);
     }
 
-    // A DeviceId is not a load-time fact for these files. A Drum Grid allocates
-    // one per pad plugin when it restores it, so a project saved before that
-    // plugin was ever instantiated carries none, and both corpus projects are
-    // that old. What load must guarantee is that the ids it DOES find are
-    // distinct: an id read from the file and duplicated across pads would key
-    // two ops the same and bind one pad's parameters to another's.
+    // Every pad device has an id, and no two share one. A DeviceId was not a
+    // load-time fact for these files: the pre-#2207 Drum Grid allocated one per
+    // pad plugin when it restored it, so a project saved before that plugin was
+    // ever instantiated carries none. Staging hands those out now, because a
+    // pad with no id cannot be keyed and the plan refuses it -- so anything
+    // that reads a staged project without committing it would see a Drum Grid
+    // with no pads at all. A duplicate would be worse still: two ops under one
+    // key, binding one pad's parameters to another's.
     std::set<magda::DeviceId> ids;
-    int withIds = 0;
-    for (const auto& pad : drumGrid.padRack->chains) {
+    int padDevices = 0;
+    for (const auto& pad : drumGrid.pads->chains) {
         for (const auto& element : pad.elements) {
             const auto id = magda::getDevice(element).id;
-            if (id == magda::INVALID_DEVICE_ID)
-                continue;
-            ++withIds;
+            INFO("pad device " << magda::getDevice(element).name);
+            CHECK(id != magda::INVALID_DEVICE_ID);
+            ++padDevices;
             ids.insert(id);
         }
     }
-    CHECK(static_cast<int>(ids.size()) == withIds);
+    CHECK(static_cast<int>(ids.size()) == padDevices);
 }
 
 }  // namespace

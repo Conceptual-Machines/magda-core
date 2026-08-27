@@ -552,8 +552,8 @@ void Builder::walkElements(const std::vector<magda::ChainElement>& elements, mag
             // these under the pad rack's own synthetic id would put them where
             // no link can find them. The rack itself gets no node: it is
             // synthesized, so it owns no macros or modifiers to address.
-            if (device.padRack)
-                for (const auto& pad : device.padRack->chains)
+            if (device.pads)
+                for (const auto& pad : device.pads->chains)
                     walkElements(pad.elements, trackId, device.id);
         } else if (magda::isRack(element)) {
             walkRack(magda::getRack(element), trackId);

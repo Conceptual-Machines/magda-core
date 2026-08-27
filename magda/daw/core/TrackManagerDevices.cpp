@@ -237,7 +237,6 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
     for (size_t i = 0; i < chainPath.steps.size() - 1; ++i) {
         rackPath.steps.push_back(chainPath.steps[i]);
     }
-
     // Get the parent rack
     if (auto* rack = getRackByPath(rackPath)) {
         // Find the chain within the rack

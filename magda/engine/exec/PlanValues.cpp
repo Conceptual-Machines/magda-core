@@ -80,8 +80,8 @@ const RackInfo* findRackIn(const std::vector<ChainElement>& elements, RackId rac
         }
         // A pad rack hangs off its device rather than sitting in the chain, and
         // its chains carry mute, solo and a fader like any other's.
-        if (const auto& device = getDevice(element); device.padRack)
-            if (const auto* found = findRackIn(*device.padRack.get(), rackId))
+        if (const auto& device = getDevice(element); device.pads)
+            if (const auto* found = findRackIn(*device.pads.get(), rackId))
                 return found;
     }
     return nullptr;
@@ -194,8 +194,8 @@ class Resolver {
                 // silences a nested rack's chains. Without this a Drum Grid in a
                 // muted chain keeps its pad devices running behind a silent
                 // fader, advancing tails and publishing meters.
-                if (const auto& device = getDevice(element); device.padRack) {
-                    const auto& pads = *device.padRack.get();
+                if (const auto& device = getDevice(element); device.pads) {
+                    const auto& pads = *device.pads.get();
                     if (insideInactiveChain)
                         silencedRacks_.insert(pads.id);
                     for (const auto& pad : pads.chains)

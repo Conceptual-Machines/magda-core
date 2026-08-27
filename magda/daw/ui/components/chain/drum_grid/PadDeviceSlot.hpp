@@ -89,6 +89,11 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     // Gain and metering (wired from DeviceSlotComponent via PadChainPanel)
     std::function<std::pair<float, float>()> getMeterLevels;
     std::function<void(float)> onGainDbChanged;
+    /// The pad device's power was toggled. True means powered on.
+    std::function<void(bool)> onPowerChanged;
+
+    /// Show the device's power without reporting a change.
+    void setPowered(bool powered);
     void setGainDb(float db);
 
     /** Set link mode context so param slots / linkable sliders participate in linking. */

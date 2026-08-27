@@ -1,9 +1,13 @@
 #include "DrumGridPads.hpp"
 
+#include <algorithm>
+
 #include "DeviceState.hpp"
+#include "LegacyDeviceAliases.hpp"
 #include "PluginCapabilities.hpp"
 #include "RackInfo.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
+#include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda {
 
@@ -14,6 +18,12 @@ namespace ds = device_state;
 /// A Drum Grid's own property names. The same in a v2 document and in pre-v2
 /// XML: the bridge carries a nested tree's properties across unchanged.
 constexpr const char* kDrumGridId = "drumgrid";
+/// The pad voice a sample is loaded into, and the property it saves the sample
+/// under. The sampler's own names, the same in the model document and in the
+/// engine tree the bridge builds from it. Its root note is spelled `rootNote`
+/// too, so it shares kRootNote with a chain's.
+constexpr const char* kSamplerId = "magdasampler";
+const juce::Identifier kSamplePath("source");
 const juce::Identifier kChain("CHAIN");
 const juce::Identifier kPlugin("PLUGIN");
 const juce::Identifier kIndex("index");
@@ -45,10 +55,70 @@ const juce::Identifier kPluginIsInstrument("magdaIsInstrument");
 /// instead of ChainInfo's default, which means "every note".
 constexpr int kFallbackNote = 60;
 
-/// The note the grid's first pad answers to, and how many pads it has. The
-/// device's own, and what turns a pad's bottom note into its parameter slot.
-constexpr int kPadBaseNote = 24;
-constexpr int kMaxPads = 64;
+/// The engine's own vocabulary on a plugin tree, and MAGDA's two markers.
+///
+/// A pad's plugin was a NESTED tree inside the Drum Grid's state, where a
+/// capture strips only the object id. As its own device it becomes the ROOT of
+/// its own document, and a root drops all of this: the bridge's own list, plus
+/// the id and instrument flag the grid stamped, which are read into the device
+/// here and have no meaning to the plugin.
+///
+/// `type` is the one that bites. The document names the device in `deviceType`,
+/// and the bridge writes that onto the tree first and then applies the root's
+/// properties over it, so a `type` left in the bag puts the saved name back:
+/// a pad saved under a retired device would be rebuilt as the retired plugin,
+/// which is exactly what the alias exists to prevent.
+const juce::Identifier* engineOwnedRootProperties(int& count) {
+    static const juce::Identifier kOwned[] = {
+        juce::Identifier("id"),
+        juce::Identifier("type"),
+        juce::Identifier("enabled"),
+        juce::Identifier("process"),
+        juce::Identifier("frozen"),
+        juce::Identifier("quickParamName"),
+        juce::Identifier("windowPos"),
+        juce::Identifier("windowX"),
+        juce::Identifier("windowY"),
+        juce::Identifier("windowLocked"),
+        juce::Identifier("masterPluginID"),
+        juce::Identifier("sidechainSourceID"),
+        juce::Identifier("parameters"),
+        kPluginDeviceId,
+        kPluginIsInstrument,
+    };
+    count = static_cast<int>(std::size(kOwned));
+    return kOwned;
+}
+
+/// Child trees the engine attaches to every plugin, which MAGDA rebuilds from
+/// its own model rather than restores.
+bool isEngineOwnedChild(const ds::Node& child) {
+    return child.type == "MODIFIERASSIGNMENTS" || child.type == "MACROPARAMETERS" ||
+           child.type == "SIDECHAINCONNECTIONS";
+}
+
+/// @p node as the root of its own device's document.
+ds::Node asOwnDocumentRoot(const ds::Node& node) {
+    // The root element name is the engine's, so the document does not name one:
+    // `type` is left unset here and the node's own is dropped below.
+    ds::Node root;
+
+    int owned = 0;
+    const auto* engineOwned = engineOwnedRootProperties(owned);
+
+    for (int i = 0; i < node.props.size(); ++i) {
+        const auto name = node.props.getName(i);
+        if (std::find(engineOwned, engineOwned + owned, name) != engineOwned + owned)
+            continue;
+        root.props.set(name, node.props.getValueAt(i));
+    }
+
+    for (const auto& child : node.children)
+        if (!isEngineOwnedChild(child))
+            root.children.push_back(child);
+
+    return root;
+}
 
 /// One pad's device.
 ///
@@ -62,12 +132,29 @@ DeviceInfo deviceFromNode(const ds::Node& node) {
     device.pluginId = savedType;
     device.name = savedType;
 
-    // Alias-aware first, so a pad saved under a retired device name resolves.
-    const auto* spec = daw::audio::findInternalPluginSpecForLoadType(savedType);
-    if (spec == nullptr)
+    // Both registries, alias-aware, so a pad saved under a retired device name
+    // resolves and a compiled device is recognised as one. The compiled ones
+    // (every drum voice and Faust effect a pad is likely to hold) are not in
+    // the internal registry, so asking only there sent them down the external
+    // branch below: format left at VST3, no instrument flag, and a load that
+    // tries to instantiate them from identifiers they have never had.
+    const auto* compiledSpec = daw::audio::compiled::findCompiledPluginSpec(savedType);
+    const auto* spec = compiledSpec != nullptr
+                           ? nullptr
+                           : daw::audio::findInternalPluginSpecForLoadType(savedType);
+    if (compiledSpec == nullptr && spec == nullptr)
         spec = daw::audio::findInternalPluginSpec(savedType);
 
-    if (spec != nullptr) {
+    if (compiledSpec != nullptr) {
+        if (compiledSpec->pluginId != nullptr)
+            device.pluginId = compiledSpec->pluginId;
+        if (compiledSpec->displayName != nullptr)
+            device.name = compiledSpec->displayName;
+        device.isInstrument = compiledSpec->isInstrument;
+        device.deviceType =
+            compiledSpec->isInstrument ? DeviceType::Instrument : DeviceType::Effect;
+        device.format = PluginFormat::Internal;
+    } else if (spec != nullptr) {
         if (spec->pluginId != nullptr)
             device.pluginId = spec->pluginId;
         if (spec->displayName != nullptr)
@@ -126,7 +213,37 @@ DeviceInfo deviceFromNode(const ds::Node& node) {
 
     ds::Doc doc;
     doc.deviceType = device.pluginId;
-    doc.root = node;
+    doc.root = asOwnDocumentRoot(node);
+
+    // A pad FX saved before its device was retired names the retired Tracktion
+    // type and keeps its values under that plugin's own property names. The
+    // successor's parameter list is a different shape, so the values are
+    // converted here, on the way into the model, and the properties they came
+    // from are dropped: the device they described no longer exists, and left in
+    // place they would be handed to a plugin that has no idea what they mean.
+    //
+    // This used to happen when the Drum Grid restored its own state, which is
+    // the only reason it had to read a nested plugin tree at all (#2207).
+    if (const auto successor = legacy_devices::retiredDeviceSuccessor(savedType);
+        successor.isNotEmpty()) {
+        for (const auto& slot :
+             legacy_devices::convertRetiredDeviceState(savedType, [&node](const char* property) {
+                 return node.props[juce::Identifier(property)];
+             })) {
+            ParameterInfo info;
+            info.paramIndex = slot.slot;
+            info.name = slot.name;
+            info.currentValue = slot.value;
+            device.parameters.push_back(std::move(info));
+        }
+
+        for (const auto* property : legacy_devices::retiredDeviceProperties(savedType))
+            doc.root.props.remove(juce::Identifier(property));
+
+        device.pluginId = successor;
+        doc.deviceType = successor;
+    }
+
     device.pluginState = ds::encode(doc);
 
     // The MIDI and audio capabilities the router asks about, from the cache
@@ -205,9 +322,13 @@ std::unique_ptr<RackInfo> rackFromRoot(const ds::Node& root) {
 
 }  // namespace
 
+int padNoteFor(int padIndex) {
+    return kPadBaseNote + padIndex;
+}
+
 int padParameterSlot(const ChainInfo& pad) {
     const auto slot = pad.lowNote - kPadBaseNote;
-    return slot >= 0 && slot < kMaxPads ? slot : -1;
+    return slot >= 0 && slot < kPadCount ? slot : -1;
 }
 
 RackId padRackIdFor(DeviceId deviceId) {
@@ -222,8 +343,81 @@ bool isPadRackDevice(const juce::String& pluginId) {
     return pluginId == kDrumGridId;
 }
 
-std::unique_ptr<RackInfo> readPadRack(const juce::String& pluginId,
-                                      const juce::String& pluginState) {
+void stampPadRackId(DeviceInfo& device) {
+    if (device.pads)
+        device.pads->id = padRackIdFor(device.id);
+}
+
+RackInfo& ensurePads(DeviceInfo& device) {
+    if (!device.pads)
+        device.pads.reset(std::make_unique<RackInfo>());
+
+    // Always, not only on creation: a device that was copied or re-keyed still
+    // carries the id its source derived, and every op the plan emits for these
+    // pads is keyed on it.
+    stampPadRackId(device);
+    return *device.pads.get();
+}
+
+ChainInfo* findPadChain(RackInfo& pads, int padIndex) {
+    const auto note = padNoteFor(padIndex);
+    for (auto& pad : pads.chains)
+        if (note >= pad.lowNote && note <= pad.highNote)
+            return &pad;
+    return nullptr;
+}
+
+const ChainInfo* findPadChain(const RackInfo& pads, int padIndex) {
+    return findPadChain(const_cast<RackInfo&>(pads), padIndex);
+}
+
+ChainId nextPadChainId(const RackInfo& pads) {
+    ChainId next = 0;
+    for (const auto& pad : pads.chains)
+        next = std::max(next, pad.id + 1);
+    return next;
+}
+
+ChainInfo& ensurePadChain(RackInfo& pads, int padIndex) {
+    if (auto* existing = findPadChain(pads, padIndex))
+        return *existing;
+
+    const auto note = padNoteFor(padIndex);
+
+    ChainInfo pad;
+    pad.id = nextPadChainId(pads);
+    pad.lowNote = note;
+    pad.highNote = note;
+    pad.rootNote = note;
+    pads.chains.push_back(std::move(pad));
+    return pads.chains.back();
+}
+
+DeviceInfo padSamplerDevice(const juce::String& samplePath, int rootNote) {
+    const juce::File file(samplePath);
+
+    DeviceInfo device;
+    device.pluginId = kSamplerId;
+    device.format = PluginFormat::Internal;
+    device.isInstrument = true;
+    device.deviceType = DeviceType::Instrument;
+    device.name = file.existsAsFile() ? file.getFileNameWithoutExtension() : "Sampler";
+
+    // The root element name is the engine's, so it is left empty and the device
+    // type is carried by the document, exactly as a capture writes it.
+    ds::Doc doc;
+    doc.deviceType = device.pluginId;
+    if (file.existsAsFile())
+        doc.root.props.set(kSamplePath, samplePath);
+    doc.root.props.set(kRootNote, rootNote);
+    device.pluginState = ds::encode(doc);
+
+    applyCachedCapabilitiesToDevice(device);
+    return device;
+}
+
+std::unique_ptr<RackInfo> readLegacyPads(const juce::String& pluginId,
+                                         const juce::String& pluginState) {
     if (!isPadRackDevice(pluginId) || pluginState.isEmpty())
         return nullptr;
 
@@ -242,15 +436,14 @@ std::unique_ptr<RackInfo> readPadRack(const juce::String& pluginId,
     return rackFromRoot(nodeFromXml(*xml));
 }
 
-void refreshPadRack(DeviceInfo& device) {
-    if (!isPadRackDevice(device.pluginId)) {
-        device.padRack.reset(nullptr);
+void migrateLegacyPads(DeviceInfo& device) {
+    if (!isPadRackDevice(device.pluginId) || device.pads)
         return;
-    }
 
-    device.padRack.reset(readPadRack(device.pluginId, device.pluginState));
-    if (device.padRack)
-        device.padRack->id = padRackIdFor(device.id);
+    if (auto pads = readLegacyPads(device.pluginId, device.pluginState))
+        device.pads.reset(std::move(pads));
+
+    stampPadRackId(device);
 }
 
 }  // namespace magda

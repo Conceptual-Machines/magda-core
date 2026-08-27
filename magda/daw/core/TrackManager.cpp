@@ -12,6 +12,7 @@
 #include "ClipManager.hpp"
 #include "Config.hpp"
 #include "DeviceState.hpp"
+#include "DrumGridPads.hpp"
 #include "ModulatorEngine.hpp"
 #include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
@@ -23,13 +24,54 @@ namespace magda {
 
 namespace {
 
+/// What one pad-per-chain device's pads were re-keyed to.
+struct DuplicatePadRemap {
+    DeviceId newOwnerId = INVALID_DEVICE_ID;
+    std::map<DeviceId, DeviceId> devices;  ///< old pad DeviceId -> new
+};
+
 struct DuplicateIdRemap {
     TrackId oldTrackId = INVALID_TRACK_ID;
     TrackId newTrackId = INVALID_TRACK_ID;
     std::map<DeviceId, DeviceId> devices;
     std::map<RackId, RackId> racks;
     std::map<ChainId, ChainId> chains;
+    /// Keyed by the OLD DeviceId of the device that owns the pads.
+    std::map<DeviceId, DuplicatePadRemap> pads;
 };
+
+/// Rewrite @p path if it addresses a pad device, and say whether it did.
+///
+/// A pad device's address is `Rack(gridDeviceId) > Chain(pad) > Device(pad
+/// device)`. None of its three steps may go through the ordinary maps:
+///
+///  - The rack step is a DeviceId, and rack ids come out of a counter that also
+///    starts at 1, so `remap.racks` would send it to whatever rack shares the
+///    number.
+///  - The chain step is a pad chain id, rack-local and untouched by
+///    duplication, so `remap.chains` would move it for the same reason.
+///
+/// Both ends are matched before either is rewritten, so a link that merely
+/// passes through a rack numbered like a grid is left to the ordinary remap
+/// (#2207).
+bool remapDuplicatedPadPath(ChainNodePath& path, const DuplicateIdRemap& remap) {
+    if (path.steps.size() != 3 || path.steps[0].type != ChainStepType::Rack ||
+        path.steps[1].type != ChainStepType::Chain || path.steps[2].type != ChainStepType::Device)
+        return false;
+
+    const auto owner = remap.pads.find(path.steps[0].id);
+    if (owner == remap.pads.end())
+        return false;
+
+    const auto device = owner->second.devices.find(path.steps[2].id);
+    if (device == owner->second.devices.end())
+        return false;
+
+    path.trackId = remap.newTrackId;
+    path.steps[0].id = owner->second.newOwnerId;
+    path.steps[2].id = device->second;
+    return true;
+}
 
 template <typename Id> bool remapDuplicateId(const std::map<Id, Id>& ids, int& value) {
     auto it = ids.find(value);
@@ -41,6 +83,11 @@ template <typename Id> bool remapDuplicateId(const std::map<Id, Id>& ids, int& v
 
 void remapDuplicatedPath(ChainNodePath& path, const DuplicateIdRemap& remap) {
     if (!path.isValid())
+        return;
+
+    // Pads first, and nothing else runs for one: every step of a pad path would
+    // be moved by the wrong map.
+    if (remapDuplicatedPadPath(path, remap))
         return;
 
     bool touched = false;
@@ -187,6 +234,15 @@ void remapDuplicatedElements(std::vector<ChainElement>& elements, const ChainNod
             }
             remapDuplicatedLinks(device.macros, device.mods, devicePath, remap);
             device.pluginState = stripDuplicateRuntimePluginState(device.pluginState);
+
+            // A device's pads are chains it owns, so they are walked like a
+            // rack's: their devices carry state to strip, and the grid's links
+            // into them were remapped by the call above (#2207).
+            if (device.pads) {
+                const auto padsPath = devicePath.parentChain().withRack(device.id);
+                for (auto& pad : device.pads->chains)
+                    remapDuplicatedElements(pad.elements, padsPath.withChain(pad.id), remap);
+            }
         } else if (magda::isRack(element)) {
             auto& rack = magda::getRack(element);
             auto rackPath = parentPath.isTrackLevel ? ChainNodePath::rack(remap.newTrackId, rack.id)
@@ -956,6 +1012,26 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
                 const auto oldDeviceId = device.id;
                 device.id = nextFxDeviceId_++;
                 remap.devices[oldDeviceId] = device.id;
+
+                // The pads a device owns are keyed on its id too, so they are
+                // re-keyed with it: left alone, the duplicate's pad devices
+                // would share the original's runtime, and its pad rack id would
+                // no longer be the one derived from its device id, which is how
+                // every pad path is built (#2207).
+                if (device.pads) {
+                    // The synthetic negative id is safe in the shared rack map;
+                    // the grid's own DeviceId, which is what a pad path actually
+                    // spells its rack step with, is not. That one is recorded as
+                    // a pad remap so `remapDuplicatedPadPath` can rewrite a whole
+                    // pad path at once, wherever the link that carries it lives:
+                    // on the grid, on a rack, or on the track (#2207).
+                    remap.racks[padRackIdFor(oldDeviceId)] = padRackIdFor(device.id);
+
+                    DuplicatePadRemap pads;
+                    pads.newOwnerId = device.id;
+                    rekeyPads(device, &pads.devices);
+                    remap.pads[oldDeviceId] = std::move(pads);
+                }
             } else if (magda::isRack(element)) {
                 auto& rack = magda::getRack(element);
                 const auto oldRackId = rack.id;
@@ -2444,6 +2520,28 @@ void TrackManager::setRackExpanded(TrackId trackId, RackId rackId, bool expanded
 // Chain Management
 // ============================================================================
 
+namespace {
+
+/// The rack @p rackId names among @p elements.
+///
+/// Allocated racks only. A Drum Grid's pads are a rack too, but their address
+/// is the grid's own DeviceId, and rack ids and device ids come out of counters
+/// that both start at 1, so a Rack step cannot tell the two apart. Nothing
+/// resolves a pad through one: `TrackManager::getPads()` reaches them through
+/// the device that owns them, which is unambiguous (#2207).
+RackInfo* findRackAmong(std::vector<ChainElement>& elements, RackId rackId) {
+    for (auto& element : elements)
+        if (magda::isRack(element) && magda::getRack(element).id == rackId)
+            return &magda::getRack(element);
+    return nullptr;
+}
+
+const RackInfo* findRackAmong(const std::vector<ChainElement>& elements, RackId rackId) {
+    return findRackAmong(const_cast<std::vector<ChainElement>&>(elements), rackId);
+}
+
+}  // namespace
+
 RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
     auto* track = getTrack(rackPath.trackId);
     if (!track) {
@@ -2511,13 +2609,7 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
                 // lives in the chain the previous step reached.
                 auto& elements =
                     currentChain != nullptr ? currentChain->elements : track->chain.fxChainElements;
-                RackInfo* found = nullptr;
-                for (auto& element : elements) {
-                    if (magda::isRack(element) && magda::getRack(element).id == step.id) {
-                        found = &magda::getRack(element);
-                        break;
-                    }
-                }
+                RackInfo* found = findRackAmong(elements, step.id);
                 if (found == nullptr)
                     return nullptr;
                 currentRack = found;
@@ -2852,25 +2944,15 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
 
         switch (step.type) {
             case ChainStepType::Rack: {
-                if (currentChain == nullptr) {
-                    // Top-level rack in track's chainElements
-                    for (const auto& element : track->chain.fxChainElements) {
-                        if (magda::isRack(element) && magda::getRack(element).id == step.id) {
-                            currentRack = &magda::getRack(element);
-                            pathNames.add(currentRack->name);
-                            break;
-                        }
-                    }
-                } else {
-                    // Nested rack within a chain
-                    for (const auto& element : currentChain->elements) {
-                        if (magda::isRack(element) && magda::getRack(element).id == step.id) {
-                            currentRack = &magda::getRack(element);
-                            currentChain = nullptr;  // Reset chain context
-                            pathNames.add(currentRack->name);
-                            break;
-                        }
-                    }
+                // A top-level rack lives in the track's own list, a nested one
+                // in the chain the previous step reached; either way a device's
+                // pads answer to a Rack step too (#2207).
+                const auto& elements =
+                    currentChain != nullptr ? currentChain->elements : track->chain.fxChainElements;
+                if (const auto* found = findRackAmong(elements, step.id)) {
+                    currentRack = found;
+                    currentChain = nullptr;  // Reset chain context
+                    pathNames.add(currentRack->name);
                 }
                 break;
             }
@@ -3122,6 +3204,15 @@ void TrackManager::refreshIdCountersFromTracks() {
         if (std::holds_alternative<DeviceInfo>(element)) {
             const auto& device = std::get<DeviceInfo>(element);
             maxFxDeviceId = std::max(maxFxDeviceId, device.id);
+            // A pad device's id comes out of the same counter, so a Drum Grid's
+            // pads have to be scanned or the next device added anywhere on the
+            // project reuses one of theirs (#2207).
+            if (device.pads)
+                for (const auto& pad : device.pads->chains)
+                    for (const auto& padElement : pad.elements)
+                        if (magda::isDevice(padElement))
+                            maxFxDeviceId =
+                                std::max(maxFxDeviceId, magda::getDevice(padElement).id);
             scanEmbeddedDeviceIds(device.pluginState, maxFxDeviceId);
         } else if (std::holds_alternative<std::unique_ptr<RackInfo>>(element)) {
             const auto& rackPtr = std::get<std::unique_ptr<RackInfo>>(element);
@@ -3274,11 +3365,40 @@ void TrackManager::notifyDeviceAdded(const ChainNodePath& devicePath, const Devi
 DeviceInfo TrackManager::prepareNewDevice(const DeviceInfo& device) {
     DeviceInfo newDevice = device;
     newDevice.id = nextFxDeviceId_++;
+    rekeyPads(newDevice);
     applyCachedCapabilitiesToDevice(newDevice);
     stampDefaultKitIfMissing(newDevice);
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
     return newDevice;
+}
+
+void TrackManager::rekeyPads(DeviceInfo& device, std::map<DeviceId, DeviceId>* remap) {
+    if (!device.pads)
+        return;
+
+    // Both the pad rack's id and its devices' are DeviceIds in disguise, so a
+    // copied Drum Grid that kept them would key the ops of the one it was
+    // copied from: the plan would emit two devices onto one op and the executor
+    // would run whichever it saw last (#2207).
+    stampPadRackId(device);
+
+    for (auto& pad : device.pads->chains) {
+        for (auto& element : pad.elements) {
+            if (!magda::isDevice(element))
+                continue;
+
+            auto& padDevice = magda::getDevice(element);
+            const auto oldId = padDevice.id;
+            padDevice.id = allocateDeviceId();
+
+            // Reported so a caller that also rewrites paths can follow the pad
+            // devices, which is what keeps a macro or a mod on the grid pointing
+            // at the pad it was linked to.
+            if (remap != nullptr && oldId != INVALID_DEVICE_ID)
+                (*remap)[oldId] = padDevice.id;
+        }
+    }
 }
 
 void TrackManager::notifyDeviceModifiersChanged(TrackId trackId) {

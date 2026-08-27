@@ -2,6 +2,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "JuceTestStateGuard.hpp"
+#include "PadSyncTestSupport.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioBridge.hpp"
 #include "magda/daw/audio/DeviceMeteringManager.hpp"
@@ -1202,12 +1203,19 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         if (drumGrid == nullptr)
             return;
 
+        // A pad is model state and the plugin is filled from it (#2207), so the
+        // pad is built in the model and the grid follows.
+        magda::DeviceInfo gridDevice;
+        gridDevice.id = 1;
+        gridDevice.pluginId = magda::daw::audio::DrumGridPlugin::xmlTypeName;
+
         constexpr int padIndex = 0;
-        drumGrid->loadInternalPluginToPad(padIndex, "magda_polysynth");
+        magda::test::setPadDevice(gridDevice, *drumGrid, padIndex,
+                                  magda::test::padDeviceFor("magda_polysynth", 100), *edit);
 
         const int midiNote = magda::daw::audio::DrumGridPlugin::baseNote + padIndex;
-        auto* chain = drumGrid->getChainForNote(midiNote);
-        expect(chain != nullptr, "Loading an internal instrument should create the pad chain");
+        const auto* chain = drumGrid->getChainForNote(midiNote);
+        expect(chain != nullptr, "Putting an internal instrument on a pad should create the chain");
         if (chain == nullptr)
             return;
 
@@ -1218,20 +1226,26 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
             return;
         expect(chain->plugins[0]->getPluginType() == juce::String("magda_polysynth"),
                "Pad voice should be the requested compiled instrument");
-        expect(drumGrid->getPluginDeviceId(chain->index, 0) != magda::INVALID_DEVICE_ID,
-               "Pad voice should get a stable MAGDA device id");
+        expectEquals(drumGrid->getPluginDeviceId(chain->index, 0), 100,
+                     "The pad plugin must carry the model device's id");
 
-        drumGrid->addInternalPluginToChain(chain->index, "eq");
+        magda::test::addToPad(gridDevice, *drumGrid, padIndex, magda::test::padDeviceFor("eq", 101),
+                              *edit);
+        chain = drumGrid->getChainForNote(midiNote);
+        expect(chain != nullptr, "Pad chain should still exist after adding FX");
+        if (chain == nullptr)
+            return;
         expectEquals(static_cast<int>(chain->plugins.size()), 2,
                      "Internal FX should append after the pad voice");
 
-        drumGrid->loadInternalPluginToPad(padIndex, "magda_fm");
+        magda::test::setPadDevice(gridDevice, *drumGrid, padIndex,
+                                  magda::test::padDeviceFor("magda_fm", 102), *edit);
         chain = drumGrid->getChainForNote(midiNote);
         expect(chain != nullptr, "Pad chain should still exist after replacing the voice");
         if (chain == nullptr)
             return;
         expectEquals(static_cast<int>(chain->plugins.size()), 1,
-                     "Loading another instrument should replace the pad voice and clear old FX");
+                     "Putting another instrument on the pad should replace the voice and its FX");
         expect(chain->plugins[0] != nullptr &&
                    chain->plugins[0]->getPluginType() == juce::String("magda_fm"),
                "Pad voice should be replaced by the new internal instrument");

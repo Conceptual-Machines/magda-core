@@ -20,6 +20,7 @@ target_sources(magda_daw PRIVATE
     TrackManager.cpp
     TrackManagerModulation.cpp
     TrackManagerDevices.cpp
+    TrackManagerPads.cpp
     ModulatorEngine.cpp
     ClipManager.cpp
     SourcePool.cpp

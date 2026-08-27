@@ -33,6 +33,7 @@
 #include "audio/processors/DeviceProcessorFactory.hpp"
 #include "audio/processors/base/DeviceProcessor.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
+#include "core/DrumGridPads.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -411,6 +412,51 @@ magda::DeviceInfo projectPadPluginDevice(magda::DeviceId deviceId,
     if (auto processor = magda::createDeviceProcessorForPlugin(device.id, plugin, device.pluginId))
         processor->populateParameters(device);
 
+    return device;
+}
+
+/// The device an internal plugin id names.
+///
+/// Both registries, because a compiled device (the drum voices, the Faust FX)
+/// is not in the internal one: asking only there would have every compiled pad
+/// voice arrive as an effect, and an effect does not replace the pad.
+magda::DeviceInfo internalPadDevice(const juce::String& pluginId, const juce::String& displayName) {
+    magda::DeviceInfo device;
+    device.pluginId = pluginId;
+    device.name = displayName.isNotEmpty() ? displayName : pluginId;
+    device.format = magda::PluginFormat::Internal;
+
+    if (const auto* compiledSpec = daw::audio::compiled::findCompiledPluginSpec(pluginId)) {
+        if (compiledSpec->pluginId != nullptr)
+            device.pluginId = compiledSpec->pluginId;
+        if (displayName.isEmpty() && compiledSpec->displayName != nullptr)
+            device.name = compiledSpec->displayName;
+        device.isInstrument = compiledSpec->isInstrument;
+    } else if (const auto* spec = daw::audio::findInternalPluginSpec(pluginId)) {
+        if (spec->pluginId != nullptr)
+            device.pluginId = spec->pluginId;
+        if (displayName.isEmpty() && spec->displayName != nullptr)
+            device.name = spec->displayName;
+        device.isInstrument = spec->isInstrument;
+    }
+
+    device.deviceType =
+        device.isInstrument ? magda::DeviceType::Instrument : magda::DeviceType::Effect;
+    return device;
+}
+
+/// The device a scanned external plugin names.
+magda::DeviceInfo externalPadDevice(const juce::PluginDescription& desc) {
+    magda::DeviceInfo device;
+    device.name = desc.name;
+    device.manufacturer = desc.manufacturerName;
+    device.uniqueId = desc.createIdentifierString();
+    device.pluginId = device.uniqueId;
+    device.fileOrIdentifier = desc.fileOrIdentifier;
+    device.format = pluginFormatFromDescription(desc);
+    device.isInstrument = desc.isInstrument;
+    device.deviceType =
+        device.isInstrument ? magda::DeviceType::Instrument : magda::DeviceType::Effect;
     return device;
 }
 
@@ -1117,10 +1163,32 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
 
     drumGridUI_ = std::make_unique<DrumGridUI>();
 
-    // Helper to get DrumGridPlugin pointer
+    // Helper to get DrumGridPlugin pointer. Reads only: what a pad holds is
+    // edited through TrackManager and reaches the plugin by sync (#2207).
     auto getDrumGrid = [this]() -> daw::audio::DrumGridPlugin* {
         auto plugin = getLivePlugin();
         return dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get());
+    };
+
+    // The grid's own path, resolved at callback time: the slot may not know it
+    // yet when this UI is built.
+    auto gridPath = [this, cb = callbacks]() -> magda::ChainNodePath {
+        if (cb.getNodePath) {
+            if (auto path = cb.getNodePath(); path.isValid())
+                return path;
+        }
+        return devicePath_;
+    };
+
+    // The chain id behind a pad, or INVALID_CHAIN_ID when the pad is empty.
+    // Pad edits take the grid's path and this, never a rack path: a pad's rack
+    // component is the grid's DeviceId and would be ambiguous with a real rack
+    // (#2207).
+    auto padChainId = [gridPath](int padIndex) -> magda::ChainId {
+        auto& tm = magda::TrackManager::getInstance();
+        if (const auto* pad = tm.getPad(gridPath(), padIndex))
+            return pad->id;
+        return magda::INVALID_CHAIN_ID;
     };
 
     // Helper to get display name for first plugin in chain
@@ -1152,120 +1220,112 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         }
     };
 
+    // Loading a sample onto a pad is a model edit: it puts a sampler device on
+    // the pad's chain, rooted on the pad's note. The plugin follows by sync.
+    auto loadSampleToPad = [gridPath](int padIndex, const juce::File& file) {
+        magda::TrackManager::getInstance().setPadDevice(
+            gridPath(), padIndex,
+            magda::padSamplerDevice(file.getFullPathName(), magda::padNoteFor(padIndex)));
+    };
+
     // Sample drop callback
-    drumGridUI_->onSampleDropped = [getDrumGrid, updatePadFromChain](int padIndex,
-                                                                     const juce::File& file) {
-        if (auto* dg = getDrumGrid()) {
-            dg->loadSampleToPad(padIndex, file);
+    drumGridUI_->onSampleDropped = [getDrumGrid, updatePadFromChain,
+                                    loadSampleToPad](int padIndex, const juce::File& file) {
+        loadSampleToPad(padIndex, file);
+        if (auto* dg = getDrumGrid())
             updatePadFromChain(dg, padIndex);
-        }
     };
 
     // Load button callback (file chooser)
-    drumGridUI_->onLoadRequested = [this, getDrumGrid, updatePadFromChain](int padIndex) {
+    drumGridUI_->onLoadRequested = [this, getDrumGrid, updatePadFromChain,
+                                    loadSampleToPad](int padIndex) {
         auto chooser = std::make_shared<juce::FileChooser>("Load Sample", juce::File(),
                                                            "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
-        chooser->launchAsync(
-            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-            [this, padIndex, chooser, getDrumGrid, updatePadFromChain](const juce::FileChooser&) {
-                if (!drumGridUI_)
-                    return;
-                auto result = chooser->getResult();
-                if (result.existsAsFile()) {
-                    if (auto* dg = getDrumGrid()) {
-                        dg->loadSampleToPad(padIndex, result);
-                        updatePadFromChain(dg, padIndex);
-                    }
-                }
-            });
+        chooser->launchAsync(juce::FileBrowserComponent::openMode |
+                                 juce::FileBrowserComponent::canSelectFiles,
+                             [this, padIndex, chooser, getDrumGrid, updatePadFromChain,
+                              loadSampleToPad](const juce::FileChooser&) {
+                                 if (!drumGridUI_)
+                                     return;
+                                 auto result = chooser->getResult();
+                                 if (result.existsAsFile()) {
+                                     loadSampleToPad(padIndex, result);
+                                     if (auto* dg = getDrumGrid())
+                                         updatePadFromChain(dg, padIndex);
+                                 }
+                             });
     };
 
     // Clear callback
-    drumGridUI_->onClearRequested = [this, getDrumGrid](int padIndex) {
-        if (auto* dg = getDrumGrid()) {
-            dg->clearPad(padIndex);
-            drumGridUI_->updatePadInfo(padIndex, "", false, false, 0.0f, 0.0f, -1);
-        }
+    drumGridUI_->onClearRequested = [this, gridPath](int padIndex) {
+        magda::TrackManager::getInstance().clearPad(gridPath(), padIndex);
+        drumGridUI_->updatePadInfo(padIndex, "", false, false, 0.0f, 0.0f, -1);
     };
 
-    // Level/pan/mute/solo callbacks - write directly to chain CachedValues
-    drumGridUI_->onPadLevelChanged = [getDrumGrid](int padIndex, float levelDb) {
-        if (auto* dg = getDrumGrid()) {
-            int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
-            if (auto* chain = dg->getChainForNote(midiNote))
-                const_cast<daw::audio::DrumGridPlugin::Chain*>(chain)->level = levelDb;
-        }
+    // A pad's fader, pan and switches are its chain's, so they are set the way
+    // any other chain's are.
+    drumGridUI_->onPadLevelChanged = [gridPath](int padIndex, float levelDb) {
+        magda::TrackManager::getInstance().setPadVolume(gridPath(), padIndex, levelDb);
     };
 
-    drumGridUI_->onPadPanChanged = [getDrumGrid](int padIndex, float pan) {
-        if (auto* dg = getDrumGrid()) {
-            int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
-            if (auto* chain = dg->getChainForNote(midiNote))
-                const_cast<daw::audio::DrumGridPlugin::Chain*>(chain)->pan = pan;
-        }
+    drumGridUI_->onPadPanChanged = [gridPath](int padIndex, float pan) {
+        magda::TrackManager::getInstance().setPadPan(gridPath(), padIndex, pan);
     };
 
-    drumGridUI_->onPadMuteChanged = [getDrumGrid](int padIndex, bool muted) {
-        if (auto* dg = getDrumGrid()) {
-            int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
-            if (auto* chain = dg->getChainForNote(midiNote))
-                const_cast<daw::audio::DrumGridPlugin::Chain*>(chain)->mute = muted;
-        }
+    drumGridUI_->onPadMuteChanged = [gridPath](int padIndex, bool muted) {
+        magda::TrackManager::getInstance().setPadMuted(gridPath(), padIndex, muted);
     };
 
-    drumGridUI_->onPadSoloChanged = [getDrumGrid](int padIndex, bool soloed) {
-        if (auto* dg = getDrumGrid()) {
-            int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
-            if (auto* chain = dg->getChainForNote(midiNote))
-                const_cast<daw::audio::DrumGridPlugin::Chain*>(chain)->solo = soloed;
-        }
+    drumGridUI_->onPadSoloChanged = [gridPath](int padIndex, bool soloed) {
+        magda::TrackManager::getInstance().setPadSolo(gridPath(), padIndex, soloed);
     };
 
-    drumGridUI_->onPadBypassChanged = [getDrumGrid](int padIndex, bool bypassed) {
-        if (auto* dg = getDrumGrid()) {
-            int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
-            if (auto* chain = dg->getChainForNote(midiNote))
-                const_cast<daw::audio::DrumGridPlugin::Chain*>(chain)->bypassed = bypassed;
-        }
+    drumGridUI_->onPadBypassChanged = [gridPath](int padIndex, bool bypassed) {
+        magda::TrackManager::getInstance().setPadBypassed(gridPath(), padIndex, bypassed);
     };
 
-    // Plugin drag & drop onto pads (instrument slot — replaces all plugins)
-    drumGridUI_->onPluginDropped =
-        [getDrumGrid, updatePadFromChain](int padIndex, const juce::DynamicObject& obj) {
-            auto* dg = getDrumGrid();
-            if (!dg)
-                return;
+    // Plugin drag and drop onto pads: an instrument replaces the pad
+    drumGridUI_->onPluginDropped = [getDrumGrid, updatePadFromChain, gridPath,
+                                    loadSampleToPad](int padIndex, const juce::DynamicObject& obj) {
+        auto& tm = magda::TrackManager::getInstance();
 
-            bool isExternal = obj.getProperty("isExternal");
-            juce::String uniqueId = obj.getProperty("uniqueId").toString();
+        bool isExternal = obj.getProperty("isExternal");
+        juce::String uniqueId = obj.getProperty("uniqueId").toString();
 
-            // Handle internal plugins (MagdaSampler, etc.)
-            if (!isExternal) {
-                if (isInstrumentDrop(obj) && !isDrumGridPluginId(uniqueId)) {
-                    dg->loadInternalPluginToPad(padIndex, uniqueId);
+        // Handle internal plugins (MagdaSampler, etc.)
+        if (!isExternal) {
+            if (isInstrumentDrop(obj) && !isDrumGridPluginId(uniqueId)) {
+                if (uniqueId.equalsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName))
+                    loadSampleToPad(padIndex, juce::File());
+                else
+                    tm.setPadDevice(
+                        gridPath(), padIndex,
+                        internalPadDevice(uniqueId, obj.getProperty("name").toString()));
+                if (auto* dg = getDrumGrid())
                     updatePadFromChain(dg, padIndex);
-                }
-                return;
             }
+            return;
+        }
 
-            // External plugin — look up in KnownPluginList
-            juce::String fileOrId = obj.getProperty("fileOrIdentifier").toString();
+        // External plugin: look it up in KnownPluginList
+        juce::String fileOrId = obj.getProperty("fileOrIdentifier").toString();
 
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
-                return;
+        auto* audioEngine = tm.getAudioEngine();
+        if (!audioEngine)
+            return;
 
-            for (const auto& desc : audioEngine->getKnownPluginTypes()) {
-                if (pluginDescriptionMatchesDrop(desc, fileOrId, uniqueId)) {
-                    if (desc.isInstrument) {
-                        dg->loadPluginToPad(padIndex, desc);
+        for (const auto& desc : audioEngine->getKnownPluginTypes()) {
+            if (pluginDescriptionMatchesDrop(desc, fileOrId, uniqueId)) {
+                if (desc.isInstrument) {
+                    tm.setPadDevice(gridPath(), padIndex, externalPadDevice(desc));
+                    if (auto* dg = getDrumGrid())
                         updatePadFromChain(dg, padIndex);
-                    }
-                    return;
                 }
+                return;
             }
-            DBG("DrumGridUI: Plugin not found in KnownPluginList: " + fileOrId);
-        };
+        }
+        DBG("DrumGridUI: Plugin not found in KnownPluginList: " + fileOrId);
+    };
 
     // Layout change notification (e.g., chains panel toggled)
     drumGridUI_->onLayoutChanged = [cb = callbacks]() {
@@ -1274,11 +1334,9 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     };
 
     // Delete from chain row — same as clear
-    drumGridUI_->onPadDeleteRequested = [this, getDrumGrid](int padIndex) {
-        if (auto* dg = getDrumGrid()) {
-            dg->clearPad(padIndex);
-            drumGridUI_->updatePadInfo(padIndex, "", false, false, 0.0f, 0.0f, -1);
-        }
+    drumGridUI_->onPadDeleteRequested = [this, gridPath](int padIndex) {
+        magda::TrackManager::getInstance().clearPad(gridPath(), padIndex);
+        drumGridUI_->updatePadInfo(padIndex, "", false, false, 0.0f, 0.0f, -1);
     };
 
     drumGridUI_->onAnalyzePadRoleRequested = [this, cb = callbacks, getDrumGrid](int padIndex) {
@@ -1371,13 +1429,14 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     };
 
     // Pad swap via drag-and-drop
-    drumGridUI_->onPadsSwapped = [this, getDrumGrid, updatePadFromChain](int srcPad, int dstPad) {
+    drumGridUI_->onPadsSwapped = [this, getDrumGrid, updatePadFromChain, gridPath](int srcPad,
+                                                                                   int dstPad) {
+        magda::TrackManager::getInstance().swapPads(gridPath(), srcPad, dstPad);
         if (auto* dg = getDrumGrid()) {
-            dg->swapPadChains(srcPad, dstPad);
             updatePadFromChain(dg, srcPad);
             updatePadFromChain(dg, dstPad);
-            drumGridUI_->rebuildChainRows();
         }
+        drumGridUI_->rebuildChainRows();
     };
 
     // Set plugin pointer for trigger polling
@@ -1406,7 +1465,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
 
     // Provide plugin slot info for each pad (via its chain)
     padChain.getPluginSlots =
-        [getDrumGrid](int padIndex) -> std::vector<PadChainPanel::PluginSlotInfo> {
+        [getDrumGrid, gridPath](int padIndex) -> std::vector<PadChainPanel::PluginSlotInfo> {
         std::vector<PadChainPanel::PluginSlotInfo> result;
         auto* dg = getDrumGrid();
         if (!dg)
@@ -1416,6 +1475,22 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         auto* chain = dg->getChainForNote(midiNote);
         if (!chain)
             return result;
+
+        auto& tm = magda::TrackManager::getInstance();
+        const auto grid = gridPath();
+        const auto* pad = tm.getPad(grid, padIndex);
+        const auto padChainId = pad != nullptr ? pad->id : magda::INVALID_CHAIN_ID;
+
+        // What the model says a pad device is, matched by id. Only what the
+        // model cannot hold is read off the plugin (#2207).
+        const auto modelDevice = [pad](magda::DeviceId deviceId) -> const magda::DeviceInfo* {
+            if (pad == nullptr)
+                return nullptr;
+            for (const auto& element : pad->elements)
+                if (magda::isDevice(element) && magda::getDevice(element).id == deviceId)
+                    return &magda::getDevice(element);
+            return nullptr;
+        };
 
         for (int pluginIndex = 0; pluginIndex < static_cast<int>(chain->plugins.size());
              ++pluginIndex) {
@@ -1429,38 +1504,73 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             info.device = projectPadPluginDevice(info.deviceId, plugin);
             info.isSampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get()) != nullptr;
             info.name = info.device.name.isNotEmpty() ? info.device.name : plugin->getName();
+
+            if (const auto* device = modelDevice(info.deviceId)) {
+                info.bypassed = device->bypassed;
+                info.gainDb = device->gainDb;
+                info.device.bypassed = device->bypassed;
+            }
+
+            if (padChainId != magda::INVALID_CHAIN_ID) {
+                info.onPowerChanged = [grid, padChainId, deviceId = info.deviceId](bool powered) {
+                    magda::TrackManager::getInstance().setPadDeviceBypassed(grid, padChainId,
+                                                                            deviceId, !powered);
+                };
+                info.onGainDbChanged = [grid, padChainId, deviceId = info.deviceId](float gainDb) {
+                    magda::TrackManager::getInstance().setPadDeviceGainDb(grid, padChainId,
+                                                                          deviceId, gainDb);
+                };
+            }
+
             result.push_back(info);
         }
         return result;
     };
 
-    // FX plugin drop onto chain area
-    padChain.onPluginDropped = [this, getDrumGrid, updatePadFromChain](
-                                   int padIndex, const juce::DynamicObject& obj, int insertIdx) {
-        auto* dg = getDrumGrid();
-        if (!dg)
-            return;
+    // Adding a device to a pad's chain. An instrument replaces the pad; an
+    // effect joins the chain behind it. Both are chain edits on the model: the
+    // pad is a chain, so the ordinary add is the one that runs (#2207).
+    auto addToPad = [this, getDrumGrid, updatePadFromChain,
+                     gridPath](int padIndex, const magda::DeviceInfo& device, int insertIdx) {
+        auto& tm = magda::TrackManager::getInstance();
+        const auto grid = gridPath();
 
+        if (device.isInstrument) {
+            tm.setPadDevice(grid, padIndex, device);
+            if (auto* dg = getDrumGrid())
+                updatePadFromChain(dg, padIndex);
+        } else {
+            const auto chainId = tm.ensurePad(grid, padIndex);
+            if (chainId == INVALID_CHAIN_ID)
+                return;
+            tm.addDeviceToPad(grid, chainId, device, insertIdx);
+        }
+
+        drumGridUI_->getPadChainPanel().refresh();
+    };
+
+    // FX plugin drop onto chain area
+    padChain.onPluginDropped = [addToPad, loadSampleToPad, getDrumGrid, updatePadFromChain](
+                                   int padIndex, const juce::DynamicObject& obj, int insertIdx) {
         bool isExternal = obj.getProperty("isExternal");
         juce::String uniqueId = obj.getProperty("uniqueId").toString();
 
-        // Internal instruments become the pad voice; internal audio effects append to the chain.
         if (!isExternal) {
             if (!isDrumGridPluginId(uniqueId) && !isMidiFxDrop(obj)) {
-                if (isInstrumentDrop(obj)) {
-                    dg->loadInternalPluginToPad(padIndex, uniqueId);
-                    updatePadFromChain(dg, padIndex);
+                if (uniqueId.equalsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
+                    loadSampleToPad(padIndex, juce::File());
+                    if (auto* dg = getDrumGrid())
+                        updatePadFromChain(dg, padIndex);
                 } else {
-                    int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
-                    if (auto* chain = dg->getChainForNote(midiNote))
-                        dg->addInternalPluginToChain(chain->index, uniqueId, insertIdx);
+                    addToPad(padIndex,
+                             internalPadDevice(uniqueId, obj.getProperty("name").toString()),
+                             insertIdx);
                 }
-                drumGridUI_->getPadChainPanel().refresh();
             }
             return;
         }
 
-        // External plugin — look up in KnownPluginList
+        // External plugin: look it up in KnownPluginList
         juce::String fileOrId = obj.getProperty("fileOrIdentifier").toString();
 
         auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
@@ -1470,59 +1580,61 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             if (pluginDescriptionMatchesDrop(desc, fileOrId, uniqueId)) {
                 if (isMidiFxPlugin(desc))
                     return;
-
-                if (desc.isInstrument) {
-                    dg->loadPluginToPad(padIndex, desc);
-                    updatePadFromChain(dg, padIndex);
-                } else {
-                    dg->addPluginToPad(padIndex, desc, insertIdx);
-                }
-                drumGridUI_->getPadChainPanel().refresh();
+                addToPad(padIndex, externalPadDevice(desc), insertIdx);
                 return;
             }
         }
     };
 
     // Remove plugin from chain
-    padChain.onPluginRemoved = [getDrumGrid, updatePadFromChain](int padIndex, int pluginIndex) {
-        auto* dg = getDrumGrid();
-        if (!dg)
+    padChain.onPluginRemoved = [getDrumGrid, updatePadFromChain, gridPath](int padIndex,
+                                                                           int pluginIndex) {
+        auto& tm = magda::TrackManager::getInstance();
+        const auto grid = gridPath();
+        const auto* pad = tm.getPad(grid, padIndex);
+        if (pad == nullptr)
             return;
-        dg->removePluginFromPad(padIndex, pluginIndex);
-        updatePadFromChain(dg, padIndex);
+
+        const auto devices = pad->getDevices();
+        if (pluginIndex < 0 || pluginIndex >= static_cast<int>(devices.size()))
+            return;
+
+        tm.removeDeviceFromPad(grid, pad->id, devices[static_cast<size_t>(pluginIndex)]->id);
+        if (auto* dg = getDrumGrid())
+            updatePadFromChain(dg, padIndex);
     };
 
     // Reorder plugins in chain
-    padChain.onPluginMoved = [getDrumGrid](int padIndex, int fromIdx, int toIdx) {
+    padChain.onPluginMoved = [gridPath, padChainId](int padIndex, int fromIdx, int toIdx) {
+        magda::TrackManager::getInstance().moveDeviceInPad(gridPath(), padChainId(padIndex),
+                                                           fromIdx, toIdx);
+    };
+
+    // Forward sample operations from PadDeviceSlot -> the model
+    padChain.onSampleDropped = [getDrumGrid, updatePadFromChain,
+                                loadSampleToPad](int padIndex, const juce::File& file) {
+        loadSampleToPad(padIndex, file);
         if (auto* dg = getDrumGrid())
-            dg->movePluginInPad(padIndex, fromIdx, toIdx);
-    };
-
-    // Forward sample operations from PadDeviceSlot -> DrumGrid
-    padChain.onSampleDropped = [getDrumGrid, updatePadFromChain](int padIndex,
-                                                                 const juce::File& file) {
-        if (auto* dg = getDrumGrid()) {
-            dg->loadSampleToPad(padIndex, file);
             updatePadFromChain(dg, padIndex);
-        }
     };
 
-    padChain.onLoadSampleRequested = [this, getDrumGrid, updatePadFromChain](int padIndex) {
+    padChain.onLoadSampleRequested = [this, getDrumGrid, updatePadFromChain,
+                                      loadSampleToPad](int padIndex) {
         auto chooser = std::make_shared<juce::FileChooser>("Load Sample", juce::File(),
                                                            "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
-        chooser->launchAsync(
-            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-            [this, padIndex, chooser, getDrumGrid, updatePadFromChain](const juce::FileChooser&) {
-                if (!drumGridUI_)
-                    return;
-                auto result = chooser->getResult();
-                if (result.existsAsFile()) {
-                    if (auto* dg = getDrumGrid()) {
-                        dg->loadSampleToPad(padIndex, result);
-                        updatePadFromChain(dg, padIndex);
-                    }
-                }
-            });
+        chooser->launchAsync(juce::FileBrowserComponent::openMode |
+                                 juce::FileBrowserComponent::canSelectFiles,
+                             [this, padIndex, chooser, getDrumGrid, updatePadFromChain,
+                              loadSampleToPad](const juce::FileChooser&) {
+                                 if (!drumGridUI_)
+                                     return;
+                                 auto result = chooser->getResult();
+                                 if (result.existsAsFile()) {
+                                     loadSampleToPad(padIndex, result);
+                                     if (auto* dg = getDrumGrid())
+                                         updatePadFromChain(dg, padIndex);
+                                 }
+                             });
     };
 
     padChain.onLayoutChanged = [cb = callbacks]() {
@@ -1544,11 +1656,8 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     };
 
     // "+" button — show plugin picker popup (same as ChainPanel)
-    padChain.onAddDeviceClicked = [this, getDrumGrid, updatePadFromChain](int padIndex) {
-        auto* dg = getDrumGrid();
-        if (!dg)
-            return;
-
+    padChain.onAddDeviceClicked = [this, addToPad, loadSampleToPad, getDrumGrid,
+                                   updatePadFromChain](int padIndex) {
         juce::PopupMenu menu;
 
         std::vector<PluginBrowserInfo> menuInternals;
@@ -1600,39 +1709,27 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         auto capturedInternals =
             std::make_shared<std::vector<PluginBrowserInfo>>(std::move(menuInternals));
 
-        menu.showMenuAsync(juce::PopupMenu::Options(), [this, padIndex, getDrumGrid,
-                                                        updatePadFromChain, capturedPlugins,
+        menu.showMenuAsync(juce::PopupMenu::Options(), [this, padIndex, addToPad, loadSampleToPad,
+                                                        getDrumGrid, updatePadFromChain,
+                                                        capturedPlugins,
                                                         capturedInternals](int result) {
             if (result == 0 || !drumGridUI_)
                 return;
 
-            auto* dg2 = getDrumGrid();
-            if (!dg2)
-                return;
-
             if (result >= 1 && result <= static_cast<int>(capturedInternals->size())) {
                 auto& entry = (*capturedInternals)[static_cast<size_t>(result - 1)];
-                if (entry.category == "Instrument") {
-                    dg2->loadInternalPluginToPad(padIndex, entry.uniqueId);
-                    updatePadFromChain(dg2, padIndex);
+                if (entry.uniqueId.equalsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
+                    loadSampleToPad(padIndex, juce::File());
+                    if (auto* dg = getDrumGrid())
+                        updatePadFromChain(dg, padIndex);
+                    drumGridUI_->getPadChainPanel().refresh();
                 } else {
-                    int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
-                    if (auto* chain = dg2->getChainForNote(midiNote))
-                        dg2->addInternalPluginToChain(chain->index, entry.uniqueId);
+                    addToPad(padIndex, internalPadDevice(entry.uniqueId, entry.name), -1);
                 }
-                drumGridUI_->getPadChainPanel().refresh();
             } else if (result >= 1000) {
                 int pluginIdx = result - 1000;
-                if (pluginIdx < capturedPlugins->size()) {
-                    const auto& desc = (*capturedPlugins)[pluginIdx];
-                    if (desc.isInstrument) {
-                        dg2->loadPluginToPad(padIndex, desc);
-                        updatePadFromChain(dg2, padIndex);
-                    } else {
-                        dg2->addPluginToPad(padIndex, desc);
-                    }
-                    drumGridUI_->getPadChainPanel().refresh();
-                }
+                if (pluginIdx < capturedPlugins->size())
+                    addToPad(padIndex, externalPadDevice((*capturedPlugins)[pluginIdx]), -1);
             }
         });
     };

@@ -48,10 +48,10 @@ DeviceInfo makePadInstrument(DeviceId id) {
     device.deviceType = DeviceType::Instrument;
     device.format = PluginFormat::Internal;
     device.audioOutputChannels = 2;
-    // What capture puts there. The projection reads a pad's parameter VALUES out
-    // of the saved state but not their names, ranges or count, so a pad device
-    // reaches the compiler with parameters only once the Drum Grid has been in
-    // hand (populatePadDeviceParameters). Without them the table allocates no
+    // What the device's own processor puts there. The model owns which pads
+    // exist and what sits on them, but a parameter's name and range are the
+    // plugin's to report, so a pad device reaches the compiler with parameters
+    // only once its plugin has been built. Without them the table allocates no
     // window and the device runs at its defaults.
     device.parameters.push_back(ParameterInfo(0, "Level", "", 0.0f, 1.0f, 0.5f));
     return device;
@@ -81,7 +81,7 @@ DeviceInfo makeDrumGrid(DeviceId id, std::vector<ChainInfo> pads) {
     auto rack = std::make_unique<RackInfo>();
     rack->id = padRackIdFor(id);
     rack->chains = std::move(pads);
-    drumGrid.padRack.reset(std::move(rack));
+    drumGrid.pads.reset(std::move(rack));
 
     return drumGrid;
 }

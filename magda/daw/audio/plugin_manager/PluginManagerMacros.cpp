@@ -35,6 +35,14 @@ void PluginManager::syncRackProperties(TrackId trackId) {
             rackSyncManager_.updateRackProperties(getRack(element));
         }
     }
+
+    // A Drum Grid's pads are chains too, and a chain's fader and pan are a
+    // track PROPERTY change, not a device one: only this path runs for them.
+    // Without it a pad level or pan move writes the model and stays inaudible
+    // until some unrelated device edit happens to run a full sync (#2207). The
+    // grid's structure fingerprint keeps this cheap on a drag.
+    for (auto& [devicePath, drumGrid] : drumGridsOnTrack(trackId))
+        syncDrumGridPads(devicePath, *drumGrid);
 }
 
 // =============================================================================

@@ -57,8 +57,8 @@ void collectDeviceIds(const std::vector<ChainElement>& elements, ChainSegment se
             // device named by neither the plan nor this set has its runtime
             // released: re-enabling would rebuild the plugins and lose their
             // tails and state.
-            if (device.padRack)
-                for (const auto& pad : device.padRack->chains)
+            if (device.pads)
+                for (const auto& pad : device.pads->chains)
                     collectDeviceIds(pad.elements, segment, out);
         } else if (isRack(element)) {
             for (const auto& chain : getRack(element).chains)

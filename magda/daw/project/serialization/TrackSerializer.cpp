@@ -571,6 +571,12 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
         obj->setProperty("sidechain", juce::var(scObj));
     }
 
+    // A pad-per-chain device's pads. Saved as the rack they are, so what the
+    // model holds is what the project carries: nothing re-reads them out of
+    // `pluginState`, which is where they used to live (#2207).
+    if (device.pads)
+        obj->setProperty("pads", serializeRackInfo(*device.pads.get()));
+
     return juce::var(obj);
 }
 
@@ -754,8 +760,20 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     if (obj->hasProperty("pluginState"))
         outDevice.pluginState = obj->getProperty("pluginState").toString();
 
-    // A pad-per-chain device keeps its pads inside that state (#2192).
-    refreshPadRack(outDevice);
+    // A pad-per-chain device's pads (#2207). A project saved before they moved
+    // into the model has none here and still carries them inside `pluginState`,
+    // so read them out of it once; a project saved since is taken at its word,
+    // including one whose pads were all deleted.
+    auto padsVar = obj->getProperty("pads");
+    if (padsVar.isObject()) {
+        auto pads = std::make_unique<RackInfo>();
+        if (!deserializeRackInfo(padsVar, *pads))
+            return false;
+        outDevice.pads.reset(std::move(pads));
+        stampPadRackId(outDevice);
+    } else {
+        migrateLegacyPads(outDevice);
+    }
 
     // Per-instance drum kit rows
     auto kitVar = obj->getProperty("kitRows");
@@ -918,6 +936,15 @@ juce::var ProjectSerializer::serializeChainInfo(const ChainInfo& chain) {
     obj->setProperty("pan", chain.pan);
     obj->setProperty("expanded", chain.expanded);
 
+    // The notes a pad answers to, and the pitch they are transposed onto. Only
+    // for a chain that is keyed by pitch: a plain parallel chain takes every
+    // note, which is what the absent properties read back as (#2207).
+    if (!chain.answersToEveryNote()) {
+        obj->setProperty("lowNote", chain.lowNote);
+        obj->setProperty("highNote", chain.highNote);
+        obj->setProperty("rootNote", chain.rootNote);
+    }
+
     // Elements
     juce::Array<juce::var> elementsArray;
     for (const auto& element : chain.elements) {
@@ -945,6 +972,16 @@ bool ProjectSerializer::deserializeChainInfo(const juce::var& json, ChainInfo& o
     outChain.volume = obj->getProperty("volume");
     outChain.pan = obj->getProperty("pan");
     outChain.expanded = obj->getProperty("expanded");
+
+    // Left at ChainInfo's "every note" default when the chain is not keyed by
+    // pitch, which is every chain a project saved before pads moved into the
+    // model (#2207).
+    if (obj->hasProperty("lowNote"))
+        outChain.lowNote = static_cast<int>(obj->getProperty("lowNote"));
+    if (obj->hasProperty("highNote"))
+        outChain.highNote = static_cast<int>(obj->getProperty("highNote"));
+    if (obj->hasProperty("rootNote"))
+        outChain.rootNote = static_cast<int>(obj->getProperty("rootNote"));
 
     // Elements
     auto elementsVar = obj->getProperty("elements");

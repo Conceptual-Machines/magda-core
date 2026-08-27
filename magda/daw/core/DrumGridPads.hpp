@@ -4,98 +4,37 @@
 
 #include <memory>
 
+#include "DeviceInfo.hpp"
 #include "TypeIds.hpp"
 
 namespace magda {
 
 struct ChainInfo;
-struct DeviceInfo;
 struct RackInfo;
 
 /**
- * A pad-per-chain device's pads, read out of its saved state as chains (#2192).
+ * A pad-per-chain device's pads, as model state (#2207).
  *
- * A Drum Grid saves its pads inside its own device state, so the plan compiler
- * cannot expand one the way it expands a rack. The state is already engine
- * neutral; what it is not is typed, so this turns its property bag into the
- * chains the compiler wants.
+ * A Drum Grid's pads are a rack of chains the device owns: `DeviceInfo::pads`.
+ * The model holds them, the project file saves them, every edit writes them,
+ * and the plugin is filled from them the way `RackSyncManager` fills a
+ * `te::RackType` from a `RackInfo`. One direction, so nothing can drift.
  *
- * A projection, not a second copy: nothing here is serialized separately and no
- * project file changes shape.
+ * They were a projection of the plugin's saved state until #2207 (#2192, #2200,
+ * #2205): decoded from `pluginState` and rebuilt on every capture, which made
+ * the plugin the truth and the model a lagging mirror of it. A pad added since
+ * the last capture was missing from the plan, a pad removed since was still in
+ * it, and neither showed under Tracktion because the plugin played itself.
+ * `readLegacyPads()` is all that is left of that reader, and it runs once, at
+ * load, on a project saved before the pads moved.
  */
 
-/**
- * What a projected pad device carries, and what it does not (#2205).
- *
- * A pad's plugin has no `DeviceInfo` outside this projection, so what the
- * projection fills is the whole of it. It is also thrown away and rebuilt from
- * `pluginState` on every capture, so a field written onto a projected device
- * from anywhere else is gone by the next one. That leaves two sources, and this
- * is all of both.
- *
- * Carried, out of the saved state: `pluginId`, `name`, `manufacturer`,
- * `format`, `fileOrIdentifier`, `isInstrument`, `deviceType`, `id`, `bypassed`
- * and `pluginState`, plus the MIDI capability flags `canReceiveMidi` and
- * `producesMidi`, which come from the capability cache keyed on that identity.
- *
- * Carried, out of the live grid: `parameters`, refilled by
- * `populatePadDeviceParameters()` (#2200) because only the plugin knows a
- * parameter's name and range, along with the `wrapperParameters` and `meters`
- * that same processor call fills, and `audioInputChannels` and
- * `audioOutputChannels`, which the plugin is asked for in the same pass (#2205)
- * because the plan compiler sizes a device's ports with them.
- *
- * Absent because a pad device cannot own it: `macros`, `mods`, `sidechain`,
- * `multiOut`, `deltaSolo`, `midiInThru`, `kitRows`, `gainValue` and `gainDb`.
- * Every one of them is written through a path that reaches a device in the
- * chain model, and a pad plugin is not in the chain model: it lives inside the
- * Drum Grid's state. The grid's own macros are unaffected, because they sit on
- * the grid's `DeviceInfo` and merely target a pad device's parameters.
- *
- * Absent because the saved state does not say: `canSidechain`, `uniqueId`,
- * `vst3ClassId` and `vst3Preset`. Only the live plugin answers these, and it is
- * not asked. Anything else that only a live plugin can answer belongs in the
- * pass above, which is where the channel counts had to go: left at the stereo
- * default they had every mono pad voice compiled as though it were stereo.
- *
- * Absent because it is UI or session state a pad has no surface for:
- * `expanded`, `modPanelOpen`, `gainPanelOpen`, `paramPanelOpen`, `aiPanelOpen`,
- * `aiPanelOutput`, `aiConversation`, `visibleParameters`,
- * `miniMixerParameters`, `aiSoundDesignerParameters`, `aiSoundDesignerPrompt`,
- * `browserCategoryOverride`, `currentParameterPage`, `loadState`, and `padRack`
- * itself, since a pad holds no pads.
- *
- * Carrying a new field is never enough on its own: every walk that collects it
- * has to descend into `padRack` too (`ModSources`, `SidechainTraversal`, the
- * macro and modifier syncs). Miss one and the field is carried but never read,
- * which looks exactly like it working.
- *
- * test_drum_grid_pads.cpp classifies every `DeviceInfo` field against the lists
- * above, and fails when `DeviceInfo` grows one they do not name.
- */
-
-/// The pads saved for `pluginId` in `pluginState`, as a rack of chains.
-///
-/// Null for a device that is not pad-per-chain, one with no pads saved, and
-/// state that cannot be read. Handles both a v2 document and pre-v2 engine XML.
-std::unique_ptr<RackInfo> readPadRack(const juce::String& pluginId,
-                                      const juce::String& pluginState);
-
-/// Point `device.padRack` at whatever `device.pluginState` currently holds,
-/// clearing it for a device with no pads. Parses nothing unless the id has pads.
-void refreshPadRack(DeviceInfo& device);
+/// The pads a Drum Grid has, and the note its first one answers to.
+constexpr int kPadCount = 64;
+constexpr int kPadBaseNote = 24;
 
 /// True when devices of this type keep their chains as pads.
 bool isPadRackDevice(const juce::String& pluginId);
-
-/// The parameter slot a pad's level and pan live in, or -1 when the pad's range
-/// starts outside the grid.
-///
-/// A Drum Grid registers padLevelN and padPanN for a fixed N per pad and reaches
-/// them by the pad's bottom note, not by the order its chains were made: a pad
-/// added first can hold chain 0 and still drive slot 17. Anything binding a pad
-/// to those parameters has to ask the same question the device does.
-int padParameterSlot(const ChainInfo& pad);
 
 /// True when @p rackId names a pad rack rather than one the app allocated.
 bool isPadRackId(RackId rackId);
@@ -105,6 +44,69 @@ bool isPadRackId(RackId rackId);
 /// Negative, and never INVALID_RACK_ID. Rack ids the app allocates start at 1,
 /// so the negative space is free and a pad rack can be keyed and looked up like
 /// any other rack without an allocator that does not reach here.
+///
+/// Derived rather than stored, so a device that is copied or re-keyed cannot
+/// carry another device's rack id: `stampPadRackId()` re-derives it wherever a
+/// DeviceId is assigned.
 RackId padRackIdFor(DeviceId deviceId);
+
+/// The MIDI note pad @p padIndex answers to.
+int padNoteFor(int padIndex);
+
+/// The parameter slot a pad's level and pan live in, or -1 when the pad's range
+/// starts outside the grid. Also the pad's index on the grid.
+///
+/// A Drum Grid registers padLevelN and padPanN for a fixed N per pad and reaches
+/// them by the pad's bottom note, not by the order its chains were made: a pad
+/// added first can hold chain 0 and still drive slot 17. Anything binding a pad
+/// to those parameters has to ask the same question the device does.
+int padParameterSlot(const ChainInfo& pad);
+
+/// Point `device.pads->id` at whatever `device.id` currently is. No-op for a
+/// device with no pads.
+void stampPadRackId(DeviceInfo& device);
+
+/// @p device's pads, made (empty) if it has none. Only call for a pad-per-chain
+/// device; anything else has no pads to give.
+RackInfo& ensurePads(DeviceInfo& device);
+
+/// The pad chain covering @p padIndex, or null.
+ChainInfo* findPadChain(RackInfo& pads, int padIndex);
+const ChainInfo* findPadChain(const RackInfo& pads, int padIndex);
+
+/// The pad chain covering @p padIndex, made if it is not there yet.
+///
+/// A new one answers to that pad's note alone and is rooted on it, which is
+/// what a sampler mapped at C0 needs to play from whichever pad triggered it.
+ChainInfo& ensurePadChain(RackInfo& pads, int padIndex);
+
+/// The next free chain id in @p pads.
+///
+/// Pad chain ids are rack-local and stay with the pad across saves, so nothing
+/// that names one (a macro, a mod, an op key) has to be remapped.
+ChainId nextPadChainId(const RackInfo& pads);
+
+/// The device a pad sampler needs to play @p samplePath, rooted on @p rootNote.
+///
+/// Model state, not a live plugin: the sample path and the root note are the
+/// sampler's own saved properties, so a pad built this way needs nothing
+/// re-derived after a save and reload.
+DeviceInfo padSamplerDevice(const juce::String& samplePath, int rootNote);
+
+/// The pads a project saved before #2207 kept inside `pluginState`, as a rack.
+///
+/// Null for a device that is not pad-per-chain, one with no pads saved, and
+/// state that cannot be read. Handles both a v2 document and pre-v2 engine XML.
+std::unique_ptr<RackInfo> readLegacyPads(const juce::String& pluginId,
+                                         const juce::String& pluginState);
+
+/// Move a pre-#2207 device's pads out of its plugin state and into the model.
+///
+/// No-op once the device has pads, so a project saved since is never re-read
+/// from the copy its plugin state still carries. A pad plugin saved before pad
+/// ids existed arrives with `INVALID_DEVICE_ID`; ids are allocated once the
+/// whole project is loaded, by `TrackManager::allocatePadDeviceIds()`, which is
+/// also where a colliding one would be caught.
+void migrateLegacyPads(DeviceInfo& device);
 
 }  // namespace magda

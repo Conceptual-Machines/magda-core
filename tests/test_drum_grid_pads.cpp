@@ -1,22 +1,17 @@
-#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
-#include <cctype>
-#include <cstring>
-#include <iterator>
 #include <set>
-#include <string>
-#include <vector>
 
 #include "magda/daw/core/DeviceInfo.hpp"
 #include "magda/daw/core/DeviceState.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
 #include "magda/daw/core/RackInfo.hpp"
 
-// Reading a Drum Grid's pads out of its saved state into the model (#2192).
+// A Drum Grid's pads as model state (#2207).
 //
-// Both shapes a project on disk can carry are covered: the v2 device state
-// document this build writes, and the pre-v2 engine XML that older projects
-// still hold.
+// Two halves: the helpers every pad edit goes through, and the one-time read of
+// a project saved before the pads moved into the model. The second is the whole
+// of what is left of the projection (#2192): it runs at load, once, and the
+// model is the truth from there on.
 
 namespace {
 
@@ -56,10 +51,155 @@ juce::String encodedDrumGridWithPads() {
     return ds::encode(doc);
 }
 
+magda::DeviceInfo drumGridDevice(magda::DeviceId id = 7) {
+    magda::DeviceInfo device;
+    device.id = id;
+    device.pluginId = "drumgrid";
+    return device;
+}
+
 }  // namespace
 
-TEST_CASE("A Drum Grid's pads are read out of a v2 document", "[drumgrid][pads]") {
-    const auto rack = magda::readPadRack("drumgrid", encodedDrumGridWithPads());
+// ============================================================================
+// The pads as model state
+// ============================================================================
+
+TEST_CASE("A Drum Grid's pads are keyed on the device that owns them", "[drumgrid][pads]") {
+    auto device = drumGridDevice(7);
+    auto& pads = magda::ensurePads(device);
+
+    CHECK(pads.id == magda::padRackIdFor(7));
+    CHECK(magda::isPadRackId(pads.id));
+
+    // Rack ids the app allocates start at 1, so a pad rack can never be
+    // mistaken for one and never collides with one.
+    CHECK(pads.id < magda::INVALID_RACK_ID);
+    CHECK_FALSE(magda::isPadRackId(1));
+    CHECK_FALSE(magda::isPadRackId(magda::INVALID_RACK_ID));
+
+    // Re-keyed, not left behind: a device that was copied carries the id its
+    // source derived until it is stamped again.
+    device.id = 12;
+    magda::stampPadRackId(device);
+    CHECK(device.pads->id == magda::padRackIdFor(12));
+}
+
+TEST_CASE("A pad chain is made on the note its pad answers to", "[drumgrid][pads]") {
+    auto device = drumGridDevice();
+    auto& pads = magda::ensurePads(device);
+
+    CHECK(magda::findPadChain(pads, 3) == nullptr);
+
+    auto& pad = magda::ensurePadChain(pads, 3);
+    const auto note = magda::padNoteFor(3);
+
+    CHECK(pad.lowNote == note);
+    CHECK(pad.highNote == note);
+    CHECK(pad.rootNote == note);
+    CHECK_FALSE(pad.answersToEveryNote());
+
+    // The pad's index is also its parameter slot: the device reaches padLevelN
+    // and padPanN by the pad's bottom note.
+    CHECK(magda::padParameterSlot(pad) == 3);
+
+    // Found again rather than made twice.
+    CHECK(&magda::ensurePadChain(pads, 3) == &pad);
+    CHECK(pads.chains.size() == 1);
+}
+
+TEST_CASE("Pad chain ids are handed out once each", "[drumgrid][pads]") {
+    auto device = drumGridDevice();
+    auto& pads = magda::ensurePads(device);
+
+    std::set<magda::ChainId> ids;
+    for (int pad : {5, 0, 12, 63})
+        ids.insert(magda::ensurePadChain(pads, pad).id);
+
+    CHECK(ids.size() == 4);
+    CHECK(magda::nextPadChainId(pads) == 4);
+
+    // A pad removed does not free its id for the next one: anything naming a
+    // pad chain would then follow the name onto different devices.
+    pads.chains.erase(pads.chains.begin());
+    CHECK(magda::nextPadChainId(pads) == 4);
+}
+
+TEST_CASE("A pad chain covering a range answers for every pad in it", "[drumgrid][pads]") {
+    auto device = drumGridDevice();
+    auto& pads = magda::ensurePads(device);
+
+    auto& pad = magda::ensurePadChain(pads, 2);
+    pad.highNote = magda::padNoteFor(4);
+
+    for (int index : {2, 3, 4})
+        CHECK(magda::findPadChain(pads, index) == &pad);
+    CHECK(magda::findPadChain(pads, 5) == nullptr);
+
+    // The slot still follows the bottom note, which is what the device uses.
+    CHECK(magda::padParameterSlot(pad) == 2);
+}
+
+TEST_CASE("A pad outside the grid has no parameter slot", "[drumgrid][pads]") {
+    magda::ChainInfo pad;
+    pad.lowNote = magda::kPadBaseNote - 1;
+    CHECK(magda::padParameterSlot(pad) == -1);
+
+    pad.lowNote = magda::kPadBaseNote + magda::kPadCount;
+    CHECK(magda::padParameterSlot(pad) == -1);
+}
+
+TEST_CASE("A pad sampler carries its sample as saved state", "[drumgrid][pads]") {
+    // The sample path and root note are the sampler's own saved properties, so
+    // the pad needs nothing re-derived from a live plugin after a reload.
+    const auto device = magda::padSamplerDevice("/Samples/kick.wav", 36);
+
+    CHECK(device.pluginId == "magdasampler");
+    CHECK(device.format == magda::PluginFormat::Internal);
+    CHECK(device.isInstrument);
+    CHECK(device.deviceType == magda::DeviceType::Instrument);
+
+    const auto doc = ds::decode(device.pluginState);
+    REQUIRE(doc.has_value());
+    CHECK(doc->deviceType == "magdasampler");
+    CHECK(static_cast<int>(doc->root.props["rootNote"]) == 36);
+
+    // The root element name is the engine's, so the document does not name one.
+    CHECK(doc->root.type.isEmpty());
+}
+
+TEST_CASE("A pad sampler with no sample yet is still a sampler", "[drumgrid][pads]") {
+    const auto device = magda::padSamplerDevice({}, 40);
+
+    CHECK(device.pluginId == "magdasampler");
+    CHECK(device.name == "Sampler");
+
+    const auto doc = ds::decode(device.pluginState);
+    REQUIRE(doc.has_value());
+    CHECK(doc->root.props["source"].isVoid());
+    CHECK(static_cast<int>(doc->root.props["rootNote"]) == 40);
+}
+
+TEST_CASE("A copied device does not share its pads", "[drumgrid][pads]") {
+    auto device = drumGridDevice();
+    auto& pads = magda::ensurePads(device);
+    magda::ensurePadChain(pads, 1).name = "Kick";
+
+    magda::DeviceInfo copy = device;
+    REQUIRE(static_cast<bool>(copy.pads));
+    CHECK(copy.pads.get() != device.pads.get());
+
+    REQUIRE(copy.pads->chains.size() == 1);
+    CHECK(copy.pads->chains[0].name == "Kick");
+    CHECK(copy.pads->chains[0].lowNote == magda::padNoteFor(1));
+    CHECK_FALSE(copy.pads->chains[0].answersToEveryNote());
+}
+
+// ============================================================================
+// Reading a project saved before the pads moved (#2192, migrated by #2207)
+// ============================================================================
+
+TEST_CASE("A pre-#2207 Drum Grid's pads are read out of a v2 document", "[drumgrid][pads]") {
+    const auto rack = magda::readLegacyPads("drumgrid", encodedDrumGridWithPads());
 
     REQUIRE(rack != nullptr);
     REQUIRE(rack->chains.size() == 2);
@@ -81,9 +221,9 @@ TEST_CASE("A Drum Grid's pads are read out of a v2 document", "[drumgrid][pads]"
     REQUIRE(second.elements.size() == 1);
     REQUIRE(magda::isDevice(second.elements[0]));
 
-    // A projected device has to be a real one. The plan keys an op on the
-    // DeviceId and routes on the instrument flag, so a pad device that kept the
-    // defaults would collide with every other pad and route nowhere.
+    // The plan keys an op on the DeviceId and routes on the instrument flag, so
+    // a migrated pad device that kept the defaults would collide with every
+    // other pad and route nowhere.
     const auto& padDevice = magda::getDevice(second.elements[0]);
     CHECK(padDevice.pluginId == "magdasampler");
     CHECK(padDevice.id == 901);
@@ -93,8 +233,8 @@ TEST_CASE("A Drum Grid's pads are read out of a v2 document", "[drumgrid][pads]"
     CHECK(padDevice.name == "Sampler");
 }
 
-TEST_CASE("Each pad's device keeps its own id", "[drumgrid][pads]") {
-    const auto rack = magda::readPadRack("drumgrid", encodedDrumGridWithPads());
+TEST_CASE("Each migrated pad device keeps its own id", "[drumgrid][pads]") {
+    const auto rack = magda::readLegacyPads("drumgrid", encodedDrumGridWithPads());
     REQUIRE(rack != nullptr);
     REQUIRE(rack->chains.size() == 2);
 
@@ -110,6 +250,9 @@ TEST_CASE("Each pad's device keeps its own id", "[drumgrid][pads]") {
 
 TEST_CASE("A pad device saved with no id stays invalid rather than inventing one",
           "[drumgrid][pads]") {
+    // The id is allocated once the whole project is loaded, by
+    // TrackManager::allocatePadDeviceIds(), where the counters are past
+    // everything the project named. Minting one here would collide.
     ds::Doc doc;
     doc.deviceType = "drumgrid";
     doc.root.type = "PLUGIN";
@@ -118,13 +261,13 @@ TEST_CASE("A pad device saved with no id stays invalid rather than inventing one
     pad.children[0].props.remove("magdaDeviceId");
     doc.root.children.push_back(pad);
 
-    const auto rack = magda::readPadRack("drumgrid", ds::encode(doc));
+    const auto rack = magda::readLegacyPads("drumgrid", ds::encode(doc));
     REQUIRE(rack != nullptr);
     REQUIRE(rack->chains[0].elements.size() == 1);
     CHECK(magda::getDevice(rack->chains[0].elements[0]).id == magda::INVALID_DEVICE_ID);
 }
 
-TEST_CASE("A Drum Grid's pads are read out of pre-v2 engine XML", "[drumgrid][pads]") {
+TEST_CASE("A pre-#2207 Drum Grid's pads are read out of engine XML", "[drumgrid][pads]") {
     const juce::String legacy = R"(<PLUGIN type="drumgrid" id="1234">
   <CHAIN index="0" name="Kick" lowNote="36" highNote="36" rootNote="36"
          padLevel="-6.0" padPan="-0.5" padMute="0" padSolo="1"
@@ -133,7 +276,7 @@ TEST_CASE("A Drum Grid's pads are read out of pre-v2 engine XML", "[drumgrid][pa
   </CHAIN>
 </PLUGIN>)";
 
-    const auto rack = magda::readPadRack("drumgrid", legacy);
+    const auto rack = magda::readLegacyPads("drumgrid", legacy);
 
     REQUIRE(rack != nullptr);
     REQUIRE(rack->chains.size() == 1);
@@ -154,55 +297,48 @@ TEST_CASE("A Drum Grid's pads are read out of pre-v2 engine XML", "[drumgrid][pa
 }
 
 TEST_CASE("A device that is not a Drum Grid has no pads", "[drumgrid][pads]") {
-    CHECK(magda::readPadRack("magda_reverb", encodedDrumGridWithPads()) == nullptr);
-    CHECK(magda::readPadRack("drumgrid", "") == nullptr);
-    CHECK(magda::readPadRack("drumgrid", "not a document at all") == nullptr);
+    CHECK(magda::readLegacyPads("magda_reverb", encodedDrumGridWithPads()) == nullptr);
+    CHECK(magda::readLegacyPads("drumgrid", "") == nullptr);
+    CHECK(magda::readLegacyPads("drumgrid", "not a document at all") == nullptr);
     CHECK_FALSE(magda::isPadRackDevice("magda_reverb"));
     CHECK(magda::isPadRackDevice("drumgrid"));
 }
 
-TEST_CASE("A Drum Grid with no chains saved yields no pad rack", "[drumgrid][pads]") {
+TEST_CASE("A Drum Grid with no chains saved yields no pads", "[drumgrid][pads]") {
     ds::Doc doc;
     doc.deviceType = "drumgrid";
     doc.root.type = "PLUGIN";
-    CHECK(magda::readPadRack("drumgrid", ds::encode(doc)) == nullptr);
+    CHECK(magda::readLegacyPads("drumgrid", ds::encode(doc)) == nullptr);
 }
 
-TEST_CASE("refreshPadRack projects and clears a device's pads", "[drumgrid][pads]") {
-    magda::DeviceInfo device;
-    device.pluginId = "drumgrid";
+TEST_CASE("A device's pads are migrated out of its plugin state once", "[drumgrid][pads]") {
+    auto device = drumGridDevice();
     device.pluginState = encodedDrumGridWithPads();
 
-    magda::refreshPadRack(device);
-    REQUIRE(static_cast<bool>(device.padRack));
-    CHECK(device.padRack->chains.size() == 2);
+    magda::migrateLegacyPads(device);
+    REQUIRE(static_cast<bool>(device.pads));
+    CHECK(device.pads->chains.size() == 2);
+    CHECK(device.pads->id == magda::padRackIdFor(device.id));
 
-    // A device that stops being a Drum Grid must not keep the pads it had.
+    // The plugin state still carries the old copy, and it must never be read
+    // again: the model is what a pad edit writes, including a project whose
+    // pads were all deleted.
+    device.pads->chains.clear();
+    magda::migrateLegacyPads(device);
+    CHECK(device.pads->chains.empty());
+}
+
+TEST_CASE("A device that is not a Drum Grid is left alone by the migration", "[drumgrid][pads]") {
+    magda::DeviceInfo device;
     device.pluginId = "magda_reverb";
-    magda::refreshPadRack(device);
-    CHECK_FALSE(static_cast<bool>(device.padRack));
-}
-
-TEST_CASE("A copied device does not share its pads", "[drumgrid][pads]") {
-    magda::DeviceInfo device;
-    device.pluginId = "drumgrid";
     device.pluginState = encodedDrumGridWithPads();
-    magda::refreshPadRack(device);
 
-    magda::DeviceInfo copy = device;
-    REQUIRE(static_cast<bool>(copy.padRack));
-    CHECK(copy.padRack.get() != device.padRack.get());
-
-    // The note range has to survive the copy: a pad that came back answering to
-    // every note would silently claim the whole keyboard.
-    REQUIRE(copy.padRack->chains.size() == 2);
-    CHECK(copy.padRack->chains[1].lowNote == 38);
-    CHECK(copy.padRack->chains[1].highNote == 40);
-    CHECK_FALSE(copy.padRack->chains[1].answersToEveryNote());
+    magda::migrateLegacyPads(device);
+    CHECK_FALSE(static_cast<bool>(device.pads));
 }
 
-TEST_CASE("A projected internal pad device is internal", "[drumgrid][pads]") {
-    const auto rack = magda::readPadRack("drumgrid", encodedDrumGridWithPads());
+TEST_CASE("A migrated internal pad device is internal", "[drumgrid][pads]") {
+    const auto rack = magda::readLegacyPads("drumgrid", encodedDrumGridWithPads());
     REQUIRE(rack != nullptr);
 
     const auto& device = magda::getDevice(rack->chains[0].elements[0]);
@@ -238,7 +374,7 @@ TEST_CASE("An external pad plugin keeps its real identity", "[drumgrid][pads]") 
     pad.children.push_back(external);
     doc.root.children.push_back(pad);
 
-    const auto rack = magda::readPadRack("drumgrid", ds::encode(doc));
+    const auto rack = magda::readLegacyPads("drumgrid", ds::encode(doc));
     REQUIRE(rack != nullptr);
     REQUIRE(rack->chains[0].elements.size() == 1);
 
@@ -277,7 +413,7 @@ TEST_CASE("An external effect in a pad is not an instrument", "[drumgrid][pads]"
     pad.children.push_back(fx);
     doc.root.children.push_back(pad);
 
-    const auto rack = magda::readPadRack("drumgrid", ds::encode(doc));
+    const auto rack = magda::readLegacyPads("drumgrid", ds::encode(doc));
     REQUIRE(rack != nullptr);
     REQUIRE(rack->chains[0].elements.size() == 2);
 
@@ -318,7 +454,7 @@ TEST_CASE("A pad's instrument is found by its flag, not its position", "[drumgri
 
     doc.root.children.push_back(pad);
 
-    const auto rack = magda::readPadRack("drumgrid", ds::encode(doc));
+    const auto rack = magda::readLegacyPads("drumgrid", ds::encode(doc));
     REQUIRE(rack != nullptr);
     REQUIRE(rack->chains[0].elements.size() == 2);
 
@@ -352,364 +488,7 @@ TEST_CASE("An external pad plugin with no saved flag is not called an instrument
     pad.children.push_back(unknown);
     doc.root.children.push_back(pad);
 
-    const auto rack = magda::readPadRack("drumgrid", ds::encode(doc));
+    const auto rack = magda::readLegacyPads("drumgrid", ds::encode(doc));
     REQUIRE(rack != nullptr);
     CHECK_FALSE(magda::getDevice(rack->chains[0].elements[0]).isInstrument);
-}
-
-// The projection's field contract (#2205).
-//
-// A pad plugin has no DeviceInfo anywhere but this projection, so the fields
-// `deviceFromNode()` fills are the whole of what a pad device is. Nothing in
-// the type system says which those are: add a field to DeviceInfo and it simply
-// arrives on a projected pad device at its default, and whatever was attached
-// to it does nothing, with no crash and no diagnostic to say so.
-//
-// So the contract is written out in DrumGridPads.hpp and classified here.
-// Reading DeviceInfo's members out of the header is unusual and is the point:
-// the fact being checked is which fields exist, which no runtime value reports.
-
-namespace {
-
-/// Where a projected pad device's value for a field comes from, or why it has
-/// none. The reasons are the ones DrumGridPads.hpp gives.
-enum class Carriage {
-    FromState,     ///< Read out of the Drum Grid's saved state.
-    FromLiveGrid,  ///< Refilled from the live plugin by populatePadDeviceParameters().
-    CannotOwn,     ///< Written only through a path that reaches the chain model.
-    StateSilent,   ///< Only the live plugin could answer it, and it is not asked.
-    UiOnly,        ///< UI or session state a pad device has no surface for.
-};
-
-struct FieldContract {
-    const char* field;
-    Carriage carriage;
-};
-
-/// Every field of DeviceInfo, and what a projected pad device does with it.
-constexpr FieldContract kPadDeviceContract[] = {
-    {"id", Carriage::FromState},
-    {"name", Carriage::FromState},
-    {"pluginId", Carriage::FromState},
-    {"manufacturer", Carriage::FromState},
-    {"format", Carriage::FromState},
-    {"isInstrument", Carriage::FromState},
-    {"deviceType", Carriage::FromState},
-    {"fileOrIdentifier", Carriage::FromState},
-    {"bypassed", Carriage::FromState},
-    {"pluginState", Carriage::FromState},
-    {"canReceiveMidi", Carriage::FromState},
-    {"producesMidi", Carriage::FromState},
-
-    {"parameters", Carriage::FromLiveGrid},
-    {"wrapperParameters", Carriage::FromLiveGrid},
-    {"meters", Carriage::FromLiveGrid},
-    {"audioInputChannels", Carriage::FromLiveGrid},
-    {"audioOutputChannels", Carriage::FromLiveGrid},
-
-    {"macros", Carriage::CannotOwn},
-    {"mods", Carriage::CannotOwn},
-    {"sidechain", Carriage::CannotOwn},
-    {"multiOut", Carriage::CannotOwn},
-    {"deltaSolo", Carriage::CannotOwn},
-    {"midiInThru", Carriage::CannotOwn},
-    {"kitRows", Carriage::CannotOwn},
-    {"gainValue", Carriage::CannotOwn},
-    {"gainDb", Carriage::CannotOwn},
-
-    {"canSidechain", Carriage::StateSilent},
-    {"uniqueId", Carriage::StateSilent},
-    {"vst3ClassId", Carriage::StateSilent},
-    {"vst3Preset", Carriage::StateSilent},
-
-    {"browserCategoryOverride", Carriage::UiOnly},
-    {"expanded", Carriage::UiOnly},
-    {"modPanelOpen", Carriage::UiOnly},
-    {"gainPanelOpen", Carriage::UiOnly},
-    {"paramPanelOpen", Carriage::UiOnly},
-    {"aiPanelOpen", Carriage::UiOnly},
-    {"aiPanelOutput", Carriage::UiOnly},
-    {"aiConversation", Carriage::UiOnly},
-    {"visibleParameters", Carriage::UiOnly},
-    {"miniMixerParameters", Carriage::UiOnly},
-    {"aiSoundDesignerParameters", Carriage::UiOnly},
-    {"aiSoundDesignerPrompt", Carriage::UiOnly},
-    {"currentParameterPage", Carriage::UiOnly},
-    {"loadState", Carriage::UiOnly},
-    {"padRack", Carriage::UiOnly},
-};
-
-/// The source with its comments, string and character literals removed, so a
-/// brace or a semicolon inside one cannot be read as structure.
-std::string withoutCommentsAndLiterals(const std::string& text) {
-    const auto starts = [&text](std::size_t at, const char* token) {
-        return text.compare(at, std::strlen(token), token) == 0;
-    };
-
-    std::string out;
-    out.reserve(text.size());
-
-    for (std::size_t i = 0; i < text.size();) {
-        if (starts(i, "//")) {
-            while (i < text.size() && text[i] != '\n')
-                ++i;
-        } else if (starts(i, "/*")) {
-            i += 2;
-            while (i < text.size() && !starts(i, "*/"))
-                ++i;
-            i = std::min(i + 2, text.size());
-        } else if (text[i] == '"' || text[i] == '\'') {
-            const auto quote = text[i++];
-            while (i < text.size() && text[i] != quote)
-                i += text[i] == '\\' ? 2 : 1;
-            ++i;
-        } else {
-            out += text[i++];
-        }
-    }
-
-    return out;
-}
-
-/// The declared name in `juce::String name` or `int channels = 2`: the last
-/// identifier before the initialiser, whatever the type in front of it is.
-std::string lastIdentifier(const std::string& declarator) {
-    std::string current, last;
-
-    for (const auto c : declarator) {
-        if (std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_') {
-            current += c;
-            continue;
-        }
-        if (!current.empty())
-            last = current;
-        current.clear();
-    }
-
-    return current.empty() ? last : current;
-}
-
-/// Every data member declared directly in `struct name`, in declaration order.
-///
-/// Member functions are not members here, and neither is anything a body
-/// contains: only the depth the struct's own declarations sit at is read.
-std::vector<std::string> fieldsOfStruct(const std::string& source, const std::string& name) {
-    std::vector<std::string> fields;
-    const auto declaration = "struct " + name;
-
-    // Past any forward declaration: the body is the one an opening brace
-    // follows.
-    std::size_t body = std::string::npos;
-    for (auto at = source.find(declaration); at != std::string::npos;
-         at = source.find(declaration, at + 1)) {
-        auto after = at + declaration.size();
-        while (after < source.size() &&
-               std::isspace(static_cast<unsigned char>(source[after])) != 0)
-            ++after;
-        if (after < source.size() && source[after] == '{') {
-            body = after;
-            break;
-        }
-    }
-
-    if (body == std::string::npos)
-        return fields;
-
-    int depth = 0;
-    std::string statement, beforeBrace;
-
-    for (auto i = body; i < source.size(); ++i) {
-        const auto c = source[i];
-
-        if (c == '{') {
-            if (depth == 1)
-                beforeBrace = statement;
-            ++depth;
-            continue;
-        }
-
-        if (c == '}') {
-            if (--depth == 0)
-                break;
-            // A brace after a member function's parameter list opens its body,
-            // and the declaration ends with it. Anywhere else it is a member's
-            // initialiser, and the declaration runs on to its semicolon.
-            if (depth == 1)
-                statement =
-                    beforeBrace.find('(') == std::string::npos ? beforeBrace : std::string();
-            continue;
-        }
-
-        if (depth != 1)
-            continue;
-
-        if (c != ';') {
-            statement += c;
-            continue;
-        }
-
-        const auto declarator = statement.substr(0, statement.find('='));
-        statement.clear();
-
-        // A '(' ahead of any initialiser makes it a function declaration.
-        if (declarator.find('(') != std::string::npos)
-            continue;
-
-        if (auto field = lastIdentifier(declarator); !field.empty())
-            fields.push_back(std::move(field));
-    }
-
-    return fields;
-}
-
-std::string headerText(const juce::String& path) {
-    const auto file = juce::File(MAGDA_REPO_ROOT).getChildFile(path);
-    REQUIRE(file.existsAsFile());
-    return file.loadFileAsString().toStdString();
-}
-
-/// The stretch of the contract in DrumGridPads.hpp that lists one carriage's
-/// fields: from the sentence introducing it to whatever comes next.
-std::string contractSection(const std::string& header, Carriage carriage) {
-    // In the order the header states them, so each section ends where the next
-    // begins and the last one runs to the end of the block.
-    constexpr struct {
-        Carriage carriage;
-        const char* opening;
-    } kSections[] = {
-        {Carriage::FromState, "Carried, out of the saved state:"},
-        {Carriage::FromLiveGrid, "Carried, out of the live grid:"},
-        {Carriage::CannotOwn, "Absent because a pad device cannot own it:"},
-        {Carriage::StateSilent, "Absent because the saved state does not say:"},
-        {Carriage::UiOnly, "Absent because it is UI or session state"},
-    };
-
-    for (std::size_t i = 0; i < std::size(kSections); ++i) {
-        if (kSections[i].carriage != carriage)
-            continue;
-
-        const auto from = header.find(kSections[i].opening);
-        if (from == std::string::npos)
-            return {};
-
-        const auto to = i + 1 < std::size(kSections) ? header.find(kSections[i + 1].opening, from)
-                                                     : header.find("*/", from);
-        return header.substr(from, to == std::string::npos ? std::string::npos : to - from);
-    }
-
-    return {};
-}
-
-bool classified(const std::string& field) {
-    return std::any_of(std::begin(kPadDeviceContract), std::end(kPadDeviceContract),
-                       [&field](const FieldContract& entry) { return field == entry.field; });
-}
-
-}  // namespace
-
-TEST_CASE("Every DeviceInfo field is classified by the pad projection's contract",
-          "[drumgrid][pads][contract]") {
-    const auto fields = fieldsOfStruct(
-        withoutCommentsAndLiterals(headerText("magda/daw/core/DeviceInfo.hpp")), "DeviceInfo");
-
-    // If this trips, the scanner stopped finding the struct rather than the
-    // struct losing its fields.
-    REQUIRE(fields.size() > 20);
-
-    std::vector<std::string> unclassified;
-    for (const auto& field : fields)
-        if (!classified(field))
-            unclassified.push_back(field);
-
-    if (!unclassified.empty()) {
-        std::string report =
-            "DeviceInfo has fields the Drum Grid pad projection has not been taught about:\n";
-        for (const auto& field : unclassified)
-            report += "  " + field + "\n";
-        report +=
-            "\nDecide whether a projected pad device carries each one, say so in the contract "
-            "in DrumGridPads.hpp, and add it to kPadDeviceContract. Carrying one also means "
-            "teaching every walk that collects it to descend into padRack.";
-        UNSCOPED_INFO(report);
-    }
-    CHECK(unclassified.empty());
-
-    std::vector<std::string> stale;
-    for (const auto& entry : kPadDeviceContract)
-        if (std::find(fields.begin(), fields.end(), entry.field) == fields.end())
-            stale.push_back(entry.field);
-
-    if (!stale.empty()) {
-        std::string report =
-            "The pad projection's contract names fields DeviceInfo no longer has:\n";
-        for (const auto& field : stale)
-            report += "  " + field + "\n";
-        UNSCOPED_INFO(report);
-    }
-    CHECK(stale.empty());
-}
-
-TEST_CASE("The contract in DrumGridPads.hpp names every field where it classifies it",
-          "[drumgrid][pads][contract]") {
-    // The table above is what fails the build; the header is where someone
-    // reads why. A field classified in one and missing from the other leaves
-    // the reason unwritten, which is the state this contract exists to end.
-    const auto header = headerText("magda/daw/core/DrumGridPads.hpp");
-
-    std::vector<std::string> undocumented;
-    for (const auto& entry : kPadDeviceContract) {
-        const auto section = contractSection(header, entry.carriage);
-        if (section.find("`" + std::string(entry.field) + "`") == std::string::npos)
-            undocumented.push_back(entry.field);
-    }
-
-    if (!undocumented.empty()) {
-        std::string report =
-            "Fields the table classifies that the matching paragraph of DrumGridPads.hpp does "
-            "not name:\n";
-        for (const auto& field : undocumented)
-            report += "  " + field + "\n";
-        UNSCOPED_INFO(report);
-    }
-    CHECK(undocumented.empty());
-}
-
-TEST_CASE("The field scanner reads declarations and not bodies", "[drumgrid][pads][contract]") {
-    // Without this the guard above is worth nothing: a scanner that counted a
-    // member function's locals would demand they be classified, and one that
-    // stopped at the first function body would never see the fields after it.
-    const std::string source = R"(
-struct DeviceInfo {
-    int declared = 0;
-    juce::String name;  // int inAComment;
-    std::vector<int> braceInitialised{};
-    MacroArray macros = createDefaultMacros();
-
-    int findParameterByIndex(int index) {
-        int local = 0;
-        return local;
-    }
-
-    juce::String getFormatString() const { return "}; int inALiteral;"; }
-
-    int afterABody = 1;
-};
-)";
-
-    const auto fields = fieldsOfStruct(withoutCommentsAndLiterals(source), "DeviceInfo");
-    CHECK(fields ==
-          std::vector<std::string>{"declared", "name", "braceInitialised", "macros", "afterABody"});
-}
-
-TEST_CASE("The field scanner skips a forward declaration", "[drumgrid][pads][contract]") {
-    const std::string source = R"(
-struct DeviceInfo;
-struct Other { int notMine = 0; };
-struct DeviceInfo {
-    int mine = 0;
-};
-)";
-
-    CHECK(fieldsOfStruct(withoutCommentsAndLiterals(source), "DeviceInfo") ==
-          std::vector<std::string>{"mine"});
 }

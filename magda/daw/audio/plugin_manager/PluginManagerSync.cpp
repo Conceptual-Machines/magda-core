@@ -692,16 +692,29 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                     teTrack->pluginList.insertPlugin(rackInstance, -1, nullptr);
                 }
 
-                // Register inner plugins in our device-to-plugin maps for parameter access
-                for (const auto& chain : rackInfo.chains) {
-                    const auto chainPath =
-                        ChainNodePath::rack(trackId, rackInfo.id).withChain(chain.id);
-                    for (const auto& chainElement : chain.elements) {
-                        if (isDevice(chainElement)) {
-                            const auto& device = getDevice(chainElement);
-                            const auto devicePath = chainPath.withDevice(device.id);
-                            auto* innerPlugin = rackSyncManager_.getInnerPlugin(device.id);
-                            if (innerPlugin) {
+                // Register inner plugins in our device-to-plugin maps for
+                // parameter access. Nested racks are walked too, the way
+                // RackSyncManager loads them: a device inside one has an inner
+                // plugin like any other, and without an entry here nothing that
+                // works off syncedDevices_ can reach it. That included filling
+                // a Drum Grid nested that deep from its pads (#2207).
+                std::function<void(const RackInfo&, const ChainNodePath&)> registerInner =
+                    [&](const RackInfo& rack, const ChainNodePath& rackPath) {
+                        for (const auto& chain : rack.chains) {
+                            const auto chainPath = rackPath.withChain(chain.id);
+                            for (const auto& chainElement : chain.elements) {
+                                if (isRack(chainElement)) {
+                                    const auto& nested = getRack(chainElement);
+                                    registerInner(nested, chainPath.withRack(nested.id));
+                                    continue;
+                                }
+
+                                const auto& device = getDevice(chainElement);
+                                const auto devicePath = chainPath.withDevice(device.id);
+                                auto* innerPlugin = rackSyncManager_.getInnerPlugin(device.id);
+                                if (innerPlugin == nullptr)
+                                    continue;
+
                                 juce::ScopedLock lock(pluginLock_);
                                 auto& sd = syncedDevices_[devicePath];
                                 sd.trackId = trackId;
@@ -709,8 +722,8 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                                 pluginToDevice_[innerPlugin] = devicePath;
                             }
                         }
-                    }
-                }
+                    };
+                registerInner(rackInfo, ChainNodePath::rack(trackId, rackInfo.id));
             }
         }
     }
@@ -737,22 +750,13 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 
     reconcileSends(*trackInfo, *teTrack);
 
-    // Register DrumGrid pad plugins in syncedDevices_ before macro/mod sync.
-    // Drum Grid device macros can target pad samplers, and those targets must
-    // already be visible to PluginManager for the link resolver to bind them.
-    {
-        std::vector<std::pair<ChainNodePath, daw::audio::DrumGridPlugin*>> drumGrids;
-        {
-            juce::ScopedLock lock(pluginLock_);
-            for (const auto& [devicePath, sd] : syncedDevices_) {
-                if (sd.trackId != trackId)
-                    continue;
-                if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(sd.plugin.get()))
-                    drumGrids.push_back({devicePath, dg});
-            }
-        }
-        for (auto& [devicePath, dg] : drumGrids)
-            syncDrumGridPadPlugins(devicePath, dg);
+    // Fill every Drum Grid on the track from its pads, then register the pad
+    // plugins in syncedDevices_ before macro/mod sync. Drum Grid device macros
+    // can target pad samplers, and those targets must already be visible to
+    // PluginManager for the link resolver to bind them.
+    for (auto& [devicePath, dg] : drumGridsOnTrack(trackId)) {
+        syncDrumGridPads(devicePath, *dg);
+        syncDrumGridPadPlugins(devicePath, dg);
     }
 
     // Sync device-level + track-level modifiers AND macros via the
@@ -2124,15 +2128,20 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
             if (internalSpec->canCreateDetached)
                 plugin =
                     daw::audio::tracktion_adapter::createInternalPlugin(*internalSpec, edit_, ps);
+        }
 
-            // DrumGrid stores its inner chain state in pluginState; rehydrate it
-            // for detached/rack creation so pad assignments survive.
-            if (plugin && daw::audio::internalPluginHasTag(*internalSpec, "drum-grid") &&
-                device.pluginState.isNotEmpty()) {
-                auto savedState =
-                    daw::audio::tracktion_adapter::devicePluginTreeFromState(device.pluginState);
-                if (savedState.isValid())
-                    plugin->restorePluginStateFromValueTree(savedState);
+        // The device's own saved properties. Not every internal device seats
+        // them at creation - a sampler is built fresh and reads its sample path
+        // out of the tree it is restored with - and the parameter overlay a
+        // caller applies afterwards carries only parameters. This is the same
+        // call a track-level device gets from restorePluginState(), which is
+        // where the two paths used to differ: a sampler on a track came back
+        // with its sample and one inside a rack came back empty.
+        if (plugin != nullptr && ps.isNotEmpty()) {
+            namespace ta = daw::audio::tracktion_adapter;
+            if (auto savedState = ta::devicePluginTreeFromState(ps); savedState.isValid()) {
+                plugin->restorePluginStateFromValueTree(savedState);
+                ta::applyDeviceStateParameters(*plugin, ps);
             }
         }
     } else {
@@ -2234,6 +2243,13 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
 
 void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
                                                 te::Plugin::Ptr plugin, const DeviceInfo& device) {
+    registerRackPluginProcessor(devicePath, plugin, device,
+                                TrackManager::getInstance().getDeviceInChainByPath(devicePath));
+}
+
+void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
+                                                te::Plugin::Ptr plugin, const DeviceInfo& device,
+                                                DeviceInfo* canonical) {
     const auto deviceId = devicePath.getDeviceId();
     if (!plugin)
         return;
@@ -2243,7 +2259,7 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
     // made: the counts come off the plugin, not off the processor. Every
     // rack-contained device passes through here and nowhere else, so without
     // this they would all keep the stereo defaults.
-    if (auto* canonical = TrackManager::getInstance().getDeviceInChainByPath(devicePath))
+    if (canonical != nullptr)
         updateDeviceCapabilityFlags(*canonical, *plugin);
 
     auto processor =
@@ -2258,9 +2274,8 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
         // DeviceInfo. Snapshotting into a temp and copying only `.parameters`
         // back loses any other processor-populated field (wrapperParameters,
         // per-param displayText, etc.).
-        if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath)) {
-            processor->populateParameters(*devInfo);
-        }
+        if (canonical != nullptr)
+            processor->populateParameters(*canonical);
         AutoAliasGenerator::regenerateForDevice(devicePath);
 
         juce::ScopedLock lock(pluginLock_);
@@ -2777,59 +2792,178 @@ void PluginManager::drumGridChainsChanged(daw::audio::DrumGridPlugin* plugin) {
     });
 }
 
+std::vector<std::pair<ChainNodePath, daw::audio::DrumGridPlugin*>> PluginManager::drumGridsOnTrack(
+    TrackId trackId) {
+    std::vector<std::pair<ChainNodePath, daw::audio::DrumGridPlugin*>> drumGrids;
+
+    juce::ScopedLock lock(pluginLock_);
+    for (const auto& [devicePath, sd] : syncedDevices_) {
+        if (sd.trackId != trackId)
+            continue;
+        if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(sd.plugin.get()))
+            drumGrids.push_back({devicePath, dg});
+    }
+
+    return drumGrids;
+}
+
+void PluginManager::syncDrumGridPads(const ChainNodePath& drumGridPath,
+                                     daw::audio::DrumGridPlugin& drumGrid) {
+    auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(drumGridPath);
+    if (devInfo == nullptr)
+        return;
+
+    // A grid with no pads yet still syncs: that is how a pad the model dropped
+    // leaves the engine, and how a Drum Grid that has just been added starts
+    // out empty rather than with whatever its plugin state happened to carry.
+    static const RackInfo kNoPads;
+    const RackInfo& pads = devInfo->pads ? *devInfo->pads.get() : kNoPads;
+
+    const auto trackId = drumGridPath.trackId;
+    drumGrid.syncFromModel(pads, [this, trackId](const DeviceInfo& padDevice) {
+        return createPluginOnly(trackId, padDevice);
+    });
+}
+
+void PluginManager::captureDrumGridPads(const ChainNodePath& drumGridPath,
+                                        daw::audio::DrumGridPlugin& drumGrid) {
+    // A pad's patch comes back off its own plugin, the same as a track
+    // device's. Done here rather than by the loop over synced devices, because
+    // a pad device is reached through the grid that owns it and not by its
+    // path: the path's rack component is a DeviceId, which a Rack step cannot
+    // tell from a rack of the same number (#2207).
+    //
+    // What pads exist and what sits on them travels the other way and is never
+    // read back.
+    auto& trackManager = TrackManager::getInstance();
+
+    for (const auto& chain : drumGrid.getChains()) {
+        if (chain == nullptr)
+            continue;
+
+        auto* pad = trackManager.getPadChain(drumGridPath, chain->index);
+        if (pad == nullptr)
+            continue;
+
+        for (int i = 0; i < static_cast<int>(chain->plugins.size()); ++i) {
+            const auto deviceId = drumGrid.getPluginDeviceId(chain->index, i);
+            const auto& plugin = chain->plugins[static_cast<std::size_t>(i)];
+            if (deviceId == INVALID_DEVICE_ID || plugin == nullptr)
+                continue;
+
+            for (auto& element : pad->elements) {
+                if (!isDevice(element) || getDevice(element).id != deviceId)
+                    continue;
+
+                auto& padDevice = getDevice(element);
+                if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+                    ext->flushPluginStateToValueTree();
+                    padDevice.pluginState = ext->state.getProperty(te::IDs::state).toString();
+                } else {
+                    padDevice.pluginState =
+                        daw::audio::tracktion_adapter::captureInternalDeviceState(
+                            *plugin, padDevice.pluginState);
+                }
+
+                // And its parameters, as every other captured device gets. The
+                // model's values are seated back onto the plugin when it is
+                // rebuilt, so leaving them at what creation reported would put
+                // the defaults over what the patch just saved.
+                {
+                    juce::ScopedLock lock(pluginLock_);
+                    const auto padPath =
+                        TrackManager::padChainPath(drumGridPath, chain->index).withDevice(deviceId);
+                    if (auto padIt = findSyncedDevice(padPath);
+                        padIt != syncedDevices_.end() && padIt->second.processor != nullptr)
+                        padIt->second.processor->populateParameters(padDevice);
+                }
+                break;
+            }
+        }
+    }
+}
+
 void PluginManager::syncDrumGridPadPlugins(const ChainNodePath& drumGridPath,
                                            daw::audio::DrumGridPlugin* drumGrid) {
     if (!drumGrid)
         return;
 
     const auto trackId = drumGridPath.trackId;
-    const auto drumGridDeviceId = drumGridPath.getDeviceId();
 
-    // Collect current valid pad plugin paths.
-    std::set<ChainNodePath> currentPaths;
+    // Every live pad plugin, keyed by the model path of the device it was built
+    // for. A real path, not an invented one: it resolves through the pad rack
+    // the device owns, so a pad plugin is reached by capture, by macro and mod
+    // linking and by the parameter refresh exactly as a rack device is (#2207).
+    std::map<ChainNodePath, te::Plugin::Ptr> current;
     for (const auto& chain : drumGrid->getChains()) {
+        if (chain == nullptr)
+            continue;
+        const auto chainPath = TrackManager::padChainPath(drumGridPath, chain->index);
         for (int pi = 0; pi < static_cast<int>(chain->plugins.size()); ++pi) {
-            int devId = drumGrid->getPluginDeviceId(chain->index, pi);
-            if (devId >= 0) {
-                currentPaths.insert(
-                    ChainNodePath::chainDevice(trackId, drumGridDeviceId, chain->index, devId));
-            }
+            const int devId = drumGrid->getPluginDeviceId(chain->index, pi);
+            if (devId >= 0)
+                current[chainPath.withDevice(devId)] = chain->plugins[static_cast<size_t>(pi)];
         }
     }
 
-    juce::ScopedLock lock(pluginLock_);
+    std::vector<ChainNodePath> added;
+    {
+        juce::ScopedLock lock(pluginLock_);
 
-    // Remove stale entries
-    auto& oldPaths = drumGridPadDevices_[drumGridPath];
-    for (const auto& oldPath : oldPaths) {
-        if (currentPaths.find(oldPath) == currentPaths.end()) {
-            auto it = findSyncedDevice(oldPath);
-            if (it != syncedDevices_.end()) {
-                if (it->second.plugin)
-                    pluginToDevice_.erase(it->second.plugin.get());
-                syncedDevices_.erase(it);
+        // Remove stale entries
+        auto& oldPaths = drumGridPadDevices_[drumGridPath];
+        for (const auto& oldPath : oldPaths) {
+            if (current.find(oldPath) == current.end()) {
+                auto it = findSyncedDevice(oldPath);
+                if (it != syncedDevices_.end()) {
+                    if (it->second.plugin)
+                        pluginToDevice_.erase(it->second.plugin.get());
+                    syncedDevices_.erase(it);
+                }
             }
         }
-    }
 
-    // Add new entries
-    for (const auto& chain : drumGrid->getChains()) {
-        for (int pi = 0; pi < static_cast<int>(chain->plugins.size()); ++pi) {
-            int devId = drumGrid->getPluginDeviceId(chain->index, pi);
-            if (devId < 0)
+        oldPaths.clear();
+        for (const auto& [devicePath, plugin] : current) {
+            oldPaths.insert(devicePath);
+            if (findSyncedDevice(devicePath) != syncedDevices_.end())
                 continue;
-            const auto devicePath =
-                ChainNodePath::chainDevice(trackId, drumGridDeviceId, chain->index, devId);
-            if (findSyncedDevice(devicePath) == syncedDevices_.end()) {
-                auto& sd = syncedDevices_[devicePath];
-                sd.trackId = trackId;
-                sd.plugin = chain->plugins[static_cast<size_t>(pi)];
-                pluginToDevice_[sd.plugin.get()] = devicePath;
-            }
+
+            auto& sd = syncedDevices_[devicePath];
+            sd.trackId = trackId;
+            sd.plugin = plugin;
+            pluginToDevice_[plugin.get()] = devicePath;
+            added.push_back(devicePath);
         }
     }
 
-    oldPaths = currentPaths;
+    // Outside the lock, because it reaches into TrackManager. A processor is
+    // what seats the model's parameter values on the plugin and reads back what
+    // only the plugin can answer: a parameter's name and range, and the channel
+    // counts the plan compiler sizes the pad's ports with.
+    //
+    // The pad device is found through the grid that owns it, not through the
+    // path above: a pad path's rack component is a DeviceId, which a Rack step
+    // cannot tell from a rack of the same number (#2207). The path is the
+    // registration key and the address a stored link carries, nothing more.
+    for (const auto& devicePath : added)
+        if (auto* padDevice = padDeviceFor(drumGridPath, devicePath))
+            registerRackPluginProcessor(devicePath, current[devicePath], *padDevice, padDevice);
+}
+
+DeviceInfo* PluginManager::padDeviceFor(const ChainNodePath& drumGridPath,
+                                        const ChainNodePath& padDevicePath) {
+    auto& trackManager = TrackManager::getInstance();
+    auto* pad = trackManager.getPadChain(drumGridPath, padDevicePath.getChainId());
+    if (pad == nullptr)
+        return nullptr;
+
+    const auto deviceId = padDevicePath.getDeviceId();
+    for (auto& element : pad->elements)
+        if (isDevice(element) && getDevice(element).id == deviceId)
+            return &getDevice(element);
+
+    return nullptr;
 }
 
 void PluginManager::syncDrumGridMultiOutTracks(const ChainNodePath& drumGridPath,

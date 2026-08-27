@@ -79,10 +79,7 @@ DevicePluginPtr createRealtimePlugin(const DevicePluginCreationContext& context)
 }
 
 DevicePluginPtr createDrumGridPlugin(const DevicePluginCreationContext& context) {
-    auto services = getDeviceServices(context.sessionKey);
-    jassert(services.deviceIdAllocator != nullptr);
-    return ta::pluginHandle(
-        new DrumGridPlugin(ta::creationInfo(context), *services.deviceIdAllocator));
+    return ta::pluginHandle(new DrumGridPlugin(ta::creationInfo(context)));
 }
 
 DevicePluginPtr createMidiChordEnginePlugin(const DevicePluginCreationContext& context) {
