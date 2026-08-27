@@ -5,9 +5,11 @@
 #include "magda/daw/core/ControlTarget.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
 #include "magda/daw/core/MacroInfo.hpp"
+#include "magda/daw/core/PadCommands.hpp"
 #include "magda/daw/core/RackInfo.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/core/UndoManager.hpp"
 
 using namespace magda;
 
@@ -26,6 +28,7 @@ void resetState() {
     ClipManager::getInstance().clearAllClips();
     TrackManager::getInstance().clearAllTracks();
     SelectionManager::getInstance().clearSelection();
+    UndoManager::getInstance().clearHistory();
 }
 
 DeviceInfo drumGridDevice() {
@@ -470,4 +473,159 @@ TEST_CASE("A pad device's power is model state", "[drumgrid][pads][commands]") {
 
     tm.setPadDeviceBypassed(gridPath, pad->id, voiceId, false);
     CHECK_FALSE(getDevice(tm.getPad(gridPath, padIndex)->elements[0]).bypassed);
+}
+
+// ============================================================================
+// #2211 -- what the pad flip left unfinished
+// ============================================================================
+
+TEST_CASE("A pad device is found by id like any other device", "[drumgrid][pads][commands]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto rackId = tm.addRackToTrack(trackId, "FX Rack");
+    const auto rackChainId = tm.addChainToRack(ChainNodePath::rack(trackId, rackId));
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    constexpr int padIndex = 3;
+    const auto voiceId = tm.setPadDevice(gridPath, padIndex, padVoice("Snare"));
+    REQUIRE(voiceId != INVALID_DEVICE_ID);
+    const auto* pad = tm.getPad(gridPath, padIndex);
+    REQUIRE(pad != nullptr);
+
+    // The address a stored link carries: the grid's own DeviceId in the rack
+    // step, then the pad chain, then the device.
+    CHECK(tm.findDevicePath(voiceId) ==
+          TrackManager::padChainPath(gridPath, pad->id).withDevice(voiceId));
+
+    // The devices it could already find still resolve the same way.
+    CHECK(tm.findDevicePath(gridId) == gridPath);
+
+    const auto rackDeviceId = tm.addDeviceToChainByPath(
+        ChainNodePath::chain(trackId, rackId, rackChainId), padVoice("Rack Voice"));
+    REQUIRE(rackDeviceId != INVALID_DEVICE_ID);
+    CHECK(tm.findDevicePath(rackDeviceId) ==
+          ChainNodePath::chainDevice(trackId, rackId, rackChainId, rackDeviceId));
+}
+
+TEST_CASE("A pad's output bus and key range are model state", "[drumgrid][pads][commands]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    constexpr int padIndex = 5;
+    REQUIRE(tm.setPadDevice(gridPath, padIndex, padVoice("Clap")) != INVALID_DEVICE_ID);
+
+    tm.setPadOutput(gridPath, padIndex, 2);
+    CHECK(tm.getPad(gridPath, padIndex)->outputIndex == 2);
+
+    // A range arrives low-first whichever way round the sliders were dragged.
+    // Widened over the two notes above it, the pad still answers to its own.
+    const auto note = padNoteFor(padIndex);
+    tm.setPadNoteRange(gridPath, padIndex, note + 2, note, note + 1);
+    const auto* pad = tm.getPad(gridPath, padIndex);
+    REQUIRE(pad != nullptr);
+    CHECK(pad->lowNote == note);
+    CHECK(pad->highNote == note + 2);
+    CHECK(pad->rootNote == note + 1);
+
+    // Clamped to what MIDI can spell.
+    tm.setPadNoteRange(gridPath, padIndex, -5, 300, 400);
+    pad = tm.getPad(gridPath, padIndex);
+    REQUIRE(pad != nullptr);
+    CHECK(pad->lowNote == 0);
+    CHECK(pad->highNote == 127);
+    CHECK(pad->rootNote == 127);
+}
+
+TEST_CASE("A pad moved off its own note stops being that pad", "[drumgrid][pads][commands]") {
+    // The pad is the note, which is what `swapPads` trades. Retuning a chain
+    // clear of the note it was on hands its sound to whichever pad the new
+    // range covers, and leaves the old one empty.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    constexpr int padIndex = 5;
+    constexpr int movedTo = 9;
+    REQUIRE(tm.setPadDevice(gridPath, padIndex, padVoice("Clap")) != INVALID_DEVICE_ID);
+
+    const auto note = padNoteFor(movedTo);
+    tm.setPadNoteRange(gridPath, padIndex, note, note, note);
+
+    CHECK(tm.getPad(gridPath, padIndex) == nullptr);
+    REQUIRE(tm.getPad(gridPath, movedTo) != nullptr);
+    CHECK(tm.getPad(gridPath, movedTo)->elements.size() == 1);
+}
+
+TEST_CASE("A pad edit is one undo step", "[drumgrid][pads][commands][undo]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    auto& undo = UndoManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    constexpr int padIndex = 0;
+    editPads(gridPath, "Set Pad Instrument", [gridPath]() {
+        TrackManager::getInstance().setPadDevice(gridPath, padIndex, padVoice("Kick"));
+    });
+    REQUIRE(tm.getPad(gridPath, padIndex) != nullptr);
+    REQUIRE(tm.getPad(gridPath, padIndex)->elements.size() == 1);
+
+    editPads(gridPath, "Mute Pad",
+             [gridPath]() { TrackManager::getInstance().setPadMuted(gridPath, padIndex, true); });
+    CHECK(tm.getPad(gridPath, padIndex)->muted);
+
+    REQUIRE(undo.undo());
+    CHECK_FALSE(tm.getPad(gridPath, padIndex)->muted);
+
+    // The pad itself goes back, devices and all: the snapshot is the whole rack.
+    REQUIRE(undo.undo());
+    CHECK(tm.getPad(gridPath, padIndex) == nullptr);
+
+    // And redo re-runs the edit rather than restoring a saved after-state.
+    REQUIRE(undo.redo());
+    REQUIRE(tm.getPad(gridPath, padIndex) != nullptr);
+    CHECK(tm.getPad(gridPath, padIndex)->elements.size() == 1);
+}
+
+TEST_CASE("A dragged pad fader is one undo step, not one per move",
+          "[drumgrid][pads][commands][undo]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    auto& undo = UndoManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    constexpr int padIndex = 0;
+    editPads(gridPath, "Set Pad Instrument", [gridPath]() {
+        TrackManager::getInstance().setPadDevice(gridPath, padIndex, padVoice("Kick"));
+    });
+
+    for (float db : {-1.0f, -2.0f, -3.0f, -4.0f})
+        editPads(
+            gridPath, "Set Pad Level",
+            [gridPath, db]() { TrackManager::getInstance().setPadVolume(gridPath, padIndex, db); },
+            "padLevel:0");
+
+    CHECK(tm.getPad(gridPath, padIndex)->volume == -4.0f);
+
+    // One step back to where the drag started, not four.
+    REQUIRE(undo.undo());
+    CHECK(tm.getPad(gridPath, padIndex)->volume == 0.0f);
+
+    // A different pad's fader is its own step.
+    CHECK(tm.getPad(gridPath, padIndex) != nullptr);
 }

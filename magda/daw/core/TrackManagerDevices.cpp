@@ -1284,30 +1284,77 @@ void TrackManager::setDeviceKitRows(TrackId trackId, DeviceId deviceId,
     mirrorKitToPreferences(*device);
 }
 
-ChainNodePath TrackManager::findDevicePath(DeviceId deviceId) const {
-    // Search all tracks for a device by ID and return its full path
-    for (const auto& track : tracks_) {
-        for (const auto& element : track.chain.fxChainElements) {
-            if (magda::isDevice(element) && magda::getDevice(element).id == deviceId)
-                return ChainNodePath::topLevelDevice(track.id, deviceId);
-            if (magda::isRack(element)) {
-                const auto& rack = magda::getRack(element);
-                for (const auto& chain : rack.chains) {
-                    for (const auto& chainElement : chain.elements) {
-                        if (magda::isDevice(chainElement) &&
-                            magda::getDevice(chainElement).id == deviceId)
-                            return ChainNodePath::chainDevice(track.id, rack.id, chain.id,
-                                                              deviceId);
-                    }
-                }
-            }
+namespace {
+
+/// The path @p parentChain gives a device it directly holds.
+///
+/// A track's own FX list is not a chain and its devices are addressed as
+/// top-level ones, which is the same split `AddDeviceByPathCommand` makes.
+ChainNodePath devicePathUnder(const ChainNodePath& parentChain, DeviceId deviceId) {
+    return parentChain.getType() == ChainNodeType::Track
+               ? ChainNodePath::topLevelDevice(parentChain.trackId, deviceId)
+               : parentChain.withDevice(deviceId);
+}
+
+/// The path addressing @p deviceId somewhere under @p parentChain, or an
+/// invalid path when it is not there.
+///
+/// Descends into a rack's chains and into a pad-per-chain device's pads. A pad
+/// device is an ordinary DeviceInfo since #2207, so anything that starts from a
+/// DeviceId and needs a path -- alias generation, automation targets, link
+/// repair -- has to be able to reach one (#2211).
+ChainNodePath findDeviceUnder(const std::vector<ChainElement>& elements,
+                              const ChainNodePath& parentChain, DeviceId deviceId) {
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            const auto& device = magda::getDevice(element);
+            if (device.id == deviceId)
+                return devicePathUnder(parentChain, deviceId);
+
+            if (!device.pads)
+                continue;
+
+            // A pad's address spells its rack step with the grid's own
+            // DeviceId: what padChainPath() builds, and what every link a
+            // project has saved to a pad device carries.
+            const auto gridPath = devicePathUnder(parentChain, device.id);
+            for (const auto& pad : device.pads->chains)
+                if (auto found = findDeviceUnder(
+                        pad.elements, TrackManager::padChainPath(gridPath, pad.id), deviceId);
+                    found.isValid())
+                    return found;
+            continue;
+        }
+
+        if (magda::isRack(element)) {
+            const auto& rack = magda::getRack(element);
+            const auto rackPath = parentChain.getType() == ChainNodeType::Track
+                                      ? ChainNodePath::rack(parentChain.trackId, rack.id)
+                                      : parentChain.withRack(rack.id);
+            for (const auto& chain : rack.chains)
+                if (auto found =
+                        findDeviceUnder(chain.elements, rackPath.withChain(chain.id), deviceId);
+                    found.isValid())
+                    return found;
         }
     }
-    // Also check master track
-    for (const auto& element : masterTrack_.chain.fxChainElements) {
-        if (magda::isDevice(element) && magda::getDevice(element).id == deviceId)
-            return ChainNodePath::topLevelDevice(MASTER_TRACK_ID, deviceId);
-    }
+    return {};
+}
+
+}  // namespace
+
+ChainNodePath TrackManager::findDevicePath(DeviceId deviceId) const {
+    for (const auto& track : tracks_)
+        if (auto found = findDeviceUnder(track.chain.fxChainElements,
+                                         ChainNodePath::trackLevel(track.id), deviceId);
+            found.isValid())
+            return found;
+
+    if (auto found = findDeviceUnder(masterTrack_.chain.fxChainElements,
+                                     ChainNodePath::trackLevel(MASTER_TRACK_ID), deviceId);
+        found.isValid())
+        return found;
+
     return {};  // Not found — returns invalid path
 }
 

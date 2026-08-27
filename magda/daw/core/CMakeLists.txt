@@ -39,6 +39,7 @@ target_sources(magda_daw PRIVATE
     ClipPropertyCommands.cpp
     WarpMarkerCommands.cpp
     TrackCommands.cpp
+    PadCommands.cpp
     TrackPropertyCommands.cpp
     AutomationCommands.cpp
     ClipLaneFlattener.cpp
@@ -110,6 +111,7 @@ target_sources(magda_daw PRIVATE
     ClipPropertyCommands.hpp
     WarpMarkerCommands.hpp
     TrackCommands.hpp
+    PadCommands.hpp
     TrackPropertyCommands.hpp
     AutomationCommands.hpp
     MidiNoteCommands.hpp

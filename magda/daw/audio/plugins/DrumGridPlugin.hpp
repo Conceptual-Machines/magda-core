@@ -198,13 +198,11 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
         mixerExpanded_ = expanded;
     }
 
-    // Multi-out mode toggle (persisted in ValueTree). A pad's bus is
-    // `ChainInfo::outputIndex` and is assigned in the model like every other
-    // pad property; this is the grid's own switch, not a pad's (#2207).
-    bool isMultiOutEnabled() const {
-        return multiOutEnabled_.get();
-    }
-
+    // A pad's bus is `ChainInfo::outputIndex`, assigned in the model like every
+    // other pad property, and the device sync turns a pad on a bus into a
+    // multi-out child track. There is no second switch in front of that: the
+    // `multiOutEnabled` flag that used to be here gated `assignBusOutputs()`,
+    // which #2207 removed, and nothing ever wrote or read either (#2211).
     int getNumOutputChannels() const {
         return maxBusOutputs * 2;
     }
@@ -340,7 +338,6 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     std::array<ChainMeterData, maxPads> chainMeters_{};
     std::array<std::array<ChainMeterData, maxFxPerChain>, maxPads> pluginMeters_{};
     juce::CachedValue<bool> mixerExpanded_;
-    juce::CachedValue<bool> multiOutEnabled_;
 
     // Audio processing state
     te::MidiMessageArray chainMidi_;
@@ -367,7 +364,6 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     static const juce::Identifier padBypassedId;
     static const juce::Identifier busOutputId;
     static const juce::Identifier mixerExpandedId;
-    static const juce::Identifier multiOutEnabledId;
     /// The model DeviceId of the pad device a plugin was built for, stamped by
     /// the sync. The mirror carries no other model state: everything else is
     /// read from the `RackInfo` each pass (#2207).

@@ -9,6 +9,7 @@
 
 #include "custom_ui/SamplerUI.hpp"
 #include "drum_grid/PadChainPanel.hpp"
+#include "drum_grid/PadChainRangeRowComponent.hpp"
 #include "drum_grid/PadChainRowComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -283,6 +284,10 @@ class DrumGridUI : public juce::Component,
     juce::Viewport chainsViewport_;
     juce::Component chainsContainer_;
     std::vector<std::unique_ptr<PadChainRowComponent>> chainRows_;
+    // One per chain row, laid out only under the selected one. Built with the
+    // rows rather than on selection: selection changes from a row's own
+    // mouseUp, and rebuilding there would free the component mid-callback.
+    std::vector<std::unique_ptr<PadChainRangeRowComponent>> rangeRows_;
     std::unique_ptr<magda::SvgButton> chainsToggleButton_;
 
     // Paint rects (set in resized, used in paint)
@@ -302,6 +307,7 @@ class DrumGridUI : public juce::Component,
     //==============================================================================
     void setDetailCollapsed(bool collapsed);
     void refreshPadButtons();
+    void refreshRangeRows();
     void refreshDetailPanel();
     void goToPrevPage();
     void goToNextPage();

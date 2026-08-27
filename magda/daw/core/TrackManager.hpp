@@ -460,6 +460,11 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     RackInfo* getPads(const ChainNodePath& gridPath);
     const RackInfo* getPads(const ChainNodePath& gridPath) const;
 
+    /// Replace those pads wholesale. Undo's counterpart to every pad edit
+    /// below, which is why it lives with them rather than on the command
+    /// (`EditPadsCommand`, #2211).
+    void setPads(const ChainNodePath& gridPath, const PadRack& pads);
+
     /// The pad chain answering to pad @p padIndex, or null.
     const ChainInfo* getPad(const ChainNodePath& gridPath, int padIndex) const;
 
@@ -491,6 +496,17 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setPadMuted(const ChainNodePath& gridPath, int padIndex, bool muted);
     void setPadSolo(const ChainNodePath& gridPath, int padIndex, bool solo);
     void setPadBypassed(const ChainNodePath& gridPath, int padIndex, bool bypassed);
+
+    /// Which output a pad plays out of: 0 is the grid's own mix, 1+ a multi-out
+    /// bus. `ChainInfo::outputIndex`, the same field a rack chain routes with.
+    void setPadOutput(const ChainNodePath& gridPath, int padIndex, int outputIndex);
+
+    /// The notes a pad answers to, and the one its sampler is rooted on.
+    ///
+    /// A pad is keyed by pitch, so this is the one pad property with no rack
+    /// equivalent: a plain chain answers to everything.
+    void setPadNoteRange(const ChainNodePath& gridPath, int padIndex, int lowNote, int highNote,
+                         int rootNote);
 
     /// The pad chain answering to pad @p padIndex, made if it is not there yet.
     /// INVALID_CHAIN_ID when the device does not keep its chains as pads.

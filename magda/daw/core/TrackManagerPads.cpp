@@ -51,6 +51,22 @@ const RackInfo* TrackManager::getPads(const ChainNodePath& gridPath) const {
     return const_cast<TrackManager*>(this)->getPads(gridPath);
 }
 
+void TrackManager::setPads(const ChainNodePath& gridPath, const PadRack& pads) {
+    auto* device = getDeviceInChainByPath(gridPath);
+    if (device == nullptr)
+        return;
+
+    device->pads = pads;
+
+    // The rack carries the device's id, and a restored copy has to carry the
+    // id the device has now rather than the one it had when the snapshot was
+    // taken -- a device restored by an undo of its own removal comes back under
+    // the same id, but nothing here depends on that being true.
+    stampPadRackId(*device);
+
+    notifyTrackDevicesChanged(gridPath.trackId);
+}
+
 ChainInfo* TrackManager::getPadChain(const ChainNodePath& gridPath, ChainId padChainId) {
     auto* pads = getPads(gridPath);
     if (pads == nullptr)
@@ -310,6 +326,38 @@ void TrackManager::setPadBypassed(const ChainNodePath& gridPath, int padIndex, b
         pad->bypassed = bypassed;
         notifyTrackDevicesChanged(gridPath.trackId);
     }
+}
+
+void TrackManager::setPadOutput(const ChainNodePath& gridPath, int padIndex, int outputIndex) {
+    auto* pad = mutablePad(gridPath, padIndex);
+    if (pad == nullptr || pad->outputIndex == outputIndex)
+        return;
+
+    pad->outputIndex = outputIndex;
+
+    // trackDevicesChanged, not trackPropertyChanged: a pad's bus decides
+    // whether the grid needs a multi-out child track for it, and that is
+    // settled by the device sync (PluginManager::syncDrumGridMultiOutTracks).
+    notifyTrackDevicesChanged(gridPath.trackId);
+}
+
+void TrackManager::setPadNoteRange(const ChainNodePath& gridPath, int padIndex, int lowNote,
+                                   int highNote, int rootNote) {
+    auto* pad = mutablePad(gridPath, padIndex);
+    if (pad == nullptr)
+        return;
+
+    const auto low = juce::jlimit(0, 127, std::min(lowNote, highNote));
+    const auto high = juce::jlimit(0, 127, std::max(lowNote, highNote));
+    const auto root = juce::jlimit(0, 127, rootNote);
+
+    if (pad->lowNote == low && pad->highNote == high && pad->rootNote == root)
+        return;
+
+    pad->lowNote = low;
+    pad->highNote = high;
+    pad->rootNote = root;
+    notifyTrackDevicesChanged(gridPath.trackId);
 }
 
 ChainInfo* TrackManager::mutablePad(const ChainNodePath& gridPath, int padIndex) {
