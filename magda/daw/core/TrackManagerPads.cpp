@@ -38,7 +38,13 @@ ChainNodePath TrackManager::padChainPath(const ChainNodePath& gridPath, ChainId 
     //
     // The synthetic negative id is still what `RackInfo::id` holds, because the
     // plan keys its ops on it and `isPadRackId()` is how the executor tells a
-    // pad rack from an allocated one. `getRackByPath()` resolves either.
+    // pad rack from an allocated one.
+    //
+    // `getRackByPath()` does not resolve this: a pad rack is a field on a
+    // device rather than a chain element, and the Rack step here carries the
+    // device's id rather than the rack's. `getDeviceInChainByPath()` follows it
+    // through `getDeviceInPadByPath()`, tried after the ordinary rack route so
+    // an allocated rack sharing the number is unaffected (#2211).
     return ChainNodePath::chain(gridPath.trackId, gridPath.getDeviceId(), padChainId);
 }
 

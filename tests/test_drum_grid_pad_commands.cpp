@@ -581,6 +581,7 @@ TEST_CASE("A pad edit is one undo step", "[drumgrid][pads][commands][undo]") {
     });
     REQUIRE(tm.getPad(gridPath, padIndex) != nullptr);
     REQUIRE(tm.getPad(gridPath, padIndex)->elements.size() == 1);
+    const auto voiceId = getDevice(tm.getPad(gridPath, padIndex)->elements[0]).id;
 
     editPads(gridPath, "Mute Pad",
              [gridPath]() { TrackManager::getInstance().setPadMuted(gridPath, padIndex, true); });
@@ -593,10 +594,56 @@ TEST_CASE("A pad edit is one undo step", "[drumgrid][pads][commands][undo]") {
     REQUIRE(undo.undo());
     CHECK(tm.getPad(gridPath, padIndex) == nullptr);
 
-    // And redo re-runs the edit rather than restoring a saved after-state.
+    // Redo restores the snapshot rather than replaying the edit. Replaying an
+    // add allocates a fresh DeviceId, and the mute behind it in the redo chain
+    // still names the one the first run handed out.
     REQUIRE(undo.redo());
     REQUIRE(tm.getPad(gridPath, padIndex) != nullptr);
-    CHECK(tm.getPad(gridPath, padIndex)->elements.size() == 1);
+    REQUIRE(tm.getPad(gridPath, padIndex)->elements.size() == 1);
+    CHECK(getDevice(tm.getPad(gridPath, padIndex)->elements[0]).id == voiceId);
+
+    REQUIRE(undo.redo());
+    CHECK(tm.getPad(gridPath, padIndex)->muted);
+    CHECK(getDevice(tm.getPad(gridPath, padIndex)->elements[0]).id == voiceId);
+}
+
+TEST_CASE("A pad device resolves through the generic path lookup", "[drumgrid][pads][commands]") {
+    // findDevicePath() answering with a pad address is only worth anything if
+    // the address can then be dereferenced: alias generation, automation
+    // targets and link repair all go id -> path -> DeviceInfo.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto rackId = tm.addRackToTrack(trackId, "FX Rack");
+    const auto rackChainId = tm.addChainToRack(ChainNodePath::rack(trackId, rackId));
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    constexpr int padIndex = 2;
+    const auto voiceId = tm.setPadDevice(gridPath, padIndex, padVoice("Hat"));
+    REQUIRE(voiceId != INVALID_DEVICE_ID);
+
+    const auto padDevicePath = tm.findDevicePath(voiceId);
+    REQUIRE(padDevicePath.isValid());
+
+    const auto* resolved = tm.getDeviceInChainByPath(padDevicePath);
+    REQUIRE(resolved != nullptr);
+    CHECK(resolved->id == voiceId);
+    CHECK(resolved->name == "Hat");
+
+    // The rack sharing the grid's number still resolves the ordinary way; a pad
+    // path is only tried once that has failed.
+    const auto rackDeviceId = tm.addDeviceToChainByPath(
+        ChainNodePath::chain(trackId, rackId, rackChainId), padVoice("Rack Voice"));
+    const auto* rackResolved = tm.getDeviceInChainByPath(
+        ChainNodePath::chainDevice(trackId, rackId, rackChainId, rackDeviceId));
+    REQUIRE(rackResolved != nullptr);
+    CHECK(rackResolved->id == rackDeviceId);
+
+    // A path naming a device that is in neither place still answers nothing.
+    CHECK(tm.getDeviceInChainByPath(ChainNodePath::chainDevice(trackId, gridId, 0, 9999)) ==
+          nullptr);
 }
 
 TEST_CASE("A dragged pad fader is one undo step, not one per move",

@@ -25,14 +25,19 @@ namespace magda {
  * and clearing one erases it. Recording those as per-op inverses would be a
  * second description of what each edit does, free to disagree with the first.
  *
- * Redo re-runs the edit rather than restoring the after-state, so an edit that
- * allocates ids (a device added to a pad) hands out the same ones it would have
- * on a fresh run.
+ * The state is taken after the grid's live plugins have been captured into the
+ * model, so undoing the removal of a pad restores it as it sounded rather than
+ * as it was added.
+ *
+ * Both sides are snapshots. Redo restores the after-state rather than replaying
+ * the edit, because `addDeviceToPad()` allocates a fresh DeviceId on every run:
+ * a replayed add would bring the device back under a new id and leave every
+ * later command in the redo chain naming the old one.
  */
 class EditPadsCommand : public UndoableCommand {
   public:
-    /// @p edit runs against the live model, addressed by @p gridPath. It is
-    /// held for redo, so it must be repeatable.
+    /// @p edit runs against the live model, addressed by @p gridPath. It runs
+    /// once: redo restores the snapshot it produced.
     ///
     /// @p mergeKey coalesces: two consecutive edits carrying the same non-empty
     /// key on the same grid collapse into one undo step, so a fader drag is one
@@ -56,6 +61,7 @@ class EditPadsCommand : public UndoableCommand {
     std::function<void()> edit_;
     juce::String mergeKey_;
     PadRack padsBefore_;
+    PadRack padsAfter_;
     bool executed_ = false;
 };
 

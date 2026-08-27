@@ -184,6 +184,27 @@ DeviceInfo* findUniqueBareDeviceIdMatch(TrackInfo& masterTrack, std::vector<Trac
     return matches.size() == 1 ? matches.front() : nullptr;
 }
 
+/// The device @p deviceId names, searched for its pads rather than itself.
+///
+/// A grid can sit anywhere a device can, including inside a rack chain, so the
+/// search descends the same way `findDeviceUnder` does.
+DeviceInfo* findPadOwner(std::vector<ChainElement>& elements, DeviceId deviceId) {
+    for (auto& element : elements) {
+        if (magda::isDevice(element)) {
+            auto& device = magda::getDevice(element);
+            if (device.id == deviceId)
+                return device.pads ? &device : nullptr;
+            continue;
+        }
+
+        if (magda::isRack(element))
+            for (auto& chain : magda::getRack(element).chains)
+                if (auto* found = findPadOwner(chain.elements, deviceId))
+                    return found;
+    }
+    return nullptr;
+}
+
 }  // namespace
 
 // ============================================================================
@@ -1075,6 +1096,45 @@ DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath
                 return &magda::getDevice(element);
             }
         }
+    }
+
+    return getDeviceInPadByPath(devicePath);
+}
+
+DeviceInfo* TrackManager::getDeviceInPadByPath(const ChainNodePath& devicePath) {
+    // A pad device's chain is not in the rack tree. Its address spells the Rack
+    // step with the owning device's id, and a pad rack is `DeviceInfo::pads`
+    // rather than a chain element, so `getRackByPath()` cannot follow it and
+    // was never meant to (#2207).
+    //
+    // Tried only after the ordinary route has failed, so an allocated rack that
+    // shares the number resolves exactly as it did before. That ordering is
+    // what makes this unambiguous rather than a guess: every device in the
+    // Rack > Chain > Device space comes out of one counter, so the leaf id
+    // names one device in the whole project, and whichever route reaches it
+    // reaches the same one (#2211).
+    if (devicePath.steps.size() != 3)
+        return nullptr;
+    if (devicePath.steps[0].type != ChainStepType::Rack ||
+        devicePath.steps[1].type != ChainStepType::Chain ||
+        devicePath.steps[2].type != ChainStepType::Device)
+        return nullptr;
+
+    auto* track = getTrack(devicePath.trackId);
+    if (track == nullptr)
+        return nullptr;
+
+    auto* owner = findPadOwner(track->chain.fxChainElements, devicePath.steps[0].id);
+    if (owner == nullptr)
+        return nullptr;
+
+    for (auto& pad : owner->pads->chains) {
+        if (pad.id != devicePath.steps[1].id)
+            continue;
+        for (auto& element : pad.elements)
+            if (magda::isDevice(element) && magda::getDevice(element).id == devicePath.steps[2].id)
+                return &magda::getDevice(element);
+        return nullptr;
     }
     return nullptr;
 }
