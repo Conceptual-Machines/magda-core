@@ -614,6 +614,36 @@ TEST_CASE("Device paths round-trip through nested racks and chains",
         REQUIRE(toChainNodePath(dto) == path);
     }
 
+    SECTION("pad-owned steps") {
+        // A pad address names its owning Drum Grid by that device's own id, and
+        // the two step names say so rather than leaving a client to infer
+        // ownership from position.
+        const auto path = ChainNodePath::padChain(2, 9, 5).withDevice(6);
+        const auto dto = makeDevicePathDto(path);
+        REQUIRE(dto.steps.size() == 3);
+        REQUIRE(dto.steps[0].type == "pad_rack");
+        REQUIRE(dto.steps[0].id == 9);
+        REQUIRE(dto.steps[1].type == "pad_chain");
+        REQUIRE(dto.steps[1].id == 5);
+        REQUIRE(toChainNodePath(dto) == path);
+
+        // Including through a rack nested inside the pad chain.
+        const auto nested =
+            ChainNodePath::padChain(2, 9, 5).withRack(7).withChain(8).withDevice(10);
+        REQUIRE(toChainNodePath(makeDevicePathDto(nested)) == nested);
+
+        // And the published schema admits what the projection emits, so the
+        // output does not violate the contract and a client can send the same
+        // address back.
+        const auto* get = OperationRegistry::instance().find("devices.list");
+        REQUIRE(get != nullptr);
+        const DeviceGraphDto graph{{{6, 2, std::nullopt, std::nullopt, dto, "Kick", "instrument",
+                                     "internal", true, false, 0.0}},
+                                   {},
+                                   {}};
+        REQUIRE(validateJson(toJson(graph), get->outputSchema).empty());
+    }
+
     SECTION("unknown section and step types are rejected, not guessed") {
         auto dto = makeDevicePathDto(ChainNodePath::chainDevice(2, 4, 5, 6));
         dto.section = "not_a_section";

@@ -1258,11 +1258,19 @@ DeviceInfo* TrackManager::getDeviceInPadByPath(const ChainNodePath& devicePath) 
 }
 
 ChainInfo* TrackManager::getChainInPadByPath(const ChainNodePath& chainPath) {
-    // `PadRack(gridDeviceId) > PadChain(pad)` and nothing after it: a pad chain
-    // is the whole of a pad-owned address, and anything deeper names something
-    // inside the chain rather than the chain (#2219).
-    if (chainPath.steps.size() != 2 || !chainPath.isPadOwned() ||
+    // `PadRack(gridDeviceId) > PadChain(pad)` and then ordinary `Rack > Chain`
+    // pairs: a pad's chain holds racks like any other chain does, and their
+    // chains are addressable. Stopping at the pad chain would leave
+    // `getElementContainerForChainPath()` unable to name them, so copy, move,
+    // remove, wrap, insert and paste could not act on anything inside a rack
+    // nested under a pad even though device lookup resolves the same route
+    // (#2219).
+    if (!chainPath.isPadOwned() || chainPath.steps.size() < 2 ||
         chainPath.getPadChainId() == INVALID_CHAIN_ID)
+        return nullptr;
+
+    // The tail is whole pairs, and the address ends on the chain it names.
+    if ((chainPath.steps.size() - 2) % 2 != 0)
         return nullptr;
 
     auto* track = getTrack(chainPath.trackId);
@@ -1273,11 +1281,40 @@ ChainInfo* TrackManager::getChainInPadByPath(const ChainNodePath& chainPath) {
     if (owner == nullptr)
         return nullptr;
 
-    for (auto& pad : owner->pads->chains)
-        if (pad.id == chainPath.getPadChainId())
-            return &pad;
+    ChainInfo* current = nullptr;
+    for (auto& pad : owner->pads->chains) {
+        if (pad.id == chainPath.getPadChainId()) {
+            current = &pad;
+            break;
+        }
+    }
+    if (current == nullptr)
+        return nullptr;
 
-    return nullptr;
+    for (std::size_t index = 2; index < chainPath.steps.size(); index += 2) {
+        const auto& rackStep = chainPath.steps[index];
+        const auto& chainStep = chainPath.steps[index + 1];
+        if (rackStep.type != ChainStepType::Rack || chainStep.type != ChainStepType::Chain)
+            return nullptr;
+
+        ChainInfo* next = nullptr;
+        for (auto& element : current->elements) {
+            if (!magda::isRack(element) || magda::getRack(element).id != rackStep.id)
+                continue;
+            for (auto& chain : magda::getRack(element).chains) {
+                if (chain.id == chainStep.id) {
+                    next = &chain;
+                    break;
+                }
+            }
+            break;
+        }
+        if (next == nullptr)
+            return nullptr;
+        current = next;
+    }
+
+    return current;
 }
 
 const DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath) const {

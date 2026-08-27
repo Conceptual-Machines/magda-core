@@ -190,6 +190,58 @@ TEST_CASE("A rack nested inside a pad chain resolves through the typed prefix",
     CHECK(resolved->id == kNested);
 }
 
+TEST_CASE("A chain inside a rack nested under a pad is addressable", "[drumgrid][pads][path]") {
+    // `getElementContainerForChainPath()` delegates to the pad chain lookup, so
+    // stopping at the pad chain would leave copy, move, remove, wrap, insert and
+    // paste unable to name anything inside a rack nested under a pad, even
+    // though the device lookup resolves the same route.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+
+    auto* pad = tm.getPad(gridPath, 0);
+    REQUIRE(pad != nullptr);
+    const auto padChainId = pad->id;
+
+    constexpr DeviceId kNested = 5150;
+    RackInfo inner;
+    inner.id = 91;
+    inner.name = "Pad Rack";
+    ChainInfo innerChain;
+    innerChain.id = 6;
+    innerChain.name = "Inner";
+    auto nested = padVoice("Nested");
+    nested.id = kNested;
+    innerChain.elements.push_back(makeDeviceElement(nested));
+    inner.chains.push_back(std::move(innerChain));
+    tm.getPadChain(gridPath, padChainId)->elements.push_back(makeRackElement(std::move(inner)));
+
+    const auto padChainPath = TrackManager::padChainPath(gridPath, padChainId);
+
+    // The pad chain itself.
+    const auto* root = tm.getChainByPath(padChainPath);
+    REQUIRE(root != nullptr);
+    CHECK(root->id == padChainId);
+
+    // And the chain of the rack it holds, through the same generic call.
+    const auto nestedChainPath = padChainPath.withRack(91).withChain(6);
+    const auto* nestedChain = tm.getChainByPath(nestedChainPath);
+    REQUIRE(nestedChain != nullptr);
+    CHECK(nestedChain->id == 6);
+    CHECK(nestedChain->name == "Inner");
+    REQUIRE(nestedChain->elements.size() == 1);
+    CHECK(getDevice(nestedChain->elements[0]).id == kNested);
+
+    // A rack id that names nothing under the pad resolves to nothing.
+    CHECK(tm.getChainByPath(padChainPath.withRack(92).withChain(6)) == nullptr);
+    // And so does a half pair.
+    CHECK(tm.getChainByPath(padChainPath.withRack(91)) == nullptr);
+}
+
 TEST_CASE("A pad address is answered only by the track it names",
           "[drumgrid][pads][path][master]") {
     // The pad route reaches the model through `getTrack()`, and
