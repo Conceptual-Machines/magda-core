@@ -1,0 +1,56 @@
+# Label and close a shared Faust device.
+#
+# magda.land/community/devices hands a contributor a prefilled issue rather
+# than uploading anything: GitHub is the identity and the store. The gallery
+# lists every issue carrying `faust-device`, open or closed, so the label is
+# what publishes a device and removing it is what takes one down.
+#
+# The prefilled link asks for that label, but GitHub only honours `labels=` for
+# people with triage rights on the repo -- so a contributor's submission always
+# arrives bare, and without this it would sit unpublished until someone noticed
+# it. This applies the label on their behalf, which means devices publish on
+# submission and come down afterwards if they need to, rather than waiting on a
+# review before they appear.
+#
+# The guard is the body contract the submission form writes: the title it uses
+# and the ```faust fence the gallery parses. An issue that does not match is
+# left entirely alone, so this cannot fire on an ordinary bug report.
+#
+# Once labelled, the issue itself has nothing outstanding on it, so it closes
+# and says where the device went.
+name: Faust device published
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  issues: write
+
+jobs:
+  publish:
+    if: >-
+      (github.event.action == 'opened' &&
+       startsWith(github.event.issue.title, 'Faust device:') &&
+       contains(github.event.issue.body, '```faust')) ||
+      (github.event.action == 'labeled' &&
+       github.event.label.name == 'faust-device' &&
+       github.event.issue.state == 'open')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish it, say where it went, and close it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Adding a label already present is not an error, so the two events
+          # take the same path rather than needing to know which one ran.
+          gh issue edit "$NUMBER" --repo "$REPO" --add-label faust-device
+
+          gh issue comment "$NUMBER" --repo "$REPO" --body \
+            'Published — this device is now on [magda.land/community/devices](https://magda.land/community/devices/), where anyone can play it in their browser and download the `.dsp`.
+
+          Closing, because the label is what keeps it listed: it stays on that page whether this issue is open or closed. Comment here if something needs changing, and removing the `faust-device` label takes it back down.'
+
+          gh issue close "$NUMBER" --repo "$REPO" --reason completed
