@@ -534,13 +534,17 @@ TEST_CASE("A pad's output bus and key range are model state", "[drumgrid][pads][
     CHECK(pad->highNote == note + 2);
     CHECK(pad->rootNote == note + 1);
 
-    // Clamped to what MIDI can spell.
-    tm.setPadNoteRange(gridPath, padIndex, -5, 300, 400);
+    // A range spanning everything MIDI can spell reaches outside the grid at
+    // both ends, and is refused whole rather than clamped into it.
+    CHECK_FALSE(tm.setPadNoteRange(gridPath, padIndex, -5, 300, 400));
     pad = tm.getPad(gridPath, padIndex);
     REQUIRE(pad != nullptr);
-    CHECK(pad->lowNote == 0);
-    CHECK(pad->highNote == 127);
-    CHECK(pad->rootNote == 127);
+    CHECK(pad->lowNote == note);
+    CHECK(pad->highNote == note + 2);
+
+    // The root is clamped rather than refused: it is not an endpoint.
+    CHECK(tm.setPadNoteRange(gridPath, padIndex, note, note + 2, 400));
+    CHECK(tm.getPad(gridPath, padIndex)->rootNote == 127);
 }
 
 TEST_CASE("A pad moved off its own note stops being that pad", "[drumgrid][pads][commands]") {
@@ -782,6 +786,19 @@ TEST_CASE("A pad's range has to stay inside the notes the grid shows",
     const auto lastNote = padNoteFor(kPadCount - 1);
     CHECK_FALSE(tm.setPadNoteRange(gridPath, 0, lastNote + 1, 127, lastNote + 1));
     CHECK(tm.getPad(gridPath, 0)->lowNote == note);
+
+    // Both ends, not merely an overlap. A low end below the grid makes
+    // padParameterSlot() answer -1, and the plan stops binding the chain's
+    // fader and pan to the grid's parameters.
+    CHECK_FALSE(tm.setPadNoteRange(gridPath, 0, 0, note, 0));
+    CHECK_FALSE(tm.setPadNoteRange(gridPath, 0, note, 127, note));
+    CHECK(tm.getPad(gridPath, 0)->lowNote == note);
+    CHECK(tm.getPad(gridPath, 0)->highNote == note);
+
+    // The root is not an endpoint: it is the transposition target, and a sample
+    // whose natural pitch sits outside the displayed pads is a valid mapping.
+    CHECK(tm.setPadNoteRange(gridPath, 0, note, note, 127));
+    CHECK(tm.getPad(gridPath, 0)->rootNote == 127);
 }
 
 TEST_CASE("A pad on a grid inside a rack cannot be put on a bus", "[drumgrid][pads][commands]") {
@@ -818,12 +835,11 @@ TEST_CASE("A pad on a grid inside a rack cannot be put on a bus", "[drumgrid][pa
     CHECK(tm.getPad(gridPath, 0)->outputIndex == 2);
 }
 
-TEST_CASE("Pads are put back on the main mix when their grid stops being top level",
-          "[drumgrid][pads][commands]") {
-    // padBusesAvailable only guards a new assignment. A grid can cross into a
-    // placement where buses do not work after one was made -- wrapping it in a
-    // rack moves it and keeps its pads -- and a project can be loaded already
-    // like that, leaving a pad pointed at a bus nothing carries.
+TEST_CASE("A grid with a pad on a bus is not wrapped into a rack", "[drumgrid][pads][commands]") {
+    // Wrapping would take the grid somewhere no bus is carried, so the move
+    // would have to put every pad back on the main mix. That clean-up is not
+    // part of the undoable step the move is, so undoing the wrap would return
+    // the grid to the top level with its routing gone. Refused instead.
     resetState();
     auto& tm = TrackManager::getInstance();
 
@@ -832,27 +848,68 @@ TEST_CASE("Pads are put back on the main mix when their grid stops being top lev
     const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
 
     REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
-    REQUIRE(tm.setPadDevice(gridPath, 1, padVoice("Snare")) != INVALID_DEVICE_ID);
     REQUIRE(tm.setPadOutput(gridPath, 0, 1));
-    REQUIRE(tm.setPadOutput(gridPath, 1, 2));
 
-    // Wrapping keeps the pads and their buses, and the grid is no longer a
-    // top-level device.
-    const auto rackId = tm.wrapDeviceInRack(trackId, gridId);
-    REQUIRE(rackId != INVALID_RACK_ID);
+    CHECK(tm.wrapDeviceInRack(trackId, gridId) == INVALID_RACK_ID);
+    CHECK(tm.findDevicePath(gridId) == gridPath);
+    CHECK(tm.getPad(gridPath, 0)->outputIndex == 1);
 
-    const auto nestedGridPath = tm.findDevicePath(gridId);
-    REQUIRE(nestedGridPath.isValid());
-    REQUIRE_FALSE(tm.padBusesAvailable(nestedGridPath));
-    REQUIRE(tm.getPad(nestedGridPath, 0)->outputIndex == 1);
+    // Back on the main mix, it wraps like any other device.
+    REQUIRE(tm.setPadOutput(gridPath, 0, 0));
+    CHECK(tm.wrapDeviceInRack(trackId, gridId) != INVALID_RACK_ID);
+}
 
-    // What the device sync does about it.
-    CHECK(tm.resetPadBuses(nestedGridPath));
-    CHECK(tm.getPad(nestedGridPath, 0)->outputIndex == 0);
-    CHECK(tm.getPad(nestedGridPath, 1)->outputIndex == 0);
+TEST_CASE("Pads on a grid that is already nested are put back on the main mix",
+          "[drumgrid][pads][commands]") {
+    // A project can be loaded with a nested grid whose pads are on buses, from
+    // before the wrap was refused or by hand. Nothing carries a bus off one, so
+    // the device sync puts them back rather than leaving them silent.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto rackId = tm.addRackToTrack(trackId, "Rack");
+    const auto rackChainId = tm.addChainToRack(ChainNodePath::rack(trackId, rackId));
+    const auto rackChainPath = ChainNodePath::chain(trackId, rackId, rackChainId);
+    const auto gridId = tm.addDeviceToChainByPath(rackChainPath, drumGridDevice());
+    const auto gridPath = rackChainPath.withDevice(gridId);
+
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+    REQUIRE(tm.setPadDevice(gridPath, 1, padVoice("Snare")) != INVALID_DEVICE_ID);
+
+    // Straight onto the model, the way a loaded project arrives: the setter
+    // refuses a bus here.
+    REQUIRE_FALSE(tm.setPadOutput(gridPath, 0, 1));
+    tm.getPadChain(gridPath, tm.getPad(gridPath, 0)->id)->outputIndex = 1;
+    tm.getPadChain(gridPath, tm.getPad(gridPath, 1)->id)->outputIndex = 2;
+
+    CHECK(tm.resetPadBuses(gridPath));
+    CHECK(tm.getPad(gridPath, 0)->outputIndex == 0);
+    CHECK(tm.getPad(gridPath, 1)->outputIndex == 0);
 
     // And it says so only when something actually moved.
-    CHECK_FALSE(tm.resetPadBuses(nestedGridPath));
+    CHECK_FALSE(tm.resetPadBuses(gridPath));
+}
+
+TEST_CASE("A pad's bus has to name one the plan can route", "[drumgrid][pads][commands]") {
+    // The live plugin clamps what it is given and the plan compiler takes the
+    // model's value as it finds it, so an out-of-range index makes the two
+    // disagree: the plan reports a bus that reaches no track and silences the
+    // pads on it rather than folding them into the device's own mix.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+
+    CHECK_FALSE(tm.setPadOutput(gridPath, 0, -1));
+    CHECK_FALSE(tm.setPadOutput(gridPath, 0, kPadBusCount));
+    CHECK(tm.getPad(gridPath, 0)->outputIndex == 0);
+
+    CHECK(tm.setPadOutput(gridPath, 0, kPadBusCount - 1));
+    CHECK(tm.getPad(gridPath, 0)->outputIndex == kPadBusCount - 1);
 }
 
 TEST_CASE("A pad chain answering to more than one note can still be deleted",

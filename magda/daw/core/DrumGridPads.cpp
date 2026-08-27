@@ -331,6 +331,14 @@ int padParameterSlot(const ChainInfo& pad) {
     return slot >= 0 && slot < kPadCount ? slot : -1;
 }
 
+bool anyPadOnABus(const DeviceInfo& device) {
+    if (!device.pads)
+        return false;
+
+    return std::ranges::any_of(device.pads->chains,
+                               [](const ChainInfo& pad) { return pad.outputIndex != 0; });
+}
+
 RackId padRackIdFor(DeviceId deviceId) {
     return -(deviceId + 2);
 }

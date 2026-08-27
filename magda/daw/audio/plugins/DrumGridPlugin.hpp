@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 
+#include "core/DrumGridPads.hpp"
 #include "plugins/DeviceServices.hpp"
 
 namespace magda {
@@ -47,8 +48,11 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     static const char* xmlTypeName;
 
     static constexpr int maxPads = 64;
-    static constexpr int baseNote = 24;       // Pad 0 = MIDI note 24 (C0)
-    static constexpr int maxBusOutputs = 32;  // TE RackType max is 64 audio pins = 32 stereo pairs
+    static constexpr int baseNote = 24;  // Pad 0 = MIDI note 24 (C0)
+    // The model's own count, so the plan and the live plugin route from the
+    // same set of buses (magda::kPadBusCount). TE's RackType carries 64 audio
+    // pins, which is 32 stereo pairs.
+    static constexpr int maxBusOutputs = magda::kPadBusCount;
 
     /**
      * @brief Per-pad output gains for a given level and pan position.

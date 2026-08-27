@@ -7,6 +7,7 @@
 #include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "DeviceState.hpp"
+#include "DrumGridPads.hpp"
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
 #include "TrackManager.hpp"
@@ -895,6 +896,12 @@ RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& p
     std::vector<std::pair<int, ChainNodePath>> orderedPaths;
     for (const auto& path : paths) {
         if (!path.isValid() || getParentChainPathForElementPath(path) != sourceChainPath)
+            return INVALID_RACK_ID;
+
+        // Same refusal as the single-device wrap: a pad on a bus would lose its
+        // routing to a clean-up the undo of this move does not cover (#2211).
+        if (const auto* device = getDeviceInChainByPath(path);
+            device != nullptr && anyPadOnABus(*device))
             return INVALID_RACK_ID;
 
         const int index = getChainElementIndex(path);
@@ -1827,6 +1834,14 @@ RackId TrackManager::wrapDeviceInRack(TrackId trackId, DeviceId deviceId,
         return magda::isDevice(e) && magda::getDevice(e).id == deviceId;
     });
     if (it == elements.end())
+        return INVALID_RACK_ID;
+
+    // Refused while a pad is on a bus. Nothing carries a bus off a device inside
+    // a rack, so the move would have to put every pad back on the main mix and
+    // take its child tracks down -- and that clean-up would not be part of the
+    // undoable step the move is, so undoing it would return the device to the
+    // top level with its routing gone for good (#2211).
+    if (anyPadOnABus(magda::getDevice(*it)))
         return INVALID_RACK_ID;
 
     int insertIndex = static_cast<int>(std::distance(elements.begin(), it));

@@ -25,6 +25,40 @@ namespace magda {
 // the model is reached the unambiguous way.
 // ============================================================================
 
+namespace {
+
+/// Drop any selection standing on something inside @p chainPath before it goes.
+///
+/// Every node under it, not only the devices it holds directly: a pad's chain
+/// takes racks like any other chain, and `clearSelectionForDeletedChainNode()`
+/// matches an exact path or a device id rather than an ancestor, so a selection
+/// below a nested rack would survive the erase pointing at freed model (#2211).
+void clearSelectionsUnder(const std::vector<ChainElement>& elements,
+                          const ChainNodePath& chainPath) {
+    auto& selection = SelectionManager::getInstance();
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            selection.clearSelectionForDeletedChainNode(
+                chainPath.withDevice(magda::getDevice(element).id));
+            continue;
+        }
+
+        if (!magda::isRack(element))
+            continue;
+
+        const auto& rack = magda::getRack(element);
+        const auto rackPath = chainPath.withRack(rack.id);
+        for (const auto& chain : rack.chains) {
+            const auto nested = rackPath.withChain(chain.id);
+            clearSelectionsUnder(chain.elements, nested);
+            selection.clearSelectionForDeletedChainNode(nested);
+        }
+        selection.clearSelectionForDeletedChainNode(rackPath);
+    }
+}
+
+}  // namespace
+
 ChainNodePath TrackManager::padChainPath(const ChainNodePath& gridPath, ChainId padChainId) {
     // Flat, and named by the DEVICE's own id: `Rack(gridDeviceId) > Chain(pad)`,
     // whatever the grid itself is nested in.
@@ -220,11 +254,7 @@ DeviceId TrackManager::setPadDevice(const ChainNodePath& gridPath, int padIndex,
     // Dropping an instrument on a pad replaces the pad, effects and all: that
     // is what the pad's slot means. Selections pointing into what is going away
     // are cleared first, the same as any other device removal.
-    const auto chainPath = padChainPath(gridPath, padChainId);
-    for (const auto& element : pad->elements)
-        if (magda::isDevice(element))
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(
-                chainPath.withDevice(magda::getDevice(element).id));
+    clearSelectionsUnder(pad->elements, padChainPath(gridPath, padChainId));
     pad->elements.clear();
 
     // Named after what is on it, which is what the grid shows on the pad.
@@ -250,10 +280,7 @@ void TrackManager::clearPad(const ChainNodePath& gridPath, int padIndex) {
         return;
 
     const auto chainPath = padChainPath(gridPath, pad->id);
-    for (const auto& element : pad->elements)
-        if (magda::isDevice(element))
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(
-                chainPath.withDevice(magda::getDevice(element).id));
+    clearSelectionsUnder(pad->elements, chainPath);
     SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
 
     std::erase_if(pads->chains, [id = pad->id](const ChainInfo& chain) { return chain.id == id; });
@@ -363,6 +390,13 @@ bool TrackManager::resetPadBuses(const ChainNodePath& gridPath) {
 }
 
 bool TrackManager::setPadOutput(const ChainNodePath& gridPath, int padIndex, int outputIndex) {
+    // The bus has to be one that exists. The live plugin clamps what it is
+    // given and the plan compiler takes the model's value as it finds it, so an
+    // out-of-range index makes the two engines disagree: the plan reports a bus
+    // that reaches no track and the pads on it go silent (#2211).
+    if (outputIndex < 0 || outputIndex >= kPadBusCount)
+        return false;
+
     if (outputIndex != 0 && !padBusesAvailable(gridPath))
         return false;
 
@@ -394,10 +428,14 @@ bool TrackManager::padNoteRangeIsFree(const ChainNodePath& gridPath, int padInde
     const auto low = juce::jlimit(0, 127, std::min(lowNote, highNote));
     const auto high = juce::jlimit(0, 127, std::max(lowNote, highNote));
 
-    // Reachable. The grid shows kPadCount pads from kPadBaseNote, and its rows
-    // are built from those notes: a chain moved clear of them keeps playing and
-    // disappears from the UI, with no way left to edit or delete it.
-    if (high < kPadBaseNote || low > kPadBaseNote + kPadCount - 1)
+    // Reachable, at both ends. The grid shows kPadCount pads from kPadBaseNote
+    // and builds its rows from those notes, so a chain reaching outside them
+    // keeps playing and cannot be seen; and `padParameterSlot()` takes the pad's
+    // slot from its bottom note, so a low end below the grid returns -1 and the
+    // plan stops binding the chain's fader and pan to the grid's parameters.
+    // The endpoint sliders offer only these notes, so this is also what keeps
+    // the row's reading of a range honest.
+    if (low < kPadBaseNote || high > kPadBaseNote + kPadCount - 1)
         return false;
 
     // One note, one owner. Every chain whose range covers an incoming note
@@ -452,10 +490,7 @@ void TrackManager::removePadChain(const ChainNodePath& gridPath, ChainId padChai
         return;
 
     const auto chainPath = padChainPath(gridPath, padChainId);
-    for (const auto& element : found->elements)
-        if (magda::isDevice(element))
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(
-                chainPath.withDevice(magda::getDevice(element).id));
+    clearSelectionsUnder(found->elements, chainPath);
     SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
 
     pads->chains.erase(found);
