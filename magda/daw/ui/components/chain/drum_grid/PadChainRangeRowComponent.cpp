@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include "core/DrumGridPads.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -16,9 +17,9 @@ PadChainRangeRowComponent::PadChainRangeRowComponent(int padIndex) : padIndex_(p
     addAndMakeVisible(nameLabel_);
 
     // Helper to set up a note slider (0-127, displayed as note names)
-    auto setupNoteSlider = [this](TextSlider& slider) {
-        slider.setRange(0.0, 127.0, 1.0);
-        slider.setValue(60.0, juce::dontSendNotification);
+    auto setupNoteSlider = [this](TextSlider& slider, int minNote, int maxNote) {
+        slider.setRange(static_cast<double>(minNote), static_cast<double>(maxNote), 1.0);
+        slider.setValue(static_cast<double>(kPadBaseNote), juce::dontSendNotification);
         slider.setShowFillIndicator(false);
         slider.setValueFormatter([](double v) { return midiNoteToName(static_cast<int>(v)); });
         slider.setValueParser([](const juce::String& text) {
@@ -32,13 +33,38 @@ PadChainRangeRowComponent::PadChainRangeRowComponent(int padIndex) : padIndex_(p
         addAndMakeVisible(slider);
     };
 
-    setupNoteSlider(lowNoteSlider_);
-    setupNoteSlider(highNoteSlider_);
-    setupNoteSlider(rootNoteSlider_);
+    // The endpoints reach only the notes the grid shows: a chain retuned clear
+    // of them keeps playing and disappears from the rows, with no way left to
+    // edit or delete it, and the model refuses such a range (#2211).
+    setupNoteSlider(lowNoteSlider_, kPadBaseNote, kPadBaseNote + kPadCount - 1);
+    setupNoteSlider(highNoteSlider_, kPadBaseNote, kPadBaseNote + kPadCount - 1);
 
-    lowNoteSlider_.onValueChanged = [this](double) { fireRangeChanged(); };
-    highNoteSlider_.onValueChanged = [this](double) { fireRangeChanged(); };
-    rootNoteSlider_.onValueChanged = [this](double) { fireRangeChanged(); };
+    // The root is not an endpoint. It is the pitch the range is transposed onto
+    // before the chain sees it (DrumGridPlugin::processChain), so it decides
+    // nothing about reachability and keeps the whole MIDI range: a sample whose
+    // natural pitch sits outside the displayed pads is a valid mapping.
+    setupNoteSlider(rootNoteSlider_, 0, 127);
+
+    // Committed when the drag ends, not on every update. A pad's note range is
+    // model state, and writing it notifies trackDevicesChanged, which rebuilds
+    // the track's chain components: this row and this slider among them.
+    // Firing per update would free the slider before its own mouseUp and cut
+    // the drag off after the first delta (#2211). A typed or clicked value
+    // still commits at once, because that is not a drag.
+    const auto commitIfSettled = [this](TextSlider& slider) {
+        return [this, &slider](double) {
+            if (!slider.isBeingDragged())
+                fireRangeChanged();
+        };
+    };
+
+    lowNoteSlider_.onValueChanged = commitIfSettled(lowNoteSlider_);
+    highNoteSlider_.onValueChanged = commitIfSettled(highNoteSlider_);
+    rootNoteSlider_.onValueChanged = commitIfSettled(rootNoteSlider_);
+
+    lowNoteSlider_.onDragEnd = [this]() { fireRangeChanged(); };
+    highNoteSlider_.onDragEnd = [this]() { fireRangeChanged(); };
+    rootNoteSlider_.onDragEnd = [this]() { fireRangeChanged(); };
 }
 
 PadChainRangeRowComponent::~PadChainRangeRowComponent() = default;

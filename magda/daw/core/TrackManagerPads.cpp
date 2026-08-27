@@ -25,6 +25,40 @@ namespace magda {
 // the model is reached the unambiguous way.
 // ============================================================================
 
+namespace {
+
+/// Drop any selection standing on something inside @p chainPath before it goes.
+///
+/// Every node under it, not only the devices it holds directly: a pad's chain
+/// takes racks like any other chain, and `clearSelectionForDeletedChainNode()`
+/// matches an exact path or a device id rather than an ancestor, so a selection
+/// below a nested rack would survive the erase pointing at freed model (#2211).
+void clearSelectionsUnder(const std::vector<ChainElement>& elements,
+                          const ChainNodePath& chainPath) {
+    auto& selection = SelectionManager::getInstance();
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            selection.clearSelectionForDeletedChainNode(
+                chainPath.withDevice(magda::getDevice(element).id));
+            continue;
+        }
+
+        if (!magda::isRack(element))
+            continue;
+
+        const auto& rack = magda::getRack(element);
+        const auto rackPath = chainPath.withRack(rack.id);
+        for (const auto& chain : rack.chains) {
+            const auto nested = rackPath.withChain(chain.id);
+            clearSelectionsUnder(chain.elements, nested);
+            selection.clearSelectionForDeletedChainNode(nested);
+        }
+        selection.clearSelectionForDeletedChainNode(rackPath);
+    }
+}
+
+}  // namespace
+
 ChainNodePath TrackManager::padChainPath(const ChainNodePath& gridPath, ChainId padChainId) {
     // Flat, and named by the DEVICE's own id: `Rack(gridDeviceId) > Chain(pad)`,
     // whatever the grid itself is nested in.
@@ -38,7 +72,13 @@ ChainNodePath TrackManager::padChainPath(const ChainNodePath& gridPath, ChainId 
     //
     // The synthetic negative id is still what `RackInfo::id` holds, because the
     // plan keys its ops on it and `isPadRackId()` is how the executor tells a
-    // pad rack from an allocated one. `getRackByPath()` resolves either.
+    // pad rack from an allocated one.
+    //
+    // `getRackByPath()` does not resolve this: a pad rack is a field on a
+    // device rather than a chain element, and the Rack step here carries the
+    // device's id rather than the rack's. `getDeviceInChainByPath()` follows it
+    // through `getDeviceInPadByPath()`, tried after the ordinary rack route so
+    // an allocated rack sharing the number is unaffected (#2211).
     return ChainNodePath::chain(gridPath.trackId, gridPath.getDeviceId(), padChainId);
 }
 
@@ -49,6 +89,22 @@ RackInfo* TrackManager::getPads(const ChainNodePath& gridPath) {
 
 const RackInfo* TrackManager::getPads(const ChainNodePath& gridPath) const {
     return const_cast<TrackManager*>(this)->getPads(gridPath);
+}
+
+void TrackManager::setPads(const ChainNodePath& gridPath, const PadRack& pads) {
+    auto* device = getDeviceInChainByPath(gridPath);
+    if (device == nullptr)
+        return;
+
+    device->pads = pads;
+
+    // The rack carries the device's id, and a restored copy has to carry the
+    // id the device has now rather than the one it had when the snapshot was
+    // taken -- a device restored by an undo of its own removal comes back under
+    // the same id, but nothing here depends on that being true.
+    stampPadRackId(*device);
+
+    notifyTrackDevicesChanged(gridPath.trackId);
 }
 
 ChainInfo* TrackManager::getPadChain(const ChainNodePath& gridPath, ChainId padChainId) {
@@ -198,11 +254,7 @@ DeviceId TrackManager::setPadDevice(const ChainNodePath& gridPath, int padIndex,
     // Dropping an instrument on a pad replaces the pad, effects and all: that
     // is what the pad's slot means. Selections pointing into what is going away
     // are cleared first, the same as any other device removal.
-    const auto chainPath = padChainPath(gridPath, padChainId);
-    for (const auto& element : pad->elements)
-        if (magda::isDevice(element))
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(
-                chainPath.withDevice(magda::getDevice(element).id));
+    clearSelectionsUnder(pad->elements, padChainPath(gridPath, padChainId));
     pad->elements.clear();
 
     // Named after what is on it, which is what the grid shows on the pad.
@@ -228,10 +280,7 @@ void TrackManager::clearPad(const ChainNodePath& gridPath, int padIndex) {
         return;
 
     const auto chainPath = padChainPath(gridPath, pad->id);
-    for (const auto& element : pad->elements)
-        if (magda::isDevice(element))
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(
-                chainPath.withDevice(magda::getDevice(element).id));
+    clearSelectionsUnder(pad->elements, chainPath);
     SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
 
     std::erase_if(pads->chains, [id = pad->id](const ChainInfo& chain) { return chain.id == id; });
@@ -310,6 +359,142 @@ void TrackManager::setPadBypassed(const ChainNodePath& gridPath, int padIndex, b
         pad->bypassed = bypassed;
         notifyTrackDevicesChanged(gridPath.trackId);
     }
+}
+
+bool TrackManager::padBusesAvailable(const ChainNodePath& gridPath) const {
+    // A multi-out child track is fed by the output instance
+    // InstrumentRackManager makes when it wraps a top-level instrument. A grid
+    // inside a MAGDA rack is loaded by RackSyncManager instead and has no entry
+    // there, so nothing would carry a bus off it: the pads on that bus would
+    // simply go silent. Refused until that route exists (#2211).
+    return gridPath.getType() == ChainNodeType::TopLevelDevice;
+}
+
+bool TrackManager::resetPadBuses(const ChainNodePath& gridPath) {
+    auto* pads = getPads(gridPath);
+    if (pads == nullptr)
+        return false;
+
+    bool moved = false;
+    for (auto& pad : pads->chains) {
+        if (pad.outputIndex == 0)
+            continue;
+        pad.outputIndex = 0;
+        moved = true;
+    }
+
+    if (moved)
+        notifyTrackDevicesChanged(gridPath.trackId);
+
+    return moved;
+}
+
+bool TrackManager::setPadOutput(const ChainNodePath& gridPath, int padIndex, int outputIndex) {
+    // The bus has to be one that exists. The live plugin clamps what it is
+    // given and the plan compiler takes the model's value as it finds it, so an
+    // out-of-range index makes the two engines disagree: the plan reports a bus
+    // that reaches no track and the pads on it go silent (#2211).
+    if (outputIndex < 0 || outputIndex >= kPadBusCount)
+        return false;
+
+    if (outputIndex != 0 && !padBusesAvailable(gridPath))
+        return false;
+
+    auto* pad = mutablePad(gridPath, padIndex);
+    if (pad == nullptr)
+        return false;
+    if (pad->outputIndex == outputIndex)
+        return true;
+
+    pad->outputIndex = outputIndex;
+
+    // trackDevicesChanged, not trackPropertyChanged: a pad's bus decides
+    // whether the grid needs a multi-out child track for it, and that is
+    // settled by the device sync (PluginManager::syncDrumGridMultiOutTracks).
+    notifyTrackDevicesChanged(gridPath.trackId);
+    return true;
+}
+
+bool TrackManager::padNoteRangeIsFree(const ChainNodePath& gridPath, int padIndex, int lowNote,
+                                      int highNote) const {
+    const auto* pads = getPads(gridPath);
+    if (pads == nullptr)
+        return false;
+
+    const auto* pad = findPadChain(*pads, padIndex);
+    if (pad == nullptr)
+        return false;
+
+    const auto low = juce::jlimit(0, 127, std::min(lowNote, highNote));
+    const auto high = juce::jlimit(0, 127, std::max(lowNote, highNote));
+
+    // Reachable, at both ends. The grid shows kPadCount pads from kPadBaseNote
+    // and builds its rows from those notes, so a chain reaching outside them
+    // keeps playing and cannot be seen; and `padParameterSlot()` takes the pad's
+    // slot from its bottom note, so a low end below the grid returns -1 and the
+    // plan stops binding the chain's fader and pan to the grid's parameters.
+    // The endpoint sliders offer only these notes, so this is also what keeps
+    // the row's reading of a range honest.
+    if (low < kPadBaseNote || high > kPadBaseNote + kPadCount - 1)
+        return false;
+
+    // One note, one owner. Every chain whose range covers an incoming note
+    // plays it, so an overlap layers two sounds the UI has no way to tell
+    // apart: the rows show the last chain to claim a note and the setters
+    // reach the first, so a row would edit a chain other than the one it
+    // shows. Refused rather than silently normalised, so the row snaps back
+    // to what the model kept.
+    for (const auto& other : pads->chains)
+        if (other.id != pad->id && !other.answersToEveryNote() && low <= other.highNote &&
+            high >= other.lowNote)
+            return false;
+
+    return true;
+}
+
+bool TrackManager::setPadNoteRange(const ChainNodePath& gridPath, int padIndex, int lowNote,
+                                   int highNote, int rootNote) {
+    auto* pads = getPads(gridPath);
+    if (pads == nullptr)
+        return false;
+
+    auto* pad = findPadChain(*pads, padIndex);
+    if (pad == nullptr)
+        return false;
+
+    const auto low = juce::jlimit(0, 127, std::min(lowNote, highNote));
+    const auto high = juce::jlimit(0, 127, std::max(lowNote, highNote));
+    const auto root = juce::jlimit(0, 127, rootNote);
+
+    if (pad->lowNote == low && pad->highNote == high && pad->rootNote == root)
+        return true;
+
+    if (!padNoteRangeIsFree(gridPath, padIndex, low, high))
+        return false;
+
+    pad->lowNote = low;
+    pad->highNote = high;
+    pad->rootNote = root;
+    notifyTrackDevicesChanged(gridPath.trackId);
+    return true;
+}
+
+void TrackManager::removePadChain(const ChainNodePath& gridPath, ChainId padChainId) {
+    auto* pads = getPads(gridPath);
+    if (pads == nullptr)
+        return;
+
+    const auto found = std::ranges::find_if(
+        pads->chains, [padChainId](const ChainInfo& chain) { return chain.id == padChainId; });
+    if (found == pads->chains.end())
+        return;
+
+    const auto chainPath = padChainPath(gridPath, padChainId);
+    clearSelectionsUnder(found->elements, chainPath);
+    SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
+
+    pads->chains.erase(found);
+    notifyTrackDevicesChanged(gridPath.trackId);
 }
 
 ChainInfo* TrackManager::mutablePad(const ChainNodePath& gridPath, int padIndex) {

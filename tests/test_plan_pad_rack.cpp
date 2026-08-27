@@ -8,6 +8,7 @@
 #include "core/TrackInfo.hpp"
 #include "exec/PlanValues.hpp"
 #include "exec/RuntimeStateStore.hpp"
+#include "param/ModSources.hpp"
 #include "param/ParamKey.hpp"
 #include "param/ParamTableCompiler.hpp"
 #include "plan/PlanCompiler.hpp"
@@ -478,4 +479,33 @@ TEST_CASE("A macro on a pad device's parameter resolves", "[engine][plan][padrac
     const auto key = magda::engine::paramKeyFor(link.target);
     REQUIRE(key.has_value());
     CHECK(table.find(*key) != magda::engine::INVALID_PARAM_ID);
+}
+
+TEST_CASE("A modifier on a pad device is collected as a modulation source",
+          "[engine][plan][padrack]") {
+    // A pad device is an ordinary DeviceInfo since #2207, so it can own a
+    // modifier. Before #2211 the collection walk stopped at the Drum Grid, so
+    // the plan carried no edge for one and the tap it reads was never emitted
+    // (#2204: the same question answered by a dozen separate walks).
+    constexpr DeviceId kDrumGrid = 10;
+    constexpr DeviceId kPadDevice = 101;
+
+    auto drumGrid = makeDrumGrid(kDrumGrid, {makePad(0, 36, 36, 60, kPadDevice)});
+
+    magda::ModInfo follower;
+    follower.id = 1;
+    follower.name = "Follower";
+    follower.type = magda::ModType::Follower;
+    follower.enabled = true;
+    follower.tapPoint = magda::ModTapPoint::PostFader;
+    getDevice(drumGrid.pads->chains[0].elements[0]).mods.push_back(follower);
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(std::move(drumGrid));
+
+    std::set<magda::engine::ModTap> taps;
+    std::set<TrackId> notes;
+    magda::engine::collectModulationTaps(track, taps, notes);
+
+    CHECK(taps.contains(magda::engine::ModTap{track.id, magda::ModTapPoint::PostFader}));
 }

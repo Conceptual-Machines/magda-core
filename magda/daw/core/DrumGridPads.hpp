@@ -33,6 +33,15 @@ struct RackInfo;
 constexpr int kPadCount = 64;
 constexpr int kPadBaseNote = 24;
 
+/// How many outputs a pad can be sent to: 0 is the grid's own mix, 1 upwards
+/// are multi-out buses. `DrumGridPlugin::maxBusOutputs` is the same number,
+/// from the same limit (a TE RackType carries 64 audio pins, so 32 stereo
+/// pairs). Here as well because the model is what the plan compiler routes
+/// from, and the two engines have to agree on which buses exist: the live
+/// plugin clamps what it is given, and the plan takes the model's value as it
+/// finds it, so an out-of-range one reaches no track and silences its pads.
+constexpr int kPadBusCount = 32;
+
 /// True when devices of this type keep their chains as pads.
 bool isPadRackDevice(const juce::String& pluginId);
 
@@ -61,6 +70,15 @@ int padNoteFor(int padIndex);
 /// added first can hold chain 0 and still drive slot 17. Anything binding a pad
 /// to those parameters has to ask the same question the device does.
 int padParameterSlot(const ChainInfo& pad);
+
+/// True when any of @p device's pads plays out of a multi-out bus rather than
+/// the device's own mix.
+///
+/// Asked before a structural move that would take the device somewhere buses do
+/// not work. Refusing the move is what keeps the assignment: normalising it
+/// afterwards would be undone by nothing, because the move is one undoable step
+/// and the normalisation would not be part of it (#2211).
+bool anyPadOnABus(const DeviceInfo& device);
 
 /// Point `device.pads->id` at whatever `device.id` currently is. No-op for a
 /// device with no pads.

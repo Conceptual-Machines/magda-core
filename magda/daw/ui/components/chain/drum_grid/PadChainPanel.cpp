@@ -3,6 +3,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
+#include "core/TrackManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -122,7 +123,15 @@ void PadChainPanel::updateLinkContext() {
 
 void PadChainPanel::applyLinkContextToSlot(PadDeviceSlot& slot, const PluginSlotInfo& info) {
     if (info.deviceId != magda::INVALID_DEVICE_ID) {
-        auto pluginPath = magda::ChainNodePath::topLevelDevice(devicePath_.trackId, info.deviceId);
+        // The address the pad device actually has, asked of the model rather
+        // than manufactured. ParamTableCompiler keys a pad device under the
+        // owning grid's DeviceId, and so does every link a project has saved,
+        // so a link made from a top-level path would name a parameter the
+        // table does not carry (#2211). The manufactured path is kept as the
+        // fallback for a slot whose device is not in the model yet.
+        auto pluginPath = magda::TrackManager::getInstance().findDevicePath(info.deviceId);
+        if (!pluginPath.isValid())
+            pluginPath = magda::ChainNodePath::topLevelDevice(devicePath_.trackId, info.deviceId);
         DBG("[PadChainLink] apply pad=" << currentPadIndex_ << " pluginDevice=" << info.deviceId
                                         << " sampler=" << yesNo(info.isSampler)
                                         << " target=" << linkPathString(pluginPath)

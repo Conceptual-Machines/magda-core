@@ -460,6 +460,17 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     RackInfo* getPads(const ChainNodePath& gridPath);
     const RackInfo* getPads(const ChainNodePath& gridPath) const;
 
+    /// The pad device @p devicePath names, or null when it names none.
+    ///
+    /// `getDeviceInChainByPath()` falls back to this, so a pad path resolves
+    /// through the generic lookup like any other device path (#2211).
+    DeviceInfo* getDeviceInPadByPath(const ChainNodePath& devicePath);
+
+    /// Replace those pads wholesale. Undo's counterpart to every pad edit
+    /// below, which is why it lives with them rather than on the command
+    /// (`EditPadsCommand`, #2211).
+    void setPads(const ChainNodePath& gridPath, const PadRack& pads);
+
     /// The pad chain answering to pad @p padIndex, or null.
     const ChainInfo* getPad(const ChainNodePath& gridPath, int padIndex) const;
 
@@ -491,6 +502,56 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setPadMuted(const ChainNodePath& gridPath, int padIndex, bool muted);
     void setPadSolo(const ChainNodePath& gridPath, int padIndex, bool solo);
     void setPadBypassed(const ChainNodePath& gridPath, int padIndex, bool bypassed);
+
+    /// Which output a pad plays out of: 0 is the grid's own mix, 1+ a multi-out
+    /// bus. `ChainInfo::outputIndex`, the same field a rack chain routes with.
+    ///
+    /// False, and refused, for a bus on a grid that is not a top-level device.
+    /// A multi-out child track is fed by an output instance the instrument rack
+    /// manager makes for a wrapped top-level instrument; a grid inside a MAGDA
+    /// rack is loaded by RackSyncManager and has no such entry, so the bus
+    /// would name a track nothing reaches (#2211).
+    bool setPadOutput(const ChainNodePath& gridPath, int padIndex, int outputIndex);
+
+    /// Whether a bus can be assigned to @p gridPath's pads at all.
+    bool padBusesAvailable(const ChainNodePath& gridPath) const;
+
+    /// Put every pad back on the grid's own mix. True when any of them moved.
+    ///
+    /// A grid can cross into a placement where buses do not work after the
+    /// assignment was made -- `wrapDeviceInRack()` moves it into a rack and
+    /// keeps its pads -- and a project can be loaded already in that state. The
+    /// device sync calls this so a pad never stays pointed at a bus nothing
+    /// carries (#2211).
+    bool resetPadBuses(const ChainNodePath& gridPath);
+
+    /// Whether @p padIndex's chain could take this range: inside the grid's own
+    /// notes, and clear of every other pad chain's. Asked before the edit so a
+    /// refused range does not become an undo step that changed nothing.
+    bool padNoteRangeIsFree(const ChainNodePath& gridPath, int padIndex, int lowNote,
+                            int highNote) const;
+
+    /// The notes a pad answers to, and the one its sampler is rooted on.
+    ///
+    /// A pad is keyed by pitch, so this is the one pad property with no rack
+    /// equivalent: a plain chain answers to everything.
+    ///
+    /// Refused, and false, when the range would reach a note another pad chain
+    /// already answers to. A note has one owner: the grid plays every chain
+    /// whose range covers an incoming note, and the rows, the faders and the
+    /// switches all address a pad by finding the chain covering its note, so a
+    /// second claimant would leave a row editing a chain other than the one it
+    /// shows (#2211).
+    bool setPadNoteRange(const ChainNodePath& gridPath, int padIndex, int lowNote, int highNote,
+                         int rootNote);
+
+    /// Take a pad chain off the grid by id, whatever range it answers to.
+    ///
+    /// `clearPad()` is the pad's own delete and leaves a chain shared with
+    /// neighbouring pads alone. This is the chain's: a row stands for a chain,
+    /// so its delete has to be able to remove one that answers to more than a
+    /// single note.
+    void removePadChain(const ChainNodePath& gridPath, ChainId padChainId);
 
     /// The pad chain answering to pad @p padIndex, made if it is not there yet.
     /// INVALID_CHAIN_ID when the device does not keep its chains as pads.

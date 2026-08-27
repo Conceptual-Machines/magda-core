@@ -24,6 +24,17 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
     levelSlider_.onValueChanged = [this](double value) {
         if (onLevelChanged)
             onLevelChanged(padIndex_, static_cast<float>(value));
+        // A typed value or a reset has no drag to end, so it closes its own
+        // gesture here (#2211).
+        if (!levelSlider_.isBeingDragged() && onFaderGestureEnd)
+            onFaderGestureEnd();
+    };
+    // The fader writes the model as it moves, so the sound follows the mouse.
+    // The drag's end is reported separately: it closes the undo step the moves
+    // coalesce into (#2211).
+    levelSlider_.onDragEnd = [this]() {
+        if (onFaderGestureEnd)
+            onFaderGestureEnd();
     };
     addAndMakeVisible(levelSlider_);
 
@@ -34,6 +45,12 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
     panSlider_.onValueChanged = [this](double value) {
         if (onPanChanged)
             onPanChanged(padIndex_, static_cast<float>(value));
+        if (!panSlider_.isBeingDragged() && onFaderGestureEnd)
+            onFaderGestureEnd();
+    };
+    panSlider_.onDragEnd = [this]() {
+        if (onFaderGestureEnd)
+            onFaderGestureEnd();
     };
     addAndMakeVisible(panSlider_);
 

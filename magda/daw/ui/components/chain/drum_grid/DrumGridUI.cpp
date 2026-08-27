@@ -18,6 +18,8 @@ namespace te = tracktion::engine;
 
 namespace magda::daw::ui {
 
+std::atomic<int> DrumGridUI::nextFaderGesture_{0};
+
 // =============================================================================
 // PadButton
 // =============================================================================
@@ -260,7 +262,13 @@ DrumGridUI::DrumGridUI() {
     levelSlider_.onValueChanged = [this](double value) {
         if (onPadLevelChanged)
             onPadLevelChanged(selectedPad_, static_cast<float>(value));
+        // A typed value or a reset has no drag to end, so it closes its own
+        // gesture here. Without this, two typed values on the same fader keep
+        // the same token and fold into one undo step (#2211).
+        if (!levelSlider_.isBeingDragged())
+            endFaderGesture();
     };
+    levelSlider_.onDragEnd = [this]() { endFaderGesture(); };
     addAndMakeVisible(levelSlider_);
 
     // Pan slider (-1 to +1)
@@ -287,7 +295,10 @@ DrumGridUI::DrumGridUI() {
     panSlider_.onValueChanged = [this](double value) {
         if (onPadPanChanged)
             onPadPanChanged(selectedPad_, static_cast<float>(value));
+        if (!panSlider_.isBeingDragged())
+            endFaderGesture();
     };
+    panSlider_.onDragEnd = [this]() { endFaderGesture(); };
     addAndMakeVisible(panSlider_);
 
     // Mute/Solo buttons
@@ -531,6 +542,8 @@ void DrumGridUI::setSelectedPad(int padIndex) {
         int rowChainIdx = padInfos_[static_cast<size_t>(rowPad)].chainIndex;
         row->setSelected(rowChainIdx >= 0 && rowChainIdx == selectedChainIdx);
     }
+
+    refreshRangeRows();
 
     // Scroll chains viewport to show the selected row
     for (auto& row : chainRows_) {
@@ -781,6 +794,21 @@ void DrumGridUI::resized() {
             row->setBounds(0, y, containerWidth, PadChainRowComponent::ROW_HEIGHT);
             chainsContainer_.addAndMakeVisible(*row);
             y += PadChainRowComponent::ROW_HEIGHT + 2;
+
+            // The selected chain's key range sits directly under it. The
+            // others are built but never laid out, so they stay out of the
+            // container's children.
+            if (!row->isSelected())
+                continue;
+
+            for (auto& rangeRow : rangeRows_) {
+                if (rangeRow->getPadIndex() != row->getPadIndex())
+                    continue;
+                rangeRow->setBounds(0, y, containerWidth, PadChainRangeRowComponent::ROW_HEIGHT);
+                chainsContainer_.addAndMakeVisible(*rangeRow);
+                y += PadChainRangeRowComponent::ROW_HEIGHT + 2;
+                break;
+            }
         }
         chainsContainer_.setSize(containerWidth, juce::jmax(y, chainsArea.getHeight()));
     } else {
@@ -934,6 +962,7 @@ void DrumGridUI::itemDropped(const SourceDetails& details) {
 
 void DrumGridUI::rebuildChainRows() {
     chainRows_.clear();
+    rangeRows_.clear();
     chainsContainer_.removeAllChildren();
 
     // Build rows from padInfos — one row per pad that has a chain
@@ -974,6 +1003,7 @@ void DrumGridUI::rebuildChainRows() {
             if (onPadPanChanged)
                 onPadPanChanged(padIndex, val);
         };
+        row->onFaderGestureEnd = [this]() { endFaderGesture(); };
         row->onMuteChanged = [this](int padIndex, bool val) {
             padInfos_[static_cast<size_t>(padIndex)].mute = val;
             if (onPadMuteChanged)
@@ -1009,14 +1039,52 @@ void DrumGridUI::rebuildChainRows() {
                 onPadOutputChanged(padIndex, busIndex);
         };
 
-        row->setSelected(i == selectedPad_);
+        // By chain, the same comparison setSelectedPad() makes. A row is named
+        // by the lowest pad its chain covers, so selecting any other note of a
+        // ranged chain left the next rebuild unselecting its only row, and the
+        // range editor under it went unlaid out (#2211).
+        row->setSelected(info.chainIndex >= 0 &&
+                         info.chainIndex ==
+                             padInfos_[static_cast<size_t>(selectedPad_)].chainIndex);
         chainRows_.push_back(std::move(row));
+
+        // --- Key range row ---
+        //
+        // One per chain, laid out only under the selected one. A pad is keyed
+        // by pitch, so its range has to be editable somewhere, and showing a
+        // row for every chain would double the panel for a field most pads
+        // never move off their own note. Built here rather than on selection
+        // because selection is changed from a row's own mouseUp: rebuilding
+        // there would destroy the component mid-callback.
+        auto rangeRow = std::make_unique<PadChainRangeRowComponent>(i);
+        rangeRow->setSelected(true);
+        rangeRow->onRangeChanged = [this](int padIndex, int low, int high, int root) {
+            if (onPadRangeChanged)
+                onPadRangeChanged(padIndex, low, high, root);
+        };
+        rangeRows_.push_back(std::move(rangeRow));
     }
+
+    refreshRangeRows();
 
     resized();
     repaint();
     if (onLayoutChanged)
         onLayoutChanged();
+}
+
+void DrumGridUI::endFaderGesture() {
+    faderGesture_ = nextFaderGesture_.fetch_add(1);
+}
+
+void DrumGridUI::refreshRangeRows() {
+    if (!getNoteRange)
+        return;
+
+    for (auto& rangeRow : rangeRows_) {
+        const auto [lowNote, highNote, rootNote] = getNoteRange(rangeRow->getPadIndex());
+        rangeRow->updateFromChain("Range", lowNote, highNote, rootNote);
+    }
 }
 
 void DrumGridUI::showPadContextMenu(int padIndex, juce::Point<int> screenPos) {

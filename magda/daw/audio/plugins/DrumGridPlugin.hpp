@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 
+#include "core/DrumGridPads.hpp"
 #include "plugins/DeviceServices.hpp"
 
 namespace magda {
@@ -47,8 +48,11 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     static const char* xmlTypeName;
 
     static constexpr int maxPads = 64;
-    static constexpr int baseNote = 24;       // Pad 0 = MIDI note 24 (C0)
-    static constexpr int maxBusOutputs = 32;  // TE RackType max is 64 audio pins = 32 stereo pairs
+    static constexpr int baseNote = 24;  // Pad 0 = MIDI note 24 (C0)
+    // The model's own count, so the plan and the live plugin route from the
+    // same set of buses (magda::kPadBusCount). TE's RackType carries 64 audio
+    // pins, which is 32 stereo pairs.
+    static constexpr int maxBusOutputs = magda::kPadBusCount;
 
     /**
      * @brief Per-pad output gains for a given level and pan position.
@@ -198,13 +202,11 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
         mixerExpanded_ = expanded;
     }
 
-    // Multi-out mode toggle (persisted in ValueTree). A pad's bus is
-    // `ChainInfo::outputIndex` and is assigned in the model like every other
-    // pad property; this is the grid's own switch, not a pad's (#2207).
-    bool isMultiOutEnabled() const {
-        return multiOutEnabled_.get();
-    }
-
+    // A pad's bus is `ChainInfo::outputIndex`, assigned in the model like every
+    // other pad property, and the device sync turns a pad on a bus into a
+    // multi-out child track. There is no second switch in front of that: the
+    // `multiOutEnabled` flag that used to be here gated `assignBusOutputs()`,
+    // which #2207 removed, and nothing ever wrote or read either (#2211).
     int getNumOutputChannels() const {
         return maxBusOutputs * 2;
     }
@@ -340,7 +342,6 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     std::array<ChainMeterData, maxPads> chainMeters_{};
     std::array<std::array<ChainMeterData, maxFxPerChain>, maxPads> pluginMeters_{};
     juce::CachedValue<bool> mixerExpanded_;
-    juce::CachedValue<bool> multiOutEnabled_;
 
     // Audio processing state
     te::MidiMessageArray chainMidi_;
@@ -367,7 +368,6 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     static const juce::Identifier padBypassedId;
     static const juce::Identifier busOutputId;
     static const juce::Identifier mixerExpandedId;
-    static const juce::Identifier multiOutEnabledId;
     /// The model DeviceId of the pad device a plugin was built for, stamped by
     /// the sync. The mirror carries no other model state: everything else is
     /// read from the `RackInfo` each pass (#2207).

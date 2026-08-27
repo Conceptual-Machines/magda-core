@@ -2971,9 +2971,25 @@ void PluginManager::syncDrumGridMultiOutTracks(const ChainNodePath& drumGridPath
     const auto trackId = drumGridPath.trackId;
     const auto deviceId = drumGridPath.getDeviceId();
     auto& tm = TrackManager::getInstance();
-    auto* devInfo = tm.getDevice(trackId, deviceId);
+
+    // By path, not by (track, device): the flat lookup misses a grid nested in
+    // a rack, which is a placement the model supports and the pad bus selector
+    // can now reach (#2211).
+    auto* devInfo = tm.getDeviceInChainByPath(drumGridPath);
     if (!devInfo || !devInfo->multiOut.isMultiOut)
         return;
+
+    // A grid can arrive here in a placement where buses do not work: wrapping a
+    // top-level one in a rack moves it and keeps its pads, and a project can be
+    // loaded already like that. Nothing carries a bus off a nested grid, so a
+    // pad left on one would simply go silent, and any child track it had made
+    // would linger with nothing feeding it. Put the pads back on the grid's own
+    // mix and take the children down.
+    if (!tm.padBusesAvailable(drumGridPath)) {
+        tm.resetPadBuses(drumGridPath);
+        tm.deactivateAllMultiOutPairs(trackId, deviceId);
+        return;
+    }
 
     auto& pairs = devInfo->multiOut.outputPairs;
     const auto& chains = drumGrid->getChains();

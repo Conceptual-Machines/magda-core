@@ -41,13 +41,11 @@ const juce::Identifier DrumGridPlugin::padSoloId("padSolo");
 const juce::Identifier DrumGridPlugin::padBypassedId("padBypassed");
 const juce::Identifier DrumGridPlugin::busOutputId("busOutput");
 const juce::Identifier DrumGridPlugin::mixerExpandedId("mixerExpanded");
-const juce::Identifier DrumGridPlugin::multiOutEnabledId("multiOutEnabled");
 const juce::Identifier DrumGridPlugin::pluginDeviceIdProp("magdaDeviceId");
 
 //==============================================================================
 DrumGridPlugin::DrumGridPlugin(const te::PluginCreationInfo& info) : Plugin(info) {
     mixerExpanded_.referTo(state, mixerExpandedId, getUndoManager(), false);
-    multiOutEnabled_.referTo(state, multiOutEnabledId, getUndoManager(), false);
 
     // Register AutomatableParameters for all 64 pads (fixed slots for stable macro/mod indexing)
     for (int i = 0; i < maxPads; ++i) {
@@ -751,7 +749,6 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
     }
 
     mixerExpanded_.forceUpdateOfCachedValue();
-    multiOutEnabled_.forceUpdateOfCachedValue();
 }
 
 void DrumGridPlugin::syncParamFromChain(const Chain& chain) {

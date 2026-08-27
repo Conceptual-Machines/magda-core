@@ -4,11 +4,13 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
+#include <atomic>
 #include <functional>
 #include <memory>
 
 #include "custom_ui/SamplerUI.hpp"
 #include "drum_grid/PadChainPanel.hpp"
+#include "drum_grid/PadChainRangeRowComponent.hpp"
 #include "drum_grid/PadChainRowComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -95,6 +97,13 @@ class DrumGridUI : public juce::Component,
     /** Called when pad pan changes. (padIndex, pan -1..1) */
     std::function<void(int, float)> onPadPanChanged;
 
+    /** Which fader drag the level and pan callbacks currently belong to.
+        Bumped when a drag ends, so consecutive gestures on the same fader are
+        separate undo steps rather than one merged run (#2211). */
+    int getFaderGesture() const {
+        return faderGesture_;
+    }
+
     /** Called when pad mute changes. (padIndex, muted) */
     std::function<void(int, bool)> onPadMuteChanged;
 
@@ -148,6 +157,10 @@ class DrumGridUI : public juce::Component,
 
     /** Rebuild visible chain rows from padInfos_. */
     void rebuildChainRows();
+
+    /** Re-read the key range rows from the model. Called after an edit the
+        model refused, so the row shows the range it actually kept (#2211). */
+    void refreshRangeRows();
 
     /** Show or hide the chains panel. */
     void setChainsPanelVisible(bool visible);
@@ -237,6 +250,15 @@ class DrumGridUI : public juce::Component,
     };
 
     std::array<PadInfo, kTotalPads> padInfos_;
+
+    // Process-wide and monotonic. A token local to one DrumGridUI restarts at
+    // zero every time the component is rebuilt -- reopening the device UI,
+    // switching tracks -- and none of that is an undoable action, so the last
+    // fader command can still be on top of the undo stack when the first drag
+    // in the new UI arrives. Reusing the token would fold two sessions into
+    // one step (#2211).
+    static std::atomic<int> nextFaderGesture_;
+    int faderGesture_ = nextFaderGesture_.fetch_add(1);
     int selectedPad_ = 0;
     int currentPage_ = 0;
 
@@ -283,6 +305,10 @@ class DrumGridUI : public juce::Component,
     juce::Viewport chainsViewport_;
     juce::Component chainsContainer_;
     std::vector<std::unique_ptr<PadChainRowComponent>> chainRows_;
+    // One per chain row, laid out only under the selected one. Built with the
+    // rows rather than on selection: selection changes from a row's own
+    // mouseUp, and rebuilding there would free the component mid-callback.
+    std::vector<std::unique_ptr<PadChainRangeRowComponent>> rangeRows_;
     std::unique_ptr<magda::SvgButton> chainsToggleButton_;
 
     // Paint rects (set in resized, used in paint)
@@ -302,6 +328,9 @@ class DrumGridUI : public juce::Component,
     //==============================================================================
     void setDetailCollapsed(bool collapsed);
     void refreshPadButtons();
+
+    /// Close the current fader gesture, so the next edit is a new undo step.
+    void endFaderGesture();
     void refreshDetailPanel();
     void goToPrevPage();
     void goToNextPage();
