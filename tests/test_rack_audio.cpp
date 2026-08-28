@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "../magda/daw/core/DrumGridPads.hpp"
 #include "../magda/daw/core/RackInfo.hpp"
 #include "../magda/daw/core/TrackManager.hpp"
 
@@ -517,4 +518,131 @@ TEST_CASE("Rack audio sync: recursive device search", "[rack_audio][recursive_se
         REQUIRE(isDevice(track->chain.fxChainElements[0]));
         REQUIRE(isRack(track->chain.fxChainElements[1]));
     }
+}
+
+// ============================================================================
+// One recursive re-key (#2221)
+//
+// Duplication, preset import, rack presets and chain presets each grew their
+// own, and two of the four stopped at the device rather than descending into
+// the pads it owns. A preset carrying a Drum Grid therefore brought the
+// preset's pad DeviceIds into a live project, where they collide with whatever
+// already holds them, and left the pad rack id derived from the id the grid had
+// in the preset rather than the one it has now.
+// ============================================================================
+
+namespace {
+
+/// A Drum Grid carrying one pad device, both under ids the caller chooses.
+DeviceInfo presetGridWithPad(DeviceId gridId, DeviceId padDeviceId) {
+    DeviceInfo grid;
+    grid.id = gridId;
+    grid.name = "Drum Grid";
+    grid.pluginId = "drumgrid";
+    grid.format = PluginFormat::Internal;
+    grid.isInstrument = true;
+    grid.deviceType = DeviceType::Instrument;
+
+    auto& pads = ensurePads(grid);
+    ChainInfo pad;
+    pad.id = 1;
+
+    DeviceInfo voice;
+    voice.id = padDeviceId;
+    voice.name = "Kick";
+    voice.pluginId = "magdasampler";
+    voice.format = PluginFormat::Internal;
+    voice.isInstrument = true;
+    voice.deviceType = DeviceType::Instrument;
+    pad.elements.push_back(makeDeviceElement(voice));
+
+    pads.chains.push_back(std::move(pad));
+    stampPadRackId(grid);
+    return grid;
+}
+
+}  // namespace
+
+TEST_CASE("A rack preset re-keys the pads of a device it carries",
+          "[rack_audio][rack_presets][pads]") {
+    RackAudioTestFixture fixture;
+    auto& tm = fixture.tm();
+
+    const auto trackId = tm.createTrack("Rack Preset Target");
+    const auto liveRackId = tm.addRackToTrack(trackId, "Live Rack");
+    const auto liveRackPath = ChainNodePath::rack(trackId, liveRackId);
+
+    // A live device whose id the preset's pad device also claims, so leaving the
+    // pad un-keyed puts two devices in one project under one id.
+    DeviceInfo occupant;
+    occupant.name = "Delay";
+    occupant.pluginId = "delay";
+    occupant.format = PluginFormat::Internal;
+    const auto occupantId = tm.addDeviceToTrack(trackId, occupant);
+    REQUIRE(occupantId != INVALID_DEVICE_ID);
+
+    RackInfo presetRack;
+    presetRack.id = 90;
+    presetRack.name = "Preset Rack";
+    ChainInfo presetChain;
+    presetChain.id = 91;
+    presetChain.elements.push_back(makeDeviceElement(presetGridWithPad(92, occupantId)));
+    presetRack.chains.push_back(std::move(presetChain));
+
+    REQUIRE(tm.applyRackPreset(liveRackPath, presetRack));
+
+    auto* liveRack = tm.getRackByPath(liveRackPath);
+    REQUIRE(liveRack != nullptr);
+    REQUIRE(liveRack->chains.size() == 1);
+    REQUIRE(liveRack->chains[0].elements.size() == 1);
+
+    const auto& grid = getDevice(liveRack->chains[0].elements[0]);
+    REQUIRE(static_cast<bool>(grid.pads));
+    REQUIRE(grid.pads->chains.size() == 1);
+    REQUIRE(grid.pads->chains[0].elements.size() == 1);
+    const auto& padDevice = getDevice(grid.pads->chains[0].elements[0]);
+
+    // The grid got a fresh id, and so did the device on its pad.
+    CHECK(grid.id != 92);
+    CHECK(padDevice.id != occupantId);
+    CHECK(padDevice.id != grid.id);
+
+    // And the pad rack id follows the id the grid has now, which is what every
+    // pad path is built from.
+    CHECK(grid.pads->id == padRackIdFor(grid.id));
+}
+
+TEST_CASE("A chain preset re-keys the pads of a device it carries",
+          "[rack_audio][track_presets][pads]") {
+    RackAudioTestFixture fixture;
+    auto& tm = fixture.tm();
+
+    const auto trackId = tm.createTrack("Chain Preset Target");
+
+    DeviceInfo occupant;
+    occupant.name = "Delay";
+    occupant.pluginId = "delay";
+    occupant.format = PluginFormat::Internal;
+    const auto occupantId = tm.addDeviceToTrack(trackId, occupant);
+    REQUIRE(occupantId != INVALID_DEVICE_ID);
+
+    std::vector<ChainElement> presetElements;
+    presetElements.push_back(makeDeviceElement(presetGridWithPad(200, occupantId)));
+
+    REQUIRE(tm.applyChainPreset(trackId, std::move(presetElements)));
+
+    auto* track = tm.getTrack(trackId);
+    REQUIRE(track != nullptr);
+    REQUIRE(track->chain.fxChainElements.size() == 1);
+
+    const auto& grid = getDevice(track->chain.fxChainElements[0]);
+    REQUIRE(static_cast<bool>(grid.pads));
+    REQUIRE(grid.pads->chains.size() == 1);
+    REQUIRE(grid.pads->chains[0].elements.size() == 1);
+    const auto& padDevice = getDevice(grid.pads->chains[0].elements[0]);
+
+    CHECK(grid.id != 200);
+    CHECK(padDevice.id != occupantId);
+    CHECK(padDevice.id != grid.id);
+    CHECK(grid.pads->id == padRackIdFor(grid.id));
 }

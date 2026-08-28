@@ -715,48 +715,15 @@ static void reassignCopiedElementIds(TrackManager& tm, std::vector<ChainElement>
     PresetIdRemap remap;
     remap.trackId = targetTrackId;
 
-    std::function<void(std::vector<ChainElement>&)> reassignIds;
-    reassignIds = [&](std::vector<ChainElement>& items) {
-        for (auto& element : items) {
-            if (magda::isDevice(element)) {
-                auto& device = magda::getDevice(element);
-                const auto oldId = device.id;
-                device.id = tm.allocateDeviceId();
-                remap.devices[oldId] = device.id;
+    // The shared walk: fresh ids for every device, rack and chain, pads
+    // included, with the synthetic pad rack id recorded so a link naming one can
+    // be followed (#2221).
+    ChainIdRemap ids;
+    tm.reassignChainElementIds(elements, ids);
+    remap.devices = std::move(ids.devices);
+    remap.racks = std::move(ids.racks);
+    remap.chains = std::move(ids.chains);
 
-                // A pad-per-chain device's pads are its own: their DeviceIds and
-                // the rack id derived from the owner's would otherwise key the
-                // ops of the device this was copied from, and the copy's links
-                // would still name the original's pads. Pad chain ids are
-                // rack-local and stay as they are, which is what keeps a macro,
-                // a mod or an automation lane naming one still naming it.
-                if (device.pads) {
-                    stampPadRackId(device);
-
-                    // A pad's own elements are re-keyed by the ordinary walk:
-                    // the devices on it land in `remap.devices` like any other,
-                    // and its chain id is rack-local and stays as it is, which
-                    // is what keeps a macro, a mod or an automation lane naming
-                    // one still naming it.
-                    for (auto& pad : device.pads->chains)
-                        reassignIds(pad.elements);
-                }
-            } else if (magda::isRack(element)) {
-                auto& rack = magda::getRack(element);
-                const auto oldRackId = rack.id;
-                rack.id = tm.allocateRackId();
-                remap.racks[oldRackId] = rack.id;
-                for (auto& chain : rack.chains) {
-                    const auto oldChainId = chain.id;
-                    chain.id = tm.allocateChainId();
-                    remap.chains[oldChainId] = chain.id;
-                    reassignIds(chain.elements);
-                }
-            }
-        }
-    };
-
-    reassignIds(elements);
     remapPresetLinksRecursive(elements, remap);
 }
 
@@ -1799,6 +1766,53 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
     return true;
 }
 
+void TrackManager::reassignChainElementIds(std::vector<ChainElement>& elements,
+                                           ChainIdRemap& remap) {
+    for (auto& element : elements) {
+        if (magda::isDevice(element)) {
+            auto& device = magda::getDevice(element);
+            const auto oldDeviceId = device.id;
+            device.id = allocateDeviceId();
+            remap.devices[oldDeviceId] = device.id;
+
+            if (!device.pads)
+                continue;
+
+            // A device's pads are a rack it owns, and their contents are chain
+            // elements like any other, so they are re-keyed by the same walk.
+            // Two of the four walkers this replaces stopped at the device and
+            // left a preset's pad DeviceIds in a live project.
+            //
+            // The pad rack's own id is derived from the device's, so it moves
+            // with it. Recorded, because a stored link can name it and there is
+            // otherwise nothing to follow it by.
+            remap.racks[padRackIdFor(oldDeviceId)] = padRackIdFor(device.id);
+            stampPadRackId(device);
+
+            // Pad chain ids are rack-local and stay as they are, which is what
+            // keeps a link naming a pad still naming it.
+            for (auto& pad : device.pads->chains)
+                reassignChainElementIds(pad.elements, remap);
+            continue;
+        }
+
+        if (!magda::isRack(element))
+            continue;
+
+        auto& rack = magda::getRack(element);
+        const auto oldRackId = rack.id;
+        rack.id = allocateRackId();
+        remap.racks[oldRackId] = rack.id;
+
+        for (auto& chain : rack.chains) {
+            const auto oldChainId = chain.id;
+            chain.id = allocateChainId();
+            remap.chains[oldChainId] = chain.id;
+            reassignChainElementIds(chain.elements, remap);
+        }
+    }
+}
+
 bool TrackManager::applyRackPreset(const ChainNodePath& rackPath, const RackInfo& presetRack) {
     auto* live = getRackByPath(rackPath);
     if (!live) {
@@ -1816,37 +1830,21 @@ bool TrackManager::applyRackPreset(const ChainNodePath& rackPath, const RackInfo
     remap.racks[presetRack.id] = preservedId;
 
     // Reassign every chain / device / nested-rack id under this rack so the
-    // freshly-loaded subtree doesn't collide with other live elements'
-    // runtime IDs. Macros and mods are indexed within their parent and don't
-    // need reassignment. Mirrors the recursive walk in duplicateTrack.
-    std::function<void(std::vector<ChainElement>&)> reassignIds;
-    reassignIds = [&](std::vector<ChainElement>& elements) {
-        for (auto& element : elements) {
-            if (magda::isDevice(element)) {
-                auto& device = magda::getDevice(element);
-                const auto oldId = device.id;
-                device.id = nextFxDeviceId_++;
-                remap.devices[oldId] = device.id;
-            } else if (magda::isRack(element)) {
-                auto& nested = magda::getRack(element);
-                const auto oldRackId = nested.id;
-                nested.id = nextRackId_++;
-                remap.racks[oldRackId] = nested.id;
-                for (auto& chain : nested.chains) {
-                    const auto oldChainId = chain.id;
-                    chain.id = nextChainId_++;
-                    remap.chains[oldChainId] = chain.id;
-                    reassignIds(chain.elements);
-                }
-            }
-        }
-    };
+    // freshly-loaded subtree doesn't collide with other live elements' runtime
+    // IDs. Macros and mods are indexed within their parent and don't need
+    // reassignment. Through the shared walk, which descends into a device's
+    // pads: this one used not to, so a rack preset holding a Drum Grid brought
+    // the preset's pad DeviceIds in with it (#2221).
+    ChainIdRemap ids;
     for (auto& chain : live->chains) {
         const auto oldChainId = chain.id;
-        chain.id = nextChainId_++;
-        remap.chains[oldChainId] = chain.id;
-        reassignIds(chain.elements);
+        chain.id = allocateChainId();
+        ids.chains[oldChainId] = chain.id;
+        reassignChainElementIds(chain.elements, ids);
     }
+    remap.devices.merge(ids.devices);
+    remap.racks.merge(ids.racks);
+    remap.chains.merge(ids.chains);
     remapRackPresetLinks(*live, remap);
 
     // Trigger a full track resync — AudioBridge::trackDevicesChanged tears
@@ -1862,33 +1860,15 @@ bool TrackManager::applyChainPreset(TrackId trackId, std::vector<ChainElement> p
     }
 
     // Reassign every chain / device / nested-rack id in the preset so they
-    // don't collide with other live elements' runtime IDs. Same recursive
-    // walk applyRackPreset uses.
+    // don't collide with other live elements' runtime IDs, through the shared
+    // walk. This one used not to descend into a device's pads either (#2221).
     PresetIdRemap remap;
     remap.trackId = trackId;
-    std::function<void(std::vector<ChainElement>&)> reassignIds;
-    reassignIds = [&](std::vector<ChainElement>& elements) {
-        for (auto& element : elements) {
-            if (magda::isDevice(element)) {
-                auto& device = magda::getDevice(element);
-                const auto oldId = device.id;
-                device.id = nextFxDeviceId_++;
-                remap.devices[oldId] = device.id;
-            } else if (magda::isRack(element)) {
-                auto& nested = magda::getRack(element);
-                const auto oldRackId = nested.id;
-                nested.id = nextRackId_++;
-                remap.racks[oldRackId] = nested.id;
-                for (auto& chain : nested.chains) {
-                    const auto oldChainId = chain.id;
-                    chain.id = nextChainId_++;
-                    remap.chains[oldChainId] = chain.id;
-                    reassignIds(chain.elements);
-                }
-            }
-        }
-    };
-    reassignIds(presetElements);
+    ChainIdRemap ids;
+    reassignChainElementIds(presetElements, ids);
+    remap.devices = std::move(ids.devices);
+    remap.racks = std::move(ids.racks);
+    remap.chains = std::move(ids.chains);
     remapPresetLinksRecursive(presetElements, remap);
 
     track->chain.fxChainElements = std::move(presetElements);
