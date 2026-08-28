@@ -88,7 +88,7 @@ bool fromVar(const juce::var& v, ChainNodePath& out) {
             if (!readRequiredInt(*stepObj, "type", rawType))
                 return false;
             if (rawType < static_cast<int>(ChainStepType::Rack) ||
-                rawType > static_cast<int>(ChainStepType::Segment))
+                rawType > static_cast<int>(ChainStepType::PadChain))
                 return false;
 
             ChainPathStep step;
@@ -106,9 +106,30 @@ bool fromVar(const juce::var& v, ChainNodePath& out) {
                     return false;
             }
 
+            // The pad steps come as a leading pair. A pad path names its owning
+            // grid by DeviceId rather than by a route to it, so PadRack is always
+            // step 0 and PadChain always step 1; accepting either anywhere else
+            // would readmit exactly the ambiguity the types exist to remove.
+            if (step.type == ChainStepType::PadRack && i != 0)
+                return false;
+            if (step.type == ChainStepType::PadChain &&
+                (i != 1 || path.steps.front().type != ChainStepType::PadRack))
+                return false;
+            if (i == 1 && path.steps.front().type == ChainStepType::PadRack &&
+                step.type != ChainStepType::PadChain)
+                return false;
+
             path.steps.push_back(step);
         }
     }
+
+    // A PadRack with nothing after it is not an address. The pair is the whole
+    // point: alone, the step names the pad rack, which nothing resolves, and
+    // getType() would report the path as an ordinary Rack whose id is a
+    // DeviceId, which is the ambiguity the types exist to remove. The in-loop
+    // checks cannot catch it, because there is no second step to check.
+    if (!path.steps.empty() && path.steps.back().type == ChainStepType::PadRack)
+        return false;
 
     if (obj->hasProperty("isTrackLevel")) {
         const auto flag = obj->getProperty("isTrackLevel");

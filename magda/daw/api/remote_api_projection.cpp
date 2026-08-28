@@ -450,6 +450,15 @@ DevicePathDto makeDevicePathDto(const ChainNodePath& path) {
             case ChainStepType::Device:
                 dto.steps.push_back({"device", step.id});
                 break;
+            case ChainStepType::PadRack:
+                // The id is the owning Drum Grid's DeviceId, not a RackId; the
+                // public step type says so rather than leaving a client to
+                // guess from position (#2219).
+                dto.steps.push_back({"pad_rack", step.id});
+                break;
+            case ChainStepType::PadChain:
+                dto.steps.push_back({"pad_chain", step.id});
+                break;
             case ChainStepType::Segment:
                 // Non-leading segments are not produced by any factory; drop
                 // rather than emit a step type the public contract lacks.
@@ -482,6 +491,10 @@ std::optional<ChainNodePath> toChainNodePath(const DevicePathDto& dto) {
             path.steps.push_back({ChainStepType::Chain, step.id});
         else if (step.type == "device")
             path.steps.push_back({ChainStepType::Device, step.id});
+        else if (step.type == "pad_rack")
+            path.steps.push_back({ChainStepType::PadRack, step.id});
+        else if (step.type == "pad_chain")
+            path.steps.push_back({ChainStepType::PadChain, step.id});
         else
             return std::nullopt;
     }

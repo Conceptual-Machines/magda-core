@@ -20,7 +20,7 @@ ChainSegment segmentOf(const magda::ChainNodePath& path) {
 /// at rack scope.
 RackId lastRackOf(const magda::ChainNodePath& path) {
     for (auto step = path.steps.rbegin(); step != path.steps.rend(); ++step)
-        if (step->type == magda::ChainStepType::Rack)
+        if (magda::isRackStep(step->type))
             return step->id;
     return INVALID_RACK_ID;
 }

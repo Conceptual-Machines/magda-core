@@ -17,12 +17,11 @@ namespace magda {
 // path and takes `DeviceInfo::pads`.
 //
 // Never through a Rack step. A pad's engine address spells the rack component
-// with the grid's own DeviceId (`padChainPath`), and rack ids and device ids
-// come out of counters that both start at 1, so `Rack(1)` is as much rack 1 as
-// it is Drum Grid 1's pads. Resolving a pad edit that way would send it to an
-// unrelated rack whenever the two numbers met. The address is kept for what it
-// has always been used for, an exact-match key and a stored link target, and
-// the model is reached the unambiguous way.
+// with the grid's own DeviceId, under the distinct `PadRack`/`PadChain` step
+// types (`padChainPath`). Rack ids and device ids come out of counters that
+// both start at 1, so an untyped `Rack(1)` would be as much rack 1 as it is
+// Drum Grid 1's pads; the types keep the two apart without anyone having to
+// inspect the model or count steps (#2219).
 // ============================================================================
 
 namespace {
@@ -60,26 +59,23 @@ void clearSelectionsUnder(const std::vector<ChainElement>& elements,
 }  // namespace
 
 ChainNodePath TrackManager::padChainPath(const ChainNodePath& gridPath, ChainId padChainId) {
-    // Flat, and named by the DEVICE's own id: `Rack(gridDeviceId) > Chain(pad)`,
-    // whatever the grid itself is nested in.
+    // Flat, and named by the DEVICE's own id: `PadRack(gridDeviceId) >
+    // PadChain(pad)`, whatever the grid itself is nested in.
     //
-    // This is the shape a pad device's address has always had, and three other
-    // things build or store it: the ADSR macro links the slicer generates
-    // (ClipCommands), the addresses the native parameter table compiles
-    // (ParamTableCompiler), and every link a project has already saved. A
-    // plugin lookup is an exact path match, so a different spelling here would
-    // leave all of them pointing at nothing (#2207).
+    // The step types say which id is which, so a resolver or a remapper never
+    // has to infer pad ownership from the path's shape and can never confuse a
+    // grid's DeviceId with the RackId of an allocated rack sharing the number
+    // (#2219).
     //
     // The synthetic negative id is still what `RackInfo::id` holds, because the
     // plan keys its ops on it and `isPadRackId()` is how the executor tells a
     // pad rack from an allocated one.
     //
     // `getRackByPath()` does not resolve this: a pad rack is a field on a
-    // device rather than a chain element, and the Rack step here carries the
-    // device's id rather than the rack's. `getDeviceInChainByPath()` follows it
-    // through `getDeviceInPadByPath()`, tried after the ordinary rack route so
-    // an allocated rack sharing the number is unaffected (#2211).
-    return ChainNodePath::chain(gridPath.trackId, gridPath.getDeviceId(), padChainId);
+    // device rather than a chain element. `getDeviceInChainByPath()` follows it
+    // through `getDeviceInPadByPath()`, which now dispatches on the step type
+    // rather than trying the pad route as a fallback.
+    return ChainNodePath::padChain(gridPath.trackId, gridPath.getDeviceId(), padChainId);
 }
 
 RackInfo* TrackManager::getPads(const ChainNodePath& gridPath) {

@@ -17,21 +17,11 @@ namespace magda {
 
 namespace {
 
-struct PresetPadRemap {
-    DeviceId newOwnerId = INVALID_DEVICE_ID;
-    std::map<DeviceId, DeviceId> devices;
-    /// The owner's pad chain ids. Unchanged by copying, and what tells a pad
-    /// prefix from a rack that merely shares the owner's number.
-    std::set<ChainId> chains;
-};
-
 struct PresetIdRemap {
     TrackId trackId = INVALID_TRACK_ID;
     std::map<DeviceId, DeviceId> devices;
     std::map<RackId, RackId> racks;
     std::map<ChainId, ChainId> chains;
-    /// Keyed by the OLD DeviceId of the device that owns the pads.
-    std::map<DeviceId, PresetPadRemap> pads;
 };
 
 template <typename Id> bool remapId(std::map<Id, Id> const& ids, int& value) {
@@ -39,65 +29,6 @@ template <typename Id> bool remapId(std::map<Id, Id> const& ids, int& value) {
     if (it == ids.end())
         return false;
     value = it->second;
-    return true;
-}
-
-/// Rewrite @p path if it addresses a pad device, and say whether it did.
-///
-/// The same shape `remapDuplicatedPadPath()` handles for a duplicated track,
-/// and for the same reason: a pad device's address is
-/// `Rack(gridDeviceId) > Chain(pad) > Device(padDevice)`, and none of its steps
-/// may go through the ordinary maps. The rack step is a DeviceId, and rack ids
-/// come out of a counter that also starts at 1; the chain step is a pad chain
-/// id, rack-local and untouched by copying. Both ends are matched before either
-/// is rewritten, so a link merely passing through a rack numbered like a grid
-/// is left to the ordinary remap (#2211).
-bool remapPresetPadPath(ChainNodePath& path, const PresetIdRemap& remap) {
-    if (path.steps.size() < 3 || path.steps[0].type != ChainStepType::Rack ||
-        path.steps[1].type != ChainStepType::Chain)
-        return false;
-
-    const auto owner = remap.pads.find(path.steps[0].id);
-    if (owner == remap.pads.end())
-        return false;
-
-    // A pad device, named directly by the pad's chain.
-    if (path.steps.size() == 3 && path.steps[2].type == ChainStepType::Device) {
-        const auto device = owner->second.devices.find(path.steps[2].id);
-        if (device == owner->second.devices.end())
-            return false;
-
-        path.trackId = remap.trackId;
-        path.steps[0].id = owner->second.newOwnerId;
-        path.steps[2].id = device->second;
-        return true;
-    }
-
-    // Or something further down, inside a rack the pad's chain holds. The
-    // prefix is still the pad's and still has to come from the pad map; what
-    // follows is an ordinary route and was re-keyed with the ordinary ones.
-    if (!owner->second.chains.contains(path.steps[1].id))
-        return false;
-
-    path.trackId = remap.trackId;
-    path.steps[0].id = owner->second.newOwnerId;
-
-    for (std::size_t index = 2; index < path.steps.size(); ++index) {
-        auto& step = path.steps[index];
-        switch (step.type) {
-            case ChainStepType::Rack:
-                remapId(remap.racks, step.id);
-                break;
-            case ChainStepType::Chain:
-                remapId(remap.chains, step.id);
-                break;
-            case ChainStepType::Device:
-                remapId(remap.devices, step.id);
-                break;
-            case ChainStepType::Segment:
-                break;
-        }
-    }
     return true;
 }
 
@@ -127,11 +58,6 @@ void retargetPresetLinks(MacroArray& macros, ModArray& mods, DeviceId presetDevi
 void remapPresetPath(ChainNodePath& path, const PresetIdRemap& remap) {
     bool touched = false;
 
-    // Pads first, and nothing else runs for one: every step of a pad path would
-    // be moved by the wrong map.
-    if (remapPresetPadPath(path, remap))
-        return;
-
     if (path.isTrackLevel) {
         path.trackId = remap.trackId;
         return;
@@ -151,6 +77,15 @@ void remapPresetPath(ChainNodePath& path, const PresetIdRemap& remap) {
             case ChainStepType::Device:
                 touched = remapId(remap.devices, step.id) || touched;
                 break;
+            case ChainStepType::PadRack:
+                // A PadRack step carries the owning grid's DeviceId, so it moves
+                // with the devices map like any other device id. Saying so in
+                // the type is what removed the shape-matching pad remapper this
+                // used to need (#2219).
+                touched = remapId(remap.devices, step.id) || touched;
+                break;
+            case ChainStepType::PadChain:
+                break;  // Pad chain ids are rack-local and survive the copy
             case ChainStepType::Segment:
                 break;  // Segment steps carry no remappable ID
         }
@@ -772,26 +707,14 @@ static void reassignCopiedElementIds(TrackManager& tm, std::vector<ChainElement>
                 // a mod or an automation lane naming one still naming it.
                 if (device.pads) {
                     stampPadRackId(device);
-                    auto& padRemap = remap.pads[oldId];
-                    padRemap.newOwnerId = device.id;
 
-                    for (auto& pad : device.pads->chains) {
-                        padRemap.chains.insert(pad.id);
-
-                        // The devices directly on the pad are the ones a pad
-                        // path names, so their old ids are noted before the walk
-                        // replaces them. Anything deeper is inside an ordinary
-                        // rack and goes through the ordinary maps.
-                        std::vector<DeviceId> padDeviceIds;
-                        for (const auto& padElement : pad.elements)
-                            if (magda::isDevice(padElement))
-                                padDeviceIds.push_back(magda::getDevice(padElement).id);
-
+                    // A pad's own elements are re-keyed by the ordinary walk:
+                    // the devices on it land in `remap.devices` like any other,
+                    // and its chain id is rack-local and stays as it is, which
+                    // is what keeps a macro, a mod or an automation lane naming
+                    // one still naming it.
+                    for (auto& pad : device.pads->chains)
                         reassignIds(pad.elements);
-
-                        for (const auto padDeviceId : padDeviceIds)
-                            padRemap.devices[padDeviceId] = remap.devices[padDeviceId];
-                    }
                 }
             } else if (magda::isRack(element)) {
                 auto& rack = magda::getRack(element);
@@ -1272,6 +1195,12 @@ DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath
         return nullptr;
     }
 
+    // A typed pad address says outright that its owner step is a DeviceId, so
+    // it goes straight to the pad route rather than walking a rack tree that
+    // cannot contain it (#2219).
+    if (devicePath.isPadOwned())
+        return getDeviceInPadByPath(devicePath);
+
     // Otherwise, device is inside a chain
     if (auto* chain = getChainFromPath(*this, chainPath)) {
         for (auto& element : chain->elements) {
@@ -1281,28 +1210,36 @@ DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath
         }
     }
 
+    // Last: an untyped pad address from a project saved before the pad step
+    // types. Ordering is the tie-break, as it always was.
     return getDeviceInPadByPath(devicePath);
 }
 
 DeviceInfo* TrackManager::getDeviceInPadByPath(const ChainNodePath& devicePath) {
-    // A pad device's chain is not in the rack tree. Its address spells the Rack
-    // step with the owning device's id, and a pad rack is `DeviceInfo::pads`
-    // rather than a chain element, so `getRackByPath()` cannot follow it and
-    // was never meant to (#2207).
+    // A pad device's chain is not in the rack tree. Its address names the
+    // owning device by that device's own id, and a pad rack is
+    // `DeviceInfo::pads` rather than a chain element, so `getRackByPath()`
+    // cannot follow it and was never meant to (#2207).
     //
-    // Tried only after the ordinary route has failed, so an allocated rack that
-    // shares the number resolves exactly as it did before. That ordering is
-    // what makes this unambiguous rather than a guess: every device in the
-    // Rack > Chain > Device space comes out of one counter, so the leaf id
-    // names one device in the whole project, and whichever route reaches it
-    // reaches the same one (#2211).
-    // `Rack(gridDeviceId) > Chain(pad)` is the synthetic prefix; everything past
-    // it is an ordinary route, because a pad's chain holds racks like any other
+    // `PadRack(gridDeviceId) > PadChain(pad)` is the prefix; everything past it
+    // is an ordinary route, because a pad's chain holds racks like any other
     // chain does and every walk that reaches a pad recurses through them.
+    //
+    // Two spellings are accepted. The typed one is what `padChainPath()` builds
+    // and what `getDeviceInChainByPath()` dispatches on directly, because the
+    // types say the leading id is a DeviceId and no allocated rack can be
+    // confused with it. The untyped `Rack > Chain` one is what projects saved
+    // before the pad step types carry; `migrateStagedPadPaths()` retypes those
+    // on load, and until a project is re-saved this still resolves them, tried
+    // only after the ordinary rack route has failed so an allocated rack
+    // sharing the number wins exactly as it used to (#2219).
     if (devicePath.steps.size() < 3)
         return nullptr;
-    if (devicePath.steps[0].type != ChainStepType::Rack ||
-        devicePath.steps[1].type != ChainStepType::Chain)
+    const bool typed = devicePath.steps[0].type == ChainStepType::PadRack &&
+                       devicePath.steps[1].type == ChainStepType::PadChain;
+    const bool legacy = devicePath.steps[0].type == ChainStepType::Rack &&
+                        devicePath.steps[1].type == ChainStepType::Chain;
+    if (!typed && !legacy)
         return nullptr;
 
     auto* track = getTrack(devicePath.trackId);
@@ -1318,6 +1255,66 @@ DeviceInfo* TrackManager::getDeviceInPadByPath(const ChainNodePath& devicePath) 
             return followChainSteps(pad.elements, devicePath, 2);
 
     return nullptr;
+}
+
+ChainInfo* TrackManager::getChainInPadByPath(const ChainNodePath& chainPath) {
+    // `PadRack(gridDeviceId) > PadChain(pad)` and then ordinary `Rack > Chain`
+    // pairs: a pad's chain holds racks like any other chain does, and their
+    // chains are addressable. Stopping at the pad chain would leave
+    // `getElementContainerForChainPath()` unable to name them, so copy, move,
+    // remove, wrap, insert and paste could not act on anything inside a rack
+    // nested under a pad even though device lookup resolves the same route
+    // (#2219).
+    if (!chainPath.isPadOwned() || chainPath.steps.size() < 2 ||
+        chainPath.getPadChainId() == INVALID_CHAIN_ID)
+        return nullptr;
+
+    // The tail is whole pairs, and the address ends on the chain it names.
+    if ((chainPath.steps.size() - 2) % 2 != 0)
+        return nullptr;
+
+    auto* track = getTrack(chainPath.trackId);
+    if (track == nullptr)
+        return nullptr;
+
+    auto* owner = findPadOwner(track->chain.fxChainElements, chainPath.getPadOwnerDeviceId());
+    if (owner == nullptr)
+        return nullptr;
+
+    ChainInfo* current = nullptr;
+    for (auto& pad : owner->pads->chains) {
+        if (pad.id == chainPath.getPadChainId()) {
+            current = &pad;
+            break;
+        }
+    }
+    if (current == nullptr)
+        return nullptr;
+
+    for (std::size_t index = 2; index < chainPath.steps.size(); index += 2) {
+        const auto& rackStep = chainPath.steps[index];
+        const auto& chainStep = chainPath.steps[index + 1];
+        if (rackStep.type != ChainStepType::Rack || chainStep.type != ChainStepType::Chain)
+            return nullptr;
+
+        ChainInfo* next = nullptr;
+        for (auto& element : current->elements) {
+            if (!magda::isRack(element) || magda::getRack(element).id != rackStep.id)
+                continue;
+            for (auto& chain : magda::getRack(element).chains) {
+                if (chain.id == chainStep.id) {
+                    next = &chain;
+                    break;
+                }
+            }
+            break;
+        }
+        if (next == nullptr)
+            return nullptr;
+        current = next;
+    }
+
+    return current;
 }
 
 const DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath) const {

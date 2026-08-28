@@ -63,7 +63,7 @@ ChainNodePath DefaultChainContext::focusedMacroOwner() const {
             return path;
         case ChainNodeType::Chain: {
             for (int i = static_cast<int>(path.steps.size()) - 1; i >= 0; --i) {
-                if (path.steps[i].type == ChainStepType::Rack) {
+                if (isRackStep(path.steps[i].type)) {
                     ChainNodePath rackPath;
                     rackPath.trackId = path.trackId;
                     rackPath.steps.assign(path.steps.begin(), path.steps.begin() + i + 1);
