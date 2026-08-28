@@ -997,54 +997,15 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
     remap.oldTrackId = trackId;
     remap.newTrackId = newTrack.id;
 
-    std::function<void(std::vector<ChainElement>&)> reassignIds;
-    reassignIds = [&](std::vector<ChainElement>& elements) {
-        for (auto& element : elements) {
-            if (magda::isDevice(element)) {
-                auto& device = magda::getDevice(element);
-                const auto oldDeviceId = device.id;
-                device.id = nextFxDeviceId_++;
-                remap.devices[oldDeviceId] = device.id;
-
-                // The pads a device owns are keyed on its id too, so they are
-                // re-keyed with it: left alone, the duplicate's pad devices
-                // would share the original's runtime, and its pad rack id would
-                // no longer be the one derived from its device id, which is how
-                // every pad path is built (#2207).
-                if (device.pads) {
-                    // The synthetic negative id is what `RackInfo::id` holds and
-                    // is safe in the shared rack map. The grid's own DeviceId,
-                    // which is what a pad path spells its owner step with, moves
-                    // with the devices map above instead -- a PadRack step says
-                    // it is a DeviceId, so nothing has to keep a second map to
-                    // tell it apart from a rack sharing the number (#2219).
-                    remap.racks[padRackIdFor(oldDeviceId)] = padRackIdFor(device.id);
-
-                    stampPadRackId(device);
-
-                    // A pad's own elements are re-keyed by the ordinary walk:
-                    // the devices on it land in `remap.devices` like any other,
-                    // and its chain id is rack-local and stays as it is, which
-                    // is what keeps a macro, a mod or an automation lane naming
-                    // one still naming it.
-                    for (auto& pad : device.pads->chains)
-                        reassignIds(pad.elements);
-                }
-            } else if (magda::isRack(element)) {
-                auto& rack = magda::getRack(element);
-                const auto oldRackId = rack.id;
-                rack.id = nextRackId_++;
-                remap.racks[oldRackId] = rack.id;
-                for (auto& chain : rack.chains) {
-                    const auto oldChainId = chain.id;
-                    chain.id = nextChainId_++;
-                    remap.chains[oldChainId] = chain.id;
-                    reassignIds(chain.elements);
-                }
-            }
-        }
-    };
-    reassignIds(newTrack.chain.fxChainElements);
+    // The shared walk. The duplicate's devices, racks, chains and pads all get
+    // fresh ids: left alone, the copy's pad devices would share the original's
+    // runtime, and its pad rack id would no longer be the one derived from its
+    // device id, which is how every pad path is built (#2207, #2221).
+    ChainIdRemap ids;
+    reassignChainElementIds(newTrack.chain.fxChainElements, ids);
+    remap.devices = std::move(ids.devices);
+    remap.racks = std::move(ids.racks);
+    remap.chains = std::move(ids.chains);
     remapDuplicatedLinks(newTrack.macros, newTrack.mods, ChainNodePath::trackLevel(newTrack.id),
                          remap);
     remapDuplicatedElements(newTrack.chain.fxChainElements, ChainNodePath::trackLevel(newTrack.id),

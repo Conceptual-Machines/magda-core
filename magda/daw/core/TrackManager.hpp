@@ -8,6 +8,7 @@
 #include <mutex>
 #include <vector>
 
+#include "ChainIdRemap.hpp"
 #include "ChainNode.hpp"
 #include "SelectionManager.hpp"
 #include "TrackInfo.hpp"
@@ -264,6 +265,25 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void previewNote(TrackId trackId, int noteNumber, int velocity, bool isNoteOn);
 
     // ========================================================================
+    // ========================================================================
+    // Structural re-keying (#2221)
+    // ========================================================================
+
+    /// Give every device, rack and chain in @p elements a fresh id, recording
+    /// what moved where in @p remap.
+    ///
+    /// The one recursive re-key. Duplication, preset import, rack presets and
+    /// chain presets each grew their own, and they drifted: two of the four did
+    /// not descend into a device's pads, so a preset carrying a Drum Grid
+    /// brought the preset's pad DeviceIds into a live project, and only one of
+    /// the four recorded the synthetic pad rack id so a link naming it could be
+    /// followed. Anything with the same job calls this instead of writing a
+    /// fifth (#2221).
+    ///
+    /// Ids only. Links inside the subtree are followed afterwards from @p remap,
+    /// because who owns them differs by caller.
+    void reassignChainElementIds(std::vector<ChainElement>& elements, ChainIdRemap& remap);
+
     // Multi-output management
     //
     // A pair's child track is owned by the child track: `TrackInfo::multiOutLink`
