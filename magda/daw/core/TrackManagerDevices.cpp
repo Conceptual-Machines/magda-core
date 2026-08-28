@@ -830,11 +830,22 @@ PlacementRefusal TrackManager::checkPlacement(const PlacementRequest& request) c
     }
 
     // A pad on a bus is carried by the output instance made for a top-level
-    // instrument. Nowhere else carries one, so the move would have to put every
-    // pad back on the main mix and take its child tracks down, and that clean-up
-    // is not part of the undoable step (#2211).
-    if (anyPadOnABusInSubtree(*request.subtree))
-        return PlacementRefusal::PadOnABus;
+    // instrument. Nowhere else carries one, so a destination that is not a
+    // track's own list would silently drop the routing, and leaving the track
+    // the buses were realised on would leave its child tracks behind. Neither
+    // clean-up is part of the undoable step (#2211).
+    //
+    // A source-less reconstruction is neither: a paste, or an undo putting a
+    // deleted device back, owns no child tracks and leaves no track. Refusing it
+    // would have made undoing the deletion of a routed grid restore nothing at
+    // all, silently, because the callers discard the result (#2221).
+    if (anyPadOnABusInSubtree(*request.subtree)) {
+        const bool hasSource = request.sourcePath.trackId != INVALID_TRACK_ID;
+        const bool leavesItsTrack =
+            hasSource && request.destination.trackId != request.sourcePath.trackId;
+        if (!request.destinationIsTrackTopLevel || leavesItsTrack)
+            return PlacementRefusal::PadOnABus;
+    }
 
     // And the same for a multi-out pair: the child track's link names the track
     // the device stands on, so moving it strands the link, and a device off the
@@ -897,8 +908,8 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
     const bool sameContainer = sourceElements == destinationElements;
 
     // One question, asked before anything is mutated (#2221).
-    if (checkPlacement({&*sourceIt, sourceElementPath, destinationChainPath, !sameContainer}) !=
-        PlacementRefusal::Allowed)
+    if (checkPlacement({&*sourceIt, sourceElementPath, destinationChainPath, !sameContainer,
+                        destinationChainPath.steps.empty()}) != PlacementRefusal::Allowed)
         return false;
 
     const int sourceIndex = static_cast<int>(std::distance(sourceElements->begin(), sourceIt));
@@ -1004,7 +1015,9 @@ bool TrackManager::insertChainElementsByPath(const ChainNodePath& destinationCha
     // the rules keyed on where they came from pass and the ones about what is
     // being placed still apply (#2221).
     for (const auto& element : elements) {
-        if (checkPlacement({&element, {}, destinationChainPath, true}) != PlacementRefusal::Allowed)
+        if (checkPlacement(
+                {&element, {}, destinationChainPath, true, destinationChainPath.steps.empty()}) !=
+            PlacementRefusal::Allowed)
             return false;
     }
 
@@ -1039,8 +1052,8 @@ RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& p
         // whether a pad was on a bus, so wrapping a multi-out instrument
         // stranded the child tracks a move of it refuses to strand (#2221).
         if (const auto* element = findChainElement(*this, path);
-            element != nullptr &&
-            checkPlacement({element, path, sourceChainPath, true}) != PlacementRefusal::Allowed)
+            element != nullptr && checkPlacement({element, path, sourceChainPath, true, false}) !=
+                                      PlacementRefusal::Allowed)
             return INVALID_RACK_ID;
 
         const int index = getChainElementIndex(path);
@@ -2068,7 +2081,8 @@ RackId TrackManager::wrapDeviceInRack(TrackId trackId, DeviceId deviceId,
     // on a bus, so wrapping a multi-out instrument stranded the child tracks a
     // move of it refuses to strand (#2211, #2221).
     if (checkPlacement({&*it, ChainNodePath::topLevelDevice(trackId, deviceId),
-                        ChainNodePath::trackLevel(trackId), true}) != PlacementRefusal::Allowed)
+                        ChainNodePath::trackLevel(trackId), true, false}) !=
+        PlacementRefusal::Allowed)
         return INVALID_RACK_ID;
 
     int insertIndex = static_cast<int>(std::distance(elements.begin(), it));
@@ -2121,7 +2135,7 @@ RackId TrackManager::wrapDeviceInRackByPath(const ChainNodePath& devicePath,
     // A nested device can drive multi-out child tracks too, and wrapping moves
     // it into a container it was not in, so this is a placement change like any
     // other and was going round the boundary (#2221).
-    if (checkPlacement({&*it, devicePath, chainPath, true}) != PlacementRefusal::Allowed)
+    if (checkPlacement({&*it, devicePath, chainPath, true, false}) != PlacementRefusal::Allowed)
         return INVALID_RACK_ID;
 
     int insertIndex = static_cast<int>(std::distance(elements.begin(), it));

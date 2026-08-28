@@ -33,9 +33,18 @@ enum class PlacementRefusal {
  */
 struct PlacementRequest {
     const ChainElement* subtree = nullptr;  ///< The element being placed
-    ChainNodePath sourcePath;               ///< Where it is now, addressed
-    ChainNodePath destination;              ///< The chain it is going into
+    /// Where it is now. Empty for a source-less reconstruction: a paste, or an
+    /// undo restoring a device that was deleted. Such a subtree owns no child
+    /// tracks and is leaving no track, so the rules keyed on where it came from
+    /// do not apply to it.
+    ChainNodePath sourcePath;
+    ChainNodePath destination;  ///< The chain it is going into
     bool leavesItsContainer = true;
+    /// Whether it lands directly in a track's own list, which is where the
+    /// output instance that carries a multi-out bus is made. False for a rack
+    /// chain, a pad chain, and for a wrap, whose destination is a rack that does
+    /// not exist yet and so cannot be described by a path.
+    bool destinationIsTrackTopLevel = false;
 };
 
 /// A one-line reason for @p refusal, for logs and diagnostics.
