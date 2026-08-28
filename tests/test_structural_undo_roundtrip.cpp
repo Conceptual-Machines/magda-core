@@ -1,15 +1,15 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "magda/daw/core/ClipManager.hpp"
+#include "StructuralRoundTrip.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
 #include "magda/daw/core/RackInfo.hpp"
-#include "magda/daw/core/SelectionManager.hpp"
 #include "magda/daw/core/TrackCommands.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
-#include "magda/daw/project/serialization/ProjectSerializer.hpp"
 
 using namespace magda;
+using magda::structural_test::resetState;
+using magda::structural_test::snapshot;
 
 // Undo of a structural edit restores the serialized model exactly (#2221).
 //
@@ -19,23 +19,12 @@ using namespace magda;
 // out, a link retargeted and not put back, a notification without a matching
 // mutation are all invisible to a test that only checks the device is present
 // again. Comparing the serialized track is what catches them.
+//
+// Each case here is one bug that was found this way. The generated sweep over
+// every operation, container and subject is in test_structural_matrix.cpp
+// (#2229), against this same oracle.
 
 namespace {
-
-void resetState() {
-    ClipManager::getInstance().clearAllClips();
-    TrackManager::getInstance().clearAllTracks();
-    SelectionManager::getInstance().clearSelection();
-    UndoManager::getInstance().clearHistory();
-}
-
-/// Every track, serialized, in order. The comparison subject.
-juce::String snapshot() {
-    juce::Array<juce::var> tracks;
-    for (const auto& track : TrackManager::getInstance().getTracks())
-        tracks.add(ProjectSerializer::serializeTrackInfo(track));
-    return juce::JSON::toString(juce::var(tracks), false);
-}
 
 DeviceInfo effect(const juce::String& name) {
     DeviceInfo device;
@@ -222,4 +211,110 @@ TEST_CASE("Undoing the removal of a routed grid restores the serialized model",
 
     UndoManager::getInstance().clearHistory();
     requireUndoRoundTrip(std::make_unique<RemoveDeviceByPathCommand>(gridPath));
+}
+
+// The five below are what the generated matrix found (#2229). Each is kept as
+// its own case because a sweep says a cell failed and a case says what broke.
+
+TEST_CASE("Undoing a move towards the front of a chain puts it back where it stood",
+          "[structural][undo][roundtrip]") {
+    // The index a move records is where the element stood, counted with itself
+    // still in the list. `moveChainElement()` takes a drop position and drops
+    // one when the element travels up a list it is already in, so handing it the
+    // recorded index straight back landed the element one slot early. Only
+    // visible undoing a move that went *towards the front*: the other direction
+    // needs no correction, which is why the existing case above passed.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    tm.addDeviceToTrack(trackId, effect("First"));
+    tm.addDeviceToTrack(trackId, effect("Second"));
+    const auto third = tm.addDeviceToTrack(trackId, effect("Third"));
+
+    requireUndoRoundTrip(std::make_unique<MoveChainElementCommand>(
+        ChainNodePath::topLevelDevice(trackId, third), ChainNodePath::trackLevel(trackId), 0));
+}
+
+TEST_CASE("Undoing a paste of a rack into a track's own list removes it",
+          "[structural][undo][roundtrip]") {
+    // The paste recorded the rack under `trackLevel(track).withRack(id)`, a path
+    // claiming to be both the track and a rack in it, which reads back as the
+    // track. The undo asked what kind of node it was, got "track", and removed
+    // nothing.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    tm.addDeviceToTrack(trackId, effect("Resident"));
+
+    RackInfo rack;
+    rack.name = "Pasted";
+    ChainInfo chain;
+    chain.name = "Chain 1";
+    chain.elements.push_back(makeDeviceElement(effect("Inside")));
+    rack.chains.push_back(std::move(chain));
+
+    std::vector<ChainElement> pasted;
+    pasted.push_back(makeRackElement(std::move(rack)));
+
+    requireUndoRoundTrip(std::make_unique<PasteChainElementsCommand>(
+        ChainNodePath::trackLevel(trackId), std::move(pasted), 0));
+}
+
+TEST_CASE("Undoing a wrap inside a pad chain restores the serialized model",
+          "[structural][undo][roundtrip][pads]") {
+    // The wrap read its new rack's chain id back through the rack walk, which no
+    // pad address answers to, so it never learned the id and its undo bailed
+    // before touching anything: the rack stayed.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGrid());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+    const auto padChainId = tm.ensurePad(gridPath, 0);
+    REQUIRE(padChainId != INVALID_CHAIN_ID);
+
+    const auto padChain = ChainNodePath::padChain(trackId, gridId, padChainId);
+    const auto deviceId = tm.addDeviceToPad(gridPath, padChainId, effect("Pad FX"));
+    REQUIRE(deviceId != INVALID_DEVICE_ID);
+
+    UndoManager::getInstance().clearHistory();
+    requireUndoRoundTrip(std::make_unique<WrapChainElementsInRackCommand>(
+        std::vector<ChainNodePath>{padChain.withDevice(deviceId)}, "Wrapper"));
+}
+
+TEST_CASE("Redoing a track duplication reproduces the track it made",
+          "[structural][undo][roundtrip]") {
+    // A redo used to duplicate again, which allocates a fresh TrackId and fresh
+    // device, rack and chain ids: undo followed by redo left a different project
+    // than the one the undo took away, and every link made against the first
+    // duplicate pointed at nothing.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    tm.addDeviceToTrack(trackId, effect("Delay"));
+    const auto rackId = tm.addRackToTrack(trackId, "Rack");
+    const auto chainId = tm.addChainToRack(ChainNodePath::rack(trackId, rackId));
+    tm.addDeviceToChainByPath(ChainNodePath::chain(trackId, rackId, chainId), effect("Nested"));
+    tm.createTrack("After");
+
+    requireUndoRoundTrip(std::make_unique<DuplicateTrackCommand>(trackId));
+}
+
+TEST_CASE("Undoing a track deletion puts the track back in its place",
+          "[structural][undo][roundtrip]") {
+    // The restore appended, so undoing the deletion of a track from the middle
+    // of a project moved it to the end. Same defect as the duplicate's redo,
+    // through the same restore.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    tm.createTrack("Before");
+    const auto doomed = tm.createTrack("Doomed");
+    tm.createTrack("After");
+
+    requireUndoRoundTrip(std::make_unique<DeleteTrackCommand>(doomed));
 }

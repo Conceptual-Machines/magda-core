@@ -225,7 +225,13 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
      * slate for workflows that want content-only duplication.
      */
     TrackId duplicateTrack(TrackId trackId, bool includeDevices = true);
-    void restoreTrack(const TrackInfo& trackInfo);  // Used by undo system
+    /// Put a track back, at @p index in the track order when one is given and
+    /// at the end when it is not.
+    ///
+    /// The index matters: a track deleted from the middle of a project and
+    /// restored at the end has moved, and a duplicate redone at the end is no
+    /// longer beside the track it copies (#2229).
+    void restoreTrack(const TrackInfo& trackInfo, int index = -1);
     void moveTrack(TrackId trackId, int newIndex);
 
     // Hierarchy operations
@@ -523,6 +529,17 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     /// `getChainByPath()` dispatches to this for a pad-owned address, so a pad
     /// chain is looked up through the generic call like any other chain (#2219).
     ChainInfo* getChainInPadByPath(const ChainNodePath& chainPath);
+
+    /// The rack a pad-owned @p rackPath names, or null when it names none.
+    ///
+    /// `getRackByPath()` dispatches to this for a pad-owned address, the way
+    /// `getChainByPath()` already dispatched chains. The rack walk cannot
+    /// answer one: a `PadRack` step carries the owning grid's DeviceId and the
+    /// rack it names is `DeviceInfo::pads`, which is not a chain element. Until
+    /// this existed every path-based rack call failed silently inside a pad, so
+    /// wrapping a device there made a rack whose chain could not be found
+    /// again and the wrap could not be undone (#2229).
+    RackInfo* getRackInPadByPath(const ChainNodePath& rackPath);
 
     /// Replace those pads wholesale. Undo's counterpart to every pad edit
     /// below, which is why it lives with them rather than on the command

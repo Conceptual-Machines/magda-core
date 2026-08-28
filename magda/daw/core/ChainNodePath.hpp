@@ -286,29 +286,35 @@ struct ChainNodePath {
         return p;
     }
 
-    // Create a path by extending an existing path
-    ChainNodePath withRack(RackId r) const {
+    // Create a path by extending an existing path.
+    //
+    // Extending clears `isTrackLevel`: a path that descends into a step names
+    // something inside the track rather than the track itself, and a path
+    // claiming both is answered as track-level by `getType()` whatever its
+    // steps say. `trackLevel(t).withRack(r)` used to build exactly that, so a
+    // rack pasted into a track's own list was recorded under a path that read
+    // back as the track, and undo left it standing (#2229).
+    ChainNodePath extendedWith(ChainPathStep step) const {
         ChainNodePath p = *this;
-        p.steps.push_back({ChainStepType::Rack, r});
+        p.isTrackLevel = false;
+        p.steps.push_back(step);
         return p;
+    }
+
+    ChainNodePath withRack(RackId r) const {
+        return extendedWith({ChainStepType::Rack, r});
     }
 
     ChainNodePath withChain(ChainId c) const {
-        ChainNodePath p = *this;
-        p.steps.push_back({ChainStepType::Chain, c});
-        return p;
+        return extendedWith({ChainStepType::Chain, c});
     }
 
     ChainNodePath withPadChain(ChainId c) const {
-        ChainNodePath p = *this;
-        p.steps.push_back({ChainStepType::PadChain, c});
-        return p;
+        return extendedWith({ChainStepType::PadChain, c});
     }
 
     ChainNodePath withDevice(DeviceId d) const {
-        ChainNodePath p = *this;
-        p.steps.push_back({ChainStepType::Device, d});
-        return p;
+        return extendedWith({ChainStepType::Device, d});
     }
 
     // Get the parent path (without the last step)

@@ -923,7 +923,7 @@ void TrackManager::startMidiMonitoring(const TrackInfo& track, const juce::Strin
     }
 }
 
-void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
+void TrackManager::restoreTrack(const TrackInfo& trackInfo, int index) {
     // Check if a track with this ID already exists
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
                            [&trackInfo](const TrackInfo& t) { return t.id == trackInfo.id; });
@@ -933,13 +933,15 @@ void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
         return;
     }
 
-    tracks_.push_back(trackInfo);
+    const int at = index < 0 ? static_cast<int>(tracks_.size())
+                             : std::clamp(index, 0, static_cast<int>(tracks_.size()));
+    auto inserted = tracks_.insert(tracks_.begin() + at, trackInfo);
 
     // Projects saved before the input-less-track invariant existed can carry
     // MIDI/audio input, monitoring, or record-arm on Aux/Group tracks
     // (createTrack used to seed every non-Aux track with "all"). Normalize on
     // restore rather than let stale on-disk state reintroduce it.
-    tracks_.back().normalizeForType();
+    inserted->normalizeForType();
 
     // Ensure nextTrackId_ is beyond any restored track IDs
     if (trackInfo.id >= nextTrackId_) {
@@ -2485,7 +2487,53 @@ const RackInfo* findRackAmong(const std::vector<ChainElement>& elements, RackId 
 
 }  // namespace
 
+RackInfo* TrackManager::getRackInPadByPath(const ChainNodePath& rackPath) {
+    if (!rackPath.isPadOwned() || rackPath.steps.empty())
+        return nullptr;
+
+    // `PadRack(grid)` on its own names the grid's own pad rack, which hangs off
+    // the device rather than sitting in a chain.
+    if (rackPath.steps.size() == 1) {
+        const auto gridPath = findDevicePath(rackPath.getPadOwnerDeviceId());
+        return gridPath.isValid() && gridPath.trackId == rackPath.trackId ? getPads(gridPath)
+                                                                          : nullptr;
+    }
+
+    // A path ending on a chain or a device names the rack that encloses it,
+    // which is the #2057 leniency the rack walk already has. The node itself has
+    // to resolve first, so a route that does not exist answers nothing rather
+    // than answering with whatever it passed through.
+    const auto& last = rackPath.steps.back();
+    if (isChainStep(last.type))
+        return getChainInPadByPath(rackPath) != nullptr ? getRackInPadByPath(rackPath.parent())
+                                                        : nullptr;
+    if (last.type == ChainStepType::Device)
+        return getDeviceInPadByPath(rackPath) != nullptr ? getRackInPadByPath(rackPath.parent())
+                                                         : nullptr;
+
+    if (last.type != ChainStepType::Rack)
+        return nullptr;
+
+    // Anything else ends on an allocated rack, sitting in a chain the pad route
+    // reaches: a pad's chain holds racks like any other chain does.
+    auto* chain = getChainInPadByPath(rackPath.parent());
+    if (chain == nullptr)
+        return nullptr;
+
+    for (auto& element : chain->elements)
+        if (magda::isRack(element) && magda::getRack(element).id == last.id)
+            return &magda::getRack(element);
+
+    return nullptr;
+}
+
 RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
+    // A pad-owned address goes to the pad route, the way `getChainByPath()`
+    // already sends one there. The walk below searches chain elements for a
+    // rack id, and a `PadRack` step carries neither (#2229).
+    if (rackPath.isPadOwned())
+        return getRackInPadByPath(rackPath);
+
     auto* track = getTrack(rackPath.trackId);
     if (!track) {
         return nullptr;
@@ -2542,12 +2590,11 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
         const bool isLast = index + 1 == rackPath.steps.size();
 
         switch (step.type) {
-            // A PadRack names a device rather than a chain element, so
-            // `findRackAmong` will not find it and this returns null, which is
-            // what a Rack step carrying a grid's id did before the pad types
-            // existed. Pads are reached through `getPads()` and
-            // `getDeviceInPadByPath()` instead (#2219).
+            // A PadRack is answered above, before the walk starts: it is always
+            // the first step of a pad-owned path, so one reaching here would be
+            // a pad step in a position the model cannot express.
             case ChainStepType::PadRack:
+                return nullptr;
             case ChainStepType::Rack: {
                 // Valid at track level, or immediately inside a chain. A Rack
                 // straight after a Rack is the sideways move above.

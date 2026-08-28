@@ -48,6 +48,8 @@ class DeleteTrackCommand : public UndoableCommand {
     TrackId trackId_;
     TrackInfo storedTrack_;
     std::vector<ClipInfo> storedClips_;
+    /// Where the track stood, so undo puts it back there rather than at the end.
+    int storedIndex_ = -1;
     bool executed_ = false;
 };
 
@@ -80,6 +82,16 @@ class DuplicateTrackCommand : public UndoableCommand {
     bool duplicateContent_;
     bool duplicateDevices_;
     TrackId duplicatedTrackId_ = INVALID_TRACK_ID;
+    /// What the first run actually made, ids and position included.
+    ///
+    /// A redo restores this rather than duplicating again. Duplicating again
+    /// allocates a fresh TrackId and fresh device, rack and chain ids, so an
+    /// undo followed by a redo would orphan every link, automation lane and
+    /// alias made against the first duplicate -- the same reason a paste
+    /// replays what it materialised and a wrap reuses its rack's id (#2229).
+    TrackInfo storedTrack_;
+    std::vector<ClipInfo> storedClips_;
+    int storedIndex_ = -1;
     bool executed_ = false;
 };
 

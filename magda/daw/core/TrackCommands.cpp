@@ -92,6 +92,31 @@ bool describeChainElementPath(const ChainNodePath& path, ChainStepType& type, in
 
     return false;
 }
+
+/// The index to hand `moveChainElement()` so @p elementPath comes to rest at
+/// @p homeIndex of @p homeChain.
+///
+/// The two are not the same number. `homeIndex` is where the element stood,
+/// counted with itself still in the list. `moveChainElement()` takes a drop
+/// position -- insert before whatever stands there now -- and drops one when
+/// the element is travelling up a list it is already in, because removing it
+/// first shifts everything past it down. So an element on its way back up its
+/// own container has to aim one slot past its home to land on it.
+///
+/// One conversion, because it was written twice and only one of them was right:
+/// the multi-element undo made the correction, the single-element one passed the
+/// home index straight through, and so undoing a drag that moved a device
+/// towards the front of its chain put it back one slot too early
+/// (#2229). `WrapChainElementsInRackCommand::undo()` makes the same correction
+/// against the standing rack.
+int dropIndexForHome(TrackManager& tm, const ChainNodePath& elementPath,
+                     const ChainNodePath& homeChain, int homeIndex) {
+    if (parentChainOf(elementPath) != homeChain)
+        return homeIndex;
+
+    const int currentIndex = tm.getChainElementIndex(elementPath);
+    return currentIndex >= 0 && currentIndex < homeIndex ? homeIndex + 1 : homeIndex;
+}
 }  // namespace
 
 // ============================================================================
@@ -174,9 +199,10 @@ void DeleteTrackCommand::execute() {
         return;
     }
 
-    // Store full track info and clips for undo (only on first execute)
+    // Store full track info, position and clips for undo (only on first execute)
     if (!executed_) {
         storedTrack_ = *track;
+        storedIndex_ = trackManager.getTrackIndex(trackId_);
     }
 
     // Store and remove all clips on this track
@@ -202,7 +228,7 @@ void DeleteTrackCommand::undo() {
         return;
     }
 
-    TrackManager::getInstance().restoreTrack(storedTrack_);
+    TrackManager::getInstance().restoreTrack(storedTrack_, storedIndex_);
 
     // Restore clips that were on this track
     auto& clipManager = ClipManager::getInstance();
@@ -225,6 +251,20 @@ DuplicateTrackCommand::DuplicateTrackCommand(TrackId sourceTrackId, bool duplica
 
 void DuplicateTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
+    auto& clipManager = ClipManager::getInstance();
+
+    // A redo puts back what the first run made rather than duplicating again:
+    // duplicating again allocates a fresh TrackId and fresh device, rack and
+    // chain ids, so undo followed by redo would leave a different project than
+    // the one the undo took away (#2229).
+    if (executed_) {
+        if (duplicatedTrackId_ == INVALID_TRACK_ID)
+            return;
+        trackManager.restoreTrack(storedTrack_, storedIndex_);
+        for (const auto& clip : storedClips_)
+            clipManager.restoreClip(clip);
+        return;
+    }
 
     // Capture current plugin state so the duplicate gets the source's live settings.
     // Skipped when we're stripping the FX chain anyway — nothing to carry over.
@@ -239,7 +279,6 @@ void DuplicateTrackCommand::execute() {
     duplicatedTrackId_ = trackManager.duplicateTrack(sourceTrackId_, duplicateDevices_);
 
     if (duplicateContent_ && duplicatedTrackId_ != INVALID_TRACK_ID) {
-        auto& clipManager = ClipManager::getInstance();
         auto clipIds = clipManager.getClipsOnTrack(sourceTrackId_);
         const double projectBpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
         const double bpm = isValidBpm(projectBpm) ? projectBpm : DEFAULT_BPM;
@@ -250,6 +289,16 @@ void DuplicateTrackCommand::execute() {
                                             bpm);
             }
         }
+    }
+
+    // What it made, so a redo can make exactly that again.
+    if (const auto* made = trackManager.getTrack(duplicatedTrackId_)) {
+        storedTrack_ = *made;
+        storedIndex_ = trackManager.getTrackIndex(duplicatedTrackId_);
+        storedClips_.clear();
+        for (auto clipId : clipManager.getClipsOnTrack(duplicatedTrackId_))
+            if (const auto* clip = clipManager.getClip(clipId))
+                storedClips_.push_back(*clip);
     }
 
     executed_ = true;
@@ -263,7 +312,7 @@ void DuplicateTrackCommand::undo() {
 
     // Delete all clips on the duplicated track before deleting the track
     auto& clipManager = ClipManager::getInstance();
-    auto clipIds = clipManager.getClipsOnTrack(duplicatedTrackId_);
+    const auto clipIds = clipManager.getClipsOnTrack(duplicatedTrackId_);
     for (auto clipId : clipIds) {
         clipManager.deleteClip(clipId);
     }
@@ -415,7 +464,9 @@ void MoveChainElementCommand::undo() {
     if (!executed_)
         return;
 
-    TrackManager::getInstance().moveChainElement(movedElementPath_, undoChainPath_, undoIndex_);
+    auto& tm = TrackManager::getInstance();
+    tm.moveChainElement(movedElementPath_, undoChainPath_,
+                        dropIndexForHome(tm, movedElementPath_, undoChainPath_, undoIndex_));
 }
 
 // ============================================================================
@@ -507,17 +558,13 @@ void MoveChainElementsCommand::undo() {
         if (!currentPath.isValid())
             return;
 
-        int insertIndex = record.originalIndex;
-        const auto currentParentPath = parentChainOf(currentPath);
-        const int currentIndex = tm.getChainElementIndex(currentPath);
-        if (currentParentPath == record.originalParentPath) {
-            if (currentIndex == record.originalIndex)
-                return;
-            if (currentIndex >= 0 && currentIndex < record.originalIndex)
-                ++insertIndex;
-        }
+        if (parentChainOf(currentPath) == record.originalParentPath &&
+            tm.getChainElementIndex(currentPath) == record.originalIndex)
+            return;
 
-        tm.moveChainElement(currentPath, record.originalParentPath, insertIndex);
+        tm.moveChainElement(
+            currentPath, record.originalParentPath,
+            dropIndexForHome(tm, currentPath, record.originalParentPath, record.originalIndex));
     };
 
     auto begin = records.begin();
