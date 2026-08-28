@@ -247,6 +247,12 @@ class WrapChainElementsInRackCommand : public UndoableCommand {
     RackId rackId_ = INVALID_RACK_ID;
     ChainId chainId_ = INVALID_CHAIN_ID;
     int sourceIndex_ = -1;
+    /// Where each wrapped element stood, ascending.
+    ///
+    /// A selection need not be contiguous. Remembering only the lowest index and
+    /// reinserting everything from there closed the gaps, so wrapping the first
+    /// and third of three and undoing reordered the chain (#2221).
+    std::vector<int> sourceIndices_;
     bool executed_ = false;
 };
 

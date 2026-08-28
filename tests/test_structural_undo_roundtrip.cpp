@@ -134,6 +134,26 @@ TEST_CASE("Undoing a paste restores the serialized model", "[structural][undo][r
         ChainNodePath::trackLevel(trackId), std::move(pasted), 1));
 }
 
+TEST_CASE("Undoing a paste at an out-of-range index restores the serialized model",
+          "[structural][undo][roundtrip]") {
+    // The insert clamps the requested index against the destination as it was.
+    // Bookkeeping that read the index back against the larger list started past
+    // what had been inserted, so undo left pasted elements behind and redo
+    // pasted another copy on top.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    tm.addDeviceToTrack(trackId, effect("Resident"));
+
+    std::vector<ChainElement> pasted;
+    pasted.push_back(makeDeviceElement(effect("First")));
+    pasted.push_back(makeDeviceElement(effect("Second")));
+
+    requireUndoRoundTrip(std::make_unique<PasteChainElementsCommand>(
+        ChainNodePath::trackLevel(trackId), std::move(pasted), 99));
+}
+
 TEST_CASE("Undoing a wrap restores the serialized model", "[structural][undo][roundtrip]") {
     resetState();
     auto& tm = TrackManager::getInstance();
@@ -145,6 +165,26 @@ TEST_CASE("Undoing a wrap restores the serialized model", "[structural][undo][ro
     requireUndoRoundTrip(std::make_unique<WrapChainElementsInRackCommand>(
         std::vector<ChainNodePath>{ChainNodePath::topLevelDevice(trackId, first),
                                    ChainNodePath::topLevelDevice(trackId, second)},
+        "Wrapper"));
+}
+
+TEST_CASE("Undoing a wrap of a noncontiguous selection restores the serialized model",
+          "[structural][undo][roundtrip]") {
+    // The context menu accepts an arbitrary multi-selection. Reinserting every
+    // wrapped element in one run from the lowest index closes the gaps between
+    // them, which reorders the chain and so changes what it sounds like.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    const auto first = tm.addDeviceToTrack(trackId, effect("First"));
+    tm.addDeviceToTrack(trackId, effect("Gap"));
+    const auto third = tm.addDeviceToTrack(trackId, effect("Third"));
+    tm.addDeviceToTrack(trackId, effect("Fourth"));
+
+    requireUndoRoundTrip(std::make_unique<WrapChainElementsInRackCommand>(
+        std::vector<ChainNodePath>{ChainNodePath::topLevelDevice(trackId, first),
+                                   ChainNodePath::topLevelDevice(trackId, third)},
         "Wrapper"));
 }
 
