@@ -970,9 +970,9 @@ TEST_CASE("A grid with a pad on a bus is not dragged to another track",
 }
 
 TEST_CASE("A copied grid owns no child tracks yet", "[drumgrid][pads][commands]") {
-    // Inheriting the source's pair state would leave the sync thinking the
-    // child tracks were already made, so it would build none for the copy and
-    // its pad on a bus would be silent while the link named the original.
+    // Ownership of a generated child track belongs to one placed instance, so a
+    // copy must not inherit it. It cannot: the assignment is the child track's
+    // own link, and a DeviceInfo carries no record of it to copy (#2220).
     resetState();
     auto& tm = TrackManager::getInstance();
 
@@ -986,9 +986,12 @@ TEST_CASE("A copied grid owns no child tracks yet", "[drumgrid][pads][commands]"
         REQUIRE(grid != nullptr);
         grid->multiOut.isMultiOut = true;
         grid->multiOut.outputPairs.resize(2);
-        grid->multiOut.outputPairs[1].active = true;
-        grid->multiOut.outputPairs[1].trackId = trackId;
     }
+
+    // A real child track, rather than a flag saying there is one.
+    const auto childTrackId = tm.activateMultiOutPair(trackId, gridId, 1);
+    REQUIRE(childTrackId != INVALID_TRACK_ID);
+    REQUIRE(tm.multiOutPairIsActive(trackId, gridId, 1));
 
     std::vector<ChainElement> copied;
     copied.push_back(makeDeviceElement(*tm.getDeviceInChainByPath(gridPath)));
@@ -996,12 +999,19 @@ TEST_CASE("A copied grid owns no child tracks yet", "[drumgrid][pads][commands]"
                                          /*reassignIds=*/true));
 
     const auto& clone = getDevice(tm.getTrack(trackId)->chain.fxChainElements[1]);
+    REQUIRE(clone.id != gridId);
     REQUIRE(clone.multiOut.outputPairs.size() == 2);
-    CHECK_FALSE(clone.multiOut.outputPairs[1].active);
-    CHECK(clone.multiOut.outputPairs[1].trackId == INVALID_TRACK_ID);
 
-    // The original keeps its own.
-    CHECK(tm.getDeviceInChainByPath(gridPath)->multiOut.outputPairs[1].active);
+    // The copy drives nothing, and the original still drives its own child.
+    CHECK_FALSE(tm.multiOutPairIsActive(trackId, clone.id, 1));
+    CHECK(tm.multiOutChildTrack(trackId, clone.id, 1) == INVALID_TRACK_ID);
+    CHECK(tm.multiOutChildTrack(trackId, gridId, 1) == childTrackId);
+
+    // And the child track still names the device it was made for.
+    const auto* child = tm.getTrack(childTrackId);
+    REQUIRE(child != nullptr);
+    REQUIRE(child->multiOutLink.has_value());
+    CHECK(child->multiOutLink->sourceDeviceId == gridId);
 }
 
 TEST_CASE("A copied link into a rack inside a pad follows the copy", "[drumgrid][pads][commands]") {

@@ -417,8 +417,8 @@ class PostFxFaderOrderTest final : public juce::UnitTest {
         instrument.multiOut.isMultiOut = true;
         instrument.multiOut.totalOutputChannels = 4;
         instrument.multiOut.outputPairs = {
-            {0, "Main 1-2", false, INVALID_TRACK_ID, 1, 2},
-            {1, "Out 3-4", false, INVALID_TRACK_ID, 3, 2},
+            {0, "Main 1-2", 1, 2},
+            {1, "Out 3-4", 3, 2},
         };
         const auto deviceId = tm.addDeviceToTrack(sourceId, instrument);
         const auto trackId = tm.activateMultiOutPair(sourceId, deviceId, 1);

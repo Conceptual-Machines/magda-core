@@ -102,14 +102,24 @@ enum class DeviceType { Instrument, Effect, MIDI, Analysis };
 
 /**
  * @brief Describes a single stereo output pair from a multi-output plugin
+ *
+ * Declarative content only. Whether a pair is routed anywhere, and to which
+ * track, is NOT here: that is ownership of a generated child track, which
+ * belongs to one placed instance of the device rather than to the device's
+ * description of itself. A `DeviceInfo` is copied by duplication, preset import
+ * and paste, and a copy that carried `active` and `trackId` claimed the child
+ * track of the device it was copied from, leaving the copy silent while the
+ * link still named the original (#2220).
+ *
+ * The child track's `TrackInfo::multiOutLink` is the one record. Ask
+ * `TrackManager::multiOutChildTrack()` which track a pair drives, and
+ * `TrackManager::multiOutPairIsActive()` whether it drives one at all.
  */
 struct MultiOutOutputPair {
-    int outputIndex = 0;                 // 0-based pair index (0 = main 1,2)
-    juce::String name;                   // From plugin channel names, e.g. "St.3-4"
-    bool active = false;                 // User activated this pair
-    TrackId trackId = INVALID_TRACK_ID;  // Output track created for this pair
-    int firstPin = 1;                    // 1-based rack output pin for left channel
-    int numChannels = 2;                 // 1=mono, 2=stereo
+    int outputIndex = 0;  // 0-based pair index (0 = main 1,2)
+    juce::String name;    // From plugin channel names, e.g. "St.3-4"
+    int firstPin = 1;     // 1-based rack output pin for left channel
+    int numChannels = 2;  // 1=mono, 2=stereo
 };
 
 /**

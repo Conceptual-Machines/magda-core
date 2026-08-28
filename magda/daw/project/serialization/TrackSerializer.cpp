@@ -509,8 +509,9 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
             auto* pairObj = new juce::DynamicObject();
             pairObj->setProperty("outputIndex", pair.outputIndex);
             pairObj->setProperty("name", pair.name);
-            pairObj->setProperty("active", pair.active);
-            pairObj->setProperty("trackId", pair.trackId);
+            // `active` and `trackId` are not written: which child track a pair
+            // drives is the child track's `multiOutLink`, and persisting a
+            // second copy is what let the two disagree (#2220).
             pairObj->setProperty("firstPin", pair.firstPin);
             pairObj->setProperty("numChannels", pair.numChannels);
             pairsArray.add(juce::var(pairObj));
@@ -717,8 +718,12 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
                     MultiOutOutputPair pair;
                     pair.outputIndex = pairObj->getProperty("outputIndex");
                     pair.name = pairObj->getProperty("name").toString();
-                    pair.active = pairObj->getProperty("active");
-                    pair.trackId = pairObj->getProperty("trackId");
+                    // A project saved before the ownership flip carries `active`
+                    // and `trackId` here. Both are dropped rather than read: the
+                    // child tracks in the same project carry the links, so the
+                    // assignments come back from them, and a pair the device
+                    // claimed with no child track to match was already an
+                    // orphan (#2220).
                     if (pairObj->hasProperty("firstPin"))
                         pair.firstPin = pairObj->getProperty("firstPin");
                     if (pairObj->hasProperty("numChannels"))
