@@ -529,3 +529,48 @@ TEST_CASE("An instrument cannot be pasted onto a track that cannot host one",
                                        /*reassignIds=*/true));
     CHECK(tm.getTrack(auxId)->chain.fxChainElements.size() == 1);
 }
+
+TEST_CASE("Wrapping a nested device that drives child tracks is refused",
+          "[multi_out][lifecycle][ownership][placement]") {
+    // `wrapDeviceInRackByPath()` delegates its top-level case to
+    // `wrapDeviceInRack()`, but its nested branch extracted and wrapped the
+    // device on its own and so went round the placement boundary (#2221).
+    MultiOutTestFixture fixture;
+    auto& tm = fixture.tm();
+
+    const auto trackId = tm.createTrack("Inst", TrackType::Media);
+    const auto rackId = tm.addRackToTrack(trackId, "Rack");
+    const auto chainId = tm.addChainToRack(ChainNodePath::rack(trackId, rackId));
+    const auto chainPath = ChainNodePath::chain(trackId, rackId, chainId);
+
+    DeviceInfo instrument;
+    instrument.name = "MultiOutSynth";
+    instrument.format = PluginFormat::Internal;
+    instrument.pluginId = "multisynth";
+    instrument.isInstrument = true;
+    instrument.multiOut.isMultiOut = true;
+    instrument.multiOut.totalOutputChannels = 4;
+    instrument.multiOut.outputPairs = {{0, "Main 1-2", 1, 2}, {1, "Out 3-4", 3, 2}};
+
+    const auto deviceId = tm.addDeviceToChainByPath(chainPath, instrument);
+    REQUIRE(deviceId != INVALID_DEVICE_ID);
+
+    const auto childId = tm.activateMultiOutPair(trackId, deviceId, 1);
+    REQUIRE(childId != INVALID_TRACK_ID);
+
+    const auto devicePath = chainPath.withDevice(deviceId);
+    CHECK(tm.wrapDeviceInRackByPath(devicePath, "Wrapper") == INVALID_RACK_ID);
+
+    // Refused means unchanged: still directly in its chain, still driving its
+    // child track.
+    CHECK(tm.findDevicePath(deviceId) == devicePath);
+    const auto* chain = tm.getChainByPath(chainPath);
+    REQUIRE(chain != nullptr);
+    REQUIRE(chain->elements.size() == 1);
+    CHECK(isDevice(chain->elements[0]));
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, 1) == childId);
+
+    // Closing the pair lets it wrap.
+    tm.deactivateMultiOutPair(trackId, deviceId, 1);
+    CHECK(tm.wrapDeviceInRackByPath(devicePath, "Wrapper") != INVALID_RACK_ID);
+}

@@ -2117,6 +2117,13 @@ RackId TrackManager::wrapDeviceInRackByPath(const ChainNodePath& devicePath,
     if (it == elements.end())
         return INVALID_RACK_ID;
 
+    // The same question the top-level branch asks through `wrapDeviceInRack()`.
+    // A nested device can drive multi-out child tracks too, and wrapping moves
+    // it into a container it was not in, so this is a placement change like any
+    // other and was going round the boundary (#2221).
+    if (checkPlacement({&*it, devicePath, chainPath, true}) != PlacementRefusal::Allowed)
+        return INVALID_RACK_ID;
+
     int insertIndex = static_cast<int>(std::distance(elements.begin(), it));
 
     // Extract the device
