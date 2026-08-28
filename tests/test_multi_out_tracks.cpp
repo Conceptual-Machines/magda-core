@@ -438,3 +438,139 @@ TEST_CASE("An active multi-out device reorders inside its own nested chain",
         tm.moveChainElement(chainPath.withDevice(deviceId), ChainNodePath::trackLevel(trackId), 0));
     CHECK(tm.multiOutChildTrack(trackId, deviceId, 1) == childId);
 }
+
+TEST_CASE("Wrapping a device that drives child tracks is refused",
+          "[multi_out][lifecycle][ownership][placement]") {
+    // Wrapping takes the device off the top level, where the output instance
+    // that carries a bus is made, so it strands the child track exactly as a
+    // move would. Wrap used to ask only whether a pad was on a bus, which a
+    // plain multi-out instrument never trips (#2221).
+    MultiOutTestFixture fixture;
+    auto& tm = fixture.tm();
+
+    auto [trackId, deviceId] = fixture.createMultiOutTrack();
+    const auto childId = tm.activateMultiOutPair(trackId, deviceId, 1);
+    REQUIRE(childId != INVALID_TRACK_ID);
+
+    CHECK(tm.wrapDeviceInRack(trackId, deviceId) == INVALID_RACK_ID);
+
+    // Refused means unchanged.
+    CHECK(tm.findDevicePath(deviceId) == ChainNodePath::topLevelDevice(trackId, deviceId));
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, 1) == childId);
+
+    // Closing the pair lets it wrap.
+    tm.deactivateMultiOutPair(trackId, deviceId, 1);
+    CHECK(tm.wrapDeviceInRack(trackId, deviceId) != INVALID_RACK_ID);
+}
+
+TEST_CASE("Wrapping a selection containing such a device is refused",
+          "[multi_out][lifecycle][ownership][placement]") {
+    MultiOutTestFixture fixture;
+    auto& tm = fixture.tm();
+
+    auto [trackId, deviceId] = fixture.createMultiOutTrack();
+
+    DeviceInfo neighbour;
+    neighbour.name = "Delay";
+    neighbour.pluginId = "delay";
+    neighbour.format = PluginFormat::Internal;
+    const auto neighbourId = tm.addDeviceToTrack(trackId, neighbour);
+    REQUIRE(neighbourId != INVALID_DEVICE_ID);
+
+    const auto childId = tm.activateMultiOutPair(trackId, deviceId, 1);
+    REQUIRE(childId != INVALID_TRACK_ID);
+
+    const std::vector<ChainNodePath> selection{ChainNodePath::topLevelDevice(trackId, deviceId),
+                                               ChainNodePath::topLevelDevice(trackId, neighbourId)};
+
+    CHECK(tm.wrapChainElementsInRack(selection, "Rack") == INVALID_RACK_ID);
+
+    // Neither device moved, and the ownership stands.
+    CHECK(tm.findDevicePath(deviceId) == ChainNodePath::topLevelDevice(trackId, deviceId));
+    CHECK(tm.findDevicePath(neighbourId) == ChainNodePath::topLevelDevice(trackId, neighbourId));
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, 1) == childId);
+}
+
+TEST_CASE("An instrument cannot be pasted onto a track that cannot host one",
+          "[multi_out][placement]") {
+    // insertChainElementsByPath asked nothing before, so paste could put an
+    // instrument where the move path refuses to put one (#2221).
+    MultiOutTestFixture fixture;
+    auto& tm = fixture.tm();
+
+    const auto auxId = tm.createTrack("Aux", TrackType::Aux);
+    REQUIRE(auxId != INVALID_TRACK_ID);
+    const auto* aux = tm.getTrack(auxId);
+    REQUIRE(aux != nullptr);
+    REQUIRE_FALSE(aux->canHostInstrument());
+
+    DeviceInfo instrument;
+    instrument.name = "MultiOutSynth";
+    instrument.pluginId = "multisynth";
+    instrument.format = PluginFormat::Internal;
+    instrument.isInstrument = true;
+
+    std::vector<ChainElement> pasted;
+    pasted.push_back(makeDeviceElement(instrument));
+
+    CHECK_FALSE(tm.insertChainElementsByPath(ChainNodePath::trackLevel(auxId), std::move(pasted), 0,
+                                             /*reassignIds=*/true));
+    CHECK(tm.getTrack(auxId)->chain.fxChainElements.empty());
+
+    // An effect is fine.
+    DeviceInfo effect;
+    effect.name = "Delay";
+    effect.pluginId = "delay";
+    effect.format = PluginFormat::Internal;
+
+    std::vector<ChainElement> effectPaste;
+    effectPaste.push_back(makeDeviceElement(effect));
+    CHECK(tm.insertChainElementsByPath(ChainNodePath::trackLevel(auxId), std::move(effectPaste), 0,
+                                       /*reassignIds=*/true));
+    CHECK(tm.getTrack(auxId)->chain.fxChainElements.size() == 1);
+}
+
+TEST_CASE("Wrapping a nested device that drives child tracks is refused",
+          "[multi_out][lifecycle][ownership][placement]") {
+    // `wrapDeviceInRackByPath()` delegates its top-level case to
+    // `wrapDeviceInRack()`, but its nested branch extracted and wrapped the
+    // device on its own and so went round the placement boundary (#2221).
+    MultiOutTestFixture fixture;
+    auto& tm = fixture.tm();
+
+    const auto trackId = tm.createTrack("Inst", TrackType::Media);
+    const auto rackId = tm.addRackToTrack(trackId, "Rack");
+    const auto chainId = tm.addChainToRack(ChainNodePath::rack(trackId, rackId));
+    const auto chainPath = ChainNodePath::chain(trackId, rackId, chainId);
+
+    DeviceInfo instrument;
+    instrument.name = "MultiOutSynth";
+    instrument.format = PluginFormat::Internal;
+    instrument.pluginId = "multisynth";
+    instrument.isInstrument = true;
+    instrument.multiOut.isMultiOut = true;
+    instrument.multiOut.totalOutputChannels = 4;
+    instrument.multiOut.outputPairs = {{0, "Main 1-2", 1, 2}, {1, "Out 3-4", 3, 2}};
+
+    const auto deviceId = tm.addDeviceToChainByPath(chainPath, instrument);
+    REQUIRE(deviceId != INVALID_DEVICE_ID);
+
+    const auto childId = tm.activateMultiOutPair(trackId, deviceId, 1);
+    REQUIRE(childId != INVALID_TRACK_ID);
+
+    const auto devicePath = chainPath.withDevice(deviceId);
+    CHECK(tm.wrapDeviceInRackByPath(devicePath, "Wrapper") == INVALID_RACK_ID);
+
+    // Refused means unchanged: still directly in its chain, still driving its
+    // child track.
+    CHECK(tm.findDevicePath(deviceId) == devicePath);
+    const auto* chain = tm.getChainByPath(chainPath);
+    REQUIRE(chain != nullptr);
+    REQUIRE(chain->elements.size() == 1);
+    CHECK(isDevice(chain->elements[0]));
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, 1) == childId);
+
+    // Closing the pair lets it wrap.
+    tm.deactivateMultiOutPair(trackId, deviceId, 1);
+    CHECK(tm.wrapDeviceInRackByPath(devicePath, "Wrapper") != INVALID_RACK_ID);
+}

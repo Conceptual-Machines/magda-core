@@ -8,6 +8,7 @@
 #include "magda/daw/core/PadCommands.hpp"
 #include "magda/daw/core/RackInfo.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
+#include "magda/daw/core/TrackCommands.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
 
@@ -1158,4 +1159,117 @@ TEST_CASE("A pad chain answering to more than one note can still be deleted",
     CHECK(tm.getPad(gridPath, 0) == nullptr);
     CHECK(tm.getPad(gridPath, 1) == nullptr);
     CHECK(tm.getPad(gridPath, 2) == nullptr);
+}
+
+TEST_CASE("A routed grid is restored by undoing its deletion",
+          "[drumgrid][pads][commands][undo][placement]") {
+    // The remove commands put the device back through
+    // `insertChainElementsByPath()`, and discard the result. A placement rule
+    // that refused a source-less reconstruction would therefore make undo
+    // restore nothing at all, silently (#2221).
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+
+    // A pad on a bus, which only a top-level grid may have.
+    REQUIRE(tm.padBusesAvailable(gridPath));
+    REQUIRE(tm.setPadOutput(gridPath, 0, 1));
+    REQUIRE(tm.getPad(gridPath, 0)->outputIndex == 1);
+
+    auto& undo = UndoManager::getInstance();
+    undo.executeCommand(std::make_unique<RemoveDeviceByPathCommand>(gridPath));
+    REQUIRE(tm.getDeviceInChainByPath(gridPath) == nullptr);
+
+    REQUIRE(undo.undo());
+
+    const auto* restored = tm.getDeviceInChainByPath(gridPath);
+    REQUIRE(restored != nullptr);
+    CHECK(restored->id == gridId);
+
+    // With its routing intact, which is the whole reason ids are preserved.
+    const auto* pad = tm.getPad(gridPath, 0);
+    REQUIRE(pad != nullptr);
+    CHECK(pad->outputIndex == 1);
+}
+
+TEST_CASE("A routed grid pastes at track level but not into a rack",
+          "[drumgrid][pads][commands][placement]") {
+    // A copy keeps each pad's outputIndex, and owns no child tracks. A track's
+    // own list can carry its buses; a rack chain cannot (#2221).
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+    REQUIRE(tm.setPadOutput(gridPath, 0, 1));
+
+    const auto rackId = tm.addRackToTrack(trackId, "FX Rack");
+    const auto rackChainId = tm.addChainToRack(ChainNodePath::rack(trackId, rackId));
+    const auto rackChainPath = ChainNodePath::chain(trackId, rackId, rackChainId);
+
+    const auto copyOfGrid = [&] {
+        std::vector<ChainElement> elements;
+        elements.push_back(makeDeviceElement(*tm.getDeviceInChainByPath(gridPath)));
+        return elements;
+    };
+
+    // A rack chain carries no bus off the grid, so it is refused and nothing
+    // lands there.
+    CHECK_FALSE(tm.insertChainElementsByPath(rackChainPath, copyOfGrid(), 0,
+                                             /*reassignIds=*/true));
+    CHECK(tm.getChainByPath(rackChainPath)->elements.empty());
+
+    // The track's own list carries them, so the paste is allowed.
+    REQUIRE(tm.insertChainElementsByPath(ChainNodePath::trackLevel(trackId), copyOfGrid(), 1,
+                                         /*reassignIds=*/true));
+    const auto& elements = tm.getTrack(trackId)->chain.fxChainElements;
+    REQUIRE(elements.size() == 3);  // grid, the copy, rack
+    const auto& clone = getDevice(elements[1]);
+    CHECK(clone.id != gridId);
+    REQUIRE(static_cast<bool>(clone.pads));
+    CHECK(clone.pads->chains[0].outputIndex == 1);
+}
+
+TEST_CASE("A rack carrying a routed grid is refused even at track level",
+          "[drumgrid][pads][commands][placement]") {
+    // The destination rule speaks for the subtree root only. A rack landing in
+    // the track's own list is top-level, but the grid inside it is not, so its
+    // bus has no output instance to be carried by and sync would drop the
+    // routing silently (#2221).
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+    REQUIRE(tm.setPadOutput(gridPath, 0, 1));
+
+    // A rack holding a copy of the routed grid, built on the model directly:
+    // no command makes one, and the point is what the rule says about it.
+    RackInfo carrier;
+    carrier.id = 500;
+    carrier.name = "Carrier";
+    ChainInfo carrierChain;
+    carrierChain.id = 501;
+    carrierChain.elements.push_back(makeDeviceElement(*tm.getDeviceInChainByPath(gridPath)));
+    carrier.chains.push_back(std::move(carrierChain));
+
+    std::vector<ChainElement> pasted;
+    pasted.push_back(makeRackElement(std::move(carrier)));
+
+    CHECK_FALSE(tm.insertChainElementsByPath(ChainNodePath::trackLevel(trackId), std::move(pasted),
+                                             1, /*reassignIds=*/true));
+
+    // Nothing landed: the grid is still the track's only element.
+    const auto& elements = tm.getTrack(trackId)->chain.fxChainElements;
+    REQUIRE(elements.size() == 1);
+    CHECK(isDevice(elements[0]));
+    CHECK(getDevice(elements[0]).id == gridId);
 }
