@@ -145,6 +145,17 @@ class ProjectSerializer {
     // the track and clip managers standing up around it, which buys nothing.
     // ========================================================================
 
+    /**
+     * @brief Serialize one track, its chain included.
+     *
+     * Public for the same reason `serializeClipInfo` is: it is a pure function
+     * of the value it is given, and the serialized form is the only way to state
+     * that a structural edit and its undo left the model where they found it
+     * (#2221).
+     */
+    static juce::var serializeTrackInfo(const TrackInfo& track);
+    static bool deserializeTrackInfo(const juce::var& json, TrackInfo& outTrack);
+
     static juce::var serializeClipInfo(const ClipInfo& clip);
 
     /// Provisional id for a v1 source staged rather than pooled. Negative so
@@ -277,9 +288,6 @@ class ProjectSerializer {
     // ========================================================================
     // Track serialization helpers
     // ========================================================================
-
-    static juce::var serializeTrackInfo(const TrackInfo& track);
-    static bool deserializeTrackInfo(const juce::var& json, TrackInfo& outTrack);
 
     // serializeChainElement / DeviceInfo / RackInfo / ChainInfo are declared
     // public above so PresetManager can use them.

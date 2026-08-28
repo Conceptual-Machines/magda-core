@@ -37,6 +37,7 @@ set(TEST_SOURCES
     test_chain_info_copy.cpp
     test_drum_grid_pad_commands.cpp
     test_pad_path_types.cpp
+    test_structural_undo_roundtrip.cpp
     test_drum_grid_pads.cpp
     test_drum_grid_pads_corpus.cpp
     test_chain_routing_model.cpp

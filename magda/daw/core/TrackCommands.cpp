@@ -1,5 +1,6 @@
 #include "TrackCommands.hpp"
 
+#include <algorithm>
 #include <limits>
 
 #include "../audio/AudioBridge.hpp"
@@ -570,10 +571,36 @@ PasteChainElementsCommand::PasteChainElementsCommand(const ChainNodePath& destin
 
 void PasteChainElementsCommand::execute() {
     auto& tm = TrackManager::getInstance();
-    auto elements = deepCopyChainElements(templateElements_);
-    const int requestedIndex = insertIndex_;
+    const bool replaying = !materialised_.empty();
+
+    // A redo replays what the first run produced, ids and all. Re-copying the
+    // template would re-key it, giving every pasted device a fresh id and
+    // orphaning the links, automation lanes and aliases made against the first
+    // paste -- the same reason the removal commands restore under the id the
+    // device had (#2221).
+    auto elements =
+        replaying ? deepCopyChainElements(materialised_) : deepCopyChainElements(templateElements_);
+    const int elementCount = static_cast<int>(elements.size());
+
+    // The index the insert will actually use, taken against the destination as
+    // it is NOW. `insertChainElementsByPath()` clamps against the pre-insertion
+    // size, so reading it back afterwards against the larger list would start
+    // the bookkeeping past what was inserted: a stale or out-of-range index
+    // recorded some of the pasted elements, or none, and undo then left them
+    // behind while redo pasted another copy (#2221).
+    const auto* destinationBefore =
+        destinationChainPath_.steps.empty() ? nullptr : tm.getChainByPath(destinationChainPath_);
+    const auto* trackBefore = tm.getTrack(destinationChainPath_.trackId);
+    const int destinationSizeBefore =
+        destinationChainPath_.steps.empty()
+            ? (trackBefore != nullptr ? static_cast<int>(trackBefore->chain.fxChainElements.size())
+                                      : 0)
+            : (destinationBefore != nullptr ? static_cast<int>(destinationBefore->elements.size())
+                                            : 0);
+    const int requestedIndex = std::clamp(insertIndex_, 0, destinationSizeBefore);
+
     executed_ = tm.insertChainElementsByPath(destinationChainPath_, std::move(elements),
-                                             requestedIndex, true);
+                                             requestedIndex, !replaying);
     insertedPaths_.clear();
     if (!executed_)
         return;
@@ -593,9 +620,10 @@ void PasteChainElementsCommand::execute() {
     const auto& destinationElements = destinationChainPath_.steps.empty()
                                           ? track->chain.fxChainElements
                                           : destinationChain->elements;
-    const int start = std::clamp(requestedIndex, 0, static_cast<int>(destinationElements.size()));
-    for (int i = 0; i < static_cast<int>(templateElements_.size()) &&
-                    start + i < static_cast<int>(destinationElements.size());
+    // `requestedIndex` is already the effective one, so the inserted elements are
+    // exactly [start, start + elementCount).
+    const int start = requestedIndex;
+    for (int i = 0; i < elementCount && start + i < static_cast<int>(destinationElements.size());
          ++i) {
         const auto& element = destinationElements[static_cast<size_t>(start + i)];
         if (isDevice(element)) {
@@ -607,6 +635,9 @@ void PasteChainElementsCommand::execute() {
         } else if (isRack(element)) {
             insertedPaths_.push_back(destinationChainPath_.withRack(getRack(element).id));
         }
+
+        if (!replaying)
+            materialised_.push_back(deepCopyElement(element));
     }
 }
 
@@ -638,6 +669,7 @@ void WrapChainElementsInRackCommand::execute() {
 
     sourceChainPath_ = parentChainOf(sourceElementPaths_.front());
     sourceIndex_ = std::numeric_limits<int>::max();
+    sourceIndices_.clear();
     for (const auto& path : sourceElementPaths_) {
         if (parentChainOf(path) != sourceChainPath_) {
             executed_ = false;
@@ -645,15 +677,24 @@ void WrapChainElementsInRackCommand::execute() {
         }
 
         const int index = tm.getChainElementIndex(path);
-        if (index >= 0)
+        if (index >= 0) {
             sourceIndex_ = std::min(sourceIndex_, index);
+            sourceIndices_.push_back(index);
+        }
     }
+    // Ascending, which is the order the wrap itself puts them in the rack, so an
+    // index and a child line up.
+    std::sort(sourceIndices_.begin(), sourceIndices_.end());
     if (sourceIndex_ == std::numeric_limits<int>::max()) {
         executed_ = false;
         return;
     }
 
-    rackId_ = tm.wrapChainElementsInRack(sourceElementPaths_, rackName_);
+    // A redo reuses the ids the first run allocated, so undo followed by redo
+    // leaves the rack with the identity it had rather than a fresh one (#2221).
+    const auto newRackId =
+        tm.wrapChainElementsInRack(sourceElementPaths_, rackName_, rackId_, chainId_);
+    rackId_ = newRackId;
     executed_ = rackId_ != INVALID_RACK_ID;
 
     if (executed_) {
@@ -682,9 +723,23 @@ void WrapChainElementsInRackCommand::undo() {
             childPaths.push_back(chainPath.withRack(getRack(element).id));
     }
 
-    int insertIndex = sourceIndex_;
-    for (const auto& childPath : childPaths)
-        tm.moveChainElement(childPath, sourceChainPath_, insertIndex++);
+    // Each child goes back to the index it came from, not to a run starting at
+    // the lowest one: a selection can have gaps, and closing them reorders the
+    // chain (#2221).
+    //
+    // The rack is still standing while they move, occupying one slot at
+    // `rackIndex`, so a child whose home is past it aims one higher and lands
+    // right when the rack goes. `rackIndex` rises as children are put in front
+    // of it.
+    int rackIndex = sourceIndex_;
+    for (std::size_t i = 0; i < childPaths.size(); ++i) {
+        const int home =
+            i < sourceIndices_.size() ? sourceIndices_[i] : sourceIndex_ + static_cast<int>(i);
+        const int target = home <= rackIndex ? home : home + 1;
+        tm.moveChainElement(childPaths[i], sourceChainPath_, target);
+        if (target <= rackIndex)
+            ++rackIndex;
+    }
 
     tm.removeRackFromChainByPath(rackPath);
 }

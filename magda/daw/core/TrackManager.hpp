@@ -712,8 +712,17 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     bool insertChainElementsByPath(const ChainNodePath& destinationChainPath,
                                    std::vector<ChainElement> elements, int insertIndex,
                                    bool reassignIds = true);
+    /// Wrap @p paths in a new rack.
+    ///
+    /// @p presetRackId and @p presetChainId let a redo reuse the ids its first
+    /// run allocated. Re-deriving them would give the rack a different identity
+    /// each time, so every link, automation lane and alias naming it would be
+    /// orphaned by an undo followed by a redo -- the same reason the removal
+    /// commands restore a device under the id it had (#2221).
     RackId wrapChainElementsInRack(const std::vector<ChainNodePath>& paths,
-                                   const juce::String& rackName = "Rack");
+                                   const juce::String& rackName = "Rack",
+                                   RackId presetRackId = INVALID_RACK_ID,
+                                   ChainId presetChainId = INVALID_CHAIN_ID);
     int getChainElementIndex(const ChainNodePath& elementPath);
     DeviceInfo* getDeviceInChain(TrackId trackId, RackId rackId, ChainId chainId,
                                  DeviceId deviceId);
