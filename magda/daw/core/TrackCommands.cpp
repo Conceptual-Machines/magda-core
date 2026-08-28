@@ -570,10 +570,18 @@ PasteChainElementsCommand::PasteChainElementsCommand(const ChainNodePath& destin
 
 void PasteChainElementsCommand::execute() {
     auto& tm = TrackManager::getInstance();
-    auto elements = deepCopyChainElements(templateElements_);
+    const bool replaying = !materialised_.empty();
+
+    // A redo replays what the first run produced, ids and all. Re-copying the
+    // template would re-key it, giving every pasted device a fresh id and
+    // orphaning the links, automation lanes and aliases made against the first
+    // paste -- the same reason the removal commands restore under the id the
+    // device had (#2221).
+    auto elements =
+        replaying ? deepCopyChainElements(materialised_) : deepCopyChainElements(templateElements_);
     const int requestedIndex = insertIndex_;
     executed_ = tm.insertChainElementsByPath(destinationChainPath_, std::move(elements),
-                                             requestedIndex, true);
+                                             requestedIndex, !replaying);
     insertedPaths_.clear();
     if (!executed_)
         return;
@@ -607,6 +615,9 @@ void PasteChainElementsCommand::execute() {
         } else if (isRack(element)) {
             insertedPaths_.push_back(destinationChainPath_.withRack(getRack(element).id));
         }
+
+        if (!replaying)
+            materialised_.push_back(deepCopyElement(element));
     }
 }
 
@@ -653,7 +664,11 @@ void WrapChainElementsInRackCommand::execute() {
         return;
     }
 
-    rackId_ = tm.wrapChainElementsInRack(sourceElementPaths_, rackName_);
+    // A redo reuses the ids the first run allocated, so undo followed by redo
+    // leaves the rack with the identity it had rather than a fresh one (#2221).
+    const auto newRackId =
+        tm.wrapChainElementsInRack(sourceElementPaths_, rackName_, rackId_, chainId_);
+    rackId_ = newRackId;
     executed_ = rackId_ != INVALID_RACK_ID;
 
     if (executed_) {

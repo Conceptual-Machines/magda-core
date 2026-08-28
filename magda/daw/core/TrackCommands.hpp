@@ -213,6 +213,13 @@ class PasteChainElementsCommand : public UndoableCommand {
   private:
     ChainNodePath destinationChainPath_;
     std::vector<ChainElement> templateElements_;
+    /// What the first execute actually produced, ids included.
+    ///
+    /// A redo replays this rather than re-copying the template: the template is
+    /// re-keyed on the way in, so re-deriving it would give every pasted device
+    /// a fresh id and orphan the links, automation lanes and aliases made
+    /// against the first paste (#2221).
+    std::vector<ChainElement> materialised_;
     std::vector<ChainNodePath> insertedPaths_;
     int insertIndex_ = 0;
     bool executed_ = false;

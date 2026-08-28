@@ -1067,7 +1067,8 @@ bool TrackManager::insertChainElementsByPath(const ChainNodePath& destinationCha
 }
 
 RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& paths,
-                                             const juce::String& rackName) {
+                                             const juce::String& rackName, RackId presetRackId,
+                                             ChainId presetChainId) {
     if (paths.empty())
         return INVALID_RACK_ID;
 
@@ -1102,10 +1103,12 @@ RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& p
                      [](const auto& a, const auto& b) { return a.first < b.first; });
 
     RackInfo rack;
-    rack.id = allocateRackId();
+    // A redo passes the ids its first run allocated, so the rack keeps the
+    // identity every link naming it was made against (#2221).
+    rack.id = presetRackId != INVALID_RACK_ID ? presetRackId : allocateRackId();
     rack.name = rackName.isEmpty() ? "Rack" : rackName;
     ChainInfo chain;
-    chain.id = allocateChainId();
+    chain.id = presetChainId != INVALID_CHAIN_ID ? presetChainId : allocateChainId();
     chain.name = "Chain 1";
 
     if (audioEngine_) {
