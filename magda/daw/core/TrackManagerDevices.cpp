@@ -858,6 +858,8 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
         return false;
     }
 
+    const bool sameContainer = sourceElements == destinationElements;
+
     // A device that drives child tracks cannot change placement. The child
     // track's link names the track the device stands on, so moving it would
     // leave that link pointing at a track no longer hosting it, and a device
@@ -866,14 +868,14 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
     // engine sync: closing the pairs first is the one documented way to move a
     // device that owns them (#2220).
     //
-    // The whole subtree, because a rack carries its devices with it. Reordering
-    // within the track's own list is not a placement change and stays allowed.
-    const bool placementChanges = destinationChainPath.getType() != ChainNodeType::Track ||
-                                  destinationChainPath.trackId != sourceElementPath.trackId;
-    if (placementChanges && ownsMultiOutChildTracks(*this, *sourceIt, sourceElementPath.trackId))
+    // The whole subtree, because a rack carries its devices with it. Leaving the
+    // container is the placement change; reordering inside it is not, whatever
+    // the container is. A nested multi-out device changes neither the track nor
+    // the device id its child track is keyed on by moving to another index in
+    // the chain it already lives in.
+    if (!sameContainer && ownsMultiOutChildTracks(*this, *sourceIt, sourceElementPath.trackId))
         return false;
 
-    const bool sameContainer = sourceElements == destinationElements;
     const int sourceIndex = static_cast<int>(std::distance(sourceElements->begin(), sourceIt));
     const int destinationSize = static_cast<int>(destinationElements->size());
     insertIndex = std::clamp(insertIndex, 0, destinationSize);

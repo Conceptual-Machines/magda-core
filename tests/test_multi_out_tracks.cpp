@@ -379,3 +379,62 @@ TEST_CASE("A device driving child tracks cannot change placement",
     CHECK(tm.moveChainElement(devicePath, elsewhere, 0));
     CHECK(tm.findDevicePath(deviceId) == ChainNodePath::topLevelDevice(otherTrackId, deviceId));
 }
+
+TEST_CASE("An active multi-out device reorders inside its own nested chain",
+          "[multi_out][lifecycle][ownership]") {
+    // Reordering is not a placement change. A nested multi-out device moving to
+    // another index in the chain it already lives in changes neither the track
+    // nor the device id its child track is keyed on, so the guard above must not
+    // catch it (#2220).
+    MultiOutTestFixture fixture;
+    auto& tm = fixture.tm();
+
+    const auto trackId = tm.createTrack("Inst", TrackType::Media);
+    const auto rackId = tm.addRackToTrack(trackId, "Rack");
+    const auto chainId = tm.addChainToRack(ChainNodePath::rack(trackId, rackId));
+    const auto chainPath = ChainNodePath::chain(trackId, rackId, chainId);
+
+    DeviceInfo instrument;
+    instrument.name = "MultiOutSynth";
+    instrument.format = PluginFormat::Internal;
+    instrument.pluginId = "multisynth";
+    instrument.isInstrument = true;
+    instrument.multiOut.isMultiOut = true;
+    instrument.multiOut.totalOutputChannels = 4;
+    instrument.multiOut.outputPairs = {{0, "Main 1-2", 1, 2}, {1, "Out 3-4", 3, 2}};
+
+    const auto deviceId = tm.addDeviceToChainByPath(chainPath, instrument);
+    REQUIRE(deviceId != INVALID_DEVICE_ID);
+
+    DeviceInfo neighbour;
+    neighbour.name = "Filter";
+    neighbour.format = PluginFormat::Internal;
+    neighbour.pluginId = "magdafilter";
+    const auto neighbourId = tm.addDeviceToChainByPath(chainPath, neighbour);
+    REQUIRE(neighbourId != INVALID_DEVICE_ID);
+
+    const auto childId = tm.activateMultiOutPair(trackId, deviceId, 1);
+    REQUIRE(childId != INVALID_TRACK_ID);
+    REQUIRE(tm.multiOutPairIsActive(trackId, deviceId, 1));
+
+    // Same container, new index: allowed, and ownership is untouched.
+    REQUIRE(tm.moveChainElement(chainPath.withDevice(deviceId), chainPath, 2));
+
+    const auto* chain = tm.getChainByPath(chainPath);
+    REQUIRE(chain != nullptr);
+    REQUIRE(chain->elements.size() == 2);
+    CHECK(getDevice(chain->elements[0]).id == neighbourId);
+    CHECK(getDevice(chain->elements[1]).id == deviceId);
+
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, 1) == childId);
+    const auto* child = tm.getTrack(childId);
+    REQUIRE(child != nullptr);
+    REQUIRE(child->multiOutLink.has_value());
+    CHECK(child->multiOutLink->sourceTrackId == trackId);
+    CHECK(child->multiOutLink->sourceDeviceId == deviceId);
+
+    // Leaving the container is still refused.
+    CHECK_FALSE(
+        tm.moveChainElement(chainPath.withDevice(deviceId), ChainNodePath::trackLevel(trackId), 0));
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, 1) == childId);
+}
