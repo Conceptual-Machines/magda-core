@@ -786,6 +786,25 @@ DeviceInfo* multiOutDevice(TrackManager& tm, TrackId parentTrackId, DeviceId dev
 
 }  // namespace
 
+TrackId TrackManager::multiOutChildTrack(TrackId parentTrackId, DeviceId deviceId,
+                                         int pairIndex) const {
+    // The child tracks are asked, because they own the assignment. A device's
+    // description of its pairs says nothing about where they go, so there is no
+    // second answer that can disagree with this one (#2220).
+    if (parentTrackId == INVALID_TRACK_ID || deviceId == INVALID_DEVICE_ID || pairIndex < 0)
+        return INVALID_TRACK_ID;
+
+    for (const auto& track : tracks_) {
+        if (!track.multiOutLink)
+            continue;
+        const auto& link = *track.multiOutLink;
+        if (link.sourceTrackId == parentTrackId && link.sourceDeviceId == deviceId &&
+            link.outputPairIndex == pairIndex)
+            return track.id;
+    }
+    return INVALID_TRACK_ID;
+}
+
 TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId deviceId,
                                            int pairIndex) {
     auto* parentTrack = getTrack(parentTrackId);
@@ -801,11 +820,13 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
     if (pairIndex < 0 || pairIndex >= static_cast<int>(device->multiOut.outputPairs.size()))
         return INVALID_TRACK_ID;
 
-    auto& pair = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
+    const auto& pair = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
 
-    // Already active?
-    if (pair.active && pair.trackId != INVALID_TRACK_ID)
-        return pair.trackId;
+    // Already driving a child track? Asked of the child tracks, which own the
+    // assignment, rather than of a flag on the device (#2220).
+    if (const auto existing = multiOutChildTrack(parentTrackId, deviceId, pairIndex);
+        existing != INVALID_TRACK_ID)
+        return existing;
 
     // Create the output track
     TrackId newTrackId = nextTrackId_++;
@@ -836,19 +857,8 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
         tracks_.push_back(std::move(newTrack));
     }
 
-    // Re-fetch pointers after insert (vector reallocation invalidates them).
-    // Through the same lookup as above: the flat one misses a device inside a
-    // rack, and this dereferences what it answers (#2211).
-    parentTrack = getTrack(parentTrackId);
-    device = multiOutDevice(*this, parentTrackId, deviceId);
-    if (device == nullptr || pairIndex >= static_cast<int>(device->multiOut.outputPairs.size()))
-        return INVALID_TRACK_ID;
-
-    auto& pairRef = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
-
-    // Update the output pair state
-    pairRef.active = true;
-    pairRef.trackId = newTrackId;
+    // Nothing to write back on the device: inserting the child track with its
+    // link IS the assignment, and every reader derives from it (#2220).
 
     DBG("TrackManager: Activated multi-out pair " << pairIndex << " for device " << deviceId
                                                   << " -> track " << newTrackId);
@@ -869,22 +879,17 @@ void TrackManager::deactivateMultiOutPair(TrackId parentTrackId, DeviceId device
     if (pairIndex < 0 || pairIndex >= static_cast<int>(device->multiOut.outputPairs.size()))
         return;
 
-    auto& pair = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
-    if (!pair.active || pair.trackId == INVALID_TRACK_ID)
+    const auto trackToRemove = multiOutChildTrack(parentTrackId, deviceId, pairIndex);
+    if (trackToRemove == INVALID_TRACK_ID)
         return;
 
-    TrackId trackToRemove = pair.trackId;
-
-    // Remove the track
+    // Removing the child track removes the assignment: the link went with it,
+    // and there is no second copy to clear (#2220).
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
                            [trackToRemove](const TrackInfo& t) { return t.id == trackToRemove; });
     if (it != tracks_.end()) {
         tracks_.erase(it);
     }
-
-    // Update pair state
-    pair.active = false;
-    pair.trackId = INVALID_TRACK_ID;
 
     DBG("TrackManager: Deactivated multi-out pair " << pairIndex << " for device " << deviceId);
 
@@ -900,7 +905,7 @@ void TrackManager::deactivateAllMultiOutPairs(TrackId parentTrackId, DeviceId de
             break;
         if (i >= static_cast<int>(device->multiOut.outputPairs.size()))
             break;
-        if (device->multiOut.outputPairs[static_cast<size_t>(i)].active) {
+        if (multiOutPairIsActive(parentTrackId, deviceId, i)) {
             deactivateMultiOutPair(parentTrackId, deviceId, i);
         }
     }
@@ -1084,26 +1089,10 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
         newTrack.auxBusIndex = nextAuxBusIndex_++;
     }
 
-    // MultiOut links and output pairs reference the original track — clear them
+    // The copy is not a child track of anything. Its devices need no such reset:
+    // a DeviceInfo no longer carries which child tracks its pairs drive, so a
+    // copy inherits no ownership to begin with (#2220).
     newTrack.multiOutLink.reset();
-
-    std::function<void(std::vector<ChainElement>&)> clearMultiOutPairs;
-    clearMultiOutPairs = [&](std::vector<ChainElement>& elements) {
-        for (auto& element : elements) {
-            if (magda::isDevice(element)) {
-                auto& device = magda::getDevice(element);
-                for (auto& pair : device.multiOut.outputPairs) {
-                    pair.active = false;
-                    pair.trackId = INVALID_TRACK_ID;
-                }
-            } else if (magda::isRack(element)) {
-                auto& rack = magda::getRack(element);
-                for (auto& chain : rack.chains)
-                    clearMultiOutPairs(chain.elements);
-            }
-        }
-    };
-    clearMultiOutPairs(newTrack.chain.fxChainElements);
 
     TrackId newId = newTrack.id;
 

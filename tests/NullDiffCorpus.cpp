@@ -1908,7 +1908,7 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         // in the other, and any mixing up of the two moves both.
         auto source = instrumentTrackOn(1, 970, "Source");
         source.chain.fxChainElements.clear();
-        source.chain.fxChainElements.emplace_back(multiOutSynthDevice(970, 2));
+        source.chain.fxChainElements.emplace_back(multiOutSynthDevice(970));
         source.pan = -1.0f;
 
         TrackInfo pairTrack;

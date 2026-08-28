@@ -172,15 +172,14 @@ inline magda::DeviceInfo synthDevice(magda::DeviceId id) {
 }
 
 /**
- * @brief The four-channel instrument, with its second pair opened by @p pairTrack.
+ * @brief The four-channel instrument, with two pairs declared.
  *
- * Two pairs declared, which is what gives the plan a port to emit and the
- * wrapper a pin to wire. The second is marked active and named its track here
- * because that is the state the app reaches after a user opens a pair; nothing
- * in either leg opens one, so a case that left it inactive would be asking the
- * engines to route a pair the model says nobody wants.
+ * Two pairs is what gives the plan a port to emit and the wrapper a pin to
+ * wire. Which of them is open is not said here: that is the child track's
+ * `multiOutLink`, and the case builds one for the second pair, which is the
+ * state the app reaches after a user opens it (#2220).
  */
-inline magda::DeviceInfo multiOutSynthDevice(magda::DeviceId id, magda::TrackId pairTrack) {
+inline magda::DeviceInfo multiOutSynthDevice(magda::DeviceId id) {
     auto device = synthDevice(id);
     device.name = "Null Diff Multi Out";
     device.pluginId = kMultiOutPluginId;
@@ -199,8 +198,6 @@ inline magda::DeviceInfo multiOutSynthDevice(magda::DeviceId id, magda::TrackId 
     second.name = "Out 3-4";
     second.firstPin = 3;
     second.numChannels = 2;
-    second.active = true;
-    second.trackId = pairTrack;
 
     device.multiOut.outputPairs.push_back(main);
     device.multiOut.outputPairs.push_back(second);

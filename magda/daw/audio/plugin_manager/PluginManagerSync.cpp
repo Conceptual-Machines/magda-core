@@ -1724,16 +1724,13 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
             TrackManager::getInstance().getDevice(link.sourceTrackId, link.sourceDeviceId);
         device != nullptr && device->multiOut.isMultiOut && link.outputPairIndex >= 0 &&
         link.outputPairIndex < static_cast<int>(device->multiOut.outputPairs.size())) {
-        auto& outPair = device->multiOut.outputPairs[static_cast<size_t>(link.outputPairIndex)];
+        const auto& outPair =
+            device->multiOut.outputPairs[static_cast<size_t>(link.outputPairIndex)];
 
-        // Restore pair state from the existing multi-out track (needed after project load,
-        // since the async plugin callback rebuilds pairs with active=false before tracks are
-        // restored)
-        if (!outPair.active || outPair.trackId != trackId) {
-            outPair.active = true;
-            outPair.trackId = trackId;
-        }
-
+        // Nothing to repair. This track's own link is the assignment, so being
+        // here already means the pair drives it; the sync used to write that
+        // back onto the device because the device held a second copy that a
+        // project load could not populate in time (#2220).
         rackInstance = instrumentRackManager_.createOutputInstance(
             link.sourceDeviceId, link.outputPairIndex, outPair.firstPin, outPair.numChannels);
         if (rackInstance) {
@@ -3008,7 +3005,8 @@ void PluginManager::syncDrumGridMultiOutTracks(const ChainNodePath& drumGridPath
 
     // Deactivate pairs that no longer have a corresponding chain
     for (int p = 1; p < static_cast<int>(pairs.size()); ++p) {
-        if (pairs[static_cast<size_t>(p)].active && activeBuses.find(p) == activeBuses.end()) {
+        if (tm.multiOutPairIsActive(trackId, deviceId, p) &&
+            activeBuses.find(p) == activeBuses.end()) {
             tm.deactivateMultiOutPair(trackId, deviceId, p);
         }
     }
@@ -3019,7 +3017,7 @@ void PluginManager::syncDrumGridMultiOutTracks(const ChainNodePath& drumGridPath
             continue;
 
         auto& pair = pairs[static_cast<size_t>(bus)];
-        if (!pair.active) {
+        if (!tm.multiOutPairIsActive(trackId, deviceId, bus)) {
             auto childTrackId = tm.activateMultiOutPair(trackId, deviceId, bus);
 
             if (childTrackId != INVALID_TRACK_ID) {
@@ -3035,14 +3033,15 @@ void PluginManager::syncDrumGridMultiOutTracks(const ChainNodePath& drumGridPath
                 if (auto* childTrack = tm.getTrack(childTrackId))
                     syncMultiOutTrack(childTrackId, *childTrack);
             }
-        } else if (pair.trackId != INVALID_TRACK_ID) {
+        } else if (const auto childTrackId = tm.multiOutChildTrack(trackId, deviceId, bus);
+                   childTrackId != INVALID_TRACK_ID) {
             // Update name if chain name changed
             auto it = busNames.find(bus);
             if (it != busNames.end()) {
                 auto newName = drumGrid->getName() + ": " + it->second;
-                if (auto* childTrack = tm.getTrack(pair.trackId)) {
+                if (auto* childTrack = tm.getTrack(childTrackId)) {
                     if (childTrack->name != newName) {
-                        tm.setTrackName(pair.trackId, newName);
+                        tm.setTrackName(childTrackId, newName);
                         pair.name = it->second;
                     }
                 }

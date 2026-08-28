@@ -32,6 +32,41 @@ template <typename Id> bool remapId(std::map<Id, Id> const& ids, int& value) {
     return true;
 }
 
+/// Whether anything in @p element drives a multi-out child track of @p sourceTrackId.
+///
+/// The whole subtree, because a rack being moved carries its devices with it.
+/// Ownership of a generated child track belongs to the device where it stands,
+/// and the child track's link names the track it stands on, so carrying the
+/// device somewhere else would leave the link naming a track that no longer
+/// hosts it (#2220).
+bool ownsMultiOutChildTracks(const TrackManager& tm, const ChainElement& element,
+                             TrackId sourceTrackId) {
+    if (magda::isDevice(element)) {
+        const auto& device = magda::getDevice(element);
+        if (device.multiOut.isMultiOut) {
+            for (std::size_t pair = 0; pair < device.multiOut.outputPairs.size(); ++pair)
+                if (tm.multiOutPairIsActive(sourceTrackId, device.id, static_cast<int>(pair)))
+                    return true;
+        }
+
+        if (device.pads)
+            for (const auto& pad : device.pads->chains)
+                for (const auto& padElement : pad.elements)
+                    if (ownsMultiOutChildTracks(tm, padElement, sourceTrackId))
+                        return true;
+        return false;
+    }
+
+    if (!magda::isRack(element))
+        return false;
+
+    for (const auto& chain : magda::getRack(element).chains)
+        for (const auto& nested : chain.elements)
+            if (ownsMultiOutChildTracks(tm, nested, sourceTrackId))
+                return true;
+    return false;
+}
+
 bool targetPointsAtDevice(const ControlTarget& target, DeviceId deviceId) {
     return deviceId != INVALID_DEVICE_ID && target.devicePath.getDeviceId() == deviceId;
 }
@@ -689,16 +724,6 @@ static void reassignCopiedElementIds(TrackManager& tm, std::vector<ChainElement>
                 device.id = tm.allocateDeviceId();
                 remap.devices[oldId] = device.id;
 
-                // The copy owns no child tracks yet. Inheriting the source's
-                // pair state would leave the sync thinking they were already
-                // made, so it would build none and the copy's pads on a bus
-                // would be silent while the link still named the original.
-                // `duplicateTrack()` clears them for the same reason.
-                for (auto& pair : device.multiOut.outputPairs) {
-                    pair.active = false;
-                    pair.trackId = INVALID_TRACK_ID;
-                }
-
                 // A pad-per-chain device's pads are its own: their DeviceIds and
                 // the rack id derived from the owner's would otherwise key the
                 // ops of the device this was copied from, and the copy's links
@@ -798,10 +823,8 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
     // the top level with its routing gone. Reordering within the track's own
     // list is not a placement change and stays allowed (#2211).
     // Only reordering within the same track's own list leaves the placement
-    // alone. A track-level destination on another track moves the pair state
-    // with the device while the existing child track still links to the track
-    // it came from, so the sync finds the pair already active, makes nothing,
-    // and the pad goes quiet.
+    // alone. Anywhere else is a placement change, and two things are refused
+    // before anything is mutated rather than repaired afterwards.
     if (destinationChainPath.getType() != ChainNodeType::Track ||
         destinationChainPath.trackId != sourceElementPath.trackId) {
         const auto* moved = getDeviceInChainByPath(sourceElementPath);
@@ -834,6 +857,21 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
     } else {
         return false;
     }
+
+    // A device that drives child tracks cannot change placement. The child
+    // track's link names the track the device stands on, so moving it would
+    // leave that link pointing at a track no longer hosting it, and a device
+    // taken off the top level has no output instance to carry a bus at all.
+    // Refused here, before anything is mutated, rather than repaired later by
+    // engine sync: closing the pairs first is the one documented way to move a
+    // device that owns them (#2220).
+    //
+    // The whole subtree, because a rack carries its devices with it. Reordering
+    // within the track's own list is not a placement change and stays allowed.
+    const bool placementChanges = destinationChainPath.getType() != ChainNodeType::Track ||
+                                  destinationChainPath.trackId != sourceElementPath.trackId;
+    if (placementChanges && ownsMultiOutChildTracks(*this, *sourceIt, sourceElementPath.trackId))
+        return false;
 
     const bool sameContainer = sourceElements == destinationElements;
     const int sourceIndex = static_cast<int>(std::distance(sourceElements->begin(), sourceIt));

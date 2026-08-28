@@ -263,7 +263,26 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
      */
     void previewNote(TrackId trackId, int noteNumber, int velocity, bool isNoteOn);
 
+    // ========================================================================
     // Multi-output management
+    //
+    // A pair's child track is owned by the child track: `TrackInfo::multiOutLink`
+    // names the source track, the source device and the pair, and it is the only
+    // record of the assignment. The device's `MultiOutOutputPair` carries the
+    // pair's declarative description and nothing about where it goes, so a
+    // device copied by duplication, preset import or paste cannot inherit the
+    // original's child tracks (#2220).
+    // ========================================================================
+
+    /// The child track pair @p pairIndex of @p deviceId drives, or
+    /// INVALID_TRACK_ID when it drives none.
+    TrackId multiOutChildTrack(TrackId parentTrackId, DeviceId deviceId, int pairIndex) const;
+
+    /// Whether that pair drives a child track. Derived, never stored.
+    bool multiOutPairIsActive(TrackId parentTrackId, DeviceId deviceId, int pairIndex) const {
+        return multiOutChildTrack(parentTrackId, deviceId, pairIndex) != INVALID_TRACK_ID;
+    }
+
     TrackId activateMultiOutPair(TrackId parentTrackId, DeviceId deviceId, int pairIndex);
     void deactivateMultiOutPair(TrackId parentTrackId, DeviceId deviceId, int pairIndex);
     void deactivateAllMultiOutPairs(TrackId parentTrackId, DeviceId deviceId);

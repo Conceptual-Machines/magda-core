@@ -41,9 +41,9 @@ class MultiOutTestFixture {
         instrument.multiOut.isMultiOut = true;
         instrument.multiOut.totalOutputChannels = 6;
         instrument.multiOut.outputPairs = {
-            {0, "Main 1-2", false, INVALID_TRACK_ID, 1, 2},
-            {1, "Out 3-4", false, INVALID_TRACK_ID, 3, 2},
-            {2, "Out 5-6", false, INVALID_TRACK_ID, 5, 2},
+            {0, "Main 1-2", 1, 2},
+            {1, "Out 3-4", 3, 2},
+            {2, "Out 5-6", 5, 2},
         };
 
         auto deviceId = tm().addDeviceToTrack(trackId, instrument);
@@ -174,9 +174,10 @@ TEST_CASE("Multi-out pair activation and deactivation", "[multi_out][lifecycle]"
         auto siblingId = fixture.tm().activateMultiOutPair(trackId, deviceId, 1);
         REQUIRE(siblingId != INVALID_TRACK_ID);
 
-        auto* device = fixture.tm().getDevice(trackId, deviceId);
-        REQUIRE(device->multiOut.outputPairs[1].active == true);
-        REQUIRE(device->multiOut.outputPairs[1].trackId == siblingId);
+        // Derived from the child track's own link, not from a flag the device
+        // carries (#2220).
+        REQUIRE(fixture.tm().multiOutPairIsActive(trackId, deviceId, 1));
+        REQUIRE(fixture.tm().multiOutChildTrack(trackId, deviceId, 1) == siblingId);
 
         // Multi-out track should be a top-level sibling, not a child
         auto* sibling = fixture.tm().getTrack(siblingId);
@@ -200,9 +201,8 @@ TEST_CASE("Multi-out pair activation and deactivation", "[multi_out][lifecycle]"
 
         fixture.tm().deactivateMultiOutPair(trackId, deviceId, 1);
 
-        auto* device = fixture.tm().getDevice(trackId, deviceId);
-        REQUIRE(device->multiOut.outputPairs[1].active == false);
-        REQUIRE(device->multiOut.outputPairs[1].trackId == INVALID_TRACK_ID);
+        REQUIRE_FALSE(fixture.tm().multiOutPairIsActive(trackId, deviceId, 1));
+        REQUIRE(fixture.tm().multiOutChildTrack(trackId, deviceId, 1) == INVALID_TRACK_ID);
 
         // Child track should no longer exist
         REQUIRE(fixture.tm().getTrack(childId) == nullptr);
@@ -212,4 +212,170 @@ TEST_CASE("Multi-out pair activation and deactivation", "[multi_out][lifecycle]"
         auto childId = fixture.tm().activateMultiOutPair(trackId, deviceId, 99);
         REQUIRE(childId == INVALID_TRACK_ID);
     }
+}
+
+// ============================================================================
+// Ownership is the child track's, and only the child track's (#2220)
+//
+// `active` and `trackId` used to sit on the device's output pair as well as on
+// the child track's `multiOutLink`. Two records of one fact, and a `DeviceInfo`
+// travels with duplication, preset import and paste, so a copy arrived claiming
+// the original's child track. These pin that there is one record now and that
+// every transition either keeps it consistent or leaves nothing behind.
+// ============================================================================
+
+TEST_CASE("Duplicating a track does not duplicate child-track ownership",
+          "[multi_out][lifecycle][ownership]") {
+    MultiOutTestFixture fixture;
+    auto& tm = fixture.tm();
+
+    auto [trackId, deviceId] = fixture.createMultiOutTrack();
+    const auto childId = tm.activateMultiOutPair(trackId, deviceId, 1);
+    REQUIRE(childId != INVALID_TRACK_ID);
+
+    const auto copyId = tm.duplicateTrack(trackId);
+    REQUIRE(copyId != INVALID_TRACK_ID);
+
+    const auto* copy = tm.getTrack(copyId);
+    REQUIRE(copy != nullptr);
+    REQUIRE(copy->chain.fxChainElements.size() == 1);
+    const auto copyDeviceId = getDevice(copy->chain.fxChainElements[0]).id;
+    REQUIRE(copyDeviceId != deviceId);
+
+    // The declarative description came with the copy.
+    const auto* copyDevice = tm.getDevice(copyId, copyDeviceId);
+    REQUIRE(copyDevice != nullptr);
+    CHECK(copyDevice->multiOut.isMultiOut);
+    CHECK(copyDevice->multiOut.outputPairs.size() == 3);
+    CHECK(copyDevice->multiOut.outputPairs[1].name == "Out 3-4");
+    CHECK(copyDevice->multiOut.outputPairs[1].firstPin == 3);
+
+    // The ownership did not.
+    CHECK_FALSE(tm.multiOutPairIsActive(copyId, copyDeviceId, 1));
+    CHECK(tm.multiOutChildTrack(copyId, copyDeviceId, 1) == INVALID_TRACK_ID);
+
+    // And the original still drives its own, unmoved.
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, 1) == childId);
+    const auto* child = tm.getTrack(childId);
+    REQUIRE(child != nullptr);
+    REQUIRE(child->multiOutLink.has_value());
+    CHECK(child->multiOutLink->sourceTrackId == trackId);
+    CHECK(child->multiOutLink->sourceDeviceId == deviceId);
+}
+
+TEST_CASE("Removing the child track ends the assignment", "[multi_out][lifecycle][ownership]") {
+    MultiOutTestFixture fixture;
+    auto& tm = fixture.tm();
+
+    auto [trackId, deviceId] = fixture.createMultiOutTrack();
+    const auto childId = tm.activateMultiOutPair(trackId, deviceId, 1);
+    REQUIRE(childId != INVALID_TRACK_ID);
+
+    // Removed as a track, not through deactivateMultiOutPair: the record went
+    // with it, so there is no second copy left claiming a track that is gone.
+    tm.deleteTrack(childId);
+
+    CHECK(tm.getTrack(childId) == nullptr);
+    CHECK_FALSE(tm.multiOutPairIsActive(trackId, deviceId, 1));
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, 1) == INVALID_TRACK_ID);
+
+    // And the pair can be opened again, onto a track of its own.
+    const auto reopened = tm.activateMultiOutPair(trackId, deviceId, 1);
+    REQUIRE(reopened != INVALID_TRACK_ID);
+    CHECK(reopened != childId);
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, 1) == reopened);
+}
+
+TEST_CASE("Two pairs of one device own two different tracks", "[multi_out][lifecycle][ownership]") {
+    MultiOutTestFixture fixture;
+    auto& tm = fixture.tm();
+
+    auto [trackId, deviceId] = fixture.createMultiOutTrack();
+    const auto firstId = tm.activateMultiOutPair(trackId, deviceId, 1);
+    const auto secondId = tm.activateMultiOutPair(trackId, deviceId, 2);
+    REQUIRE(firstId != INVALID_TRACK_ID);
+    REQUIRE(secondId != INVALID_TRACK_ID);
+    REQUIRE(firstId != secondId);
+
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, 1) == firstId);
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, 2) == secondId);
+
+    // Closing one leaves the other alone.
+    tm.deactivateMultiOutPair(trackId, deviceId, 1);
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, 1) == INVALID_TRACK_ID);
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, 2) == secondId);
+}
+
+TEST_CASE("Two devices with the same pair index own different tracks",
+          "[multi_out][lifecycle][ownership]") {
+    // The record is keyed by source track, source device and pair, so two grids
+    // opening the same numbered bus cannot be confused for one another.
+    MultiOutTestFixture fixture;
+    auto& tm = fixture.tm();
+
+    auto [trackA, deviceA] = fixture.createMultiOutTrack("A");
+    auto [trackB, deviceB] = fixture.createMultiOutTrack("B");
+
+    const auto childA = tm.activateMultiOutPair(trackA, deviceA, 1);
+    const auto childB = tm.activateMultiOutPair(trackB, deviceB, 1);
+    REQUIRE(childA != INVALID_TRACK_ID);
+    REQUIRE(childB != INVALID_TRACK_ID);
+    REQUIRE(childA != childB);
+
+    CHECK(tm.multiOutChildTrack(trackA, deviceA, 1) == childA);
+    CHECK(tm.multiOutChildTrack(trackB, deviceB, 1) == childB);
+
+    // And neither answers for the other's device.
+    CHECK(tm.multiOutChildTrack(trackA, deviceB, 1) == INVALID_TRACK_ID);
+    CHECK(tm.multiOutChildTrack(trackB, deviceA, 1) == INVALID_TRACK_ID);
+}
+
+TEST_CASE("An unopened pair owns nothing", "[multi_out][lifecycle][ownership]") {
+    MultiOutTestFixture fixture;
+    auto& tm = fixture.tm();
+
+    auto [trackId, deviceId] = fixture.createMultiOutTrack();
+
+    for (int pair = 0; pair < 3; ++pair)
+        CHECK_FALSE(tm.multiOutPairIsActive(trackId, deviceId, pair));
+
+    // And an address that names nothing is answered, not guessed at.
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, 99) == INVALID_TRACK_ID);
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, -1) == INVALID_TRACK_ID);
+    CHECK(tm.multiOutChildTrack(INVALID_TRACK_ID, deviceId, 1) == INVALID_TRACK_ID);
+    CHECK(tm.multiOutChildTrack(trackId, INVALID_DEVICE_ID, 1) == INVALID_TRACK_ID);
+}
+
+TEST_CASE("A device driving child tracks cannot change placement",
+          "[multi_out][lifecycle][ownership]") {
+    // The child track's link names the track the device stands on, so a move
+    // would strand it. Refused before anything is mutated; closing the pairs is
+    // the documented way to move such a device (#2220).
+    MultiOutTestFixture fixture;
+    auto& tm = fixture.tm();
+
+    auto [trackId, deviceId] = fixture.createMultiOutTrack();
+    const auto otherTrackId = tm.createTrack("Other", TrackType::Media);
+    const auto childId = tm.activateMultiOutPair(trackId, deviceId, 1);
+    REQUIRE(childId != INVALID_TRACK_ID);
+
+    const auto devicePath = ChainNodePath::topLevelDevice(trackId, deviceId);
+    const auto elsewhere = ChainNodePath::trackLevel(otherTrackId);
+
+    CHECK_FALSE(tm.moveChainElement(devicePath, elsewhere, 0));
+
+    // Refused means unchanged: the device is where it was and still drives its
+    // child, which still names the track it was made against.
+    CHECK(tm.findDevicePath(deviceId) == devicePath);
+    CHECK(tm.multiOutChildTrack(trackId, deviceId, 1) == childId);
+    const auto* child = tm.getTrack(childId);
+    REQUIRE(child != nullptr);
+    REQUIRE(child->multiOutLink.has_value());
+    CHECK(child->multiOutLink->sourceTrackId == trackId);
+
+    // Closing the pair lets it move.
+    tm.deactivateMultiOutPair(trackId, deviceId, 1);
+    REQUIRE_FALSE(tm.multiOutPairIsActive(trackId, deviceId, 1));
+    CHECK(tm.moveChainElement(devicePath, elsewhere, 0));
+    CHECK(tm.findDevicePath(deviceId) == ChainNodePath::topLevelDevice(otherTrackId, deviceId));
 }
