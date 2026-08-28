@@ -60,6 +60,33 @@ bool anyPadOnABusInSubtree(const ChainElement& element) {
     return false;
 }
 
+/// Whether anything strictly BELOW @p element has a Drum Grid pad routed to a bus.
+///
+/// The distinction the destination rule needs. Only the root of a subtree lands
+/// where the caller says it lands; anything below it stays nested inside the
+/// root wherever that is, so it can never be the top-level instrument whose
+/// output instance carries a bus (#2221).
+bool anyPadOnABusBelowRoot(const ChainElement& element) {
+    if (magda::isDevice(element)) {
+        const auto& device = magda::getDevice(element);
+        if (device.pads)
+            for (const auto& pad : device.pads->chains)
+                for (const auto& padElement : pad.elements)
+                    if (anyPadOnABusInSubtree(padElement))
+                        return true;
+        return false;
+    }
+
+    if (!magda::isRack(element))
+        return false;
+
+    for (const auto& chain : magda::getRack(element).chains)
+        for (const auto& nested : chain.elements)
+            if (anyPadOnABusInSubtree(nested))
+                return true;
+    return false;
+}
+
 /// Whether anything in @p element drives a multi-out child track of @p sourceTrackId.
 ///
 /// The whole subtree, because a rack being moved carries its devices with it.
@@ -839,7 +866,14 @@ PlacementRefusal TrackManager::checkPlacement(const PlacementRequest& request) c
     // deleted device back, owns no child tracks and leaves no track. Refusing it
     // would have made undoing the deletion of a routed grid restore nothing at
     // all, silently, because the callers discard the result (#2221).
-    if (anyPadOnABusInSubtree(*request.subtree)) {
+    //
+    // Only the root lands where the caller says it lands. A routed grid deeper
+    // in the subtree stays nested inside that root wherever it goes, so it can
+    // never be the top-level instrument its bus needs, whatever the destination.
+    if (anyPadOnABusBelowRoot(*request.subtree))
+        return PlacementRefusal::PadOnABus;
+
+    if (magda::isDevice(*request.subtree) && anyPadOnABus(magda::getDevice(*request.subtree))) {
         const bool hasSource = request.sourcePath.trackId != INVALID_TRACK_ID;
         const bool leavesItsTrack =
             hasSource && request.destination.trackId != request.sourcePath.trackId;

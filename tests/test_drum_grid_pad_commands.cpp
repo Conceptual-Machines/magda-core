@@ -1235,3 +1235,41 @@ TEST_CASE("A routed grid pastes at track level but not into a rack",
     REQUIRE(static_cast<bool>(clone.pads));
     CHECK(clone.pads->chains[0].outputIndex == 1);
 }
+
+TEST_CASE("A rack carrying a routed grid is refused even at track level",
+          "[drumgrid][pads][commands][placement]") {
+    // The destination rule speaks for the subtree root only. A rack landing in
+    // the track's own list is top-level, but the grid inside it is not, so its
+    // bus has no output instance to be carried by and sync would drop the
+    // routing silently (#2221).
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+    REQUIRE(tm.setPadOutput(gridPath, 0, 1));
+
+    // A rack holding a copy of the routed grid, built on the model directly:
+    // no command makes one, and the point is what the rule says about it.
+    RackInfo carrier;
+    carrier.id = 500;
+    carrier.name = "Carrier";
+    ChainInfo carrierChain;
+    carrierChain.id = 501;
+    carrierChain.elements.push_back(makeDeviceElement(*tm.getDeviceInChainByPath(gridPath)));
+    carrier.chains.push_back(std::move(carrierChain));
+
+    std::vector<ChainElement> pasted;
+    pasted.push_back(makeRackElement(std::move(carrier)));
+
+    CHECK_FALSE(tm.insertChainElementsByPath(ChainNodePath::trackLevel(trackId), std::move(pasted),
+                                             1, /*reassignIds=*/true));
+
+    // Nothing landed: the grid is still the track's only element.
+    const auto& elements = tm.getTrack(trackId)->chain.fxChainElements;
+    REQUIRE(elements.size() == 1);
+    CHECK(isDevice(elements[0]));
+    CHECK(getDevice(elements[0]).id == gridId);
+}
