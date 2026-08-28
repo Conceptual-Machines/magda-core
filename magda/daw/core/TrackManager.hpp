@@ -10,6 +10,7 @@
 
 #include "ChainIdRemap.hpp"
 #include "ChainNode.hpp"
+#include "ChainPlacement.hpp"
 #include "SelectionManager.hpp"
 #include "TrackInfo.hpp"
 #include "TrackTypes.hpp"
@@ -268,6 +269,18 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // ========================================================================
     // Structural re-keying (#2221)
     // ========================================================================
+
+    /// Whether @p request may be carried out, and why not when it may not.
+    ///
+    /// The one placement question. Move, paste, wrap, unwrap and duplication all
+    /// ask it, and used to answer it with their own subset of the rules: the
+    /// move path checked four, wrap checked one, insert checked none. Every rule
+    /// examines the complete subtree and is independent of whether the
+    /// destination is a track's own list, a rack chain or a pad chain (#2221).
+    ///
+    /// Asked before anything is mutated. A refused operation leaves the model
+    /// as it was and notifies nothing.
+    PlacementRefusal checkPlacement(const PlacementRequest& request) const;
 
     /// Give every device, rack and chain in @p elements a fresh id, recording
     /// what moved where in @p remap.

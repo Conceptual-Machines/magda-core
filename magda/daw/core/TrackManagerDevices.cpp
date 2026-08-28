@@ -32,6 +32,34 @@ template <typename Id> bool remapId(std::map<Id, Id> const& ids, int& value) {
     return true;
 }
 
+/// Whether anything in @p element has a Drum Grid pad routed to a bus.
+///
+/// The whole subtree, because a rack being moved carries its devices with it.
+/// The single-device callers this replaces looked only at the element itself.
+bool anyPadOnABusInSubtree(const ChainElement& element) {
+    if (magda::isDevice(element)) {
+        const auto& device = magda::getDevice(element);
+        if (anyPadOnABus(device))
+            return true;
+
+        if (device.pads)
+            for (const auto& pad : device.pads->chains)
+                for (const auto& padElement : pad.elements)
+                    if (anyPadOnABusInSubtree(padElement))
+                        return true;
+        return false;
+    }
+
+    if (!magda::isRack(element))
+        return false;
+
+    for (const auto& chain : magda::getRack(element).chains)
+        for (const auto& nested : chain.elements)
+            if (anyPadOnABusInSubtree(nested))
+                return true;
+    return false;
+}
+
 /// Whether anything in @p element drives a multi-out child track of @p sourceTrackId.
 ///
 /// The whole subtree, because a rack being moved carries its devices with it.
@@ -752,6 +780,71 @@ static bool elementContainsInstrument(const ChainElement& element) {
     return false;
 }
 
+/// The chain element @p path addresses, device or rack, or null.
+const ChainElement* findChainElement(TrackManager& tm, const ChainNodePath& path) {
+    const auto parentPath = getParentChainPathForElementPath(path);
+    const auto* elements = getElementContainerForChainPath(tm, parentPath);
+    if (elements == nullptr)
+        return nullptr;
+
+    const auto type = path.topLevelDeviceId != INVALID_DEVICE_ID
+                          ? ChainStepType::Device
+                          : (!path.steps.empty() ? path.steps.back().type : ChainStepType::Device);
+    const auto id = path.topLevelDeviceId != INVALID_DEVICE_ID
+                        ? path.topLevelDeviceId
+                        : (!path.steps.empty() ? path.steps.back().id : INVALID_DEVICE_ID);
+
+    for (const auto& element : *elements) {
+        if (type == ChainStepType::Device) {
+            if (magda::isDevice(element) && magda::getDevice(element).id == id)
+                return &element;
+            continue;
+        }
+        if (magda::isRack(element) && magda::getRack(element).id == id)
+            return &element;
+    }
+    return nullptr;
+}
+
+PlacementRefusal TrackManager::checkPlacement(const PlacementRequest& request) const {
+    if (request.subtree == nullptr)
+        return PlacementRefusal::Allowed;
+
+    // Reordering inside the container a subtree already lives in changes neither
+    // the track nor the ids anything is keyed on, so the rules below, which all
+    // exist to protect one of those, do not apply to it.
+    if (!request.leavesItsContainer)
+        return PlacementRefusal::Allowed;
+
+    // A rack cannot be put inside one of its own chains.
+    if (chainPathContainsRack(request.destination, request.sourcePath))
+        return PlacementRefusal::DestinationInsideSource;
+
+    // The destination track has to be able to hold what is coming. Asked of the
+    // whole subtree, because a rack carries its devices with it.
+    if (const auto* destinationTrack = getTrack(request.destination.trackId)) {
+        if (!destinationTrack->canHostInstrument() && elementContainsInstrument(*request.subtree))
+            return PlacementRefusal::DestinationCannotHostInstrument;
+    } else {
+        return PlacementRefusal::DestinationCannotHostInstrument;
+    }
+
+    // A pad on a bus is carried by the output instance made for a top-level
+    // instrument. Nowhere else carries one, so the move would have to put every
+    // pad back on the main mix and take its child tracks down, and that clean-up
+    // is not part of the undoable step (#2211).
+    if (anyPadOnABusInSubtree(*request.subtree))
+        return PlacementRefusal::PadOnABus;
+
+    // And the same for a multi-out pair: the child track's link names the track
+    // the device stands on, so moving it strands the link, and a device off the
+    // top level has no output instance to carry a bus at all (#2220).
+    if (ownsMultiOutChildTracks(*this, *request.subtree, request.sourcePath.trackId))
+        return PlacementRefusal::OwnsMultiOutChildTracks;
+
+    return PlacementRefusal::Allowed;
+}
+
 bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
                                     const ChainNodePath& destinationChainPath, int insertIndex) {
     if (sourceElementPath.trackId == INVALID_TRACK_ID ||
@@ -778,27 +871,12 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
         return false;
     }
 
-    if (sourceType == ChainStepType::Rack &&
-        chainPathContainsRack(destinationChainPath, sourceElementPath)) {
-        return false;
-    }
-
     // Refused for the same reason a wrap is: dropping a grid into a rack takes
     // it somewhere no bus is carried, so the move would have to put every pad
     // back on the main mix and take its child tracks down, and that clean-up is
     // not part of the undoable step the move is. Undo would return the grid to
     // the top level with its routing gone. Reordering within the track's own
     // list is not a placement change and stays allowed (#2211).
-    // Only reordering within the same track's own list leaves the placement
-    // alone. Anywhere else is a placement change, and two things are refused
-    // before anything is mutated rather than repaired afterwards.
-    if (destinationChainPath.getType() != ChainNodeType::Track ||
-        destinationChainPath.trackId != sourceElementPath.trackId) {
-        const auto* moved = getDeviceInChainByPath(sourceElementPath);
-        if (moved != nullptr && anyPadOnABus(*moved))
-            return false;
-    }
-
     auto* sourceElements = getElementContainerForChainPath(*this, sourceChainPath);
     auto* destinationElements = getElementContainerForChainPath(*this, destinationChainPath);
     if (sourceElements == nullptr || destinationElements == nullptr) {
@@ -816,31 +894,11 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
         return false;
     }
 
-    if (auto* destinationTrack = getTrack(destinationChainPath.trackId)) {
-        const bool destinationCannotHostInstruments = !destinationTrack->canHostInstrument();
-        if (destinationCannotHostInstruments && elementContainsInstrument(*sourceIt)) {
-            return false;
-        }
-    } else {
-        return false;
-    }
-
     const bool sameContainer = sourceElements == destinationElements;
 
-    // A device that drives child tracks cannot change placement. The child
-    // track's link names the track the device stands on, so moving it would
-    // leave that link pointing at a track no longer hosting it, and a device
-    // taken off the top level has no output instance to carry a bus at all.
-    // Refused here, before anything is mutated, rather than repaired later by
-    // engine sync: closing the pairs first is the one documented way to move a
-    // device that owns them (#2220).
-    //
-    // The whole subtree, because a rack carries its devices with it. Leaving the
-    // container is the placement change; reordering inside it is not, whatever
-    // the container is. A nested multi-out device changes neither the track nor
-    // the device id its child track is keyed on by moving to another index in
-    // the chain it already lives in.
-    if (!sameContainer && ownsMultiOutChildTracks(*this, *sourceIt, sourceElementPath.trackId))
+    // One question, asked before anything is mutated (#2221).
+    if (checkPlacement({&*sourceIt, sourceElementPath, destinationChainPath, !sameContainer}) !=
+        PlacementRefusal::Allowed)
         return false;
 
     const int sourceIndex = static_cast<int>(std::distance(sourceElements->begin(), sourceIt));
@@ -941,6 +999,15 @@ bool TrackManager::insertChainElementsByPath(const ChainNodePath& destinationCha
     if (destinationElements == nullptr || elements.empty())
         return false;
 
+    // This asked nothing before, so a paste could put an instrument on a track
+    // that cannot host one. There is no source: the elements are arriving, so
+    // the rules keyed on where they came from pass and the ones about what is
+    // being placed still apply (#2221).
+    for (const auto& element : elements) {
+        if (checkPlacement({&element, {}, destinationChainPath, true}) != PlacementRefusal::Allowed)
+            return false;
+    }
+
     if (reassignIds)
         reassignCopiedElementIds(*this, elements, destinationChainPath.trackId);
 
@@ -967,10 +1034,13 @@ RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& p
         if (!path.isValid() || getParentChainPathForElementPath(path) != sourceChainPath)
             return INVALID_RACK_ID;
 
-        // Same refusal as the single-device wrap: a pad on a bus would lose its
-        // routing to a clean-up the undo of this move does not cover (#2211).
-        if (const auto* device = getDeviceInChainByPath(path);
-            device != nullptr && anyPadOnABus(*device))
+        // Wrapping takes an element off the top level, which is a placement
+        // change like any other. Asked the same way: this used to check only
+        // whether a pad was on a bus, so wrapping a multi-out instrument
+        // stranded the child tracks a move of it refuses to strand (#2221).
+        if (const auto* element = findChainElement(*this, path);
+            element != nullptr &&
+            checkPlacement({element, path, sourceChainPath, true}) != PlacementRefusal::Allowed)
             return INVALID_RACK_ID;
 
         const int index = getChainElementIndex(path);
@@ -1992,12 +2062,13 @@ RackId TrackManager::wrapDeviceInRack(TrackId trackId, DeviceId deviceId,
     if (it == elements.end())
         return INVALID_RACK_ID;
 
-    // Refused while a pad is on a bus. Nothing carries a bus off a device inside
-    // a rack, so the move would have to put every pad back on the main mix and
-    // take its child tracks down -- and that clean-up would not be part of the
-    // undoable step the move is, so undoing it would return the device to the
-    // top level with its routing gone for good (#2211).
-    if (anyPadOnABus(magda::getDevice(*it)))
+    // Wrapping takes the device off the top level, where the output instance
+    // that carries a bus is made, so it is a placement change and asks the same
+    // question every other one does. This used to check only whether a pad was
+    // on a bus, so wrapping a multi-out instrument stranded the child tracks a
+    // move of it refuses to strand (#2211, #2221).
+    if (checkPlacement({&*it, ChainNodePath::topLevelDevice(trackId, deviceId),
+                        ChainNodePath::trackLevel(trackId), true}) != PlacementRefusal::Allowed)
         return INVALID_RACK_ID;
 
     int insertIndex = static_cast<int>(std::distance(elements.begin(), it));
