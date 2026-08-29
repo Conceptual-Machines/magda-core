@@ -2663,28 +2663,59 @@ void TrackChainContent::hideHeaderControls() {
 }
 
 void TrackChainContent::rebuildNodeComponents() {
-    // Save node states (collapsed, expanded chains) BEFORE clearing components
+    // Save node states (collapsed, expanded chains) BEFORE anything is dropped
     saveNodeStates();
 
-    // Clear existing components
-    unfocusAllComponents();
-    nodeComponents_.clear();
-
     if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
+        unfocusAllComponents();
+        nodeComponents_.clear();
         return;
     }
 
     const auto& elements = magda::TrackManager::getInstance().getChainElements(selectedTrackId_);
 
-    // Create a component for each chain element
-    for (size_t i = 0; i < elements.size(); ++i) {
-        const auto& element = elements[i];
+    // Reuse the component already standing for an element, keyed by its id, and
+    // build only what is new. This used to clear the whole vector and construct
+    // every node again, so a control that wrote a device property destroyed the
+    // component tree it was inside before its own callback returned: fifty-odd
+    // TrackManager setters announce `trackDevicesChanged`, and most of them have
+    // a control behind them. `ChainPanel::rebuildElementSlots()` has always done
+    // it this way (#2214).
+    //
+    // Element ids are unique across the project, so a component never survives
+    // into a track it does not belong to: switching tracks finds no match and
+    // builds afresh.
+    std::vector<std::unique_ptr<NodeComponent>> newNodes;
 
+    auto takeExisting = [this](auto predicate) -> std::unique_ptr<NodeComponent> {
+        for (size_t i = 0; i < nodeComponents_.size(); ++i) {
+            if (predicate(nodeComponents_[i].get())) {
+                auto found = std::move(nodeComponents_[i]);
+                nodeComponents_.erase(nodeComponents_.begin() + static_cast<long>(i));
+                return found;
+            }
+        }
+        return nullptr;
+    };
+
+    for (const auto& element : elements) {
         if (magda::isDevice(element)) {
-            // Create device slot component
             const auto& device = magda::getDevice(element);
+            const auto devicePath =
+                magda::ChainNodePath::topLevelDevice(selectedTrackId_, device.id);
+
+            if (auto existing = takeExisting([&device](NodeComponent* node) {
+                    auto* slot = dynamic_cast<DeviceSlotComponent*>(node);
+                    return slot != nullptr && slot->getDeviceId() == device.id;
+                })) {
+                static_cast<DeviceSlotComponent*>(existing.get())->updateFromDevice(device);
+                existing->setNodePath(devicePath);
+                newNodes.push_back(std::move(existing));
+                continue;
+            }
+
             auto slot = std::make_unique<DeviceSlotComponent>(device);
-            slot->setNodePath(magda::ChainNodePath::topLevelDevice(selectedTrackId_, device.id));
+            slot->setNodePath(devicePath);
 
             // Wire up device-specific callbacks
             slot->onDeviceLayoutChanged = [this]() {
@@ -2692,48 +2723,25 @@ void TrackChainContent::rebuildNodeComponents() {
                 repaint();
             };
 
-            // Wire up drag-to-reorder callbacks
-            slot->onDragStart = [this](NodeComponent* node, const juce::MouseEvent&) {
-                draggedNode_ = node;
-                dragOriginalIndex_ = findNodeIndex(node);
-                dragInsertIndex_ = dragOriginalIndex_;
-                // Capture ghost image and make original semi-transparent
-                dragGhostImage_ = node->createComponentSnapshot(node->getLocalBounds());
-                node->setAlpha(0.4f);
-                startTimerHz(10);  // Start timer to detect stale drag state
-                // Re-layout to add left padding for drop indicator
-                resized();
-            };
-
-            slot->onDragMove = [this](NodeComponent*, const juce::MouseEvent& e) {
-                auto pos = e.getEventRelativeTo(chainContainer_.get()).getPosition();
-                dragInsertIndex_ = calculateInsertIndex(pos.x);
-                dragMousePos_ = pos;
-                chainContainer_->repaint();
-            };
-
-            slot->onDragEnd = [this](NodeComponent* node, const juce::MouseEvent&) {
-                // Restore alpha and clear ghost
-                node->setAlpha(1.0f);
-                dragGhostImage_ = juce::Image();
-                stopTimer();
-
-                draggedNode_ = nullptr;
-                dragOriginalIndex_ = -1;
-                dragInsertIndex_ = -1;
-
-                resized();
-                chainContainer_->repaint();
-            };
-
             chainContainer_->addAndMakeVisible(*slot);
-            nodeComponents_.push_back(std::move(slot));
+            newNodes.push_back(std::move(slot));
 
         } else if (magda::isRack(element)) {
-            // Create rack component
             const auto& rack = magda::getRack(element);
+            const auto rackPath = magda::ChainNodePath::rack(selectedTrackId_, rack.id);
+
+            if (auto existing = takeExisting([&rack](NodeComponent* node) {
+                    auto* rackComp = dynamic_cast<RackComponent*>(node);
+                    return rackComp != nullptr && rackComp->getRackId() == rack.id;
+                })) {
+                static_cast<RackComponent*>(existing.get())->updateFromRack(rack);
+                existing->setNodePath(rackPath);
+                newNodes.push_back(std::move(existing));
+                continue;
+            }
+
             auto rackComp = std::make_unique<RackComponent>(selectedTrackId_, rack);
-            rackComp->setNodePath(magda::ChainNodePath::rack(selectedTrackId_, rack.id));
+            rackComp->setNodePath(rackPath);
 
             // Wire up callbacks
             rackComp->onSelected = [this]() { selectedDeviceId_ = magda::INVALID_DEVICE_ID; };
@@ -2755,42 +2763,61 @@ void TrackChainContent::rebuildNodeComponents() {
                 }
             };
 
-            // Wire up drag-to-reorder callbacks
-            rackComp->onDragStart = [this](NodeComponent* node, const juce::MouseEvent&) {
-                draggedNode_ = node;
-                dragOriginalIndex_ = findNodeIndex(node);
-                dragInsertIndex_ = dragOriginalIndex_;
-                // Capture ghost image and make original semi-transparent
-                dragGhostImage_ = node->createComponentSnapshot(node->getLocalBounds());
-                node->setAlpha(0.4f);
-                startTimerHz(10);  // Start timer to detect stale drag state
-                // Re-layout to add left padding for drop indicator
-                resized();
-            };
-
-            rackComp->onDragMove = [this](NodeComponent*, const juce::MouseEvent& e) {
-                auto pos = e.getEventRelativeTo(chainContainer_.get()).getPosition();
-                dragInsertIndex_ = calculateInsertIndex(pos.x);
-                dragMousePos_ = pos;
-                chainContainer_->repaint();
-            };
-
-            rackComp->onDragEnd = [this](NodeComponent* node, const juce::MouseEvent&) {
-                // Restore alpha and clear ghost
-                node->setAlpha(1.0f);
-                dragGhostImage_ = juce::Image();
-                stopTimer();
-
-                draggedNode_ = nullptr;
-                dragOriginalIndex_ = -1;
-                dragInsertIndex_ = -1;
-                resized();
-                chainContainer_->repaint();
-            };
-
             chainContainer_->addAndMakeVisible(*rackComp);
-            nodeComponents_.push_back(std::move(rackComp));
+            newNodes.push_back(std::move(rackComp));
         }
+    }
+
+    // Whatever is left in nodeComponents_ stands for an element that has gone,
+    // and is about to be destroyed, so drop the focus first.
+    if (!nodeComponents_.empty())
+        unfocusAllComponents();
+    nodeComponents_ = std::move(newNodes);
+
+    // Drag-to-reorder is the same on both kinds, so it is wired once here
+    // rather than twice above. A SafePointer because a drop calls back into a
+    // move, which rebuilds and can take this panel with it.
+    auto safeThis = juce::Component::SafePointer<TrackChainContent>(this);
+    for (auto& node : nodeComponents_) {
+        node->onDragStart = [safeThis](NodeComponent* dragged, const juce::MouseEvent&) {
+            if (safeThis == nullptr)
+                return;
+            safeThis->draggedNode_ = dragged;
+            safeThis->dragOriginalIndex_ = safeThis->findNodeIndex(dragged);
+            safeThis->dragInsertIndex_ = safeThis->dragOriginalIndex_;
+            // Capture ghost image and make original semi-transparent
+            safeThis->dragGhostImage_ = dragged->createComponentSnapshot(dragged->getLocalBounds());
+            dragged->setAlpha(0.4f);
+            safeThis->startTimerHz(10);  // Start timer to detect stale drag state
+            // Re-layout to add left padding for drop indicator
+            safeThis->resized();
+        };
+
+        node->onDragMove = [safeThis](NodeComponent*, const juce::MouseEvent& e) {
+            if (safeThis == nullptr)
+                return;
+            auto pos = e.getEventRelativeTo(safeThis->chainContainer_.get()).getPosition();
+            safeThis->dragInsertIndex_ = safeThis->calculateInsertIndex(pos.x);
+            safeThis->dragMousePos_ = pos;
+            safeThis->chainContainer_->repaint();
+        };
+
+        node->onDragEnd = [safeThis](NodeComponent* dragged, const juce::MouseEvent&) {
+            if (safeThis == nullptr)
+                return;
+
+            // Restore alpha and clear ghost
+            dragged->setAlpha(1.0f);
+            safeThis->dragGhostImage_ = juce::Image();
+            safeThis->stopTimer();
+
+            safeThis->draggedNode_ = nullptr;
+            safeThis->dragOriginalIndex_ = -1;
+            safeThis->dragInsertIndex_ = -1;
+
+            safeThis->resized();
+            safeThis->chainContainer_->repaint();
+        };
     }
 
     // Set frozen + chain-power state on all nodes. Chain power off greys the
