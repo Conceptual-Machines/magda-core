@@ -462,6 +462,68 @@ TEST_CASE("Undoing a post-fader device removal puts it back at its index",
         std::make_unique<RemoveDeviceByPathCommand>(ChainNodePath::postFxDevice(trackId, middle)));
 }
 
+TEST_CASE("Removing a rack drops a selection standing on a pad inside it",
+          "[structural][selection]") {
+    // A device is not always a leaf. A Drum Grid's pads are chains on the
+    // device (#2207), addressed off the track by the grid's own DeviceId --
+    // `PadRack(grid) > PadChain(pad)` -- so neither the grid's path nor its
+    // DeviceId matches anything under it, and the subtree walk stopped at the
+    // grid. A pad selected when the rack around it went kept pointing into the
+    // erased subtree (#2232).
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    auto& selection = SelectionManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    const auto rackId = tm.addRackToTrack(trackId, "Rack");
+    const auto rackPath = ChainNodePath::rack(trackId, rackId);
+    const auto chainId = tm.addChainToRack(rackPath);
+    const auto gridId = tm.addDeviceToChainByPath(rackPath.withChain(chainId), drumGrid());
+
+    const auto gridPath = rackPath.withChain(chainId).withDevice(gridId);
+    const auto padChainId = tm.ensurePad(gridPath, 0);
+    REQUIRE(padChainId != INVALID_CHAIN_ID);
+
+    const auto padPath = TrackManager::padChainPath(gridPath, padChainId);
+    selection.selectChainNode(padPath);
+    REQUIRE(selection.getSelectedChainNode() == padPath);
+
+    UndoManager::getInstance().executeCommand(std::make_unique<RemoveRackByPathCommand>(rackPath));
+
+    CHECK_FALSE(selection.getSelectedChainNode().isValid());
+}
+
+TEST_CASE("Removing a Drum Grid drops a selection standing on one of its pads",
+          "[structural][selection]") {
+    // The same leaf assumption on the direct route: deleting the grid itself
+    // cleared only the grid's own path.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    auto& selection = SelectionManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGrid());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    const auto padChainId = tm.ensurePad(gridPath, 0);
+    REQUIRE(padChainId != INVALID_CHAIN_ID);
+    const auto padDeviceId = tm.addDeviceToPad(gridPath, padChainId, effect("Pad FX"));
+    REQUIRE(padDeviceId != INVALID_DEVICE_ID);
+
+    // The device on the pad, not the pad itself: it is a step deeper again, and
+    // its DeviceId is not the grid's, so nothing about the grid's own path
+    // reaches it.
+    const auto padDevicePath =
+        TrackManager::padChainPath(gridPath, padChainId).withDevice(padDeviceId);
+    selection.selectChainNode(padDevicePath);
+    REQUIRE(selection.getSelectedChainNode() == padDevicePath);
+
+    UndoManager::getInstance().executeCommand(
+        std::make_unique<RemoveDeviceByPathCommand>(gridPath));
+
+    CHECK_FALSE(selection.getSelectedChainNode().isValid());
+}
+
 TEST_CASE("Removing a rack drops a selection standing inside it", "[structural][selection]") {
     // `clearSelectionForDeletedChainNode()` matches an exact path or a device
     // id, never an ancestor, so removing a container left a selection below it

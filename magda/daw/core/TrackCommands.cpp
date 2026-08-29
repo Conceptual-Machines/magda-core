@@ -386,69 +386,6 @@ void AddDeviceToTrackCommand::undo() {
 }
 
 // ============================================================================
-// RemoveDeviceFromTrackCommand
-// ============================================================================
-
-RemoveDeviceFromTrackCommand::RemoveDeviceFromTrackCommand(TrackId trackId, DeviceId deviceId)
-    : trackId_(trackId), deviceId_(deviceId) {}
-
-void RemoveDeviceFromTrackCommand::execute() {
-    auto& tm = TrackManager::getInstance();
-
-    // Flush the plugin's live state into DeviceInfo before capturing
-    if (auto* engine = tm.getAudioEngine()) {
-        if (auto* bridge = engine->getAudioBridge()) {
-            DBG("UNDO: Capturing plugin state for device " << deviceId_);
-            bridge->getPluginManager().capturePluginState(
-                ChainNodePath::topLevelDevice(trackId_, deviceId_));
-        } else {
-            DBG("UNDO: WARNING - no AudioBridge, cannot capture plugin state");
-        }
-    } else {
-        DBG("UNDO: WARNING - no AudioEngine, cannot capture plugin state");
-    }
-
-    // Save the device info and position before removing
-    const auto& elements = tm.getChainElements(trackId_);
-    for (int i = 0; i < static_cast<int>(elements.size()); ++i) {
-        if (isDevice(elements[i]) && getDevice(elements[i]).id == deviceId_) {
-            savedDevice_ = getDevice(elements[i]);
-            savedIndex_ = i;
-            break;
-        }
-    }
-
-    if (savedIndex_ < 0)
-        return;
-
-    DBG("UNDO: Captured device state, pluginState length=" << savedDevice_.pluginState.length());
-
-    tm.removeDeviceFromTrack(trackId_, deviceId_);
-    executed_ = true;
-    DBG("UNDO: Removed device " << savedDevice_.name << " (id=" << deviceId_ << ") from track "
-                                << trackId_ << " at index " << savedIndex_);
-}
-
-void RemoveDeviceFromTrackCommand::undo() {
-    if (!executed_)
-        return;
-
-    DBG("UNDO: Restoring device " << savedDevice_.name << " (id=" << deviceId_
-                                  << "), pluginState length=" << savedDevice_.pluginState.length());
-    auto& tm = TrackManager::getInstance();
-    // Re-insert with ids preserved. addDeviceToTrack runs the device through
-    // prepareNewDevice, which stamps a fresh DeviceId, so undo would restore it
-    // under a different id and orphan every automation lane, macro link, and
-    // alias that targeted it. ChainElement is move-only, hence the push_back.
-    std::vector<ChainElement> elements;
-    elements.push_back(makeDeviceElement(savedDevice_));
-    tm.insertChainElementsByPath(ChainNodePath::topLevelDevice(trackId_, deviceId_).parentChain(),
-                                 std::move(elements), savedIndex_, /*reassignIds=*/false);
-    DBG("UNDO: Restored device " << savedDevice_.name << " (id=" << deviceId_ << ") to track "
-                                 << trackId_ << " at index " << savedIndex_);
-}
-
-// ============================================================================
 // MoveChainElementCommand
 // ============================================================================
 

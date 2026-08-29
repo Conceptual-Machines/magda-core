@@ -496,7 +496,8 @@ void TrackManager::removeDeviceFromChain(TrackId trackId, RackId rackId, ChainId
             return magda::isDevice(e) && magda::getDevice(e).id == deviceId;
         });
         if (it != elements.end()) {
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(
+            clearSelectionsUnderDevice(
+                magda::getDevice(*it),
                 ChainNodePath::chainDevice(trackId, rackId, chainId, deviceId));
             elements.erase(it);
             notifyTrackDevicesChanged(trackId);
@@ -1223,7 +1224,7 @@ void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) 
         auto it = std::find_if(elements.begin(), elements.end(),
                                [id](const PostFxChainElement& e) { return e.device.id == id; });
         if (it != elements.end()) {
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
+            clearSelectionsUnderDevice(it->device, devicePath);
             elements.erase(it);
             notifyTrackDevicesChanged(devicePath.trackId);
         }
@@ -1253,7 +1254,7 @@ void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) 
                 return magda::isDevice(e) && magda::getDevice(e).id == devicePath.topLevelDeviceId;
             });
         if (it != elements.end()) {
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
+            clearSelectionsUnderDevice(magda::getDevice(*it), devicePath);
             elements.erase(it);
             notifyTrackDevicesChanged(devicePath.trackId);
         }
@@ -1284,7 +1285,7 @@ void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) 
             return magda::isDevice(e) && magda::getDevice(e).id == deviceId;
         });
         if (it != elements.end()) {
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
+            clearSelectionsUnderDevice(magda::getDevice(*it), devicePath);
             elements.erase(it);
             notifyTrackDevicesChanged(devicePath.trackId);
         }

@@ -1230,6 +1230,8 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // path or a device id rather than an ancestor, so removing a container
     // leaves a selection below it pointing at freed model. Every removal of a
     // subtree goes through these two, which walk it (#2232).
+    static void clearSelectionsUnderDevice(const DeviceInfo& device,
+                                           const ChainNodePath& devicePath);
     static void clearSelectionsUnderChain(const std::vector<ChainElement>& elements,
                                           const ChainNodePath& chainPath);
     static void clearSelectionsUnderRack(const RackInfo& rack, const ChainNodePath& rackPath);

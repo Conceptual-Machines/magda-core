@@ -2348,8 +2348,8 @@ void TrackManager::removeDeviceFromTrack(TrackId trackId, DeviceId deviceId) {
         if (it != elements.end()) {
             DBG("Removed device: " << magda::getDevice(*it).name << " (id=" << deviceId
                                    << ") from track " << trackId);
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(
-                ChainNodePath::topLevelDevice(trackId, deviceId));
+            clearSelectionsUnderDevice(magda::getDevice(*it),
+                                       ChainNodePath::topLevelDevice(trackId, deviceId));
             elements.erase(it);
             notifyTrackDevicesChanged(trackId);
             return;
@@ -2499,13 +2499,33 @@ RackId TrackManager::addRackToTrack(TrackId trackId, const juce::String& name) {
     return INVALID_RACK_ID;
 }
 
+void TrackManager::clearSelectionsUnderDevice(const DeviceInfo& device,
+                                              const ChainNodePath& devicePath) {
+    SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
+
+    // A device is not always a leaf: a pad-per-chain device owns chains of its
+    // own (#2207), and they are addressed off the track by the device's id
+    // rather than through whatever the device itself stands in, so neither the
+    // grid's path nor its DeviceId matches anything under it. A selected pad
+    // chain, or a device on one, would survive the erase pointing at freed
+    // model (#2232).
+    const auto* pads = device.pads.get();
+    if (pads == nullptr)
+        return;
+
+    for (const auto& pad : pads->chains) {
+        const auto padPath = ChainNodePath::padChain(devicePath.trackId, device.id, pad.id);
+        clearSelectionsUnderChain(pad.elements, padPath);
+        SelectionManager::getInstance().clearSelectionForDeletedChainNode(padPath);
+    }
+}
+
 void TrackManager::clearSelectionsUnderChain(const std::vector<ChainElement>& elements,
                                              const ChainNodePath& chainPath) {
-    auto& selection = SelectionManager::getInstance();
     for (const auto& element : elements) {
         if (magda::isDevice(element)) {
-            selection.clearSelectionForDeletedChainNode(
-                chainPath.withDevice(magda::getDevice(element).id));
+            const auto& device = magda::getDevice(element);
+            clearSelectionsUnderDevice(device, chainPath.withDevice(device.id));
             continue;
         }
 
