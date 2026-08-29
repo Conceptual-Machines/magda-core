@@ -681,24 +681,34 @@ static void collectMovedDevicePaths(const ChainElement& element, const ChainNode
                               });
 }
 
+/// Point every link @p elements OWNS at where the moved devices now are.
+///
+/// Pads entered: a pad device owns macros and mods like any other, and a
+/// modifier on one pointing at its own parameter is the ordinary case. This
+/// descended only through racks, so such a link went on naming the track its
+/// grid came from (#2204).
 static void retargetLinksInElements(std::vector<ChainElement>& elements,
+                                    const ChainNodePath& parentPath,
                                     const DevicePathMap& movedPaths) {
-    for (auto& element : elements) {
-        if (magda::isDevice(element)) {
-            auto& device = magda::getDevice(element);
+    // The real parent, not the track: these run over a nested chain's elements
+    // as well as a track's own list, and a walk told the wrong parent spells
+    // every device in it as top-level. Nothing here reads the address it
+    // builds, which is exactly why passing the wrong one would sit unnoticed.
+    chain_walk::forEachNode(
+        elements, parentPath, chain_walk::Pads::Enter,
+        [&movedPaths](DeviceInfo& device, const ChainNodePath&) {
             retargetMovedLinks(device.macros, device.mods, movedPaths);
-        } else if (magda::isRack(element)) {
-            auto& rack = magda::getRack(element);
+        },
+        [&movedPaths](RackInfo& rack, const ChainNodePath&) {
             retargetMovedLinks(rack.macros, rack.mods, movedPaths);
-            for (auto& chain : rack.chains)
-                retargetLinksInElements(chain.elements, movedPaths);
-        }
-    }
+            return chain_walk::Descend::Into;
+        });
 }
 
 static void retargetMovedLinksInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
     retargetMovedLinks(track.macros, track.mods, movedPaths);
-    retargetLinksInElements(track.chain.fxChainElements, movedPaths);
+    retargetLinksInElements(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+                            movedPaths);
 }
 
 static bool targetPointsAtMovedDevice(const ControlTarget& target,
@@ -728,24 +738,28 @@ static void removeMovedTargets(MacroArray& macros, ModArray& mods,
     }
 }
 
+/// Drop every link @p elements owns to a device that has left the track.
+///
+/// The mirror of the above, and it skipped pads the same way: a pad device
+/// staying put kept a link to something no longer on its track (#2204).
 static void removeMovedTargetsInElements(std::vector<ChainElement>& elements,
+                                         const ChainNodePath& parentPath,
                                          const DevicePathMap& movedPaths) {
-    for (auto& element : elements) {
-        if (magda::isDevice(element)) {
-            auto& device = magda::getDevice(element);
+    chain_walk::forEachNode(
+        elements, parentPath, chain_walk::Pads::Enter,
+        [&movedPaths](DeviceInfo& device, const ChainNodePath&) {
             removeMovedTargets(device.macros, device.mods, movedPaths);
-        } else if (magda::isRack(element)) {
-            auto& rack = magda::getRack(element);
+        },
+        [&movedPaths](RackInfo& rack, const ChainNodePath&) {
             removeMovedTargets(rack.macros, rack.mods, movedPaths);
-            for (auto& chain : rack.chains)
-                removeMovedTargetsInElements(chain.elements, movedPaths);
-        }
-    }
+            return chain_walk::Descend::Into;
+        });
 }
 
 static void removeMovedTargetsInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
     removeMovedTargets(track.macros, track.mods, movedPaths);
-    removeMovedTargetsInElements(track.chain.fxChainElements, movedPaths);
+    removeMovedTargetsInElements(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+                                 movedPaths);
 }
 
 static ChainNodePath getInsertedElementPath(const ChainNodePath& destinationChainPath,
@@ -973,7 +987,7 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
         if (auto* track = getTrack(destinationChainPath.trackId))
             retargetMovedLinksInTrack(*track, movedPaths);
     } else {
-        retargetLinksInElements(*destinationElements, movedPaths);
+        retargetLinksInElements(*destinationElements, destinationChainPath, movedPaths);
         if (auto* sourceTrack = getTrack(sourceElementPath.trackId))
             removeMovedTargetsInTrack(*sourceTrack, movedPaths);
     }

@@ -367,3 +367,80 @@ TEST_CASE("Duplicating a track addresses the copy's pads the typed way", "[chain
 
     tm.clearAllTracks();
 }
+
+TEST_CASE("A moved grid's pad device keeps its own links pointing at itself",
+          "[chain-walk][links]") {
+    // The links a moved device OWNS are retargeted onto its new address, by a
+    // second descent over what arrived. That one skipped pads too, so a
+    // modifier on a pad device pointing at its own parameter went on naming the
+    // track the grid came from (#2204).
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+
+    const auto source = tm.createTrack("Source");
+    const auto destination = tm.createTrack("Destination");
+
+    const auto gridId = tm.addDeviceToTrack(source, drumGrid("Grid"));
+    const auto gridPath = ChainNodePath::topLevelDevice(source, gridId);
+    const auto padChainId = tm.ensurePad(gridPath, 0);
+    const auto padDeviceId = tm.addDeviceToPad(gridPath, padChainId, effect("OnPad"));
+    REQUIRE(padDeviceId != INVALID_DEVICE_ID);
+
+    const auto before = ChainNodePath::padChain(source, gridId, padChainId).withDevice(padDeviceId);
+    auto* padDevice = tm.getDeviceInChainByPath(before);
+    REQUIRE(padDevice != nullptr);
+    padDevice->mods.push_back(ModInfo(0));
+    padDevice->mods.back().links.push_back(
+        ModLink{ControlTarget::pluginParam(before, 0), 1.0f, true});
+
+    REQUIRE(tm.moveChainElement(gridPath, ChainNodePath::trackLevel(destination), 0));
+
+    const auto after =
+        ChainNodePath::padChain(destination, gridId, padChainId).withDevice(padDeviceId);
+    const auto* moved = tm.getDeviceInChainByPath(after);
+    REQUIRE(moved != nullptr);
+    REQUIRE_FALSE(moved->mods.empty());
+    REQUIRE_FALSE(moved->mods.front().links.empty());
+
+    CHECK(moved->mods.front().links.front().target.devicePath == after);
+
+    tm.clearAllTracks();
+}
+
+TEST_CASE("A pad device left behind loses its link to a device that moved away",
+          "[chain-walk][links]") {
+    // The mirror: the source track drops links naming a device that left, by a
+    // descent that also skipped pads. A pad device staying put kept a link to
+    // something no longer on its track.
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+
+    const auto source = tm.createTrack("Source");
+    const auto destination = tm.createTrack("Destination");
+
+    const auto gridId = tm.addDeviceToTrack(source, drumGrid("Stays"));
+    const auto gridPath = ChainNodePath::topLevelDevice(source, gridId);
+    const auto padChainId = tm.ensurePad(gridPath, 0);
+    const auto padDeviceId = tm.addDeviceToPad(gridPath, padChainId, effect("OnPad"));
+    REQUIRE(padDeviceId != INVALID_DEVICE_ID);
+
+    const auto leavingId = tm.addDeviceToTrack(source, effect("Leaves"));
+    const auto leavingPath = ChainNodePath::topLevelDevice(source, leavingId);
+
+    const auto padDevicePath =
+        ChainNodePath::padChain(source, gridId, padChainId).withDevice(padDeviceId);
+    auto* padDevice = tm.getDeviceInChainByPath(padDevicePath);
+    REQUIRE(padDevice != nullptr);
+    padDevice->mods.push_back(ModInfo(0));
+    padDevice->mods.back().links.push_back(
+        ModLink{ControlTarget::pluginParam(leavingPath, 0), 1.0f, true});
+
+    REQUIRE(tm.moveChainElement(leavingPath, ChainNodePath::trackLevel(destination), 0));
+
+    const auto* stayed = tm.getDeviceInChainByPath(padDevicePath);
+    REQUIRE(stayed != nullptr);
+    REQUIRE_FALSE(stayed->mods.empty());
+    CHECK(stayed->mods.front().links.empty());
+
+    tm.clearAllTracks();
+}
