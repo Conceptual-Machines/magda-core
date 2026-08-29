@@ -28,12 +28,16 @@ using magda::structural_test::snapshot;
 // so a container shape nobody thought of is covered by construction rather than
 // by having come up.
 //
-// Every cell asserts one of two outcomes. Either the operation is refused, and
-// then the serialized model is byte-identical and nothing was announced; or it
-// happened, and then undo restores the bytes it started from and redo
-// reproduces the bytes it made. Combinations that cannot exist are excluded by
-// name, with the reason, and the excluded set is reported so a shape that stops
-// being generated shows up instead of quietly dropping out of the sweep.
+// Every cell says which of two outcomes it expects before it runs, and asserts
+// that one. Refused: the serialized model is byte-identical and nothing was
+// announced. Applied: undo restores the bytes it started from and redo
+// reproduces the bytes it made. Saying so up front is what gives the sweep
+// teeth -- a regression that starts refusing every legal edit would satisfy a
+// harness that accepted "nothing changed" wherever it found it.
+//
+// Combinations that cannot exist are excluded by name, with the reason, and the
+// excluded set is reported so a shape that stops being generated shows up
+// instead of quietly dropping out of the sweep.
 
 namespace {
 
@@ -133,6 +137,102 @@ const char* label(TrackRole role) {
             return "an aux track";
     }
     return "?";
+}
+
+/// The structural operations the sweep drives.
+enum class Operation { Move, Paste, Wrap, Duplicate, Remove, TrackDuplicate, PadEdit };
+
+/// What a cell has to do: the model's own rules decide, and the cell asserts it.
+///
+/// Accepting "nothing changed" as a valid outcome wherever it turned up would
+/// make the sweep agree with a regression that refuses every legal edit, which
+/// is the one thing a matrix this size exists to catch. So each cell says which
+/// of the two outcomes it expects before it runs, and a refusal that was
+/// supposed to apply fails as loudly as a broken round trip.
+enum class Disposition { Applied, Refused };
+
+const char* label(Disposition disposition) {
+    return disposition == Disposition::Applied ? "apply" : "be refused";
+}
+
+bool carriesAnInstrument(Subject subject) {
+    return subject == Subject::Instrument || subject == Subject::RoutedGrid ||
+           subject == Subject::MultiOutDriver;
+}
+
+/// The rules, restated from the model side.
+///
+/// Deliberately written out rather than derived from `checkPlacement()`: a test
+/// that asks the code under test what it should do agrees with it by
+/// construction. These are the rules as the issues state them --
+/// `PlacementRefusal` for what a subtree may carry and where, plus the two
+/// sections that hold bare devices and so cannot be addressed as chains at all.
+Disposition expectedOutcome(Operation operation, Subject subject, Container source,
+                            Container destination, TrackRole role) {
+    const bool auxDestination = role == TrackRole::Aux;
+    const bool sameContainer = source == destination && role == TrackRole::Host;
+
+    switch (operation) {
+        case Operation::TrackDuplicate:
+        case Operation::PadEdit:
+            // Neither reads a destination, and neither has a rule that can stop
+            // it: a duplicate is a copy of a whole track, and a pad edit acts on
+            // pads the grid resolves from its own path wherever it stands.
+            return Disposition::Applied;
+
+        case Operation::Remove:
+            // A flat section is not a chain, so the element index the removal
+            // records has no answer there and it stops before mutating.
+            return isFlatSection(source) ? Disposition::Refused : Disposition::Applied;
+
+        case Operation::Wrap:
+            if (isFlatSection(source))
+                return Disposition::Refused;
+            // Wrapping takes the element off the top level, which is where a pad
+            // bus and a multi-out pair are carried from.
+            if (subject == Subject::RoutedGrid || subject == Subject::MultiOutDriver)
+                return Disposition::Refused;
+            return Disposition::Applied;
+
+        case Operation::Duplicate:
+            // A copy pasted back beside itself. It has no source as far as the
+            // placement rules are concerned, so only what it carries matters,
+            // and a routed grid only ever stands in the track's own list.
+            return isFlatSection(source) ? Disposition::Refused : Disposition::Applied;
+
+        case Operation::Paste:
+            // Copying reads the source as a chain and inserting addresses the
+            // destination as one, so neither may be a flat section.
+            if (isFlatSection(source) || isFlatSection(destination))
+                return Disposition::Refused;
+            if (carriesAnInstrument(subject) && auxDestination)
+                return Disposition::Refused;
+            // A pasted subtree owns no child tracks and leaves no track, so the
+            // rules keyed on where it came from pass. What it carries still has
+            // to land somewhere that carries it: a pad on a bus needs the output
+            // instance made for a top-level instrument.
+            if (subject == Subject::RoutedGrid && destination != Container::TrackList)
+                return Disposition::Refused;
+            return Disposition::Applied;
+
+        case Operation::Move:
+            if (isFlatSection(source) || isFlatSection(destination))
+                return Disposition::Refused;
+            // Reordering inside the container it already lives in changes
+            // neither the track nor the ids anything is keyed on, so none of the
+            // rules below apply to it.
+            if (sameContainer)
+                return Disposition::Applied;
+            if (carriesAnInstrument(subject) && auxDestination)
+                return Disposition::Refused;
+            // Both of these are keyed on the track the subtree stands on, and
+            // both are stranded by any placement change.
+            if (subject == Subject::RoutedGrid || subject == Subject::MultiOutDriver)
+                return Disposition::Refused;
+            return Disposition::Applied;
+    }
+
+    return Disposition::Applied;
 }
 
 // ============================================================================
@@ -539,9 +639,9 @@ void requireModel(const juce::String& expected, const char* stage) {
     CHECK(difference.empty());
 }
 
-void requireRefusedOrReversible(const juce::String& cell,
-                                std::unique_ptr<UndoableCommand> command) {
-    INFO(cell);
+void requireCell(const juce::String& cell, Disposition expected,
+                 std::unique_ptr<UndoableCommand> command) {
+    INFO(cell << ", which must " << label(expected));
     auto& undo = UndoManager::getInstance();
     undo.clearHistory();
 
@@ -550,8 +650,11 @@ void requireRefusedOrReversible(const juce::String& cell,
     undo.executeCommand(std::move(command));
     const auto after = snapshot();
 
-    if (after == before) {
-        INFO("refused");
+    if (expected == Disposition::Refused) {
+        // Refused means untouched and unannounced: a notification with no
+        // matching mutation sends every listener to rebuild from a model that
+        // did not change, which is how a half-applied edit hides.
+        requireModel(before, "the refusal");
         CHECK(notifications.count() == 0);
         // A refused step is still a step on the stack, and it has to be a no-op
         // in both directions.
@@ -562,7 +665,7 @@ void requireRefusedOrReversible(const juce::String& cell,
         return;
     }
 
-    INFO("applied");
+    REQUIRE(before != after);  // It was supposed to do something.
     REQUIRE(undo.undo());
     requireModel(before, "undo");
     REQUIRE(undo.redo());
@@ -610,8 +713,9 @@ TEST_CASE("Every move across the container matrix is refused or reversible",
                     }
 
                     const auto subjectPath = placeSubject(subject, world.host, source);
-                    requireRefusedOrReversible(
-                        cell, std::make_unique<MoveChainElementCommand>(subjectPath, *target, 0));
+                    requireCell(
+                        cell, expectedOutcome(Operation::Move, subject, source, destination, role),
+                        std::make_unique<MoveChainElementCommand>(subjectPath, *target, 0));
 
                     ++ledger.ran;
                     ledger.sourcesCovered.insert(source);
@@ -653,8 +757,9 @@ TEST_CASE("Every paste across the container matrix is refused or reversible",
 
                     const auto subjectPath = placeSubject(subject, world.host, source);
                     auto copied = TrackManager::getInstance().copyChainElements({subjectPath});
-                    requireRefusedOrReversible(cell, std::make_unique<PasteChainElementsCommand>(
-                                                         *target, std::move(copied), 0));
+                    requireCell(
+                        cell, expectedOutcome(Operation::Paste, subject, source, destination, role),
+                        std::make_unique<PasteChainElementsCommand>(*target, std::move(copied), 0));
 
                     ++ledger.ran;
                     ledger.sourcesCovered.insert(source);
@@ -689,9 +794,11 @@ TEST_CASE("Every wrap across the container matrix is refused or reversible",
 
             auto world = buildWorld();
             const auto subjectPath = placeSubject(subject, world.host, container);
-            requireRefusedOrReversible(cell,
-                                       std::make_unique<WrapChainElementsInRackCommand>(
-                                           std::vector<ChainNodePath>{subjectPath}, "Wrapper"));
+            requireCell(
+                cell,
+                expectedOutcome(Operation::Wrap, subject, container, container, TrackRole::Host),
+                std::make_unique<WrapChainElementsInRackCommand>(
+                    std::vector<ChainNodePath>{subjectPath}, "Wrapper"));
 
             ++ledger.ran;
             ledger.sourcesCovered.insert(container);
@@ -728,8 +835,11 @@ TEST_CASE("Every duplication across the container matrix is refused or reversibl
             auto& tm = TrackManager::getInstance();
             auto copied = tm.copyChainElements({subjectPath});
             const int index = tm.getChainElementIndex(subjectPath);
-            requireRefusedOrReversible(cell, std::make_unique<PasteChainElementsCommand>(
-                                                 *containerPath, std::move(copied), index + 1));
+            requireCell(cell,
+                        expectedOutcome(Operation::Duplicate, subject, container, container,
+                                        TrackRole::Host),
+                        std::make_unique<PasteChainElementsCommand>(*containerPath,
+                                                                    std::move(copied), index + 1));
 
             ++ledger.ran;
             ledger.sourcesCovered.insert(container);
@@ -763,8 +873,10 @@ TEST_CASE("Every removal across the container matrix is refused or reversible",
 
             auto world = buildWorld();
             const auto subjectPath = placeSubject(subject, world.host, container);
-            requireRefusedOrReversible(cell,
-                                       std::make_unique<RemoveDeviceByPathCommand>(subjectPath));
+            requireCell(
+                cell,
+                expectedOutcome(Operation::Remove, subject, container, container, TrackRole::Host),
+                std::make_unique<RemoveDeviceByPathCommand>(subjectPath));
 
             ++ledger.ran;
             ledger.sourcesCovered.insert(container);
@@ -793,9 +905,12 @@ TEST_CASE("Duplicating a track carrying any subject in any container is reversib
 
             auto world = buildWorld();
             placeSubject(subject, world.host, container);
-            requireRefusedOrReversible(
-                cell, std::make_unique<DuplicateTrackCommand>(world.host.id, /*duplicateContent=*/
-                                                              true, /*duplicateDevices=*/true));
+            requireCell(cell,
+                        expectedOutcome(Operation::TrackDuplicate, subject, container, container,
+                                        TrackRole::Host),
+                        std::make_unique<DuplicateTrackCommand>(world.host.id,
+                                                                /*duplicateContent=*/true,
+                                                                /*duplicateDevices=*/true));
 
             ++ledger.ran;
             ledger.sourcesCovered.insert(container);
@@ -882,11 +997,13 @@ TEST_CASE("Every pad structural edit from every container is refused or reversib
             REQUIRE(tm.ensurePad(gridPath, 1) != INVALID_CHAIN_ID);
 
             const auto apply = operation.apply;
-            requireRefusedOrReversible(
-                cell, std::make_unique<EditPadsCommand>(
-                          gridPath, operation.name, [gridPath, padChainId, padDeviceId, apply] {
-                              apply(gridPath, padChainId, padDeviceId);
-                          }));
+            requireCell(cell,
+                        expectedOutcome(Operation::PadEdit, Subject::RoutedGrid, container,
+                                        container, TrackRole::Host),
+                        std::make_unique<EditPadsCommand>(
+                            gridPath, operation.name, [gridPath, padChainId, padDeviceId, apply] {
+                                apply(gridPath, padChainId, padDeviceId);
+                            }));
 
             ++ledger.ran;
             ledger.sourcesCovered.insert(container);

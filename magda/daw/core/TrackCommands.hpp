@@ -48,8 +48,9 @@ class DeleteTrackCommand : public UndoableCommand {
     TrackId trackId_;
     TrackInfo storedTrack_;
     std::vector<ClipInfo> storedClips_;
-    /// Where the track stood, so undo puts it back there rather than at the end.
-    int storedIndex_ = -1;
+    /// Where the track stood -- in the project and among its group's children --
+    /// so undo puts it back there rather than at the end of either.
+    TrackRestorePosition storedPosition_;
     bool executed_ = false;
 };
 
@@ -91,7 +92,7 @@ class DuplicateTrackCommand : public UndoableCommand {
     /// replays what it materialised and a wrap reuses its rack's id (#2229).
     TrackInfo storedTrack_;
     std::vector<ClipInfo> storedClips_;
-    int storedIndex_ = -1;
+    TrackRestorePosition storedPosition_;
     bool executed_ = false;
 };
 

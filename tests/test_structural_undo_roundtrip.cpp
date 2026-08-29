@@ -318,3 +318,27 @@ TEST_CASE("Undoing a track deletion puts the track back in its place",
 
     requireUndoRoundTrip(std::make_unique<DeleteTrackCommand>(doomed));
 }
+
+TEST_CASE("Undoing the deletion of a middle child puts it back among its siblings",
+          "[structural][undo][roundtrip]") {
+    // A track belongs to two orders, and the restore only put back the first.
+    // A group's order is its `childIds` order, so a middle child restored at the
+    // end of that list has moved within the group even though its place in the
+    // project is right.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto groupId = tm.createGroupTrack("Group");
+    const auto first = tm.createTrack("First");
+    const auto middle = tm.createTrack("Middle");
+    const auto last = tm.createTrack("Last");
+    tm.addTrackToGroup(first, groupId);
+    tm.addTrackToGroup(middle, groupId);
+    tm.addTrackToGroup(last, groupId);
+
+    const auto* group = tm.getTrack(groupId);
+    REQUIRE(group != nullptr);
+    REQUIRE(group->childIds == std::vector<TrackId>{first, middle, last});
+
+    requireUndoRoundTrip(std::make_unique<DeleteTrackCommand>(middle));
+}

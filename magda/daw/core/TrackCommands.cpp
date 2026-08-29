@@ -202,7 +202,7 @@ void DeleteTrackCommand::execute() {
     // Store full track info, position and clips for undo (only on first execute)
     if (!executed_) {
         storedTrack_ = *track;
-        storedIndex_ = trackManager.getTrackIndex(trackId_);
+        storedPosition_ = trackManager.restorePositionOf(trackId_);
     }
 
     // Store and remove all clips on this track
@@ -228,7 +228,7 @@ void DeleteTrackCommand::undo() {
         return;
     }
 
-    TrackManager::getInstance().restoreTrack(storedTrack_, storedIndex_);
+    TrackManager::getInstance().restoreTrack(storedTrack_, storedPosition_);
 
     // Restore clips that were on this track
     auto& clipManager = ClipManager::getInstance();
@@ -260,7 +260,7 @@ void DuplicateTrackCommand::execute() {
     if (executed_) {
         if (duplicatedTrackId_ == INVALID_TRACK_ID)
             return;
-        trackManager.restoreTrack(storedTrack_, storedIndex_);
+        trackManager.restoreTrack(storedTrack_, storedPosition_);
         for (const auto& clip : storedClips_)
             clipManager.restoreClip(clip);
         return;
@@ -294,7 +294,7 @@ void DuplicateTrackCommand::execute() {
     // What it made, so a redo can make exactly that again.
     if (const auto* made = trackManager.getTrack(duplicatedTrackId_)) {
         storedTrack_ = *made;
-        storedIndex_ = trackManager.getTrackIndex(duplicatedTrackId_);
+        storedPosition_ = trackManager.restorePositionOf(duplicatedTrackId_);
         storedClips_.clear();
         for (auto clipId : clipManager.getClipsOnTrack(duplicatedTrackId_))
             if (const auto* clip = clipManager.getClip(clipId))

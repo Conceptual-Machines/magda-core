@@ -923,7 +923,23 @@ void TrackManager::startMidiMonitoring(const TrackInfo& track, const juce::Strin
     }
 }
 
-void TrackManager::restoreTrack(const TrackInfo& trackInfo, int index) {
+TrackRestorePosition TrackManager::restorePositionOf(TrackId trackId) const {
+    TrackRestorePosition position;
+    position.trackIndex = getTrackIndex(trackId);
+
+    if (const auto* track = getTrack(trackId); track != nullptr && track->hasParent()) {
+        if (const auto* parent = getTrack(track->parentId)) {
+            const auto found = std::find(parent->childIds.begin(), parent->childIds.end(), trackId);
+            if (found != parent->childIds.end())
+                position.siblingIndex =
+                    static_cast<int>(std::distance(parent->childIds.begin(), found));
+        }
+    }
+
+    return position;
+}
+
+void TrackManager::restoreTrack(const TrackInfo& trackInfo, TrackRestorePosition position) {
     // Check if a track with this ID already exists
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
                            [&trackInfo](const TrackInfo& t) { return t.id == trackInfo.id; });
@@ -933,8 +949,9 @@ void TrackManager::restoreTrack(const TrackInfo& trackInfo, int index) {
         return;
     }
 
-    const int at = index < 0 ? static_cast<int>(tracks_.size())
-                             : std::clamp(index, 0, static_cast<int>(tracks_.size()));
+    const int at = position.trackIndex < 0
+                       ? static_cast<int>(tracks_.size())
+                       : std::clamp(position.trackIndex, 0, static_cast<int>(tracks_.size()));
     auto inserted = tracks_.insert(tracks_.begin() + at, trackInfo);
 
     // Projects saved before the input-less-track invariant existed can carry
@@ -948,12 +965,19 @@ void TrackManager::restoreTrack(const TrackInfo& trackInfo, int index) {
         nextTrackId_ = trackInfo.id + 1;
     }
 
-    // If track has a parent, add it back to parent's children
+    // If track has a parent, add it back to parent's children -- where it stood,
+    // not at the end. A group's order is its `childIds` order, so appending a
+    // restored middle child reorders the group even when the project order is
+    // right (#2229).
     if (trackInfo.hasParent()) {
         if (auto* parent = getTrack(trackInfo.parentId)) {
-            if (std::find(parent->childIds.begin(), parent->childIds.end(), trackInfo.id) ==
-                parent->childIds.end()) {
-                parent->childIds.push_back(trackInfo.id);
+            auto& children = parent->childIds;
+            if (std::find(children.begin(), children.end(), trackInfo.id) == children.end()) {
+                const int amongSiblings =
+                    position.siblingIndex < 0
+                        ? static_cast<int>(children.size())
+                        : std::clamp(position.siblingIndex, 0, static_cast<int>(children.size()));
+                children.insert(children.begin() + amongSiblings, trackInfo.id);
             }
         }
     }

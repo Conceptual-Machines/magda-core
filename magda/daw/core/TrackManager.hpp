@@ -124,6 +124,18 @@ class TrackManagerListener {
 };
 
 /**
+ * @brief Where a restored track belongs: its place in the project's track
+ * order, and its place among its parent group's children when it has one.
+ *
+ * A track belongs to two orders and a restore has to put it back in both. Either
+ * index left unset means the end of that order (#2229).
+ */
+struct TrackRestorePosition {
+    int trackIndex = -1;
+    int siblingIndex = -1;
+};
+
+/**
  * @brief Singleton manager for all tracks in the project
  *
  * Provides CRUD operations for tracks and notifies listeners of changes.
@@ -225,13 +237,14 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
      * slate for workflows that want content-only duplication.
      */
     TrackId duplicateTrack(TrackId trackId, bool includeDevices = true);
-    /// Put a track back, at @p index in the track order when one is given and
-    /// at the end when it is not.
-    ///
-    /// The index matters: a track deleted from the middle of a project and
-    /// restored at the end has moved, and a duplicate redone at the end is no
-    /// longer beside the track it copies (#2229).
-    void restoreTrack(const TrackInfo& trackInfo, int index = -1);
+    /// Put a track back. Both orders matter: a track deleted from the middle of
+    /// a project and restored at the end has moved, and a child restored at the
+    /// end of its group's `childIds` has changed the group's order even when its
+    /// place in the project is right (#2229).
+    void restoreTrack(const TrackInfo& trackInfo, TrackRestorePosition position = {});
+
+    /// Where @p trackId stands now, so a later restore can put it back there.
+    TrackRestorePosition restorePositionOf(TrackId trackId) const;
     void moveTrack(TrackId trackId, int newIndex);
 
     // Hierarchy operations
