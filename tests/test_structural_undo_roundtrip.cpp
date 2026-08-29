@@ -365,3 +365,33 @@ TEST_CASE("Undoing the deletion of a group brings its children back with it",
 
     requireUndoRoundTrip(std::make_unique<DeleteTrackCommand>(groupId));
 }
+
+TEST_CASE("Undoing a track deletion puts back the routing it swept up",
+          "[structural][undo][roundtrip]") {
+    // The deletion reaches outside the track it removes: every send aimed at it
+    // goes, so does the input of anything listening to it, and so does every
+    // sidechain on it. None of that is inside the deleted subtree, so an undo
+    // that restored only the subtree gave back a project that had permanently
+    // lost them.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto auxId = tm.createTrack("Aux", TrackType::Aux);
+    const auto sender = tm.createTrack("Sender");
+    const auto listener = tm.createTrack("Listener");
+    const auto ducked = tm.createTrack("Ducked");
+
+    tm.addSend(sender, auxId);
+    tm.setTrackAudioInput(listener, "track:" + juce::String(auxId));
+    tm.setTrackMidiInput(listener, "track:" + juce::String(auxId));
+
+    const auto compressor = tm.addDeviceToTrack(ducked, effect("Compressor"));
+    tm.setSidechainSource(compressor, auxId, SidechainConfig::Type::Audio);
+
+    const auto* senderTrack = tm.getTrack(sender);
+    REQUIRE(senderTrack != nullptr);
+    REQUIRE(senderTrack->sends.size() == 1);
+
+    UndoManager::getInstance().clearHistory();
+    requireUndoRoundTrip(std::make_unique<DeleteTrackCommand>(auxId));
+}

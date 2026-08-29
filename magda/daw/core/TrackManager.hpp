@@ -136,6 +136,40 @@ struct TrackRestorePosition {
 };
 
 /**
+ * @brief What a track deletion clears on the tracks that outlive it.
+ *
+ * `deleteTrack()` reaches outside the track it removes: it erases every send
+ * aimed at it, clears the input of anything listening to it, and clears every
+ * device and rack sidechained to it, the master track included. None of that
+ * lives inside the deleted subtree, so an undo that restores only the subtree
+ * gives back a project that has permanently lost them (#2229).
+ */
+struct ExternalTrackRouting {
+    /// One surviving track's routing, whole rather than by difference: the
+    /// deletion only ever removes from these, so putting the recorded state
+    /// back is exact, order and send levels included.
+    struct Routing {
+        TrackId trackId = INVALID_TRACK_ID;
+        std::vector<SendInfo> sends;
+        juce::String audioInputDevice;
+        juce::String midiInputDevice;
+    };
+
+    /// One device or rack that was sidechained to a deleted track.
+    struct Sidechain {
+        ChainNodePath nodePath;
+        SidechainConfig config;
+    };
+
+    std::vector<Routing> tracks;
+    std::vector<Sidechain> sidechains;
+
+    bool empty() const {
+        return tracks.empty() && sidechains.empty();
+    }
+};
+
+/**
  * @brief Singleton manager for all tracks in the project
  *
  * Provides CRUD operations for tracks and notifies listeners of changes.
@@ -245,6 +279,15 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
 
     /// Where @p trackId stands now, so a later restore can put it back there.
     TrackRestorePosition restorePositionOf(TrackId trackId) const;
+
+    /// Everything outside @p trackIds that deleting all of them would clear.
+    ///
+    /// Asked before the deletion, so undo can put back what the cleanup swept
+    /// up. Only tracks that actually route into the doomed set are recorded.
+    ExternalTrackRouting externalRoutingInto(const std::vector<TrackId>& trackIds) const;
+
+    /// Put back what @p routing recorded.
+    void restoreExternalRouting(const ExternalTrackRouting& routing);
     void moveTrack(TrackId trackId, int newIndex);
 
     // Hierarchy operations

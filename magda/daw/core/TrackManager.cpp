@@ -939,6 +939,91 @@ TrackRestorePosition TrackManager::restorePositionOf(TrackId trackId) const {
     return position;
 }
 
+namespace {
+
+/// Every device and rack under @p elements that is sidechained to one of
+/// @p doomed, with the path that addresses it.
+void collectSidechainsInto(const std::vector<ChainElement>& elements,
+                           const ChainNodePath& parentChain, const std::set<TrackId>& doomed,
+                           std::vector<ExternalTrackRouting::Sidechain>& found) {
+    const bool topLevel = parentChain.steps.empty();
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            const auto& device = magda::getDevice(element);
+            if (doomed.count(device.sidechain.sourceTrackId) == 1)
+                found.push_back({topLevel
+                                     ? ChainNodePath::topLevelDevice(parentChain.trackId, device.id)
+                                     : parentChain.withDevice(device.id),
+                                 device.sidechain});
+            continue;
+        }
+
+        const auto& rack = magda::getRack(element);
+        const auto rackPath = topLevel ? ChainNodePath::rack(parentChain.trackId, rack.id)
+                                       : parentChain.withRack(rack.id);
+        if (doomed.count(rack.sidechain.sourceTrackId) == 1)
+            found.push_back({rackPath, rack.sidechain});
+        for (const auto& chain : rack.chains)
+            collectSidechainsInto(chain.elements, rackPath.withChain(chain.id), doomed, found);
+    }
+}
+
+}  // namespace
+
+ExternalTrackRouting TrackManager::externalRoutingInto(const std::vector<TrackId>& trackIds) const {
+    ExternalTrackRouting routing;
+    const std::set<TrackId> doomed(trackIds.begin(), trackIds.end());
+
+    const auto listensToADoomedTrack = [&doomed](const juce::String& input) {
+        for (auto id : doomed)
+            if (input == "track:" + juce::String(id))
+                return true;
+        return false;
+    };
+
+    const auto record = [&](const TrackInfo& track) {
+        if (doomed.count(track.id) == 1)
+            return;
+
+        const bool sendsIn = std::ranges::any_of(track.sends, [&doomed](const SendInfo& send) {
+            return doomed.count(send.destTrackId) == 1;
+        });
+        if (sendsIn || listensToADoomedTrack(track.audioInputDevice) ||
+            listensToADoomedTrack(track.midiInputDevice))
+            routing.tracks.push_back(
+                {track.id, track.sends, track.audioInputDevice, track.midiInputDevice});
+
+        collectSidechainsInto(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+                              doomed, routing.sidechains);
+    };
+
+    for (const auto& track : tracks_)
+        record(track);
+    record(masterTrack_);
+
+    return routing;
+}
+
+void TrackManager::restoreExternalRouting(const ExternalTrackRouting& routing) {
+    for (const auto& entry : routing.tracks) {
+        if (auto* track = getTrack(entry.trackId)) {
+            // Whole, not by difference: the deletion only removed from these.
+            track->sends = entry.sends;
+            notifyTrackPropertyChanged(entry.trackId);
+        }
+        // Through the setters, so the engine follows the routing back.
+        setTrackAudioInput(entry.trackId, entry.audioInputDevice);
+        setTrackMidiInput(entry.trackId, entry.midiInputDevice);
+    }
+
+    for (const auto& entry : routing.sidechains) {
+        if (entry.nodePath.getType() == ChainNodeType::Rack)
+            setRackSidechainSource(entry.nodePath, entry.config.sourceTrackId, entry.config.type);
+        else if (const auto deviceId = entry.nodePath.getDeviceId(); deviceId != INVALID_DEVICE_ID)
+            setSidechainSource(deviceId, entry.config.sourceTrackId, entry.config.type);
+    }
+}
+
 void TrackManager::restoreTrack(const TrackInfo& trackInfo, TrackRestorePosition position) {
     // Check if a track with this ID already exists
     auto it = std::find_if(tracks_.begin(), tracks_.end(),

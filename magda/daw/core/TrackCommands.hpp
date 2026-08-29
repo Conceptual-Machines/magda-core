@@ -66,6 +66,11 @@ class DeleteTrackCommand : public UndoableCommand {
     /// their clips were gone for good, and the restored group listed children
     /// that no longer existed (#2229).
     std::vector<DeletedTrack> storedTracks_;
+    /// What the deletion cleared on the tracks that outlived it: their sends
+    /// into the subtree, their inputs listening to it, their sidechains on it.
+    /// None of that is inside the subtree, so restoring the subtree alone left
+    /// a project that had permanently lost them (#2229).
+    ExternalTrackRouting storedRouting_;
     bool executed_ = false;
 };
 

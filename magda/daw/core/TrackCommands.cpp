@@ -238,6 +238,13 @@ void DeleteTrackCommand::execute() {
     // takes their devices and clips with them (only on first execute).
     if (!executed_) {
         storedTracks_ = collectSubtree(trackId_);
+
+        // And what it will clear on everything that outlives it.
+        std::vector<TrackId> doomed;
+        doomed.reserve(storedTracks_.size());
+        for (const auto& record : storedTracks_)
+            doomed.push_back(record.track.id);
+        storedRouting_ = trackManager.externalRoutingInto(doomed);
     }
 
     // deleteTrack() deletes each track's clips as it goes, children included.
@@ -264,6 +271,10 @@ void DeleteTrackCommand::undo() {
         for (const auto& clip : record.clips)
             clipManager.restoreClip(clip);
     }
+
+    // After the tracks are back, so a send, an input or a sidechain naming one
+    // of them names something that exists again.
+    trackManager.restoreExternalRouting(storedRouting_);
 
     DBG("UNDO: Restored track " << trackId_ << " and its descendants");
 }
