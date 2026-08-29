@@ -679,6 +679,24 @@ void PluginManager::prepareForRendering() {
 void PluginManager::restoreAfterRendering() {
     renderingActive_.store(false, std::memory_order_release);
     rackSyncManager_.setRenderingActive(false);
+
+    // The tone generators prepareForRendering un-bypassed, back to whatever the
+    // transport says they should be.
+    //
+    // The pair has to leave what it found. prepareForRendering enables every
+    // tone generator because the renderer drives playback independently of the
+    // transport, and nothing here put them back: they stayed audible with the
+    // transport stopped until the next play or stop happened to run
+    // updateTransportSyncedProcessors again. In the app that is a tone playing
+    // out of a stopped project after a bounce; in a test binary, which opens
+    // the same audio device and never moves a transport, it is a tone that
+    // never stops.
+    //
+    // Ordered after the flag is cleared, because updateTransportSyncedProcessors
+    // returns early while a render is active -- which is the whole reason it
+    // could not undo this itself.
+    updateTransportSyncedProcessors(transportState_.isPlaying());
+
     // LFOs were un-gated for rendering. They'll be re-gated naturally by
     // gateSidechainLFOs on the next note-off, or by syncDeviceModifiers
     // if the edit is rebuilt.
