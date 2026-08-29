@@ -4,6 +4,8 @@
 
 #include "PluginBrowserContent.hpp"
 #include "core/ChainNodePath.hpp"
+#include "core/TrackCommands.hpp"
+#include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/NodeComponent.hpp"
@@ -109,8 +111,10 @@ class PostFxPanelContent::Container : public juce::Component, public juce::DragA
                 auto device = PostFxPanelContent::deviceInfoFromDragObject(*obj);
                 // Post-fx never holds instruments (addDeviceToPostFx also guards).
                 if (!device.isInstrument) {
-                    magda::TrackManager::getInstance().addDeviceToPostFx(owner_.trackId_, device,
-                                                                         insertIndex);
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::AddDeviceByPathCommand>(
+                            magda::ChainNodePath::postFxSection(owner_.trackId_), device,
+                            insertIndex));
                 }
             }
         }
@@ -516,7 +520,9 @@ void PostFxPanelContent::showAddDeviceMenu() {
             return;
         }
 
-        magda::TrackManager::getInstance().addDeviceToPostFx(trackId, device);
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::AddDeviceByPathCommand>(
+                magda::ChainNodePath::postFxSection(trackId), device));
     });
 }
 

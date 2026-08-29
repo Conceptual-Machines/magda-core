@@ -184,14 +184,11 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         auto callback = onDeviceDeleted;
         detachInlineUiFromLivePlugin();
         juce::MessageManager::callAsync([pathToDelete, callback]() {
-            // Top-level devices use undoable command; nested devices fall back to direct removal
-            if (pathToDelete.topLevelDeviceId != magda::INVALID_DEVICE_ID) {
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::RemoveDeviceFromTrackCommand>(
-                        pathToDelete.trackId, pathToDelete.topLevelDeviceId));
-            } else {
-                magda::TrackManager::getInstance().removeDeviceFromChainByPath(pathToDelete);
-            }
+            // Every depth through the same undoable command. A nested device
+            // used to fall back to a direct model call, so deleting one out of
+            // a rack chain could not be undone (#2232).
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::RemoveDeviceByPathCommand>(pathToDelete));
             if (callback) {
                 callback();
             }

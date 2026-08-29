@@ -90,13 +90,13 @@ void showDeviceSlotContextMenu(juce::Component& owner, const magda::ChainNodePat
                     std::make_unique<magda::WrapChainElementsInRackCommand>(selectedPaths));
             } else if (result == 100) {
                 juce::MessageManager::callAsync([path, callback]() {
-                    if (path.topLevelDeviceId != magda::INVALID_DEVICE_ID) {
-                        magda::UndoManager::getInstance().executeCommand(
-                            std::make_unique<magda::RemoveDeviceFromTrackCommand>(
-                                path.trackId, path.topLevelDeviceId));
-                    } else {
-                        magda::TrackManager::getInstance().removeDeviceFromChainByPath(path);
-                    }
+                    // Every depth through the same undoable command, the way
+                    // the slot's own X does. This used to fall through to a
+                    // direct model call for anything but a top-level device,
+                    // so right-click Delete on a nested, post-fader or
+                    // mixer-analysis device could not be undone (#2232).
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::RemoveDeviceByPathCommand>(path));
                     if (callback)
                         callback();
                 });

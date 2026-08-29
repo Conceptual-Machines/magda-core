@@ -16,21 +16,34 @@
 
 namespace magda::daw::ui {
 
+namespace {
+
+/// Delete the rack at @p rackPath, undoably and after this component has gone.
+///
+/// Deferred because removing the rack notifies synchronously, and the rebuild
+/// that follows destroys the button whose click is still on the stack; the path
+/// is taken by value for the same reason. Both constructors below share this,
+/// so the top-level and nested X do the same thing (#2232).
+void requestRackDeletion(magda::ChainNodePath rackPath) {
+    juce::MessageManager::callAsync([rackPath]() {
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::RemoveRackByPathCommand>(rackPath));
+    });
+}
+
+}  // namespace
+
 // Constructor for top-level rack (in track)
 RackComponent::RackComponent(magda::TrackId trackId, const magda::RackInfo& rack)
     : rackPath_(magda::ChainNodePath::rack(trackId, rack.id)), trackId_(trackId), rackId_(rack.id) {
-    onDeleteClicked = [this]() {
-        magda::TrackManager::getInstance().removeRackFromTrack(trackId_, rackId_);
-    };
+    onDeleteClicked = [this]() { requestRackDeletion(rackPath_); };
     initializeCommon(rack);
 }
 
 // Constructor for nested rack (in chain) - with full path context
 RackComponent::RackComponent(const magda::ChainNodePath& rackPath, const magda::RackInfo& rack)
     : rackPath_(rackPath), trackId_(rackPath.trackId), rackId_(rack.id) {
-    onDeleteClicked = [this]() {
-        magda::TrackManager::getInstance().removeRackFromChainByPath(rackPath_);
-    };
+    onDeleteClicked = [this]() { requestRackDeletion(rackPath_); };
     initializeCommon(rack);
 }
 

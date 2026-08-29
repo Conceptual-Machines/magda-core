@@ -926,6 +926,26 @@ void SelectionManager::clearSelectionForDeletedChainNode(const ChainNodePath& de
             shouldClear = deviceSelection_.trackId == deletedPath.trackId &&
                           deviceSelection_.deviceId == deletedPath.getDeviceId();
             break;
+        case SelectionType::MultiChainNode: {
+            // Drop the members that went and keep the rest. This had no case at
+            // all, so a Cmd-selected set holding one node inside a removed
+            // subtree kept that path in `selectedChainNodes_` and every
+            // multi-node operation ran against freed model (#2232). Clearing
+            // the whole set instead would take the survivors with it, which is
+            // not what deleting one of several selected nodes means.
+            std::vector<ChainNodePath> survivors;
+            survivors.reserve(selectedChainNodes_.size());
+            for (const auto& path : selectedChainNodes_)
+                if (!pointsAtDeletedNode(path))
+                    survivors.push_back(path);
+
+            // Re-selecting is the whole bookkeeping: it collapses back to
+            // ChainNode at one member, clears at none, moves the primary off a
+            // node that has gone, and notifies.
+            if (survivors.size() != selectedChainNodes_.size())
+                selectChainNodes(survivors);
+            return;
+        }
         default:
             break;
     }

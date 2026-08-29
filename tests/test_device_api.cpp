@@ -222,31 +222,6 @@ TEST_CASE("Undoing a removal restores the device under its original id",
     tracks.clearAllTracks();
 }
 
-TEST_CASE("The track-level remove command also preserves the device id",
-          "[device-api][mutation][undo]") {
-    // RemoveDeviceFromTrackCommand is what the UI runs when a device is deleted
-    // from a track, and it had the same id-reassigning undo.
-    auto& tracks = TrackManager::getInstance();
-    const auto trackId = freshTrack("Bass");
-
-    DeviceInfo device;
-    device.name = "Filter";
-    device.pluginId = "test_filter";
-    const auto deviceId = tracks.addDeviceToTrack(trackId, device);
-    REQUIRE(deviceId != INVALID_DEVICE_ID);
-    const auto path = tracks.findDevicePath(deviceId);
-
-    auto& undo = UndoManager::getInstance();
-    undo.executeCommand(std::make_unique<RemoveDeviceFromTrackCommand>(trackId, deviceId));
-    REQUIRE(tracks.getChainElements(trackId).empty());
-
-    undo.undo();
-    REQUIRE(tracks.getChainElements(trackId).size() == 1);
-    REQUIRE(tracks.findDevicePath(deviceId) == path);
-
-    tracks.clearAllTracks();
-}
-
 TEST_CASE("Undo restores a device to its original position", "[device-api][mutation][undo]") {
     auto& tracks = TrackManager::getInstance();
     const auto trackId = freshTrack("Bass");

@@ -2348,8 +2348,8 @@ void TrackManager::removeDeviceFromTrack(TrackId trackId, DeviceId deviceId) {
         if (it != elements.end()) {
             DBG("Removed device: " << magda::getDevice(*it).name << " (id=" << deviceId
                                    << ") from track " << trackId);
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(
-                ChainNodePath::topLevelDevice(trackId, deviceId));
+            clearSelectionsUnderDevice(magda::getDevice(*it),
+                                       ChainNodePath::topLevelDevice(trackId, deviceId));
             elements.erase(it);
             notifyTrackDevicesChanged(trackId);
             return;
@@ -2499,6 +2499,53 @@ RackId TrackManager::addRackToTrack(TrackId trackId, const juce::String& name) {
     return INVALID_RACK_ID;
 }
 
+void TrackManager::clearSelectionsUnderDevice(const DeviceInfo& device,
+                                              const ChainNodePath& devicePath) {
+    SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
+
+    // A device is not always a leaf: a pad-per-chain device owns chains of its
+    // own (#2207), and they are addressed off the track by the device's id
+    // rather than through whatever the device itself stands in, so neither the
+    // grid's path nor its DeviceId matches anything under it. A selected pad
+    // chain, or a device on one, would survive the erase pointing at freed
+    // model (#2232).
+    const auto* pads = device.pads.get();
+    if (pads == nullptr)
+        return;
+
+    for (const auto& pad : pads->chains) {
+        const auto padPath = ChainNodePath::padChain(devicePath.trackId, device.id, pad.id);
+        clearSelectionsUnderChain(pad.elements, padPath);
+        SelectionManager::getInstance().clearSelectionForDeletedChainNode(padPath);
+    }
+}
+
+void TrackManager::clearSelectionsUnderChain(const std::vector<ChainElement>& elements,
+                                             const ChainNodePath& chainPath) {
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            const auto& device = magda::getDevice(element);
+            clearSelectionsUnderDevice(device, chainPath.withDevice(device.id));
+            continue;
+        }
+
+        if (magda::isRack(element)) {
+            const auto& rack = magda::getRack(element);
+            clearSelectionsUnderRack(rack, chainPath.withRack(rack.id));
+        }
+    }
+}
+
+void TrackManager::clearSelectionsUnderRack(const RackInfo& rack, const ChainNodePath& rackPath) {
+    auto& selection = SelectionManager::getInstance();
+    for (const auto& chain : rack.chains) {
+        const auto chainPath = rackPath.withChain(chain.id);
+        clearSelectionsUnderChain(chain.elements, chainPath);
+        selection.clearSelectionForDeletedChainNode(chainPath);
+    }
+    selection.clearSelectionForDeletedChainNode(rackPath);
+}
+
 void TrackManager::removeRackFromTrack(TrackId trackId, RackId rackId) {
     if (auto* track = getTrack(trackId)) {
         auto& elements = track->chain.fxChainElements;
@@ -2508,6 +2555,7 @@ void TrackManager::removeRackFromTrack(TrackId trackId, RackId rackId) {
         if (it != elements.end()) {
             DBG("Removed rack: " << magda::getRack(*it).name << " (id=" << rackId << ") from track "
                                  << trackId);
+            clearSelectionsUnderRack(magda::getRack(*it), ChainNodePath::rack(trackId, rackId));
             elements.erase(it);
             notifyTrackDevicesChanged(trackId);
         }
@@ -2792,6 +2840,9 @@ void TrackManager::removeChainFromRack(TrackId trackId, RackId rackId, ChainId c
                                [chainId](const ChainInfo& c) { return c.id == chainId; });
         if (it != chains.end()) {
             DBG("Removed chain: " << it->name << " (id=" << chainId << ") from rack " << rackId);
+            const auto chainPath = ChainNodePath::rack(trackId, rackId).withChain(chainId);
+            clearSelectionsUnderChain(it->elements, chainPath);
+            SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
             chains.erase(it);
             notifyTrackDevicesChanged(trackId);
         }
@@ -2828,12 +2879,26 @@ void TrackManager::removeChainByPath(const ChainNodePath& chainPath) {
                                [chainId](const ChainInfo& c) { return c.id == chainId; });
         if (it != chains.end()) {
             DBG("Removed chain via path: " << it->name << " (id=" << chainId << ")");
+            clearSelectionsUnderChain(it->elements, chainPath);
+            SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
             chains.erase(it);
             notifyTrackDevicesChanged(chainPath.trackId);
         }
     } else {
         DBG("removeChainByPath FAILED - rack not found via path!");
     }
+}
+
+bool TrackManager::insertChainIntoRackByPath(const ChainNodePath& rackPath, ChainInfo chain,
+                                             int index) {
+    auto* rack = getRackByPath(rackPath);
+    if (rack == nullptr || chain.id == INVALID_CHAIN_ID)
+        return false;
+
+    index = std::clamp(index, 0, static_cast<int>(rack->chains.size()));
+    rack->chains.insert(rack->chains.begin() + index, std::move(chain));
+    notifyTrackDevicesChanged(rackPath.trackId);
+    return true;
 }
 
 ChainInfo* TrackManager::getChainByPath(const ChainNodePath& chainPath) {

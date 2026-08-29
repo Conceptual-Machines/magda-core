@@ -141,27 +141,6 @@ class AddDeviceToTrackCommand : public UndoableCommand {
 };
 
 /**
- * @brief Command for removing a device from a track (undoable)
- */
-class RemoveDeviceFromTrackCommand : public UndoableCommand {
-  public:
-    RemoveDeviceFromTrackCommand(TrackId trackId, DeviceId deviceId);
-
-    void execute() override;
-    void undo() override;
-    juce::String getDescription() const override {
-        return "Remove Device from Track";
-    }
-
-  private:
-    TrackId trackId_;
-    DeviceId deviceId_;
-    DeviceInfo savedDevice_;
-    int savedIndex_ = -1;
-    bool executed_ = false;
-};
-
-/**
  * @brief Command for moving a chain element within/between track and rack chains.
  */
 class MoveChainElementCommand : public UndoableCommand {
@@ -361,8 +340,9 @@ class CreateTrackWithDeviceCommand : public UndoableCommand {
  *
  * The track-level `AddDeviceToTrackCommand` above cannot reach into a rack, and
  * a `(trackId, rackId, chainId)` triple stops at one level of nesting. This
- * takes the parent path — track-level for the main FX chain, or a chain path at
- * any depth — so anything the model can express is reachable.
+ * takes the parent path — track-level for the main FX chain, a chain path at
+ * any depth, or one of the two flat sections — so anything the model can
+ * express is reachable (#2232).
  */
 class AddDeviceByPathCommand : public UndoableCommand {
   public:
@@ -390,6 +370,12 @@ class AddDeviceByPathCommand : public UndoableCommand {
     int insertIndex_ = -1;
     DeviceId createdDeviceId_ = INVALID_DEVICE_ID;
     ChainNodePath createdDevicePath_;
+    /// What the first run actually made, replayed by a redo rather than added
+    /// again. The add path stamps a fresh DeviceId, so re-adding would give the
+    /// device a different identity each time round the stack and orphan
+    /// everything named against the first one -- the reason paste and wrap
+    /// replay what they materialised (#2228).
+    DeviceInfo materialised_;
     bool executed_ = false;
 };
 
@@ -417,6 +403,68 @@ class RemoveDeviceByPathCommand : public UndoableCommand {
     ChainNodePath devicePath_;
     ChainNodePath parentPath_;
     DeviceInfo savedDevice_;
+    int savedIndex_ = -1;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Remove a rack addressed by path, restoring the whole subtree on undo.
+ *
+ * The chain view used to call `removeRackFromChainByPath()` straight off the
+ * model, so deleting a rack -- with every device, nested rack, macro and mod it
+ * held -- could not be undone at all. It was the one operation the structural
+ * matrix had to exclude by name rather than assert (#2232).
+ *
+ * Captures the live plugin state of every device beneath the rack first, so
+ * undo restores them as they sounded, and restores under the ids they had so
+ * the links naming them still resolve.
+ */
+class RemoveRackByPathCommand : public UndoableCommand {
+  public:
+    explicit RemoveRackByPathCommand(const ChainNodePath& rackPath);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Remove Rack";
+    }
+
+    bool didRemove() const {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath rackPath_;
+    ChainNodePath parentPath_;
+    RackInfo savedRack_;
+    int savedIndex_ = -1;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Remove one chain from a rack, restoring it in place on undo.
+ *
+ * Same gap as the rack above, one level down: the chain row's X went straight
+ * to `removeChainByPath()`, and a chain carries devices (#2232).
+ */
+class RemoveChainByPathCommand : public UndoableCommand {
+  public:
+    explicit RemoveChainByPathCommand(const ChainNodePath& chainPath);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Remove Chain";
+    }
+
+    bool didRemove() const {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath chainPath_;
+    ChainNodePath rackPath_;
+    ChainInfo savedChain_;
     int savedIndex_ = -1;
     bool executed_ = false;
 };

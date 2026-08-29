@@ -266,6 +266,24 @@ struct ChainNodePath {
         return p;
     }
 
+    // The track's post-fader FX list itself, as a container: Track >
+    // Segment(PostFx). What an insert into that list is addressed by, the way a
+    // chain path addresses an insert into a chain (#2232).
+    static ChainNodePath postFxSection(TrackId track) {
+        ChainNodePath p;
+        p.trackId = track;
+        p.steps.push_back({ChainStepType::Segment, static_cast<int>(ChainSegment::PostFx)});
+        return p;
+    }
+
+    // The rail-managed mixer-analysis section itself, as a container.
+    static ChainNodePath mixerAnalysisSection(TrackId track) {
+        ChainNodePath p;
+        p.trackId = track;
+        p.steps.push_back({ChainStepType::Segment, static_cast<int>(ChainSegment::MixerAnalysis)});
+        return p;
+    }
+
     // A device in the track's post-fader FX list. Flat by construction:
     //   Track > Segment(PostFx) > Device
     static ChainNodePath postFxDevice(TrackId track, DeviceId device) {

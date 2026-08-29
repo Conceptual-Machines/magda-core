@@ -7,6 +7,7 @@
 #include "../../utils/SelectionPolicy.hpp"
 #include "RackComponent.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackCommands.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -389,13 +390,16 @@ void ChainRowComponent::onBypassClicked() {
 }
 
 void ChainRowComponent::onDeleteClicked() {
-    // Use path-based removal to support nested chains
-    if (nodePath_.isValid()) {
-        magda::TrackManager::getInstance().removeChainByPath(nodePath_);
-    } else {
-        // Fallback to flat ID removal for top-level chains
-        magda::TrackManager::getInstance().removeChainFromRack(trackId_, rackId_, chainId_);
-    }
+    // Deferred and undoable: the removal notifies synchronously and the rebuild
+    // it triggers destroys this row while its own click is still on the stack,
+    // and a chain carries every device in it (#2232).
+    const auto chainPath = nodePath_.isValid()
+                               ? nodePath_
+                               : magda::ChainNodePath::rack(trackId_, rackId_).withChain(chainId_);
+    juce::MessageManager::callAsync([chainPath]() {
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::RemoveChainByPathCommand>(chainPath));
+    });
 }
 
 }  // namespace magda::daw::ui
