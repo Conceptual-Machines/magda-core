@@ -138,13 +138,19 @@ bool forEachNode(Elements& elements, const ChainNodePath& parentPath, Pads pads,
                 // `PadRack` step is not a valid address on its own:
                 // `parseChainNodePath()` refuses one, and every pad API takes
                 // the grid's path and builds the rest from it.
+                // The alias is hoisted and the member is not called `rack`:
+                // naming a member after an enclosing variable and typing it
+                // `decltype(that variable)` changes the meaning of the name
+                // inside the class, which GCC rejects where clang does not.
+                using PadRackRef = std::remove_reference_t<decltype(*device.pads.get())>;
+
                 if (onRack(*device.pads.get(), devicePath) == Descend::Into) {
                     struct PadExit {
                         OnRackExit& run;
-                        std::remove_reference_t<decltype(*device.pads.get())>& rack;
+                        PadRackRef& target;
                         const ChainNodePath& path;
                         ~PadExit() {
-                            run(rack, path);
+                            run(target, path);
                         }
                     } padExit{onRackExit, *device.pads.get(), devicePath};
 
@@ -167,12 +173,13 @@ bool forEachNode(Elements& elements, const ChainNodePath& parentPath, Pads pads,
         if (onRack(rack, rackPath) == Descend::Skip)
             continue;
 
+        using RackRef = std::remove_reference_t<decltype(rack)>;
         struct Exit {
             OnRackExit& run;
-            decltype(rack)& rack;
+            RackRef& target;
             const ChainNodePath& path;
             ~Exit() {
-                run(rack, path);
+                run(target, path);
             }
         } exit{onRackExit, rack, rackPath};
 
