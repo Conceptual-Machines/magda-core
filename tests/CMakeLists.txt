@@ -38,6 +38,7 @@ set(TEST_SOURCES
     test_drum_grid_pad_commands.cpp
     test_pad_path_types.cpp
     test_structural_undo_roundtrip.cpp
+    test_chain_walk.cpp
     test_structural_matrix.cpp
     test_drum_grid_pads.cpp
     test_drum_grid_pads_corpus.cpp

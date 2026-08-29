@@ -10,6 +10,7 @@
 #include "../audio/TracktionHelpers.hpp"
 #include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "ChainWalk.hpp"
 #include "ClipManager.hpp"
 #include "Config.hpp"
 #include "DeviceState.hpp"
@@ -185,84 +186,44 @@ void scanEmbeddedDeviceIds(const juce::String& pluginState, int& maxDeviceId) {
         scanEmbeddedDeviceIds(state, maxDeviceId);
 }
 
+/// Point a duplicated track's links at the copy, and strip the runtime state
+/// its devices carried over.
+///
+/// The walk addresses everything, including a device's pads: they are chains it
+/// owns, their devices carry state to strip, and the address it builds is
+/// stamped into any mod link that carries none of its own. This built pad
+/// addresses as `Rack(deviceId) > Chain(padId)`, the untyped spelling #2219
+/// removed, so a duplicated pad device's self-targeted modifier named a rack
+/// step holding a DeviceId -- which resolves down the rack walk that no pad
+/// answers to (#2204).
 void remapDuplicatedElements(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
                              const DuplicateIdRemap& remap) {
-    for (auto& element : elements) {
-        if (magda::isDevice(element)) {
-            auto& device = magda::getDevice(element);
-            auto devicePath = parentPath;
-            if (parentPath.isTrackLevel) {
-                devicePath = ChainNodePath::topLevelDevice(remap.newTrackId, device.id);
-            } else {
-                devicePath = parentPath.withDevice(device.id);
-            }
+    chain_walk::forEachNode(
+        elements, parentPath, chain_walk::Pads::Enter,
+        [&remap](DeviceInfo& device, const ChainNodePath& devicePath) {
             remapDuplicatedLinks(device.macros, device.mods, devicePath, remap);
             device.pluginState = stripDuplicateRuntimePluginState(device.pluginState);
-
-            // A device's pads are chains it owns, so they are walked like a
-            // rack's: their devices carry state to strip, and the grid's links
-            // into them were remapped by the call above (#2207).
-            if (device.pads) {
-                const auto padsPath = devicePath.parentChain().withRack(device.id);
-                for (auto& pad : device.pads->chains)
-                    remapDuplicatedElements(pad.elements, padsPath.withChain(pad.id), remap);
-            }
-        } else if (magda::isRack(element)) {
-            auto& rack = magda::getRack(element);
-            auto rackPath = parentPath.isTrackLevel ? ChainNodePath::rack(remap.newTrackId, rack.id)
-                                                    : parentPath.withRack(rack.id);
+        },
+        [&remap](RackInfo& rack, const ChainNodePath& rackPath) {
             remapDuplicatedLinks(rack.macros, rack.mods, rackPath, remap);
-            for (auto& chain : rack.chains)
-                remapDuplicatedElements(chain.elements, rackPath.withChain(chain.id), remap);
-        }
-    }
-}
-
-ChainNodePath childDevicePath(const ChainNodePath& parentPath, DeviceId deviceId) {
-    return parentPath.isTrackLevel ? ChainNodePath::topLevelDevice(parentPath.trackId, deviceId)
-                                   : parentPath.withDevice(deviceId);
-}
-
-ChainNodePath childRackPath(const ChainNodePath& parentPath, RackId rackId) {
-    return parentPath.isTrackLevel ? ChainNodePath::rack(parentPath.trackId, rackId)
-                                   : parentPath.withRack(rackId);
-}
-
-// Collect the device paths of every device in the given chain tree (racks
-// recursed), without mutating anything. Path construction mirrors
-// setChainElementsBypassed below.
-void collectChainDevicePaths(const std::vector<ChainElement>& elements,
-                             const ChainNodePath& parentPath,
-                             std::vector<ChainNodePath>& outDevices) {
-    for (const auto& element : elements) {
-        if (magda::isDevice(element)) {
-            outDevices.push_back(childDevicePath(parentPath, magda::getDevice(element).id));
-            continue;
-        }
-        const auto& rack = magda::getRack(element);
-        const auto rackPath = childRackPath(parentPath, rack.id);
-        for (const auto& chain : rack.chains)
-            collectChainDevicePaths(chain.elements, rackPath.withChain(chain.id), outDevices);
-    }
+            return chain_walk::Descend::Into;
+        });
 }
 
 void setChainElementsBypassed(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
                               bool bypassed, std::vector<ChainNodePath>& affectedDevices) {
-    for (auto& element : elements) {
-        if (magda::isDevice(element)) {
-            auto& device = magda::getDevice(element);
+    // Racks and devices are two walks rather than one that visits both, which
+    // costs a second descent and buys the two orders being independent: the
+    // devices come out in signal order for the caller to announce.
+    chain_walk::forEachRack(
+        elements, parentPath, chain_walk::Pads::Skip,
+        [bypassed](RackInfo& rack, const ChainNodePath&) { rack.bypassed = bypassed; });
+    chain_walk::forEachDevice(
+        elements, parentPath, chain_walk::Pads::Skip,
+        [bypassed, &affectedDevices](DeviceInfo& device, const ChainNodePath& path) {
             device.bypassed = bypassed;
-            affectedDevices.push_back(childDevicePath(parentPath, device.id));
-            continue;
-        }
-
-        auto& rack = magda::getRack(element);
-        rack.bypassed = bypassed;
-        const auto rackPath = childRackPath(parentPath, rack.id);
-        for (auto& chain : rack.chains)
-            setChainElementsBypassed(chain.elements, rackPath.withChain(chain.id), bypassed,
-                                     affectedDevices);
-    }
+            affectedDevices.push_back(path);
+        });
 }
 
 void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
@@ -2428,11 +2389,11 @@ void TrackManager::setChainEnabled(TrackId trackId, bool enabled) {
     // regular device sync path (AudioBridge::devicePropertyChanged applies the
     // chain gate on top of each device's own bypassed flag). The flags
     // themselves are untouched, so per-device bypass survives an off/on cycle.
-    std::vector<ChainNodePath> devicePaths;
-    collectChainDevicePaths(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
-                            devicePaths);
-    for (const auto& devicePath : devicePaths)
-        notifyDevicePropertyChanged(devicePath);
+    chain_walk::forEachDevice(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
+                              chain_walk::Pads::Skip,
+                              [this](const DeviceInfo&, const ChainNodePath& devicePath) {
+                                  notifyDevicePropertyChanged(devicePath);
+                              });
     notifyTrackDevicesChanged(trackId);
 }
 

@@ -10,6 +10,7 @@
 #include <span>
 
 #include "AutomationInfo.hpp"
+#include "ChainWalk.hpp"
 #include "DeviceInfo.hpp"
 #include "DeviceState.hpp"
 #include "TrackInfo.hpp"
@@ -631,39 +632,40 @@ void pruneLinks(MacroArray& macros, ModArray& mods, const std::set<ChainNodePath
         });
 }
 
-void collectChainElements(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
-                          TrackId trackId, std::set<ChainNodePath>& migratedPaths);
+/// Migrate every device on the track, and drop the links each rack held to one
+/// that lost them, innermost rack first.
+///
+/// A rack prunes against what migrated inside it rather than against the whole
+/// track: a link is the rack's own, and a device elsewhere losing its links is
+/// none of its business. That scoping is a stack of sets pushed and popped
+/// around the descent, which is what the walk's rack exit is for -- and it runs
+/// from a destructor, so the stack stays balanced (#2204).
+void migrateTrackDevices(std::vector<ChainElement>& elements, const ChainNodePath& trackPath,
+                         std::set<ChainNodePath>& migratedPaths) {
+    std::vector<std::set<ChainNodePath>> scopes;
+    scopes.emplace_back();
 
-void collectRack(RackInfo& rack, const ChainNodePath& rackPath, TrackId trackId,
-                 std::set<ChainNodePath>& migratedPaths) {
-    std::set<ChainNodePath> rackMigrated;
-    for (auto& chain : rack.chains)
-        collectChainElements(chain.elements, rackPath.withChain(chain.id), trackId, rackMigrated);
+    // Pads skipped: a pad device has no legacy alias to migrate, and the Drum
+    // Grid covers its own retired nested plugins through
+    // adoptRetiredNestedPluginTree.
+    chain_walk::forEachNode(
+        elements, trackPath, chain_walk::Pads::Skip,
+        [&scopes](DeviceInfo& device, const ChainNodePath& path) {
+            if (migrateDevice(device) == MigrationResult::MigratedDroppingLinks)
+                scopes.back().insert(path);
+        },
+        [&scopes](RackInfo&, const ChainNodePath&) {
+            scopes.emplace_back();
+            return chain_walk::Descend::Into;
+        },
+        [&scopes](RackInfo& rack, const ChainNodePath&) {
+            auto rackMigrated = std::move(scopes.back());
+            scopes.pop_back();
+            pruneLinks(rack.macros, rack.mods, rackMigrated);
+            scopes.back().merge(rackMigrated);
+        });
 
-    pruneLinks(rack.macros, rack.mods, rackMigrated);
-    migratedPaths.insert(rackMigrated.begin(), rackMigrated.end());
-}
-
-void collectChainElements(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
-                          TrackId trackId, std::set<ChainNodePath>& migratedPaths) {
-    for (auto& element : elements) {
-        if (isDevice(element)) {
-            auto& device = getDevice(element);
-            if (migrateDevice(device) != MigrationResult::MigratedDroppingLinks)
-                continue;
-
-            // A top-level device on a track keeps the legacy flat path shape,
-            // which is what the control graph stored for it.
-            migratedPaths.insert(parentPath.isTrackLevel
-                                     ? ChainNodePath::topLevelDevice(trackId, device.id)
-                                     : parentPath.withDevice(device.id));
-        } else if (isRack(element)) {
-            auto& rack = getRack(element);
-            const auto rackPath = parentPath.isTrackLevel ? ChainNodePath::rack(trackId, rack.id)
-                                                          : parentPath.withRack(rack.id);
-            collectRack(rack, rackPath, trackId, migratedPaths);
-        }
-    }
+    migratedPaths.merge(scopes.back());
 }
 
 // A preset carries no surrounding project, and its device ids are unique
@@ -769,8 +771,8 @@ bool migrateRetiredDevice(DeviceInfo& device) {
 std::vector<ChainNodePath> migrateRetiredDevicesInTrack(TrackInfo& track) {
     std::set<ChainNodePath> migratedPaths;
 
-    collectChainElements(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id), track.id,
-                         migratedPaths);
+    migrateTrackDevices(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+                        migratedPaths);
 
     for (auto& element : track.chain.postFxChainElements)
         if (migrateDevice(element.device) == MigrationResult::MigratedDroppingLinks)

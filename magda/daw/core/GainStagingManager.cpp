@@ -9,6 +9,7 @@
 #include "../audio/AudioBridge.hpp"
 #include "../audio/DeviceMeteringManager.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "ChainWalk.hpp"
 #include "DeviceInfo.hpp"
 #include "RackInfo.hpp"
 #include "TrackInfo.hpp"
@@ -21,18 +22,6 @@ namespace {
 
 float linearToDb(float linear) {
     return juce::Decibels::gainToDecibels(linear, kGainStageSilenceDb);
-}
-
-void collectChainDeviceIds(const std::vector<ChainElement>& elements, std::vector<DeviceId>& out) {
-    for (const auto& element : elements) {
-        if (isDevice(element)) {
-            out.push_back(getDevice(element).id);
-        } else if (isRack(element)) {
-            const auto& rack = getRack(element);
-            for (const auto& chain : rack.chains)
-                collectChainDeviceIds(chain.elements, out);
-        }
-    }
 }
 
 struct CascadeSuggestion {
@@ -365,14 +354,18 @@ void GainStagingManager::buildStagedDeviceList(TrackId trackId) {
     if (track == nullptr)
         return;
 
-    // Main FX chain (device/rack tree) in signal order.
-    std::vector<DeviceId> fxIds;
-    collectChainDeviceIds(track->chain.fxChainElements, fxIds);
-    for (auto deviceId : fxIds) {
-        auto path = tm.findDevicePath(deviceId);
-        if (path.isValid())
-            staged_.push_back({deviceId, path});
-    }
+    // Main FX chain (device/rack tree) in signal order. Pads skipped: gain
+    // staging works on a track's chain, and a pad's level is the grid's
+    // business rather than a stage in the cascade (#2204).
+    //
+    // The walk hands back the address it built, so there is no findDevicePath()
+    // search per device to undo the descent that just passed the device.
+    chain_walk::forEachDevice(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
+                              chain_walk::Pads::Skip,
+                              [this](const DeviceInfo& device, const ChainNodePath& path) {
+                                  if (path.isValid())
+                                      staged_.push_back({device.id, path});
+                              });
 
     // Post-FX stage (flat, devices only).
     for (const auto& element : track->chain.postFxChainElements) {

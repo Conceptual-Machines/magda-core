@@ -5,6 +5,7 @@
 #include <set>
 #include <unordered_map>
 
+#include "core/ChainWalk.hpp"
 #include "core/DrumGridPads.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
@@ -59,33 +60,6 @@ float faderPositionToGain(float position) {
 /// compiler reports routing cycles, and mute inheritance is not the place to
 /// discover one.
 constexpr int kMaxTrackWalk = 64;
-
-const RackInfo* findRackIn(const std::vector<ChainElement>& elements, RackId rackId);
-
-const RackInfo* findRackIn(const RackInfo& rack, RackId rackId) {
-    if (rack.id == rackId)
-        return &rack;
-    for (const auto& chain : rack.chains)
-        if (const auto* found = findRackIn(chain.elements, rackId))
-            return found;
-    return nullptr;
-}
-
-const RackInfo* findRackIn(const std::vector<ChainElement>& elements, RackId rackId) {
-    for (const auto& element : elements) {
-        if (isRack(element)) {
-            if (const auto* found = findRackIn(getRack(element), rackId))
-                return found;
-            continue;
-        }
-        // A pad rack hangs off its device rather than sitting in the chain, and
-        // its chains carry mute, solo and a fader like any other's.
-        if (const auto& device = getDevice(element); device.pads)
-            if (const auto* found = findRackIn(*device.pads.get(), rackId))
-                return found;
-    }
-    return nullptr;
-}
 
 const ChainInfo* findChain(const RackInfo& rack, ChainId chainId) {
     const auto found = std::ranges::find_if(
@@ -153,8 +127,14 @@ class Resolver {
     }
 
     /// The rack an op's key names, wherever it is nested.
+    ///
+    /// Pads entered: a pad rack hangs off its device rather than sitting in the
+    /// chain, and its chains carry mute, solo and a fader like any other's.
     const RackInfo* findRack(const TrackInfo& track, RackId rackId) const {
-        return findRackIn(track.chain.fxChainElements, rackId);
+        return chain_walk::findRack(
+            track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+            chain_walk::Pads::Enter,
+            [rackId](const RackInfo& rack, const ChainNodePath&) { return rack.id == rackId; });
     }
 
     /// The device an op's key names: a track-level device sits in one of the
