@@ -342,3 +342,26 @@ TEST_CASE("Undoing the deletion of a middle child puts it back among its sibling
 
     requireUndoRoundTrip(std::make_unique<DeleteTrackCommand>(middle));
 }
+
+TEST_CASE("Undoing the deletion of a group brings its children back with it",
+          "[structural][undo][roundtrip]") {
+    // Deleting a group deletes its children, and the command stored only the
+    // track the user named. Undo restored the group alone: its tracks, their
+    // devices and their clips were gone for good, and the restored group listed
+    // children that no longer existed.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    tm.createTrack("Before");
+    const auto groupId = tm.createGroupTrack("Group");
+    const auto first = tm.createTrack("First");
+    const auto second = tm.createTrack("Second");
+    tm.addTrackToGroup(first, groupId);
+    tm.addTrackToGroup(second, groupId);
+    tm.addDeviceToTrack(first, effect("Child FX"));
+    const auto rackId = tm.addRackToTrack(second, "Child Rack");
+    tm.addChainToRack(ChainNodePath::rack(second, rackId));
+    tm.createTrack("After");
+
+    requireUndoRoundTrip(std::make_unique<DeleteTrackCommand>(groupId));
+}

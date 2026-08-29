@@ -1,6 +1,7 @@
 #include "TrackCommands.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 
 #include "../audio/AudioBridge.hpp"
@@ -185,6 +186,40 @@ juce::String CreateTrackCommand::getDescription() const {
 
 DeleteTrackCommand::DeleteTrackCommand(TrackId trackId) : trackId_(trackId) {}
 
+std::vector<DeleteTrackCommand::DeletedTrack> DeleteTrackCommand::collectSubtree(TrackId trackId) {
+    auto& tm = TrackManager::getInstance();
+    std::vector<DeletedTrack> records;
+
+    const std::function<void(TrackId)> descend = [&](TrackId id) {
+        const auto* track = tm.getTrack(id);
+        if (track == nullptr)
+            return;
+
+        DeletedTrack record;
+        record.track = *track;
+        record.position = tm.restorePositionOf(id);
+
+        auto& clipManager = ClipManager::getInstance();
+        for (auto clipId : clipManager.getClipsOnTrack(id))
+            if (const auto* clip = clipManager.getClip(clipId))
+                record.clips.push_back(*clip);
+
+        records.push_back(std::move(record));
+
+        for (auto childId : track->childIds)
+            descend(childId);
+    };
+
+    descend(trackId);
+
+    // By where each stood, so refilling the list left to right lands every one
+    // of them on its own index.
+    std::stable_sort(records.begin(), records.end(), [](const auto& a, const auto& b) {
+        return a.position.trackIndex < b.position.trackIndex;
+    });
+    return records;
+}
+
 void DeleteTrackCommand::execute() {
     // The master track is permanent. Bail before touching clips or storing undo
     // state so the command is a clean no-op (undo() is gated on executed_).
@@ -199,28 +234,18 @@ void DeleteTrackCommand::execute() {
         return;
     }
 
-    // Store full track info, position and clips for undo (only on first execute)
+    // The whole subtree, because deleteTrack() cascades into the children and
+    // takes their devices and clips with them (only on first execute).
     if (!executed_) {
-        storedTrack_ = *track;
-        storedPosition_ = trackManager.restorePositionOf(trackId_);
+        storedTracks_ = collectSubtree(trackId_);
     }
 
-    // Store and remove all clips on this track
-    auto& clipManager = ClipManager::getInstance();
-    auto clipIds = clipManager.getClipsOnTrack(trackId_);
-    storedClips_.clear();
-    for (auto clipId : clipIds) {
-        const auto* clip = clipManager.getClip(clipId);
-        if (clip) {
-            storedClips_.push_back(*clip);
-        }
-        clipManager.deleteClip(clipId);
-    }
-
+    // deleteTrack() deletes each track's clips as it goes, children included.
     trackManager.deleteTrack(trackId_);
     executed_ = true;
 
-    DBG("UNDO: Deleted track " << trackId_);
+    DBG("UNDO: Deleted track " << trackId_ << " and " << (int)storedTracks_.size() - 1
+                               << " descendant(s)");
 }
 
 void DeleteTrackCommand::undo() {
@@ -228,15 +253,19 @@ void DeleteTrackCommand::undo() {
         return;
     }
 
-    TrackManager::getInstance().restoreTrack(storedTrack_, storedPosition_);
-
-    // Restore clips that were on this track
+    auto& trackManager = TrackManager::getInstance();
     auto& clipManager = ClipManager::getInstance();
-    for (const auto& clip : storedClips_) {
-        clipManager.restoreClip(clip);
+
+    // Ascending by where each stood, so the list refills left to right. A child
+    // restored before its parent finds no parent to rejoin, and needs none: the
+    // parent's own stored childIds still names it.
+    for (const auto& record : storedTracks_) {
+        trackManager.restoreTrack(record.track, record.position);
+        for (const auto& clip : record.clips)
+            clipManager.restoreClip(clip);
     }
 
-    DBG("UNDO: Restored track " << trackId_);
+    DBG("UNDO: Restored track " << trackId_ << " and its descendants");
 }
 
 // ============================================================================

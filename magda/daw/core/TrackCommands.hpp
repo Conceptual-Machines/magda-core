@@ -45,12 +45,27 @@ class DeleteTrackCommand : public UndoableCommand {
     }
 
   private:
+    /// One deleted track, with everything needed to put it back as it was.
+    struct DeletedTrack {
+        TrackInfo track;
+        /// Where it stood -- in the project and among its group's children --
+        /// so undo puts it back there rather than at the end of either.
+        TrackRestorePosition position;
+        std::vector<ClipInfo> clips;
+    };
+
+    /// @p trackId and everything under it, each with where it stood and what
+    /// it held, ordered by their places in the project.
+    static std::vector<DeletedTrack> collectSubtree(TrackId trackId);
+
     TrackId trackId_;
-    TrackInfo storedTrack_;
-    std::vector<ClipInfo> storedClips_;
-    /// Where the track stood -- in the project and among its group's children --
-    /// so undo puts it back there rather than at the end of either.
-    TrackRestorePosition storedPosition_;
+    /// The whole subtree, in the order it stood in the project.
+    ///
+    /// Deleting a group deletes its children with it, so storing only the track
+    /// the user named restored the group alone: its tracks, their devices and
+    /// their clips were gone for good, and the restored group listed children
+    /// that no longer existed (#2229).
+    std::vector<DeletedTrack> storedTracks_;
     bool executed_ = false;
 };
 

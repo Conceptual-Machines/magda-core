@@ -167,6 +167,19 @@ bool carriesAnInstrument(Subject subject) {
 /// construction. These are the rules as the issues state them --
 /// `PlacementRefusal` for what a subtree may carry and where, plus the two
 /// sections that hold bare devices and so cannot be addressed as chains at all.
+/// Why a destination track of this role adds nothing for this subject, or empty
+/// when it does.
+///
+/// An aux track differs from another media track in exactly one thing the sweep
+/// tests: it refuses an instrument. For a subject carrying none, the cell is the
+/// media-track cell run twice.
+juce::String rolePointless(Subject subject, TrackRole role) {
+    if (role == TrackRole::Aux && !carriesAnInstrument(subject))
+        return "an aux track differs from another media track only in refusing an instrument, "
+               "so for a subject carrying none this repeats the media-track cell";
+    return {};
+}
+
 Disposition expectedOutcome(Operation operation, Subject subject, Container source,
                             Container destination, TrackRole role) {
     const bool auxDestination = role == TrackRole::Aux;
@@ -453,8 +466,30 @@ struct Shapes {
 /// Build a track holding one of every container shape, each already occupied by
 /// a resident effect so that an index of 0 is always a real placement rather
 /// than a subject's own index.
-Shapes buildShapes(const juce::String& name, TrackType type) {
+/// Which shapes a container needs standing before it: a pad chain needs the grid
+/// that owns it, a nested chain needs the rack it hangs in.
+std::set<Container> withPrerequisites(const std::set<Container>& wanted) {
+    std::set<Container> needed = wanted;
+    if (needed.count(Container::PadNestedRackChain) == 1)
+        needed.insert(Container::PadChain);
+    if (needed.count(Container::NestedRackChain) == 1)
+        needed.insert(Container::RackChain);
+    return needed;
+}
+
+/// Build a track carrying the container shapes in @p wanted and nothing else,
+/// each already occupied by a resident effect so that an index of 0 is always a
+/// real placement rather than a subject's own index.
+///
+/// Only what the cell addresses, because the oracle serializes every track four
+/// times per cell: standing up all seven shapes on three tracks to use one of
+/// them made the sweep an order of magnitude more expensive than the coverage it
+/// bought, and pushed the Windows test step past its timeout.
+Shapes buildShapes(const juce::String& name, TrackType type, const std::set<Container>& wanted) {
     auto& tm = TrackManager::getInstance();
+    const auto needed = withPrerequisites(wanted);
+    const auto asked = [&needed](Container container) { return needed.count(container) == 1; };
+
     Shapes shapes;
     shapes.id = tm.createTrack(name, type);
     REQUIRE(shapes.id != INVALID_TRACK_ID);
@@ -462,25 +497,30 @@ Shapes buildShapes(const juce::String& name, TrackType type) {
     REQUIRE(track != nullptr);
     shapes.hostsInstruments = track->canHostInstrument();
 
-    shapes.containers[Container::TrackList] = ChainNodePath::trackLevel(shapes.id);
+    if (asked(Container::TrackList))
+        shapes.containers[Container::TrackList] = ChainNodePath::trackLevel(shapes.id);
 
-    const auto rackId = tm.addRackToTrack(shapes.id, name + " Rack");
-    REQUIRE(rackId != INVALID_RACK_ID);
-    const auto chainId = tm.addChainToRack(ChainNodePath::rack(shapes.id, rackId));
-    REQUIRE(chainId != INVALID_CHAIN_ID);
-    const auto rackChain = ChainNodePath::chain(shapes.id, rackId, chainId);
-    shapes.containers[Container::RackChain] = rackChain;
+    if (asked(Container::RackChain)) {
+        const auto rackId = tm.addRackToTrack(shapes.id, name + " Rack");
+        REQUIRE(rackId != INVALID_RACK_ID);
+        const auto chainId = tm.addChainToRack(ChainNodePath::rack(shapes.id, rackId));
+        REQUIRE(chainId != INVALID_CHAIN_ID);
+        const auto rackChain = ChainNodePath::chain(shapes.id, rackId, chainId);
+        shapes.containers[Container::RackChain] = rackChain;
 
-    const auto innerRackId = tm.addRackToChainByPath(rackChain, "Inner");
-    REQUIRE(innerRackId != INVALID_RACK_ID);
-    const auto innerChainId = tm.addChainToRack(rackChain.withRack(innerRackId));
-    REQUIRE(innerChainId != INVALID_CHAIN_ID);
-    shapes.containers[Container::NestedRackChain] =
-        rackChain.withRack(innerRackId).withChain(innerChainId);
+        if (asked(Container::NestedRackChain)) {
+            const auto innerRackId = tm.addRackToChainByPath(rackChain, "Inner");
+            REQUIRE(innerRackId != INVALID_RACK_ID);
+            const auto innerChainId = tm.addChainToRack(rackChain.withRack(innerRackId));
+            REQUIRE(innerChainId != INVALID_CHAIN_ID);
+            shapes.containers[Container::NestedRackChain] =
+                rackChain.withRack(innerRackId).withChain(innerChainId);
+        }
+    }
 
-    // A pad rack belongs to a Drum Grid, which is an instrument, so a track
-    // that cannot host one has no pad shapes at all.
-    if (shapes.hostsInstruments) {
+    // A pad rack belongs to a Drum Grid, which is an instrument, so a track that
+    // cannot host one has no pad shapes at all.
+    if (asked(Container::PadChain) && shapes.hostsInstruments) {
         shapes.gridId = tm.addDeviceToTrack(shapes.id, drumGrid(name + " Grid"));
         REQUIRE(shapes.gridId != INVALID_DEVICE_ID);
         const auto gridPath = ChainNodePath::topLevelDevice(shapes.id, shapes.gridId);
@@ -489,26 +529,31 @@ Shapes buildShapes(const juce::String& name, TrackType type) {
         const auto padChain = ChainNodePath::padChain(shapes.id, shapes.gridId, padChainId);
         shapes.containers[Container::PadChain] = padChain;
 
-        // The rack goes in whole rather than through `addRackToChainByPath`,
-        // which resolves its parent through the rack walk and so cannot reach a
-        // pad chain. Its chain comes with it for the same reason.
-        const auto nestedPath = append(padChain, rackHolding("Pad Inner", effect("Pad Inner FX")));
-        // Its chain id is read back out of the pad chain rather than asked of
-        // `getRackByPath`, which walks the rack tree a pad rack is not part of.
-        const auto* holder = tm.getChainByPath(padChain);
-        REQUIRE(holder != nullptr);
-        ChainId nestedChainId = INVALID_CHAIN_ID;
-        for (const auto& element : holder->elements)
-            if (isRack(element) && getRack(element).id == nestedPath.steps.back().id &&
-                !getRack(element).chains.empty())
-                nestedChainId = getRack(element).chains.front().id;
-        REQUIRE(nestedChainId != INVALID_CHAIN_ID);
-        shapes.containers[Container::PadNestedRackChain] = nestedPath.withChain(nestedChainId);
+        if (asked(Container::PadNestedRackChain)) {
+            // The rack goes in whole rather than through `addRackToChainByPath`,
+            // which resolves its parent through the rack walk and so cannot
+            // reach a pad chain. Its chain comes with it for the same reason.
+            const auto nestedPath =
+                append(padChain, rackHolding("Pad Inner", effect("Pad Inner FX")));
+            // Its chain id is read back out of the pad chain rather than asked
+            // of `getRackByPath`, which walks a tree a pad rack is not part of.
+            const auto* holder = tm.getChainByPath(padChain);
+            REQUIRE(holder != nullptr);
+            ChainId nestedChainId = INVALID_CHAIN_ID;
+            for (const auto& element : holder->elements)
+                if (isRack(element) && getRack(element).id == nestedPath.steps.back().id &&
+                    !getRack(element).chains.empty())
+                    nestedChainId = getRack(element).chains.front().id;
+            REQUIRE(nestedChainId != INVALID_CHAIN_ID);
+            shapes.containers[Container::PadNestedRackChain] = nestedPath.withChain(nestedChainId);
+        }
     }
 
-    shapes.containers[Container::PostFx] = segmentContainer(shapes.id, ChainSegment::PostFx);
-    shapes.containers[Container::MixerAnalysis] =
-        segmentContainer(shapes.id, ChainSegment::MixerAnalysis);
+    if (asked(Container::PostFx))
+        shapes.containers[Container::PostFx] = segmentContainer(shapes.id, ChainSegment::PostFx);
+    if (asked(Container::MixerAnalysis))
+        shapes.containers[Container::MixerAnalysis] =
+            segmentContainer(shapes.id, ChainSegment::MixerAnalysis);
 
     // One resident everywhere, so index 0 is never the subject's own index.
     for (const auto& [container, path] : shapes.containers) {
@@ -526,29 +571,38 @@ Shapes buildShapes(const juce::String& name, TrackType type) {
 
 struct World {
     Shapes host;
-    Shapes peer;
-    Shapes aux;
+    Shapes destination;  ///< The same track as `host` when the role is Host.
 
     const Shapes& of(TrackRole role) const {
-        switch (role) {
-            case TrackRole::Host:
-                return host;
-            case TrackRole::Peer:
-                return peer;
-            case TrackRole::Aux:
-                return aux;
-        }
-        return host;
+        return role == TrackRole::Host ? host : destination;
     }
 };
 
-World buildWorld() {
+TrackType trackTypeFor(TrackRole role) {
+    return role == TrackRole::Aux ? TrackType::Aux : TrackType::Media;
+}
+
+/// A project holding just the shapes @p cell needs: the subject's container on
+/// the host track, and the destination container on whichever track the role
+/// names.
+World buildWorld(Container source, Container destination, TrackRole role) {
     resetState();
     World world;
-    world.host = buildShapes("Host", TrackType::Media);
-    world.peer = buildShapes("Peer", TrackType::Media);
-    world.aux = buildShapes("Aux", TrackType::Aux);
+    if (role == TrackRole::Host) {
+        world.host = buildShapes("Host", TrackType::Media, {source, destination});
+        world.destination = world.host;
+        return world;
+    }
+
+    world.host = buildShapes("Host", TrackType::Media, {source});
+    world.destination =
+        buildShapes(role == TrackRole::Aux ? "Aux" : "Peer", trackTypeFor(role), {destination});
     return world;
+}
+
+/// The single-container matrices, which never reach past the host track.
+World buildWorld(Container container) {
+    return buildWorld(container, container, TrackRole::Host);
 }
 
 // ============================================================================
@@ -703,8 +757,12 @@ TEST_CASE("Every move across the container matrix is refused or reversible",
             for (auto destination : kContainers) {
                 for (auto role : kRoles) {
                     const auto cell = cellName("move", subject, source, destination, role);
+                    if (const auto reason = rolePointless(subject, role); reason.isNotEmpty()) {
+                        ledger.exclude(cell, reason);
+                        continue;
+                    }
 
-                    auto world = buildWorld();
+                    auto world = buildWorld(source, destination, role);
                     const auto* target = world.of(role).find(destination);
                     if (target == nullptr) {
                         ledger.exclude(cell, "an aux track cannot host the Drum Grid a pad rack "
@@ -746,8 +804,12 @@ TEST_CASE("Every paste across the container matrix is refused or reversible",
             for (auto destination : kContainers) {
                 for (auto role : kRoles) {
                     const auto cell = cellName("paste", subject, source, destination, role);
+                    if (const auto reason = rolePointless(subject, role); reason.isNotEmpty()) {
+                        ledger.exclude(cell, reason);
+                        continue;
+                    }
 
-                    auto world = buildWorld();
+                    auto world = buildWorld(source, destination, role);
                     const auto* target = world.of(role).find(destination);
                     if (target == nullptr) {
                         ledger.exclude(cell, "an aux track cannot host the Drum Grid a pad rack "
@@ -792,7 +854,7 @@ TEST_CASE("Every wrap across the container matrix is refused or reversible",
                 continue;
             }
 
-            auto world = buildWorld();
+            auto world = buildWorld(container);
             const auto subjectPath = placeSubject(subject, world.host, container);
             requireCell(
                 cell,
@@ -827,7 +889,7 @@ TEST_CASE("Every duplication across the container matrix is refused or reversibl
                 continue;
             }
 
-            auto world = buildWorld();
+            auto world = buildWorld(container);
             const auto* containerPath = world.host.find(container);
             REQUIRE(containerPath != nullptr);
             const auto subjectPath = placeSubject(subject, world.host, container);
@@ -871,7 +933,7 @@ TEST_CASE("Every removal across the container matrix is refused or reversible",
                 continue;
             }
 
-            auto world = buildWorld();
+            auto world = buildWorld(container);
             const auto subjectPath = placeSubject(subject, world.host, container);
             requireCell(
                 cell,
@@ -903,7 +965,7 @@ TEST_CASE("Duplicating a track carrying any subject in any container is reversib
                 continue;
             }
 
-            auto world = buildWorld();
+            auto world = buildWorld(container);
             placeSubject(subject, world.host, container);
             requireCell(cell,
                         expectedOutcome(Operation::TrackDuplicate, subject, container, container,
@@ -983,7 +1045,7 @@ TEST_CASE("Every pad structural edit from every container is refused or reversib
             const juce::String cell =
                 juce::String(operation.name) + " on a grid in the " + label(container);
 
-            auto world = buildWorld();
+            auto world = buildWorld(container);
             const auto* containerPath = world.host.find(container);
             REQUIRE(containerPath != nullptr);
 
