@@ -395,3 +395,93 @@ TEST_CASE("Undoing a track deletion puts back the routing it swept up",
     UndoManager::getInstance().clearHistory();
     requireUndoRoundTrip(std::make_unique<DeleteTrackCommand>(auxId));
 }
+
+TEST_CASE("Undoing a rack removal brings back everything that was inside it",
+          "[structural][undo][roundtrip]") {
+    // Nothing undid a rack removal at all: the chain view called
+    // removeRackFromChainByPath() straight off the model, so deleting a rack
+    // took its chains, its devices and their links with it for good. It was the
+    // one operation the transition matrix had to exclude by name (#2232).
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    tm.addDeviceToTrack(trackId, effect("Before"));
+    const auto rackId = tm.addRackToTrack(trackId, "Doomed");
+    tm.addDeviceToTrack(trackId, effect("After"));
+
+    const auto rackPath = ChainNodePath::rack(trackId, rackId);
+    const auto firstChain = tm.addChainToRack(rackPath);
+    const auto secondChain = tm.addChainToRack(rackPath);
+    tm.addDeviceToChainByPath(rackPath.withChain(firstChain), effect("In Chain One"));
+    tm.addDeviceToChainByPath(rackPath.withChain(secondChain), effect("In Chain Two"));
+
+    // A rack inside the rack, so the restore has to carry a subtree rather than
+    // a flat list of devices.
+    const auto nestedId = tm.addRackToChainByPath(rackPath.withChain(firstChain), "Nested");
+    const auto nestedPath = rackPath.withChain(firstChain).withRack(nestedId);
+    tm.addDeviceToChainByPath(nestedPath.withChain(tm.addChainToRack(nestedPath)), effect("Deep"));
+
+    requireUndoRoundTrip(std::make_unique<RemoveRackByPathCommand>(rackPath));
+}
+
+TEST_CASE("Undoing a chain removal puts the chain back among its siblings",
+          "[structural][undo][roundtrip]") {
+    // Same gap one level down, and with the same trap the track restores had:
+    // an append puts a middle chain back last, which reorders the rack.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    const auto rackId = tm.addRackToTrack(trackId, "Rack");
+    const auto rackPath = ChainNodePath::rack(trackId, rackId);
+
+    tm.addDeviceToChainByPath(rackPath.withChain(tm.addChainToRack(rackPath)), effect("First"));
+    const auto middle = tm.addChainToRack(rackPath);
+    tm.addDeviceToChainByPath(rackPath.withChain(middle), effect("Middle"));
+    tm.addDeviceToChainByPath(rackPath.withChain(tm.addChainToRack(rackPath)), effect("Last"));
+
+    requireUndoRoundTrip(std::make_unique<RemoveChainByPathCommand>(rackPath.withChain(middle)));
+}
+
+TEST_CASE("Undoing a post-fader device removal puts it back at its index",
+          "[structural][undo][roundtrip]") {
+    // The flat sections hold bare devices rather than chain elements, so the
+    // index lookup the removal records had no answer for them and the command
+    // stopped before mutating: deleting a post-fader device from the UI worked
+    // only because the UI was not going through the command (#2232).
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    tm.addDeviceToPostFx(trackId, effect("First"));
+    const auto middle = tm.addDeviceToPostFx(trackId, effect("Middle"));
+    tm.addDeviceToPostFx(trackId, effect("Last"));
+
+    requireUndoRoundTrip(
+        std::make_unique<RemoveDeviceByPathCommand>(ChainNodePath::postFxDevice(trackId, middle)));
+}
+
+TEST_CASE("Removing a rack drops a selection standing inside it", "[structural][selection]") {
+    // `clearSelectionForDeletedChainNode()` matches an exact path or a device
+    // id, never an ancestor, so removing a container left a selection below it
+    // pointing at model that had just been freed. The pad removals walked the
+    // subtree for this reason; the rack and chain removals did not (#2232).
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    auto& selection = SelectionManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    const auto rackId = tm.addRackToTrack(trackId, "Rack");
+    const auto rackPath = ChainNodePath::rack(trackId, rackId);
+    const auto chainId = tm.addChainToRack(rackPath);
+    const auto deviceId = tm.addDeviceToChainByPath(rackPath.withChain(chainId), effect("Buried"));
+
+    const auto devicePath = rackPath.withChain(chainId).withDevice(deviceId);
+    selection.selectChainNode(devicePath);
+    REQUIRE(selection.getSelectedChainNode() == devicePath);
+
+    UndoManager::getInstance().executeCommand(std::make_unique<RemoveRackByPathCommand>(rackPath));
+
+    CHECK_FALSE(selection.getSelectedChainNode().isValid());
+}

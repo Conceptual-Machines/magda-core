@@ -24,40 +24,6 @@ namespace magda {
 // inspect the model or count steps (#2219).
 // ============================================================================
 
-namespace {
-
-/// Drop any selection standing on something inside @p chainPath before it goes.
-///
-/// Every node under it, not only the devices it holds directly: a pad's chain
-/// takes racks like any other chain, and `clearSelectionForDeletedChainNode()`
-/// matches an exact path or a device id rather than an ancestor, so a selection
-/// below a nested rack would survive the erase pointing at freed model (#2211).
-void clearSelectionsUnder(const std::vector<ChainElement>& elements,
-                          const ChainNodePath& chainPath) {
-    auto& selection = SelectionManager::getInstance();
-    for (const auto& element : elements) {
-        if (magda::isDevice(element)) {
-            selection.clearSelectionForDeletedChainNode(
-                chainPath.withDevice(magda::getDevice(element).id));
-            continue;
-        }
-
-        if (!magda::isRack(element))
-            continue;
-
-        const auto& rack = magda::getRack(element);
-        const auto rackPath = chainPath.withRack(rack.id);
-        for (const auto& chain : rack.chains) {
-            const auto nested = rackPath.withChain(chain.id);
-            clearSelectionsUnder(chain.elements, nested);
-            selection.clearSelectionForDeletedChainNode(nested);
-        }
-        selection.clearSelectionForDeletedChainNode(rackPath);
-    }
-}
-
-}  // namespace
-
 ChainNodePath TrackManager::padChainPath(const ChainNodePath& gridPath, ChainId padChainId) {
     // Flat, and named by the DEVICE's own id: `PadRack(gridDeviceId) >
     // PadChain(pad)`, whatever the grid itself is nested in.
@@ -250,7 +216,7 @@ DeviceId TrackManager::setPadDevice(const ChainNodePath& gridPath, int padIndex,
     // Dropping an instrument on a pad replaces the pad, effects and all: that
     // is what the pad's slot means. Selections pointing into what is going away
     // are cleared first, the same as any other device removal.
-    clearSelectionsUnder(pad->elements, padChainPath(gridPath, padChainId));
+    clearSelectionsUnderChain(pad->elements, padChainPath(gridPath, padChainId));
     pad->elements.clear();
 
     // Named after what is on it, which is what the grid shows on the pad.
@@ -276,7 +242,7 @@ void TrackManager::clearPad(const ChainNodePath& gridPath, int padIndex) {
         return;
 
     const auto chainPath = padChainPath(gridPath, pad->id);
-    clearSelectionsUnder(pad->elements, chainPath);
+    clearSelectionsUnderChain(pad->elements, chainPath);
     SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
 
     std::erase_if(pads->chains, [id = pad->id](const ChainInfo& chain) { return chain.id == id; });
@@ -486,7 +452,7 @@ void TrackManager::removePadChain(const ChainNodePath& gridPath, ChainId padChai
         return;
 
     const auto chainPath = padChainPath(gridPath, padChainId);
-    clearSelectionsUnder(found->elements, chainPath);
+    clearSelectionsUnderChain(found->elements, chainPath);
     SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
 
     pads->chains.erase(found);

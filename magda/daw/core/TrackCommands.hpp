@@ -421,4 +421,66 @@ class RemoveDeviceByPathCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/**
+ * @brief Remove a rack addressed by path, restoring the whole subtree on undo.
+ *
+ * The chain view used to call `removeRackFromChainByPath()` straight off the
+ * model, so deleting a rack -- with every device, nested rack, macro and mod it
+ * held -- could not be undone at all. It was the one operation the structural
+ * matrix had to exclude by name rather than assert (#2232).
+ *
+ * Captures the live plugin state of every device beneath the rack first, so
+ * undo restores them as they sounded, and restores under the ids they had so
+ * the links naming them still resolve.
+ */
+class RemoveRackByPathCommand : public UndoableCommand {
+  public:
+    explicit RemoveRackByPathCommand(const ChainNodePath& rackPath);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Remove Rack";
+    }
+
+    bool didRemove() const {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath rackPath_;
+    ChainNodePath parentPath_;
+    RackInfo savedRack_;
+    int savedIndex_ = -1;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Remove one chain from a rack, restoring it in place on undo.
+ *
+ * Same gap as the rack above, one level down: the chain row's X went straight
+ * to `removeChainByPath()`, and a chain carries devices (#2232).
+ */
+class RemoveChainByPathCommand : public UndoableCommand {
+  public:
+    explicit RemoveChainByPathCommand(const ChainNodePath& chainPath);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Remove Chain";
+    }
+
+    bool didRemove() const {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath chainPath_;
+    ChainNodePath rackPath_;
+    ChainInfo savedChain_;
+    int savedIndex_ = -1;
+    bool executed_ = false;
+};
+
 }  // namespace magda

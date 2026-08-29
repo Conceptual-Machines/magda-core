@@ -1037,6 +1037,23 @@ std::vector<ChainElement> TrackManager::copyChainElements(
     return copied;
 }
 
+bool TrackManager::insertFlatSectionDeviceByPath(const ChainNodePath& devicePath, DeviceInfo device,
+                                                 int index) {
+    auto* track = getTrack(devicePath.trackId);
+    if (track == nullptr || device.id == INVALID_DEVICE_ID)
+        return false;
+
+    const bool postFx = devicePath.isPostFx();
+    if (!postFx && !devicePath.isMixerAnalysis())
+        return false;
+
+    auto& section = postFx ? track->chain.postFxChainElements : track->chain.mixerAnalysisElements;
+    index = std::clamp(index, 0, static_cast<int>(section.size()));
+    section.insert(section.begin() + index, PostFxChainElement{std::move(device)});
+    notifyTrackDevicesChanged(devicePath.trackId);
+    return true;
+}
+
 bool TrackManager::insertChainElementsByPath(const ChainNodePath& destinationChainPath,
                                              std::vector<ChainElement> elements, int insertIndex,
                                              bool reassignIds) {
@@ -1144,6 +1161,26 @@ RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& p
 }
 
 int TrackManager::getChainElementIndex(const ChainNodePath& elementPath) {
+    // The two flat sections hold bare devices rather than chain elements, so
+    // the container lookup below has no answer for them. Without this a removal
+    // command could not record where a post-fader device stood and stopped
+    // before removing it, which is why the structural matrix recorded every
+    // flat-section removal as refused (#2232).
+    if (elementPath.isPostFx() || elementPath.isMixerAnalysis()) {
+        auto* track = getTrack(elementPath.trackId);
+        if (track == nullptr)
+            return -1;
+
+        const auto& section = elementPath.isPostFx() ? track->chain.postFxChainElements
+                                                     : track->chain.mixerAnalysisElements;
+        const auto deviceId = elementPath.getDeviceId();
+        for (int i = 0; i < static_cast<int>(section.size()); ++i) {
+            if (section[static_cast<size_t>(i)].device.id == deviceId)
+                return i;
+        }
+        return -1;
+    }
+
     ChainNodePath containerPath;
     containerPath.trackId = elementPath.trackId;
 
@@ -2292,28 +2329,8 @@ RackId TrackManager::addRackToChainByPath(const ChainNodePath& chainPath,
     return INVALID_RACK_ID;
 }
 
-void TrackManager::removeRackFromChain(TrackId trackId, RackId parentRackId, ChainId chainId,
-                                       RackId nestedRackId) {
-    if (auto* chain = getChain(trackId, parentRackId, chainId)) {
-        auto& elements = chain->elements;
-        for (auto it = elements.begin(); it != elements.end(); ++it) {
-            if (magda::isRack(*it)) {
-                if (magda::getRack(*it).id == nestedRackId) {
-                    elements.erase(it);
-                    notifyTrackDevicesChanged(trackId);
-                    return;
-                }
-            }
-        }
-    } else {
-    }
-}
-
 void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
     // rackPath ends with a Rack step - we need to find the parent chain and remove this rack
-    for (size_t i = 0; i < rackPath.steps.size(); ++i) {
-    }
-
     if (rackPath.steps.size() == 1 && rackPath.steps.back().type == ChainStepType::Rack) {
         removeRackFromTrack(rackPath.trackId, rackPath.steps.back().id);
         return;
@@ -2342,15 +2359,13 @@ void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
     if (auto* chain = getChainFromPath(*this, chainPath)) {
         auto& elements = chain->elements;
         for (auto it = elements.begin(); it != elements.end(); ++it) {
-            if (magda::isRack(*it)) {
-                if (magda::getRack(*it).id == rackId) {
-                    elements.erase(it);
-                    notifyTrackDevicesChanged(rackPath.trackId);
-                    return;
-                }
+            if (magda::isRack(*it) && magda::getRack(*it).id == rackId) {
+                clearSelectionsUnderRack(magda::getRack(*it), rackPath);
+                elements.erase(it);
+                notifyTrackDevicesChanged(rackPath.trackId);
+                return;
             }
         }
-    } else {
     }
 }
 

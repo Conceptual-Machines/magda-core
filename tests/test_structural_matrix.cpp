@@ -194,9 +194,10 @@ Disposition expectedOutcome(Operation operation, Subject subject, Container sour
             return Disposition::Applied;
 
         case Operation::Remove:
-            // A flat section is not a chain, so the element index the removal
-            // records has no answer there and it stops before mutating.
-            return isFlatSection(source) ? Disposition::Refused : Disposition::Applied;
+            // Every container, the two flat sections included: they hold bare
+            // devices rather than chain elements, and the removal now records
+            // and restores a position in that list too (#2232).
+            return Disposition::Applied;
 
         case Operation::Wrap:
             if (isFlatSection(source))
@@ -315,14 +316,6 @@ void requireEveryAxisCovered(const Ledger& ledger, const std::vector<Subject>& e
 
 std::vector<Subject> everySubject() {
     return {kSubjects.begin(), kSubjects.end()};
-}
-
-std::vector<Subject> everySubjectExcept(Subject omitted) {
-    std::vector<Subject> subjects;
-    for (auto subject : kSubjects)
-        if (subject != omitted)
-            subjects.push_back(subject);
-    return subjects;
 }
 
 // ============================================================================
@@ -927,18 +920,20 @@ TEST_CASE("Every removal across the container matrix is refused or reversible",
                 ledger.exclude(cell, reason);
                 continue;
             }
-            if (subject == Subject::Rack) {
-                ledger.exclude(cell, "no undoable command removes a rack: the chain view calls "
-                                     "removeRackFromChainByPath() directly");
-                continue;
-            }
-
             auto world = buildWorld(container);
             const auto subjectPath = placeSubject(subject, world.host, container);
+            // A rack is taken out by its own command: the model call the two
+            // share erases a whole subtree, and only one of the two knows how
+            // to put a subtree back (#2232).
+            auto command = subject == Subject::Rack
+                               ? std::unique_ptr<UndoableCommand>(
+                                     std::make_unique<RemoveRackByPathCommand>(subjectPath))
+                               : std::unique_ptr<UndoableCommand>(
+                                     std::make_unique<RemoveDeviceByPathCommand>(subjectPath));
             requireCell(
                 cell,
                 expectedOutcome(Operation::Remove, subject, container, container, TrackRole::Host),
-                std::make_unique<RemoveDeviceByPathCommand>(subjectPath));
+                std::move(command));
 
             ++ledger.ran;
             ledger.sourcesCovered.insert(container);
@@ -947,7 +942,7 @@ TEST_CASE("Every removal across the container matrix is refused or reversible",
         }
     }
 
-    requireEveryAxisCovered(ledger, everySubjectExcept(Subject::Rack));
+    requireEveryAxisCovered(ledger, everySubject());
     WARN(ledger.report().toStdString());
     resetState();
 }

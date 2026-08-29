@@ -722,6 +722,15 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     ChainId addChainToRack(const ChainNodePath& rackPath, const juce::String& name = "Chain");
     void removeChainFromRack(TrackId trackId, RackId rackId, ChainId chainId);
     void removeChainByPath(const ChainNodePath& chainPath);  // Path-based removal for nested chains
+    /// Put @p chain back into the rack at @p rackPath, at @p index, under the id
+    /// it already carries.
+    ///
+    /// `addChainToRack()` appends and stamps a fresh ChainId, so it cannot undo
+    /// a removal: the chain would come back last and under a different identity
+    /// from the one every link, lane and alias naming it was made against, the
+    /// same reason the device and rack removals restore ids rather than
+    /// reallocate them (#2232).
+    bool insertChainIntoRackByPath(const ChainNodePath& rackPath, ChainInfo chain, int index);
     ChainInfo* getChain(TrackId trackId, RackId rackId, ChainId chainId);
     const ChainInfo* getChain(TrackId trackId, RackId rackId, ChainId chainId) const;
     ChainInfo* getChainByPath(const ChainNodePath& chainPath);  // Nested-chain lookup
@@ -785,6 +794,16 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     bool insertChainElementsByPath(const ChainNodePath& destinationChainPath,
                                    std::vector<ChainElement> elements, int insertIndex,
                                    bool reassignIds = true);
+    /// Put @p device back into the flat section @p devicePath addresses, at
+    /// @p index, under the id it already carries.
+    ///
+    /// `addDeviceToPostFx()` and `addDeviceToMixerAnalysis()` stamp a fresh
+    /// DeviceId and re-run the section's admission rules, so neither can undo a
+    /// removal: the device would come back under an identity no existing link
+    /// names. The chain tree has `insertChainElementsByPath(reassignIds=false)`
+    /// for this; the flat sections had nothing (#2232).
+    bool insertFlatSectionDeviceByPath(const ChainNodePath& devicePath, DeviceInfo device,
+                                       int index);
     /// Wrap @p paths in a new rack.
     ///
     /// @p presetRackId and @p presetChainId let a redo reuse the ids its first
@@ -920,8 +939,6 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     RackId addRackToChain(TrackId trackId, RackId parentRackId, ChainId chainId,
                           const juce::String& name = "Rack");
     RackId addRackToChainByPath(const ChainNodePath& chainPath, const juce::String& name = "Rack");
-    void removeRackFromChain(TrackId trackId, RackId parentRackId, ChainId chainId,
-                             RackId nestedRackId);
     void removeRackFromChainByPath(const ChainNodePath& rackPath);
 
     // ========================================================================
@@ -1206,6 +1223,16 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // reach in and mutate macros/mods without going through the setter
     // notification path.
     ChainNode resolveChainNode(const ChainNodePath& path);
+
+    // Drop any selection standing on something that is about to be erased.
+    //
+    // `SelectionManager::clearSelectionForDeletedChainNode()` matches an exact
+    // path or a device id rather than an ancestor, so removing a container
+    // leaves a selection below it pointing at freed model. Every removal of a
+    // subtree goes through these two, which walk it (#2232).
+    static void clearSelectionsUnderChain(const std::vector<ChainElement>& elements,
+                                          const ChainNodePath& chainPath);
+    static void clearSelectionsUnderRack(const RackInfo& rack, const ChainNodePath& rackPath);
 
     std::vector<TrackInfo> tracks_;
     std::vector<TrackManagerListener*> listeners_;

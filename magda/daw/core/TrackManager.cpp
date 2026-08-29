@@ -2499,6 +2499,33 @@ RackId TrackManager::addRackToTrack(TrackId trackId, const juce::String& name) {
     return INVALID_RACK_ID;
 }
 
+void TrackManager::clearSelectionsUnderChain(const std::vector<ChainElement>& elements,
+                                             const ChainNodePath& chainPath) {
+    auto& selection = SelectionManager::getInstance();
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            selection.clearSelectionForDeletedChainNode(
+                chainPath.withDevice(magda::getDevice(element).id));
+            continue;
+        }
+
+        if (magda::isRack(element)) {
+            const auto& rack = magda::getRack(element);
+            clearSelectionsUnderRack(rack, chainPath.withRack(rack.id));
+        }
+    }
+}
+
+void TrackManager::clearSelectionsUnderRack(const RackInfo& rack, const ChainNodePath& rackPath) {
+    auto& selection = SelectionManager::getInstance();
+    for (const auto& chain : rack.chains) {
+        const auto chainPath = rackPath.withChain(chain.id);
+        clearSelectionsUnderChain(chain.elements, chainPath);
+        selection.clearSelectionForDeletedChainNode(chainPath);
+    }
+    selection.clearSelectionForDeletedChainNode(rackPath);
+}
+
 void TrackManager::removeRackFromTrack(TrackId trackId, RackId rackId) {
     if (auto* track = getTrack(trackId)) {
         auto& elements = track->chain.fxChainElements;
@@ -2508,6 +2535,7 @@ void TrackManager::removeRackFromTrack(TrackId trackId, RackId rackId) {
         if (it != elements.end()) {
             DBG("Removed rack: " << magda::getRack(*it).name << " (id=" << rackId << ") from track "
                                  << trackId);
+            clearSelectionsUnderRack(magda::getRack(*it), ChainNodePath::rack(trackId, rackId));
             elements.erase(it);
             notifyTrackDevicesChanged(trackId);
         }
@@ -2792,6 +2820,9 @@ void TrackManager::removeChainFromRack(TrackId trackId, RackId rackId, ChainId c
                                [chainId](const ChainInfo& c) { return c.id == chainId; });
         if (it != chains.end()) {
             DBG("Removed chain: " << it->name << " (id=" << chainId << ") from rack " << rackId);
+            const auto chainPath = ChainNodePath::rack(trackId, rackId).withChain(chainId);
+            clearSelectionsUnderChain(it->elements, chainPath);
+            SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
             chains.erase(it);
             notifyTrackDevicesChanged(trackId);
         }
@@ -2828,12 +2859,26 @@ void TrackManager::removeChainByPath(const ChainNodePath& chainPath) {
                                [chainId](const ChainInfo& c) { return c.id == chainId; });
         if (it != chains.end()) {
             DBG("Removed chain via path: " << it->name << " (id=" << chainId << ")");
+            clearSelectionsUnderChain(it->elements, chainPath);
+            SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
             chains.erase(it);
             notifyTrackDevicesChanged(chainPath.trackId);
         }
     } else {
         DBG("removeChainByPath FAILED - rack not found via path!");
     }
+}
+
+bool TrackManager::insertChainIntoRackByPath(const ChainNodePath& rackPath, ChainInfo chain,
+                                             int index) {
+    auto* rack = getRackByPath(rackPath);
+    if (rack == nullptr || chain.id == INVALID_CHAIN_ID)
+        return false;
+
+    index = std::clamp(index, 0, static_cast<int>(rack->chains.size()));
+    rack->chains.insert(rack->chains.begin() + index, std::move(chain));
+    notifyTrackDevicesChanged(rackPath.trackId);
+    return true;
 }
 
 ChainInfo* TrackManager::getChainByPath(const ChainNodePath& chainPath) {
