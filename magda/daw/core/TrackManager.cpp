@@ -10,6 +10,7 @@
 #include "../audio/TracktionHelpers.hpp"
 #include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "ChainWalk.hpp"
 #include "ClipManager.hpp"
 #include "Config.hpp"
 #include "DeviceState.hpp"
@@ -218,51 +219,20 @@ void remapDuplicatedElements(std::vector<ChainElement>& elements, const ChainNod
     }
 }
 
-ChainNodePath childDevicePath(const ChainNodePath& parentPath, DeviceId deviceId) {
-    return parentPath.isTrackLevel ? ChainNodePath::topLevelDevice(parentPath.trackId, deviceId)
-                                   : parentPath.withDevice(deviceId);
-}
-
-ChainNodePath childRackPath(const ChainNodePath& parentPath, RackId rackId) {
-    return parentPath.isTrackLevel ? ChainNodePath::rack(parentPath.trackId, rackId)
-                                   : parentPath.withRack(rackId);
-}
-
-// Collect the device paths of every device in the given chain tree (racks
-// recursed), without mutating anything. Path construction mirrors
-// setChainElementsBypassed below.
-void collectChainDevicePaths(const std::vector<ChainElement>& elements,
-                             const ChainNodePath& parentPath,
-                             std::vector<ChainNodePath>& outDevices) {
-    for (const auto& element : elements) {
-        if (magda::isDevice(element)) {
-            outDevices.push_back(childDevicePath(parentPath, magda::getDevice(element).id));
-            continue;
-        }
-        const auto& rack = magda::getRack(element);
-        const auto rackPath = childRackPath(parentPath, rack.id);
-        for (const auto& chain : rack.chains)
-            collectChainDevicePaths(chain.elements, rackPath.withChain(chain.id), outDevices);
-    }
-}
-
 void setChainElementsBypassed(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
                               bool bypassed, std::vector<ChainNodePath>& affectedDevices) {
-    for (auto& element : elements) {
-        if (magda::isDevice(element)) {
-            auto& device = magda::getDevice(element);
+    // Racks and devices are two walks rather than one that visits both, which
+    // costs a second descent and buys the two orders being independent: the
+    // devices come out in signal order for the caller to announce.
+    chain_walk::forEachRack(
+        elements, parentPath, chain_walk::Pads::Skip,
+        [bypassed](RackInfo& rack, const ChainNodePath&) { rack.bypassed = bypassed; });
+    chain_walk::forEachDevice(
+        elements, parentPath, chain_walk::Pads::Skip,
+        [bypassed, &affectedDevices](DeviceInfo& device, const ChainNodePath& path) {
             device.bypassed = bypassed;
-            affectedDevices.push_back(childDevicePath(parentPath, device.id));
-            continue;
-        }
-
-        auto& rack = magda::getRack(element);
-        rack.bypassed = bypassed;
-        const auto rackPath = childRackPath(parentPath, rack.id);
-        for (auto& chain : rack.chains)
-            setChainElementsBypassed(chain.elements, rackPath.withChain(chain.id), bypassed,
-                                     affectedDevices);
-    }
+            affectedDevices.push_back(path);
+        });
 }
 
 void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
@@ -2428,11 +2398,11 @@ void TrackManager::setChainEnabled(TrackId trackId, bool enabled) {
     // regular device sync path (AudioBridge::devicePropertyChanged applies the
     // chain gate on top of each device's own bypassed flag). The flags
     // themselves are untouched, so per-device bypass survives an off/on cycle.
-    std::vector<ChainNodePath> devicePaths;
-    collectChainDevicePaths(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
-                            devicePaths);
-    for (const auto& devicePath : devicePaths)
-        notifyDevicePropertyChanged(devicePath);
+    chain_walk::forEachDevice(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
+                              chain_walk::Pads::Skip,
+                              [this](const DeviceInfo&, const ChainNodePath& devicePath) {
+                                  notifyDevicePropertyChanged(devicePath);
+                              });
     notifyTrackDevicesChanged(trackId);
 }
 

@@ -17,12 +17,25 @@ std::string RackNesting::cycle(RackId rack) const {
     return "rack " + std::to_string(rack) + " contains itself: " + path;
 }
 
-RackNesting::Scope::Scope(RackNesting& nesting, RackId rack) : nesting_(nesting) {
-    nesting_.open_.push_back(rack);
+void RackNesting::open(RackId rack) {
+    open_.push_back(rack);
+}
+
+void RackNesting::close(RackId rack) {
+    // By identity rather than by position: a caller closing something other
+    // than the innermost open rack has lost track of its own descent, and
+    // popping regardless would hide that and leave the stack wrong from there
+    // on.
+    if (!open_.empty() && open_.back() == rack)
+        open_.pop_back();
+}
+
+RackNesting::Scope::Scope(RackNesting& nesting, RackId rack) : nesting_(nesting), rack_(rack) {
+    nesting_.open(rack);
 }
 
 RackNesting::Scope::~Scope() {
-    nesting_.open_.pop_back();
+    nesting_.close(rack_);
 }
 
 }  // namespace magda::engine

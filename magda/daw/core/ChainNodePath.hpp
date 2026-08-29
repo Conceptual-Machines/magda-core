@@ -314,7 +314,15 @@ struct ChainNodePath {
     // back as the track, and undo left it standing (#2229).
     ChainNodePath extendedWith(ChainPathStep step) const {
         ChainNodePath p = *this;
+        // Both of the step-free representations are dropped, not just the
+        // track-level flag. A path carrying a step and one of these says where
+        // it points twice, `getType()` picks between them by precedence, and
+        // the accessors then disagree with each other -- which is exactly the
+        // shape `parseChainNodePath()` refuses to load as corrupt. #2230
+        // cleared `isTrackLevel` here and left `topLevelDeviceId`, so the
+        // invariant held for one of the two (#2204).
         p.isTrackLevel = false;
+        p.topLevelDeviceId = INVALID_DEVICE_ID;
         p.steps.push_back(step);
         return p;
     }

@@ -2,6 +2,7 @@
 
 #include <set>
 
+#include "core/ChainWalk.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
 #include "param/ParamTable.hpp"
@@ -36,35 +37,22 @@ template <typename Map> void prepareAll(Map& map, const RenderContext& context) 
         object->prepare(context);
 }
 
-void collectDeviceIds(const std::vector<ChainElement>& elements, ChainSegment segment,
-                      std::set<DeviceKey>& out);
-
 void collectDeviceIds(const std::vector<PostFxChainElement>& elements, ChainSegment segment,
                       std::set<DeviceKey>& out) {
     for (const auto& element : elements)
         out.emplace(segment, element.device.id);
 }
 
-void collectDeviceIds(const std::vector<ChainElement>& elements, ChainSegment segment,
-                      std::set<DeviceKey>& out) {
-    for (const auto& element : elements) {
-        if (isDevice(element)) {
-            const auto& device = getDevice(element);
-            out.emplace(segment, device.id);
-
-            // A pad rack's devices are the user's the same way a nested rack's
-            // are. Bypass and chain power take their ops out of the plan, and a
-            // device named by neither the plan nor this set has its runtime
-            // released: re-enabling would rebuild the plugins and lose their
-            // tails and state.
-            if (device.pads)
-                for (const auto& pad : device.pads->chains)
-                    collectDeviceIds(pad.elements, segment, out);
-        } else if (isRack(element)) {
-            for (const auto& chain : getRack(element).chains)
-                collectDeviceIds(chain.elements, segment, out);
-        }
-    }
+void collectDeviceIds(const std::vector<ChainElement>& elements, TrackId trackId,
+                      ChainSegment segment, std::set<DeviceKey>& out) {
+    // Pads entered: a pad rack's devices are the user's the same way a nested
+    // rack's are. Bypass and chain power take their ops out of the plan, and a
+    // device named by neither the plan nor this set has its runtime released:
+    // re-enabling would rebuild the plugins and lose their tails and state.
+    chain_walk::forEachDevice(elements, ChainNodePath::trackLevel(trackId), chain_walk::Pads::Enter,
+                              [segment, &out](const DeviceInfo& device, const ChainNodePath&) {
+                                  out.emplace(segment, device.id);
+                              });
 }
 
 /// Whether a Meter op's key still names something the model holds. A meter at a
@@ -298,7 +286,7 @@ RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
         ids.tracks.insert(track.id);
         // Every section, and bypass is not consulted anywhere here: a bypassed
         // device is still a device the user owns.
-        collectDeviceIds(track.chain.fxChainElements, ChainSegment::Fx, ids.devices);
+        collectDeviceIds(track.chain.fxChainElements, track.id, ChainSegment::Fx, ids.devices);
         collectDeviceIds(track.chain.postFxChainElements, ChainSegment::PostFx, ids.devices);
         collectDeviceIds(track.chain.mixerAnalysisElements, ChainSegment::MixerAnalysis,
                          ids.devices);

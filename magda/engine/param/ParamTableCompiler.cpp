@@ -5,6 +5,7 @@
 #include <set>
 
 #include "core/AutomationCurve.hpp"
+#include "core/ChainWalk.hpp"
 #include "core/ClipLaneFlattener.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
@@ -261,9 +262,6 @@ class Builder {
     ParamId add(const ParamKey& key, const ParamSpec& spec, float base);
 
     void walkTrack(const magda::TrackInfo& track);
-    void walkRack(const magda::RackInfo& rack, magda::TrackId trackId);
-    void walkElements(const std::vector<magda::ChainElement>& elements, magda::TrackId trackId,
-                      magda::RackId rackId);
     void walkFlat(const std::vector<magda::PostFxChainElement>& elements, magda::TrackId trackId,
                   ChainSegment segment);
 
@@ -525,42 +523,6 @@ void Builder::allocateDevice(const Node& node) {
         table_.deviceWindows.emplace(scope.device, ParamTable::DeviceWindow{first, highest + 1});
 }
 
-void Builder::walkElements(const std::vector<magda::ChainElement>& elements, magda::TrackId trackId,
-                           magda::RackId rackId) {
-    for (const auto& element : elements) {
-        if (magda::isDevice(element)) {
-            const auto& device = magda::getDevice(element);
-            Node node;
-            node.scope.scope = ParamKey::Scope::Device;
-            node.scope.trackId = trackId;
-            node.scope.rackId = rackId;
-            node.scope.device = DeviceKey{ChainSegment::Fx, device.id};
-            node.macros = &device.macros;
-            node.mods = &device.mods;
-            node.device = &device;
-            node.sidechainSource = sidechainSourceOf(device.sidechain);
-            nodes_.push_back(node);
-
-            // A pad rack's chains hold devices like any other rack's, and the
-            // plan compiles them, so their parameters, macros and mods need
-            // addresses or nothing consumes them.
-            //
-            // Addressed under the owning device's id, not the pad rack's. A
-            // stored link to a pad device names the Drum Grid there -- see the
-            // chainDevice path syncDrumGridPadPlugins and the ADSR macro links
-            // are built with -- and ParamKey carries the rack id, so addressing
-            // these under the pad rack's own synthetic id would put them where
-            // no link can find them. The rack itself gets no node: it is
-            // synthesized, so it owns no macros or modifiers to address.
-            if (device.pads)
-                for (const auto& pad : device.pads->chains)
-                    walkElements(pad.elements, trackId, device.id);
-        } else if (magda::isRack(element)) {
-            walkRack(magda::getRack(element), trackId);
-        }
-    }
-}
-
 void Builder::walkFlat(const std::vector<magda::PostFxChainElement>& elements,
                        magda::TrackId trackId, ChainSegment segment) {
     for (const auto& element : elements) {
@@ -574,31 +536,6 @@ void Builder::walkFlat(const std::vector<magda::PostFxChainElement>& elements,
         node.sidechainSource = sidechainSourceOf(element.device.sidechain);
         nodes_.push_back(node);
     }
-}
-
-void Builder::walkRack(const magda::RackInfo& rack, magda::TrackId trackId) {
-    // The same instance the plan compiler passes over. Walking it would report
-    // every address in the subtree as claimed twice, with nothing naming the
-    // cause.
-    if (nesting_.encloses(rack.id)) {
-        diagnose(nesting_.cycle(rack.id) +
-                 ", its parameters and everything under it are not carried");
-        return;
-    }
-
-    const RackNesting::Scope scope{nesting_, rack.id};
-
-    Node node;
-    node.scope.scope = ParamKey::Scope::Rack;
-    node.scope.trackId = trackId;
-    node.scope.rackId = rack.id;
-    node.macros = &rack.macros;
-    node.mods = &rack.mods;
-    node.sidechainSource = sidechainSourceOf(rack.sidechain);
-    nodes_.push_back(node);
-
-    for (const auto& chain : rack.chains)
-        walkElements(chain.elements, trackId, rack.id);
 }
 
 /// The mixer values a track has, allocated only when something reaches them: a
@@ -648,7 +585,56 @@ void Builder::walkTrack(const magda::TrackInfo& track) {
     node.track = &track;
     nodes_.push_back(node);
 
-    walkElements(track.chain.fxChainElements, track.id, INVALID_RACK_ID);
+    // Pads entered: a pad rack's chains hold devices like any other rack's, and
+    // the plan compiles them, so their parameters, macros and mods need
+    // addresses or nothing consumes them.
+    //
+    // A device's own id comes from the walk's `owningRackId`, which answers the
+    // Drum Grid for a pad device rather than the synthetic pad rack: a stored
+    // link to one names the grid -- see the chainDevice path
+    // syncDrumGridPadPlugins and the ADSR macro links are built with -- and
+    // ParamKey carries the rack id, so addressing these under the pad rack's
+    // own id would put them where no link can find them. The pad rack itself
+    // gets no node: it is synthesized, so it owns no macros or modifiers.
+    chain_walk::forEachNode(
+        track.chain.fxChainElements, magda::ChainNodePath::trackLevel(track.id),
+        chain_walk::Pads::Enter,
+        [this, &track](const magda::DeviceInfo& device, const magda::ChainNodePath& path) {
+            Node deviceNode;
+            deviceNode.scope.scope = ParamKey::Scope::Device;
+            deviceNode.scope.trackId = track.id;
+            deviceNode.scope.rackId = chain_walk::owningRackId(path);
+            deviceNode.scope.device = DeviceKey{ChainSegment::Fx, device.id};
+            deviceNode.macros = &device.macros;
+            deviceNode.mods = &device.mods;
+            deviceNode.device = &device;
+            deviceNode.sidechainSource = sidechainSourceOf(device.sidechain);
+            nodes_.push_back(deviceNode);
+        },
+        [this, &track](const magda::RackInfo& rack, const magda::ChainNodePath&) {
+            // The same instance the plan compiler passes over. Walking it would
+            // report every address in the subtree as claimed twice, with
+            // nothing naming the cause.
+            if (nesting_.encloses(rack.id)) {
+                diagnose(nesting_.cycle(rack.id) +
+                         ", its parameters and everything under it are not carried");
+                return chain_walk::Descend::Skip;
+            }
+            nesting_.open(rack.id);
+
+            Node rackNode;
+            rackNode.scope.scope = ParamKey::Scope::Rack;
+            rackNode.scope.trackId = track.id;
+            rackNode.scope.rackId = rack.id;
+            rackNode.macros = &rack.macros;
+            rackNode.mods = &rack.mods;
+            rackNode.sidechainSource = sidechainSourceOf(rack.sidechain);
+            nodes_.push_back(rackNode);
+            return chain_walk::Descend::Into;
+        },
+        [this](const magda::RackInfo& rack, const magda::ChainNodePath&) {
+            nesting_.close(rack.id);
+        });
     walkFlat(track.chain.postFxChainElements, track.id, ChainSegment::PostFx);
     walkFlat(track.chain.mixerAnalysisElements, track.id, ChainSegment::MixerAnalysis);
 }
