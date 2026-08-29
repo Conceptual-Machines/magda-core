@@ -175,6 +175,52 @@ TEST_CASE("A pad device is addressed off the track by its grid's id", "[chain-wa
     tm.clearAllTracks();
 }
 
+TEST_CASE("A pad rack is a rack the walk yields", "[chain-walk]") {
+    // A pad rack is a RackInfo hanging off a device rather than sitting in the
+    // chain as an element, so a walk that only descended into its chains would
+    // hand a rack visitor every rack but this one. It carries mute, solo and a
+    // fader like any other, which is what PlanValues looks it up for, and a
+    // consumer migrating to the walk would have lost it silently (#2204).
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+
+    const auto trackId = tm.createTrack("Track");
+    tm.addRackToTrack(trackId, "Ordinary");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGrid("Grid"));
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+    REQUIRE(tm.ensurePad(gridPath, 0) != INVALID_CHAIN_ID);
+
+    const auto* track = tm.getTrack(trackId);
+    REQUIRE(track != nullptr);
+
+    auto walk = [&](chain_walk::Pads pads) {
+        std::vector<juce::String> visited;
+        chain_walk::forEachRack(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
+                                pads, [&visited](const RackInfo& rack, const ChainNodePath&) {
+                                    visited.push_back(rack.name);
+                                });
+        return visited;
+    };
+
+    const auto entered = walk(chain_walk::Pads::Enter);
+    REQUIRE(entered.size() == 2);
+    CHECK(entered[0] == "Ordinary");
+    CHECK(isPadRackId(tm.getPads(gridPath)->id));
+
+    CHECK(walk(chain_walk::Pads::Skip).size() == 1);
+
+    // Addressed by the owning device's path: a bare PadRack step is not a valid
+    // address, and every pad API takes the grid's path and builds the rest.
+    std::vector<ChainNodePath> rackPaths;
+    chain_walk::forEachRack(
+        track->chain.fxChainElements, ChainNodePath::trackLevel(trackId), chain_walk::Pads::Enter,
+        [&rackPaths](const RackInfo&, const ChainNodePath& path) { rackPaths.push_back(path); });
+    REQUIRE(rackPaths.size() == 2);
+    CHECK(rackPaths[1] == gridPath);
+
+    tm.clearAllTracks();
+}
+
 TEST_CASE("The rack walk is outermost first and can prune", "[chain-walk]") {
     auto& tm = TrackManager::getInstance();
     tm.clearAllTracks();

@@ -7,6 +7,7 @@
 #include <set>
 
 #include "AutomationInfo.hpp"
+#include "ChainWalk.hpp"
 #include "TrackInfo.hpp"
 
 namespace magda::device_param_migrations {
@@ -139,40 +140,20 @@ using MigrationsById = std::map<DeviceId, const ParamIndexMigration*>;
 /// A device and the path saved links address it by.
 using DeviceAtPath = std::pair<ChainNodePath, DeviceInfo*>;
 
-void collectElements(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
-                     TrackId trackId, std::vector<DeviceAtPath>& out);
-
-void collectRack(RackInfo& rack, const ChainNodePath& rackPath, TrackId trackId,
-                 std::vector<DeviceAtPath>& out) {
-    for (auto& chain : rack.chains)
-        collectElements(chain.elements, rackPath.withChain(chain.id), trackId, out);
-}
-
-void collectElements(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
-                     TrackId trackId, std::vector<DeviceAtPath>& out) {
-    for (auto& element : elements) {
-        if (isDevice(element)) {
-            auto& device = getDevice(element);
-            // A top-level device on a track keeps the legacy flat path shape,
-            // which is what the control graph stored for it.
-            out.emplace_back(parentPath.isTrackLevel
-                                 ? ChainNodePath::topLevelDevice(trackId, device.id)
-                                 : parentPath.withDevice(device.id),
-                             &device);
-        } else if (isRack(element)) {
-            auto& rack = getRack(element);
-            const auto rackPath = parentPath.isTrackLevel ? ChainNodePath::rack(trackId, rack.id)
-                                                          : parentPath.withRack(rack.id);
-            collectRack(rack, rackPath, trackId, out);
-        }
-    }
-}
-
 /// Every device on a track, each with the path its links address it by.
 std::vector<DeviceAtPath> devicesInTrack(TrackInfo& track) {
     std::vector<DeviceAtPath> devices;
-    collectElements(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id), track.id,
-                    devices);
+    // Pads skipped: these migrations rewrite parameters saved against a
+    // DeviceInfo in the chain model, and the Drum Grid covers its own retired
+    // nested plugins through adoptRetiredNestedPluginTree.
+    //
+    // The walk spells a top-level device the flat way the control graph stored
+    // it, which this had to remember for itself (#2204).
+    chain_walk::forEachDevice(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+                              chain_walk::Pads::Skip,
+                              [&devices](DeviceInfo& device, const ChainNodePath& path) {
+                                  devices.emplace_back(path, &device);
+                              });
     for (auto& element : track.chain.postFxChainElements)
         devices.emplace_back(ChainNodePath::postFxDevice(track.id, element.device.id),
                              &element.device);

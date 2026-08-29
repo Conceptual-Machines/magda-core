@@ -120,11 +120,32 @@ bool forEachNode(Elements& elements, const ChainNodePath& parentPath, Pads pads,
             }
 
             if (pads == Pads::Enter && device.pads) {
-                for (auto& pad : device.pads->chains) {
-                    const auto padPath =
-                        ChainNodePath::padChain(parentPath.trackId, device.id, pad.id);
-                    if (!forEachNode(pad.elements, padPath, pads, onDevice, onRack))
-                        return false;
+                // The pad rack is a rack, and a walk that only descended into
+                // its chains would hand a rack visitor every rack but this one
+                // -- the silent kind of miss this file exists to stop. It
+                // carries mute, solo and a fader like any other, which is what
+                // `PlanValues` looks it up for.
+                //
+                // Addressed by the owning device's path, because a bare
+                // `PadRack` step is not a valid address on its own:
+                // `parseChainNodePath()` refuses one, and every pad API takes
+                // the grid's path and builds the rest from it.
+                if (onRack(*device.pads.get(), devicePath) == Descend::Into) {
+                    struct PadExit {
+                        OnRackExit& run;
+                        std::remove_reference_t<decltype(*device.pads.get())>& rack;
+                        const ChainNodePath& path;
+                        ~PadExit() {
+                            run(rack, path);
+                        }
+                    } padExit{onRackExit, *device.pads.get(), devicePath};
+
+                    for (auto& pad : device.pads->chains) {
+                        const auto padPath =
+                            ChainNodePath::padChain(parentPath.trackId, device.id, pad.id);
+                        if (!forEachNode(pad.elements, padPath, pads, onDevice, onRack, onRackExit))
+                            return false;
+                    }
                 }
             }
             continue;
@@ -213,6 +234,43 @@ void forEachChain(Elements& elements, const ChainNodePath& parentPath, Pads pads
             forEachChain(chain.elements, chainPath, pads, visit);
         }
     }
+}
+
+/// The first device @p match accepts, or null.
+///
+/// A search rather than a sweep, so it stops where it finds. Several of the
+/// walks this replaces were searches written as their own recursion.
+template <typename Elements, typename Match>
+auto* findDevice(Elements& elements, const ChainNodePath& parentPath, Pads pads, Match&& match) {
+    using Device = std::remove_reference_t<decltype(getDevice(*elements.begin()))>;
+    Device* found = nullptr;
+    forEachDevice(elements, parentPath, pads,
+                  [&found, &match](Device& device, const ChainNodePath& path) {
+                      if (!match(device, path))
+                          return true;
+                      found = &device;
+                      return false;
+                  });
+    return found;
+}
+
+/// The first rack @p match accepts, or null. Pad racks included when asked for,
+/// addressed by their owning device's path.
+template <typename Elements, typename Match>
+auto* findRack(Elements& elements, const ChainNodePath& parentPath, Pads pads, Match&& match) {
+    using Rack = std::remove_reference_t<decltype(getRack(*elements.begin()))>;
+    Rack* found = nullptr;
+    forEachNode(
+        elements, parentPath, pads,
+        [&found](auto&, const ChainNodePath&) { return found == nullptr; },
+        [&found, &match](Rack& rack, const ChainNodePath& path) {
+            if (found != nullptr)
+                return Descend::Skip;
+            if (match(rack, path))
+                found = &rack;
+            return found != nullptr ? Descend::Skip : Descend::Into;
+        });
+    return found;
 }
 
 }  // namespace magda::chain_walk

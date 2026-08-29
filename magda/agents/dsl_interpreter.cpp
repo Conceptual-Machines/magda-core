@@ -17,6 +17,7 @@
 #include "../daw/api/track_api.hpp"
 #include "../daw/api/undo_api.hpp"
 #include "../daw/audio/AudioThumbnailManager.hpp"
+#include "../daw/core/ChainWalk.hpp"
 #include "../daw/core/ClipManager.hpp"
 #include "../daw/core/ClipPropertyCommands.hpp"
 #include "../daw/core/DeviceInfo.hpp"
@@ -1965,34 +1966,15 @@ struct DeviceAtPath {
     ChainNodePath path;
 };
 
-void collectRackDevices(const RackInfo& rack, const ChainNodePath& rackPath,
-                        std::vector<DeviceAtPath>& devices) {
-    for (const auto& chain : rack.chains) {
-        const auto chainPath = rackPath.withChain(chain.id);
-        for (const auto& element : chain.elements) {
-            if (isDevice(element)) {
-                const auto& device = getDevice(element);
-                devices.push_back({&device, chainPath.withDevice(device.id)});
-            } else {
-                const auto& nestedRack = getRack(element);
-                const auto nestedPath = chainPath.withRack(nestedRack.id);
-                collectRackDevices(nestedRack, nestedPath, devices);
-            }
-        }
-    }
-}
-
 std::vector<DeviceAtPath> collectTrackDevices(const TrackInfo& track) {
     std::vector<DeviceAtPath> devices;
-    for (const auto& element : track.chain.fxChainElements) {
-        if (isDevice(element)) {
-            const auto& device = getDevice(element);
-            devices.push_back({&device, ChainNodePath::topLevelDevice(track.id, device.id)});
-        } else {
-            const auto& rack = getRack(element);
-            collectRackDevices(rack, ChainNodePath::rack(track.id, rack.id), devices);
-        }
-    }
+    // Pads skipped: the DSL addresses a track's own devices, and a pad device
+    // is reached through its grid rather than named beside it (#2204).
+    chain_walk::forEachDevice(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+                              chain_walk::Pads::Skip,
+                              [&devices](const DeviceInfo& device, const ChainNodePath& path) {
+                                  devices.push_back({&device, path});
+                              });
     for (const auto& element : track.chain.postFxChainElements) {
         devices.push_back(
             {&element.device, ChainNodePath::postFxDevice(track.id, element.device.id)});
@@ -2003,6 +1985,7 @@ std::vector<DeviceAtPath> collectTrackDevices(const TrackInfo& track) {
     }
     return devices;
 }
+
 }  // namespace
 
 void Interpreter::setContextEnabled(bool enabled) {
