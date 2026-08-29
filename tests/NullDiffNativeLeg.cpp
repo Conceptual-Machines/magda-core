@@ -285,9 +285,33 @@ NativeRender renderNative(const Case& value) {
     for (const auto& track : value.tracks) {
         ClipLane lane;
         lane.trackId = track.id;
-        for (const auto& clip : value.clips)
-            if (clip.trackId == track.id)
-                lane.clips.push_back(clip);
+        for (const auto& clip : value.clips) {
+            if (clip.trackId != track.id)
+                continue;
+
+            // The arrangement's clips, which is what an arrangement lane is.
+            // Filtered here rather than left to the compiler's own guard,
+            // because the two are answering different questions: the guard
+            // exists so that a caller who put a session clip in an arrangement
+            // lane hears about it, and this leg is the caller deciding what
+            // goes in one.
+            //
+            // A code-built case never had the distinction to make -- every clip
+            // in the corpus is an arrangement clip -- and a real project always
+            // does, since the session and the arrangement are two views of one
+            // project and both are saved. Without this the demo project reports
+            // sixty-four diagnostics for having a session view, and every one of
+            // them would make it unmeasurable.
+            //
+            // The same rule the incumbent already applies at the same point:
+            // ClipSynchronizer::syncArrangementClipToEngine refuses a session
+            // clip and the launcher schedules it instead, so an offline
+            // arrangement render plays the arrangement on both sides.
+            if (clip.view != ClipView::Arrangement)
+                continue;
+
+            lane.clips.push_back(clip);
+        }
         lanes.push_back(std::move(lane));
     }
 

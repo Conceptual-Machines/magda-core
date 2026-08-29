@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "MgdFixture.hpp"
 #include "NullDiffCompare.hpp"
 #include "NullDiffNativeLeg.hpp"
 
@@ -145,8 +146,19 @@ struct GateResult {
     std::vector<Rung> rungs;
     std::string unmeasurable;
 
+    /// Why this project does not render the same twice, at one block size, in
+    /// one process. Empty when it does.
+    ///
+    /// Asked first and reported apart from the rungs, because it is a different
+    /// finding and it makes them meaningless. A project whose render depends on
+    /// what the process did before it differs at every block size for a reason
+    /// that has nothing to do with block size, and reading that as a block-size
+    /// dependence sends whoever picks it up into the block loop looking for a
+    /// bug that is not there.
+    std::string irreproducible;
+
     bool held() const {
-        return unmeasurable.empty() &&
+        return unmeasurable.empty() && irreproducible.empty() &&
                std::all_of(rungs.begin(), rungs.end(), [](const Rung& r) { return r.held; });
     }
 };
@@ -175,6 +187,31 @@ GateResult gate(const Case& value) {
     if (!rendered.failure.empty()) {
         result.unmeasurable = "at " + std::to_string(kReferenceBlockSize) + ": " + rendered.failure;
         return result;
+    }
+
+    // The same project, the same size, the second time. Held to the same bit
+    // identity the rungs are, and for a stronger reason: a render that is not a
+    // function of the timeline is not a function of anything the rest of this
+    // file is asking about.
+    {
+        const auto again = renderNative(reference);
+        if (!again.failure.empty()) {
+            result.unmeasurable =
+                "at " + std::to_string(kReferenceBlockSize) + ", rendered again: " + again.failure;
+            return result;
+        }
+
+        AudioCompareOptions options;
+        options.sampleRate = value.sampleRate;
+        options.floorDb = allowed;
+
+        const auto repeat = compareAudio(rendered.audio, again.audio, options);
+        if (repeat.lengthDifference != 0 || !repeat.refusal.empty() || !repeat.nulled())
+            result.irreproducible = "rendered twice at " + std::to_string(kReferenceBlockSize) +
+                                    " it comes back different: peak " + formatDb(repeat.peakDb) +
+                                    ", first difference "
+                                    "at sample " +
+                                    std::to_string(repeat.firstDivergence);
     }
 
     for (const auto blockSize : kOtherBlockSizes) {
@@ -219,20 +256,101 @@ GateResult gate(const Case& value) {
     return result;
 }
 
+/// Every project the gate covers: the ones built in code and the ones loaded
+/// from a file.
+///
+/// The real projects belong here for the reason they belong in the corpus
+/// (#2081). Block-size invariance is a claim about the engine and not about how
+/// a case was written, and a project somebody made is where the claim is worth
+/// most: the combinations that break an assumption about block boundaries are
+/// the ones nobody thought to write down.
+///
+/// A fixture that will not load is a failure of the corpus rather than of the
+/// claim, and comes back named so the caller can say so instead of quietly
+/// gating fewer projects than it thinks.
+std::vector<Case> everyProject(std::vector<std::string>& refusals) {
+    auto cases = sharedCorpus(scratch());
+
+    for (const auto& fixture : mgdFixtures()) {
+        const auto loaded = loadFixture(fixture, scratch().getChildFile("projects"));
+        if (!loaded.ok) {
+            refusals.push_back(std::string(fixture.declaration.name) + ": " + loaded.failure);
+            continue;
+        }
+
+        cases.push_back(loaded.value);
+    }
+
+    return cases;
+}
+
 }  // namespace
 
 TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff][blocksize]") {
+    // Held for the whole case: the load drives the app's own source install,
+    // which clears the pool the code-built corpus is also holding its sources
+    // in. See PooledSourcesUnwind.
+    const PooledSourcesUnwind unwind;
+
     // Named rather than skipped by a predicate, and asserted in both
     // directions, so the list cannot quietly grow and a case that starts
     // holding has to be taken off by somebody. It is the same rule the
     // corpus's calibration list lives by.
     //
-    // Empty, and it took four fixes to get there; the file comment says which.
-    const std::set<std::string> knownDependent{};
+    // Empty of code-built cases, and it took four fixes to get there; the file
+    // comment says which.
+    //
+    // Four real projects are on it, and they arrived together with the projects
+    // themselves (#2081). What they have in common is the one thing no case
+    // above them has: a device MAGDA ships. The code-built corpus contains four
+    // devices and all four were written for it -- a gain, a mono gain, an
+    // impulse synth and a multi-out (NullDiffGain.hpp) -- so until a real
+    // project was gated, this claim had never been asked of a Poly Synth, an FM
+    // synth, a Drum Grid, a reverb, a limiter, a Clouds, a sidechain or a Faust
+    // device.
+    //
+    // What was measured, at 64, 96 and 4096 against 512:
+    //
+    //  - project.fmchain diverges at sample 222, before the first note has
+    //    finished its attack, by 5 dB. Chain: FM synth, filter, reverb, Clouds,
+    //    limiter.
+    //  - project.sidechain diverges at the block boundary before the second
+    //    beat -- 22016 at 64, 21984 at 96, 20480 at 4096, each the last
+    //    multiple of that size before 22050 -- by 7 to 9 dB.
+    //  - project.demo diverges by 2 to 4 dB, and it is the only one whose peak
+    //    residual is above the render itself.
+    //  - project.faust diverges at 64 and 96 and holds at 4096.
+    //
+    // No mechanism is claimed for any of them. Each is a number this gate
+    // measured and nothing more, which is the same standing the corpus's own
+    // calibration list gives a residual without an explanation: a bound nobody
+    // has justified is how a real difference ends up inside an expected one.
+    // They are named so that neither a new failure nor a fixed one is quiet.
+    const std::set<std::string> knownDependent{
+        "project.demo",
+        "project.faust",
+        "project.fmchain",
+        "project.sidechain",
+    };
+
+    // Empty, and it is worth its own list rather than being folded into the one
+    // above. A project that does not render the same twice differs at every
+    // block size for a reason that has nothing to do with block size, and the
+    // four above would have been read as evidence of one. Asked first, and the
+    // answer today is that every project in the gate is reproducible: what they
+    // depend on is the block size and not the process's history.
+    const std::set<std::string> knownIrreproducible{};
+
+    std::vector<std::string> refusals;
+    const auto projects = everyProject(refusals);
+
+    INFO("fixtures that would not load: " << join(refusals));
+    REQUIRE(refusals.empty());
 
     std::set<std::string> failed;
+    std::set<std::string> irreproducible;
 
-    for (const auto& value : sharedCorpus(scratch())) {
+    for (const auto& value : projects) {
         // A case that asserts nothing about its audio renders none to compare:
         // the four MIDI-only cases carry a device that records what arrives
         // instead of sounding. What block size does to a stream of captured
@@ -273,6 +391,14 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
         REQUIRE(result.unmeasurable.empty());
         REQUIRE(result.rungs.size() == kOtherBlockSizes.size());
 
+        // Before the rungs, because it is what makes them mean anything.
+        INFO(result.irreproducible);
+        if (knownIrreproducible.count(value.name) == 0)
+            CHECK(result.irreproducible.empty());
+
+        if (!result.irreproducible.empty())
+            irreproducible.insert(value.name);
+
         // Asserted per rung rather than per case, so the size that failed and
         // what it failed by are on the failure rather than in a report the
         // reader has to go and find. "stretch.soundtouch.normal did not hold"
@@ -298,6 +424,7 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
     }
 
     CHECK(failed == knownDependent);
+    CHECK(irreproducible == knownIrreproducible);
 }
 
 TEST_CASE("A stretched clip survives a block shorter than a cell", "[nulldiff][blocksize]") {

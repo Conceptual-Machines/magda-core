@@ -41,8 +41,18 @@ juce::File getFaustLibrariesPath() {
 #if JUCE_MAC
     // currentApplicationFile is the .app bundle on macOS. Libraries live in
     // Contents/Resources/faustlibraries (matches CMake's POST_BUILD copy).
-    return juce::File::getSpecialLocation(juce::File::currentApplicationFile)
-        .getChildFile("Contents/Resources/faustlibraries");
+    const auto bundled = juce::File::getSpecialLocation(juce::File::currentApplicationFile)
+                             .getChildFile("Contents/Resources/faustlibraries");
+    if (bundled.isDirectory())
+        return bundled;
+
+    // Not everything that hosts a device on macOS is a bundle. currentApplicationFile
+    // is the executable itself for a plain one, so the path above becomes
+    // `magda_juce_tests/Contents/Resources/faustlibraries` and every
+    // import("stdfaust.lib") fails -- silently, because a device whose DSP will
+    // not compile passes audio through. The same staging every other
+    // exe-adjacent resource directory uses is what to fall back to.
+    return magda::paths::executableDir().getChildFile("faustlibraries");
 #else
     // On Windows/Linux, libraries sit next to the executable. Go through
     // paths::executableDir() rather than currentApplicationFile so this

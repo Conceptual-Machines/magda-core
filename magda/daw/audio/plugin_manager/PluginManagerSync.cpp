@@ -2746,46 +2746,83 @@ void PluginManager::drumGridChainsChanged(daw::audio::DrumGridPlugin* plugin) {
     if (!plugin)
         return;
 
-    // Hold a ref-counted pointer to keep the plugin alive across the async call.
-    te::Plugin::Ptr pluginRef(plugin);
+    // Which device this is, resolved now rather than carried. The async below
+    // used to capture a te::Plugin::Ptr to keep the plugin alive across the
+    // call, and that reference is the thing that has to go.
+    //
+    // A te::Plugin may not outlive its Edit: its destructor reaches
+    // edit.getParameterChangeHandler(), and AutomatableEditItem's teardown
+    // takes a lock on it inside a noexcept function, so a plugin destroyed
+    // after its Edit terminates the process rather than crashing somewhere a
+    // stack trace explains. A message posted here and delivered after the Edit
+    // is gone -- a project closed, or a render finished, with a pad load still
+    // in flight -- makes the lambda's own captured reference the last one, and
+    // the plugin then dies on the message thread with nothing left to reach.
+    //
+    // Nothing is captured that can keep it alive, so what arrives late finds
+    // the device gone and does nothing. The path is looked up here because the
+    // caller is on the thread that knows the plugin is alive.
+    //
+    // Looked up two ways for the same reason the async did: a drum grid inside
+    // a rack is not the plugin its device path holds, and the rack manager is
+    // what knows the inner one.
+    ChainNodePath matchedPath;
+    bool foundMatch = false;
+
+    {
+        juce::ScopedLock lock(pluginLock_);
+        for (const auto& [devicePath, synced] : syncedDevices_) {
+            const auto deviceId = devicePath.getDeviceId();
+            if (synced.plugin.get() == plugin ||
+                instrumentRackManager_.getInnerPlugin(deviceId) == plugin) {
+                matchedPath = devicePath;
+                foundMatch = true;
+                break;
+            }
+        }
+    }
+
+    if (!foundMatch)
+        return;
 
     // Dispatch asynchronously — this callback fires during loadSampleToPad/addChain,
     // and synchronous track activation would re-entrantly destroy UI components
     // (e.g., DeviceSlotComponent) while their callbacks are still on the stack.
     juce::WeakReference<PluginManager> weakThis(this);
 
-    juce::MessageManager::callAsync([weakThis, pluginRef]() {
+    juce::MessageManager::callAsync([weakThis, matchedPath]() {
         auto* self = weakThis.get();
         if (!self)
             return;
 
-        auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(pluginRef.get());
-        if (!dg)
-            return;
-
-        // Look up the device under lock, then release lock before mutating TrackManager
-        // to avoid deadlock (syncDrumGridMultiOutTracks -> TrackManager listeners ->
-        // syncAllPlugins -> pluginLock_).
-        ChainNodePath matchedPath;
-        bool foundMatch = false;
+        // Resolved again, under the lock, because everything this message says
+        // about the device was true when it was posted and none of it is
+        // guaranteed now. A device removed in between resolves to nothing and
+        // the message does nothing, which is the whole point of not carrying a
+        // reference to it.
+        //
+        // The lock is released before the sync calls below: syncDrumGridMultiOutTracks
+        // reaches TrackManager listeners, which reach syncAllPlugins, which takes
+        // pluginLock_ again.
+        daw::audio::DrumGridPlugin* dg = nullptr;
 
         {
             juce::ScopedLock lock(self->pluginLock_);
-            for (const auto& [devicePath, synced] : self->syncedDevices_) {
-                const auto deviceId = devicePath.getDeviceId();
-                if (synced.plugin.get() == dg ||
-                    self->instrumentRackManager_.getInnerPlugin(deviceId) == dg) {
-                    matchedPath = devicePath;
-                    foundMatch = true;
-                    break;
-                }
-            }
+            const auto found = self->findSyncedDevice(matchedPath);
+            if (found == self->syncedDevices_.end())
+                return;
+
+            dg = dynamic_cast<daw::audio::DrumGridPlugin*>(found->second.plugin.get());
+            if (dg == nullptr)
+                dg = dynamic_cast<daw::audio::DrumGridPlugin*>(
+                    self->instrumentRackManager_.getInnerPlugin(matchedPath.getDeviceId()));
         }
 
-        if (foundMatch) {
-            self->syncDrumGridPadPlugins(matchedPath, dg);
-            self->syncDrumGridMultiOutTracks(matchedPath, dg);
-        }
+        if (dg == nullptr)
+            return;
+
+        self->syncDrumGridPadPlugins(matchedPath, dg);
+        self->syncDrumGridMultiOutTracks(matchedPath, dg);
     });
 }
 

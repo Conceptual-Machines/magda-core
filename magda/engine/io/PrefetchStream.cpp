@@ -1,6 +1,7 @@
 #include "io/PrefetchStream.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 namespace magda::engine {
@@ -246,8 +247,25 @@ bool PrefetchStream::fill() {
     Chunk* chunk = nullptr;
 
     while (fillPosition_ < length_ && spent_.pop(chunk)) {
-        const auto count =
-            static_cast<int>(std::min<std::int64_t>(chunkSamples_, length_ - fillPosition_));
+        // How much of the stream is left, saturating rather than wrapping.
+        //
+        // The subtraction on its own overflows, and the way it overflows is
+        // silent and unsafe. A looping reader has no last sample, so its
+        // length is int64's maximum (SourceReaders.cpp), and a position can be
+        // negative: an event anchored before its own loop start is anchored at
+        // a phase within it, and a reversed clip trimmed longer than its source
+        // begins ahead of the first sample. Subtracting a negative position
+        // from that maximum wraps to a large negative, whose low thirty-two
+        // bits truncate back to a positive count larger than a chunk -- 8414
+        // samples into a chunk of 4096, which is a read past the end of the
+        // buffer rather than a wrong number. A real project found it: a loop
+        // whose region starts after the clip does.
+        const auto headroom = std::numeric_limits<std::int64_t>::max() + fillPosition_;
+        const auto remaining = fillPosition_ < 0 && length_ > headroom
+                                   ? std::numeric_limits<std::int64_t>::max()
+                                   : length_ - fillPosition_;
+
+        const auto count = static_cast<int>(std::min<std::int64_t>(chunkSamples_, remaining));
 
         chunk->startSample = fillPosition_;
         chunk->numSamples = reader_->read(chunk->audio, 0, fillPosition_, count);

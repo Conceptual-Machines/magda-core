@@ -20,7 +20,13 @@
  * says the cost question is answered by measuring rather than by deciding in
  * advance. This is the measuring. It is not the corpus: nothing here declares a
  * tier or asserts a residual, and every project is handed the same placeholder
- * material rather than material chosen for what its path goes through.
+ * material rather than material chosen for what its path goes through. The
+ * corpus itself is MgdFixtures.cpp and test_real_project_corpus_juce.cpp, and
+ * it carries seven of the twenty-two projects surveyed here.
+ *
+ * It stays after the corpus it sized, because what it reports about the other
+ * fifteen is the list of things standing between them and being cases, and that
+ * list shrinks as the engine grows. Seven of them wait on one missing device.
  *
  * What it reports, per project: whether the fixture rig will take it at all,
  * what the plan compiler says about it, how many ops the plan carries, and how

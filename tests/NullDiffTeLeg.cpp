@@ -16,6 +16,7 @@
 #include "magda/daw/audio/TrackController.hpp"
 #include "magda/daw/audio/WarpMarkerManager.hpp"
 #include "magda/daw/audio/automation/AutomationBake.hpp"
+#include "magda/daw/audio/automation/ControlTargetResolver.hpp"
 #include "magda/daw/audio/modifiers/ModifierSync.hpp"
 #include "magda/daw/audio/plugin_manager/PluginManager.hpp"
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
@@ -816,9 +817,10 @@ IncumbentRender renderIncumbent(const Case& value) {
     // The gain devices this project has, by the path that addresses them, with
     // the plugin the sync installed for each.
     //
-    // Still collected, because the automation bake and the host write below
-    // both address a parameter and the corpus's gain is the only device whose
-    // parameter either of them knows. Resolved through the manager rather than
+    // Still collected for the host write below, which puts each device's
+    // declared parameter value where a modifier cannot drop it (#2117). The
+    // automation bake no longer needs this: it resolves whatever a lane names
+    // through the app's own resolver. Resolved through the manager rather than
     // recorded while installing, which is what lets the walk be over the model
     // alone: a device inside a rack is found the same way one on a track is.
     std::map<ChainNodePath, GainPlugin*> gains;
@@ -911,27 +913,31 @@ IncumbentRender renderIncumbent(const Case& value) {
     // (AutomationBake.hpp): a second bake here would be a corpus agreeing with
     // itself about what a step means.
     //
-    // Device parameters only. Every other target resolves through
-    // ControlTargetResolver, which wants a PluginManager -- the second sync
-    // this corpus refuses, and the boundary sends stop at too (#1892).
+    // Both halves of it now. This used to resolve the corpus's own gain device
+    // out of a map and convert with the identity, because the two things the
+    // app does instead -- find the parameter a target names, and map a lane's
+    // normalised position onto whatever that parameter stores -- both wanted a
+    // PluginManager, which was the boundary this corpus refused to cross.
+    // #2174 moved that boundary: the manager above is the app's own, so the
+    // app's own resolver answers the first question and the app's own
+    // converter answers the second.
+    //
+    // What that buys is every target a real project actually automates. The
+    // corpus's gain is 0..1 on both sides and converts by the identity; a Poly
+    // Synth parameter is not, and the demo project's one lane plays over one
+    // (#2081). A leg that kept the identity would have baked a display value
+    // into a native curve and reported the difference as an engine bug.
+    ControlTargetResolver targetResolver(trackController, pluginManager);
 
     for (const auto& lane : value.lanes) {
-        if (lane.target.kind != ControlTarget::Kind::PluginParam) {
-            result.failure = "a lane plays over a target this leg cannot resolve";
+        auto* param = targetResolver.resolve(lane.target);
+        if (param == nullptr) {
+            result.failure = "a lane plays over a target this project does not have";
             ClipManager::getInstance().clearAllClips();
             ProjectManager::getInstance().setTempo(previousTempo);
             return result;
         }
 
-        const auto found = gains.find(lane.target.devicePath);
-        if (found == gains.end() || lane.target.paramIndex != kGainParamIndex) {
-            result.failure = "a lane plays over a parameter this project does not have";
-            ClipManager::getInstance().clearAllClips();
-            ProjectManager::getInstance().setTempo(previousTempo);
-            return result;
-        }
-
-        auto* param = found->second->gain;
         auto& curve = param->getCurve();
         curve.clear(nullptr);
 
@@ -942,12 +948,10 @@ IncumbentRender renderIncumbent(const Case& value) {
             return nullptr;
         };
 
-        // Zero to one on both sides, so the lane's normalised position is
-        // already what the parameter stores (NullDiffGain.hpp).
         bakeLaneIntoCurve(
             curve, lane, getClip,
             [&](double beat) { return magda::automation::laneValueAtBeat(lane, getClip, beat); },
-            [](double normalized) { return juce::jlimit(0.0f, 1.0f, (float)normalized); });
+            makeParameterValueConverter(lane.target, param));
 
         param->updateStream();
         bakedParams.push_back(param);
@@ -1094,6 +1098,30 @@ IncumbentRender renderIncumbent(const Case& value) {
     params.realTimeRender = false;
 
     prepareEditForOfflineRender(*edit);
+
+    // And the plugin layer's half of it, which this leg was not doing.
+    //
+    // The native leg builds every device with offlineRender true, and the rule
+    // it states is that a device which skips live-only work has to skip it on
+    // both sides or the corpus is comparing two decisions about the same block.
+    // The app's own render session calls both halves (OfflineRenderHelper.cpp);
+    // this called the Edit's and not the PluginManager's, so the incumbent
+    // rendered with a sidechain monitor still holding whatever note count it
+    // had and with triggered LFOs still gated -- neither of which the engine
+    // does. A real project with a sidechain device is where that showed up
+    // (#2081).
+    //
+    // Restored through a guard because the read-back below returns early on a
+    // render that failed, and a monitor left in its rendering state belongs to
+    // whichever case runs next.
+    struct RenderingUnwind {
+        PluginManager& manager;
+        ~RenderingUnwind() {
+            manager.restoreAfterRendering();
+        }
+    } renderingUnwind{pluginManager};
+
+    pluginManager.prepareForRendering();
 
     {
         std::atomic<float> progress{0.0f};

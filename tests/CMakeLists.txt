@@ -480,6 +480,12 @@ target_compile_definitions(magda_tests
     MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt"
 )
 
+# The Faust standard library, beside the binary, so a runtime-compiled device
+# can resolve import("stdfaust.lib") (#2081). Same reason as magda_juce_tests:
+# a real project carries a Faust device whose saved source imports it, and a
+# device whose DSP will not compile passes audio through without saying so.
+magda_stage_faust_libraries(magda_tests)
+
 # The bridge is exec'd, not linked, so nothing in the link graph would build it.
 add_dependencies(magda_tests magda_mcp_bridge)
 
@@ -656,7 +662,16 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         NullDiffCorpus.cpp
         NullDiffNativeLeg.cpp
         NullDiffTeLeg.cpp
+        NullDiffRunner.cpp
         test_null_diff_juce.cpp
+
+        # The real-project corpus (#2081). The fixture rig is compiled into
+        # magda_tests too, where it is tested without rendering anything; here
+        # it feeds the same runner the code-built corpus uses, so the two
+        # corpora cannot disagree about what counts as a null.
+        MgdFixture.cpp
+        MgdFixtures.cpp
+        test_real_project_corpus_juce.cpp
     )
 endif()
 
@@ -691,6 +706,16 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     target_link_libraries(magda_juce_tests PRIVATE magda_engine magda_engine_devices)
 endif()
 
+# The Faust standard library, beside the binary, so a runtime-compiled device
+# can resolve import("stdfaust.lib") (#2081).
+#
+# The self-contained DSP the Faust tests here compile does not need it, and says
+# so; a real project does. 0.17.0-faust carries a Faust device whose saved source
+# imports the library, and without this the compile fails, the device passes
+# audio through, and the case reports a null between two chains that are not
+# running the device the project named.
+magda_stage_faust_libraries(magda_juce_tests)
+
 target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
     MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1
     # JUCE_LOG_ASSERTIONS is set on magda_daw instead, gated on MAGDA_BUILD_TESTS:
@@ -702,7 +727,10 @@ target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
     MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt"
     # The legacy corpus (#2079): the JUCE suite converts the pre-v2 device state
     # its projects carry, which needs a live plugin to read the values off.
-    MAGDA_LEGACY_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/corpus/legacy")
+    MAGDA_LEGACY_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/corpus/legacy"
+    # The root the .mgd fixtures name a file under (#2173), for the real-project
+    # corpus that renders them through both legs (#2081).
+    MAGDA_TEST_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/corpus")
 
 # Include directories for JUCE tests
 target_include_directories(magda_juce_tests

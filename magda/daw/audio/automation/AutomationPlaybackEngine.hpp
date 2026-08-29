@@ -93,14 +93,8 @@ class AutomationPlaybackEngine : public AutomationManagerListener,
 
     te::AutomatableParameter* resolveParameter(const AutomationTarget& target);
 
-    // Maps a MAGDA 0..1 normalized value to the TE parameter's real range,
-    // accounting for the non-linear dB scale on track volume and TE's native
-    // fader position encoding. Shared by the bake loop and the drag-preview
-    // fast path so both paths agree on the conversion.
-    float convertToTEValue(const AutomationTarget& target, te::AutomatableParameter* param,
-                           double magdaNormalized) const;
-
-    // Inverse of convertToTEValue: TE parameter's real value → MAGDA 0..1.
+    // Inverse of makeParameterValueConverter (AutomationBake.hpp): the TE
+    // parameter's real value → MAGDA 0..1.
     // Used by currentValueChanged to translate TE-driven parameter writes back
     // into the normalized form UI listeners expect.
     double convertFromTEValue(const AutomationTarget& target, te::AutomatableParameter* param,

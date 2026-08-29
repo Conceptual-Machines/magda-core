@@ -25,7 +25,7 @@ class ControlTargetResolver {
 /**
  * @brief TE parameter value → MAGDA lane-normalized 0..1 for a target.
  *
- * Inverse of AutomationPlaybackEngine::convertToTEValue — keep the two
+ * Inverse of makeParameterValueConverter (AutomationBake.hpp) — keep the two
  * symmetric or the round-trip (MAGDA normalized -> TE raw -> MAGDA
  * normalized) drifts and the UI fights the curve. Shared by the playback
  * writeback path and AutomationManager's live current-value lookup.

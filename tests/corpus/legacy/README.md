@@ -46,8 +46,10 @@ nulls against silence perfectly well.
 
 ## Reuse here, or save new elsewhere
 
-The render corpus (#2081) has to decide, per project, whether to reuse one of
-these or save its own. The rule, recorded per fixture in
+The render corpus (#2081) decides, per project, whether to reuse one of these or
+save its own. Seven of the twenty-two are reused today and none has yet needed
+one saved for it; `tests/MgdFixtures.cpp` carries the table and says why the
+other fifteen are out. The rule, recorded per fixture in
 `MgdFixture::isMigrationFixture`:
 
 **Reuse where a project earns its place by being a real arrangement** that
