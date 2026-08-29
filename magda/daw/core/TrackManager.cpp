@@ -186,37 +186,28 @@ void scanEmbeddedDeviceIds(const juce::String& pluginState, int& maxDeviceId) {
         scanEmbeddedDeviceIds(state, maxDeviceId);
 }
 
+/// Point a duplicated track's links at the copy, and strip the runtime state
+/// its devices carried over.
+///
+/// The walk addresses everything, including a device's pads: they are chains it
+/// owns, their devices carry state to strip, and the address it builds is
+/// stamped into any mod link that carries none of its own. This built pad
+/// addresses as `Rack(deviceId) > Chain(padId)`, the untyped spelling #2219
+/// removed, so a duplicated pad device's self-targeted modifier named a rack
+/// step holding a DeviceId -- which resolves down the rack walk that no pad
+/// answers to (#2204).
 void remapDuplicatedElements(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
                              const DuplicateIdRemap& remap) {
-    for (auto& element : elements) {
-        if (magda::isDevice(element)) {
-            auto& device = magda::getDevice(element);
-            auto devicePath = parentPath;
-            if (parentPath.isTrackLevel) {
-                devicePath = ChainNodePath::topLevelDevice(remap.newTrackId, device.id);
-            } else {
-                devicePath = parentPath.withDevice(device.id);
-            }
+    chain_walk::forEachNode(
+        elements, parentPath, chain_walk::Pads::Enter,
+        [&remap](DeviceInfo& device, const ChainNodePath& devicePath) {
             remapDuplicatedLinks(device.macros, device.mods, devicePath, remap);
             device.pluginState = stripDuplicateRuntimePluginState(device.pluginState);
-
-            // A device's pads are chains it owns, so they are walked like a
-            // rack's: their devices carry state to strip, and the grid's links
-            // into them were remapped by the call above (#2207).
-            if (device.pads) {
-                const auto padsPath = devicePath.parentChain().withRack(device.id);
-                for (auto& pad : device.pads->chains)
-                    remapDuplicatedElements(pad.elements, padsPath.withChain(pad.id), remap);
-            }
-        } else if (magda::isRack(element)) {
-            auto& rack = magda::getRack(element);
-            auto rackPath = parentPath.isTrackLevel ? ChainNodePath::rack(remap.newTrackId, rack.id)
-                                                    : parentPath.withRack(rack.id);
+        },
+        [&remap](RackInfo& rack, const ChainNodePath& rackPath) {
             remapDuplicatedLinks(rack.macros, rack.mods, rackPath, remap);
-            for (auto& chain : rack.chains)
-                remapDuplicatedElements(chain.elements, rackPath.withChain(chain.id), remap);
-        }
-    }
+            return chain_walk::Descend::Into;
+        });
 }
 
 void setChainElementsBypassed(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,

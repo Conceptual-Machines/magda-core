@@ -52,8 +52,16 @@ enum class Pads { Skip, Enter };
 /// `topLevelDeviceId` rather than in a step, and `withDevice()` would build the
 /// other spelling.
 inline ChainNodePath deviceIn(const ChainNodePath& parentPath, DeviceId deviceId) {
-    return parentPath.isTrackLevel ? ChainNodePath::topLevelDevice(parentPath.trackId, deviceId)
-                                   : parentPath.withDevice(deviceId);
+    // On the absence of steps rather than on `isTrackLevel`. The two agree for
+    // a path built by `trackLevel()`, and only one of them survives a round
+    // trip: `parentChain()` returns the track's own list with no steps and the
+    // flag unset, so keying on the flag would spell a device in it the other
+    // way and `deviceIn(path.parentChain(), id) == path` would not hold.
+    //
+    // A stepless chain path is the track's own FX list and nothing else: the
+    // flat sections carry a Segment step and a pad chain carries two.
+    return parentPath.steps.empty() ? ChainNodePath::topLevelDevice(parentPath.trackId, deviceId)
+                                    : parentPath.withDevice(deviceId);
 }
 
 /// The address of a rack directly inside @p parentPath.

@@ -2,7 +2,10 @@
 #include <string>
 
 #include "magda/daw/core/ChainWalk.hpp"
+#include "magda/daw/core/ControlTarget.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
+#include "magda/daw/core/MacroInfo.hpp"
+#include "magda/daw/core/ModInfo.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 
 using namespace magda;
@@ -115,6 +118,22 @@ TEST_CASE("The device walk spells a top-level device the way everything else sto
     CHECK_FALSE(paths[0] == ChainNodePath::trackLevel(trackId).withDevice(topId));
 
     tm.clearAllTracks();
+}
+
+TEST_CASE("A device's address survives a round trip through its parent", "[chain-walk]") {
+    // deviceIn() has to agree with parentChain() about how the track's own list
+    // is spelled, or a caller that has a device path, takes its parent and asks
+    // for the device back gets a different path naming the same device.
+    // parentChain() leaves isTrackLevel unset, so keying on that flag broke
+    // exactly this (#2204).
+    const auto topLevel = ChainNodePath::topLevelDevice(7, 3);
+    CHECK(chain_walk::deviceIn(topLevel.parentChain(), 3) == topLevel);
+
+    const auto nested = ChainNodePath::rack(7, 1).withChain(2).withDevice(3);
+    CHECK(chain_walk::deviceIn(nested.parentChain(), 3) == nested);
+
+    const auto onPad = ChainNodePath::padChain(7, 3, 4).withDevice(5);
+    CHECK(chain_walk::deviceIn(onPad.parentChain(), 5) == onPad);
 }
 
 TEST_CASE("A device's pads are walked after it, and only when asked for", "[chain-walk]") {
@@ -241,6 +260,110 @@ TEST_CASE("The rack walk is outermost first and can prune", "[chain-walk]") {
         [&visited](const RackInfo& rack, const ChainNodePath&) { visited.push_back(rack.name); });
 
     CHECK(order(visited) == "Outer,Inner");
+
+    tm.clearAllTracks();
+}
+
+// ============================================================================
+// What the descent covering pads is worth, at the two places it did not.
+//
+// Each becomes wrong the moment a pad device owns the thing being collected,
+// and nothing says so -- the trap #2204 describes. Both were found by putting
+// the walks named in that issue onto one descent and asking each what it does
+// about pads.
+// ============================================================================
+
+TEST_CASE("Moving a Drum Grid off a track drops that track's links into its pads",
+          "[chain-walk][links]") {
+    // A move looks every device it carried up in a map the descent built, and
+    // for a cross-track move drops the source track's links to them: a track
+    // macro cannot reach into another track. That descent stopped at the grid,
+    // so a link into one of its pads was never in the map and survived,
+    // pointing at a device the track no longer holds.
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+
+    const auto source = tm.createTrack("Source");
+    const auto destination = tm.createTrack("Destination");
+
+    const auto gridId = tm.addDeviceToTrack(source, drumGrid("Grid"));
+    const auto gridPath = ChainNodePath::topLevelDevice(source, gridId);
+    const auto padChainId = tm.ensurePad(gridPath, 0);
+    REQUIRE(padChainId != INVALID_CHAIN_ID);
+    const auto padDeviceId = tm.addDeviceToPad(gridPath, padChainId, effect("OnPad"));
+    REQUIRE(padDeviceId != INVALID_DEVICE_ID);
+
+    const auto padDevicePath =
+        ChainNodePath::padChain(source, gridId, padChainId).withDevice(padDeviceId);
+
+    // A track macro driving a parameter of the device on the pad.
+    auto* sourceTrack = tm.getTrack(source);
+    REQUIRE(sourceTrack != nullptr);
+    sourceTrack->macros[0].links.push_back(
+        MacroLink{ControlTarget::pluginParam(padDevicePath, 0), 1.0f, true});
+
+    REQUIRE(tm.getTrack(source)->macros[0].links.size() == 1);
+    REQUIRE(tm.moveChainElement(gridPath, ChainNodePath::trackLevel(destination), 0));
+
+    CHECK(tm.getTrack(source)->macros[0].links.empty());
+
+    // And the grid really did move, so the link had nothing left to name.
+    CHECK(tm.getDeviceInChainByPath(
+              ChainNodePath::padChain(destination, gridId, padChainId).withDevice(padDeviceId)) !=
+          nullptr);
+
+    tm.clearAllTracks();
+}
+
+TEST_CASE("Duplicating a track addresses the copy's pads the typed way", "[chain-walk][links]") {
+    // The duplicate remaps every link it copies onto the new track's ids, and
+    // built a pad address as `Rack(deviceId) > Chain(padId)` -- the untyped
+    // spelling #2219 removed. A rack step carrying a DeviceId resolves down the
+    // rack walk, which no pad answers to, so the link named nothing.
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+
+    const auto source = tm.createTrack("Source");
+    const auto gridId = tm.addDeviceToTrack(source, drumGrid("Grid"));
+    const auto gridPath = ChainNodePath::topLevelDevice(source, gridId);
+    const auto padChainId = tm.ensurePad(gridPath, 0);
+    const auto padDeviceId = tm.addDeviceToPad(gridPath, padChainId, effect("OnPad"));
+    REQUIRE(padDeviceId != INVALID_DEVICE_ID);
+
+    auto* padDevice = tm.getDeviceInChainByPath(
+        ChainNodePath::padChain(source, gridId, padChainId).withDevice(padDeviceId));
+    REQUIRE(padDevice != nullptr);
+    // A mod link with no path of its own: the remap stamps the owner's address
+    // into it, which is the one place the pad address the duplicate builds is
+    // actually consumed. A link that already carries a path is remapped by id
+    // instead and never sees it.
+    // A device starts with no modifiers (`createDefaultMods(0)`), so one is
+    // added before it can carry a link.
+    padDevice->mods.push_back(ModInfo(0));
+    padDevice->mods.back().links.push_back(
+        ModLink{ControlTarget::modParam(ChainNodePath{}, 0, 0), 1.0f, true});
+
+    const auto copy = tm.duplicateTrack(source);
+    REQUIRE(copy != INVALID_TRACK_ID);
+
+    // Whatever ids the copy got, the link its pad device holds has to name
+    // something the model can resolve.
+    const auto* copyTrack = tm.getTrack(copy);
+    REQUIRE(copyTrack != nullptr);
+    REQUIRE(copyTrack->chain.fxChainElements.size() == 1);
+    const auto& copiedGrid = getDevice(copyTrack->chain.fxChainElements.front());
+    REQUIRE(copiedGrid.pads);
+    REQUIRE_FALSE(copiedGrid.pads->chains.empty());
+
+    const auto& copiedPad = copiedGrid.pads->chains.front();
+    REQUIRE_FALSE(copiedPad.elements.empty());
+    const auto& copiedPadDevice = getDevice(copiedPad.elements.front());
+    REQUIRE_FALSE(copiedPadDevice.mods.empty());
+    REQUIRE_FALSE(copiedPadDevice.mods.front().links.empty());
+
+    const auto& target = copiedPadDevice.mods.front().links.front().target.devicePath;
+    CHECK(target.isPadOwned());
+    CHECK(tm.getDeviceInChainByPath(target) != nullptr);
 
     tm.clearAllTracks();
 }

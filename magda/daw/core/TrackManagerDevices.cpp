@@ -1,12 +1,14 @@
 #include <algorithm>
 #include <map>
 #include <set>
+#include <span>
 
 #include "../audio/AudioBridge.hpp"
 #include "../audio/TracktionHelpers.hpp"
 #include "../audio/plugin_manager/ExternalPluginStateUtil.hpp"
 #include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "ChainWalk.hpp"
 #include "DeviceState.hpp"
 #include "DrumGridPads.hpp"
 #include "PluginPreferences.hpp"
@@ -251,21 +253,16 @@ void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const Preset
     }
 }
 
-void collectDeviceIdMatches(std::vector<ChainElement>& elements, DeviceId deviceId,
+void collectDeviceIdMatches(std::vector<ChainElement>& elements, TrackId trackId, DeviceId deviceId,
                             std::vector<DeviceInfo*>& matches) {
-    for (auto& element : elements) {
-        if (magda::isDevice(element)) {
-            auto& device = magda::getDevice(element);
-            if (device.id == deviceId)
-                matches.push_back(&device);
-            continue;
-        }
-
-        if (magda::isRack(element)) {
-            for (auto& chain : magda::getRack(element).chains)
-                collectDeviceIdMatches(chain.elements, deviceId, matches);
-        }
-    }
+    // Pads entered: this asks whether a bare device id names exactly one
+    // device, and a pad device is one. Skipping them would answer "unique" for
+    // an id that two devices hold.
+    chain_walk::forEachDevice(elements, ChainNodePath::trackLevel(trackId), chain_walk::Pads::Enter,
+                              [deviceId, &matches](DeviceInfo& device, const ChainNodePath&) {
+                                  if (device.id == deviceId)
+                                      matches.push_back(&device);
+                              });
 }
 
 void collectDeviceIdMatches(std::vector<PostFxChainElement>& elements, DeviceId deviceId,
@@ -278,12 +275,12 @@ void collectDeviceIdMatches(std::vector<PostFxChainElement>& elements, DeviceId 
 DeviceInfo* findUniqueBareDeviceIdMatch(TrackInfo& masterTrack, std::vector<TrackInfo>& tracks,
                                         DeviceId deviceId) {
     std::vector<DeviceInfo*> matches;
-    collectDeviceIdMatches(masterTrack.chain.fxChainElements, deviceId, matches);
+    collectDeviceIdMatches(masterTrack.chain.fxChainElements, masterTrack.id, deviceId, matches);
     collectDeviceIdMatches(masterTrack.chain.postFxChainElements, deviceId, matches);
     collectDeviceIdMatches(masterTrack.chain.mixerAnalysisElements, deviceId, matches);
 
     for (auto& track : tracks) {
-        collectDeviceIdMatches(track.chain.fxChainElements, deviceId, matches);
+        collectDeviceIdMatches(track.chain.fxChainElements, track.id, deviceId, matches);
         collectDeviceIdMatches(track.chain.postFxChainElements, deviceId, matches);
         collectDeviceIdMatches(track.chain.mixerAnalysisElements, deviceId, matches);
     }
@@ -664,27 +661,24 @@ static void retargetMovedLinks(MacroArray& macros, ModArray& mods,
     }
 }
 
+/// Where every device under @p element now lives, keyed by id, for the links
+/// naming them to be retargeted onto.
+///
+/// Pads entered: a Drum Grid carries its pad devices with it. This stopped at
+/// the grid, so moving one to another track left every link into its pads
+/// holding the path it had on the track it came from -- a device id that
+/// `retargetMovedTarget` never found, so the whole address survived unchanged
+/// (#2204).
 static void collectMovedDevicePaths(const ChainElement& element, const ChainNodePath& elementPath,
                                     DevicePathMap& movedPaths) {
-    if (magda::isDevice(element)) {
-        movedPaths[magda::getDevice(element).id] = elementPath;
-        return;
-    }
+    const std::span<const ChainElement> subtree{&element, 1};
+    const auto parentPath =
+        magda::isDevice(element) ? elementPath.parentChain() : elementPath.parent();
 
-    const auto& rack = magda::getRack(element);
-    auto rackPath = elementPath;
-    for (const auto& chain : rack.chains) {
-        auto chainPath = rackPath.withChain(chain.id);
-        for (const auto& child : chain.elements) {
-            if (magda::isDevice(child)) {
-                collectMovedDevicePaths(child, chainPath.withDevice(magda::getDevice(child).id),
-                                        movedPaths);
-            } else if (magda::isRack(child)) {
-                collectMovedDevicePaths(child, chainPath.withRack(magda::getRack(child).id),
-                                        movedPaths);
-            }
-        }
-    }
+    chain_walk::forEachDevice(subtree, parentPath, chain_walk::Pads::Enter,
+                              [&movedPaths](const DeviceInfo& device, const ChainNodePath& path) {
+                                  movedPaths[device.id] = path;
+                              });
 }
 
 static void retargetLinksInElements(std::vector<ChainElement>& elements,
