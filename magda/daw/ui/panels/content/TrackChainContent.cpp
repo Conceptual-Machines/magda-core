@@ -2016,8 +2016,12 @@ void TrackChainContent::togglePostFxAnalysisDevice(const juce::String& pluginId,
     auto& tm = magda::TrackManager::getInstance();
     const magda::DeviceId existing = tm.findPostFxDevice(selectedTrackId_, pluginId);
     if (existing != magda::INVALID_DEVICE_ID) {
-        tm.removeDeviceFromChainByPath(
-            magda::ChainNodePath::postFxDevice(selectedTrackId_, existing));
+        // Through the command, like the slot's X and the context menu: turning
+        // the header toggle off is the third way to delete an analyzer, and it
+        // was the one that still went straight to the model (#2232).
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::RemoveDeviceByPathCommand>(
+                magda::ChainNodePath::postFxDevice(selectedTrackId_, existing)));
     } else {
         magda::DeviceInfo device;
         device.name = displayName;

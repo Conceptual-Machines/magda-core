@@ -462,6 +462,62 @@ TEST_CASE("Undoing a post-fader device removal puts it back at its index",
         std::make_unique<RemoveDeviceByPathCommand>(ChainNodePath::postFxDevice(trackId, middle)));
 }
 
+TEST_CASE("Removing a rack prunes a multi-node selection rather than clearing it",
+          "[structural][selection]") {
+    // `clearSelectionForDeletedChainNode()` had no MultiChainNode case at all,
+    // so a Cmd-selected set holding one node inside a removed subtree kept that
+    // path and every multi-node operation ran against freed model. The members
+    // that did not go have to survive: dropping the whole set is a different
+    // and equally wrong answer (#2232).
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    auto& selection = SelectionManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    const auto keptId = tm.addDeviceToTrack(trackId, effect("Kept"));
+    const auto rackId = tm.addRackToTrack(trackId, "Doomed");
+    const auto rackPath = ChainNodePath::rack(trackId, rackId);
+    const auto chainId = tm.addChainToRack(rackPath);
+    const auto doomedId = tm.addDeviceToChainByPath(rackPath.withChain(chainId), effect("Doomed"));
+
+    const auto keptPath = ChainNodePath::topLevelDevice(trackId, keptId);
+    const auto doomedPath = rackPath.withChain(chainId).withDevice(doomedId);
+    selection.selectChainNodes({keptPath, doomedPath});
+    REQUIRE(selection.getSelectedChainNodes().size() == 2);
+
+    UndoManager::getInstance().executeCommand(std::make_unique<RemoveRackByPathCommand>(rackPath));
+
+    const auto remaining = selection.getSelectedChainNodes();
+    REQUIRE(remaining.size() == 1);
+    CHECK(remaining.front() == keptPath);
+    // One member left, so it is an ordinary single selection again, and the
+    // primary has moved off the node that went.
+    CHECK(selection.getSelectedChainNode() == keptPath);
+}
+
+TEST_CASE("Removing a rack clears a multi-node selection that was entirely inside it",
+          "[structural][selection]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    auto& selection = SelectionManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    const auto rackId = tm.addRackToTrack(trackId, "Doomed");
+    const auto rackPath = ChainNodePath::rack(trackId, rackId);
+    const auto chainId = tm.addChainToRack(rackPath);
+    const auto chainPath = rackPath.withChain(chainId);
+    const auto firstId = tm.addDeviceToChainByPath(chainPath, effect("First"));
+    const auto secondId = tm.addDeviceToChainByPath(chainPath, effect("Second"));
+
+    selection.selectChainNodes({chainPath.withDevice(firstId), chainPath.withDevice(secondId)});
+    REQUIRE(selection.getSelectedChainNodes().size() == 2);
+
+    UndoManager::getInstance().executeCommand(std::make_unique<RemoveRackByPathCommand>(rackPath));
+
+    CHECK(selection.getSelectedChainNodes().empty());
+    CHECK_FALSE(selection.getSelectedChainNode().isValid());
+}
+
 TEST_CASE("Removing a rack drops a selection standing on a pad inside it",
           "[structural][selection]") {
     // A device is not always a leaf. A Drum Grid's pads are chains on the
