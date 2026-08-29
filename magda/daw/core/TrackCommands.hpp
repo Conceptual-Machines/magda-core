@@ -340,8 +340,9 @@ class CreateTrackWithDeviceCommand : public UndoableCommand {
  *
  * The track-level `AddDeviceToTrackCommand` above cannot reach into a rack, and
  * a `(trackId, rackId, chainId)` triple stops at one level of nesting. This
- * takes the parent path — track-level for the main FX chain, or a chain path at
- * any depth — so anything the model can express is reachable.
+ * takes the parent path — track-level for the main FX chain, a chain path at
+ * any depth, or one of the two flat sections — so anything the model can
+ * express is reachable (#2232).
  */
 class AddDeviceByPathCommand : public UndoableCommand {
   public:
@@ -369,6 +370,12 @@ class AddDeviceByPathCommand : public UndoableCommand {
     int insertIndex_ = -1;
     DeviceId createdDeviceId_ = INVALID_DEVICE_ID;
     ChainNodePath createdDevicePath_;
+    /// What the first run actually made, replayed by a redo rather than added
+    /// again. The add path stamps a fresh DeviceId, so re-adding would give the
+    /// device a different identity each time round the stack and orphan
+    /// everything named against the first one -- the reason paste and wrap
+    /// replay what they materialised (#2228).
+    DeviceInfo materialised_;
     bool executed_ = false;
 };
 

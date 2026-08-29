@@ -462,6 +462,68 @@ TEST_CASE("Undoing a post-fader device removal puts it back at its index",
         std::make_unique<RemoveDeviceByPathCommand>(ChainNodePath::postFxDevice(trackId, middle)));
 }
 
+TEST_CASE("Adding a post-fader device is reversible and replays the same device",
+          "[structural][undo][roundtrip]") {
+    // Adding to a flat section was not on the undo stack at all: neither chain
+    // add can reach one, so the header analyzer toggle, the post-fx panel drop
+    // and its plus menu all wrote straight to the model. Turning a toggle on
+    // and pressing Cmd+Z undid whatever came before it (#2232).
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    tm.addDeviceToPostFx(trackId, effect("Resident"));
+
+    requireUndoRoundTrip(std::make_unique<AddDeviceByPathCommand>(
+        ChainNodePath::postFxSection(trackId), effect("Analyzer")));
+}
+
+TEST_CASE("Adding a mixer-analysis device is reversible", "[structural][undo][roundtrip]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+
+    requireUndoRoundTrip(std::make_unique<AddDeviceByPathCommand>(
+        ChainNodePath::mixerAnalysisSection(trackId), effect("Scope")));
+}
+
+TEST_CASE("Redoing an add puts back the device it made, not another one",
+          "[structural][undo][roundtrip]") {
+    // Every add path stamps a fresh DeviceId. A redo that added again gave the
+    // device a different identity each time round the stack, orphaning every
+    // link named against the first one -- the defect #2228 fixed for paste and
+    // wrap, still standing on the add. The round trip catches it: the redone
+    // model has to serialize to the bytes the first run made, id included.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    const auto rackId = tm.addRackToTrack(trackId, "Rack");
+    const auto rackPath = ChainNodePath::rack(trackId, rackId);
+    const auto chainId = tm.addChainToRack(rackPath);
+    tm.addDeviceToChainByPath(rackPath.withChain(chainId), effect("Resident"));
+
+    requireUndoRoundTrip(
+        std::make_unique<AddDeviceByPathCommand>(rackPath.withChain(chainId), effect("Added")));
+}
+
+TEST_CASE("Adding a device to the middle of a chain is redone at the same index",
+          "[structural][undo][roundtrip]") {
+    // An add that named no index appended, and a redo that re-derived it would
+    // append again -- right only because it happened to be last. This one is
+    // placed, so the index has to be recorded rather than recomputed.
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Track");
+    tm.addDeviceToTrack(trackId, effect("First"));
+    tm.addDeviceToTrack(trackId, effect("Last"));
+
+    requireUndoRoundTrip(std::make_unique<AddDeviceByPathCommand>(
+        ChainNodePath::trackLevel(trackId), effect("Middle"), 1));
+}
+
 TEST_CASE("Removing a rack prunes a multi-node selection rather than clearing it",
           "[structural][selection]") {
     // `clearSelectionForDeletedChainNode()` had no MultiChainNode case at all,

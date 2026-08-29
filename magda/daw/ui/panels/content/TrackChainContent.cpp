@@ -2029,7 +2029,11 @@ void TrackChainContent::togglePostFxAnalysisDevice(const juce::String& pluginId,
         device.pluginId = pluginId;
         device.deviceType = magda::DeviceType::Analysis;
         device.format = magda::PluginFormat::Internal;
-        tm.addDeviceToPostFx(selectedTrackId_, device);
+        // Both directions on the stack. Only the removal being undoable would
+        // mean Cmd+Z after turning a toggle on undid something else entirely.
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::AddDeviceByPathCommand>(
+                magda::ChainNodePath::postFxSection(selectedTrackId_), device));
         // Reveal the panel so the analyzer you just added is visible.
         if (onPostFxPanelToggled)
             onPostFxPanelToggled(true);

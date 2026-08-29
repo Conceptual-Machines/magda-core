@@ -926,7 +926,40 @@ AddDeviceByPathCommand::AddDeviceByPathCommand(const ChainNodePath& parentPath,
 void AddDeviceByPathCommand::execute() {
     auto& tm = TrackManager::getInstance();
 
-    if (parentPath_.getType() == ChainNodeType::Track) {
+    // A redo puts back what the first run made rather than adding again. Every
+    // add path stamps a fresh DeviceId, so a second run would hand the device a
+    // different identity and orphan every automation lane, macro link and alias
+    // named against the first one -- the reason paste and wrap replay what they
+    // materialised (#2228, #2232).
+    if (executed_ && createdDevicePath_.isValid()) {
+        if (createdDevicePath_.isPostFx() || createdDevicePath_.isMixerAnalysis()) {
+            tm.insertFlatSectionDeviceByPath(createdDevicePath_, materialised_, insertIndex_);
+            return;
+        }
+
+        std::vector<ChainElement> elements;
+        elements.push_back(makeDeviceElement(materialised_));
+        tm.insertChainElementsByPath(createdDevicePath_.parentChain(), std::move(elements),
+                                     insertIndex_, /*reassignIds=*/false);
+        return;
+    }
+
+    const bool postFx = parentPath_.isPostFx();
+    if (postFx || parentPath_.isMixerAnalysis()) {
+        // The two flat sections hold bare devices in their own list; neither of
+        // the chain adds can reach one, so adding an analyzer stayed off the
+        // undo stack entirely.
+        if (postFx)
+            createdDeviceId_ =
+                insertIndex_ >= 0 ? tm.addDeviceToPostFx(parentPath_.trackId, device_, insertIndex_)
+                                  : tm.addDeviceToPostFx(parentPath_.trackId, device_);
+        else
+            createdDeviceId_ = tm.addDeviceToMixerAnalysis(parentPath_.trackId, device_);
+        if (createdDeviceId_ != INVALID_DEVICE_ID)
+            createdDevicePath_ =
+                postFx ? ChainNodePath::postFxDevice(parentPath_.trackId, createdDeviceId_)
+                       : ChainNodePath::mixerAnalysisDevice(parentPath_.trackId, createdDeviceId_);
+    } else if (parentPath_.getType() == ChainNodeType::Track) {
         createdDeviceId_ = insertIndex_ >= 0
                                ? tm.addDeviceToTrack(parentPath_.trackId, device_, insertIndex_)
                                : tm.addDeviceToTrack(parentPath_.trackId, device_);
@@ -942,6 +975,13 @@ void AddDeviceByPathCommand::execute() {
     }
 
     executed_ = createdDeviceId_ != INVALID_DEVICE_ID;
+    if (executed_) {
+        // Where it actually landed, so a redo restores that index rather than
+        // the -1 that meant "append".
+        insertIndex_ = tm.getChainElementIndex(createdDevicePath_);
+        if (const auto* added = tm.getDeviceInChainByPath(createdDevicePath_))
+            materialised_ = *added;
+    }
     DBG("UNDO: Added device by path " << parentPath_.toString() << " (deviceId=" << createdDeviceId_
                                       << ")");
 }
