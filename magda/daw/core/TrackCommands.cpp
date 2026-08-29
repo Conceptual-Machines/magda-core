@@ -1,6 +1,7 @@
 #include "TrackCommands.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 
 #include "../audio/AudioBridge.hpp"
@@ -92,6 +93,31 @@ bool describeChainElementPath(const ChainNodePath& path, ChainStepType& type, in
 
     return false;
 }
+
+/// The index to hand `moveChainElement()` so @p elementPath comes to rest at
+/// @p homeIndex of @p homeChain.
+///
+/// The two are not the same number. `homeIndex` is where the element stood,
+/// counted with itself still in the list. `moveChainElement()` takes a drop
+/// position -- insert before whatever stands there now -- and drops one when
+/// the element is travelling up a list it is already in, because removing it
+/// first shifts everything past it down. So an element on its way back up its
+/// own container has to aim one slot past its home to land on it.
+///
+/// One conversion, because it was written twice and only one of them was right:
+/// the multi-element undo made the correction, the single-element one passed the
+/// home index straight through, and so undoing a drag that moved a device
+/// towards the front of its chain put it back one slot too early
+/// (#2229). `WrapChainElementsInRackCommand::undo()` makes the same correction
+/// against the standing rack.
+int dropIndexForHome(TrackManager& tm, const ChainNodePath& elementPath,
+                     const ChainNodePath& homeChain, int homeIndex) {
+    if (parentChainOf(elementPath) != homeChain)
+        return homeIndex;
+
+    const int currentIndex = tm.getChainElementIndex(elementPath);
+    return currentIndex >= 0 && currentIndex < homeIndex ? homeIndex + 1 : homeIndex;
+}
 }  // namespace
 
 // ============================================================================
@@ -160,6 +186,40 @@ juce::String CreateTrackCommand::getDescription() const {
 
 DeleteTrackCommand::DeleteTrackCommand(TrackId trackId) : trackId_(trackId) {}
 
+std::vector<DeleteTrackCommand::DeletedTrack> DeleteTrackCommand::collectSubtree(TrackId trackId) {
+    auto& tm = TrackManager::getInstance();
+    std::vector<DeletedTrack> records;
+
+    const std::function<void(TrackId)> descend = [&](TrackId id) {
+        const auto* track = tm.getTrack(id);
+        if (track == nullptr)
+            return;
+
+        DeletedTrack record;
+        record.track = *track;
+        record.position = tm.restorePositionOf(id);
+
+        auto& clipManager = ClipManager::getInstance();
+        for (auto clipId : clipManager.getClipsOnTrack(id))
+            if (const auto* clip = clipManager.getClip(clipId))
+                record.clips.push_back(*clip);
+
+        records.push_back(std::move(record));
+
+        for (auto childId : track->childIds)
+            descend(childId);
+    };
+
+    descend(trackId);
+
+    // By where each stood, so refilling the list left to right lands every one
+    // of them on its own index.
+    std::stable_sort(records.begin(), records.end(), [](const auto& a, const auto& b) {
+        return a.position.trackIndex < b.position.trackIndex;
+    });
+    return records;
+}
+
 void DeleteTrackCommand::execute() {
     // The master track is permanent. Bail before touching clips or storing undo
     // state so the command is a clean no-op (undo() is gated on executed_).
@@ -174,27 +234,25 @@ void DeleteTrackCommand::execute() {
         return;
     }
 
-    // Store full track info and clips for undo (only on first execute)
+    // The whole subtree, because deleteTrack() cascades into the children and
+    // takes their devices and clips with them (only on first execute).
     if (!executed_) {
-        storedTrack_ = *track;
+        storedTracks_ = collectSubtree(trackId_);
+
+        // And what it will clear on everything that outlives it.
+        std::vector<TrackId> doomed;
+        doomed.reserve(storedTracks_.size());
+        for (const auto& record : storedTracks_)
+            doomed.push_back(record.track.id);
+        storedRouting_ = trackManager.externalRoutingInto(doomed);
     }
 
-    // Store and remove all clips on this track
-    auto& clipManager = ClipManager::getInstance();
-    auto clipIds = clipManager.getClipsOnTrack(trackId_);
-    storedClips_.clear();
-    for (auto clipId : clipIds) {
-        const auto* clip = clipManager.getClip(clipId);
-        if (clip) {
-            storedClips_.push_back(*clip);
-        }
-        clipManager.deleteClip(clipId);
-    }
-
+    // deleteTrack() deletes each track's clips as it goes, children included.
     trackManager.deleteTrack(trackId_);
     executed_ = true;
 
-    DBG("UNDO: Deleted track " << trackId_);
+    DBG("UNDO: Deleted track " << trackId_ << " and " << (int)storedTracks_.size() - 1
+                               << " descendant(s)");
 }
 
 void DeleteTrackCommand::undo() {
@@ -202,15 +260,23 @@ void DeleteTrackCommand::undo() {
         return;
     }
 
-    TrackManager::getInstance().restoreTrack(storedTrack_);
-
-    // Restore clips that were on this track
+    auto& trackManager = TrackManager::getInstance();
     auto& clipManager = ClipManager::getInstance();
-    for (const auto& clip : storedClips_) {
-        clipManager.restoreClip(clip);
+
+    // Ascending by where each stood, so the list refills left to right. A child
+    // restored before its parent finds no parent to rejoin, and needs none: the
+    // parent's own stored childIds still names it.
+    for (const auto& record : storedTracks_) {
+        trackManager.restoreTrack(record.track, record.position);
+        for (const auto& clip : record.clips)
+            clipManager.restoreClip(clip);
     }
 
-    DBG("UNDO: Restored track " << trackId_);
+    // After the tracks are back, so a send, an input or a sidechain naming one
+    // of them names something that exists again.
+    trackManager.restoreExternalRouting(storedRouting_);
+
+    DBG("UNDO: Restored track " << trackId_ << " and its descendants");
 }
 
 // ============================================================================
@@ -225,6 +291,20 @@ DuplicateTrackCommand::DuplicateTrackCommand(TrackId sourceTrackId, bool duplica
 
 void DuplicateTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
+    auto& clipManager = ClipManager::getInstance();
+
+    // A redo puts back what the first run made rather than duplicating again:
+    // duplicating again allocates a fresh TrackId and fresh device, rack and
+    // chain ids, so undo followed by redo would leave a different project than
+    // the one the undo took away (#2229).
+    if (executed_) {
+        if (duplicatedTrackId_ == INVALID_TRACK_ID)
+            return;
+        trackManager.restoreTrack(storedTrack_, storedPosition_);
+        for (const auto& clip : storedClips_)
+            clipManager.restoreClip(clip);
+        return;
+    }
 
     // Capture current plugin state so the duplicate gets the source's live settings.
     // Skipped when we're stripping the FX chain anyway — nothing to carry over.
@@ -239,7 +319,6 @@ void DuplicateTrackCommand::execute() {
     duplicatedTrackId_ = trackManager.duplicateTrack(sourceTrackId_, duplicateDevices_);
 
     if (duplicateContent_ && duplicatedTrackId_ != INVALID_TRACK_ID) {
-        auto& clipManager = ClipManager::getInstance();
         auto clipIds = clipManager.getClipsOnTrack(sourceTrackId_);
         const double projectBpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
         const double bpm = isValidBpm(projectBpm) ? projectBpm : DEFAULT_BPM;
@@ -250,6 +329,16 @@ void DuplicateTrackCommand::execute() {
                                             bpm);
             }
         }
+    }
+
+    // What it made, so a redo can make exactly that again.
+    if (const auto* made = trackManager.getTrack(duplicatedTrackId_)) {
+        storedTrack_ = *made;
+        storedPosition_ = trackManager.restorePositionOf(duplicatedTrackId_);
+        storedClips_.clear();
+        for (auto clipId : clipManager.getClipsOnTrack(duplicatedTrackId_))
+            if (const auto* clip = clipManager.getClip(clipId))
+                storedClips_.push_back(*clip);
     }
 
     executed_ = true;
@@ -263,7 +352,7 @@ void DuplicateTrackCommand::undo() {
 
     // Delete all clips on the duplicated track before deleting the track
     auto& clipManager = ClipManager::getInstance();
-    auto clipIds = clipManager.getClipsOnTrack(duplicatedTrackId_);
+    const auto clipIds = clipManager.getClipsOnTrack(duplicatedTrackId_);
     for (auto clipId : clipIds) {
         clipManager.deleteClip(clipId);
     }
@@ -415,7 +504,9 @@ void MoveChainElementCommand::undo() {
     if (!executed_)
         return;
 
-    TrackManager::getInstance().moveChainElement(movedElementPath_, undoChainPath_, undoIndex_);
+    auto& tm = TrackManager::getInstance();
+    tm.moveChainElement(movedElementPath_, undoChainPath_,
+                        dropIndexForHome(tm, movedElementPath_, undoChainPath_, undoIndex_));
 }
 
 // ============================================================================
@@ -507,17 +598,13 @@ void MoveChainElementsCommand::undo() {
         if (!currentPath.isValid())
             return;
 
-        int insertIndex = record.originalIndex;
-        const auto currentParentPath = parentChainOf(currentPath);
-        const int currentIndex = tm.getChainElementIndex(currentPath);
-        if (currentParentPath == record.originalParentPath) {
-            if (currentIndex == record.originalIndex)
-                return;
-            if (currentIndex >= 0 && currentIndex < record.originalIndex)
-                ++insertIndex;
-        }
+        if (parentChainOf(currentPath) == record.originalParentPath &&
+            tm.getChainElementIndex(currentPath) == record.originalIndex)
+            return;
 
-        tm.moveChainElement(currentPath, record.originalParentPath, insertIndex);
+        tm.moveChainElement(
+            currentPath, record.originalParentPath,
+            dropIndexForHome(tm, currentPath, record.originalParentPath, record.originalIndex));
     };
 
     auto begin = records.begin();

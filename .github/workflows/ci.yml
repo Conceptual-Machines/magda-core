@@ -1181,10 +1181,16 @@ jobs:
     # A timeout is here to catch a hang, not to enforce a performance budget.
     # At five minutes it was doing the second job badly: the last green run on
     # dev finished this step in 4:53, so any test added anywhere in the suite
-    # failed Windows and nowhere else, with a timeout for a message. Fifteen
-    # still catches a hang and stops the gate going red over seven seconds.
+    # failed Windows and nowhere else, with a timeout for a message.
+    #
+    # Fifteen went the same way. The suite reached 11:32 on dev, and the next
+    # test matrix added anywhere took it over, again on Windows and nowhere
+    # else. Debug MSVC runs this suite about ten times slower than a Debug
+    # clang build does, so this is the step that meets every addition first.
+    # Thirty still kills a hang long before the job's own limit, and leaves the
+    # suite room to grow without the gate reading "timed out" for "slower".
     - name: Run tests
-      timeout-minutes: 15
+      timeout-minutes: 30
       run: |
         $testExe = Get-ChildItem -Path build-debug -Recurse -Filter "magda_tests.exe" | Select-Object -First 1
         if ($testExe) {

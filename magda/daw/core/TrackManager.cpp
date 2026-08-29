@@ -923,7 +923,108 @@ void TrackManager::startMidiMonitoring(const TrackInfo& track, const juce::Strin
     }
 }
 
-void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
+TrackRestorePosition TrackManager::restorePositionOf(TrackId trackId) const {
+    TrackRestorePosition position;
+    position.trackIndex = getTrackIndex(trackId);
+
+    if (const auto* track = getTrack(trackId); track != nullptr && track->hasParent()) {
+        if (const auto* parent = getTrack(track->parentId)) {
+            const auto found = std::find(parent->childIds.begin(), parent->childIds.end(), trackId);
+            if (found != parent->childIds.end())
+                position.siblingIndex =
+                    static_cast<int>(std::distance(parent->childIds.begin(), found));
+        }
+    }
+
+    return position;
+}
+
+namespace {
+
+/// Every device and rack under @p elements that is sidechained to one of
+/// @p doomed, with the path that addresses it.
+void collectSidechainsInto(const std::vector<ChainElement>& elements,
+                           const ChainNodePath& parentChain, const std::set<TrackId>& doomed,
+                           std::vector<ExternalTrackRouting::Sidechain>& found) {
+    const bool topLevel = parentChain.steps.empty();
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            const auto& device = magda::getDevice(element);
+            if (doomed.count(device.sidechain.sourceTrackId) == 1)
+                found.push_back({topLevel
+                                     ? ChainNodePath::topLevelDevice(parentChain.trackId, device.id)
+                                     : parentChain.withDevice(device.id),
+                                 device.sidechain});
+            continue;
+        }
+
+        const auto& rack = magda::getRack(element);
+        const auto rackPath = topLevel ? ChainNodePath::rack(parentChain.trackId, rack.id)
+                                       : parentChain.withRack(rack.id);
+        if (doomed.count(rack.sidechain.sourceTrackId) == 1)
+            found.push_back({rackPath, rack.sidechain});
+        for (const auto& chain : rack.chains)
+            collectSidechainsInto(chain.elements, rackPath.withChain(chain.id), doomed, found);
+    }
+}
+
+}  // namespace
+
+ExternalTrackRouting TrackManager::externalRoutingInto(const std::vector<TrackId>& trackIds) const {
+    ExternalTrackRouting routing;
+    const std::set<TrackId> doomed(trackIds.begin(), trackIds.end());
+
+    const auto listensToADoomedTrack = [&doomed](const juce::String& input) {
+        for (auto id : doomed)
+            if (input == "track:" + juce::String(id))
+                return true;
+        return false;
+    };
+
+    const auto record = [&](const TrackInfo& track) {
+        if (doomed.count(track.id) == 1)
+            return;
+
+        const bool sendsIn = std::ranges::any_of(track.sends, [&doomed](const SendInfo& send) {
+            return doomed.count(send.destTrackId) == 1;
+        });
+        if (sendsIn || listensToADoomedTrack(track.audioInputDevice) ||
+            listensToADoomedTrack(track.midiInputDevice))
+            routing.tracks.push_back(
+                {track.id, track.sends, track.audioInputDevice, track.midiInputDevice});
+
+        collectSidechainsInto(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+                              doomed, routing.sidechains);
+    };
+
+    for (const auto& track : tracks_)
+        record(track);
+    record(masterTrack_);
+
+    return routing;
+}
+
+void TrackManager::restoreExternalRouting(const ExternalTrackRouting& routing) {
+    for (const auto& entry : routing.tracks) {
+        if (auto* track = getTrack(entry.trackId)) {
+            // Whole, not by difference: the deletion only removed from these.
+            track->sends = entry.sends;
+            notifyTrackPropertyChanged(entry.trackId);
+        }
+        // Through the setters, so the engine follows the routing back.
+        setTrackAudioInput(entry.trackId, entry.audioInputDevice);
+        setTrackMidiInput(entry.trackId, entry.midiInputDevice);
+    }
+
+    for (const auto& entry : routing.sidechains) {
+        if (entry.nodePath.getType() == ChainNodeType::Rack)
+            setRackSidechainSource(entry.nodePath, entry.config.sourceTrackId, entry.config.type);
+        else if (const auto deviceId = entry.nodePath.getDeviceId(); deviceId != INVALID_DEVICE_ID)
+            setSidechainSource(deviceId, entry.config.sourceTrackId, entry.config.type);
+    }
+}
+
+void TrackManager::restoreTrack(const TrackInfo& trackInfo, TrackRestorePosition position) {
     // Check if a track with this ID already exists
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
                            [&trackInfo](const TrackInfo& t) { return t.id == trackInfo.id; });
@@ -933,25 +1034,35 @@ void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
         return;
     }
 
-    tracks_.push_back(trackInfo);
+    const int at = position.trackIndex < 0
+                       ? static_cast<int>(tracks_.size())
+                       : std::clamp(position.trackIndex, 0, static_cast<int>(tracks_.size()));
+    auto inserted = tracks_.insert(tracks_.begin() + at, trackInfo);
 
     // Projects saved before the input-less-track invariant existed can carry
     // MIDI/audio input, monitoring, or record-arm on Aux/Group tracks
     // (createTrack used to seed every non-Aux track with "all"). Normalize on
     // restore rather than let stale on-disk state reintroduce it.
-    tracks_.back().normalizeForType();
+    inserted->normalizeForType();
 
     // Ensure nextTrackId_ is beyond any restored track IDs
     if (trackInfo.id >= nextTrackId_) {
         nextTrackId_ = trackInfo.id + 1;
     }
 
-    // If track has a parent, add it back to parent's children
+    // If track has a parent, add it back to parent's children -- where it stood,
+    // not at the end. A group's order is its `childIds` order, so appending a
+    // restored middle child reorders the group even when the project order is
+    // right (#2229).
     if (trackInfo.hasParent()) {
         if (auto* parent = getTrack(trackInfo.parentId)) {
-            if (std::find(parent->childIds.begin(), parent->childIds.end(), trackInfo.id) ==
-                parent->childIds.end()) {
-                parent->childIds.push_back(trackInfo.id);
+            auto& children = parent->childIds;
+            if (std::find(children.begin(), children.end(), trackInfo.id) == children.end()) {
+                const int amongSiblings =
+                    position.siblingIndex < 0
+                        ? static_cast<int>(children.size())
+                        : std::clamp(position.siblingIndex, 0, static_cast<int>(children.size()));
+                children.insert(children.begin() + amongSiblings, trackInfo.id);
             }
         }
     }
@@ -2485,7 +2596,53 @@ const RackInfo* findRackAmong(const std::vector<ChainElement>& elements, RackId 
 
 }  // namespace
 
+RackInfo* TrackManager::getRackInPadByPath(const ChainNodePath& rackPath) {
+    if (!rackPath.isPadOwned() || rackPath.steps.empty())
+        return nullptr;
+
+    // `PadRack(grid)` on its own names the grid's own pad rack, which hangs off
+    // the device rather than sitting in a chain.
+    if (rackPath.steps.size() == 1) {
+        const auto gridPath = findDevicePath(rackPath.getPadOwnerDeviceId());
+        return gridPath.isValid() && gridPath.trackId == rackPath.trackId ? getPads(gridPath)
+                                                                          : nullptr;
+    }
+
+    // A path ending on a chain or a device names the rack that encloses it,
+    // which is the #2057 leniency the rack walk already has. The node itself has
+    // to resolve first, so a route that does not exist answers nothing rather
+    // than answering with whatever it passed through.
+    const auto& last = rackPath.steps.back();
+    if (isChainStep(last.type))
+        return getChainInPadByPath(rackPath) != nullptr ? getRackInPadByPath(rackPath.parent())
+                                                        : nullptr;
+    if (last.type == ChainStepType::Device)
+        return getDeviceInPadByPath(rackPath) != nullptr ? getRackInPadByPath(rackPath.parent())
+                                                         : nullptr;
+
+    if (last.type != ChainStepType::Rack)
+        return nullptr;
+
+    // Anything else ends on an allocated rack, sitting in a chain the pad route
+    // reaches: a pad's chain holds racks like any other chain does.
+    auto* chain = getChainInPadByPath(rackPath.parent());
+    if (chain == nullptr)
+        return nullptr;
+
+    for (auto& element : chain->elements)
+        if (magda::isRack(element) && magda::getRack(element).id == last.id)
+            return &magda::getRack(element);
+
+    return nullptr;
+}
+
 RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
+    // A pad-owned address goes to the pad route, the way `getChainByPath()`
+    // already sends one there. The walk below searches chain elements for a
+    // rack id, and a `PadRack` step carries neither (#2229).
+    if (rackPath.isPadOwned())
+        return getRackInPadByPath(rackPath);
+
     auto* track = getTrack(rackPath.trackId);
     if (!track) {
         return nullptr;
@@ -2542,12 +2699,11 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
         const bool isLast = index + 1 == rackPath.steps.size();
 
         switch (step.type) {
-            // A PadRack names a device rather than a chain element, so
-            // `findRackAmong` will not find it and this returns null, which is
-            // what a Rack step carrying a grid's id did before the pad types
-            // existed. Pads are reached through `getPads()` and
-            // `getDeviceInPadByPath()` instead (#2219).
+            // A PadRack is answered above, before the walk starts: it is always
+            // the first step of a pad-owned path, so one reaching here would be
+            // a pad step in a position the model cannot express.
             case ChainStepType::PadRack:
+                return nullptr;
             case ChainStepType::Rack: {
                 // Valid at track level, or immediately inside a chain. A Rack
                 // straight after a Rack is the sideways move above.

@@ -45,9 +45,32 @@ class DeleteTrackCommand : public UndoableCommand {
     }
 
   private:
+    /// One deleted track, with everything needed to put it back as it was.
+    struct DeletedTrack {
+        TrackInfo track;
+        /// Where it stood -- in the project and among its group's children --
+        /// so undo puts it back there rather than at the end of either.
+        TrackRestorePosition position;
+        std::vector<ClipInfo> clips;
+    };
+
+    /// @p trackId and everything under it, each with where it stood and what
+    /// it held, ordered by their places in the project.
+    static std::vector<DeletedTrack> collectSubtree(TrackId trackId);
+
     TrackId trackId_;
-    TrackInfo storedTrack_;
-    std::vector<ClipInfo> storedClips_;
+    /// The whole subtree, in the order it stood in the project.
+    ///
+    /// Deleting a group deletes its children with it, so storing only the track
+    /// the user named restored the group alone: its tracks, their devices and
+    /// their clips were gone for good, and the restored group listed children
+    /// that no longer existed (#2229).
+    std::vector<DeletedTrack> storedTracks_;
+    /// What the deletion cleared on the tracks that outlived it: their sends
+    /// into the subtree, their inputs listening to it, their sidechains on it.
+    /// None of that is inside the subtree, so restoring the subtree alone left
+    /// a project that had permanently lost them (#2229).
+    ExternalTrackRouting storedRouting_;
     bool executed_ = false;
 };
 
@@ -80,6 +103,16 @@ class DuplicateTrackCommand : public UndoableCommand {
     bool duplicateContent_;
     bool duplicateDevices_;
     TrackId duplicatedTrackId_ = INVALID_TRACK_ID;
+    /// What the first run actually made, ids and position included.
+    ///
+    /// A redo restores this rather than duplicating again. Duplicating again
+    /// allocates a fresh TrackId and fresh device, rack and chain ids, so an
+    /// undo followed by a redo would orphan every link, automation lane and
+    /// alias made against the first duplicate -- the same reason a paste
+    /// replays what it materialised and a wrap reuses its rack's id (#2229).
+    TrackInfo storedTrack_;
+    std::vector<ClipInfo> storedClips_;
+    TrackRestorePosition storedPosition_;
     bool executed_ = false;
 };
 
