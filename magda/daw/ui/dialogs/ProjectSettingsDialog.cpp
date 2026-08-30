@@ -6,6 +6,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
+#include "ProjectFormatChoices.hpp"
 
 namespace magda {
 
@@ -40,39 +41,11 @@ static_assert(kProjectMetadataFields.back().member == &ProjectMetadata::comment,
               "comment box; keep Comment last in kProjectMetadataFields.");
 constexpr size_t kMetaGridCount = kProjectMetadataFields.size() - 1;
 
-const double kSampleRates[] = {44100.0, 48000.0, 88200.0, 96000.0, 192000.0};
-const int kBitDepths[] = {16, 24, 32};  // 32 = 32-bit float
-
 void setupFieldLabel(juce::Component& owner, juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(14.0f));
     label.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     owner.addAndMakeVisible(label);
-}
-
-void fillSampleRateCombo(juce::ComboBox& c) {
-    for (int i = 0; i < static_cast<int>(std::size(kSampleRates)); ++i)
-        c.addItem(juce::String(static_cast<int>(kSampleRates[i])) + " Hz", i + 1);
-}
-
-void fillBitDepthCombo(juce::ComboBox& c) {
-    c.addItem("16-bit", 1);
-    c.addItem("24-bit", 2);
-    c.addItem("32-bit float", 3);
-}
-
-int indexOfSampleRate(double rate) {
-    for (int i = 0; i < static_cast<int>(std::size(kSampleRates)); ++i)
-        if (std::abs(kSampleRates[i] - rate) < 0.5)
-            return i + 1;
-    return 2;  // default 48000
-}
-
-int indexOfBitDepth(int depth) {
-    for (int i = 0; i < static_cast<int>(std::size(kBitDepths)); ++i)
-        if (kBitDepths[i] == depth)
-            return i + 1;
-    return 2;  // default 24
 }
 }  // namespace
 
@@ -167,9 +140,9 @@ ProjectSettingsDialog::GeneralPage::GeneralPage() {
     lengthSlider_.setTextValueSuffix(" " + tr("project_settings.bars"));
     addAndMakeVisible(lengthSlider_);
 
-    fillSampleRateCombo(sampleRateCombo_);
-    fillBitDepthCombo(renderBitCombo_);
-    fillBitDepthCombo(bounceBitCombo_);
+    daw::ui::fillSampleRateCombo(sampleRateCombo_);
+    daw::ui::fillBitDepthCombo(renderBitCombo_);
+    daw::ui::fillBitDepthCombo(bounceBitCombo_);
     addAndMakeVisible(sampleRateCombo_);
     addAndMakeVisible(renderBitCombo_);
     addAndMakeVisible(bounceBitCombo_);
@@ -181,16 +154,19 @@ int ProjectSettingsDialog::GeneralPage::preferredHeight() {
 
 void ProjectSettingsDialog::GeneralPage::load(const ProjectInfo& info) {
     lengthSlider_.setValue(info.timelineLengthBars, juce::dontSendNotification);
-    sampleRateCombo_.setSelectedId(indexOfSampleRate(info.sampleRate), juce::dontSendNotification);
-    renderBitCombo_.setSelectedId(indexOfBitDepth(info.renderBitDepth), juce::dontSendNotification);
-    bounceBitCombo_.setSelectedId(indexOfBitDepth(info.bounceBitDepth), juce::dontSendNotification);
+    sampleRateCombo_.setSelectedId(daw::ui::sampleRateItemId(info.sampleRate),
+                                   juce::dontSendNotification);
+    renderBitCombo_.setSelectedId(daw::ui::bitDepthItemId(info.renderBitDepth),
+                                  juce::dontSendNotification);
+    bounceBitCombo_.setSelectedId(daw::ui::bitDepthItemId(info.bounceBitDepth),
+                                  juce::dontSendNotification);
 }
 
 void ProjectSettingsDialog::GeneralPage::apply(ProjectInfo& info) const {
     info.timelineLengthBars = juce::jmax(1, static_cast<int>(lengthSlider_.getValue()));
-    info.sampleRate = kSampleRates[juce::jmax(0, sampleRateCombo_.getSelectedId() - 1)];
-    info.renderBitDepth = kBitDepths[juce::jmax(0, renderBitCombo_.getSelectedId() - 1)];
-    info.bounceBitDepth = kBitDepths[juce::jmax(0, bounceBitCombo_.getSelectedId() - 1)];
+    info.sampleRate = daw::ui::sampleRateForItemId(sampleRateCombo_.getSelectedId());
+    info.renderBitDepth = daw::ui::bitDepthForItemId(renderBitCombo_.getSelectedId());
+    info.bounceBitDepth = daw::ui::bitDepthForItemId(bounceBitCombo_.getSelectedId());
 }
 
 void ProjectSettingsDialog::GeneralPage::resized() {
