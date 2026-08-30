@@ -51,7 +51,29 @@ void fill(juce::KnownPluginList& list, const std::vector<juce::PluginDescription
 
 }  // namespace
 
-TEST_CASE("The file and the instrument flag together are the first answer", "[plugins][lookup]") {
+TEST_CASE("JUCE's own identifier is the first answer", "[plugins][lookup]") {
+    // A bundle shipping several effects out of one file, which is what a shell
+    // format is. Every one of them has the same path and the same role, so the
+    // file pass returns whichever the scan listed first; only the identifier
+    // tells them apart, and it is what the project saved.
+    // The decoy is added last, which puts it first: KnownPluginList::addType
+    // inserts at the front. So the file pass below, which cannot tell these two
+    // apart, returns the decoy.
+    juce::KnownPluginList list;
+    const auto wanted = installed("Shell Reverb", "Vendor", "/Library/Shell.vst3", false);
+    const auto decoy = installed("Shell Delay", "Vendor", "/Library/Shell.vst3", false);
+    fill(list, {wanted, decoy});
+
+    auto device = saved("Shell Reverb", "Vendor", "/Library/Shell.vst3", false);
+    device.uniqueId = wanted.createIdentifierString();
+
+    const auto match = magda::matchInstalledPlugin(device, list);
+
+    REQUIRE(match.found);
+    CHECK(match.description.name == "Shell Reverb");
+}
+
+TEST_CASE("The file and the instrument flag together are the second answer", "[plugins][lookup]") {
     // One file, two plugins out of it: the effect and the instrument. This is
     // the case the flag is in the first pass for, and loading the other one is
     // silent rather than an error.
@@ -75,6 +97,22 @@ TEST_CASE("A plugin that moved is found by name and vendor", "[plugins][lookup]"
 
     REQUIRE(match.found);
     CHECK(match.description.fileOrIdentifier == "/new/Pro-Q 3.vst3");
+}
+
+TEST_CASE("A moved plugin is not resolved to the same plugin in another format",
+          "[plugins][lookup]") {
+    // The common macOS case: the same plugin installed twice, as an AU and as a
+    // VST3, with the same name, vendor and role. The saved VST3 has moved, so
+    // the file pass cannot answer, and without the format in the vendor pass
+    // the AU wins by being there. It is not a substitute: its parameter layout
+    // and its state are its own, so the project would load and be wrong.
+    juce::KnownPluginList list;
+    fill(list, {installed("Pro-Q 3", "FabFilter", "/Library/ProQ.component", false, "AudioUnit")});
+
+    const auto match =
+        magda::matchInstalledPlugin(saved("Pro-Q 3", "FabFilter", "/old/ProQ.vst3", false), list);
+
+    CHECK_FALSE(match.found);
 }
 
 TEST_CASE("A plugin renamed in place is found by its file alone", "[plugins][lookup]") {
@@ -114,6 +152,19 @@ TEST_CASE("The format is part of the last pass", "[plugins][lookup]") {
     fill(list, {installed("Serum", "Xfer Records", "/Library/Serum.component", true, "AudioUnit")});
 
     const auto match = magda::matchInstalledPlugin(saved("Serum", "", "", true), list);
+
+    CHECK_FALSE(match.found);
+}
+
+TEST_CASE("A saved device with no name matches nothing by name", "[plugins][lookup]") {
+    // The other half of the same rule as the file guard below. A device with
+    // neither a name nor a file reaches the app's lookup now that the call
+    // sites no longer refuse to search, and it must not resolve to whichever
+    // scanned plugin happens to have an empty name.
+    juce::KnownPluginList list;
+    fill(list, {installed("", "", "/Library/Nameless.vst3", false)});
+
+    const auto match = magda::matchInstalledPlugin(saved("", "", "", false), list);
 
     CHECK_FALSE(match.found);
 }

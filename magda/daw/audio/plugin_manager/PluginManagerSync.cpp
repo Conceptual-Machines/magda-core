@@ -2146,7 +2146,13 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
         // External plugin. Which installed plugin the saved device meant is one
         // question with one answer (ExternalPluginLookup.hpp), asked here, by
         // the track path below, and by the native engine's device factory.
-        if (device.uniqueId.isNotEmpty() || device.fileOrIdentifier.isNotEmpty()) {
+        //
+        // Asked for every external device rather than only for one that saved
+        // an id or a file. The lookup resolves an imported project by name and
+        // format, which is the case a device with neither of those is, and the
+        // guard that used to stand here meant the pass written for that case
+        // could never run.
+        {
             auto desc = matchInstalledPlugin(device, engine_.getPluginManager().knownPluginList)
                             .description;
 
@@ -2291,8 +2297,10 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
         }
     } else {
         // External plugin. The same lookup the rack path above asks, and the one
-        // the native engine asks (ExternalPluginLookup.hpp).
-        if (device.uniqueId.isNotEmpty() || device.fileOrIdentifier.isNotEmpty()) {
+        // the native engine asks (ExternalPluginLookup.hpp), for every external
+        // device rather than only one that saved an id or a file: see the note
+        // on the rack path.
+        {
             const auto match =
                 matchInstalledPlugin(device, engine_.getPluginManager().knownPluginList);
             auto desc = match.description;
@@ -2348,7 +2356,6 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
                 }
                 return nullptr;  // Don't proceed with a failed plugin
             }
-        } else {
         }
     }
 

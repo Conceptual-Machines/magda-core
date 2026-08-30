@@ -41,31 +41,39 @@ ExternalPluginMatch matchInstalledPlugin(const DeviceInfo& device,
                                          const juce::KnownPluginList& knownPlugins) {
     const auto saved = describeSavedPlugin(device);
 
-    // The four passes, as predicates over one list. Written this way rather
-    // than as four loops because what matters about them is the order, and the
-    // order is invisible when it is four hundred lines of the same loop.
+    // The passes, as predicates over one list. Written this way rather than as
+    // five loops because what matters about them is the order, and the order is
+    // invisible when it is four hundred lines of the same loop.
     //
-    // The two file passes ask nothing when the device saved no file, because an
-    // empty path matches every description that also has none and that is a
-    // match on the absence of evidence. The app guarded this at its call sites
-    // by declining to search at all; the guard belongs to the pass that needs
-    // it, so the other two still answer.
+    // A pass asks nothing when the device saved nothing for it to ask with. An
+    // empty path matches every description that also has none, and an empty
+    // name matches every plugin with no name: both are matches on the absence
+    // of evidence, and they would resolve a device that saved neither to
+    // whichever scanned plugin happens to be missing the same field.
     const auto hasFile = device.fileOrIdentifier.isNotEmpty();
+    const auto hasName = device.name.isNotEmpty();
+    const auto hasIdentity = device.uniqueId.isNotEmpty();
 
-    const std::array<std::function<bool(const juce::PluginDescription&)>, 4> passes{
+    const std::array<std::function<bool(const juce::PluginDescription&)>, 5> passes{
+        [&](const juce::PluginDescription& known) {
+            return hasIdentity && known.createIdentifierString() == device.uniqueId;
+        },
         [&](const juce::PluginDescription& known) {
             return hasFile && known.fileOrIdentifier == device.fileOrIdentifier &&
                    known.isInstrument == device.isInstrument;
         },
         [&](const juce::PluginDescription& known) {
-            return known.name == device.name && known.manufacturerName == device.manufacturer &&
+            return hasName && known.name == device.name &&
+                   known.manufacturerName == device.manufacturer &&
+                   known.pluginFormatName == saved.pluginFormatName &&
                    known.isInstrument == device.isInstrument;
         },
         [&](const juce::PluginDescription& known) {
             return hasFile && known.fileOrIdentifier == device.fileOrIdentifier;
         },
         [&](const juce::PluginDescription& known) {
-            return known.name == device.name && known.pluginFormatName == saved.pluginFormatName;
+            return hasName && known.name == device.name &&
+                   known.pluginFormatName == saved.pluginFormatName;
         },
     };
 

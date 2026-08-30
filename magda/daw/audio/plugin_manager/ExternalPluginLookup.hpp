@@ -52,20 +52,36 @@ struct ExternalPluginMatch {
 juce::PluginDescription describeSavedPlugin(const DeviceInfo& device);
 
 /**
- * @brief The installed plugin @p device names, searched for in four passes.
+ * @brief The installed plugin @p device names, searched for in five passes.
  *
  * In order, each stricter than the one after it:
  *
- * 1. The file it was loaded from, and the instrument flag agreeing. The flag is
+ * 1. JUCE's own identifier, which is what DeviceInfo::uniqueId holds
+ *    (PluginDescription::createIdentifierString). Exact identity, and it is
+ *    first because nothing below it can tell two plugins apart that a bundle
+ *    ships out of one file with one role: a shell format's dozen effects share
+ *    a path, and the pass below would return whichever of them the scan listed
+ *    first.
+ * 2. The file it was loaded from, and the instrument flag agreeing. The flag is
  *    checked here because a plugin often ships an effect and an instrument out
  *    of one file, and loading the wrong one is silent.
- * 2. Name, vendor and the instrument flag. What answers when the plugin moved.
- * 3. The file alone. What answers when a plugin was renamed in place.
- * 4. Name and format alone. What answers for a project that came from another
+ * 3. Name, vendor, format and the instrument flag. What answers when the plugin
+ *    moved. The format is required because a machine commonly has the same
+ *    plugin twice, as an AU and as a VST3, with the same name, vendor and role:
+ *    the two have different parameter layouts and different state, so
+ *    substituting one for the other loads a plugin and renders a different
+ *    project.
+ * 4. The file alone. What answers when a plugin was renamed in place.
+ * 5. Name and format alone. What answers for a project that came from another
  *    host: a DAWproject carries the plugin's name and its class id but neither
  *    our file path nor, reliably, its role -- Bitwig exports Serum, an
  *    instrument, as an audio effect -- so neither the vendor nor the flag can
  *    be required by the pass that has to resolve it.
+ *
+ * A pass that has nothing to ask with asks nothing: a device that saved no file
+ * skips the file passes, one with no name skips the name passes, one with no
+ * identifier skips the first. An empty field matching an empty field is a match
+ * on the absence of evidence.
  */
 ExternalPluginMatch matchInstalledPlugin(const DeviceInfo& device,
                                          const juce::KnownPluginList& knownPlugins);

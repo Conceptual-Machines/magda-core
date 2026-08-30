@@ -144,8 +144,14 @@ class StubPlugin final : public juce::AudioPluginInstance {
             if (auto position = head->getPosition())
                 positionSeen = *position;
 
+        // Only the channels it has outputs for, which is what a real plugin
+        // does: JUCE hands it a buffer as wide as its inputs or its outputs,
+        // whichever is more, and a mono-out plugin leaves everything past its
+        // one output holding the input it was given.
+        const auto written = std::min(buffer.getNumChannels(), getTotalNumOutputChannels());
+
         const auto level = gain->getValue();
-        for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
+        for (int channel = 0; channel < written; ++channel) {
             auto* samples = buffer.getWritePointer(channel);
             const auto marker = static_cast<float>(channel + 1) * kChannelMarker;
 
@@ -678,4 +684,85 @@ TEST_CASE("A host that gave the engine no formats is told so", "[engine][externa
 
     CHECK(result.device == nullptr);
     CHECK(result.failure.contains("no plugin formats"));
+}
+
+TEST_CASE("A plugin with more inputs than outputs fills the slot from its outputs",
+          "[engine][external]") {
+    // Stereo in, mono out, and a mono sidechain after them: processed at three
+    // channels, of which the plugin writes one. The two channels past its
+    // output hold what was copied in -- the right half of the input, and the
+    // key -- and reading those back as output hands the chain its own input in
+    // place of an answer.
+    auto plugin = std::make_unique<StubPlugin>(2, 1, 1);
+    auto* raw = plugin.get();
+
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+    const auto context = contextFor();
+    device.prepare(context);
+
+    ParamArena arena({0.0f, 1.0f, 1.0f, 0.0f});
+    Block block(context, 2);
+    juce::FloatVectorOperations::fill(block.buffer.getWritePointer(0), 1.0f,
+                                      block.buffer.getNumSamples());
+    juce::FloatVectorOperations::fill(block.buffer.getWritePointer(1), -1.0f,
+                                      block.buffer.getNumSamples());
+
+    juce::AudioBuffer<float> key(1, context.maxBlockSize);
+    juce::FloatVectorOperations::fill(key.getWritePointer(0), 0.5f, key.getNumSamples());
+
+    auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
+    deviceBlock.sidechain = juce::dsp::AudioBlock<const float>(key);
+    device.process(deviceBlock);
+
+    REQUIRE(raw->channelsSeen == 3);
+
+    // The one output, on both sides. Not the input's right channel and not the
+    // key, which are what channels one and two of the plugin's buffer hold.
+    const auto expected = 1.0f + StubPlugin::kChannelMarker;
+    CHECK(block.buffer.getSample(0, 0) == Catch::Approx(expected));
+    CHECK(block.buffer.getSample(1, 0) == Catch::Approx(expected));
+}
+
+TEST_CASE("A stereo-in mono-out plugin does not leave its input in the right channel",
+          "[engine][external]") {
+    // The same rule where the widths happen to agree: two channels in, one
+    // written, and the block is two channels wide. Taking the fast path here
+    // would leave the input sitting in the right channel, which is neither
+    // silence nor the plugin's answer.
+    auto plugin = std::make_unique<StubPlugin>(2, 1, 0);
+
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+    const auto context = contextFor();
+    device.prepare(context);
+
+    ParamArena arena({0.0f, 1.0f, 1.0f, 0.0f});
+    Block block(context, 2);
+    block.fill(0.5f);
+
+    auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
+    device.process(deviceBlock);
+
+    const auto expected = 0.5f + StubPlugin::kChannelMarker;
+    CHECK(block.buffer.getSample(0, 0) == Catch::Approx(expected));
+    CHECK(block.buffer.getSample(1, 0) == Catch::Approx(expected));
+}
+
+TEST_CASE("A second prepare at the same settings does not prepare the plugin again",
+          "[engine][external]") {
+    auto plugin = std::make_unique<StubPlugin>();
+    auto* raw = plugin.get();
+
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+    device.prepare(contextFor());
+    device.prepare(contextFor());
+
+    // Once. The fork does not release a plugin's resources before re-preparing
+    // it -- with VST3 that shuts down the MIDI input buses for good -- so a
+    // device retained across a re-prepare at settings that did not move is left
+    // alone rather than torn down and rebuilt.
+    CHECK(raw->prepareCount == 1);
+
+    device.prepare(contextFor(2, 128));
+    CHECK(raw->prepareCount == 2);
+    CHECK(raw->preparedBlockSize == 128);
 }

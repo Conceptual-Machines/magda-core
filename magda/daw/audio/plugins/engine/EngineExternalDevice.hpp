@@ -169,6 +169,11 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     /// chain's: max(max(1, inputs), outputs).
     int processChannels_ = 0;
 
+    /// How many of those channels the plugin writes. Not the same number
+    /// whenever it has more inputs than outputs, and it is this one the chain
+    /// is filled from: the channels between the two carry input.
+    int outputChannels_ = 0;
+
     /// Input channels on the plugin's main bus, and how many it has after them.
     /// The second is where a sidechain key lands, which is how every dynamics
     /// plugin takes one.
@@ -187,6 +192,11 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     juce::MidiBuffer midi_;
 
     double sampleRate_ = 44100.0;
+
+    /// What the instance was last prepared at, so a second prepare at the same
+    /// settings does not prepare it again. See prepare().
+    int preparedBlockSize_ = 0;
+
     int latencySamples_ = 0;
     int midiInputBoundBytes_ = magda::engine::kMaxMidiBytesPerPort;
     bool offlineRender_ = false;

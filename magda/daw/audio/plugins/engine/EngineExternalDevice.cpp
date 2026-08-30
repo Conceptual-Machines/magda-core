@@ -159,8 +159,6 @@ EngineExternalDevice::~EngineExternalDevice() {
 }
 
 void EngineExternalDevice::prepare(const magda::engine::RenderContext& context) {
-    sampleRate_ = context.sampleRate;
-
     // Before prepareToPlay, because it is what a plugin reads when it decides
     // how much work a block is worth: an oversampling saturator sizes its
     // filters here.
@@ -168,8 +166,21 @@ void EngineExternalDevice::prepare(const magda::engine::RenderContext& context) 
     instance_->setPlayHead(playHead_.get());
 
     instance_->setRateAndBufferSizeDetails(context.sampleRate, context.maxBlockSize);
-    instance_->prepareToPlay(context.sampleRate, context.maxBlockSize);
+
+    // Prepared once, and again only when the rate or the block size actually
+    // moved. This is the fork's rule and its comment is worth carrying with it:
+    // it used to call releaseResources() before re-preparing, and with VST3
+    // that shuts down the MIDI input buses with no way to get them back, which
+    // breaks every synth. So a device the store retains across a re-prepare at
+    // the same settings is left alone rather than torn down and rebuilt.
+    if (!prepared_ || context.sampleRate != sampleRate_ ||
+        context.maxBlockSize != preparedBlockSize_) {
+        instance_->prepareToPlay(context.sampleRate, context.maxBlockSize);
+    }
+
     prepared_ = true;
+    preparedBlockSize_ = context.maxBlockSize;
+    sampleRate_ = context.sampleRate;
 
     latencySamples_ = instance_->getLatencySamples();
 
@@ -187,6 +198,14 @@ void EngineExternalDevice::prepare(const magda::engine::RenderContext& context) 
     // The fork's width, verbatim: a plugin is processed at its own channel
     // count whatever the chain around it is, and never at none.
     processChannels_ = std::max({1, totalInputs, totalOutputs});
+
+    // What the plugin actually writes, which is not the same number and is the
+    // one the chain has to be filled from. A plugin with more inputs than
+    // outputs -- a stereo-in mono-out utility, anything with a sidechain -- is
+    // processed at the wider count, and the channels past its outputs still
+    // hold what was copied in. Reading those back as output hands the chain its
+    // own input, or a sidechain key, in place of the second half of a signal.
+    outputChannels_ = std::max(1, totalOutputs);
 
     // Wide enough for either path: the block's channels when the plugin's width
     // already matches, the plugin's when it does not.
@@ -375,13 +394,19 @@ void EngineExternalDevice::processThroughScratch(magda::engine::DeviceBlock& blo
     for (int channel = 0; channel < destChannels; ++channel) {
         auto* destination = block.audio.getChannelPointer(static_cast<std::size_t>(channel));
 
-        if (channel < processChannels_)
+        if (channel < outputChannels_)
             juce::FloatVectorOperations::copy(destination, audio.getReadPointer(channel),
                                               numSamples);
         else if (channel < 2)
             // A mono plugin in a stereo chain: its one output goes to both
             // sides, so what follows it has two channels to read rather than a
             // silent right.
+            //
+            // Bounded by the plugin's output count and not by the width it was
+            // processed at. Those differ for anything with more inputs than
+            // outputs, and there the channels between the two hold input rather
+            // than answer: a sidechain key, or the right half of a signal the
+            // plugin summed to mono.
             juce::FloatVectorOperations::copy(destination, audio.getReadPointer(0), numSamples);
         else
             juce::FloatVectorOperations::clear(destination, numSamples);
@@ -401,10 +426,17 @@ void EngineExternalDevice::process(magda::engine::DeviceBlock& block) {
     else
         midi_.clear();
 
-    if (destChannels == processChannels_ && sidechainInputChannels_ == 0) {
-        // The plugin's width and the block's already agree, so it processes the
-        // executor's own buffer and nothing is copied. The fork's fast path,
-        // and the one almost every plugin in a stereo chain takes.
+    if (destChannels == processChannels_ && sidechainInputChannels_ == 0 &&
+        outputChannels_ >= destChannels) {
+        // The plugin's width and the block's already agree and it writes every
+        // channel the slot will be read at, so it processes the executor's own
+        // buffer and nothing is copied. The fork's fast path, and the one
+        // almost every plugin in a stereo chain takes.
+        //
+        // The output count is part of the test rather than a detail: a
+        // stereo-in mono-out plugin matches the first half of it and leaves the
+        // right channel holding the input it was handed, which is not silence
+        // and is not its answer.
         for (int channel = 0; channel < destChannels; ++channel)
             channels_[static_cast<std::size_t>(channel)] =
                 block.audio.getChannelPointer(static_cast<std::size_t>(channel));
