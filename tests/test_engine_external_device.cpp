@@ -1126,3 +1126,34 @@ TEST_CASE("Saved state that is not a chunk this plugin understands is refused",
     CHECK(raw->stateRestores == 0);
     CHECK(raw->fixed->getValue() == Catch::Approx(0.0f));
 }
+
+TEST_CASE("The asynchronous entry point reports a missing plugin the same way",
+          "[engine][external]") {
+    // Both entry points end at the same transaction, which is what the cases
+    // above drive; what is its own here is that a failure reaches the caller
+    // through the callback rather than through a return value, so a session
+    // that asked for a plugin it does not have is told rather than left
+    // waiting.
+    juce::KnownPluginList empty;
+    juce::AudioPluginFormatManager formats;
+
+    magda::DeviceInfo missing = externalDevice();
+    missing.name = "Massive X";
+    missing.fileOrIdentifier = "/Library/MassiveX.vst3";
+
+    const adapter::ExternalPluginServices services{
+        .formats = &formats, .knownPlugins = &empty, .context = contextFor()};
+
+    bool called = false;
+    adapter::ExternalDeviceResult delivered;
+    adapter::createEngineExternalDeviceAsync(missing, services, false,
+                                             [&](adapter::ExternalDeviceResult result) {
+                                                 called = true;
+                                                 delivered = std::move(result);
+                                             });
+
+    REQUIRE(called);
+    CHECK(delivered.device == nullptr);
+    CHECK(delivered.failure.contains("Massive X"));
+    CHECK(delivered.restoredParameters.empty());
+}
