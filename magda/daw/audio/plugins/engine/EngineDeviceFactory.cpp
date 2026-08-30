@@ -206,7 +206,7 @@ ExternalDeviceResult createEngineExternalDevice(const magda::DeviceInfo& device,
 
 ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPluginInstance> instance,
                                                 const juce::String& error,
-                                                const juce::PluginDescription& requested,
+                                                const RequestedPlugin& requested,
                                                 const CurrentDeviceLookup& currentDevice,
                                                 bool offlineRender) {
     // The model first, before anything is done with the instance. Everything
@@ -226,8 +226,12 @@ ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPlugi
     // And it has to still be the same plugin. A device whose plugin was
     // replaced while this one loaded is not waiting for this answer, and
     // restoring onto it would put one plugin's saved patch on another.
-    if (magda::describeSavedPlugin(*device).createIdentifierString() !=
-        requested.createIdentifierString())
+    //
+    // The model's identity on both sides. The scanned description's identifier
+    // carries the plugin's numeric uid and a device's saved fields do not, so
+    // comparing this against that would find every unchanged plugin changed and
+    // refuse every load there is.
+    if (!magda::savedPluginIdentity(*device).namesSamePluginAs(requested.identity))
         return {.device = {},
                 .failure =
                     "the device changed plugin while \"" + requested.name + "\" was loading"};
@@ -253,9 +257,10 @@ void createEngineExternalDeviceAsync(const magda::DeviceInfo& device,
     // to move on: see CurrentDeviceLookup.
     services.formats->createPluginInstanceAsync(
         resolved.description, services.context.sampleRate, services.context.maxBlockSize,
-        [requested = resolved.description, currentDevice = std::move(currentDevice), offlineRender,
-         completed = std::move(completed)](std::unique_ptr<juce::AudioPluginInstance> instance,
-                                           const juce::String& error) {
+        [requested = RequestedPlugin{.identity = magda::savedPluginIdentity(device),
+                                     .name = resolved.description.name},
+         currentDevice = std::move(currentDevice), offlineRender, completed = std::move(completed)](
+            std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error) {
             completed(completeExternalPluginLoad(std::move(instance), error, requested,
                                                  currentDevice, offlineRender));
         });

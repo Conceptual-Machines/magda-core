@@ -8,6 +8,7 @@
 #include "core/DeviceInfo.hpp"
 #include "exec/EngineDevice.hpp"
 #include "exec/RenderContext.hpp"
+#include "plugin_manager/ExternalPluginLookup.hpp"
 #include "plugin_manager/ExternalPluginState.hpp"
 
 /**
@@ -188,6 +189,22 @@ ExternalDeviceResult createEngineExternalDevice(const magda::DeviceInfo& device,
 using CurrentDeviceLookup = std::function<const magda::DeviceInfo*()>;
 
 /**
+ * @brief What an asynchronous load remembers about what it asked for.
+ *
+ * The identity is the model's, taken when the load was requested, so that
+ * comparing it with the model's identity at completion compares like with like.
+ * Not the scanned description's identifier: that carries the plugin's numeric
+ * uid, a device's saved fields do not, and comparing the two would call every
+ * unchanged plugin a change.
+ */
+struct RequestedPlugin {
+    magda::SavedPluginIdentity identity;
+
+    /// For the messages, which name a plugin rather than an identifier.
+    juce::String name;
+};
+
+/**
  * @brief The end of an asynchronous load, once the instance exists.
  *
  * The seam the callback below ends at, and a host with a loader of its own
@@ -201,7 +218,7 @@ using CurrentDeviceLookup = std::function<const magda::DeviceInfo*()>;
  */
 ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPluginInstance> instance,
                                                 const juce::String& error,
-                                                const juce::PluginDescription& requested,
+                                                const RequestedPlugin& requested,
                                                 const CurrentDeviceLookup& currentDevice,
                                                 bool offlineRender = false);
 

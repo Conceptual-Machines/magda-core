@@ -86,4 +86,42 @@ juce::PluginDescription describeSavedPlugin(const DeviceInfo& device);
 ExternalPluginMatch matchInstalledPlugin(const DeviceInfo& device,
                                          const juce::KnownPluginList& knownPlugins);
 
+/**
+ * @brief How a device says which plugin it is, as the model records it.
+ *
+ * Two forms, because a project may carry either. @ref identifier is JUCE's own
+ * identifier string, which is what DeviceInfo::uniqueId holds for a device
+ * added from the browser; @ref fields is the saved name, format and file, which
+ * is all an imported project has.
+ *
+ * Both are needed and neither replaces the other. The identifier contains the
+ * plugin's numeric uid, which a description reconstructed from saved fields
+ * does not have: comparing one against the other is comparing a real uid
+ * against a zero, and it never matches. So a comparison has to be told which
+ * form it is looking at, which is what this type is for.
+ */
+struct SavedPluginIdentity {
+    juce::String identifier;
+    juce::String fields;
+
+    /**
+     * @brief Whether @p other names the same plugin.
+     *
+     * By identifier when both have one, which is exact. By the saved fields
+     * otherwise, which is what an imported device has and what a device that
+     * has only just been resolved has: a device that gains a scanned identifier
+     * has not changed plugin, and a comparison that read that as a change would
+     * refuse an answer it should have taken.
+     */
+    bool namesSamePluginAs(const SavedPluginIdentity& other) const {
+        if (identifier.isNotEmpty() && other.identifier.isNotEmpty())
+            return identifier == other.identifier;
+
+        return fields == other.fields;
+    }
+};
+
+/** What @p device records about which plugin it names. */
+SavedPluginIdentity savedPluginIdentity(const DeviceInfo& device);
+
 }  // namespace magda

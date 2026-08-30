@@ -1170,7 +1170,8 @@ TEST_CASE("A load that finishes late restores from the model as it is now", "[en
     auto* raw = plugin.get();
 
     auto model = externalDeviceSaving(1.0f, 0.25f);
-    const auto requested = magda::describeSavedPlugin(model);
+    const adapter::RequestedPlugin requested{.identity = magda::savedPluginIdentity(model),
+                                             .name = model.name};
 
     // The edit, made while the plugin was loading.
     model.parameters[1].currentValue = 0.6f;
@@ -1191,7 +1192,9 @@ TEST_CASE("A load that finishes late restores from the model as it is now", "[en
 TEST_CASE("A device deleted while its plugin loaded is not completed", "[engine][external]") {
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
 
-    const auto requested = magda::describeSavedPlugin(externalDevice());
+    const auto device = externalDevice();
+    const adapter::RequestedPlugin requested{.identity = magda::savedPluginIdentity(device),
+                                             .name = device.name};
     const auto result = adapter::completeExternalPluginLoad(
         std::move(plugin), {}, requested, []() -> const magda::DeviceInfo* { return nullptr; });
 
@@ -1211,7 +1214,8 @@ TEST_CASE("A device that changed plugin while loading is not completed", "[engin
     auto requestedDevice = externalDevice();
     requestedDevice.name = "Massive X";
     requestedDevice.fileOrIdentifier = "/Library/MassiveX.vst3";
-    const auto requested = magda::describeSavedPlugin(requestedDevice);
+    const adapter::RequestedPlugin requested{
+        .identity = magda::savedPluginIdentity(requestedDevice), .name = requestedDevice.name};
 
     const auto result = adapter::completeExternalPluginLoad(std::move(plugin), {}, requested,
                                                             [&]() { return &model; });
@@ -1222,11 +1226,68 @@ TEST_CASE("A device that changed plugin while loading is not completed", "[engin
 
 TEST_CASE("A load that failed reports the loader's reason", "[engine][external]") {
     auto model = externalDevice();
-    const auto requested = magda::describeSavedPlugin(model);
+    const adapter::RequestedPlugin requested{.identity = magda::savedPluginIdentity(model),
+                                             .name = model.name};
 
     const auto result = adapter::completeExternalPluginLoad(nullptr, "the file was not there",
                                                             requested, [&]() { return &model; });
 
     CHECK(result.device == nullptr);
     CHECK(result.failure.contains("the file was not there"));
+}
+
+TEST_CASE("A scanned plugin's own identifier is not read as a change", "[engine][external]") {
+    // The identity a project saves for a device added from the browser is
+    // JUCE's identifier string for the scanned plugin, and that string carries
+    // the plugin's numeric uid. A description rebuilt from the device's saved
+    // name, format and file has no uid to put in it, so comparing one form
+    // against the other finds every unchanged plugin changed -- and refuses
+    // every load that ever succeeds.
+    juce::PluginDescription scanned;
+    scanned.name = "Massive X";
+    scanned.manufacturerName = "NI";
+    scanned.fileOrIdentifier = "/Library/MassiveX.vst3";
+    scanned.pluginFormatName = "VST3";
+    scanned.uniqueId = 0x4d617373;  // what a scan reports and a rebuild cannot
+
+    auto model = externalDeviceSaving(1.0f, 0.5f);
+    model.name = scanned.name;
+    model.manufacturer = scanned.manufacturerName;
+    model.fileOrIdentifier = scanned.fileOrIdentifier;
+    model.uniqueId = scanned.createIdentifierString();
+
+    const adapter::RequestedPlugin requested{.identity = magda::savedPluginIdentity(model),
+                                             .name = scanned.name};
+
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    const auto result = adapter::completeExternalPluginLoad(std::move(plugin), {}, requested,
+                                                            [&]() { return &model; });
+
+    REQUIRE(result.device != nullptr);
+    CHECK(result.failure.isEmpty());
+    CHECK(raw->tone->getValue() == Catch::Approx(0.5f));
+}
+
+TEST_CASE("A device that gained a scanned identifier has not changed plugin",
+          "[engine][external]") {
+    // An imported project has no identifier until something resolves it. The
+    // device gaining one while its plugin loaded is not a change of plugin, and
+    // a comparison that read it as one would throw away a good load.
+    auto model = externalDeviceSaving(1.0f, 0.5f);
+    model.name = "Massive X";
+    model.fileOrIdentifier = "/Library/MassiveX.vst3";
+
+    const adapter::RequestedPlugin requested{.identity = magda::savedPluginIdentity(model),
+                                             .name = model.name};
+
+    model.uniqueId = "VST3-Massive X-1234abcd-4d617373";
+
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    const auto result = adapter::completeExternalPluginLoad(std::move(plugin), {}, requested,
+                                                            [&]() { return &model; });
+
+    REQUIRE(result.device != nullptr);
+    CHECK(result.failure.isEmpty());
 }
