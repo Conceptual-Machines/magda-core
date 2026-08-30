@@ -67,6 +67,30 @@ inline double evaluatePitchExpressionCurve(const std::vector<MidiPitchExpression
     return points.back().semitones;
 }
 
+/**
+ * @brief Whether the segment starting at @p index can take a bend at all.
+ *
+ * A segment between two points at the same pitch cannot: the shape is a warp of
+ * the travel between the endpoints and there is none, so `evalSegment` returns
+ * the flat value whatever tension it is handed. Same property the automation
+ * lanes and the LFO editor have.
+ *
+ * Asked by the hit test as well as by the drag, from here rather than twice,
+ * because the two have to draw the line in the same place and with the same
+ * epsilon. When they did not, a flat segment advertised the bend cursor,
+ * accepted the gesture, did nothing with it, and still committed an undo entry
+ * on release (#2198 review).
+ */
+inline bool pitchExpressionSegmentCanBend(const std::vector<MidiPitchExpressionPoint>& points,
+                                          std::size_t index) {
+    if (index + 1 >= points.size())
+        return false;
+
+    const auto& left = points[index];
+    const auto& right = points[index + 1];
+    return (right.beat - left.beat) > 0.0 && std::abs(right.semitones - left.semitones) >= 1.0e-6;
+}
+
 /// The range a tension may take, matching every other curve in the app.
 inline constexpr double kMaxPitchExpressionTension = 3.0;
 

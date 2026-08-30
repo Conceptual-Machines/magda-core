@@ -118,6 +118,63 @@ TEST_CASE("A flat segment stays flat however it is bent", "[pitch_expression]") 
 }
 
 // ============================================================================
+// Which segments the gesture is offered on
+// ============================================================================
+
+TEST_CASE("A segment with pitch to travel can be bent", "[pitch_expression]") {
+    const std::vector<MidiPitchExpressionPoint> points{pt(0.0, 0.0), pt(1.0, 4.0), pt(2.0, 4.0)};
+
+    CHECK(pitchExpressionSegmentCanBend(points, 0));
+}
+
+TEST_CASE("A flat segment is not offered the gesture at all", "[pitch_expression]") {
+    // Not merely refused once the drag is under way: the hit test asks this too,
+    // so a flat segment never shows the bend cursor, never starts a drag, and
+    // never commits the undo entry that drag would have ended in.
+    const std::vector<MidiPitchExpressionPoint> points{pt(0.0, 0.0), pt(1.0, 4.0), pt(2.0, 4.0)};
+
+    CHECK_FALSE(pitchExpressionSegmentCanBend(points, 1));
+}
+
+TEST_CASE("There is no segment past the last point", "[pitch_expression]") {
+    const std::vector<MidiPitchExpressionPoint> points{pt(0.0, 0.0), pt(1.0, 4.0)};
+
+    CHECK_FALSE(pitchExpressionSegmentCanBend(points, 1));
+    CHECK_FALSE(pitchExpressionSegmentCanBend(points, 9));
+    CHECK_FALSE(pitchExpressionSegmentCanBend({}, 0));
+}
+
+TEST_CASE("A zero-width segment cannot be bent either", "[pitch_expression]") {
+    // Two points stacked on the same beat: there is no travel along the segment
+    // to warp, and the parameter the drag works in would divide by that width.
+    const std::vector<MidiPitchExpressionPoint> points{pt(1.0, 0.0), pt(1.0, 4.0)};
+
+    CHECK_FALSE(pitchExpressionSegmentCanBend(points, 0));
+}
+
+TEST_CASE("What can be bent is exactly what bending changes", "[pitch_expression]") {
+    // The predicate and the evaluator have to agree, or the editor offers a
+    // gesture that does nothing -- which is the defect it was added for.
+    //
+    // Segments with width only. A zero-width segment has no interior to ask
+    // about: every beat in it is also its own endpoints, where the evaluator
+    // answers with an end value rather than with a shape, so "does bending
+    // change the middle" is not a question it has.
+    const std::vector<std::vector<MidiPitchExpressionPoint>> cases{
+        {pt(0.0, 0.0, 2.0), pt(2.0, 6.0)},   // travels: bendable, and bends
+        {pt(0.0, 3.0, 2.0), pt(2.0, 3.0)}};  // flat: neither
+
+    for (const auto& points : cases) {
+        const double straight = 0.5 * (points[0].semitones + points[1].semitones);
+        const double midBeat = 0.5 * (points[0].beat + points[1].beat);
+        const bool bends =
+            std::abs(evaluatePitchExpressionCurve(points, midBeat) - straight) > 1.0e-6;
+
+        CHECK(pitchExpressionSegmentCanBend(points, 0) == bends);
+    }
+}
+
+// ============================================================================
 // The inverse the drag uses
 // ============================================================================
 

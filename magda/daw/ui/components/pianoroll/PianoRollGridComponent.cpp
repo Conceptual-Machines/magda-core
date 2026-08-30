@@ -3003,6 +3003,12 @@ PianoRollGridComponent::hitTestExpressionSegment(juce::Point<int> pos) const {
             const double centerY = noteNumberToY(note.noteNumber) + noteHeight_ * 0.5;
 
             for (size_t p = 0; p + 1 < points.size(); ++p) {
+                // Segments that cannot be bent are not offered: the cursor is a
+                // promise, and a drag that starts here would end in a commit
+                // that changed nothing.
+                if (!pitchExpressionSegmentCanBend(points, p))
+                    continue;
+
                 const int segStartX = beatToPixel(noteStartDisplayBeat + points[p].beat);
                 const int segEndX = beatToPixel(noteStartDisplayBeat + points[p + 1].beat);
                 if (pos.x < segStartX || pos.x > segEndX || segEndX <= segStartX)
@@ -3227,7 +3233,10 @@ void PianoRollGridComponent::handleExpressionMouseDrag(const juce::MouseEvent& e
 void PianoRollGridComponent::bendExpressionSegment(const MidiNote& note,
                                                    const juce::MouseEvent& e) {
     const auto index = static_cast<size_t>(expressionTensionSegmentIndex_);
-    if (index + 1 >= expressionWorkingPoints_.size())
+
+    // The same question the hit test asked before offering the gesture, asked
+    // again because the points can move under a live drag.
+    if (!pitchExpressionSegmentCanBend(expressionWorkingPoints_, index))
         return;
 
     auto& left = expressionWorkingPoints_[index];
@@ -3235,13 +3244,6 @@ void PianoRollGridComponent::bendExpressionSegment(const MidiNote& note,
 
     const double span = right.beat - left.beat;
     const double rise = right.semitones - left.semitones;
-
-    // A segment between two points at the same pitch has no curve to bend: the
-    // shape is a warp of the travel between the endpoints, and there is none.
-    // Same property the automation lanes and the LFO editor have, and leaving
-    // it alone is better than giving glides a second kind of maths.
-    if (span <= 0.0 || std::abs(rise) < 1.0e-6)
-        return;
 
     const double noteStartDisplayBeat = displayBeatForClipBeat(expressionClipId_, note.startBeat);
     const double relBeat = pixelToBeat(e.x) - noteStartDisplayBeat;
