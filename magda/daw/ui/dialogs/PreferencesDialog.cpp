@@ -193,12 +193,9 @@ class GeneralPage : public juce::Component {
                         1.0, 50.0, 0.5, 1);
 
         setupSectionHeader(*this, timelineHeader, tr("preferences.section.timeline"));
-        // Both are seeds for new projects. The length a project actually has is
-        // its own and is edited in File > Project Settings; changing this one
-        // does not touch a project that already exists.
-        setupTextSlider(*this, defaultLengthSlider, defaultLengthLabel,
-                        tr("preferences.slider.default_total_length"), 16.0, 4096.0, 16.0,
-                        magda::TechnicalTextToken::Bars, 0, true);
+        // How much of the timeline is on screen, not how long it is. The default
+        // length a new project gets sits with the other new-project defaults on
+        // the Rendering tab.
         setupTextSlider(*this, viewDurationSlider, viewDurationLabel,
                         tr("preferences.slider.default_view"), 4.0, 128.0, 1.0,
                         magda::TechnicalTextToken::Bars, 0, true);
@@ -304,8 +301,6 @@ class GeneralPage : public juce::Component {
                                           juce::dontSendNotification);
         zoomShiftSensitivitySlider.setValue(config.getZoomInSensitivityShift(),
                                             juce::dontSendNotification);
-        defaultLengthSlider.setValue(config.getDefaultTimelineLengthBars(),
-                                     juce::dontSendNotification);
         viewDurationSlider.setValue(config.getDefaultZoomViewBars(), juce::dontSendNotification);
         followPlayheadToggle.setToggleState(config.getFollowPlayhead(), juce::dontSendNotification);
         stopUpdatesPlayheadToggle.setToggleState(config.getStopUpdatesPlayhead(),
@@ -370,7 +365,6 @@ class GeneralPage : public juce::Component {
         config.setZoomOutSensitivity(zoomOutSensitivitySlider.getValue());
         config.setZoomInSensitivityShift(zoomShiftSensitivitySlider.getValue());
         config.setZoomOutSensitivityShift(zoomShiftSensitivitySlider.getValue());
-        config.setDefaultTimelineLengthBars(static_cast<int>(defaultLengthSlider.getValue()));
         config.setDefaultZoomViewBars(static_cast<int>(viewDurationSlider.getValue()));
         config.setStopUpdatesPlayhead(stopUpdatesPlayheadToggle.getToggleState());
         config.setFollowPlayhead(followPlayheadToggle.getToggleState());
@@ -423,9 +417,9 @@ class GeneralPage : public juce::Component {
 
         // The Behaviour block is 10 toggles with a 4px gap between them.
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
-               secGap + headerH + 4 + rowH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH +
-               secGap + headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 10) + 36 + secGap +
-               headerH + 4 + rowH + 18 + 4 + rowH + padding;
+               secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
+               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 10) + 36 + secGap + headerH + 4 +
+               rowH + 18 + 4 + rowH + padding;
     }
 
     static int getLeftColumnPreferredHeight() {
@@ -435,7 +429,7 @@ class GeneralPage : public juce::Component {
         constexpr int secGap = 12;
 
         return padding + headerH + 4 + (rowH * 3) + 8         // Zoom
-               + secGap + headerH + 4 + rowH + 4 + rowH       // Timeline
+               + secGap + headerH + 4 + rowH                  // Timeline
                + secGap + headerH + 4 + rowH + 4 + rowH       // Transport
                + secGap + headerH + 4 + rowH + 4 + rowH       // Auto-Save
                + secGap + headerH + 4 + rowH + 18 + 4 + rowH  // Language + Localized Font Size
@@ -467,8 +461,6 @@ class GeneralPage : public juce::Component {
 
         // Timeline
         timelineHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        layoutTextSliderRow(bounds, defaultLengthLabel, defaultLengthSlider, rowH, sliderH);
         bounds.removeFromTop(4);
         layoutTextSliderRow(bounds, viewDurationLabel, viewDurationSlider, rowH, sliderH);
         bounds.removeFromTop(secGap);
@@ -553,8 +545,6 @@ class GeneralPage : public juce::Component {
         // Timeline
         timelineHeader.setBounds(left.removeFromTop(headerH));
         left.removeFromTop(4);
-        layoutTextSliderRow(left, defaultLengthLabel, defaultLengthSlider, rowH, sliderH);
-        left.removeFromTop(4);
         layoutTextSliderRow(left, viewDurationLabel, viewDurationSlider, rowH, sliderH);
         left.removeFromTop(secGap);
 
@@ -618,9 +608,7 @@ class GeneralPage : public juce::Component {
     magda::daw::ui::TextSlider zoomInSensitivitySlider, zoomOutSensitivitySlider,
         zoomShiftSensitivitySlider;
     juce::Label zoomInLabel, zoomOutLabel, zoomShiftLabel;
-    magda::daw::ui::TextSlider defaultLengthSlider;
     magda::daw::ui::TextSlider viewDurationSlider;
-    juce::Label defaultLengthLabel;
     juce::Label viewDurationLabel;
     juce::ToggleButton stopUpdatesPlayheadToggle;
     juce::ToggleButton followPlayheadToggle;
@@ -1419,13 +1407,19 @@ class RenderingPage : public juce::Component {
 
         // --- New project defaults ---
         //
-        // A project's own sample rate and bit depths live in ProjectInfo and are
-        // edited in File > Project Settings. These are only the values a new
-        // project starts from; changing them leaves every existing project as it
-        // is, which is why they say "new projects" rather than sitting on the
-        // Output section above.
+        // A project's own length, sample rate and bit depths live in ProjectInfo
+        // and are edited in File > Project Settings. These are only the values a
+        // new project starts from; changing them leaves every existing project
+        // as it is, which is why they say "new projects" rather than sitting on
+        // the Output section above. All four are here together: split across two
+        // tabs they read as duplicates of the per-project controls rather than
+        // as one set of seeds.
         setupSectionHeader(*this, projectDefaultsHeader,
                            tr("preferences.section.new_project_defaults"));
+
+        setupTextSlider(*this, defaultLengthSlider, defaultLengthLabel,
+                        tr("preferences.slider.default_total_length"), 16.0, 4096.0, 16.0,
+                        magda::TechnicalTextToken::Bars, 0, true);
 
         setupComboLabel(sampleRateLabel, tr("preferences.label.default_sample_rate"));
         setupComboLabel(renderBitLabel, tr("preferences.label.default_render_bit_depth"));
@@ -1476,15 +1470,17 @@ class RenderingPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        return padding + headerH + 4 + rowH + 4 + rowH              // Output folder
-               + secGap + headerH + 4 + rowH + 4 + rowH + 4 + rowH  // New project defaults
-               + secGap + headerH + 4 + rowH + 4 + rowH + 2 + 18    // File naming
+        return padding + headerH + 4 + rowH + 4 + rowH  // Output folder
+               + secGap + headerH + 4 + rowH + 4 + rowH + 4 + rowH + 4 +
+               rowH                                               // New project defaults
+               + secGap + headerH + 4 + rowH + 4 + rowH + 2 + 18  // File naming
                + padding;
     }
 
     void resized() override {
         auto bounds = getLocalBounds().reduced(16);
         const int rowH = 32;
+        const int sliderH = 24;
         const int headerH = 28;
         const int labelW = 140;
         const int secGap = 12;
@@ -1506,6 +1502,8 @@ class RenderingPage : public juce::Component {
 
         // New project defaults
         projectDefaultsHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, defaultLengthLabel, defaultLengthSlider, rowH, sliderH);
         bounds.removeFromTop(4);
         layoutComboRow(bounds, sampleRateLabel, sampleRateCombo, rowH);
         bounds.removeFromTop(4);
@@ -1543,6 +1541,8 @@ class RenderingPage : public juce::Component {
         }
 
         // New project defaults
+        defaultLengthSlider.setValue(config.getDefaultTimelineLengthBars(),
+                                     juce::dontSendNotification);
         sampleRateCombo.setSelectedId(
             magda::daw::ui::sampleRateItemId(config.getRenderSampleRate()),
             juce::dontSendNotification);
@@ -1561,6 +1561,7 @@ class RenderingPage : public juce::Component {
     void applySettings(Config& config) {
         config.setRenderFolder(renderFolderPath_);
 
+        config.setDefaultTimelineLengthBars(static_cast<int>(defaultLengthSlider.getValue()));
         config.setRenderSampleRate(
             magda::daw::ui::sampleRateForItemId(sampleRateCombo.getSelectedId()));
         config.setRenderBitDepth(magda::daw::ui::bitDepthForItemId(renderBitCombo.getSelectedId()));
@@ -1587,7 +1588,8 @@ class RenderingPage : public juce::Component {
     }
 
     juce::Label renderHeader, projectDefaultsHeader, namingHeader;
-    juce::Label sampleRateLabel, renderBitLabel, bounceBitLabel;
+    juce::Label defaultLengthLabel, sampleRateLabel, renderBitLabel, bounceBitLabel;
+    magda::daw::ui::TextSlider defaultLengthSlider;
     juce::ComboBox sampleRateCombo, renderBitCombo, bounceBitCombo;
     juce::Label renderFolderLabel;
     juce::Label renderFolderValue;

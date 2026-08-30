@@ -9,7 +9,6 @@ The dialog is organised into sections; each section is described below.
 - **Zoom In Sensitivity** — Controls how fast the timeline zooms in
 - **Zoom Out Sensitivity** — Controls how fast the timeline zooms out
 - **Shift+Zoom Sensitivity** — Controls zoom speed when holding Shift
-- **Default Total Length** — Timeline length a new project starts with (in bars)
 - **Default View** — Default visible range when opening a project (in bars)
 - **Auto-Save** — Enable or disable automatic saving, and set the interval
 
@@ -118,8 +117,9 @@ The location and maintenance of the sample-indexing database live here too. See 
 
 ### New Project Defaults
 
-These are the values a **new** project starts with. A project's own sample rate and bit depths belong to the project and are edited in [Project Settings](../arrangement-view.md#project-settings); changing them here leaves existing projects alone.
+These are the values a **new** project starts with. A project's own length, sample rate and bit depths belong to the project and are edited in [Project Settings](../arrangement-view.md#project-settings); changing them here leaves existing projects alone.
 
+- **Default Total Length** — Timeline length a new project starts with (in bars)
 - **Sample Rate** — Working and render sample rate for new projects
 - **Render Bit Depth** — Bit depth for audio exports
 - **Bounce Bit Depth** — Bit depth for bounced and frozen audio
