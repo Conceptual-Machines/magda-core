@@ -153,6 +153,10 @@ set(TEST_SOURCES
     test_config_path_redirect.cpp
     # Keyboard clip nudging (#1957)
     test_clip_nudge.cpp
+    # Where a clip drag may land (#2179): the pure index rules that step the
+    # ghost over a lane it cannot land on. The panel driving them is in
+    # magda_juce_tests, which is where a TrackContentPanel can exist.
+    test_clip_drag_targets.cpp
     test_mono_note_processor.cpp
     test_sends_and_track_deletion.cpp
     # Internal track-to-track routing (issue #1690)
@@ -574,6 +578,7 @@ target_sources(magda_juce_tests PRIVATE
     test_multi_clip_resize_preview_juce.cpp
     test_clip_paint_juce.cpp
     test_clip_nudge_juce.cpp
+    test_clip_drag_targets_juce.cpp
     # A .mid dropped on the chord track arrives as chords
     test_chord_track_file_drop_juce.cpp
     # Files dropped straight onto a Drum Grid track (#2172)
