@@ -96,12 +96,12 @@ class RealProjectCorpusTests : public juce::UnitTest {
         // project.faust hosts a runtime-compiled Faust device, and the Faust
         // standard library is not staged beside this binary: staging it aborts
         // the suite on Linux, in an unrelated test that instantiates the Faust
-        // instrument, inside libfaust's own interval analysis. tests/CMakeLists.txt
-        // has the mechanism. Without the library the device's saved source will
-        // not compile and it passes audio through, so both legs would render two
-        // chains that are not running the device the project named and null
-        // against each other perfectly -- a case that passes by testing less
-        // than it claims, which is the one outcome this corpus exists to refuse.
+        // instrument, inside libfaust's own interval analysis (#2237, #2238).
+        // tests/CMakeLists.txt has the mechanism. Without the library the device's saved source
+        // will not compile and it passes audio through, so both legs would render two chains that
+        // are not running the device the project named and null against each other perfectly -- a
+        // case that passes by testing less than it claims, which is the one outcome this corpus
+        // exists to refuse.
         //
         // It is not lost coverage: magda_tests does stage the library and
         // renders this project through the block-size gate, where it is one of

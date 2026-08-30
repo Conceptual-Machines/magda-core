@@ -719,8 +719,8 @@ endif()
 # Clang does not, so it is Linux only and invisible on a Mac.
 #
 # Two things follow, and neither belongs here: the patch is wrong to call a Q of
-# zero a resonance, and a compiler embedded in a DAW should not abort its host
-# over an analysis it could not complete. Until both are dealt with, the corpus
+# zero a resonance (#2237), and a compiler embedded in a DAW should not abort
+# its host over an analysis it could not complete (#2238). Until those, the corpus
 # skips the one project that hosts a runtime Faust device in this binary and
 # says so where the skip is (test_real_project_corpus_juce.cpp). magda_tests
 # keeps the staging: it renders the same project through the block-size gate,
