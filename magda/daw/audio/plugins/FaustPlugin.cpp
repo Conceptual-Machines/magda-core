@@ -541,6 +541,27 @@ void FaustPlugin::restoreState(const juce::ValueTree& v) {
         if (!loadDspSource(savedName.isNotEmpty() ? savedName : juce::String("Loaded"), savedSource,
                            err)) {
             DBG("FaustPlugin::restore: compile failed: " << err);
+
+            // The saved source is what the project asked for and the live DSP
+            // is the passthrough the constructor settled on, which is precisely
+            // what activeDspMatchesSource() answers -- and it was left saying
+            // the opposite, because nothing on the failure path touched it and
+            // the constructor had just set it true.
+            //
+            // What reads it is the guard that clears a serialized audio
+            // sidechain when the live DSP has no key input to route into
+            // (clearStaleFaustAudioSidechain). So a project whose Faust source
+            // stopped compiling -- an older Faust's syntax, a library that
+            // moved -- opened with its sidechain routing deleted rather than
+            // held until the source is repaired, which is the one thing this
+            // flag exists to prevent.
+            //
+            // Staged rather than dropped: the source stays editable so whoever
+            // opens the project sees what failed and can fix it, which is the
+            // same state the editor puts a device in while its code is being
+            // worked on.
+            stageSourceForEditing(savedName.isNotEmpty() ? savedName : juce::String("Loaded"),
+                                  savedSource);
         }
     }
 

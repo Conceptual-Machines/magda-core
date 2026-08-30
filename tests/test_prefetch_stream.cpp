@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <limits>
 #include <memory>
 
 #include "io/PrefetchStream.hpp"
@@ -41,9 +42,32 @@ class CountingReader final : public AudioFileReader {
              int numSamples) override {
         ++reads;
         lastStart = startSample;
+        largestRequest = std::max(largestRequest, numSamples);
 
-        const auto available =
-            static_cast<int>(std::clamp<std::int64_t>(length_ - startSample, 0, numSamples));
+        // What the file has from here, saturating rather than wrapping. A
+        // reader with no end reports int64's maximum for its length, and it is
+        // asked for positions ahead of its first sample -- LoopingAudioFileReader
+        // answers those by phase and pads what is in front of them -- so the
+        // plain subtraction overflows for exactly the pair this file is here to
+        // stand in for.
+        //
+        // Branched the way PrefetchStream::fill is, and for the same reason
+        // rather than for symmetry: int64's maximum plus the position is only
+        // representable while the position is negative, so the sign has to be
+        // established before that sum is formed. A test double that reproduced
+        // the overflow it exists to catch would be undefined behaviour on the
+        // path this case was widened to cover.
+        const auto remaining = [this, startSample]() -> std::int64_t {
+            constexpr auto unbounded = std::numeric_limits<std::int64_t>::max();
+
+            if (startSample >= 0)
+                return length_ - startSample;  // both non-negative, so no wrap
+
+            const auto headroom = unbounded + startSample;
+            return length_ > headroom ? unbounded : length_ - startSample;
+        }();
+
+        const auto available = static_cast<int>(std::clamp<std::int64_t>(remaining, 0, numSamples));
 
         for (auto channel = 0; channel < destination.getNumChannels(); ++channel)
             for (auto sample = 0; sample < available; ++sample)
@@ -62,6 +86,11 @@ class CountingReader final : public AudioFileReader {
 
     int reads = 0;
     std::int64_t lastStart = -1;
+
+    /// The largest run this reader was ever asked for. A stream must never ask
+    /// for more than a chunk holds, and the one time it did, it did so by
+    /// arithmetic rather than by intent.
+    int largestRequest = 0;
 
   private:
     std::int64_t length_;
@@ -294,4 +323,55 @@ TEST_CASE("A reader that fails is not a reader that returned audio", "[engine][i
         INFO("sample " << sample);
         REQUIRE(destination.getSample(0, sample) == approx(0.0f));
     }
+}
+
+TEST_CASE("A source with no end is not read past the end of a chunk", "[engine][io][prefetch]") {
+    // A looping reader has no last sample, so it reports int64's maximum as its
+    // length (SourceReaders.cpp), and a position can be negative: an event
+    // anchored before its own loop start is anchored at a phase within it, and
+    // a reversed clip trimmed longer than its source begins ahead of its first
+    // sample.
+    //
+    // How much is left was `length - position`, which overflows for exactly
+    // that pair. The wrap is silent and it is not merely a wrong number: the
+    // large negative it produces truncates back to a positive int larger than
+    // a chunk, so the read writes past the end of the buffer it was handed. The
+    // project that found it asked for 8414 samples into a chunk of 4096.
+    //
+    // Asserted as "never more than a chunk" rather than as one number, because
+    // the bound is what makes the read safe and the number is an accident of
+    // which position overflowed.
+    const PrefetchSettings settings{256, 4};
+    Fixture fixture(std::numeric_limits<std::int64_t>::max(), settings);
+
+    const auto chunkSamples = std::max(settings.chunkSamples, kBlockSize);
+
+    // Played across zero rather than up to it, and that is the point of the
+    // loop. The pool holds four chunks, so one round of fill() from -8415
+    // advances the read-ahead by a kilosample and never reaches a position that
+    // is not negative -- which would leave the ordinary path untested, and the
+    // ordinary path is where the second overflow lived: the saturating form
+    // needs int64's maximum plus the position, and that sum is only
+    // representable while the position is negative.
+    fixture.cue(-8415);
+
+    auto played = 0;
+    std::int64_t lastPosition = 0;
+    for (std::int64_t position = -8415; position < 2048; position += kBlockSize) {
+        lastPosition = position;
+        INFO("position " << position);
+        played += fixture.readPrefetched(position);
+
+        // Every round, not once at the end. A single request past the bound is
+        // a write past the end of a chunk, whatever the rest of the run does.
+        REQUIRE(fixture.reader->largestRequest > 0);
+        REQUIRE(fixture.reader->largestRequest <= chunkSamples);
+    }
+
+    // And it played: the guard is a clamp, not a refusal. A position in front
+    // of the first sample reads as silence, which is what a stream on its way
+    // into its own material is, and the material itself follows.
+    CHECK(played > 0);
+    CHECK(lastPosition > 0);
+    fixture.requireHolds(lastPosition);
 }

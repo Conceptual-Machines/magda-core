@@ -365,47 +365,18 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
 
     // Shared converter: maps MAGDA's 0-1 normalized to TE's parameter range.
     //
-    // Hoisted out of the sample loop — convertToTEValue fetches
-    // getParameterInfoForTarget(target) per call, which walks the track /
-    // rack / chain tree to resolve the device and copies a full
-    // ParameterInfo (incl. valueTable, choices, shared_ptrs). With
-    // ~100k loop iterations on a long edit that lookup is enough to
-    // beach-ball the UI on every play / stop bake. Compute the TE
-    // mapping once here and inline the 2 FLOPS in the hot loop.
-    const ParameterInfo bakedInfo = (lane.target.kind == ControlTarget::Kind::PluginParam)
-                                        ? getParameterInfoForTarget(lane.target)
-                                        : ParameterInfo{};
-    const bool bakedIsDeviceParam = lane.target.kind == ControlTarget::Kind::PluginParam;
-    const float bakedTeMin = bakedInfo.teMinValue;
-    const float bakedTeSpan = bakedInfo.teMaxValue - bakedInfo.teMinValue;
-    const bool bakedUseTeRange = bakedIsDeviceParam && bakedTeSpan > 0.0f &&
-                                 !ParameterUtils::infoMatchesTeRange(bakedInfo) &&
-                                 !ParameterUtils::isDisplayMappedInternalValue(bakedInfo);
-    // Compiled/internal params on a 0..1 native range with a display mapping
-    // (gain dB, xover Hz). Their TE-native value == the lane's normalized
-    // value, so bake it through unchanged — routing via normalizedToModelValue
-    // would write the DISPLAY value into the 0..1 curve, pinning the param at a
-    // collapsed value (0 dB -> native 0.0 = -inf) for the whole edit.
-    const bool bakedDisplayMapped =
-        bakedIsDeviceParam && ParameterUtils::isDisplayMappedInternalValue(bakedInfo);
-    // For the info == TE-range path (most internal plugins, VSTs without
-    // AI-Detect), we still need normalizedToReal to honour info.scale/
-    // scaleAnchor. Precompute the info once — convertToTEValue itself
-    // would otherwise re-fetch via getParameterInfoForTarget(target) on every
-    // sample and walk the track/rack tree each time, beach-balling
-    // play/stop on any edit with automation on a VST parameter.
-    auto convertValue = [&](double magdaNormalized) -> float {
-        if (bakedUseTeRange)
-            return bakedTeMin + static_cast<float>(magdaNormalized) * bakedTeSpan;
-        if (bakedDisplayMapped)
-            return juce::jlimit(0.0f, 1.0f, static_cast<float>(magdaNormalized));
-        if (!bakedIsDeviceParam)
-            return convertToTEValue(lane.target, param, magdaNormalized);
-        return ParameterUtils::normalizedToModelValue(
-                   ParameterNormalizedValue::clamped(static_cast<float>(magdaNormalized)),
-                   bakedInfo)
-            .value;
-    };
+    // Built once rather than per point, and built where the bake lives
+    // (AutomationBake.hpp) rather than here. Resolving the target's
+    // ParameterInfo walks the track, rack and chain tree and copies choices,
+    // value tables and shared pointers; with ~100k loop iterations on a long
+    // edit that lookup alone is enough to beach-ball the UI on every play or
+    // stop bake.
+    //
+    // Shared with the null-diff corpus, which bakes a real project's lanes over
+    // the app's own devices through the same conversion (#2081). Two
+    // conversions would be a corpus agreeing with itself about what a lane
+    // means.
+    const auto convertValue = makeParameterValueConverter(lane.target, param);
 
     // The shape, emitted as the breakpoints a linear iterator needs to
     // describe it. Shared with the null-diff corpus (AutomationBake.hpp), which
@@ -440,75 +411,6 @@ void AutomationPlaybackEngine::clearLane(const AutomationLaneInfo& lane) {
 // ============================================================================
 // Parameter Resolution
 // ============================================================================
-
-float AutomationPlaybackEngine::convertToTEValue(const AutomationTarget& target,
-                                                 te::AutomatableParameter* param,
-                                                 double magdaNormalized) const {
-    switch (target.kind) {
-        case ControlTarget::Kind::DeviceMacro:
-            // Macros are stored as 0..1 on both sides — no display/percent
-            // scale conversion. Going through the percent ParameterInfo
-            // fallback would write 100 to TE for a 1.0 MAGDA value, and the
-            // inverse writeback would then divide by 100, pinning the UI
-            // knob near zero throughout playback.
-            return juce::jlimit(0.0f, 1.0f, static_cast<float>(magdaNormalized));
-
-        case ControlTarget::Kind::TrackVolume:
-        case ControlTarget::Kind::SendLevel: {
-            // MAGDA 0-1 (FaderDB scale) → dB → TE fader position. Same
-            // mapping for both: AuxSendPlugin's `gain` parameter uses
-            // volume-fader-position units just like VolAndPanPlugin.
-            auto paramInfo = ParameterPresets::faderVolume(-1, "Volume");
-            float dB =
-                ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), paramInfo);
-            return te::decibelsToVolumeFaderPosition(dB);
-        }
-        case ControlTarget::Kind::TrackPan: {
-            // MAGDA 0-1 → linear -1..+1 (same as TE's pan range)
-            auto paramInfo = ParameterPresets::pan(-1, "Pan");
-            return ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), paramInfo);
-        }
-        default: {
-            // Device parameters: the lane stores MAGDA-normalized [0,1] values.
-            // TE's AutomatableParameter stores plugin-native values —
-            // always [0,1] for external VSTs, the raw native range for
-            // internal plugins (e.g. 0..135 for 4OSC filterFreq).
-            //
-            // When info.min/max match the TE-native range (internal plugins,
-            // or external VSTs before AI-Detect) go through
-            // normalizedToReal so log scales and scaleAnchors are honoured.
-            //
-            // When they differ (external VST with AI-Detect display range)
-            // normalizedToReal would return a display-range value (e.g.
-            // -48..+48 semitones) that TE then clips to its 0..1 param
-            // range — the source of the "curve moves but plugin doesn't"
-            // drift. Fall back to a linear mapping onto the NATIVE TE
-            // range instead, so the lane's normalized [0,1] reaches the
-            // plugin unchanged.
-            ParameterInfo info = getParameterInfoForTarget(target);
-            // Compiled/internal MAGDA plugins register their TE param on a 0..1
-            // native range with the display mapping (e.g. gain dB, xover Hz)
-            // layered on top via the param's scale. For these the lane's
-            // MAGDA-normalized value already IS the native 0..1 position, so
-            // pass it straight through. Routing it via normalizedToModelValue
-            // would emit the DISPLAY value (e.g. 0 dB) into the 0..1 curve,
-            // collapsing it to native 0.0 (-inf) during playback.
-            if (ParameterUtils::isDisplayMappedInternalValue(info))
-                return juce::jlimit(0.0f, 1.0f, static_cast<float>(magdaNormalized));
-            const float teSpan = info.teMaxValue - info.teMinValue;
-            if (teSpan <= 0.0f) {
-                if (!param)
-                    return static_cast<float>(magdaNormalized);
-                auto range = param->getValueRange();
-                return range.getStart() +
-                       static_cast<float>(magdaNormalized) * (range.getEnd() - range.getStart());
-            }
-            return ParameterUtils::normalizedToModelValue(
-                       ParameterNormalizedValue::clamped(static_cast<float>(magdaNormalized)), info)
-                .value;
-        }
-    }
-}
 
 void AutomationPlaybackEngine::automationPointDragPreview(AutomationLaneId laneId,
                                                           AutomationPointId /*pointId*/,

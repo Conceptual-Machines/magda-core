@@ -3,7 +3,7 @@
 /**
  * @file MgdFixtures.cpp
  * @brief Which real projects the corpus carries, and what each declares
- *        (#2173).
+ *        (#2173, #2081).
  *
  * Separate from the rig for the reason NullDiffCorpus.cpp is separate from
  * NullDiffCase.hpp: the table is a description of what is being tested and the
@@ -26,8 +26,18 @@
  *
  * So: reuse where a project earns its place by being a real arrangement nobody
  * would have written down, and save new ones where the material has to be
- * designed. This slice reuses, because the rig is what is being proved and
- * saving projects needs the app. #2081 is where the designed ones arrive.
+ * designed. Everything here is a reuse. A project saved for this corpus goes
+ * under `corpus/render/projects` with `isMigrationFixture` false, and needs
+ * nothing from the rig that is not already here -- the file path and the
+ * manifest entry are the whole addition.
+ *
+ * ## What each fixture renders
+ *
+ * A window rather than the whole arrangement, chosen so that everything the
+ * project has on at once is inside it. That is not a convenience: a range which
+ * misses the project's audio clip leaves the case asserting a project without
+ * one, and the fixture that had this wrong first is the demo, whose only audio
+ * clip starts at beat 96 and whose declaration rendered the first thirty-two.
  *
  * ## Choosing material for a source nobody still has
  *
@@ -47,6 +57,31 @@
  * original was eleven seconds of somebody's Splice library; writing thirty
  * seconds of tone to stand in for a clip that plays four bars of it would cost
  * the run a second of disk per fixture for nothing.
+ *
+ * ## The projects that are not here
+ *
+ * Fifteen of the twenty-two are out, and each for a reason that is a fact about
+ * the project or about the engine rather than a preference:
+ *
+ *  - **Half of them host an external plugin.** retrovid and envfollower carry
+ *    Retrospect, groups carries Pro-L 2, overlaps carries Pianoteq. The rig
+ *    refuses those outright and #2175 is the slice that takes them, with the
+ *    invariant tier and a gate that calls an absent plugin unmeasurable rather
+ *    than equal.
+ *  - **Seven of them contain 4OSC**, which has no engine device yet, so a
+ *    Device op for one binds to a passthrough and the case would be comparing
+ *    a project neither engine really rendered: dupes, macrolinkmod, retired-fx,
+ *    dafunk, rack, fxshowcase and automation. They arrive with the port.
+ *  - **Two of them render silence.** master-eq has no tracks at all, and
+ *    sessiondemo's thirty-two clips are all session clips, so an arrangement
+ *    render of it plays nothing. Two silences null perfectly and assert
+ *    nothing, which the runner refuses as unmeasurable rather than passing.
+ *  - **automation-clips has no instrument on its one track**, so its MIDI clip
+ *    and the automation lane over it reach a track that makes no sound. Same
+ *    refusal, and the same fix: it needs a project saved with a device on it,
+ *    which is a new fixture rather than a rewrite of this one.
+ *  - **drumgrid-rack** stops on a rack whose device has a gap in its parameter
+ *    indices, which the parameter table does not carry yet.
  */
 
 namespace magda::nulldiff {
@@ -61,26 +96,25 @@ MaterialSpec impulsesFor(double seconds, double interval) {
     return spec;
 }
 
-MaterialSpec toneFor(double seconds, double frequency) {
+/// A tone with an envelope to correlate, for a clip a stretcher stands in front
+/// of: a stretched case is judged on its envelope and its spectrum, and a
+/// steady tone has no envelope, so an envelope test over one measures the noise
+/// floor's preferences.
+MaterialSpec pulsedToneFor(double seconds, double frequency) {
     MaterialSpec spec;
-    spec.kind = MaterialKind::Tone;
+    spec.kind = MaterialKind::PulsedTone;
     spec.sampleRate = 44100.0;
     spec.durationSeconds = seconds;
     spec.frequency = frequency;
     return spec;
 }
 
-Case declarationFor(const char* name, const char* covers, double endBeat) {
+Case declarationFor(const char* name, const char* covers, double startBeat, double endBeat) {
     Case value;
     value.name = name;
     value.covers = covers;
-    value.startBeat = 0.0;
+    value.startBeat = startBeat;
     value.endBeat = endBeat;
-
-    // Left at the corpus default deliberately. What tier a real project owes is
-    // decided when it has been rendered through both legs and the answer is a
-    // number, which is #2081; declaring one here would be choosing the verdict
-    // before the measurement. This slice renders nothing.
     value.tier = AudioTier::Exact;
     return value;
 }
@@ -88,66 +122,208 @@ Case declarationFor(const char* name, const char* covers, double endBeat) {
 std::vector<MgdFixture> build() {
     std::vector<MgdFixture> fixtures;
 
-    // Both of these are internal-device projects, and that is a requirement
-    // rather than what was to hand. A project hosting a VST3 cannot be held to a
-    // null: without the plugin installed both legs render a passthrough and pass
-    // by agreeing about nothing, and with it installed the incumbent hosts it
-    // while the native leg cannot, so the verdict becomes a fact about the
-    // machine. #2175 reserves those projects for the invariant tier and an
-    // absent-plugin gate, and they belong there rather than here.
+    // Every fixture here is an internal-device project, and that is a
+    // requirement rather than what was to hand. A project hosting a VST3 cannot
+    // be held to a null: without the plugin installed both legs render a
+    // passthrough and pass by agreeing about nothing, and with it installed the
+    // incumbent hosts it while the native leg cannot, so the verdict becomes a
+    // fact about the machine. #2175 reserves those projects for the invariant
+    // tier and an absent-plugin gate, and they belong there rather than here.
     //
-    // Half the legacy corpus is out on that rule -- retrovid and envfollower
-    // carry Retrospect, groups carries Pro-L 2, overlaps carries Pianoteq -- and
-    // the check is `format`, which is VST3 at zero and Internal at three.
+    // The rig checks it rather than trusting this comment: `format`, which is
+    // VST3 at zero and Internal at three.
 
     {
-        // The arrangement: eight tracks and sixty-nine clips at 120 bpm, one of
-        // them audio and the rest MIDI, with an automation lane over the top.
-        // That shape is the argument for loading a project at all. Nobody
-        // writing a case in code produces sixty-eight MIDI clips across eight
-        // tracks to see what happens; somebody making a demo does.
+        // Two audio tracks playing bounces off an SSD that is gone, and a Drum
+        // Grid on a third with nothing to play. The oldest shape in the corpus:
+        // a v1 project, whose clips carry their source inline rather than
+        // through a pooled table, and whose placement is in seconds rather than
+        // beats. That the load produces the same model values out of that as
+        // out of a v2 file is the thing worth rendering it for.
         MgdFixture fixture;
-        fixture.file = "legacy/projects/0.15.0-demo.mgd";
-        fixture.savedBy = "0.15.0-9-gf444267f";
+        fixture.file = "legacy/projects/0.4.8-drumgrid.mgd";
+        fixture.savedBy = "0.4.8-10-g83eb35e0";
         fixture.isMigrationFixture = true;
-        fixture.declaration =
-            declarationFor("project.demo", "eight tracks and sixty-nine clips at 120 bpm", 32.0);
+        fixture.declaration = declarationFor(
+            "project.v1bounces", "two v1 audio clips with their sources inline, at 120", 0.0, 16.0);
 
-        // A tone, because the clip reading it is stretched: the project plays a
-        // loop recorded at one tempo inside an arrangement at another, and
-        // impulses through two different stretchers report the distance between
-        // two interpolators rather than anything about the clip.
+        // Impulses on both: neither clip is stretched -- the source's own bpm is
+        // the project's -- so where each sample lands is the whole assertion.
+        //
+        // Two sources rather than one, and that is the point of this fixture
+        // beside the others: two clips on two tracks reading two different
+        // files is where a source id naming the wrong file stops being
+        // invisible.
         fixture.sources = {
-            {.fileName = "SA_MU_89_electric_guitar_loop_arp_chillin_vibrato_Emin.wav",
-             .material = toneFor(14.0, 220.0),
-             .covers = "a guitar loop the arrangement stretched from 82 to 120"},
+            {.fileName = "HiHat Closed Bell-bounce-1.wav",
+             .material = impulsesFor(7.0, 0.25),
+             .covers = "a hi-hat bounce on the first track, played unstretched"},
+            {.fileName = "HiHat Closed Bell-bounce-3.wav",
+             .material = impulsesFor(7.0, 1.0 / 3.0),
+             .covers = "a second bounce on the second track, at a different interval so the "
+                       "two cannot be mistaken for each other"},
         };
 
         fixtures.push_back(std::move(fixture));
     }
 
     {
-        // A second project, and the point of it is that there are two. A Case
-        // carries source ids and nothing else, so two of them loaded at once is
-        // the arrangement under which those ids either stay meaningful or
-        // quietly start naming each other's audio. One fixture can never show
-        // that.
-        //
-        // Small on purpose: two tracks, two clips, two automation lanes. What it
-        // adds is a second project and an automation lane, not more surface.
+        // One audio clip on one track at 172 bpm, and nothing else at all: no
+        // devices, no automation, no master chain. The simplest real project
+        // there is, and it is here because the tempo is not the corpus default.
+        // Every code-built case renders at 120, so a beat that lands at a
+        // different second than the fork thinks it does would null across the
+        // whole of that corpus and show up here.
         MgdFixture fixture;
-        fixture.file = "legacy/projects/0.11.1-automation.mgd";
-        fixture.savedBy = "0.11.1-119-gbe8377ce0";
+        fixture.file = "legacy/projects/0.9.0-analysis.mgd";
+        fixture.savedBy = "0.9.0-rc3-1-gde7a0b7c3";
         fixture.isMigrationFixture = true;
         fixture.declaration = declarationFor(
-            "project.automation", "two tracks under two automation lanes at 120 bpm", 16.0);
+            "project.tempo172", "one audio clip on a bare track at 172 bpm", 0.0, 16.0);
 
-        // Impulses: this clip plays at its own rate, so where it lands is the
-        // whole of what a render would be asserting.
+        // Impulses: the clip's interpretation is unlocked and its own bpm is
+        // the file's, so it plays at its own rate and where each impulse lands
+        // is what the two engines owe each other.
         fixture.sources = {
-            {.fileName = "HeartBreaker Layered Master-bounce-10.wav",
-             .material = impulsesFor(4.0, 0.25),
-             .covers = "a bounced break, played unstretched"},
+            {.fileName = "Sub Focus - Timewarp (Dimension Remix).wav",
+             .material = impulsesFor(9.0, 0.25),
+             .covers = "a track bounce, played unstretched under a 172 bpm timeline"},
+        };
+
+        fixtures.push_back(std::move(fixture));
+    }
+
+    {
+        // An FM instrument under four effects: filter, reverb, Clouds and a
+        // limiter. Five devices in a row on one track, which is a chain nobody
+        // writes down in a case and somebody making a demo patch does, and it
+        // is where a device order or a latency the two hosts disagree about
+        // would show.
+        MgdFixture fixture;
+        fixture.file = "legacy/projects/0.12.1-fm0demo.mgd";
+        fixture.savedBy = "0.12.1-31-g5d7dc457b";
+        fixture.isMigrationFixture = true;
+        fixture.declaration = declarationFor(
+            "project.fmchain", "an FM instrument under filter, reverb, Clouds and a limiter", 0.0,
+            16.0);
+
+        fixtures.push_back(std::move(fixture));
+    }
+
+    {
+        // A Poly Synth with a sidechain device on it and a kick on the track
+        // that feeds it. Two tracks whose audio is coupled through a device
+        // rather than through routing, which is the first thing in this corpus
+        // that is not a chain read top to bottom.
+        MgdFixture fixture;
+        fixture.file = "legacy/projects/0.14.0-sidechain.mgd";
+        fixture.savedBy = "0.14.0";
+        fixture.isMigrationFixture = true;
+        fixture.declaration =
+            declarationFor("project.sidechain",
+                           "a synth ducked by the kick track through a sidechain device", 0.0, 8.0);
+
+        fixtures.push_back(std::move(fixture));
+    }
+
+    {
+        // A second project, and the point of it is that there are several. A
+        // Case carries source ids and nothing else, so two of them loaded at
+        // once is the arrangement under which those ids either stay meaningful
+        // or quietly start naming each other's audio.
+        //
+        // What it adds beyond that is the reverse feature's own project: one
+        // audio clip whose length in beats is exactly its length in seconds at
+        // the project tempo, so nothing stretches and nothing interpolates.
+        MgdFixture fixture;
+        fixture.file = "legacy/projects/0.16.0-reverse.mgd";
+        fixture.savedBy = "0.16.0-4-gf300f6aa";
+        fixture.isMigrationFixture = true;
+        fixture.declaration = declarationFor(
+            "project.render", "a rendered bounce played back at the rate it was made", 0.0, 16.0);
+
+        fixture.sources = {
+            {.fileName = "Untitled_20260722_062806.wav",
+             .material = impulsesFor(9.0, 0.5),
+             .covers = "a render of the project's own output, played unstretched"},
+        };
+
+        fixtures.push_back(std::move(fixture));
+    }
+
+    {
+        // The arrangement: eight tracks and sixty-nine clips at 120 bpm, five of
+        // them in the arrangement and sixty-four in the session, with an
+        // automation lane over a Poly Synth parameter and a limiter on the
+        // master. That shape is the argument for loading a project at all.
+        // Nobody writing a case in code produces sixty-four session clips
+        // alongside an arrangement to see what happens; somebody making a demo
+        // does.
+        //
+        // Rendered from beat 96, which is where the fifth clip starts. The
+        // window before it holds drums and keys only, so the first declaration
+        // of this fixture asserted a project without its audio clip in it.
+        MgdFixture fixture;
+        fixture.file = "legacy/projects/0.15.0-demo.mgd";
+        fixture.savedBy = "0.15.0-9-gf444267f";
+        fixture.isMigrationFixture = true;
+        fixture.declaration = declarationFor("project.demo",
+                                             "eight tracks, five arrangement clips and a stretched "
+                                             "guitar loop, under a master limiter",
+                                             96.0, 112.0);
+
+        // Stretched, so the tier is spectral and the material has an envelope
+        // to correlate: the project plays a loop recorded at 82.55 bpm inside
+        // an arrangement at 120 with its length locked, and impulses through
+        // two different stretchers report the distance between two
+        // interpolators rather than anything about the clip.
+        fixture.declaration.tier = AudioTier::Spectral;
+        fixture.declaration.mechanism =
+            "the guitar loop is stretched from 82.55 to 120, and two phase vocoders primed "
+            "differently never converge on one waveform";
+
+        fixture.sources = {
+            {.fileName = "SA_MU_89_electric_guitar_loop_arp_chillin_vibrato_Emin.wav",
+             .material = pulsedToneFor(14.0, 220.0),
+             .covers = "a guitar loop the arrangement stretched from 82.55 to 120"},
+        };
+
+        fixtures.push_back(std::move(fixture));
+    }
+
+    {
+        // A Faust device on an audio track, and a Poly Synth on a track whose
+        // input monitoring is on. Two things no code-built case has: a device
+        // whose DSP was compiled from a .dsp file, and a track that is listening
+        // to an input nothing is bound to.
+        //
+        // The clip is warped, and its markers are what a real transient pass
+        // produced rather than what somebody would write down: one of them
+        // repeats a position, so the compiler drops it and says so. Declared
+        // below, because a diagnostic that is the project rather than a refusal
+        // is the parity rather than an obstacle to it.
+        MgdFixture fixture;
+        fixture.file = "legacy/projects/0.17.0-faust.mgd";
+        fixture.savedBy = "0.17.0-16-gb9ae990b";
+        fixture.isMigrationFixture = true;
+        fixture.declaration = declarationFor(
+            "project.faust", "a Faust device over a warped break, beside a monitored synth track",
+            0.0, 16.0);
+
+        fixture.declaration.tier = AudioTier::Spectral;
+        fixture.declaration.mechanism =
+            "the break is warped, which forces a stretcher on, and the two stretchers prime "
+            "from different material";
+
+        fixture.declaration.expectedDiagnostics = {
+            "warp marker(s) that do not run forwards",
+            "no live MIDI input bound for track 2",
+        };
+
+        fixture.sources = {
+            {.fileName = "Addictive Drums Key Map FX-bounce-1.wav",
+             .material = pulsedToneFor(6.0, 196.0),
+             .covers = "a break the clip warps, recorded at 135 under a 120 timeline"},
         };
 
         fixtures.push_back(std::move(fixture));
