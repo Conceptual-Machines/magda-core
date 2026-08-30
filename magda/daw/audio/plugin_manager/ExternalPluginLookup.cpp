@@ -39,7 +39,11 @@ juce::PluginDescription describeSavedPlugin(const DeviceInfo& device) {
 
 SavedPluginIdentity savedPluginIdentity(const DeviceInfo& device) {
     return {.identifier = device.uniqueId,
-            .fields = describeSavedPlugin(device).createIdentifierString()};
+            .name = device.name,
+            .manufacturer = device.manufacturer,
+            .fileOrIdentifier = device.fileOrIdentifier,
+            .format = device.format,
+            .isInstrument = device.isInstrument};
 }
 
 ExternalPluginMatch matchInstalledPlugin(const DeviceInfo& device,

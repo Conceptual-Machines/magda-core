@@ -91,18 +91,26 @@ ExternalPluginMatch matchInstalledPlugin(const DeviceInfo& device,
  *
  * Two forms, because a project may carry either. @ref identifier is JUCE's own
  * identifier string, which is what DeviceInfo::uniqueId holds for a device
- * added from the browser; @ref fields is the saved name, format and file, which
- * is all an imported project has.
+ * added from the browser. The fields beside it are what an imported project has
+ * instead, and they are compared as themselves rather than through
+ * PluginDescription::createIdentifierString().
  *
- * Both are needed and neither replaces the other. The identifier contains the
- * plugin's numeric uid, which a description reconstructed from saved fields
- * does not have: comparing one against the other is comparing a real uid
- * against a zero, and it never matches. So a comparison has to be told which
- * form it is looking at, which is what this type is for.
+ * Not through that string for two reasons. It contains the plugin's numeric
+ * uid, which a description rebuilt from saved fields does not have, so
+ * comparing a rebuilt one against a scanned one never matches. And it encodes
+ * only the format, the name and a hash of the file: not the vendor, and not
+ * whether the plugin is an instrument. A bundle shipping an effect and an
+ * instrument of the same name out of one file -- the case the lookup's own
+ * first pass exists for -- produces one string for both.
  */
 struct SavedPluginIdentity {
     juce::String identifier;
-    juce::String fields;
+
+    juce::String name;
+    juce::String manufacturer;
+    juce::String fileOrIdentifier;
+    PluginFormat format = PluginFormat::VST3;
+    bool isInstrument = false;
 
     /**
      * @brief Whether @p other names the same plugin.
@@ -117,7 +125,9 @@ struct SavedPluginIdentity {
         if (identifier.isNotEmpty() && other.identifier.isNotEmpty())
             return identifier == other.identifier;
 
-        return fields == other.fields;
+        return name == other.name && manufacturer == other.manufacturer &&
+               fileOrIdentifier == other.fileOrIdentifier && format == other.format &&
+               isInstrument == other.isInstrument;
     }
 };
 

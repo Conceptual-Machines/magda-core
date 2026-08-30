@@ -1331,3 +1331,57 @@ TEST_CASE("A device that gained a scanned identifier has not changed plugin",
     REQUIRE(result.device != nullptr);
     CHECK(result.failure.isEmpty());
 }
+
+TEST_CASE("An imported device swapped to the other half of its bundle is a change",
+          "[engine][external]") {
+    // A bundle shipping an effect and an instrument of the same name out of one
+    // file is the case the lookup's first pass exists for, and it is the case
+    // JUCE's identifier string cannot see: that string carries the format, the
+    // name and a hash of the file, and neither the vendor nor the role. An
+    // imported device has no saved identifier to fall back on, so swapping to
+    // the other variant while a load is in flight has to be caught by the
+    // fields themselves.
+    auto model = externalDeviceSaving(1.0f, 0.5f);
+    model.name = "Kontakt";
+    model.manufacturer = "NI";
+    model.fileOrIdentifier = "/Library/Kontakt.vst3";
+    model.isInstrument = false;
+    model.uniqueId = {};  // imported: nothing scanned it
+
+    const adapter::RequestedPlugin requested{.identity = magda::savedPluginIdentity(model),
+                                             .name = model.name};
+
+    // The swap: the instrument out of the same bundle.
+    model.isInstrument = true;
+
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    const auto result = adapter::completeExternalPluginLoad(std::move(plugin), {}, requested,
+                                                            [&]() { return &model; });
+
+    CHECK(result.device == nullptr);
+    CHECK(result.failure.contains("changed plugin"));
+}
+
+TEST_CASE("An imported device swapped to another vendor's plugin is a change",
+          "[engine][external]") {
+    // The same gap, from the other side: the identifier string leaves the
+    // vendor out too, so two plugins of one name shipped by different vendors
+    // are one identity to it.
+    auto model = externalDeviceSaving(1.0f, 0.5f);
+    model.name = "Saturator";
+    model.manufacturer = "One";
+    model.fileOrIdentifier = "/Library/Saturator.vst3";
+    model.uniqueId = {};
+
+    const adapter::RequestedPlugin requested{.identity = magda::savedPluginIdentity(model),
+                                             .name = model.name};
+
+    model.manufacturer = "Another";
+
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    const auto result = adapter::completeExternalPluginLoad(std::move(plugin), {}, requested,
+                                                            [&]() { return &model; });
+
+    CHECK(result.device == nullptr);
+    CHECK(result.failure.contains("changed plugin"));
+}
