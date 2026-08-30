@@ -197,17 +197,7 @@ Range operations ripple the global tempo, time-signature, and pitch-bend curves 
 
 Open **File → Project Settings** to set options that belong to the project itself rather than the application. It has two tabs.
 
-### Metadata
-
-The **Metadata** tab holds the song's title and credits: Title, Artist, Album, Original artist, Composer, Songwriter, Producer, Arranger, Year, Genre, Copyright, Website and Comment. All of them are free text and all of them are optional.
-
-Title is left empty by default and shows the project's name in grey. That name is what gets used, so there is nothing to fill in unless the song is called something other than the file — a song called *Blue* can live in `blue_v7.mgd`. Type a title only when you want one that differs from the name; leave it alone and renaming the project keeps carrying through.
-
-These are the fields the DAWproject format defines, so they survive a round trip through **File → Export DAWproject...** and back, and credits written in another DAW come through on import.
-
 ### General
-
-The **General** tab holds the technical settings:
 
 | Setting | Options |
 |--------|---------|
@@ -216,4 +206,12 @@ The **General** tab holds the technical settings:
 | **Render Bit Depth** | 16-bit, 24-bit, 32-bit float |
 | **Bounce Bit Depth** | 16-bit, 24-bit, 32-bit float |
 
-Tick **Save as default for new projects** to apply the same values to new projects from now on. These settings are stored per project, so different songs can carry different lengths and render formats. The metadata has no such default — it is per project by nature.
+These are stored per project, so different songs can carry different lengths and render formats. **Apply** commits your changes; **Cancel** closes the dialog, discarding anything you have not applied.
+
+### Metadata
+
+The **Metadata** tab holds the song's title and credits: Title, Artist, Album, Original artist, Composer, Songwriter, Producer, Arranger, Year, Genre, Copyright, Website and Comment. All of them are free text and all of them are optional, and none of them has a global default — metadata is per project by nature.
+
+Title is left empty by default and shows the project's name in grey. That name is what gets used, so there is nothing to fill in unless the song is called something other than the file — a song called *Blue* can live in `blue_v7.mgd`. Type a title only when you want one that differs from the name; leave it alone and renaming the project keeps carrying through.
+
+These are the fields the DAWproject format defines, so they survive a round trip through **File → Export DAWproject...** and back, and credits written in another DAW come through on import.

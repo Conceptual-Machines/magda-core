@@ -12,11 +12,11 @@ namespace magda {
  * Per-project settings dialog (File > Project Settings).
  *
  * Two tabs over the authoritative per-project values held in ProjectInfo.
- * Metadata is the title and credits in its ProjectMetadata block; General is
- * total timeline length (bars), working/render sample rate, and render / bounce
- * bit depth. New projects seed the General values from the global Config
- * defaults and this dialog overrides them for the current project; the metadata
- * has no global default, being per-project by nature.
+ * General is total timeline length (bars), working/render sample rate, and
+ * render / bounce bit depth; Metadata is the title and credits in its
+ * ProjectMetadata block. New projects seed the General values from the global
+ * Config defaults and this dialog overrides them for the current project; the
+ * metadata has no global default, being per-project by nature.
  */
 class ProjectSettingsDialog : public juce::Component {
   public:
@@ -60,9 +60,8 @@ class ProjectSettingsDialog : public juce::Component {
     /**
      * The General tab: the technical per-project values.
      *
-     * It reads and writes ProjectInfo only. Whether the same values also become
-     * the defaults for new projects is asked here but answered by the dialog,
-     * which owns the side effects on Config and the live timeline.
+     * It reads and writes ProjectInfo only; the dialog owns the side effect on
+     * the live timeline.
      */
     class GeneralPage : public juce::Component {
       public:
@@ -73,15 +72,12 @@ class ProjectSettingsDialog : public juce::Component {
         void load(const ProjectInfo& info);
         void apply(ProjectInfo& info) const;
 
-        bool shouldSaveAsDefault() const;
-
         static int preferredHeight();
 
       private:
         juce::Label lengthLabel_, sampleRateLabel_, renderBitLabel_, bounceBitLabel_;
         juce::Slider lengthSlider_;
         juce::ComboBox sampleRateCombo_, renderBitCombo_, bounceBitCombo_;
-        juce::ToggleButton saveAsDefaultBtn_;
     };
 
     void loadSettings();
@@ -89,11 +85,11 @@ class ProjectSettingsDialog : public juce::Component {
 
     // Declared before the TabbedComponent that shows them, so the tabs go first
     // when the dialog is torn down.
-    MetadataPage metadataPage_;
     GeneralPage generalPage_;
+    MetadataPage metadataPage_;
 
     juce::TabbedComponent tabs_{juce::TabbedButtonBar::TabsAtTop};
-    juce::TextButton okBtn_{"OK"}, cancelBtn_{"Cancel"};
+    juce::TextButton applyBtn_, cancelBtn_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ProjectSettingsDialog)
 };

@@ -1,6 +1,5 @@
 #include "ProjectSettingsDialog.hpp"
 
-#include "../../core/Config.hpp"
 #include "../../core/StringTable.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "../state/TimelineController.hpp"
@@ -18,6 +17,8 @@ constexpr int kRowGap = 12;
 constexpr int kLabelW = 150;
 constexpr int kControlW = 220;
 constexpr int kTabBarDepth = 32;
+constexpr int kButtonW = 90;
+constexpr int kButtonGap = 8;
 constexpr int kDialogW = 660;
 
 // Metadata occupies two columns of short text fields. One column would make the
@@ -172,14 +173,10 @@ ProjectSettingsDialog::GeneralPage::GeneralPage() {
     addAndMakeVisible(sampleRateCombo_);
     addAndMakeVisible(renderBitCombo_);
     addAndMakeVisible(bounceBitCombo_);
-
-    saveAsDefaultBtn_.setButtonText(tr("project_settings.save_as_default"));
-    saveAsDefaultBtn_.setClickingTogglesState(true);
-    addAndMakeVisible(saveAsDefaultBtn_);
 }
 
 int ProjectSettingsDialog::GeneralPage::preferredHeight() {
-    return (kPagePad * 2) + (4 * (kRowH + kRowGap)) + kRowH;
+    return (kPagePad * 2) + (4 * (kRowH + kRowGap));
 }
 
 void ProjectSettingsDialog::GeneralPage::load(const ProjectInfo& info) {
@@ -194,10 +191,6 @@ void ProjectSettingsDialog::GeneralPage::apply(ProjectInfo& info) const {
     info.sampleRate = kSampleRates[juce::jmax(0, sampleRateCombo_.getSelectedId() - 1)];
     info.renderBitDepth = kBitDepths[juce::jmax(0, renderBitCombo_.getSelectedId() - 1)];
     info.bounceBitDepth = kBitDepths[juce::jmax(0, bounceBitCombo_.getSelectedId() - 1)];
-}
-
-bool ProjectSettingsDialog::GeneralPage::shouldSaveAsDefault() const {
-    return saveAsDefaultBtn_.getToggleState();
 }
 
 void ProjectSettingsDialog::GeneralPage::resized() {
@@ -216,7 +209,6 @@ void ProjectSettingsDialog::GeneralPage::resized() {
     row(sampleRateLabel_, sampleRateCombo_);
     row(renderBitLabel_, renderBitCombo_);
     row(bounceBitLabel_, bounceBitCombo_);
-    saveAsDefaultBtn_.setBounds(bounds.removeFromTop(kRowH));
 }
 
 // ============================================================================
@@ -227,22 +219,25 @@ ProjectSettingsDialog::ProjectSettingsDialog() {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
 
     const auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
-    tabs_.addTab(tr("project_settings.section.metadata"), tabBg, &metadataPage_, false);
     tabs_.addTab(tr("project_settings.section.general"), tabBg, &generalPage_, false);
+    tabs_.addTab(tr("project_settings.section.metadata"), tabBg, &metadataPage_, false);
     tabs_.setTabBarDepth(kTabBarDepth);
     tabs_.setOutline(0);
     addAndMakeVisible(tabs_);
 
-    okBtn_.onClick = [this]() {
-        applySettings();
-        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-            dw->closeButtonPressed();
-    };
+    // Apply without closing, so a length or a credit can be tried against the
+    // arrangement behind the dialog rather than committed blind. There is no
+    // OK: it would only be Apply that also closes, and the dialog is cheap to
+    // dismiss once you can already see what you changed.
+    applyBtn_.setButtonText(tr("dialogs.apply"));
+    applyBtn_.onClick = [this]() { applySettings(); };
+
+    cancelBtn_.setButtonText(tr("dialogs.cancel"));
     cancelBtn_.onClick = [this]() {
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
             dw->closeButtonPressed();
     };
-    addAndMakeVisible(okBtn_);
+    addAndMakeVisible(applyBtn_);
     addAndMakeVisible(cancelBtn_);
 
     loadSettings();
@@ -272,16 +267,6 @@ void ProjectSettingsDialog::applySettings() {
 
     pm.markDirty();
 
-    // Optionally persist the General values as the defaults for new projects.
-    if (generalPage_.shouldSaveAsDefault()) {
-        auto& config = Config::getInstance();
-        config.setDefaultTimelineLengthBars(info.timelineLengthBars);
-        config.setRenderSampleRate(info.sampleRate);
-        config.setRenderBitDepth(info.renderBitDepth);
-        config.setBounceBitDepth(info.bounceBitDepth);
-        config.save();
-    }
-
     // Apply the new length to the live timeline immediately.
     if (auto* tc = TimelineController::getCurrent()) {
         const int beatsPerBar = juce::jmax(1, tc->getState().tempo.timeSignatureNumerator);
@@ -302,9 +287,9 @@ void ProjectSettingsDialog::resized() {
     auto bounds = getLocalBounds().reduced(kPad);
 
     auto buttons = bounds.removeFromBottom(kRowH);
-    cancelBtn_.setBounds(buttons.removeFromRight(90));
-    buttons.removeFromRight(8);
-    okBtn_.setBounds(buttons.removeFromRight(90));
+    cancelBtn_.setBounds(buttons.removeFromRight(kButtonW));
+    buttons.removeFromRight(kButtonGap);
+    applyBtn_.setBounds(buttons.removeFromRight(kButtonW));
     bounds.removeFromBottom(kRowGap);
 
     tabs_.setBounds(bounds);

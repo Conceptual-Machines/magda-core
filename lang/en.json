@@ -224,8 +224,7 @@
     "bars": "bars",
     "sample_rate": "Sample rate",
     "render_bit_depth": "Render bit depth",
-    "bounce_bit_depth": "Bounce bit depth",
-    "save_as_default": "Save as default for new projects"
+    "bounce_bit_depth": "Bounce bit depth"
   },
   "track_manager": {
     "column.track": "Track",
