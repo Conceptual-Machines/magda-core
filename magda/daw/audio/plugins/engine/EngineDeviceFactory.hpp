@@ -172,7 +172,41 @@ ExternalDeviceResult createEngineExternalDevice(const magda::DeviceInfo& device,
                                                 bool offlineRender = false);
 
 /**
- * @brief The same, without waiting for it.
+ * @brief What the model says about this device now, asked on the message thread.
+ *
+ * A plugin takes seconds to load and a project does not stop while it does. By
+ * the time one arrives its device may have been edited, had a preset applied,
+ * or been deleted, and the restoration is about to write the model's parameter
+ * values onto the instance and hand corrected ones back. Doing that from a copy
+ * taken when the load was requested would quietly undo whatever happened in
+ * between.
+ *
+ * So the model is read at completion rather than captured at request. Null
+ * means the device is gone, and the load is abandoned rather than completed
+ * against a project that no longer has it.
+ */
+using CurrentDeviceLookup = std::function<const magda::DeviceInfo*()>;
+
+/**
+ * @brief The end of an asynchronous load, once the instance exists.
+ *
+ * The seam the callback below ends at, and a host with a loader of its own
+ * calls it directly. @p error is what the loader reported, used only when @p
+ * instance is null.
+ *
+ * It resolves @p currentDevice first: a device that has gone, or that now names
+ * a different plugin from the one that was asked for, is a load whose answer
+ * arrived too late to be useful, and completing it would put a stale patch on a
+ * device somebody has since changed.
+ */
+ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPluginInstance> instance,
+                                                const juce::String& error,
+                                                const juce::PluginDescription& requested,
+                                                const CurrentDeviceLookup& currentDevice,
+                                                bool offlineRender = false);
+
+/**
+ * @brief The same as createEngineExternalDevice, without waiting for it.
  *
  * @p completed runs on the message thread when the plugin is ready or has
  * failed. Until then the plan has no device bound for that op, which the
@@ -180,9 +214,14 @@ ExternalDeviceResult createEngineExternalDevice(const magda::DeviceInfo& device,
  * through and says so in the diagnostics. Completion is therefore a re-prepare
  * rather than a hand-off -- bindings are resolved when a plan is prepared, so a
  * device that arrives later is published and the plan prepared again.
+ *
+ * @p device is read once, now, to work out which plugin to load.
+ * @p currentDevice is read again at completion, to work out what to restore
+ * onto it; see CurrentDeviceLookup for why those are two different questions.
  */
 void createEngineExternalDeviceAsync(const magda::DeviceInfo& device,
                                      const ExternalPluginServices& services, bool offlineRender,
+                                     CurrentDeviceLookup currentDevice,
                                      std::function<void(ExternalDeviceResult)> completed);
 
 /**

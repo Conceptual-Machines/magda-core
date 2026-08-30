@@ -204,10 +204,43 @@ ExternalDeviceResult createEngineExternalDevice(const magda::DeviceInfo& device,
     return adaptExternalPluginInstance(std::move(instance), device, offlineRender);
 }
 
+ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPluginInstance> instance,
+                                                const juce::String& error,
+                                                const juce::PluginDescription& requested,
+                                                const CurrentDeviceLookup& currentDevice,
+                                                bool offlineRender) {
+    // The model first, before anything is done with the instance. Everything
+    // below restores from it, and it is a different object from the one the
+    // load was requested with: seconds have passed.
+    const auto* device = currentDevice ? currentDevice() : nullptr;
+
+    if (device == nullptr)
+        return {.device = {},
+                .failure = "the device was removed while \"" + requested.name + "\" was loading"};
+
+    if (instance == nullptr)
+        return {.device = {},
+                .failure = "external plugin \"" + device->name + "\" could not be loaded: " +
+                           (error.isNotEmpty() ? error : "no reason given")};
+
+    // And it has to still be the same plugin. A device whose plugin was
+    // replaced while this one loaded is not waiting for this answer, and
+    // restoring onto it would put one plugin's saved patch on another.
+    if (magda::describeSavedPlugin(*device).createIdentifierString() !=
+        requested.createIdentifierString())
+        return {.device = {},
+                .failure =
+                    "the device changed plugin while \"" + requested.name + "\" was loading"};
+
+    return adaptExternalPluginInstance(std::move(instance), *device, offlineRender);
+}
+
 void createEngineExternalDeviceAsync(const magda::DeviceInfo& device,
                                      const ExternalPluginServices& services, bool offlineRender,
+                                     CurrentDeviceLookup currentDevice,
                                      std::function<void(ExternalDeviceResult)> completed) {
     jassert(completed != nullptr);
+    jassert(currentDevice != nullptr);
 
     const auto resolved = resolvePlugin(device, services);
     if (resolved.failure.isNotEmpty()) {
@@ -215,23 +248,16 @@ void createEngineExternalDeviceAsync(const magda::DeviceInfo& device,
         return;
     }
 
-    // The device is copied into the callback rather than captured by reference.
-    // What it is read for is its parameter metadata, and the model it came from
-    // is free to be edited, moved or deleted while a plugin loads: that is what
-    // taking seconds means.
+    // Nothing of the model is captured here. What the callback needs from it is
+    // read when the callback runs, because by then the project has had seconds
+    // to move on: see CurrentDeviceLookup.
     services.formats->createPluginInstanceAsync(
         resolved.description, services.context.sampleRate, services.context.maxBlockSize,
-        [saved = device, offlineRender, completed = std::move(completed)](
-            std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error) {
-            if (instance == nullptr) {
-                completed({.device = {},
-                           .failure = "external plugin \"" + saved.name +
-                                      "\" could not be loaded: " +
-                                      (error.isNotEmpty() ? error : "no reason given")});
-                return;
-            }
-
-            completed(adaptExternalPluginInstance(std::move(instance), saved, offlineRender));
+        [requested = resolved.description, currentDevice = std::move(currentDevice), offlineRender,
+         completed = std::move(completed)](std::unique_ptr<juce::AudioPluginInstance> instance,
+                                           const juce::String& error) {
+            completed(completeExternalPluginLoad(std::move(instance), error, requested,
+                                                 currentDevice, offlineRender));
         });
 }
 

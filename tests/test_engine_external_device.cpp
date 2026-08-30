@@ -10,6 +10,7 @@
 
 #include "core/ParameterInfo.hpp"
 #include "exec/EngineDevice.hpp"
+#include "magda/daw/audio/plugin_manager/ExternalPluginLookup.hpp"
 #include "magda/daw/audio/plugin_manager/ExternalPluginState.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "magda/daw/audio/plugins/engine/EngineExternalDevice.hpp"
@@ -1146,14 +1147,86 @@ TEST_CASE("The asynchronous entry point reports a missing plugin the same way",
 
     bool called = false;
     adapter::ExternalDeviceResult delivered;
-    adapter::createEngineExternalDeviceAsync(missing, services, false,
-                                             [&](adapter::ExternalDeviceResult result) {
-                                                 called = true;
-                                                 delivered = std::move(result);
-                                             });
+    adapter::createEngineExternalDeviceAsync(
+        missing, services, false, [&]() { return &missing; },
+        [&](adapter::ExternalDeviceResult result) {
+            called = true;
+            delivered = std::move(result);
+        });
 
     REQUIRE(called);
     CHECK(delivered.device == nullptr);
     CHECK(delivered.failure.contains("Massive X"));
     CHECK(delivered.restoredParameters.empty());
+}
+
+TEST_CASE("A load that finishes late restores from the model as it is now", "[engine][external]") {
+    // A plugin takes seconds to load and a project does not stop while it does.
+    // If the user turns a knob or applies a preset in the meantime, completing
+    // the load from the values the request was made with would put them back,
+    // and the caller would then be handed those as the values to write into the
+    // model: the edit undone twice over.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto model = externalDeviceSaving(1.0f, 0.25f);
+    const auto requested = magda::describeSavedPlugin(model);
+
+    // The edit, made while the plugin was loading.
+    model.parameters[1].currentValue = 0.6f;
+
+    const auto result = adapter::completeExternalPluginLoad(std::move(plugin), {}, requested,
+                                                            [&]() { return &model; });
+
+    REQUIRE(result.device != nullptr);
+    CHECK(raw->tone->getValue() == Catch::Approx(0.6f));
+
+    const auto tone =
+        std::find_if(result.restoredParameters.begin(), result.restoredParameters.end(),
+                     [](const magda::RestoredParameter& p) { return p.paramIndex == 3; });
+    REQUIRE(tone != result.restoredParameters.end());
+    CHECK(tone->value == Catch::Approx(0.6f));
+}
+
+TEST_CASE("A device deleted while its plugin loaded is not completed", "[engine][external]") {
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+
+    const auto requested = magda::describeSavedPlugin(externalDevice());
+    const auto result = adapter::completeExternalPluginLoad(
+        std::move(plugin), {}, requested, []() -> const magda::DeviceInfo* { return nullptr; });
+
+    CHECK(result.device == nullptr);
+    CHECK(result.failure.contains("removed while"));
+}
+
+TEST_CASE("A device that changed plugin while loading is not completed", "[engine][external]") {
+    // The answer arrived for a question the device is no longer asking.
+    // Restoring here would put one plugin's saved patch onto another.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+
+    auto model = externalDevice();
+    model.name = "Something Else";
+    model.fileOrIdentifier = "/Library/SomethingElse.vst3";
+
+    auto requestedDevice = externalDevice();
+    requestedDevice.name = "Massive X";
+    requestedDevice.fileOrIdentifier = "/Library/MassiveX.vst3";
+    const auto requested = magda::describeSavedPlugin(requestedDevice);
+
+    const auto result = adapter::completeExternalPluginLoad(std::move(plugin), {}, requested,
+                                                            [&]() { return &model; });
+
+    CHECK(result.device == nullptr);
+    CHECK(result.failure.contains("changed plugin"));
+}
+
+TEST_CASE("A load that failed reports the loader's reason", "[engine][external]") {
+    auto model = externalDevice();
+    const auto requested = magda::describeSavedPlugin(model);
+
+    const auto result = adapter::completeExternalPluginLoad(nullptr, "the file was not there",
+                                                            requested, [&]() { return &model; });
+
+    CHECK(result.device == nullptr);
+    CHECK(result.failure.contains("the file was not there"));
 }
