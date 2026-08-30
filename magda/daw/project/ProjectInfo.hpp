@@ -116,8 +116,10 @@ struct ProjectInfo {
     int keyRoot = -1;    // 0=C, 1=C#, ..., 11=B; -1=none
     int keyQuality = 0;  // 0=major, 1=minor
 
-    // Title and credits. Distinct from `name`, which is the project's own name
-    // and follows the .mgd file; a song called "Blue" can live in blue_v7.mgd.
+    // Title and credits. `title` is distinct from `name`, which is the project's
+    // own name and follows the .mgd file, so a song called "Blue" can live in
+    // blue_v7.mgd - but an empty title means "inherit", and the name is what
+    // gets shown and written. Nobody has to retype a name they already gave.
     ProjectMetadata metadata;
 
     // Loop settings (beats are authoritative, seconds derived from tempo)

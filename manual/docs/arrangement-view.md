@@ -201,7 +201,7 @@ Open **File → Project Settings** to set options that belong to the project its
 
 The **Metadata** section holds the song's title and credits: Title, Artist, Album, Original artist, Composer, Songwriter, Producer, Arranger, Year, Genre, Copyright, Website and Comment. All of them are free text and all of them are optional.
 
-The title is separate from the project's own name, so a song called *Blue* can live in `blue_v7.mgd`. If you leave the title empty, the project name stands in for it wherever a title is needed.
+Title is left empty by default and shows the project's name in grey. That name is what gets used, so there is nothing to fill in unless the song is called something other than the file — a song called *Blue* can live in `blue_v7.mgd`. Type a title only when you want one that differs from the name; leave it alone and renaming the project keeps carrying through.
 
 These are the fields the DAWproject format defines, so they survive a round trip through **File → Export DAWproject...** and back, and credits written in another DAW come through on import.
 

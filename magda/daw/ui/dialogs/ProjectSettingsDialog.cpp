@@ -24,8 +24,12 @@ constexpr int kMetaRowGap = 8;
 constexpr int kCommentH = 64;
 constexpr int kDialogW = 660;
 
-// The last field gets the full-width multi-line box, which is right for a
-// free-form comment and wrong for a one-line credit.
+// The first field takes the project name as its placeholder and the last gets
+// the full-width multi-line box, which is right for a free-form comment and
+// wrong for a one-line credit.
+static_assert(kProjectMetadataFields.front().member == &ProjectMetadata::title,
+              "ProjectSettingsDialog offers the project name as the first metadata field's "
+              "placeholder; keep Title first in kProjectMetadataFields.");
 static_assert(kProjectMetadataFields.back().member == &ProjectMetadata::comment,
               "ProjectSettingsDialog lays out the final metadata field as a multi-line "
               "comment box; keep Comment last in kProjectMetadataFields.");
@@ -157,6 +161,15 @@ void ProjectSettingsDialog::loadSettings() {
     for (size_t i = 0; i < kProjectMetadataFields.size(); ++i)
         metadataRows_[i].editor.setText(info.metadata.*kProjectMetadataFields[i].member,
                                         juce::dontSendNotification);
+
+    // A project that already has a name should not make anyone retype it as a
+    // title. Leaving the box empty is what exports the name as <Title>, so the
+    // placeholder is the value the field actually stands for, not a prompt -
+    // and because it stays empty, renaming the project keeps carrying through
+    // instead of freezing whatever the project was called the first time
+    // somebody opened this dialog.
+    metadataRows_.front().editor.setTextToShowWhenEmpty(info.name,
+                                                        DarkTheme::getColour(DarkTheme::TEXT_DIM));
 
     lengthSlider_.setValue(info.timelineLengthBars, juce::dontSendNotification);
     sampleRateCombo_.setSelectedId(indexOfSampleRate(info.sampleRate), juce::dontSendNotification);
