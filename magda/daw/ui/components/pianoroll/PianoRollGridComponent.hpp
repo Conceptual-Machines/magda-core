@@ -505,6 +505,10 @@ class PianoRollGridComponent : public juce::Component,
     std::optional<ExpressionHit> hitTestExpressionPoint(juce::Point<int> pos) const;
     std::optional<ExpressionHit> hitTestExpressionNote(juce::Point<int> pos) const;
 
+    /// Cursor while editing glides: the bend glyph when the gesture would take
+    /// effect here, the ordinary pointer otherwise (#2198).
+    void updateExpressionCursor(const juce::ModifierKeys& mods, juce::Point<int> pos);
+
     /// Whether @p mods ask for a segment bend rather than a point move (#2198).
     /// Alt, which is what Bitwig uses and the one modifier free here: Shift
     /// already means "do not snap to semitones" on the other two gestures.

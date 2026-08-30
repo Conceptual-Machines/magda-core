@@ -902,6 +902,7 @@ void PianoRollGridComponent::mouseMove(const juce::MouseEvent& e) {
             hoveredExpressionPoint_ = hit;
             repaint();
         }
+        updateExpressionCursor(e.mods, e.getEventRelativeTo(this).getPosition());
     } else if (hoveredExpressionPoint_) {
         hoveredExpressionPoint_.reset();
         repaint();
@@ -2034,7 +2035,25 @@ double PianoRollGridComponent::absolutePlayheadBeatForDisplayX(int mouseX) const
     return juce::jlimit(0.0, timelineLengthBeats_, beat);
 }
 
+void PianoRollGridComponent::updateExpressionCursor(const juce::ModifierKeys& mods,
+                                                    juce::Point<int> pos) {
+    // Only while the modifier is actually held: the cursor is how the gesture
+    // announces itself, and showing it unprompted over every glide would make
+    // Alt look like it was already down.
+    if (isBendExpressionGesture(mods) && hitTestExpressionSegment(pos).has_value())
+        setMouseCursor(CursorManager::getInstance().getCurveBendCursor());
+    else
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+}
+
 void PianoRollGridComponent::updateEmptyGridCursor(const juce::ModifierKeys& mods, int /*mouseX*/) {
+    // Alt means bend while glides are being edited, not draw, and a pencil
+    // pointing at a curve the click will reshape is the wrong promise.
+    if (pitchExpressionMode_) {
+        updateExpressionCursor(mods, getMouseXYRelative());
+        return;
+    }
+
     if (mods.isAltDown()) {
         setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
     } else {
@@ -2043,8 +2062,8 @@ void PianoRollGridComponent::updateEmptyGridCursor(const juce::ModifierKeys& mod
 }
 
 void PianoRollGridComponent::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
-    // Pressing/releasing Alt while hovering must swap the pencil cursor
-    // without waiting for a mouse move.
+    // Pressing/releasing Alt while hovering must swap the cursor -- pencil
+    // normally, bend while editing glides -- without waiting for a mouse move.
     if (isMouseOver() && !juce::Component::isMouseButtonDownAnywhere())
         updateEmptyGridCursor(modifiers, getMouseXYRelative().x);
 }

@@ -37,6 +37,10 @@ class CursorManager {
     const juce::MouseCursor& getGhostCopyCursor() const {
         return ghostCopyCursor;
     }
+    /// Shown while Alt is held over a glide segment that can be bent (#2198).
+    const juce::MouseCursor& getCurveBendCursor() const {
+        return curveBendCursor;
+    }
 
   private:
     CursorManager();
@@ -53,6 +57,7 @@ class CursorManager {
     static juce::MouseCursor createNoteRepeatCursor();
     static juce::MouseCursor createBladeCursor();
     static juce::MouseCursor createGhostCopyCursor();
+    static juce::MouseCursor createCurveBendCursor();
 
     juce::MouseCursor zoomCursor;
     juce::MouseCursor zoomInCursor;
@@ -62,6 +67,7 @@ class CursorManager {
     juce::MouseCursor noteRepeatCursor;
     juce::MouseCursor bladeCursor;
     juce::MouseCursor ghostCopyCursor;
+    juce::MouseCursor curveBendCursor;
 };
 
 }  // namespace magda
