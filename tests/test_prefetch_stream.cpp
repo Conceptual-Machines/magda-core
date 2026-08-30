@@ -334,15 +334,32 @@ TEST_CASE("A source with no end is not read past the end of a chunk", "[engine][
 
     const auto chunkSamples = std::max(settings.chunkSamples, kBlockSize);
 
+    // Played across zero rather than up to it, and that is the point of the
+    // loop. The pool holds four chunks, so one round of fill() from -8415
+    // advances the read-ahead by a kilosample and never reaches a position that
+    // is not negative -- which would leave the ordinary path untested, and the
+    // ordinary path is where the second overflow lived: the saturating form
+    // needs int64's maximum plus the position, and that sum is only
+    // representable while the position is negative.
     fixture.cue(-8415);
-    while (fixture.stream->fill()) {
+
+    auto played = 0;
+    std::int64_t lastPosition = 0;
+    for (std::int64_t position = -8415; position < 2048; position += kBlockSize) {
+        lastPosition = position;
+        INFO("position " << position);
+        played += fixture.readPrefetched(position);
+
+        // Every round, not once at the end. A single request past the bound is
+        // a write past the end of a chunk, whatever the rest of the run does.
+        REQUIRE(fixture.reader->largestRequest > 0);
+        REQUIRE(fixture.reader->largestRequest <= chunkSamples);
     }
 
-    CHECK(fixture.reader->largestRequest > 0);
-    CHECK(fixture.reader->largestRequest <= chunkSamples);
-
-    // And it still plays: the guard is a clamp, not a refusal. A position in
-    // front of the first sample reads as silence, which is what a stream on its
-    // way into its own material is.
-    CHECK(fixture.read(-8415) == kBlockSize);
+    // And it played: the guard is a clamp, not a refusal. A position in front
+    // of the first sample reads as silence, which is what a stream on its way
+    // into its own material is, and the material itself follows.
+    CHECK(played > 0);
+    CHECK(lastPosition > 0);
+    fixture.requireHolds(lastPosition);
 }

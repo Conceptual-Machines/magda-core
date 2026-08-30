@@ -260,10 +260,24 @@ bool PrefetchStream::fill() {
         // samples into a chunk of 4096, which is a read past the end of the
         // buffer rather than a wrong number. A real project found it: a loop
         // whose region starts after the clip does.
-        const auto headroom = std::numeric_limits<std::int64_t>::max() + fillPosition_;
-        const auto remaining = fillPosition_ < 0 && length_ > headroom
-                                   ? std::numeric_limits<std::int64_t>::max()
-                                   : length_ - fillPosition_;
+        //
+        // Branched rather than written as one expression, because the guard has
+        // to come before the arithmetic it is guarding and not beside it. The
+        // saturating form needs int64's maximum plus the position, and that sum
+        // is only representable while the position is negative: computing it
+        // first and testing the sign afterwards is the same overflow again,
+        // moved.
+        const auto remaining = [this]() -> std::int64_t {
+            constexpr auto unbounded = std::numeric_limits<std::int64_t>::max();
+
+            if (fillPosition_ >= 0)
+                return length_ - fillPosition_;  // both non-negative, so no wrap
+
+            // Safe here and only here: the position is negative, so the sum is
+            // below the maximum rather than past it.
+            const auto headroom = unbounded + fillPosition_;
+            return length_ > headroom ? unbounded : length_ - fillPosition_;
+        }();
 
         const auto count = static_cast<int>(std::min<std::int64_t>(chunkSamples_, remaining));
 
