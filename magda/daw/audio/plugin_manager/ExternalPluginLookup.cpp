@@ -37,13 +37,19 @@ juce::PluginDescription describeSavedPlugin(const DeviceInfo& device) {
     return description;
 }
 
-SavedPluginIdentity savedPluginIdentity(const DeviceInfo& device) {
-    return {.identifier = device.uniqueId,
-            .name = device.name,
-            .manufacturer = device.manufacturer,
-            .fileOrIdentifier = device.fileOrIdentifier,
-            .format = device.format,
-            .isInstrument = device.isInstrument};
+void applyResolvedPluginDescription(DeviceInfo& device,
+                                    const juce::PluginDescription& description) {
+    device.name = description.name;
+    device.pluginId = description.createIdentifierString();
+    device.manufacturer = description.manufacturerName;
+    device.format = pluginFormatFromName(description.pluginFormatName);
+    device.isInstrument = description.isInstrument;
+    if (device.deviceType != DeviceType::MIDI)
+        device.deviceType = description.isInstrument ? DeviceType::Instrument : DeviceType::Effect;
+    device.uniqueId = description.createIdentifierString();
+    device.fileOrIdentifier = description.fileOrIdentifier;
+    device.audioInputChannels = description.numInputChannels;
+    device.audioOutputChannels = description.numOutputChannels;
 }
 
 ExternalPluginMatch matchInstalledPlugin(const DeviceInfo& device,

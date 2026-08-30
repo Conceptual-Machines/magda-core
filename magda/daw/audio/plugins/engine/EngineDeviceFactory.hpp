@@ -186,22 +186,24 @@ ExternalDeviceResult createEngineExternalDevice(const magda::DeviceInfo& device,
  * means the device is gone, and the load is abandoned rather than completed
  * against a project that no longer has it.
  */
-using CurrentDeviceLookup = std::function<const magda::DeviceInfo*()>;
+using CurrentDeviceLookup = std::function<const magda::DeviceInfo*(magda::DeviceId deviceId)>;
 
 /**
  * @brief What an asynchronous load remembers about what it asked for.
  *
- * The identity is the model's, taken when the load was requested, so that
- * comparing it with the model's identity at completion compares like with like.
- * Not the scanned description's identifier: that carries the plugin's numeric
- * uid, a device's saved fields do not, and comparing the two would call every
- * unchanged plugin a change.
+ * The device id and assignment generation are the stable question the loader
+ * is answering. Saved plugin metadata is not: resolving a moved plugin or an
+ * imported DAWproject legitimately corrects it before this request completes.
+ *
+ * @ref resolvedIdentity is the exact installed description handed to JUCE. It
+ * is retained so the request records the precise variant that is in flight;
+ * completion does not try to re-resolve mutable model fields and infer whether
+ * they still mean it. The assignment generation answers that directly.
  */
 struct RequestedPlugin {
-    magda::SavedPluginIdentity identity;
-
-    /// For the messages, which name a plugin rather than an identifier.
-    juce::String name;
+    magda::DeviceId deviceId = magda::INVALID_DEVICE_ID;
+    std::uint64_t assignmentGeneration = 0;
+    juce::PluginDescription resolvedIdentity;
 };
 
 /**
@@ -211,10 +213,9 @@ struct RequestedPlugin {
  * calls it directly. @p error is what the loader reported, used only when @p
  * instance is null.
  *
- * It resolves @p currentDevice first: a device that has gone, or that now names
- * a different plugin from the one that was asked for, is a load whose answer
- * arrived too late to be useful, and completing it would put a stale patch on a
- * device somebody has since changed.
+ * It resolves @p currentDevice by the captured id first. A device that has gone,
+ * or whose assignment generation changed, is a load whose answer arrived too
+ * late to be useful. Mutable plugin metadata is deliberately not compared.
  */
 ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPluginInstance> instance,
                                                 const juce::String& error,
@@ -232,11 +233,16 @@ ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPlugi
  * rather than a hand-off -- bindings are resolved when a plan is prepared, so a
  * device that arrives later is published and the plan prepared again.
  *
- * @p device is read once, now, to work out which plugin to load.
+ * @p device is resolved and enriched synchronously before this function
+ * returns, so its installed role and channel capabilities are visible to a
+ * plan compiled while the plugin instance is still loading. That enrichment
+ * preserves its assignment generation.
+ *
+ * The enriched @p device is read once to work out which plugin to load.
  * @p currentDevice is read again at completion, to work out what to restore
  * onto it; see CurrentDeviceLookup for why those are two different questions.
  */
-void createEngineExternalDeviceAsync(const magda::DeviceInfo& device,
+void createEngineExternalDeviceAsync(magda::DeviceInfo& device,
                                      const ExternalPluginServices& services, bool offlineRender,
                                      CurrentDeviceLookup currentDevice,
                                      std::function<void(ExternalDeviceResult)> completed);

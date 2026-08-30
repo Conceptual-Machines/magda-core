@@ -144,6 +144,39 @@ TEST_CASE("A project from another host resolves by name and format", "[plugins][
     CHECK(match.description.manufacturerName == "Xfer Records");
 }
 
+TEST_CASE("Resolved scan facts enrich the assignment without replacing it", "[plugins][lookup]") {
+    auto device = saved("Serum", "", "/old/Serum.vst3", false);
+    device.deviceType = magda::DeviceType::Effect;
+    const auto generation = device.pluginAssignmentGeneration;
+
+    auto description = installed("Serum", "Xfer Records", "/Library/Serum.vst3", true);
+    description.numInputChannels = 0;
+    description.numOutputChannels = 8;
+
+    magda::applyResolvedPluginDescription(device, description);
+
+    CHECK(device.pluginAssignmentGeneration == generation);
+    CHECK(device.name == "Serum");
+    CHECK(device.pluginId == description.createIdentifierString());
+    CHECK(device.uniqueId == description.createIdentifierString());
+    CHECK(device.manufacturer == "Xfer Records");
+    CHECK(device.fileOrIdentifier == "/Library/Serum.vst3");
+    CHECK(device.isInstrument);
+    CHECK(device.deviceType == magda::DeviceType::Instrument);
+    CHECK(device.audioInputChannels == 0);
+    CHECK(device.audioOutputChannels == 8);
+}
+
+TEST_CASE("Plugin assignment generations survive copies and change for replacements",
+          "[plugins][lookup]") {
+    const auto assignment = saved("Kontakt", "NI", "/Library/Kontakt.vst3", true);
+    const auto copy = assignment;
+    const auto replacement = saved("Kontakt", "NI", "/Library/Kontakt.vst3", false);
+
+    CHECK(copy.pluginAssignmentGeneration == assignment.pluginAssignmentGeneration);
+    CHECK(replacement.pluginAssignmentGeneration > assignment.pluginAssignmentGeneration);
+}
+
 TEST_CASE("The format is part of the last pass", "[plugins][lookup]") {
     // Same name, different format. An AU is not a substitute for the VST3 a
     // project saved: the two have different parameter lists and different

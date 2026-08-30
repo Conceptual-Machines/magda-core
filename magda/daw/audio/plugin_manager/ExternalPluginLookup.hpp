@@ -87,51 +87,18 @@ ExternalPluginMatch matchInstalledPlugin(const DeviceInfo& device,
                                          const juce::KnownPluginList& knownPlugins);
 
 /**
- * @brief How a device says which plugin it is, as the model records it.
+ * @brief Enrich @p device with facts from the exact installed plugin selected.
  *
- * Two forms, because a project may carry either. @ref identifier is JUCE's own
- * identifier string, which is what DeviceInfo::uniqueId holds for a device
- * added from the browser. The fields beside it are what an imported project has
- * instead, and they are compared as themselves rather than through
- * PluginDescription::createIdentifierString().
+ * Resolution is also metadata discovery. An imported DAWproject may have no
+ * vendor or path and may call an instrument an effect; a plugin may have moved
+ * since the project was saved. The native plan must see the installed role and
+ * channel topology before it compiles, otherwise the successfully resolved
+ * instrument receives no MIDI or a device is wired at the wrong width.
  *
- * Not through that string for two reasons. It contains the plugin's numeric
- * uid, which a description rebuilt from saved fields does not have, so
- * comparing a rebuilt one against a scanned one never matches. And it encodes
- * only the format, the name and a hash of the file: not the vendor, and not
- * whether the plugin is an instrument. A bundle shipping an effect and an
- * instrument of the same name out of one file -- the case the lookup's own
- * first pass exists for -- produces one string for both.
+ * This does not author a new plugin assignment and therefore deliberately does
+ * not change DeviceInfo::pluginAssignmentGeneration. It only replaces mutable
+ * saved/scan facts for the assignment already in the slot.
  */
-struct SavedPluginIdentity {
-    juce::String identifier;
-
-    juce::String name;
-    juce::String manufacturer;
-    juce::String fileOrIdentifier;
-    PluginFormat format = PluginFormat::VST3;
-    bool isInstrument = false;
-
-    /**
-     * @brief Whether @p other names the same plugin.
-     *
-     * By identifier when both have one, which is exact. By the saved fields
-     * otherwise, which is what an imported device has and what a device that
-     * has only just been resolved has: a device that gains a scanned identifier
-     * has not changed plugin, and a comparison that read that as a change would
-     * refuse an answer it should have taken.
-     */
-    bool namesSamePluginAs(const SavedPluginIdentity& other) const {
-        if (identifier.isNotEmpty() && other.identifier.isNotEmpty())
-            return identifier == other.identifier;
-
-        return name == other.name && manufacturer == other.manufacturer &&
-               fileOrIdentifier == other.fileOrIdentifier && format == other.format &&
-               isInstrument == other.isInstrument;
-    }
-};
-
-/** What @p device records about which plugin it names. */
-SavedPluginIdentity savedPluginIdentity(const DeviceInfo& device);
+void applyResolvedPluginDescription(DeviceInfo& device, const juce::PluginDescription& description);
 
 }  // namespace magda

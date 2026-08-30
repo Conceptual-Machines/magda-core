@@ -216,34 +216,33 @@ ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPlugi
     // The model first, before anything is done with the instance. Everything
     // below restores from it, and it is a different object from the one the
     // load was requested with: seconds have passed.
-    const auto* device = currentDevice ? currentDevice() : nullptr;
+    const auto* device = currentDevice ? currentDevice(requested.deviceId) : nullptr;
+
+    const auto& requestedName = requested.resolvedIdentity.name;
 
     if (device == nullptr)
         return {.device = {},
-                .failure = "the device was removed while \"" + requested.name + "\" was loading"};
+                .failure = "the device was removed while \"" + requestedName + "\" was loading"};
+
+    // This is the identity boundary. Scan metadata may have changed in every
+    // field while the plugin loaded, including the role the plan compiles from;
+    // those are facts learned about this assignment, not another assignment.
+    // A replacement DeviceInfo carries a newly authored generation even when
+    // it is another variant in the same bundle or has the same display name.
+    if (device->id != requested.deviceId ||
+        device->pluginAssignmentGeneration != requested.assignmentGeneration)
+        return {.device = {},
+                .failure = "the device changed plugin while \"" + requestedName + "\" was loading"};
 
     if (instance == nullptr)
         return {.device = {},
                 .failure = "external plugin \"" + device->name + "\" could not be loaded: " +
                            (error.isNotEmpty() ? error : "no reason given")};
 
-    // And it has to still be the same plugin. A device whose plugin was
-    // replaced while this one loaded is not waiting for this answer, and
-    // restoring onto it would put one plugin's saved patch on another.
-    //
-    // The model's identity on both sides. The scanned description's identifier
-    // carries the plugin's numeric uid and a device's saved fields do not, so
-    // comparing this against that would find every unchanged plugin changed and
-    // refuse every load there is.
-    if (!magda::savedPluginIdentity(*device).namesSamePluginAs(requested.identity))
-        return {.device = {},
-                .failure =
-                    "the device changed plugin while \"" + requested.name + "\" was loading"};
-
     return adaptExternalPluginInstance(std::move(instance), *device, offlineRender);
 }
 
-void createEngineExternalDeviceAsync(const magda::DeviceInfo& device,
+void createEngineExternalDeviceAsync(magda::DeviceInfo& device,
                                      const ExternalPluginServices& services, bool offlineRender,
                                      CurrentDeviceLookup currentDevice,
                                      std::function<void(ExternalDeviceResult)> completed) {
@@ -256,13 +255,18 @@ void createEngineExternalDeviceAsync(const magda::DeviceInfo& device,
         return;
     }
 
-    // Nothing of the model is captured here. What the callback needs from it is
-    // read when the callback runs, because by then the project has had seconds
-    // to move on: see CurrentDeviceLookup.
+    // This is synchronous on purpose. A caller compiles the native plan after
+    // starting the loads, while their instances are still in flight; it needs
+    // the resolved instrument role and channel topology now, not at completion.
+    // These are corrected facts about the existing assignment, so its stable
+    // generation is preserved.
+    magda::applyResolvedPluginDescription(device, resolved.description);
+
     services.formats->createPluginInstanceAsync(
         resolved.description, services.context.sampleRate, services.context.maxBlockSize,
-        [requested = RequestedPlugin{.identity = magda::savedPluginIdentity(device),
-                                     .name = resolved.description.name},
+        [requested = RequestedPlugin{.deviceId = device.id,
+                                     .assignmentGeneration = device.pluginAssignmentGeneration,
+                                     .resolvedIdentity = resolved.description},
          currentDevice = std::move(currentDevice), offlineRender, completed = std::move(completed)](
             std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error) {
             completed(completeExternalPluginLoad(std::move(instance), error, requested,

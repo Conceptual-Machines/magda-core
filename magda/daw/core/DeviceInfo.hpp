@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 
@@ -14,6 +15,18 @@
 namespace magda {
 
 struct RackInfo;
+
+/**
+ * @brief A process-local serial number for a newly authored plugin assignment.
+ *
+ * This is deliberately not project data. A project load authors fresh live
+ * assignments, while copies of those DeviceInfo values carry the same number.
+ * The distinction is what an asynchronous plugin load needs: metadata and
+ * state edits copy or mutate the current assignment, while replacing a slot
+ * with a newly constructed DeviceInfo carries a different number even when
+ * both plugins have ambiguous or temporarily incomplete saved metadata.
+ */
+std::uint64_t nextPluginAssignmentGeneration();
 
 /**
  * @brief Value-semantic owner for a device's pad chains.
@@ -194,6 +207,13 @@ struct MeterInfo {
  */
 struct DeviceInfo {
     DeviceId id = INVALID_DEVICE_ID;
+
+    // Runtime identity of the plugin assignment in this slot. Copies preserve
+    // it; a newly constructed replacement gets another monotonically increasing
+    // value. Scan enrichment, parameter edits and preset restores must not
+    // change it. Transient by design: serializers neither read nor write it.
+    std::uint64_t pluginAssignmentGeneration = nextPluginAssignmentGeneration();
+
     juce::String name;  // Display name (e.g., "Pro-Q 3")
 
     // MAGDA's loader/model id for this device. For internal devices this is
