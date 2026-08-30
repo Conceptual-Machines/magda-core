@@ -2,15 +2,21 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
+
+#include "../../project/ProjectInfo.hpp"
+
 namespace magda {
 
 /**
  * Per-project settings dialog (File > Project Settings).
  *
- * Edits the authoritative per-project values held in ProjectInfo: total timeline
- * length (bars), working/render sample rate, and render / bounce bit depth.
- * New projects seed these from the global Config defaults; this dialog overrides
- * them for the current project.
+ * Edits the authoritative per-project values held in ProjectInfo: the title and
+ * credits in its ProjectMetadata block, plus total timeline length (bars),
+ * working/render sample rate, and render / bounce bit depth. New projects seed
+ * the technical values from the global Config defaults; this dialog overrides
+ * them for the current project. The metadata has no global default - it is
+ * per-project by nature.
  */
 class ProjectSettingsDialog : public juce::Component {
   public:
@@ -29,6 +35,15 @@ class ProjectSettingsDialog : public juce::Component {
   private:
     void loadSettings();
     void applySettings();
+
+    /// One editable metadata field, in the same order as kProjectMetadataFields.
+    struct MetadataRow {
+        juce::Label label;
+        juce::TextEditor editor;
+    };
+
+    juce::Label metadataHeader_, generalHeader_;
+    std::array<MetadataRow, kProjectMetadataFields.size()> metadataRows_;
 
     juce::Label lengthLabel_, sampleRateLabel_, renderBitLabel_, bounceBitLabel_;
     juce::Slider lengthSlider_;

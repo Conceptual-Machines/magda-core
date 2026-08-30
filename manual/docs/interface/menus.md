@@ -16,7 +16,7 @@ MAGDA has eight top-level menus.
 | Export Audio | Export/render the project to an audio file |
 | Import DAWproject... | Import a `.dawproject` interchange file (see [File Formats](../reference/file-formats.md#dawproject-interchange)) |
 | Export DAWproject... | Export the project as a `.dawproject` interchange file |
-| Project Settings | Open the [Project Settings](../arrangement-view.md#project-settings) dialog (song length, sample rate, render/bounce bit depth) |
+| Project Settings | Open the [Project Settings](../arrangement-view.md#project-settings) dialog (title and credits, song length, sample rate, render/bounce bit depth) |
 | Quit | Exit MAGDA (Windows/Linux only — use Cmd+Q on macOS) |
 
 ## Edit

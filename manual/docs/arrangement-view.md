@@ -195,7 +195,17 @@ Range operations ripple the global tempo, time-signature, and pitch-bend curves 
 
 ## Project Settings
 
-Open **File → Project Settings** to set options that belong to the project itself rather than the application:
+Open **File → Project Settings** to set options that belong to the project itself rather than the application.
+
+### Metadata
+
+The **Metadata** section holds the song's title and credits: Title, Artist, Album, Original artist, Composer, Songwriter, Producer, Arranger, Year, Genre, Copyright, Website and Comment. All of them are free text and all of them are optional.
+
+The title is separate from the project's own name, so a song called *Blue* can live in `blue_v7.mgd`. If you leave the title empty, the project name stands in for it wherever a title is needed.
+
+These are the fields the DAWproject format defines, so they survive a round trip through **File → Export DAWproject...** and back, and credits written in another DAW come through on import.
+
+### General
 
 | Setting | Options |
 |--------|---------|
@@ -204,4 +214,4 @@ Open **File → Project Settings** to set options that belong to the project its
 | **Render Bit Depth** | 16-bit, 24-bit, 32-bit float |
 | **Bounce Bit Depth** | 16-bit, 24-bit, 32-bit float |
 
-Tick **Save as default for new projects** to apply the same values to new projects from now on. These settings are stored per project, so different songs can carry different lengths and render formats.
+Tick **Save as default for new projects** to apply the same values to new projects from now on. These settings are stored per project, so different songs can carry different lengths and render formats. The metadata has no such default — it is per project by nature.

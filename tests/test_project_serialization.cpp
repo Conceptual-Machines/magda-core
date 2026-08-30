@@ -2147,6 +2147,80 @@ TEST_CASE("Project metadata fields roundtrip", "[project][serialization][metadat
     }
 }
 
+TEST_CASE("Project title and credits roundtrip", "[project][serialization][metadata]") {
+    ProjectTestFixture fixture;
+
+    // Every field gets a value derived from its own key, so a mapping that
+    // crosses two fields over reads as the wrong string rather than passing by
+    // coincidence.
+    auto filled = []() {
+        ProjectMetadata metadata;
+        for (const auto& field : kProjectMetadataFields)
+            metadata.*field.member = juce::String("value-") + field.key;
+        return metadata;
+    };
+
+    auto projectObjectOf = [](const juce::var& json) {
+        auto* root = json.getDynamicObject();
+        REQUIRE(root != nullptr);
+        auto* project = root->getProperty("project").getDynamicObject();
+        REQUIRE(project != nullptr);
+        return project;
+    };
+
+    SECTION("every DAWproject metadata field survives a save and load") {
+        ProjectInfo info;
+        info.name = "Credits";
+        info.metadata = filled();
+
+        ProjectInfo loaded;
+        REQUIRE(ProjectSerializer::deserializeProject(ProjectSerializer::serializeProject(info),
+                                                      loaded));
+
+        for (const auto& field : kProjectMetadataFields) {
+            INFO(field.key);
+            REQUIRE(loaded.metadata.*field.member == juce::String("value-") + field.key);
+        }
+    }
+
+    SECTION("an uncredited project writes no metadata object at all") {
+        ProjectInfo info;
+        info.name = "Uncredited";
+        REQUIRE(info.metadata.isEmpty());
+
+        // The var owns the DynamicObject the pointers below run through, so it
+        // has to outlive them.
+        const auto json = ProjectSerializer::serializeProject(info);
+        REQUIRE_FALSE(projectObjectOf(json)->hasProperty("metadata"));
+    }
+
+    SECTION("only the fields that were filled in are written") {
+        ProjectInfo info;
+        info.metadata.artist = "Solo";
+
+        const auto json = ProjectSerializer::serializeProject(info);
+        const auto metadata = projectObjectOf(json)->getProperty("metadata");
+        auto* metadataObj = metadata.getDynamicObject();
+        REQUIRE(metadataObj != nullptr);
+        REQUIRE(metadataObj->getProperties().size() == 1);
+        REQUIRE(metadataObj->getProperty("artist").toString() == "Solo");
+    }
+
+    SECTION("a project saved before the block existed loads with empty credits") {
+        ProjectInfo info;
+        info.name = "Old Project";
+        auto json = ProjectSerializer::serializeProject(info);
+
+        // Loading into a struct that already holds someone else's credits has to
+        // clear them, or the previous project's artist shows under this one's
+        // name for as long as the window stays open.
+        ProjectInfo loaded;
+        loaded.metadata = filled();
+        REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+        REQUIRE(loaded.metadata.isEmpty());
+    }
+}
+
 TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginState]") {
     ProjectTestFixture fixture;
 

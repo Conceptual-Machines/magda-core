@@ -203,6 +203,23 @@
     "label.click_hint": "Click an item to select it in the chain view"
   },
   "project_settings": {
+    "section.metadata": "Metadata",
+    "section.general": "General",
+    "metadata": {
+      "title": "Title",
+      "artist": "Artist",
+      "album": "Album",
+      "originalArtist": "Original artist",
+      "composer": "Composer",
+      "songwriter": "Songwriter",
+      "producer": "Producer",
+      "arranger": "Arranger",
+      "year": "Year",
+      "genre": "Genre",
+      "copyright": "Copyright",
+      "website": "Website",
+      "comment": "Comment"
+    },
     "total_length": "Total length",
     "bars": "bars",
     "sample_rate": "Sample rate",
