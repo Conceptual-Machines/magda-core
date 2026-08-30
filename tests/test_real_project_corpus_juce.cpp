@@ -21,11 +21,9 @@
  * trims -- and it is also its ceiling: a rule nobody wrote down is a rule
  * nothing in it exercises.
  *
- * This is the other half. Projects saved by released builds between 0.4.8 and
- * 0.17.0, loaded from the bytes they were written as, rendered through both
- * engines and compared by the same runner the code-built corpus uses. Seven are
- * declared; six run here, and the skip list below says why the seventh does
- * not. What they
+ * This is the other half. Seven projects saved by released builds between 0.4.8
+ * and 0.17.0, loaded from the bytes they were written as, rendered through both
+ * engines and compared by the same runner the code-built corpus uses. What they
  * bring is the combinations: a v1 project whose clips carry their sources
  * inline, a five-device chain under an FM synth, two tracks coupled through a
  * sidechain rather than through routing, sixty-four session clips sitting
@@ -89,35 +87,10 @@ class RealProjectCorpusTests : public juce::UnitTest {
         // corpus. See PooledSourcesUnwind.
         const PooledSourcesUnwind unwind;
 
-        // Fixtures this binary cannot measure, named rather than filtered by a
-        // predicate, so the reason travels with the name and the day it stops
-        // being true somebody has to come here to say so.
-        //
-        // project.faust hosts a runtime-compiled Faust device, and the Faust
-        // standard library is not staged beside this binary: staging it aborts
-        // the suite on Linux, in an unrelated test that instantiates the Faust
-        // instrument, inside libfaust's own interval analysis (#2237, #2238).
-        // tests/CMakeLists.txt has the mechanism. Without the library the device's saved source
-        // will not compile and it passes audio through, so both legs would render two chains that
-        // are not running the device the project named and null against each other perfectly -- a
-        // case that passes by testing less than it claims, which is the one outcome this corpus
-        // exists to refuse.
-        //
-        // It is not lost coverage: magda_tests does stage the library and
-        // renders this project through the block-size gate, where it is one of
-        // the four that found a dependence.
-        const std::set<std::string> unmeasurableHere{"project.faust"};
-
         std::vector<Case> cases;
         std::vector<std::string> refusals;
-        std::set<std::string> skipped;
 
         for (const auto& fixture : mgdFixtures()) {
-            if (unmeasurableHere.count(fixture.declaration.name) != 0) {
-                skipped.insert(fixture.declaration.name);
-                continue;
-            }
-
             const auto loaded = loadFixture(fixture, fixtureScratch());
 
             // A fixture that will not load is a failure of the corpus rather
@@ -133,11 +106,6 @@ class RealProjectCorpusTests : public juce::UnitTest {
         }
 
         expect(refusals.empty(), "fixtures that would not load: " + join(refusals));
-
-        // Both directions, the same rule the calibration list lives by: a name
-        // on the list that is no longer a fixture has to come off it.
-        expect(skipped.size() == unmeasurableHere.size(),
-               "the skip list names a fixture the corpus does not carry");
 
         const auto run = runSuite(cases, [this](const juce::String& line) { logMessage(line); });
 
@@ -165,18 +133,16 @@ class RealProjectCorpusTests : public juce::UnitTest {
         // Where each one stands is written beside it below, from the run that
         // produced these numbers.
         const std::set<std::string> underCalibration{
-            // The stretched project. It is in the spectral tier for a declared
-            // mechanism -- a loop stretched from 82.55 to 120 -- and has no
-            // predicted shift yet, which the tier refuses rather than measures.
-            // Predicting one means reading what the engine primes its stretcher
-            // with on this project and checking it against what the fork's copy
-            // of the same library does, which is the calibration the code-built
-            // stretch cases went through and is a measurement rather than a
-            // guess.
-            //
-            // project.faust is the third, and it is skipped in this binary
-            // rather than calibrated here; see the list above.
+            // The two stretched projects. Both are in the spectral tier for a
+            // declared mechanism -- a loop stretched from 82.55 to 120, and a
+            // warped break -- and neither has a predicted shift yet, which the
+            // tier refuses rather than measures. Predicting one means reading
+            // what the engine primes its stretcher with on this project and
+            // checking it against what the fork's copy of the same library
+            // does, which is the calibration the code-built stretch cases went
+            // through and is a measurement rather than a guess.
             "project.demo",
+            "project.faust",
 
             // The two device projects, and the reason they are here is not that
             // their residual is unexplained. It is that the native leg does not

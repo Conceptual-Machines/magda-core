@@ -599,6 +599,7 @@ target_sources(magda_juce_tests PRIVATE
     test_faust_sidechain_juce.cpp
     test_faust_instrument_tempo_juce.cpp
     test_faust_instrument_voice_modes_juce.cpp
+    test_faust_instrument_default_patch_juce.cpp
     test_runtime_theme_juce.cpp
     test_user_theme_juce.cpp
     test_syntax_highlighting_juce.cpp
@@ -706,25 +707,24 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     target_link_libraries(magda_juce_tests PRIVATE magda_engine magda_engine_devices)
 endif()
 
-# The Faust standard library is deliberately NOT staged beside this binary,
-# unlike magda_tests (#2081).
+# The Faust standard library, beside the binary, so a runtime-compiled device
+# can resolve import("stdfaust.lib") (#2081).
 #
-# It was, and it aborts the suite on Linux. This target instantiates every
-# registered device -- the device parameter schema freeze walks the whole
-# registry -- and that includes the Faust *instrument*, whose default patch
-# passes a resonance of zero straight into fi.resonlp as a Q. With the library
-# present that patch actually reaches libfaust's interval analysis, which
-# asserts `x.lo() > 0` in fPow and takes the process down with it
-# (third_party/faust/compiler/interval/intervalPow.cpp:89). GCC hits it and
-# Clang does not, so it is Linux only and invisible on a Mac.
+# The self-contained DSP the Faust tests here compile does not need it, and says
+# so; a real project does, and so does the Faust instrument's own default patch,
+# which is what this target's device roster instantiates.
 #
-# Two things follow, and neither belongs here: the patch is wrong to call a Q of
-# zero a resonance (#2237), and a compiler embedded in a DAW should not abort
-# its host over an analysis it could not complete (#2238). Until those, the corpus
-# skips the one project that hosts a runtime Faust device in this binary and
-# says so where the skip is (test_real_project_corpus_juce.cpp). magda_tests
-# keeps the staging: it renders the same project through the block-size gate,
-# instantiates no Faust instrument, and is green on Linux and macOS.
+# Staged, then unstaged, then staged again. It aborted the Linux suite for as
+# long as that default patch handed fi.resonlp a resonance of zero as its Q:
+# with the library present the patch reached libfaust's interval analysis, which
+# asserts `x.lo() > 0` in fPow and takes the process down (#2238). GCC hit it and
+# Clang did not, so it was Linux only and invisible on a Mac.
+#
+# The patch is fixed (#2237): the control maps onto a Q rather than being one,
+# so there is no longer a zero to divide by and nothing for the analysis to
+# refuse. test_faust_instrument_default_patch_juce.cpp is what holds it there.
+
+magda_stage_faust_libraries(magda_juce_tests)
 
 target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
     MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1

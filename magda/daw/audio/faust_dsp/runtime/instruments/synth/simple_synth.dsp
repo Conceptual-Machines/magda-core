@@ -25,10 +25,28 @@ with {
 };
 
 // Filter tab: resonant lowpass.
-filterSection(x) = vgroup("Filter", x : fi.resonlp(cutoff, res, 1))
+filterSection(x) = vgroup("Filter", x : fi.resonlp(cutoff, q, 1))
 with {
     cutoff = hslider("cutoff [unit:Hz] [scale:log] [idx:0]", 3000, 50, 18000, 1);
-    res    = hslider("resonance [idx:1]", 0.3, 0, 0.95, 0.01);
+    res    = hslider("resonance [idx:1]", 0.3, 0, 1, 0.01);
+
+    // A resonance and a Q are not the same number, and resonlp's second
+    // argument is a Q. It computes 1/Q, so a control handed to it unchanged
+    // divides by zero at the bottom of its travel: the filter's feedback
+    // coefficient comes out NaN, the voice outputs NaN from its first sample,
+    // and it never recovers because that NaN is now the filter's own state
+    // (#2237).
+    //
+    // 0.707 is Butterworth, the flattest a two-pole lowpass gets, so the bottom
+    // of the control is no emphasis rather than no filter. Squared rather than
+    // linear so the resonant half of the range is spread over half the control
+    // instead of arriving in the last few percent of it.
+    //
+    // The old mapping was the control itself, capped at 0.95, so every position
+    // on it was below Butterworth: it ran from heavily damped to slightly less
+    // damped and never resonated anywhere. The cap went with the singularity it
+    // was avoiding.
+    q = 0.707 + res * res * 27.3;
 };
 
 // Env tab: ADSR amplitude envelope.
