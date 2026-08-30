@@ -390,6 +390,12 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # reports what stands between each project and being a case.
     list(APPEND TEST_SOURCES test_real_project_survey.cpp)
 
+    # The default Faust synth patch, compiled and played through libfaust
+    # (#2237). Here rather than in magda_juce_tests because the plugin that
+    # hosts it wants an Edit, and that target cannot have the Faust standard
+    # library staged beside it while #2238 stands.
+    list(APPEND TEST_SOURCES test_faust_default_synth_patch.cpp)
+
     # The device layer under the engine (#2174): the app's own catalogs asked
     # for a Device op's device, and a shipped device rendered through the
     # adapter. The engine's half alone -- what the two hosts do with one device
@@ -478,6 +484,13 @@ target_compile_definitions(magda_tests
     # part of what a manifest says.
     MAGDA_TEST_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/corpus"
     MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt"
+    # Where the bundled runtime patches and the Faust standard library are, for
+    # the test that compiles the default synth (#2237). Read from the source
+    # tree rather than from the staged copy beside the binary: the patch is what
+    # is under test, and a test that read the staged copy would pass on a stale
+    # one.
+    MAGDA_FAUST_RUNTIME_DSP_DIR="${CMAKE_SOURCE_DIR}/magda/daw/audio/faust_dsp/runtime"
+    MAGDA_FAUST_LIBRARIES_DIR="${CMAKE_SOURCE_DIR}/third_party/faust/libraries"
 )
 
 # The Faust standard library, beside the binary, so a runtime-compiled device
@@ -599,7 +612,6 @@ target_sources(magda_juce_tests PRIVATE
     test_faust_sidechain_juce.cpp
     test_faust_instrument_tempo_juce.cpp
     test_faust_instrument_voice_modes_juce.cpp
-    test_faust_instrument_default_patch_juce.cpp
     test_runtime_theme_juce.cpp
     test_user_theme_juce.cpp
     test_syntax_highlighting_juce.cpp
@@ -707,24 +719,27 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     target_link_libraries(magda_juce_tests PRIVATE magda_engine magda_engine_devices)
 endif()
 
-# The Faust standard library, beside the binary, so a runtime-compiled device
-# can resolve import("stdfaust.lib") (#2081).
+# The Faust standard library is deliberately NOT staged beside this binary,
+# unlike magda_tests (#2081).
 #
-# The self-contained DSP the Faust tests here compile does not need it, and says
-# so; a real project does, and so does the Faust instrument's own default patch,
-# which is what this target's device roster instantiates.
+# It was, and it aborts the suite on Linux. This target instantiates every
+# registered device -- the device parameter schema freeze walks the whole
+# registry -- and that includes the Faust instrument. With the library present
+# its patch actually compiles, which reaches libfaust's interval analysis, which
+# asserts `x.lo() > 0` in fPow and takes the process down with it
+# (third_party/faust/compiler/interval/intervalPow.cpp:89). GCC hits it and
+# Clang does not, so it is Linux only and invisible on a Mac.
 #
-# Staged, then unstaged, then staged again. It aborted the Linux suite for as
-# long as that default patch handed fi.resonlp a resonance of zero as its Q:
-# with the library present the patch reached libfaust's interval analysis, which
-# asserts `x.lo() > 0` in fPow and takes the process down (#2238). GCC hit it and
-# Clang did not, so it was Linux only and invisible on a Mac.
+# The patch's own divide by zero (#2237) looked like the cause and was not.
+# Fixing it did not clear the assert, and could not have: the power the analysis
+# refuses is `csq = c*c` inside Faust's own tf2s, which every tf2s-based filter
+# carries. A patch using nothing but `fi.resonlp` with a constant Q generates it
+# just the same, so this waits on #2238 rather than on anything of ours.
 #
-# The patch is fixed (#2237): the control maps onto a Q rather than being one,
-# so there is no longer a zero to divide by and nothing for the analysis to
-# refuse. test_faust_instrument_default_patch_juce.cpp is what holds it there.
-
-magda_stage_faust_libraries(magda_juce_tests)
+# What the corpus loses is the one project hosting a runtime Faust device, named
+# and skipped where the skip is (test_real_project_corpus_juce.cpp). magda_tests
+# keeps the staging: it renders that same project through the block-size gate,
+# instantiates no Faust instrument, and is green on Linux and macOS.
 
 target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
     MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1
