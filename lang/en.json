@@ -363,6 +363,7 @@
     "font_family.label": "UI Font",
     "font_family.default": "Inter (default)",
     "tab.general": "General",
+    "tab.defaults": "Defaults",
     "tab.appearance": "Appearance",
     "tab.colours": "Colours",
     "tab.rendering": "Rendering",

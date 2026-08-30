@@ -206,7 +206,7 @@ Open **File → Project Settings** to set options that belong to the project its
 | **Render Bit Depth** | 16-bit, 24-bit, 32-bit float |
 | **Bounce Bit Depth** | 16-bit, 24-bit, 32-bit float |
 
-These are stored per project, so different songs can carry different lengths and render formats. The values a *new* project starts with are set in [Preferences](interface/preferences.md#new-project-defaults). **Apply** commits your changes; **Cancel** closes the dialog, discarding anything you have not applied.
+These are stored per project, so different songs can carry different lengths and render formats. The values a *new* project starts with are set in [Preferences](interface/preferences.md#defaults). **Apply** commits your changes; **Cancel** closes the dialog, discarding anything you have not applied.
 
 ### Metadata
 
