@@ -3,8 +3,10 @@
 #include <utility>
 
 #include "core/DeviceState.hpp"
+#include "plugin_manager/ExternalPluginLookup.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/engine/EngineExternalDevice.hpp"
 #include "plugins/engine/EngineMagdaDevice.hpp"
 
 namespace magda::daw::audio::engine_adapter {
@@ -84,6 +86,57 @@ void restoreSavedState(MagdaDevice& device, const juce::String& savedState) {
     device.restoreState(tree);
 }
 
+/// The adapter over an instance the format manager just handed back.
+///
+/// enableAllBuses first, at the same point the fork does it
+/// (completePluginInstanceCreation) and for the same reason: a plugin whose
+/// sidechain or second output bus is disabled reports channels it does not
+/// have, and everything downstream -- the adapter's own channel adaptation, the
+/// plan's declared widths -- is read off those numbers.
+ExternalDeviceResult adaptInstance(std::unique_ptr<juce::AudioPluginInstance> instance,
+                                   const magda::DeviceInfo& device, bool offlineRender) {
+    instance->enableAllBuses();
+
+    return {.device =
+                std::make_unique<EngineExternalDevice>(std::move(instance), device, offlineRender),
+            .failure = {}};
+}
+
+/// Why a plugin nobody could find is missing, said once so both entry points
+/// say it the same way.
+juce::String describeMissingPlugin(const magda::DeviceInfo& device) {
+    return "external plugin \"" + device.name + "\" (" + device.getFormatString() +
+           ") is not installed on this machine";
+}
+
+/// What the two entry points check before either asks a format manager for
+/// anything: the services are complete, and the scan knows the plugin.
+///
+/// Returns the description to load, or the reason there is not one.
+struct ResolvedPlugin {
+    juce::PluginDescription description;
+    juce::String failure;
+};
+
+ResolvedPlugin resolvePlugin(const magda::DeviceInfo& device,
+                             const ExternalPluginServices& services) {
+    if (services.formats == nullptr || services.knownPlugins == nullptr)
+        return {.description = {},
+                .failure = "no plugin formats or scan results were given to the engine"};
+
+    const auto match = magda::matchInstalledPlugin(device, *services.knownPlugins);
+
+    // Unfound is refused rather than attempted. The app tries the saved
+    // description anyway and lets the format's own lookup have a go, which is
+    // right for a session where a user is watching and can be told; a render is
+    // not that, and a plugin resolved by a route nothing recorded is the kind
+    // of difference a null-diff corpus cannot attribute afterwards.
+    if (!match.found)
+        return {.description = {}, .failure = describeMissingPlugin(device)};
+
+    return {.description = match.description, .failure = {}};
+}
+
 }  // namespace
 
 std::unique_ptr<magda::engine::EngineDevice> createEngineDevice(const magda::DeviceInfo& device,
@@ -113,6 +166,61 @@ bool canCreateEngineDevice(const juce::String& pluginId) {
 bool isRegisteredDevice(const juce::String& pluginId) {
     return findInternalPluginSpec(pluginId) != nullptr ||
            compiled::findCompiledPluginSpec(pluginId) != nullptr;
+}
+
+bool isInstalledExternalPlugin(const magda::DeviceInfo& device,
+                               const juce::KnownPluginList& knownPlugins) {
+    return magda::matchInstalledPlugin(device, knownPlugins).found;
+}
+
+ExternalDeviceResult createEngineExternalDevice(const magda::DeviceInfo& device,
+                                                const ExternalPluginServices& services,
+                                                bool offlineRender) {
+    const auto resolved = resolvePlugin(device, services);
+    if (resolved.failure.isNotEmpty())
+        return {.device = {}, .failure = resolved.failure};
+
+    juce::String error;
+    auto instance = services.formats->createPluginInstance(
+        resolved.description, services.context.sampleRate, services.context.maxBlockSize, error);
+
+    if (instance == nullptr)
+        return {.device = {},
+                .failure = "external plugin \"" + device.name + "\" could not be loaded: " +
+                           (error.isNotEmpty() ? error : "no reason given")};
+
+    return adaptInstance(std::move(instance), device, offlineRender);
+}
+
+void createEngineExternalDeviceAsync(const magda::DeviceInfo& device,
+                                     const ExternalPluginServices& services, bool offlineRender,
+                                     std::function<void(ExternalDeviceResult)> completed) {
+    jassert(completed != nullptr);
+
+    const auto resolved = resolvePlugin(device, services);
+    if (resolved.failure.isNotEmpty()) {
+        completed({.device = {}, .failure = resolved.failure});
+        return;
+    }
+
+    // The device is copied into the callback rather than captured by reference.
+    // What it is read for is its parameter metadata, and the model it came from
+    // is free to be edited, moved or deleted while a plugin loads: that is what
+    // taking seconds means.
+    services.formats->createPluginInstanceAsync(
+        resolved.description, services.context.sampleRate, services.context.maxBlockSize,
+        [saved = device, offlineRender, completed = std::move(completed)](
+            std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error) {
+            if (instance == nullptr) {
+                completed({.device = {},
+                           .failure = "external plugin \"" + saved.name +
+                                      "\" could not be loaded: " +
+                                      (error.isNotEmpty() ? error : "no reason given")});
+                return;
+            }
+
+            completed(adaptInstance(std::move(instance), saved, offlineRender));
+        });
 }
 
 }  // namespace magda::daw::audio::engine_adapter

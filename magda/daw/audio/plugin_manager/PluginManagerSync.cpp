@@ -13,6 +13,7 @@
 #include "../PluginWindowBridge.hpp"
 #include "../TrackController.hpp"
 #include "../TracktionHelpers.hpp"
+#include "ExternalPluginLookup.hpp"
 #include "ExternalPluginStateUtil.hpp"
 #include "PluginManager.hpp"
 #include "modifiers/CurveSnapshot.hpp"
@@ -2142,66 +2143,12 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
             }
         }
     } else {
-        // External plugin — same lookup logic as loadDeviceAsPlugin but without track insertion
+        // External plugin. Which installed plugin the saved device meant is one
+        // question with one answer (ExternalPluginLookup.hpp), asked here, by
+        // the track path below, and by the native engine's device factory.
         if (device.uniqueId.isNotEmpty() || device.fileOrIdentifier.isNotEmpty()) {
-            juce::PluginDescription desc;
-            desc.name = device.name;
-            desc.manufacturerName = device.manufacturer;
-            desc.fileOrIdentifier = device.fileOrIdentifier;
-            desc.isInstrument = device.isInstrument;
-
-            switch (device.format) {
-                case PluginFormat::VST3:
-                    desc.pluginFormatName = "VST3";
-                    break;
-                case PluginFormat::AU:
-                    desc.pluginFormatName = "AudioUnit";
-                    break;
-                case PluginFormat::LV2:
-                    desc.pluginFormatName = "LV2";
-                    break;
-                default:
-                    break;
-            }
-
-            // Try to find a matching plugin in KnownPluginList
-            auto& knownPlugins = engine_.getPluginManager().knownPluginList;
-            bool found = false;
-
-            for (const auto& knownDesc : knownPlugins.getTypes()) {
-                if (knownDesc.fileOrIdentifier == device.fileOrIdentifier &&
-                    knownDesc.isInstrument == device.isInstrument) {
-                    desc = knownDesc;
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found) {
-                for (const auto& knownDesc : knownPlugins.getTypes()) {
-                    if (knownDesc.name == device.name &&
-                        knownDesc.manufacturerName == device.manufacturer &&
-                        knownDesc.isInstrument == device.isInstrument) {
-                        desc = knownDesc;
-                        found = true;
-                        break;
-                    }
-                }
-            }
-
-            // Final pass: by name + format only (other hosts' deviceRole is
-            // unreliable, so isInstrument can't be required); resolves an imported
-            // plugin to the installed one by name.
-            if (!found) {
-                for (const auto& knownDesc : knownPlugins.getTypes()) {
-                    if (knownDesc.name == device.name &&
-                        knownDesc.pluginFormatName == desc.pluginFormatName) {
-                        desc = knownDesc;
-                        found = true;
-                        break;
-                    }
-                }
-            }
+            auto desc = matchInstalledPlugin(device, engine_.getPluginManager().knownPluginList)
+                            .description;
 
             // Apply TE bug workaround (same as loadExternalPlugin)
             juce::PluginDescription descCopy = desc;
@@ -2343,94 +2290,13 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
             }
         }
     } else {
-        // External plugin - find matching description from KnownPluginList
+        // External plugin. The same lookup the rack path above asks, and the one
+        // the native engine asks (ExternalPluginLookup.hpp).
         if (device.uniqueId.isNotEmpty() || device.fileOrIdentifier.isNotEmpty()) {
-            // Build PluginDescription from DeviceInfo
-            juce::PluginDescription desc;
-            desc.name = device.name;
-            desc.manufacturerName = device.manufacturer;
-            desc.fileOrIdentifier = device.fileOrIdentifier;
-            desc.isInstrument = device.isInstrument;
-
-            // Set format
-            switch (device.format) {
-                case PluginFormat::VST3:
-                    desc.pluginFormatName = "VST3";
-                    break;
-                case PluginFormat::AU:
-                    desc.pluginFormatName = "AudioUnit";
-                    break;
-                case PluginFormat::LV2:
-                    desc.pluginFormatName = "LV2";
-                    break;
-                default:
-                    break;
-            }
-
-            // Try to find a matching plugin in KnownPluginList
-
-            auto& knownPlugins = engine_.getPluginManager().knownPluginList;
-
-            // Debug: dump all plugins that match the name (case insensitive)
-            for (const auto& kd : knownPlugins.getTypes()) {
-                if (kd.name.containsIgnoreCase(device.name) ||
-                    device.name.containsIgnoreCase(kd.name.toStdString())) {
-                }
-            }
-            bool found = false;
-            for (const auto& knownDesc : knownPlugins.getTypes()) {
-                // Match by fileOrIdentifier (most specific) BUT also check isInstrument
-                // to avoid loading FX when instrument is requested
-                if (knownDesc.fileOrIdentifier == device.fileOrIdentifier &&
-                    knownDesc.isInstrument == device.isInstrument) {
-                    desc = knownDesc;
-                    found = true;
-                    break;
-                }
-            }
-
-            // Second pass: match by name, manufacturer, AND isInstrument flag
-            if (!found) {
-                for (const auto& knownDesc : knownPlugins.getTypes()) {
-                    if (knownDesc.name == device.name &&
-                        knownDesc.manufacturerName == device.manufacturer &&
-                        knownDesc.isInstrument == device.isInstrument) {
-                        desc = knownDesc;
-                        found = true;
-                        break;
-                    }
-                }
-            }
-
-            // Third pass: match by fileOrIdentifier only (fallback)
-            if (!found) {
-                for (const auto& knownDesc : knownPlugins.getTypes()) {
-                    if (knownDesc.fileOrIdentifier == device.fileOrIdentifier) {
-                        desc = knownDesc;
-                        found = true;
-                        break;
-                    }
-                }
-            }
-
-            // Final pass: match by name + format + isInstrument, ignoring vendor
-            // and file path. DAWproject from other hosts (Bitwig) carries the
-            // plugin name and the VST3 class id, but not MAGDA's file path or the
-            // vendor, so the earlier passes can't resolve it; the name is the only
-            // portable handle to the installed plugin.
-            // Final pass: match by name + format only. Other hosts' deviceRole is
-            // unreliable (Bitwig exports Serum, an instrument, as "audioFX"), so we
-            // can't require isInstrument to agree; the name is the portable handle.
-            if (!found) {
-                for (const auto& knownDesc : knownPlugins.getTypes()) {
-                    if (knownDesc.name == device.name &&
-                        knownDesc.pluginFormatName == desc.pluginFormatName) {
-                        desc = knownDesc;
-                        found = true;
-                        break;
-                    }
-                }
-            }
+            const auto match =
+                matchInstalledPlugin(device, engine_.getPluginManager().knownPluginList);
+            auto desc = match.description;
+            const bool found = match.found;
 
             // Adopt the resolved plugin's instrument classification (the imported
             // deviceRole may be wrong), so MAGDA wraps/routes it correctly. A

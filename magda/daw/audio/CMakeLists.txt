@@ -466,6 +466,11 @@ target_sources(magda_daw PRIVATE
     TrackController.cpp
     plugin_manager/PluginManager.cpp
     plugin_manager/PluginManagerSync.cpp
+    # Which installed plugin a saved device meant (#2243). One answer, asked by
+    # the sync path here and by the native engine's device factory, which
+    # resolves it at the final link the way it resolves findCompiledPluginSpec.
+    plugin_manager/ExternalPluginLookup.cpp
+    plugin_manager/ExternalPluginLookup.hpp
     plugin_manager/PluginManagerMacros.cpp
     plugin_manager/PluginManagerModifiers.cpp
     plugin_manager/PluginManagerSidechain.cpp

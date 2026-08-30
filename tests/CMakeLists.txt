@@ -63,6 +63,7 @@ set(TEST_SOURCES
     test_plugin_preferences.cpp
     test_plugin_browser_metadata_merge.cpp
     test_plugin_metadata_store.cpp
+    test_external_plugin_lookup.cpp
     test_prune_missing_plugins.cpp
     test_known_plugin_list_duplicates.cpp
     test_device_parameter_pagination.cpp

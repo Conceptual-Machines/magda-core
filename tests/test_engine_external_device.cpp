@@ -7,6 +7,7 @@
 
 #include "core/ParameterInfo.hpp"
 #include "exec/EngineDevice.hpp"
+#include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "magda/daw/audio/plugins/engine/EngineExternalDevice.hpp"
 #include "param/ParamBlock.hpp"
 #include "transport/TempoMap.hpp"
@@ -649,4 +650,32 @@ TEST_CASE("A parameter the table does not carry is left where it was", "[engine]
 
     CHECK(raw->gain->getValue() == Catch::Approx(0.4f));
     CHECK(raw->tone->getValue() == Catch::Approx(0.9f));
+}
+
+TEST_CASE("A plugin the scan never saw is refused with a reason", "[engine][external]") {
+    juce::KnownPluginList empty;
+    juce::AudioPluginFormatManager formats;
+
+    magda::DeviceInfo missing = externalDevice();
+    missing.name = "Massive X";
+    missing.fileOrIdentifier = "/Library/MassiveX.vst3";
+
+    const adapter::ExternalPluginServices services{
+        .formats = &formats, .knownPlugins = &empty, .context = contextFor()};
+
+    const auto result = adapter::createEngineExternalDevice(missing, services);
+
+    CHECK(result.device == nullptr);
+    CHECK(result.failure.contains("Massive X"));
+    CHECK(result.failure.contains("not installed"));
+    CHECK_FALSE(adapter::isInstalledExternalPlugin(missing, empty));
+}
+
+TEST_CASE("A host that gave the engine no formats is told so", "[engine][external]") {
+    const adapter::ExternalPluginServices nothing{};
+
+    const auto result = adapter::createEngineExternalDevice(externalDevice(), nothing);
+
+    CHECK(result.device == nullptr);
+    CHECK(result.failure.contains("no plugin formats"));
 }
