@@ -227,8 +227,14 @@ class StubPlugin final : public juce::AudioPluginInstance {
     }
 
     void setStateInformation(const void* data, int size) override {
-        if (throwsOnState)
+        if (throwsOnState) {
+            // Half of a restore, then the throw. A plugin that got this far has
+            // changed things no parameter write puts back.
+            if (mutatesBeforeThrowing)
+                tone->setValue(0.42f);
+
             throw std::runtime_error("plugin state handler failed");
+        }
 
         if (size != static_cast<int>(sizeof(State)))
             return;
@@ -254,6 +260,9 @@ class StubPlugin final : public juce::AudioPluginInstance {
 
     /// Third-party code handed a chunk it cannot read. Some throw.
     bool throwsOnState = false;
+
+    /// And some get part of the way through first.
+    bool mutatesBeforeThrowing = false;
 
     double preparedRate = 0.0;
     int preparedBlockSize = 0;
@@ -1044,13 +1053,20 @@ TEST_CASE("A chunk the plugin declines leaves the baseline standing", "[engine][
     CHECK(raw->tone->getValue() == Catch::Approx(0.7f));
 }
 
-TEST_CASE("A plugin that throws restoring its state does not take the host with it",
-          "[engine][external]") {
+TEST_CASE("A plugin that throws restoring its state is not published", "[engine][external]") {
     // A plugin's state handler is third-party code, and a corrupt chunk is the
-    // input it is least likely to have been tested against.
+    // input it is least likely to have been tested against. Catching the throw
+    // keeps the host alive and tells us nothing about the plugin: it may have
+    // loaded half a preset, switched program and swapped a sample first, and no
+    // amount of writing parameters puts any of that back.
+    //
+    // So the instance is dropped rather than published. What must not happen is
+    // the third step running over it, because that would hand the caller a half
+    // restored plugin's values as the ones to write into the project.
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
     auto* raw = plugin.get();
     raw->throwsOnState = true;
+    raw->mutatesBeforeThrowing = true;
 
     const StubPlugin::State chunkVoice{.tone = 0.9f, .fixed = 0.8f};
     juce::MemoryBlock chunk(&chunkVoice, sizeof(chunkVoice));
@@ -1060,8 +1076,32 @@ TEST_CASE("A plugin that throws restoring its state does not take the host with 
 
     const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
 
-    REQUIRE(result.device != nullptr);
-    CHECK(raw->tone->getValue() == Catch::Approx(0.7f));
+    CHECK(result.device == nullptr);
+    CHECK(result.failure.contains("failed while restoring"));
+    CHECK(result.restoredParameters.empty());
+}
+
+TEST_CASE("The value a half restored plugin was left on never reaches the model",
+          "[engine][external]") {
+    // The same case, said from the model's side, which is where the damage
+    // would be: a snapshot of a plugin that threw partway would be written into
+    // the project as the corrected values and saved over the real ones.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->throwsOnState = true;
+    raw->mutatesBeforeThrowing = true;
+
+    const StubPlugin::State chunkVoice{.tone = 0.9f, .fixed = 0.8f};
+    juce::MemoryBlock chunk(&chunkVoice, sizeof(chunkVoice));
+
+    auto model = externalDeviceSaving(1.0f, 0.7f);
+    model.pluginState = chunk.toBase64Encoding();
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    magda::applyRestoredParameters(model, result.restoredParameters);
+
+    // 0.42 is where the plugin was left. The project still says 0.7.
+    CHECK(model.parameters[1].currentValue == Catch::Approx(0.7f));
 }
 
 TEST_CASE("Automation moves a parameter the chunk set", "[engine][external]") {

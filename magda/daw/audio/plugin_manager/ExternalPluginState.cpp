@@ -56,7 +56,8 @@ std::vector<juce::AudioProcessorParameter*> hostParameterOrder(
     return order;
 }
 
-bool applySavedPluginState(juce::AudioPluginInstance& instance, const DeviceInfo& device) {
+SavedStateOutcome applySavedPluginState(juce::AudioPluginInstance& instance,
+                                        const DeviceInfo& device) {
     const auto order = hostParameterOrder(instance);
 
     // The array first. A parameter the model does not describe keeps whatever
@@ -78,7 +79,7 @@ bool applySavedPluginState(juce::AudioPluginInstance& instance, const DeviceInfo
 
     const auto chunk = decodeSavedChunk(device.pluginState);
     if (chunk.getSize() == 0)
-        return false;
+        return SavedStateOutcome::Baseline;
 
     // DeviceInfo::vst3Preset is deliberately not applied here. It is the
     // portable .vstpreset a DAWproject carries, applied once on import and
@@ -89,13 +90,15 @@ bool applySavedPluginState(juce::AudioPluginInstance& instance, const DeviceInfo
     try {
         instance.setStateInformation(chunk.getData(), static_cast<int>(chunk.getSize()));
     } catch (...) {
-        // Third-party code, handed the input it is least likely to have been
-        // tested against. The baseline above is still standing, which is where
-        // a plugin that refuses a chunk quietly leaves things anyway.
-        return false;
+        // The host survives, which is all a catch-all can promise. What the
+        // plugin holds now is whatever it had managed to do before it threw:
+        // half a preset, a program it switched, a sample it swapped. Writing
+        // the parameter array again would put the parameters back and none of
+        // the rest, so this says so rather than pretending otherwise.
+        return SavedStateOutcome::Failed;
     }
 
-    return true;
+    return SavedStateOutcome::Restored;
 }
 
 std::vector<RestoredParameter> snapshotHostParameters(const juce::AudioPluginInstance& instance) {

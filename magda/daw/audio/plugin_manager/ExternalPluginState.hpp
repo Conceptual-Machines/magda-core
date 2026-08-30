@@ -73,20 +73,38 @@ struct RestoredParameter {
     float value = 0.0f;
 };
 
+/** How far applySavedPluginState() got. */
+enum class SavedStateOutcome {
+    /// The parameter array is on the instance and no chunk went over it: the
+    /// device saved none, or what it saved was not decodable. A plugin that
+    /// takes a chunk and quietly ignores it lands here too, because from
+    /// outside it is the same thing.
+    Baseline,
+
+    /// The array, then the chunk, both applied.
+    Restored,
+
+    /// The plugin threw partway through reading its own state. What it holds
+    /// now is not the baseline, not the chunk, and not knowable from here.
+    Failed,
+};
+
 /**
  * @brief Apply what @p device saved onto @p instance: array, then chunk.
  *
- * Steps one and two above. Returns whether the chunk was applied, which is
- * false for a device that saved none and for one whose saved state this build
- * of the plugin could not read.
+ * Steps one and two above.
  *
  * A plugin's own state handler is third-party code running in-process, and a
  * corrupt chunk is exactly the input it is least likely to have been tested
- * against, so it is called inside a catch-all. A plugin that throws leaves the
- * baseline standing, which is the same place a plugin that refuses the chunk
- * quietly leaves it.
+ * against, so it is called inside a catch-all. What the catch-all buys is that
+ * the host survives, and nothing more: a plugin is free to have loaded half a
+ * preset, switched program and swapped a sample before it threw, and no
+ * sequence of parameter writes puts any of that back. So a throw is reported as
+ * a failure rather than smoothed over, and the caller's business is to discard
+ * the instance rather than to publish one whose state nobody can describe.
  */
-bool applySavedPluginState(juce::AudioPluginInstance& instance, const DeviceInfo& device);
+SavedStateOutcome applySavedPluginState(juce::AudioPluginInstance& instance,
+                                        const DeviceInfo& device);
 
 /**
  * @brief What @p instance holds now, for the model to record.

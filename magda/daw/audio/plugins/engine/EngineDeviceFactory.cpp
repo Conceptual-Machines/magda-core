@@ -103,7 +103,11 @@ ExternalDeviceResult adaptExternalPluginInstance(
     // order and the reasons are ExternalPluginState.hpp's; what matters here is
     // that all three happen before the adapter exists, so the adapter never has
     // to reason about which of a project's two records it is looking at.
-    magda::applySavedPluginState(*instance, device);
+    if (magda::applySavedPluginState(*instance, device) == magda::SavedStateOutcome::Failed)
+        return {.device = {},
+                .failure = "external plugin \"" + device.name +
+                           "\" failed while restoring its own saved state"};
+
     auto restored = magda::snapshotHostParameters(*instance);
 
     return {.device =
