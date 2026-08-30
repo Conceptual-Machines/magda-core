@@ -16,6 +16,52 @@ CursorManager::CursorManager() {
     noteRepeatCursor = createNoteRepeatCursor();
     bladeCursor = createBladeCursor();
     ghostCopyCursor = createGhostCopyCursor();
+    curveBendCursor = createCurveBendCursor();
+}
+
+juce::MouseCursor CursorManager::createCurveBendCursor() {
+    // Bending a glide segment (#2198): an S-curve with a small double-headed
+    // arrow standing clear of it. The curve says what is about to change, the
+    // arrow says the drag is vertical.
+    //
+    // Kept apart rather than overlaid. At 28px with the outline pass every
+    // other tool cursor here uses, two strokes crossing each other merge into
+    // one unreadable mark -- the first attempt put the arrow through the
+    // curve's midpoint and neither shape survived.
+    const int size = 28;
+    juce::Image img(juce::Image::ARGB, size, size, true);
+    juce::Graphics g(img);
+
+    // Low on the left, high on the right, the way a rising glide is drawn.
+    juce::Path curve;
+    curve.startNewSubPath(3.0f, 24.0f);
+    curve.cubicTo(12.0f, 24.0f, 14.0f, 11.0f, 25.0f, 11.0f);
+
+    juce::Path arrow;
+    arrow.startNewSubPath(7.0f, 3.0f);
+    arrow.lineTo(7.0f, 13.0f);
+    arrow.startNewSubPath(4.4f, 5.6f);
+    arrow.lineTo(7.0f, 2.6f);
+    arrow.lineTo(9.6f, 5.6f);
+    arrow.startNewSubPath(4.4f, 10.4f);
+    arrow.lineTo(7.0f, 13.4f);
+    arrow.lineTo(9.6f, 10.4f);
+
+    // White outline pass then the body, as the other tool cursors do, so it
+    // stays readable over both the dark grid and a bright clip colour.
+    const auto pass = [&g](const juce::Path& path, float outline, float body) {
+        g.setColour(juce::Colours::white);
+        g.strokePath(path, juce::PathStrokeType(outline, juce::PathStrokeType::curved,
+                                                juce::PathStrokeType::rounded));
+        g.setColour(juce::Colours::black);
+        g.strokePath(path, juce::PathStrokeType(body, juce::PathStrokeType::curved,
+                                                juce::PathStrokeType::rounded));
+    };
+    pass(curve, 4.0f, 2.0f);
+    pass(arrow, 3.4f, 1.6f);
+
+    // Hotspot on the curve's own midpoint, which is the thing being grabbed.
+    return juce::MouseCursor(img, 13, 17);
 }
 
 juce::MouseCursor CursorManager::createGhostCopyCursor() {

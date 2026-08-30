@@ -52,6 +52,14 @@ struct MidiPitchExpressionPoint {
     double beat = 0.0;       // Position relative to note start (0..note length)
     double semitones = 0.0;  // Pitch offset in semitones (-48..+48)
 
+    // Shape of the segment running from this point to the next one, in the same
+    // -3..+3 scale every other curve in the app uses (CurvePoint::tension,
+    // MidiCCData::tension). Zero is the straight line this used to always be,
+    // so a glide authored before #2198 reads back unchanged. Owned by the left
+    // point, as segments are everywhere else here; the last point's value is
+    // carried but never shapes anything.
+    double tension = 0.0;
+
     bool operator==(const MidiPitchExpressionPoint&) const = default;
 };
 

@@ -467,6 +467,11 @@ class PianoRollGridComponent : public juce::Component,
     int expressionDragPointIndex_ = -1;
     bool isExpressionDragging_ = false;
 
+    // Bending a segment rather than moving a point (#2198): the index of the
+    // segment's left point, which is the point that owns its shape. -1 when the
+    // drag is an ordinary point move.
+    int expressionTensionSegmentIndex_ = -1;
+
     static constexpr int EXPRESSION_POINT_HIT_RADIUS = 6;
     static constexpr double MAX_PITCH_EXPRESSION_SEMITONES = 48.0;
 
@@ -499,6 +504,28 @@ class PianoRollGridComponent : public juce::Component,
     };
     std::optional<ExpressionHit> hitTestExpressionPoint(juce::Point<int> pos) const;
     std::optional<ExpressionHit> hitTestExpressionNote(juce::Point<int> pos) const;
+
+    /// Cursor while editing glides: the bend glyph when the gesture would take
+    /// effect here, the ordinary pointer otherwise (#2198).
+    void updateExpressionCursor(const juce::ModifierKeys& mods, juce::Point<int> pos);
+
+    /// Whether @p mods ask for a segment bend rather than a point move (#2198).
+    /// Alt, which is what Bitwig uses and the one modifier free here: Shift
+    /// already means "do not snap to semitones" on the other two gestures.
+    /// Hard-coded rather than routed through GestureRouter, whose action codes
+    /// are persisted and whose only discrete drag actions today are the clip
+    /// duplicates; worth revisiting if a second such gesture appears.
+    static bool isBendExpressionGesture(const juce::ModifierKeys& mods) {
+        return mods.isAltDown();
+    }
+
+    /// Reshape the segment being dragged so its curve passes under the cursor.
+    void bendExpressionSegment(const MidiNote& note, const juce::MouseEvent& e);
+
+    /// The segment under @p pos, reported as its left point's index (#2198).
+    /// Only segments between two authored points: the flat runs before the
+    /// first point and after the last are the note's own pitch, not a glide.
+    std::optional<ExpressionHit> hitTestExpressionSegment(juce::Point<int> pos) const;
 
     // Point under the mouse (for the pitch value label)
     std::optional<ExpressionHit> hoveredExpressionPoint_;

@@ -915,6 +915,10 @@ juce::var ProjectSerializer::serializeMidiNote(const MidiNote& data) {
             auto* pObj = new juce::DynamicObject();
             pObj->setProperty("beat", p.beat);
             pObj->setProperty("semitones", p.semitones);
+            // Only when bent (#2198), so a project full of straight glides is
+            // written exactly as it was before the field existed.
+            if (p.tension != 0.0)
+                pObj->setProperty("tension", p.tension);
             points.add(juce::var(pObj));
         }
         obj->setProperty("pitchExpression", juce::var(points));
@@ -941,6 +945,10 @@ bool ProjectSerializer::deserializeMidiNote(const juce::var& json, MidiNote& dat
                 MidiPitchExpressionPoint p;
                 p.beat = pObj->getProperty("beat");
                 p.semitones = pObj->getProperty("semitones");
+                // Absent in projects written before #2198, and absent again in
+                // any straight segment since: the default is the straight line.
+                if (pObj->hasProperty("tension"))
+                    p.tension = pObj->getProperty("tension");
                 data.pitchExpression.push_back(p);
             }
         }

@@ -20,6 +20,7 @@
 #include "core/GestureRouter.hpp"
 #include "core/MidiChordMarkers.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/PitchExpressionCurve.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -901,6 +902,7 @@ void PianoRollGridComponent::mouseMove(const juce::MouseEvent& e) {
             hoveredExpressionPoint_ = hit;
             repaint();
         }
+        updateExpressionCursor(e.mods, e.getEventRelativeTo(this).getPosition());
     } else if (hoveredExpressionPoint_) {
         hoveredExpressionPoint_.reset();
         repaint();
@@ -2033,7 +2035,25 @@ double PianoRollGridComponent::absolutePlayheadBeatForDisplayX(int mouseX) const
     return juce::jlimit(0.0, timelineLengthBeats_, beat);
 }
 
+void PianoRollGridComponent::updateExpressionCursor(const juce::ModifierKeys& mods,
+                                                    juce::Point<int> pos) {
+    // Only while the modifier is actually held: the cursor is how the gesture
+    // announces itself, and showing it unprompted over every glide would make
+    // Alt look like it was already down.
+    if (isBendExpressionGesture(mods) && hitTestExpressionSegment(pos).has_value())
+        setMouseCursor(CursorManager::getInstance().getCurveBendCursor());
+    else
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+}
+
 void PianoRollGridComponent::updateEmptyGridCursor(const juce::ModifierKeys& mods, int /*mouseX*/) {
+    // Alt means bend while glides are being edited, not draw, and a pencil
+    // pointing at a curve the click will reshape is the wrong promise.
+    if (pitchExpressionMode_) {
+        updateExpressionCursor(mods, getMouseXYRelative());
+        return;
+    }
+
     if (mods.isAltDown()) {
         setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
     } else {
@@ -2042,8 +2062,8 @@ void PianoRollGridComponent::updateEmptyGridCursor(const juce::ModifierKeys& mod
 }
 
 void PianoRollGridComponent::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
-    // Pressing/releasing Alt while hovering must swap the pencil cursor
-    // without waiting for a mouse move.
+    // Pressing/releasing Alt while hovering must swap the cursor -- pencil
+    // normally, bend while editing glides -- without waiting for a mouse move.
     if (isMouseOver() && !juce::Component::isMouseButtonDownAnywhere())
         updateEmptyGridCursor(modifiers, getMouseXYRelative().x);
 }
@@ -2908,25 +2928,10 @@ void PianoRollGridComponent::setPitchExpressionMode(bool enabled) {
 
 double PianoRollGridComponent::evaluatePitchExpression(
     const std::vector<MidiPitchExpressionPoint>& points, double relBeat) {
-    if (points.empty())
-        return 0.0;
-    if (relBeat <= points.front().beat)
-        return points.front().semitones;
-    if (relBeat >= points.back().beat)
-        return points.back().semitones;
-
-    for (size_t i = 0; i + 1 < points.size(); ++i) {
-        const auto& a = points[i];
-        const auto& b = points[i + 1];
-        if (relBeat >= a.beat && relBeat <= b.beat) {
-            const double span = b.beat - a.beat;
-            if (span <= 0.0)
-                return b.semitones;
-            const double t = (relBeat - a.beat) / span;
-            return a.semitones + t * (b.semitones - a.semitones);
-        }
-    }
-    return points.back().semitones;
+    // The shape lives in core (#2198) because the compiler and the Tracktion
+    // bridge have to draw the same one, and a curve the editor renders
+    // differently from what plays is not an editor.
+    return evaluatePitchExpressionCurve(points, relBeat);
 }
 
 double PianoRollGridComponent::expressionRelBeatForX(ClipId clipId, const MidiNote& note,
@@ -2970,6 +2975,61 @@ std::optional<PianoRollGridComponent::ExpressionHit> PianoRollGridComponent::hit
         }
     }
     return std::nullopt;
+}
+
+std::optional<PianoRollGridComponent::ExpressionHit>
+PianoRollGridComponent::hitTestExpressionSegment(juce::Point<int> pos) const {
+    auto& clipManager = ClipManager::getInstance();
+
+    std::optional<ExpressionHit> best;
+    double bestDistance = std::numeric_limits<double>::max();
+
+    for (ClipId clipId : selectedClipIds_) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip || !clip->isMidi() || !isClipSelected(clipId))
+            continue;
+
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
+            const auto& note = clip->midiNotes[i];
+            const auto& points = note.pitchExpression;
+            if (points.size() < 2)
+                continue;
+
+            auto visibleNote = clip->midiNotes[i];
+            if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, visibleNote))
+                continue;
+
+            const double noteStartDisplayBeat = displayBeatForClipBeat(clipId, note.startBeat);
+            const double centerY = noteNumberToY(note.noteNumber) + noteHeight_ * 0.5;
+
+            for (size_t p = 0; p + 1 < points.size(); ++p) {
+                // Segments that cannot be bent are not offered: the cursor is a
+                // promise, and a drag that starts here would end in a commit
+                // that changed nothing.
+                if (!pitchExpressionSegmentCanBend(points, p))
+                    continue;
+
+                const int segStartX = beatToPixel(noteStartDisplayBeat + points[p].beat);
+                const int segEndX = beatToPixel(noteStartDisplayBeat + points[p + 1].beat);
+                if (pos.x < segStartX || pos.x > segEndX || segEndX <= segStartX)
+                    continue;
+
+                // Distance to the curve as it is drawn, not to the straight
+                // line between the endpoints: a segment already bent has to be
+                // grabbable where it actually is.
+                const double relBeat = expressionRelBeatForX(clipId, note, pos.x);
+                const double curveY =
+                    centerY - evaluatePitchExpression(points, relBeat) * noteHeight_;
+                const double distance = std::abs(pos.y - curveY);
+
+                if (distance <= noteHeight_ && distance < bestDistance) {
+                    bestDistance = distance;
+                    best = ExpressionHit{clipId, i, static_cast<int>(p)};
+                }
+            }
+        }
+    }
+    return best;
 }
 
 std::optional<PianoRollGridComponent::ExpressionHit> PianoRollGridComponent::hitTestExpressionNote(
@@ -3051,6 +3111,32 @@ bool PianoRollGridComponent::handleExpressionMouseDown(const juce::MouseEvent& e
         }
     }
 
+    // Bend the segment under the cursor (#2198). Ahead of the point grab
+    // because the gesture is deliberately usable near a point, and behind the
+    // frozen guard because bending is an edit like any other.
+    //
+    // Alt is the modifier Bitwig uses for this and the one free here: Shift
+    // already means "do not snap to semitones" on both of the other gestures.
+    if (isBendExpressionGesture(e.mods)) {
+        if (auto hit = hitTestExpressionSegment(e.getPosition())) {
+            const auto* clip = clipManager.getClip(hit->clipId);
+            if (!clip || hit->noteIndex >= clip->midiNotes.size())
+                return true;
+
+            expressionClipId_ = hit->clipId;
+            expressionNoteIndex_ = hit->noteIndex;
+            expressionWorkingPoints_ = clip->midiNotes[hit->noteIndex].pitchExpression;
+            expressionTensionSegmentIndex_ = hit->pointIndex;
+            expressionDragPointIndex_ = -1;
+            isExpressionDragging_ = true;
+            repaint();
+            return true;
+        }
+        // Alt with no segment under the cursor does nothing rather than falling
+        // through to adding a point: the user asked to bend something.
+        return true;
+    }
+
     // Grab an existing point
     if (auto hit = hitTestExpressionPoint(e.getPosition())) {
         const auto* clip = clipManager.getClip(hit->clipId);
@@ -3102,8 +3188,7 @@ bool PianoRollGridComponent::handleExpressionMouseDown(const juce::MouseEvent& e
 }
 
 void PianoRollGridComponent::handleExpressionMouseDrag(const juce::MouseEvent& e) {
-    if (!isExpressionDragging_ || expressionDragPointIndex_ < 0 ||
-        expressionDragPointIndex_ >= static_cast<int>(expressionWorkingPoints_.size()))
+    if (!isExpressionDragging_)
         return;
 
     const auto* clip = ClipManager::getInstance().getClip(expressionClipId_);
@@ -3111,6 +3196,16 @@ void PianoRollGridComponent::handleExpressionMouseDrag(const juce::MouseEvent& e
         return;
 
     const auto& note = clip->midiNotes[expressionNoteIndex_];
+
+    if (expressionTensionSegmentIndex_ >= 0) {
+        bendExpressionSegment(note, e);
+        return;
+    }
+
+    if (expressionDragPointIndex_ < 0 ||
+        expressionDragPointIndex_ >= static_cast<int>(expressionWorkingPoints_.size()))
+        return;
+
     auto& point = expressionWorkingPoints_[static_cast<size_t>(expressionDragPointIndex_)];
 
     // Horizontal: clamp between neighbouring points so ordering is stable
@@ -3135,6 +3230,32 @@ void PianoRollGridComponent::handleExpressionMouseDrag(const juce::MouseEvent& e
     repaint();
 }
 
+void PianoRollGridComponent::bendExpressionSegment(const MidiNote& note,
+                                                   const juce::MouseEvent& e) {
+    const auto index = static_cast<size_t>(expressionTensionSegmentIndex_);
+
+    // The same question the hit test asked before offering the gesture, asked
+    // again because the points can move under a live drag.
+    if (!pitchExpressionSegmentCanBend(expressionWorkingPoints_, index))
+        return;
+
+    auto& left = expressionWorkingPoints_[index];
+    const auto& right = expressionWorkingPoints_[index + 1];
+
+    const double span = right.beat - left.beat;
+    const double rise = right.semitones - left.semitones;
+
+    const double noteStartDisplayBeat = displayBeatForClipBeat(expressionClipId_, note.startBeat);
+    const double relBeat = pixelToBeat(e.x) - noteStartDisplayBeat;
+    const double t = juce::jlimit(0.0, 1.0, (relBeat - left.beat) / span);
+
+    const double centerY = noteNumberToY(note.noteNumber) + noteHeight_ * 0.5;
+    const double semitones = (centerY - e.y) / noteHeight_;
+
+    left.tension = pitchExpressionTensionThrough(t, (semitones - left.semitones) / rise);
+    repaint();
+}
+
 void PianoRollGridComponent::handleExpressionMouseUp(const juce::MouseEvent& /*e*/) {
     if (!isExpressionDragging_)
         return;
@@ -3143,6 +3264,7 @@ void PianoRollGridComponent::handleExpressionMouseUp(const juce::MouseEvent& /*e
 
     isExpressionDragging_ = false;
     expressionDragPointIndex_ = -1;
+    expressionTensionSegmentIndex_ = -1;
     expressionClipId_ = INVALID_CLIP_ID;
     expressionWorkingPoints_.clear();
     repaint();
@@ -3251,9 +3373,32 @@ void PianoRollGridComponent::paintPitchExpression(juce::Graphics& g) {
 
             juce::Path path;
             path.startNewSubPath(startX, yForSemitones(evaluatePitchExpression(points, 0.0)));
-            for (const auto& p : points) {
-                const float px = static_cast<float>(beatToPixel(noteStartDisplayBeat + p.beat));
-                path.lineTo(juce::jlimit(startX, endX, px), yForSemitones(p.semitones));
+            for (size_t p = 0; p < points.size(); ++p) {
+                const float px =
+                    static_cast<float>(beatToPixel(noteStartDisplayBeat + points[p].beat));
+                const float clampedX = juce::jlimit(startX, endX, px);
+
+                // A bent segment is sampled rather than drawn as one line
+                // (#2198). Sample count follows the segment's width on screen so
+                // a steep bend stays smooth when zoomed in and costs nothing
+                // when the note is a few pixels wide.
+                const bool bent = p > 0 && std::abs(points[p - 1].tension) >= 0.001;
+                if (bent) {
+                    const float prevX = juce::jlimit(
+                        startX, endX,
+                        static_cast<float>(beatToPixel(noteStartDisplayBeat + points[p - 1].beat)));
+                    const int samples =
+                        juce::jlimit(8, 96, static_cast<int>(std::abs(clampedX - prevX) * 0.5f));
+                    for (int sIdx = 1; sIdx < samples; ++sIdx) {
+                        const double u = static_cast<double>(sIdx) / samples;
+                        const double beat =
+                            points[p - 1].beat + (points[p].beat - points[p - 1].beat) * u;
+                        path.lineTo(prevX + (clampedX - prevX) * static_cast<float>(u),
+                                    yForSemitones(evaluatePitchExpression(points, beat)));
+                    }
+                }
+
+                path.lineTo(clampedX, yForSemitones(points[p].semitones));
             }
             path.lineTo(endX, yForSemitones(evaluatePitchExpression(points, note.lengthBeats)));
 

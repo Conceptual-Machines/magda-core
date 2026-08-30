@@ -8,6 +8,7 @@
 
 #include "../../core/ClipManager.hpp"
 #include "../../core/ClipOperations.hpp"
+#include "../../core/PitchExpressionCurve.hpp"
 #include "../../core/TempoUtils.hpp"
 #include "../../core/TrackManager.hpp"
 #include "ArrangementClipSyncPlanner.hpp"
@@ -1553,26 +1554,10 @@ static void addPitchExpressionToTeNote(te::MidiNote& teNote, const MidiNote& not
     std::sort(sorted.begin(), sorted.end(),
               [](const auto& a, const auto& b) { return a.beat < b.beat; });
 
-    // Evaluate the curve at a beat position (relative to original note start):
-    // hold first value before the first point, linear between points, hold last.
-    auto valueAt = [&sorted](double beat) {
-        if (beat <= sorted.front().beat)
-            return sorted.front().semitones;
-        if (beat >= sorted.back().beat)
-            return sorted.back().semitones;
-        for (size_t i = 0; i + 1 < sorted.size(); ++i) {
-            const auto& a = sorted[i];
-            const auto& b = sorted[i + 1];
-            if (beat >= a.beat && beat <= b.beat) {
-                const double span = b.beat - a.beat;
-                if (span <= 0.0)
-                    return b.semitones;
-                const double t = (beat - a.beat) / span;
-                return a.semitones + t * (b.semitones - a.semitones);
-            }
-        }
-        return sorted.back().semitones;
-    };
+    // Evaluate the curve at a beat position, relative to the original note
+    // start. Shape from core (#2198), so this leg and the native one hand the
+    // same glide to their respective engines.
+    auto valueAt = [&sorted](double beat) { return evaluatePitchExpressionCurve(sorted, beat); };
 
     auto addExpressionEvent = [&teNote](double relBeat, double semitones) {
         auto value = juce::jlimit(-kMaxSemitones, kMaxSemitones, static_cast<float>(semitones));
