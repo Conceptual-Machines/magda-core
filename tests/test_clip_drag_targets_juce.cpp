@@ -1,6 +1,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "JuceTestStateGuard.hpp"
+#include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
@@ -63,6 +64,19 @@ struct DragFixture {
         controller.dispatch(SetSnapEnabledEvent{false});
     }
 
+    /// Open an automation lane under @p trackId, so its row is taller than its
+    /// track and there is a band of Y inside the stack that is not any track's
+    /// own lane area.
+    AutomationLaneId showAutomationLaneOn(TrackId trackId) {
+        AutomationTarget target;
+        target.kind = ControlTarget::Kind::TrackVolume;
+        target.devicePath = ChainNodePath::trackLevel(trackId);
+        const auto laneId =
+            AutomationManager::getInstance().createLane(target, AutomationLaneType::Absolute);
+        AutomationManager::getInstance().setLaneVisible(laneId, true);
+        return laneId;
+    }
+
     ClipId addClip(TrackId trackId, double startBeats, double lengthBeats = 4.0) {
         return ClipManager::getInstance().createMidiClipBeats(trackId, startBeats, lengthBeats,
                                                               ClipView::Arrangement);
@@ -105,6 +119,7 @@ class ClipDragTargetsJuceTest final : public juce::UnitTest {
         testSelectionKeepsItsSpreadAcrossARefusingLane();
         testDragPinsWhenNoLaneAccepts();
         testFrozenLanesAreSteppedOver();
+        testAnAutomationLaneBelongsToItsOwnTrack();
     }
 
   private:
@@ -277,6 +292,49 @@ class ClipDragTargetsJuceTest final : public juce::UnitTest {
             const int delta = f.panel.clipDragSlotDelta(f.centreOfLane(3));
             expect(f.panel.clipDragTargetTrackId(f.topTrack, delta) == f.bottomTrack,
                    "the drag should reach the bottom track");
+        });
+    }
+
+    // getTrackIndexAtY answers -1 both for a pointer below the arrangement and
+    // for one inside a track's automation lanes, and a drag that reads the
+    // second as the first sends the ghost to the bottom of the stack from a
+    // position the user is holding halfway up it.
+    void testAnAutomationLaneBelongsToItsOwnTrack() {
+        beginTest("A pointer over an automation lane resolves to the track above it");
+
+        magda::test::runWithCleanJuceState([this] {
+            DragFixture f;
+            f.showAutomationLaneOn(f.topTrack);
+
+            // The automation band is whatever part of the top track's row no
+            // track's own lane area claims. Found by probing rather than
+            // computed, so the test does not have to know how the row is laid
+            // out -- only that a gap exists inside the stack.
+            const int topLane = f.laneOf(f.topTrack);
+            const int rowStart = f.panel.getTrackYPosition(topLane);
+            const int rowEnd = rowStart + f.panel.getTrackTotalHeight(topLane);
+            int automationY = -1;
+            for (int y = rowStart; y < rowEnd; ++y)
+                if (f.panel.getTrackIndexAtY(y) < 0) {
+                    automationY = y;
+                    break;
+                }
+
+            expect(automationY >= 0,
+                   "the fixture needs a visible automation lane to have a gap at all");
+            expect(automationY > rowStart && automationY < rowEnd,
+                   "the gap should be inside the top track's row, not past the stack");
+            if (automationY < 0)
+                return;
+
+            const ClipId clip = f.addClip(f.middleTrack, 0.0);
+            SelectionManager::getInstance().selectClip(clip);
+            f.panel.beginClipDragTargets({clip}, clip);
+
+            const int delta = f.panel.clipDragSlotDelta(automationY);
+            expect(f.panel.clipDragTargetTrackId(f.middleTrack, delta) == f.topTrack,
+                   "an automation lane belongs to the track it was opened under, "
+                   "not to the bottom of the arrangement");
         });
     }
 };

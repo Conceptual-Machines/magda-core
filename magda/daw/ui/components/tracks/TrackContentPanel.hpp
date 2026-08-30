@@ -536,6 +536,11 @@ class TrackContentPanel : public juce::Component,
     /// Slot @p trackId occupies in the current drag's host set; -1 if it has none.
     int clipDragSlotOfTrack(TrackId trackId) const;
 
+    /// The row @p pointerY falls in, counting a track's automation lanes as part
+    /// of that track's row and clamping to the ends of the stack. -1 only when
+    /// there are no rows at all.
+    int clipDragRowAtY(int pointerY) const;
+
     // Multi-clip Alt+drag duplicate state
     bool isMultiClipDuplicating_ = false;
     bool isMultiClipGhosting_ = false;  // the copies join their sources' link groups

@@ -210,16 +210,41 @@ int TrackContentPanel::clipDragSlotOfTrack(TrackId trackId) const {
     return static_cast<int>(std::distance(clipDragHostTrackIds_.begin(), it));
 }
 
+int TrackContentPanel::clipDragRowAtY(int pointerY) const {
+    if (trackLanes.empty())
+        return -1;
+    if (pointerY < 0)
+        return 0;
+
+    // getTrackIndexAtY answers with the track's own lane area and nothing else,
+    // so it says -1 both for a pointer below the arrangement and for one inside
+    // a track's automation lanes. A drag has to tell those apart: the second is
+    // a gap in the middle of the stack, and reading it as "below everything"
+    // would send the ghost to the bottom of the arrangement from a position the
+    // user is holding halfway up it. An automation lane belongs to the track it
+    // was opened under, so the row it falls in is that track's.
+    int currentY = 0;
+    for (size_t row = 0; row < trackLanes.size(); ++row) {
+        const int rowHeight = getTrackTotalHeight(static_cast<int>(row));
+        if (pointerY < currentY + rowHeight)
+            return static_cast<int>(row);
+        currentY += rowHeight;
+    }
+
+    // Genuinely past the end of the stack.
+    return static_cast<int>(trackLanes.size()) - 1;
+}
+
 int TrackContentPanel::clipDragSlotDelta(int pointerY) const {
     if (clipDragAnchorSlot_ < 0)
         return 0;
 
-    // Outside the lanes entirely, the pointer counts as being at whichever end
-    // it left through: dragging off the top of the arrangement keeps travelling
-    // upwards rather than stalling on the last lane the pointer was over.
-    int lane = getTrackIndexAtY(pointerY);
+    // Off either end of the arrangement the pointer counts as being at whichever
+    // end it left through, so a drag dragged past the top keeps travelling
+    // upwards rather than stalling on the last lane it was over.
+    const int lane = clipDragRowAtY(pointerY);
     if (lane < 0)
-        lane = pointerY <= 0 ? 0 : static_cast<int>(visibleTrackIds_.size()) - 1;
+        return 0;
 
     const int slot = interaction::nearestHostSlot(clipDragHostLanes_, lane);
     if (slot < 0)
