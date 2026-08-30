@@ -101,18 +101,18 @@ void restoreSavedState(MagdaDevice& device, const juce::String& savedState) {
  * (PluginManagerSync), and the field's own comment says what this file relies
  * on: interchange only, native state is pluginState.
  *
- * What happens afterwards is worth stating, because it is the native engine's
- * answer to the precedence the fork spends three steps on. The fork applies the
- * saved parameter array, overlays the chunk, then refreshes its parameter cache
- * from the plugin so the chunk wins. Here the chunk is applied at creation and
- * the plan writes every parameter it knows about before each block, so for an
- * automatable parameter the model is authoritative and for everything else the
- * chunk is. Those agree in a project MAGDA saved, because the app writes the
- * refreshed values back into the model; where they disagree -- a chunk written
- * by another version of the plugin -- the model wins for the parameters it has.
- * Whether that is the right way round for a dual-engine release is #2244's
- * question, and it is a question about which number to keep rather than about
- * whether the patch loads.
+ * What happens afterwards is the same rule the fork reaches by another route.
+ * The fork applies the saved parameter array, overlays the chunk, then
+ * refreshes its own parameter cache from the plugin, so nothing writes the
+ * array back and the chunk wins. Here the chunk is applied at creation and the
+ * adapter declines to write a parameter that is still sitting where the project
+ * said it sits (EngineExternalDevice::writeParameters), which comes to the same
+ * thing without the engine writing to the model from a render.
+ *
+ * That the two saved records can disagree at all is not hypothetical: every
+ * project written by a MAGDA old enough to have saved a stale array beside a
+ * good chunk is this case, which is what
+ * test_external_plugin_state_restore_juce.cpp was written for.
  */
 void restoreSavedChunk(juce::AudioPluginInstance& instance, const juce::String& savedState) {
     if (savedState.isEmpty())
