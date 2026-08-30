@@ -48,12 +48,19 @@ struct ProjectMetadata {
     bool isEmpty() const;
 };
 
-/// One metadata field, and the two names it goes by outside the struct.
+/// One metadata field, the two names it goes by outside the struct, and whether
+/// a new project can be seeded with a stored value for it.
 struct ProjectMetadataField {
     const char* key;      ///< .mgd JSON property, and the StringTable leaf under
                           ///< "project_settings.metadata."
     const char* element;  ///< DAWproject <MetaData> child element name
     juce::String ProjectMetadata::*member;
+
+    /// True for the fields that describe the person rather than the work, which
+    /// are the same in every project somebody makes and are worth keeping a
+    /// per-install default for. False for title, album, original artist, year
+    /// and comment: a stored default for those would be wrong every time.
+    bool seededFromDefaults;
 };
 
 /**
@@ -66,19 +73,19 @@ struct ProjectMetadataField {
  * spelling out thirteen fields apiece and drifting apart.
  */
 inline constexpr std::array<ProjectMetadataField, 13> kProjectMetadataFields{{
-    {"title", "Title", &ProjectMetadata::title},
-    {"artist", "Artist", &ProjectMetadata::artist},
-    {"album", "Album", &ProjectMetadata::album},
-    {"originalArtist", "OriginalArtist", &ProjectMetadata::originalArtist},
-    {"composer", "Composer", &ProjectMetadata::composer},
-    {"songwriter", "Songwriter", &ProjectMetadata::songwriter},
-    {"producer", "Producer", &ProjectMetadata::producer},
-    {"arranger", "Arranger", &ProjectMetadata::arranger},
-    {"year", "Year", &ProjectMetadata::year},
-    {"genre", "Genre", &ProjectMetadata::genre},
-    {"copyright", "Copyright", &ProjectMetadata::copyright},
-    {"website", "Website", &ProjectMetadata::website},
-    {"comment", "Comment", &ProjectMetadata::comment},
+    {"title", "Title", &ProjectMetadata::title, false},
+    {"artist", "Artist", &ProjectMetadata::artist, true},
+    {"album", "Album", &ProjectMetadata::album, false},
+    {"originalArtist", "OriginalArtist", &ProjectMetadata::originalArtist, false},
+    {"composer", "Composer", &ProjectMetadata::composer, true},
+    {"songwriter", "Songwriter", &ProjectMetadata::songwriter, true},
+    {"producer", "Producer", &ProjectMetadata::producer, true},
+    {"arranger", "Arranger", &ProjectMetadata::arranger, true},
+    {"year", "Year", &ProjectMetadata::year, false},
+    {"genre", "Genre", &ProjectMetadata::genre, true},
+    {"copyright", "Copyright", &ProjectMetadata::copyright, true},
+    {"website", "Website", &ProjectMetadata::website, true},
+    {"comment", "Comment", &ProjectMetadata::comment, false},
 }};
 
 inline bool ProjectMetadata::isEmpty() const {

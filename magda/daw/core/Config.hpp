@@ -808,6 +808,23 @@ class Config {
         renderFilePattern = pattern;
     }
 
+    /**
+     * Per-install seeds for a new project's credit fields, keyed by
+     * ProjectMetadataField::key ("artist", "composer", ...).
+     *
+     * A map rather than one member per field because the field list lives in
+     * ProjectInfo.hpp, which is a layer Config does not know about: keying by
+     * the same string the project format uses lets the two stay in step without
+     * Config having to name them. Only the fields flagged seededFromDefaults
+     * ever appear; the rest describe the work, not the person.
+     */
+    const std::map<std::string, std::string>& getProjectMetadataDefaults() const {
+        return projectMetadataDefaults;
+    }
+    void setProjectMetadataDefaults(std::map<std::string, std::string> defaults) {
+        projectMetadataDefaults = std::move(defaults);
+    }
+
     std::string getBounceFilePattern() const {
         return bounceFilePattern;
     }
@@ -1566,6 +1583,7 @@ class Config {
     double renderSampleRate = 44100.0;  // 44100, 48000, 96000, 192000
     int renderBitDepth = 24;            // 16, 24, 32
     // File naming pattern tokens: <project-name>, <clip-name>, <track-name>, <date-time>
+    std::map<std::string, std::string> projectMetadataDefaults;
     std::string renderFilePattern = "<project-name>_<date-time>";
     std::string bounceFilePattern = "<clip-name>_<date-time>";
     int bounceBitDepth = 32;  // 16, 24, 32 — default 32-bit for internal bounces

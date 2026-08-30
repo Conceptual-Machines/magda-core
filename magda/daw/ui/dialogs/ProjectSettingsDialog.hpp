@@ -15,8 +15,10 @@ namespace magda {
  * General is total timeline length (bars), working/render sample rate, and
  * render / bounce bit depth; Metadata is the title and credits in its
  * ProjectMetadata block. New projects seed the General values from the global
- * Config defaults and this dialog overrides them for the current project; the
- * metadata has no global default, being per-project by nature.
+ * Config defaults and this dialog overrides them for the current project. The
+ * credit fields are seeded the same way, from the Credits block on Preferences >
+ * Defaults - but only the ones describing the person, never the title or the
+ * year, which belong to the work.
  */
 class ProjectSettingsDialog : public juce::Component {
   public:

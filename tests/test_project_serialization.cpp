@@ -5,6 +5,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
 #include <filesystem>
+#include <map>
+#include <string>
 
 #include "AudioClipTestHelpers.hpp"
 #include "magda/daw/core/AppPaths.hpp"
@@ -2219,6 +2221,37 @@ TEST_CASE("Project title and credits roundtrip", "[project][serialization][metad
         REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
         REQUIRE(loaded.metadata.isEmpty());
     }
+}
+
+TEST_CASE("A new project is seeded with the stored credit defaults",
+          "[project][manager][metadata]") {
+    ProjectTestFixture fixture;
+
+    auto& config = Config::getInstance();
+    const auto restore = config.getProjectMetadataDefaults();
+
+    std::map<std::string, std::string> defaults;
+    for (const auto& field : kProjectMetadataFields)
+        defaults[field.key] = std::string("default-") + field.key;
+    config.setProjectMetadataDefaults(defaults);
+
+    REQUIRE(ProjectManager::getInstance().newProject());
+    const auto& metadata = ProjectManager::getInstance().getCurrentProjectInfo().metadata;
+
+    for (const auto& field : kProjectMetadataFields) {
+        INFO(field.key);
+        if (field.seededFromDefaults) {
+            // Describes the person, so it carries over.
+            REQUIRE(metadata.*field.member == juce::String("default-") + field.key);
+        } else {
+            // Describes the work. A stored value for the title or the year would
+            // be wrong in every project after the first, so it is ignored even
+            // when the config file has one.
+            REQUIRE((metadata.*field.member).isEmpty());
+        }
+    }
+
+    config.setProjectMetadataDefaults(restore);
 }
 
 TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginState]") {

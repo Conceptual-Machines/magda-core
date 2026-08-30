@@ -21,6 +21,12 @@ What a **new** project starts as. Nothing here touches the project you have open
 - **Render Bit Depth** — Bit depth for audio exports
 - **Bounce Bit Depth** — Bit depth for bounced and frozen audio
 
+### Credits
+
+The credits that describe *you* rather than the song — Artist, Composer, Songwriter, Producer, Arranger, Genre, Copyright and Website — are copied into every new project, so you fill them in once instead of in every song. Edit them per project in [Project Settings → Metadata](../arrangement-view.md#metadata).
+
+Title, Album, Original Artist, Year and Comment have no default: they belong to the work, and a stored value would be wrong in every project after the first.
+
 ## UI
 
 - **Panel visibility defaults** — Choose which panels are shown on startup

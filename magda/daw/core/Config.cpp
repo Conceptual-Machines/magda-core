@@ -163,6 +163,17 @@ void Config::save() {
     root->setProperty("renderBitDepth", renderBitDepth);
     root->setProperty("renderFilePattern", toJuceString(renderFilePattern));
     root->setProperty("bounceFilePattern", toJuceString(bounceFilePattern));
+
+    // Credit seeds for new projects. Empty entries are not written, so a config
+    // nobody has filled in carries no object at all.
+    {
+        juce::DynamicObject::Ptr defaults(new juce::DynamicObject());
+        for (const auto& [key, value] : projectMetadataDefaults)
+            if (!value.empty())
+                defaults->setProperty(juce::Identifier(toJuceString(key)), toJuceString(value));
+        if (defaults->getProperties().size() > 0)
+            root->setProperty("projectMetadataDefaults", juce::var(defaults.get()));
+    }
     root->setProperty("bounceBitDepth", bounceBitDepth);
 
     // Audio devices
@@ -548,6 +559,12 @@ void Config::load() {
     renderBitDepth = getInt("renderBitDepth", renderBitDepth);
     renderFilePattern = getString("renderFilePattern", renderFilePattern);
     bounceFilePattern = getString("bounceFilePattern", bounceFilePattern);
+
+    projectMetadataDefaults.clear();
+    if (auto* defaults = obj->getProperty("projectMetadataDefaults").getDynamicObject())
+        for (const auto& property : defaults->getProperties())
+            projectMetadataDefaults[property.name.toString().toStdString()] =
+                property.value.toString().toStdString();
     bounceBitDepth = getInt("bounceBitDepth", bounceBitDepth);
 
     preferredAudioDevice = getString("preferredAudioDevice", preferredAudioDevice);

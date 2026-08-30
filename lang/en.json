@@ -389,6 +389,7 @@
     "section.output": "Output",
     "section.format": "Format",
     "section.new_project_defaults": "New Project Defaults",
+    "section.credit_defaults": "Credits",
     "label.default_sample_rate": "Sample Rate",
     "label.default_render_bit_depth": "Render Bit Depth",
     "label.default_bounce_bit_depth": "Bounce Bit Depth",

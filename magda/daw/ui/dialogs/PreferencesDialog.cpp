@@ -12,6 +12,7 @@
 #include "../../media_db/MediaDbContext.hpp"
 #include "../../media_db/MediaDbQuery.hpp"
 #include "../../media_db/PresetDbIndexer.hpp"
+#include "../../project/ProjectInfo.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "../components/common/TextSlider.hpp"
 #include "../state/TimelineController.hpp"
@@ -1367,6 +1368,30 @@ class DefaultsPage : public juce::Component {
   public:
     DefaultsPage() {
         setupSectionHeader(*this, formatHeader, tr("preferences.section.new_project_defaults"));
+        setupSectionHeader(*this, creditsHeader, tr("preferences.section.credit_defaults"));
+
+        // Labelled from the Project Settings keys rather than a second set of
+        // preferences.* ones: these are the same thirteen field names, and two
+        // copies of "Original artist" that have to stay identical is a worse
+        // problem than one key serving two dialogs.
+        for (const auto& field : kProjectMetadataFields) {
+            if (!field.seededFromDefaults)
+                continue;
+
+            auto row = std::make_unique<CreditRow>();
+            row->field = &field;
+            setupComboLabel(row->label, tr("project_settings.metadata." + juce::String(field.key)));
+
+            row->editor.setFont(FontManager::getInstance().getUIFont(12.0f));
+            row->editor.setColour(juce::TextEditor::backgroundColourId,
+                                  DarkTheme::getColour(DarkTheme::SURFACE));
+            row->editor.setColour(juce::TextEditor::textColourId,
+                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            row->editor.setColour(juce::TextEditor::outlineColourId,
+                                  DarkTheme::getColour(DarkTheme::BORDER));
+            addAndMakeVisible(row->editor);
+            creditRows_.push_back(std::move(row));
+        }
 
         setupTextSlider(*this, lengthSlider, lengthLabel,
                         tr("preferences.slider.default_total_length"), 16.0, 4096.0, 16.0,
@@ -1389,8 +1414,14 @@ class DefaultsPage : public juce::Component {
         constexpr int padding = 16;
         constexpr int rowH = 32;
         constexpr int headerH = 28;
+        constexpr int secGap = 12;
 
-        return padding + headerH + 4 + rowH + 4 + rowH + 4 + rowH + 4 + rowH + padding;
+        const int credits = headerH + 4 + (rowH * static_cast<int>(creditRows_.size())) +
+                            (4 * juce::jmax(0, static_cast<int>(creditRows_.size()) - 1));
+
+        return padding + headerH + 4 + rowH + 4 + rowH + 4 + rowH + 4 + rowH  // Format
+               + secGap + credits                                             // Credits
+               + padding;
     }
 
     void resized() override {
@@ -1398,6 +1429,8 @@ class DefaultsPage : public juce::Component {
         const int rowH = 32;
         const int sliderH = 24;
         const int headerH = 28;
+        const int secGap = 12;
+        const int labelW = 140;
 
         formatHeader.setBounds(bounds.removeFromTop(headerH));
         bounds.removeFromTop(4);
@@ -1408,6 +1441,17 @@ class DefaultsPage : public juce::Component {
         layoutComboRow(bounds, renderBitLabel, renderBitCombo, rowH);
         bounds.removeFromTop(4);
         layoutComboRow(bounds, bounceBitLabel, bounceBitCombo, rowH);
+        bounds.removeFromTop(secGap);
+
+        creditsHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        for (size_t i = 0; i < creditRows_.size(); ++i) {
+            auto row = bounds.removeFromTop(rowH);
+            creditRows_[i]->label.setBounds(row.removeFromLeft(labelW));
+            creditRows_[i]->editor.setBounds(row.reduced(0, 4));
+            if (i + 1 < creditRows_.size())
+                bounds.removeFromTop(4);
+        }
     }
 
     void loadSettings(Config& config) {
@@ -1419,6 +1463,14 @@ class DefaultsPage : public juce::Component {
                                      juce::dontSendNotification);
         bounceBitCombo.setSelectedId(magda::daw::ui::bitDepthItemId(config.getBounceBitDepth()),
                                      juce::dontSendNotification);
+
+        const auto& credits = config.getProjectMetadataDefaults();
+        for (auto& row : creditRows_) {
+            const auto entry = credits.find(row->field->key);
+            row->editor.setText(entry == credits.end() ? juce::String()
+                                                       : juce::String(entry->second),
+                                juce::dontSendNotification);
+        }
     }
 
     void applySettings(Config& config) {
@@ -1427,6 +1479,14 @@ class DefaultsPage : public juce::Component {
             magda::daw::ui::sampleRateForItemId(sampleRateCombo.getSelectedId()));
         config.setRenderBitDepth(magda::daw::ui::bitDepthForItemId(renderBitCombo.getSelectedId()));
         config.setBounceBitDepth(magda::daw::ui::bitDepthForItemId(bounceBitCombo.getSelectedId()));
+
+        std::map<std::string, std::string> credits;
+        for (const auto& row : creditRows_) {
+            const auto value = row->editor.getText().trim();
+            if (value.isNotEmpty())
+                credits[row->field->key] = value.toStdString();
+        }
+        config.setProjectMetadataDefaults(std::move(credits));
     }
 
   private:
@@ -1437,10 +1497,17 @@ class DefaultsPage : public juce::Component {
         addAndMakeVisible(label);
     }
 
-    juce::Label formatHeader;
+    struct CreditRow {
+        const ProjectMetadataField* field = nullptr;
+        juce::Label label;
+        juce::TextEditor editor;
+    };
+
+    juce::Label formatHeader, creditsHeader;
     juce::Label lengthLabel, sampleRateLabel, renderBitLabel, bounceBitLabel;
     magda::daw::ui::TextSlider lengthSlider;
     juce::ComboBox sampleRateCombo, renderBitCombo, bounceBitCombo;
+    std::vector<std::unique_ptr<CreditRow>> creditRows_;
 };
 
 // ---- Rendering tab --------------------------------------------------------
