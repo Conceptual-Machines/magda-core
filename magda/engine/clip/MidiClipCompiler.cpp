@@ -6,6 +6,8 @@
 #include <limits>
 #include <map>
 
+#include "core/PitchExpressionCurve.hpp"
+
 namespace magda::engine {
 
 namespace {
@@ -361,22 +363,11 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
             std::stable_sort(points.begin(), points.end(),
                              [](const auto& a, const auto& b) { return a.beat < b.beat; });
 
+            // Shape from core, so what compiles is what the piano roll drew
+            // (#2198). The densification below is unchanged: it already walks
+            // each segment finely enough for a bend to survive it.
             const auto valueAt = [&points](double beat) {
-                if (beat <= points.front().beat)
-                    return points.front().semitones;
-                if (beat >= points.back().beat)
-                    return points.back().semitones;
-                for (std::size_t p = 0; p + 1 < points.size(); ++p) {
-                    const auto& a = points[p];
-                    const auto& b = points[p + 1];
-                    if (beat >= a.beat && beat <= b.beat) {
-                        const auto span = b.beat - a.beat;
-                        if (span <= 0.0)
-                            return b.semitones;
-                        return a.semitones + (beat - a.beat) / span * (b.semitones - a.semitones);
-                    }
-                }
-                return points.back().semitones;
+                return evaluatePitchExpressionCurve(points, beat);
             };
 
             auto lastValue = std::numeric_limits<int>::min();

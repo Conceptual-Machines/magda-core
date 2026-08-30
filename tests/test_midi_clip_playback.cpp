@@ -12,6 +12,7 @@
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/GrooveTemplate.hpp"
 #include "clip/MidiClipCompiler.hpp"
+#include "core/PitchExpressionCurve.hpp"
 
 /**
  * MIDI clip playback (#2039), on the audio thread.
@@ -509,6 +510,58 @@ TEST_CASE("Overlapping expressive notes get their own channels", "[engine][clip]
         }
 
     CHECK(bends > 16);
+}
+
+TEST_CASE("A bent glide compiles to the curve the editor drew, not the straight line",
+          "[engine][clip][midi]") {
+    // #2198. The compiler already densified each segment; what is new is that
+    // the value it densifies is a shape. Checked against the linear answer,
+    // because a bend that compiles as a line is exactly the bug this replaces.
+    constexpr double kTension = 2.0;
+    constexpr double kEndSemitones = 12.0;
+
+    auto clip = makeMidiClip(1, 0.0, 8.0);
+    auto bent = note(60, 0.0, 4.0);
+    bent.pitchExpression = {MidiPitchExpressionPoint{0.0, 0.0, kTension},
+                            MidiPitchExpressionPoint{4.0, kEndSemitones, 0.0}};
+    clip.midiNotes.push_back(bent);
+
+    const auto list = compileMidiEvents(clip, 0.0);
+    REQUIRE(list.mpe);
+
+    // Wheel value -> semitones, through the same +/-48 range the compiler uses.
+    const auto semitonesOf = [](const auto& event) {
+        const auto value = static_cast<int>(event.data1) | (static_cast<int>(event.data2) << 7);
+        return (value - 8192) / 8192.0 * 48.0;
+    };
+
+    std::optional<double> atMidpoint;
+    std::optional<double> atEnd;
+    double nearestToMid = 1.0e9;
+
+    for (const auto& event : list.events) {
+        if (event.kind() != 0xe0u)
+            continue;
+        if (const auto distance = std::abs(event.beat - 2.0); distance < nearestToMid) {
+            nearestToMid = distance;
+            atMidpoint = semitonesOf(event);
+        }
+        if (std::abs(event.beat - 4.0) < 1.0e-6)
+            atEnd = semitonesOf(event);
+    }
+
+    REQUIRE(atMidpoint.has_value());
+
+    // The straight line would read half the travel here. The bend pulls it well
+    // below that, and the tolerance is the wheel's own resolution rather than a
+    // guess: 48 semitones over 8192 steps.
+    const double expected = evaluatePitchExpressionCurve(bent.pitchExpression, 2.0);
+    CHECK(*atMidpoint == Approx(expected).margin(48.0 / 8192.0 * 2.0));
+    CHECK(*atMidpoint < kEndSemitones * 0.5 - 1.0);
+
+    // ...and it still arrives where the user put the last point.
+    REQUIRE(atEnd.has_value());
+    CHECK(*atEnd == Approx(kEndSemitones).margin(48.0 / 8192.0 * 2.0));
 }
 
 // =============================================================================

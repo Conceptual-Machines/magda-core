@@ -153,6 +153,10 @@ set(TEST_SOURCES
     test_config_path_redirect.cpp
     # Keyboard clip nudging (#1957)
     test_clip_nudge.cpp
+    # The MPE pitch glide's curve (#2198): the shape the piano roll draws, the
+    # compiler compiles and the Tracktion bridge hands over, and the inverse the
+    # bend gesture drives it by.
+    test_pitch_expression_curve.cpp
     # Where a clip drag may land (#2179): the pure index rules that step the
     # ghost over a lane it cannot land on. The panel driving them is in
     # magda_juce_tests, which is where a TrackContentPanel can exist.

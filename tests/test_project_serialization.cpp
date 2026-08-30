@@ -1114,6 +1114,74 @@ TEST_CASE("Looped MIDI clip serialization preserves loop region separate from pl
     REQUIRE(restored->midi().sourceFilePath == "/tmp/imported-loop.mid");
 }
 
+TEST_CASE("A bent pitch glide roundtrips, and a straight one writes nothing extra",
+          "[project][serialization][midi]") {
+    // #2198 gave each glide segment a shape. The shape has to survive a save,
+    // and a project full of straight glides has to come back byte-identical to
+    // what it was before the field existed -- which is what the write-only-when-
+    // bent rule buys and what a reader of old projects depends on.
+    ProjectTestFixture fixture;
+
+    auto trackId = TrackManager::getInstance().createTrack("MIDI", TrackType::Media);
+
+    ClipInfo clip;
+    clip.id = 93;
+    clip.trackId = trackId;
+    clip.setMidiContent();
+    clip.view = ClipView::Arrangement;
+    clip.setPlacementBeats(0.0, 4.0);
+
+    MidiNote note;
+    note.noteNumber = 60;
+    note.startBeat = 0.0;
+    note.lengthBeats = 4.0;
+    note.pitchExpression = {MidiPitchExpressionPoint{0.0, 0.0, 1.75},
+                            MidiPitchExpressionPoint{2.0, 5.0, 0.0},
+                            MidiPitchExpressionPoint{4.0, -3.0, -2.5}};
+    clip.midiNotes.push_back(note);
+
+    ClipManager::getInstance().restoreClip(clip);
+
+    ProjectInfo info;
+    info.name = "Bent Glide";
+    info.tempo = 120.0;
+
+    auto json = ProjectSerializer::serializeProject(info);
+
+    // The straight middle segment carries no tension property at all.
+    auto* rootObj = json.getDynamicObject();
+    REQUIRE(rootObj != nullptr);
+    auto* clips = rootObj->getProperty("clips").getArray();
+    REQUIRE(clips != nullptr);
+    REQUIRE(clips->size() == 1);
+    auto* clipObj = clips->getReference(0).getDynamicObject();
+    REQUIRE(clipObj != nullptr);
+    auto* notes = clipObj->getProperty("midiNotes").getArray();
+    REQUIRE(notes != nullptr);
+    REQUIRE(notes->size() == 1);
+    auto* noteObj = notes->getReference(0).getDynamicObject();
+    REQUIRE(noteObj != nullptr);
+    auto* pointArray = noteObj->getProperty("pitchExpression").getArray();
+    REQUIRE(pointArray != nullptr);
+    REQUIRE(pointArray->size() == 3);
+    CHECK(pointArray->getReference(0).getDynamicObject()->hasProperty("tension"));
+    CHECK_FALSE(pointArray->getReference(1).getDynamicObject()->hasProperty("tension"));
+    CHECK(pointArray->getReference(2).getDynamicObject()->hasProperty("tension"));
+
+    ProjectInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+    const auto* restored = ClipManager::getInstance().getClip(clip.id);
+    REQUIRE(restored != nullptr);
+    REQUIRE(restored->midiNotes.size() == 1);
+
+    const auto& points = restored->midiNotes.front().pitchExpression;
+    REQUIRE(points.size() == 3);
+    CHECK(points[0].tension == Approx(1.75));
+    CHECK(points[1].tension == Approx(0.0));
+    CHECK(points[2].tension == Approx(-2.5));
+    CHECK(points[1].semitones == Approx(5.0));
+}
+
 TEST_CASE("Saving a MIDI clip to the media library writes and indexes a generated source file",
           "[project][serialization][midi][media_db]") {
     ProjectTestFixture fixture;
