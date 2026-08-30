@@ -1666,6 +1666,13 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     dragStartTrackId_ = clip->trackId;
     dragStartAudioOffset_ = magda::audioEventRef(*clip).anchorSeconds();
 
+    // Which lanes this drag may land on (#2179), worked out once here rather
+    // than per frame. A multi-clip drag replaces it in startMultiClipDrag with
+    // the whole selection's answer; this covers the single-clip case, which is
+    // the panel's only way to know a drag has begun.
+    if (parentPanel_)
+        parentPanel_->beginClipDragTargets({clipId_}, clipId_);
+
     // Cache file duration for resize clamping
     dragStartFileDuration_ = 0.0;
     if (clip->isAudio() && magda::audioEventRef(*clip).sourceFilePath().isNotEmpty()) {
@@ -2008,7 +2015,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                     int ghostH = getHeight();
                     const int localY =
                         e.getScreenPosition().y - parentPanel_->getScreenBounds().getPosition().y;
-                    const int trackIndex = parentPanel_->getTrackIndexAtY(localY);
+                    const int trackIndex = parentPanel_->clipDragTargetLane(
+                        dragStartTrackId_, parentPanel_->clipDragSlotDelta(localY));
                     if (trackIndex >= 0) {
                         ghostY = parentPanel_->getTrackYPosition(trackIndex);
                         ghostH = parentPanel_->getTrackTotalHeight(trackIndex);
@@ -2027,32 +2035,29 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 int newWidth = static_cast<int>(std::round(lengthBeats * pixelsPerBeat));
                 setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
 
-                // Show ghost on target track when dragging across tracks
+                // Show ghost on the track the drop will actually use, which is
+                // the nearest lane that can hold this clip rather than whichever
+                // one the pointer is over (#2179). Resolved through the panel so
+                // the ghost and the mouseUp commit cannot disagree.
                 auto screenPos = e.getScreenPosition();
                 auto parentPos = parentPanel_->getScreenBounds().getPosition();
                 int localY = screenPos.y - parentPos.y;
-                int trackIndex = parentPanel_->getTrackIndexAtY(localY);
+                const int slotDelta = parentPanel_->clipDragSlotDelta(localY);
+                const int trackIndex =
+                    parentPanel_->clipDragTargetLane(dragStartTrackId_, slotDelta);
 
-                if (trackIndex >= 0) {
-                    auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
-                        ViewModeController::getInstance().getViewMode());
-
-                    if (trackIndex < static_cast<int>(visibleTracks.size()) &&
-                        visibleTracks[trackIndex] != dragStartTrackId_) {
-                        // Over a different track — show ghost
-                        int targetY = parentPanel_->getTrackYPosition(trackIndex);
-                        int targetH = parentPanel_->getTrackTotalHeight(trackIndex);
-                        const auto* clip = getClipInfo();
-                        juce::Rectangle<int> ghostBounds(newX, targetY, juce::jmax(10, newWidth),
-                                                         targetH);
-                        parentPanel_->setClipGhost(clipId_, ghostBounds,
-                                                   clip ? clip->colour : juce::Colours::grey);
-                    } else {
-                        // Back on source track — clear ghost
-                        parentPanel_->clearClipGhost(clipId_);
-                    }
+                if (trackIndex >= 0 && parentPanel_->clipDragTargetTrackId(
+                                           dragStartTrackId_, slotDelta) != dragStartTrackId_) {
+                    // Landing somewhere else — show ghost
+                    int targetY = parentPanel_->getTrackYPosition(trackIndex);
+                    int targetH = parentPanel_->getTrackTotalHeight(trackIndex);
+                    const auto* clip = getClipInfo();
+                    juce::Rectangle<int> ghostBounds(newX, targetY, juce::jmax(10, newWidth),
+                                                     targetH);
+                    parentPanel_->setClipGhost(clipId_, ghostBounds,
+                                               clip ? clip->colour : juce::Colours::grey);
                 } else {
-                    // Outside any track — clear ghost
+                    // Staying on the source track — no ghost to draw
                     parentPanel_->clearClipGhost(clipId_);
                 }
             }
@@ -2549,22 +2554,19 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 }
                 finalStartTime = juce::jmax(0.0, finalStartTime);
 
-                // Determine target track
+                // Determine target track — the same resolution the ghost used,
+                // so the lane under the ghost at the moment of release is the
+                // lane the clip lands on (#2179).
                 TrackId targetTrackId = dragStartTrackId_;
                 if (parentPanel_) {
                     auto screenPos = e.getScreenPosition();
                     auto parentPos = parentPanel_->getScreenBounds().getPosition();
                     int localY = screenPos.y - parentPos.y;
-                    int trackIndex = parentPanel_->getTrackIndexAtY(localY);
-
-                    if (trackIndex >= 0) {
-                        auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
-                            ViewModeController::getInstance().getViewMode());
-
-                        if (trackIndex < static_cast<int>(visibleTracks.size())) {
-                            targetTrackId = visibleTracks[trackIndex];
-                        }
-                    }
+                    targetTrackId = parentPanel_->clipDragTargetTrackId(
+                        dragStartTrackId_, parentPanel_->clipDragSlotDelta(localY));
+                    // Nothing below reads them, and the commit can destroy this
+                    // component before any later exit could clear them.
+                    parentPanel_->endClipDragTargets();
                 }
 
                 if (isDuplicating_) {

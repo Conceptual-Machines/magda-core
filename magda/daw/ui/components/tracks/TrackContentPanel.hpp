@@ -145,6 +145,13 @@ class TrackContentPanel : public juce::Component,
     // Get track index at Y position (for drag-drop)
     int getTrackIndexAtY(int y) const;
 
+    /// The arrangement's lanes in display order. The index space every track
+    /// index in this class is expressed in, exposed so a caller can turn one
+    /// back into the track it names.
+    const std::vector<TrackId>& getVisibleTrackIds() const {
+        return visibleTrackIds_;
+    }
+
     // Automation lane management
     void showAutomationLane(TrackId trackId, AutomationLaneId laneId);
     void hideAutomationLane(TrackId trackId, AutomationLaneId laneId);
@@ -216,6 +223,35 @@ class TrackContentPanel : public juce::Component,
     void updateMultiClipDrag(const juce::Point<int>& currentPos);
     void finishMultiClipDrag();
 
+    // ------------------------------------------------------------------
+    // Clip drag destinations (#2179)
+    //
+    // One resolution of pointer Y to a landing lane, shared by the ghost and
+    // the commit, because a ghost that lands where the commit refuses is the
+    // bug this exists to end. Public for ClipComponent, which drives the
+    // single-clip drag and has to ask the same question the panel's own
+    // multi-clip drag asks.
+    //
+    // The set of lanes that can hold the selection is fixed for the length of
+    // the gesture -- the selection does not change mid-drag -- so it is
+    // computed once at drag start and every frame after that is a lookup.
+    // ------------------------------------------------------------------
+
+    /// Work out which lanes can hold @p movingClips, measured from @p anchorClipId.
+    void beginClipDragTargets(const std::vector<ClipId>& movingClips, ClipId anchorClipId);
+
+    /// Forget them. Safe to call when no drag is in progress.
+    void endClipDragTargets();
+
+    /// How many usable lanes the selection has travelled for a pointer at @p pointerY.
+    int clipDragSlotDelta(int pointerY) const;
+
+    /// Lane a clip from @p originalTrackId lands on; -1 when it cannot move.
+    int clipDragTargetLane(TrackId originalTrackId, int slotDelta) const;
+
+    /// The same destination as a track; @p originalTrackId when it cannot move.
+    TrackId clipDragTargetTrackId(TrackId originalTrackId, int slotDelta) const;
+
     // Lower-zone time selection: a ClipComponent hands its lower-half gestures
     // back to the panel so the existing time-selection machinery runs over the
     // clip (the panel's own mouse handlers are private). Events must already be
@@ -255,6 +291,11 @@ class TrackContentPanel : public juce::Component,
                       const juce::Colour& colour);
     void clearClipGhost(ClipId clipId);
     void clearAllClipGhosts();
+
+    /// Where @p clipId's ghost is being drawn, or an empty rectangle if it has
+    /// none. The preview a drag is showing, so a test can ask whether it agrees
+    /// with where the release actually puts the clip (#2179).
+    juce::Rectangle<int> getClipGhostBounds(ClipId clipId) const;
 
     TimelineController* getTimelineController() const {
         return timelineController;
@@ -477,9 +518,23 @@ class TrackContentPanel : public juce::Component,
     double multiClipDragStartTime_ = 0.0;
     double multiClipDragDeltaTime_ =
         0.0;  // Stored during drag, used at commit — no pixel round-trip
-    int multiClipDragAnchorTrackIndex_ = -1;  // Anchor clip's track index at drag start
-    int multiClipDragTrackDelta_ =
-        0;  // Track index offset, stored during drag — no pixel round-trip
+    // Offset in usable-lane slots rather than in raw track indices (#2179):
+    // one delta has to mean the same travel for every clip in the selection,
+    // and a lane the selection cannot land on is not travel. Stored during the
+    // drag and reused at commit — no pixel round-trip.
+    int multiClipDragSlotDelta_ = 0;
+
+    // Lanes this drag may land on, in display order, fixed at drag start.
+    // Empty means vertical movement is pinned: nothing in the stack can hold
+    // what is being dragged, which needs no case of its own.
+    std::vector<TrackId> clipDragHostTrackIds_;
+    std::vector<int> clipDragHostLanes_;  // their indices into visibleTrackIds_
+    int clipDragAnchorSlot_ = -1;         // where the gesture started, in slots
+    int clipDragMinSlot_ = 0;             // topmost and bottommost slots the
+    int clipDragMaxSlot_ = 0;             // selection occupies, for block clamping
+
+    /// Slot @p trackId occupies in the current drag's host set; -1 if it has none.
+    int clipDragSlotOfTrack(TrackId trackId) const;
 
     // Multi-clip Alt+drag duplicate state
     bool isMultiClipDuplicating_ = false;
