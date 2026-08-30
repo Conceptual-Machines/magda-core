@@ -264,8 +264,8 @@ class GeneralPage : public juce::Component {
         // (see languageCombo.onChange). UI Scale, UI Font, and Font Size moved to
         // the Appearance tab.
         setupTextSlider(*this, localizedFontScaleSlider, localizedFontScaleLabel,
-                        trOr("preferences.localized_font_scale.label", "Localized Font Size"),
-                        100.0, 300.0, 5.0, magda::TechnicalTextToken::Percent);
+                        tr("preferences.localized_font_scale.label"), 100.0, 300.0, 5.0,
+                        magda::TechnicalTextToken::Percent);
         localizedFontScaleSlider.onValueChanged = [this](double) {
             localizedFontScaleExplicit_ = true;
         };
@@ -1158,8 +1158,7 @@ class AppearancePage : public juce::Component {
             (baseId == ThemeManager::kLightThemeId) ? "Light Theme.json" : "Dark Theme.json";
 
         fileChooser_ = std::make_unique<juce::FileChooser>(
-            trOr("preferences.dialog.save_theme_template", "Save theme template"),
-            dir.getChildFile(suggested), "*.json");
+            tr("preferences.dialog.save_theme_template"), dir.getChildFile(suggested), "*.json");
         fileChooser_->launchAsync(
             juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
                 juce::FileBrowserComponent::warnAboutOverwriting,
@@ -1180,8 +1179,8 @@ class AppearancePage : public juce::Component {
         auto dir = paths::themesDir();
         dir.createDirectory();
 
-        fileChooser_ = std::make_unique<juce::FileChooser>(
-            trOr("preferences.dialog.load_theme", "Load a theme"), dir, "*.json");
+        fileChooser_ =
+            std::make_unique<juce::FileChooser>(tr("preferences.dialog.load_theme"), dir, "*.json");
         fileChooser_->launchAsync(
             juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
             [this](const juce::FileChooser& fc) {
