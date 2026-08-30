@@ -13,16 +13,20 @@ namespace magda {
 namespace {
 constexpr int kRowH = 28;
 constexpr int kPad = 16;
+constexpr int kPagePad = 12;
+constexpr int kRowGap = 12;
 constexpr int kLabelW = 150;
-constexpr int kHeaderH = 20;
+constexpr int kControlW = 220;
+constexpr int kTabBarDepth = 32;
+constexpr int kDialogW = 660;
 
-// Metadata occupies two columns of short text fields, because thirteen stacked
-// rows would push the dialog past the height of a laptop screen on its own.
+// Metadata occupies two columns of short text fields. One column would make the
+// Metadata tab twice as tall as the General one, and the dialog has to size to
+// whichever tab is taller.
 constexpr int kMetaLabelW = 118;
 constexpr int kMetaColGutter = 20;
 constexpr int kMetaRowGap = 8;
 constexpr int kCommentH = 64;
-constexpr int kDialogW = 660;
 
 // The first field takes the project name as its placeholder and the last gets
 // the full-width multi-line box, which is right for a free-form comment and
@@ -37,6 +41,13 @@ constexpr size_t kMetaGridCount = kProjectMetadataFields.size() - 1;
 
 const double kSampleRates[] = {44100.0, 48000.0, 88200.0, 96000.0, 192000.0};
 const int kBitDepths[] = {16, 24, 32};  // 32 = 32-bit float
+
+void setupFieldLabel(juce::Component& owner, juce::Label& label, const juce::String& text) {
+    label.setText(text, juce::dontSendNotification);
+    label.setFont(FontManager::getInstance().getUIFont(14.0f));
+    label.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    owner.addAndMakeVisible(label);
+}
 
 void fillSampleRateCombo(juce::ComboBox& c) {
     for (int i = 0; i < static_cast<int>(std::size(kSampleRates)); ++i)
@@ -64,33 +75,17 @@ int indexOfBitDepth(int depth) {
 }
 }  // namespace
 
-ProjectSettingsDialog::ProjectSettingsDialog() {
-    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
+// ============================================================================
+// Metadata tab
+// ============================================================================
 
-    auto setupLabel = [this](juce::Label& l, const juce::String& text) {
-        l.setText(text, juce::dontSendNotification);
-        l.setFont(FontManager::getInstance().getUIFont(14.0f));
-        l.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        addAndMakeVisible(l);
-    };
-
-    auto setupHeader = [this](juce::Label& l, const juce::String& text) {
-        l.setText(text, juce::dontSendNotification);
-        l.setFont(FontManager::getInstance().getUIFontBold(14.0f));
-        l.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        addAndMakeVisible(l);
-    };
-
-    setupHeader(metadataHeader_, tr("project_settings.section.metadata"));
-    setupHeader(generalHeader_, tr("project_settings.section.general"));
-
+ProjectSettingsDialog::MetadataPage::MetadataPage() {
     for (size_t i = 0; i < kProjectMetadataFields.size(); ++i) {
-        auto& row = metadataRows_[i];
+        auto& row = rows_[i];
         const juce::String key(kProjectMetadataFields[i].key);
-        setupLabel(row.label, tr("project_settings.metadata." + key));
+        setupFieldLabel(*this, row.label, tr("project_settings.metadata." + key));
 
-        const bool isComment = i == kProjectMetadataFields.size() - 1;
-        if (isComment) {
+        if (i == kProjectMetadataFields.size() - 1) {
             row.label.setJustificationType(juce::Justification::topLeft);
             row.editor.setMultiLine(true, true);
             row.editor.setReturnKeyStartsNewLine(true);
@@ -105,11 +100,64 @@ ProjectSettingsDialog::ProjectSettingsDialog() {
                              DarkTheme::getColour(DarkTheme::BORDER));
         addAndMakeVisible(row.editor);
     }
+}
 
-    setupLabel(lengthLabel_, tr("project_settings.total_length"));
-    setupLabel(sampleRateLabel_, tr("project_settings.sample_rate"));
-    setupLabel(renderBitLabel_, tr("project_settings.render_bit_depth"));
-    setupLabel(bounceBitLabel_, tr("project_settings.bounce_bit_depth"));
+int ProjectSettingsDialog::MetadataPage::preferredHeight() {
+    const int gridH = static_cast<int>(kMetaGridCount / 2) * (kRowH + kMetaRowGap);
+    return (kPagePad * 2) + gridH + kCommentH;
+}
+
+void ProjectSettingsDialog::MetadataPage::load(const ProjectInfo& info) {
+    for (size_t i = 0; i < kProjectMetadataFields.size(); ++i)
+        rows_[i].editor.setText(info.metadata.*kProjectMetadataFields[i].member,
+                                juce::dontSendNotification);
+
+    // A project that already has a name should not make anyone retype it as a
+    // title. Leaving the box empty is what exports the name as <Title>, so the
+    // placeholder is the value the field actually stands for, not a prompt -
+    // and because it stays empty, renaming the project keeps carrying through
+    // instead of freezing whatever the project was called the first time
+    // somebody opened this dialog.
+    rows_.front().editor.setTextToShowWhenEmpty(info.name,
+                                                DarkTheme::getColour(DarkTheme::TEXT_DIM));
+}
+
+void ProjectSettingsDialog::MetadataPage::apply(ProjectInfo& info) const {
+    // Trimmed, because trailing whitespace in a credit is invisible here and
+    // still ends up in metadata.xml.
+    for (size_t i = 0; i < kProjectMetadataFields.size(); ++i)
+        info.metadata.*kProjectMetadataFields[i].member = rows_[i].editor.getText().trim();
+}
+
+void ProjectSettingsDialog::MetadataPage::resized() {
+    auto bounds = getLocalBounds().reduced(0, kPagePad);
+
+    auto field = [](Row& row, juce::Rectangle<int> area) {
+        row.label.setBounds(area.removeFromLeft(kMetaLabelW));
+        row.editor.setBounds(area);
+    };
+
+    for (size_t i = 0; i < kMetaGridCount; i += 2) {
+        auto r = bounds.removeFromTop(kRowH);
+        const int columnW = (r.getWidth() - kMetaColGutter) / 2;
+        field(rows_[i], r.removeFromLeft(columnW));
+        r.removeFromLeft(kMetaColGutter);
+        field(rows_[i + 1], r);
+        bounds.removeFromTop(kMetaRowGap);
+    }
+
+    field(rows_.back(), bounds.removeFromTop(kCommentH));
+}
+
+// ============================================================================
+// General tab
+// ============================================================================
+
+ProjectSettingsDialog::GeneralPage::GeneralPage() {
+    setupFieldLabel(*this, lengthLabel_, tr("project_settings.total_length"));
+    setupFieldLabel(*this, sampleRateLabel_, tr("project_settings.sample_rate"));
+    setupFieldLabel(*this, renderBitLabel_, tr("project_settings.render_bit_depth"));
+    setupFieldLabel(*this, bounceBitLabel_, tr("project_settings.bounce_bit_depth"));
 
     lengthSlider_.setSliderStyle(juce::Slider::IncDecButtons);
     // Total length is constrained to multiples of 16 bars.
@@ -128,6 +176,62 @@ ProjectSettingsDialog::ProjectSettingsDialog() {
     saveAsDefaultBtn_.setButtonText(tr("project_settings.save_as_default"));
     saveAsDefaultBtn_.setClickingTogglesState(true);
     addAndMakeVisible(saveAsDefaultBtn_);
+}
+
+int ProjectSettingsDialog::GeneralPage::preferredHeight() {
+    return (kPagePad * 2) + (4 * (kRowH + kRowGap)) + kRowH;
+}
+
+void ProjectSettingsDialog::GeneralPage::load(const ProjectInfo& info) {
+    lengthSlider_.setValue(info.timelineLengthBars, juce::dontSendNotification);
+    sampleRateCombo_.setSelectedId(indexOfSampleRate(info.sampleRate), juce::dontSendNotification);
+    renderBitCombo_.setSelectedId(indexOfBitDepth(info.renderBitDepth), juce::dontSendNotification);
+    bounceBitCombo_.setSelectedId(indexOfBitDepth(info.bounceBitDepth), juce::dontSendNotification);
+}
+
+void ProjectSettingsDialog::GeneralPage::apply(ProjectInfo& info) const {
+    info.timelineLengthBars = juce::jmax(1, static_cast<int>(lengthSlider_.getValue()));
+    info.sampleRate = kSampleRates[juce::jmax(0, sampleRateCombo_.getSelectedId() - 1)];
+    info.renderBitDepth = kBitDepths[juce::jmax(0, renderBitCombo_.getSelectedId() - 1)];
+    info.bounceBitDepth = kBitDepths[juce::jmax(0, bounceBitCombo_.getSelectedId() - 1)];
+}
+
+bool ProjectSettingsDialog::GeneralPage::shouldSaveAsDefault() const {
+    return saveAsDefaultBtn_.getToggleState();
+}
+
+void ProjectSettingsDialog::GeneralPage::resized() {
+    auto bounds = getLocalBounds().reduced(0, kPagePad);
+
+    auto row = [&](juce::Label& label, juce::Component& control) {
+        auto r = bounds.removeFromTop(kRowH);
+        label.setBounds(r.removeFromLeft(kLabelW));
+        // The dialog is as wide as the Metadata tab's two columns need, which is
+        // far wider than a bit-depth combo wants to be.
+        control.setBounds(r.removeFromLeft(juce::jmin(r.getWidth(), kControlW)));
+        bounds.removeFromTop(kRowGap);
+    };
+
+    row(lengthLabel_, lengthSlider_);
+    row(sampleRateLabel_, sampleRateCombo_);
+    row(renderBitLabel_, renderBitCombo_);
+    row(bounceBitLabel_, bounceBitCombo_);
+    saveAsDefaultBtn_.setBounds(bounds.removeFromTop(kRowH));
+}
+
+// ============================================================================
+// Dialog
+// ============================================================================
+
+ProjectSettingsDialog::ProjectSettingsDialog() {
+    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
+
+    const auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    tabs_.addTab(tr("project_settings.section.metadata"), tabBg, &metadataPage_, false);
+    tabs_.addTab(tr("project_settings.section.general"), tabBg, &generalPage_, false);
+    tabs_.setTabBarDepth(kTabBarDepth);
+    tabs_.setOutline(0);
+    addAndMakeVisible(tabs_);
 
     okBtn_.onClick = [this]() {
         applySettings();
@@ -143,12 +247,10 @@ ProjectSettingsDialog::ProjectSettingsDialog() {
 
     loadSettings();
 
-    // Metadata: a header, six two-up rows, the comment box. Then the general
-    // block: a header, four rows, the save-as-default checkbox. Then buttons.
-    const int metadataH =
-        kHeaderH + 6 + static_cast<int>(kMetaGridCount / 2) * (kRowH + kMetaRowGap) + kCommentH;
-    const int generalH = kHeaderH + 6 + kRowH * 5 + 12 * 4;
-    setSize(kDialogW, kPad * 2 + metadataH + 14 + generalH + 12 + kRowH);
+    // The tabs cannot resize as you switch between them, so the content area is
+    // as tall as the taller page needs.
+    const int pageH = juce::jmax(MetadataPage::preferredHeight(), GeneralPage::preferredHeight());
+    setSize(kDialogW, (kPad * 2) + kTabBarDepth + pageH + kRowGap + kRowH);
 }
 
 ProjectSettingsDialog::~ProjectSettingsDialog() {
@@ -157,45 +259,21 @@ ProjectSettingsDialog::~ProjectSettingsDialog() {
 
 void ProjectSettingsDialog::loadSettings() {
     const auto& info = ProjectManager::getInstance().getCurrentProjectInfo();
-
-    for (size_t i = 0; i < kProjectMetadataFields.size(); ++i)
-        metadataRows_[i].editor.setText(info.metadata.*kProjectMetadataFields[i].member,
-                                        juce::dontSendNotification);
-
-    // A project that already has a name should not make anyone retype it as a
-    // title. Leaving the box empty is what exports the name as <Title>, so the
-    // placeholder is the value the field actually stands for, not a prompt -
-    // and because it stays empty, renaming the project keeps carrying through
-    // instead of freezing whatever the project was called the first time
-    // somebody opened this dialog.
-    metadataRows_.front().editor.setTextToShowWhenEmpty(info.name,
-                                                        DarkTheme::getColour(DarkTheme::TEXT_DIM));
-
-    lengthSlider_.setValue(info.timelineLengthBars, juce::dontSendNotification);
-    sampleRateCombo_.setSelectedId(indexOfSampleRate(info.sampleRate), juce::dontSendNotification);
-    renderBitCombo_.setSelectedId(indexOfBitDepth(info.renderBitDepth), juce::dontSendNotification);
-    bounceBitCombo_.setSelectedId(indexOfBitDepth(info.bounceBitDepth), juce::dontSendNotification);
+    metadataPage_.load(info);
+    generalPage_.load(info);
 }
 
 void ProjectSettingsDialog::applySettings() {
     auto& pm = ProjectManager::getInstance();
     auto& info = pm.getMutableProjectInfo();
 
-    // Trimmed, because trailing whitespace in a credit is invisible here and
-    // still ends up in metadata.xml.
-    for (size_t i = 0; i < kProjectMetadataFields.size(); ++i)
-        info.metadata.*kProjectMetadataFields[i].member = metadataRows_[i].editor.getText().trim();
-
-    const int bars = juce::jmax(1, static_cast<int>(lengthSlider_.getValue()));
-    info.timelineLengthBars = bars;
-    info.sampleRate = kSampleRates[juce::jmax(0, sampleRateCombo_.getSelectedId() - 1)];
-    info.renderBitDepth = kBitDepths[juce::jmax(0, renderBitCombo_.getSelectedId() - 1)];
-    info.bounceBitDepth = kBitDepths[juce::jmax(0, bounceBitCombo_.getSelectedId() - 1)];
+    metadataPage_.apply(info);
+    generalPage_.apply(info);
 
     pm.markDirty();
 
-    // Optionally persist these as the defaults for new projects.
-    if (saveAsDefaultBtn_.getToggleState()) {
+    // Optionally persist the General values as the defaults for new projects.
+    if (generalPage_.shouldSaveAsDefault()) {
         auto& config = Config::getInstance();
         config.setDefaultTimelineLengthBars(info.timelineLengthBars);
         config.setRenderSampleRate(info.sampleRate);
@@ -207,7 +285,8 @@ void ProjectSettingsDialog::applySettings() {
     // Apply the new length to the live timeline immediately.
     if (auto* tc = TimelineController::getCurrent()) {
         const int beatsPerBar = juce::jmax(1, tc->getState().tempo.timeSignatureNumerator);
-        tc->dispatch(SetTimelineLengthBeatsEvent{static_cast<double>(bars) * beatsPerBar});
+        tc->dispatch(SetTimelineLengthBeatsEvent{static_cast<double>(info.timelineLengthBars) *
+                                                 beatsPerBar});
     }
 }
 
@@ -222,51 +301,13 @@ void ProjectSettingsDialog::lookAndFeelChanged() {
 void ProjectSettingsDialog::resized() {
     auto bounds = getLocalBounds().reduced(kPad);
 
-    // Buttons first, off the bottom, so the blocks above can take what is left
-    // without having to know how tall the footer is.
     auto buttons = bounds.removeFromBottom(kRowH);
     cancelBtn_.setBounds(buttons.removeFromRight(90));
     buttons.removeFromRight(8);
     okBtn_.setBounds(buttons.removeFromRight(90));
-    bounds.removeFromBottom(12);
+    bounds.removeFromBottom(kRowGap);
 
-    auto metaField = [](MetadataRow& row, juce::Rectangle<int> area) {
-        row.label.setBounds(area.removeFromLeft(kMetaLabelW));
-        row.editor.setBounds(area);
-    };
-
-    metadataHeader_.setBounds(bounds.removeFromTop(kHeaderH));
-    bounds.removeFromTop(6);
-
-    for (size_t i = 0; i < kMetaGridCount; i += 2) {
-        auto r = bounds.removeFromTop(kRowH);
-        const int columnW = (r.getWidth() - kMetaColGutter) / 2;
-        metaField(metadataRows_[i], r.removeFromLeft(columnW));
-        r.removeFromLeft(kMetaColGutter);
-        metaField(metadataRows_[i + 1], r);
-        bounds.removeFromTop(kMetaRowGap);
-    }
-
-    metaField(metadataRows_.back(), bounds.removeFromTop(kCommentH));
-    bounds.removeFromTop(14);
-
-    generalHeader_.setBounds(bounds.removeFromTop(kHeaderH));
-    bounds.removeFromTop(6);
-
-    auto row = [&](juce::Label& label, juce::Component& control) {
-        auto r = bounds.removeFromTop(kRowH);
-        label.setBounds(r.removeFromLeft(kLabelW));
-        // The dialog is wide enough for two metadata columns, which is far wider
-        // than a bit-depth combo wants to be.
-        control.setBounds(r.removeFromLeft(juce::jmin(r.getWidth(), 220)));
-        bounds.removeFromTop(12);
-    };
-
-    row(lengthLabel_, lengthSlider_);
-    row(sampleRateLabel_, sampleRateCombo_);
-    row(renderBitLabel_, renderBitCombo_);
-    row(bounceBitLabel_, bounceBitCombo_);
-    saveAsDefaultBtn_.setBounds(bounds.removeFromTop(kRowH));
+    tabs_.setBounds(bounds);
 }
 
 void ProjectSettingsDialog::showDialog(juce::Component* parent) {
