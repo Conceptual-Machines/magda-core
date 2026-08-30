@@ -50,10 +50,22 @@ class CountingReader final : public AudioFileReader {
         // answers those by phase and pads what is in front of them -- so the
         // plain subtraction overflows for exactly the pair this file is here to
         // stand in for.
-        const auto headroom = std::numeric_limits<std::int64_t>::max() + startSample;
-        const auto remaining = startSample < 0 && length_ > headroom
-                                   ? std::numeric_limits<std::int64_t>::max()
-                                   : length_ - startSample;
+        //
+        // Branched the way PrefetchStream::fill is, and for the same reason
+        // rather than for symmetry: int64's maximum plus the position is only
+        // representable while the position is negative, so the sign has to be
+        // established before that sum is formed. A test double that reproduced
+        // the overflow it exists to catch would be undefined behaviour on the
+        // path this case was widened to cover.
+        const auto remaining = [this, startSample]() -> std::int64_t {
+            constexpr auto unbounded = std::numeric_limits<std::int64_t>::max();
+
+            if (startSample >= 0)
+                return length_ - startSample;  // both non-negative, so no wrap
+
+            const auto headroom = unbounded + startSample;
+            return length_ > headroom ? unbounded : length_ - startSample;
+        }();
 
         const auto available = static_cast<int>(std::clamp<std::int64_t>(remaining, 0, numSamples));
 
