@@ -402,6 +402,12 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # is the corpus's question, in magda_juce_tests.
     list(APPEND TEST_SOURCES test_engine_device_layer.cpp)
 
+    # An external plugin under a Device op (#2241): the adapter over
+    # juce::AudioPluginInstance, against a plugin written in the test rather
+    # than one that happens to be installed. What a real plugin is for is the
+    # corpus (#2175), where both engines run the same one.
+    list(APPEND TEST_SOURCES test_engine_external_device.cpp)
+
     # The block-size invariance gate (#2078). Model-only for the same reason the
     # native leg is: the claim is the native engine's alone, and the incumbent
     # owes nobody block-size invariance. In CI rather than in a nightly, because

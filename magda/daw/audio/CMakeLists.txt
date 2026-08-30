@@ -305,6 +305,8 @@ list(REMOVE_ITEM _magda_device_pack_sources ${_magda_tracktion_device_adapter_so
 set(_magda_engine_device_adapter_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineDeviceFactory.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineDeviceFactory.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineExternalDevice.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineExternalDevice.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineMagdaDevice.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineMagdaDevice.hpp"
 )
