@@ -88,7 +88,7 @@ class StubPlugin final : public juce::AudioPluginInstance {
         return channels == 1 ? juce::AudioChannelSet::mono() : juce::AudioChannelSet::stereo();
     }
 
-    static BusesProperties busesFor(int inputs, int outputs, int sidechain) {
+    static BusesProperties busesFor(int inputs, int outputs, int sidechain, int extraPairs) {
         auto buses = BusesProperties()
                          .withInput("Input", setFor(inputs), true)
                          .withOutput("Output", setFor(outputs), true);
@@ -96,11 +96,17 @@ class StubPlugin final : public juce::AudioPluginInstance {
         if (sidechain > 0)
             buses = buses.withInput("Sidechain", setFor(sidechain), true);
 
+        // Further stereo output buses, the way a multi-out sampler reports its
+        // drum outs: one bus each, after the main one.
+        for (int pair = 0; pair < extraPairs; ++pair)
+            buses = buses.withOutput("Out " + juce::String(pair + 2),
+                                     juce::AudioChannelSet::stereo(), true);
+
         return buses;
     }
 
-    StubPlugin(int inputs, int outputs, int sidechain)
-        : AudioPluginInstance(busesFor(inputs, outputs, sidechain)) {
+    StubPlugin(int inputs, int outputs, int sidechain, int extraPairs = 0)
+        : AudioPluginInstance(busesFor(inputs, outputs, sidechain, extraPairs)) {
         auto gainParameter = std::make_unique<StubParameter>("gain", "Gain", 1.0f, true);
         gain = gainParameter.get();
         addHostedParameter(std::move(gainParameter));
@@ -765,4 +771,104 @@ TEST_CASE("A second prepare at the same settings does not prepare the plugin aga
     device.prepare(contextFor(2, 128));
     CHECK(raw->prepareCount == 2);
     CHECK(raw->preparedBlockSize == 128);
+}
+
+TEST_CASE("A multi-out plugin's further pairs reach the ports opened for them",
+          "[engine][external]") {
+    // Three drum outs past the main pair, which is what a multi-out sampler on
+    // a MultiOut track is. The plan opens a port for each and the executor
+    // hands over a cleared block for it; a device that writes only the main
+    // pair leaves every one of those tracks silent.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0, 3);
+    auto* raw = plugin.get();
+
+    auto model = externalDevice();
+    model.multiOut.isMultiOut = true;
+    model.multiOut.totalOutputChannels = 8;
+    for (int pair = 0; pair < 4; ++pair)
+        model.multiOut.outputPairs.push_back({.outputIndex = pair,
+                                              .name = "Out " + juce::String(pair + 1),
+                                              .firstPin = (pair * 2) + 1,
+                                              .numChannels = 2});
+
+    adapter::EngineExternalDevice device(std::move(plugin), model, false);
+    const auto context = contextFor();
+    device.prepare(context);
+
+    ParamArena arena({0.0f, 1.0f, 1.0f, 0.0f});
+    Block block(context, 2);
+    block.fill(0.25f);
+
+    // One block per pair past the main one, cleared, exactly as the executor
+    // hands them over.
+    std::vector<juce::AudioBuffer<float>> pairBuffers;
+    std::vector<juce::dsp::AudioBlock<float>> pairs;
+    pairBuffers.reserve(3);
+    for (int pair = 0; pair < 3; ++pair) {
+        pairBuffers.emplace_back(2, context.maxBlockSize);
+        pairBuffers.back().clear();
+    }
+    for (auto& buffer : pairBuffers)
+        pairs.emplace_back(buffer);
+
+    auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
+    deviceBlock.extraOutputs = {pairs.data(), pairs.size()};
+    device.process(deviceBlock);
+
+    REQUIRE(raw->channelsSeen == 8);
+
+    // The main pair still goes to the chain, and each further pair carries the
+    // plugin's own channels for it: pair one is channels two and three.
+    CHECK(block.buffer.getSample(0, 0) == Catch::Approx(0.25f + StubPlugin::kChannelMarker));
+
+    for (int pair = 0; pair < 3; ++pair) {
+        const auto firstChannel = (pair + 1) * 2;
+        for (int channel = 0; channel < 2; ++channel) {
+            const auto expected =
+                static_cast<float>(firstChannel + channel + 1) * StubPlugin::kChannelMarker;
+            CHECK(pairBuffers[static_cast<std::size_t>(pair)].getSample(channel, 0) ==
+                  Catch::Approx(expected));
+        }
+    }
+}
+
+TEST_CASE("A pair the plugin does not have stays silent", "[engine][external]") {
+    // A model that recorded four pairs against a build of the plugin that has
+    // two. The block for the pair with nothing behind it arrives cleared and
+    // has to stay that way rather than being handed whatever sits at that index.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0, 1);
+
+    auto model = externalDevice();
+    model.multiOut.isMultiOut = true;
+    for (int pair = 0; pair < 3; ++pair)
+        model.multiOut.outputPairs.push_back(
+            {.outputIndex = pair, .name = "Out", .firstPin = (pair * 2) + 1, .numChannels = 2});
+
+    adapter::EngineExternalDevice device(std::move(plugin), model, false);
+    const auto context = contextFor();
+    device.prepare(context);
+
+    ParamArena arena({0.0f, 1.0f, 1.0f, 0.0f});
+    Block block(context, 2);
+    block.fill(0.25f);
+
+    std::vector<juce::AudioBuffer<float>> pairBuffers;
+    std::vector<juce::dsp::AudioBlock<float>> pairs;
+    pairBuffers.reserve(2);
+    for (int pair = 0; pair < 2; ++pair) {
+        pairBuffers.emplace_back(2, context.maxBlockSize);
+        pairBuffers.back().clear();
+    }
+    for (auto& buffer : pairBuffers)
+        pairs.emplace_back(buffer);
+
+    auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
+    deviceBlock.extraOutputs = {pairs.data(), pairs.size()};
+    device.process(deviceBlock);
+
+    // Pair one is the plugin's second bus and carries audio; pair two has no
+    // channels behind it.
+    CHECK(pairBuffers[0].getSample(0, 0) == Catch::Approx(3 * StubPlugin::kChannelMarker));
+    CHECK(pairBuffers[1].getSample(0, 0) == Catch::Approx(0.0f));
+    CHECK(pairBuffers[1].getSample(1, 0) == Catch::Approx(0.0f));
 }

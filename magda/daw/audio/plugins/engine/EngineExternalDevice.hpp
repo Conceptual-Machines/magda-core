@@ -45,6 +45,11 @@
  *   what MAGDA saved as ParameterInfo::paramIndex and what the plan's value
  *   layer resolves against, so the mapping back onto the live instance has to
  *   reproduce that list rather than invent one.
+ * - **Further output pairs.** A multi-out sampler's drum outs are the channels
+ *   past its main pair, and the plan opens a port for each one the model
+ *   recorded. They are copied out by the same mapping the current engine wires
+ *   its rack pins by, rather than by a second guess at how a plugin lays its
+ *   outputs out.
  * - **Latency.** Read once from the instance after prepareToPlay and reported to
  *   the executor, which compensates it the same way it compensates any device.
  * - **The playhead.** A plugin asks where the transport is, and a tempo-synced
@@ -135,6 +140,11 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     void readMidiIn(const juce::MidiBuffer& in);
     void writeMidiOut(juce::MidiBuffer& out, int numSamples) const;
 
+    /// The plugin's further output pairs, onto the ports the plan opened for
+    /// them. @p processed is the buffer the plugin just wrote, at its own width.
+    void writeExtraOutputs(magda::engine::DeviceBlock& block,
+                           const juce::AudioBuffer<float>& processed, int numSamples) const;
+
     std::unique_ptr<juce::AudioPluginInstance> instance_;
     std::unique_ptr<PlayHead> playHead_;
 
@@ -173,6 +183,26 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     /// whenever it has more inputs than outputs, and it is this one the chain
     /// is filled from: the channels between the two carry input.
     int outputChannels_ = 0;
+
+    /**
+     * @brief Where each further output pair starts in the plugin's own output.
+     *
+     * Entry k is the pair the plan's `extraOutputs[k]` stands for, which is
+     * pair k + 1: pair 0 is the main output and is the buffer the chain carries
+     * on from. The channel it starts at is what the model recorded when it read
+     * the plugin's output buses (MultiOutOutputPair::firstPin, one-based), so
+     * this is the same mapping the current engine wires its rack pins by rather
+     * than a second guess at how a plugin lays its outputs out.
+     *
+     * Empty for every plugin that is not multi-out, which is almost all of
+     * them.
+     */
+    struct OutputPair {
+        int firstChannel = 0;
+        int numChannels = 0;
+    };
+
+    std::vector<OutputPair> extraOutputPairs_;
 
     /// Input channels on the plugin's main bus, and how many it has after them.
     /// The second is where a sidechain key lands, which is how every dynamics

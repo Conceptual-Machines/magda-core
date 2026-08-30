@@ -136,6 +136,18 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
     parameters_.push_back({nullptr, magda::WrapperRole::DryGain, modelParameterAt(device, 0)});
     parameters_.push_back({nullptr, magda::WrapperRole::WetGain, modelParameterAt(device, 1)});
 
+    // The pairs past the main one, in the plan's own order: extraOutputs[k] is
+    // pair k + 1. Read from the model rather than from the instance's bus
+    // layout, because it is the model the plan compiled its ports from -- the
+    // two agree, and where they do not it is the plan that decided how many
+    // ports there are.
+    const auto& pairs = device.multiOut.outputPairs;
+    for (std::size_t pair = 1; pair < pairs.size(); ++pair) {
+        const auto& declared = pairs[pair];
+        extraOutputPairs_.push_back({.firstChannel = std::max(0, declared.firstPin - 1),
+                                     .numChannels = std::max(0, declared.numChannels)});
+    }
+
     int slot = kWrapperParameterCount;
     for (auto* parameter : instance_->getParameters()) {
         if (parameter == nullptr || !parameter->isAutomatable())
@@ -311,6 +323,35 @@ void EngineExternalDevice::writeMidiOut(juce::MidiBuffer& out, int numSamples) c
     }
 }
 
+void EngineExternalDevice::writeExtraOutputs(magda::engine::DeviceBlock& block,
+                                             const juce::AudioBuffer<float>& processed,
+                                             int numSamples) const {
+    const auto pairs = std::min(block.extraOutputs.size(), extraOutputPairs_.size());
+
+    for (std::size_t pair = 0; pair < pairs; ++pair) {
+        auto& destination = block.extraOutputs[pair];
+        const auto& source = extraOutputPairs_[pair];
+        const auto channels =
+            std::min(static_cast<int>(destination.getNumChannels()), source.numChannels);
+
+        for (int channel = 0; channel < channels; ++channel) {
+            const auto from = source.firstChannel + channel;
+
+            // A pair whose channels the plugin does not have is left as it
+            // arrived, which is cleared. That is a model that recorded more
+            // pairs than this build of the plugin reports, and silence is the
+            // honest answer: the alternative is handing a track whatever
+            // happened to be in the buffer at that index.
+            if (from >= outputChannels_ || from >= processed.getNumChannels())
+                break;
+
+            juce::FloatVectorOperations::copy(
+                destination.getChannelPointer(static_cast<std::size_t>(channel)),
+                processed.getReadPointer(from), numSamples);
+        }
+    }
+}
+
 void EngineExternalDevice::processPluginBlock(juce::AudioBuffer<float>& audio) {
     const auto numSamples = audio.getNumSamples();
 
@@ -390,6 +431,7 @@ void EngineExternalDevice::processThroughScratch(magda::engine::DeviceBlock& blo
     }
 
     processPluginBlock(audio);
+    writeExtraOutputs(block, audio, numSamples);
 
     for (int channel = 0; channel < destChannels; ++channel) {
         auto* destination = block.audio.getChannelPointer(static_cast<std::size_t>(channel));
@@ -427,7 +469,7 @@ void EngineExternalDevice::process(magda::engine::DeviceBlock& block) {
         midi_.clear();
 
     if (destChannels == processChannels_ && sidechainInputChannels_ == 0 &&
-        outputChannels_ >= destChannels) {
+        outputChannels_ >= destChannels && block.extraOutputs.empty()) {
         // The plugin's width and the block's already agree and it writes every
         // channel the slot will be read at, so it processes the executor's own
         // buffer and nothing is copied. The fork's fast path, and the one
@@ -437,6 +479,11 @@ void EngineExternalDevice::process(magda::engine::DeviceBlock& block) {
         // stereo-in mono-out plugin matches the first half of it and leaves the
         // right channel holding the input it was handed, which is not silence
         // and is not its answer.
+        //
+        // A multi-out instrument is out of it entirely: its further pairs live
+        // in the channels past the ones the chain reads, and processing in
+        // place into the chain's own two would leave nowhere for them to be
+        // written.
         for (int channel = 0; channel < destChannels; ++channel)
             channels_[static_cast<std::size_t>(channel)] =
                 block.audio.getChannelPointer(static_cast<std::size_t>(channel));
