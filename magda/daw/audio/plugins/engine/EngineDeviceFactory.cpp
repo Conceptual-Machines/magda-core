@@ -4,6 +4,7 @@
 
 #include "core/DeviceState.hpp"
 #include "plugin_manager/ExternalPluginLookup.hpp"
+#include "plugin_manager/ExternalPluginState.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 #include "plugins/engine/EngineExternalDevice.hpp"
@@ -86,45 +87,6 @@ void restoreSavedState(MagdaDevice& device, const juce::String& savedState) {
     device.restoreState(tree);
 }
 
-/**
- * @brief The plugin's own state, as the project saved it.
- *
- * Base64 of what getStateInformation wrote, which is the one thing MAGDA
- * persists for an external plugin and the only thing that carries what a
- * parameter array cannot: the current program, a sampler's loaded samples and
- * key mappings, and every value the plugin never exposed as a parameter. A
- * plugin created without it renders its initialised voice, which is a different
- * project rather than a quieter one.
- *
- * DeviceInfo::vst3Preset is not this and is not applied here. It is the
- * portable .vstpreset a DAWproject carries, applied once on import and cleared
- * (PluginManagerSync), and the field's own comment says what this file relies
- * on: interchange only, native state is pluginState.
- *
- * What happens afterwards is the same rule the fork reaches by another route.
- * The fork applies the saved parameter array, overlays the chunk, then
- * refreshes its own parameter cache from the plugin, so nothing writes the
- * array back and the chunk wins. Here the chunk is applied at creation and the
- * adapter declines to write a parameter that is still sitting where the project
- * said it sits (EngineExternalDevice::writeParameters), which comes to the same
- * thing without the engine writing to the model from a render.
- *
- * That the two saved records can disagree at all is not hypothetical: every
- * project written by a MAGDA old enough to have saved a stale array beside a
- * good chunk is this case, which is what
- * test_external_plugin_state_restore_juce.cpp was written for.
- */
-void restoreSavedChunk(juce::AudioPluginInstance& instance, const juce::String& savedState) {
-    if (savedState.isEmpty())
-        return;
-
-    juce::MemoryBlock chunk;
-    if (!chunk.fromBase64Encoding(savedState) || chunk.getSize() == 0)
-        return;
-
-    instance.setStateInformation(chunk.getData(), static_cast<int>(chunk.getSize()));
-}
-
 }  // namespace
 
 /// enableAllBuses first, at the same point the fork does it
@@ -137,15 +99,17 @@ ExternalDeviceResult adaptExternalPluginInstance(
     bool offlineRender) {
     instance->enableAllBuses();
 
-    // Before the adapter, not after, and for the same reason the internal path
-    // restores before wrapping: the adapter reads the plugin's parameter list
-    // when it is constructed, and a plugin that changes which parameters it has
-    // when its state is applied would be mapped against the ones it had first.
-    restoreSavedChunk(*instance, device.pluginState);
+    // The saved array, then the chunk over it, then what that left behind. The
+    // order and the reasons are ExternalPluginState.hpp's; what matters here is
+    // that all three happen before the adapter exists, so the adapter never has
+    // to reason about which of a project's two records it is looking at.
+    magda::applySavedPluginState(*instance, device);
+    auto restored = magda::snapshotHostParameters(*instance);
 
     return {.device =
                 std::make_unique<EngineExternalDevice>(std::move(instance), device, offlineRender),
-            .failure = {}};
+            .failure = {},
+            .restoredParameters = std::move(restored)};
 }
 
 namespace {

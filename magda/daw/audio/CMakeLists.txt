@@ -471,6 +471,11 @@ target_sources(magda_daw PRIVATE
     # resolves it at the final link the way it resolves findCompiledPluginSpec.
     plugin_manager/ExternalPluginLookup.cpp
     plugin_manager/ExternalPluginLookup.hpp
+    # A project's record of a plugin onto a live instance: array, then chunk,
+    # then what that left behind, for whoever owns the model (#2243). Same
+    # arrangement as the lookup above -- one answer, both engines.
+    plugin_manager/ExternalPluginState.cpp
+    plugin_manager/ExternalPluginState.hpp
     plugin_manager/PluginManagerMacros.cpp
     plugin_manager/PluginManagerModifiers.cpp
     plugin_manager/PluginManagerSidechain.cpp

@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "core/ParameterUtils.hpp"
+#include "plugin_manager/ExternalPluginState.hpp"
 
 namespace magda::daw::audio::engine_adapter {
 
@@ -135,14 +136,7 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
     // lands on.
     const auto mappingFor = [](juce::AudioProcessorParameter* parameter, magda::WrapperRole role,
                                std::optional<magda::ParameterInfo> info) {
-        // Where the model says the parameter sits, in the units the plan will
-        // resolve it in, so writeParameters() can tell "still where the project
-        // left it" from "something moved it" without converting twice.
-        const auto base =
-            info ? magda::ParameterUtils::realToNormalized(info->currentValue, *info) : 0.0f;
-
-        return ParameterMapping{
-            .parameter = parameter, .role = role, .info = std::move(info), .base = base};
+        return ParameterMapping{.parameter = parameter, .role = role, .info = std::move(info)};
     };
 
     parameters_.push_back(
@@ -162,15 +156,10 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
                                      .numChannels = std::max(0, declared.numChannels)});
     }
 
-    int slot = kWrapperParameterCount;
-    for (auto* parameter : instance_->getParameters()) {
-        if (parameter == nullptr || !parameter->isAutomatable())
-            continue;
-
-        parameters_.push_back(
-            mappingFor(parameter, magda::WrapperRole::None, modelParameterAt(device, slot)));
-        ++slot;
-    }
+    const auto order = magda::hostParameterOrder(*instance_);
+    for (int slot = kWrapperParameterCount; slot < static_cast<int>(order.size()); ++slot)
+        parameters_.push_back(mappingFor(order[static_cast<std::size_t>(slot)],
+                                         magda::WrapperRole::None, modelParameterAt(device, slot)));
 }
 
 EngineExternalDevice::~EngineExternalDevice() {
@@ -267,7 +256,7 @@ int EngineExternalDevice::latencySamples() const {
 
 void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& params) {
     for (int slot = 0; slot < static_cast<int>(parameters_.size()); ++slot) {
-        auto& mapping = parameters_[static_cast<std::size_t>(slot)];
+        const auto& mapping = parameters_[static_cast<std::size_t>(slot)];
         const auto values = params[slot];
 
         // A slot the table does not carry is one nothing resolved: a project
@@ -301,29 +290,16 @@ void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& pa
                 if (mapping.parameter == nullptr)
                     break;
 
-                // A parameter still sitting where the project said it sits is
-                // not written at all, and the plugin keeps what its own state
-                // gave it. That is the fork's answer to a project whose saved
-                // parameter array disagrees with its chunk, which is every
-                // project written by a MAGDA old enough to have saved a stale
-                // array: the fork refreshes its cache from the plugin after the
-                // restore precisely so that nothing writes the array back
-                // afterwards. Writing it here would undo the chunk on the first
-                // block and render the initialised voice.
-                //
-                // Anything that moves the value off that position -- an
-                // automation lane, a macro, a modifier, a host edit -- is a
-                // write, and it stays a write from then on. Latched rather than
-                // compared each block, because a lane that returns to the
-                // saved position later has still taken the parameter away from
-                // the plugin's own state, and stopping there would leave it
-                // wherever the last write put it.
-                if (!mapping.moved) {
-                    if (juce::approximatelyEqual(normalised, mapping.base))
-                        break;
-
-                    mapping.moved = true;
-                }
+                // What the plan resolved, with nothing read into it. Whether
+                // this value came from the project's array, a lane, a macro or
+                // a knob somebody just turned is the model's business, and the
+                // one case where the model could hold something the plugin has
+                // already corrected -- a stale array beside a good chunk -- is
+                // settled before this device exists, by the restoration handing
+                // the corrected values back to whoever owns the model
+                // (ExternalPluginState.hpp). A device that tried to work that
+                // out from the numbers could not: no comparison tells a stale
+                // value apart from a lane passing through the same one.
 
                 // Only on a change, which is the fork's rule rather than a
                 // saving: a plugin is entitled to treat every write as a

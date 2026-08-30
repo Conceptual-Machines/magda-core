@@ -45,13 +45,13 @@
  *   what MAGDA saved as ParameterInfo::paramIndex and what the plan's value
  *   layer resolves against, so the mapping back onto the live instance has to
  *   reproduce that list rather than invent one.
- * - **Which of the two saved records wins.** A project saves a plugin twice: as
- *   the chunk the plugin wrote, and as an array of parameter values. Where they
- *   disagree the fork lets the chunk win -- it applies the array, overlays the
- *   chunk, then refreshes its own cache from the plugin so nothing writes the
- *   array back afterwards -- and a project saved by an older build of MAGDA is
- *   exactly where they disagree. So a parameter nothing has moved is not
- *   written at all here, and the plugin keeps what its state gave it.
+ * - **Which of the two saved records wins** is settled before this class
+ *   exists. A project saves a plugin twice, as a chunk and as an array of
+ *   parameter values, and where they disagree the chunk is right; the
+ *   restoration applies both in that order and hands the corrected values back
+ *   for the model to record (ExternalPluginState.hpp). By the time a device is
+ *   rendering, the model is the answer and this writes what the plan resolves
+ *   from it.
  * - **Further output pairs.** A multi-out sampler's drum outs are the channels
  *   past its main pair, and the plan opens a port for each one the model
  *   recorded. They are copied out by the same mapping the current engine wires
@@ -91,9 +91,10 @@ namespace magda::daw::audio::engine_adapter {
  * the channel pointer array, the processing scratch, the dry copy the wet/dry
  * mix reads, and the MIDI buffer.
  *
- * The instance arrives already created and already told what it is: buses
- * enabled, saved state applied. Instantiation is a message-thread job with a
- * plugin format manager behind it, and it is not this class's (see
+ * The instance arrives created and with its buses enabled; what the project
+ * saved for it is applied here, because the order of that is bound up with the
+ * parameter list this class builds. Instantiation itself is a message-thread
+ * job with a plugin format manager behind it, and it is not this class's (see
  * EngineDeviceFactory.hpp).
  */
 class EngineExternalDevice final : public magda::engine::EngineDevice {
@@ -173,13 +174,6 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
         /// is the conversion out of the plan's units, which is the same
         /// conversion the value went in through.
         std::optional<magda::ParameterInfo> info;
-
-        /// Where the model says this parameter sits, normalised: the knob
-        /// position a project saved, before automation or a modifier moves it.
-        float base = 0.0f;
-
-        /// Whether anything has moved it off that. See writeParameters().
-        bool moved = false;
     };
 
     std::vector<ParameterMapping> parameters_;

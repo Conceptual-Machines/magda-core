@@ -8,6 +8,7 @@
 #include "core/DeviceInfo.hpp"
 #include "exec/EngineDevice.hpp"
 #include "exec/RenderContext.hpp"
+#include "plugin_manager/ExternalPluginState.hpp"
 
 /**
  * @file EngineDeviceFactory.hpp
@@ -41,11 +42,11 @@
  * worth telling a user about, and it returns why rather than a null.
  *
  * An external plugin's saved state does travel, unlike an internal device's:
- * MAGDA persists the plugin's own chunk and it is applied before the adapter
- * takes the instance. What that leaves for the state slice (#2244) is the other
- * direction -- writing the chunk back out of an instance the native engine
- * holds, so a project round-trips between the two engines during the
- * dual-engine release.
+ * MAGDA persists the plugin's own chunk, and the adapter applies it along with
+ * the saved parameter array it overlays (EngineExternalDevice::applySavedState).
+ * What that leaves for the state slice (#2244) is the other direction --
+ * writing the chunk back out of an instance the native engine holds, so a
+ * project round-trips between the two engines during the dual-engine release.
  */
 
 namespace magda::daw::audio::engine_adapter {
@@ -118,15 +119,38 @@ struct ExternalPluginServices {
 struct ExternalDeviceResult {
     std::unique_ptr<magda::engine::EngineDevice> device;
     juce::String failure;
+
+    /**
+     * @brief What the plugin holds now, for the caller to write into its model.
+     *
+     * Restoring a plugin is not only something done to the plugin: a project's
+     * saved parameter array and the chunk beside it can disagree, the chunk
+     * wins, and everything downstream reads the model rather than the plugin.
+     * An automation lane's base value, a knob's position, and the values a
+     * render writes every block all come from there, so a model left holding
+     * the stale array would put them back on the next block.
+     *
+     * The engine does not correct the model itself and could not: the model is
+     * the one authority and this is a render path. So the correction is handed
+     * back, and applying it is the caller's, on the message thread
+     * (magda::applyRestoredParameters). A caller that already knows its model
+     * agrees with the plugin -- a project saved by a build that refreshed it --
+     * applies the same values it already had.
+     *
+     * Empty when nothing was created.
+     */
+    std::vector<magda::RestoredParameter> restoredParameters;
 };
 
 /**
  * @brief The adapter over an instance the host made itself.
  *
  * What both entry points below end at, and the seam for a host that creates its
- * plugins some other way. It enables the instance's buses and applies the
- * project's saved state before the adapter takes it, because the adapter reads
- * the plugin's parameter list when it is constructed.
+ * plugins some other way. One transaction: the instance's buses are enabled,
+ * which has to happen before anything reads its channel counts; the project's
+ * saved parameter array and its chunk are applied in that order; and what the
+ * plugin holds afterwards comes back in the result for the caller to write into
+ * its model (ExternalPluginState.hpp).
  */
 ExternalDeviceResult adaptExternalPluginInstance(
     std::unique_ptr<juce::AudioPluginInstance> instance, const magda::DeviceInfo& device,

@@ -1,13 +1,16 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cstring>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
 #include "exec/EngineDevice.hpp"
+#include "magda/daw/audio/plugin_manager/ExternalPluginState.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "magda/daw/audio/plugins/engine/EngineExternalDevice.hpp"
 #include "param/ParamBlock.hpp"
@@ -223,6 +226,9 @@ class StubPlugin final : public juce::AudioPluginInstance {
     }
 
     void setStateInformation(const void* data, int size) override {
+        if (throwsOnState)
+            throw std::runtime_error("plugin state handler failed");
+
         if (size != static_cast<int>(sizeof(State)))
             return;
 
@@ -244,6 +250,9 @@ class StubPlugin final : public juce::AudioPluginInstance {
     int stateRestores = 0;
 
     bool emitsMidi = false;
+
+    /// Third-party code handed a chunk it cannot read. Some throw.
+    bool throwsOnState = false;
 
     double preparedRate = 0.0;
     int preparedBlockSize = 0;
@@ -659,6 +668,10 @@ TEST_CASE("A parameter that did not move is not written again", "[engine][extern
     ParamArena held({0.0f, 1.0f, 0.6f, 0.0f});
     Block block(context, 2);
 
+    // From here: applying the project's saved parameter array is itself a
+    // write, and what this is about is how many the blocks add.
+    const auto writesAfterConstruction = raw->gain->writes;
+
     for (int pass = 0; pass < 3; ++pass) {
         auto deviceBlock = block.deviceBlock(held.params(context.maxBlockSize));
         device.process(deviceBlock);
@@ -669,13 +682,13 @@ TEST_CASE("A parameter that did not move is not written again", "[engine][extern
     // plugin is entitled to treat every write as a gesture: one that rebuilds a
     // filter or repaints an editor on each would do it every block on a
     // parameter nobody touched.
-    CHECK(raw->gain->writes == 1);
+    CHECK(raw->gain->writes == writesAfterConstruction + 1);
 
     ParamArena moved({0.0f, 1.0f, 0.7f, 0.0f});
     auto movedBlock = block.deviceBlock(moved.params(context.maxBlockSize));
     device.process(movedBlock);
 
-    CHECK(raw->gain->writes == 2);
+    CHECK(raw->gain->writes == writesAfterConstruction + 2);
 }
 
 TEST_CASE("A parameter the table does not carry is left where it was", "[engine][external]") {
@@ -683,12 +696,16 @@ TEST_CASE("A parameter the table does not carry is left where it was", "[engine]
     auto* raw = plugin.get();
     raw->tone->setValue(0.9f);
 
-    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+    // A project saved against a build of the plugin that did not have the tone
+    // parameter: the model does not describe it, so nothing seeds it and the
+    // plan's window stops before it.
+    auto model = externalDevice();
+    model.parameters.pop_back();
+
+    adapter::EngineExternalDevice device(std::move(plugin), model, false);
     const auto context = contextFor();
     device.prepare(context);
 
-    // A window that stops before the tone parameter: a project saved against a
-    // build of the plugin that did not have it.
     ParamArena arena({0.0f, 1.0f, 0.4f});
     Block block(context, 2);
 
@@ -929,15 +946,17 @@ TEST_CASE("A project's saved plugin state reaches the plugin", "[engine][externa
     CHECK(raw->fixed->getValue() == Catch::Approx(0.8f));
 }
 
-TEST_CASE("A stale saved parameter array does not overwrite the chunk", "[engine][external]") {
+TEST_CASE("A stale saved parameter array is corrected rather than replayed", "[engine][external]") {
     // Every project MAGDA saved before the restore was fixed has this shape:
     // the chunk holds the voice the user heard, and the parameter array beside
-    // it holds the defaults the host had read at construction. The incumbent
-    // lets the chunk win -- it refreshes its own parameter cache from the
-    // plugin after the restore so nothing writes the array back -- and
-    // test_external_plugin_state_restore_juce.cpp is what pins that. A device
-    // that wrote the array on its first block would undo the restore and render
-    // the initialised voice.
+    // it holds the defaults the host read at construction. The incumbent lets
+    // the chunk win and test_external_plugin_state_restore_juce.cpp pins that.
+    //
+    // Under the native engine the plan writes every parameter it resolves
+    // before each block, and it resolves them from the model. So the chunk
+    // winning on the instance is not enough on its own: what the restoration
+    // leaves behind has to reach the model, or the next block puts the stale
+    // value back. That correction is what the result carries.
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
     auto* raw = plugin.get();
 
@@ -947,30 +966,107 @@ TEST_CASE("A stale saved parameter array does not overwrite the chunk", "[engine
     auto model = externalDeviceSaving(1.0f, 0.25f);  // stale: the chunk says 0.9
     model.pluginState = chunk.toBase64Encoding();
 
-    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
     REQUIRE(result.device != nullptr);
+
+    // The chunk won on the instance.
+    CHECK(raw->tone->getValue() == Catch::Approx(0.9f));
+    CHECK(raw->fixed->getValue() == Catch::Approx(0.8f));
+
+    // And the correction came back, addressed the way the project addresses it.
+    const auto tone =
+        std::find_if(result.restoredParameters.begin(), result.restoredParameters.end(),
+                     [](const magda::RestoredParameter& p) { return p.paramIndex == 3; });
+    REQUIRE(tone != result.restoredParameters.end());
+    CHECK(tone->value == Catch::Approx(0.9f));
+
+    // Applied by the host, on the model, which is the only place it may be
+    // written. From here the plan resolves the chunk's value and every block
+    // asserts it rather than fighting it.
+    magda::applyRestoredParameters(model, result.restoredParameters);
+    CHECK(model.parameters[1].currentValue == Catch::Approx(0.9f));
 
     const auto context = contextFor();
     result.device->prepare(context);
 
-    // Counted from here: restoring the chunk is itself a write, and what this
-    // is about is whether the block adds one.
-    const auto writesAfterRestore = raw->tone->writes;
-
-    // The plan resolves the stale value, because that is what the model holds.
-    ParamArena arena({0.0f, 1.0f, 1.0f, 0.25f});
+    ParamArena arena({0.0f, 1.0f, 1.0f, 0.9f});
     Block block(context, 2);
     auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
     result.device->process(deviceBlock);
 
     CHECK(raw->tone->getValue() == Catch::Approx(0.9f));
-    CHECK(raw->tone->writes == writesAfterRestore);
 }
 
-TEST_CASE("Automation still moves a parameter the chunk set", "[engine][external]") {
-    // The other half of the rule. Leaving a parameter alone is for one that is
-    // still where the project put it; a lane, a macro or a modifier moving it
-    // is a write, and the plugin's own state has no say after that.
+TEST_CASE("With no chunk the saved parameter array is what the plugin gets", "[engine][external]") {
+    // The baseline is not a formality. A plugin that stores nothing, or whose
+    // chunk this build refuses, has only the array, and skipping it would leave
+    // it on its factory defaults with the project's own values unused.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    REQUIRE(raw->tone->getValue() == Catch::Approx(0.25f));  // the plugin's own default
+
+    const auto result =
+        adapter::adaptExternalPluginInstance(std::move(plugin), externalDeviceSaving(1.0f, 0.7f));
+
+    REQUIRE(result.device != nullptr);
+    CHECK(raw->tone->getValue() == Catch::Approx(0.7f));
+    CHECK(raw->stateRestores == 0);
+}
+
+TEST_CASE("A chunk that is not base64 leaves the baseline standing", "[engine][external]") {
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto model = externalDeviceSaving(1.0f, 0.7f);
+    model.pluginState = "not base64 at all !!";
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+
+    REQUIRE(result.device != nullptr);
+    CHECK(raw->stateRestores == 0);
+    CHECK(raw->tone->getValue() == Catch::Approx(0.7f));
+}
+
+TEST_CASE("A chunk the plugin declines leaves the baseline standing", "[engine][external]") {
+    // Valid base64 of something this build of the plugin cannot read, which is
+    // what a chunk written by another version of it looks like.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto model = externalDeviceSaving(1.0f, 0.7f);
+    const juce::MemoryBlock nonsense("wrong size entirely", 19);
+    model.pluginState = nonsense.toBase64Encoding();
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+
+    REQUIRE(result.device != nullptr);
+    CHECK(raw->tone->getValue() == Catch::Approx(0.7f));
+}
+
+TEST_CASE("A plugin that throws restoring its state does not take the host with it",
+          "[engine][external]") {
+    // A plugin's state handler is third-party code, and a corrupt chunk is the
+    // input it is least likely to have been tested against.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->throwsOnState = true;
+
+    const StubPlugin::State chunkVoice{.tone = 0.9f, .fixed = 0.8f};
+    juce::MemoryBlock chunk(&chunkVoice, sizeof(chunkVoice));
+
+    auto model = externalDeviceSaving(1.0f, 0.7f);
+    model.pluginState = chunk.toBase64Encoding();
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+
+    REQUIRE(result.device != nullptr);
+    CHECK(raw->tone->getValue() == Catch::Approx(0.7f));
+}
+
+TEST_CASE("Automation moves a parameter the chunk set", "[engine][external]") {
+    // A lane, a macro or a modifier takes the parameter away from whatever the
+    // plugin's state left there, and keeps it: a value the lane passes through
+    // on its way back is still the lane's, not the plugin's.
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
     auto* raw = plugin.get();
 
