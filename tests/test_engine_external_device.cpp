@@ -290,6 +290,16 @@ magda::DeviceInfo externalDevice() {
     return device;
 }
 
+/// The same device, with the knob positions a project saved for the plugin's
+/// two parameters. What the plan resolves for an untouched parameter is this,
+/// which is what tells "the project left it here" from "something moved it".
+magda::DeviceInfo externalDeviceSaving(float gain, float tone) {
+    auto device = externalDevice();
+    device.parameters[0].currentValue = gain;
+    device.parameters[1].currentValue = tone;
+    return device;
+}
+
 /**
  * @brief One block, and the parameter values the plan resolved for it.
  *
@@ -917,20 +927,81 @@ TEST_CASE("A project's saved plugin state reaches the plugin", "[engine][externa
     REQUIRE(result.device != nullptr);
     CHECK(raw->stateRestores == 1);
     CHECK(raw->fixed->getValue() == Catch::Approx(0.8f));
+}
 
-    result.device->prepare(contextFor());
+TEST_CASE("A stale saved parameter array does not overwrite the chunk", "[engine][external]") {
+    // Every project MAGDA saved before the restore was fixed has this shape:
+    // the chunk holds the voice the user heard, and the parameter array beside
+    // it holds the defaults the host had read at construction. The incumbent
+    // lets the chunk win -- it refreshes its own parameter cache from the
+    // plugin after the restore so nothing writes the array back -- and
+    // test_external_plugin_state_restore_juce.cpp is what pins that. A device
+    // that wrote the array on its first block would undo the restore and render
+    // the initialised voice.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
 
-    // The plan writes the parameters it knows about before every block, so an
-    // automatable value comes from the model and everything else stays as the
-    // chunk left it. That is the native engine's answer to the precedence the
-    // fork spends three steps on, and the two agree for a project MAGDA saved.
-    ParamArena arena({0.0f, 1.0f, 1.0f, 0.4f});
-    Block block(contextFor(), 2);
-    auto deviceBlock = block.deviceBlock(arena.params(contextFor().maxBlockSize));
+    const StubPlugin::State chunkVoice{.tone = 0.9f, .fixed = 0.8f};
+    juce::MemoryBlock chunk(&chunkVoice, sizeof(chunkVoice));
+
+    auto model = externalDeviceSaving(1.0f, 0.25f);  // stale: the chunk says 0.9
+    model.pluginState = chunk.toBase64Encoding();
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    const auto context = contextFor();
+    result.device->prepare(context);
+
+    // Counted from here: restoring the chunk is itself a write, and what this
+    // is about is whether the block adds one.
+    const auto writesAfterRestore = raw->tone->writes;
+
+    // The plan resolves the stale value, because that is what the model holds.
+    ParamArena arena({0.0f, 1.0f, 1.0f, 0.25f});
+    Block block(context, 2);
+    auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
     result.device->process(deviceBlock);
 
-    CHECK(raw->tone->getValue() == Catch::Approx(0.4f));
-    CHECK(raw->fixed->getValue() == Catch::Approx(0.8f));
+    CHECK(raw->tone->getValue() == Catch::Approx(0.9f));
+    CHECK(raw->tone->writes == writesAfterRestore);
+}
+
+TEST_CASE("Automation still moves a parameter the chunk set", "[engine][external]") {
+    // The other half of the rule. Leaving a parameter alone is for one that is
+    // still where the project put it; a lane, a macro or a modifier moving it
+    // is a write, and the plugin's own state has no say after that.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    const StubPlugin::State chunkVoice{.tone = 0.9f, .fixed = 0.8f};
+    juce::MemoryBlock chunk(&chunkVoice, sizeof(chunkVoice));
+
+    auto model = externalDeviceSaving(1.0f, 0.25f);
+    model.pluginState = chunk.toBase64Encoding();
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    const auto context = contextFor();
+    result.device->prepare(context);
+    Block block(context, 2);
+
+    // A lane holding the parameter somewhere else.
+    ParamArena automated({0.0f, 1.0f, 1.0f, 0.5f});
+    auto moved = block.deviceBlock(automated.params(context.maxBlockSize));
+    result.device->process(moved);
+
+    CHECK(raw->tone->getValue() == Catch::Approx(0.5f));
+
+    // And back to where the project saved it, which is a position the lane
+    // passes through rather than a parameter nobody has touched: it must arrive
+    // there rather than stay at 0.5.
+    ParamArena returned({0.0f, 1.0f, 1.0f, 0.25f});
+    auto back = block.deviceBlock(returned.params(context.maxBlockSize));
+    result.device->process(back);
+
+    CHECK(raw->tone->getValue() == Catch::Approx(0.25f));
 }
 
 TEST_CASE("A device with no saved state keeps the plugin's defaults", "[engine][external]") {

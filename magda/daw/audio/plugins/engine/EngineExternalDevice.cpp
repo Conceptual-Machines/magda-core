@@ -133,8 +133,22 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
     // the plugin's parameter array with two added -- it is a filtered view of
     // it, and the filter is what decides which slot a project's saved value
     // lands on.
-    parameters_.push_back({nullptr, magda::WrapperRole::DryGain, modelParameterAt(device, 0)});
-    parameters_.push_back({nullptr, magda::WrapperRole::WetGain, modelParameterAt(device, 1)});
+    const auto mappingFor = [](juce::AudioProcessorParameter* parameter, magda::WrapperRole role,
+                               std::optional<magda::ParameterInfo> info) {
+        // Where the model says the parameter sits, in the units the plan will
+        // resolve it in, so writeParameters() can tell "still where the project
+        // left it" from "something moved it" without converting twice.
+        const auto base =
+            info ? magda::ParameterUtils::realToNormalized(info->currentValue, *info) : 0.0f;
+
+        return ParameterMapping{
+            .parameter = parameter, .role = role, .info = std::move(info), .base = base};
+    };
+
+    parameters_.push_back(
+        mappingFor(nullptr, magda::WrapperRole::DryGain, modelParameterAt(device, 0)));
+    parameters_.push_back(
+        mappingFor(nullptr, magda::WrapperRole::WetGain, modelParameterAt(device, 1)));
 
     // The pairs past the main one, in the plan's own order: extraOutputs[k] is
     // pair k + 1. Read from the model rather than from the instance's bus
@@ -154,7 +168,7 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
             continue;
 
         parameters_.push_back(
-            {parameter, magda::WrapperRole::None, modelParameterAt(device, slot)});
+            mappingFor(parameter, magda::WrapperRole::None, modelParameterAt(device, slot)));
         ++slot;
     }
 }
@@ -253,7 +267,7 @@ int EngineExternalDevice::latencySamples() const {
 
 void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& params) {
     for (int slot = 0; slot < static_cast<int>(parameters_.size()); ++slot) {
-        const auto& mapping = parameters_[static_cast<std::size_t>(slot)];
+        auto& mapping = parameters_[static_cast<std::size_t>(slot)];
         const auto values = params[slot];
 
         // A slot the table does not carry is one nothing resolved: a project
@@ -274,6 +288,8 @@ void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& pa
 
         switch (mapping.role) {
             case magda::WrapperRole::DryGain:
+                // The wrapper pair is the host's own number and no chunk can
+                // carry it, so it is always taken from the model.
                 dryGain_ = normalised;
                 break;
 
@@ -282,11 +298,38 @@ void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& pa
                 break;
 
             default:
+                if (mapping.parameter == nullptr)
+                    break;
+
+                // A parameter still sitting where the project said it sits is
+                // not written at all, and the plugin keeps what its own state
+                // gave it. That is the fork's answer to a project whose saved
+                // parameter array disagrees with its chunk, which is every
+                // project written by a MAGDA old enough to have saved a stale
+                // array: the fork refreshes its cache from the plugin after the
+                // restore precisely so that nothing writes the array back
+                // afterwards. Writing it here would undo the chunk on the first
+                // block and render the initialised voice.
+                //
+                // Anything that moves the value off that position -- an
+                // automation lane, a macro, a modifier, a host edit -- is a
+                // write, and it stays a write from then on. Latched rather than
+                // compared each block, because a lane that returns to the
+                // saved position later has still taken the parameter away from
+                // the plugin's own state, and stopping there would leave it
+                // wherever the last write put it.
+                if (!mapping.moved) {
+                    if (juce::approximatelyEqual(normalised, mapping.base))
+                        break;
+
+                    mapping.moved = true;
+                }
+
                 // Only on a change, which is the fork's rule rather than a
                 // saving: a plugin is entitled to treat every write as a
                 // gesture, and one that rebuilds a filter or repaints an editor
                 // on each would do it every block on a parameter nobody moved.
-                if (mapping.parameter != nullptr && mapping.parameter->getValue() != normalised)
+                if (mapping.parameter->getValue() != normalised)
                     mapping.parameter->setValue(normalised);
                 break;
         }

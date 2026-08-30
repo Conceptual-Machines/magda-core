@@ -45,6 +45,13 @@
  *   what MAGDA saved as ParameterInfo::paramIndex and what the plan's value
  *   layer resolves against, so the mapping back onto the live instance has to
  *   reproduce that list rather than invent one.
+ * - **Which of the two saved records wins.** A project saves a plugin twice: as
+ *   the chunk the plugin wrote, and as an array of parameter values. Where they
+ *   disagree the fork lets the chunk win -- it applies the array, overlays the
+ *   chunk, then refreshes its own cache from the plugin so nothing writes the
+ *   array back afterwards -- and a project saved by an older build of MAGDA is
+ *   exactly where they disagree. So a parameter nothing has moved is not
+ *   written at all here, and the plugin keeps what its state gave it.
  * - **Further output pairs.** A multi-out sampler's drum outs are the channels
  *   past its main pair, and the plan opens a port for each one the model
  *   recorded. They are copied out by the same mapping the current engine wires
@@ -166,6 +173,13 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
         /// is the conversion out of the plan's units, which is the same
         /// conversion the value went in through.
         std::optional<magda::ParameterInfo> info;
+
+        /// Where the model says this parameter sits, normalised: the knob
+        /// position a project saved, before automation or a modifier moves it.
+        float base = 0.0f;
+
+        /// Whether anything has moved it off that. See writeParameters().
+        bool moved = false;
     };
 
     std::vector<ParameterMapping> parameters_;
