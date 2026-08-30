@@ -86,21 +86,69 @@ void restoreSavedState(MagdaDevice& device, const juce::String& savedState) {
     device.restoreState(tree);
 }
 
-/// The adapter over an instance the format manager just handed back.
-///
+/**
+ * @brief The plugin's own state, as the project saved it.
+ *
+ * Base64 of what getStateInformation wrote, which is the one thing MAGDA
+ * persists for an external plugin and the only thing that carries what a
+ * parameter array cannot: the current program, a sampler's loaded samples and
+ * key mappings, and every value the plugin never exposed as a parameter. A
+ * plugin created without it renders its initialised voice, which is a different
+ * project rather than a quieter one.
+ *
+ * DeviceInfo::vst3Preset is not this and is not applied here. It is the
+ * portable .vstpreset a DAWproject carries, applied once on import and cleared
+ * (PluginManagerSync), and the field's own comment says what this file relies
+ * on: interchange only, native state is pluginState.
+ *
+ * What happens afterwards is worth stating, because it is the native engine's
+ * answer to the precedence the fork spends three steps on. The fork applies the
+ * saved parameter array, overlays the chunk, then refreshes its parameter cache
+ * from the plugin so the chunk wins. Here the chunk is applied at creation and
+ * the plan writes every parameter it knows about before each block, so for an
+ * automatable parameter the model is authoritative and for everything else the
+ * chunk is. Those agree in a project MAGDA saved, because the app writes the
+ * refreshed values back into the model; where they disagree -- a chunk written
+ * by another version of the plugin -- the model wins for the parameters it has.
+ * Whether that is the right way round for a dual-engine release is #2244's
+ * question, and it is a question about which number to keep rather than about
+ * whether the patch loads.
+ */
+void restoreSavedChunk(juce::AudioPluginInstance& instance, const juce::String& savedState) {
+    if (savedState.isEmpty())
+        return;
+
+    juce::MemoryBlock chunk;
+    if (!chunk.fromBase64Encoding(savedState) || chunk.getSize() == 0)
+        return;
+
+    instance.setStateInformation(chunk.getData(), static_cast<int>(chunk.getSize()));
+}
+
+}  // namespace
+
 /// enableAllBuses first, at the same point the fork does it
 /// (completePluginInstanceCreation) and for the same reason: a plugin whose
 /// sidechain or second output bus is disabled reports channels it does not
 /// have, and everything downstream -- the adapter's own channel adaptation, the
 /// plan's declared widths -- is read off those numbers.
-ExternalDeviceResult adaptInstance(std::unique_ptr<juce::AudioPluginInstance> instance,
-                                   const magda::DeviceInfo& device, bool offlineRender) {
+ExternalDeviceResult adaptExternalPluginInstance(
+    std::unique_ptr<juce::AudioPluginInstance> instance, const magda::DeviceInfo& device,
+    bool offlineRender) {
     instance->enableAllBuses();
+
+    // Before the adapter, not after, and for the same reason the internal path
+    // restores before wrapping: the adapter reads the plugin's parameter list
+    // when it is constructed, and a plugin that changes which parameters it has
+    // when its state is applied would be mapped against the ones it had first.
+    restoreSavedChunk(*instance, device.pluginState);
 
     return {.device =
                 std::make_unique<EngineExternalDevice>(std::move(instance), device, offlineRender),
             .failure = {}};
 }
+
+namespace {
 
 /// Why a plugin nobody could find is missing, said once so both entry points
 /// say it the same way.
@@ -189,7 +237,7 @@ ExternalDeviceResult createEngineExternalDevice(const magda::DeviceInfo& device,
                 .failure = "external plugin \"" + device.name + "\" could not be loaded: " +
                            (error.isNotEmpty() ? error : "no reason given")};
 
-    return adaptInstance(std::move(instance), device, offlineRender);
+    return adaptExternalPluginInstance(std::move(instance), device, offlineRender);
 }
 
 void createEngineExternalDeviceAsync(const magda::DeviceInfo& device,
@@ -219,7 +267,7 @@ void createEngineExternalDeviceAsync(const magda::DeviceInfo& device,
                 return;
             }
 
-            completed(adaptInstance(std::move(instance), saved, offlineRender));
+            completed(adaptExternalPluginInstance(std::move(instance), saved, offlineRender));
         });
 }
 

@@ -39,6 +39,13 @@
  * not, while an external plugin is a file on a machine that may have moved,
  * been upgraded, or never been installed. So creating one can fail for reasons
  * worth telling a user about, and it returns why rather than a null.
+ *
+ * An external plugin's saved state does travel, unlike an internal device's:
+ * MAGDA persists the plugin's own chunk and it is applied before the adapter
+ * takes the instance. What that leaves for the state slice (#2244) is the other
+ * direction -- writing the chunk back out of an instance the native engine
+ * holds, so a project round-trips between the two engines during the
+ * dual-engine release.
  */
 
 namespace magda::daw::audio::engine_adapter {
@@ -112,6 +119,18 @@ struct ExternalDeviceResult {
     std::unique_ptr<magda::engine::EngineDevice> device;
     juce::String failure;
 };
+
+/**
+ * @brief The adapter over an instance the host made itself.
+ *
+ * What both entry points below end at, and the seam for a host that creates its
+ * plugins some other way. It enables the instance's buses and applies the
+ * project's saved state before the adapter takes it, because the adapter reads
+ * the plugin's parameter list when it is constructed.
+ */
+ExternalDeviceResult adaptExternalPluginInstance(
+    std::unique_ptr<juce::AudioPluginInstance> instance, const magda::DeviceInfo& device,
+    bool offlineRender = false);
 
 /**
  * @brief The external plugin @p device names, created and ready to bind.

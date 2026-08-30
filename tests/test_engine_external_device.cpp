@@ -2,6 +2,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -111,7 +112,9 @@ class StubPlugin final : public juce::AudioPluginInstance {
         gain = gainParameter.get();
         addHostedParameter(std::move(gainParameter));
 
-        addHostedParameter(std::make_unique<StubParameter>("fixed", "Fixed", 0.0f, false));
+        auto fixedParameter = std::make_unique<StubParameter>("fixed", "Fixed", 0.0f, false);
+        fixed = fixedParameter.get();
+        addHostedParameter(std::move(fixedParameter));
 
         auto toneParameter = std::make_unique<StubParameter>("tone", "Tone", 0.25f, true);
         tone = toneParameter.get();
@@ -207,9 +210,28 @@ class StubPlugin final : public juce::AudioPluginInstance {
 
     void changeProgramName(int, const juce::String&) override {}
 
-    void getStateInformation(juce::MemoryBlock&) override {}
+    /// The state a real plugin carries and a parameter array cannot: here, the
+    /// values of both parameters, including the one no host may automate.
+    struct State {
+        float tone = 0.0f;
+        float fixed = 0.0f;
+    };
 
-    void setStateInformation(const void*, int) override {}
+    void getStateInformation(juce::MemoryBlock& destination) override {
+        const State state{.tone = tone->getValue(), .fixed = fixed->getValue()};
+        destination.replaceAll(&state, sizeof(state));
+    }
+
+    void setStateInformation(const void* data, int size) override {
+        if (size != static_cast<int>(sizeof(State)))
+            return;
+
+        State state{};
+        std::memcpy(&state, data, sizeof(state));
+        tone->setValue(state.tone);
+        fixed->setValue(state.fixed);
+        ++stateRestores;
+    }
 
     /// The per-channel offset the output carries, so a test can name which of
     /// the plugin's channels it is reading.
@@ -217,6 +239,9 @@ class StubPlugin final : public juce::AudioPluginInstance {
 
     StubParameter* gain = nullptr;
     StubParameter* tone = nullptr;
+    StubParameter* fixed = nullptr;
+
+    int stateRestores = 0;
 
     bool emitsMidi = false;
 
@@ -871,4 +896,66 @@ TEST_CASE("A pair the plugin does not have stays silent", "[engine][external]") 
     CHECK(pairBuffers[0].getSample(0, 0) == Catch::Approx(3 * StubPlugin::kChannelMarker));
     CHECK(pairBuffers[1].getSample(0, 0) == Catch::Approx(0.0f));
     CHECK(pairBuffers[1].getSample(1, 0) == Catch::Approx(0.0f));
+}
+
+TEST_CASE("A project's saved plugin state reaches the plugin", "[engine][external]") {
+    // The chunk carries what the parameter array cannot. Here that is the value
+    // of a parameter no host may automate, which stands for a sampler's loaded
+    // samples and a synth's current program: a plugin created without the chunk
+    // renders its initialised voice, which is a different project rather than a
+    // quieter one.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    const StubPlugin::State saved{.tone = 0.9f, .fixed = 0.8f};
+    juce::MemoryBlock chunk(&saved, sizeof(saved));
+
+    auto model = externalDevice();
+    model.pluginState = chunk.toBase64Encoding();
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+    CHECK(raw->stateRestores == 1);
+    CHECK(raw->fixed->getValue() == Catch::Approx(0.8f));
+
+    result.device->prepare(contextFor());
+
+    // The plan writes the parameters it knows about before every block, so an
+    // automatable value comes from the model and everything else stays as the
+    // chunk left it. That is the native engine's answer to the precedence the
+    // fork spends three steps on, and the two agree for a project MAGDA saved.
+    ParamArena arena({0.0f, 1.0f, 1.0f, 0.4f});
+    Block block(contextFor(), 2);
+    auto deviceBlock = block.deviceBlock(arena.params(contextFor().maxBlockSize));
+    result.device->process(deviceBlock);
+
+    CHECK(raw->tone->getValue() == Catch::Approx(0.4f));
+    CHECK(raw->fixed->getValue() == Catch::Approx(0.8f));
+}
+
+TEST_CASE("A device with no saved state keeps the plugin's defaults", "[engine][external]") {
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), externalDevice());
+
+    REQUIRE(result.device != nullptr);
+    CHECK(raw->stateRestores == 0);
+}
+
+TEST_CASE("Saved state that is not a chunk this plugin understands is refused",
+          "[engine][external]") {
+    // A chunk written by another plugin, or by another version of this one. The
+    // plugin is handed it and declines; what it must not do is take half of it.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto model = externalDevice();
+    model.pluginState = "not base64 at all !!";
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+
+    REQUIRE(result.device != nullptr);
+    CHECK(raw->stateRestores == 0);
+    CHECK(raw->fixed->getValue() == Catch::Approx(0.0f));
 }
