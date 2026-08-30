@@ -305,6 +305,8 @@ list(REMOVE_ITEM _magda_device_pack_sources ${_magda_tracktion_device_adapter_so
 set(_magda_engine_device_adapter_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineDeviceFactory.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineDeviceFactory.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineExternalDevice.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineExternalDevice.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineMagdaDevice.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineMagdaDevice.hpp"
 )
@@ -464,6 +466,16 @@ target_sources(magda_daw PRIVATE
     TrackController.cpp
     plugin_manager/PluginManager.cpp
     plugin_manager/PluginManagerSync.cpp
+    # Which installed plugin a saved device meant (#2243). One answer, asked by
+    # the sync path here and by the native engine's device factory, which
+    # resolves it at the final link the way it resolves findCompiledPluginSpec.
+    plugin_manager/ExternalPluginLookup.cpp
+    plugin_manager/ExternalPluginLookup.hpp
+    # A project's record of a plugin onto a live instance: array, then chunk,
+    # then what that left behind, for whoever owns the model (#2243). Same
+    # arrangement as the lookup above -- one answer, both engines.
+    plugin_manager/ExternalPluginState.cpp
+    plugin_manager/ExternalPluginState.hpp
     plugin_manager/PluginManagerMacros.cpp
     plugin_manager/PluginManagerModifiers.cpp
     plugin_manager/PluginManagerSidechain.cpp

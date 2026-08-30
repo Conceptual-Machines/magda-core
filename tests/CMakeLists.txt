@@ -63,6 +63,7 @@ set(TEST_SOURCES
     test_plugin_preferences.cpp
     test_plugin_browser_metadata_merge.cpp
     test_plugin_metadata_store.cpp
+    test_external_plugin_lookup.cpp
     test_prune_missing_plugins.cpp
     test_known_plugin_list_duplicates.cpp
     test_device_parameter_pagination.cpp
@@ -409,6 +410,12 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # adapter. The engine's half alone -- what the two hosts do with one device
     # is the corpus's question, in magda_juce_tests.
     list(APPEND TEST_SOURCES test_engine_device_layer.cpp)
+
+    # An external plugin under a Device op (#2241): the adapter over
+    # juce::AudioPluginInstance, against a plugin written in the test rather
+    # than one that happens to be installed. What a real plugin is for is the
+    # corpus (#2175), where both engines run the same one.
+    list(APPEND TEST_SOURCES test_engine_external_device.cpp)
 
     # The block-size invariance gate (#2078). Model-only for the same reason the
     # native leg is: the claim is the native engine's alone, and the incumbent
