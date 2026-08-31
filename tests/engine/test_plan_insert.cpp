@@ -492,11 +492,16 @@ BlockInfo blockAtSample(std::int64_t first, int numSamples) {
 }
 
 /// A capture of [0, samples), taken in blocks of @p blockSize.
-CapturedInsert capture(RampingInsert& live, std::int64_t samples, int channels = 1,
-                       int blockSize = kBlockSize) {
-    CapturedInsert insert(CapturedInsert::Mode::Capturing, channels, &live);
-    insert.setWindow({0, samples});
-    insert.prepare(RenderContext{44100.0, blockSize, channels});
+///
+/// By pointer because a CapturedInsert holds an atomic and is therefore neither
+/// copyable nor movable, which is the right shape for a thing an audio thread
+/// writes and another thread reads.
+std::unique_ptr<CapturedInsert> capture(RampingInsert& live, std::int64_t samples, int channels = 1,
+                                        int blockSize = kBlockSize, double rate = 44100.0) {
+    auto insert =
+        std::make_unique<CapturedInsert>(CapturedInsert::Mode::Capturing, channels, &live);
+    insert->setWindow({0, samples});
+    insert->prepare(RenderContext{rate, blockSize, channels});
 
     juce::AudioBuffer<float> buffer(channels, blockSize);
     juce::MidiBuffer midi;
@@ -505,8 +510,8 @@ CapturedInsert capture(RampingInsert& live, std::int64_t samples, int channels =
         const auto block = blockAtSample(at, blockSize);
         buffer.clear();
         midi.clear();
-        insert.send(block, juce::dsp::AudioBlock<const float>(buffer), midi);
-        insert.receive(block, juce::dsp::AudioBlock<float>(buffer), midi);
+        insert->send(block, juce::dsp::AudioBlock<const float>(buffer), midi);
+        insert->receive(block, juce::dsp::AudioBlock<float>(buffer), midi);
     }
 
     return insert;
@@ -523,20 +528,21 @@ TEST_CASE("A capture replays what the hardware answered, at the position it answ
     auto insert = capture(live, 8 * kBlockSize);
 
     CHECK(live.sends == 8);
-    CHECK(insert.covers(0, 8 * kBlockSize));
+    CHECK(insert->covers(0, 8 * kBlockSize));
 
     // The bounce, over the same timeline in a different block size, which is
     // the case a capture indexed by call count would get wrong.
     constexpr int kRenderBlock = 96;
-    insert.setMode(CapturedInsert::Mode::Playing);
+    insert->setMode(CapturedInsert::Mode::Playing);
+    insert->prepare(RenderContext{44100.0, kRenderBlock, 1});
 
     juce::AudioBuffer<float> rendered(1, kRenderBlock);
     juce::MidiBuffer midi;
     rendered.clear();
 
     const auto at = blockAtSample(kBlockSize, kRenderBlock);
-    insert.send(at, juce::dsp::AudioBlock<const float>(rendered), midi);
-    insert.receive(at, juce::dsp::AudioBlock<float>(rendered), midi);
+    insert->send(at, juce::dsp::AudioBlock<const float>(rendered), midi);
+    insert->receive(at, juce::dsp::AudioBlock<float>(rendered), midi);
 
     // Nothing left the machine: there is nothing on the other end that could
     // answer at render speed, and a send that went out anyway would put the
@@ -562,10 +568,11 @@ TEST_CASE("A replay declares the round trip the capture was taken through",
     RampingInsert live(kRoundTrip);
 
     auto insert = capture(live, 4 * kBlockSize);
-    CHECK(insert.latencySamples() == kRoundTrip);
+    CHECK(insert->latencySamples() == kRoundTrip);
 
-    insert.setMode(CapturedInsert::Mode::Playing);
-    CHECK(insert.latencySamples() == kRoundTrip);
+    insert->setMode(CapturedInsert::Mode::Playing);
+    insert->prepare(RenderContext{44100.0, kBlockSize, 1});
+    CHECK(insert->latencySamples() == kRoundTrip);
 }
 
 TEST_CASE("A MIDI return is captured and replayed", "[engine][insert][capture]") {
@@ -669,16 +676,149 @@ TEST_CASE("A bounce past the end of the capture is silent, not the nearest thing
     RampingInsert live;
     auto insert = capture(live, kBlockSize);
 
-    insert.setMode(CapturedInsert::Mode::Playing);
+    insert->setMode(CapturedInsert::Mode::Playing);
+    insert->prepare(RenderContext{44100.0, kBlockSize, 1});
 
     juce::AudioBuffer<float> buffer(1, kBlockSize);
     juce::MidiBuffer midi;
     buffer.clear();
 
-    insert.receive(blockAtSample(kBlockSize * 4, kBlockSize), juce::dsp::AudioBlock<float>(buffer),
-                   midi);
+    insert->receive(blockAtSample(kBlockSize * 4, kBlockSize), juce::dsp::AudioBlock<float>(buffer),
+                    midi);
 
     for (int sample = 0; sample < kBlockSize; ++sample)
         CHECK(buffer.getSample(0, sample) == Catch::Approx(0.0f).margin(1e-9));
     CHECK(midi.getNumEvents() == 0);
+}
+
+TEST_CASE("A capture replayed at another rate is refused rather than shifted",
+          "[engine][insert][capture][rate]") {
+    // A capture is written during live playback at whatever rate the device is
+    // open at, and read during a bounce whose rate is chosen at export. One
+    // object, two rate domains.
+    //
+    // Positions and the round trip survive that, because both are held in
+    // something both domains share. The samples do not: 44,100 numbers a second
+    // handed one for one to something that wants 48,000 come out 8.8 per cent
+    // slow and a tone and a half flat, and run out of window early. So this is
+    // the one that is refused.
+    RampingInsert live;
+    auto insert = capture(live, 4 * kBlockSize, 1, kBlockSize, 44100.0);
+
+    REQUIRE(insert->covers(0, 4 * kBlockSize));
+    CHECK(insert->usable());
+
+    insert->setMode(CapturedInsert::Mode::Playing);
+    insert->prepare(RenderContext{48000.0, kBlockSize, 1});
+
+    CHECK_FALSE(insert->usable());
+
+    // Through covers(), because that is the preflight a bounce asks: a render
+    // that went ahead would write slow, detuned audio into a file somebody
+    // keeps, and nothing downstream could see it.
+    CHECK_FALSE(insert->covers(0, 4 * kBlockSize));
+
+    // And the same capture replayed at the rate it was taken at is fine, which
+    // is what says the refusal is about the rates rather than about replaying.
+    insert->prepare(RenderContext{44100.0, kBlockSize, 1});
+    CHECK(insert->usable());
+    CHECK(insert->covers(0, 4 * kBlockSize));
+}
+
+TEST_CASE("A replay reports the round trip as the render's own samples",
+          "[engine][insert][capture][rate]") {
+    // The round trip is a duration, not a count. Stored as 512 samples and
+    // reported into a graph at another rate it would delay every parallel path
+    // by a different length of time than the capture is actually behind.
+    //
+    // The rate guard above refuses a mismatched replay, so this is checked
+    // through the arithmetic rather than through a render: what matters is that
+    // the figure is derived from a duration, so that it stays right the day a
+    // resampling replay makes a mismatch renderable.
+    constexpr int kRoundTrip = 512;
+    RampingInsert live(kRoundTrip);
+
+    auto insert = capture(live, 4 * kBlockSize, 1, kBlockSize, 44100.0);
+    CHECK(insert->latencySamples() == kRoundTrip);
+
+    insert->setMode(CapturedInsert::Mode::Playing);
+    insert->prepare(RenderContext{44100.0, kBlockSize, 1});
+    CHECK(insert->latencySamples() == kRoundTrip);
+
+    // 512 samples at 44.1 kHz is 11.61 ms, which is 557 samples at 48 kHz.
+    insert->prepare(RenderContext{48000.0, kBlockSize, 1});
+    CHECK(insert->latencySamples() == 557);
+}
+
+TEST_CASE("Progress is a counter rather than a walk", "[engine][insert][capture]") {
+    // Polled from whatever thread is drawing it while the audio thread writes
+    // the bitmap, so a walk of the bitmap would be a data race and O(window)
+    // per poll besides.
+    RampingInsert live;
+
+    CapturedInsert insert(CapturedInsert::Mode::Capturing, 1, &live);
+    insert.setWindow({0, 8 * kBlockSize});
+    insert.prepare(RenderContext{44100.0, kBlockSize, 1});
+
+    CHECK(insert.capturedSamples() == 0);
+
+    juce::AudioBuffer<float> buffer(1, kBlockSize);
+    juce::MidiBuffer midi;
+
+    for (const std::int64_t at : {0, kBlockSize}) {
+        buffer.clear();
+        insert.receive(blockAtSample(at, kBlockSize), juce::dsp::AudioBlock<float>(buffer), midi);
+    }
+
+    CHECK(insert.capturedSamples() == 2 * kBlockSize);
+
+    // A second pass over the same stretch is not more captured. Counted on the
+    // transition, so a total can never claim more of the window than it holds.
+    buffer.clear();
+    insert.receive(blockAtSample(0, kBlockSize), juce::dsp::AudioBlock<float>(buffer), midi);
+    CHECK(insert.capturedSamples() == 2 * kBlockSize);
+}
+
+TEST_CASE("MIDI past the reserved capacity makes the capture unusable",
+          "[engine][insert][capture]") {
+    // ensureSize is a reservation and addEvent grows past it, which on the
+    // audio thread is an allocation. And a capture that allocated its way out
+    // would still be one with events missing from it, reporting success: the
+    // bounce would be short of notes with nothing to say so.
+    class ChattyInsert final : public EngineInsert {
+      public:
+        void send(const BlockInfo&, juce::dsp::AudioBlock<const float>,
+                  const juce::MidiBuffer&) override {}
+
+        void receive(const BlockInfo& block, juce::dsp::AudioBlock<float> audio,
+                     juce::MidiBuffer& midi) override {
+            audio.clear();
+
+            // A wall of events, which is what a controller dump or a long
+            // SysEx stream looks like from in here.
+            for (int index = 0; index < block.numSamples; ++index)
+                midi.addEvent(juce::MidiMessage::controllerEvent(1, 7, index % 128), index);
+        }
+    };
+
+    ChattyInsert live;
+
+    CapturedInsert insert(CapturedInsert::Mode::Capturing, 1, &live);
+    insert.setWindow({0, 44100 * 60});
+    insert.prepare(RenderContext{44100.0, kBlockSize, 1});
+
+    CHECK(insert.usable());
+
+    juce::AudioBuffer<float> buffer(1, kBlockSize);
+    juce::MidiBuffer midi;
+
+    for (std::int64_t at = 0; at < 44100 * 60 && insert.usable(); at += kBlockSize) {
+        buffer.clear();
+        midi.clear();
+        insert.receive(blockAtSample(at, kBlockSize), juce::dsp::AudioBlock<float>(buffer), midi);
+    }
+
+    // It ran out, and said so rather than growing.
+    CHECK_FALSE(insert.usable());
+    CHECK_FALSE(insert.covers(0, kBlockSize));
 }

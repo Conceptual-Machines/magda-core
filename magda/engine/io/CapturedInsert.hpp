@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <atomic>
 #include <cstdint>
 #include <vector>
 
@@ -67,6 +68,38 @@ namespace magda::engine {
  * the round trip is remembered when the capture is taken and declared again
  * while replaying: the graph then compensates a bounce exactly as it
  * compensated the pass the capture came from.
+ *
+ * ## Two sample rates, and which one each number is in
+ *
+ * A capture is written during live playback, at whatever rate the audio device
+ * is open at, and read during a bounce, whose rate is chosen at export. One of
+ * these objects therefore lives through two rate domains: written in one, read
+ * in the other. Everything below is a sample count, and a sample count means
+ * nothing without saying which.
+ *
+ *  - @ref captureRate_ is the rate the recording was made at. The audio array,
+ *    the window's bounds and the MIDI positions are all in its samples. It is
+ *    set once, when a capture prepares, and a later prepare never moves it: the
+ *    data it describes is already written.
+ *  - @ref renderRate_ is the rate the graph running now is at. Every prepare
+ *    sets it, in both modes.
+ *
+ * During the live pass they are equal. During a bounce they need not be, and
+ * the three things that follow from that are handled differently because they
+ * are different problems:
+ *
+ *  - **Position** is converted through seconds, which both domains share, using
+ *    the capture's own rate. Correct at any render rate.
+ *  - **The round trip** is stored in seconds for the same reason and reported
+ *    against the render rate, so it means the same instant either side.
+ *  - **The samples themselves** cannot be converted without a resampler: a
+ *    capture at 44.1 kHz handed one for one to a 48 kHz render plays 8.8 per
+ *    cent slow and a tone and a half flat, and runs out of window early. So
+ *    that is the one that is refused rather than converted. A Playing instance
+ *    prepared at a rate the capture was not taken at is unusable, @ref covers
+ *    says so, and the preflight refuses the bounce instead of writing slow,
+ *    detuned audio into a file somebody keeps. Re-capturing at the export rate
+ *    is a live pass, which is a thing the host can do.
  */
 class CapturedInsert final : public EngineInsert {
   public:
@@ -145,16 +178,35 @@ class CapturedInsert final : public EngineInsert {
     /// How many samples of the window have been captured, for a caller
     /// reporting progress. Not what @ref covers is asked, and deliberately not
     /// usable as it: a total says nothing about where the gaps are.
-    std::int64_t capturedSamples() const;
+    ///
+    /// Read while the capture is running, from whatever thread is drawing the
+    /// progress, so it is a counter rather than a walk of the bitmap: the walk
+    /// would be a data race with the audio thread writing it, and O(window) on
+    /// every poll besides.
+    std::int64_t capturedSamples() const {
+        return captured_.load(std::memory_order_relaxed);
+    }
+
+    /// Whether this capture can be replayed at all.
+    ///
+    /// False for a capture asked to play into a render at a rate it was not
+    /// taken at, and for one whose MIDI outgrew what was reserved for it. Both
+    /// are refusals rather than approximations: what they would otherwise
+    /// produce is a bounce that is wrong in a way nothing downstream can see.
+    bool usable() const {
+        return !rateMismatch_ && !midiOverflowed_;
+    }
 
   private:
-    /// Where @p block sits on the timeline, in samples.
+    /// Where @p block sits in the capture, in capture-rate samples.
     ///
-    /// From seconds, which is what a block carries and what recorded material
-    /// is measured in. A capture indexed by how many blocks have gone by would
-    /// come back smeared the moment a bounce used a different block size, which
-    /// it always does.
-    std::int64_t timelineSampleOf(const BlockInfo& block) const;
+    /// Through seconds, which is what a block carries, what recorded material
+    /// is measured in, and the one domain both rates share. A capture indexed
+    /// by how many blocks have gone by would come back smeared the moment a
+    /// bounce used a different block size, which it always does; one indexed
+    /// with the render's rate would come back smeared whenever the two rates
+    /// differ, and further wrong the deeper into the timeline it got.
+    std::int64_t captureSampleOf(const BlockInfo& block) const;
 
     void markCaptured(std::int64_t first, std::int64_t count);
 
@@ -162,19 +214,40 @@ class CapturedInsert final : public EngineInsert {
     int numChannels_ = 2;
     EngineInsert* live_ = nullptr;
 
+    /// In capture-rate samples, like everything it bounds.
     Window window_;
-    double sampleRate_ = 44100.0;
 
-    /// The round trip the capture was taken through, remembered so a replay can
-    /// declare the same one without the live insert being around.
-    int capturedLatency_ = 0;
+    /// The rate the recording was made at, and the rate every stored position
+    /// is in. Set once, when a capture prepares; a later prepare never moves
+    /// it, because the data it describes is already written.
+    double captureRate_ = 44100.0;
+
+    /// The rate the graph running now is at. Set by every prepare, both modes.
+    double renderRate_ = 44100.0;
+
+    /// The round trip the capture was taken through, in seconds.
+    ///
+    /// Seconds rather than samples because it is reported into whatever rate
+    /// the graph is running at: stored as a count it would mean a different
+    /// duration in a bounce at another rate, and every parallel path would be
+    /// delayed by slightly the wrong amount.
+    double roundTripSeconds_ = 0.0;
+
+    /// Set when a replay was prepared at a rate the capture was not taken at.
+    bool rateMismatch_ = false;
+
+    /// Set when the MIDI a capture answered with outgrew what was reserved for
+    /// it. The alternative is growing the buffer on the audio thread, and a
+    /// capture that allocated its way out of the problem would still be one
+    /// with events missing from it.
+    bool midiOverflowed_ = false;
 
     /// One vector per channel, indexed from the window's first sample.
     std::vector<std::vector<float>> samples_;
 
-    /// The MIDI a MIDI-returning insert answered with, at absolute timeline
-    /// positions. Reserved at prepare, because adding to it happens on the
-    /// audio thread.
+    /// The MIDI a MIDI-returning insert answered with, at absolute capture-rate
+    /// positions. Reserved at prepare and bounded at every append, because
+    /// adding to it happens on the audio thread.
     juce::MidiBuffer midi_;
 
     /// Whether each sample of the window has been written, indexed from the
@@ -188,6 +261,14 @@ class CapturedInsert final : public EngineInsert {
     /// stereo sample already occupies here, which is not the thing to be clever
     /// about when the answer decides whether a file gets silence in it.
     std::vector<char> written_;
+
+    /// How many of those bytes are set.
+    ///
+    /// Kept as a counter rather than recomputed, because it is polled from
+    /// another thread while the audio thread writes the bitmap: a walk would be
+    /// a data race and O(window) per poll. @ref covers reads the bitmap
+    /// instead, and is asked between passes rather than during one.
+    std::atomic<std::int64_t> captured_{0};
 };
 
 }  // namespace magda::engine

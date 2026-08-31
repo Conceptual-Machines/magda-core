@@ -15,37 +15,63 @@ namespace {
 /// is a fraction of what one second of the audio beside it costs.
 constexpr int kCapturedMidiBytes = 1 << 20;
 
+/// What a MidiBuffer spends on an event besides its bytes: the sample position
+/// and the length. Counted into the ceiling so the check is about what will be
+/// stored rather than about what was handed over.
+constexpr int kMidiEventOverhead = 6;
+
 }  // namespace
 
 CapturedInsert::CapturedInsert(Mode mode, int numChannels, EngineInsert* live)
     : mode_(mode), numChannels_(std::max(1, numChannels)), live_(live) {}
 
-std::int64_t CapturedInsert::timelineSampleOf(const BlockInfo& block) const {
-    return static_cast<std::int64_t>(std::llround(block.startSeconds * sampleRate_));
+std::int64_t CapturedInsert::captureSampleOf(const BlockInfo& block) const {
+    // The capture's own rate, never the render's. Seconds are what both domains
+    // share, so this lands on the moment the block is at whatever rate the
+    // graph asking is running.
+    return static_cast<std::int64_t>(std::llround(block.startSeconds * captureRate_));
 }
 
 void CapturedInsert::prepare(const RenderContext& context) {
     if (live_ != nullptr)
         live_->prepare(context);
 
-    sampleRate_ = context.sampleRate;
+    // The graph running now, whichever mode this is in.
+    renderRate_ = context.sampleRate;
 
     // Only while capturing. A bounce is handed a capture that already exists
     // and must not clear it, which is the one way this class could quietly turn
     // a render into silence.
-    if (mode_ != Mode::Capturing)
+    if (mode_ != Mode::Capturing) {
+        // And the one thing a replay has to check. Every stored position is in
+        // capture-rate samples and the audio behind them is capture-rate audio;
+        // positions convert through seconds and the round trip is held in them,
+        // but the samples themselves would need a resampler. Refused rather
+        // than approximated: played one for one a 44.1 kHz capture comes out of
+        // a 48 kHz render 8.8 per cent slow and a tone and a half flat.
+        rateMismatch_ = renderRate_ != captureRate_;
         return;
+    }
 
-    // Remembered now rather than asked for later: by the time a bounce replays
-    // this, the live insert may be gone, and the round trip is what the capture
-    // has to be aligned by (see the header).
-    capturedLatency_ = live_ != nullptr ? live_->latencySamples() : 0;
+    // The rate this recording is being made at, and the rate every position
+    // stored below is in. Set here and nowhere else.
+    captureRate_ = context.sampleRate;
+    rateMismatch_ = false;
+    midiOverflowed_ = false;
+
+    // Remembered now rather than asked for later, and in seconds rather than
+    // samples: by the time a bounce replays this the live insert may be gone,
+    // and a count would mean a different duration in a render at another rate
+    // (see the header).
+    const auto latency = live_ != nullptr ? live_->latencySamples() : 0;
+    roundTripSeconds_ = captureRate_ > 0.0 ? static_cast<double>(latency) / captureRate_ : 0.0;
 
     const auto length = std::max<std::int64_t>(0, window_.numSamples);
     samples_.assign(static_cast<std::size_t>(numChannels_),
                     std::vector<float>(static_cast<std::size_t>(length), 0.0f));
 
     written_.assign(static_cast<std::size_t>(length), 0);
+    captured_.store(0, std::memory_order_relaxed);
 
     midi_.clear();
     midi_.ensureSize(static_cast<std::size_t>(kCapturedMidiBytes));
@@ -57,26 +83,48 @@ void CapturedInsert::reset() {
 }
 
 int CapturedInsert::latencySamples() const {
-    // The same figure in both modes. A capture holds what the hardware answered
-    // rather than what was sent to it, so a replay declaring none would leave
-    // every parallel path undelayed against a return that is still a round trip
-    // behind.
+    // The same instant in both modes, which is not the same number. A capture
+    // holds what the hardware answered rather than what was sent to it, so a
+    // replay declaring no latency would leave every parallel path undelayed
+    // against a return that is still a round trip behind; and a replay
+    // declaring the count it was captured as would delay them by that many of
+    // the render's samples, which is a different duration whenever the rates
+    // differ.
     if (mode_ == Mode::Capturing)
         return live_ != nullptr ? live_->latencySamples() : 0;
-    return capturedLatency_;
+
+    return static_cast<int>(std::llround(roundTripSeconds_ * renderRate_));
 }
 
 void CapturedInsert::markCaptured(std::int64_t first, std::int64_t count) {
     const auto offset = first - window_.firstSample;
+
+    std::int64_t added = 0;
     for (std::int64_t sample = 0; sample < count; ++sample) {
         const auto index = static_cast<std::size_t>(offset + sample);
         if (index >= written_.size())
-            return;
-        written_[index] = 1;
+            break;
+
+        // Counted on the transition only, so a second pass over the same
+        // stretch does not report more captured than the window holds.
+        if (written_[index] == 0) {
+            written_[index] = 1;
+            ++added;
+        }
     }
+
+    if (added > 0)
+        captured_.fetch_add(added, std::memory_order_relaxed);
 }
 
 bool CapturedInsert::covers(std::int64_t first, std::int64_t count) const {
+    // A capture that cannot be replayed covers nothing, whatever is in it. This
+    // is the preflight a bounce asks, and it is the place a rate mismatch or a
+    // MIDI overflow has to stop one: both produce a render that is wrong in a
+    // way nothing downstream can see.
+    if (!usable())
+        return false;
+
     if (count <= 0)
         return true;
     if (!window_.contains(first, count))
@@ -90,10 +138,6 @@ bool CapturedInsert::covers(std::int64_t first, std::int64_t count) const {
     }
 
     return true;
-}
-
-std::int64_t CapturedInsert::capturedSamples() const {
-    return std::count(written_.begin(), written_.end(), char{1});
 }
 
 void CapturedInsert::send(const BlockInfo& block, juce::dsp::AudioBlock<const float> audio,
@@ -113,9 +157,13 @@ void CapturedInsert::receive(const BlockInfo& block, juce::dsp::AudioBlock<float
     // is handed an empty audio block, and a span taken from that would be zero:
     // nothing would be recorded as captured, and the bounce would replay a
     // capture it believed was empty.
-    const auto numSamples = static_cast<std::int64_t>(block.numSamples);
+    // The block's own length rather than the audio's, and in capture-rate
+    // samples: a block is a duration, and the two rates count it differently.
+    const auto seconds =
+        static_cast<double>(block.numSamples) / (renderRate_ > 0.0 ? renderRate_ : 1.0);
+    const auto numSamples = static_cast<std::int64_t>(std::llround(seconds * captureRate_));
     const auto channels = static_cast<int>(audio.getNumChannels());
-    const auto first = timelineSampleOf(block);
+    const auto first = captureSampleOf(block);
 
     if (mode_ == Mode::Capturing) {
         if (live_ != nullptr) {
@@ -148,8 +196,22 @@ void CapturedInsert::receive(const BlockInfo& block, juce::dsp::AudioBlock<float
         // downstream is silent in the bounce if this is dropped.
         for (const auto metadata : midi) {
             const auto at = first + metadata.samplePosition;
-            if (at >= from && at < to)
-                midi_.addEvent(metadata.data, metadata.numBytes, static_cast<int>(at));
+            if (at < from || at >= to)
+                continue;
+
+            // Bounded rather than merely reserved. ensureSize is a reservation
+            // and addEvent grows past it, which on this thread is an
+            // allocation; and a capture that allocated its way out of the
+            // problem would still be one with events missing from it, reporting
+            // success. So the ceiling is checked and the capture is marked
+            // unusable instead.
+            if (static_cast<int>(midi_.data.size()) + metadata.numBytes + kMidiEventOverhead >
+                kCapturedMidiBytes) {
+                midiOverflowed_ = true;
+                break;
+            }
+
+            midi_.addEvent(metadata.data, metadata.numBytes, static_cast<int>(at));
         }
 
         markCaptured(from, within);
