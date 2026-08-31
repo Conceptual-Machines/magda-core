@@ -4,6 +4,7 @@
 #include <set>
 #include <string>
 
+#include "NullDiffGain.hpp"
 #include "NullDiffNativeLeg.hpp"
 
 /**
@@ -257,4 +258,156 @@ TEST_CASE("An eligible track with nothing to play is still captured", "[nulldiff
     // has, and its being empty is what says nothing was invented to fill it.
     REQUIRE(rendered.midiByTrack.count(2) == 1);
     CHECK(rendered.midiByTrack.at(2).empty());
+}
+
+namespace {
+
+/// A master track with nothing on its chain.
+///
+/// Built by hand rather than defaulted: a Case's master carries the id and the
+/// type the compiler looks for, and one that carried neither would be a
+/// different bug from the one each case below is about.
+TrackInfo bareMaster() {
+    TrackInfo master;
+    master.id = MASTER_TRACK_ID;
+    master.type = TrackType::Master;
+    master.name = "Master";
+    return master;
+}
+
+/// The same, with @p device on its insert chain.
+///
+/// Moved in one at a time. A ChainElement holds a unique_ptr for the rack case,
+/// so a braced list of them would copy and does not compile.
+TrackInfo masterWith(DeviceInfo device) {
+    auto master = bareMaster();
+    master.chain.fxChainElements.emplace_back(std::move(device));
+    return master;
+}
+
+/// An instrument track that plays one note, so a case has something audible to
+/// send through whatever is downstream of it.
+TrackInfo impulseTrack(TrackId trackId, DeviceId deviceId) {
+    TrackInfo track;
+    track.id = trackId;
+    track.type = TrackType::Media;
+    track.name = "Instrument";
+    track.audioOutputDevice = "master";
+    track.chain.fxChainElements.emplace_back(synthDevice(deviceId));
+    return track;
+}
+
+ClipInfo oneNoteClip(ClipId clipId, TrackId trackId) {
+    ClipInfo clip;
+    clip.id = clipId;
+    clip.trackId = trackId;
+    clip.name = "midi";
+    clip.view = ClipView::Arrangement;
+    clip.setMidiContent();
+    clip.setPlacementBeats(0.0, 4.0);
+    clip.deriveTimesFromBeats(120.0);
+
+    MidiNote note;
+    note.noteNumber = 60;
+    note.velocity = 100;
+    note.startBeat = 0.0;
+    note.lengthBeats = 1.0;
+    clip.midiNotes.push_back(note);
+    return clip;
+}
+
+/// One note into one instrument, with @p device on the master chain.
+Case throughMaster(const char* name, DeviceInfo device) {
+    Case value;
+    value.name = name;
+    value.covers = "the master chain's own devices";
+    value.endBeat = 4.0;
+    value.tracks.push_back(impulseTrack(1, 900));
+    value.master = masterWith(std::move(device));
+    value.clips.push_back(oneNoteClip(1, 1));
+    return value;
+}
+
+}  // namespace
+
+TEST_CASE("A device on the master chain is the one that renders", "[nulldiff][native]") {
+    // The master's chain is as much of the project as any track's, and the
+    // compiler emits Device ops for it. A leg that collected only the tracks'
+    // devices left every one of them looked up and not found, which binds the
+    // stand-in: the case still renders, still compares, and is measuring a
+    // project with no master chain in it.
+    //
+    // A gain of zero is what makes that visible. Bound, it silences the render;
+    // as a stand-in it passes the signal through and the case cannot tell the
+    // difference between a master device that worked and one that was never
+    // there.
+    const auto silenced = renderNative(throughMaster("master.silenced", gainDevice(901, 0.0f)));
+    REQUIRE(silenced.failure.empty());
+    CHECK(silenced.diagnostics.empty());
+    CHECK(peakOf(silenced.audio) == 0.0);
+
+    // The control, so the assertion above is about the master device rather
+    // than about a case that renders nothing either way.
+    const auto passed = renderNative(throughMaster("master.passed", gainDevice(901, 1.0f)));
+    REQUIRE(passed.failure.empty());
+    CHECK(peakOf(passed.audio) > 0.0);
+}
+
+TEST_CASE("A plugin the machine does not have is said out loud", "[nulldiff][native]") {
+    // The rule #2175 turns on: a project rendered without its plugin is not
+    // that project, and a case that compared anyway would pass by having tested
+    // less than it claims. The runner makes any diagnostic a case did not
+    // declare unmeasurable, so what this leg owes is to report one.
+    //
+    // Rendered with no scan at all, which is what a machine that has never
+    // scanned looks like and what every CI runner looks like.
+    Case value;
+    value.name = "external.absent";
+    value.covers = "a project naming a plugin this machine cannot resolve";
+    value.endBeat = 4.0;
+
+    TrackInfo track;
+    track.id = 1;
+    track.type = TrackType::Media;
+    track.name = "Hosting";
+    track.audioOutputDevice = "master";
+
+    DeviceInfo plugin;
+    plugin.id = 910;
+    plugin.name = "Something Nobody Has";
+    plugin.deviceType = DeviceType::Effect;
+    plugin.format = PluginFormat::VST3;
+    track.chain.fxChainElements.emplace_back(std::move(plugin));
+
+    value.tracks.push_back(std::move(track));
+    value.master = bareMaster();
+
+    const auto rendered = renderNative(value);
+
+    // It still renders. The stand-in is bound because the executor refuses an
+    // unbound Device op, and a leg that failed outright would report the case
+    // as a broken harness rather than as a project it could not measure.
+    REQUIRE(rendered.failure.empty());
+
+    REQUIRE_FALSE(rendered.diagnostics.empty());
+    const auto reported = rendered.diagnostics.front();
+    CHECK(reported.find("Something Nobody Has") != std::string::npos);
+}
+
+TEST_CASE("A plugin on the master chain is reported too", "[nulldiff][native]") {
+    // The two halves of this change meet here: a master device is looked up at
+    // all, and an external one that cannot be resolved says so. A master bus
+    // limiter is where a real project puts a plugin, and it is the case the old
+    // lookup would have dropped in silence.
+    DeviceInfo plugin;
+    plugin.id = 911;
+    plugin.name = "Master Bus Limiter";
+    plugin.deviceType = DeviceType::Effect;
+    plugin.format = PluginFormat::VST3;
+
+    const auto rendered = renderNative(throughMaster("external.master", std::move(plugin)));
+
+    REQUIRE(rendered.failure.empty());
+    REQUIRE_FALSE(rendered.diagnostics.empty());
+    CHECK(rendered.diagnostics.front().find("Master Bus Limiter") != std::string::npos);
 }

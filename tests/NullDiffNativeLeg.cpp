@@ -18,6 +18,7 @@
 #include "exec/PlanExecutor.hpp"
 #include "exec/PlanValues.hpp"
 #include "io/PrefetchThread.hpp"
+#include "magda/daw/audio/plugin_manager/ExternalPluginState.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "transport/TempoMap.hpp"
@@ -25,6 +26,8 @@
 namespace magda::nulldiff {
 
 using namespace magda::engine;
+
+namespace adapter = ::magda::daw::audio::engine_adapter;
 
 namespace {
 
@@ -186,30 +189,78 @@ class ImpulseSynthDevice final : public EngineDevice {
 /// segment and not across them (#1899), so a map keyed by the number alone
 /// would let a post-FX device stand in for the FX device with the same one.
 /// OpKey::deviceKey() carries the segment for that reason; this has to match.
-void collectDevices(const std::vector<magda::ChainElement>& elements,
-                    std::map<DeviceKey, const magda::DeviceInfo*>& out) {
-    for (const auto& element : elements) {
+void collectDevices(std::vector<magda::ChainElement>& elements,
+                    std::map<DeviceKey, magda::DeviceInfo*>& out) {
+    for (auto& element : elements) {
         if (magda::isDevice(element)) {
-            const auto& device = magda::getDevice(element);
+            auto& device = magda::getDevice(element);
             out[DeviceKey{ChainSegment::Fx, device.id}] = &device;
         } else if (magda::isRack(element)) {
             // A rack's chains sit in the segment the rack itself does.
-            for (const auto& chain : magda::getRack(element).chains)
+            for (auto& chain : magda::getRack(element).chains)
                 collectDevices(chain.elements, out);
         }
     }
 }
 
-std::map<DeviceKey, const magda::DeviceInfo*> devicesIn(const Case& value) {
-    std::map<DeviceKey, const magda::DeviceInfo*> devices;
-    for (const auto& track : value.tracks) {
+/// Every device the plan can emit an op for, by the key the op carries.
+///
+/// The master's chain is walked with the rest. It is as much of the project as
+/// any track's, the compiler emits Device ops for it, and a master left out of
+/// this map is a master limiter that silently becomes a stand-in: the case
+/// still renders, still compares, and is measuring a project without its
+/// master chain in it.
+std::map<DeviceKey, magda::DeviceInfo*> devicesIn(std::vector<TrackInfo>& tracks,
+                                                  TrackInfo& master) {
+    std::map<DeviceKey, magda::DeviceInfo*> devices;
+
+    const auto collectTrack = [&devices](TrackInfo& track) {
         collectDevices(track.chain.fxChainElements, devices);
-        for (const auto& element : track.chain.postFxChainElements)
+        for (auto& element : track.chain.postFxChainElements)
             devices[DeviceKey{ChainSegment::PostFx, element.device.id}] = &element.device;
-        for (const auto& element : track.chain.mixerAnalysisElements)
+        for (auto& element : track.chain.mixerAnalysisElements)
             devices[DeviceKey{ChainSegment::MixerAnalysis, element.device.id}] = &element.device;
-    }
+    };
+
+    for (auto& track : tracks)
+        collectTrack(track);
+
+    collectTrack(master);
     return devices;
+}
+
+/// Whether @p device is a plugin somebody else shipped, which is the one kind
+/// this leg cannot build from a catalog and has to find on the machine.
+bool isExternalDevice(const magda::DeviceInfo& device) {
+    return device.format != magda::PluginFormat::Internal;
+}
+
+/**
+ * @brief Correct every external device against the scan, before the plan reads it.
+ *
+ * The plan is compiled from the model, and for an external plugin two of the
+ * things it compiles from are the project's guesses rather than facts: the
+ * effect/instrument role, which decides whether the device is routed MIDI at
+ * all, and the cached capability flags. A project imported from another host
+ * carries whatever that host said, and #2252's whole point is that resolution
+ * is entitled to correct it.
+ *
+ * So resolution happens here, once, against a copy of the model, and both the
+ * plan and the device creation below read the corrected one. A failure is left
+ * alone rather than reported: the creation below asks the same question and
+ * reports the same answer, and one diagnostic per absent plugin is what a
+ * reader wants.
+ */
+void resolveExternalDevices(std::vector<TrackInfo>& tracks, TrackInfo& master,
+                            const adapter::ExternalPluginServices& services) {
+    for (auto& [key, device] : devicesIn(tracks, master)) {
+        if (!isExternalDevice(*device))
+            continue;
+
+        auto resolved = adapter::resolveEngineExternalPlugin(*device, services);
+        if (resolved)
+            *device = std::move(resolved.planDevice);
+    }
 }
 
 engine::TempoMap tempoMapFor(const Case& value) {
@@ -273,7 +324,7 @@ class BufferSink final : public OfflineRenderSink {
 
 }  // namespace
 
-NativeRender renderNative(const Case& value) {
+NativeRender renderNative(const Case& value, const InstalledPlugins& installed) {
     NativeRender result;
 
     const RenderContext context{value.sampleRate, value.blockSize, value.channels};
@@ -327,9 +378,23 @@ NativeRender renderNative(const Case& value) {
 
     // --- the plan ------------------------------------------------------------
 
+    // The scan an external plugin is resolved against, and the settings one is
+    // instantiated at. Both legs read the same scan; a leg that was handed none
+    // resolves nothing and says so per device below.
+    const adapter::ExternalPluginServices services{
+        .formats = installed.formats, .knownPlugins = installed.knownPlugins, .context = context};
+
+    // The model the plan and the devices are both built from, corrected against
+    // the scan first. Resolution may change the role an external device is
+    // compiled with, and a plan compiled from the project's own guess would
+    // route MIDI to the wrong places before any plugin was created.
+    auto tracks = value.tracks;
+    auto master = value.master;
+    resolveExternalDevices(tracks, master, services);
+
     CompileOptions options;
     options.deviceMeters = false;
-    const auto plan = compileRenderPlan(value.tracks, value.master, options);
+    const auto plan = compileRenderPlan(tracks, master, options);
     for (const auto& diagnostic : plan.diagnostics)
         result.diagnostics.push_back("plan: " + diagnostic);
 
@@ -358,14 +423,14 @@ NativeRender renderNative(const Case& value) {
     std::vector<std::unique_ptr<GainDevice>> gains;
     std::vector<std::unique_ptr<ImpulseSynthDevice>> synths;
 
-    const auto modelDevices = devicesIn(value);
+    const auto modelDevices = devicesIn(tracks, master);
 
     // The tracks the corpus compares MIDI for, which is the same question the
     // incumbent asks when it decides where to put a capture. Asked once, of the
     // model, through the compiler's own predicate, rather than inferred from the
     // graph afterwards.
     std::set<TrackId> midiTracks;
-    for (const auto& track : value.tracks)
+    for (const auto& track : tracks)
         if (chainConsumesMidi(track))
             midiTracks.insert(track.id);
 
@@ -405,7 +470,7 @@ NativeRender renderNative(const Case& value) {
                 // is built by the factory below, which is what makes a corpus
                 // case able to contain one (#2174).
                 const auto found = modelDevices.find(op.key.deviceKey());
-                const auto* model = found == modelDevices.end() ? nullptr : found->second;
+                auto* model = found == modelDevices.end() ? nullptr : found->second;
 
                 if (model != nullptr && isImpulseSynthDevice(*model)) {
                     auto device = std::make_unique<ImpulseSynthDevice>();
@@ -423,14 +488,44 @@ NativeRender renderNative(const Case& value) {
                     break;
                 }
 
-                if (model != nullptr) {
+                if (model != nullptr && isExternalDevice(*model)) {
+                    // A plugin somebody else shipped, loaded from the machine
+                    // rather than built from a catalog. Blocking, because this
+                    // leg is an offline render with nothing to do until the
+                    // plugin is there.
+                    auto external = adapter::createEngineExternalDevice(*model, services,
+                                                                        /*offlineRender=*/true);
+
+                    if (external.device != nullptr) {
+                        // What the restore left behind, written back into the
+                        // model before the parameter table is resolved from it.
+                        // The chunk wins over the project's saved array, and the
+                        // table is what the plan writes onto the device every
+                        // block: a model left holding the stale array would put
+                        // it back on the first one (ExternalPluginState.hpp).
+                        magda::applyRestoredParameters(*model, external.restoredParameters);
+
+                        external.device->prepare(context);
+                        bindings.devices[op.key.deviceKey()] = external.device.get();
+                        hosted.push_back(std::move(external.device));
+                        break;
+                    }
+
+                    // Said out loud, always. A plugin this machine does not
+                    // have is not a quieter project, it is a different one, and
+                    // a case that compared anyway would be passing by having
+                    // tested less than it claims. The runner turns any
+                    // diagnostic the case did not declare into unmeasurable,
+                    // which is the same treatment a proxy that never arrived
+                    // already gets (#2175).
+                    result.diagnostics.push_back("devices: " + external.failure.toStdString());
+                } else if (model != nullptr) {
                     // Built for an offline render, because that is what this
                     // leg is and what the other leg's Renderer tells its own
                     // devices. A device that skips live-only work has to skip
                     // it on both sides or the corpus is comparing two different
                     // decisions about the same block.
-                    if (auto device = ::magda::daw::audio::engine_adapter::createEngineDevice(
-                            *model, /*offlineRender=*/true)) {
+                    if (auto device = adapter::createEngineDevice(*model, /*offlineRender=*/true)) {
                         device->prepare(context);
                         bindings.devices[op.key.deviceKey()] = device.get();
                         hosted.push_back(std::move(device));
@@ -449,7 +544,7 @@ NativeRender renderNative(const Case& value) {
                     // capture there rather than a plugin -- and reporting those
                     // would make every such case unmeasurable over an asymmetry
                     // that does not exist.
-                    if (::magda::daw::audio::engine_adapter::isRegisteredDevice(model->pluginId))
+                    if (adapter::isRegisteredDevice(model->pluginId))
                         result.diagnostics.push_back("devices: no native device for " +
                                                      model->pluginId.toStdString());
                 }
@@ -484,8 +579,8 @@ NativeRender renderNative(const Case& value) {
     // The op values and the parameter table together, out of one call, so the
     // two cannot be published out of step (#2117).
     PlanValues values;
-    for (const auto& diagnostic : resolvePlanValues(plan, value.tracks, value.master, values,
-                                                    value.lanes, value.automationClips))
+    for (const auto& diagnostic :
+         resolvePlanValues(plan, tracks, master, values, value.lanes, value.automationClips))
         result.diagnostics.push_back("values: " + diagnostic);
 
     // What the table could not honour: a link naming something the project does

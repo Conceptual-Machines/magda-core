@@ -202,7 +202,13 @@ ExternalPluginResolution resolveEngineExternalPlugin(const magda::DeviceInfo& de
     ExternalPluginResolution resolved{.planDevice = device};
 
     if (services.formats == nullptr || services.knownPlugins == nullptr) {
-        resolved.failure = "no plugin formats or scan results were given to the engine";
+        // Named, like every other failure here. A caller collecting these has a
+        // project's worth of devices and needs to know which one it is holding,
+        // and "no plugin formats" on its own reads as one global complaint
+        // rather than one per plugin the render went without.
+        resolved.failure = "external plugin \"" + device.name +
+                           "\" cannot be resolved: no plugin formats or scan results were given "
+                           "to the engine";
         return resolved;
     }
 

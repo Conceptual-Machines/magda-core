@@ -858,6 +858,10 @@ TEST_CASE("A host that gave the engine no formats is told so", "[engine][externa
 
     CHECK(result.device == nullptr);
     CHECK(result.failure.contains("no plugin formats"));
+
+    // And which plugin went without, because a caller collecting these has a
+    // project's worth of them.
+    CHECK(result.failure.contains(externalDevice().name));
 }
 
 TEST_CASE("Resolution returns planning facts without rewriting the saved assignment",

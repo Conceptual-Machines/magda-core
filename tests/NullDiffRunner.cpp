@@ -11,9 +11,32 @@
 #include "AssertionWatch.hpp"
 #include "NullDiffNativeLeg.hpp"
 #include "NullDiffTeLeg.hpp"
+#include "SharedTestEngine.hpp"
 
 namespace magda::nulldiff {
 namespace {
+
+/**
+ * @brief The one scan both legs resolve a project's plugins against.
+ *
+ * The incumbent leg resolves against the engine's own KnownPluginList, because
+ * that is what the app does. The native leg is handed the same one rather than
+ * a list of its own: two legs that each found their own copy of a plugin would
+ * be rendering two projects and calling the difference an engine bug.
+ *
+ * It is whatever this machine has scanned, which is the point. A developer's
+ * machine has the plugins the corpus projects were authored with and measures
+ * them; a runner that has none reports every case that names one as
+ * unmeasurable, which is the honest answer rather than a green one (#2175).
+ */
+InstalledPlugins installedPlugins() {
+    auto* engine = magda::test::getSharedEngine().getEngine();
+    if (engine == nullptr)
+        return {};
+
+    auto& plugins = engine->getPluginManager();
+    return {.formats = &plugins.pluginFormatManager, .knownPlugins = &plugins.knownPluginList};
+}
 
 /// The largest magnitude anywhere in @p buffer, which is all the silence guard
 /// below needs: it asks whether a render happened, not how loud it was.
@@ -200,7 +223,7 @@ CaseReport runCase(const Case& value, const RunnerLog& log) {
     report.tier = value.tier;
     report.environment = value.environment();
 
-    const auto native = renderNative(value);
+    const auto native = renderNative(value, installedPlugins());
     const auto incumbent = renderIncumbent(value);
 
     // A leg that could not render is never reported as a residual.
