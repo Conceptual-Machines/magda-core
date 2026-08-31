@@ -277,9 +277,20 @@ void applyCachedCapabilitiesToDevice(DeviceInfo& device, const juce::String& plu
     if (!snapshot)
         return;
 
+    // These two are not written the same way, and the difference is the one
+    // PluginManagerSync::updateDeviceCapabilityFlags makes from the same
+    // snapshot. Two paths writing one model field by different rules would
+    // flip it on alternate loads.
+    //
+    // canReceiveMidi promotes only. A project's saved true can be true for
+    // reasons one scan of the installed plugin cannot see -- a MIDI-typed
+    // device, a plugin whose MIDI input the incumbent engine takes even though
+    // its AudioProcessor does not advertise it -- and PlanCompiler gates MIDI
+    // delivery on it, so assigning a scan's false over the model is a device
+    // that silently stops receiving MIDI.
     device.producesMidi = snapshot->hasMidiOutput;
-    if (!device.isInstrument)
-        device.canReceiveMidi = snapshot->hasMidiInput;
+    if (!device.isInstrument && snapshot->hasMidiInput)
+        device.canReceiveMidi = true;
 }
 
 }  // namespace magda
