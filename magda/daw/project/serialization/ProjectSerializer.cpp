@@ -177,7 +177,7 @@ void allocateStagedPadDeviceIds(std::vector<TrackInfo>& tracks, TrackInfo* maste
 
 /// Read the credits block out of a serialized "project" object.
 ///
-/// Shared because loadProject() and deserializeProject() parse the same JSON in
+/// Shared because loadAndStage() and deserializeProject() parse the same JSON in
 /// two separate passes, and a metadata field that only one of them knew about
 /// would go missing down whichever path the caller happened to take.
 ProjectMetadata readProjectMetadata(juce::DynamicObject& projectObj) {

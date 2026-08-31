@@ -67,10 +67,14 @@ struct ProjectMetadataField {
  * Every metadata field, in the order MetaData.xsd declares them.
  *
  * The order is load-bearing: metaData is an xs:sequence, so an export that
- * writes the elements in any other order fails schema validation. Keep this
- * list in schema order and the four sites that map metadata - native save,
- * native load, DAWproject write, DAWproject read - all iterate it instead of
- * spelling out thirteen fields apiece and drifting apart.
+ * writes the elements in any other order fails schema validation, and the
+ * Project Settings dialog lays the fields out in the order it reads them here.
+ *
+ * Keep the list in schema order and everything that touches metadata iterates
+ * it rather than spelling out thirteen fields apiece and drifting apart: the
+ * four mapping sites (native save, native load, DAWproject write, DAWproject
+ * read), the two dialogs that build a row per field, and the seeding in
+ * ProjectManager::newProject.
  */
 inline constexpr std::array<ProjectMetadataField, 13> kProjectMetadataFields{{
     {"title", "Title", &ProjectMetadata::title, false},

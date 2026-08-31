@@ -196,7 +196,7 @@ class GeneralPage : public juce::Component {
         setupSectionHeader(*this, timelineHeader, tr("preferences.section.timeline"));
         // How much of the timeline is on screen, not how long it is. The default
         // length a new project gets sits with the other new-project defaults on
-        // the Rendering tab.
+        // the Defaults tab.
         setupTextSlider(*this, viewDurationSlider, viewDurationLabel,
                         tr("preferences.slider.default_view"), 4.0, 128.0, 1.0,
                         magda::TechnicalTextToken::Bars, 0, true);
@@ -1358,11 +1358,15 @@ class AppearancePage : public juce::Component {
 // ---- Defaults tab (what a new project starts as) --------------------------
 //
 // Nothing on this tab touches the project that is open. A project's own length,
-// sample rate and bit depths live in its ProjectInfo and are edited in File >
-// Project Settings; these are only the values a newly created project is seeded
-// with. That is why the tab is called Defaults rather than Project - a Project
-// tab in Preferences reads like it edits the one you have open, which is what
-// the Project Settings dialog is for.
+// sample rate, bit depths and credits live in its ProjectInfo and are edited in
+// File > Project Settings; these are only the values a newly created project is
+// seeded with. That is why the tab is called Defaults rather than Project - a
+// Project tab in Preferences reads like it edits the one you have open, which is
+// what the Project Settings dialog is for.
+//
+// Two sections: the format values every project needs, and the credits that
+// describe the person making it. Not every metadata field appears - see
+// ProjectMetadataField::seededFromDefaults for which ones do and why.
 
 class DefaultsPage : public juce::Component {
   public:
