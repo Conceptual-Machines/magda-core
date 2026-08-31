@@ -1858,9 +1858,12 @@ double PianoRollGridComponent::snapBeatToGridFloor(double beat) const {
     if (!snapEnabled_ || gridResolutionBeats_ <= 0.0) {
         return beat;
     }
-    // Epsilon absorbs float error when the click maps to a hair below a cell
-    // boundary, so a click on the line still lands on the cell it starts.
-    return std::floor(beat / gridResolutionBeats_ + 1e-6) * gridResolutionBeats_;
+    // Grid lines render at integer pixels (beatToPixel rounds), so a click on
+    // a rendered boundary can map back up to half a pixel below the true beat.
+    // Absorb that quantization so a click on the line lands on the cell the
+    // line starts.
+    const double halfPixelBeats = pixelsPerBeat_ > 0.0 ? 0.5 / pixelsPerBeat_ : 0.0;
+    return std::floor((beat + halfPixelBeats) / gridResolutionBeats_ + 1e-6) * gridResolutionBeats_;
 }
 
 bool PianoRollGridComponent::isNearGridLine(int mouseX) const {

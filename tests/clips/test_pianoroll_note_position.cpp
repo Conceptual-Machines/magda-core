@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 
 /**
  * Tests for piano roll note position calculation in absolute and relative modes.
@@ -74,5 +75,68 @@ TEST_CASE("Piano roll note position - relative mode", "[pianoroll][display]") {
         double pos1 = computeRelativeDisplayBeat(3.0);
         double pos2 = computeRelativeDisplayBeat(3.0);
         REQUIRE(pos1 == pos2);
+    }
+}
+
+namespace {
+
+/// Mirrors PianoRollGridComponent::beatToPixel (rounds to integer pixels).
+int beatToPixel(double beat, double pixelsPerBeat) {
+    return static_cast<int>(std::round(beat * pixelsPerBeat));
+}
+
+/// Mirrors PianoRollGridComponent::pixelToBeat.
+double pixelToBeat(int x, double pixelsPerBeat) {
+    return x / pixelsPerBeat;
+}
+
+/// Mirrors PianoRollGridComponent::snapBeatToGridFloor: floors to the
+/// containing cell, absorbing the half-pixel error introduced by rendering
+/// grid lines at rounded integer pixels.
+double snapBeatToGridFloor(double beat, double gridResolutionBeats, double pixelsPerBeat) {
+    const double halfPixelBeats = pixelsPerBeat > 0.0 ? 0.5 / pixelsPerBeat : 0.0;
+    return std::floor((beat + halfPixelBeats) / gridResolutionBeats + 1e-6) * gridResolutionBeats;
+}
+
+}  // namespace
+
+TEST_CASE("Pencil insert floors to containing cell", "[pianoroll][snap]") {
+    SECTION("Click inside a cell floors to the cell start") {
+        // 100 px/beat, 0.25 grid: pixel 30 is beat 0.3, inside cell [0.25, 0.5)
+        double beat = pixelToBeat(30, 100.0);
+        REQUIRE(snapBeatToGridFloor(beat, 0.25, 100.0) == Catch::Approx(0.25));
+    }
+
+    SECTION("Click on a rendered grid line lands on the cell it starts") {
+        // At 93 px/beat the 0.25 line renders at round(23.25) = pixel 23,
+        // which maps back to 23/93 = 0.2473 — below the true boundary by more
+        // than any fixed float-error epsilon. The floor snap must absorb the
+        // pixel quantization instead of inserting into the previous cell.
+        const double ppb = 93.0;
+        const double grid = 0.25;
+        const int lineX = beatToPixel(0.25, ppb);
+        REQUIRE(lineX == 23);
+        double beat = pixelToBeat(lineX, ppb);
+        REQUIRE(snapBeatToGridFloor(beat, grid, ppb) == Catch::Approx(0.25));
+    }
+
+    SECTION("Rendered grid lines map to their own cell across zooms and grids") {
+        for (double ppb : {37.0, 61.0, 93.0, 100.0, 131.0, 250.0}) {
+            for (double grid : {0.125, 0.25, 0.5, 1.0}) {
+                for (int cell = 1; cell <= 16; ++cell) {
+                    const double boundary = cell * grid;
+                    const int lineX = beatToPixel(boundary, ppb);
+                    const double beat = pixelToBeat(lineX, ppb);
+                    REQUIRE(snapBeatToGridFloor(beat, grid, ppb) ==
+                            Catch::Approx(boundary).margin(1e-9));
+                }
+            }
+        }
+    }
+
+    SECTION("Click one pixel left of a line stays in the previous cell") {
+        // Pixel 22 at 93 px/beat is 0.2366 — visually inside cell [0, 0.25)
+        double beat = pixelToBeat(22, 93.0);
+        REQUIRE(snapBeatToGridFloor(beat, 0.25, 93.0) == Catch::Approx(0.0));
     }
 }
