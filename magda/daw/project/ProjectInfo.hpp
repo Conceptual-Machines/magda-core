@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -18,10 +19,91 @@ struct ProjectTimelineMarker {
 };
 
 /**
- * @brief Project metadata and settings
+ * @brief Author-facing project metadata (title, credits, rights).
+ *
+ * The field set is DAWproject's MetaData element verbatim - see
+ * third_party/dawproject/MetaData.xsd - so the whole block maps one to one onto
+ * metadata.xml in both directions with nothing to reconcile. Every field is an
+ * optional string; empty means "not set" and is not written to either format.
+ *
+ * `year` is a string rather than an int because the schema says xs:string, and
+ * because the things people actually type there ("1998", "2003-2005", "MMXIV")
+ * do not all survive a parse to int.
+ */
+struct ProjectMetadata {
+    juce::String title;
+    juce::String artist;
+    juce::String album;
+    juce::String originalArtist;
+    juce::String composer;
+    juce::String songwriter;
+    juce::String producer;
+    juce::String arranger;
+    juce::String year;
+    juce::String genre;
+    juce::String copyright;
+    juce::String website;
+    juce::String comment;
+
+    bool isEmpty() const;
+};
+
+/// One metadata field, the two names it goes by outside the struct, and whether
+/// a new project can be seeded with a stored value for it.
+struct ProjectMetadataField {
+    const char* key;      ///< .mgd JSON property, and the StringTable leaf under
+                          ///< "project_settings.metadata."
+    const char* element;  ///< DAWproject <MetaData> child element name
+    juce::String ProjectMetadata::*member;
+
+    /// True for the fields that describe the person rather than the work, which
+    /// are the same in every project somebody makes and are worth keeping a
+    /// per-install default for. False for title, album, original artist, year
+    /// and comment: a stored default for those would be wrong every time.
+    bool seededFromDefaults;
+};
+
+/**
+ * Every metadata field, in the order MetaData.xsd declares them.
+ *
+ * The order is load-bearing: metaData is an xs:sequence, so an export that
+ * writes the elements in any other order fails schema validation, and the
+ * Project Settings dialog lays the fields out in the order it reads them here.
+ *
+ * Keep the list in schema order and everything that touches metadata iterates
+ * it rather than spelling out thirteen fields apiece and drifting apart: the
+ * four mapping sites (native save, native load, DAWproject write, DAWproject
+ * read), the two dialogs that build a row per field, and the seeding in
+ * ProjectManager::newProject.
+ */
+inline constexpr std::array<ProjectMetadataField, 13> kProjectMetadataFields{{
+    {"title", "Title", &ProjectMetadata::title, false},
+    {"artist", "Artist", &ProjectMetadata::artist, true},
+    {"album", "Album", &ProjectMetadata::album, false},
+    {"originalArtist", "OriginalArtist", &ProjectMetadata::originalArtist, false},
+    {"composer", "Composer", &ProjectMetadata::composer, true},
+    {"songwriter", "Songwriter", &ProjectMetadata::songwriter, true},
+    {"producer", "Producer", &ProjectMetadata::producer, true},
+    {"arranger", "Arranger", &ProjectMetadata::arranger, true},
+    {"year", "Year", &ProjectMetadata::year, false},
+    {"genre", "Genre", &ProjectMetadata::genre, true},
+    {"copyright", "Copyright", &ProjectMetadata::copyright, true},
+    {"website", "Website", &ProjectMetadata::website, true},
+    {"comment", "Comment", &ProjectMetadata::comment, false},
+}};
+
+inline bool ProjectMetadata::isEmpty() const {
+    for (const auto& field : kProjectMetadataFields)
+        if ((this->*field.member).isNotEmpty())
+            return false;
+    return true;
+}
+
+/**
+ * @brief Project-level settings and state
  *
  * Contains all project-level information including tempo, time signature,
- * loop settings, and file path.
+ * loop settings, file path, and the ProjectMetadata credits block.
  */
 struct ProjectInfo {
     juce::String name;
@@ -44,6 +126,12 @@ struct ProjectInfo {
     // Key signature
     int keyRoot = -1;    // 0=C, 1=C#, ..., 11=B; -1=none
     int keyQuality = 0;  // 0=major, 1=minor
+
+    // Title and credits. `title` is distinct from `name`, which is the project's
+    // own name and follows the .mgd file, so a song called "Blue" can live in
+    // blue_v7.mgd - but an empty title means "inherit", and the name is what
+    // gets shown and written. Nobody has to retype a name they already gave.
+    ProjectMetadata metadata;
 
     // Loop settings (beats are authoritative, seconds derived from tempo)
     bool loopEnabled = false;

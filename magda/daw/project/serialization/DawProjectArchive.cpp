@@ -36,9 +36,23 @@ bool readZipEntry(juce::ZipFile& zip, const juce::String& entryName, juce::Strin
 juce::String DawProjectArchive::toMetadataXml(const ProjectDocument& document) {
     juce::XmlElement metadata("MetaData");
 
-    if (document.info.name.isNotEmpty()) {
-        auto* title = metadata.createNewChildElement("Title");
-        title->addTextElement(document.info.name);
+    // kProjectMetadataFields is in MetaData.xsd order, and metaData is an
+    // xs:sequence, so writing the elements as they come round is what keeps the
+    // result schema-valid. Empty fields are skipped; every element is optional.
+    for (const auto& field : kProjectMetadataFields) {
+        auto value = document.info.metadata.*field.member;
+
+        // A project with no song title still has a name, and every DAW that
+        // reads this expects to find something in <Title>. Falling back keeps
+        // that true, and keeps archives written before ProjectMetadata existed
+        // looking the same as the ones written after it.
+        if (field.member == &ProjectMetadata::title && value.isEmpty())
+            value = document.info.name;
+
+        if (value.isEmpty())
+            continue;
+
+        metadata.createNewChildElement(field.element)->addTextElement(value);
     }
 
     return metadata.toString();
@@ -213,11 +227,15 @@ bool DawProjectArchive::readFromFile(const juce::File& file, ProjectDocument& ou
 
     if (metadataXml.isNotEmpty()) {
         if (auto metadata = juce::parseXML(metadataXml)) {
-            if (auto* title = metadata->getChildByName("Title")) {
-                const auto name = title->getAllSubText().trim();
-                if (name.isNotEmpty())
-                    outDocument.info.name = name;
-            }
+            for (const auto& field : kProjectMetadataFields)
+                if (auto* element = metadata->getChildByName(field.element))
+                    outDocument.info.metadata.*field.member = element->getAllSubText().trim();
+
+            // The mirror of the export fallback. project.xml carries no name of
+            // its own, so fromProjectXml() has already left a placeholder here;
+            // a <Title> is the only real name the archive has, and it wins.
+            if (outDocument.info.metadata.title.isNotEmpty())
+                outDocument.info.name = outDocument.info.metadata.title;
         }
     }
 

@@ -9,7 +9,6 @@ The dialog is organised into sections; each section is described below.
 - **Zoom In Sensitivity** — Controls how fast the timeline zooms in
 - **Zoom Out Sensitivity** — Controls how fast the timeline zooms out
 - **Shift+Zoom Sensitivity** — Controls zoom speed when holding Shift
-- **Default Length** — Default timeline length for new projects (in bars)
 - **Default View** — Default visible range when opening a project (in bars)
 - **Auto-Save** — Enable or disable automatic saving, and set the interval
 
@@ -116,10 +115,22 @@ The location and maintenance of the sample-indexing database live here too. See 
 
 ## Rendering
 
-- **Sample rate** — Default sample rate for rendered files
-- **Export bit depth** — Default bit depth for audio exports
-- **Bounce bit depth** — Default bit depth for bounced and frozen audio
-- Audio export format is chosen in the export dialog: WAV 16-bit, WAV 24-bit, WAV 32-bit float, or FLAC
+Where rendered files go and what they are called. Audio export format is chosen in the export dialog: WAV 16-bit, WAV 24-bit, WAV 32-bit float, or FLAC.
+
+## Defaults
+
+What a **new** project starts as. Nothing here touches the project you have open: a project's own length, sample rate and bit depths belong to it and are edited in [Project Settings](../arrangement-view.md#project-settings).
+
+- **Default Total Length** — Timeline length a new project starts with (in bars)
+- **Sample Rate** — Working and render sample rate for new projects
+- **Render Bit Depth** — Bit depth for audio exports
+- **Bounce Bit Depth** — Bit depth for bounced and frozen audio
+
+### Credits
+
+The credits that describe *you* rather than the song — Artist, Composer, Songwriter, Producer, Arranger, Genre, Copyright and Website — are copied into every new project, so you fill them in once instead of in every song. Edit them per project in [Project Settings → Metadata](../arrangement-view.md#metadata).
+
+Title, Album, Original Artist, Year and Comment have no default: they belong to the work, and a stored value would be wrong in every project after the first.
 
 ## AI
 

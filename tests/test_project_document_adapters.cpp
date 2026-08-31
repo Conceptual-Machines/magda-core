@@ -430,6 +430,93 @@ TEST_CASE("DawProjectArchive writes validates and reads dawproject archives",
     file.deleteFile();
 }
 
+TEST_CASE("DawProjectArchive roundtrips the whole MetaData block",
+          "[project][serialization][dawproject][archive][metadata]") {
+    ProjectDocument document;
+    document.info.name = "Credited Project";
+    for (const auto& field : kProjectMetadataFields)
+        document.info.metadata.*field.member = juce::String("value-") + field.key;
+
+    auto file = createTempDawProjectFile();
+    juce::String error;
+    REQUIRE(DawProjectArchive::writeToFile(file, document, error));
+
+    juce::ZipFile zip(file);
+    const auto metadataXml = readZipTextEntry(zip, "metadata.xml");
+
+    // metaData is an xs:sequence, so validating a fully populated block is also
+    // what asserts the elements come out in the order MetaData.xsd declares.
+    INFO(metadataXml);
+    REQUIRE(DawProjectValidator::validateMetadataXml(metadataXml, error));
+
+    ProjectDocument imported;
+    REQUIRE(DawProjectArchive::readFromFile(file, imported, error));
+    for (const auto& field : kProjectMetadataFields) {
+        INFO(field.key);
+        REQUIRE(imported.info.metadata.*field.member == juce::String("value-") + field.key);
+    }
+
+    // <Title> is the only name a DAWproject archive carries, so it names the
+    // imported project as well: "Credited Project" has nowhere to go.
+    REQUIRE(imported.info.name == "value-title");
+
+    file.deleteFile();
+}
+
+TEST_CASE("An uncredited project exports a Title and nothing else",
+          "[project][serialization][dawproject][archive][metadata]") {
+    ProjectDocument document;
+    document.info.name = "Uncredited";
+
+    auto file = createTempDawProjectFile();
+    juce::String error;
+    REQUIRE(DawProjectArchive::writeToFile(file, document, error));
+
+    juce::ZipFile zip(file);
+    const auto metadataXml = readZipTextEntry(zip, "metadata.xml");
+    REQUIRE(DawProjectValidator::validateMetadataXml(metadataXml, error));
+
+    auto parsed = juce::parseXML(metadataXml);
+    REQUIRE(parsed != nullptr);
+    REQUIRE(parsed->getNumChildElements() == 1);
+    REQUIRE(parsed->getFirstChildElement()->hasTagName("Title"));
+    REQUIRE(parsed->getFirstChildElement()->getAllSubText() == "Uncredited");
+
+    ProjectDocument imported;
+    REQUIRE(DawProjectArchive::readFromFile(file, imported, error));
+    REQUIRE(imported.info.name == "Uncredited");
+
+    // The project name filled <Title> on the way out, so it comes back as the
+    // title. Nothing else was invented on either leg.
+    REQUIRE(imported.info.metadata.title == "Uncredited");
+    auto exceptTitle = imported.info.metadata;
+    exceptTitle.title = {};
+    REQUIRE(exceptTitle.isEmpty());
+
+    file.deleteFile();
+}
+
+TEST_CASE("A song title outranks the project name in metadata.xml",
+          "[project][serialization][dawproject][archive][metadata]") {
+    ProjectDocument document;
+    document.info.name = "blue_v7";
+    document.info.metadata.title = "Blue";
+
+    auto file = createTempDawProjectFile();
+    juce::String error;
+    REQUIRE(DawProjectArchive::writeToFile(file, document, error));
+
+    juce::ZipFile zip(file);
+    REQUIRE(readZipTextEntry(zip, "metadata.xml").contains("<Title>Blue</Title>"));
+
+    ProjectDocument imported;
+    REQUIRE(DawProjectArchive::readFromFile(file, imported, error));
+    REQUIRE(imported.info.metadata.title == "Blue");
+    REQUIRE(imported.info.name == "Blue");
+
+    file.deleteFile();
+}
+
 TEST_CASE("ProjectSerializer exports and stages dawproject archives",
           "[project][serialization][dawproject][serializer]") {
     clearProjectManagers();

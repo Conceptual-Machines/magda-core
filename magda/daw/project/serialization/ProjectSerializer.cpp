@@ -175,6 +175,23 @@ void allocateStagedPadDeviceIds(std::vector<TrackInfo>& tracks, TrackInfo* maste
         device->id = next++;
 }
 
+/// Read the credits block out of a serialized "project" object.
+///
+/// Shared because loadAndStage() and deserializeProject() parse the same JSON in
+/// two separate passes, and a metadata field that only one of them knew about
+/// would go missing down whichever path the caller happened to take.
+ProjectMetadata readProjectMetadata(juce::DynamicObject& projectObj) {
+    ProjectMetadata metadata;
+
+    // Absent in every project saved before the block existed, and absent again
+    // in any project nobody credited, so no object simply means no credits.
+    if (auto* metadataObj = projectObj.getProperty("metadata").getDynamicObject())
+        for (const auto& field : kProjectMetadataFields)
+            metadata.*field.member = metadataObj->getProperty(field.key).toString();
+
+    return metadata;
+}
+
 }  // namespace
 
 bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& outData) {
@@ -262,6 +279,8 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
             outData.info.keyRoot = projectObj->getProperty("keyRoot");
         if (projectObj->hasProperty("keyQuality"))
             outData.info.keyQuality = projectObj->getProperty("keyQuality");
+
+        outData.info.metadata = readProjectMetadata(*projectObj);
 
         // Named timeline markers
         outData.info.markers.clear();
@@ -459,6 +478,18 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     projectObj->setProperty("keyRoot", info.keyRoot);
     projectObj->setProperty("keyQuality", info.keyQuality);
 
+    // Title and credits. Only the fields that were filled in are written, so a
+    // project nobody has credited carries no "metadata" object at all.
+    if (!info.metadata.isEmpty()) {
+        auto* metadataObj = new juce::DynamicObject();
+        for (const auto& field : kProjectMetadataFields) {
+            const auto& value = info.metadata.*field.member;
+            if (value.isNotEmpty())
+                metadataObj->setProperty(field.key, value);
+        }
+        projectObj->setProperty("metadata", juce::var(metadataObj));
+    }
+
     // Named timeline markers
     if (!info.markers.empty()) {
         juce::Array<juce::var> markersArray;
@@ -588,6 +619,8 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
         outInfo.keyRoot = projectObj->getProperty("keyRoot");
     if (projectObj->hasProperty("keyQuality"))
         outInfo.keyQuality = projectObj->getProperty("keyQuality");
+
+    outInfo.metadata = readProjectMetadata(*projectObj);
 
     // Named timeline markers
     outInfo.markers.clear();

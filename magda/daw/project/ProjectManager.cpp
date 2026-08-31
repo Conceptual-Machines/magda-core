@@ -299,6 +299,18 @@ bool ProjectManager::newProject() {
         currentProject_.sampleRate = config.getRenderSampleRate();
         currentProject_.renderBitDepth = config.getRenderBitDepth();
         currentProject_.bounceBitDepth = config.getBounceBitDepth();
+
+        // Credits describing the person rather than the work. Only the fields
+        // flagged for it are seeded - a stored default for the title or the year
+        // would be wrong in every project after the first.
+        const auto& metadataDefaults = config.getProjectMetadataDefaults();
+        for (const auto& field : kProjectMetadataFields) {
+            if (!field.seededFromDefaults)
+                continue;
+            const auto entry = metadataDefaults.find(field.key);
+            if (entry != metadataDefaults.end())
+                currentProject_.metadata.*field.member = juce::String(entry->second);
+        }
     }
     currentFile_ = juce::File();
     isProjectOpen_ = true;

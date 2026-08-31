@@ -12,6 +12,7 @@
 #include "../../media_db/MediaDbContext.hpp"
 #include "../../media_db/MediaDbQuery.hpp"
 #include "../../media_db/PresetDbIndexer.hpp"
+#include "../../project/ProjectInfo.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "../components/common/TextSlider.hpp"
 #include "../state/TimelineController.hpp"
@@ -21,6 +22,7 @@
 #include "../themes/FontManager.hpp"
 #include "../themes/UserTheme.hpp"
 #include "../windows/MainWindow.hpp"
+#include "ProjectFormatChoices.hpp"
 #include "core/AppPaths.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
@@ -192,7 +194,9 @@ class GeneralPage : public juce::Component {
                         1.0, 50.0, 0.5, 1);
 
         setupSectionHeader(*this, timelineHeader, tr("preferences.section.timeline"));
-        // Total timeline length is per-project (File > Project Settings).
+        // How much of the timeline is on screen, not how long it is. The default
+        // length a new project gets sits with the other new-project defaults on
+        // the Defaults tab.
         setupTextSlider(*this, viewDurationSlider, viewDurationLabel,
                         tr("preferences.slider.default_view"), 4.0, 128.0, 1.0,
                         magda::TechnicalTextToken::Bars, 0, true);
@@ -261,8 +265,8 @@ class GeneralPage : public juce::Component {
         // (see languageCombo.onChange). UI Scale, UI Font, and Font Size moved to
         // the Appearance tab.
         setupTextSlider(*this, localizedFontScaleSlider, localizedFontScaleLabel,
-                        trOr("preferences.localized_font_scale.label", "Localized Font Size"),
-                        100.0, 300.0, 5.0, magda::TechnicalTextToken::Percent);
+                        tr("preferences.localized_font_scale.label"), 100.0, 300.0, 5.0,
+                        magda::TechnicalTextToken::Percent);
         localizedFontScaleSlider.onValueChanged = [this](double) {
             localizedFontScaleExplicit_ = true;
         };
@@ -1155,8 +1159,7 @@ class AppearancePage : public juce::Component {
             (baseId == ThemeManager::kLightThemeId) ? "Light Theme.json" : "Dark Theme.json";
 
         fileChooser_ = std::make_unique<juce::FileChooser>(
-            trOr("preferences.dialog.save_theme_template", "Save theme template"),
-            dir.getChildFile(suggested), "*.json");
+            tr("preferences.dialog.save_theme_template"), dir.getChildFile(suggested), "*.json");
         fileChooser_->launchAsync(
             juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
                 juce::FileBrowserComponent::warnAboutOverwriting,
@@ -1177,8 +1180,8 @@ class AppearancePage : public juce::Component {
         auto dir = paths::themesDir();
         dir.createDirectory();
 
-        fileChooser_ = std::make_unique<juce::FileChooser>(
-            trOr("preferences.dialog.load_theme", "Load a theme"), dir, "*.json");
+        fileChooser_ =
+            std::make_unique<juce::FileChooser>(tr("preferences.dialog.load_theme"), dir, "*.json");
         fileChooser_->launchAsync(
             juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
             [this](const juce::FileChooser& fc) {
@@ -1352,6 +1355,165 @@ class AppearancePage : public juce::Component {
     juce::ComboBox clipColourModeCombo;
 };
 
+// ---- Defaults tab (what a new project starts as) --------------------------
+//
+// Nothing on this tab touches the project that is open. A project's own length,
+// sample rate, bit depths and credits live in its ProjectInfo and are edited in
+// File > Project Settings; these are only the values a newly created project is
+// seeded with. That is why the tab is called Defaults rather than Project - a
+// Project tab in Preferences reads like it edits the one you have open, which is
+// what the Project Settings dialog is for.
+//
+// Two sections: the format values every project needs, and the credits that
+// describe the person making it. Not every metadata field appears - see
+// ProjectMetadataField::seededFromDefaults for which ones do and why.
+
+class DefaultsPage : public juce::Component {
+  public:
+    DefaultsPage() {
+        setupSectionHeader(*this, formatHeader, tr("preferences.section.new_project_defaults"));
+        setupSectionHeader(*this, creditsHeader, tr("preferences.section.credit_defaults"));
+
+        // Labelled from the Project Settings keys rather than a second set of
+        // preferences.* ones: these are the same thirteen field names, and two
+        // copies of "Original artist" that have to stay identical is a worse
+        // problem than one key serving two dialogs.
+        for (const auto& field : kProjectMetadataFields) {
+            if (!field.seededFromDefaults)
+                continue;
+
+            auto row = std::make_unique<CreditRow>();
+            row->field = &field;
+            setupComboLabel(row->label, tr("project_settings.metadata." + juce::String(field.key)));
+
+            row->editor.setFont(FontManager::getInstance().getUIFont(12.0f));
+            row->editor.setColour(juce::TextEditor::backgroundColourId,
+                                  DarkTheme::getColour(DarkTheme::SURFACE));
+            row->editor.setColour(juce::TextEditor::textColourId,
+                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            row->editor.setColour(juce::TextEditor::outlineColourId,
+                                  DarkTheme::getColour(DarkTheme::BORDER));
+            addAndMakeVisible(row->editor);
+            creditRows_.push_back(std::move(row));
+        }
+
+        setupTextSlider(*this, lengthSlider, lengthLabel,
+                        tr("preferences.slider.default_total_length"), 16.0, 4096.0, 16.0,
+                        magda::TechnicalTextToken::Bars, 0, true);
+
+        setupComboLabel(sampleRateLabel, tr("preferences.label.default_sample_rate"));
+        setupComboLabel(renderBitLabel, tr("preferences.label.default_render_bit_depth"));
+        setupComboLabel(bounceBitLabel, tr("preferences.label.default_bounce_bit_depth"));
+
+        magda::daw::ui::fillSampleRateCombo(sampleRateCombo);
+        magda::daw::ui::fillBitDepthCombo(renderBitCombo);
+        magda::daw::ui::fillBitDepthCombo(bounceBitCombo);
+        for (auto* combo : {&sampleRateCombo, &renderBitCombo, &bounceBitCombo}) {
+            styleCombo(*combo);
+            addAndMakeVisible(*combo);
+        }
+    }
+
+    int getPreferredHeight(int) const {
+        constexpr int padding = 16;
+        constexpr int rowH = 32;
+        constexpr int headerH = 28;
+        constexpr int secGap = 12;
+
+        const int credits = headerH + 4 + (rowH * static_cast<int>(creditRows_.size())) +
+                            (4 * juce::jmax(0, static_cast<int>(creditRows_.size()) - 1));
+
+        return padding + headerH + 4 + rowH + 4 + rowH + 4 + rowH + 4 + rowH  // Format
+               + secGap + credits                                             // Credits
+               + padding;
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(16);
+        const int rowH = 32;
+        const int sliderH = 24;
+        const int headerH = 28;
+        const int secGap = 12;
+        const int labelW = 140;
+
+        formatHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, lengthLabel, lengthSlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutComboRow(bounds, sampleRateLabel, sampleRateCombo, rowH);
+        bounds.removeFromTop(4);
+        layoutComboRow(bounds, renderBitLabel, renderBitCombo, rowH);
+        bounds.removeFromTop(4);
+        layoutComboRow(bounds, bounceBitLabel, bounceBitCombo, rowH);
+        bounds.removeFromTop(secGap);
+
+        creditsHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        for (size_t i = 0; i < creditRows_.size(); ++i) {
+            auto row = bounds.removeFromTop(rowH);
+            creditRows_[i]->label.setBounds(row.removeFromLeft(labelW));
+            creditRows_[i]->editor.setBounds(row.reduced(0, 4));
+            if (i + 1 < creditRows_.size())
+                bounds.removeFromTop(4);
+        }
+    }
+
+    void loadSettings(Config& config) {
+        lengthSlider.setValue(config.getDefaultTimelineLengthBars(), juce::dontSendNotification);
+        sampleRateCombo.setSelectedId(
+            magda::daw::ui::sampleRateItemId(config.getRenderSampleRate()),
+            juce::dontSendNotification);
+        renderBitCombo.setSelectedId(magda::daw::ui::bitDepthItemId(config.getRenderBitDepth()),
+                                     juce::dontSendNotification);
+        bounceBitCombo.setSelectedId(magda::daw::ui::bitDepthItemId(config.getBounceBitDepth()),
+                                     juce::dontSendNotification);
+
+        const auto& credits = config.getProjectMetadataDefaults();
+        for (auto& row : creditRows_) {
+            const auto entry = credits.find(row->field->key);
+            row->editor.setText(entry == credits.end() ? juce::String()
+                                                       : juce::String(entry->second),
+                                juce::dontSendNotification);
+        }
+    }
+
+    void applySettings(Config& config) {
+        config.setDefaultTimelineLengthBars(static_cast<int>(lengthSlider.getValue()));
+        config.setRenderSampleRate(
+            magda::daw::ui::sampleRateForItemId(sampleRateCombo.getSelectedId()));
+        config.setRenderBitDepth(magda::daw::ui::bitDepthForItemId(renderBitCombo.getSelectedId()));
+        config.setBounceBitDepth(magda::daw::ui::bitDepthForItemId(bounceBitCombo.getSelectedId()));
+
+        std::map<std::string, std::string> credits;
+        for (const auto& row : creditRows_) {
+            const auto value = row->editor.getText().trim();
+            if (value.isNotEmpty())
+                credits[row->field->key] = value.toStdString();
+        }
+        config.setProjectMetadataDefaults(std::move(credits));
+    }
+
+  private:
+    void setupComboLabel(juce::Label& label, const juce::String& text) {
+        label.setText(text, juce::dontSendNotification);
+        label.setFont(FontManager::getInstance().getUIFont(12.0f));
+        label.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        addAndMakeVisible(label);
+    }
+
+    struct CreditRow {
+        const ProjectMetadataField* field = nullptr;
+        juce::Label label;
+        juce::TextEditor editor;
+    };
+
+    juce::Label formatHeader, creditsHeader;
+    juce::Label lengthLabel, sampleRateLabel, renderBitLabel, bounceBitLabel;
+    magda::daw::ui::TextSlider lengthSlider;
+    juce::ComboBox sampleRateCombo, renderBitCombo, bounceBitCombo;
+    std::vector<std::unique_ptr<CreditRow>> creditRows_;
+};
+
 // ---- Rendering tab --------------------------------------------------------
 
 class RenderingPage : public juce::Component {
@@ -1402,8 +1564,10 @@ class RenderingPage : public juce::Component {
         };
         addAndMakeVisible(renderFolderClearButton);
 
-        // Sample rate and render/bounce bit depth are per-project (File >
-        // Project Settings), not global preferences.
+        // A project's own length, sample rate and bit depths are per-project (File
+        // > Project Settings), and the values a new project starts from are on
+        // the Defaults tab. Neither belongs here, which is only about where
+        // rendered files go and what they are called.
 
         // --- File Naming ---
         setupSectionHeader(*this, namingHeader, tr("preferences.section.file_naming"));
@@ -1442,8 +1606,9 @@ class RenderingPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        return padding + headerH + 4 + rowH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH +
-               2 + 18 + padding;
+        return padding + headerH + 4 + rowH + 4 + rowH            // Output folder
+               + secGap + headerH + 4 + rowH + 4 + rowH + 2 + 18  // File naming
+               + padding;
     }
 
     void resized() override {
@@ -2946,6 +3111,7 @@ PreferencesDialog::PreferencesDialog(juce::ApplicationCommandManager* commandMan
     appearancePage = std::make_unique<AppearancePage>();
     renderingPage = std::make_unique<RenderingPage>();
     pathsPage = std::make_unique<PathsPage>();
+    defaultsPage = std::make_unique<DefaultsPage>();
     shortcutsPage = std::make_unique<ShortcutsPage>(commandManager);
 
     auto setupPageViewport = [](juce::Viewport& viewport, juce::Component& page) {
@@ -2958,6 +3124,7 @@ PreferencesDialog::PreferencesDialog(juce::ApplicationCommandManager* commandMan
     setupPageViewport(appearancePageViewport, *appearancePage);
     setupPageViewport(renderingPageViewport, *renderingPage);
     setupPageViewport(pathsPageViewport, *pathsPage);
+    setupPageViewport(defaultsPageViewport, *defaultsPage);
 
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
     tabbedComponent.addTab(tr("preferences.tab.general"), tabBg, &generalPageViewport, false);
@@ -2965,6 +3132,7 @@ PreferencesDialog::PreferencesDialog(juce::ApplicationCommandManager* commandMan
                            &appearancePageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.rendering"), tabBg, &renderingPageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.paths"), tabBg, &pathsPageViewport, false);
+    tabbedComponent.addTab(tr("preferences.tab.defaults"), tabBg, &defaultsPageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.shortcuts"), tabBg, shortcutsPage.get(), false);
     tabbedComponent.setTabBarDepth(36);
     addAndMakeVisible(tabbedComponent);
@@ -3064,6 +3232,11 @@ void PreferencesDialog::updatePageViewports() {
             const int viewW = juce::jmax(1, pathsPageViewport.getMaximumVisibleWidth());
             updateContentSize(pathsPageViewport, *pathsPage, pathsPage->getPreferredHeight(viewW));
         }
+        if (defaultsPage) {
+            const int viewW = juce::jmax(1, defaultsPageViewport.getMaximumVisibleWidth());
+            updateContentSize(defaultsPageViewport, *defaultsPage,
+                              defaultsPage->getPreferredHeight(viewW));
+        }
     };
 
     updateAll();
@@ -3076,6 +3249,7 @@ void PreferencesDialog::loadCurrentSettings() {
     appearancePage->loadSettings(config);
     renderingPage->loadSettings(config);
     pathsPage->loadSettings(config);
+    defaultsPage->loadSettings(config);
     shortcutsPage->loadSettings(config);
 }
 
@@ -3171,6 +3345,7 @@ void PreferencesDialog::applySettings() {
     renderingPage->applySettings(config);
     shortcutsPage->applySettings(config);
     pathsPage->applySettings(config);  // no-op for path values
+    defaultsPage->applySettings(config);
     config.save();
 
     const double newFontScale = config.getUIFontScale();
