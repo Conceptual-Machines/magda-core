@@ -4,6 +4,7 @@
 #include <set>
 
 #include "magda/daw/api/device_api_live.hpp"
+#include "magda/daw/core/DrumGridPads.hpp"
 #include "magda/daw/core/TrackCommands.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
@@ -178,6 +179,60 @@ TEST_CASE("A duplicated track's devices are distinct assignments from the origin
     const auto& copiedPostFx = tracks.getPostFxChainElements(copyId);
     REQUIRE(copiedPostFx.size() == 1);
     CHECK(copiedPostFx.front().device.pluginAssignmentGeneration != sourcePostFxGeneration);
+}
+
+TEST_CASE("A pad's nested rack is re-keyed along with the pad itself", "[device-api][inspection]") {
+    // Pads hold chain elements like any other chain, so a pre-populated Drum
+    // Grid can arrive with a rack inside a pad. A walk that stopped at the
+    // direct pad devices left everything under that rack carrying the source's
+    // DeviceIds -- keying the original's ops -- and its assignment tokens, so a
+    // late async load could complete onto the copy.
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Track");
+
+    DeviceInfo nested;
+    nested.name = "Nested effect";
+    nested.pluginId = "template-effect";
+    nested.id = 4242;
+    const auto nestedGeneration = nested.pluginAssignmentGeneration;
+
+    auto rack = std::make_unique<RackInfo>();
+    rack->id = 9911;
+    ChainInfo rackChain;
+    rackChain.id = 8811;
+    rackChain.elements.push_back(ChainElement{nested});
+    rack->chains.push_back(std::move(rackChain));
+
+    DeviceInfo grid;
+    grid.name = "Grid";
+    grid.pluginId = "drumgrid";
+    auto& pads = magda::ensurePads(grid);
+    magda::ensurePadChain(pads, 0).elements.push_back(ChainElement{std::move(rack)});
+
+    const auto gridId = tracks.addDeviceToTrack(trackId, grid);
+    REQUIRE(gridId != INVALID_DEVICE_ID);
+
+    const auto* live = tracks.getDevice(trackId, gridId);
+    REQUIRE(live != nullptr);
+    REQUIRE(static_cast<bool>(live->pads));
+    REQUIRE(live->pads->chains.size() == 1);
+
+    const auto& padElements = live->pads->chains.front().elements;
+    REQUIRE(padElements.size() == 1);
+    REQUIRE(magda::isRack(padElements.front()));
+
+    const auto& liveRack = magda::getRack(padElements.front());
+    CHECK(liveRack.id != 9911);
+    REQUIRE(liveRack.chains.size() == 1);
+    CHECK(liveRack.chains.front().id != 8811);
+
+    const auto& nestedElements = liveRack.chains.front().elements;
+    REQUIRE(nestedElements.size() == 1);
+    REQUIRE(magda::isDevice(nestedElements.front()));
+
+    const auto& liveNested = magda::getDevice(nestedElements.front());
+    CHECK(liveNested.id != 4242);
+    CHECK(liveNested.pluginAssignmentGeneration != nestedGeneration);
 }
 
 TEST_CASE("Device parameters are reported in real units", "[device-api][inspection]") {

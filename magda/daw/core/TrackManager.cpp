@@ -3523,7 +3523,7 @@ DeviceInfo TrackManager::prepareNewDevice(const DeviceInfo& device) {
     return newDevice;
 }
 
-void TrackManager::rekeyPads(DeviceInfo& device, std::map<DeviceId, DeviceId>* remap) {
+void TrackManager::rekeyPads(DeviceInfo& device, ChainIdRemap* remap) {
     if (!device.pads)
         return;
 
@@ -3533,23 +3533,19 @@ void TrackManager::rekeyPads(DeviceInfo& device, std::map<DeviceId, DeviceId>* r
     // would run whichever it saw last (#2207).
     stampPadRackId(device);
 
-    for (auto& pad : device.pads->chains) {
-        for (auto& element : pad.elements) {
-            if (!magda::isDevice(element))
-                continue;
-
-            auto& padDevice = magda::getDevice(element);
-            const auto oldId = padDevice.id;
-            padDevice.beginNewPluginAssignment();
-            padDevice.id = allocateDeviceId();
-
-            // Reported so a caller that also rewrites paths can follow the pad
-            // devices, which is what keeps a macro or a mod on the grid pointing
-            // at the pad it was linked to.
-            if (remap != nullptr && oldId != INVALID_DEVICE_ID)
-                (*remap)[oldId] = padDevice.id;
-        }
-    }
+    // A pad holds chain elements like any other chain, nested racks included,
+    // so the same recursive walk re-keys them. A shallow pass over the direct
+    // pad devices left everything inside a pad's rack carrying the source's
+    // DeviceIds and assignment tokens, so a copied grid shared ops with the one
+    // it came from and a late async load could complete onto the copy.
+    //
+    // Reported so a caller that also rewrites paths can follow the pad
+    // contents, which is what keeps a macro or a mod on the grid pointing at
+    // the pad it was linked to.
+    ChainIdRemap discarded;
+    auto& target = remap != nullptr ? *remap : discarded;
+    for (auto& pad : device.pads->chains)
+        reassignChainElementIds(pad.elements, target);
 }
 
 void TrackManager::notifyDeviceModifiersChanged(TrackId trackId) {
