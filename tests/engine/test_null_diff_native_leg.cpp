@@ -394,6 +394,93 @@ TEST_CASE("A plugin the machine does not have is said out loud", "[nulldiff][nat
     CHECK(reported.find("Something Nobody Has") != std::string::npos);
 }
 
+TEST_CASE("A plugin inside a Drum Grid pad is reported", "[nulldiff][native]") {
+    // A pad is a chain of devices and PlanCompiler::emitPadRack() emits a Device
+    // op for each one in it, so a walk that stopped at the grid would leave every
+    // plugin in every pad looked up and not found: bound to a stand-in, never
+    // resolved, and reported as nothing. A drum kit built out of hosted plugins
+    // is a normal project, and it is the shape where the miss is invisible.
+    DeviceInfo grid;
+    grid.id = 920;
+    grid.name = "Drum Grid";
+    grid.deviceType = DeviceType::Instrument;
+    grid.isInstrument = true;
+    grid.canReceiveMidi = true;
+    grid.format = PluginFormat::Internal;
+    grid.pluginId = "magda_drum_grid";
+
+    auto rack = std::make_unique<RackInfo>();
+    rack->id = 1;
+
+    ChainInfo pad;
+    pad.id = 1;
+
+    DeviceInfo padPlugin;
+    padPlugin.id = 921;
+    padPlugin.name = "Kick Plugin Nobody Has";
+    padPlugin.deviceType = DeviceType::Instrument;
+    padPlugin.isInstrument = true;
+    padPlugin.format = PluginFormat::VST3;
+    pad.elements.emplace_back(std::move(padPlugin));
+
+    rack->chains.push_back(std::move(pad));
+    grid.pads.reset(std::move(rack));
+
+    TrackInfo track;
+    track.id = 1;
+    track.type = TrackType::Media;
+    track.name = "Drums";
+    track.audioOutputDevice = "master";
+    track.chain.fxChainElements.emplace_back(std::move(grid));
+
+    Case value;
+    value.name = "external.pad";
+    value.covers = "a plugin hosted inside a Drum Grid pad";
+    value.endBeat = 4.0;
+    value.tracks.push_back(std::move(track));
+    value.master = bareMaster();
+    value.clips.push_back(oneNoteClip(1, 1));
+
+    const auto rendered = renderNative(value);
+    REQUIRE(rendered.failure.empty());
+
+    REQUIRE_FALSE(rendered.diagnostics.empty());
+    const auto named = std::any_of(
+        rendered.diagnostics.begin(), rendered.diagnostics.end(), [](const std::string& reported) {
+            return reported.find("Kick Plugin Nobody Has") != std::string::npos;
+        });
+    CHECK(named);
+}
+
+TEST_CASE("A plugin the plan never reaches is not reported", "[nulldiff][native]") {
+    // A project does not go without a plugin it was never going to run. A
+    // bypassed device is not compiled, so no op names it and nothing is missing;
+    // reporting one would make a case unmeasurable over a plugin that would not
+    // have been heard either way.
+    //
+    // What holds that today is that the diagnostics are written while walking
+    // the plan's ops rather than the model's devices, and this exists to keep it
+    // that way: collecting devices from the model is what the pad case above
+    // asks for, and the obvious next step from there is to report from the same
+    // walk, which would fail here.
+    DeviceInfo plugin;
+    plugin.id = 930;
+    plugin.name = "Bypassed Plugin Nobody Has";
+    plugin.deviceType = DeviceType::Effect;
+    plugin.format = PluginFormat::VST3;
+    plugin.bypassed = true;
+
+    auto value = throughMaster("external.bypassed", std::move(plugin));
+
+    const auto rendered = renderNative(value);
+    REQUIRE(rendered.failure.empty());
+    CHECK(rendered.diagnostics.empty());
+
+    // And the render still happened, so this is not a case that reported
+    // nothing by doing nothing.
+    CHECK(peakOf(rendered.audio) > 0.0);
+}
+
 TEST_CASE("A plugin on the master chain is reported too", "[nulldiff][native]") {
     // The two halves of this change meet here: a master device is looked up at
     // all, and an external one that cannot be resolved says so. A master bus
