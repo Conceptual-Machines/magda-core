@@ -14,6 +14,15 @@ magda::InsertConfig::Endpoint endpointOf(te::InsertPlugin::DeviceType type) {
     return magda::InsertConfig::Endpoint::None;
 }
 
+InsertSyncDirection insertSyncDirectionFor(const magda::InsertConfig& model,
+                                           const magda::InsertConfig& plugin) {
+    if (model.isActive())
+        return InsertSyncDirection::ToPlugin;
+    if (plugin.isActive())
+        return InsertSyncDirection::ToModel;
+    return InsertSyncDirection::Neither;
+}
+
 magda::InsertConfig insertConfigOf(const te::InsertPlugin& plugin) {
     magda::InsertConfig config;
 
