@@ -1854,16 +1854,20 @@ double PianoRollGridComponent::snapBeatToGrid(double beat) const {
     return std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
 }
 
-double PianoRollGridComponent::snapBeatToGridFloor(double beat) const {
+double PianoRollGridComponent::snapBeatToGridFloor(int mouseX) const {
+    const double beat = pixelToBeat(mouseX);
     if (!snapEnabled_ || gridResolutionBeats_ <= 0.0) {
         return beat;
     }
-    // Grid lines render at integer pixels (beatToPixel rounds), so a click on
-    // a rendered boundary can map back up to half a pixel below the true beat.
-    // Absorb that quantization so a click on the line lands on the cell the
-    // line starts.
-    const double halfPixelBeats = pixelsPerBeat_ > 0.0 ? 0.5 / pixelsPerBeat_ : 0.0;
-    return std::floor((beat + halfPixelBeats) / gridResolutionBeats_ + 1e-6) * gridResolutionBeats_;
+    // Grid lines render at rounded integer pixels (beatToPixel), so decide the
+    // containing cell against those same rounded boundaries: the click lands
+    // in the cell whose rendered start is at or left of the clicked pixel.
+    double cell = std::floor(beat / gridResolutionBeats_ + 1e-6);
+    if (beatToPixel((cell + 1.0) * gridResolutionBeats_) <= mouseX)
+        cell += 1.0;
+    else if (beatToPixel(cell * gridResolutionBeats_) > mouseX)
+        cell -= 1.0;
+    return cell * gridResolutionBeats_;
 }
 
 bool PianoRollGridComponent::isNearGridLine(int mouseX) const {
@@ -1985,7 +1989,9 @@ double PianoRollGridComponent::displayBeatForClipBeat(ClipId clipId, double clip
 double PianoRollGridComponent::clipBeatForDisplayX(ClipId clipId, int mouseX,
                                                    bool floorToCell) const {
     const auto* clip = ClipManager::getInstance().getClip(clipId);
-    double clipBeat = pixelToBeat(mouseX);
+    // Cell flooring works in display space, where the painted grid lines
+    // live, so the chosen cell always matches the rendered boundaries.
+    double clipBeat = floorToCell ? snapBeatToGridFloor(mouseX) : pixelToBeat(mouseX);
 
     if (relativeMode_) {
         if (clipIds_.size() > 1 && clip) {
@@ -2009,7 +2015,9 @@ double PianoRollGridComponent::clipBeatForDisplayX(ClipId clipId, int mouseX,
         }
     }
 
-    clipBeat = floorToCell ? snapBeatToGridFloor(clipBeat) : snapBeatToGrid(clipBeat);
+    if (!floorToCell) {
+        clipBeat = snapBeatToGrid(clipBeat);
+    }
     clipBeat = juce::jmax(0.0, clipBeat);
     if (clip) {
         clipBeat += ClipOperations::getMidiVisibleRange(*clip).startBeat;

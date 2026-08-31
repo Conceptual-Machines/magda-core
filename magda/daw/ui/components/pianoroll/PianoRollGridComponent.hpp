@@ -534,10 +534,11 @@ class PianoRollGridComponent : public juce::Component,
                                    juce::Point<float> screen);
 
     // Grid snap helpers. snapBeatToGrid rounds to the nearest grid line (drag,
-    // resize, playhead); snapBeatToGridFloor floors to the containing cell so a
-    // pencil click anywhere in a cell's span inserts on that cell (#2266).
+    // resize, playhead); snapBeatToGridFloor returns the display beat of the
+    // rendered cell containing the clicked pixel, so a pencil click anywhere
+    // in a cell's painted span inserts on that cell (#2266).
     double snapBeatToGrid(double beat) const;
-    double snapBeatToGridFloor(double beat) const;
+    double snapBeatToGridFloor(int mouseX) const;
 
     // Note management
     void createNoteComponents();
