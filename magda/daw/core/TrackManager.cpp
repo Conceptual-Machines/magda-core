@@ -1087,10 +1087,17 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
     // DeviceId counter, so the copied devices must be re-stamped with fresh ids
     // from the right counter (sharing ids = sharing audio-engine plugin slots).
     // Empty when !includeDevices, so these loops are no-ops in that case.
-    for (auto& element : newTrack.chain.postFxChainElements)
+    // Each is a distinct live assignment for the same reason reassignChainElementIds
+    // mints one, and these two counters are section-local, so a copied device
+    // can otherwise land on an id another section is already using.
+    for (auto& element : newTrack.chain.postFxChainElements) {
+        element.device.beginNewPluginAssignment();
         element.device.id = nextPostFxDeviceId_++;
-    for (auto& element : newTrack.chain.mixerAnalysisElements)
+    }
+    for (auto& element : newTrack.chain.mixerAnalysisElements) {
+        element.device.beginNewPluginAssignment();
         element.device.id = nextMixerAnalysisDeviceId_++;
+    }
 
     // Log all device IDs after reassignment
     DBG("duplicateTrack: original trackId=" << trackId << " -> newTrackId=" << newTrack.id);
@@ -2212,6 +2219,7 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
     }
 
     DeviceInfo newDevice = device;
+    newDevice.beginNewPluginAssignment();
     newDevice.id = nextPostFxDeviceId_++;
     applyCachedCapabilitiesToDevice(newDevice);
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
@@ -2277,6 +2285,7 @@ DeviceId TrackManager::addDeviceToMixerAnalysis(TrackId trackId, const DeviceInf
     }
 
     DeviceInfo newDevice = device;
+    newDevice.beginNewPluginAssignment();
     newDevice.id = nextMixerAnalysisDeviceId_++;
     applyCachedCapabilitiesToDevice(newDevice);
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
