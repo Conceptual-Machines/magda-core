@@ -100,15 +100,6 @@ ExternalDeviceResult adaptExternalPluginInstance(
     bool offlineRender) {
     instance->enableAllBuses();
 
-    // Scan descriptions report the format's default buses, not the instance
-    // after the host has enabled its sidechains and extra outputs. These are
-    // the only channel counts safe to compile a live plan from.
-    auto resolvedDevice = device;
-    resolvedDevice.audioInputChannels = instance->getTotalNumInputChannels();
-    resolvedDevice.audioOutputChannels = instance->getTotalNumOutputChannels();
-    resolvedDevice.canReceiveMidi = !resolvedDevice.isInstrument && instance->acceptsMidi();
-    resolvedDevice.producesMidi = instance->producesMidi() || instance->isMidiEffect();
-
     // The saved array, then the chunk over it, then what that left behind. The
     // order and the reasons are ExternalPluginState.hpp's; what matters here is
     // that all three happen before the adapter exists, so the adapter never has
@@ -117,6 +108,33 @@ ExternalDeviceResult adaptExternalPluginInstance(
         return {.device = {},
                 .failure = "external plugin \"" + device.name +
                            "\" failed while restoring its own saved state"};
+
+    // Buses again, and the widths only now. setStateInformation is free to
+    // change a plugin's bus layout -- an instrument the patch switches to
+    // multi-out, a compressor whose sidechain the patch turns on -- so widths
+    // read before the chunk was applied describe a layout the instance no
+    // longer has, while EngineExternalDevice::prepare() goes on to process the
+    // one it does. Re-enabling keeps the all-buses policy the first call
+    // establishes: a chunk that disabled one would otherwise leave the device
+    // reporting channels the rest of the chain is wired for.
+    instance->enableAllBuses();
+
+    // Scan descriptions report the format's default buses, not the instance
+    // after the host has enabled its sidechains and extra outputs. These are
+    // the only channel counts safe to compile a live plan from.
+    auto resolvedDevice = device;
+    resolvedDevice.audioInputChannels = instance->getTotalNumInputChannels();
+    resolvedDevice.audioOutputChannels = instance->getTotalNumOutputChannels();
+
+    // Promote only, the rule the model's other two writers follow
+    // (PluginManagerSync::updateDeviceCapabilityFlags,
+    // applyCachedCapabilitiesToDevice). A raw AudioProcessor::acceptsMidi() is
+    // narrower than what the incumbent engine asks -- it takes MIDI input for
+    // plugins whose processor does not advertise it -- so assigning it here
+    // clears a saved true and PlanCompiler stops routing MIDI to the device.
+    if (!resolvedDevice.isInstrument && (instance->acceptsMidi() || instance->isMidiEffect()))
+        resolvedDevice.canReceiveMidi = true;
+    resolvedDevice.producesMidi = instance->producesMidi() || instance->isMidiEffect();
 
     auto restored = magda::snapshotHostParameters(*instance);
 

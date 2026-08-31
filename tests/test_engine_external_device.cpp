@@ -184,7 +184,7 @@ class StubPlugin final : public juce::AudioPluginInstance {
     }
 
     bool acceptsMidi() const override {
-        return true;
+        return takesMidi;
     }
 
     bool producesMidi() const override {
@@ -245,6 +245,17 @@ class StubPlugin final : public juce::AudioPluginInstance {
         tone->setValue(state.tone);
         fixed->setValue(state.fixed);
         ++stateRestores;
+
+        // A patch that changes the plugin's own topology, which real ones do:
+        // a sampler whose preset turns its drum outs on, an instrument that
+        // goes stereo for one program and mono for another. Anything that read
+        // the width before the chunk was applied is now describing a layout
+        // this instance no longer has.
+        if (widensOutputOnState) {
+            auto layout = getBusesLayout();
+            layout.outputBuses.getReference(0) = juce::AudioChannelSet::stereo();
+            setBusesLayout(layout);
+        }
     }
 
     /// The per-channel offset the output carries, so a test can name which of
@@ -258,6 +269,14 @@ class StubPlugin final : public juce::AudioPluginInstance {
     int stateRestores = 0;
 
     bool emitsMidi = false;
+
+    /// Whether the processor advertises MIDI input at all. A real plugin can
+    /// say no here while the incumbent engine still takes MIDI input for it.
+    bool takesMidi = true;
+
+    /// Whether restoring the chunk widens the main output bus (see
+    /// setStateInformation).
+    bool widensOutputOnState = false;
 
     /// Third-party code handed a chunk it cannot read. Some throw.
     bool throwsOnState = false;
@@ -1307,6 +1326,61 @@ TEST_CASE("Successful adaptation reports live buses and MIDI capabilities", "[en
     // Publication belongs to the caller and only happens after success.
     CHECK(model.audioInputChannels == 9);
     CHECK(model.audioOutputChannels == 9);
+}
+
+TEST_CASE("A plugin that does not advertise MIDI input cannot clear the project's flag",
+          "[engine][external]") {
+    // The incumbent engine takes MIDI input for plugins whose AudioProcessor
+    // says no, so the model's true is evidence the instance does not have.
+    // Assigning over it would leave PlanCompiler routing no MIDI to a device
+    // that had been receiving it.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    plugin->takesMidi = false;
+
+    auto model = externalDevice();
+    model.canReceiveMidi = true;
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+
+    REQUIRE(result.device != nullptr);
+    REQUIRE(result.resolvedDevice.has_value());
+    CHECK(result.resolvedDevice->canReceiveMidi);
+}
+
+TEST_CASE("An instrument keeps its MIDI flag off however the instance answers",
+          "[engine][external]") {
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto model = externalDevice();
+    model.isInstrument = true;
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+
+    REQUIRE(result.resolvedDevice.has_value());
+    CHECK_FALSE(result.resolvedDevice->canReceiveMidi);
+}
+
+TEST_CASE("Channel widths are read after the plugin's own state is restored",
+          "[engine][external]") {
+    // A chunk is free to change the layout it is restored into. The widths the
+    // plan compiles from have to be the ones the instance ends up with, since
+    // EngineExternalDevice::prepare() goes on to process that layout.
+    auto plugin = std::make_unique<StubPlugin>(2, 1, 0);
+    plugin->widensOutputOnState = true;
+    auto* raw = plugin.get();
+
+    const StubPlugin::State saved{.tone = 0.5f, .fixed = 0.5f};
+    juce::MemoryBlock chunk(&saved, sizeof(saved));
+
+    auto model = externalDevice();
+    model.pluginState = chunk.toBase64Encoding();
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+
+    REQUIRE(result.device != nullptr);
+    REQUIRE(result.resolvedDevice.has_value());
+    CHECK(raw->stateRestores == 1);
+    CHECK(raw->getTotalNumOutputChannels() == 2);
+    CHECK(result.resolvedDevice->audioOutputChannels == 2);
 }
 
 TEST_CASE("Saved state that is not a chunk this plugin understands is refused",
