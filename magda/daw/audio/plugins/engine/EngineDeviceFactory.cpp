@@ -100,11 +100,12 @@ ExternalDeviceResult adaptExternalPluginInstance(
     bool offlineRender) {
     instance->enableAllBuses();
 
-    // The saved array, then the chunk over it, then what that left behind. The
+    // The saved array, then the overlay over it, then what that left behind. The
     // order and the reasons are ExternalPluginState.hpp's; what matters here is
     // that all three happen before the adapter exists, so the adapter never has
-    // to reason about which of a project's two records it is looking at.
-    if (magda::applySavedPluginState(*instance, device) == magda::SavedStateOutcome::Failed)
+    // to reason about which of a project's records it is looking at.
+    const auto restoredFrom = magda::applySavedPluginState(*instance, device);
+    if (restoredFrom == magda::SavedStateOutcome::Failed)
         return {.device = {},
                 .failure = "external plugin \"" + device.name +
                            "\" failed while restoring its own saved state"};
@@ -125,6 +126,14 @@ ExternalDeviceResult adaptExternalPluginInstance(
     auto resolvedDevice = device;
     resolvedDevice.audioInputChannels = instance->getTotalNumInputChannels();
     resolvedDevice.audioOutputChannels = instance->getTotalNumOutputChannels();
+
+    // An imported .vstpreset is spent by the load that applies it. The patch is
+    // now the instance's, the next save writes it out as a chunk, and a project
+    // that kept the preset would apply it again over whatever was saved in
+    // between. Only a published resolvedDevice clears it, so a load that failed
+    // leaves the project still holding the one thing that describes its plugin.
+    if (restoredFrom == magda::SavedStateOutcome::RestoredFromPreset)
+        resolvedDevice.vst3Preset = {};
 
     // Promote only, the rule the model's other two writers follow
     // (PluginManagerSync::updateDeviceCapabilityFlags,

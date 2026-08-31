@@ -124,6 +124,16 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     void reset() override;
     void setMidiInputBoundBytes(int bytes) override;
     int latencySamples() const override;
+
+    /// One block through the plugin: its parameters written, its audio
+    /// processed, its MIDI carried.
+    ///
+    /// Does none of that while a host holds the plugin for a state read or
+    /// write, and passes the block through instead. That is the one thing in
+    /// this class which is not the fork's arrangement transcribed: the fork
+    /// waits on its own processMutex where this declines to block the audio
+    /// thread. The two can only differ while a save is in flight, and a corpus
+    /// render never takes one.
     void process(magda::engine::DeviceBlock& block) override;
 
     /// The instance this stands for. For a host that has to reach past the
