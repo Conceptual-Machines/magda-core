@@ -931,18 +931,20 @@ class SessionView::MiniIOStrip : public juce::Component {
         auto* midiBridge = audioEngine_ ? audioEngine_->getMidiBridge() : nullptr;
 
         juce::BigInteger enabledInputChannels, enabledOutputChannels;
-        std::map<int, juce::String> teInputDeviceNames;
+        std::map<int, juce::String> teInputDeviceNames, teOutputDeviceNames;
         if (auto* bridge = audioEngine_->getAudioBridge()) {
             enabledInputChannels = bridge->getEnabledInputChannels();
             enabledOutputChannels = bridge->getEnabledOutputChannels();
             teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
+            teOutputDeviceNames = bridge->getOutputDeviceNamesByChannel();
         }
 
         RoutingSyncHelper::syncSelectorsFromTrack(
             *track, audioInSelector_.get(), midiInSelector_.get(), audioOutSelector_.get(),
             midiOutSelector_.get(), midiBridge, device, trackId_, outputTrackMapping_,
             midiOutputTrackMapping_, &inputTrackMapping_, enabledInputChannels,
-            enabledOutputChannels, nullptr, teInputDeviceNames, &midiInputTrackMapping_);
+            enabledOutputChannels, nullptr, teInputDeviceNames, &midiInputTrackMapping_,
+            &outputChannelMapping_, teOutputDeviceNames);
     }
 
     TrackId getTrackId() const {
@@ -960,6 +962,7 @@ class SessionView::MiniIOStrip : public juce::Component {
     std::map<int, TrackId> midiInputTrackMapping_;
     std::map<int, TrackId> outputTrackMapping_;
     std::map<int, TrackId> midiOutputTrackMapping_;
+    std::map<int, juce::String> outputChannelMapping_;
 
     void populateOptions() {
         if (!audioEngine_)
@@ -970,18 +973,20 @@ class SessionView::MiniIOStrip : public juce::Component {
         auto* midiBridge = audioEngine_->getMidiBridge();
 
         juce::BigInteger enabledInputChannels, enabledOutputChannels;
-        std::map<int, juce::String> teInputDeviceNames;
+        std::map<int, juce::String> teInputDeviceNames, teOutputDeviceNames;
         if (auto* bridge = audioEngine_->getAudioBridge()) {
             enabledInputChannels = bridge->getEnabledInputChannels();
             enabledOutputChannels = bridge->getEnabledOutputChannels();
             teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
+            teOutputDeviceNames = bridge->getOutputDeviceNamesByChannel();
         }
 
         RoutingSyncHelper::populateAudioInputOptions(audioInSelector_.get(), device, trackId_,
                                                      &inputTrackMapping_, enabledInputChannels,
                                                      nullptr, teInputDeviceNames);
         RoutingSyncHelper::populateAudioOutputOptions(audioOutSelector_.get(), trackId_, device,
-                                                      outputTrackMapping_, enabledOutputChannels);
+                                                      outputTrackMapping_, enabledOutputChannels,
+                                                      &outputChannelMapping_, teOutputDeviceNames);
         RoutingSyncHelper::populateMidiInputOptions(midiInSelector_.get(), midiBridge, trackId_,
                                                     &midiInputTrackMapping_);
         RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector_.get(), midiBridge,
@@ -1091,7 +1096,12 @@ class SessionView::MiniIOStrip : public juce::Component {
                     TrackManager::getInstance().setTrackAudioOutput(
                         trackId_, "track:" + juce::String(it->second));
             } else if (selectedId >= 10) {
-                TrackManager::getInstance().setTrackAudioOutput(trackId_, "master");
+                // Copy the string — the map can be repopulated during
+                // setTrackAudioOutput (change notification re-syncs selectors)
+                auto it = outputChannelMapping_.find(selectedId);
+                juce::String dest =
+                    it != outputChannelMapping_.end() ? it->second : juce::String("master");
+                TrackManager::getInstance().setTrackAudioOutput(trackId_, dest);
             }
         };
 

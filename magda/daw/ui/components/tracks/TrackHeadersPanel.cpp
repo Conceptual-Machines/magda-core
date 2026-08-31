@@ -642,11 +642,14 @@ void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector,
     if (!deviceManager)
         return;
     juce::BigInteger enabledOutputChannels;
-    if (auto* bridge = audioEngine_->getAudioBridge())
+    std::map<int, juce::String> teOutputDeviceNames;
+    if (auto* bridge = audioEngine_->getAudioBridge()) {
         enabledOutputChannels = bridge->getEnabledOutputChannels();
-    RoutingSyncHelper::populateAudioOutputOptions(selector, currentTrackId,
-                                                  deviceManager->getCurrentAudioDevice(),
-                                                  outputTrackMapping_, enabledOutputChannels);
+        teOutputDeviceNames = bridge->getOutputDeviceNamesByChannel();
+    }
+    RoutingSyncHelper::populateAudioOutputOptions(
+        selector, currentTrackId, deviceManager->getCurrentAudioDevice(), outputTrackMapping_,
+        enabledOutputChannels, &outputChannelMapping_, teOutputDeviceNames);
 }
 
 void TrackHeadersPanel::populateMidiInputOptions(RoutingSelector* selector, TrackId trackId) {
@@ -819,8 +822,9 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
 
     // Capture outputTrackMapping_ by value so each header has its own snapshot
     // (the shared member is rebuilt per-header in populateAudioOutputOptions)
-    header.outputSelector->onSelectionChanged = [trackId,
-                                                 mapping = outputTrackMapping_](int selectedId) {
+    header.outputSelector->onSelectionChanged = [trackId, mapping = outputTrackMapping_,
+                                                 channelMapping =
+                                                     outputChannelMapping_](int selectedId) {
         if (selectedId == 1) {
             // Master
             TrackManager::getInstance().setTrackAudioOutput(trackId, "master");
@@ -835,9 +839,10 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
                     trackId, "track:" + juce::String(it->second));
             }
         } else if (selectedId >= 10) {
-            // Hardware output device (existing behavior — use device ID)
-            // For now, hardware channels route via device ID
-            TrackManager::getInstance().setTrackAudioOutput(trackId, "master");
+            // Hardware output — route to the mapped wave output device
+            auto it = channelMapping.find(selectedId);
+            TrackManager::getInstance().setTrackAudioOutput(
+                trackId, it != channelMapping.end() ? it->second : "master");
         }
     };
 
@@ -1160,17 +1165,19 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
     auto* deviceManager = audioEngine_->getDeviceManager();
     auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
     juce::BigInteger enabledIn, enabledOut;
-    std::map<int, juce::String> teInputDeviceNames;
+    std::map<int, juce::String> teInputDeviceNames, teOutputDeviceNames;
     if (auto* bridge = audioEngine_->getAudioBridge()) {
         enabledIn = bridge->getEnabledInputChannels();
         enabledOut = bridge->getEnabledOutputChannels();
         teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
+        teOutputDeviceNames = bridge->getOutputDeviceNamesByChannel();
     }
     RoutingSyncHelper::syncSelectorsFromTrack(
         *track, header.audioInputSelector.get(), header.inputSelector.get(),
         header.outputSelector.get(), header.midiOutputSelector.get(), audioEngine_->getMidiBridge(),
         device, header.trackId, outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_,
-        enabledIn, enabledOut, &inputChannelMapping_, teInputDeviceNames, &midiInputTrackMapping_);
+        enabledIn, enabledOut, &inputChannelMapping_, teInputDeviceNames, &midiInputTrackMapping_,
+        &outputChannelMapping_, teOutputDeviceNames);
 }
 
 void TrackHeadersPanel::paint(juce::Graphics& g) {

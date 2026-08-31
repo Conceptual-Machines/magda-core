@@ -387,17 +387,19 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
             auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
             auto* midiBridge = audioEngine_->getMidiBridge();
             juce::BigInteger enabledIn, enabledOut;
-            std::map<int, juce::String> teInputDeviceNames;
+            std::map<int, juce::String> teInputDeviceNames, teOutputDeviceNames;
             if (auto* bridge = audioEngine_->getAudioBridge()) {
                 enabledIn = bridge->getEnabledInputChannels();
                 enabledOut = bridge->getEnabledOutputChannels();
                 teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
+                teOutputDeviceNames = bridge->getOutputDeviceNamesByChannel();
             }
             RoutingSyncHelper::syncSelectorsFromTrack(
                 track, audioInSelector.get(), midiInSelector.get(), audioOutSelector.get(),
                 midiOutSelector.get(), midiBridge, device, trackId_, outputTrackMapping_,
                 midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut, nullptr,
-                teInputDeviceNames, &midiInputTrackMapping_);
+                teInputDeviceNames, &midiInputTrackMapping_, &outputChannelMapping_,
+                teOutputDeviceNames);
         }
     }
 
@@ -773,19 +775,20 @@ void MixerView::ChannelStrip::setupControls() {
             auto* midiBridge = audioEngine_->getMidiBridge();
 
             juce::BigInteger enabledInputChannels, enabledOutputChannels;
-            std::map<int, juce::String> teInputDeviceNames;
+            std::map<int, juce::String> teInputDeviceNames, teOutputDeviceNames;
             if (auto* bridge = audioEngine_->getAudioBridge()) {
                 enabledInputChannels = bridge->getEnabledInputChannels();
                 enabledOutputChannels = bridge->getEnabledOutputChannels();
                 teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
+                teOutputDeviceNames = bridge->getOutputDeviceNamesByChannel();
             }
 
             RoutingSyncHelper::populateAudioInputOptions(audioInSelector.get(), device, trackId_,
                                                          &inputTrackMapping_, enabledInputChannels,
                                                          nullptr, teInputDeviceNames);
-            RoutingSyncHelper::populateAudioOutputOptions(audioOutSelector.get(), trackId_, device,
-                                                          outputTrackMapping_,
-                                                          enabledOutputChannels);
+            RoutingSyncHelper::populateAudioOutputOptions(
+                audioOutSelector.get(), trackId_, device, outputTrackMapping_,
+                enabledOutputChannels, &outputChannelMapping_, teOutputDeviceNames);
             RoutingSyncHelper::populateMidiInputOptions(midiInSelector.get(), midiBridge, trackId_,
                                                         &midiInputTrackMapping_);
             RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector.get(), midiBridge,
@@ -916,7 +919,12 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
                     trackId_, "track:" + juce::String(it->second));
             }
         } else if (selectedId >= 10) {
-            TrackManager::getInstance().setTrackAudioOutput(trackId_, "master");
+            // Copy the string — the map can be repopulated during
+            // setTrackAudioOutput (change notification re-syncs selectors)
+            auto it = outputChannelMapping_.find(selectedId);
+            juce::String dest =
+                it != outputChannelMapping_.end() ? it->second : juce::String("master");
+            TrackManager::getInstance().setTrackAudioOutput(trackId_, dest);
         }
     };
 

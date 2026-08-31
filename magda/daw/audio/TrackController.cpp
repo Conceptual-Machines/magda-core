@@ -289,8 +289,12 @@ void TrackController::setTrackAudioOutput(TrackId trackId, const juce::String& d
             track->getOutput().setOutputToDefaultDevice(false);
         }
     } else {
-        // Route to specific output device
-        track->getOutput().setOutputToDeviceID(destination);
+        // Route to specific output device. "stereo:" marks a pair selection in
+        // the UI; both forms resolve to the same TE wave output device.
+        auto resolvedName = destination.startsWith("stereo:")
+                                ? destination.fromFirstOccurrenceOf("stereo:", false, false)
+                                : destination;
+        track->getOutput().setOutputToDeviceID(resolvedName);
     }
 }
 

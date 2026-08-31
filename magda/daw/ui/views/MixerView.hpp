@@ -275,6 +275,7 @@ class MixerView : public juce::Component,
         // Routing option-to-track mappings (rebuilt when options are populated)
         std::map<int, TrackId> outputTrackMapping_;
         std::map<int, TrackId> midiOutputTrackMapping_;
+        std::map<int, juce::String> outputChannelMapping_;
         std::map<int, TrackId> inputTrackMapping_;
         std::map<int, TrackId> midiInputTrackMapping_;
 

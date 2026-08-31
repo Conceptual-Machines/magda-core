@@ -569,6 +569,9 @@ target_sources(magda_juce_tests PRIVATE
     ui/test_transport_seek_juce.cpp
     midi/test_session_slot_recording_juce.cpp
     routing/test_input_monitor_track_routing_juce.cpp
+    # Hardware output selections must reach the TE wave output devices (#2264)
+    routing/test_hardware_output_routing_juce.cpp
+    ../magda/daw/ui/components/mixer/RoutingSelector.cpp
     controllers/test_controller_track_level_write_juce.cpp
     # OSC control surfaces (issue #1757): a live receive thread and real packets
     controllers/test_osc_service_juce.cpp

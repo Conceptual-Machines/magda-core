@@ -1435,6 +1435,18 @@ juce::BigInteger AudioBridge::getEnabledOutputChannels() const {
     return enabled;
 }
 
+std::map<int, juce::String> AudioBridge::getOutputDeviceNamesByChannel() const {
+    std::map<int, juce::String> result;
+    auto& dm = engine_.getDeviceManager();
+    for (auto* dev : dm.getWaveOutputDevices()) {
+        if (dev->isEnabled()) {
+            for (const auto& ch : dev->getChannels())
+                result[ch.indexInDevice] = dev->getName();
+        }
+    }
+    return result;
+}
+
 void AudioBridge::setTrackAudioOutput(TrackId trackId, const juce::String& destination) {
     trackController_.setTrackAudioOutput(trackId, destination);
 }

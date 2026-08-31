@@ -139,9 +139,14 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
 inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId currentTrackId,
                                        juce::AudioIODevice* device,
                                        std::map<int, TrackId>& outTrackMapping,
-                                       juce::BigInteger enabledOutputChannels = {}) {
+                                       juce::BigInteger enabledOutputChannels = {},
+                                       std::map<int, juce::String>* outChannelMapping = nullptr,
+                                       const std::map<int, juce::String>& teDeviceNames = {}) {
     if (!selector)
         return;
+
+    if (outChannelMapping)
+        outChannelMapping->clear();
 
     std::vector<RoutingSelector::RoutingOption> options;
     options.push_back({1, technicalText(TechnicalTextToken::Master)});
@@ -237,13 +242,25 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
                 }
             }
 
+            // Helper: get the TE device name for a channel index, fall back to "Out N"
+            auto getDeviceName = [&](int channelIndex) -> juce::String {
+                auto it = teDeviceNames.find(channelIndex);
+                if (it != teDeviceNames.end())
+                    return it->second;
+                return "Out " + juce::String(channelIndex + 1);
+            };
+
             int id = 10;
             for (int i = 0; i < activeIndices.size(); i += 2) {
                 if (i + 1 < activeIndices.size()) {
                     int ch1 = activeIndices[i] + 1;
                     int ch2 = activeIndices[i + 1] + 1;
                     juce::String pairName = juce::String(ch1) + "-" + juce::String(ch2);
-                    options.push_back({id++, pairName});
+                    options.push_back({id, pairName});
+                    // Use actual TE device name for routing
+                    if (outChannelMapping)
+                        (*outChannelMapping)[id] = "stereo:" + getDeviceName(activeIndices[i]);
+                    ++id;
                 }
             }
 
@@ -254,7 +271,10 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
             id = 100;
             for (int i = 0; i < activeIndices.size(); ++i) {
                 int channelNum = activeIndices[i] + 1;
-                options.push_back({id++, juce::String(channelNum) + " (mono)"});
+                options.push_back({id, juce::String(channelNum) + " (mono)"});
+                if (outChannelMapping)
+                    (*outChannelMapping)[id] = getDeviceName(activeIndices[i]);
+                ++id;
             }
         }
     }
@@ -403,7 +423,9 @@ inline void syncSelectorsFromTrack(
     juce::BigInteger enabledOutputChannels = {},
     std::map<int, juce::String>* inputChannelMapping = nullptr,
     const std::map<int, juce::String>& teDeviceNames = {},
-    std::map<int, TrackId>* midiInputTrackMapping = nullptr) {
+    std::map<int, TrackId>* midiInputTrackMapping = nullptr,
+    std::map<int, juce::String>* outputChannelMapping = nullptr,
+    const std::map<int, juce::String>& teOutputDeviceNames = {}) {
     bool hasAudioInput = !track.audioInputDevice.isEmpty();
     bool hasMidiInput = !track.midiInputDevice.isEmpty();
 
@@ -494,7 +516,8 @@ inline void syncSelectorsFromTrack(
     // Update Audio Output selector
     if (audioOutSelector) {
         populateAudioOutputOptions(audioOutSelector, currentTrackId, device, outputTrackMapping,
-                                   enabledOutputChannels);
+                                   enabledOutputChannels, outputChannelMapping,
+                                   teOutputDeviceNames);
         juce::String currentAudioOutput = track.audioOutputDevice;
         if (currentAudioOutput.isEmpty()) {
             audioOutSelector->setSelectedId(2);  // "None"
@@ -517,6 +540,20 @@ inline void syncSelectorsFromTrack(
             }
             audioOutSelector->setEnabled(true);
         } else {
+            // Hardware output device — find the option whose mapped device
+            // string matches so the dropdown doesn't snap back to Master
+            if (outputChannelMapping) {
+                int optionId = -1;
+                for (const auto& [oid, name] : *outputChannelMapping) {
+                    if (name == currentAudioOutput) {
+                        optionId = oid;
+                        break;
+                    }
+                }
+                if (optionId > 0) {
+                    audioOutSelector->setSelectedId(optionId);
+                }
+            }
             audioOutSelector->setEnabled(true);
         }
     }
