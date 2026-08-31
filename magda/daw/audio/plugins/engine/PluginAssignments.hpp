@@ -121,6 +121,18 @@ struct LoadRequest {
      * for accepting anything.
      */
     bool keyWasReassigned() const;
+
+    /**
+     * @brief Whether the runtime that owns this assignment is still there.
+     *
+     * A different question from isStillWanted(), and the one a caller asks
+     * before *reporting* rather than before accepting. A device deleted while
+     * its runtime lives is a load to refuse and say so about, because something
+     * is waiting to hear it. A runtime that is gone is not: there is nothing to
+     * publish onto and nobody to tell, and a completion callback made by that
+     * runtime is exactly the thing that must not be called now.
+     */
+    bool runtimeIsAlive() const;
 };
 
 /**

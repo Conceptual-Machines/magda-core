@@ -318,6 +318,19 @@ ExternalPluginResolution createEngineExternalDeviceAsync(
                                      .resolvedIsInstrument = resolved.description.isInstrument},
          currentDevice = std::move(currentDevice), offlineRender, completed = std::move(completed)](
             std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error) {
+            // The lifetime gate, before anything is called rather than after.
+            // This lambda is stored by JUCE and run a turn or more later, and
+            // `completed` is the runtime's own: it publishes the device into the
+            // project and reports the failures. A runtime that is gone has
+            // nowhere to publish and nobody to tell, so calling it at all is the
+            // use-after-free -- refusing inside it would already be too late.
+            //
+            // Deliberately not isStillWanted(): a device deleted while its
+            // runtime lives is a load to refuse *and say so about*, because
+            // something is still waiting to hear it.
+            if (!requested.assignment.runtimeIsAlive())
+                return;
+
             completed(completeExternalPluginLoad(std::move(instance), error, requested,
                                                  currentDevice, offlineRender));
         });

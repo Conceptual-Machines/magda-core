@@ -299,6 +299,13 @@ ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPlugi
  * so a runtime destroyed while a plugin is still loading is a load that expires
  * rather than a dangling one. A key with no assignment yields a request that
  * completion refuses.
+ *
+ * That expiry also gates @p completed. It is the runtime's own callback -- it
+ * publishes the device into the project and reports the failures -- so if the
+ * runtime that owns @p assignments is destroyed before the plugin arrives, it
+ * is not called at all. A caller therefore does not have to make its completion
+ * survive its own destruction; it has to keep the assignments alive for exactly
+ * as long as it wants to hear about loads, which is the same thing said once.
  */
 ExternalPluginResolution createEngineExternalDeviceAsync(
     const magda::DeviceInfo& device, magda::engine::DeviceKey key,

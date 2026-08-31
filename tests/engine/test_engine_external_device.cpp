@@ -1858,3 +1858,51 @@ TEST_CASE("Registering a device that is already live does not expire its load",
     CHECK(result.failure.isEmpty());
     CHECK(raw->tone->getValue() == Catch::Approx(0.5f));
 }
+
+TEST_CASE("A runtime torn down before dispatch is never called back", "[engine][external]") {
+    // The other half of the shutdown case, through the entry point a session
+    // actually uses. JUCE stores the completion and runs it a turn or more
+    // later, and in production that callback is the runtime's own -- it
+    // publishes the device into the project. So the load must be dropped
+    // before it is invoked, not refused inside it.
+    juce::ScopedJuceInitialiser_GUI juce;
+
+    auto model = externalDevice();
+    model.name = "My Stub";
+    model.fileOrIdentifier = "stub.plugin";
+
+    auto installed = descriptionFor(model);
+    installed.name = "Installed Stub";
+    installed.pluginFormatName = "StubFormat";
+    installed.fileOrIdentifier = model.fileOrIdentifier;
+
+    juce::KnownPluginList known;
+    known.addType(installed);
+    juce::AudioPluginFormatManager formats;
+    formats.addFormat(std::make_unique<StubFormat>());
+
+    const adapter::ExternalPluginServices services{
+        .formats = &formats, .knownPlugins = &known, .context = contextFor()};
+
+    bool called = false;
+    {
+        adapter::PluginAssignments assignments;
+        assignments.ensureAssignment(keyFor(model));
+
+        const auto resolved = adapter::createEngineExternalDeviceAsync(
+            model, keyFor(model), services, false, assignments,
+            [&](magda::engine::DeviceKey) { return &model; },
+            [&](adapter::ExternalDeviceResult) { called = true; });
+
+        REQUIRE(resolved);
+        // Nothing has dispatched yet: the creation is queued, not done.
+        REQUIRE_FALSE(called);
+    }
+
+    // The project closed. Everything the completion would have published into
+    // is gone, and the plugin only arrives now.
+    for (int attempts = 0; attempts < 20; ++attempts)
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+
+    CHECK_FALSE(called);
+}

@@ -34,6 +34,10 @@ bool LoadRequest::keyWasReassigned() const {
     return now != nullptr && now != handle.lock();
 }
 
+bool LoadRequest::runtimeIsAlive() const {
+    return !table.expired();
+}
+
 PluginAssignments::PluginAssignments() : table_(std::make_shared<AssignmentTable>()) {}
 
 ActiveAssignment PluginAssignments::ensureAssignment(magda::engine::DeviceKey key) {
