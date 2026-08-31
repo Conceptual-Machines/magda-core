@@ -60,14 +60,15 @@
  *
  * ## The projects that are not here
  *
- * Fifteen of the twenty-two are out, and each for a reason that is a fact about
+ * Twelve of the twenty-two are out, and each for a reason that is a fact about
  * the project or about the engine rather than a preference:
  *
- *  - **Half of them host an external plugin.** retrovid and envfollower carry
- *    Retrospect, groups carries Pro-L 2, overlaps carries Pianoteq. The rig
- *    refuses those outright and #2175 is the slice that takes them, with the
- *    invariant tier and a gate that calls an absent plugin unmeasurable rather
- *    than equal.
+ *  - **envfollower hosts a plugin and is still out**, which is the one entry
+ *    here that reads like an exception and is not. Its two Retrospect instances
+ *    are both on muted tracks, so an arrangement render of it is one internal
+ *    filter and no plugin at all; and it carries 4OSC besides. It belongs with
+ *    the 4OSC exclusions below rather than with the three plugin projects, which
+ *    are in (#2175).
  *  - **Seven of them contain 4OSC**, which has no engine device yet, so a
  *    Device op for one binds to a passthrough and the case would be comparing
  *    a project neither engine really rendered: dupes, macrolinkmod, retired-fx,
@@ -109,6 +110,22 @@ MaterialSpec pulsedToneFor(double seconds, double frequency) {
     return spec;
 }
 
+/// A steady band-limited tone, for a source whose case is judged on what its
+/// render is rather than on how close two renders are.
+///
+/// What the invariants tier reads off it is the largest step from one sample to
+/// the next, and that number is only meaningful over material that has a
+/// meaningful one: impulses step by full scale legitimately, so a project fed
+/// them has no step bound worth declaring and the check certifies nothing.
+MaterialSpec toneFor(double seconds, double frequency) {
+    MaterialSpec spec;
+    spec.kind = MaterialKind::Tone;
+    spec.sampleRate = 44100.0;
+    spec.durationSeconds = seconds;
+    spec.frequency = frequency;
+    return spec;
+}
+
 Case declarationFor(const char* name, const char* covers, double startBeat, double endBeat) {
     Case value;
     value.name = name;
@@ -122,16 +139,16 @@ Case declarationFor(const char* name, const char* covers, double startBeat, doub
 std::vector<MgdFixture> build() {
     std::vector<MgdFixture> fixtures;
 
-    // Every fixture here is an internal-device project, and that is a
-    // requirement rather than what was to hand. A project hosting a VST3 cannot
-    // be held to a null: without the plugin installed both legs render a
-    // passthrough and pass by agreeing about nothing, and with it installed the
-    // incumbent hosts it while the native leg cannot, so the verdict becomes a
-    // fact about the machine. #2175 reserves those projects for the invariant
-    // tier and an absent-plugin gate, and they belong there rather than here.
+    // The fixtures down to the Faust one are internal-device projects and the
+    // three after them host a plugin. That is a division rather than an
+    // ordering: an internal-device project is held to a null, and a project
+    // hosting a plugin cannot be, so the second group declares the invariants
+    // tier and does not run at all on a machine that has not scanned its plugin.
     //
-    // The rig checks it rather than trusting this comment: `format`, which is
-    // VST3 at zero and Internal at three.
+    // The rig checks it rather than trusting this comment. A plugin in a project
+    // that the manifest does not name is refused, a name no device claims is
+    // refused, and a fixture hosting one that did not declare the tier is
+    // refused (MgdFixture.cpp, refuseUndeclaredPlugins).
 
     {
         // Two audio tracks playing bounces off an SSD that is gone, and a Drum
@@ -341,6 +358,274 @@ std::vector<MgdFixture> build() {
             {.fileName = "Addictive Drums Key Map FX-bounce-1.wav",
              .material = pulsedToneFor(6.0, 196.0),
              .covers = "a break the clip warps, recorded at 135 under a 120 timeline"},
+        };
+
+        fixtures.push_back(std::move(fixture));
+    }
+
+    // ---------------------------------------------------------------------
+    // The projects that host a plugin (#2175)
+    // ---------------------------------------------------------------------
+    //
+    // Everything above is an internal-device project and was a requirement while
+    // nothing hosted a VST3 in the engine. #1893 ended that, and these three are
+    // what the requirement was keeping out: the projects most worth having, and
+    // the ones a corpus that quietly dropped every project with a plugin in it
+    // would have dropped.
+    //
+    // All three declare the invariants tier, and the rig refuses them otherwise.
+    // A plugin is entitled to frame its own work -- to dither, to hold state
+    // from however it was last called -- so a residual measured across one is a
+    // number about the plugin, and a tolerance wide enough to pass it is wide
+    // enough to pass anything. What is asked instead is what a plugin can be
+    // held to: both renders finite, the same length, continuous within a
+    // declared step, and decayed by the end.
+    //
+    // And none of them runs on a machine that has not scanned its plugin. That
+    // is not a gap: it is the gate (NullDiffCase.hpp, absentPluginsIn). A
+    // project rendered without the plugin it names is a different project, and
+    // two legs rendering it without the plugin null perfectly.
+
+    {
+        // Two audio tracks each through their own Retrospect, one of them with
+        // an internal Limiter after it. The first project in this corpus where a
+        // hosted plugin makes the sound, and the mixed chain is the half worth
+        // having: an external device and an internal one in one chain is where a
+        // plan that binds the two kinds differently shows it.
+        //
+        // Both instances carry saved state, which is the other half. #2244 made
+        // the chunk authoritative over the project's parameter array, and this
+        // is a project whose chunk was written by a released build rather than
+        // by a test.
+        MgdFixture fixture;
+        fixture.file = "legacy/projects/0.13.0-retrovid.mgd";
+        fixture.savedBy = "0.13.0-rc1";
+        fixture.isMigrationFixture = true;
+        fixture.declaration =
+            declarationFor("project.retrospect",
+                           "two audio tracks through hosted Retrospect instances at 92 bpm, one "
+                           "of them behind an internal limiter",
+                           0.0, 8.0);
+
+        fixture.declaration.tier = AudioTier::Invariants;
+        fixture.hostedPlugins = {"Retrospect"};
+
+        // Measured on the first run with the plugin installed: -3.0 dB, which
+        // is 0.71 of full scale in one sample. Named rather than rounded up to a
+        // number that would pass anything, and it is the mechanism that says why
+        // it is this large. Retrospect is a repeat effect: it splices, and a
+        // splice between two phases of a tone steps by the distance between
+        // them, which for a full-scale tone is up to twice its peak. What the
+        // bound has to refuse is a step larger than a splice, which is what a
+        // graph transition without a ramp leaves behind.
+        fixture.declaration.maxStepPerSample = 0.75;
+
+        // Eight beats of an arrangement whose clips run to thirty-two, so the
+        // render stops in the middle of the music. Nothing has decayed at the
+        // end because nothing has stopped.
+        fixture.declaration.rendersPastItsMaterial = false;
+
+        fixture.declaration.mechanism =
+            "two hosted Retrospect instances, which owe neither engine a sample";
+
+        // Tones throughout, at frequencies far enough apart that two sources
+        // cannot be mistaken for each other in a render. A tone rather than
+        // impulses because the step bound above is the whole assertion and
+        // impulses have no step worth bounding.
+        //
+        // Two of the eight sound in the rendered window: the two arrangement
+        // clips on the two unmuted tracks. The rest are the project's session
+        // clips and its two muted tracks, and they are declared because the
+        // manifest has to name every source the project references -- a source
+        // the manifest misses reaches a leg pointing at a path that does not
+        // exist, renders silence, and silence nulls against silence.
+        fixture.sources = {
+            {.fileName = "mdh_drm120_touch_stp.wav",
+             .material = toneFor(6.0, 220.0),
+             .covers = "the first track's arrangement clip, looped and stretched from 120 to 92 "
+                       "under the Retrospect and the limiter"},
+            {.fileName = "mdh_drm120_touch_stp_(copy)_20260701_145457.wav",
+             .material = toneFor(6.0, 330.0),
+             .covers = "the second track's arrangement clip, played at its own rate under the "
+                       "second Retrospect"},
+            {.fileName = "DS_OT_fx_riser_dark.wav",
+             .material = toneFor(6.0, 440.0),
+             .covers = "a riser on the third track, which the project muted"},
+            {.fileName = "DS_OT_fx_riser_dark_20260701_153831.wav",
+             .material = toneFor(6.0, 550.0),
+             .covers = "its bounce on the fourth track, muted with it"},
+            {.fileName = "TAMUZ_TD_90_drum_best_simple_trashy.wav",
+             .material = toneFor(2.0, 660.0),
+             .covers = "a session clip in the first scene, which an arrangement render never "
+                       "launches"},
+            {.fileName = "SLS_O_65_guitar_soul_serenade_Cmin.wav",
+             .material = toneFor(2.0, 770.0),
+             .covers = "a session clip on the second track"},
+            {.fileName = "BS_NCS3_140_bass_growl_leap_Dbmin.wav",
+             .material = toneFor(2.0, 880.0),
+             .covers = "a session clip in the fourth scene"},
+            {.fileName = "SA_MU_118_electric_guitar_loop_funky_wah_Amaj.wav",
+             .material = toneFor(2.0, 990.0),
+             .covers = "a session clip in the fifth scene"},
+        };
+
+        fixtures.push_back(std::move(fixture));
+    }
+
+    {
+        // A hosted instrument rather than a hosted effect, which is the other
+        // half of what #1893 built and a different path through the plan: MIDI
+        // is routed to it, and whether it is routed at all comes from the role
+        // resolution corrects against the scan rather than from what the project
+        // guessed (#2252).
+        //
+        // Two MIDI clips back to back on one track, four notes each. No audio
+        // sources at all, which makes this the cheapest case in the corpus and
+        // the one that isolates the instrument: whatever comes out came out of
+        // Pianoteq, and the notes that went in are compared as a stream beside
+        // it.
+        MgdFixture fixture;
+        fixture.file = "legacy/projects/0.18.0-overlaps.mgd";
+        fixture.savedBy = "0.18.0-6-g3c042289";
+        fixture.isMigrationFixture = true;
+        fixture.declaration =
+            declarationFor("project.hostedinstrument",
+                           "two MIDI clips back to back into a hosted Pianoteq", 0.0, 8.0);
+
+        fixture.declaration.tier = AudioTier::Invariants;
+        fixture.hostedPlugins = {"Pianoteq 8"};
+
+        // A piano is a decaying acoustic model: nothing in its output steps, and
+        // a bound loose enough for a repeat effect would say nothing here.
+        fixture.declaration.maxStepPerSample = 0.1;
+
+        // The second clip's notes are still ringing when the render stops. A
+        // piano decays over seconds and the window is four of them, so the tail
+        // here is the instrument sounding rather than a device left running.
+        fixture.declaration.rendersPastItsMaterial = false;
+
+        fixture.declaration.mechanism =
+            "a hosted Pianoteq, which is a physical model and settles from its own state";
+
+        // Asserted beside the audio, and independent of it. What reaches the
+        // instrument is a fact both engines owe each other exactly, whatever
+        // either instrument then does with it, and it is the assertion that
+        // survives the plugin being entitled to its own sound.
+        fixture.declaration.compareMidiStreams = true;
+
+        fixtures.push_back(std::move(fixture));
+    }
+
+    {
+        // Twenty-three stems, three group tracks and a limiter on two of them:
+        // a real multitrack session, and the only project in this corpus with a
+        // track hierarchy in it. Two things arrive with it that nothing else
+        // here has -- group tracks summing their children, and the same plugin
+        // hosted twice in one project, once on a track and once on the master.
+        //
+        // Rendered over eight beats of a project whose clips are five hundred
+        // and ninety-seven, for the reason the corpus comment gives: what a
+        // fixture is worth is what it contains, not how much of it is played,
+        // and a forty-minute arrangement rendered twice is not a test budget.
+        MgdFixture fixture;
+        fixture.file = "legacy/projects/0.10.2-groups.mgd";
+        fixture.savedBy = "0.10.2-6-g9cfbb3b32";
+        fixture.isMigrationFixture = true;
+        fixture.declaration = declarationFor(
+            "project.multitrack",
+            "twenty-three stems under three group tracks, limited on a track and on the master",
+            0.0, 8.0);
+
+        fixture.declaration.tier = AudioTier::Invariants;
+        fixture.hostedPlugins = {"Pro-L 2"};
+
+        // A limiter's job is to not step: it is the one device here whose output
+        // is bounded by construction, and a bound this tight is what says the
+        // twenty-three summed stems went through it rather than around it.
+        fixture.declaration.maxStepPerSample = 0.1;
+
+        // Eight beats of a five-hundred-and-ninety-seven-beat arrangement. Every
+        // one of the twenty-three stems is still playing when the render stops.
+        fixture.declaration.rendersPastItsMaterial = false;
+
+        fixture.declaration.mechanism =
+            "two hosted Pro-L 2 instances, one on the snare track and one on the master";
+
+        // One tone per stem, spaced so that no two sum to a beat frequency
+        // inside the band and no two can be mistaken for each other. Every one
+        // of them sounds: this project has no session clips and no muted tracks,
+        // which is what makes it the summing case.
+        fixture.sources = {
+            {.fileName = "BACKING VOX (female) - M81.wav",
+             .material = toneFor(5.0, 110.0),
+             .covers = "a vocal stem under the VOX group"},
+            {.fileName = "BACKING VOX (male) - M80.wav",
+             .material = toneFor(5.0, 123.0),
+             .covers = "a second vocal stem under the VOX group"},
+            {.fileName = "BARITONE - M81-SH.wav",
+             .material = toneFor(5.0, 139.0),
+             .covers = "a horn stem routed straight to the master"},
+            {.fileName = "BASS AMP - AK-47mkII.wav",
+             .material = toneFor(5.0, 156.0),
+             .covers = "an amped bass stem under the BASS group"},
+            {.fileName = "BASS DI.wav",
+             .material = toneFor(5.0, 175.0),
+             .covers = "the DI beside it, under the same group"},
+            {.fileName = "CHAMBER - AR-70 STEREO.L.wav",
+             .material = toneFor(5.0, 196.0),
+             .covers = "the left half of a stereo room pair, carried as two mono tracks"},
+            {.fileName = "CHAMBER - AR-70 STEREO.R.wav",
+             .material = toneFor(5.0, 220.0),
+             .covers = "its right half"},
+            {.fileName = "DRUM HIHAT - M60 FET hypercardioid.wav",
+             .material = toneFor(5.0, 247.0),
+             .covers = "a hi-hat stem under the DRUMS group"},
+            {.fileName = "DRUM KICK - SENN 421  {our M82 died _( }.wav",
+             .material = toneFor(5.0, 277.0),
+             .covers = "a kick stem, whose file name carries the braces and spaces a real "
+                       "session leaves in one"},
+            {.fileName = "DRUM OVERHEADS - AR-51.L.wav",
+             .material = toneFor(5.0, 311.0),
+             .covers = "the left overhead"},
+            {.fileName = "DRUM OVERHEADS - AR-51.R.wav",
+             .material = toneFor(5.0, 330.0),
+             .covers = "the right overhead"},
+            {.fileName = "DRUM SNARE - M80-SH.wav",
+             .material = toneFor(5.0, 370.0),
+             .covers = "the snare, and the one track in the project with a plugin on it"},
+            {.fileName = "DRUM TOM - M81-SH.wav",
+             .material = toneFor(5.0, 415.0),
+             .covers = "a tom stem"},
+            {.fileName = "DRUM TOM 2 - M81-SH.wav",
+             .material = toneFor(5.0, 466.0),
+             .covers = "a second tom stem"},
+            {.fileName = "E GUITAR - M81-SH.wav",
+             .material = toneFor(5.0, 523.0),
+             .covers = "a guitar stem routed straight to the master"},
+            {.fileName = "KEY AMP - M81-SH.wav",
+             .material = toneFor(5.0, 587.0),
+             .covers = "a keyboard amp stem"},
+            {.fileName = "LEAD VOX (female) - M81.wav",
+             .material = toneFor(5.0, 659.0),
+             .covers = "the lead vocal, under the VOX group"},
+            {.fileName = "LESLIE BOTTOM - M81.wav",
+             .material = toneFor(5.0, 740.0),
+             .covers = "the bottom of a Leslie pair"},
+            {.fileName = "LESLIE TOP - M81.wav",
+             .material = toneFor(5.0, 831.0),
+             .covers = "its top"},
+            {.fileName = "ROOM - M81 (ORTF).L.wav",
+             .material = toneFor(5.0, 932.0),
+             .covers = "the left half of an ORTF room pair"},
+            {.fileName = "ROOM - M81 (ORTF).R.wav",
+             .material = toneFor(5.0, 1046.0),
+             .covers = "its right half"},
+            {.fileName = "TENOR - M81-SH.wav",
+             .material = toneFor(5.0, 1174.0),
+             .covers = "a tenor horn stem"},
+            {.fileName = "TRUMPET - M81-SH.wav",
+             .material = toneFor(5.0, 1318.0),
+             .covers = "a trumpet stem"},
         };
 
         fixtures.push_back(std::move(fixture));

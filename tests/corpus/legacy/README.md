@@ -47,9 +47,9 @@ nulls against silence perfectly well.
 ## Reuse here, or save new elsewhere
 
 The render corpus (#2081) decides, per project, whether to reuse one of these or
-save its own. Seven of the twenty-two are reused today and none has yet needed
+save its own. Ten of the twenty-two are reused today and none has yet needed
 one saved for it; `tests/MgdFixtures.cpp` carries the table and says why the
-other fifteen are out. The rule, recorded per fixture in
+other twelve are out. The rule, recorded per fixture in
 `MgdFixture::isMigrationFixture`:
 
 **Reuse where a project earns its place by being a real arrangement** that
@@ -57,16 +57,21 @@ nobody would have written down. That is the whole value of this directory:
 eight tracks carrying sixty-eight MIDI clips, one audio clip and an automation
 lane is a shape a hand-written case never has.
 
-**Never reuse one that hosts a plugin.** Roughly half of these do: retrovid and
-envfollower carry Retrospect, groups carries Pro-L 2, overlaps carries Pianoteq.
-A project with a VST3 in it has no verdict a null-diff corpus can hold it to.
-Without the plugin installed both legs render a passthrough and pass by agreeing
-about nothing; with it installed the incumbent hosts it and the native engine
-cannot, so whether the case passes becomes a fact about the machine that ran it.
-Those projects belong to #2175, with the invariant tier and a gate that calls an
-absent plugin unmeasurable rather than equal. The fixture rig refuses them
-outright, because a tier is a field somebody fills in and the plugin format is a
-fact about the file.
+**Reuse one that hosts a plugin only with the declaration that goes with it.**
+Roughly half of these do: retrovid and envfollower carry Retrospect, groups
+carries Pro-L 2, overlaps carries Pianoteq. Three of them are fixtures now
+(#2175); what makes that possible is that the native engine hosts a VST3 (#1893)
+and that the two things a plugin project cannot pretend about are declared.
+
+A project with a VST3 in it has no null a corpus can hold it to: a plugin frames
+its own work, so it renders at `AudioTier::Invariants` and the fixture is refused
+if it asks for anything else. And a project rendered without the plugin it names
+is a different project -- both legs bind nothing in that slot and null against
+each other perfectly -- so `MgdFixture::hostedPlugins` names them, the rig
+refuses a plugin the manifest missed and a name no device claims, and the runner
+does not render the case at all on a machine that has not scanned one. Every CI
+runner is such a machine, which is why those three are reported not run there
+rather than green.
 
 **Save new where the material has to be designed.** A fixture reused from here
 can never be asked for one bar more, for a source that suits a case better, or

@@ -107,6 +107,15 @@ struct SuiteRun {
     std::set<std::string> failing;
     std::set<std::string> unmeasurable;
 
+    /// Never rendered, because the project names a plugin this machine has not
+    /// scanned (#2175).
+    ///
+    /// Kept apart from the three above because it is not a complaint. Those are
+    /// things wrong with the engine or with the harness; this is a fact about
+    /// which plugins are installed, and every CI runner has none. A suite reads
+    /// it to print what it did not cover, not to fail.
+    std::set<std::string> notRun;
+
     /// Wall clock per case, in milliseconds, both legs and the comparison.
     ///
     /// Recorded on every run rather than under a flag, because #2081's open

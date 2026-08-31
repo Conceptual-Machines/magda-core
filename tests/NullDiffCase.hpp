@@ -2,6 +2,10 @@
 
 #include <juce_core/juce_core.h>
 
+namespace juce {
+class KnownPluginList;
+}
+
 #include <limits>
 #include <string>
 #include <vector>
@@ -209,6 +213,21 @@ struct Case {
     /// nobody declared would certify a check that never ran.
     double maxStepPerSample = 0.0;
 
+    /// Whether this case's render window goes past the end of its material
+    /// (#2175).
+    ///
+    /// True for every case built in code: they are written to render what they
+    /// contain and then stop. False for a real project, whose arrangement is
+    /// minutes long and whose case renders eight beats of it, so the render ends
+    /// in the middle of a clip.
+    ///
+    /// Read by the invariants tier, where the tail check asks what is left
+    /// running after the material stops. That question has no meaning on a
+    /// render that stops first: what is in the last fifty milliseconds there is
+    /// the music. The tail is still measured and still printed, marked so that a
+    /// number nobody asked for cannot be read as a check that held.
+    bool rendersPastItsMaterial = true;
+
     /// How far this project's renders at two different block sizes may sit
     /// apart, as a peak level (#2078).
     ///
@@ -249,7 +268,10 @@ struct Case {
     }
 
     CaseEnvironment environment() const {
-        return {sampleRate, blockSize, channels, seed};
+        // Plugins left empty on purpose: a case declares what it renders
+        // under and cannot declare what is installed. The runner fills them in
+        // from what the render actually resolved.
+        return {sampleRate, blockSize, channels, seed, {}};
     }
 };
 
@@ -298,10 +320,35 @@ const std::vector<Case>& sharedCorpus(const juce::File& scratchDirectory);
  * tier says what can be asserted against the incumbent, and an external plugin
  * frames its own work whether or not the case chose to notice.
  *
- * Empty for the whole corpus today, because nothing hosts a plugin yet. It is
- * written now so that #1893 has a gate to land in rather than a gate to widen.
+ * Empty for the code-built corpus, whose devices were all written for it. The
+ * three real projects that host a plugin (#2175) are what fills it, and they
+ * found the gate it was written for rather than widening it.
  */
 std::vector<std::string> externalDevicesIn(const Case& value);
+
+/**
+ * @brief Of those, the ones @p knownPlugins has never seen (#2175).
+ *
+ * The gate on a case whose project hosts a plugin. A project rendered without
+ * the plugin it names is a different project: both legs bind nothing in that
+ * slot, both render the chain around it, and the two null against each other
+ * perfectly -- a case that passes by having tested less than it claims. So the
+ * question is asked of the scan before either leg is driven, and a case with an
+ * answer does not run at all.
+ *
+ * Asked of the model rather than of the compiled plan, which makes it strict in
+ * one direction: a plugin on a chain the project bypassed is never instantiated
+ * and never missed, and this refuses the case over it anyway. That is the right
+ * way round to be wrong -- the cost is a case reported as not run on a machine
+ * that could have measured it, and the report names the plugin, where the other
+ * way round is a green case that rendered a project nobody has.
+ *
+ * A null @p knownPlugins is not a special case: nothing is installed, so
+ * everything the project names is absent. That is the state every CI runner is
+ * in.
+ */
+std::vector<std::string> absentPluginsIn(const Case& value,
+                                         const juce::KnownPluginList* knownPlugins);
 
 /// The groove template every grooving case names, and the one the runner
 /// installs in both engines.

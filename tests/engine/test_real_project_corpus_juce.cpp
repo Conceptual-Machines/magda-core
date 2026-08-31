@@ -1,5 +1,6 @@
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <iostream>
 #include <numeric>
 #include <set>
@@ -22,15 +23,30 @@
  * nothing in it exercises.
  *
  * This is the other half. Projects saved by released builds between 0.4.8 and
- * 0.17.0, loaded from the bytes they were written as, rendered through both
- * engines and compared by the same runner the code-built corpus uses. Seven are
- * declared; six run here, and the skip list below says why the seventh does
- * not. What they
+ * 0.18.0, loaded from the bytes they were written as, rendered through both
+ * engines and compared by the same runner the code-built corpus uses. Ten are
+ * declared; nine reach a leg here, and the skip list below says why the tenth
+ * does not. What they
  * bring is the combinations: a v1 project whose clips carry their sources
  * inline, a five-device chain under an FM synth, two tracks coupled through a
  * sidechain rather than through routing, sixty-four session clips sitting
  * beside an arrangement, a warp map made by a real transient pass with a
  * repeated marker in it.
+ *
+ * ## The three that host a plugin
+ *
+ * Of the nine, three are projects with a VST3 in them (#2175): two Retrospect
+ * instances over audio, a Pianoteq fed MIDI, and a Pro-L 2 over twenty-three
+ * summed stems. They are the projects most worth having and the ones a corpus
+ * that quietly dropped every project with a plugin in it would have dropped.
+ *
+ * How many of them are measured is a fact about the machine rather than about
+ * the corpus, and it is printed rather than assumed. A project rendered without
+ * the plugin it names is a different project -- both legs bind nothing in that
+ * slot and null against each other perfectly -- so a case whose plugin this
+ * machine has not scanned does not run at all, and is reported as not run rather
+ * than as a pass. Every CI runner scans nothing, so on CI all three are in that
+ * state and the six internal-device projects are what gates a release.
  *
  * MgdFixtures.cpp says which projects and why, and which fifteen of the
  * twenty-two are not here.
@@ -214,6 +230,37 @@ class RealProjectCorpusTests : public juce::UnitTest {
 
         const auto complaints =
             judgeSuite(run.asserted, run.unmeasurable, run.failing, underCalibration);
+
+        // What this run did not cover, said out loud. A case that did not run is
+        // not a pass and not a failure, and the one way that can go wrong is
+        // quietly: a corpus reporting nine ok on a machine that measured six.
+        if (!run.notRun.empty()) {
+            juce::String skipped;
+            for (const auto& name : run.notRun)
+                skipped << (skipped.isEmpty() ? "" : ", ") << juce::String(name);
+
+            logMessage("not run for want of a plugin this machine has not scanned: " + skipped);
+            std::cout << "not run for want of a plugin this machine has not scanned: " << skipped
+                      << std::endl;
+        }
+
+        // And the rule that keeps it from covering anything else. Only a project
+        // that declares a hosted plugin may be skipped for one, so a leg that
+        // started refusing every case would fail here rather than reporting a
+        // quiet corpus.
+        std::vector<std::string> skippedWithoutPlugins;
+        for (const auto& name : run.notRun) {
+            const auto declared =
+                std::find_if(mgdFixtures().begin(), mgdFixtures().end(),
+                             [&name](const auto& f) { return f.declaration.name == name; });
+
+            if (declared == mgdFixtures().end() || declared->hostedPlugins.empty())
+                skippedWithoutPlugins.push_back(name);
+        }
+
+        expect(skippedWithoutPlugins.empty(),
+               "did not run, and host no plugin that could explain it: " +
+                   join(skippedWithoutPlugins));
 
         // Every fixture reached a verdict. Asserted positively rather than left
         // implied, because the checks below all pass on an empty run and a

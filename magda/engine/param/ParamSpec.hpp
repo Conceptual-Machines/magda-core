@@ -55,6 +55,33 @@ struct ParamSpec {
      * that is the granularity the cost is paid at.
      */
     bool segmentAccurate = false;
+
+    /**
+     * @brief Whether anything in the model actually declared this parameter.
+     *
+     * False for one slot only: the hole a device's window has to leave when its
+     * parameter indices are sparse. A window is contiguous and indexed from
+     * zero, because that is what lets a device be handed a span and read its own
+     * parameters by the index it declared them at, so an index nothing declared
+     * still costs a slot.
+     *
+     * What it must not cost is a value. A device cannot tell a fabricated zero
+     * from a real one, and the first real project to host a plugin found what
+     * that means: a project saved before the wet/dry pair was persisted has no
+     * parameters at indices 0 and 1, and a hole publishing 0.0 there set the
+     * pair to fully dry and fully attenuated -- silence, from a plugin whose own
+     * chunk was perfectly restored. A sparse array is normal for a hosted plugin
+     * (the fork's list is a filtered view of the instance's, and a project saves
+     * what it had), so this is a shape the value layer has to carry rather than
+     * a model to correct.
+     *
+     * Read where the block is resolved: an undeclared parameter publishes no
+     * segments, so the device sees an empty view and keeps whatever its own
+     * state put there. That is the same answer a device already gets for an
+     * index past the end of its window, which is the same question one step
+     * further out.
+     */
+    bool declared = true;
 };
 
 /** @brief The spec of the parameter @p info describes. Off the audio thread. */
