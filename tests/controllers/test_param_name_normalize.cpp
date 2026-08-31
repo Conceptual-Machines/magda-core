@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/aliases/ParamNameNormalize.hpp"
+#include "../../magda/daw/core/aliases/ParamNameNormalize.hpp"
 
 using namespace magda;
 

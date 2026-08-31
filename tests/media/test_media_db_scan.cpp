@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "../magda/daw/media_db/Scan.hpp"
+#include "../../magda/daw/media_db/Scan.hpp"
 
 namespace fs = std::filesystem;
 

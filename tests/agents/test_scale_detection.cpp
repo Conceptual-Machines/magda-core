@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 
-#include "../magda/daw/music/ScaleDetector.hpp"
-#include "../magda/daw/music/Scales.hpp"
+#include "../../magda/daw/music/ScaleDetector.hpp"
+#include "../../magda/daw/music/Scales.hpp"
 
 using namespace magda::music;
 

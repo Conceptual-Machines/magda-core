@@ -1,10 +1,10 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/audio/plugins/InternalPluginRegistry.hpp"
-#include "../magda/daw/audio/plugins/SidechainPlugin.hpp"
-#include "../magda/daw/core/TrackManager.hpp"
-#include "../magda/daw/project/serialization/ProjectSerializer.hpp"
+#include "../../magda/daw/audio/plugins/InternalPluginRegistry.hpp"
+#include "../../magda/daw/audio/plugins/SidechainPlugin.hpp"
+#include "../../magda/daw/core/TrackManager.hpp"
+#include "../../magda/daw/project/serialization/ProjectSerializer.hpp"
 
 using namespace magda;
 

@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/controllers/ControllerRegistry.hpp"
+#include "../../magda/daw/core/controllers/ControllerRegistry.hpp"
 
 using namespace magda;
 

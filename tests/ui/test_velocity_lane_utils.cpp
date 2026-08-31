@@ -1,7 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/ui/components/pianoroll/VelocityLaneUtils.hpp"
+#include "../../magda/daw/ui/components/pianoroll/VelocityLaneUtils.hpp"
 
 using namespace magda::velocity_lane;
 

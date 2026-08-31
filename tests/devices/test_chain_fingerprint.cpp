@@ -1,10 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/ChainFingerprint.hpp"
-#include "../magda/daw/core/ChainNode.hpp"
-#include "../magda/daw/core/MacroInfo.hpp"
-#include "../magda/daw/core/ModInfo.hpp"
-#include "../magda/daw/core/RackInfo.hpp"
+#include "../../magda/daw/core/ChainFingerprint.hpp"
+#include "../../magda/daw/core/ChainNode.hpp"
+#include "../../magda/daw/core/MacroInfo.hpp"
+#include "../../magda/daw/core/ModInfo.hpp"
+#include "../../magda/daw/core/RackInfo.hpp"
 
 using namespace magda;
 

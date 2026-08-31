@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/aliases/ParamSigilParser.hpp"
-#include "../magda/daw/core/aliases/Target.hpp"
+#include "../../magda/daw/core/aliases/ParamSigilParser.hpp"
+#include "../../magda/daw/core/aliases/Target.hpp"
 
 using namespace magda;
 

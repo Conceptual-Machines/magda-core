@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/audio/plugins/FaustParamInfo.hpp"
+#include "../../magda/daw/audio/plugins/FaustParamInfo.hpp"
 
 using namespace magda::daw::audio;
 using magda::DisplayFormat;

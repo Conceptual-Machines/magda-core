@@ -1,14 +1,14 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/AutomationInfo.hpp"
-#include "../magda/daw/core/MacroInfo.hpp"
-#include "../magda/daw/core/ModInfo.hpp"
-#include "../magda/daw/core/RackInfo.hpp"
-#include "../magda/daw/core/TrackCommands.hpp"
-#include "../magda/daw/core/TrackManager.hpp"
-#include "../magda/daw/core/UndoManager.hpp"
-#include "../magda/daw/project/serialization/ProjectSerializer.hpp"
+#include "../../magda/daw/core/AutomationInfo.hpp"
+#include "../../magda/daw/core/MacroInfo.hpp"
+#include "../../magda/daw/core/ModInfo.hpp"
+#include "../../magda/daw/core/RackInfo.hpp"
+#include "../../magda/daw/core/TrackCommands.hpp"
+#include "../../magda/daw/core/TrackManager.hpp"
+#include "../../magda/daw/core/UndoManager.hpp"
+#include "../../magda/daw/project/serialization/ProjectSerializer.hpp"
 
 using namespace magda;
 

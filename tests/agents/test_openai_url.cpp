@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/agents/openai_url.hpp"
+#include "../../magda/agents/openai_url.hpp"
 
 using magda::normalizeOpenAIBaseUrl;
 

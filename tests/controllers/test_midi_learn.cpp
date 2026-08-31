@@ -2,14 +2,14 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/audio/controllers/ControllerRouter.hpp"
-#include "../magda/daw/audio/midi/MidiLearnSession.hpp"
-#include "../magda/daw/core/Config.hpp"
-#include "../magda/daw/core/aliases/AliasRegistry.hpp"
-#include "../magda/daw/core/aliases/AliasReverseIndex.hpp"
-#include "../magda/daw/core/controllers/BindingRegistry.hpp"
-#include "../magda/daw/core/controllers/ControllerRegistry.hpp"
-#include "../magda/daw/core/controllers/MidiLearnCoordinator.hpp"
+#include "../../magda/daw/audio/controllers/ControllerRouter.hpp"
+#include "../../magda/daw/audio/midi/MidiLearnSession.hpp"
+#include "../../magda/daw/core/Config.hpp"
+#include "../../magda/daw/core/aliases/AliasRegistry.hpp"
+#include "../../magda/daw/core/aliases/AliasReverseIndex.hpp"
+#include "../../magda/daw/core/controllers/BindingRegistry.hpp"
+#include "../../magda/daw/core/controllers/ControllerRegistry.hpp"
+#include "../../magda/daw/core/controllers/MidiLearnCoordinator.hpp"
 
 using namespace magda;
 

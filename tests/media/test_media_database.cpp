@@ -17,9 +17,9 @@
 #include <string>
 #include <vector>
 
-#include "../magda/daw/media_db/MediaDatabase.hpp"
-#include "../magda/daw/media_db/MediaDbMetadata.hpp"
-#include "../magda/daw/media_db/Schema.hpp"
+#include "../../magda/daw/media_db/MediaDatabase.hpp"
+#include "../../magda/daw/media_db/MediaDbMetadata.hpp"
+#include "../../magda/daw/media_db/Schema.hpp"
 
 using Catch::Approx;
 using magda::media::kSchemaVersion;

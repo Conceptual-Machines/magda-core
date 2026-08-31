@@ -7,8 +7,8 @@
 #include <thread>
 #include <vector>
 
-#include "../magda/daw/audio/osc/OscRouter.hpp"
-#include "../magda/daw/core/controllers/Binding.hpp"
+#include "../../magda/daw/audio/osc/OscRouter.hpp"
+#include "../../magda/daw/core/controllers/Binding.hpp"
 
 using namespace magda;
 using namespace magda::osc;

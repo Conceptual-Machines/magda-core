@@ -19,9 +19,9 @@
 #include <string>
 #include <vector>
 
-#include "../magda/daw/core/MidiFileWriter.hpp"
-#include "../magda/daw/media_db/MediaDatabase.hpp"
-#include "../magda/daw/media_db/MediaDbIndexer.hpp"
+#include "../../magda/daw/core/MidiFileWriter.hpp"
+#include "../../magda/daw/media_db/MediaDatabase.hpp"
+#include "../../magda/daw/media_db/MediaDbIndexer.hpp"
 
 namespace fs = std::filesystem;
 using Catch::Approx;

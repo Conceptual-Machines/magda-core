@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/controllers/ControllerProfile.hpp"
-#include "../magda/daw/core/controllers/ControllerProfileRegistry.hpp"
+#include "../../magda/daw/core/controllers/ControllerProfile.hpp"
+#include "../../magda/daw/core/controllers/ControllerProfileRegistry.hpp"
 
 using namespace magda;
 

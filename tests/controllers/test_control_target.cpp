@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/ChainNodePath.hpp"
-#include "../magda/daw/core/ControlTarget.hpp"
+#include "../../magda/daw/core/ChainNodePath.hpp"
+#include "../../magda/daw/core/ControlTarget.hpp"
 
 using namespace magda;
 

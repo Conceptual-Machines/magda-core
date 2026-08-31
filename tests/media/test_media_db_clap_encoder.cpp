@@ -15,8 +15,8 @@
 #include <numbers>
 #include <vector>
 
-#include "../magda/daw/media_db/ClapAudioEncoder.hpp"
-#include "../magda/daw/media_db/MelSpectrogram.hpp"
+#include "../../magda/daw/media_db/ClapAudioEncoder.hpp"
+#include "../../magda/daw/media_db/MelSpectrogram.hpp"
 
 namespace fs = std::filesystem;
 using magda::media::ClapAudioEncoder;

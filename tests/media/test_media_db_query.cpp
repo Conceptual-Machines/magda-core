@@ -19,9 +19,9 @@
 #include <string>
 #include <vector>
 
-#include "../magda/daw/media_db/MediaDatabase.hpp"
-#include "../magda/daw/media_db/MediaDbIndexer.hpp"
-#include "../magda/daw/media_db/MediaDbQuery.hpp"
+#include "../../magda/daw/media_db/MediaDatabase.hpp"
+#include "../../magda/daw/media_db/MediaDbIndexer.hpp"
+#include "../../magda/daw/media_db/MediaDbQuery.hpp"
 
 namespace fs = std::filesystem;
 using magda::media::MediaDatabase;

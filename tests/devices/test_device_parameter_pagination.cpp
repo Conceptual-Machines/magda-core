@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/DeviceInfo.hpp"
-#include "../magda/daw/core/ParameterInfo.hpp"
+#include "../../magda/daw/core/DeviceInfo.hpp"
+#include "../../magda/daw/core/ParameterInfo.hpp"
 
 using namespace magda;
 

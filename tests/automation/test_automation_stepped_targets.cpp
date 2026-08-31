@@ -1,10 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/AutomationInfo.hpp"
-#include "../magda/daw/core/AutomationManager.hpp"
-#include "../magda/daw/core/DeviceInfo.hpp"
-#include "../magda/daw/core/ParameterInfo.hpp"
-#include "../magda/daw/core/TrackManager.hpp"
+#include "../../magda/daw/core/AutomationInfo.hpp"
+#include "../../magda/daw/core/AutomationManager.hpp"
+#include "../../magda/daw/core/DeviceInfo.hpp"
+#include "../../magda/daw/core/ParameterInfo.hpp"
+#include "../../magda/daw/core/TrackManager.hpp"
 
 using namespace magda;
 

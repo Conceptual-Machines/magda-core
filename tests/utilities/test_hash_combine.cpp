@@ -5,7 +5,7 @@
 #include <set>
 #include <vector>
 
-#include "../third_party/tracktion_engine/modules/tracktion_core/utilities/tracktion_Hash.h"
+#include "../../third_party/tracktion_engine/modules/tracktion_core/utilities/tracktion_Hash.h"
 
 /**
  * tracktion::hash_combine, which every node in a playback graph gets its

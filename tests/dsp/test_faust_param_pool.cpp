@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/audio/plugins/FaustParamPool.hpp"
+#include "../../magda/daw/audio/plugins/FaustParamPool.hpp"
 
 using namespace magda::daw::audio;
 

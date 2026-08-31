@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <vector>
 
-#include "../magda/daw/engine/TempoSequenceRippleMath.hpp"
+#include "../../magda/daw/engine/TempoSequenceRippleMath.hpp"
 
 using magda::temporipple::Mode;
 using magda::temporipple::rippleEvents;

@@ -1,10 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/aliases/AliasRegistry.hpp"
-#include "../magda/daw/core/aliases/ChainContext.hpp"
-#include "../magda/daw/core/aliases/ResolverRegistry.hpp"
-#include "../magda/daw/core/aliases/Target.hpp"
-#include "../magda/daw/core/aliases/TargetResolver.hpp"
+#include "../../magda/daw/core/aliases/AliasRegistry.hpp"
+#include "../../magda/daw/core/aliases/ChainContext.hpp"
+#include "../../magda/daw/core/aliases/ResolverRegistry.hpp"
+#include "../../magda/daw/core/aliases/Target.hpp"
+#include "../../magda/daw/core/aliases/TargetResolver.hpp"
 
 using namespace magda;
 

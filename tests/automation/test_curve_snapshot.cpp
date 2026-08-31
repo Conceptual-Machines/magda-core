@@ -2,7 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 
-#include "../magda/daw/audio/modifiers/CurveSnapshot.hpp"
+#include "../../magda/daw/audio/modifiers/CurveSnapshot.hpp"
 
 using namespace magda;
 using Catch::Approx;

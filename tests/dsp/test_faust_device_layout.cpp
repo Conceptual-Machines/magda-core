@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/ui/components/chain/layout/FaustDeviceLayout.hpp"
-#include "../magda/daw/ui/components/chain/slot/DeviceSlotParamLayoutFactory.hpp"
-#include "../magda/daw/ui/components/chain/slot/DeviceSlotTraits.hpp"
+#include "../../magda/daw/ui/components/chain/layout/FaustDeviceLayout.hpp"
+#include "../../magda/daw/ui/components/chain/slot/DeviceSlotParamLayoutFactory.hpp"
+#include "../../magda/daw/ui/components/chain/slot/DeviceSlotTraits.hpp"
 
 using namespace magda;
 using namespace magda::daw::ui;

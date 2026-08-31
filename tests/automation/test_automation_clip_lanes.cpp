@@ -1,11 +1,11 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/AutomationCommands.hpp"
-#include "../magda/daw/core/AutomationManager.hpp"
-#include "../magda/daw/core/ClipLaneFlattener.hpp"
-#include "../magda/daw/core/TrackManager.hpp"
-#include "../magda/daw/core/UndoManager.hpp"
+#include "../../magda/daw/core/AutomationCommands.hpp"
+#include "../../magda/daw/core/AutomationManager.hpp"
+#include "../../magda/daw/core/ClipLaneFlattener.hpp"
+#include "../../magda/daw/core/TrackManager.hpp"
+#include "../../magda/daw/core/UndoManager.hpp"
 
 using namespace magda;
 using Catch::Approx;

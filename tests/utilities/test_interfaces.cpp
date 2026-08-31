@@ -4,10 +4,10 @@
 #include <string>
 #include <vector>
 
-#include "../magda/daw/interfaces/clip_interface.hpp"
-#include "../magda/daw/interfaces/mixer_interface.hpp"
-#include "../magda/daw/interfaces/track_interface.hpp"
-#include "../magda/daw/interfaces/transport_interface.hpp"
+#include "../../magda/daw/interfaces/clip_interface.hpp"
+#include "../../magda/daw/interfaces/mixer_interface.hpp"
+#include "../../magda/daw/interfaces/track_interface.hpp"
+#include "../../magda/daw/interfaces/transport_interface.hpp"
 
 // Mock implementation of TransportInterface for testing
 class MockTransportInterface : public TransportInterface {

@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-#include "../magda/daw/media_db/AudioFeatures.hpp"
+#include "../../magda/daw/media_db/AudioFeatures.hpp"
 
 namespace fs = std::filesystem;
 

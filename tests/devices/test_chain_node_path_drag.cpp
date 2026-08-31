@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/ui/components/chain/ChainNodePathDrag.hpp"
+#include "../../magda/daw/ui/components/chain/ChainNodePathDrag.hpp"
 
 using namespace magda;
 using namespace magda::daw::ui;

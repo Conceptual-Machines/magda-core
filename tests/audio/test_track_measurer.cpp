@@ -3,7 +3,7 @@
 #include <cmath>
 #include <vector>
 
-#include "../magda/daw/audio/analysis/TrackMeasurer.hpp"
+#include "../../magda/daw/audio/analysis/TrackMeasurer.hpp"
 
 using magda::daw::audio::kSilenceLufs;
 using magda::daw::audio::TrackMeasurementSnapshot;

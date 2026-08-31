@@ -14,8 +14,8 @@
 #include <string>
 #include <vector>
 
-#include "../magda/daw/transcription/BasicPitchPostprocess.hpp"
-#include "../magda/daw/transcription/BasicPitchTranscriber.hpp"
+#include "../../magda/daw/transcription/BasicPitchPostprocess.hpp"
+#include "../../magda/daw/transcription/BasicPitchTranscriber.hpp"
 
 namespace bp = magda::transcription::basicpitch;
 namespace fs = std::filesystem;

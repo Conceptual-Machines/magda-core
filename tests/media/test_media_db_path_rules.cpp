@@ -5,7 +5,7 @@
 #include <filesystem>
 #include <optional>
 
-#include "../magda/daw/media_db/PathRules.hpp"
+#include "../../magda/daw/media_db/PathRules.hpp"
 
 using magda::media::parseBpmFromPath;
 using magda::media::ParsedKey;

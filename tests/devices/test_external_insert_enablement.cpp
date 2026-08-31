@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/audio/ExternalInsertDeviceEnablement.hpp"
+#include "../../magda/daw/audio/ExternalInsertDeviceEnablement.hpp"
 
 // Per-port reconciliation rule for external-insert hardware auto-enablement.
 // The set of auto-enabled ports is persisted across sessions (TE persists

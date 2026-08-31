@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/aliases/AliasRegistry.hpp"
+#include "../../magda/daw/core/aliases/AliasRegistry.hpp"
 
 using namespace magda;
 

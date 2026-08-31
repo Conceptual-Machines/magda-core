@@ -4,7 +4,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "../third_party/tracktion_engine/modules/tracktion_engine/playback/graph/tracktion_DeltaSolo.h"
+#include "../../third_party/tracktion_engine/modules/tracktion_engine/playback/graph/tracktion_DeltaSolo.h"
 
 using Catch::Approx;
 

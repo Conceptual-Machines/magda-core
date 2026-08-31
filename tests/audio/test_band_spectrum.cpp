@@ -4,8 +4,8 @@
 #include <cmath>
 #include <vector>
 
-#include "../magda/daw/audio/analysis/AudioTapBuffer.hpp"
-#include "../magda/daw/audio/analysis/BandSpectrum.hpp"
+#include "../../magda/daw/audio/analysis/AudioTapBuffer.hpp"
+#include "../../magda/daw/audio/analysis/BandSpectrum.hpp"
 
 using magda::daw::audio::AudioTapBuffer;
 using magda::daw::audio::computeMaskingBandsDb;

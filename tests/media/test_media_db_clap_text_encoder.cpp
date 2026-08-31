@@ -13,7 +13,7 @@
 #include <filesystem>
 #include <vector>
 
-#include "../magda/daw/media_db/ClapTextEncoder.hpp"
+#include "../../magda/daw/media_db/ClapTextEncoder.hpp"
 
 namespace fs = std::filesystem;
 using magda::media::ClapTextEncoder;

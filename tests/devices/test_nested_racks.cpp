@@ -3,10 +3,10 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/RackInfo.hpp"
-#include "../magda/daw/core/SelectionManager.hpp"
-#include "../magda/daw/core/TrackCommands.hpp"
-#include "../magda/daw/core/TrackManager.hpp"
+#include "../../magda/daw/core/RackInfo.hpp"
+#include "../../magda/daw/core/SelectionManager.hpp"
+#include "../../magda/daw/core/TrackCommands.hpp"
+#include "../../magda/daw/core/TrackManager.hpp"
 
 using namespace magda;
 

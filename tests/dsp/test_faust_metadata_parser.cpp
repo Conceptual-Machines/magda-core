@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/audio/plugins/FaustMetadataParser.hpp"
+#include "../../magda/daw/audio/plugins/FaustMetadataParser.hpp"
 
 using namespace magda::daw::audio;
 

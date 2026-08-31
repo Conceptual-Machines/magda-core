@@ -1,11 +1,11 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/GridDivision.hpp"
-#include "../magda/daw/ui/components/common/GridDivisionMenu.hpp"
-#include "../magda/daw/ui/state/TimelineController.hpp"
-#include "../magda/daw/ui/state/TimelineEvents.hpp"
-#include "../magda/daw/ui/state/TimelineState.hpp"
+#include "../../magda/daw/core/GridDivision.hpp"
+#include "../../magda/daw/ui/components/common/GridDivisionMenu.hpp"
+#include "../../magda/daw/ui/state/TimelineController.hpp"
+#include "../../magda/daw/ui/state/TimelineEvents.hpp"
+#include "../../magda/daw/ui/state/TimelineState.hpp"
 
 using magda::GridConstants;
 using magda::GridQuantize;

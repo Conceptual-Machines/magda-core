@@ -3,7 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <vector>
 
-#include "../magda/daw/audio/analysis/MaskingDetector.hpp"
+#include "../../magda/daw/audio/analysis/MaskingDetector.hpp"
 
 using magda::daw::audio::detectMasking;
 using magda::daw::audio::kNumMaskingBands;

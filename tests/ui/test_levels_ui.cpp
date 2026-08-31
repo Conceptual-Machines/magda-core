@@ -2,7 +2,7 @@
 #include <memory>
 #include <vector>
 
-#include "../magda/daw/ui/components/chain/custom_ui/LevelsUI.hpp"
+#include "../../magda/daw/ui/components/chain/custom_ui/LevelsUI.hpp"
 
 namespace {
 

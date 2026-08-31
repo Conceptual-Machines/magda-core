@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/UpdateChecker.hpp"
+#include "../../magda/daw/core/UpdateChecker.hpp"
 
 using namespace magda;
 

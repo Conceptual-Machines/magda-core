@@ -1,7 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/controllers/BindingTransform.hpp"
+#include "../../magda/daw/core/controllers/BindingTransform.hpp"
 
 using namespace magda;
 using Catch::Approx;

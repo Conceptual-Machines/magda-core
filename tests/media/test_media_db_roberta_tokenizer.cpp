@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-#include "../magda/daw/media_db/RobertaTokenizer.hpp"
+#include "../../magda/daw/media_db/RobertaTokenizer.hpp"
 
 namespace fs = std::filesystem;
 using magda::media::RobertaTokenizer;

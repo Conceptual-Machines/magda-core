@@ -2,9 +2,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/DrumGridPads.hpp"
-#include "../magda/daw/core/RackInfo.hpp"
-#include "../magda/daw/core/TrackManager.hpp"
+#include "../../magda/daw/core/DrumGridPads.hpp"
+#include "../../magda/daw/core/RackInfo.hpp"
+#include "../../magda/daw/core/TrackManager.hpp"
 
 using namespace magda;
 

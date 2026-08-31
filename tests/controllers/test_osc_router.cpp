@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 
-#include "../magda/daw/audio/osc/OscRouter.hpp"
+#include "../../magda/daw/audio/osc/OscRouter.hpp"
 
 using namespace magda::osc;
 using Catch::Approx;

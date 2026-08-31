@@ -1,8 +1,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/ParameterInfo.hpp"
-#include "../magda/daw/core/ParameterUtils.hpp"
+#include "../../magda/daw/core/ParameterInfo.hpp"
+#include "../../magda/daw/core/ParameterUtils.hpp"
 
 using namespace magda;
 

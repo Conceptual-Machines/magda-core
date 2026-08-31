@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/audio/FaustResources.hpp"
-#include "../magda/daw/audio/plugins/FaustPatchInfo.hpp"
+#include "../../magda/daw/audio/FaustResources.hpp"
+#include "../../magda/daw/audio/plugins/FaustPatchInfo.hpp"
 
 using namespace magda::daw::audio;
 
