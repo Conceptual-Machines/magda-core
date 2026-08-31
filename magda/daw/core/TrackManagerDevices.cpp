@@ -6,11 +6,13 @@
 #include "../audio/AudioBridge.hpp"
 #include "../audio/TracktionHelpers.hpp"
 #include "../audio/plugin_manager/ExternalPluginStateUtil.hpp"
+#include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "ChainWalk.hpp"
 #include "DeviceState.hpp"
 #include "DrumGridPads.hpp"
+#include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
 #include "TrackManager.hpp"
@@ -227,30 +229,67 @@ juce::String stripPresetRuntimePluginState(const juce::String& pluginState) {
     return pluginState;
 }
 
-void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const PresetIdRemap& remap);
+/// Whether a re-keyed subtree's saved plugin state is a preset's or a project's.
+///
+/// A preset carries state captured against another project's engine, so the
+/// runtime ids in it name plugin instances that are not this project's. A
+/// subtree being re-keyed in place -- a Drum Grid getting its own DeviceId as it
+/// is placed -- carries no such thing, and rewriting its state would be a change
+/// nobody asked for.
+enum class PresetState { Strip, Keep };
 
-void remapRackPresetLinks(RackInfo& rack, const PresetIdRemap& remap) {
+void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const PresetIdRemap& remap,
+                               PresetState state = PresetState::Strip);
+
+void remapRackPresetLinks(RackInfo& rack, const PresetIdRemap& remap,
+                          PresetState state = PresetState::Strip) {
     remapPresetLinks(rack.macros, rack.mods, remap);
     for (auto& chain : rack.chains)
-        remapPresetLinksRecursive(chain.elements, remap);
+        remapPresetLinksRecursive(chain.elements, remap, state);
 }
 
-void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const PresetIdRemap& remap) {
+void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const PresetIdRemap& remap,
+                               PresetState state) {
     for (auto& element : elements) {
         if (magda::isDevice(element)) {
             auto& device = magda::getDevice(element);
             remapPresetLinks(device.macros, device.mods, remap);
-            device.pluginState = stripPresetRuntimePluginState(device.pluginState);
+            if (state == PresetState::Strip)
+                device.pluginState = stripPresetRuntimePluginState(device.pluginState);
 
-            // A pad device is an ordinary DeviceInfo and owns macros and mods
-            // like any other, so a copy's have to be retargeted too (#2211).
+            // The pad rack, as a rack. A pad device is an ordinary DeviceInfo
+            // and owns macros and mods like any other, so a copy's have to be
+            // retargeted too (#2211) -- and so does the pad rack itself, which
+            // is a RackInfo with macros and mods of its own that a pad path
+            // resolves to and the modulation surfaces compile from. Descending
+            // straight into its chains walked past those (#2261).
             if (device.pads)
-                for (auto& pad : device.pads->chains)
-                    remapPresetLinksRecursive(pad.elements, remap);
+                remapRackPresetLinks(*device.pads.get(), remap, state);
         } else if (magda::isRack(element)) {
-            remapRackPresetLinks(magda::getRack(element), remap);
+            remapRackPresetLinks(magda::getRack(element), remap, state);
         }
     }
+}
+
+/// Follow a re-keyed Drum Grid's pads with everything that addressed them.
+///
+/// @p ids is what `rekeyPads()` moved, the grid's own id included. Every end of
+/// a pad link needs it: the grid's macros and mods point down into the pads,
+/// the pad rack's own point at what it holds, and a pad device's point at its
+/// siblings. A link out of the subtree names an id this does not hold and is
+/// left alone, which is what `remapPresetPath()` does with an unmapped id.
+void retargetPadLinks(DeviceInfo& device, TrackId trackId, const ChainIdRemap& ids) {
+    if (!device.pads)
+        return;
+
+    PresetIdRemap remap;
+    remap.trackId = trackId;
+    remap.devices = ids.devices;
+    remap.racks = ids.racks;
+    remap.chains = ids.chains;
+
+    remapPresetLinks(device.macros, device.mods, remap);
+    remapRackPresetLinks(*device.pads.get(), remap, PresetState::Keep);
 }
 
 void collectDeviceIdMatches(std::vector<ChainElement>& elements, TrackId trackId, DeviceId deviceId,
@@ -360,7 +399,7 @@ DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId 
         }
     }
     if (auto* chain = getChain(trackId, rackId, chainId)) {
-        DeviceInfo newDevice = prepareNewDevice(device);
+        DeviceInfo newDevice = prepareNewDevice(trackId, device);
         seedSidechainModIfMissing(
             newDevice, ChainNodePath::chainDevice(trackId, rackId, chainId, newDevice.id));
         chain->elements.push_back(makeDeviceElement(newDevice));
@@ -415,7 +454,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
         }
 
         // Add the device
-        DeviceInfo newDevice = prepareNewDevice(device);
+        DeviceInfo newDevice = prepareNewDevice(chainPath.trackId, device);
         seedSidechainModIfMissing(newDevice, chainPath.withDevice(newDevice.id));
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(chainPath.trackId);
@@ -469,7 +508,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
         }
 
         // Add the device at the specified index
-        DeviceInfo newDevice = prepareNewDevice(device);
+        DeviceInfo newDevice = prepareNewDevice(chainPath.trackId, device);
         seedSidechainModIfMissing(newDevice, chainPath.withDevice(newDevice.id));
 
         // Clamp insert index to valid range
@@ -1932,19 +1971,54 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
     return true;
 }
 
+DeviceInfo TrackManager::prepareNewDevice(TrackId trackId, const DeviceInfo& device) {
+    DeviceInfo newDevice = device;
+    newDevice.id = nextFxDeviceId_++;
+
+    // The grid's own id is in the map because a pad path names the grid rather
+    // than a route to it: every link into these pads carries the old DeviceId
+    // in its PadRack step, and the ones the grid's own macros and mods hold
+    // carry it in `topLevelDeviceId` as well.
+    ChainIdRemap ids;
+    ids.devices[device.id] = newDevice.id;
+    rekeyPads(newDevice, ids);
+    retargetPadLinks(newDevice, trackId, ids);
+
+    applyCachedCapabilitiesToDevice(newDevice);
+    stampDefaultKitIfMissing(newDevice);
+    if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
+        newDevice.deviceType = DeviceType::Analysis;
+    return newDevice;
+}
+
+void TrackManager::rekeyPads(DeviceInfo& device, ChainIdRemap& remap) {
+    if (!device.pads)
+        return;
+
+    // Both the pad rack's id and its devices' are DeviceIds in disguise, so a
+    // copied Drum Grid that kept them would key the ops of the one it was
+    // copied from: the plan would emit two devices onto one op and the executor
+    // would run whichever it saw last (#2207).
+    stampPadRackId(device);
+
+    // A pad holds chain elements like any other chain, nested racks included,
+    // so the same recursive walk re-keys them. A shallow pass over the direct
+    // pad devices left everything inside a pad's rack carrying the source's
+    // DeviceIds, so a copied grid shared ops with the one it came from.
+    //
+    // Reported rather than discarded: the ids this moves are the ones a macro
+    // or a mod addressing anything in the pad subtree was pointing at, and a
+    // link left on the old address resolves to nothing.
+    for (auto& pad : device.pads->chains)
+        reassignChainElementIds(pad.elements, remap);
+}
+
 void TrackManager::reassignChainElementIds(std::vector<ChainElement>& elements,
                                            ChainIdRemap& remap) {
     for (auto& element : elements) {
         if (magda::isDevice(element)) {
             auto& device = magda::getDevice(element);
             const auto oldDeviceId = device.id;
-
-            // A re-keyed element is a distinct live assignment, not a snapshot
-            // of the one it was copied from: it gets its own plugin instance,
-            // and DeviceIds are reused after clearAllTracks(). Without a fresh
-            // token an async load requested by the original would match the
-            // copy and restore one plugin's state onto another.
-            device.beginNewPluginAssignment();
             device.id = allocateDeviceId();
             remap.devices[oldDeviceId] = device.id;
 

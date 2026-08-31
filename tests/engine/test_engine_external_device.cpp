@@ -15,6 +15,7 @@
 #include "magda/daw/audio/plugin_manager/ExternalPluginState.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "magda/daw/audio/plugins/engine/EngineExternalDevice.hpp"
+#include "magda/daw/audio/plugins/engine/PluginAssignments.hpp"
 #include "param/ParamBlock.hpp"
 #include "transport/TempoMap.hpp"
 
@@ -404,12 +405,22 @@ juce::PluginDescription descriptionFor(const magda::DeviceInfo& device) {
     return description;
 }
 
+/// The key a device holds while these tests keep it in the main FX section.
+magda::engine::DeviceKey keyFor(const magda::DeviceInfo& device) {
+    return {magda::ChainSegment::Fx, device.id};
+}
+
+/// The device registered as live, and the request a load for it carries.
+///
+/// Registration is the caller's job in production too: a device that becomes
+/// live is assigned a handle, and nothing about the DeviceInfo grants one.
 adapter::RequestedPlugin requestFor(
-    const magda::DeviceInfo& device,
+    adapter::PluginAssignments& assignments, const magda::DeviceInfo& device,
     const std::optional<juce::PluginDescription>& resolved = std::nullopt) {
     const auto description = resolved.value_or(descriptionFor(device));
-    return {.deviceId = device.id,
-            .assignmentGeneration = device.pluginAssignmentGeneration,
+    const auto key = keyFor(device);
+    assignments.ensureAssignment(key);
+    return {.assignment = assignments.request(key),
             .displayName = device.name,
             .resolvedIsInstrument = description.isInstrument};
 }
@@ -859,7 +870,6 @@ TEST_CASE("Resolution returns planning facts without rewriting the saved assignm
     model.fileOrIdentifier = "/Library/Stub.vst3";
     model.audioInputChannels = 2;
     model.audioOutputChannels = 2;
-    const auto generation = model.pluginAssignmentGeneration;
 
     auto installed = descriptionFor(model);
     installed.name = "Scanner's canonical name";
@@ -888,7 +898,6 @@ TEST_CASE("Resolution returns planning facts without rewriting the saved assignm
     CHECK(model.deviceType == magda::DeviceType::Effect);
     CHECK(model.audioInputChannels == 2);
     CHECK(model.audioOutputChannels == 2);
-    CHECK(model.pluginAssignmentGeneration == generation);
 
     // The transient copy carries only the role needed for placement validation
     // and plan compilation. Zero/default scan buses are not treated as live.
@@ -1417,10 +1426,14 @@ TEST_CASE("The asynchronous entry point reports a missing plugin the same way",
     const adapter::ExternalPluginServices services{
         .formats = &formats, .knownPlugins = &empty, .context = contextFor()};
 
+    adapter::PluginAssignments assignments;
+    assignments.ensureAssignment(keyFor(missing));
+
     bool called = false;
     adapter::ExternalDeviceResult delivered;
     adapter::createEngineExternalDeviceAsync(
-        missing, services, false, [&](magda::DeviceId) { return &missing; },
+        missing, keyFor(missing), services, false, assignments,
+        [&](magda::engine::DeviceKey) { return &missing; },
         [&](adapter::ExternalDeviceResult result) {
             called = true;
             delivered = std::move(result);
@@ -1443,7 +1456,6 @@ TEST_CASE("The asynchronous entry point resolves once and completes an installed
     model.deviceType = magda::DeviceType::Effect;
     model.audioInputChannels = 1;
     model.audioOutputChannels = 1;
-    const auto generation = model.pluginAssignmentGeneration;
 
     auto installed = descriptionFor(model);
     installed.name = "Installed Stub";
@@ -1463,10 +1475,14 @@ TEST_CASE("The asynchronous entry point resolves once and completes an installed
     const adapter::ExternalPluginServices services{
         .formats = &formats, .knownPlugins = &known, .context = contextFor()};
 
+    adapter::PluginAssignments assignments;
+    assignments.ensureAssignment(keyFor(model));
+
     bool called = false;
     adapter::ExternalDeviceResult delivered;
     const auto resolved = adapter::createEngineExternalDeviceAsync(
-        model, services, false, [&](magda::DeviceId) { return &model; },
+        model, keyFor(model), services, false, assignments,
+        [&](magda::engine::DeviceKey) { return &model; },
         [&](adapter::ExternalDeviceResult result) {
             called = true;
             delivered = std::move(result);
@@ -1484,7 +1500,6 @@ TEST_CASE("The asynchronous entry point resolves once and completes an installed
     CHECK(model.deviceType == magda::DeviceType::Effect);
     CHECK(model.audioInputChannels == 1);
     CHECK(model.audioOutputChannels == 1);
-    CHECK(model.pluginAssignmentGeneration == generation);
 
     for (int attempts = 0; !called && attempts < 100; ++attempts)
         juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
@@ -1509,13 +1524,15 @@ TEST_CASE("A load that finishes late restores from the model as it is now", "[en
     auto* raw = plugin.get();
 
     auto model = externalDeviceSaving(1.0f, 0.25f);
-    const auto requested = requestFor(model);
+    adapter::PluginAssignments assignments;
+    const auto requested = requestFor(assignments, model);
 
-    // The edit, made while the plugin was loading.
+    // The edit, made while the plugin was loading. It is an edit to this
+    // assignment, so nothing about the assignment changes.
     model.parameters[1].currentValue = 0.6f;
 
     const auto result = adapter::completeExternalPluginLoad(
-        std::move(plugin), {}, requested, [&](magda::DeviceId) { return &model; });
+        std::move(plugin), {}, requested, [&](magda::engine::DeviceKey) { return &model; });
 
     REQUIRE(result.device != nullptr);
     CHECK(raw->tone->getValue() == Catch::Approx(0.6f));
@@ -1533,7 +1550,8 @@ TEST_CASE("State applied while a plugin loads is the state that gets restored",
     auto* raw = plugin.get();
 
     auto model = externalDeviceSaving(1.0f, 0.25f);
-    const auto requested = requestFor(model);
+    adapter::PluginAssignments assignments;
+    const auto requested = requestFor(assignments, model);
 
     // A preset selected after the load began. Its chunk is the current model's
     // authority at completion, not the empty state on the request-time copy.
@@ -1542,7 +1560,7 @@ TEST_CASE("State applied while a plugin loads is the state that gets restored",
     model.pluginState = chunk.toBase64Encoding();
 
     const auto result = adapter::completeExternalPluginLoad(
-        std::move(plugin), {}, requested, [&](magda::DeviceId) { return &model; });
+        std::move(plugin), {}, requested, [&](magda::engine::DeviceKey) { return &model; });
 
     REQUIRE(result.device != nullptr);
     CHECK(raw->stateRestores == 1);
@@ -1554,10 +1572,15 @@ TEST_CASE("A device deleted while its plugin loaded is not completed", "[engine]
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
 
     const auto device = externalDevice();
-    const auto requested = requestFor(device);
+    adapter::PluginAssignments assignments;
+    const auto requested = requestFor(assignments, device);
+
+    // Deletion releases the assignment, which is what expires the request.
+    assignments.release(keyFor(device));
+
     const auto result = adapter::completeExternalPluginLoad(
         std::move(plugin), {}, requested,
-        [](magda::DeviceId) -> const magda::DeviceInfo* { return nullptr; });
+        [](magda::engine::DeviceKey) -> const magda::DeviceInfo* { return nullptr; });
 
     CHECK(result.device == nullptr);
     CHECK(result.failure.contains("removed while"));
@@ -1571,14 +1594,17 @@ TEST_CASE("A device that changed plugin while loading is not completed", "[engin
     auto model = externalDevice();
     model.name = "Massive X";
     model.fileOrIdentifier = "/Library/MassiveX.vst3";
-    const auto requested = requestFor(model);
+    adapter::PluginAssignments assignments;
+    const auto requested = requestFor(assignments, model);
 
-    model.beginNewPluginAssignment();
+    // The slot keeps its id and is assigned again: a new assignment on a key
+    // that had one.
+    assignments.replaceAssignment(keyFor(model));
     model.name = "Something Else";
     model.fileOrIdentifier = "/Library/SomethingElse.vst3";
 
     const auto result = adapter::completeExternalPluginLoad(
-        std::move(plugin), {}, requested, [&](magda::DeviceId) { return &model; });
+        std::move(plugin), {}, requested, [&](magda::engine::DeviceKey) { return &model; });
 
     CHECK(result.device == nullptr);
     CHECK(result.failure.contains("changed plugin"));
@@ -1586,10 +1612,12 @@ TEST_CASE("A device that changed plugin while loading is not completed", "[engin
 
 TEST_CASE("A load that failed reports the loader's reason", "[engine][external]") {
     auto model = externalDevice();
-    const auto requested = requestFor(model);
+    adapter::PluginAssignments assignments;
+    const auto requested = requestFor(assignments, model);
 
-    const auto result = adapter::completeExternalPluginLoad(
-        nullptr, "the file was not there", requested, [&](magda::DeviceId) { return &model; });
+    const auto result =
+        adapter::completeExternalPluginLoad(nullptr, "the file was not there", requested,
+                                            [&](magda::engine::DeviceKey) { return &model; });
 
     CHECK(result.device == nullptr);
     CHECK(result.failure.contains("the file was not there"));
@@ -1615,13 +1643,14 @@ TEST_CASE("A scanned plugin's own identifier is not read as a change", "[engine]
     model.fileOrIdentifier = scanned.fileOrIdentifier;
     model.uniqueId = scanned.createIdentifierString();
 
-    const auto requested = requestFor(model, scanned);
+    adapter::PluginAssignments assignments;
+    const auto requested = requestFor(assignments, model, scanned);
 
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
     auto* raw = plugin.get();
 
     const auto result = adapter::completeExternalPluginLoad(
-        std::move(plugin), {}, requested, [&](magda::DeviceId) { return &model; });
+        std::move(plugin), {}, requested, [&](magda::engine::DeviceKey) { return &model; });
 
     REQUIRE(result.device != nullptr);
     CHECK(result.failure.isEmpty());
@@ -1644,7 +1673,8 @@ TEST_CASE("Resolved metadata gained while loading does not change the assignment
     resolved.fileOrIdentifier = "/Library/Serum.vst3";
     resolved.isInstrument = true;
     resolved.uniqueId = 0x53657275;
-    const auto requested = requestFor(model, resolved);
+    adapter::PluginAssignments assignments;
+    const auto requested = requestFor(assignments, model, resolved);
 
     model.manufacturer = "Xfer Records";
     model.fileOrIdentifier = "/Library/Serum.vst3";
@@ -1654,7 +1684,7 @@ TEST_CASE("Resolved metadata gained while loading does not change the assignment
 
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
     const auto result = adapter::completeExternalPluginLoad(
-        std::move(plugin), {}, requested, [&](magda::DeviceId) { return &model; });
+        std::move(plugin), {}, requested, [&](magda::engine::DeviceKey) { return &model; });
 
     REQUIRE(result.device != nullptr);
     CHECK(result.failure.isEmpty());
@@ -1662,8 +1692,8 @@ TEST_CASE("Resolved metadata gained while loading does not change the assignment
 
 TEST_CASE("An imported device swapped to the other half of its bundle is a change",
           "[engine][external]") {
-    // The generation distinguishes two assignments even where JUCE's compact
-    // identifier and all bundle-level metadata do not.
+    // The assignment distinguishes the two even where JUCE's compact identifier
+    // and all bundle-level metadata do not.
     auto model = externalDeviceSaving(1.0f, 0.5f);
     model.name = "Kontakt";
     model.manufacturer = "NI";
@@ -1671,14 +1701,15 @@ TEST_CASE("An imported device swapped to the other half of its bundle is a chang
     model.isInstrument = false;
     model.uniqueId = {};  // imported: nothing scanned it
 
-    const auto requested = requestFor(model);
+    adapter::PluginAssignments assignments;
+    const auto requested = requestFor(assignments, model);
 
-    model.beginNewPluginAssignment();
+    assignments.replaceAssignment(keyFor(model));
     model.isInstrument = true;
 
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
     const auto result = adapter::completeExternalPluginLoad(
-        std::move(plugin), {}, requested, [&](magda::DeviceId) { return &model; });
+        std::move(plugin), {}, requested, [&](magda::engine::DeviceKey) { return &model; });
 
     CHECK(result.device == nullptr);
     CHECK(result.failure.contains("changed plugin"));
@@ -1694,16 +1725,184 @@ TEST_CASE("An imported device swapped to another vendor's plugin is a change",
     model.fileOrIdentifier = "/Library/Saturator.vst3";
     model.uniqueId = {};
 
-    const auto requested = requestFor(model);
+    adapter::PluginAssignments assignments;
+    const auto requested = requestFor(assignments, model);
 
-    model.beginNewPluginAssignment();
+    assignments.replaceAssignment(keyFor(model));
     model.manufacturer = "Another";
     model.fileOrIdentifier = "/Another/Saturator.vst3";
 
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
     const auto result = adapter::completeExternalPluginLoad(
-        std::move(plugin), {}, requested, [&](magda::DeviceId) { return &model; });
+        std::move(plugin), {}, requested, [&](magda::engine::DeviceKey) { return &model; });
 
     CHECK(result.device == nullptr);
     CHECK(result.failure.contains("changed plugin"));
+}
+
+TEST_CASE("A duplicate cannot accept the load its source asked for", "[engine][external]") {
+    // The copy is a different device with an id of its own, and there is
+    // nothing in the DeviceInfo it was copied from that could have made it look
+    // like the original. It is registered as the placement it is.
+    auto source = externalDeviceSaving(1.0f, 0.5f);
+    source.id = 1;
+
+    adapter::PluginAssignments assignments;
+    const auto requested = requestFor(assignments, source);
+
+    auto copy = source;  // duplicate, paste, preset import, undo reinsertion
+    copy.id = 2;
+    assignments.replaceAssignment(keyFor(copy));
+
+    // The load arrives while only the copy is still in the project.
+    assignments.release(keyFor(source));
+
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    const auto result = adapter::completeExternalPluginLoad(
+        std::move(plugin), {}, requested, [&](magda::engine::DeviceKey) { return &copy; });
+
+    CHECK(result.device == nullptr);
+    CHECK(result.failure.contains("removed while"));
+}
+
+TEST_CASE("A device in another section cannot accept the load", "[engine][external]") {
+    // DeviceId is allocated per section, so the post-FX device below is also
+    // device 1. A bare id would have named both.
+    auto model = externalDeviceSaving(1.0f, 0.5f);
+    model.id = 1;
+
+    adapter::PluginAssignments assignments;
+    assignments.replaceAssignment({magda::ChainSegment::PostFx, model.id});
+
+    const adapter::RequestedPlugin requested{
+        .assignment = assignments.request({magda::ChainSegment::PostFx, model.id}),
+        .displayName = model.name,
+        .resolvedIsInstrument = false};
+
+    // The main-FX device with the same integer is the one still live.
+    assignments.release({magda::ChainSegment::PostFx, model.id});
+    assignments.replaceAssignment({magda::ChainSegment::Fx, model.id});
+
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    const auto result = adapter::completeExternalPluginLoad(
+        std::move(plugin), {}, requested, [&](magda::engine::DeviceKey) { return &model; });
+
+    CHECK(result.device == nullptr);
+    // "removed", not "changed plugin": the live main-FX device is a different
+    // key, so it was not offered as a stand-in for the one that went away.
+    CHECK(result.failure.contains("removed while"));
+}
+
+TEST_CASE("A load nobody registered is refused rather than completed", "[engine][external]") {
+    // The failure direction. The device is in the model and the plugin loaded
+    // fine; what is missing is the registration, and the answer is no.
+    auto model = externalDeviceSaving(1.0f, 0.5f);
+
+    const adapter::PluginAssignments assignments;
+    const adapter::RequestedPlugin requested{.assignment = assignments.request(keyFor(model)),
+                                             .displayName = model.name,
+                                             .resolvedIsInstrument = false};
+
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    const auto result = adapter::completeExternalPluginLoad(
+        std::move(plugin), {}, requested, [&](magda::engine::DeviceKey) { return &model; });
+
+    CHECK(result.device == nullptr);
+    CHECK(result.failure.isNotEmpty());
+    CHECK(result.restoredParameters.empty());
+}
+
+TEST_CASE("A load outliving the runtime that started it is refused", "[engine][external]") {
+    // The project was closed while a plugin was still loading, and the thing
+    // that owned the assignments went with it. The completion still arrives,
+    // and it has to answer without reaching into any of that.
+    auto model = externalDeviceSaving(1.0f, 0.5f);
+
+    adapter::RequestedPlugin requested;
+    {
+        adapter::PluginAssignments assignments;
+        requested = requestFor(assignments, model);
+        REQUIRE(requested.assignment.isStillWanted());
+    }
+
+    CHECK_FALSE(requested.assignment.isStillWanted());
+
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    const auto result = adapter::completeExternalPluginLoad(
+        std::move(plugin), {}, requested, [&](magda::engine::DeviceKey) { return &model; });
+
+    CHECK(result.device == nullptr);
+    CHECK(result.failure.contains("removed while"));
+}
+
+TEST_CASE("Registering a device that is already live does not expire its load",
+          "[engine][external]") {
+    // Ordinary registration: a plan prepared again, the project walked again.
+    // Minting a new assignment for that would abandon a load that is still
+    // wanted, over and over for anything that re-registers on every recompile.
+    auto model = externalDeviceSaving(1.0f, 0.5f);
+
+    adapter::PluginAssignments assignments;
+    const auto requested = requestFor(assignments, model);
+
+    for (int again = 0; again < 3; ++again)
+        assignments.ensureAssignment(keyFor(model));
+
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    const auto result = adapter::completeExternalPluginLoad(
+        std::move(plugin), {}, requested, [&](magda::engine::DeviceKey) { return &model; });
+
+    REQUIRE(result.device != nullptr);
+    CHECK(result.failure.isEmpty());
+    CHECK(raw->tone->getValue() == Catch::Approx(0.5f));
+}
+
+TEST_CASE("A runtime torn down before dispatch is never called back", "[engine][external]") {
+    // The other half of the shutdown case, through the entry point a session
+    // actually uses. JUCE stores the completion and runs it a turn or more
+    // later, and in production that callback is the runtime's own -- it
+    // publishes the device into the project. So the load must be dropped
+    // before it is invoked, not refused inside it.
+    juce::ScopedJuceInitialiser_GUI juce;
+
+    auto model = externalDevice();
+    model.name = "My Stub";
+    model.fileOrIdentifier = "stub.plugin";
+
+    auto installed = descriptionFor(model);
+    installed.name = "Installed Stub";
+    installed.pluginFormatName = "StubFormat";
+    installed.fileOrIdentifier = model.fileOrIdentifier;
+
+    juce::KnownPluginList known;
+    known.addType(installed);
+    juce::AudioPluginFormatManager formats;
+    formats.addFormat(std::make_unique<StubFormat>());
+
+    const adapter::ExternalPluginServices services{
+        .formats = &formats, .knownPlugins = &known, .context = contextFor()};
+
+    bool called = false;
+    {
+        adapter::PluginAssignments assignments;
+        assignments.ensureAssignment(keyFor(model));
+
+        const auto resolved = adapter::createEngineExternalDeviceAsync(
+            model, keyFor(model), services, false, assignments,
+            [&](magda::engine::DeviceKey) { return &model; },
+            [&](adapter::ExternalDeviceResult) { called = true; });
+
+        REQUIRE(resolved);
+        // Nothing has dispatched yet: the creation is queued, not done.
+        REQUIRE_FALSE(called);
+    }
+
+    // The project closed. Everything the completion would have published into
+    // is gone, and the plugin only arrives now.
+    for (int attempts = 0; attempts < 20; ++attempts)
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+
+    CHECK_FALSE(called);
 }

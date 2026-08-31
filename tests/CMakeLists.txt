@@ -417,6 +417,10 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # corpus (#2175), where both engines run the same one.
     list(APPEND TEST_SOURCES engine/test_engine_external_device.cpp)
 
+    # Who an asynchronous plugin load belongs to (#2261): the runtime-owned
+    # assignment the adapter above checks before it completes one.
+    list(APPEND TEST_SOURCES engine/test_plugin_assignments.cpp)
+
     # The block-size invariance gate (#2078). Model-only for the same reason the
     # native leg is: the claim is the native engine's alone, and the incumbent
     # owes nobody block-size invariance. In CI rather than in a nightly, because

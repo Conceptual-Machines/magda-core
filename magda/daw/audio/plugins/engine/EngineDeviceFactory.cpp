@@ -257,25 +257,35 @@ ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPlugi
                                                 const RequestedPlugin& requested,
                                                 const CurrentDeviceLookup& currentDevice,
                                                 bool offlineRender) {
-    // The model first, before anything is done with the instance. Everything
+    const auto& requestedName = requested.displayName;
+
+    // The identity boundary, and the first thing asked. Scan metadata may have
+    // changed in every field while the plugin loaded, including the role the
+    // plan compiles from; those are facts learned about this assignment, not
+    // about another one, so none of them is consulted here. What decides is
+    // whether the runtime still holds the very assignment the load was started
+    // against, which no copy of the model can carry and no unregistered device
+    // can claim.
+    if (!requested.assignment.isStillWanted()) {
+        // Which of the two it was, for a person reading the log: a key held
+        // under a different assignment is a slot now asking for something else,
+        // and anything else -- a released key, a runtime that is gone, a
+        // registration nobody made -- is a device there is no longer one of.
+        return {.device = {},
+                .failure =
+                    requested.assignment.keyWasReassigned()
+                        ? "the device changed plugin while \"" + requestedName + "\" was loading"
+                        : "the device was removed while \"" + requestedName + "\" was loading"};
+    }
+
+    // Then the model, before anything is done with the instance. Everything
     // below restores from it, and it is a different object from the one the
     // load was requested with: seconds have passed.
-    const auto* device = currentDevice ? currentDevice(requested.deviceId) : nullptr;
-
-    const auto& requestedName = requested.displayName;
+    const auto* device = currentDevice ? currentDevice(requested.assignment.key) : nullptr;
 
     if (device == nullptr)
         return {.device = {},
                 .failure = "the device was removed while \"" + requestedName + "\" was loading"};
-
-    // This is the identity boundary. Scan metadata may have changed in every
-    // field while the plugin loaded, including the role the plan compiles from;
-    // those are facts learned about this assignment, not another assignment.
-    // A replacement DeviceInfo carries a newly authored generation even when
-    // it is another variant in the same bundle or has the same display name.
-    if (device->pluginAssignmentGeneration != requested.assignmentGeneration)
-        return {.device = {},
-                .failure = "the device changed plugin while \"" + requestedName + "\" was loading"};
 
     if (instance == nullptr)
         return {.device = {},
@@ -288,8 +298,10 @@ ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPlugi
 }
 
 ExternalPluginResolution createEngineExternalDeviceAsync(
-    const magda::DeviceInfo& device, const ExternalPluginServices& services, bool offlineRender,
-    CurrentDeviceLookup currentDevice, std::function<void(ExternalDeviceResult)> completed) {
+    const magda::DeviceInfo& device, magda::engine::DeviceKey key,
+    const ExternalPluginServices& services, bool offlineRender,
+    const PluginAssignments& assignments, CurrentDeviceLookup currentDevice,
+    std::function<void(ExternalDeviceResult)> completed) {
     jassert(completed != nullptr);
     jassert(currentDevice != nullptr);
 
@@ -301,12 +313,24 @@ ExternalPluginResolution createEngineExternalDeviceAsync(
 
     services.formats->createPluginInstanceAsync(
         resolved.description, services.context.sampleRate, services.context.maxBlockSize,
-        [requested = RequestedPlugin{.deviceId = device.id,
-                                     .assignmentGeneration = device.pluginAssignmentGeneration,
+        [requested = RequestedPlugin{.assignment = assignments.request(key),
                                      .displayName = device.name,
                                      .resolvedIsInstrument = resolved.description.isInstrument},
          currentDevice = std::move(currentDevice), offlineRender, completed = std::move(completed)](
             std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error) {
+            // The lifetime gate, before anything is called rather than after.
+            // This lambda is stored by JUCE and run a turn or more later, and
+            // `completed` is the runtime's own: it publishes the device into the
+            // project and reports the failures. A runtime that is gone has
+            // nowhere to publish and nobody to tell, so calling it at all is the
+            // use-after-free -- refusing inside it would already be too late.
+            //
+            // Deliberately not isStillWanted(): a device deleted while its
+            // runtime lives is a load to refuse *and say so about*, because
+            // something is still waiting to hear it.
+            if (!requested.assignment.runtimeIsAlive())
+                return;
+
             completed(completeExternalPluginLoad(std::move(instance), error, requested,
                                                  currentDevice, offlineRender));
         });

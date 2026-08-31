@@ -144,22 +144,6 @@ TEST_CASE("A project from another host resolves by name and format", "[plugins][
     CHECK(match.description.manufacturerName == "Xfer Records");
 }
 
-TEST_CASE("Plugin assignment generations survive snapshots and explicitly change for replacements",
-          "[plugins][lookup]") {
-    auto assignment = saved("Kontakt", "NI", "/Library/Kontakt.vst3", true);
-    const auto copy = assignment;
-    const auto originalGeneration = assignment.pluginAssignmentGeneration;
-
-    // Production replacement paths mutate an existing DeviceInfo or copy a
-    // browser template, so replacement identity is authored explicitly rather
-    // than inferred from C++ object construction.
-    assignment.beginNewPluginAssignment();
-    assignment.isInstrument = false;
-
-    CHECK(copy.pluginAssignmentGeneration == originalGeneration);
-    CHECK(assignment.pluginAssignmentGeneration > originalGeneration);
-}
-
 TEST_CASE("The format is part of the last pass", "[plugins][lookup]") {
     // Same name, different format. An AU is not a substitute for the VST3 a
     // project saved: the two have different parameter lists and different
