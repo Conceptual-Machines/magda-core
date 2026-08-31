@@ -76,6 +76,30 @@ TEST_CASE("Live device lookup rejects paths that address nothing", "[device-api]
     REQUIRE(devices.getDeviceParameters(missing).empty());
 }
 
+TEST_CASE("Each device added from a reusable template gets a fresh plugin assignment token",
+          "[device-api][inspection]") {
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Track");
+
+    DeviceInfo browserTemplate;
+    browserTemplate.name = "Reusable effect";
+    browserTemplate.pluginId = "template-effect";
+    const auto templateGeneration = browserTemplate.pluginAssignmentGeneration;
+
+    const auto firstId = tracks.addDeviceToTrack(trackId, browserTemplate);
+    const auto secondId = tracks.addDeviceToTrack(trackId, browserTemplate);
+    REQUIRE(firstId != INVALID_DEVICE_ID);
+    REQUIRE(secondId != INVALID_DEVICE_ID);
+
+    const auto* first = tracks.getDevice(trackId, firstId);
+    const auto* second = tracks.getDevice(trackId, secondId);
+    REQUIRE(first != nullptr);
+    REQUIRE(second != nullptr);
+    CHECK(first->pluginAssignmentGeneration != templateGeneration);
+    CHECK(second->pluginAssignmentGeneration != templateGeneration);
+    CHECK(first->pluginAssignmentGeneration != second->pluginAssignmentGeneration);
+}
+
 TEST_CASE("Device parameters are reported in real units", "[device-api][inspection]") {
     auto& tracks = TrackManager::getInstance();
     tracks.clearAllTracks();

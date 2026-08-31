@@ -214,6 +214,17 @@ struct DeviceInfo {
     // change it. Transient by design: serializers neither read nor write it.
     std::uint64_t pluginAssignmentGeneration = nextPluginAssignmentGeneration();
 
+    /**
+     * Mark this slot as asking for a different plugin.
+     *
+     * Copies deliberately keep their token, because most copies are snapshots
+     * of the same assignment. Every path that authors a replacement from a
+     * copy or mutates plugin identity in place must come through here.
+     */
+    void beginNewPluginAssignment() {
+        pluginAssignmentGeneration = nextPluginAssignmentGeneration();
+    }
+
     juce::String name;  // Display name (e.g., "Pro-Q 3")
 
     // MAGDA's loader/model id for this device. For internal devices this is

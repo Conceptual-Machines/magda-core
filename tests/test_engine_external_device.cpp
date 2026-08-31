@@ -277,6 +277,65 @@ class StubPlugin final : public juce::AudioPluginInstance {
     juce::AudioPlayHead::PositionInfo positionSeen;
 };
 
+/// A real AudioPluginFormat seam for the asynchronous factory test. The
+/// format manager still performs its normal lookup and message-thread delivery;
+/// only the binary behind the description is local to the test.
+class StubFormat final : public juce::AudioPluginFormat {
+  public:
+    juce::String getName() const override {
+        return "StubFormat";
+    }
+
+    void findAllTypesForFile(juce::OwnedArray<juce::PluginDescription>&,
+                             const juce::String&) override {}
+
+    bool fileMightContainThisPluginType(const juce::String&) override {
+        return true;
+    }
+
+    juce::String getNameOfPluginFromIdentifier(const juce::String&) override {
+        return "Stub";
+    }
+
+    bool pluginNeedsRescanning(const juce::PluginDescription&) override {
+        return false;
+    }
+
+    bool doesPluginStillExist(const juce::PluginDescription&) override {
+        return true;
+    }
+
+    bool canScanForPlugins() const override {
+        return false;
+    }
+
+    bool isTrivialToScan() const override {
+        return true;
+    }
+
+    juce::StringArray searchPathsForPlugins(const juce::FileSearchPath&, bool, bool) override {
+        return {};
+    }
+
+    juce::FileSearchPath getDefaultLocationsToSearch() override {
+        return {};
+    }
+
+    bool requiresUnblockedMessageThreadDuringCreation(
+        const juce::PluginDescription&) const override {
+        return false;
+    }
+
+    juce::PluginDescription requested;
+
+  private:
+    void createPluginInstance(const juce::PluginDescription& description, double, int,
+                              PluginCreationCallback callback) override {
+        requested = description;
+        callback(std::make_unique<StubPlugin>(2, 2, 0), {});
+    }
+};
+
 magda::engine::RenderContext contextFor(int channels = 2, int blockSize = 64) {
     return {.sampleRate = 48000.0, .maxBlockSize = blockSize, .numChannels = channels};
 }
@@ -329,9 +388,11 @@ juce::PluginDescription descriptionFor(const magda::DeviceInfo& device) {
 adapter::RequestedPlugin requestFor(
     const magda::DeviceInfo& device,
     const std::optional<juce::PluginDescription>& resolved = std::nullopt) {
+    const auto description = resolved.value_or(descriptionFor(device));
     return {.deviceId = device.id,
             .assignmentGeneration = device.pluginAssignmentGeneration,
-            .resolvedIdentity = resolved.value_or(descriptionFor(device))};
+            .displayName = device.name,
+            .resolvedIsInstrument = description.isInstrument};
 }
 
 /**
@@ -769,6 +830,66 @@ TEST_CASE("A host that gave the engine no formats is told so", "[engine][externa
     CHECK(result.failure.contains("no plugin formats"));
 }
 
+TEST_CASE("Resolution returns planning facts without rewriting the saved assignment",
+          "[engine][external]") {
+    auto model = externalDevice();
+    model.name = "My imported synth";  // user/import display label
+    model.pluginId = "saved-plugin-key";
+    model.uniqueId = "saved-preference-key";
+    model.manufacturer = "Saved vendor";
+    model.fileOrIdentifier = "/Library/Stub.vst3";
+    model.audioInputChannels = 2;
+    model.audioOutputChannels = 2;
+    const auto generation = model.pluginAssignmentGeneration;
+
+    auto installed = descriptionFor(model);
+    installed.name = "Scanner's canonical name";
+    installed.manufacturerName = "Installed vendor";
+    installed.pluginFormatName = "UnknownFutureFormat";
+    installed.isInstrument = true;
+    installed.numInputChannels = 0;
+    installed.numOutputChannels = 0;
+
+    juce::KnownPluginList known;
+    known.addType(installed);
+    juce::AudioPluginFormatManager formats;
+    const adapter::ExternalPluginServices services{
+        .formats = &formats, .knownPlugins = &known, .context = contextFor()};
+
+    const auto resolved = adapter::resolveEngineExternalPlugin(model, services);
+    REQUIRE(resolved);
+
+    // The persistent assignment is untouched, including preference keys,
+    // display text, placement role and widths last observed from a live host.
+    CHECK(model.name == "My imported synth");
+    CHECK(model.pluginId == "saved-plugin-key");
+    CHECK(model.uniqueId == "saved-preference-key");
+    CHECK(model.manufacturer == "Saved vendor");
+    CHECK_FALSE(model.isInstrument);
+    CHECK(model.deviceType == magda::DeviceType::Effect);
+    CHECK(model.audioInputChannels == 2);
+    CHECK(model.audioOutputChannels == 2);
+    CHECK(model.pluginAssignmentGeneration == generation);
+
+    // The transient copy carries only the role needed for placement validation
+    // and plan compilation. Zero/default scan buses are not treated as live.
+    CHECK(resolved.planDevice.name == model.name);
+    CHECK(resolved.planDevice.pluginId == model.pluginId);
+    CHECK(resolved.planDevice.uniqueId == model.uniqueId);
+    CHECK(resolved.planDevice.format == model.format);
+    CHECK(resolved.planDevice.isInstrument);
+    CHECK(resolved.planDevice.deviceType == magda::DeviceType::Instrument);
+    CHECK(resolved.planDevice.audioInputChannels == 2);
+    CHECK(resolved.planDevice.audioOutputChannels == 2);
+
+    auto analysis = model;
+    analysis.deviceType = magda::DeviceType::Analysis;
+    const auto resolvedAnalysis = adapter::resolveEngineExternalPlugin(analysis, services);
+    REQUIRE(resolvedAnalysis);
+    CHECK(resolvedAnalysis.planDevice.deviceType == magda::DeviceType::Analysis);
+    CHECK_FALSE(resolvedAnalysis.planDevice.isInstrument);
+}
+
 TEST_CASE("A plugin with more inputs than outputs fills the slot from its outputs",
           "[engine][external]") {
     // Stereo in, mono out, and a mono sidechain after them: processed at three
@@ -1166,6 +1287,28 @@ TEST_CASE("A device with no saved state keeps the plugin's defaults", "[engine][
     CHECK(raw->stateRestores == 0);
 }
 
+TEST_CASE("Successful adaptation reports live buses and MIDI capabilities", "[engine][external]") {
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 1, 2);
+    plugin->emitsMidi = true;
+
+    auto model = externalDevice();
+    model.audioInputChannels = 9;
+    model.audioOutputChannels = 9;
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+
+    REQUIRE(result.device != nullptr);
+    REQUIRE(result.resolvedDevice.has_value());
+    CHECK(result.resolvedDevice->audioInputChannels == 3);
+    CHECK(result.resolvedDevice->audioOutputChannels == 6);
+    CHECK(result.resolvedDevice->canReceiveMidi);
+    CHECK(result.resolvedDevice->producesMidi);
+
+    // Publication belongs to the caller and only happens after success.
+    CHECK(model.audioInputChannels == 9);
+    CHECK(model.audioOutputChannels == 9);
+}
+
 TEST_CASE("Saved state that is not a chunk this plugin understands is refused",
           "[engine][external]") {
     // A chunk written by another plugin, or by another version of this one. The
@@ -1213,6 +1356,73 @@ TEST_CASE("The asynchronous entry point reports a missing plugin the same way",
     CHECK(delivered.device == nullptr);
     CHECK(delivered.failure.contains("Massive X"));
     CHECK(delivered.restoredParameters.empty());
+}
+
+TEST_CASE("The asynchronous entry point resolves once and completes an installed plugin",
+          "[engine][external]") {
+    juce::ScopedJuceInitialiser_GUI juce;
+
+    auto model = externalDevice();
+    model.name = "My Stub";
+    model.fileOrIdentifier = "stub.plugin";
+    model.isInstrument = false;
+    model.deviceType = magda::DeviceType::Effect;
+    model.audioInputChannels = 1;
+    model.audioOutputChannels = 1;
+    const auto generation = model.pluginAssignmentGeneration;
+
+    auto installed = descriptionFor(model);
+    installed.name = "Installed Stub";
+    installed.pluginFormatName = "StubFormat";
+    installed.fileOrIdentifier = model.fileOrIdentifier;
+    installed.isInstrument = true;
+    installed.numInputChannels = 0;
+    installed.numOutputChannels = 0;
+
+    juce::KnownPluginList known;
+    known.addType(installed);
+    juce::AudioPluginFormatManager formats;
+    auto stubFormat = std::make_unique<StubFormat>();
+    auto* rawFormat = stubFormat.get();
+    formats.addFormat(std::move(stubFormat));
+
+    const adapter::ExternalPluginServices services{
+        .formats = &formats, .knownPlugins = &known, .context = contextFor()};
+
+    bool called = false;
+    adapter::ExternalDeviceResult delivered;
+    const auto resolved = adapter::createEngineExternalDeviceAsync(
+        model, services, false, [&](magda::DeviceId) { return &model; },
+        [&](adapter::ExternalDeviceResult result) {
+            called = true;
+            delivered = std::move(result);
+        });
+
+    REQUIRE(resolved);
+    CHECK(resolved.planDevice.isInstrument);
+    CHECK(resolved.planDevice.deviceType == magda::DeviceType::Instrument);
+    CHECK(resolved.planDevice.audioInputChannels == 1);
+    CHECK(resolved.planDevice.audioOutputChannels == 1);
+
+    // Starting the request does not rewrite a placed model or publish scan bus
+    // defaults before JUCE has made an instance.
+    CHECK_FALSE(model.isInstrument);
+    CHECK(model.deviceType == magda::DeviceType::Effect);
+    CHECK(model.audioInputChannels == 1);
+    CHECK(model.audioOutputChannels == 1);
+    CHECK(model.pluginAssignmentGeneration == generation);
+
+    for (int attempts = 0; !called && attempts < 100; ++attempts)
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+
+    REQUIRE(called);
+    REQUIRE(delivered.device != nullptr);
+    REQUIRE(delivered.resolvedDevice.has_value());
+    CHECK(delivered.resolvedDevice->isInstrument);
+    CHECK(delivered.resolvedDevice->deviceType == magda::DeviceType::Instrument);
+    CHECK(delivered.resolvedDevice->audioInputChannels == 2);
+    CHECK(delivered.resolvedDevice->audioOutputChannels == 2);
+    CHECK(rawFormat->requested.createIdentifierString() == installed.createIdentifierString());
 }
 
 TEST_CASE("A load that finishes late restores from the model as it is now", "[engine][external]") {
@@ -1285,17 +1495,13 @@ TEST_CASE("A device that changed plugin while loading is not completed", "[engin
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
 
     auto model = externalDevice();
-    auto requestedDevice = model;
-    requestedDevice.name = "Massive X";
-    requestedDevice.fileOrIdentifier = "/Library/MassiveX.vst3";
-    model = requestedDevice;
+    model.name = "Massive X";
+    model.fileOrIdentifier = "/Library/MassiveX.vst3";
     const auto requested = requestFor(model);
 
-    auto replacement = externalDevice();
-    replacement.id = model.id;
-    replacement.name = "Something Else";
-    replacement.fileOrIdentifier = "/Library/SomethingElse.vst3";
-    model = std::move(replacement);
+    model.beginNewPluginAssignment();
+    model.name = "Something Else";
+    model.fileOrIdentifier = "/Library/SomethingElse.vst3";
 
     const auto result = adapter::completeExternalPluginLoad(
         std::move(plugin), {}, requested, [&](magda::DeviceId) { return &model; });
@@ -1393,14 +1599,8 @@ TEST_CASE("An imported device swapped to the other half of its bundle is a chang
 
     const auto requested = requestFor(model);
 
-    auto replacement = externalDeviceSaving(1.0f, 0.5f);
-    replacement.id = model.id;
-    replacement.name = model.name;
-    replacement.manufacturer = model.manufacturer;
-    replacement.fileOrIdentifier = model.fileOrIdentifier;
-    replacement.isInstrument = true;
-    replacement.uniqueId = {};
-    model = std::move(replacement);
+    model.beginNewPluginAssignment();
+    model.isInstrument = true;
 
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
     const auto result = adapter::completeExternalPluginLoad(
@@ -1422,13 +1622,9 @@ TEST_CASE("An imported device swapped to another vendor's plugin is a change",
 
     const auto requested = requestFor(model);
 
-    auto replacement = externalDeviceSaving(1.0f, 0.5f);
-    replacement.id = model.id;
-    replacement.name = model.name;
-    replacement.manufacturer = "Another";
-    replacement.fileOrIdentifier = "/Another/Saturator.vst3";
-    replacement.uniqueId = {};
-    model = std::move(replacement);
+    model.beginNewPluginAssignment();
+    model.manufacturer = "Another";
+    model.fileOrIdentifier = "/Another/Saturator.vst3";
 
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
     const auto result = adapter::completeExternalPluginLoad(

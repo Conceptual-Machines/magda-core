@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 #include "core/DeviceInfo.hpp"
 #include "exec/EngineDevice.hpp"
@@ -110,6 +111,30 @@ struct ExternalPluginServices {
 };
 
 /**
+ * @brief The exact installed plugin and the model facts safe to compile from.
+ *
+ * @ref planDevice is a transient copy. Resolution may correct the ordinary
+ * effect/instrument role and apply capabilities cached under the installed
+ * plugin's exact identifier, but it never rekeys or mutates the persistent
+ * model. Display names, user preferences, explicit MIDI/Analysis roles and
+ * saved channel widths remain the project's. Live channel topology is only
+ * known after JUCE has instantiated the plugin and enabled all of its buses.
+ */
+struct ExternalPluginResolution {
+    magda::DeviceInfo planDevice;
+    juce::PluginDescription description;
+    juce::String failure;
+
+    explicit operator bool() const {
+        return failure.isEmpty();
+    }
+};
+
+/** Resolve once for both plan compilation and plugin creation. */
+ExternalPluginResolution resolveEngineExternalPlugin(const magda::DeviceInfo& device,
+                                                     const ExternalPluginServices& services);
+
+/**
  * @brief An external device, or why there is not one.
  *
  * Exactly one of the two is set. The failure is a sentence for a person: which
@@ -141,6 +166,13 @@ struct ExternalDeviceResult {
      * Empty when nothing was created.
      */
     std::vector<magda::RestoredParameter> restoredParameters;
+
+    /**
+     * The current assignment enriched from the live instance after all buses
+     * were enabled. A caller may validate and publish this only on success;
+     * failures leave the persistent model exactly as it was.
+     */
+    std::optional<magda::DeviceInfo> resolvedDevice;
 };
 
 /**
@@ -195,15 +227,16 @@ using CurrentDeviceLookup = std::function<const magda::DeviceInfo*(magda::Device
  * is answering. Saved plugin metadata is not: resolving a moved plugin or an
  * imported DAWproject legitimately corrects it before this request completes.
  *
- * @ref resolvedIdentity is the exact installed description handed to JUCE. It
- * is retained so the request records the precise variant that is in flight;
- * completion does not try to re-resolve mutable model fields and infer whether
- * they still mean it. The assignment generation answers that directly.
+ * Only the stable assignment token decides whether the answer is still wanted.
+ * The display name makes an abandoned/failing request intelligible, and the
+ * resolved role is the one installed fact completion still needs. The full
+ * PluginDescription is deliberately not retained.
  */
 struct RequestedPlugin {
     magda::DeviceId deviceId = magda::INVALID_DEVICE_ID;
     std::uint64_t assignmentGeneration = 0;
-    juce::PluginDescription resolvedIdentity;
+    juce::String displayName;
+    bool resolvedIsInstrument = false;
 };
 
 /**
@@ -233,19 +266,18 @@ ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPlugi
  * rather than a hand-off -- bindings are resolved when a plan is prepared, so a
  * device that arrives later is published and the plan prepared again.
  *
- * @p device is resolved and enriched synchronously before this function
- * returns, so its installed role and channel capabilities are visible to a
- * plan compiled while the plugin instance is still loading. That enrichment
- * preserves its assignment generation.
+ * The returned resolution carries the installed role and cached capabilities
+ * a plan compiled while the instance loads must use. The persistent @p device
+ * is never changed here; only a successful result carries live facts suitable
+ * for validation and publication.
  *
- * The enriched @p device is read once to work out which plugin to load.
+ * The saved @p device is read once to work out which plugin to load.
  * @p currentDevice is read again at completion, to work out what to restore
  * onto it; see CurrentDeviceLookup for why those are two different questions.
  */
-void createEngineExternalDeviceAsync(magda::DeviceInfo& device,
-                                     const ExternalPluginServices& services, bool offlineRender,
-                                     CurrentDeviceLookup currentDevice,
-                                     std::function<void(ExternalDeviceResult)> completed);
+ExternalPluginResolution createEngineExternalDeviceAsync(
+    const magda::DeviceInfo& device, const ExternalPluginServices& services, bool offlineRender,
+    CurrentDeviceLookup currentDevice, std::function<void(ExternalDeviceResult)> completed);
 
 /**
  * @brief Whether the scan knows the plugin @p device names.

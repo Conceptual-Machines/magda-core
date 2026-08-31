@@ -86,19 +86,4 @@ juce::PluginDescription describeSavedPlugin(const DeviceInfo& device);
 ExternalPluginMatch matchInstalledPlugin(const DeviceInfo& device,
                                          const juce::KnownPluginList& knownPlugins);
 
-/**
- * @brief Enrich @p device with facts from the exact installed plugin selected.
- *
- * Resolution is also metadata discovery. An imported DAWproject may have no
- * vendor or path and may call an instrument an effect; a plugin may have moved
- * since the project was saved. The native plan must see the installed role and
- * channel topology before it compiles, otherwise the successfully resolved
- * instrument receives no MIDI or a device is wired at the wrong width.
- *
- * This does not author a new plugin assignment and therefore deliberately does
- * not change DeviceInfo::pluginAssignmentGeneration. It only replaces mutable
- * saved/scan facts for the assignment already in the slot.
- */
-void applyResolvedPluginDescription(DeviceInfo& device, const juce::PluginDescription& description);
-
 }  // namespace magda

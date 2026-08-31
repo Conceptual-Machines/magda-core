@@ -269,14 +269,17 @@ bool supportsSidechainRoutingMenu(const DeviceInfo& device) {
 }
 
 void applyCachedCapabilitiesToDevice(DeviceInfo& device) {
-    const auto identifier = PluginCapabilityCache::identifierForDevice(device);
-    auto snapshot = PluginCapabilityCache::getInstance().find(identifier);
+    applyCachedCapabilitiesToDevice(device, PluginCapabilityCache::identifierForDevice(device));
+}
+
+void applyCachedCapabilitiesToDevice(DeviceInfo& device, const juce::String& pluginIdentifier) {
+    auto snapshot = PluginCapabilityCache::getInstance().find(pluginIdentifier);
     if (!snapshot)
         return;
 
     device.producesMidi = snapshot->hasMidiOutput;
-    if (!device.isInstrument && snapshot->hasMidiInput)
-        device.canReceiveMidi = true;
+    if (!device.isInstrument)
+        device.canReceiveMidi = snapshot->hasMidiInput;
 }
 
 }  // namespace magda

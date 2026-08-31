@@ -3504,6 +3504,7 @@ void TrackManager::notifyDeviceAdded(const ChainNodePath& devicePath, const Devi
 
 DeviceInfo TrackManager::prepareNewDevice(const DeviceInfo& device) {
     DeviceInfo newDevice = device;
+    newDevice.beginNewPluginAssignment();
     newDevice.id = nextFxDeviceId_++;
     rekeyPads(newDevice);
     applyCachedCapabilitiesToDevice(newDevice);
@@ -3530,6 +3531,7 @@ void TrackManager::rekeyPads(DeviceInfo& device, std::map<DeviceId, DeviceId>* r
 
             auto& padDevice = magda::getDevice(element);
             const auto oldId = padDevice.id;
+            padDevice.beginNewPluginAssignment();
             padDevice.id = allocateDeviceId();
 
             // Reported so a caller that also rewrites paths can follow the pad
