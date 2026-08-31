@@ -49,7 +49,7 @@ collapsed into one hybrid track, which kept the name `Audio` and so read as a
 statement about content for years after it had stopped being one; it is `Media`
 now. The ordinals that Instrument and MIDI used are skipped rather than reused,
 because the numbers are written into every `.mgd` and are pinned
-(`tests/test_persisted_enum_pins.cpp`).
+(`tests/devices/test_persisted_enum_pins.cpp`).
 
 What each type can do is declared once in `TrackTypeTraits`, not re-derived per
 call site. See `magda/daw/core/TrackTypes.hpp`.
