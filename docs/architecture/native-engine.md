@@ -865,7 +865,7 @@ graph that was misaligned in fact while every latency assertion above it passed.
 corpus, and it is the question `RenderContext` already answers on paper: output is a function of
 timeline position and nothing else, so a project renders the same audio however the callback is
 cut up. Every non-MIDI case is rendered at 64, 96, 512 and 4096 samples and the other three are
-compared against 512. It lives in `tests/test_null_diff_block_size.cpp` and runs in `magda_tests`,
+compared against 512. It lives in `tests/engine/test_null_diff_block_size.cpp` and runs in `magda_tests`,
 because the claim is the native engine's alone: the incumbent owes nobody block-size invariance
 and could not be held to it here if it did.
 
