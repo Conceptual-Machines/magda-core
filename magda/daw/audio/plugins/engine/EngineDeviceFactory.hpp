@@ -252,13 +252,18 @@ struct RequestedPlugin {
  * calls it directly. @p error is what the loader reported, used only when @p
  * instance is null.
  *
- * @p assignments is asked first, and it is the identity boundary: the load is
- * completed only onto the assignment it was requested for. A device that was
- * deleted, had its plugin replaced, was duplicated or pasted from, or whose id
- * was handed out again after the project was cleared, no longer holds that
- * assignment. Nor does one that was never registered, which is why a forgotten
- * registration refuses the load instead of accepting it. Mutable plugin
+ * The requested assignment is asked first, and it is the identity boundary: the
+ * load is completed only onto the assignment it was requested for. A device
+ * that was deleted, had its plugin replaced, was duplicated or pasted from, or
+ * whose id was handed out again after the project was cleared, no longer holds
+ * that assignment. Nor does one that was never registered, which is why a
+ * forgotten registration refuses the load instead of accepting it, nor one
+ * whose whole runtime went away while the plugin loaded. Mutable plugin
  * metadata is deliberately not compared.
+ *
+ * Nothing but @p requested is needed for that, which is why it is a value:
+ * a completion arriving after the runtime is gone answers from weak references
+ * that have expired, rather than by reaching into it.
  *
  * @p currentDevice then supplies the model to restore from, read now rather
  * than captured when the load was requested.
@@ -266,7 +271,6 @@ struct RequestedPlugin {
 ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPluginInstance> instance,
                                                 const juce::String& error,
                                                 const RequestedPlugin& requested,
-                                                const PluginAssignments& assignments,
                                                 const CurrentDeviceLookup& currentDevice,
                                                 bool offlineRender = false);
 
@@ -290,10 +294,11 @@ ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPlugi
  * onto it; see CurrentDeviceLookup for why those are two different questions.
  *
  * @p key says which live device this is being loaded for, and @p assignments is
- * asked for the assignment that key holds now. It has to outlive the load,
- * which it does by construction: it is owned by whatever runs the plugins, and
- * a load with nothing to complete onto is a load nothing is waiting for. A key
- * with no assignment yields a request that completion refuses.
+ * read once, here, for the assignment that key holds now. It is not captured:
+ * the request that comes out of it is self-contained and holds weak references,
+ * so a runtime destroyed while a plugin is still loading is a load that expires
+ * rather than a dangling one. A key with no assignment yields a request that
+ * completion refuses.
  */
 ExternalPluginResolution createEngineExternalDeviceAsync(
     const magda::DeviceInfo& device, magda::engine::DeviceKey key,

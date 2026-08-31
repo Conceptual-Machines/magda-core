@@ -255,7 +255,6 @@ ExternalDeviceResult createEngineExternalDevice(const magda::DeviceInfo& device,
 ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPluginInstance> instance,
                                                 const juce::String& error,
                                                 const RequestedPlugin& requested,
-                                                const PluginAssignments& assignments,
                                                 const CurrentDeviceLookup& currentDevice,
                                                 bool offlineRender) {
     const auto& requestedName = requested.displayName;
@@ -267,14 +266,14 @@ ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPlugi
     // whether the runtime still holds the very assignment the load was started
     // against, which no copy of the model can carry and no unregistered device
     // can claim.
-    if (!assignments.accepts(requested.assignment)) {
-        // Which of the two it was, for a person reading the log: a key nothing
-        // holds any more is a device that went away, and a key held under a
-        // different assignment is a slot that is now asking for something else.
-        const auto replaced = static_cast<bool>(assignments.current(requested.assignment.key));
+    if (!requested.assignment.isStillWanted()) {
+        // Which of the two it was, for a person reading the log: a key held
+        // under a different assignment is a slot now asking for something else,
+        // and anything else -- a released key, a runtime that is gone, a
+        // registration nobody made -- is a device there is no longer one of.
         return {.device = {},
                 .failure =
-                    replaced
+                    requested.assignment.keyWasReassigned()
                         ? "the device changed plugin while \"" + requestedName + "\" was loading"
                         : "the device was removed while \"" + requestedName + "\" was loading"};
     }
@@ -317,10 +316,9 @@ ExternalPluginResolution createEngineExternalDeviceAsync(
         [requested = RequestedPlugin{.assignment = assignments.request(key),
                                      .displayName = device.name,
                                      .resolvedIsInstrument = resolved.description.isInstrument},
-         &assignments, currentDevice = std::move(currentDevice), offlineRender,
-         completed = std::move(completed)](std::unique_ptr<juce::AudioPluginInstance> instance,
-                                           const juce::String& error) {
-            completed(completeExternalPluginLoad(std::move(instance), error, requested, assignments,
+         currentDevice = std::move(currentDevice), offlineRender, completed = std::move(completed)](
+            std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error) {
+            completed(completeExternalPluginLoad(std::move(instance), error, requested,
                                                  currentDevice, offlineRender));
         });
 

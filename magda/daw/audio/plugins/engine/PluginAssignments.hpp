@@ -28,11 +28,11 @@
  *
  * So identity is owned here instead, by whoever runs the plugins, and it is a
  * pointer rather than a number. A device that becomes live gets a handle; the
- * request holds a weak reference to it; completion is accepted only if this
- * still holds that same handle for that same key. Nothing in the model carries
- * it, so no copy, re-key or serialization path can get it wrong, and a device
- * that was never registered has no handle to lend -- which rejects its load
- * rather than accepting it.
+ * request holds a weak reference to it, and to the table it lives in; a load is
+ * accepted only if that table still holds that same handle for that same key.
+ * Nothing in the model carries it, so no copy, re-key or serialization path can
+ * get it wrong, and a device that was never registered has no handle to lend --
+ * which rejects its load rather than accepting it.
  *
  * Message thread only. Registration happens as devices are placed, and JUCE
  * calls an asynchronous load back on the message thread, so both ends of the
@@ -51,6 +51,27 @@ namespace magda::daw::audio::engine_adapter {
  */
 struct AssignmentHandle {};
 
+/**
+ * @brief The live set, held apart from the object that manages it.
+ *
+ * A load in flight outlives things. The project can be closed and the runtime
+ * that owns the assignments destroyed while a plugin is still loading, and the
+ * completion that arrives afterwards still has to answer -- so it cannot answer
+ * by dereferencing the owner. It holds a weak reference to this instead, and a
+ * table that is gone is a load nobody is waiting for.
+ */
+class AssignmentTable {
+  public:
+    /** The handle held for @p key, or null when nothing is. */
+    std::shared_ptr<const AssignmentHandle> find(magda::engine::DeviceKey key) const;
+
+  private:
+    friend class PluginAssignments;
+    std::unordered_map<magda::engine::DeviceKey, std::shared_ptr<const AssignmentHandle>,
+                       magda::engine::DeviceKeyHash>
+        byKey_;
+};
+
 /** A device that is live now, and the handle standing for its assignment. */
 struct ActiveAssignment {
     magda::engine::DeviceKey key;
@@ -66,15 +87,40 @@ struct ActiveAssignment {
 /**
  * @brief What an asynchronous load remembers about who it is loading for.
  *
- * Weak on purpose. A load in flight must not keep an assignment alive, because
- * an assignment outliving its device is exactly the state in which a stale load
- * would be accepted. An expired handle is the answer "no longer wanted", and it
- * is also what an unregistered device hands out, so forgetting to register
- * fails closed.
+ * Weak at both ends, and for the same reason. A load must not keep an
+ * assignment alive, because an assignment outliving its device is exactly the
+ * state in which a stale load would be accepted; and it must not keep the table
+ * alive either, because the runtime that owns it may be gone by the time the
+ * plugin arrives. Either reference expiring is the answer "no longer wanted",
+ * and an unregistered device hands out an already-expired handle, so forgetting
+ * to register fails closed.
+ *
+ * Self-contained on purpose: completion needs nothing but this to decide, so
+ * nothing about the runtime has to be captured by an asynchronous callback.
  */
 struct LoadRequest {
     magda::engine::DeviceKey key;
     std::weak_ptr<const AssignmentHandle> handle;
+    std::weak_ptr<const AssignmentTable> table;
+
+    /**
+     * @brief Whether a load answering this is still wanted.
+     *
+     * True only when the table is still there and still holds, for this key,
+     * the very handle the request was made against. Every part matters: the
+     * weak handle can still be locked by a caller holding the ActiveAssignment
+     * it was given, and a key can be live again under a different assignment.
+     */
+    bool isStillWanted() const;
+
+    /**
+     * @brief Whether the key is live again under a different assignment.
+     *
+     * Only for telling a person which of the two happened: a slot now asking
+     * for a different plugin, against a device that went away. Never the basis
+     * for accepting anything.
+     */
+    bool keyWasReassigned() const;
 };
 
 /**
@@ -84,19 +130,40 @@ struct LoadRequest {
  * per section, so the main FX, post-FX and mixer-analysis sections can each hold
  * the same integer, and a device in one section must not be able to accept a
  * load requested for a device in another.
+ *
+ * Move-only. The table is shared with the loads in flight against it, never
+ * with a second manager.
  */
 class PluginAssignments {
   public:
+    PluginAssignments();
+
+    PluginAssignments(const PluginAssignments&) = delete;
+    PluginAssignments& operator=(const PluginAssignments&) = delete;
+    PluginAssignments(PluginAssignments&&) noexcept = default;
+    PluginAssignments& operator=(PluginAssignments&&) noexcept = default;
+    ~PluginAssignments() = default;
+
     /**
-     * @brief A device is live under @p key, as a new assignment.
+     * @brief @p key is live and keeps whatever assignment it already has.
      *
-     * Any handle already held for @p key is dropped, which expires every
-     * request outstanding against it. That is what covers a slot whose plugin
-     * was replaced and an id handed out again after the project was cleared:
-     * both are a new assignment on a key that had one, and neither can be told
-     * from the other by anything in the model.
+     * What ordinary registration is: a plan prepared again, a device re-visited
+     * as the project is walked, a slot confirmed to still be there. None of
+     * those is a new assignment, and minting one would expire a load that is
+     * still wanted -- repeatedly, for anything that re-registers on a timer or
+     * on every recompile.
      */
-    ActiveAssignment assign(magda::engine::DeviceKey key);
+    ActiveAssignment ensureAssignment(magda::engine::DeviceKey key);
+
+    /**
+     * @brief @p key is live as a *new* assignment, whatever it held before.
+     *
+     * What a slot asking for a different plugin is, and what a placement is: a
+     * duplicate, a paste, a preset import, an undo reinsertion, or an id handed
+     * out again after the project was cleared. Any handle already held for @p
+     * key is dropped, which expires every request outstanding against it.
+     */
+    ActiveAssignment replaceAssignment(magda::engine::DeviceKey key);
 
     /** The assignment held for @p key, or an empty one when there is none. */
     ActiveAssignment current(magda::engine::DeviceKey key) const;
@@ -115,25 +182,11 @@ class PluginAssignments {
     /** Every assignment ends: the project was closed or cleared. */
     void releaseAll();
 
-    /**
-     * @brief Whether a load answering @p request is still wanted.
-     *
-     * True only when this still holds, for @p request's key, the very handle
-     * the request was made against. Both halves matter: the weak reference can
-     * still be locked by a caller holding the ActiveAssignment it was given,
-     * and a key can be live again under a different assignment.
-     */
-    bool accepts(const LoadRequest& request) const;
-
     /** How many assignments are live. For tests and diagnostics. */
-    std::size_t size() const {
-        return live_.size();
-    }
+    std::size_t size() const;
 
   private:
-    std::unordered_map<magda::engine::DeviceKey, std::shared_ptr<const AssignmentHandle>,
-                       magda::engine::DeviceKeyHash>
-        live_;
+    std::shared_ptr<AssignmentTable> table_;
 };
 
 }  // namespace magda::daw::audio::engine_adapter

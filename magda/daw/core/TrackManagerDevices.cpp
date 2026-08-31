@@ -257,11 +257,14 @@ void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const Preset
             if (state == PresetState::Strip)
                 device.pluginState = stripPresetRuntimePluginState(device.pluginState);
 
-            // A pad device is an ordinary DeviceInfo and owns macros and mods
-            // like any other, so a copy's have to be retargeted too (#2211).
+            // The pad rack, as a rack. A pad device is an ordinary DeviceInfo
+            // and owns macros and mods like any other, so a copy's have to be
+            // retargeted too (#2211) -- and so does the pad rack itself, which
+            // is a RackInfo with macros and mods of its own that a pad path
+            // resolves to and the modulation surfaces compile from. Descending
+            // straight into its chains walked past those (#2261).
             if (device.pads)
-                for (auto& pad : device.pads->chains)
-                    remapPresetLinksRecursive(pad.elements, remap, state);
+                remapRackPresetLinks(*device.pads.get(), remap, state);
         } else if (magda::isRack(element)) {
             remapRackPresetLinks(magda::getRack(element), remap, state);
         }
@@ -270,11 +273,11 @@ void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const Preset
 
 /// Follow a re-keyed Drum Grid's pads with everything that addressed them.
 ///
-/// @p ids is what `rekeyPads()` moved, the grid's own id included. Both ends of
-/// a pad link need it: the grid's macros and mods point down into the pads, and
-/// a pad device's own macros and mods point at their siblings. A link out of the
-/// subtree names an id this does not hold and is left alone, which is what
-/// `remapPresetPath()` does with an unmapped id.
+/// @p ids is what `rekeyPads()` moved, the grid's own id included. Every end of
+/// a pad link needs it: the grid's macros and mods point down into the pads,
+/// the pad rack's own point at what it holds, and a pad device's point at its
+/// siblings. A link out of the subtree names an id this does not hold and is
+/// left alone, which is what `remapPresetPath()` does with an unmapped id.
 void retargetPadLinks(DeviceInfo& device, TrackId trackId, const ChainIdRemap& ids) {
     if (!device.pads)
         return;
@@ -286,8 +289,7 @@ void retargetPadLinks(DeviceInfo& device, TrackId trackId, const ChainIdRemap& i
     remap.chains = ids.chains;
 
     remapPresetLinks(device.macros, device.mods, remap);
-    for (auto& pad : device.pads->chains)
-        remapPresetLinksRecursive(pad.elements, remap, PresetState::Keep);
+    remapRackPresetLinks(*device.pads.get(), remap, PresetState::Keep);
 }
 
 void collectDeviceIdMatches(std::vector<ChainElement>& elements, TrackId trackId, DeviceId deviceId,

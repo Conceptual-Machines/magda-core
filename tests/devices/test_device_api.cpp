@@ -248,6 +248,14 @@ TEST_CASE("A grid's links follow its pads when the grid is placed", "[device-api
     intoPad.amount = 1.0f;
     grid.macros.front().links.push_back(intoPad);
 
+    // The pad rack owns macros and mods of its own -- it is a RackInfo, a pad
+    // path resolves to it, and the modulation surfaces read its macros like any
+    // other rack's. A walk that descended straight into its chains left these
+    // behind.
+    if (pads.macros.empty())
+        pads.macros.emplace_back(0);
+    pads.macros.front().links.push_back(intoPad);
+
     const auto gridId = tracks.addDeviceToTrack(trackId, grid);
     REQUIRE(gridId != INVALID_DEVICE_ID);
     REQUIRE(gridId != kGridId);
@@ -272,6 +280,10 @@ TEST_CASE("A grid's links follow its pads when the grid is placed", "[device-api
 
     REQUIRE_FALSE(livePadDevice.macros.front().links.empty());
     CHECK(livePadDevice.macros.front().links.front().target.devicePath == livePadDevicePath);
+
+    REQUIRE_FALSE(live->pads->macros.empty());
+    REQUIRE_FALSE(live->pads->macros.front().links.empty());
+    CHECK(live->pads->macros.front().links.front().target.devicePath == livePadDevicePath);
 }
 
 TEST_CASE("Device parameters are reported in real units", "[device-api][inspection]") {
