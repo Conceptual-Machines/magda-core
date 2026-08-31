@@ -1713,15 +1713,29 @@ TEST_CASE("A block that arrives during a state read does not reach the plugin",
     // of its read.
     raw->suspendProcessing(true);
 
-    ParamArena arena({0.0f, 1.0f, 1.0f, 0.25f});
+    const auto gainWrites = raw->gain->writes;
+    const auto toneWrites = raw->tone->writes;
+    const auto gainBefore = raw->gain->getValue();
+
+    // Values the plugin is not already holding, so a write that got through
+    // would be a write the parameter records. Supplying what it already has
+    // would let this pass with the gate around processBlock alone, which is
+    // where the hole was: writeParameters() runs before it.
+    ParamArena arena({0.0f, 1.0f, 0.3f, 0.7f});
     Block block(context, 2);
     block.fill(0.5f);
 
     auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
     result.device->process(deviceBlock);
 
-    // The plugin never saw it.
+    // Nothing plugin-facing happened. Not its DSP, and not its parameters
+    // either: a capture reads the chunk and then the parameter values, and a
+    // block that moved one between the two saves a pair that disagrees with
+    // itself.
     CHECK(raw->samplesSeen == 0);
+    CHECK(raw->gain->writes == gainWrites);
+    CHECK(raw->tone->writes == toneWrites);
+    CHECK(raw->gain->getValue() == Catch::Approx(gainBefore));
 
     // And the block came out as it went in, which is the passthrough the plan
     // already gives a Device op with no instance bound. The stub would have

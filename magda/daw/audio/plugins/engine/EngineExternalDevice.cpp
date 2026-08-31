@@ -372,26 +372,6 @@ void EngineExternalDevice::writeExtraOutputs(magda::engine::DeviceBlock& block,
 }
 
 void EngineExternalDevice::processPluginBlock(juce::AudioBuffer<float>& audio) {
-    // The plugin's own callback lock, and its own suspended flag. A host reading
-    // or writing this plugin's state holds one and sets the other
-    // (ExternalPluginState.hpp), and what a block may not do is run third-party
-    // DSP concurrently with a third-party state handler: the plugin is entitled
-    // to be halfway through swapping a sample or a program, and no part of that
-    // is safe to process against.
-    //
-    // Tried rather than waited on, because this is the audio thread. A block
-    // that arrives mid-transaction leaves the buffer as it was handed over,
-    // which is the passthrough the plan already gives a Device op with no
-    // instance bound, and the wet/dry mix is skipped with it: mixing a plugin's
-    // input against itself is not what a project at 40% wet asked for.
-    //
-    // The lock is the half that makes suspension mean anything. Holding it here
-    // is what makes suspendProcessing() wait for a block already in progress
-    // rather than set a flag and return while the plugin is still running.
-    const juce::ScopedTryLock guard(instance_->getCallbackLock());
-    if (!guard.isLocked() || instance_->isSuspended())
-        return;
-
     const auto numSamples = audio.getNumSamples();
 
     if (dryGain_ <= kDryLevelFloor) {
@@ -495,6 +475,31 @@ void EngineExternalDevice::processThroughScratch(magda::engine::DeviceBlock& blo
 }
 
 void EngineExternalDevice::process(magda::engine::DeviceBlock& block) {
+    // The plugin's own callback lock, and its own suspended flag. A host reading
+    // or writing this plugin's state holds one and sets the other
+    // (ExternalPluginState.hpp), and what a block may not do is touch the plugin
+    // at all while that is happening: it is entitled to be halfway through
+    // swapping a sample or a program, and neither its DSP nor its parameters are
+    // safe to reach into meanwhile.
+    //
+    // Everything plugin-facing is inside this, parameter writes included. They
+    // are the reason the gate is here rather than around the processBlock call:
+    // a capture reads the plugin's chunk and then its parameter values, and a
+    // block that moved a parameter between those two reads would produce a
+    // saved pair that disagrees with itself.
+    //
+    // Tried rather than waited on, because this is the audio thread. A block
+    // that arrives mid-transaction leaves the buffer as it was handed over,
+    // which is the passthrough the plan already gives a Device op with no
+    // instance bound.
+    //
+    // The lock is the half that makes suspension mean anything. Holding it here
+    // is what makes suspendProcessing() wait for a block already in progress
+    // rather than set a flag and return while the plugin is still running.
+    const juce::ScopedTryLock guard(instance_->getCallbackLock());
+    if (!guard.isLocked() || instance_->isSuspended())
+        return;
+
     writeParameters(block.params);
 
     const auto numSamples = static_cast<int>(block.audio.getNumSamples());
