@@ -1087,10 +1087,17 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
     // DeviceId counter, so the copied devices must be re-stamped with fresh ids
     // from the right counter (sharing ids = sharing audio-engine plugin slots).
     // Empty when !includeDevices, so these loops are no-ops in that case.
-    for (auto& element : newTrack.chain.postFxChainElements)
+    // Each is a distinct live assignment for the same reason reassignChainElementIds
+    // mints one, and these two counters are section-local, so a copied device
+    // can otherwise land on an id another section is already using.
+    for (auto& element : newTrack.chain.postFxChainElements) {
+        element.device.beginNewPluginAssignment();
         element.device.id = nextPostFxDeviceId_++;
-    for (auto& element : newTrack.chain.mixerAnalysisElements)
+    }
+    for (auto& element : newTrack.chain.mixerAnalysisElements) {
+        element.device.beginNewPluginAssignment();
         element.device.id = nextMixerAnalysisDeviceId_++;
+    }
 
     // Log all device IDs after reassignment
     DBG("duplicateTrack: original trackId=" << trackId << " -> newTrackId=" << newTrack.id);
@@ -2212,6 +2219,7 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
     }
 
     DeviceInfo newDevice = device;
+    newDevice.beginNewPluginAssignment();
     newDevice.id = nextPostFxDeviceId_++;
     applyCachedCapabilitiesToDevice(newDevice);
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
@@ -2277,6 +2285,7 @@ DeviceId TrackManager::addDeviceToMixerAnalysis(TrackId trackId, const DeviceInf
     }
 
     DeviceInfo newDevice = device;
+    newDevice.beginNewPluginAssignment();
     newDevice.id = nextMixerAnalysisDeviceId_++;
     applyCachedCapabilitiesToDevice(newDevice);
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
@@ -3504,6 +3513,7 @@ void TrackManager::notifyDeviceAdded(const ChainNodePath& devicePath, const Devi
 
 DeviceInfo TrackManager::prepareNewDevice(const DeviceInfo& device) {
     DeviceInfo newDevice = device;
+    newDevice.beginNewPluginAssignment();
     newDevice.id = nextFxDeviceId_++;
     rekeyPads(newDevice);
     applyCachedCapabilitiesToDevice(newDevice);
@@ -3513,7 +3523,7 @@ DeviceInfo TrackManager::prepareNewDevice(const DeviceInfo& device) {
     return newDevice;
 }
 
-void TrackManager::rekeyPads(DeviceInfo& device, std::map<DeviceId, DeviceId>* remap) {
+void TrackManager::rekeyPads(DeviceInfo& device, ChainIdRemap* remap) {
     if (!device.pads)
         return;
 
@@ -3523,22 +3533,19 @@ void TrackManager::rekeyPads(DeviceInfo& device, std::map<DeviceId, DeviceId>* r
     // would run whichever it saw last (#2207).
     stampPadRackId(device);
 
-    for (auto& pad : device.pads->chains) {
-        for (auto& element : pad.elements) {
-            if (!magda::isDevice(element))
-                continue;
-
-            auto& padDevice = magda::getDevice(element);
-            const auto oldId = padDevice.id;
-            padDevice.id = allocateDeviceId();
-
-            // Reported so a caller that also rewrites paths can follow the pad
-            // devices, which is what keeps a macro or a mod on the grid pointing
-            // at the pad it was linked to.
-            if (remap != nullptr && oldId != INVALID_DEVICE_ID)
-                (*remap)[oldId] = padDevice.id;
-        }
-    }
+    // A pad holds chain elements like any other chain, nested racks included,
+    // so the same recursive walk re-keys them. A shallow pass over the direct
+    // pad devices left everything inside a pad's rack carrying the source's
+    // DeviceIds and assignment tokens, so a copied grid shared ops with the one
+    // it came from and a late async load could complete onto the copy.
+    //
+    // Reported so a caller that also rewrites paths can follow the pad
+    // contents, which is what keeps a macro or a mod on the grid pointing at
+    // the pad it was linked to.
+    ChainIdRemap discarded;
+    auto& target = remap != nullptr ? *remap : discarded;
+    for (auto& pad : device.pads->chains)
+        reassignChainElementIds(pad.elements, target);
 }
 
 void TrackManager::notifyDeviceModifiersChanged(TrackId trackId) {

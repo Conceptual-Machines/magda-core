@@ -1938,6 +1938,13 @@ void TrackManager::reassignChainElementIds(std::vector<ChainElement>& elements,
         if (magda::isDevice(element)) {
             auto& device = magda::getDevice(element);
             const auto oldDeviceId = device.id;
+
+            // A re-keyed element is a distinct live assignment, not a snapshot
+            // of the one it was copied from: it gets its own plugin instance,
+            // and DeviceIds are reused after clearAllTracks(). Without a fresh
+            // token an async load requested by the original would match the
+            // copy and restore one plugin's state onto another.
+            device.beginNewPluginAssignment();
             device.id = allocateDeviceId();
             remap.devices[oldDeviceId] = device.id;
 

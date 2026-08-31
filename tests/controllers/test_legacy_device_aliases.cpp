@@ -75,6 +75,7 @@ TEST_CASE("Retired Tracktion devices resolve to their successor by every stored 
 
 TEST_CASE("Migrating a retired device rewrites its identity", "[devices][legacy][aliases]") {
     auto device = retiredDevice("reverb", {param(0, 0.5f)});
+    const auto retiredGeneration = device.pluginAssignmentGeneration;
     device.name = "Reverb";  // still the stock name
     device.pluginState = "<PLUGIN type=\"reverb\"/>";
     device.visibleParameters = {0, 1, 2};
@@ -83,13 +84,16 @@ TEST_CASE("Migrating a retired device rewrites its identity", "[devices][legacy]
 
     CHECK(device.pluginId == "magda_reverb");
     CHECK(device.uniqueId == "magda_reverb");
+    CHECK(device.pluginAssignmentGeneration > retiredGeneration);
     CHECK(device.name == "Reverb");
     // State and index lists described a plugin that no longer exists.
     CHECK(device.pluginState.isEmpty());
     CHECK(device.visibleParameters.empty());
 
     // Idempotent: a second pass finds nothing to do.
+    const auto successorGeneration = device.pluginAssignmentGeneration;
     CHECK_FALSE(legacy_devices::migrateRetiredDevice(device));
+    CHECK(device.pluginAssignmentGeneration == successorGeneration);
 }
 
 TEST_CASE("Migration keeps a user-renamed device's name", "[devices][legacy][aliases]") {

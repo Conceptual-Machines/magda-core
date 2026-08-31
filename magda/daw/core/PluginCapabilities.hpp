@@ -86,5 +86,6 @@ bool supportsExternalMidiInputRouting(const DeviceInfo& device);
 bool supportsMidiSidechainSource(const DeviceInfo& device);
 bool supportsSidechainRoutingMenu(const DeviceInfo& device);
 void applyCachedCapabilitiesToDevice(DeviceInfo& device);
+void applyCachedCapabilitiesToDevice(DeviceInfo& device, const juce::String& pluginIdentifier);
 
 }  // namespace magda
