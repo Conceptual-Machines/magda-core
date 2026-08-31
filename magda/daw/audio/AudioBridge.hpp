@@ -695,6 +695,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     juce::BigInteger getEnabledOutputChannels() const;
 
+    /** Map from hardware channel index to TE WaveOutputDevice name (e.g. "Out 1 + 2"). */
+    std::map<int, juce::String> getOutputDeviceNamesByChannel() const;
+
     /**
      * @brief Set audio output destination for a track
      * @param trackId The MAGDA track ID

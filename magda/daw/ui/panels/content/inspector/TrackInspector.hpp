@@ -168,6 +168,7 @@ class TrackInspector : public BaseInspector,
     std::map<int, magda::TrackId> inputTrackMapping_;
     std::map<int, magda::TrackId> midiInputTrackMapping_;
     std::map<int, juce::String> inputChannelMapping_;
+    std::map<int, juce::String> outputChannelMapping_;
 
     // MIDI device change detection
     size_t lastMidiInputCount_ = 0;

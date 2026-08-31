@@ -1783,8 +1783,13 @@ void TrackInspector::populateRoutingSelectors() {
                     selectedTrackId_, "track:" + juce::String(it->second));
             }
         } else if (selectedId >= 10) {
-            // Hardware output
-            magda::TrackManager::getInstance().setTrackAudioOutput(selectedTrackId_, "master");
+            // Hardware output — route to the mapped wave output device.
+            // Copy the string — the map can be repopulated during setTrackAudioOutput
+            // (via notifyTrackPropertyChanged → updateRoutingSelectorsFromTrack)
+            auto it = outputChannelMapping_.find(selectedId);
+            juce::String dest =
+                it != outputChannelMapping_.end() ? it->second : juce::String("master");
+            magda::TrackManager::getInstance().setTrackAudioOutput(selectedTrackId_, dest);
         }
     };
 
@@ -1847,11 +1852,14 @@ void TrackInspector::populateAudioOutputOptions() {
     if (!deviceManager)
         return;
     juce::BigInteger enabledOutputChannels;
-    if (auto* bridge = audioEngine_->getAudioBridge())
+    std::map<int, juce::String> teOutputDeviceNames;
+    if (auto* bridge = audioEngine_->getAudioBridge()) {
         enabledOutputChannels = bridge->getEnabledOutputChannels();
+        teOutputDeviceNames = bridge->getOutputDeviceNamesByChannel();
+    }
     magda::RoutingSyncHelper::populateAudioOutputOptions(
         outputSelector_.get(), selectedTrackId_, deviceManager->getCurrentAudioDevice(),
-        outputTrackMapping_, enabledOutputChannels);
+        outputTrackMapping_, enabledOutputChannels, &outputChannelMapping_, teOutputDeviceNames);
 }
 
 void TrackInspector::populateMidiInputOptions() {
@@ -1884,17 +1892,19 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
     auto* deviceManager = audioEngine_->getDeviceManager();
     auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
     juce::BigInteger enabledIn, enabledOut;
-    std::map<int, juce::String> teInputDeviceNames;
+    std::map<int, juce::String> teInputDeviceNames, teOutputDeviceNames;
     if (auto* bridge = audioEngine_->getAudioBridge()) {
         enabledIn = bridge->getEnabledInputChannels();
         enabledOut = bridge->getEnabledOutputChannels();
         teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
+        teOutputDeviceNames = bridge->getOutputDeviceNamesByChannel();
     }
     magda::RoutingSyncHelper::syncSelectorsFromTrack(
         *track, audioInputSelector_.get(), inputSelector_.get(), outputSelector_.get(),
         midiOutputSelector_.get(), audioEngine_->getMidiBridge(), device, selectedTrackId_,
         outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut,
-        &inputChannelMapping_, teInputDeviceNames, &midiInputTrackMapping_);
+        &inputChannelMapping_, teInputDeviceNames, &midiInputTrackMapping_, &outputChannelMapping_,
+        teOutputDeviceNames);
 }
 
 }  // namespace magda::daw::ui

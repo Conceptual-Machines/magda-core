@@ -317,6 +317,7 @@ class TrackHeadersPanel : public juce::Component,
     std::map<int, TrackId> inputTrackMapping_;
     std::map<int, TrackId> midiInputTrackMapping_;
     std::map<int, juce::String> inputChannelMapping_;
+    std::map<int, juce::String> outputChannelMapping_;
 
     // Flip name-label text colour on the near-white selected fill
     void updateHeaderSelectionColours();
