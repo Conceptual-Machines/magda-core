@@ -822,9 +822,8 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
 
     // Capture outputTrackMapping_ by value so each header has its own snapshot
     // (the shared member is rebuilt per-header in populateAudioOutputOptions)
-    header.outputSelector->onSelectionChanged = [trackId, mapping = outputTrackMapping_,
-                                                 channelMapping =
-                                                     outputChannelMapping_](int selectedId) {
+    header.outputSelector->onSelectionChanged = [this, trackId,
+                                                 mapping = outputTrackMapping_](int selectedId) {
         if (selectedId == 1) {
             // Master
             TrackManager::getInstance().setTrackAudioOutput(trackId, "master");
@@ -839,10 +838,14 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
                     trackId, "track:" + juce::String(it->second));
             }
         } else if (selectedId >= 10) {
-            // Hardware output — route to the mapped wave output device
-            auto it = channelMapping.find(selectedId);
-            TrackManager::getInstance().setTrackAudioOutput(
-                trackId, it != channelMapping.end() ? it->second : "master");
+            // Hardware output — route to the mapped wave output device. Read
+            // the shared member (rebuilt whenever options are, and identical
+            // for every header) and copy the string — setTrackAudioOutput can
+            // trigger a re-population that invalidates the iterator.
+            auto it = outputChannelMapping_.find(selectedId);
+            juce::String dest =
+                it != outputChannelMapping_.end() ? it->second : juce::String("master");
+            TrackManager::getInstance().setTrackAudioOutput(trackId, dest);
         }
     };
 

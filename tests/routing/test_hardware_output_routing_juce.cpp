@@ -105,44 +105,60 @@ class HardwareOutputRoutingTest final : public juce::UnitTest {
     void testOptionToDeviceMapping() {
         beginTest("populateAudioOutputOptions maps option IDs to wave output devices");
 
-        StubAudioIODevice device(4);
+        StubAudioIODevice device(5);
         RoutingSelector selector(RoutingSelector::Type::AudioOut);
         std::map<int, TrackId> trackMapping;
         std::map<int, juce::String> channelMapping;
         juce::BigInteger enabled;
-        enabled.setRange(0, 4, true);
+        enabled.setRange(0, 5, true);
+        // Two stereo-pair devices plus a trailing mono device
         const std::map<int, juce::String> teNames = {
-            {0, "Out 1 + 2"}, {1, "Out 1 + 2"}, {2, "Out 3 + 4"}, {3, "Out 3 + 4"}};
+            {0, "Out 1 + 2"}, {1, "Out 1 + 2"}, {2, "Out 3 + 4"}, {3, "Out 3 + 4"}, {4, "Out 5"}};
 
         RoutingSyncHelper::populateAudioOutputOptions(
             &selector, INVALID_TRACK_ID, &device, trackMapping, enabled, &channelMapping, teNames);
 
-        // Stereo pairs (ID 10+) carry the pair marker; monos (ID 100+) the bare name
+        // Stereo pairs (ID 10+) carry the pair marker; the mono device (ID
+        // 100+) the bare name. Channels inside a pair get no mono option — TE
+        // routes a track output to a whole wave device only.
         expectEquals(channelMapping[10], juce::String("stereo:Out 1 + 2"));
         expectEquals(channelMapping[11], juce::String("stereo:Out 3 + 4"));
-        expectEquals(channelMapping[100], juce::String("Out 1 + 2"));
-        expectEquals(channelMapping[102], juce::String("Out 3 + 4"));
+        expectEquals(channelMapping[100], juce::String("Out 5"));
+        expectEquals(static_cast<int>(channelMapping.size()), 3);
 
-        // Without TE device names the mapping falls back to positional names
+        // Distinct mono devices must stay distinguishable in the model
+        std::map<int, juce::String> monoMapping;
+        juce::BigInteger twoChannels;
+        twoChannels.setRange(0, 2, true);
+        const std::map<int, juce::String> monoNames = {{0, "Main L"}, {1, "Main R"}};
+        RoutingSyncHelper::populateAudioOutputOptions(&selector, INVALID_TRACK_ID, &device,
+                                                      trackMapping, twoChannels, &monoMapping,
+                                                      monoNames);
+        expectEquals(monoMapping[100], juce::String("Main L"));
+        expectEquals(monoMapping[101], juce::String("Main R"));
+        expectEquals(static_cast<int>(monoMapping.size()), 2);
+
+        // Without TE device names the mapping falls back to positional pairing
         std::map<int, juce::String> fallbackMapping;
         RoutingSyncHelper::populateAudioOutputOptions(&selector, INVALID_TRACK_ID, &device,
                                                       trackMapping, enabled, &fallbackMapping);
         expectEquals(fallbackMapping[10], juce::String("stereo:Out 1"));
-        expectEquals(fallbackMapping[101], juce::String("Out 2"));
+        expectEquals(fallbackMapping[11], juce::String("stereo:Out 3"));
+        expectEquals(fallbackMapping[100], juce::String("Out 5"));
     }
 
     void testSelectorRoundTrip() {
         beginTest("syncSelectorsFromTrack re-selects a stored hardware destination");
 
-        StubAudioIODevice device(4);
+        StubAudioIODevice device(5);
         RoutingSelector selector(RoutingSelector::Type::AudioOut);
         std::map<int, TrackId> outputTrackMapping;
         std::map<int, TrackId> midiOutputTrackMapping;
         std::map<int, juce::String> channelMapping;
         juce::BigInteger enabled;
-        enabled.setRange(0, 4, true);
+        enabled.setRange(0, 5, true);
         const std::map<int, juce::String> teNames = {
-            {0, "Out 1 + 2"}, {1, "Out 1 + 2"}, {2, "Out 3 + 4"}, {3, "Out 3 + 4"}};
+            {0, "Out 1 + 2"}, {1, "Out 1 + 2"}, {2, "Out 3 + 4"}, {3, "Out 3 + 4"}, {4, "Out 5"}};
 
         TrackInfo track;
         track.audioOutputDevice = "stereo:Out 3 + 4";
@@ -155,7 +171,7 @@ class HardwareOutputRoutingTest final : public juce::UnitTest {
         // The dropdown must land on the second stereo pair, not snap back to Master
         expectEquals(selector.getSelectedId(), 11);
 
-        track.audioOutputDevice = "Out 1 + 2";  // mono/bare device selection
+        track.audioOutputDevice = "Out 5";  // mono device selection
         RoutingSyncHelper::syncSelectorsFromTrack(
             track, nullptr, nullptr, &selector, nullptr, nullptr, &device, INVALID_TRACK_ID,
             outputTrackMapping, midiOutputTrackMapping, nullptr, {}, enabled, nullptr, {}, nullptr,
