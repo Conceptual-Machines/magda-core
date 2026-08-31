@@ -533,8 +533,11 @@ class PianoRollGridComponent : public juce::Component,
                                    const MidiPitchExpressionPoint& point,
                                    juce::Point<float> screen);
 
-    // Grid snap helper
+    // Grid snap helpers. snapBeatToGrid rounds to the nearest grid line (drag,
+    // resize, playhead); snapBeatToGridFloor floors to the containing cell so a
+    // pencil click anywhere in a cell's span inserts on that cell (#2266).
     double snapBeatToGrid(double beat) const;
+    double snapBeatToGridFloor(double beat) const;
 
     // Note management
     void createNoteComponents();
@@ -559,7 +562,7 @@ class PianoRollGridComponent : public juce::Component,
     };
     std::optional<NoteInsertPosition> getNoteInsertPosition(juce::Point<int> localPos) const;
     double displayBeatForClipBeat(ClipId clipId, double clipBeat) const;
-    double clipBeatForDisplayX(ClipId clipId, int mouseX) const;
+    double clipBeatForDisplayX(ClipId clipId, int mouseX, bool floorToCell = false) const;
     double absolutePlayheadBeatForDisplayX(int mouseX) const;
     void updateEmptyGridCursor(const juce::ModifierKeys& mods, int mouseX);
     bool isBlackKey(int noteNumber) const;

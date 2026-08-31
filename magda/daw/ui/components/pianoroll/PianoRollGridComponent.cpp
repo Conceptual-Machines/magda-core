@@ -1854,6 +1854,15 @@ double PianoRollGridComponent::snapBeatToGrid(double beat) const {
     return std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
 }
 
+double PianoRollGridComponent::snapBeatToGridFloor(double beat) const {
+    if (!snapEnabled_ || gridResolutionBeats_ <= 0.0) {
+        return beat;
+    }
+    // Epsilon absorbs float error when the click maps to a hair below a cell
+    // boundary, so a click on the line still lands on the cell it starts.
+    return std::floor(beat / gridResolutionBeats_ + 1e-6) * gridResolutionBeats_;
+}
+
 bool PianoRollGridComponent::isNearGridLine(int mouseX) const {
     if (gridResolutionBeats_ <= 0.0)
         return false;
@@ -1935,7 +1944,7 @@ PianoRollGridComponent::getNoteInsertPosition(juce::Point<int> localPos) const {
 
     NoteInsertPosition insertPos;
     insertPos.clipId = targetClipId;
-    insertPos.beat = clipBeatForDisplayX(targetClipId, localPos.x);
+    insertPos.beat = clipBeatForDisplayX(targetClipId, localPos.x, /*floorToCell=*/true);
     insertPos.noteNumber = yToNoteNumber(localPos.y);
     return insertPos;
 }
@@ -1970,7 +1979,8 @@ double PianoRollGridComponent::displayBeatForClipBeat(ClipId clipId, double clip
     return clipStartBeats_ + clipBeat;
 }
 
-double PianoRollGridComponent::clipBeatForDisplayX(ClipId clipId, int mouseX) const {
+double PianoRollGridComponent::clipBeatForDisplayX(ClipId clipId, int mouseX,
+                                                   bool floorToCell) const {
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     double clipBeat = pixelToBeat(mouseX);
 
@@ -1996,7 +2006,7 @@ double PianoRollGridComponent::clipBeatForDisplayX(ClipId clipId, int mouseX) co
         }
     }
 
-    clipBeat = snapBeatToGrid(clipBeat);
+    clipBeat = floorToCell ? snapBeatToGridFloor(clipBeat) : snapBeatToGrid(clipBeat);
     clipBeat = juce::jmax(0.0, clipBeat);
     if (clip) {
         clipBeat += ClipOperations::getMidiVisibleRange(*clip).startBeat;
