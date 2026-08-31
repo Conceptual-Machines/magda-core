@@ -121,6 +121,12 @@ enum class SavedStateOutcome {
  * the patch, and a project holds the preset only until the first load turns it
  * into a chunk of its own.
  *
+ * A VST3 that refuses the preset falls through to the chunk, which overwrites
+ * whatever the refusal left behind. With no chunk to fall through to there is
+ * nothing left that describes the instance, and this reports Failed rather than
+ * Baseline: a refused preset is not a no-op (Vst3PresetOutcome::Refused), so the
+ * parameter array underneath it is no longer a description of the plugin.
+ *
  * A plugin's own state handler is third-party code running in-process, and a
  * corrupt chunk is exactly the input it is least likely to have been tested
  * against, so it is called inside a catch-all. What the catch-all buys is that
@@ -158,31 +164,71 @@ void applyRestoredParameters(DeviceInfo& device, const std::vector<RestoredParam
  * the format is not in the description a host holds, only in whether the
  * instance answers the VST3 extension.
  */
-juce::MemoryBlock readVst3Preset(const juce::AudioPluginInstance& instance);
+struct Vst3PresetRead {
+    /// The preset the instance wrote. Empty for a plugin of another format, and
+    /// also for a VST3 that could not write one.
+    juce::MemoryBlock preset;
+
+    /// Whether the instance answered the VST3 extension at all.
+    ///
+    /// The half that cannot be inferred from the block. An empty preset from a
+    /// VST3 is a plugin that failed to describe its patch, and an empty one from
+    /// an AU is a question that was never asked; a caller that treated them the
+    /// same would either discard an imported project's identity or keep a patch
+    /// it knows is out of date.
+    bool isVst3 = false;
+};
+
+Vst3PresetRead readVst3Preset(const juce::AudioPluginInstance& instance);
+
+/// What became of a .vstpreset handed to an instance.
+enum class Vst3PresetOutcome {
+    /// A plugin of another format. Nothing was asked of it and nothing moved.
+    NotVst3,
+
+    /// The plugin took the patch.
+    Applied,
+
+    /// A VST3 that would not take it, and which may have moved partway doing so.
+    ///
+    /// Not a no-op, which is the whole reason this is not a bool. Steinberg's
+    /// loader restores the component's state and then the controller's, and it
+    /// returns false if the second fails after the first succeeded, so a refused
+    /// preset can leave a plugin holding half of one. A caller with nothing
+    /// authoritative to apply afterwards has an instance nobody can describe.
+    Refused,
+};
 
 /**
- * @brief Hand @p preset to @p instance as a .vstpreset, and say whether it took.
+ * @brief Hand @p preset to @p instance as a .vstpreset.
  *
- * False for a non-VST3, for a preset it refuses, and for an instance that threw
- * reading it. It is the same third-party state handler applySavedPluginState()
- * guards, reached through the format's own preset call rather than through the
- * chunk.
+ * It is the same third-party state handler applySavedPluginState() guards,
+ * reached through the format's own preset call rather than through the chunk, so
+ * a throw is caught and reported as a refusal for the same reason: what the
+ * plugin holds afterwards is not knowable from here.
  */
-bool writeVst3Preset(juce::AudioPluginInstance& instance, const juce::MemoryBlock& preset);
+Vst3PresetOutcome writeVst3Preset(juce::AudioPluginInstance& instance,
+                                  const juce::MemoryBlock& preset);
 
 /**
  * @brief Refresh @p device's portable VST3 records from @p instance.
  *
  * The .vstpreset a DAWproject export writes and the class id other hosts match
- * on, both read off the live instance and neither part of native state. A
- * no-op for a plugin that is not a VST3, which leaves whatever the project
+ * on, both read off the live instance and neither part of native state.
+ *
+ * A no-op for a plugin that is not a VST3, which leaves whatever the project
  * already carried rather than clearing it: a project imported from another host
  * keeps the identity it came with even where this machine's copy cannot restate
  * it.
  *
- * The class id is written once and then left alone. It is the plugin's
- * identity, not its patch, and the one the project was authored against is
- * worth more than the one this machine happens to have installed.
+ * A VST3 that could not write one is the opposite case and is cleared. What the
+ * project is holding describes an older patch, the portable record is the
+ * overlay on the next load, and keeping it would restore that older patch over
+ * the chunk the same save just wrote.
+ *
+ * The class id survives either way. It is the plugin's identity rather than its
+ * patch, and the one the project was authored against is worth more than the
+ * one this machine happens to have installed.
  */
 void captureVst3Records(const juce::AudioPluginInstance& instance, DeviceInfo& device);
 
@@ -195,9 +241,17 @@ void captureVst3Records(const juce::AudioPluginInstance& instance, DeviceInfo& d
  * rather than empty when the plugin has nothing to say -- so a project saved
  * under either engine opens under the other.
  *
- * Message thread, and the plugin is suspended across the read the way the fork
- * suspends it: a plugin asked to describe itself mid-block is entitled to
- * answer with half of one state and half of another.
+ * Message thread, and the plugin is suspended across the whole transaction the
+ * way the fork holds its processMutex across one: a plugin asked to describe
+ * itself mid-block is entitled to answer with half of one state and half of
+ * another, and that applies to its parameter values and its portable preset as
+ * much as to its chunk.
+ *
+ * Suspension is only worth anything because the host honours it. A block that
+ * arrives while this is in flight passes its audio through rather than running
+ * the plugin (EngineExternalDevice::processPluginBlock), which is what makes
+ * suspendProcessing() wait for one already in progress rather than merely set a
+ * flag nobody reads.
  *
  * False when the plugin threw describing itself, and then @p device is left
  * exactly as it was. The two records have to agree with each other -- the array

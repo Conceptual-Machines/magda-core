@@ -804,7 +804,7 @@ juce::String AudioBridge::getVst3DeviceId(const ChainNodePath& devicePath) const
         return {};
     // Pull the current state as a .vstpreset; its header carries the 32-char
     // class id. Empty for a plugin that is not a VST3.
-    return vst3::classIdFromPreset(readVst3Preset(*pi));
+    return vst3::classIdFromPreset(readVst3Preset(*pi).preset);
 }
 
 int AudioBridge::getPluginNumPrograms(const ChainNodePath& devicePath) const {
@@ -861,7 +861,7 @@ bool AudioBridge::loadPluginPresetFile(const ChainNodePath& devicePath,
         juce::MemoryBlock raw;
         if (!presetFile.loadFileAsData(raw))
             return false;
-        applied = writeVst3Preset(*pi, raw);
+        applied = writeVst3Preset(*pi, raw) == Vst3PresetOutcome::Applied;
     } else if (extension == ".aupreset") {
         juce::MemoryBlock raw;
         if (!presetFile.loadFileAsData(raw))
@@ -886,7 +886,7 @@ bool AudioBridge::savePluginPresetFile(const ChainNodePath& devicePath,
     const auto extension = presetFile.getFileExtension().toLowerCase();
 
     if (extension == ".vstpreset") {
-        const auto preset = readVst3Preset(*pi);
+        const auto preset = readVst3Preset(*pi).preset;
         if (preset.getSize() == 0)
             return false;  // not a VST3 plugin
         presetFile.getParentDirectory().createDirectory();

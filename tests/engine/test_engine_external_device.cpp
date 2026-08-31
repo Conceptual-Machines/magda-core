@@ -359,12 +359,19 @@ class StubPlugin final : public juce::AudioPluginInstance {
     /// And some have nothing beyond their parameters to describe.
     bool savesNothing = false;
 
+    /// A VST3 that cannot write its patch out, which is the case a caller must
+    /// not read as "not a VST3".
+    bool savesNoPreset = false;
+
     /// Whether this stub is a VST3 at all (see getExtensions).
     bool isVst3 = false;
 
     /// Whether its VST3 client takes the preset it is handed. A real one
     /// refuses a patch that was written for a different plugin.
     bool acceptsPreset = true;
+
+    /// And whether it has already changed something by the time it refuses.
+    bool mutatesBeforeRefusing = false;
 
     /// How many presets reached it, which is how a test tells the portable
     /// record's door from the chunk's.
@@ -383,13 +390,24 @@ class StubPlugin final : public juce::AudioPluginInstance {
 };
 
 juce::MemoryBlock StubPlugin::Vst3Extension::getPreset() const {
+    if (plugin.savesNoPreset)
+        return {};
+
     const State state{.tone = plugin.tone->getValue(), .fixed = plugin.fixed->getValue()};
     return vst3PresetOf(&state, sizeof(state));
 }
 
 bool StubPlugin::Vst3Extension::setPreset(const juce::MemoryBlock& data) const {
-    if (!plugin.acceptsPreset)
+    if (!plugin.acceptsPreset) {
+        // Half of it, then the refusal. Steinberg's loader restores the
+        // component's state and then the controller's and returns false when the
+        // second fails after the first, so this is what a real refusal can look
+        // like from outside.
+        if (plugin.mutatesBeforeRefusing)
+            plugin.tone->setValue(0.42f);
+
         return false;
+    }
 
     constexpr size_t kHeaderBytes = 48;
     if (data.getSize() != kHeaderBytes + sizeof(State))
@@ -1566,6 +1584,57 @@ TEST_CASE("An applied preset is spent rather than kept", "[engine][external]") {
     CHECK(model.vst3Preset.isNotEmpty());
 }
 
+TEST_CASE("A refused preset with nothing behind it is not published", "[engine][external]") {
+    // Steinberg's loader restores the component's state before the controller's
+    // and returns false when the second fails after the first, so a refusal is
+    // not a no-op: the plugin can be holding half the imported patch. An import
+    // is exactly the project with no chunk to overwrite that with, and the
+    // parameter array underneath describes what the project believed rather than
+    // what the instance now is.
+    //
+    // So it is refused the same way a chunk that threw is, rather than published
+    // as a baseline nobody can describe.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->isVst3 = true;
+    raw->acceptsPreset = false;
+    raw->mutatesBeforeRefusing = true;
+
+    const StubPlugin::State imported{.tone = 0.9f, .fixed = 0.8f};
+    const auto preset = vst3PresetOf(&imported, sizeof(imported));
+
+    auto model = externalDevice();
+    model.vst3Preset = juce::Base64::toBase64(preset.getData(), preset.getSize());
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+
+    CHECK(result.device == nullptr);
+    CHECK(result.failure.contains("restoring its own saved state"));
+
+    // And the value it was left on never reached the model.
+    CHECK(result.restoredParameters.empty());
+}
+
+TEST_CASE("A plugin of another format refusing nothing is still a baseline", "[engine][external]") {
+    // The other side of the case above. A project can carry a portable preset
+    // and be opened against an AU, where nothing is asked and nothing moves, and
+    // that device still has its parameter array to stand on.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->isVst3 = false;
+
+    const StubPlugin::State imported{.tone = 0.9f, .fixed = 0.8f};
+    const auto preset = vst3PresetOf(&imported, sizeof(imported));
+
+    auto model = externalDeviceSaving(1.0f, 0.7f);
+    model.vst3Preset = juce::Base64::toBase64(preset.getData(), preset.getSize());
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+
+    REQUIRE(result.device != nullptr);
+    CHECK(raw->tone->getValue() == Catch::Approx(0.7f));
+}
+
 TEST_CASE("A preset the plugin refuses falls through to the chunk", "[engine][external]") {
     // A patch written for another plugin, handed to this one. The project's own
     // native record is right there and is the only thing that describes this
@@ -1623,6 +1692,44 @@ TEST_CASE("A plugin that is not a VST3 never sees a preset", "[engine][external]
 // ============================================================================
 // Saving: what a project keeps about a plugin the native engine holds (#2244)
 // ============================================================================
+
+TEST_CASE("A block that arrives during a state read does not reach the plugin",
+          "[engine][external][state]") {
+    // Suspension is worth nothing unless the host honours it. A save reads the
+    // plugin's chunk, its parameters and its preset from the message thread with
+    // the plugin suspended, and a block that ran the plugin anyway would have
+    // third-party DSP and a third-party state handler in the same instance at
+    // the same time.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), externalDevice());
+    REQUIRE(result.device != nullptr);
+
+    const auto context = contextFor();
+    result.device->prepare(context);
+
+    // Suspended, the way captureSavedPluginState() suspends it for the duration
+    // of its read.
+    raw->suspendProcessing(true);
+
+    ParamArena arena({0.0f, 1.0f, 1.0f, 0.25f});
+    Block block(context, 2);
+    block.fill(0.5f);
+
+    auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
+    result.device->process(deviceBlock);
+
+    // The plugin never saw it.
+    CHECK(raw->samplesSeen == 0);
+
+    // And the block came out as it went in, which is the passthrough the plan
+    // already gives a Device op with no instance bound. The stub would have
+    // added its per-channel marker had it run.
+    CHECK(block.buffer.getSample(0, 0) == Catch::Approx(0.5f));
+
+    raw->suspendProcessing(false);
+}
 
 TEST_CASE("A save writes the chunk the incumbent would have written", "[engine][external][state]") {
     // The round trip that matters during the dual-engine release: a project
@@ -1735,6 +1842,33 @@ TEST_CASE("A save refreshes the portable VST3 records", "[engine][external][stat
     juce::MemoryOutputStream decoded;
     REQUIRE(juce::Base64::convertFromBase64(decoded, model.vst3Preset));
     CHECK(magda::vst3::classIdFromPreset(decoded.getMemoryBlock()) == kStubVst3ClassId);
+}
+
+TEST_CASE("A VST3 that cannot write its patch out does not keep the old one",
+          "[engine][external][state]") {
+    // The dangerous half of the case below. An empty read from a VST3 and an
+    // empty read from an AU are the same block and are not the same event: the
+    // AU was never asked, and the VST3 failed to answer. Keeping the project's
+    // existing preset here would leave a record of an older patch beside the
+    // chunk this very save just wrote -- and the portable record is the overlay
+    // on the next load, so the older patch would win over the newer one.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->isVst3 = true;
+    raw->savesNoPreset = true;
+
+    auto model = externalDevice();
+    model.vst3ClassId = kStubVst3ClassId;
+    model.vst3Preset = "the patch this project was imported with";
+
+    REQUIRE(magda::captureSavedPluginState(*raw, model));
+
+    CHECK(model.vst3Preset.isEmpty());
+    CHECK(model.pluginState.isNotEmpty());
+
+    // The identity survives. It is the plugin rather than its patch, and the one
+    // the project was authored against is the one another host matches on.
+    CHECK(model.vst3ClassId == kStubVst3ClassId);
 }
 
 TEST_CASE("A save leaves a non-VST3 device's portable records alone", "[engine][external][state]") {

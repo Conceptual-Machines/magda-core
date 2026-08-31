@@ -73,6 +73,22 @@ juce::MemoryBlock decodeSavedPreset(const juce::String& savedPreset) {
     return decoded.getMemoryBlock();
 }
 
+/// Write @p read into @p device's portable records. See captureVst3Records().
+void applyVst3Records(DeviceInfo& device, const Vst3PresetRead& read) {
+    if (!read.isVst3)
+        return;
+
+    if (read.preset.getSize() == 0) {
+        device.vst3Preset = {};
+        return;
+    }
+
+    if (device.vst3ClassId.isEmpty())
+        device.vst3ClassId = vst3::classIdFromPreset(read.preset);
+
+    device.vst3Preset = juce::Base64::toBase64(read.preset.getData(), read.preset.getSize());
+}
+
 }  // namespace
 
 std::vector<juce::AudioProcessorParameter*> hostParameterOrder(
@@ -116,14 +132,34 @@ SavedStateOutcome applySavedPluginState(juce::AudioPluginInstance& instance,
     // refuses it -- a VST3 that will not take that patch, or a format with no
     // preset call at all -- falls through to the chunk rather than being left on
     // the bare array, which is the only place the project's own record is.
+    bool presetRefused = false;
+
     if (const auto preset = decodeSavedPreset(device.vst3Preset); preset.getSize() > 0) {
-        if (writeVst3Preset(instance, preset))
-            return SavedStateOutcome::RestoredFromPreset;
+        switch (writeVst3Preset(instance, preset)) {
+            case Vst3PresetOutcome::Applied:
+                return SavedStateOutcome::RestoredFromPreset;
+            case Vst3PresetOutcome::Refused:
+                presetRefused = true;
+                break;
+            case Vst3PresetOutcome::NotVst3:
+                break;
+        }
     }
 
     const auto chunk = decodeSavedChunk(device.pluginState);
-    if (chunk.getSize() == 0)
+    if (chunk.getSize() == 0) {
+        // A refusal with nothing behind it. Steinberg's loader restores the
+        // component's state before the controller's and returns false if the
+        // second fails after the first, so the plugin may be holding half the
+        // imported patch; the parameter array written above describes what the
+        // project believed and not what the instance now is. There is nothing
+        // left to make it true, so this is the same answer the chunk path gives
+        // for the same situation rather than a quieter one.
+        if (presetRefused)
+            return SavedStateOutcome::Failed;
+
         return SavedStateOutcome::Baseline;
+    }
 
     try {
         instance.setStateInformation(chunk.getData(), static_cast<int>(chunk.getSize()));
@@ -161,21 +197,26 @@ void applyRestoredParameters(DeviceInfo& device, const std::vector<RestoredParam
                         parameter.value, ParameterUtils::domainOf(info));
 }
 
-juce::MemoryBlock readVst3Preset(const juce::AudioPluginInstance& instance) {
+Vst3PresetRead readVst3Preset(const juce::AudioPluginInstance& instance) {
     Vst3PresetVisitor visitor;
 
+    // The visit is what identifies the format, and it is recorded before the
+    // plugin is asked anything: a VST3 whose getPreset() throws has still been
+    // identified as one, and the caller's answer for it is not the answer for a
+    // plugin that was never visited.
     try {
         instance.getExtensions(visitor);
     } catch (...) {
-        return {};
+        return {.preset = {}, .isVst3 = visitor.visited};
     }
 
-    return visitor.preset;
+    return {.preset = std::move(visitor.preset), .isVst3 = visitor.visited};
 }
 
-bool writeVst3Preset(juce::AudioPluginInstance& instance, const juce::MemoryBlock& preset) {
+Vst3PresetOutcome writeVst3Preset(juce::AudioPluginInstance& instance,
+                                  const juce::MemoryBlock& preset) {
     if (preset.getSize() == 0)
-        return false;
+        return Vst3PresetOutcome::NotVst3;
 
     Vst3PresetVisitor visitor;
     visitor.writing = true;
@@ -184,39 +225,46 @@ bool writeVst3Preset(juce::AudioPluginInstance& instance, const juce::MemoryBloc
     try {
         instance.getExtensions(visitor);
     } catch (...) {
-        return false;
+        // Visited and throwing is a refusal rather than a no-op, and for the
+        // same reason a refusal is: whatever the loader had done before it threw
+        // is still done.
+        return visitor.visited ? Vst3PresetOutcome::Refused : Vst3PresetOutcome::NotVst3;
     }
 
-    return visitor.accepted;
+    if (!visitor.visited)
+        return Vst3PresetOutcome::NotVst3;
+
+    return visitor.accepted ? Vst3PresetOutcome::Applied : Vst3PresetOutcome::Refused;
 }
 
 void captureVst3Records(const juce::AudioPluginInstance& instance, DeviceInfo& device) {
-    const auto preset = readVst3Preset(instance);
-    if (preset.getSize() == 0)
-        return;
-
-    if (device.vst3ClassId.isEmpty())
-        device.vst3ClassId = vst3::classIdFromPreset(preset);
-
-    device.vst3Preset = juce::Base64::toBase64(preset.getData(), preset.getSize());
+    applyVst3Records(device, readVst3Preset(instance));
 }
 
 bool captureSavedPluginState(juce::AudioPluginInstance& instance, DeviceInfo& device) {
     juce::MemoryBlock chunk;
+    std::vector<RestoredParameter> parameters;
+    Vst3PresetRead portable;
 
-    // Suspended across the read, the way the fork suspends it
-    // (ExternalPlugin::flushPluginStateToValueTree). Restored either way: a
-    // plugin left suspended by its own throw would render silence for the rest
-    // of the session.
+    // Suspended across the whole transaction, the way the fork holds its
+    // processMutex across one. Everything read here is read from a plugin that
+    // is not simultaneously processing: its chunk, the parameter values that
+    // have to agree with that chunk, and the portable preset beside them.
+    // Resuming between any two of those would let a block move the plugin
+    // underneath the rest of the read.
     instance.suspendProcessing(true);
 
     bool described = true;
     try {
         instance.getStateInformation(chunk);
+        parameters = snapshotHostParameters(instance);
+        portable = readVst3Preset(instance);
     } catch (...) {
         described = false;
     }
 
+    // Restored either way: a plugin left suspended by its own throw would render
+    // silence for the rest of the session.
     instance.suspendProcessing(false);
 
     if (!described)
@@ -228,8 +276,8 @@ bool captureSavedPluginState(juce::AudioPluginInstance& instance, DeviceInfo& de
     // decodeSavedChunk() as a baseline anyway.
     device.pluginState = chunk.getSize() > 0 ? chunk.toBase64Encoding() : juce::String();
 
-    applyRestoredParameters(device, snapshotHostParameters(instance));
-    captureVst3Records(instance, device);
+    applyRestoredParameters(device, parameters);
+    applyVst3Records(device, portable);
 
     return true;
 }

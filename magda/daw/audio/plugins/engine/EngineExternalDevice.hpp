@@ -139,6 +139,12 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
 
     /// The plugin over one buffer, wet/dry mixed. @p audio is the buffer the
     /// plugin processes in place, at the width it asked for.
+    ///
+    /// Leaves @p audio alone while a host holds the plugin for a state read or
+    /// write, which is the one thing in this class that is not the fork's
+    /// arrangement transcribed: the fork waits on its own processMutex where
+    /// this passes the block through rather than blocking the audio thread. The
+    /// two can only differ during a save, and a corpus render never takes one.
     void processPluginBlock(juce::AudioBuffer<float>& audio);
 
     /// The block through a buffer of the plugin's own width, for a plugin whose

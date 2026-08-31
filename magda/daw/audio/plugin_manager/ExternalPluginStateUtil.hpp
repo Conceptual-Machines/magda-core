@@ -93,7 +93,8 @@ inline bool applyVst3Preset(tracktion::engine::Plugin* plugin, const juce::Strin
     if (!juce::Base64::convertFromBase64(decoded, presetBase64))
         return false;
 
-    if (!writeVst3Preset(*ext->getAudioPluginInstance(), decoded.getMemoryBlock()))
+    if (writeVst3Preset(*ext->getAudioPluginInstance(), decoded.getMemoryBlock()) !=
+        Vst3PresetOutcome::Applied)
         return false;  // not a VST3 instance / apply failed
 
     // Mirror the applied state into TE's state property so a later graph build /
