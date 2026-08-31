@@ -5,6 +5,7 @@
 #include <map>
 #include <set>
 
+#include "core/ChainWalk.hpp"
 #include "core/SourcePool.hpp"
 #include "project/serialization/ProjectSerializer.hpp"
 
@@ -191,23 +192,33 @@ std::string writeAndRepoint(const std::vector<Source*>& sources, const Declarati
 }
 
 /// Every device anywhere in a track's chain, racks and flat sections included.
-void everyDevice(const std::vector<ChainElement>& elements, std::vector<const DeviceInfo*>& out) {
-    for (const auto& element : elements) {
-        if (magda::isDevice(element)) {
-            out.push_back(&magda::getDevice(element));
-        } else if (magda::isRack(element)) {
-            for (const auto& chain : magda::getRack(element).chains)
-                everyDevice(chain.elements, out);
-        }
-    }
+/// Every device under @p elements, pads included.
+///
+/// The model's own walk rather than one written here, and entered with
+/// Pads::Enter: a Drum Grid's pads are chains of devices, so a walk that stopped
+/// at the grid would call a project full of hosted plugins an internal one. The
+/// refusal below is the whole point of this walk, and a walk that cannot see
+/// half a project cannot refuse on its behalf.
+void everyDevice(const std::vector<ChainElement>& elements, TrackId trackId,
+                 std::vector<const DeviceInfo*>& out) {
+    magda::chain_walk::forEachDevice(
+        elements, magda::ChainNodePath::trackLevel(trackId), magda::chain_walk::Pads::Enter,
+        [&out](const DeviceInfo& device, const ChainNodePath&) { out.push_back(&device); });
 }
 
 void everyDevice(const TrackInfo& track, std::vector<const DeviceInfo*>& out) {
-    everyDevice(track.chain.fxChainElements, out);
+    everyDevice(track.chain.fxChainElements, track.id, out);
+
+    // Flat stages: no racks, but a device there can still carry pads.
     for (const auto* section :
          {&track.chain.postFxChainElements, &track.chain.mixerAnalysisElements})
-        for (const auto& element : *section)
+        for (const auto& element : *section) {
             out.push_back(&element.device);
+
+            if (element.device.pads)
+                for (const auto& pad : element.device.pads->chains)
+                    everyDevice(pad.elements, track.id, out);
+        }
 }
 
 /**

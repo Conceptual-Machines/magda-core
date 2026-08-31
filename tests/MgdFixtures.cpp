@@ -147,6 +147,23 @@ std::vector<MgdFixture> build() {
         fixture.declaration = declarationFor(
             "project.v1bounces", "two v1 audio clips with their sources inline, at 120", 0.0, 16.0);
 
+        // The grid's pads, said out loud rather than substituted in silence.
+        //
+        // A Drum Grid fills every pad with a magdasampler when it restores
+        // (DrumGridPads.cpp), and that device has not moved to the SDK, so the
+        // native engine cannot build one (#2271). Until #2175 the harness never
+        // looked inside a pad and the substitution was invisible; it looks now,
+        // so the gap is named here.
+        //
+        // Declared rather than skipped, because the grid on this project's third
+        // track has nothing to play and the two v1 audio clips are what the
+        // fixture exists for. Declaring it keeps those live and asserts the gap
+        // in both directions: the day the sampler runs natively (#2271), this
+        // line fails and comes out.
+        fixture.declaration.expectedDiagnostics = {
+            "no native device for magdasampler",
+        };
+
         // Impulses on both: neither clip is stretched -- the source's own bpm is
         // the project's -- so where each sample lands is the whole assertion.
         //

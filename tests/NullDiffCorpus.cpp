@@ -6,6 +6,7 @@
 #include "NullDiffCase.hpp"
 #include "NullDiffGain.hpp"
 #include "NullDiffMaterial.hpp"
+#include "core/ChainWalk.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/SourcePool.hpp"
 #include "core/TimeStretchModes.hpp"
@@ -2141,38 +2142,42 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
 std::vector<std::string> externalDevicesIn(const Case& value) {
     std::vector<std::string> external;
 
-    // Recursive, because a rack is a chain of chains and a plugin four levels
-    // down frames its own work exactly like one at the top. A walk that stopped
-    // at the first level would report a rack full of plugins as an internal
-    // project and hold it to bit identity, which is the one way this can be
-    // wrong in the direction nobody notices: the gate would fail, and the
+    // The model's own walk, because a rack is a chain of chains and a plugin four
+    // levels down frames its own work exactly like one at the top. A walk that
+    // stopped at the first level would report a rack full of plugins as an
+    // internal project and hold it to bit identity, which is the one way this
+    // can be wrong in the direction nobody notices: the gate would fail, and the
     // failure would name no cause.
-    const std::function<void(const std::vector<ChainElement>&)> walk =
-        [&](const std::vector<ChainElement>& elements) {
-            for (const auto& element : elements) {
-                if (isDevice(element)) {
-                    const auto& device = getDevice(element);
-                    if (device.format != PluginFormat::Internal)
-                        external.push_back(device.name.toStdString());
-                    continue;
-                }
-
-                for (const auto& chain : getRack(element).chains)
-                    walk(chain.elements);
-            }
-        };
+    //
+    // Pads::Enter for the same reason one level further in. A Drum Grid's pads
+    // are chains of devices, and a kit built out of hosted plugins is a project
+    // this would otherwise call internal.
+    const auto walk = [&external](const std::vector<ChainElement>& elements, TrackId trackId) {
+        chain_walk::forEachDevice(elements, ChainNodePath::trackLevel(trackId),
+                                  chain_walk::Pads::Enter,
+                                  [&external](const DeviceInfo& device, const ChainNodePath&) {
+                                      if (device.format != PluginFormat::Internal)
+                                          external.push_back(device.name.toStdString());
+                                  });
+    };
 
     // The post-FX stage and the mixer rail's analysis devices are as much of the
     // project as the insert chain is, and a plugin in either one reaches the
     // render the same way.
     const auto walkTrack = [&](const TrackInfo& track) {
-        walk(track.chain.fxChainElements);
+        walk(track.chain.fxChainElements, track.id);
 
+        // Flat stages: no racks, but a device there can still carry pads.
         for (const auto* stage :
              {&track.chain.postFxChainElements, &track.chain.mixerAnalysisElements})
-            for (const auto& element : *stage)
+            for (const auto& element : *stage) {
                 if (element.device.format != PluginFormat::Internal)
                     external.push_back(element.device.name.toStdString());
+
+                if (element.device.pads)
+                    for (const auto& pad : element.device.pads->chains)
+                        walk(pad.elements, track.id);
+            }
     };
 
     for (const auto& track : value.tracks)

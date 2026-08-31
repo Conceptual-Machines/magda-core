@@ -163,6 +163,31 @@ struct GateResult {
     }
 };
 
+/// What the engine could not do in @p rendered, beyond what @p value declared.
+///
+/// The same rule the runner applies, and this file needs it more than the runner
+/// does: the runner compares a native render against the incumbent, where a
+/// device the engine did not build shows up as a residual. This compares native
+/// renders against each other, and a passthrough substituted for a plugin is
+/// perfectly block-size invariant. Checking only `failure` would certify exactly
+/// that -- a project held to bit identity across every size without the plugin
+/// ever having run.
+std::string undeclaredDiagnostic(const Case& value, const NativeRender& rendered) {
+    auto diagnostics = rendered.diagnostics;
+
+    for (const auto& expected : value.expectedDiagnostics) {
+        const auto found =
+            std::find_if(diagnostics.begin(), diagnostics.end(), [&](const std::string& reported) {
+                return reported.find(expected) != std::string::npos;
+            });
+
+        if (found != diagnostics.end())
+            diagnostics.erase(found);
+    }
+
+    return diagnostics.empty() ? std::string{} : diagnostics.front();
+}
+
 GateResult gate(const Case& value) {
     GateResult result;
 
@@ -189,6 +214,12 @@ GateResult gate(const Case& value) {
         return result;
     }
 
+    if (const auto refused = undeclaredDiagnostic(value, rendered); !refused.empty()) {
+        result.unmeasurable = "at " + std::to_string(kReferenceBlockSize) +
+                              ", the engine could not honour the case: " + refused;
+        return result;
+    }
+
     // The same project, the same size, the second time. Held to the same bit
     // identity the rungs are, and for a stronger reason: a render that is not a
     // function of the timeline is not a function of anything the rest of this
@@ -198,6 +229,13 @@ GateResult gate(const Case& value) {
         if (!again.failure.empty()) {
             result.unmeasurable =
                 "at " + std::to_string(kReferenceBlockSize) + ", rendered again: " + again.failure;
+            return result;
+        }
+
+        if (const auto refused = undeclaredDiagnostic(value, again); !refused.empty()) {
+            result.unmeasurable =
+                "at " + std::to_string(kReferenceBlockSize) +
+                ", rendered again, the engine could not honour the case: " + refused;
             return result;
         }
 
@@ -221,6 +259,12 @@ GateResult gate(const Case& value) {
 
         if (!second.failure.empty()) {
             result.unmeasurable = "at " + std::to_string(blockSize) + ": " + second.failure;
+            return result;
+        }
+
+        if (const auto refused = undeclaredDiagnostic(value, second); !refused.empty()) {
+            result.unmeasurable = "at " + std::to_string(blockSize) +
+                                  ", the engine could not honour the case: " + refused;
             return result;
         }
 
@@ -551,6 +595,41 @@ TEST_CASE("An epsilon is bought by a plugin, not declared", "[nulldiff][blocksiz
         const auto external = externalDevicesIn(value);
         REQUIRE(external.size() == 1);
         CHECK(external.front() == "Nested");
+    }
+
+    SECTION("a plugin inside a Drum Grid pad counts") {
+        // The same miss one level further in. A pad is a chain of devices, so a
+        // kit built out of hosted plugins is a project this would otherwise call
+        // internal and hold to bit identity -- and every one of those plugins
+        // frames its own work, which is exactly what the epsilon exists for.
+        auto value = projectWith(PluginFormat::Internal);
+
+        DeviceInfo grid;
+        grid.id = 904;
+        grid.name = "Drum Grid";
+        grid.deviceType = DeviceType::Instrument;
+        grid.isInstrument = true;
+        grid.format = PluginFormat::Internal;
+
+        auto pads = std::make_unique<RackInfo>();
+        pads->id = 1;
+        {
+            ChainInfo pad;
+            pad.id = 1;
+            DeviceInfo sampler;
+            sampler.id = 905;
+            sampler.name = "Padded";
+            sampler.format = PluginFormat::VST3;
+            pad.elements.emplace_back(std::move(sampler));
+            pads->chains.push_back(std::move(pad));
+        }
+        grid.pads.reset(std::move(pads));
+
+        value.tracks.front().chain.fxChainElements.emplace_back(std::move(grid));
+
+        const auto external = externalDevicesIn(value);
+        REQUIRE(external.size() == 1);
+        CHECK(external.front() == "Padded");
     }
 
     SECTION("a plugin in the post-FX stage counts too") {

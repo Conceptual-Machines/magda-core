@@ -175,6 +175,15 @@ class RealProjectCorpusTests : public juce::UnitTest {
             // stretch cases went through and is a measurement rather than a
             // guess.
             //
+            // Its numbers moved when the master chain started rendering
+            // (#2175): this project carries a limiter there, and until then the
+            // corpus was comparing the incumbent's limited render against an
+            // unlimited native one. The envelopes correlate at 0.417 now where
+            // they correlated at 0.442 before, which is the comparison getting
+            // honest rather than worse -- and whoever calibrates the shift
+            // should expect to find two mechanisms in here rather than one, the
+            // stretch priming and whatever the two limiters do differently.
+            //
             // project.faust is the third, and it is skipped in this binary
             // rather than calibrated here; see the list above.
             "project.demo",
