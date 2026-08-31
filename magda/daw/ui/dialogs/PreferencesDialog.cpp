@@ -3104,10 +3104,10 @@ PreferencesDialog::PreferencesDialog(juce::ApplicationCommandManager* commandMan
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
 
     generalPage = std::make_unique<GeneralPage>();
-    defaultsPage = std::make_unique<DefaultsPage>();
     appearancePage = std::make_unique<AppearancePage>();
     renderingPage = std::make_unique<RenderingPage>();
     pathsPage = std::make_unique<PathsPage>();
+    defaultsPage = std::make_unique<DefaultsPage>();
     shortcutsPage = std::make_unique<ShortcutsPage>(commandManager);
 
     auto setupPageViewport = [](juce::Viewport& viewport, juce::Component& page) {
@@ -3117,18 +3117,18 @@ PreferencesDialog::PreferencesDialog(juce::ApplicationCommandManager* commandMan
         page.setViewportIgnoreDragFlag(true);
     };
     setupPageViewport(generalPageViewport, *generalPage);
-    setupPageViewport(defaultsPageViewport, *defaultsPage);
     setupPageViewport(appearancePageViewport, *appearancePage);
     setupPageViewport(renderingPageViewport, *renderingPage);
     setupPageViewport(pathsPageViewport, *pathsPage);
+    setupPageViewport(defaultsPageViewport, *defaultsPage);
 
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
     tabbedComponent.addTab(tr("preferences.tab.general"), tabBg, &generalPageViewport, false);
-    tabbedComponent.addTab(tr("preferences.tab.defaults"), tabBg, &defaultsPageViewport, false);
     tabbedComponent.addTab(trOr("preferences.tab.appearance", "Appearance"), tabBg,
                            &appearancePageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.rendering"), tabBg, &renderingPageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.paths"), tabBg, &pathsPageViewport, false);
+    tabbedComponent.addTab(tr("preferences.tab.defaults"), tabBg, &defaultsPageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.shortcuts"), tabBg, shortcutsPage.get(), false);
     tabbedComponent.setTabBarDepth(36);
     addAndMakeVisible(tabbedComponent);
@@ -3214,11 +3214,6 @@ void PreferencesDialog::updatePageViewports() {
             updateContentSize(generalPageViewport, *generalPage,
                               generalPage->getPreferredHeight(viewW));
         }
-        if (defaultsPage) {
-            const int viewW = juce::jmax(1, defaultsPageViewport.getMaximumVisibleWidth());
-            updateContentSize(defaultsPageViewport, *defaultsPage,
-                              defaultsPage->getPreferredHeight(viewW));
-        }
         if (appearancePage) {
             const int viewW = juce::jmax(1, appearancePageViewport.getMaximumVisibleWidth());
             updateContentSize(appearancePageViewport, *appearancePage,
@@ -3233,6 +3228,11 @@ void PreferencesDialog::updatePageViewports() {
             const int viewW = juce::jmax(1, pathsPageViewport.getMaximumVisibleWidth());
             updateContentSize(pathsPageViewport, *pathsPage, pathsPage->getPreferredHeight(viewW));
         }
+        if (defaultsPage) {
+            const int viewW = juce::jmax(1, defaultsPageViewport.getMaximumVisibleWidth());
+            updateContentSize(defaultsPageViewport, *defaultsPage,
+                              defaultsPage->getPreferredHeight(viewW));
+        }
     };
 
     updateAll();
@@ -3242,10 +3242,10 @@ void PreferencesDialog::updatePageViewports() {
 void PreferencesDialog::loadCurrentSettings() {
     auto& config = Config::getInstance();
     generalPage->loadSettings(config);
-    defaultsPage->loadSettings(config);
     appearancePage->loadSettings(config);
     renderingPage->loadSettings(config);
     pathsPage->loadSettings(config);
+    defaultsPage->loadSettings(config);
     shortcutsPage->loadSettings(config);
 }
 
@@ -3337,11 +3337,11 @@ void PreferencesDialog::applySettings() {
 
     // Apply non-path pages and persist.
     generalPage->applySettings(config);
-    defaultsPage->applySettings(config);
     appearancePage->applySettings(config);
     renderingPage->applySettings(config);
     shortcutsPage->applySettings(config);
     pathsPage->applySettings(config);  // no-op for path values
+    defaultsPage->applySettings(config);
     config.save();
 
     const double newFontScale = config.getUIFontScale();
