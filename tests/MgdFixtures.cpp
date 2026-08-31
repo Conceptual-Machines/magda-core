@@ -425,6 +425,22 @@ std::vector<MgdFixture> build() {
         // end because nothing has stopped.
         fixture.declaration.rendersPastItsMaterial = false;
 
+        // Which is why the liveness floor has to be here: with no tail to ask
+        // about and no residual in this tier, every remaining check passes on
+        // silence. The quieter of the two legs peaks at +4 dBFS on this project,
+        // a float render of two tones through a repeat effect and a limiter; -40
+        // is far below that and far above anything a dead leg produces.
+        fixture.declaration.minPeakDb = -40.0;
+
+        // Retrospect is an LV2 plugin behind a VST3 shell and hands JUCE its own
+        // URI, "https://conceptualmachines.com/plugins/retrospect", where a path
+        // is expected. Once per instantiation, so twice here.
+        //
+        // Named rather than waived, and asserted in both directions: the day
+        // Retrospect stops doing it this line fails and comes out, which is what
+        // keeps it from quietly forgiving something else.
+        fixture.declaration.expectedHostedAssertions = {"juce_File.cpp:219"};
+
         fixture.declaration.mechanism =
             "two hosted Retrospect instances, which owe neither engine a sample";
 
@@ -504,6 +520,10 @@ std::vector<MgdFixture> build() {
         // here is the instrument sounding rather than a device left running.
         fixture.declaration.rendersPastItsMaterial = false;
 
+        // And with no tail asked, liveness is what stops a silent leg passing.
+        // Eight notes into a piano is not a quiet render on either engine.
+        fixture.declaration.minPeakDb = -40.0;
+
         fixture.declaration.mechanism =
             "a hosted Pianoteq, which is a physical model and settles from its own state";
 
@@ -547,6 +567,11 @@ std::vector<MgdFixture> build() {
         // Eight beats of a five-hundred-and-ninety-seven-beat arrangement. Every
         // one of the twenty-three stems is still playing when the render stops.
         fixture.declaration.rendersPastItsMaterial = false;
+
+        // Twenty-three tones summed into a limiter. The floor is the same one
+        // the other two carry, and it is nowhere near what this renders: what it
+        // is for is the difference between a render and nothing.
+        fixture.declaration.minPeakDb = -40.0;
 
         fixture.declaration.mechanism =
             "two hosted Pro-L 2 instances, one on the snare track and one on the master";

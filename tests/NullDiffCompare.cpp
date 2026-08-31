@@ -743,6 +743,13 @@ InvariantComparison compareInvariants(const juce::AudioBuffer<float>& native,
         return result;
     }
 
+    // And the same for liveness, which is the check the rest of this tier
+    // cannot stand in for: every other question here is answered by silence.
+    if (!std::isfinite(options.minPeakDb)) {
+        result.refusal = "no liveness floor declared";
+        return result;
+    }
+
     result.lengthsMatch = native.getNumSamples() == incumbent.getNumSamples();
     if (!result.lengthsMatch)
         result.problems.push_back("lengths differ: native " +
@@ -828,6 +835,28 @@ InvariantComparison compareInvariants(const juce::AudioBuffer<float>& native,
                                       channel, begin, static_cast<int>(samples))));
         return toDb(peak);
     };
+
+    // Liveness, per side. Ahead of the tail because it is the question the tail
+    // cannot be asked in place of: a render that never started has decayed by
+    // the end of itself.
+    const auto peakOf = [](const juce::AudioBuffer<float>& buffer) {
+        auto peak = 0.0;
+        for (auto channel = 0; channel < buffer.getNumChannels(); ++channel)
+            peak = std::max(
+                peak, static_cast<double>(buffer.getMagnitude(channel, 0, buffer.getNumSamples())));
+        return toDb(peak);
+    };
+
+    result.peakNativeDb = peakOf(native);
+    result.peakIncumbentDb = peakOf(incumbent);
+    result.bothSound =
+        result.peakNativeDb >= options.minPeakDb && result.peakIncumbentDb >= options.minPeakDb;
+
+    if (!result.bothSound)
+        result.problems.push_back("a render did not sound: native " +
+                                  formatDb(result.peakNativeDb) + " dBFS, incumbent " +
+                                  formatDb(result.peakIncumbentDb) + " dBFS, floor " +
+                                  formatDb(options.minPeakDb) + " dBFS");
 
     result.tailPeakNativeDb = tailPeak(native);
     result.tailPeakIncumbentDb = tailPeak(incumbent);
@@ -1260,7 +1289,8 @@ std::string formatReport(const std::vector<CaseReport>& cases, const CaseEnviron
             if (report.hasInvariants) {
                 const auto& invariants = report.invariants;
                 std::snprintf(
-                    line, sizeof(line), "step=%-9s tail=%-9s length=%-8s",
+                    line, sizeof(line), "peak=%-9s step=%-9s tail=%-9s length=%-8s",
+                    formatDb(std::min(invariants.peakNativeDb, invariants.peakIncumbentDb)).c_str(),
                     formatDb(
                         toDb(std::max(invariants.worstStepNative, invariants.worstStepIncumbent)))
                         .c_str(),

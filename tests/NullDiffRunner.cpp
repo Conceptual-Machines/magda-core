@@ -531,6 +531,7 @@ CaseReport runCase(const Case& value, const RunnerLog& log) {
         InvariantOptions options;
         options.sampleRate = value.sampleRate;
         options.maxStepPerSample = value.maxStepPerSample;
+        options.minPeakDb = value.minPeakDb;
         options.asksForTail = value.rendersPastItsMaterial;
 
         report.hasInvariants = true;
@@ -647,35 +648,67 @@ SuiteRun runSuite(const std::vector<Case>& cases, const RunnerLog& log) {
         // proxy that never arrived is: the number would be about something
         // other than parity, and it would look like a parity failure.
         //
-        // Unless this case loaded a plugin somebody else wrote. The watch is a
-        // process-wide hook and it cannot tell whose code raised what, and that
-        // premise -- everything that asserts here is the engine or the harness
-        // -- is true of every case in the corpus but the three that host a
-        // plugin (#2175). Retrospect is an LV2 plugin behind a VST3 shell and
-        // hands JUCE its own URI where a path is expected, once per
-        // instantiation. Condemning the case for it would make a fact about
-        // Retrospect read as a fact about the engine, and would leave the case
-        // unmeasurable on every machine that has the plugin, which is the only
-        // kind of machine that can measure it.
+        // Except the ones the case named. The watch is a process-wide hook and it
+        // cannot tell whose code raised what, so on a case that loads somebody
+        // else's code into this process the premise above -- everything that
+        // asserts here is the engine or the harness -- stops being true.
         //
-        // Recorded and printed either way. Nothing is dropped; what changes is
-        // what it is allowed to conclude.
+        // Named one at a time rather than waived by the presence of a plugin.
+        // "This project hosts a VST3" is not evidence about who asserted: a
+        // waiver keyed on it would forgive a genuine engine regression on
+        // exactly the three cases worth adding, and would forgive it for a
+        // plugin on a bypassed chain that the render never instantiated.
+        // Retrospect hands JUCE its own URI where a path is expected, once per
+        // instantiation, and that one sentence is what the case declares.
+        //
+        // Recorded and printed either way, whichever side it falls on. Nothing
+        // is dropped; what changes is what it is allowed to conclude.
         if (auto fired = watch.take(); !fired.empty()) {
-            const auto hosted = !externalDevicesIn(value).empty();
+            auto unexplained = std::vector<juce::String>{};
 
-            for (const auto& assertion : fired)
-                log("  " + juce::String(value.name) + (hosted ? " (hosting): " : ": ") + assertion);
+            for (const auto& assertion : fired) {
+                const auto named = std::any_of(
+                    value.expectedHostedAssertions.begin(), value.expectedHostedAssertions.end(),
+                    [&assertion](const std::string& expected) {
+                        return assertion.toStdString().find(expected) != std::string::npos;
+                    });
 
-            if (hosted) {
-                for (const auto& assertion : fired)
+                log("  " + juce::String(value.name) + (named ? " (hosted): " : ": ") + assertion);
+
+                if (named)
                     report.hostedAssertions.push_back(assertion.toStdString());
-            } else {
+                else
+                    unexplained.push_back(assertion);
+            }
+
+            if (!unexplained.empty()) {
                 report.passed = false;
                 report.unmeasurable =
-                    "the engine asserted while rendering: " + fired.front().toStdString() +
-                    (fired.size() > 1 ? " (and " + std::to_string(fired.size() - 1) + " more)"
-                                      : "");
+                    "the engine asserted while rendering: " + unexplained.front().toStdString() +
+                    (unexplained.size() > 1
+                         ? " (and " + std::to_string(unexplained.size() - 1) + " more)"
+                         : "");
                 run.asserted.insert(value.name);
+            }
+        }
+
+        // And the other direction, the same rule the declared diagnostics live
+        // by: a plugin that stops asserting where it did has to come off the
+        // case, or the declaration sits there forgiving something that no
+        // longer happens.
+        if (!value.expectedHostedAssertions.empty() && report.absentPlugins.empty()) {
+            for (const auto& expected : value.expectedHostedAssertions) {
+                const auto seen =
+                    std::any_of(report.hostedAssertions.begin(), report.hostedAssertions.end(),
+                                [&expected](const std::string& assertion) {
+                                    return assertion.find(expected) != std::string::npos;
+                                });
+
+                if (!seen) {
+                    report.passed = false;
+                    report.unmeasurable = "the case expects the hosted plugin to assert \"" +
+                                          expected + "\", and it did not";
+                }
             }
         }
 

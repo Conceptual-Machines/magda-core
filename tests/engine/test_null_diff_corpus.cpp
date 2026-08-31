@@ -158,8 +158,14 @@ TEST_CASE("A tier without the figure it needs is refused", "[nulldiff][corpus]")
         if (value.tier == AudioTier::Aligned)
             CHECK(value.declaredFractionalShiftSamples != 0.0);
 
-        if (value.tier == AudioTier::Invariants)
+        if (value.tier == AudioTier::Invariants) {
             CHECK(value.maxStepPerSample > 0.0);
+
+            // And a liveness floor, which the tier refuses to run without. Both
+            // are the same rule: this tier computes no residual, so a bound
+            // nobody declared is a check that never ran (#2175).
+            CHECK(std::isfinite(value.minPeakDb));
+        }
     }
 }
 

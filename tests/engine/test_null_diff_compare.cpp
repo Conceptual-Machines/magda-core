@@ -703,6 +703,7 @@ InvariantOptions invariantOptions(double maxStep = 0.5) {
     InvariantOptions options;
     options.sampleRate = kSampleRate;
     options.maxStepPerSample = maxStep;
+    options.minPeakDb = -40.0;
     options.tailSeconds = 0.05;
     options.tailFloorDb = -60.0;
     return options;
@@ -753,6 +754,82 @@ TEST_CASE("The invariants tier refuses a case that declared no bound",
 
     CHECK_FALSE(invariants.passed());
     CHECK(invariants.refusal == "no discontinuity bound declared");
+}
+
+TEST_CASE("The invariants tier refuses a case that declared no liveness floor",
+          "[nulldiff][compare][invariants]") {
+    // The same rule as the step bound, and it needs stating separately because
+    // the two catch different things. This tier computes no residual, so nothing
+    // else in it would notice a leg going silent.
+    const auto tone = decayingTone();
+
+    auto options = invariantOptions();
+    options.minPeakDb = std::numeric_limits<double>::infinity();
+
+    const auto invariants = compareInvariants(tone, tone, options);
+
+    CHECK_FALSE(invariants.passed());
+    CHECK(invariants.refusal == "no liveness floor declared");
+}
+
+TEST_CASE("One silent render is never certified", "[nulldiff][compare][invariants]") {
+    // The hole a waived tail leaves, and the reason liveness is asked per side.
+    // Silence is finite, it is the same length as anything, it steps by nothing
+    // and it has decayed by the end: every other check in this tier passes on
+    // it. A case that renders eight beats of a long arrangement waives the tail,
+    // so without this a native leg that stopped rendering would report ok
+    // against an incumbent that sounded (#2175).
+    // Cleared explicitly: JUCE's constructor leaves the buffer as it found the
+    // memory, and a test for silence built out of whatever was on the heap is a
+    // test for whatever was on the heap.
+    juce::AudioBuffer<float> silence(1, 8192);
+    silence.clear();
+
+    auto options = invariantOptions();
+    options.asksForTail = false;
+
+    const auto invariants = compareInvariants(silence, decayingTone(), options);
+
+    // Everything else it could be asked, it answers yes to.
+    CHECK(invariants.finite);
+    CHECK(invariants.lengthsMatch);
+    CHECK(invariants.continuous);
+
+    CHECK_FALSE(invariants.bothSound);
+    CHECK_FALSE(invariants.passed());
+    REQUIRE_FALSE(invariants.problems.empty());
+    CHECK(invariants.problems.front().find("did not sound") != std::string::npos);
+
+    // And the mirror, so the check cannot be one-sided.
+    const auto other = compareInvariants(decayingTone(), silence, options);
+    CHECK_FALSE(other.bothSound);
+    CHECK_FALSE(other.passed());
+}
+
+TEST_CASE("A waived tail is never reported as a tail that held",
+          "[nulldiff][compare][invariants]") {
+    // A case whose render window ends before its material does cannot be asked
+    // what is left running afterwards. What it must not do is answer.
+    juce::AudioBuffer<float> ringing(1, 8192);
+    auto* data = ringing.getWritePointer(0);
+    for (auto index = 0; index < ringing.getNumSamples(); ++index)
+        data[index] =
+            static_cast<float>(0.5 * std::sin(2.0 * juce::MathConstants<double>::pi * 220.0 *
+                                              static_cast<double>(index) / kSampleRate));
+
+    auto options = invariantOptions();
+    options.asksForTail = false;
+
+    const auto invariants = compareInvariants(ringing, ringing, options);
+
+    CHECK(invariants.passed());
+    CHECK_FALSE(invariants.tailAsked);
+
+    // Measured and carried even so: the number is still there to read, it is
+    // just not a verdict.
+    CHECK_FALSE(invariants.tailDecays);
+    CHECK(invariants.tailPeakNativeDb > -60.0);
+    CHECK(invariants.problems.empty());
 }
 
 TEST_CASE("A render that is not finite is never certified", "[nulldiff][compare][invariants]") {

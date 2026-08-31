@@ -213,6 +213,34 @@ struct Case {
     /// nobody declared would certify a check that never ran.
     double maxStepPerSample = 0.0;
 
+    /// The peak each side of this case has to reach on its own, for a case in
+    /// the Invariants tier. Required there and refused without, for the reason
+    /// the step bound is: this tier computes no residual, so nothing else in it
+    /// would notice one leg going silent, and every other check it makes is
+    /// satisfied by silence.
+    ///
+    /// A liveness floor rather than a level. It says the render happened, and
+    /// it is set far below what the project renders and far above what a broken
+    /// one does.
+    double minPeakDb = std::numeric_limits<double>::infinity();
+
+    /// Assertions this case's hosted plugins are known to raise, as substrings
+    /// of them (#2175).
+    ///
+    /// The assertion watch is a process-wide hook, so on a case that loads
+    /// somebody else's code it cannot say whose code raised what. Named here
+    /// rather than waived by the presence of a plugin, because "this project
+    /// hosts a VST3" is not evidence about who asserted: a waiver keyed on it
+    /// forgives a genuine engine regression on exactly the three cases that
+    /// were worth adding, and forgives it on a plugin that sits on a bypassed
+    /// chain and was never instantiated.
+    ///
+    /// Asserted in both directions, like @ref expectedDiagnostics: an assertion
+    /// nothing named still condemns the case, and a name that stops firing
+    /// fails as loudly, so the day a plugin is fixed the line comes out rather
+    /// than sitting there forgiving something that no longer happens.
+    std::vector<std::string> expectedHostedAssertions;
+
     /// Whether this case's render window goes past the end of its material
     /// (#2175).
     ///

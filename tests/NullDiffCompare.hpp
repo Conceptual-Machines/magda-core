@@ -280,6 +280,26 @@ struct InvariantOptions {
     /// exists to catch.
     double maxStepPerSample = 0.0;
 
+    /// The peak each render has to reach, on its own, for the pair to have been
+    /// worth comparing at all.
+    ///
+    /// Required, and the tier is refused without it, for the same reason the
+    /// step bound is: this tier computes no residual, so nothing else here would
+    /// notice one side going silent. Every other check passes on silence --
+    /// silence is finite, it is the same length as anything, it steps by nothing
+    /// and it has decayed by the end -- so an invariants case with a dead native
+    /// leg and a sounding incumbent would report ok, which is the exact failure
+    /// the residual tiers catch for free and this one cannot.
+    ///
+    /// Asked of each side rather than of the pair. Two silences agreeing is
+    /// already refused upstream; what this adds is one silence, which is the
+    /// shape a device that stopped rendering actually has.
+    ///
+    /// A liveness floor rather than a level assertion. It is set far below what
+    /// a project renders and far above what a broken one does, because what it
+    /// is for is the difference between a render and nothing.
+    double minPeakDb = std::numeric_limits<double>::infinity();
+
     /// The tail is the last @p tailSeconds of the render, and it has to have
     /// decayed below @p tailFloorDb. A device left running past the end of its
     /// material is how a graph transition leaks, and a residual comparison would
@@ -313,6 +333,15 @@ struct InvariantComparison {
     /// them is evidence.
     bool tailAsked = true;
 
+    /// Whether each render, on its own, reached the peak the case declared
+    /// (InvariantOptions::minPeakDb).
+    bool bothSound = false;
+
+    /// What each side actually peaked at. Printed whether or not it held: a
+    /// level drifting towards the floor is worth seeing before it arrives.
+    double peakNativeDb = -std::numeric_limits<double>::infinity();
+    double peakIncumbentDb = -std::numeric_limits<double>::infinity();
+
     /// The worst step found, and where, per side. Printed whether or not the
     /// bound held: a step creeping towards the bound is worth seeing before it
     /// crosses it.
@@ -330,7 +359,7 @@ struct InvariantComparison {
     std::vector<std::string> problems;
 
     bool passed() const {
-        return refusal.empty() && finite && lengthsMatch && continuous &&
+        return refusal.empty() && finite && lengthsMatch && continuous && bothSound &&
                (!tailAsked || tailDecays);
     }
 };
