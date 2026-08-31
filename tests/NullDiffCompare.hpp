@@ -280,12 +280,45 @@ struct InvariantOptions {
     /// exists to catch.
     double maxStepPerSample = 0.0;
 
+    /// The peak each render has to reach, on its own, for the pair to have been
+    /// worth comparing at all.
+    ///
+    /// Required, and the tier is refused without it, for the same reason the
+    /// step bound is: this tier computes no residual, so nothing else here would
+    /// notice one side going silent. Every other check passes on silence --
+    /// silence is finite, it is the same length as anything, it steps by nothing
+    /// and it has decayed by the end -- so an invariants case with a dead native
+    /// leg and a sounding incumbent would report ok, which is the exact failure
+    /// the residual tiers catch for free and this one cannot.
+    ///
+    /// Asked of each side rather than of the pair. Two silences agreeing is
+    /// already refused upstream; what this adds is one silence, which is the
+    /// shape a device that stopped rendering actually has.
+    ///
+    /// A liveness floor rather than a level assertion. It is set far below what
+    /// a project renders and far above what a broken one does, because what it
+    /// is for is the difference between a render and nothing.
+    double minPeakDb = std::numeric_limits<double>::infinity();
+
     /// The tail is the last @p tailSeconds of the render, and it has to have
     /// decayed below @p tailFloorDb. A device left running past the end of its
     /// material is how a graph transition leaks, and a residual comparison would
     /// not see it if both engines leaked alike.
     double tailSeconds = 0.05;
     double tailFloorDb = -60.0;
+
+    /// Whether the tail is a question this pair can be asked (#2175).
+    ///
+    /// It is a question about what is left running after the material stops, so
+    /// it can only be asked of a render that goes past the material. A real
+    /// project's arrangement is minutes long and the corpus renders eight beats
+    /// of it, which ends in the middle of a clip: what is in the last fifty
+    /// milliseconds there is the music, and reporting it as a leak would be the
+    /// check misreading the case.
+    ///
+    /// Measured either way and printed either way. What changes is whether the
+    /// number is a verdict.
+    bool asksForTail = true;
 };
 
 struct InvariantComparison {
@@ -293,6 +326,21 @@ struct InvariantComparison {
     bool lengthsMatch = false;
     bool continuous = false;
     bool tailDecays = false;
+
+    /// Whether the tail was asked about at all (InvariantOptions::asksForTail).
+    /// Kept beside the answer rather than folded into it, because a tail that
+    /// held and a tail nobody asked about are different facts and only one of
+    /// them is evidence.
+    bool tailAsked = true;
+
+    /// Whether each render, on its own, reached the peak the case declared
+    /// (InvariantOptions::minPeakDb).
+    bool bothSound = false;
+
+    /// What each side actually peaked at. Printed whether or not it held: a
+    /// level drifting towards the floor is worth seeing before it arrives.
+    double peakNativeDb = -std::numeric_limits<double>::infinity();
+    double peakIncumbentDb = -std::numeric_limits<double>::infinity();
 
     /// The worst step found, and where, per side. Printed whether or not the
     /// bound held: a step creeping towards the bound is worth seeing before it
@@ -311,7 +359,8 @@ struct InvariantComparison {
     std::vector<std::string> problems;
 
     bool passed() const {
-        return refusal.empty() && finite && lengthsMatch && continuous && tailDecays;
+        return refusal.empty() && finite && lengthsMatch && continuous && bothSound &&
+               (!tailAsked || tailDecays);
     }
 };
 
@@ -509,6 +558,22 @@ struct CaseEnvironment {
     int channels = 2;
     std::uint32_t seed = 0;
 
+    /// The external plugins this render actually ran, as name, version and
+    /// format, in the order the plan reached them.
+    ///
+    /// The one field here that is discovered rather than declared, and it has to
+    /// be: a case cannot name a version, because the version is a fact about the
+    /// machine that ran it and a corpus that asserted one would fail everywhere
+    /// but the desk it was written on. What it is for is the same as the rest of
+    /// the block -- a residual that is really an environment difference is the
+    /// worst failure a parity corpus can have -- and a plugin is the environment
+    /// difference most likely to move without anyone touching the engine. Two
+    /// runs of the same project that disagree, with two versions of Retrospect
+    /// printed beside them, is a question answered by reading the report.
+    ///
+    /// Empty for a project of internal devices, which is most of the corpus.
+    std::vector<std::string> plugins;
+
     bool operator==(const CaseEnvironment&) const = default;
 };
 
@@ -552,6 +617,38 @@ struct CaseReport {
     /// because a race reported as a parity failure costs somebody a day inside
     /// the engine looking for it.
     std::string unmeasurable;
+
+    /// What fired on the assertion watch while this case ran, on a case that
+    /// loaded a plugin somebody else wrote into this process (#2175).
+    ///
+    /// Recorded rather than held against the case, and the reason is the one
+    /// thing that is different about these three cases: the assertion hook is
+    /// process-wide, and this process now contains code this project did not
+    /// write. Retrospect is an LV2 plugin behind a VST3 shell and hands JUCE its
+    /// own URI where a path is expected, once per instantiation; that is a fact
+    /// about Retrospect, and reporting it as "the engine objected to its own
+    /// graph" would be the corpus asserting something it cannot know.
+    ///
+    /// A case with no hosted plugin keeps the strict rule, where the premise
+    /// holds: everything that asserts is the engine or the harness.
+    ///
+    /// Never dropped. It goes on the case's line, because a plugin that starts
+    /// asserting where it did not is worth seeing even when nothing can be
+    /// concluded from it.
+    std::vector<std::string> hostedAssertions;
+
+    /// The external plugins this case's project names and this machine has not
+    /// scanned, which is why it did not run (#2175).
+    ///
+    /// A third outcome, and it needs to be one. A project rendered without its
+    /// plugin is a different project: both legs would host nothing in that slot
+    /// and null against each other perfectly, which is a case passing by having
+    /// tested less than it claims -- the one outcome this corpus exists to
+    /// refuse. So it is never green. Nor is it a complaint like @ref
+    /// unmeasurable, because it is not a fact about the engine or the harness:
+    /// it is a fact about which plugins are on this desk, and every CI runner
+    /// has none of them. It is printed, counted, and left at that.
+    std::vector<std::string> absentPlugins;
 
     bool passed = false;
 };

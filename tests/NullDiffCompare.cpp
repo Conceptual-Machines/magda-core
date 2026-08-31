@@ -743,6 +743,13 @@ InvariantComparison compareInvariants(const juce::AudioBuffer<float>& native,
         return result;
     }
 
+    // And the same for liveness, which is the check the rest of this tier
+    // cannot stand in for: every other question here is answered by silence.
+    if (!std::isfinite(options.minPeakDb)) {
+        result.refusal = "no liveness floor declared";
+        return result;
+    }
+
     result.lengthsMatch = native.getNumSamples() == incumbent.getNumSamples();
     if (!result.lengthsMatch)
         result.problems.push_back("lengths differ: native " +
@@ -829,11 +836,34 @@ InvariantComparison compareInvariants(const juce::AudioBuffer<float>& native,
         return toDb(peak);
     };
 
+    // Liveness, per side. Ahead of the tail because it is the question the tail
+    // cannot be asked in place of: a render that never started has decayed by
+    // the end of itself.
+    const auto peakOf = [](const juce::AudioBuffer<float>& buffer) {
+        auto peak = 0.0;
+        for (auto channel = 0; channel < buffer.getNumChannels(); ++channel)
+            peak = std::max(
+                peak, static_cast<double>(buffer.getMagnitude(channel, 0, buffer.getNumSamples())));
+        return toDb(peak);
+    };
+
+    result.peakNativeDb = peakOf(native);
+    result.peakIncumbentDb = peakOf(incumbent);
+    result.bothSound =
+        result.peakNativeDb >= options.minPeakDb && result.peakIncumbentDb >= options.minPeakDb;
+
+    if (!result.bothSound)
+        result.problems.push_back("a render did not sound: native " +
+                                  formatDb(result.peakNativeDb) + " dBFS, incumbent " +
+                                  formatDb(result.peakIncumbentDb) + " dBFS, floor " +
+                                  formatDb(options.minPeakDb) + " dBFS");
+
     result.tailPeakNativeDb = tailPeak(native);
     result.tailPeakIncumbentDb = tailPeak(incumbent);
+    result.tailAsked = options.asksForTail;
     result.tailDecays = result.tailPeakNativeDb <= options.tailFloorDb &&
                         result.tailPeakIncumbentDb <= options.tailFloorDb;
-    if (!result.tailDecays)
+    if (result.tailAsked && !result.tailDecays)
         result.problems.push_back("the tail has not decayed: native " +
                                   formatDb(result.tailPeakNativeDb) + " dBFS, incumbent " +
                                   formatDb(result.tailPeakIncumbentDb) + " dBFS, bound " +
@@ -1218,7 +1248,15 @@ std::string formatReport(const std::vector<CaseReport>& cases, const CaseEnviron
         std::snprintf(text, sizeof(text), "rate=%lld blockSize=%d channels=%d seed=%u",
                       static_cast<long long>(environment.sampleRate), environment.blockSize,
                       environment.channels, environment.seed);
-        return std::string(text);
+
+        // Named in full, versions included, and never abbreviated to a count.
+        // What this answers is "what could account for this difference", and a
+        // count answers nothing -- the same reason externalDevicesIn names them.
+        std::string described(text);
+        for (const auto& plugin : environment.plugins)
+            described += " plugin=\"" + plugin + "\"";
+
+        return described;
     };
 
     out << "magda-null-diff v2\n";
@@ -1237,17 +1275,32 @@ std::string formatReport(const std::vector<CaseReport>& cases, const CaseEnviron
         // with an instrument track and audio tracks would print its notes and
         // silently drop its residual, which is the number that moves going
         // missing from exactly the cases this slice exists to enable.
-        if (!report.unmeasurable.empty()) {
+        if (!report.absentPlugins.empty()) {
+            // Ahead of the unmeasurable branch because it is the more specific
+            // answer: a case stopped here never reached a leg, so there is no
+            // leg failure to report and nothing was measured for a reason that
+            // is neither engine's.
+            out << "not run: this machine has not scanned";
+            for (const auto& plugin : report.absentPlugins)
+                out << " \"" << plugin << "\"";
+        } else if (!report.unmeasurable.empty()) {
             out << "unmeasurable: " << report.unmeasurable;
         } else {
             if (report.hasInvariants) {
                 const auto& invariants = report.invariants;
                 std::snprintf(
-                    line, sizeof(line), "step=%-9s tail=%-9s length=%-8s",
+                    line, sizeof(line), "peak=%-9s step=%-9s tail=%-9s length=%-8s",
+                    formatDb(std::min(invariants.peakNativeDb, invariants.peakIncumbentDb)).c_str(),
                     formatDb(
                         toDb(std::max(invariants.worstStepNative, invariants.worstStepIncumbent)))
                         .c_str(),
-                    formatDb(std::max(invariants.tailPeakNativeDb, invariants.tailPeakIncumbentDb))
+                    // Printed with a mark when nobody asked, so a number that is
+                    // not a verdict cannot be read as one.
+                    (invariants.tailAsked ? formatDb(std::max(invariants.tailPeakNativeDb,
+                                                              invariants.tailPeakIncumbentDb))
+                                          : formatDb(std::max(invariants.tailPeakNativeDb,
+                                                              invariants.tailPeakIncumbentDb)) +
+                                                "?")
                         .c_str(),
                     invariants.lengthsMatch ? "ok" : "differs");
                 out << line;
@@ -1279,7 +1332,22 @@ std::string formatReport(const std::vector<CaseReport>& cases, const CaseEnviron
             }
         }
 
-        out << (report.passed ? "  ok" : "  FAIL");
+        // Three verdicts rather than two. A case that did not run is not a
+        // pass and is not a failure, and printing it as either would be the
+        // report lying about what this run established.
+        if (!report.absentPlugins.empty())
+            out << "  --";
+        else
+            out << (report.passed ? "  ok" : "  FAIL");
+
+        // Never dropped, whatever the verdict was. A plugin that starts
+        // asserting where it did not is worth seeing even on a case that
+        // cannot conclude anything from it.
+        if (!report.hostedAssertions.empty()) {
+            out << "  hosted plugin asserted: " << report.hostedAssertions.front();
+            if (report.hostedAssertions.size() > 1)
+                out << " (and " << (report.hostedAssertions.size() - 1) << " more)";
+        }
 
         // Only where it deviates. A number measured at another rate, another
         // block size or another seed is a number about a different render, and

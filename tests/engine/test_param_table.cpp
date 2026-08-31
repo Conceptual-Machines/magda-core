@@ -155,6 +155,82 @@ TEST_CASE("A device's parameters are a window indexed from zero", "[engine][para
     CHECK(device[0].value() == approx(0.0f));
 }
 
+TEST_CASE("A sparse device window publishes nothing in its holes", "[engine][param][table]") {
+    // The shape the first real project hosting a plugin arrived in (#2175). A
+    // project saved before the wet/dry pair was persisted has no parameters at
+    // indices 0 and 1, and the fork's list is a filtered view of the instance's
+    // anyway, so a sparse array is the normal shape of a hosted plugin rather
+    // than a model to correct.
+    //
+    // The window still covers the holes, because a window is contiguous and
+    // indexed from zero: that is what lets a device read its own parameters by
+    // the index it declared them at.
+    auto device = makeDevice(7, 0);
+    device.format = magda::PluginFormat::VST3;
+
+    for (int index = 2; index < 5; ++index) {
+        ParameterInfo info(index, "P" + juce::String(index), "%", 0.0f, 100.0f, 0.0f);
+        info.currentValue = 100.0f;
+        device.parameters.push_back(info);
+    }
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(device));
+
+    const auto table = tableFor({track});
+    const auto window = table.windowFor(magda::engine::DeviceKey{ChainSegment::Fx, 7});
+    REQUIRE(window.count == 5);
+
+    const auto values = resolved(table);
+    const auto params = values.device(window.first, window.count);
+    REQUIRE(params.size() == 5);
+
+    // The holes: empty, which is the one answer a device can read as "not
+    // mine". A value here would be indistinguishable from a real one, and the
+    // project that found this rendered silent because 0.0 at slots zero and one
+    // is a wet/dry pair set fully dry and fully attenuated.
+    CHECK(params[0].empty());
+    CHECK(params[1].empty());
+
+    // And the declared ones, which are unaffected.
+    CHECK_FALSE(params[2].empty());
+    CHECK(params[2].value() == approx(100.0f));
+    CHECK_FALSE(params[4].empty());
+
+    // Not diagnosed, because for a hosted plugin it is not a fault. A project
+    // reported as unmeasurable for having been saved by an older build is a
+    // project the corpus cannot use.
+    CHECK_FALSE(mentions(table, "not contiguous"));
+}
+
+TEST_CASE("An internal device with a gap in its indices is reported", "[engine][param][table]") {
+    // The mirror, and the reason the check is scoped rather than removed. An
+    // internal device declares its own parameters, so a gap is a device that
+    // skipped an index and the slot it left is one nothing will ever read.
+    auto device = makeDevice(7, 0);
+    device.format = magda::PluginFormat::Internal;
+
+    for (const int index : {0, 2}) {
+        ParameterInfo info(index, "P" + juce::String(index), "%", 0.0f, 100.0f, 0.0f);
+        info.currentValue = 0.0f;
+        device.parameters.push_back(info);
+    }
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(device));
+
+    const auto table = tableFor({track});
+    CHECK(mentions(table, "not contiguous"));
+
+    // Reported and still carried the same way: the diagnostic says the model is
+    // wrong, and the hole is silent either way.
+    const auto window = table.windowFor(magda::engine::DeviceKey{ChainSegment::Fx, 7});
+    const auto values = resolved(table);
+    const auto params = values.device(window.first, window.count);
+    REQUIRE(params.size() == 3);
+    CHECK(params[1].empty());
+}
+
 TEST_CASE("One device id in two sections is two parameters", "[engine][param][table]") {
     // The collision #2089 found in the plan, asked of the table: the FX and
     // post-FX sections allocate device ids independently, so the section is

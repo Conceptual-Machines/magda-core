@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <functional>
@@ -10,6 +11,7 @@
 #include "core/DeviceInfo.hpp"
 #include "core/SourcePool.hpp"
 #include "core/TimeStretchModes.hpp"
+#include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 
 /**
  * The corpus itself (#2040): every case, as model values.
@@ -35,6 +37,8 @@
  * reverse job, so the markers are silently lost. There is nothing to diff, and
  * the case would be asserting that the engine reproduces a bug.
  */
+
+namespace adapter = ::magda::daw::audio::engine_adapter;
 
 namespace magda::nulldiff {
 
@@ -2139,25 +2143,33 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     return corpus;
 }
 
-std::vector<std::string> externalDevicesIn(const Case& value) {
-    std::vector<std::string> external;
-
-    // The model's own walk, because a rack is a chain of chains and a plugin four
-    // levels down frames its own work exactly like one at the top. A walk that
-    // stopped at the first level would report a rack full of plugins as an
-    // internal project and hold it to bit identity, which is the one way this
-    // can be wrong in the direction nobody notices: the gate would fail, and the
-    // failure would name no cause.
-    //
-    // Pads::Enter for the same reason one level further in. A Drum Grid's pads
-    // are chains of devices, and a kit built out of hosted plugins is a project
-    // this would otherwise call internal.
-    const auto walk = [&external](const std::vector<ChainElement>& elements, TrackId trackId) {
+/**
+ * @brief Every external device @p value hosts, wherever it sits, in chain order.
+ *
+ * The model's own walk, because a rack is a chain of chains and a plugin four
+ * levels down frames its own work exactly like one at the top. A walk that
+ * stopped at the first level would report a rack full of plugins as an internal
+ * project and hold it to bit identity, which is the one way this can be wrong in
+ * the direction nobody notices: the gate would fail, and the failure would name
+ * no cause.
+ *
+ * Pads::Enter for the same reason one level further in. A Drum Grid's pads are
+ * chains of devices, and a kit built out of hosted plugins is a project this
+ * would otherwise call internal.
+ *
+ * Shared by the two questions asked of a project's plugins -- what could account
+ * for a difference, and which of them this machine does not have -- because two
+ * walks would eventually disagree about where a plugin can hide, and the one
+ * that missed a place would be the one deciding a case is safe to hold to bit
+ * identity.
+ */
+void forEachExternalDevice(const Case& value, const std::function<void(const DeviceInfo&)>& visit) {
+    const auto walk = [&visit](const std::vector<ChainElement>& elements, TrackId trackId) {
         chain_walk::forEachDevice(elements, ChainNodePath::trackLevel(trackId),
                                   chain_walk::Pads::Enter,
-                                  [&external](const DeviceInfo& device, const ChainNodePath&) {
+                                  [&visit](const DeviceInfo& device, const ChainNodePath&) {
                                       if (device.format != PluginFormat::Internal)
-                                          external.push_back(device.name.toStdString());
+                                          visit(device);
                                   });
     };
 
@@ -2172,7 +2184,7 @@ std::vector<std::string> externalDevicesIn(const Case& value) {
              {&track.chain.postFxChainElements, &track.chain.mixerAnalysisElements})
             for (const auto& element : *stage) {
                 if (element.device.format != PluginFormat::Internal)
-                    external.push_back(element.device.name.toStdString());
+                    visit(element.device);
 
                 if (element.device.pads)
                     for (const auto& pad : element.device.pads->chains)
@@ -2184,8 +2196,39 @@ std::vector<std::string> externalDevicesIn(const Case& value) {
         walkTrack(track);
 
     walkTrack(value.master);
+}
+
+std::vector<std::string> externalDevicesIn(const Case& value) {
+    std::vector<std::string> external;
+
+    forEachExternalDevice(value, [&external](const DeviceInfo& device) {
+        external.push_back(device.name.toStdString());
+    });
 
     return external;
+}
+
+std::vector<std::string> absentPluginsIn(const Case& value,
+                                         const juce::KnownPluginList* knownPlugins) {
+    std::vector<std::string> absent;
+
+    forEachExternalDevice(value, [&](const DeviceInfo& device) {
+        // No scan at all is not a special case: nothing is installed, so every
+        // plugin the project names is absent. That is the state every CI runner
+        // is in, and it is the one this has to get right without a flag.
+        if (knownPlugins != nullptr && adapter::isInstalledExternalPlugin(device, *knownPlugins))
+            return;
+
+        // Once each, unlike externalDevicesIn beside it, and the difference is
+        // the question. That one asks what could account for a difference and
+        // wants every instance in chain order; this one asks what this machine
+        // does not have, which a plugin hosted twice does not answer twice.
+        auto name = device.name.toStdString();
+        if (std::find(absent.begin(), absent.end(), name) == absent.end())
+            absent.push_back(std::move(name));
+    });
+
+    return absent;
 }
 
 const std::vector<Case>& sharedCorpus(const juce::File& scratchDirectory) {

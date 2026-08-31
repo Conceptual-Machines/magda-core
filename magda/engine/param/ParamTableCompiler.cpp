@@ -502,7 +502,13 @@ void Builder::allocateDevice(const Node& node) {
         const auto* info = find(index);
         if (info == nullptr) {
             ++gaps;
-            add(key, ParamSpec{}, 0.0f);
+
+            // A slot, because the window is contiguous, and no value, because
+            // nothing declared one. See ParamSpec::declared: a fabricated zero
+            // is indistinguishable from a real one to the device reading it.
+            ParamSpec hole;
+            hole.declared = false;
+            add(key, hole, 0.0f);
             continue;
         }
 
@@ -515,7 +521,18 @@ void Builder::allocateDevice(const Node& node) {
         add(key, paramSpecFrom(*info), normalised.value);
     }
 
-    if (gaps > 0)
+    // Reported for a device MAGDA ships and not for one it hosts, because it is
+    // a mistake in the first case and the normal shape of the second.
+    //
+    // An internal device declares its own parameters, so a gap is a device that
+    // skipped an index and the slot it left is one nothing will ever read. A
+    // hosted plugin's array is a filtered view of the instance's -- the
+    // non-automatable ones are not in it at all -- and a project saves whatever
+    // it had when it was saved, which for anything written before the wet/dry
+    // pair was persisted is an array starting at index two. Diagnosing that
+    // would make every real project hosting a plugin unmeasurable for having
+    // been saved by an older build (#2175).
+    if (gaps > 0 && device.format == magda::PluginFormat::Internal)
         diagnose(toString(scope) + ": parameter indices are not contiguous, so " +
                  std::to_string(gaps) + " slot(s) of the window belong to no parameter");
 

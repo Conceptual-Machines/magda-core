@@ -394,6 +394,11 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
     std::set<std::string> failed;
     std::set<std::string> irreproducible;
 
+    /// Projects this binary did not gate, and why. Printed rather than counted:
+    /// a gate that quietly covered fewer projects than it thinks is the one
+    /// failure it cannot report as one.
+    std::set<std::string> notRun;
+
     for (const auto& value : projects) {
         // A case that asserts nothing about its audio renders none to compare:
         // the four MIDI-only cases carry a device that records what arrives
@@ -410,6 +415,30 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
         // out of the gate, which is the last one worth losing.
         if (value.tier == AudioTier::None)
             continue;
+
+        // And a project whose plugin nothing here has scanned (#2175). Every
+        // render in this file goes through the no-scan overload -- these are
+        // Catch2 tests over the model, with no engine beside them and nothing
+        // that could scan a plugin folder without turning a fast gate into a
+        // slow one -- so an external plugin is absent by construction and a
+        // passthrough would be bound in its place.
+        //
+        // A passthrough is perfectly block-size invariant, which is what makes
+        // this the one place the substitution has to be refused rather than
+        // measured: the gate compares native renders against each other, so the
+        // missing plugin leaves no residual for anything to notice. The
+        // undeclared-diagnostic refusal inside gate() catches it and reports
+        // unmeasurable; that is the right answer and the wrong place to hear it,
+        // because unmeasurable is a complaint and this is not one.
+        //
+        // The epsilon these projects would buy (#2078) is not dead code waiting
+        // for a use. It is what a machine with the plugins installed measures
+        // them within, and the day this gate is handed a scan it is the bound
+        // that stops the difference being absorbed.
+        if (const auto absent = absentPluginsIn(value, nullptr); !absent.empty()) {
+            notRun.insert(value.name + " (" + join(absent) + ")");
+            continue;
+        }
 
         INFO(value.name);
 
@@ -465,6 +494,14 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
 
         if (!result.held())
             failed.insert(value.name);
+    }
+
+    if (!notRun.empty()) {
+        std::string skipped;
+        for (const auto& name : notRun)
+            skipped += (skipped.empty() ? "" : ", ") + name;
+
+        WARN("not gated, for want of a plugin no scan here could find: " << skipped);
     }
 
     CHECK(failed == knownDependent);

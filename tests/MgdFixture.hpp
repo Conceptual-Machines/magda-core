@@ -74,11 +74,13 @@
  * So is a project whose sources cannot be told apart by the only part of a path
  * a manifest can name. See @ref refuseIndistinguishableSources.
  *
- * And so is a project that hosts an external plugin. Without the plugin
- * installed both legs render a passthrough and agree about nothing; with it
- * installed the incumbent hosts it and the native leg cannot, so the verdict
- * becomes a fact about the machine. #2175 reserves those for the invariant tier
- * and an absent-plugin gate, which is a different slice and a different verdict.
+ * A project that hosts an external plugin is not refused any more (#2175), and
+ * what replaced the refusal is a declaration: @ref MgdFixture::hostedPlugins
+ * names them, the tier has to be @c AudioTier::Invariants, and the runner does
+ * not render the case at all on a machine that has not scanned one of them. The
+ * refusal was right while nothing hosted a VST3 in the engine and the verdict
+ * could only be a fact about the machine; what makes it a fixture now is that
+ * the fact about the machine is asked first and answered out loud.
  *
  * ## A loaded fixture keeps its ids
  *
@@ -140,6 +142,22 @@ struct MgdFixture {
 
     Case declaration;
     std::vector<FixtureSource> sources;
+
+    /// The external plugins this project hosts, by the name the project gives
+    /// them, in no order (#2175).
+    ///
+    /// Declared for the same reason the sources are, and checked the same way in
+    /// both directions: a plugin in the project that the manifest does not name
+    /// is refused, and a name in the manifest no device claims is refused. A
+    /// project acquires a plugin the day somebody replaces its bytes, which is
+    /// exactly the day nobody is reading the manifest.
+    ///
+    /// Non-empty demands @c AudioTier::Invariants. A plugin is entitled to
+    /// frame its own work -- to dither, to hold state from however it was last
+    /// called -- so there is no null to ask of a project hosting one, and a
+    /// residual measured across one is a number about the plugin rather than
+    /// about either engine.
+    std::vector<const char*> hostedPlugins;
 };
 
 /// What loading one fixture produced, or why it could not be loaded.

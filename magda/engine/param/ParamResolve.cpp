@@ -346,6 +346,17 @@ void resolveOneParam(const ParamTable& table, ResolvedParams& out, const ModRunt
                      std::span<ModContribution> links, std::span<ParamSegment> segments,
                      const BlockInfo& block, ParamId param) {
     const auto index = static_cast<std::size_t>(param);
+
+    // A hole in a sparse device window. Nothing declared it, so nothing may be
+    // published for it: no segments is the one answer a device can read as "not
+    // mine", and it is the answer it already gets for an index past the end of
+    // its window. A fabricated value here is indistinguishable from a real one
+    // (ParamSpec::declared).
+    if (!table.specs[index].declared) {
+        out.setSegmentCount(param, 0);
+        return;
+    }
+
     const auto reaching = table.linksFor(param);
 
     std::size_t used = 0;

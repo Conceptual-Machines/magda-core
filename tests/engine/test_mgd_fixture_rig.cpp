@@ -1,5 +1,6 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <map>
 #include <set>
@@ -226,32 +227,69 @@ TEST_CASE("Two fixtures held at once both stay resolvable", "[nulldiff][fixture]
     CHECK(eventsResolve(second.value));
 }
 
-TEST_CASE("A project that hosts a plugin is not a fixture here", "[nulldiff][fixture]") {
+TEST_CASE("A project that hosts a plugin has to declare it", "[nulldiff][fixture]") {
     const PooledSourcesUnwind unwind;
 
-    // Half the legacy corpus hosts one, and none of it can be held to a null:
-    // without the plugin installed both legs render a passthrough and agree
-    // about nothing, and with it installed only one leg can host it. #2175 is
-    // where those go.
-    //
-    // Asserted against a real one rather than described, because the rule is
-    // about what is in the file and the file is right here.
-    MgdFixture hosted;
-    hosted.file = "legacy/projects/0.13.0-retrovid.mgd";
-    hosted.savedBy = "0.13.0-rc1";
-    hosted.declaration = mgdFixtures().front().declaration;
-    hosted.declaration.name = "project.hosted";
+    // A plugin in a project used to be an outright refusal (#2175 lifted it),
+    // and what replaced it is a declaration checked in both directions. The
+    // specimen is the real project rather than a described one, because the rule
+    // is about what is in the file and the file is right here.
+    const auto retrospect =
+        std::find_if(mgdFixtures().begin(), mgdFixtures().end(),
+                     [](const auto& f) { return f.declaration.name == "project.retrospect"; });
+    REQUIRE(retrospect != mgdFixtures().end());
+    REQUIRE_FALSE(retrospect->hostedPlugins.empty());
 
-    const auto loaded = loadFixture(hosted, scratch());
-    CHECK_FALSE(loaded.ok);
-    CHECK(loaded.failure.find("Retrospect") != std::string::npos);
+    SECTION("a plugin the manifest does not name is refused") {
+        // The failure this rule is built around: a project acquires a plugin the
+        // day somebody replaces its bytes, and that is exactly the day nobody
+        // rereads the manifest.
+        auto undeclared = *retrospect;
+        undeclared.hostedPlugins.clear();
 
-    // And no fixture the corpus actually carries trips it.
-    for (const auto& fixture : mgdFixtures()) {
-        INFO(fixture.file);
-        const auto good = loadFixture(fixture, scratch());
-        INFO(good.failure);
-        CHECK(good.ok);
+        const auto loaded = loadFixture(undeclared, scratch());
+        CHECK_FALSE(loaded.ok);
+        CHECK(loaded.failure.find("Retrospect") != std::string::npos);
+    }
+
+    SECTION("a name no device claims is refused") {
+        // The mirror, and the rule the source declarations already live by: a
+        // declaration that has stopped being true is worse than one nobody
+        // wrote, because it reads as coverage.
+        auto stale = *retrospect;
+        stale.hostedPlugins.push_back("A Plugin Nobody Shipped");
+
+        const auto loaded = loadFixture(stale, scratch());
+        CHECK_FALSE(loaded.ok);
+        CHECK(loaded.failure.find("A Plugin Nobody Shipped") != std::string::npos);
+    }
+
+    SECTION("hosting one and asking for a null is refused") {
+        // The tier is checked rather than left to a reviewer's eye. A plugin
+        // frames its own work, so a residual measured across one is a number
+        // about the plugin, and a tolerance wide enough to pass it passes
+        // anything.
+        auto nulled = *retrospect;
+        nulled.declaration.tier = AudioTier::Exact;
+
+        const auto loaded = loadFixture(nulled, scratch());
+        CHECK_FALSE(loaded.ok);
+        CHECK(loaded.failure.find("invariants tier") != std::string::npos);
+    }
+
+    SECTION("every fixture the corpus carries holds the rule") {
+        for (const auto& fixture : mgdFixtures()) {
+            INFO(fixture.file);
+            const auto good = loadFixture(fixture, scratch());
+            INFO(good.failure);
+            CHECK(good.ok);
+
+            // And the half that cannot be checked from inside the load: a
+            // fixture that declares a plugin declares the tier that goes with
+            // it, which is what the corpus reads to decide what to assert.
+            if (!fixture.hostedPlugins.empty())
+                CHECK(fixture.declaration.tier == AudioTier::Invariants);
+        }
     }
 }
 

@@ -2,6 +2,7 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <algorithm>
 #include <map>
 #include <set>
 
@@ -222,32 +223,65 @@ void everyDevice(const TrackInfo& track, std::vector<const DeviceInfo*>& out) {
 }
 
 /**
- * @brief Why this project cannot be a fixture here, if it hosts a plugin.
+ * @brief Why this project cannot be a fixture here, if it hosts a plugin it did
+ *        not declare (#2175).
  *
- * A project with a VST3 in it has no verdict a corpus can hold it to. Without
- * the plugin installed both legs render a passthrough and pass by agreeing
- * about nothing, which is the silence-nulls-against-silence failure wearing a
- * different hat. With it installed the incumbent hosts it and the native leg
- * cannot (#1893), so whether the case passes is a fact about the machine that
- * ran it.
+ * A plugin in a project used to be an outright refusal, and while nothing hosted
+ * a VST3 in the engine it was the right one: without the plugin installed both
+ * legs render a passthrough and pass by agreeing about nothing, and with it
+ * installed the incumbent hosted it and the native leg could not, so the verdict
+ * was a fact about the machine either way. #1893 answered the second half and
+ * the runner's absent-plugin gate answers the first, so what is left here is the
+ * declaration.
  *
- * #2175 is where those projects go, with the invariant tier and a gate that
- * calls an absent plugin unmeasurable rather than equal. Refused here rather
- * than left to whoever writes a manifest, because the tier is a field somebody
- * fills in and the format is a fact about the file.
+ * Both directions, like the sources beside it. A plugin the manifest does not
+ * name is refused, because a project acquires one the day somebody replaces its
+ * bytes and that is exactly the day nobody rereads the manifest; a name no
+ * device claims is refused, because a declaration that has stopped being true is
+ * worse than one nobody wrote.
+ *
+ * And the tier, which is checked here rather than left to a reviewer's eye: a
+ * plugin frames its own work, so a residual measured across one is a number
+ * about the plugin. Invariants is the tier that asks questions a plugin can be
+ * held to.
  */
-std::string refuseHostedPlugins(const StagedProjectData& staged) {
+std::string refuseUndeclaredPlugins(const MgdFixture& fixture, const StagedProjectData& staged) {
     std::vector<const DeviceInfo*> devices;
     for (const auto& track : staged.tracks)
         everyDevice(track, devices);
     if (staged.masterTrack != nullptr)
         everyDevice(*staged.masterTrack, devices);
 
-    for (const auto* device : devices)
-        if (device->format != magda::PluginFormat::Internal)
+    const auto declares = [&fixture](const juce::String& name) {
+        return std::any_of(fixture.hostedPlugins.begin(), fixture.hostedPlugins.end(),
+                           [&name](const char* declared) { return name == declared; });
+    };
+
+    std::set<std::string> hosted;
+    for (const auto* device : devices) {
+        if (device->format == magda::PluginFormat::Internal)
+            continue;
+
+        if (!declares(device->name))
             return "the project hosts " + quoted(device->name) +
-                   ", which is not an internal device, so neither engine owes the other a "
-                   "sample on it: see #2175 for the tier those projects get";
+                   ", which the manifest does not name: a fixture that hosts a plugin declares "
+                   "it, because the corpus renders it at a different tier and does not render "
+                   "it at all on a machine that has not scanned it (#2175)";
+
+        hosted.insert(device->name.toStdString());
+    }
+
+    for (const char* declared : fixture.hostedPlugins)
+        if (hosted.count(declared) == 0)
+            return "the manifest names " + quoted(declared) +
+                   " as a plugin this project hosts, and no device in it does";
+
+    // The tier last, so that a fixture that names the wrong plugin hears about
+    // that rather than about a tier it would have set correctly.
+    if (!hosted.empty() && fixture.declaration.tier != AudioTier::Invariants)
+        return "the project hosts a plugin and the fixture does not declare the invariants "
+               "tier: a plugin is entitled to frame its own work, so a residual measured "
+               "across one is a number about the plugin rather than about either engine";
 
     return {};
 }
@@ -388,7 +422,7 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
         return result;
     }
 
-    if (auto refusal = refuseHostedPlugins(staged); !refusal.empty()) {
+    if (auto refusal = refuseUndeclaredPlugins(fixture, staged); !refusal.empty()) {
         result.failure = std::move(refusal);
         return result;
     }

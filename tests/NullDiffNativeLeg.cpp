@@ -276,16 +276,34 @@ bool isExternalDevice(const magda::DeviceInfo& device) {
  * reports the same answer, and one diagnostic per absent plugin is what a
  * reader wants.
  */
-void resolveExternalDevices(std::vector<TrackInfo>& tracks, TrackInfo& master,
-                            const adapter::ExternalPluginServices& services) {
+std::map<DeviceKey, std::string> resolveExternalDevices(
+    std::vector<TrackInfo>& tracks, TrackInfo& master,
+    const adapter::ExternalPluginServices& services) {
+    std::map<DeviceKey, std::string> identities;
+
     for (auto& [key, device] : devicesIn(tracks, master)) {
         if (!isExternalDevice(*device))
             continue;
 
         auto resolved = adapter::resolveEngineExternalPlugin(*device, services);
-        if (resolved)
-            *device = std::move(resolved.planDevice);
+        if (!resolved)
+            continue;
+
+        // What the scan actually matched, kept for the report. The project's
+        // own name for the device is not the answer: a project names what its
+        // author called the slot, and what the render ran is whichever build of
+        // whichever plugin this machine matched it to.
+        const auto& description = resolved.description;
+        identities.emplace(key, (description.name + " " +
+                                 (description.version.isNotEmpty() ? description.version
+                                                                   : juce::String("no version")) +
+                                 " (" + description.pluginFormatName + ")")
+                                    .toStdString());
+
+        *device = std::move(resolved.planDevice);
     }
+
+    return identities;
 }
 
 /// The keys of the Device ops @p plan emits, which is which of a project's
@@ -480,7 +498,7 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
     // route MIDI to the wrong places before any plugin was created.
     auto tracks = value.tracks;
     auto master = value.master;
-    resolveExternalDevices(tracks, master, services);
+    const auto identities = resolveExternalDevices(tracks, master, services);
 
     CompileOptions options;
     options.deviceMeters = false;
@@ -494,6 +512,18 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
     // is every case in the code-built corpus.
     auto externals = createExternalDevices(
         tracks, master, deviceKeysIn(compileRenderPlan(tracks, master, options)), services);
+
+    // What the render actually ran, for the report's environment line. Read off
+    // the created set rather than the resolved one: resolution answers every
+    // external device in the project, and the ones that reached a plan op and
+    // loaded are the ones that made a sound.
+    for (const auto& [key, created] : externals) {
+        if (created.device == nullptr)
+            continue;
+
+        if (const auto identity = identities.find(key); identity != identities.end())
+            result.plugins.push_back(identity->second);
+    }
 
     const auto plan = compileRenderPlan(tracks, master, options);
     for (const auto& diagnostic : plan.diagnostics)

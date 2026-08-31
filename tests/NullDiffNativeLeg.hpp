@@ -92,6 +92,19 @@ struct NativeRender {
     int starvedVoices = 0;
     int droppedMidiEvents = 0;
 
+    /// What each external plugin the render actually reached resolved to on
+    /// this machine: name, version and format.
+    ///
+    /// Read back from the scan rather than declared, because a version is a
+    /// fact about the machine. It goes on the case's environment line, where a
+    /// residual that is really a plugin update can be seen for what it is
+    /// (CaseEnvironment::plugins).
+    ///
+    /// Only the devices the plan reached and the factory built. A plugin on a
+    /// bypassed chain is not instantiated, and a report claiming a project ran
+    /// one it never loaded would be worse than one that said nothing.
+    std::vector<std::string> plugins;
+
     /// The most material any of this case's stretchers is primed with, in
     /// samples of the reading.
     ///

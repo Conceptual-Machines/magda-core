@@ -1,12 +1,14 @@
 #include "NullDiffRunner.hpp"
 
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_audio_processors/juce_audio_processors.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <map>
 #include <memory>
+#include <set>
 
 #include "AssertionWatch.hpp"
 #include "NullDiffNativeLeg.hpp"
@@ -23,11 +25,6 @@ namespace {
  * that is what the app does. The native leg is handed the same one rather than
  * a list of its own: two legs that each found their own copy of a plugin would
  * be rendering two projects and calling the difference an engine bug.
- *
- * It is whatever this machine has scanned, which is the point. A developer's
- * machine has the plugins the corpus projects were authored with and measures
- * them; a runner that has none reports every case that names one as
- * unmeasurable, which is the honest answer rather than a green one (#2175).
  */
 InstalledPlugins installedPlugins() {
     auto* engine = magda::test::getSharedEngine().getEngine();
@@ -36,6 +33,101 @@ InstalledPlugins installedPlugins() {
 
     auto& plugins = engine->getPluginManager();
     return {.formats = &plugins.pluginFormatManager, .knownPlugins = &plugins.knownPluginList};
+}
+
+/**
+ * @brief Look on this machine for the plugins @p wanted names, once each.
+ *
+ * The corpus finds its own plugins rather than reading the app's scan, and it
+ * has to. A test binary runs under a sandboxed HOME (the Makefile's TEST_ENV),
+ * so the application data directory the app keeps its KnownPluginList in is not
+ * this machine's -- and it must not be, because a suite whose verdict depended
+ * on what the developer last clicked in a scan dialog is not a suite. Left
+ * alone, the list is empty on every machine, and every project hosting a plugin
+ * would be reported not run for ever: a gate that is always closed tests as
+ * little as one that is always open.
+ *
+ * What is left is the machine itself, which is the honest source anyway. The
+ * question these cases ask is whether this machine has the plugin, and the
+ * plugin folders are where that is answered.
+ *
+ * Directed rather than exhaustive, and that is the safety. A full scan loads
+ * every bundle installed, which is minutes on a desk with a library on it and
+ * one bad plugin away from taking the suite down with it -- which is why the app
+ * scans out of process. This walks the folders, which is cheap, and then loads
+ * only the bundles whose name matches one a corpus project asked for: three
+ * files at most, all of them named in a manifest somebody wrote.
+ *
+ * Added to the engine's own list rather than to one of its own, because the
+ * incumbent leg reads that one and two legs reading two lists are two projects.
+ */
+void findPluginsFor(const std::vector<std::string>& wanted) {
+    // Once per name for the whole run, whether or not it was found. A name that
+    // is not on this machine is not on it the second time either, and the walk
+    // is the expensive half.
+    static std::set<std::string> searched;
+
+    std::vector<std::string> unsearched;
+    for (const auto& name : wanted)
+        if (searched.insert(name).second)
+            unsearched.push_back(name);
+
+    if (unsearched.empty())
+        return;
+
+    auto* engine = magda::test::getSharedEngine().getEngine();
+    if (engine == nullptr)
+        return;
+
+    auto& plugins = engine->getPluginManager();
+    auto& formats = plugins.pluginFormatManager;
+    auto& known = plugins.knownPluginList;
+
+    // A project names a plugin what its author's host called it, and a bundle is
+    // named what its vendor called the file. Those agree often and not always:
+    // FabFilter ships "Pro-L 2" inside "FabFilter Pro-L 2.vst3". So the match is
+    // containment in either direction, folded for case.
+    //
+    // Loose on purpose, and it can only be loose in one direction that matters.
+    // A false match costs one bundle loaded that resolution then declines,
+    // because matchInstalledPlugin has the project's own identifier to check
+    // against and this does not; a missed match costs a case that never runs on
+    // a machine that could have measured it.
+    const auto matches = [&unsearched](const juce::String& identifier) {
+        const auto file = juce::File::createFileWithoutCheckingPath(identifier);
+        const auto base =
+            (file.exists() ? file.getFileNameWithoutExtension() : identifier).toLowerCase();
+
+        return std::any_of(unsearched.begin(), unsearched.end(), [&base](const std::string& name) {
+            const auto folded = juce::String(name).toLowerCase();
+            return folded.isNotEmpty() && (base.contains(folded) || folded.contains(base));
+        });
+    };
+
+    for (int index = 0; index < formats.getNumFormats(); ++index) {
+        auto* format = formats.getFormat(index);
+        if (format == nullptr)
+            continue;
+
+        // The walk, which reads directory entries and loads nothing.
+        const auto found =
+            format->searchPathsForPlugins(format->getDefaultLocationsToSearch(), true);
+
+        for (const auto& identifier : found) {
+            if (!matches(identifier))
+                continue;
+
+            // And the load, for the handful that matched. This is the step the
+            // app runs out of process; in here it is a named bundle rather than
+            // a library, and a plugin that cannot survive being asked what it is
+            // would not have survived the render either.
+            juce::OwnedArray<juce::PluginDescription> descriptions;
+            format->findAllTypesForFile(descriptions, identifier);
+
+            for (const auto* description : descriptions)
+                known.addType(*description);
+        }
+    }
 }
 
 /// The largest magnitude anywhere in @p buffer, which is all the silence guard
@@ -223,8 +315,28 @@ CaseReport runCase(const Case& value, const RunnerLog& log) {
     report.tier = value.tier;
     report.environment = value.environment();
 
-    const auto native = renderNative(value, installedPlugins());
+    // Looked for before the scan is read, so that "this machine has not scanned
+    // it" is a fact about the machine rather than about the binary.
+    findPluginsFor(externalDevicesIn(value));
+
+    const auto installed = installedPlugins();
+
+    // Asked before either leg is driven, because the answer decides whether
+    // there is anything worth driving them for. A project rendered without the
+    // plugin it names is a different project, and two legs rendering it without
+    // the plugin null perfectly (NullDiffCase.hpp).
+    report.absentPlugins = absentPluginsIn(value, installed.knownPlugins);
+    if (!report.absentPlugins.empty())
+        return report;
+
+    const auto native = renderNative(value, installed);
     const auto incumbent = renderIncumbent(value);
+
+    // What the render ran, whatever the comparison goes on to say. Written
+    // before the early returns below so that a case that turns out to be
+    // unmeasurable still prints which plugins it had, which is the first thing
+    // worth knowing about one that stopped being measurable.
+    report.environment.plugins = native.plugins;
 
     // A leg that could not render is never reported as a residual.
     if (!native.failure.empty()) {
@@ -419,6 +531,8 @@ CaseReport runCase(const Case& value, const RunnerLog& log) {
         InvariantOptions options;
         options.sampleRate = value.sampleRate;
         options.maxStepPerSample = value.maxStepPerSample;
+        options.minPeakDb = value.minPeakDb;
+        options.asksForTail = value.rendersPastItsMaterial;
 
         report.hasInvariants = true;
         report.invariants = compareInvariants(native.audio, incumbent.audio, options);
@@ -533,21 +647,84 @@ SuiteRun runSuite(const std::vector<Case>& cases, const RunnerLog& log) {
         // unmeasurable rather than as a residual, for the same reason a
         // proxy that never arrived is: the number would be about something
         // other than parity, and it would look like a parity failure.
+        //
+        // Except the ones the case named. The watch is a process-wide hook and it
+        // cannot tell whose code raised what, so on a case that loads somebody
+        // else's code into this process the premise above -- everything that
+        // asserts here is the engine or the harness -- stops being true.
+        //
+        // Named one at a time rather than waived by the presence of a plugin.
+        // "This project hosts a VST3" is not evidence about who asserted: a
+        // waiver keyed on it would forgive a genuine engine regression on
+        // exactly the three cases worth adding, and would forgive it for a
+        // plugin on a bypassed chain that the render never instantiated.
+        // Retrospect hands JUCE its own URI where a path is expected, once per
+        // instantiation, and that one sentence is what the case declares.
+        //
+        // Recorded and printed either way, whichever side it falls on. Nothing
+        // is dropped; what changes is what it is allowed to conclude.
         if (auto fired = watch.take(); !fired.empty()) {
-            report.passed = false;
-            report.unmeasurable =
-                "the engine asserted while rendering: " + fired.front().toStdString() +
-                (fired.size() > 1 ? " (and " + std::to_string(fired.size() - 1) + " more)" : "");
-            run.asserted.insert(value.name);
+            auto unexplained = std::vector<juce::String>{};
 
-            for (const auto& assertion : fired)
-                log("  " + juce::String(value.name) + ": " + assertion);
+            for (const auto& assertion : fired) {
+                const auto named = std::any_of(
+                    value.expectedHostedAssertions.begin(), value.expectedHostedAssertions.end(),
+                    [&assertion](const std::string& expected) {
+                        return assertion.toStdString().find(expected) != std::string::npos;
+                    });
+
+                log("  " + juce::String(value.name) + (named ? " (hosted): " : ": ") + assertion);
+
+                if (named)
+                    report.hostedAssertions.push_back(assertion.toStdString());
+                else
+                    unexplained.push_back(assertion);
+            }
+
+            if (!unexplained.empty()) {
+                report.passed = false;
+                report.unmeasurable =
+                    "the engine asserted while rendering: " + unexplained.front().toStdString() +
+                    (unexplained.size() > 1
+                         ? " (and " + std::to_string(unexplained.size() - 1) + " more)"
+                         : "");
+                run.asserted.insert(value.name);
+            }
         }
 
-        if (!report.passed)
-            run.failing.insert(report.name);
-        if (!report.unmeasurable.empty())
-            run.unmeasurable.insert(report.name);
+        // And the other direction, the same rule the declared diagnostics live
+        // by: a plugin that stops asserting where it did has to come off the
+        // case, or the declaration sits there forgiving something that no
+        // longer happens.
+        if (!value.expectedHostedAssertions.empty() && report.absentPlugins.empty()) {
+            for (const auto& expected : value.expectedHostedAssertions) {
+                const auto seen =
+                    std::any_of(report.hostedAssertions.begin(), report.hostedAssertions.end(),
+                                [&expected](const std::string& assertion) {
+                                    return assertion.find(expected) != std::string::npos;
+                                });
+
+                if (!seen) {
+                    report.passed = false;
+                    report.unmeasurable = "the case expects the hosted plugin to assert \"" +
+                                          expected + "\", and it did not";
+                }
+            }
+        }
+
+        // A case that never ran is neither failing nor unmeasurable. Both of
+        // those are complaints -- one says the engines disagree, the other says
+        // the harness could not tell -- and an absent plugin is neither: it is a
+        // fact about which plugins are on this machine, and the machine every
+        // release is built on has none of them.
+        if (!report.absentPlugins.empty()) {
+            run.notRun.insert(report.name);
+        } else {
+            if (!report.passed)
+                run.failing.insert(report.name);
+            if (!report.unmeasurable.empty())
+                run.unmeasurable.insert(report.name);
+        }
 
         run.reports.push_back(std::move(report));
     }
