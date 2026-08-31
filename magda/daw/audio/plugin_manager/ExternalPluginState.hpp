@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <optional>
 #include <vector>
 
 #include "core/DeviceInfo.hpp"
@@ -233,31 +234,69 @@ Vst3PresetOutcome writeVst3Preset(juce::AudioPluginInstance& instance,
 void captureVst3Records(const juce::AudioPluginInstance& instance, DeviceInfo& device);
 
 /**
- * @brief Write what @p instance holds into @p device: chunk, array, VST3 records.
+ * @brief Everything a project keeps about a plugin, read off one in one go.
  *
- * Saving, and the mirror of applySavedPluginState(). What lands in the model is
- * what the fork writes for the same instance -- the chunk from
- * getStateInformation(), base64 in juce::MemoryBlock's own encoding, absent
- * rather than empty when the plugin has nothing to say -- so a project saved
- * under either engine opens under the other.
+ * Data, and nothing but data: no reference to the instance, no lock, nothing
+ * that has to still be alive when this is written to a model. That is what lets
+ * reading the plugin and writing the model be two separate moments, which is
+ * what the caller needs in order to check between them that the device it read
+ * is still the device it is about to write (PluginAssignments.hpp) -- and what
+ * a plugin living in another process would need in order to send one at all.
+ */
+struct ExternalPluginSnapshot {
+    /// The chunk, in the encoding DeviceInfo::pluginState holds. Empty for a
+    /// plugin with nothing to say, which the model records as absent.
+    juce::String pluginState;
+
+    /// Every parameter a project addresses, at its live value.
+    std::vector<RestoredParameter> parameters;
+
+    /// The portable VST3 records, and what the read learned about their absence.
+    Vst3PresetRead portable;
+};
+
+/**
+ * @brief Read what @p instance holds: chunk, parameter values, VST3 records.
  *
- * Message thread, and the plugin is suspended across the whole transaction the
- * way the fork holds its processMutex across one: a plugin asked to describe
- * itself mid-block is entitled to answer with half of one state and half of
- * another, and that applies to its parameter values and its portable preset as
- * much as to its chunk.
+ * Saving, and the mirror of applySavedPluginState(). What it reads is what the
+ * fork writes for the same instance -- the chunk from getStateInformation(),
+ * base64 in juce::MemoryBlock's own encoding -- so a project saved under either
+ * engine opens under the other.
+ *
+ * It reads and does not write, for the same reason the restore hands its
+ * corrections back rather than applying them: the model is the caller's, and a
+ * function holding a plugin is the wrong place to be deciding a project's
+ * contents. Symmetry aside, it is what keeps the commit a separate step the
+ * caller can refuse.
+ *
+ * Message thread, and the plugin is suspended across the whole read the way the
+ * fork holds its processMutex across one: a plugin asked to describe itself
+ * mid-block is entitled to answer with half of one state and half of another,
+ * and that applies to its parameter values and its portable preset as much as to
+ * its chunk.
  *
  * Suspension is only worth anything because the host honours it. A block that
- * arrives while this is in flight passes its audio through rather than running
- * the plugin (EngineExternalDevice::processPluginBlock), which is what makes
- * suspendProcessing() wait for one already in progress rather than merely set a
- * flag nobody reads.
+ * arrives while this is in flight passes through without touching the plugin at
+ * all, parameter writes included (EngineExternalDevice::process), which is what
+ * makes suspendProcessing() wait for one already in progress rather than merely
+ * set a flag nobody reads.
  *
- * False when the plugin threw describing itself, and then @p device is left
- * exactly as it was. The two records have to agree with each other -- the array
- * is the baseline the chunk overlays -- so a save that can only write one of
- * them writes neither, and the project keeps the last pair that did agree.
+ * Nullopt when the plugin threw describing itself. The records have to agree
+ * with each other -- the array is the baseline the chunk overlays -- so a read
+ * that can only answer part of the question answers none of it, and the project
+ * keeps the last set that did agree.
  */
-bool captureSavedPluginState(juce::AudioPluginInstance& instance, DeviceInfo& device);
+std::optional<ExternalPluginSnapshot> captureExternalPluginState(
+    juce::AudioPluginInstance& instance);
+
+/**
+ * @brief Write @p snapshot into @p device.
+ *
+ * The other half, and the only half that touches a model. Nothing here reaches
+ * a plugin, so a caller may put whatever it likes between the two: the check
+ * that the device is still the one that was read, a hop between processes, or
+ * nothing at all.
+ */
+void applyCapturedPluginState(DeviceInfo& device, const ExternalPluginSnapshot& snapshot);
 
 }  // namespace magda

@@ -241,24 +241,23 @@ void captureVst3Records(const juce::AudioPluginInstance& instance, DeviceInfo& d
     applyVst3Records(device, readVst3Preset(instance));
 }
 
-bool captureSavedPluginState(juce::AudioPluginInstance& instance, DeviceInfo& device) {
+std::optional<ExternalPluginSnapshot> captureExternalPluginState(
+    juce::AudioPluginInstance& instance) {
     juce::MemoryBlock chunk;
-    std::vector<RestoredParameter> parameters;
-    Vst3PresetRead portable;
+    ExternalPluginSnapshot snapshot;
 
-    // Suspended across the whole transaction, the way the fork holds its
-    // processMutex across one. Everything read here is read from a plugin that
-    // is not simultaneously processing: its chunk, the parameter values that
-    // have to agree with that chunk, and the portable preset beside them.
-    // Resuming between any two of those would let a block move the plugin
-    // underneath the rest of the read.
+    // Suspended across the whole read, the way the fork holds its processMutex
+    // across one. Everything here comes off a plugin that is not simultaneously
+    // processing: its chunk, the parameter values that have to agree with that
+    // chunk, and the portable preset beside them. Resuming between any two of
+    // those would let a block move the plugin underneath the rest of the read.
     instance.suspendProcessing(true);
 
     bool described = true;
     try {
         instance.getStateInformation(chunk);
-        parameters = snapshotHostParameters(instance);
-        portable = readVst3Preset(instance);
+        snapshot.parameters = snapshotHostParameters(instance);
+        snapshot.portable = readVst3Preset(instance);
     } catch (...) {
         described = false;
     }
@@ -268,18 +267,22 @@ bool captureSavedPluginState(juce::AudioPluginInstance& instance, DeviceInfo& de
     instance.suspendProcessing(false);
 
     if (!described)
-        return false;
+        return std::nullopt;
 
     // Absent rather than empty for a plugin with nothing to say, which is what
     // the fork writes for one: it removes the property rather than storing a
     // zero-length chunk, and a project that stored one would come back through
     // decodeSavedChunk() as a baseline anyway.
-    device.pluginState = chunk.getSize() > 0 ? chunk.toBase64Encoding() : juce::String();
+    if (chunk.getSize() > 0)
+        snapshot.pluginState = chunk.toBase64Encoding();
 
-    applyRestoredParameters(device, parameters);
-    applyVst3Records(device, portable);
+    return snapshot;
+}
 
-    return true;
+void applyCapturedPluginState(DeviceInfo& device, const ExternalPluginSnapshot& snapshot) {
+    device.pluginState = snapshot.pluginState;
+    applyRestoredParameters(device, snapshot.parameters);
+    applyVst3Records(device, snapshot.portable);
 }
 
 }  // namespace magda

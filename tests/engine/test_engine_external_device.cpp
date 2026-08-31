@@ -534,6 +534,17 @@ magda::engine::DeviceKey keyFor(const magda::DeviceInfo& device) {
     return {magda::ChainSegment::Fx, device.id};
 }
 
+/// Read a plugin and write what it holds into @p device, which is what a caller
+/// does with the two halves when it has nothing to check between them.
+bool captureInto(juce::AudioPluginInstance& instance, magda::DeviceInfo& device) {
+    const auto snapshot = magda::captureExternalPluginState(instance);
+    if (!snapshot.has_value())
+        return false;
+
+    magda::applyCapturedPluginState(device, *snapshot);
+    return true;
+}
+
 /// The device registered as live, and the request a load for it carries.
 ///
 /// Registration is the caller's job in production too: a device that becomes
@@ -1709,7 +1720,7 @@ TEST_CASE("A block that arrives during a state read does not reach the plugin",
     const auto context = contextFor();
     result.device->prepare(context);
 
-    // Suspended, the way captureSavedPluginState() suspends it for the duration
+    // Suspended, the way captureExternalPluginState() suspends it for the duration
     // of its read.
     raw->suspendProcessing(true);
 
@@ -1745,6 +1756,34 @@ TEST_CASE("A block that arrives during a state read does not reach the plugin",
     raw->suspendProcessing(false);
 }
 
+TEST_CASE("Reading a plugin does not write the project", "[engine][external][state]") {
+    // The two halves are separate so a caller can put a question between them.
+    // The one it has to ask is whether the device it read is still the device it
+    // is about to write, and a capture that wrote the model on the way past
+    // would have answered it too late. The same seam is what a plugin living in
+    // another process would need: a snapshot can cross, a plugin cannot.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->gain->setValue(0.6f);
+
+    auto model = externalDeviceSaving(0.1f, 0.2f);
+    model.pluginState = "the project as it was";
+
+    const auto snapshot = magda::captureExternalPluginState(*raw);
+    REQUIRE(snapshot.has_value());
+
+    // The plugin has been read and the project has not been touched.
+    CHECK(model.pluginState == "the project as it was");
+    CHECK(model.parameters[0].currentValue == Catch::Approx(0.1f));
+
+    // And everything read is in the snapshot, waiting for a caller that wants it.
+    CHECK(snapshot->pluginState.isNotEmpty());
+
+    magda::applyCapturedPluginState(model, *snapshot);
+    CHECK(model.pluginState != "the project as it was");
+    CHECK(model.parameters[0].currentValue == Catch::Approx(0.6f));
+}
+
 TEST_CASE("A save writes the chunk the incumbent would have written", "[engine][external][state]") {
     // The round trip that matters during the dual-engine release: a project
     // saved while the native engine held the instance has to open under the
@@ -1755,7 +1794,7 @@ TEST_CASE("A save writes the chunk the incumbent would have written", "[engine][
     raw->fixed->setValue(0.8f);
 
     auto model = externalDevice();
-    REQUIRE(magda::captureSavedPluginState(*raw, model));
+    REQUIRE(captureInto(*raw, model));
 
     // What the fork writes for the same instance: getStateInformation, in
     // juce::MemoryBlock's own base64.
@@ -1784,7 +1823,7 @@ TEST_CASE("A save writes the parameter array beside the chunk", "[engine][extern
     raw->tone->setValue(0.9f);
 
     auto model = externalDeviceSaving(0.1f, 0.2f);
-    REQUIRE(magda::captureSavedPluginState(*raw, model));
+    REQUIRE(captureInto(*raw, model));
 
     CHECK(model.parameters[0].currentValue == Catch::Approx(0.6f));
     CHECK(model.parameters[1].currentValue == Catch::Approx(0.9f));
@@ -1802,7 +1841,7 @@ TEST_CASE("A plugin with nothing to say saves no chunk at all", "[engine][extern
     auto model = externalDevice();
     model.pluginState = "some earlier chunk";
 
-    REQUIRE(magda::captureSavedPluginState(*raw, model));
+    REQUIRE(captureInto(*raw, model));
     CHECK(model.pluginState.isEmpty());
 }
 
@@ -1820,7 +1859,7 @@ TEST_CASE("A plugin that throws describing itself leaves the last good save",
     auto model = externalDeviceSaving(0.1f, 0.2f);
     model.pluginState = "the last chunk that saved cleanly";
 
-    CHECK_FALSE(magda::captureSavedPluginState(*raw, model));
+    CHECK_FALSE(captureInto(*raw, model));
     CHECK(model.pluginState == "the last chunk that saved cleanly");
     CHECK(model.parameters[0].currentValue == Catch::Approx(0.1f));
 }
@@ -1833,7 +1872,7 @@ TEST_CASE("A save is not left holding the plugin suspended", "[engine][external]
     raw->throwsSavingState = true;
 
     auto model = externalDevice();
-    CHECK_FALSE(magda::captureSavedPluginState(*raw, model));
+    CHECK_FALSE(captureInto(*raw, model));
     CHECK_FALSE(raw->isSuspended());
 }
 
@@ -1848,7 +1887,7 @@ TEST_CASE("A save refreshes the portable VST3 records", "[engine][external][stat
     raw->tone->setValue(0.9f);
 
     auto model = externalDevice();
-    REQUIRE(magda::captureSavedPluginState(*raw, model));
+    REQUIRE(captureInto(*raw, model));
 
     CHECK(model.vst3ClassId == kStubVst3ClassId);
     REQUIRE(model.vst3Preset.isNotEmpty());
@@ -1875,7 +1914,7 @@ TEST_CASE("A VST3 that cannot write its patch out does not keep the old one",
     model.vst3ClassId = kStubVst3ClassId;
     model.vst3Preset = "the patch this project was imported with";
 
-    REQUIRE(magda::captureSavedPluginState(*raw, model));
+    REQUIRE(captureInto(*raw, model));
 
     CHECK(model.vst3Preset.isEmpty());
     CHECK(model.pluginState.isNotEmpty());
@@ -1896,7 +1935,7 @@ TEST_CASE("A save leaves a non-VST3 device's portable records alone", "[engine][
     model.vst3ClassId = "FEDCBA9876543210FEDCBA9876543210";
     model.vst3Preset = "what the project was imported with";
 
-    REQUIRE(magda::captureSavedPluginState(*raw, model));
+    REQUIRE(captureInto(*raw, model));
     CHECK(model.vst3ClassId == "FEDCBA9876543210FEDCBA9876543210");
     CHECK(model.vst3Preset == "what the project was imported with");
 }
@@ -1918,7 +1957,7 @@ TEST_CASE("A save reads the instance the adapter is holding", "[engine][external
 
     auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
     REQUIRE(external != nullptr);
-    REQUIRE(magda::captureSavedPluginState(external->instance(), model));
+    REQUIRE(captureInto(external->instance(), model));
 
     auto reopened = std::make_unique<StubPlugin>(2, 2, 0);
     auto* reopenedRaw = reopened.get();
