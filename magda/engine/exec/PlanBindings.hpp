@@ -36,6 +36,12 @@ struct PlanBindings {
     std::unordered_map<TrackId, EngineAudioSource*> audioInputs;
     std::unordered_map<TrackId, EngineMidiSource*> midiInputs;
 
+    /// The outside world behind each hardware insert (InsertSend / InsertReturn
+    /// ops, #2245). Keyed by DeviceKey like the devices are, and for the same
+    /// reason: an insert is a thing in the project at a place in a chain, and
+    /// its send op and return op are two halves of one binding.
+    std::unordered_map<DeviceKey, EngineInsert*, DeviceKeyHash> inserts;
+
     /**
      * @brief Where each Meter op publishes its level.
      *

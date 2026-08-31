@@ -121,6 +121,13 @@ enum class OpKind : std::uint8_t {
     Meter,         ///< level tap read by the UI
     ModSource,     ///< a track's signal as the modulation system reads it
     Output,        ///< hardware output
+
+    // A hardware insert, which is these two with the outside world between them
+    // (#2245). Not a device with special cases: the incumbent recognises an
+    // insert by where it sits in a chain, and the plan already has ops for
+    // things that consume a signal and things that produce one.
+    InsertSend,    ///< audio or MIDI leaving the machine; consumes, produces nothing
+    InsertReturn,  ///< what comes back, and where the round trip's latency is declared
 };
 
 /**
@@ -155,6 +162,8 @@ enum class OpRole : std::uint8_t {
     SendTap,          ///< one send slot
     ModulationTap,    ///< one track's signal, read by the modifiers listening to it
     HardwareOutput,   ///< the master's hardware output
+    InsertSend,       ///< one insert's send
+    InsertReturn,     ///< one insert's return
 
     // Latency compensation. A delay sits on one edge, so its identity is the
     // op it feeds plus the input slot it fills: the role says which op that is,

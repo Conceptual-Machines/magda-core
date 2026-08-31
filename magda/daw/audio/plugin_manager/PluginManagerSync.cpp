@@ -24,6 +24,7 @@
 #include "plugins/DrumGridPlugin.hpp"
 #include "plugins/FaustPlugin.hpp"
 #include "plugins/InsertCapturePlugin.hpp"
+#include "plugins/InsertConfigBridge.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
@@ -2415,6 +2416,19 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
         // routed. So never wrap it, even though it presents as an instrument.
         const bool isExternalInsert =
             daw::audio::internalPluginHasTag(device.pluginId, "external-insert");
+
+        // What the project says this insert sends to and gets back from (#2245).
+        //
+        // The model is the authority and the fork is what makes the sound, so
+        // the model is applied to it here, on the path every device takes on its
+        // way into the graph. A project saved before the model carried any of
+        // this has an inactive config and nothing is written, which leaves the
+        // plugin holding what its own state blob restored: the two
+        // representations are the same facts, and the older of them is still
+        // the one on disk.
+        if (isExternalInsert && device.insert.isActive())
+            if (auto* insert = dynamic_cast<te::InsertPlugin*>(plugin.get()))
+                daw::audio::applyInsertConfig(*insert, device.insert);
         if (device.isInstrument && !isExternalInsert) {
             // Detect multi-output capability.
             //

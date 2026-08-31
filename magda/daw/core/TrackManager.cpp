@@ -2012,21 +2012,13 @@ TrackManager::ExternalInstrumentRouting TrackManager::getExternalInstrumentRouti
             continue;
 
         routing.present = true;
-        // Mirror the live insert's chosen send/return devices so the track-level
-        // selectors can display them. The plugin may not be resolvable yet
-        // (path invalid during load); present stays true regardless.
-        if (audioEngine_ != nullptr) {
-            if (auto* bridge = audioEngine_->getAudioBridge()) {
-                auto path = ChainNodePath::topLevelDevice(trackId, d.id);
-                if (auto plugin = bridge->getPlugin(path)) {
-                    if (auto* insert =
-                            dynamic_cast<tracktion::engine::InsertPlugin*>(plugin.get())) {
-                        routing.midiOut = insert->outputDevice.get();
-                        routing.audioReturn = insert->inputDevice.get();
-                    }
-                }
-            }
-        }
+
+        // Read from the model rather than from the live plugin (#2245). The two
+        // hold the same facts and the model holds them earlier: a project that
+        // has loaded but whose plugins have not been built yet would have shown
+        // an empty pair here, and a path that would not resolve showed one too.
+        routing.midiOut = d.insert.sendDevice;
+        routing.audioReturn = d.insert.returnDevice;
         break;
     }
     return routing;

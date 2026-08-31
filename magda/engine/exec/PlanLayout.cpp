@@ -109,6 +109,10 @@ std::optional<std::size_t> inPlaceInputOf(const PlanOp& op) {
         case OpKind::MidiNoteGate:
         case OpKind::ModSource:
         case OpKind::Output:
+        // An insert's send writes nothing, and its return writes what came back
+        // rather than what it was handed, so neither has an input to write over.
+        case OpKind::InsertSend:
+        case OpKind::InsertReturn:
             return std::nullopt;
     }
 
@@ -181,7 +185,9 @@ PlanLatency resolvePlanLatency(const RenderPlan& plan, const std::vector<int>& p
         const auto produced =
             op.kind == OpKind::Crossfade && op.inputs.size() > 1 && op.inputs[1].valid()
                 ? arriving(op.inputs[1])
-                : target + (op.kind == OpKind::Device ? std::max(0, deviceLatency[i]) : 0);
+                : target + (op.kind == OpKind::Device || op.kind == OpKind::InsertReturn
+                                ? std::max(0, deviceLatency[i])
+                                : 0);
         for (std::size_t port = 0; port < op.outputs.size(); ++port)
             resolved.portLatency[static_cast<std::size_t>(portOffsets[i]) + port] = produced;
 

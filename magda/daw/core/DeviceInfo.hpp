@@ -148,6 +148,48 @@ struct SidechainConfig {
 };
 
 /**
+ * @brief A hardware insert: what leaves the machine and what comes back (#2245).
+ *
+ * Model values rather than a plugin's state blob, and that is the point of it.
+ * The incumbent keeps this inside a te::InsertPlugin's ValueTree, so the only
+ * way to know what an insert sends to was to ask the fork; the native engine
+ * compiles an insert into a send op and a return op with the outside world
+ * between them, and it compiles from the model like everything else.
+ *
+ * Send and return are declared separately because they are separate. An
+ * external effect sends audio and gets audio back; an external instrument sends
+ * MIDI and gets audio back; a device that only listens has no send at all. The
+ * incumbent carries the same pair of types for the same reason.
+ *
+ * @ref manualAdjustMs is the user's correction on top of the measured round
+ * trip, in milliseconds, and it may be negative: an interface reports its own
+ * buffering and knows nothing about the converter and the cable past it, so the
+ * measured figure is a lower bound that somebody with a loopback puts right.
+ */
+struct InsertConfig {
+    enum class Endpoint { None, Audio, MIDI };
+
+    Endpoint sendType = Endpoint::None;
+    Endpoint returnType = Endpoint::None;
+
+    /// The hardware device each end names, as the audio settings name it. Empty
+    /// is an end that was never pointed anywhere, which is not the same as an
+    /// end that is not used: a send of type Audio with no device is an insert
+    /// somebody half configured, and it is reported rather than passed through.
+    juce::String sendDevice;
+    juce::String returnDevice;
+
+    double manualAdjustMs = 0.0;
+
+    /// Whether this device is an insert at all. False for every ordinary
+    /// device, which is what keeps the compiler from having to know a plugin id
+    /// to recognise one.
+    bool isActive() const {
+        return sendType != Endpoint::None || returnType != Endpoint::None;
+    }
+};
+
+/**
  * @brief Loading state for a device's underlying plugin
  */
 enum class DeviceLoadState { Loaded, Loading, Failed };
@@ -322,6 +364,11 @@ struct DeviceInfo {
 
     // Sidechain configuration (e.g., compressor key input)
     SidechainConfig sidechain;
+
+    /// Set only on an external insert, where it is the whole device: the plan
+    /// compiles a send op and a return op from it rather than a Device op
+    /// (#2245).
+    InsertConfig insert;
     bool canSidechain = false;    // true if TE plugin supports audio sidechain input
     bool canReceiveMidi = false;  // true if TE plugin accepts MIDI input (for cross-track MIDI)
     bool producesMidi = false;    // true if the live plugin can output MIDI

@@ -271,6 +271,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     const auto numOps = plan.ops.size();
 
     deviceForOp_.assign(numOps, nullptr);
+    insertForOp_.assign(numOps, nullptr);
     audioSourceForOp_.assign(numOps, nullptr);
     midiSourceForOp_.assign(numOps, nullptr);
     meterForOp_.assign(numOps, nullptr);
@@ -511,6 +512,29 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 break;
             }
 
+            case OpKind::InsertSend:
+            case OpKind::InsertReturn: {
+                // Both halves resolve to one object, because a round trip is
+                // one thing: an implementation handed a separately bound sink
+                // and source would be rebuilding the pairing the plan already
+                // did (#2245).
+                const auto found = bindings.inserts.find(op.key.deviceKey());
+                if (found == bindings.inserts.end() || found->second == nullptr) {
+                    // Reported, unlike a device that failed to load, which
+                    // passes audio through. There is no passing through here:
+                    // an insert with nothing behind it sends into nothing and
+                    // its return has nothing to answer with, so a render that
+                    // went ahead would be a render of a project with the
+                    // outboard unplugged and no way to tell from the audio.
+                    messages.push_back(describe(i) + "no insert bound for " +
+                                       toString(op.key.deviceKey()) +
+                                       ", nothing leaves the machine and its return is silent");
+                    break;
+                }
+                insertForOp_[i] = found->second;
+                break;
+            }
+
             case OpKind::Meter: {
                 // Silently optional, unlike every other binding above. A meter
                 // is the one op whose runtime object exists for something
@@ -552,9 +576,20 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     // a buffer. So the two passes run here, in this order, on every prepare.
 
     std::vector<int> deviceLatency(numOps, 0);
-    for (std::size_t i = 0; i < numOps; ++i)
+    for (std::size_t i = 0; i < numOps; ++i) {
         if (const auto* device = deviceForOp_[i]; device != nullptr)
             deviceLatency[i] = device->latencySamples();
+
+        // An insert's round trip goes in the same array, on the return op,
+        // which is where it is incurred: what left is coming back late, and
+        // everything downstream of the return is what has to be aligned against
+        // it. The send declares none -- nothing waits on it, because nothing
+        // reads it -- and the latency pass below has no idea any of this is an
+        // insert, which is the whole point (#2245).
+        if (plan.ops[i].kind == OpKind::InsertReturn)
+            if (const auto* insert = insertForOp_[i]; insert != nullptr)
+                deviceLatency[i] = insert->latencySamples();
+    }
 
     // Through resolveLayout rather than the three passes inline, because the
     // plan goldens (#2076) pin what a prepare resolves and have to be resolving
@@ -1490,6 +1525,58 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
         case OpKind::ModSource:
             renderModSource(id, block);
             break;
+
+        case OpKind::InsertSend: {
+            // A sink, and the one place in the graph where the block leaves the
+            // machine. Silent means the chain feeding it is muted, and a muted
+            // track sends nothing: the hardware hears what the track is doing,
+            // which for a muted track is nothing (#2245).
+            auto* insert = insertForOp_[i];
+            if (insert == nullptr || value.silent)
+                break;
+
+            static const juce::MidiBuffer kNoMidi;
+
+            // Either input may be unconnected: an external effect sends audio
+            // and no MIDI, an external instrument the reverse. An empty block
+            // and an empty buffer are what "this insert has no send of that
+            // kind" looks like to whoever implements it.
+            const auto audio =
+                op.inputs[0].valid()
+                    ? juce::dsp::AudioBlock<const float>(audioIn(op.inputs[0], numSamples))
+                    : juce::dsp::AudioBlock<const float>();
+
+            insert->send(block, audio, op.inputs[1].valid() ? midiIn(op.inputs[1]) : kNoMidi);
+            break;
+        }
+
+        case OpKind::InsertReturn: {
+            // A source, like a live input, and asked for exactly the one port
+            // the plan declared: the compiler emits an audio port or a MIDI
+            // port from what the insert says comes back, so which of the two is
+            // wanted is already decided here.
+            auto* insert = insertForOp_[i];
+            const bool returnsAudio = op.outputs[0].kind == SignalKind::Audio;
+
+            static thread_local juce::MidiBuffer discardedMidi;
+            discardedMidi.clear();
+
+            if (returnsAudio) {
+                auto out = audioOut(id, 0, numSamples);
+                if (insert == nullptr || value.silent)
+                    out.clear();
+                else
+                    insert->receive(block, out, discardedMidi);
+            } else {
+                auto& out = midiOut(id, 0);
+                out.clear();
+                if (insert != nullptr && !value.silent)
+                    insert->receive(block, {}, out);
+
+                jassert(out.data.size() <= kMaxMidiBytesPerPort);
+            }
+            break;
+        }
 
         case OpKind::Output: {
             if (value.silent || !op.inputs[0].valid())

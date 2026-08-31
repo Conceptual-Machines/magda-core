@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "audio/AudioBridge.hpp"
+#include "audio/plugins/InsertConfigBridge.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
@@ -37,6 +38,25 @@ void rebuildPlaybackGraph(te::InsertPlugin& insert, const magda::ChainNodePath& 
         ctx != nullptr && ctx->isPlaybackGraphAllocated())
         ctx->reallocate();
     magda::TrackManager::getInstance().notifyDevicePropertyChanged(path);
+}
+
+/// Write what the live insert now is back into the model (#2245).
+///
+/// The model is the authority on what an insert sends to and gets back from:
+/// the native engine compiles a send op and a return op from it, and the
+/// project saves it. This panel edits the fork's plugin because that is what is
+/// making sound right now, so every edit ends here.
+///
+/// After updateDeviceTypes() rather than before it. The types are the fork's
+/// own derivation from the names -- a send pointing at a device that is not
+/// enabled resolves to nothing -- so a mirror taken first would record an insert
+/// this machine cannot make.
+void mirrorInsertIntoModel(te::InsertPlugin& insert, const magda::ChainNodePath& path) {
+    auto& manager = magda::TrackManager::getInstance();
+    if (auto* device = manager.getDeviceInChainByPath(path)) {
+        device->insert = magda::daw::audio::insertConfigOf(insert);
+        manager.notifyDevicePropertyChanged(path);
+    }
 }
 
 // The picker id whose mapped name matches the plugin's current device, else 0
@@ -172,8 +192,10 @@ ExternalInsertUI::ExternalInsertUI(bool isInstrument) : isInstrument_(isInstrume
     latencyValue_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(latencyValue_);
     latencyValue_.onTextChange = [this] {
-        if (auto* insert = liveInsert(devicePath_))
+        if (auto* insert = liveInsert(devicePath_)) {
             insert->manualAdjustMs = latencyValue_.getText().getDoubleValue();
+            mirrorInsertIntoModel(*insert, devicePath_);
+        }
     };
 
     warningLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
@@ -203,6 +225,7 @@ void ExternalInsertUI::rebuildFromPlugin() {
         if (auto* ins = liveInsert(devicePath_)) {
             ins->outputDevice = (id <= 0) ? juce::String() : sendNames_[id];
             ins->updateDeviceTypes();
+            mirrorInsertIntoModel(*ins, devicePath_);
             rebuildPlaybackGraph(*ins, devicePath_);
             refreshConflictWarning();
         }
@@ -215,6 +238,7 @@ void ExternalInsertUI::rebuildFromPlugin() {
         if (auto* ins = liveInsert(devicePath_)) {
             ins->inputDevice = (id <= 0) ? juce::String() : returnNames_[id];
             ins->updateDeviceTypes();
+            mirrorInsertIntoModel(*ins, devicePath_);
             rebuildPlaybackGraph(*ins, devicePath_);
             refreshConflictWarning();
         }
