@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "core/DeviceState.hpp"
+#include "core/PluginCapabilities.hpp"
 #include "plugin_manager/ExternalPluginLookup.hpp"
 #include "plugin_manager/ExternalPluginState.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
@@ -108,12 +109,40 @@ ExternalDeviceResult adaptExternalPluginInstance(
                 .failure = "external plugin \"" + device.name +
                            "\" failed while restoring its own saved state"};
 
+    // Buses again, and the widths only now. setStateInformation is free to
+    // change a plugin's bus layout -- an instrument the patch switches to
+    // multi-out, a compressor whose sidechain the patch turns on -- so widths
+    // read before the chunk was applied describe a layout the instance no
+    // longer has, while EngineExternalDevice::prepare() goes on to process the
+    // one it does. Re-enabling keeps the all-buses policy the first call
+    // establishes: a chunk that disabled one would otherwise leave the device
+    // reporting channels the rest of the chain is wired for.
+    instance->enableAllBuses();
+
+    // Scan descriptions report the format's default buses, not the instance
+    // after the host has enabled its sidechains and extra outputs. These are
+    // the only channel counts safe to compile a live plan from.
+    auto resolvedDevice = device;
+    resolvedDevice.audioInputChannels = instance->getTotalNumInputChannels();
+    resolvedDevice.audioOutputChannels = instance->getTotalNumOutputChannels();
+
+    // Promote only, the rule the model's other two writers follow
+    // (PluginManagerSync::updateDeviceCapabilityFlags,
+    // applyCachedCapabilitiesToDevice). A raw AudioProcessor::acceptsMidi() is
+    // narrower than what the incumbent engine asks -- it takes MIDI input for
+    // plugins whose processor does not advertise it -- so assigning it here
+    // clears a saved true and PlanCompiler stops routing MIDI to the device.
+    if (!resolvedDevice.isInstrument && (instance->acceptsMidi() || instance->isMidiEffect()))
+        resolvedDevice.canReceiveMidi = true;
+    resolvedDevice.producesMidi = instance->producesMidi() || instance->isMidiEffect();
+
     auto restored = magda::snapshotHostParameters(*instance);
 
-    return {.device =
-                std::make_unique<EngineExternalDevice>(std::move(instance), device, offlineRender),
+    return {.device = std::make_unique<EngineExternalDevice>(std::move(instance), resolvedDevice,
+                                                             offlineRender),
             .failure = {},
-            .restoredParameters = std::move(restored)};
+            .restoredParameters = std::move(restored),
+            .resolvedDevice = std::move(resolvedDevice)};
 }
 
 namespace {
@@ -125,32 +154,16 @@ juce::String describeMissingPlugin(const magda::DeviceInfo& device) {
            ") is not installed on this machine";
 }
 
-/// What the two entry points check before either asks a format manager for
-/// anything: the services are complete, and the scan knows the plugin.
-///
-/// Returns the description to load, or the reason there is not one.
-struct ResolvedPlugin {
-    juce::PluginDescription description;
-    juce::String failure;
-};
+/// Apply only a role JUCE's installed description can author. MIDI and Analysis
+/// are explicit MAGDA roles, and replacing either with Effect/Instrument would
+/// change the plan rather than enrich it.
+void applyInstalledRole(magda::DeviceInfo& device, bool isInstrument) {
+    if (device.deviceType == magda::DeviceType::MIDI ||
+        device.deviceType == magda::DeviceType::Analysis)
+        return;
 
-ResolvedPlugin resolvePlugin(const magda::DeviceInfo& device,
-                             const ExternalPluginServices& services) {
-    if (services.formats == nullptr || services.knownPlugins == nullptr)
-        return {.description = {},
-                .failure = "no plugin formats or scan results were given to the engine"};
-
-    const auto match = magda::matchInstalledPlugin(device, *services.knownPlugins);
-
-    // Unfound is refused rather than attempted. The app tries the saved
-    // description anyway and lets the format's own lookup have a go, which is
-    // right for a session where a user is watching and can be told; a render is
-    // not that, and a plugin resolved by a route nothing recorded is the kind
-    // of difference a null-diff corpus cannot attribute afterwards.
-    if (!match.found)
-        return {.description = {}, .failure = describeMissingPlugin(device)};
-
-    return {.description = match.description, .failure = {}};
+    device.isInstrument = isInstrument;
+    device.deviceType = isInstrument ? magda::DeviceType::Instrument : magda::DeviceType::Effect;
 }
 
 }  // namespace
@@ -184,6 +197,37 @@ bool isRegisteredDevice(const juce::String& pluginId) {
            compiled::findCompiledPluginSpec(pluginId) != nullptr;
 }
 
+ExternalPluginResolution resolveEngineExternalPlugin(const magda::DeviceInfo& device,
+                                                     const ExternalPluginServices& services) {
+    ExternalPluginResolution resolved{.planDevice = device};
+
+    if (services.formats == nullptr || services.knownPlugins == nullptr) {
+        resolved.failure = "no plugin formats or scan results were given to the engine";
+        return resolved;
+    }
+
+    const auto match = magda::matchInstalledPlugin(device, *services.knownPlugins);
+
+    // Unfound is refused rather than attempted. The app tries the saved
+    // description anyway and lets the format's own lookup have a go, which is
+    // right for a session where a user is watching and can be told; a render is
+    // not that, and a plugin resolved by a route nothing recorded is the kind
+    // of difference a null-diff corpus cannot attribute afterwards.
+    if (!match.found) {
+        resolved.failure = describeMissingPlugin(device);
+        return resolved;
+    }
+
+    resolved.description = match.description;
+    applyInstalledRole(resolved.planDevice, match.description.isInstrument);
+
+    // Keep the project's identity and preference key. The capability cache is
+    // nevertheless queried with the exact installed identity resolution found.
+    const auto resolvedIdentifier = match.description.createIdentifierString();
+    magda::applyCachedCapabilitiesToDevice(resolved.planDevice, resolvedIdentifier);
+    return resolved;
+}
+
 bool isInstalledExternalPlugin(const magda::DeviceInfo& device,
                                const juce::KnownPluginList& knownPlugins) {
     return magda::matchInstalledPlugin(device, knownPlugins).found;
@@ -192,7 +236,7 @@ bool isInstalledExternalPlugin(const magda::DeviceInfo& device,
 ExternalDeviceResult createEngineExternalDevice(const magda::DeviceInfo& device,
                                                 const ExternalPluginServices& services,
                                                 bool offlineRender) {
-    const auto resolved = resolvePlugin(device, services);
+    const auto resolved = resolveEngineExternalPlugin(device, services);
     if (resolved.failure.isNotEmpty())
         return {.device = {}, .failure = resolved.failure};
 
@@ -205,7 +249,7 @@ ExternalDeviceResult createEngineExternalDevice(const magda::DeviceInfo& device,
                 .failure = "external plugin \"" + device.name + "\" could not be loaded: " +
                            (error.isNotEmpty() ? error : "no reason given")};
 
-    return adaptExternalPluginInstance(std::move(instance), device, offlineRender);
+    return adaptExternalPluginInstance(std::move(instance), resolved.planDevice, offlineRender);
 }
 
 ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPluginInstance> instance,
@@ -216,58 +260,58 @@ ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPlugi
     // The model first, before anything is done with the instance. Everything
     // below restores from it, and it is a different object from the one the
     // load was requested with: seconds have passed.
-    const auto* device = currentDevice ? currentDevice() : nullptr;
+    const auto* device = currentDevice ? currentDevice(requested.deviceId) : nullptr;
+
+    const auto& requestedName = requested.displayName;
 
     if (device == nullptr)
         return {.device = {},
-                .failure = "the device was removed while \"" + requested.name + "\" was loading"};
+                .failure = "the device was removed while \"" + requestedName + "\" was loading"};
+
+    // This is the identity boundary. Scan metadata may have changed in every
+    // field while the plugin loaded, including the role the plan compiles from;
+    // those are facts learned about this assignment, not another assignment.
+    // A replacement DeviceInfo carries a newly authored generation even when
+    // it is another variant in the same bundle or has the same display name.
+    if (device->pluginAssignmentGeneration != requested.assignmentGeneration)
+        return {.device = {},
+                .failure = "the device changed plugin while \"" + requestedName + "\" was loading"};
 
     if (instance == nullptr)
         return {.device = {},
                 .failure = "external plugin \"" + device->name + "\" could not be loaded: " +
                            (error.isNotEmpty() ? error : "no reason given")};
 
-    // And it has to still be the same plugin. A device whose plugin was
-    // replaced while this one loaded is not waiting for this answer, and
-    // restoring onto it would put one plugin's saved patch on another.
-    //
-    // The model's identity on both sides. The scanned description's identifier
-    // carries the plugin's numeric uid and a device's saved fields do not, so
-    // comparing this against that would find every unchanged plugin changed and
-    // refuse every load there is.
-    if (!magda::savedPluginIdentity(*device).namesSamePluginAs(requested.identity))
-        return {.device = {},
-                .failure =
-                    "the device changed plugin while \"" + requested.name + "\" was loading"};
-
-    return adaptExternalPluginInstance(std::move(instance), *device, offlineRender);
+    auto resolvedDevice = *device;
+    applyInstalledRole(resolvedDevice, requested.resolvedIsInstrument);
+    return adaptExternalPluginInstance(std::move(instance), resolvedDevice, offlineRender);
 }
 
-void createEngineExternalDeviceAsync(const magda::DeviceInfo& device,
-                                     const ExternalPluginServices& services, bool offlineRender,
-                                     CurrentDeviceLookup currentDevice,
-                                     std::function<void(ExternalDeviceResult)> completed) {
+ExternalPluginResolution createEngineExternalDeviceAsync(
+    const magda::DeviceInfo& device, const ExternalPluginServices& services, bool offlineRender,
+    CurrentDeviceLookup currentDevice, std::function<void(ExternalDeviceResult)> completed) {
     jassert(completed != nullptr);
     jassert(currentDevice != nullptr);
 
-    const auto resolved = resolvePlugin(device, services);
+    auto resolved = resolveEngineExternalPlugin(device, services);
     if (resolved.failure.isNotEmpty()) {
         completed({.device = {}, .failure = resolved.failure});
-        return;
+        return resolved;
     }
 
-    // Nothing of the model is captured here. What the callback needs from it is
-    // read when the callback runs, because by then the project has had seconds
-    // to move on: see CurrentDeviceLookup.
     services.formats->createPluginInstanceAsync(
         resolved.description, services.context.sampleRate, services.context.maxBlockSize,
-        [requested = RequestedPlugin{.identity = magda::savedPluginIdentity(device),
-                                     .name = resolved.description.name},
+        [requested = RequestedPlugin{.deviceId = device.id,
+                                     .assignmentGeneration = device.pluginAssignmentGeneration,
+                                     .displayName = device.name,
+                                     .resolvedIsInstrument = resolved.description.isInstrument},
          currentDevice = std::move(currentDevice), offlineRender, completed = std::move(completed)](
             std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error) {
             completed(completeExternalPluginLoad(std::move(instance), error, requested,
                                                  currentDevice, offlineRender));
         });
+
+    return resolved;
 }
 
 }  // namespace magda::daw::audio::engine_adapter

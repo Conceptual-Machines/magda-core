@@ -4,6 +4,7 @@
 #include <set>
 
 #include "magda/daw/api/device_api_live.hpp"
+#include "magda/daw/core/DrumGridPads.hpp"
 #include "magda/daw/core/TrackCommands.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
@@ -74,6 +75,164 @@ TEST_CASE("Live device lookup rejects paths that address nothing", "[device-api]
     const auto missing = ChainNodePath::topLevelDevice(9999, 1);
     REQUIRE(devices.getDevice(missing) == nullptr);
     REQUIRE(devices.getDeviceParameters(missing).empty());
+}
+
+TEST_CASE("Each device added from a reusable template gets a fresh plugin assignment token",
+          "[device-api][inspection]") {
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Track");
+
+    DeviceInfo browserTemplate;
+    browserTemplate.name = "Reusable effect";
+    browserTemplate.pluginId = "template-effect";
+    const auto templateGeneration = browserTemplate.pluginAssignmentGeneration;
+
+    const auto firstId = tracks.addDeviceToTrack(trackId, browserTemplate);
+    const auto secondId = tracks.addDeviceToTrack(trackId, browserTemplate);
+    REQUIRE(firstId != INVALID_DEVICE_ID);
+    REQUIRE(secondId != INVALID_DEVICE_ID);
+
+    const auto* first = tracks.getDevice(trackId, firstId);
+    const auto* second = tracks.getDevice(trackId, secondId);
+    REQUIRE(first != nullptr);
+    REQUIRE(second != nullptr);
+    CHECK(first->pluginAssignmentGeneration != templateGeneration);
+    CHECK(second->pluginAssignmentGeneration != templateGeneration);
+    CHECK(first->pluginAssignmentGeneration != second->pluginAssignmentGeneration);
+}
+
+TEST_CASE("Devices sharing a DeviceId across sections still hold distinct assignment tokens",
+          "[device-api][inspection]") {
+    // The three sections keep independent DeviceId counters that all start at
+    // 1, so a top-level, a post-FX and a mixer-analysis device can carry the
+    // same bare id. The assignment token is what tells an arriving async load
+    // which of them it was asked for, and completeExternalPluginLoad accepts a
+    // matching (id, token) pair as proof the load is still wanted.
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Track");
+
+    DeviceInfo effect;
+    effect.name = "Reusable effect";
+    effect.pluginId = "template-effect";
+
+    const auto topLevelId = tracks.addDeviceToTrack(trackId, effect);
+    const auto postFxId = tracks.addDeviceToPostFx(trackId, effect);
+    REQUIRE(topLevelId != INVALID_DEVICE_ID);
+    REQUIRE(postFxId != INVALID_DEVICE_ID);
+
+    const auto* topLevel = tracks.getDevice(trackId, topLevelId);
+    REQUIRE(topLevel != nullptr);
+
+    const auto& postFx = tracks.getPostFxChainElements(trackId);
+    REQUIRE(postFx.size() == 1);
+
+    CHECK(postFx.front().device.pluginAssignmentGeneration != topLevel->pluginAssignmentGeneration);
+    CHECK(postFx.front().device.pluginAssignmentGeneration != effect.pluginAssignmentGeneration);
+}
+
+TEST_CASE("A mixer-analysis device gets its own assignment token", "[device-api][inspection]") {
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Track");
+
+    DeviceInfo analysis;
+    analysis.name = "Reusable analyser";
+    analysis.pluginId = "template-analyser";
+
+    REQUIRE(tracks.addDeviceToMixerAnalysis(trackId, analysis) != INVALID_DEVICE_ID);
+
+    const auto& elements = tracks.getMixerAnalysisElements(trackId);
+    REQUIRE(elements.size() == 1);
+    CHECK(elements.front().device.pluginAssignmentGeneration !=
+          analysis.pluginAssignmentGeneration);
+}
+
+TEST_CASE("A duplicated track's devices are distinct assignments from the originals",
+          "[device-api][inspection]") {
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Track");
+
+    DeviceInfo effect;
+    effect.name = "Reusable effect";
+    effect.pluginId = "template-effect";
+
+    const auto sourceId = tracks.addDeviceToTrack(trackId, effect);
+    REQUIRE(sourceId != INVALID_DEVICE_ID);
+    REQUIRE(tracks.addDeviceToPostFx(trackId, effect) != INVALID_DEVICE_ID);
+
+    const auto* source = tracks.getDevice(trackId, sourceId);
+    REQUIRE(source != nullptr);
+    const auto sourceGeneration = source->pluginAssignmentGeneration;
+    const auto sourcePostFxGeneration =
+        tracks.getPostFxChainElements(trackId).front().device.pluginAssignmentGeneration;
+
+    const auto copyId = tracks.duplicateTrack(trackId);
+    REQUIRE(copyId != INVALID_TRACK_ID);
+
+    // The copy runs its own plugin instances, and DeviceIds are handed out
+    // again after clearAllTracks(), so a shared token would let a load the
+    // original requested complete onto the copy.
+    const auto& copiedTopLevel = tracks.getChainElements(copyId);
+    REQUIRE_FALSE(copiedTopLevel.empty());
+    REQUIRE(magda::isDevice(copiedTopLevel.front()));
+    CHECK(magda::getDevice(copiedTopLevel.front()).pluginAssignmentGeneration != sourceGeneration);
+
+    const auto& copiedPostFx = tracks.getPostFxChainElements(copyId);
+    REQUIRE(copiedPostFx.size() == 1);
+    CHECK(copiedPostFx.front().device.pluginAssignmentGeneration != sourcePostFxGeneration);
+}
+
+TEST_CASE("A pad's nested rack is re-keyed along with the pad itself", "[device-api][inspection]") {
+    // Pads hold chain elements like any other chain, so a pre-populated Drum
+    // Grid can arrive with a rack inside a pad. A walk that stopped at the
+    // direct pad devices left everything under that rack carrying the source's
+    // DeviceIds -- keying the original's ops -- and its assignment tokens, so a
+    // late async load could complete onto the copy.
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Track");
+
+    DeviceInfo nested;
+    nested.name = "Nested effect";
+    nested.pluginId = "template-effect";
+    nested.id = 4242;
+    const auto nestedGeneration = nested.pluginAssignmentGeneration;
+
+    auto rack = std::make_unique<RackInfo>();
+    rack->id = 9911;
+    ChainInfo rackChain;
+    rackChain.id = 8811;
+    rackChain.elements.push_back(ChainElement{nested});
+    rack->chains.push_back(std::move(rackChain));
+
+    DeviceInfo grid;
+    grid.name = "Grid";
+    grid.pluginId = "drumgrid";
+    auto& pads = magda::ensurePads(grid);
+    magda::ensurePadChain(pads, 0).elements.push_back(ChainElement{std::move(rack)});
+
+    const auto gridId = tracks.addDeviceToTrack(trackId, grid);
+    REQUIRE(gridId != INVALID_DEVICE_ID);
+
+    const auto* live = tracks.getDevice(trackId, gridId);
+    REQUIRE(live != nullptr);
+    REQUIRE(static_cast<bool>(live->pads));
+    REQUIRE(live->pads->chains.size() == 1);
+
+    const auto& padElements = live->pads->chains.front().elements;
+    REQUIRE(padElements.size() == 1);
+    REQUIRE(magda::isRack(padElements.front()));
+
+    const auto& liveRack = magda::getRack(padElements.front());
+    CHECK(liveRack.id != 9911);
+    REQUIRE(liveRack.chains.size() == 1);
+    CHECK(liveRack.chains.front().id != 8811);
+
+    const auto& nestedElements = liveRack.chains.front().elements;
+    REQUIRE(nestedElements.size() == 1);
+    REQUIRE(magda::isDevice(nestedElements.front()));
+
+    const auto& liveNested = magda::getDevice(nestedElements.front());
+    CHECK(liveNested.id != 4242);
+    CHECK(liveNested.pluginAssignmentGeneration != nestedGeneration);
 }
 
 TEST_CASE("Device parameters are reported in real units", "[device-api][inspection]") {

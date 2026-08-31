@@ -558,6 +558,8 @@ MigrationResult migrateDevice(DeviceInfo& device) {
     if (retired == nullptr)
         return MigrationResult::NotRetired;
 
+    device.beginNewPluginAssignment();
+
     const auto converted = convertSlots(
         *retired, [&device](int legacyIndex) { return retiredValue(device, legacyIndex); });
 
