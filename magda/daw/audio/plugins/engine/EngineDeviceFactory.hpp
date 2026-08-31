@@ -9,8 +9,10 @@
 #include "core/DeviceInfo.hpp"
 #include "exec/EngineDevice.hpp"
 #include "exec/RenderContext.hpp"
+#include "plan/RenderPlan.hpp"
 #include "plugin_manager/ExternalPluginLookup.hpp"
 #include "plugin_manager/ExternalPluginState.hpp"
+#include "plugins/engine/PluginAssignments.hpp"
 
 /**
  * @file EngineDeviceFactory.hpp
@@ -217,24 +219,28 @@ ExternalDeviceResult createEngineExternalDevice(const magda::DeviceInfo& device,
  * So the model is read at completion rather than captured at request. Null
  * means the device is gone, and the load is abandoned rather than completed
  * against a project that no longer has it.
+ *
+ * Keyed on engine::DeviceKey, not on a bare DeviceId: DeviceId is allocated per
+ * section, so the main FX, post-FX and mixer-analysis sections can each hold the
+ * same integer and a bare one names up to three devices.
  */
-using CurrentDeviceLookup = std::function<const magda::DeviceInfo*(magda::DeviceId deviceId)>;
+using CurrentDeviceLookup = std::function<const magda::DeviceInfo*(magda::engine::DeviceKey)>;
 
 /**
  * @brief What an asynchronous load remembers about what it asked for.
  *
- * The device id and assignment generation are the stable question the loader
- * is answering. Saved plugin metadata is not: resolving a moved plugin or an
- * imported DAWproject legitimately corrects it before this request completes.
+ * The assignment is the stable question the loader is answering, and it is a
+ * weak reference to something the runtime owns rather than anything read off
+ * the model (PluginAssignments.hpp). Saved plugin metadata is not part of the
+ * question: resolving a moved plugin or an imported DAWproject legitimately
+ * corrects it before this request completes.
  *
- * Only the stable assignment token decides whether the answer is still wanted.
  * The display name makes an abandoned/failing request intelligible, and the
  * resolved role is the one installed fact completion still needs. The full
  * PluginDescription is deliberately not retained.
  */
 struct RequestedPlugin {
-    magda::DeviceId deviceId = magda::INVALID_DEVICE_ID;
-    std::uint64_t assignmentGeneration = 0;
+    LoadRequest assignment;
     juce::String displayName;
     bool resolvedIsInstrument = false;
 };
@@ -246,13 +252,21 @@ struct RequestedPlugin {
  * calls it directly. @p error is what the loader reported, used only when @p
  * instance is null.
  *
- * It resolves @p currentDevice by the captured id first. A device that has gone,
- * or whose assignment generation changed, is a load whose answer arrived too
- * late to be useful. Mutable plugin metadata is deliberately not compared.
+ * @p assignments is asked first, and it is the identity boundary: the load is
+ * completed only onto the assignment it was requested for. A device that was
+ * deleted, had its plugin replaced, was duplicated or pasted from, or whose id
+ * was handed out again after the project was cleared, no longer holds that
+ * assignment. Nor does one that was never registered, which is why a forgotten
+ * registration refuses the load instead of accepting it. Mutable plugin
+ * metadata is deliberately not compared.
+ *
+ * @p currentDevice then supplies the model to restore from, read now rather
+ * than captured when the load was requested.
  */
 ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPluginInstance> instance,
                                                 const juce::String& error,
                                                 const RequestedPlugin& requested,
+                                                const PluginAssignments& assignments,
                                                 const CurrentDeviceLookup& currentDevice,
                                                 bool offlineRender = false);
 
@@ -274,10 +288,18 @@ ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPlugi
  * The saved @p device is read once to work out which plugin to load.
  * @p currentDevice is read again at completion, to work out what to restore
  * onto it; see CurrentDeviceLookup for why those are two different questions.
+ *
+ * @p key says which live device this is being loaded for, and @p assignments is
+ * asked for the assignment that key holds now. It has to outlive the load,
+ * which it does by construction: it is owned by whatever runs the plugins, and
+ * a load with nothing to complete onto is a load nothing is waiting for. A key
+ * with no assignment yields a request that completion refuses.
  */
 ExternalPluginResolution createEngineExternalDeviceAsync(
-    const magda::DeviceInfo& device, const ExternalPluginServices& services, bool offlineRender,
-    CurrentDeviceLookup currentDevice, std::function<void(ExternalDeviceResult)> completed);
+    const magda::DeviceInfo& device, magda::engine::DeviceKey key,
+    const ExternalPluginServices& services, bool offlineRender,
+    const PluginAssignments& assignments, CurrentDeviceLookup currentDevice,
+    std::function<void(ExternalDeviceResult)> completed);
 
 /**
  * @brief Whether the scan knows the plugin @p device names.

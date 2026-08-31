@@ -226,7 +226,6 @@ DeviceInfo deviceFromNode(const ds::Node& node) {
     // the only reason it had to read a nested plugin tree at all (#2207).
     if (const auto successor = legacy_devices::retiredDeviceSuccessor(savedType);
         successor.isNotEmpty()) {
-        device.beginNewPluginAssignment();
         for (const auto& slot :
              legacy_devices::convertRetiredDeviceState(savedType, [&node](const char* property) {
                  return node.props[juce::Identifier(property)];

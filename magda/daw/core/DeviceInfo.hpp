@@ -2,7 +2,6 @@
 
 #include <juce_core/juce_core.h>
 
-#include <cstdint>
 #include <memory>
 #include <optional>
 
@@ -15,18 +14,6 @@
 namespace magda {
 
 struct RackInfo;
-
-/**
- * @brief A process-local serial number for a newly authored plugin assignment.
- *
- * This is deliberately not project data. A project load authors fresh live
- * assignments, while copies of those DeviceInfo values carry the same number.
- * The distinction is what an asynchronous plugin load needs: metadata and
- * state edits copy or mutate the current assignment, while replacing a slot
- * with a newly constructed DeviceInfo carries a different number even when
- * both plugins have ambiguous or temporarily incomplete saved metadata.
- */
-std::uint64_t nextPluginAssignmentGeneration();
 
 /**
  * @brief Value-semantic owner for a device's pad chains.
@@ -208,22 +195,12 @@ struct MeterInfo {
 struct DeviceInfo {
     DeviceId id = INVALID_DEVICE_ID;
 
-    // Runtime identity of the plugin assignment in this slot. Copies preserve
-    // it; a newly constructed replacement gets another monotonically increasing
-    // value. Scan enrichment, parameter edits and preset restores must not
-    // change it. Transient by design: serializers neither read nor write it.
-    std::uint64_t pluginAssignmentGeneration = nextPluginAssignmentGeneration();
-
-    /**
-     * Mark this slot as asking for a different plugin.
-     *
-     * Copies deliberately keep their token, because most copies are snapshots
-     * of the same assignment. Every path that authors a replacement from a
-     * copy or mutates plugin identity in place must come through here.
-     */
-    void beginNewPluginAssignment() {
-        pluginAssignmentGeneration = nextPluginAssignmentGeneration();
-    }
+    // No runtime lifetime identity lives here. Which live assignment a slot
+    // holds is owned by the runtime that runs the plugins, and is a handle
+    // rather than a value (PluginAssignments.hpp): a value type cannot tell a
+    // snapshot from an undo record from a browser template from a duplicate
+    // from a new live placement, because every one of those is the same copy
+    // (#2261).
 
     juce::String name;  // Display name (e.g., "Pro-Q 3")
 

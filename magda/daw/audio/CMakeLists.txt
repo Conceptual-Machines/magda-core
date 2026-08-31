@@ -309,6 +309,8 @@ set(_magda_engine_device_adapter_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineExternalDevice.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineMagdaDevice.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineMagdaDevice.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/PluginAssignments.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/PluginAssignments.hpp"
 )
 list(REMOVE_ITEM _magda_device_pack_sources ${_magda_engine_device_adapter_sources})
 

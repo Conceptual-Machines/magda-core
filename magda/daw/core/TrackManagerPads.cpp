@@ -112,7 +112,7 @@ DeviceId TrackManager::addDeviceToPad(const ChainNodePath& gridPath, ChainId pad
         track != nullptr && !track->canHostInstrument() && device.isInstrument)
         return INVALID_DEVICE_ID;
 
-    auto newDevice = prepareNewDevice(device);
+    auto newDevice = prepareNewDevice(gridPath.trackId, device);
     const auto devicePath = padChainPath(gridPath, padChainId).withDevice(newDevice.id);
     seedSidechainModIfMissing(newDevice, devicePath);
 

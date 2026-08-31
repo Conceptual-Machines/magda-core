@@ -255,27 +255,38 @@ ExternalDeviceResult createEngineExternalDevice(const magda::DeviceInfo& device,
 ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPluginInstance> instance,
                                                 const juce::String& error,
                                                 const RequestedPlugin& requested,
+                                                const PluginAssignments& assignments,
                                                 const CurrentDeviceLookup& currentDevice,
                                                 bool offlineRender) {
-    // The model first, before anything is done with the instance. Everything
+    const auto& requestedName = requested.displayName;
+
+    // The identity boundary, and the first thing asked. Scan metadata may have
+    // changed in every field while the plugin loaded, including the role the
+    // plan compiles from; those are facts learned about this assignment, not
+    // about another one, so none of them is consulted here. What decides is
+    // whether the runtime still holds the very assignment the load was started
+    // against, which no copy of the model can carry and no unregistered device
+    // can claim.
+    if (!assignments.accepts(requested.assignment)) {
+        // Which of the two it was, for a person reading the log: a key nothing
+        // holds any more is a device that went away, and a key held under a
+        // different assignment is a slot that is now asking for something else.
+        const auto replaced = static_cast<bool>(assignments.current(requested.assignment.key));
+        return {.device = {},
+                .failure =
+                    replaced
+                        ? "the device changed plugin while \"" + requestedName + "\" was loading"
+                        : "the device was removed while \"" + requestedName + "\" was loading"};
+    }
+
+    // Then the model, before anything is done with the instance. Everything
     // below restores from it, and it is a different object from the one the
     // load was requested with: seconds have passed.
-    const auto* device = currentDevice ? currentDevice(requested.deviceId) : nullptr;
-
-    const auto& requestedName = requested.displayName;
+    const auto* device = currentDevice ? currentDevice(requested.assignment.key) : nullptr;
 
     if (device == nullptr)
         return {.device = {},
                 .failure = "the device was removed while \"" + requestedName + "\" was loading"};
-
-    // This is the identity boundary. Scan metadata may have changed in every
-    // field while the plugin loaded, including the role the plan compiles from;
-    // those are facts learned about this assignment, not another assignment.
-    // A replacement DeviceInfo carries a newly authored generation even when
-    // it is another variant in the same bundle or has the same display name.
-    if (device->pluginAssignmentGeneration != requested.assignmentGeneration)
-        return {.device = {},
-                .failure = "the device changed plugin while \"" + requestedName + "\" was loading"};
 
     if (instance == nullptr)
         return {.device = {},
@@ -288,8 +299,10 @@ ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPlugi
 }
 
 ExternalPluginResolution createEngineExternalDeviceAsync(
-    const magda::DeviceInfo& device, const ExternalPluginServices& services, bool offlineRender,
-    CurrentDeviceLookup currentDevice, std::function<void(ExternalDeviceResult)> completed) {
+    const magda::DeviceInfo& device, magda::engine::DeviceKey key,
+    const ExternalPluginServices& services, bool offlineRender,
+    const PluginAssignments& assignments, CurrentDeviceLookup currentDevice,
+    std::function<void(ExternalDeviceResult)> completed) {
     jassert(completed != nullptr);
     jassert(currentDevice != nullptr);
 
@@ -301,13 +314,13 @@ ExternalPluginResolution createEngineExternalDeviceAsync(
 
     services.formats->createPluginInstanceAsync(
         resolved.description, services.context.sampleRate, services.context.maxBlockSize,
-        [requested = RequestedPlugin{.deviceId = device.id,
-                                     .assignmentGeneration = device.pluginAssignmentGeneration,
+        [requested = RequestedPlugin{.assignment = assignments.request(key),
                                      .displayName = device.name,
                                      .resolvedIsInstrument = resolved.description.isInstrument},
-         currentDevice = std::move(currentDevice), offlineRender, completed = std::move(completed)](
-            std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error) {
-            completed(completeExternalPluginLoad(std::move(instance), error, requested,
+         &assignments, currentDevice = std::move(currentDevice), offlineRender,
+         completed = std::move(completed)](std::unique_ptr<juce::AudioPluginInstance> instance,
+                                           const juce::String& error) {
+            completed(completeExternalPluginLoad(std::move(instance), error, requested, assignments,
                                                  currentDevice, offlineRender));
         });
 

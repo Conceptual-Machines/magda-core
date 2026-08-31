@@ -539,21 +539,26 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     static void seedSidechainModIfMissing(DeviceInfo& dev, const ChainNodePath& devicePath);
 
     // Common prep for the FX-chain and rack-chain add paths: assign a fresh
-    // DeviceId from nextFxDeviceId_, stamp the default kit, and tag analysis
-    // devices. Returns the prepared copy; callers insert it, then fire
-    // notifyDeviceAdded. Centralised so these steps can't drift per call site.
-    // Post-fx and mixer-analysis keep their own ID spaces (nextPostFxDeviceId_,
-    // nextMixerAnalysisDeviceId_) and so do their own prep.
-    DeviceInfo prepareNewDevice(const DeviceInfo& device);
+    // DeviceId from nextFxDeviceId_, re-key and retarget its pads, stamp the
+    // default kit, and tag analysis devices. Returns the prepared copy; callers
+    // insert it into @p trackId, then fire notifyDeviceAdded. Centralised so
+    // these steps can't drift per call site. Post-fx and mixer-analysis keep
+    // their own ID spaces (nextPostFxDeviceId_, nextMixerAnalysisDeviceId_) and
+    // so do their own prep.
+    //
+    // The track is taken because a pad path is rooted at one: a link inside a
+    // Drum Grid's pads names the track the grid is on, and the copy is about to
+    // be on a different one.
+    DeviceInfo prepareNewDevice(TrackId trackId, const DeviceInfo& device);
 
     // Re-derive a pad-per-chain device's rack id and re-key its pad devices,
     // for a copy that arrived carrying the ids of the device it came from.
     // Both ids are DeviceIds in disguise, so a copy that kept them would key
     // the original's ops (#2207). A pad's contents are chain elements like any
     // other, nested racks included, so the whole subtree is re-keyed rather
-    // than the direct pad devices alone. `remap`, when given, collects the
-    // old-to-new ids so a caller that also rewrites paths can follow them.
-    void rekeyPads(DeviceInfo& device, ChainIdRemap* remap = nullptr);
+    // than the direct pad devices alone. `remap` collects the old-to-new ids so
+    // the caller can follow the paths that named them.
+    void rekeyPads(DeviceInfo& device, ChainIdRemap& remap);
 
     // The pad chain answering to a pad, mutable. Private because a pad property
     // is set through the setters above, which notify.
