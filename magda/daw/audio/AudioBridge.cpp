@@ -15,6 +15,7 @@
 #include "DeviceParameterDisplayTextProvider.hpp"
 #include "Vst3Preset.hpp"
 #include "modifiers/ADSRDebugLog.hpp"
+#include "plugin_manager/ExternalPluginState.hpp"
 #include "plugins/DeviceServices.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MidiInThruSync.hpp"
@@ -792,25 +793,6 @@ te::ExternalPlugin* asExternalPlugin(te::Plugin::Ptr plugin) {
     return dynamic_cast<te::ExternalPlugin*>(plugin.get());
 }
 
-// Loads / saves a .vstpreset blob via JUCE's VST3Client extension. Two-mode
-// visitor: when `dataIn` is non-empty we apply it as a preset; otherwise we
-// pull the current state into `dataOut`.
-struct Vst3PresetVisitor : juce::ExtensionsVisitor {
-    juce::MemoryBlock dataIn;
-    juce::MemoryBlock dataOut;
-    bool ok = false;
-    bool save = false;
-
-    void visitVST3Client(const VST3Client& client) override {
-        if (save) {
-            dataOut = client.getPreset();
-            ok = dataOut.getSize() > 0;
-        } else {
-            ok = client.setPreset(dataIn);
-        }
-    }
-};
-
 }  // namespace
 
 juce::String AudioBridge::getVst3DeviceId(const ChainNodePath& devicePath) const {
@@ -821,13 +803,8 @@ juce::String AudioBridge::getVst3DeviceId(const ChainNodePath& devicePath) const
     if (pi == nullptr)
         return {};
     // Pull the current state as a .vstpreset; its header carries the 32-char
-    // class id. Visitor stays empty for non-VST3 plugins.
-    Vst3PresetVisitor visitor;
-    visitor.save = true;
-    pi->getExtensions(visitor);
-    if (!visitor.ok)
-        return {};  // not a VST3 plugin
-    return vst3::classIdFromPreset(visitor.dataOut);
+    // class id. Empty for a plugin that is not a VST3.
+    return vst3::classIdFromPreset(readVst3Preset(*pi));
 }
 
 int AudioBridge::getPluginNumPrograms(const ChainNodePath& devicePath) const {
@@ -884,11 +861,7 @@ bool AudioBridge::loadPluginPresetFile(const ChainNodePath& devicePath,
         juce::MemoryBlock raw;
         if (!presetFile.loadFileAsData(raw))
             return false;
-        Vst3PresetVisitor visitor;
-        visitor.save = false;
-        visitor.dataIn = std::move(raw);
-        pi->getExtensions(visitor);
-        applied = visitor.ok;
+        applied = writeVst3Preset(*pi, raw);
     } else if (extension == ".aupreset") {
         juce::MemoryBlock raw;
         if (!presetFile.loadFileAsData(raw))
@@ -913,13 +886,11 @@ bool AudioBridge::savePluginPresetFile(const ChainNodePath& devicePath,
     const auto extension = presetFile.getFileExtension().toLowerCase();
 
     if (extension == ".vstpreset") {
-        Vst3PresetVisitor visitor;
-        visitor.save = true;
-        pi->getExtensions(visitor);
-        if (!visitor.ok)
-            return false;
+        const auto preset = readVst3Preset(*pi);
+        if (preset.getSize() == 0)
+            return false;  // not a VST3 plugin
         presetFile.getParentDirectory().createDirectory();
-        return presetFile.replaceWithData(visitor.dataOut.getData(), visitor.dataOut.getSize());
+        return presetFile.replaceWithData(preset.getData(), preset.getSize());
     }
 
     if (extension == ".aupreset") {

@@ -13,7 +13,7 @@
 #include "../PluginWindowBridge.hpp"
 #include "../TrackController.hpp"
 #include "../TracktionHelpers.hpp"
-#include "../Vst3Preset.hpp"
+#include "ExternalPluginState.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
 #include "modifiers/ModifierSync.hpp"
@@ -137,30 +137,15 @@ void collectValidDevicePaths(const TrackInfo& track, std::set<ChainNodePath>& va
 
 // Capture the VST3 .vstpreset for a device: the class id (stable, cached once)
 // and the current preset blob (refreshed each capture, since the patch changes).
-// One getPreset() call yields both - the class id lives in the preset header.
-// These feed the portable DAWproject deviceID + <State>.
+// These feed the portable DAWproject deviceID + <State>. What they are and how
+// they are read is the same under either engine, so it is stated once
+// (ExternalPluginState.hpp) and this is the incumbent's way in.
 void captureVst3Info(DeviceInfo& devInfo, te::ExternalPlugin* ext) {
     if (ext == nullptr)
         return;
-    auto* pi = ext->getAudioPluginInstance();
-    if (pi == nullptr)
-        return;
 
-    struct PresetVisitor : juce::ExtensionsVisitor {
-        juce::MemoryBlock data;
-        void visitVST3Client(const VST3Client& client) override {
-            data = client.getPreset();
-        }
-    };
-    PresetVisitor visitor;
-    pi->getExtensions(visitor);
-
-    const auto& preset = visitor.data;
-    if (preset.getSize() == 0)
-        return;  // not a VST3 / no preset
-    if (devInfo.vst3ClassId.isEmpty())
-        devInfo.vst3ClassId = vst3::classIdFromPreset(preset);
-    devInfo.vst3Preset = juce::Base64::toBase64(preset.getData(), preset.getSize());
+    if (auto* pi = ext->getAudioPluginInstance())
+        captureVst3Records(*pi, devInfo);
 }
 
 }  // namespace

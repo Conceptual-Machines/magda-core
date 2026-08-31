@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "../Vst3Preset.hpp"
 #include "core/ParameterUtils.hpp"
 
 namespace magda {
@@ -25,6 +26,26 @@ const ParameterInfo* modelParameterAt(const DeviceInfo& device, int index) {
     return nullptr;
 }
 
+/// One visit to the VST3 extension, in whichever direction was asked for. The
+/// extension is the only way to ask an instance whether it is a VST3 at all:
+/// visitVST3Client() is called for one and nothing is called for anything else,
+/// so `visited` is the answer to both questions at once.
+struct Vst3PresetVisitor final : juce::ExtensionsVisitor {
+    juce::MemoryBlock preset;
+    bool writing = false;
+    bool visited = false;
+    bool accepted = false;
+
+    void visitVST3Client(const VST3Client& client) override {
+        visited = true;
+
+        if (writing)
+            accepted = client.setPreset(preset);
+        else
+            preset = client.getPreset();
+    }
+};
+
 /// The saved chunk, decoded. Empty for a device that saved none and for a
 /// string that is not base64, which is what a project truncated by a failed
 /// write looks like.
@@ -38,6 +59,18 @@ juce::MemoryBlock decodeSavedChunk(const juce::String& savedState) {
         chunk.reset();
 
     return chunk;
+}
+
+/// The saved .vstpreset, decoded. Standard base64 rather than
+/// juce::MemoryBlock's own, because this one crosses between hosts and the
+/// DAWproject writer that produced it used the standard one.
+juce::MemoryBlock decodeSavedPreset(const juce::String& savedPreset) {
+    juce::MemoryOutputStream decoded;
+
+    if (savedPreset.isEmpty() || !juce::Base64::convertFromBase64(decoded, savedPreset))
+        return {};
+
+    return decoded.getMemoryBlock();
 }
 
 }  // namespace
@@ -77,16 +110,21 @@ SavedStateOutcome applySavedPluginState(juce::AudioPluginInstance& instance,
             std::clamp(ParameterUtils::realToNormalized(info->currentValue, *info), 0.0f, 1.0f));
     }
 
+    // The portable preset is asked first, because a project only carries one
+    // until the load that consumes it: an import has a .vstpreset and no chunk,
+    // and everything saved afterwards has a chunk and no preset. A plugin that
+    // refuses it -- a VST3 that will not take that patch, or a format with no
+    // preset call at all -- falls through to the chunk rather than being left on
+    // the bare array, which is the only place the project's own record is.
+    if (const auto preset = decodeSavedPreset(device.vst3Preset); preset.getSize() > 0) {
+        if (writeVst3Preset(instance, preset))
+            return SavedStateOutcome::RestoredFromPreset;
+    }
+
     const auto chunk = decodeSavedChunk(device.pluginState);
     if (chunk.getSize() == 0)
         return SavedStateOutcome::Baseline;
 
-    // DeviceInfo::vst3Preset is deliberately not applied here. It is the
-    // portable .vstpreset a DAWproject carries, applied once on import and
-    // cleared, and its own field comment says what this relies on: interchange
-    // only, native state is pluginState. When the native engine grows an import
-    // path of its own (#2244) it belongs in this function beside the chunk,
-    // rather than in whichever engine happens to be loading the project.
     try {
         instance.setStateInformation(chunk.getData(), static_cast<int>(chunk.getSize()));
     } catch (...) {
@@ -121,6 +159,79 @@ void applyRestoredParameters(DeviceInfo& device, const std::vector<RestoredParam
                 if (info.paramIndex == parameter.paramIndex)
                     info.currentValue = ParameterUtils::normalizedToReal(
                         parameter.value, ParameterUtils::domainOf(info));
+}
+
+juce::MemoryBlock readVst3Preset(const juce::AudioPluginInstance& instance) {
+    Vst3PresetVisitor visitor;
+
+    try {
+        instance.getExtensions(visitor);
+    } catch (...) {
+        return {};
+    }
+
+    return visitor.preset;
+}
+
+bool writeVst3Preset(juce::AudioPluginInstance& instance, const juce::MemoryBlock& preset) {
+    if (preset.getSize() == 0)
+        return false;
+
+    Vst3PresetVisitor visitor;
+    visitor.writing = true;
+    visitor.preset = preset;
+
+    try {
+        instance.getExtensions(visitor);
+    } catch (...) {
+        return false;
+    }
+
+    return visitor.accepted;
+}
+
+void captureVst3Records(const juce::AudioPluginInstance& instance, DeviceInfo& device) {
+    const auto preset = readVst3Preset(instance);
+    if (preset.getSize() == 0)
+        return;
+
+    if (device.vst3ClassId.isEmpty())
+        device.vst3ClassId = vst3::classIdFromPreset(preset);
+
+    device.vst3Preset = juce::Base64::toBase64(preset.getData(), preset.getSize());
+}
+
+bool captureSavedPluginState(juce::AudioPluginInstance& instance, DeviceInfo& device) {
+    juce::MemoryBlock chunk;
+
+    // Suspended across the read, the way the fork suspends it
+    // (ExternalPlugin::flushPluginStateToValueTree). Restored either way: a
+    // plugin left suspended by its own throw would render silence for the rest
+    // of the session.
+    instance.suspendProcessing(true);
+
+    bool described = true;
+    try {
+        instance.getStateInformation(chunk);
+    } catch (...) {
+        described = false;
+    }
+
+    instance.suspendProcessing(false);
+
+    if (!described)
+        return false;
+
+    // Absent rather than empty for a plugin with nothing to say, which is what
+    // the fork writes for one: it removes the property rather than storing a
+    // zero-length chunk, and a project that stored one would come back through
+    // decodeSavedChunk() as a baseline anyway.
+    device.pluginState = chunk.getSize() > 0 ? chunk.toBase64Encoding() : juce::String();
+
+    applyRestoredParameters(device, snapshotHostParameters(instance));
+    captureVst3Records(instance, device);
+
+    return true;
 }
 
 }  // namespace magda

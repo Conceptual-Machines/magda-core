@@ -11,6 +11,7 @@
 
 #include "core/ParameterInfo.hpp"
 #include "exec/EngineDevice.hpp"
+#include "magda/daw/audio/Vst3Preset.hpp"
 #include "magda/daw/audio/plugin_manager/ExternalPluginLookup.hpp"
 #include "magda/daw/audio/plugin_manager/ExternalPluginState.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
@@ -81,6 +82,30 @@ class StubParameter final : public juce::AudioProcessorParameterWithID {
   private:
     float value_ = 0.0f;
 };
+
+/// The class id a stub VST3's preset header carries, which is the identity
+/// another host matches on and the one thing MAGDA reads out of the header.
+constexpr const char* kStubVst3ClassId = "0123456789ABCDEF0123456789ABCDEF";
+
+/// A .vstpreset-shaped block: Steinberg's header, then @p bytes of payload.
+///
+/// The header is what makes this a preset rather than a chunk -- the magic, the
+/// class id at offset eight, the chunk-list offset at forty -- and a stub that
+/// skipped it would let a bug that reads the wrong offset pass.
+juce::MemoryBlock vst3PresetOf(const void* payload, size_t bytes) {
+    constexpr size_t kHeaderBytes = 48;
+
+    juce::MemoryBlock preset;
+    preset.setSize(kHeaderBytes, true);
+
+    auto* header = static_cast<char*>(preset.getData());
+    std::memcpy(header, "VST3", 4);
+    std::memcpy(header + magda::vst3::kVst3PresetClassIdOffset, kStubVst3ClassId,
+                magda::vst3::kVst3PresetClassIdLength);
+
+    preset.append(payload, bytes);
+    return preset;
+}
 
 /**
  * @brief A plugin that reports what it was handed and marks what it wrote.
@@ -224,6 +249,14 @@ class StubPlugin final : public juce::AudioPluginInstance {
     };
 
     void getStateInformation(juce::MemoryBlock& destination) override {
+        if (throwsSavingState)
+            throw std::runtime_error("plugin state handler failed");
+
+        // A plugin whose whole voice is its parameters has nothing to add, and
+        // plenty of real ones are like that.
+        if (savesNothing)
+            return;
+
         const State state{.tone = tone->getValue(), .fixed = fixed->getValue()};
         destination.replaceAll(&state, sizeof(state));
     }
@@ -259,6 +292,41 @@ class StubPlugin final : public juce::AudioPluginInstance {
         }
     }
 
+    /**
+     * @brief The stub as a VST3, for the one record that is not a chunk.
+     *
+     * A portable .vstpreset is reached through the format's own client rather
+     * than through setStateInformation, and whether an instance answers this
+     * visit at all is the only way a host can ask whether it is a VST3. So the
+     * stub answers it or does not, and a test picks which.
+     *
+     * The patch it carries is the same State the chunk carries, behind a real
+     * preset header: what is being asserted is which door the host went
+     * through, not that two serialisations differ.
+     */
+    struct Vst3Extension final : juce::ExtensionsVisitor::VST3Client {
+        explicit Vst3Extension(const StubPlugin& owner) : plugin(owner) {}
+
+        Steinberg::Vst::IComponent* getIComponentPtr() const noexcept override {
+            return nullptr;
+        }
+
+        juce::MemoryBlock getPreset() const override;
+        bool setPreset(const juce::MemoryBlock& data) const override;
+
+        const StubPlugin& plugin;
+    };
+
+    void getExtensions(juce::ExtensionsVisitor& visitor) const override {
+        // Nothing is visited for a plugin of another format, which is how the
+        // host tells a VST3 from an AU without being told.
+        if (!isVst3)
+            return;
+
+        const Vst3Extension client(*this);
+        visitor.visitVST3Client(client);
+    }
+
     /// The per-channel offset the output carries, so a test can name which of
     /// the plugin's channels it is reading.
     static constexpr float kChannelMarker = 0.01f;
@@ -285,6 +353,23 @@ class StubPlugin final : public juce::AudioPluginInstance {
     /// And some get part of the way through first.
     bool mutatesBeforeThrowing = false;
 
+    /// And some throw describing themselves rather than reading a description.
+    bool throwsSavingState = false;
+
+    /// And some have nothing beyond their parameters to describe.
+    bool savesNothing = false;
+
+    /// Whether this stub is a VST3 at all (see getExtensions).
+    bool isVst3 = false;
+
+    /// Whether its VST3 client takes the preset it is handed. A real one
+    /// refuses a patch that was written for a different plugin.
+    bool acceptsPreset = true;
+
+    /// How many presets reached it, which is how a test tells the portable
+    /// record's door from the chunk's.
+    mutable int presetApplies = 0;
+
     double preparedRate = 0.0;
     int preparedBlockSize = 0;
     int prepareCount = 0;
@@ -296,6 +381,27 @@ class StubPlugin final : public juce::AudioPluginInstance {
     juce::MidiBuffer midiSeen;
     juce::AudioPlayHead::PositionInfo positionSeen;
 };
+
+juce::MemoryBlock StubPlugin::Vst3Extension::getPreset() const {
+    const State state{.tone = plugin.tone->getValue(), .fixed = plugin.fixed->getValue()};
+    return vst3PresetOf(&state, sizeof(state));
+}
+
+bool StubPlugin::Vst3Extension::setPreset(const juce::MemoryBlock& data) const {
+    if (!plugin.acceptsPreset)
+        return false;
+
+    constexpr size_t kHeaderBytes = 48;
+    if (data.getSize() != kHeaderBytes + sizeof(State))
+        return false;
+
+    State state{};
+    std::memcpy(&state, static_cast<const char*>(data.getData()) + kHeaderBytes, sizeof(state));
+    plugin.tone->setValue(state.tone);
+    plugin.fixed->setValue(state.fixed);
+    ++plugin.presetApplies;
+    return true;
+}
 
 /// A real AudioPluginFormat seam for the asynchronous factory test. The
 /// format manager still performs its normal lookup and message-thread delivery;
@@ -1407,6 +1513,270 @@ TEST_CASE("Saved state that is not a chunk this plugin understands is refused",
     REQUIRE(result.device != nullptr);
     CHECK(raw->stateRestores == 0);
     CHECK(raw->fixed->getValue() == Catch::Approx(0.0f));
+}
+
+// ============================================================================
+// The portable record: a .vstpreset a project was imported with (#2244)
+// ============================================================================
+
+TEST_CASE("An imported project's .vstpreset is the overlay", "[engine][external]") {
+    // A DAWproject carries a VST3's patch as a .vstpreset, because no other
+    // host has MAGDA's chunk format. The device it lands on therefore has a
+    // portable record and no native one, and a load that only knew about chunks
+    // would render the plugin's initialised voice.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->isVst3 = true;
+
+    const StubPlugin::State imported{.tone = 0.9f, .fixed = 0.8f};
+    const auto preset = vst3PresetOf(&imported, sizeof(imported));
+
+    auto model = externalDevice();
+    model.vst3Preset = juce::Base64::toBase64(preset.getData(), preset.getSize());
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    // Through the format's own door, not the chunk's.
+    CHECK(raw->presetApplies == 1);
+    CHECK(raw->stateRestores == 0);
+    CHECK(raw->fixed->getValue() == Catch::Approx(0.8f));
+}
+
+TEST_CASE("An applied preset is spent rather than kept", "[engine][external]") {
+    // The patch is the instance's now, and the next save writes it out as a
+    // chunk. A project that kept the preset would apply it again on the load
+    // after that, over whatever had been saved in between.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    plugin->isVst3 = true;
+
+    const StubPlugin::State imported{.tone = 0.9f, .fixed = 0.8f};
+    const auto preset = vst3PresetOf(&imported, sizeof(imported));
+
+    auto model = externalDevice();
+    model.vst3Preset = juce::Base64::toBase64(preset.getData(), preset.getSize());
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+    REQUIRE(result.resolvedDevice.has_value());
+    CHECK(result.resolvedDevice->vst3Preset.isEmpty());
+
+    // And the model the caller was handed is the only thing that changed: a
+    // load that never got published leaves the project holding its preset.
+    CHECK(model.vst3Preset.isNotEmpty());
+}
+
+TEST_CASE("A preset the plugin refuses falls through to the chunk", "[engine][external]") {
+    // A patch written for another plugin, handed to this one. The project's own
+    // native record is right there and is the only thing that describes this
+    // device, so refusing the preset must not also discard it.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->isVst3 = true;
+    raw->acceptsPreset = false;
+
+    const StubPlugin::State imported{.tone = 0.9f, .fixed = 0.8f};
+    const auto preset = vst3PresetOf(&imported, sizeof(imported));
+
+    const StubPlugin::State saved{.tone = 0.3f, .fixed = 0.2f};
+    juce::MemoryBlock chunk(&saved, sizeof(saved));
+
+    auto model = externalDevice();
+    model.vst3Preset = juce::Base64::toBase64(preset.getData(), preset.getSize());
+    model.pluginState = chunk.toBase64Encoding();
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    CHECK(raw->presetApplies == 0);
+    CHECK(raw->stateRestores == 1);
+    CHECK(raw->fixed->getValue() == Catch::Approx(0.2f));
+
+    // Nothing was consumed, so the project keeps the preset for a machine whose
+    // copy of the plugin does take it.
+    REQUIRE(result.resolvedDevice.has_value());
+    CHECK(result.resolvedDevice->vst3Preset.isNotEmpty());
+}
+
+TEST_CASE("A plugin that is not a VST3 never sees a preset", "[engine][external]") {
+    // Format is not something a host reads off a description here: an instance
+    // either answers the VST3 extension or it does not, and one that does not
+    // has only the chunk.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->isVst3 = false;
+
+    const StubPlugin::State imported{.tone = 0.9f, .fixed = 0.8f};
+    const auto preset = vst3PresetOf(&imported, sizeof(imported));
+
+    auto model = externalDeviceSaving(1.0f, 0.7f);
+    model.vst3Preset = juce::Base64::toBase64(preset.getData(), preset.getSize());
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    CHECK(raw->presetApplies == 0);
+    CHECK(raw->stateRestores == 0);
+    CHECK(raw->tone->getValue() == Catch::Approx(0.7f));  // the array, and nothing over it
+}
+
+// ============================================================================
+// Saving: what a project keeps about a plugin the native engine holds (#2244)
+// ============================================================================
+
+TEST_CASE("A save writes the chunk the incumbent would have written", "[engine][external][state]") {
+    // The round trip that matters during the dual-engine release: a project
+    // saved while the native engine held the instance has to open under the
+    // fork, which means the same base64 in the same field.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->tone->setValue(0.9f);
+    raw->fixed->setValue(0.8f);
+
+    auto model = externalDevice();
+    REQUIRE(magda::captureSavedPluginState(*raw, model));
+
+    // What the fork writes for the same instance: getStateInformation, in
+    // juce::MemoryBlock's own base64.
+    juce::MemoryBlock expected;
+    raw->getStateInformation(expected);
+    CHECK(model.pluginState == expected.toBase64Encoding());
+
+    // And a second instance restored from it holds what the first one held,
+    // including the parameter no host may automate.
+    auto reopened = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* reopenedRaw = reopened.get();
+    const auto result = adapter::adaptExternalPluginInstance(std::move(reopened), model);
+    REQUIRE(result.device != nullptr);
+    CHECK(reopenedRaw->tone->getValue() == Catch::Approx(0.9f));
+    CHECK(reopenedRaw->fixed->getValue() == Catch::Approx(0.8f));
+}
+
+TEST_CASE("A save writes the parameter array beside the chunk", "[engine][external][state]") {
+    // The two records have to agree. The array is the baseline the chunk
+    // overlays on the next load, and it is also what the UI draws and what
+    // automation addresses, so a save that only wrote the chunk would leave the
+    // project describing the voice before the last knob move.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->gain->setValue(0.6f);
+    raw->tone->setValue(0.9f);
+
+    auto model = externalDeviceSaving(0.1f, 0.2f);
+    REQUIRE(magda::captureSavedPluginState(*raw, model));
+
+    CHECK(model.parameters[0].currentValue == Catch::Approx(0.6f));
+    CHECK(model.parameters[1].currentValue == Catch::Approx(0.9f));
+}
+
+TEST_CASE("A plugin with nothing to say saves no chunk at all", "[engine][external][state]") {
+    // The fork removes the property rather than storing a zero-length chunk,
+    // and a project that stored one would come back as a baseline anyway. What
+    // matters is that a previous save's chunk does not survive the plugin
+    // ceasing to have one.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->savesNothing = true;
+
+    auto model = externalDevice();
+    model.pluginState = "some earlier chunk";
+
+    REQUIRE(magda::captureSavedPluginState(*raw, model));
+    CHECK(model.pluginState.isEmpty());
+}
+
+TEST_CASE("A plugin that throws describing itself leaves the last good save",
+          "[engine][external][state]") {
+    // Neither record may be written on its own: the array is the baseline the
+    // chunk overlays, and a fresh array under a stale chunk restores the stale
+    // voice and calls it the project's. So a save that cannot write both writes
+    // neither.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->gain->setValue(0.6f);
+    raw->throwsSavingState = true;
+
+    auto model = externalDeviceSaving(0.1f, 0.2f);
+    model.pluginState = "the last chunk that saved cleanly";
+
+    CHECK_FALSE(magda::captureSavedPluginState(*raw, model));
+    CHECK(model.pluginState == "the last chunk that saved cleanly");
+    CHECK(model.parameters[0].currentValue == Catch::Approx(0.1f));
+}
+
+TEST_CASE("A save is not left holding the plugin suspended", "[engine][external][state]") {
+    // The fork suspends the plugin across the read, and a plugin left suspended
+    // by its own throw would render silence for the rest of the session.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->throwsSavingState = true;
+
+    auto model = externalDevice();
+    CHECK_FALSE(magda::captureSavedPluginState(*raw, model));
+    CHECK_FALSE(raw->isSuspended());
+}
+
+TEST_CASE("A save refreshes the portable VST3 records", "[engine][external][state]") {
+    // The .vstpreset a DAWproject export writes is the current patch, not the
+    // one the project was imported with, so it is read again on every save. The
+    // class id beside it is the plugin's identity rather than its patch, and is
+    // written once.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->isVst3 = true;
+    raw->tone->setValue(0.9f);
+
+    auto model = externalDevice();
+    REQUIRE(magda::captureSavedPluginState(*raw, model));
+
+    CHECK(model.vst3ClassId == kStubVst3ClassId);
+    REQUIRE(model.vst3Preset.isNotEmpty());
+
+    juce::MemoryOutputStream decoded;
+    REQUIRE(juce::Base64::convertFromBase64(decoded, model.vst3Preset));
+    CHECK(magda::vst3::classIdFromPreset(decoded.getMemoryBlock()) == kStubVst3ClassId);
+}
+
+TEST_CASE("A save leaves a non-VST3 device's portable records alone", "[engine][external][state]") {
+    // An AU cannot restate the identity a project was imported with, and
+    // clearing it would lose the one thing another host matches on.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->isVst3 = false;
+
+    auto model = externalDevice();
+    model.vst3ClassId = "FEDCBA9876543210FEDCBA9876543210";
+    model.vst3Preset = "what the project was imported with";
+
+    REQUIRE(magda::captureSavedPluginState(*raw, model));
+    CHECK(model.vst3ClassId == "FEDCBA9876543210FEDCBA9876543210");
+    CHECK(model.vst3Preset == "what the project was imported with");
+}
+
+TEST_CASE("A save reads the instance the adapter is holding", "[engine][external][state]") {
+    // The seam a host saves through: the adapter owns the instance, and
+    // EngineExternalDevice::instance() is how anything that is not rendering
+    // reaches it.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    // The patch moves after the device was built, the way a knob moved during a
+    // session does.
+    raw->tone->setValue(0.75f);
+
+    auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
+    REQUIRE(external != nullptr);
+    REQUIRE(magda::captureSavedPluginState(external->instance(), model));
+
+    auto reopened = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* reopenedRaw = reopened.get();
+    const auto reloaded = adapter::adaptExternalPluginInstance(std::move(reopened), model);
+    REQUIRE(reloaded.device != nullptr);
+    CHECK(reopenedRaw->tone->getValue() == Catch::Approx(0.75f));
 }
 
 TEST_CASE("The asynchronous entry point reports a missing plugin the same way",

@@ -8,8 +8,8 @@
 
 /**
  * @file ExternalPluginState.hpp
- * @brief Getting a project's record of a plugin onto a live instance, once
- *        (#2243).
+ * @brief A project's record of a plugin and a live instance, in both
+ *        directions, once (#2243, #2244).
  *
  * A project stores an external plugin twice over, and the two records are not
  * the same shape. One is an array of parameter values, which is what the UI
@@ -43,6 +43,21 @@
  * parameter it is about to write is the project's own value or a stale one the
  * chunk has already corrected -- and no comparison can tell those apart from an
  * automation lane that happens to be passing through the same value.
+ *
+ * Saving is the same three records read the other way, and it is here for the
+ * same reason: a project saved while the native engine holds the instance has
+ * to be a project the incumbent can open, so what goes back into the model is
+ * what the fork's own flushPluginStateToValueTree() would have written. One
+ * definition of what a project keeps about a plugin, read and written by
+ * whichever engine happens to be holding it.
+ *
+ * There is a third record beside those two, and it belongs to neither engine:
+ * the portable .vstpreset a DAWproject carries, which is how a VST3's patch
+ * crosses between hosts that share no chunk format. It is the overlay when a
+ * project has one, because a project that has one has just been imported and
+ * has no chunk of its own yet, and it is consumed rather than kept: applying it
+ * is what turns it into native state, and a second application over a chunk
+ * written since would undo the patch it was imported to become.
  */
 
 namespace magda {
@@ -84,15 +99,27 @@ enum class SavedStateOutcome {
     /// The array, then the chunk, both applied.
     Restored,
 
+    /// The array, then the portable .vstpreset the project was imported with,
+    /// which the plugin took. The caller publishes a model with
+    /// DeviceInfo::vst3Preset cleared: it has done its one job and a project
+    /// that kept it would apply it again over whatever was saved since.
+    RestoredFromPreset,
+
     /// The plugin threw partway through reading its own state. What it holds
     /// now is not the baseline, not the chunk, and not knowable from here.
     Failed,
 };
 
 /**
- * @brief Apply what @p device saved onto @p instance: array, then chunk.
+ * @brief Apply what @p device saved onto @p instance: array, then overlay.
  *
  * Steps one and two above.
+ *
+ * The overlay is the portable .vstpreset when the project carries one and the
+ * instance is a VST3 that takes it, and the plugin's own chunk otherwise. The
+ * two are alternatives rather than a sequence: each is a complete statement of
+ * the patch, and a project holds the preset only until the first load turns it
+ * into a chunk of its own.
  *
  * A plugin's own state handler is third-party code running in-process, and a
  * corrupt chunk is exactly the input it is least likely to have been tested
@@ -123,5 +150,60 @@ std::vector<RestoredParameter> snapshotHostParameters(const juce::AudioPluginIns
  * is the only place a value like this may be written.
  */
 void applyRestoredParameters(DeviceInfo& device, const std::vector<RestoredParameter>& restored);
+
+/**
+ * @brief The .vstpreset @p instance would write, or nothing.
+ *
+ * Empty for anything that is not a live VST3, which is the only way to ask:
+ * the format is not in the description a host holds, only in whether the
+ * instance answers the VST3 extension.
+ */
+juce::MemoryBlock readVst3Preset(const juce::AudioPluginInstance& instance);
+
+/**
+ * @brief Hand @p preset to @p instance as a .vstpreset, and say whether it took.
+ *
+ * False for a non-VST3, for a preset it refuses, and for an instance that threw
+ * reading it. It is the same third-party state handler applySavedPluginState()
+ * guards, reached through the format's own preset call rather than through the
+ * chunk.
+ */
+bool writeVst3Preset(juce::AudioPluginInstance& instance, const juce::MemoryBlock& preset);
+
+/**
+ * @brief Refresh @p device's portable VST3 records from @p instance.
+ *
+ * The .vstpreset a DAWproject export writes and the class id other hosts match
+ * on, both read off the live instance and neither part of native state. A
+ * no-op for a plugin that is not a VST3, which leaves whatever the project
+ * already carried rather than clearing it: a project imported from another host
+ * keeps the identity it came with even where this machine's copy cannot restate
+ * it.
+ *
+ * The class id is written once and then left alone. It is the plugin's
+ * identity, not its patch, and the one the project was authored against is
+ * worth more than the one this machine happens to have installed.
+ */
+void captureVst3Records(const juce::AudioPluginInstance& instance, DeviceInfo& device);
+
+/**
+ * @brief Write what @p instance holds into @p device: chunk, array, VST3 records.
+ *
+ * Saving, and the mirror of applySavedPluginState(). What lands in the model is
+ * what the fork writes for the same instance -- the chunk from
+ * getStateInformation(), base64 in juce::MemoryBlock's own encoding, absent
+ * rather than empty when the plugin has nothing to say -- so a project saved
+ * under either engine opens under the other.
+ *
+ * Message thread, and the plugin is suspended across the read the way the fork
+ * suspends it: a plugin asked to describe itself mid-block is entitled to
+ * answer with half of one state and half of another.
+ *
+ * False when the plugin threw describing itself, and then @p device is left
+ * exactly as it was. The two records have to agree with each other -- the array
+ * is the baseline the chunk overlays -- so a save that can only write one of
+ * them writes neither, and the project keeps the last pair that did agree.
+ */
+bool captureSavedPluginState(juce::AudioPluginInstance& instance, DeviceInfo& device);
 
 }  // namespace magda

@@ -12,6 +12,8 @@
 #include <tracktion_engine/plugins/external/tracktion_ExternalAutomatableParameter.h>
 // clang-format on
 
+#include "ExternalPluginState.hpp"
+
 namespace magda {
 
 /**
@@ -70,12 +72,15 @@ inline void applyExternalPluginChunk(tracktion::engine::Plugin* plugin, const ju
 }
 
 /**
- * Apply a base64 .vstpreset (Steinberg preset format) to a VST3 via
- * ExtensionsVisitor::VST3Client::setPreset(), then sync TE's parameter cache.
- * Used for state imported from DAWproject, where the portable state is a
- * .vstpreset rather than MAGDA's TE chunk. Requires the instance to be live
- * (call after async load completes). Returns true if applied; no-op/false for
- * non-VST3, not-yet-live, or undecodable data.
+ * Apply a base64 .vstpreset (Steinberg preset format) to a VST3, then sync TE's
+ * parameter cache. Used for state imported from DAWproject, where the portable
+ * state is a .vstpreset rather than MAGDA's TE chunk. Requires the instance to
+ * be live (call after async load completes). Returns true if applied; no-op/false
+ * for non-VST3, not-yet-live, or undecodable data.
+ *
+ * What a .vstpreset is and how an instance takes one is engine-agnostic and
+ * stated once (ExternalPluginState.hpp); this is the incumbent's half of it,
+ * which is TE's async lifecycle and its parameter cache.
  */
 inline bool applyVst3Preset(tracktion::engine::Plugin* plugin, const juce::String& presetBase64) {
     if (presetBase64.isEmpty())
@@ -88,17 +93,7 @@ inline bool applyVst3Preset(tracktion::engine::Plugin* plugin, const juce::Strin
     if (!juce::Base64::convertFromBase64(decoded, presetBase64))
         return false;
 
-    struct ApplyVisitor : juce::ExtensionsVisitor {
-        juce::MemoryBlock data;
-        bool ok = false;
-        void visitVST3Client(const VST3Client& client) override {
-            ok = client.setPreset(data);
-        }
-    };
-    ApplyVisitor visitor;
-    visitor.data = decoded.getMemoryBlock();
-    ext->getAudioPluginInstance()->getExtensions(visitor);
-    if (!visitor.ok)
+    if (!writeVst3Preset(*ext->getAudioPluginInstance(), decoded.getMemoryBlock()))
         return false;  // not a VST3 instance / apply failed
 
     // Mirror the applied state into TE's state property so a later graph build /
