@@ -197,16 +197,19 @@ class DeviceControlPlane {
  * @brief The devices a plane can reach, owned by whoever runs them (#2270).
  *
  * A plane's work runs later than the call that queued it, so between the two a
- * project can be closed. What it needs at that moment is not a token beside a
- * lookup -- keeping one alive says nothing about what the other captured -- but
- * the thing that owns the devices, held weakly and locked before it is asked.
+ * project can be closed and a device can be taken out of the chain it was in.
+ * Two lifetimes, and both have to be answered where the answer cannot be
+ * forgotten.
  *
- * So the lookup is a type rather than a function, and the plane holds a weak
- * reference to it. Locking it is what keeps the devices alive for the length of
- * the operation, and failing to lock it is the answer that there is nothing
- * left to ask. The relationship is the type's rather than a caller's to
- * maintain: there is no way to hand over a lease that has nothing to do with
- * the devices it is supposed to be keeping.
+ * The registry answers the first: the plane holds it weakly, locks it before it
+ * asks anything, and a registry that will not lock is a runtime that has gone.
+ * The lease answers the second: what comes back from find() carries the device
+ * rather than pointing at it, so a device removed or destroyed while a capture
+ * is reading it is a device the capture is still holding.
+ *
+ * Neither is a caller's to remember. A token beside a lookup was the version
+ * that could be got wrong -- keeping one alive says nothing about what the
+ * other captured -- and the types say it now instead.
  *
  * The same shape the load path already has for the same problem, where an
  * assignment is held weakly and a completion that finds it gone is refused
@@ -223,14 +226,24 @@ class DeviceRegistry {
     DeviceRegistry& operator=(DeviceRegistry&&) = delete;
 
     /**
-     * @brief The device at @p key, or null.
+     * @brief A lease on the device at @p key, or nothing.
      *
-     * Null for a key nothing is bound to, which includes one whose plugin has
-     * not finished loading. Called on the control executor, with the registry
-     * held alive for the length of the operation, so what it returns is safe to
-     * use until that operation ends.
+     * A lease rather than a pointer, and that is the whole of what this
+     * interface is for. Holding the registry alive says only that the registry
+     * is alive: a device can be taken out of it, or destroyed by whatever owns
+     * it, while the registry itself carries on -- and a capture that had a bare
+     * pointer would be reading a plugin that had gone. So the lifetime comes
+     * back with the answer, and the operation holds it until it is finished.
+     *
+     * Which means a runtime owns its external devices by shared_ptr. That is
+     * the cost of this, and it is the smaller half of the bill: the alternative
+     * is every control operation reasoning about what else might be removing a
+     * device while it works.
+     *
+     * Empty for a key nothing is bound to, which includes one whose plugin has
+     * not finished loading. Called on the control executor.
      */
-    virtual EngineExternalDevice* find(magda::engine::DeviceKey key) const = 0;
+    virtual std::shared_ptr<EngineExternalDevice> find(magda::engine::DeviceKey key) const = 0;
 };
 
 /**

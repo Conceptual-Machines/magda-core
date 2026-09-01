@@ -521,38 +521,63 @@ adapter::CaptureOutcome capture(adapter::DeviceControlPlane& plane, magda::engin
 
 /// A registry over one device, which is what a runtime hands a plane (#2270).
 ///
-/// Owned by the test the way a runtime owns its own: what keeps the device
-/// reachable is this object being alive, so dropping it is how a test closes a
-/// project.
+/// It owns the device, the way a runtime owns the ones it runs, and hands out a
+/// lease rather than a pointer: what keeps a device alive through a capture is
+/// the lease, so this can let go of its own copy mid-operation and the capture
+/// carries on with the plugin it was already reading.
 class OneDeviceRegistry final : public adapter::DeviceRegistry {
   public:
     /// @p asked counts the lookups, for the cases about whether there should
     /// have been one. It belongs to the test rather than to this object,
     /// because the case that cares is the one where this object is gone.
-    OneDeviceRegistry(magda::engine::DeviceKey key, adapter::EngineExternalDevice* device,
+    OneDeviceRegistry(magda::engine::DeviceKey key,
+                      std::shared_ptr<adapter::EngineExternalDevice> device,
                       std::atomic<int>* asked = nullptr)
-        : key_(key), device_(device), asked_(asked) {}
+        : key_(key), device_(std::move(device)), asked_(asked) {}
 
-    adapter::EngineExternalDevice* find(magda::engine::DeviceKey key) const override {
+    std::shared_ptr<adapter::EngineExternalDevice> find(
+        magda::engine::DeviceKey key) const override {
         if (asked_ != nullptr)
             ++(*asked_);
 
         return key == key_ ? device_ : nullptr;
     }
 
+    /// Let go of the device while keeping the registry, which is the state a
+    /// chain edit leaves behind: the runtime is still there and the device is
+    /// not its any more.
+    void release() {
+        device_.reset();
+    }
+
   private:
     magda::engine::DeviceKey key_;
-    adapter::EngineExternalDevice* device_ = nullptr;
+    std::shared_ptr<adapter::EngineExternalDevice> device_;
     std::atomic<int>* asked_ = nullptr;
 };
 
 /// A registry with nothing in it.
 class EmptyRegistry final : public adapter::DeviceRegistry {
   public:
-    adapter::EngineExternalDevice* find(magda::engine::DeviceKey) const override {
+    std::shared_ptr<adapter::EngineExternalDevice> find(magda::engine::DeviceKey) const override {
         return nullptr;
     }
 };
+
+/// The device an adaptation produced, owned the way a runtime owns one.
+///
+/// The factory hands back the base type by unique_ptr, and what a registry
+/// lends out is a lease on the external device underneath it, so the cast and
+/// the change of ownership happen once here rather than in every case.
+std::shared_ptr<adapter::EngineExternalDevice> ownedExternalDevice(
+    adapter::ExternalDeviceResult& result) {
+    auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
+    if (external == nullptr)
+        return nullptr;
+
+    result.device.release();
+    return std::shared_ptr<adapter::EngineExternalDevice>(external);
+}
 
 magda::DeviceInfo externalDevice() {
     magda::DeviceInfo device;
@@ -2562,7 +2587,7 @@ TEST_CASE("A capture through the control plane answers with what the plugin hold
     // holds and what the plugin holds now.
     raw->tone->setValue(0.4f);
 
-    auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
+    const auto external = ownedExternalDevice(result);
     REQUIRE(external != nullptr);
 
     const magda::engine::DeviceKey key{magda::ChainSegment::Fx, model.id};
@@ -2607,7 +2632,7 @@ TEST_CASE("A plugin that will not describe itself is a failure with a reason",
     auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
     REQUIRE(result.device != nullptr);
 
-    auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
+    const auto external = ownedExternalDevice(result);
     REQUIRE(external != nullptr);
 
     const auto registry = std::make_shared<const OneDeviceRegistry>(
@@ -2728,7 +2753,7 @@ TEST_CASE("A capture runs and answers on the plane's executor", "[engine][extern
     auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
     REQUIRE(result.device != nullptr);
 
-    auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
+    const auto external = ownedExternalDevice(result);
     REQUIRE(external != nullptr);
 
     auto executor = std::make_shared<adapter::SerialControlThread>();
@@ -2764,7 +2789,7 @@ TEST_CASE("A capture asked for on the executor is queued behind what asked for i
     auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
     REQUIRE(result.device != nullptr);
 
-    auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
+    const auto external = ownedExternalDevice(result);
     REQUIRE(external != nullptr);
 
     auto executor = std::make_shared<adapter::SerialControlThread>();
@@ -2797,6 +2822,52 @@ TEST_CASE("A capture asked for on the executor is queued behind what asked for i
     CHECK(answered);
 }
 
+TEST_CASE("A device let go of mid-capture is still the one being read",
+          "[engine][external][control]") {
+    // What the lease is for, and what holding the registry alive never proved.
+    // A registry can carry on while a device leaves it -- a chain edited, a
+    // slot emptied -- and a capture that had been handed a bare pointer would
+    // be reading a plugin that had gone. So find() hands over the device rather
+    // than pointing at it, and the operation holds it until it is finished.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    auto external = ownedExternalDevice(result);
+    REQUIRE(external != nullptr);
+
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, model.id};
+    auto registry = std::make_shared<OneDeviceRegistry>(key, external);
+
+    // From here the registry is the only owner, so what happens next is the
+    // device being destroyed rather than merely unregistered.
+    std::weak_ptr<adapter::EngineExternalDevice> watch = external;
+    external.reset();
+
+    // Let go of halfway through describing itself, which is the moment a bare
+    // pointer would become stale in.
+    raw->whileDescribingItself = [&registry] { registry->release(); };
+
+    auto executor = std::make_shared<adapter::SerialControlThread>();
+    adapter::LocalDeviceControlPlane plane(executor, registry);
+
+    const auto answered = capture(plane, key);
+    CHECK(answered.ok());
+
+    // And once the operation is over, so is the lease. Drained by asking for
+    // one more thing, because the work holding it is destroyed at the end of
+    // its own turn rather than when its callback fired.
+    std::promise<void> drained;
+    auto emptied = drained.get_future();
+    REQUIRE(executor->run([&drained](adapter::ExecutionState) { drained.set_value(); }));
+    emptied.wait();
+
+    CHECK(watch.expired());
+}
+
 TEST_CASE("A capture queued before its registry went is answered rather than run",
           "[engine][external][control]") {
     // The hazard of being genuinely asynchronous. Between queueing a capture
@@ -2814,7 +2885,7 @@ TEST_CASE("A capture queued before its registry went is answered rather than run
     auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
     REQUIRE(result.device != nullptr);
 
-    auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
+    const auto external = ownedExternalDevice(result);
     REQUIRE(external != nullptr);
 
     auto executor = std::make_shared<adapter::SerialControlThread>();
@@ -2871,7 +2942,7 @@ TEST_CASE("Two captures of one device do not overlap", "[engine][external][contr
     auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
     REQUIRE(result.device != nullptr);
 
-    auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
+    const auto external = ownedExternalDevice(result);
     REQUIRE(external != nullptr);
 
     std::atomic<int> inside{0};

@@ -85,7 +85,11 @@ bool LocalDeviceControlPlane::captureState(magda::engine::DeviceKey key,
             return;
         }
 
-        auto* device = registry->find(key);
+        // The lease, held for the rest of this operation. What it is worth is
+        // that the device cannot go while the capture is reading it: not when
+        // the chain it sits in is edited, and not when whatever owns it lets
+        // go. The registry being alive was never enough to promise that.
+        const auto device = registry->find(key);
         if (device == nullptr) {
             // Named rather than reported as an empty state. A key with nothing
             // bound to it is a slot whose plugin has not arrived or has gone,
