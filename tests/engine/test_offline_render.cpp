@@ -116,6 +116,58 @@ class DecayDevice final : public EngineDevice {
     float level_ = 0.0f;
 };
 
+/// A pure delay that reports exactly what it delays by (#2246).
+///
+/// The one device shape that can say whether a render was compensated: what
+/// comes out is what went in, moved, so a render that took the latency back out
+/// is sample for sample the render of the same project without it, and one that
+/// did not is that render late.
+class LatentDevice final : public EngineDevice {
+  public:
+    explicit LatentDevice(int latencySamples) : latency_(latencySamples) {}
+
+    int latencySamples() const override {
+        return latency_;
+    }
+
+    void prepare(const RenderContext& context) override {
+        delay_.assign(static_cast<std::size_t>(std::max(1, latency_)) *
+                          static_cast<std::size_t>(std::max(1, context.numChannels)),
+                      0.0f);
+        channels_ = std::max(1, context.numChannels);
+        position_ = 0;
+    }
+
+    void process(DeviceBlock& block) override {
+        ++blocksProcessed;
+
+        const auto channels = std::min(static_cast<int>(block.audio.getNumChannels()), channels_);
+
+        for (auto sample = 0; sample < block.block.numSamples; ++sample) {
+            for (auto channel = 0; channel < channels; ++channel) {
+                auto& stored = delay_[(static_cast<std::size_t>(position_) *
+                                       static_cast<std::size_t>(channels_)) +
+                                      static_cast<std::size_t>(channel)];
+                const auto input = block.audio.getSample(channel, sample);
+                block.audio.setSample(channel, sample, stored);
+                stored = input;
+            }
+
+            position_ = (position_ + 1) % std::max(1, latency_);
+        }
+    }
+
+    /// Blocks it was handed, which is how a render that produced nothing for the
+    /// sink can still be caught having run the graph.
+    int blocksProcessed = 0;
+
+  private:
+    int latency_ = 0;
+    int channels_ = 2;
+    int position_ = 0;
+    std::vector<float> delay_;
+};
+
 /// Everything a render produced, as one stream per channel, so two renders are
 /// comparable sample for sample however they were cut into blocks.
 class CollectingSink final : public OfflineRenderSink {
@@ -187,6 +239,28 @@ struct Harness {
     std::vector<std::unique_ptr<DecayDevice>> devices;
     DecayDevice* decay = nullptr;
 };
+
+/// A harness whose one device is @p latent, prepared and ready to render.
+///
+/// The plain Harness binds its own decaying device to every Device op, which is
+/// the wrong shape for a latency question: what these tests need is a device
+/// that reports one and delays by exactly it.
+void bindLatentDevice(Harness& harness, LatentDevice& latent) {
+    harness.context = RenderContext{kSampleRate, 512, 2};
+
+    harness.source = std::make_unique<TimelineRamp>();
+    harness.source->prepare(harness.context);
+    harness.bindings.clipAudio[1] = harness.source.get();
+
+    latent.prepare(harness.context);
+
+    for (const auto& op : harness.plan.ops)
+        if (op.kind == magda::engine::OpKind::Device)
+            harness.bindings.devices[op.key.deviceKey()] = &latent;
+
+    harness.valueMessages = magda::engine::resolvePlanValues(harness.plan, harness.tracks,
+                                                             harness.master, harness.values);
+}
 
 Catch::Approx approx(float value) {
     return Catch::Approx(value).margin(1e-6);
@@ -455,4 +529,78 @@ TEST_CASE("An offline render's block size is held to what the plan was prepared 
     // Cut to the prepared size rather than asserted against: the caller's block
     // size is a batching hint and the render is the same audio either way.
     CHECK(result.blocksRendered == static_cast<int>((result.samplesRendered + 127) / 128));
+}
+
+TEST_CASE("A render takes the plan's own latency back out", "[engine][offline]") {
+    // What a bounce owes: its first sample is the range's first sample. A plan
+    // whose devices report latency is that far behind the timeline, which is
+    // right during playback and wrong in a file -- a bounce that starts late
+    // drifts against every other bounce of the same project, and against the
+    // project itself the moment it is imported back in.
+    //
+    // Asserted as an identity rather than as an offset. A pure delay that is
+    // compensated renders what the same project renders without it, so the
+    // reference here is that project: nothing about the expected samples has to
+    // be written down, and a compensation that is off by one fails as loudly as
+    // one that is missing.
+    constexpr int kLatency = 333;
+
+    std::vector<float> reference;
+    {
+        Harness harness;
+        REQUIRE(harness.prepare(512).empty());
+
+        CollectingSink sink;
+        REQUIRE_FALSE(harness.render({0.0, 4.0, 0.0, 512}, sink).refused);
+        reference = sink.samples;
+    }
+
+    Harness harness(true);
+    LatentDevice latent(kLatency);
+    bindLatentDevice(harness, latent);
+
+    REQUIRE(harness.executor.prepare(harness.plan, harness.bindings, harness.context).empty());
+    REQUIRE(harness.executor.latencySamples() == kLatency);
+
+    CollectingSink sink;
+    const auto result = harness.render({0.0, 4.0, 0.0, 512}, sink);
+
+    CHECK_FALSE(result.refused);
+
+    // The same length as the range asked for, so the extra samples the render
+    // pulled to flush the delay went to the trim rather than into the file, and
+    // what the result reports is what the sink was handed.
+    CHECK(sink.samples.size() == reference.size());
+    CHECK(result.samplesRendered == static_cast<std::int64_t>(sink.samples.size()));
+    CHECK(result.blocksRendered == sink.blocks);
+
+    REQUIRE(sink.samples.size() == reference.size());
+    for (std::size_t sample = 0; sample < reference.size(); ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(sink.samples[sample] == approx(reference[sample]));
+    }
+}
+
+TEST_CASE("An empty range renders nothing through a plan that reports latency",
+          "[engine][offline]") {
+    // The flush that takes a plan's latency back out is for pushing the last of
+    // a range through the graph, and a range with no samples in it has nothing
+    // to push. Rendering it anyway would run every bound device for blocks the
+    // sink is never handed, which is a side effect an empty request is not
+    // supposed to have: a device left holding something, and a caller that can
+    // be asked whether to continue a render that produced nothing.
+    Harness harness(true);
+    LatentDevice latent(333);
+    bindLatentDevice(harness, latent);
+
+    REQUIRE(harness.executor.prepare(harness.plan, harness.bindings, harness.context).empty());
+    REQUIRE(harness.executor.latencySamples() == 333);
+
+    CollectingSink sink;
+    const auto result = harness.render({4.0, 4.0, 0.0, 512}, sink);
+
+    CHECK_FALSE(result.refused);
+    CHECK(result.samplesRendered == 0);
+    CHECK(sink.blocks == 0);
+    CHECK(latent.blocksProcessed == 0);
 }

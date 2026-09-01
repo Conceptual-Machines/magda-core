@@ -5,6 +5,7 @@
 #include <string>
 
 #include "NullDiffGain.hpp"
+#include "NullDiffHostedPlugin.hpp"
 #include "NullDiffNativeLeg.hpp"
 
 /**
@@ -42,10 +43,18 @@ double peakOf(const juce::AudioBuffer<float>& buffer) {
 }  // namespace
 
 TEST_CASE("Every case renders through the native engine", "[nulldiff][native]") {
+    // The corpus's own plugins, which are in this binary rather than on this
+    // machine (#2246). Without them a case that hosts one renders a passthrough
+    // and says so in the diagnostics, which is the right answer to the wrong
+    // question: what this file asks is whether the leg renders the corpus, and
+    // the corpus includes the projects it brought a plugin for.
+    HostedScan scan;
+    const InstalledPlugins installed{.formats = &scan.formats, .knownPlugins = &scan.knownPlugins};
+
     for (const auto& value : sharedCorpus(scratch())) {
         INFO(value.name);
 
-        const auto rendered = renderNative(value);
+        const auto rendered = renderNative(value, installed);
 
         CHECK(rendered.failure.empty());
 

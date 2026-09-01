@@ -6,6 +6,7 @@
 
 #include "NullDiffCase.hpp"
 #include "NullDiffGain.hpp"
+#include "NullDiffHostedPlugin.hpp"
 #include "NullDiffMaterial.hpp"
 #include "core/ChainWalk.hpp"
 #include "core/DeviceInfo.hpp"
@@ -2136,6 +2137,257 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         value.mechanism =
             "the fork's arranger path drops midiOffset on an unlooped clip while its session "
             "path applies it; the engine applies it either way";
+
+        corpus.push_back(std::move(value));
+    }
+
+    // --- external plugins ------------------------------------------------------
+    //
+    // The first cases in the corpus that host a plugin rather than run a device
+    // written for them (#2246). What each one asserts is a number the host
+    // chose: how a mix the plugin never declared is applied, which channels a
+    // narrow plugin is handed, where a reported latency is taken out again,
+    // which bus a key arrives on, what a plugin is told about the transport, and
+    // what an instrument's MIDI does on the way in and on the way out.
+    //
+    // They are held to the ordinary floor rather than given the epsilon a
+    // project hosting a plugin may declare (#2078). The plugin is ours and does
+    // nothing that depends on how a render was framed (NullDiffHostedPlugin.hpp),
+    // so there is nothing here to attribute a difference to, and a case that
+    // took the allowance anyway would be spending it on the host.
+
+    {
+        // The pair the fork gives every external plugin and the plugin never
+        // asked for. Dry six tenths against wet four, over a plugin that
+        // inverts, so what the render carries is a fifth of the material and
+        // the arithmetic is the whole signal rather than a level somebody has
+        // to measure.
+        auto track = plainTrack();
+        auto device = hostedDevice(970, HostedRole::Polarity);
+        setHostedMix(device, 0.6f, 0.4f);
+        track.chain.fxChainElements.emplace_back(std::move(device));
+
+        auto value = newCase("plugin.wetdry", "the wrapper pair at a value a project saves",
+                             std::move(track));
+        value.endBeat = 8.0;
+
+        const auto source = writeSource(scratchDirectory, "pluginwetdry", impulses());
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(330, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // Fully dry, which both engines still run the plugin for. The claim is
+        // that the slot is transparent and not that the plugin was skipped: the
+        // fork's own dry path takes the input around a plugin it nevertheless
+        // called, and the engine reproduces that including the threshold below
+        // which it stops mixing at all (EngineExternalDevice.cpp).
+        auto track = plainTrack();
+        auto device = hostedDevice(971, HostedRole::Polarity);
+        setHostedMix(device, 1.0f, 0.0f);
+        track.chain.fxChainElements.emplace_back(std::move(device));
+
+        auto value =
+            newCase("plugin.wetdry.dry", "a fully dry slot in front of a plugin that still runs",
+                    std::move(track));
+        value.endBeat = 8.0;
+
+        const auto source = writeSource(scratchDirectory, "plugindry", impulses());
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(331, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A one-channel plugin on a stereo track: the host folds the bus into
+        // it and spreads what comes back. Two-channel noise, and stated rather
+        // than left to the default for the reason rack.mono states it -- a fold
+        // of two identical channels is the identity whichever way it is done, so
+        // a case playing a mono file would null green over a host reading the
+        // wrong side.
+        auto track = plainTrack();
+        track.chain.fxChainElements.emplace_back(hostedDevice(972, HostedRole::Narrow));
+
+        auto value = newCase("plugin.mono", "a mono plugin folded into and out of a stereo chain",
+                             std::move(track));
+        value.endBeat = 8.0;
+
+        auto material = noise();
+        material.channels = 2;
+        value.seed = material.seed;
+
+        const auto source = writeSource(scratchDirectory, "pluginmono", material);
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(332, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // And the adaptation the other way round: a stereo plugin in a slot one
+        // channel wide, which is what the corpus's own mono device leaves behind
+        // it inside a rack chain. The host has one channel and a plugin that
+        // wants two, and what it does with the second is arithmetic in both
+        // engines.
+        ChainInfo chain;
+        chain.id = 1;
+        chain.name = "Narrowed";
+        chain.elements.emplace_back(monoGainDevice(973, 1.0f));
+        chain.elements.emplace_back(hostedDevice(974, HostedRole::Polarity));
+
+        std::vector<ChainInfo> chains;
+        chains.push_back(std::move(chain));
+
+        auto value = newRackCase(
+            "plugin.narrow.slot", "a stereo plugin in a mono slot",
+            rackTrack(kTrack, "Narrow slot", rackOf(720, "Narrowed", std::move(chains))));
+
+        auto material = noise();
+        material.channels = 2;
+        value.seed = material.seed;
+
+        const auto source = writeSource(scratchDirectory, "pluginnarrowslot", material);
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(333, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A plugin reporting latency, against a track without one. Both tracks
+        // play the same impulses, so a compensation that worked puts one impulse
+        // per interval where two would otherwise sit 333 samples apart, and the
+        // second track's fader keeps the two halves separable if it did not.
+        //
+        // The figure is deliberately awkward (NullDiffHostedPlugin.hpp): a
+        // compensation that is only right on block boundaries is wrong here at
+        // every size the invariance gate renders at.
+        //
+        // The clips start a beat in, and that is this case's one concession to
+        // the incumbent. A render of a project whose plugin reports latency
+        // comes back from the fork with its first 333 samples missing -- the
+        // impulse at beat zero is simply not in the file, while every impulse
+        // after it sits at its own sample. The engine loses nothing there: the
+        // offline render pulls the plan's latency in extra samples at the end
+        // and drops the same number off the front, so the file starts where the
+        // range does and the material still inside the delay line comes out
+        // (OfflineRender.cpp). Starting a beat in keeps that difference out of
+        // a case about alignment, which is what this one is for.
+        auto delayed = mixTrack(1, "Through the plugin");
+        delayed.chain.fxChainElements.emplace_back(hostedDevice(975, HostedRole::Latency));
+
+        auto direct = mixTrack(2, "Direct");
+        direct.volume = 0.5f;
+
+        auto value = newMixCase("plugin.latency", "a plugin's reported latency, taken back out",
+                                {std::move(delayed), std::move(direct)});
+
+        const auto source = writeSource(scratchDirectory, "pluginlatency", impulses());
+        value.sources.push_back(source);
+        value.clips.push_back(audioClipOn(1, 334, 1.0, 7.0, source));
+        value.clips.push_back(audioClipOn(2, 335, 1.0, 7.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A sidechained plugin, which returns its key instead of its input. That
+        // is what makes the case readable rather than a level to be trusted: a
+        // host that wired nothing renders silence on this track, one that wired
+        // the main input renders this track's own impulses, and only the host
+        // that put the key on the bus after the plugin's own renders the other
+        // track's.
+        //
+        // The two tracks play different intervals for the same reason.
+        auto keyed = mixTrack(1, "Keyed");
+        auto device = hostedDevice(976, HostedRole::Key);
+        device.sidechain.type = SidechainConfig::Type::Audio;
+        device.sidechain.sourceTrackId = 2;
+        keyed.chain.fxChainElements.emplace_back(std::move(device));
+
+        auto value = newMixCase("plugin.sidechain", "a key on the bus after the plugin's own",
+                                {std::move(keyed), mixTrack(2, "Key source")});
+
+        const auto keyedSource = writeSource(scratchDirectory, "pluginkeyed", impulses(0.375));
+        const auto keySource = writeSource(scratchDirectory, "pluginkey", impulses(0.25));
+        value.sources.push_back(keyedSource);
+        value.sources.push_back(keySource);
+        value.clips.push_back(audioClipOn(1, 336, 0.0, 8.0, keyedSource));
+        value.clips.push_back(audioClipOn(2, 337, 0.0, 8.0, keySource));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // What a plugin cannot work out for itself. This one discards its input
+        // and renders a sine locked to the bar from the position the host
+        // published, so a host that reported the wrong place renders the right
+        // shape at the wrong phase, and one that published nothing renders
+        // silence.
+        //
+        // The clip is there to give both engines a track with something on it
+        // rather than to be heard: the plugin overwrites whatever it is handed.
+        auto track = plainTrack();
+        track.chain.fxChainElements.emplace_back(hostedDevice(977, HostedRole::Transport));
+
+        auto value =
+            newCase("plugin.transport", "the position a plugin is told it is at", std::move(track));
+        value.endBeat = 8.0;
+
+        const auto source = writeSource(scratchDirectory, "plugintransport", impulses());
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(338, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // MIDI into a hosted instrument. One sample at the note's own velocity
+        // on every note-on, which says both that the MIDI arrived and where it
+        // landed, and nothing between the two engines interpolates it.
+        auto track = plainTrack();
+        track.chain.fxChainElements.emplace_back(hostedDevice(978, HostedRole::Instrument));
+
+        auto value =
+            newCase("plugin.instrument", "MIDI into a hosted instrument", std::move(track));
+        value.endBeat = 8.0;
+
+        auto clip = midiClip(339, 0.0, 8.0);
+        for (auto index = 0; index < 8; ++index)
+            clip.midiNotes.push_back(note(60 + index, static_cast<double>(index), 0.5, 127));
+        value.clips.push_back(std::move(clip));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // And MIDI out of one. The instrument answers every note-on with its own
+        // an octave up at half the velocity, the device behind it renders what it
+        // receives as impulses at a quarter of that, and the chain's raw input is
+        // held back so the second device can only be hearing the first.
+        //
+        // Three levels in one render, and they are what the case reads: the
+        // instrument's own impulse at full scale, the echo's at an eighth of it,
+        // and nothing at all where a host dropped the plugin's MIDI on the way to
+        // the next device.
+        auto track = plainTrack();
+        auto relay = hostedDevice(979, HostedRole::InstrumentMidiOut);
+        relay.midiInThru = false;
+        track.chain.fxChainElements.emplace_back(std::move(relay));
+        track.chain.fxChainElements.emplace_back(hostedDevice(980, HostedRole::Echo));
+
+        auto value =
+            newCase("plugin.instrument.midiout",
+                    "an instrument's MIDI output reaching the device behind it", std::move(track));
+        value.endBeat = 8.0;
+
+        auto clip = midiClip(340, 0.0, 8.0);
+        for (auto index = 0; index < 8; ++index)
+            clip.midiNotes.push_back(note(60 + index, static_cast<double>(index), 0.5, 127));
+        value.clips.push_back(std::move(clip));
 
         corpus.push_back(std::move(value));
     }

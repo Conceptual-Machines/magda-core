@@ -7,6 +7,7 @@
 
 #include "DawProjectRoundTrip.hpp"
 #include "NullDiffCompare.hpp"
+#include "NullDiffHostedPlugin.hpp"
 #include "NullDiffNativeLeg.hpp"
 #include "TextDifference.hpp"
 #include "plan/PlanCompiler.hpp"
@@ -182,9 +183,18 @@ bool midiHolds(const NativeRender& before, const NativeRender& after) {
 
 /// The two models render the same samples, and send the same MIDI where the
 /// case captures any.
+///
+/// Both renders are handed the corpus's own plugins (#2246). Without them a case
+/// that hosts one binds a passthrough on both sides, reports the same missing
+/// plugin twice, and nulls against itself: a round trip certified for a project
+/// whose plugin never ran, which is exactly the shape of pass this file exists
+/// to refuse elsewhere.
 bool renderHolds(const Case& value, const Case& imported) {
-    const auto before = renderNative(value);
-    const auto after = renderNative(imported);
+    HostedScan scan;
+    const InstalledPlugins installed{.formats = &scan.formats, .knownPlugins = &scan.knownPlugins};
+
+    const auto before = renderNative(value, installed);
+    const auto after = renderNative(imported, installed);
 
     {
         INFO("the original would not render: " << before.failure);

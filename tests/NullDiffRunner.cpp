@@ -11,12 +11,34 @@
 #include <set>
 
 #include "AssertionWatch.hpp"
+#include "NullDiffHostedPlugin.hpp"
 #include "NullDiffNativeLeg.hpp"
 #include "NullDiffTeLeg.hpp"
 #include "SharedTestEngine.hpp"
 
 namespace magda::nulldiff {
 namespace {
+
+/**
+ * @brief Put the corpus's own plugins where a project can find them (#2246).
+ *
+ * They are in this binary rather than on this machine, so there is nothing to
+ * search for and nothing that can be missing: the format is registered with the
+ * engine's own manager and the descriptions go into the engine's own scan, which
+ * is the list both legs already resolve against.
+ *
+ * Called per case and idempotent, because the alternative is a static
+ * initialiser that would have to run before the engine it registers with
+ * exists.
+ */
+void installCorpusPlugins() {
+    auto* engine = magda::test::getSharedEngine().getEngine();
+    if (engine == nullptr)
+        return;
+
+    auto& plugins = engine->getPluginManager();
+    installHostedPlugins(plugins.pluginFormatManager, plugins.knownPluginList);
+}
 
 /**
  * @brief The one scan both legs resolve a project's plugins against.
@@ -314,6 +336,12 @@ CaseReport runCase(const Case& value, const RunnerLog& log) {
     report.name = value.name;
     report.tier = value.tier;
     report.environment = value.environment();
+
+    // The corpus's own plugins first, which are a fact about the binary, then
+    // whatever this machine has: a case naming one of ours must not depend on a
+    // folder walk, and a case naming a real plugin must not be answered by one
+    // of ours.
+    installCorpusPlugins();
 
     // Looked for before the scan is read, so that "this machine has not scanned
     // it" is a fact about the machine rather than about the binary.

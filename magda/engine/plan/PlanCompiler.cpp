@@ -805,10 +805,30 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     // narrowing it would narrow the chain rather than the device.
     const bool transparent = isTransparentTap(device);
     const bool injector = !transparent && node.injectsAudio();
-    const auto inputWidth = transparent ? 2
-                            : injector  ? 0
-                                        : std::clamp(device.audioInputChannels, 0, 2);
-    const auto outputWidth = transparent ? 2 : std::clamp(device.audioOutputChannels, 0, 2);
+
+    // An external plugin is handed the bus and adapts its own channels, and
+    // that is not a width the plan gets an opinion about (#2246).
+    //
+    // The adaptation is arithmetic rather than routing, and it is the fork's:
+    // a stereo bus into a mono plugin is averaged, a mono bus into a stereo one
+    // is duplicated, and a mono plugin's output is spread back over both sides.
+    // EngineExternalDevice reproduces every step of it, because every project
+    // hosting a plugin that is not stereo was mixed against it.
+    //
+    // Narrowing the port first defeats that. The device would be handed the
+    // left channel of the bus and the average would never be taken -- the
+    // arithmetic would still be in the adapter, unreachable, and a mono plugin
+    // would render one side of a project the fork renders both sides of.
+    const bool adaptsItsOwnChannels = device.format != PluginFormat::Internal;
+
+    // The injector test still comes first: an instrument reads no bus in either
+    // engine, and being external does not give it one to adapt.
+    const auto inputWidth = transparent            ? 2
+                            : injector             ? 0
+                            : adaptsItsOwnChannels ? 2
+                                                   : std::clamp(device.audioInputChannels, 0, 2);
+    const auto outputWidth =
+        transparent || adaptsItsOwnChannels ? 2 : std::clamp(device.audioOutputChannels, 0, 2);
 
     std::vector<PortDesc> outputs{
         PortDesc{SignalKind::Audio, static_cast<std::uint8_t>(outputWidth)}};
