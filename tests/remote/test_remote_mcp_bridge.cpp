@@ -361,6 +361,37 @@ TEST_CASE("A legacy session survives MAGDA restarting under it", "[remote][mcp-b
     dataDir.deleteRecursively();
 }
 
+TEST_CASE("The bridge absorbs rate-limit refusals with backoff", "[remote][mcp-bridge]") {
+    // The endpoint's token bucket refuses a burst partway through (burst =
+    // maxConcurrentRequests). A stdio host treats errors as terminal, so the
+    // bridge retries 429s itself; every call in a modest burst must answer.
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto options = serverOptions();
+    options.maxConcurrentRequests = 2;    // burst of 2 tokens
+    options.maxRequestsPerSecond = 20.0;  // one token back every 50ms
+    RemoteMcpServer server(service, options);
+    REQUIRE(server.start());
+
+    juce::TemporaryFile scratch;
+    const auto dataDir = scratch.getFile().getSiblingFile("magda-bridge-rate-limit");
+    writeRecord(dataDir, server.boundPort(), kToken);
+    BridgeProcess bridge(dataDir);
+
+    for (int id = 1; id <= 8; ++id) {
+        bridge.send(request(id, "ping", modernParams()));
+        const auto response = bridge.receive();
+        INFO("request " << id);
+        REQUIRE(response.getDynamicObject() != nullptr);
+        REQUIRE(static_cast<int>(response["id"]) == id);
+        REQUIRE(response["error"].isVoid());
+    }
+
+    dataDir.deleteRecursively();
+}
+
 TEST_CASE("With no MAGDA running, the bridge says so rather than hanging", "[remote][mcp-bridge]") {
     juce::TemporaryFile scratch;
     const auto dataDir = scratch.getFile().getSiblingFile("magda-bridge-empty");

@@ -43,6 +43,9 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("devices.listParameters") != nullptr);
     REQUIRE(registry.find("devices.setParameter") != nullptr);
     REQUIRE(registry.find("devices.setParameterConfig") != nullptr);
+    REQUIRE(registry.find("devices.add") != nullptr);
+    REQUIRE(registry.find("devices.remove") != nullptr);
+    REQUIRE(registry.find("devices.move") != nullptr);
     REQUIRE(registry.find("devices.openEditor") != nullptr);
     REQUIRE(registry.find("session.launchClip") != nullptr);
     REQUIRE(registry.find("automation.addPoint") != nullptr);
@@ -497,17 +500,20 @@ TEST_CASE("devices.listParameters projects real units and customization flags",
           "[remote-api][contract]") {
     DeviceInfo device;
     device.format = PluginFormat::VST3;
-    device.parameters.emplace_back(0, "Cutoff", "Hz", 20.0f, 20000.0f, 800.0f);
+    device.parameters.emplace_back(0, "Cutoff", "Hz", 20.0f, 20000.0f, 800.0f,
+                                   ParameterScale::Logarithmic);
     device.parameters.emplace_back(1, "Resonance", "%", 0.0f, 100.0f, 10.0f);
+    device.parameters.emplace_back(2, "Mode", "", 0.0f, 2.0f, 0.0f, ParameterScale::Discrete);
     device.parameters[0].stableId = "cutoff";
     device.parameters[0].currentValue = 800.0f;
     device.parameters[1].currentValue = 25.0f;
+    device.parameters[2].choices = {"LP", "BP", "HP"};
     device.visibleParameters = {0, 1};
     device.miniMixerParameters = {1};
     device.aiSoundDesignerParameters = {1};
 
     const auto parameters = makeDeviceParameterDtos(device);
-    REQUIRE(parameters.size() == 2);
+    REQUIRE(parameters.size() == 3);
 
     REQUIRE(parameters[0].index == 0);
     REQUIRE(parameters[0].stableId == "cutoff");
@@ -525,8 +531,16 @@ TEST_CASE("devices.listParameters projects real units and customization flags",
     REQUIRE(parameters[1].miniMixer);
     REQUIRE(std::abs(parameters[1].normalizedValue - 0.25) < 1e-6);
 
+    // A discrete parameter is interpretable, not just a number in a range.
+    REQUIRE(parameters[0].scale == ParameterScale::Logarithmic);
+    REQUIRE(parameters[1].scale == ParameterScale::Linear);
+    REQUIRE(parameters[1].choices.empty());
+    REQUIRE(parameters[2].scale == ParameterScale::Discrete);
+    REQUIRE(parameters[2].choices == std::vector<juce::String>{"LP", "BP", "HP"});
+
     requireRoundTrip(parameters[0], deviceParameterFromJson);
     requireRoundTrip(parameters[1], deviceParameterFromJson);
+    requireRoundTrip(parameters[2], deviceParameterFromJson);
 }
 
 TEST_CASE("configured external parameters project model values into display units",

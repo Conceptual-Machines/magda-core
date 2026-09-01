@@ -895,3 +895,100 @@ TEST_CASE("devices.setParameter converts display units to the model domain",
     REQUIRE(api.devices_.parameterWrites.size() == 1);
     REQUIRE(std::abs(std::get<2>(api.devices_.parameterWrites.front()) - 0.75f) < 1e-6f);
 }
+
+TEST_CASE("devices.add creates a device and returns its address", "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 1;
+    api.tracks_.tracks.push_back(track);
+    api.devices_.catalog.push_back({"internal.filter", "Filter", "", "", "", PluginFormat::Internal,
+                                    DeviceType::Effect, false});
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "devices.add", object({{"trackId", 1}, {"catalogId", "internal.filter"}}));
+
+    REQUIRE(response.ok);
+    const auto id = static_cast<int>(response.result["id"]);
+    REQUIRE(id != INVALID_DEVICE_ID);
+    // The returned address is the canonical top-level spelling.
+    REQUIRE(static_cast<int>(response.result["devicePath"]["topLevelDeviceId"]) == id);
+    REQUIRE(response.result["devicePath"]["section"].toString() == "fx");
+    REQUIRE(api.devices_.added.size() == 1);
+    REQUIRE(api.devices_.added.front().catalogId == "internal.filter");
+
+    const auto unknown =
+        run(service, "devices.add", object({{"trackId", 1}, {"catalogId", "no.such.device"}}));
+    REQUIRE_FALSE(unknown.ok);
+    REQUIRE(errorCodeOf(unknown) == "not_found");
+}
+
+TEST_CASE("devices.remove and devices.move act on resolvable paths only",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    auto move = pathInput(path);
+    move.getDynamicObject()->setProperty("toIndex", 2);
+    const auto moved = run(service, "devices.move", move);
+    REQUIRE(moved.ok);
+    REQUIRE(api.devices_.moved.size() == 1);
+
+    const auto removed = run(service, "devices.remove", pathInput(path));
+    REQUIRE(removed.ok);
+    REQUIRE(static_cast<bool>(removed.result["accepted"]));
+    REQUIRE(api.devices_.removed.size() == 1);
+
+    const auto missing =
+        run(service, "devices.remove", pathInput(ChainNodePath::topLevelDevice(1, 99)));
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE(errorCodeOf(missing) == "not_found");
+}
+
+TEST_CASE("devices.setParameterConfig applies detection overrides", "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    auto* override_ = new juce::DynamicObject();
+    override_->setProperty("index", 1);
+    override_->setProperty("unit", "dB");
+    override_->setProperty("scale", "logarithmic");
+    override_->setProperty("minValue", 1.0);
+    override_->setProperty("maxValue", 100.0);
+    juce::Array<juce::var> overrides;
+    overrides.add(juce::var(override_));
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("parameterOverrides", overrides);
+    const auto response = run(service, "devices.setParameterConfig", input);
+
+    REQUIRE(response.ok);
+    const auto* items = response.result.getArray();
+    REQUIRE(items != nullptr);
+    // The echo speaks the new detection data immediately.
+    REQUIRE((*items)[1]["unit"].toString() == "dB");
+    REQUIRE((*items)[1]["scale"].toString() == "logarithmic");
+    REQUIRE(static_cast<double>((*items)[1]["minValue"]) == 1.0);
+    REQUIRE(static_cast<double>((*items)[1]["maxValue"]) == 100.0);
+    REQUIRE(api.devices_.configUpdates.size() == 1);
+
+    // An empty or inverted display range is refused before anything persists.
+    auto* bad = new juce::DynamicObject();
+    bad->setProperty("index", 0);
+    bad->setProperty("minValue", 500.0);
+    bad->setProperty("maxValue", 100.0);
+    juce::Array<juce::var> badOverrides;
+    badOverrides.add(juce::var(bad));
+    auto badInput = pathInput(path);
+    badInput.getDynamicObject()->setProperty("parameterOverrides", badOverrides);
+    const auto refused = run(service, "devices.setParameterConfig", badInput);
+    REQUIRE_FALSE(refused.ok);
+    REQUIRE(errorCodeOf(refused) == "validation_failed");
+    REQUIRE(api.devices_.configUpdates.size() == 1);
+}

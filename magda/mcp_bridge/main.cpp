@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <map>
@@ -363,6 +364,19 @@ class Bridge {
         }
 
         auto result = client->Post(endpoint.path, headers, body, "application/json");
+
+        // The endpoint admits requests from a token bucket, so a legitimate
+        // burst — an agent sweeping a dozen parameters — sees HTTP 429 partway
+        // through. That refusal is retryable by construction (tokens return
+        // with wall-clock, ~50/s), and most stdio hosts treat any error as
+        // terminal, so absorb it here with a bounded backoff. The bound keeps a
+        // genuinely saturated server visible instead of hidden forever.
+        for (int delayMs = 100;
+             result && result->status == httplib::StatusCode::TooManyRequests_429 && delayMs <= 800;
+             delayMs *= 2) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
+            result = client->Post(endpoint.path, headers, body, "application/json");
+        }
 
         if (!result) {
             // Connection refused or reset: MAGDA is gone or was restarted. Worth

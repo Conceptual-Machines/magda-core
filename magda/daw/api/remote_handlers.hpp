@@ -49,6 +49,9 @@ HandlerResult clipsDelete(MagdaApi&, const juce::var&, const RequestContext&);
 // Devices and racks
 HandlerResult devicesList(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesCatalog(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult devicesAdd(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult devicesRemove(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult devicesMove(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesListParameters(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesSetParameter(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesSetParameterConfig(MagdaApi&, const juce::var&, const RequestContext&);
