@@ -14,6 +14,7 @@
 #include "magda/daw/audio/Vst3Preset.hpp"
 #include "magda/daw/audio/plugin_manager/ExternalPluginLookup.hpp"
 #include "magda/daw/audio/plugin_manager/ExternalPluginState.hpp"
+#include "magda/daw/audio/plugins/engine/DeviceControl.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "magda/daw/audio/plugins/engine/EngineExternalDevice.hpp"
 #include "magda/daw/audio/plugins/engine/PluginAssignments.hpp"
@@ -1944,10 +1945,11 @@ TEST_CASE("A save leaves a non-VST3 device's portable records alone", "[engine][
     CHECK(model.vst3Preset == "what the project was imported with");
 }
 
-TEST_CASE("A save reads the instance the adapter is holding", "[engine][external][state]") {
-    // The seam a host saves through: the adapter owns the instance, and
-    // EngineExternalDevice::instance() is how anything that is not rendering
-    // reaches it.
+TEST_CASE("A save reads the plugin through the device that owns it", "[engine][external][state]") {
+    // The seam a host saves through (#2270). The adapter owns the instance and
+    // nothing else can reach it: a save asks the device for what its plugin
+    // holds, which is what makes the read and the blocks around it two things
+    // one object is serialising rather than two callers observing a convention.
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
     auto* raw = plugin.get();
 
@@ -1961,7 +1963,10 @@ TEST_CASE("A save reads the instance the adapter is holding", "[engine][external
 
     auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
     REQUIRE(external != nullptr);
-    REQUIRE(captureInto(external->instance(), model));
+
+    const auto snapshot = external->captureState();
+    REQUIRE(snapshot.has_value());
+    magda::applyCapturedPluginState(model, *snapshot);
 
     auto reopened = std::make_unique<StubPlugin>(2, 2, 0);
     auto* reopenedRaw = reopened.get();
@@ -2466,4 +2471,157 @@ TEST_CASE("A runtime torn down before dispatch is never called back", "[engine][
         juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
 
     CHECK_FALSE(called);
+}
+
+// =============================================================================
+// The control plane (#2270)
+// =============================================================================
+
+TEST_CASE("A capture through the control plane answers with what the plugin holds",
+          "[engine][external][control]") {
+    // The endpoint a host asks rather than the instance it used to be handed.
+    // What it answers with is data: a snapshot that outlives the call, which is
+    // what lets the caller check between reading and writing, and what a plugin
+    // in another process could send back at all.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    // Moved after the device was built, the way a knob moved during a session
+    // is: what a capture is for is the difference between what the project
+    // holds and what the plugin holds now.
+    raw->tone->setValue(0.4f);
+
+    auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
+    REQUIRE(external != nullptr);
+
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, model.id};
+    adapter::LocalDeviceControlPlane plane(
+        [&](magda::engine::DeviceKey asked) { return asked == key ? external : nullptr; });
+
+    std::optional<adapter::CaptureOutcome> answered;
+    plane.captureState(
+        key, [&answered](adapter::CaptureOutcome outcome) { answered = std::move(outcome); });
+
+    // Answered before the call returned, because this plugin is in this
+    // process. Through the callback all the same, which is the half that will
+    // still be true when it is not.
+    REQUIRE(answered.has_value());
+    REQUIRE(answered->ok());
+    CHECK(answered->failure.isEmpty());
+
+    magda::applyCapturedPluginState(model, *answered->snapshot);
+    CHECK(model.parameters[1].currentValue == Catch::Approx(0.4f));
+}
+
+TEST_CASE("A key with no device bound is a failure rather than an empty state",
+          "[engine][external][control]") {
+    // The two are different findings and one reads like the other: a slot whose
+    // plugin has not arrived, against a plugin that answered with nothing. A
+    // caller told the second would write that nothing into the project and lose
+    // the patch the slot is about to load.
+    adapter::LocalDeviceControlPlane plane(
+        [](magda::engine::DeviceKey) -> adapter::EngineExternalDevice* { return nullptr; });
+
+    std::optional<adapter::CaptureOutcome> answered;
+    plane.captureState(
+        {magda::ChainSegment::PostFx, 12},
+        [&answered](adapter::CaptureOutcome outcome) { answered = std::move(outcome); });
+
+    REQUIRE(answered.has_value());
+    CHECK_FALSE(answered->ok());
+    CHECK(answered->failure.contains("no plugin is bound"));
+
+    // And it says which slot, because a host with a project's worth of devices
+    // is holding a failure that has to name one of them.
+    CHECK(answered->failure.contains("12"));
+}
+
+TEST_CASE("A plugin that will not describe itself is a failure with a reason",
+          "[engine][external][control]") {
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->throwsSavingState = true;
+
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
+    REQUIRE(external != nullptr);
+
+    adapter::LocalDeviceControlPlane plane(
+        [external](magda::engine::DeviceKey) { return external; });
+
+    std::optional<adapter::CaptureOutcome> answered;
+    plane.captureState(
+        {magda::ChainSegment::Fx, model.id},
+        [&answered](adapter::CaptureOutcome outcome) { answered = std::move(outcome); });
+
+    REQUIRE(answered.has_value());
+    CHECK_FALSE(answered->ok());
+    CHECK(answered->failure.contains("could not describe itself"));
+}
+
+TEST_CASE("A snapshot is written onto the assignment it was read from",
+          "[engine][external][control]") {
+    adapter::PluginAssignments assignments;
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, 7};
+    assignments.replaceAssignment(key);
+
+    const auto request = assignments.request(key);
+
+    magda::ExternalPluginSnapshot snapshot;
+    snapshot.pluginState = "what the plugin was holding";
+
+    auto model = externalDevice();
+    CHECK(adapter::commitCapturedState(request, snapshot, model));
+    CHECK(model.pluginState == "what the plugin was holding");
+}
+
+TEST_CASE("A snapshot read from an assignment that has been replaced is not written",
+          "[engine][external][control]") {
+    // The reason a capture is two steps with only data between them. Between
+    // asking a plugin what it holds and writing that down, the slot can have
+    // been given a different plugin -- and the patch of the one that answered
+    // would land on the one that did not.
+    adapter::PluginAssignments assignments;
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, 7};
+    assignments.replaceAssignment(key);
+
+    const auto request = assignments.request(key);
+    assignments.replaceAssignment(key);
+
+    magda::ExternalPluginSnapshot snapshot;
+    snapshot.pluginState = "the plugin that used to be in this slot";
+
+    auto model = externalDevice();
+    model.pluginState = "what the slot holds now";
+
+    CHECK_FALSE(adapter::commitCapturedState(request, snapshot, model));
+    CHECK(model.pluginState == "what the slot holds now");
+}
+
+TEST_CASE("A snapshot outliving the runtime that read it is not written",
+          "[engine][external][control]") {
+    // The other way a commit arrives too late, and the one an out-of-process
+    // capture will meet first: the project was closed while the answer was in
+    // flight. There is nothing to write onto and nobody waiting to hear it.
+    adapter::AssignmentRequest request;
+    {
+        adapter::PluginAssignments assignments;
+        assignments.replaceAssignment({magda::ChainSegment::Fx, 7});
+        request = assignments.request({magda::ChainSegment::Fx, 7});
+        CHECK(request.isStillWanted());
+    }
+
+    magda::ExternalPluginSnapshot snapshot;
+    snapshot.pluginState = "read before the project closed";
+
+    auto model = externalDevice();
+    CHECK_FALSE(adapter::commitCapturedState(request, snapshot, model));
+    CHECK(model.pluginState.isEmpty());
 }

@@ -85,20 +85,27 @@ struct ActiveAssignment {
 };
 
 /**
- * @brief What an asynchronous load remembers about who it is loading for.
+ * @brief What an asynchronous operation remembers about the device it is for.
  *
- * Weak at both ends, and for the same reason. A load must not keep an
+ * Both directions carry one. A load is answered by a plugin arriving and asks
+ * whether the slot that wanted it still does; a state capture is answered by a
+ * snapshot arriving and asks the same thing before writing it into a project
+ * (DeviceControl.hpp). It is the same question either way -- is this still the
+ * assignment the operation was started against -- so it is one type, and the
+ * check is one function rather than a convention each caller reimplements.
+ *
+ * Weak at both ends, and for the same reason. An operation must not keep an
  * assignment alive, because an assignment outliving its device is exactly the
- * state in which a stale load would be accepted; and it must not keep the table
- * alive either, because the runtime that owns it may be gone by the time the
- * plugin arrives. Either reference expiring is the answer "no longer wanted",
- * and an unregistered device hands out an already-expired handle, so forgetting
- * to register fails closed.
+ * state in which a stale answer would be accepted; and it must not keep the
+ * table alive either, because the runtime that owns it may be gone by the time
+ * the answer arrives. Either reference expiring is the answer "no longer
+ * wanted", and an unregistered device hands out an already-expired handle, so
+ * forgetting to register fails closed.
  *
  * Self-contained on purpose: completion needs nothing but this to decide, so
  * nothing about the runtime has to be captured by an asynchronous callback.
  */
-struct LoadRequest {
+struct AssignmentRequest {
     magda::engine::DeviceKey key;
     std::weak_ptr<const AssignmentHandle> handle;
     std::weak_ptr<const AssignmentTable> table;
@@ -186,7 +193,7 @@ class PluginAssignments {
      * An unregistered key yields an already-expired request, so a load started
      * without one is refused at completion.
      */
-    LoadRequest request(magda::engine::DeviceKey key) const;
+    AssignmentRequest request(magda::engine::DeviceKey key) const;
 
     /** The device is gone, or its plugin is being replaced by nothing. */
     void release(magda::engine::DeviceKey key);

@@ -9,6 +9,7 @@
 #include "core/DeviceInfo.hpp"
 #include "core/ParameterInfo.hpp"
 #include "exec/EngineDevice.hpp"
+#include "plugin_manager/ExternalPluginState.hpp"
 
 /**
  * @file EngineExternalDevice.hpp
@@ -136,11 +137,26 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     /// render never takes one.
     void process(magda::engine::DeviceBlock& block) override;
 
-    /// The instance this stands for. For a host that has to reach past the
-    /// adapter -- an editor window, a state save -- never for rendering.
-    juce::AudioPluginInstance& instance() const {
-        return *instance_;
-    }
+    /**
+     * @brief What the plugin holds now: chunk, parameter values, VST3 records.
+     *
+     * The control half of this device, and the reason it is here rather than
+     * anywhere with a pointer to the instance (#2270). Reading a plugin and
+     * rendering through it are two things that must not overlap, and the rule
+     * saying so has to have one owner: this object holds the instance, honours
+     * the suspension in process(), and is therefore the only thing that can
+     * promise the two are serialised. A caller handed the instance instead
+     * would be holding half of a rule and no way to keep it.
+     *
+     * Message thread. Nullopt when the plugin threw describing itself, which is
+     * a plugin whose records would not agree with each other
+     * (ExternalPluginState.hpp).
+     *
+     * It reads and does not write. What to do with a snapshot -- and whether
+     * the device it was read from is still the device the model means -- is the
+     * caller's, over in the control plane (DeviceControl.hpp).
+     */
+    std::optional<magda::ExternalPluginSnapshot> captureState();
 
   private:
     class PlayHead;

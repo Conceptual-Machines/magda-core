@@ -542,4 +542,14 @@ void EngineExternalDevice::process(magda::engine::DeviceBlock& block) {
         writeMidiOut(*block.midiOut, numSamples);
 }
 
+std::optional<magda::ExternalPluginSnapshot> EngineExternalDevice::captureState() {
+    // The read itself is engine-agnostic and stated once: what a plugin holds,
+    // in the encoding a project keeps it in, with the plugin suspended across
+    // the whole of it (ExternalPluginState.hpp). What this adds is the only
+    // thing that could not live there -- that nothing else can reach the
+    // instance to do it, so the suspension the read asks for is a suspension
+    // this device's own process() is already honouring.
+    return magda::captureExternalPluginState(*instance_);
+}
+
 }  // namespace magda::daw::audio::engine_adapter

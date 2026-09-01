@@ -240,7 +240,7 @@ using CurrentDeviceLookup = std::function<const magda::DeviceInfo*(magda::engine
  * PluginDescription is deliberately not retained.
  */
 struct RequestedPlugin {
-    LoadRequest assignment;
+    AssignmentRequest assignment;
     juce::String displayName;
     bool resolvedIsInstrument = false;
 };

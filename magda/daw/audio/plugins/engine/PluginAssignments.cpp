@@ -10,7 +10,7 @@ std::shared_ptr<const AssignmentHandle> AssignmentTable::find(magda::engine::Dev
     return it != byKey_.end() ? it->second : nullptr;
 }
 
-bool LoadRequest::isStillWanted() const {
+bool AssignmentRequest::isStillWanted() const {
     const auto live = table.lock();
     if (live == nullptr)
         return false;
@@ -25,7 +25,7 @@ bool LoadRequest::isStillWanted() const {
     return live->find(key) == held;
 }
 
-bool LoadRequest::keyWasReassigned() const {
+bool AssignmentRequest::keyWasReassigned() const {
     const auto live = table.lock();
     if (live == nullptr)
         return false;
@@ -34,7 +34,7 @@ bool LoadRequest::keyWasReassigned() const {
     return now != nullptr && now != handle.lock();
 }
 
-bool LoadRequest::runtimeIsAlive() const {
+bool AssignmentRequest::runtimeIsAlive() const {
     return !table.expired();
 }
 
@@ -62,7 +62,7 @@ ActiveAssignment PluginAssignments::current(magda::engine::DeviceKey key) const 
     return {.key = key, .handle = std::move(held)};
 }
 
-LoadRequest PluginAssignments::request(magda::engine::DeviceKey key) const {
+AssignmentRequest PluginAssignments::request(magda::engine::DeviceKey key) const {
     return {.key = key, .handle = table_->find(key), .table = table_};
 }
 

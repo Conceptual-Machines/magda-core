@@ -115,7 +115,7 @@ TEST_CASE("A copy of a live device is not the device it was copied from",
 
     assignments.replaceAssignment(fx(2));
 
-    const adapter::LoadRequest ontoTheCopy{
+    const adapter::AssignmentRequest ontoTheCopy{
         .key = fx(2), .handle = sourceRequest.handle, .table = sourceRequest.table};
     CHECK_FALSE(ontoTheCopy.isStillWanted());
     CHECK(sourceRequest.isStillWanted());
@@ -131,10 +131,10 @@ TEST_CASE("Sections holding the same DeviceId hold different assignments",
 
     const auto request = assignments.request(fx(1));
 
-    CHECK_FALSE(
-        adapter::LoadRequest{.key = postFx(1), .handle = request.handle, .table = request.table}
-            .isStillWanted());
-    CHECK_FALSE(adapter::LoadRequest{
+    CHECK_FALSE(adapter::AssignmentRequest{
+        .key = postFx(1), .handle = request.handle, .table = request.table}
+                    .isStillWanted());
+    CHECK_FALSE(adapter::AssignmentRequest{
         .key = mixerAnalysis(1), .handle = request.handle, .table = request.table}
                     .isStillWanted());
 
@@ -175,7 +175,7 @@ TEST_CASE("A request outliving the whole runtime is refused", "[plugins][assignm
     // The project was closed while a plugin was loading. The completion still
     // arrives, and it must answer from what it holds rather than by reaching
     // into a destroyed registry.
-    adapter::LoadRequest request;
+    adapter::AssignmentRequest request;
     adapter::ActiveAssignment held;
     {
         adapter::PluginAssignments assignments;
@@ -195,5 +195,5 @@ TEST_CASE("A default-constructed request is refused", "[plugins][assignments]") 
     adapter::PluginAssignments assignments;
     assignments.replaceAssignment(fx(magda::INVALID_DEVICE_ID));
 
-    CHECK_FALSE(adapter::LoadRequest{}.isStillWanted());
+    CHECK_FALSE(adapter::AssignmentRequest{}.isStillWanted());
 }
