@@ -136,39 +136,33 @@ TEST_CASE("Work that never ran is cancelled rather than dropped", "[engine][cont
     // The promise a caller above this makes is exactly one answer, and an
     // executor that let queued work go would leave that promise unkept by
     // whoever made it: a capture waiting for a snapshot nobody is left to send.
-    // So accepted work is always called, and told which of the two it is.
-    std::promise<void> holdingOn;
-    std::shared_future<void> release = holdingOn.get_future();
-    std::promise<void> started;
-    auto running = started.get_future();
+    // So accepted work is always called, on this executor, and told which of the
+    // two it is.
+    //
+    // Destroyed from inside its own work, which is the one ordering a test can
+    // pin without a sleep in it: the destructor runs while the worker is here,
+    // so the item queued below is still queued when it does, and the drain that
+    // follows is on this thread rather than a race with it.
+    auto executor = std::make_shared<adapter::SerialControlThread>();
 
     std::promise<ExecutionState> abandoned;
     auto answered = abandoned.get_future();
 
-    auto executor = std::make_unique<adapter::SerialControlThread>();
+    REQUIRE(executor->run([executor, &abandoned](ExecutionState) mutable {
+        // Queued while the executor is still taking work, and never reached:
+        // what follows stops it.
+        CHECK(executor->run([&abandoned](ExecutionState state) { abandoned.set_value(state); }));
 
-    // Holds the worker, so what follows is still queued when the executor is
-    // destroyed.
-    REQUIRE(executor->run([&started, release](ExecutionState) {
-        started.set_value();
-        release.wait();
+        // The last reference, dropped here. The destructor runs on this thread,
+        // marks the executor stopping, and leaves the worker to answer what is
+        // left once this returns.
+        executor.reset();
     }));
 
-    running.wait();
-
-    REQUIRE(executor->run([&abandoned](ExecutionState state) { abandoned.set_value(state); }));
-
-    // Destroyed from another thread, because the destructor waits for a worker
-    // this test is deliberately holding. Nothing here is a race: the destructor
-    // answers the queue before it starts waiting, so the cancellation below
-    // arrives while the first piece of work is still standing still.
-    std::thread destroyer([&executor] { executor.reset(); });
+    executor.reset();
 
     REQUIRE(answered.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
     CHECK(answered.get() == ExecutionState::Cancelled);
-
-    holdingOn.set_value();
-    destroyer.join();
 }
 
 TEST_CASE("An executor destroyed by its own work does not wait for itself", "[engine][control]") {

@@ -2,6 +2,7 @@
 
 #include <juce_events/juce_events.h>
 
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <functional>
@@ -44,21 +45,33 @@
  *
  * ## What happens to work that was accepted
  *
- * Accepted work is always called exactly once, and told which of the two it is:
- * it either ran, or it was cancelled because the executor went away before its
- * turn. That is what lets a caller above this keep a promise of its own -- a
- * capture owes its answer exactly once, and an executor that quietly dropped
- * queued work would leave callers waiting for an answer nobody was left to
- * send.
+ * Accepted work is called exactly once, on the executor, and told which of the
+ * two it is: it either ran, or it was cancelled because the executor is going
+ * away before its turn came. Both arrive on the executor's own thread, which is
+ * the whole point of having one -- a caller writing a project's model in a
+ * completion is entitled to be on the same thread whichever of the two it got,
+ * and an answer that arrived somewhere else would put an isCurrent() check and
+ * a hop of its own into every consumer.
  *
- * Cancelled work runs on whichever thread destroys the executor and must touch
- * nothing but its own reporting. A cancellation is not a late chance to reach a
- * plugin: the reason there is one is that the plugins are going away.
+ * A cancellation is not a late chance to reach a plugin. The devices are going
+ * away; what it is for is letting whoever was waiting stop waiting.
  *
  * Submission itself can fail, and says so rather than pretending: an executor
- * that has stopped accepts nothing, and a message loop that is shutting down
- * refuses a post. A caller that is refused has been told nothing will run, and
- * answers for the operation itself.
+ * that has stopped accepts nothing. A caller that is refused has been told,
+ * synchronously, that nothing will run and nothing will be called -- so
+ * whatever it owed for that operation is still its own to answer, on its own
+ * thread, without a callback arriving from somewhere unexpected to say so.
+ *
+ * ## The one edge the guarantee is scoped to
+ *
+ * "Exactly once, on the executor" holds for as long as the executor has a
+ * context to run on. A SerialControlThread owns its thread and therefore owns
+ * the guarantee outright. A MessageThreadControlExecutor borrows the host's
+ * message loop: work it posted is cancelled on that loop when the executor is
+ * destroyed, but a loop torn down under a posted call takes the call with it,
+ * and nothing in this file can be standing on a thread that no longer exists.
+ * That is process teardown rather than a project closing, and it is written
+ * here rather than left as a surprise.
  *
  * ## What this is for
  *
@@ -118,10 +131,12 @@ class ControlExecutor {
      * See the file comment: an operation that ran nested work inline would be
      * letting a second transaction into a plugin the first has open.
      *
-     * @return whether it was accepted. Accepted work is called exactly once,
-     *         with Ran or with Cancelled. A refusal means nothing will run it
-     *         and nothing will call it, so whatever the caller owed for it is
-     *         still owed.
+     * @return whether it was accepted. Accepted work is called exactly once and
+     *         on this executor, with Ran or with Cancelled, scoped as the file
+     *         comment scopes it. A refusal means nothing will run it and
+     *         nothing will call it, so whatever the caller owed for it is still
+     *         owed -- and is owed on the caller's own thread, which is where it
+     *         has just been told.
      */
     virtual bool run(Work work) = 0;
 
@@ -137,15 +152,32 @@ class ControlExecutor {
  * editor lives on, the one its own host callbacks expect, and the one the model
  * a callback writes into is edited from.
  *
- * The one guarantee it cannot make is the one JUCE does not: a message posted
- * and then abandoned because the loop itself was torn down is a call that never
- * arrives. That is process teardown rather than a plane closing, and it is
- * stated here rather than papered over.
+ * Work it has posted and this executor has not outlived is cancelled rather
+ * than left to run against a plane that is gone: the post still arrives on the
+ * message thread and is told it was cancelled, which keeps the answer on the
+ * executor in both cases.
+ *
+ * The loop is the host's rather than this object's, which is where the base
+ * guarantee is scoped rather than kept: a message loop torn down under a posted
+ * call takes the call with it, and there is no thread left to say so on.
  */
 class MessageThreadControlExecutor final : public ControlExecutor {
   public:
+    MessageThreadControlExecutor();
+    ~MessageThreadControlExecutor() override;
+
     bool run(Work work) override;
     bool isCurrent() const override;
+
+  private:
+    /// Shared with every post this executor has made, so that destroying it
+    /// turns them all into cancellations rather than calls into a plane that
+    /// has gone.
+    struct Posted {
+        std::atomic<bool> cancelled{false};
+    };
+
+    std::shared_ptr<Posted> posted_;
 };
 
 /**
@@ -157,8 +189,11 @@ class MessageThreadControlExecutor final : public ControlExecutor {
  * left deciding per call site.
  *
  * Work still queued when this is destroyed is cancelled rather than dropped, so
- * every accepted operation is still answered once. Cancellation runs on the
- * thread doing the destroying, before it waits for the worker.
+ * every accepted operation is still answered once -- and answered on the worker
+ * itself, which drains what is left as cancellations before it stops. The
+ * destructor waits for that, so an executor that has been destroyed has
+ * accounted for everything it accepted, on the one thread it promised to
+ * account for it on.
  *
  * ## Being destroyed by its own work
  *

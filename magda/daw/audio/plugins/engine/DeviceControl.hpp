@@ -152,28 +152,27 @@ class DeviceControlPlane {
      * Asked from any thread, answered on the executor, always later than this
      * returns. A caller writing a project's model in that callback is therefore
      * on the thread it is entitled to write one from, whichever thread asked
-     * and whichever process answered.
+     * and whichever process answered -- and it is never handed that callback
+     * anywhere else, which is what keeps an isCurrent() check and a hop of its
+     * own out of every consumer.
      *
-     * @p completed is called exactly once. Three things can happen to it:
+     * @return whether the request was accepted. False is a plane that is
+     *         closing: nothing will run and @p completed will not be called, so
+     *         the caller still owes whatever it owed and has been told so here,
+     *         synchronously, rather than by a callback arriving from a thread
+     *         it was not expecting one on.
      *
-     * - the capture ran, and it carries a snapshot or a reason there is none;
-     * - the plane's executor went away before its turn, and it carries that as
-     *   a failure, on whichever thread destroyed the executor;
-     * - the executor would not take the work at all, which is a plane already
-     *   shutting down, and the failure is delivered on the calling thread
-     *   because there is no longer an executor to deliver it on.
-     *
-     * The last is the only answer that does not arrive on the executor, and it
-     * is the one case where there is none to arrive on. It is stated rather
-     * than left to be discovered, because a caller that writes a model in this
-     * callback has to know the one occasion it is not being handed the thread
-     * for it.
+     * An accepted request calls @p completed exactly once, on the executor,
+     * either with what the capture found or with a failure saying the plane
+     * closed before its turn came. The one thing that can take an accepted
+     * request away without a word is the host's message loop being torn down
+     * under it, which is process teardown (ControlExecutor.hpp).
      *
      * The callback outlives the call. Whatever it captures must still be there
      * when it runs, or must be held weakly and checked -- the plane keeps its
-     * own end of that with @p lifeline and cannot keep the caller's.
+     * own end of that with the registry below and cannot keep the caller's.
      */
-    virtual void captureState(magda::engine::DeviceKey key, CaptureCallback completed) = 0;
+    virtual bool captureState(magda::engine::DeviceKey key, CaptureCallback completed) = 0;
 
     /// Where this plane's work runs, for a host that has something else to put
     /// on the same thread.
@@ -186,53 +185,71 @@ class DeviceControlPlane {
 };
 
 /**
+ * @brief A registry that finds nothing is a failure, not an empty snapshot.
+ *
+ * Worth saying where the two meet: a slot with no plugin in it and a plugin
+ * that would not describe itself are different findings, and a caller told the
+ * second when the first happened would write a project's plugin state away as
+ * absent.
+ */
+
+/**
+ * @brief The devices a plane can reach, owned by whoever runs them (#2270).
+ *
+ * A plane's work runs later than the call that queued it, so between the two a
+ * project can be closed. What it needs at that moment is not a token beside a
+ * lookup -- keeping one alive says nothing about what the other captured -- but
+ * the thing that owns the devices, held weakly and locked before it is asked.
+ *
+ * So the lookup is a type rather than a function, and the plane holds a weak
+ * reference to it. Locking it is what keeps the devices alive for the length of
+ * the operation, and failing to lock it is the answer that there is nothing
+ * left to ask. The relationship is the type's rather than a caller's to
+ * maintain: there is no way to hand over a lease that has nothing to do with
+ * the devices it is supposed to be keeping.
+ *
+ * The same shape the load path already has for the same problem, where an
+ * assignment is held weakly and a completion that finds it gone is refused
+ * (PluginAssignments.hpp).
+ */
+class DeviceRegistry {
+  public:
+    virtual ~DeviceRegistry() = default;
+
+    DeviceRegistry() = default;
+    DeviceRegistry(const DeviceRegistry&) = delete;
+    DeviceRegistry& operator=(const DeviceRegistry&) = delete;
+    DeviceRegistry(DeviceRegistry&&) = delete;
+    DeviceRegistry& operator=(DeviceRegistry&&) = delete;
+
+    /**
+     * @brief The device at @p key, or null.
+     *
+     * Null for a key nothing is bound to, which includes one whose plugin has
+     * not finished loading. Called on the control executor, with the registry
+     * held alive for the length of the operation, so what it returns is safe to
+     * use until that operation ends.
+     */
+    virtual EngineExternalDevice* find(magda::engine::DeviceKey key) const = 0;
+};
+
+/**
  * @brief The plane for plugins running in this process.
  *
- * It owns nothing. Which device is at a key is the runtime's business, so the
- * lookup is handed in: the same arrangement the load path already has with
- * CurrentDeviceLookup, and what keeps this from becoming a second registry
- * disagreeing with the first.
- *
- * A lookup that returns nothing is a failure rather than an empty snapshot. The
- * two are different findings -- a slot with no plugin in it, against a plugin
- * that would not describe itself -- and a caller told the second when the first
- * happened would write a project's plugin state away as absent.
+ * It owns nothing: which device is at a key is the runtime's business, and the
+ * runtime's registry is held weakly so that a project closing between a request
+ * and its turn is a failure with a reason rather than a dereference of
+ * something that has gone.
  */
 class LocalDeviceControlPlane final : public DeviceControlPlane {
   public:
-    /// The device at a key, or null. Null for a key nothing is bound to, which
-    /// includes one whose plugin has not finished loading.
-    ///
-    /// Called on the executor, like everything else here, so a host writing one
-    /// answers from the same thread its runtime is edited from.
-    using DeviceLookup = std::function<EngineExternalDevice*(magda::engine::DeviceKey)>;
+    LocalDeviceControlPlane(std::shared_ptr<ControlExecutor> executor,
+                            std::weak_ptr<const DeviceRegistry> devices);
 
-    /**
-     * @brief The plane for plugins in this process.
-     *
-     * @p lifeline is what the lookup belongs to: the runtime that owns the
-     * devices, held weakly. Work is queued and runs later, so between the two
-     * the project can be closed -- and a lookup is a function over a runtime,
-     * so calling one whose runtime has gone is reaching into a deleted object
-     * rather than being told there is no device.
-     *
-     * Locked on the executor for the length of the operation, which is more
-     * than a check: it is what stops the runtime being destroyed halfway
-     * through a capture rather than only before one. An expired lifeline is a
-     * failure with a reason, and the lookup is never called.
-     *
-     * The same shape the load path uses for the same problem, where an
-     * assignment is held weakly and a completion that finds it gone is refused
-     * (PluginAssignments.hpp).
-     */
-    LocalDeviceControlPlane(std::shared_ptr<ControlExecutor> executor, std::weak_ptr<void> lifeline,
-                            DeviceLookup devices);
-
-    void captureState(magda::engine::DeviceKey key, CaptureCallback completed) override;
+    bool captureState(magda::engine::DeviceKey key, CaptureCallback completed) override;
 
   private:
-    std::weak_ptr<void> lifeline_;
-    DeviceLookup devices_;
+    std::weak_ptr<const DeviceRegistry> devices_;
 };
 
 /**

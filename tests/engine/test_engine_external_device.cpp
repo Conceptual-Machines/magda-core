@@ -519,6 +519,41 @@ adapter::CaptureOutcome capture(adapter::DeviceControlPlane& plane, magda::engin
     return answered.get();
 }
 
+/// A registry over one device, which is what a runtime hands a plane (#2270).
+///
+/// Owned by the test the way a runtime owns its own: what keeps the device
+/// reachable is this object being alive, so dropping it is how a test closes a
+/// project.
+class OneDeviceRegistry final : public adapter::DeviceRegistry {
+  public:
+    /// @p asked counts the lookups, for the cases about whether there should
+    /// have been one. It belongs to the test rather than to this object,
+    /// because the case that cares is the one where this object is gone.
+    OneDeviceRegistry(magda::engine::DeviceKey key, adapter::EngineExternalDevice* device,
+                      std::atomic<int>* asked = nullptr)
+        : key_(key), device_(device), asked_(asked) {}
+
+    adapter::EngineExternalDevice* find(magda::engine::DeviceKey key) const override {
+        if (asked_ != nullptr)
+            ++(*asked_);
+
+        return key == key_ ? device_ : nullptr;
+    }
+
+  private:
+    magda::engine::DeviceKey key_;
+    adapter::EngineExternalDevice* device_ = nullptr;
+    std::atomic<int>* asked_ = nullptr;
+};
+
+/// A registry with nothing in it.
+class EmptyRegistry final : public adapter::DeviceRegistry {
+  public:
+    adapter::EngineExternalDevice* find(magda::engine::DeviceKey) const override {
+        return nullptr;
+    }
+};
+
 magda::DeviceInfo externalDevice() {
     magda::DeviceInfo device;
     device.id = 7;
@@ -2531,10 +2566,9 @@ TEST_CASE("A capture through the control plane answers with what the plugin hold
     REQUIRE(external != nullptr);
 
     const magda::engine::DeviceKey key{magda::ChainSegment::Fx, model.id};
-    const auto runtime = std::make_shared<int>(0);
-    adapter::LocalDeviceControlPlane plane(
-        std::make_shared<adapter::SerialControlThread>(), runtime,
-        [&](magda::engine::DeviceKey asked) { return asked == key ? external : nullptr; });
+    const auto registry = std::make_shared<const OneDeviceRegistry>(key, external);
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
 
     const auto answered = capture(plane, key);
     REQUIRE(answered.ok());
@@ -2550,10 +2584,9 @@ TEST_CASE("A key with no device bound is a failure rather than an empty state",
     // plugin has not arrived, against a plugin that answered with nothing. A
     // caller told the second would write that nothing into the project and lose
     // the patch the slot is about to load.
-    const auto runtime = std::make_shared<int>(0);
-    adapter::LocalDeviceControlPlane plane(
-        std::make_shared<adapter::SerialControlThread>(), runtime,
-        [](magda::engine::DeviceKey) -> adapter::EngineExternalDevice* { return nullptr; });
+    const auto registry = std::make_shared<const EmptyRegistry>();
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
 
     const auto answered = capture(plane, {magda::ChainSegment::PostFx, 12});
     CHECK_FALSE(answered.ok());
@@ -2577,10 +2610,10 @@ TEST_CASE("A plugin that will not describe itself is a failure with a reason",
     auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
     REQUIRE(external != nullptr);
 
-    const auto runtime = std::make_shared<int>(0);
-    adapter::LocalDeviceControlPlane plane(
-        std::make_shared<adapter::SerialControlThread>(), runtime,
-        [external](magda::engine::DeviceKey) { return external; });
+    const auto registry = std::make_shared<const OneDeviceRegistry>(
+        magda::engine::DeviceKey{magda::ChainSegment::Fx, model.id}, external);
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
 
     const auto answered = capture(plane, {magda::ChainSegment::Fx, model.id});
     CHECK_FALSE(answered.ok());
@@ -2699,9 +2732,9 @@ TEST_CASE("A capture runs and answers on the plane's executor", "[engine][extern
     REQUIRE(external != nullptr);
 
     auto executor = std::make_shared<adapter::SerialControlThread>();
-    const auto runtime = std::make_shared<int>(0);
-    adapter::LocalDeviceControlPlane plane(
-        executor, runtime, [external](magda::engine::DeviceKey) { return external; });
+    const auto registry = std::make_shared<const OneDeviceRegistry>(
+        magda::engine::DeviceKey{magda::ChainSegment::Fx, model.id}, external);
+    adapter::LocalDeviceControlPlane plane(executor, registry);
 
     std::promise<bool> onTheExecutor;
     auto answered = onTheExecutor.get_future();
@@ -2735,9 +2768,9 @@ TEST_CASE("A capture asked for on the executor is queued behind what asked for i
     REQUIRE(external != nullptr);
 
     auto executor = std::make_shared<adapter::SerialControlThread>();
-    const auto runtime = std::make_shared<int>(0);
-    adapter::LocalDeviceControlPlane plane(
-        executor, runtime, [external](magda::engine::DeviceKey) { return external; });
+    const auto registry = std::make_shared<const OneDeviceRegistry>(
+        magda::engine::DeviceKey{magda::ChainSegment::Fx, model.id}, external);
+    adapter::LocalDeviceControlPlane plane(executor, registry);
 
     std::atomic<bool> answered{false};
     std::promise<bool> answeredInside;
@@ -2764,17 +2797,18 @@ TEST_CASE("A capture asked for on the executor is queued behind what asked for i
     CHECK(answered);
 }
 
-TEST_CASE("A capture queued before its runtime went is answered rather than run",
+TEST_CASE("A capture queued before its registry went is answered rather than run",
           "[engine][external][control]") {
     // The hazard of being genuinely asynchronous. Between queueing a capture
-    // and running it, the project can close -- and the lookup a plane was given
-    // is a function over the runtime that owned those devices, so calling it
-    // then is reaching into something that has been deleted rather than being
-    // told there is no device.
+    // and running it, the project can close -- and what finds a device is a
+    // registry the runtime owns, so asking one whose runtime has gone is
+    // reaching into something that has been deleted rather than being told
+    // there is no device.
     //
-    // So the work carries a weak lifeline, takes it before it looks anything
-    // up, and answers rather than reaching. The same shape the asynchronous
-    // load path uses for the same problem (PluginAssignments.hpp).
+    // So the plane holds the registry weakly and takes it before it asks
+    // anything, which is the relationship a token standing beside a lookup
+    // could not have had. The same shape the asynchronous load path uses for
+    // the same problem (PluginAssignments.hpp).
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
     auto model = externalDevice();
     auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
@@ -2784,41 +2818,40 @@ TEST_CASE("A capture queued before its runtime went is answered rather than run"
     REQUIRE(external != nullptr);
 
     auto executor = std::make_shared<adapter::SerialControlThread>();
-    auto runtime = std::make_shared<int>(0);
+    // Counted outside the registry, because the point of this case is that the
+    // registry is gone by the time the question is asked.
+    std::atomic<int> asked{0};
+    auto registry = std::make_shared<const OneDeviceRegistry>(
+        magda::engine::DeviceKey{magda::ChainSegment::Fx, model.id}, external, &asked);
 
-    std::atomic<bool> lookedUp{false};
-    adapter::LocalDeviceControlPlane plane(executor, runtime,
-                                           [external, &lookedUp](magda::engine::DeviceKey) {
-                                               lookedUp = true;
-                                               return external;
-                                           });
+    adapter::LocalDeviceControlPlane plane(executor, registry);
 
     // The worker is held while the capture is queued behind it, so the project
-    // can be closed in between the way it would be by a person doing it.
+    // can be closed in between the way a person would close it.
     std::promise<void> holdingOn;
     std::shared_future<void> release = holdingOn.get_future();
     std::promise<void> started;
     auto running = started.get_future();
 
-    executor->run([&started, release](adapter::ExecutionState) {
+    REQUIRE(executor->run([&started, release](adapter::ExecutionState) {
         started.set_value();
         release.wait();
-    });
+    }));
     running.wait();
 
     std::promise<adapter::CaptureOutcome> answered;
     auto answer = answered.get_future();
-    plane.captureState(
+    REQUIRE(plane.captureState(
         {magda::ChainSegment::Fx, model.id},
-        [&answered](adapter::CaptureOutcome outcome) { answered.set_value(std::move(outcome)); });
+        [&answered](adapter::CaptureOutcome outcome) { answered.set_value(std::move(outcome)); }));
 
-    runtime.reset();
+    registry.reset();
     holdingOn.set_value();
 
     const auto outcome = answer.get();
     CHECK_FALSE(outcome.ok());
     CHECK(outcome.failure().contains("is gone"));
-    CHECK_FALSE(lookedUp);
+    CHECK(asked == 0);
 }
 
 TEST_CASE("Two captures of one device do not overlap", "[engine][external][control]") {
@@ -2855,10 +2888,10 @@ TEST_CASE("Two captures of one device do not overlap", "[engine][external][contr
         --inside;
     };
 
-    const auto runtime = std::make_shared<int>(0);
-    adapter::LocalDeviceControlPlane plane(
-        std::make_shared<adapter::SerialControlThread>(), runtime,
-        [external](magda::engine::DeviceKey) { return external; });
+    const auto registry = std::make_shared<const OneDeviceRegistry>(
+        magda::engine::DeviceKey{magda::ChainSegment::Fx, model.id}, external);
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
 
     std::atomic<int> taken{0};
     std::vector<std::thread> askers;

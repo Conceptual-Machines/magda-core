@@ -47,20 +47,13 @@ DeviceControlPlane::DeviceControlPlane(std::shared_ptr<ControlExecutor> executor
 }
 
 LocalDeviceControlPlane::LocalDeviceControlPlane(std::shared_ptr<ControlExecutor> executor,
-                                                 std::weak_ptr<void> lifeline, DeviceLookup devices)
-    : DeviceControlPlane(std::move(executor)),
-      lifeline_(std::move(lifeline)),
-      devices_(std::move(devices)) {}
+                                                 std::weak_ptr<const DeviceRegistry> devices)
+    : DeviceControlPlane(std::move(executor)), devices_(std::move(devices)) {}
 
-void LocalDeviceControlPlane::captureState(magda::engine::DeviceKey key,
+bool LocalDeviceControlPlane::captureState(magda::engine::DeviceKey key,
                                            CaptureCallback completed) {
-    if (!completed)
-        return;
-
-    if (executor() == nullptr) {
-        completed(CaptureOutcome::failed("this control plane has no executor to run on"));
-        return;
-    }
+    if (!completed || executor() == nullptr)
+        return false;
 
     // Everything past here runs on the executor: the lookup, the plugin's own
     // state read, and the answer. Nothing checks which thread asked, because
@@ -69,35 +62,30 @@ void LocalDeviceControlPlane::captureState(magda::engine::DeviceKey key,
     // that impossible for every control operation rather than for this one.
     //
     // Nothing about the plane is captured. The work outlives the call that
-    // queued it, so it carries what it needs by value: the lookup, and the weak
-    // lifeline that says whether the runtime the lookup reads is still there.
-    const auto accepted = executor()->run([lifeline = lifeline_, devices = devices_, key,
-                                           completed](ExecutionState state) mutable {
+    // queued it, so it carries what it needs by value: the weak registry, which
+    // is the devices and their owner in one reference rather than a token
+    // standing beside them.
+    return executor()->run([devices = devices_, key, completed](ExecutionState state) mutable {
         if (state == ExecutionState::Cancelled) {
-            // Owed an answer even here, and owed the truth about it: this is
-            // not the control thread and the devices are going away, so nothing
-            // is looked up and nothing is read.
+            // Still on the executor, which is what a cancellation is worth: the
+            // caller is told where it was expecting to be told, and the devices
+            // are not reached for on the way.
             completed(CaptureOutcome::failed("the control plane closed before this capture ran"));
             return;
         }
 
         // Held for the length of the operation rather than checked at the start
-        // of it. A runtime that expires between the check and the lookup is the
-        // same dangling pointer as one that expired before either.
-        const auto alive = lifeline.lock();
-        if (!alive) {
+        // of it, and it is the registry itself rather than a token beside it:
+        // what keeps a device alive is the thing that owns it, so locking that
+        // is what makes the pointer below safe to use until this returns.
+        const auto registry = devices.lock();
+        if (!registry) {
             completed(CaptureOutcome::failed("the runtime that owned " + describeKey(key) +
                                              " is gone, so nothing was read"));
             return;
         }
 
-        if (!devices) {
-            completed(
-                CaptureOutcome::failed("this control plane was given no way to find a device"));
-            return;
-        }
-
-        auto* device = devices(key);
+        auto* device = registry->find(key);
         if (device == nullptr) {
             // Named rather than reported as an empty state. A key with nothing
             // bound to it is a slot whose plugin has not arrived or has gone,
@@ -116,13 +104,6 @@ void LocalDeviceControlPlane::captureState(magda::engine::DeviceKey key,
 
         completed(CaptureOutcome::taken(std::move(*snapshot)));
     });
-
-    // Refused, which is a plane already shutting down: nothing will run the
-    // work and nothing will call the callback, so the promise of exactly one
-    // answer is this call's to keep. The one answer that does not arrive on the
-    // executor, because by now there is not one to arrive on.
-    if (!accepted)
-        completed(CaptureOutcome::failed("the control plane is closing and took no capture"));
 }
 
 bool commitCapturedState(const AssignmentRequest& request,
