@@ -306,40 +306,60 @@ TEST_CASE("A request and a loop wrap on the same beat resolve to the request", "
     CHECK_FALSE(handle.queuedState().has_value());
 }
 
-TEST_CASE("A request losing to a wrap is late by one block and no more", "[launch]") {
+TEST_CASE("A wrap never displaces a quantized request", "[launch]") {
+    // The drift dies with the unquantized launch that caused it rather than
+    // being carried into an action somebody explicitly put on the grid.
     LaunchHandle handle;
-    handle.play({});
-    handle.setLooping(4.0);
-    handle.advance(block(0.0, 3.99));
+    handle.play(3.99);  // off the grid, so the wraps are off the grid too
+    handle.setLooping(8.0);
+    handle.advance(block(3.99, 11.98));
 
-    // Due at 4.01, which is after the wrap at 4.0 and inside the same block.
-    handle.stop(4.01);
+    // The wrap is due at 11.99 and the stop at 12.0, both inside this block.
+    // The wrap is earlier and still gives way.
+    handle.stop(12.0);
+    const auto status = handle.advance(block(11.98, 12.01));
 
-    const auto contested = handle.advance(block(3.99, 4.02));
-    CHECK(contested.isSplit);
-    CHECK(handle.playState() == LaunchHandle::PlayState::playing);
-    CHECK(handle.queuedState() == LaunchHandle::QueueState::stopQueued);
-
-    // Next block, at its very first sample rather than anywhere later.
-    const auto resolved = handle.advance(block(4.02, 4.05));
-    CHECK_FALSE(resolved.isSplit);
-    CHECK_FALSE(resolved.playing1);
+    REQUIRE(status.isSplit);
+    CHECK(status.playing1);
+    CHECK_FALSE(status.playing2);
     CHECK(handle.playState() == LaunchHandle::PlayState::stopped);
+
+    // On the bar, to the sample, rather than a block late.
+    CHECK(status.range2.start == Approx(12.0));
 }
 
-TEST_CASE("A deferred request cannot be starved by further wraps", "[launch]") {
-    // A loop short enough to put a wrap in every block. A request that lost
-    // once must not keep losing: once deferred it sits at or before the next
-    // block's start, and no wrap can be earlier than that.
+TEST_CASE("A re-trigger lands on its own beat, not on the wrap before it", "[launch]") {
+    LaunchHandle handle;
+    handle.play(3.99);
+    handle.setLooping(8.0);
+    handle.advance(block(3.99, 11.98));
+
+    handle.play(12.0);
+    const auto status = handle.advance(block(11.98, 12.01));
+
+    REQUIRE(status.isSplit);
+    CHECK(status.playing2);
+
+    // The run's origin is the beat that was asked for. The wrap at 11.99 would
+    // have put it there 0.01 beats early and kept the drift alive.
+    REQUIRE(status.playStartTime2.has_value());
+    CHECK(*status.playStartTime2 == Approx(12.0));
+    CHECK(handle.playedRange()->start == Approx(12.0));
+}
+
+TEST_CASE("A request fires on its beat however often the loop wraps", "[launch]") {
+    // A loop short enough to put a wrap in every block cannot hold a request
+    // off, because it never outranks one in the first place.
     LaunchHandle handle;
     handle.play({});
     handle.setLooping(0.01);
     handle.advance(block(0.0, 0.005));
 
     handle.stop(0.011);
-    handle.advance(block(0.005, 0.03));
-    handle.advance(block(0.03, 0.055));
+    const auto status = handle.advance(block(0.005, 0.03));
 
+    REQUIRE(status.isSplit);
+    CHECK(status.range2.start == Approx(0.011));
     CHECK(handle.playState() == LaunchHandle::PlayState::stopped);
     CHECK_FALSE(handle.queuedState().has_value());
 }

@@ -154,12 +154,19 @@ SplitStatus LaunchHandle::advance(const SyncRange& range) {
     status.playing1 = playState_ == PlayState::playing;
     status.playing2 = status.playing1;
 
-    // What happens inside this block, in monotonic beats. At most one: a
-    // handle holds one pending request, so a launch cannot be queued behind a
-    // stop, and the only way two events can compete is a request landing in
-    // the same block as a loop wrap. The earlier one wins and the other is
-    // reconsidered next block, which bounds the error at one block rather than
-    // inventing a second split the caller has nowhere to put.
+    // What happens inside this block, in monotonic beats. At most one, and a
+    // request always outranks a loop wrap.
+    //
+    // The rule is that anything quantized lands on its beat, and anything that
+    // is not is the user's own business. A wrap is the handle's bookkeeping and
+    // it is not entitled to move an instant somebody asked for: a clip launched
+    // off the grid has its wraps off the grid too, and letting one displace a
+    // quantized stop would carry that drift into the one action that was
+    // explicitly put on the beat.
+    //
+    // Giving way costs the wrap nothing. A stop ends the run and a launch
+    // restarts it, so either way the run it would have restarted is gone before
+    // the block is over.
     std::optional<double> event;
     auto fromPending = false;
 
@@ -175,7 +182,7 @@ SplitStatus LaunchHandle::advance(const SyncRange& range) {
         }
     }
 
-    if (playState_ == PlayState::playing && loopBeats_ && playedMonotonic_) {
+    if (!event && playState_ == PlayState::playing && loopBeats_ && playedMonotonic_) {
         const auto origin = playedMonotonic_->start;
         const auto elapsed = range.monotonic.start - origin;
         auto wrap = origin + (std::floor(elapsed / *loopBeats_) + 1.0) * *loopBeats_;
@@ -183,7 +190,7 @@ SplitStatus LaunchHandle::advance(const SyncRange& range) {
         while (wrap <= range.monotonic.start)
             wrap += *loopBeats_;
 
-        if (wrap < range.monotonic.end && (!event || wrap < *event)) {
+        if (wrap < range.monotonic.end) {
             event = wrap;
             fromPending = false;
 
