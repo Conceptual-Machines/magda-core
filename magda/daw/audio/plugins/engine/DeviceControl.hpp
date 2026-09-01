@@ -3,8 +3,10 @@
 #include <juce_core/juce_core.h>
 
 #include <functional>
+#include <memory>
 #include <optional>
 
+#include "ControlExecutor.hpp"
 #include "PluginAssignments.hpp"
 #include "plan/RenderPlan.hpp"
 #include "plugin_manager/ExternalPluginState.hpp"
@@ -39,9 +41,22 @@
  * Keyed by magda::engine::DeviceKey, which is the identity the plan and the
  * assignment table already use, rather than by a reference to a live object.
  * Asynchronous and fallible, because a remote implementation has IPC, a
- * timeout, and a device that can go away mid-call; a local one answers
- * immediately and still answers through the callback, so a caller written
- * against this works either way.
+ * timeout, and a device that can go away mid-call.
+ *
+ * ## Where it all runs
+ *
+ * On the plane's ControlExecutor, which is the part that has to be explicit
+ * rather than assumed (ControlExecutor.hpp). Every operation runs there and
+ * every answer is delivered there: a caller may ask from any thread, and what
+ * it gets back arrives on the one thread the control side of a device is
+ * allowed to be on.
+ *
+ * That is what serialises these. Reading a plugin's state suspends it and
+ * resumes it afterwards, so two operations overlapping would have the first to
+ * finish resuming a plugin the second is still inside -- and neither the
+ * endpoint nor the device can prevent it by checking a thread, because a
+ * headless host has whatever threads it has. One executor answers it for every
+ * operation at once, including the ones that are not written yet.
  *
  * Nothing here reaches a model. A capture comes back as data, the caller checks
  * that the assignment it was read from still holds, and only then is it written
@@ -116,33 +131,45 @@ class CaptureOutcome {
  */
 class DeviceControlPlane {
   public:
+    /// @p executor is where this plane's work runs and its answers arrive. Held
+    /// by shared_ptr because a remote implementation's reply comes back long
+    /// after the call that sent it.
+    explicit DeviceControlPlane(std::shared_ptr<ControlExecutor> executor);
+
     virtual ~DeviceControlPlane() = default;
 
-    /// What a capture is answered with, on the message thread.
+    DeviceControlPlane(const DeviceControlPlane&) = delete;
+    DeviceControlPlane& operator=(const DeviceControlPlane&) = delete;
+    DeviceControlPlane(DeviceControlPlane&&) = delete;
+    DeviceControlPlane& operator=(DeviceControlPlane&&) = delete;
+
+    /// What a capture is answered with, on this plane's executor.
     using CaptureCallback = std::function<void(CaptureOutcome)>;
 
     /**
      * @brief Ask the device at @p key what its plugin holds.
      *
-     * Asked on the message thread, and that is a precondition rather than a
-     * convenience: a plugin's state is read with the plugin suspended, on the
-     * thread the host is allowed to talk to it from, and a save dispatched from
-     * a worker would be reaching into somebody else's code from the wrong one.
-     * An implementation is required to refuse rather than to marshal, so that
-     * a caller on the wrong thread is a finding here and not a rare crash in a
-     * plugin later.
+     * Asked from any thread. The work runs on the executor and @p completed is
+     * called there, exactly once, with a snapshot or with a reason there is
+     * none -- so a caller writing a project's model in that callback is on the
+     * thread it is entitled to write one from, whichever thread asked and
+     * whichever process answered.
      *
-     * A host with no message thread at all -- an offline render, a test binary,
-     * anything headless -- has nothing to be off, and is not refused. What is
-     * refused is a caller that had one and was not on it.
-     *
-     * @p completed is called exactly once, on the message thread, with a
-     * snapshot or with a reason there is none. It may be called before this
-     * returns -- a local plane has the plugin right here -- and a caller that
-     * assumed otherwise would be assuming something only the local case
-     * happens to make true.
+     * It may be called before this returns, which is what a caller already on
+     * the executor gets: the plugin is right here and there is nothing to wait
+     * for. A caller that assumed otherwise would be assuming something only
+     * that case happens to make true.
      */
     virtual void captureState(magda::engine::DeviceKey key, CaptureCallback completed) = 0;
+
+    /// Where this plane's work runs, for a host that has something else to put
+    /// on the same thread.
+    const std::shared_ptr<ControlExecutor>& executor() const {
+        return executor_;
+    }
+
+  private:
+    std::shared_ptr<ControlExecutor> executor_;
 };
 
 /**
@@ -162,9 +189,12 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
   public:
     /// The device at a key, or null. Null for a key nothing is bound to, which
     /// includes one whose plugin has not finished loading.
+    ///
+    /// Called on the executor, like everything else here, so a host writing one
+    /// answers from the same thread its runtime is edited from.
     using DeviceLookup = std::function<EngineExternalDevice*(magda::engine::DeviceKey)>;
 
-    explicit LocalDeviceControlPlane(DeviceLookup devices);
+    LocalDeviceControlPlane(std::shared_ptr<ControlExecutor> executor, DeviceLookup devices);
 
     void captureState(magda::engine::DeviceKey key, CaptureCallback completed) override;
 

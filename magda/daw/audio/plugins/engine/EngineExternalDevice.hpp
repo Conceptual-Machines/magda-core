@@ -148,9 +148,22 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      * promise the two are serialised. A caller handed the instance instead
      * would be holding half of a rule and no way to keep it.
      *
-     * Message thread. Nullopt when the plugin threw describing itself, which is
-     * a plugin whose records would not agree with each other
-     * (ExternalPluginState.hpp).
+     * Nullopt when the plugin threw describing itself, which is a plugin whose
+     * records would not agree with each other (ExternalPluginState.hpp).
+     *
+     * Called on the control executor, which is where every control operation on
+     * a device runs and what serialises them against each other
+     * (ControlExecutor.hpp). It matters here more than it looks: the read
+     * suspends the plugin and resumes it afterwards, so two overlapping readers
+     * would have the first to finish resuming the plugin underneath the second
+     * and letting a block back in mid-capture. This device does not check --
+     * a lock here would be a second answer to a question the executor already
+     * answers for the editor and the preset load as well.
+     *
+     * The audio thread is not party to any of it. process() is gated by the
+     * plugin's own callback lock and its suspended flag, which it tries rather
+     * than waits on, so a capture in flight costs a block its passthrough and
+     * never the deadline.
      *
      * It reads and does not write. What to do with a snapshot -- and whether
      * the device it was read from is still the device the model means -- is the

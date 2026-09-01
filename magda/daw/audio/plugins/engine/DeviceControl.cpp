@@ -39,59 +39,62 @@ const magda::ExternalPluginSnapshot& CaptureOutcome::snapshot() const {
     return *snapshot_;
 }
 
-LocalDeviceControlPlane::LocalDeviceControlPlane(DeviceLookup devices)
-    : devices_(std::move(devices)) {}
+DeviceControlPlane::DeviceControlPlane(std::shared_ptr<ControlExecutor> executor)
+    : executor_(std::move(executor)) {
+    // A plane with nowhere to run its work would answer nothing and say nothing
+    // about why, which is the one failure this whole file is arranged against.
+    jassert(executor_ != nullptr);
+}
+
+LocalDeviceControlPlane::LocalDeviceControlPlane(std::shared_ptr<ControlExecutor> executor,
+                                                 DeviceLookup devices)
+    : DeviceControlPlane(std::move(executor)), devices_(std::move(devices)) {}
 
 void LocalDeviceControlPlane::captureState(magda::engine::DeviceKey key,
                                            CaptureCallback completed) {
     if (!completed)
         return;
 
-    // The precondition, enforced rather than documented. Everything below this
-    // line reaches into a plugin: the lookup finds the device, the device
-    // suspends the instance and asks it to describe itself, and none of that is
-    // a worker thread's to do. Refused rather than marshalled, because a save
-    // asked for from the wrong thread is a caller to fix and not a call to
-    // rescue -- and because a remote implementation would answer the same way
-    // rather than quietly acquiring a thread to hop from.
+    if (executor() == nullptr) {
+        completed(CaptureOutcome::failed("this control plane has no executor to run on"));
+        return;
+    }
+
+    // Everything past here runs on the executor: the lookup, the plugin's own
+    // state read, and the answer. Nothing checks which thread asked, because
+    // asking is allowed from any of them -- what is not allowed is two of these
+    // being inside one plugin at once, and one serial executor is what makes
+    // that impossible for every control operation rather than for this one.
     //
-    // Asked as "is there a message thread, and is this it" rather than as "is
-    // this the message thread", because those differ where the engine is
-    // supposed to work: a headless render has no message manager at all, so
-    // there is no thread to be off, and a check that refused there would refuse
-    // every offline host on the grounds that it is not an application.
-    if (auto* messages = juce::MessageManager::getInstanceWithoutCreating();
-        messages != nullptr && !messages->isThisTheMessageThread()) {
-        JUCE_ASSERT_MESSAGE_THREAD
-        completed(CaptureOutcome::failed("a capture was asked for off the message thread"));
-        return;
-    }
+    // The lookup is copied rather than reached for through `this`: work outlives
+    // the call that queued it, and a plane destroyed in between would otherwise
+    // be read from a thread that is still running.
+    executor()->run([devices = devices_, key, completed = std::move(completed)]() mutable {
+        if (!devices) {
+            completed(
+                CaptureOutcome::failed("this control plane was given no way to find a device"));
+            return;
+        }
 
-    if (!devices_) {
-        completed(CaptureOutcome::failed("this control plane was given no way to find a device"));
-        return;
-    }
+        auto* device = devices(key);
+        if (device == nullptr) {
+            // Named rather than reported as an empty state. A key with nothing
+            // bound to it is a slot whose plugin has not arrived or has gone,
+            // and a caller told "no state" would write that absence into the
+            // project.
+            completed(CaptureOutcome::failed("no plugin is bound for " + describeKey(key)));
+            return;
+        }
 
-    auto* device = devices_(key);
-    if (device == nullptr) {
-        // Named rather than reported as an empty state. A key with nothing
-        // bound to it is a slot whose plugin has not arrived or has gone, and a
-        // caller told "no state" would write that absence into the project.
-        completed(CaptureOutcome::failed("no plugin is bound for " + describeKey(key)));
-        return;
-    }
+        auto snapshot = device->captureState();
+        if (!snapshot.has_value()) {
+            completed(CaptureOutcome::failed("the plugin bound for " + describeKey(key) +
+                                             " could not describe itself"));
+            return;
+        }
 
-    auto snapshot = device->captureState();
-    if (!snapshot.has_value()) {
-        completed(CaptureOutcome::failed("the plugin bound for " + describeKey(key) +
-                                         " could not describe itself"));
-        return;
-    }
-
-    // Called before returning, because the plugin is right here. Through the
-    // callback all the same: a caller that only worked when the answer arrived
-    // synchronously would be a caller that only works in this process.
-    completed(CaptureOutcome::taken(std::move(*snapshot)));
+        completed(CaptureOutcome::taken(std::move(*snapshot)));
+    });
 }
 
 bool commitCapturedState(const AssignmentRequest& request,
