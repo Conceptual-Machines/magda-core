@@ -1,5 +1,7 @@
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
+#include <future>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -25,49 +27,51 @@
 
 namespace adapter = magda::daw::audio::engine_adapter;
 
+using adapter::ExecutionState;
+
 TEST_CASE("A serial executor runs its work on one thread, in order", "[engine][control]") {
     adapter::SerialControlThread executor;
 
     std::vector<int> order;
     std::vector<std::thread::id> threads;
-    std::atomic<int> done{0};
 
     // Queued from several threads at once, which is the case a headless host
     // presents: nothing about who asks says anything about who runs it.
     std::vector<std::thread> askers;
     for (int index = 0; index < 4; ++index)
-        askers.emplace_back([&executor, &order, &threads, &done, index] {
+        askers.emplace_back([&executor, &order, &threads, index] {
             for (int item = 0; item < 8; ++item)
-                executor.run([&order, &threads, &done, index] {
+                CHECK(executor.run([&order, &threads, index](ExecutionState state) {
+                    if (state != ExecutionState::Ran)
+                        return;
+
                     // No lock: the claim is that this only ever runs on one
                     // thread, so a second one writing here would be the finding
                     // rather than a reason to synchronise.
                     order.push_back(index);
                     threads.push_back(std::this_thread::get_id());
-                    ++done;
-                });
+                }));
         });
 
     for (auto& asker : askers)
         asker.join();
 
-    // Drained by asking for one more thing and waiting for it: work is run in
-    // the order it was accepted, so anything queued before this has run by the
-    // time this has.
-    std::atomic<bool> drained{false};
-    executor.run([&drained] { drained = true; });
-    while (!drained)
-        std::this_thread::yield();
+    // Drained by asking for one more thing and waiting for it: work runs in the
+    // order it was accepted, so anything queued before this has run by the time
+    // this has.
+    std::promise<void> drained;
+    auto emptied = drained.get_future();
+    REQUIRE(executor.run([&drained](ExecutionState) { drained.set_value(); }));
+    emptied.wait();
 
-    CHECK(done == 32);
     REQUIRE(order.size() == 32);
     REQUIRE(threads.size() == 32);
 
     for (const auto& thread : threads)
         CHECK(thread == threads.front());
 
-    // Each asker's own items kept their order, which is what "serial" is worth:
-    // interleaving between askers is fine and reordering within one is not.
+    // Each asker's own items all arrived. Interleaving between askers is fine
+    // and losing one is not.
     for (int index = 0; index < 4; ++index) {
         auto seen = 0;
         for (const auto item : order)
@@ -78,50 +82,117 @@ TEST_CASE("A serial executor runs its work on one thread, in order", "[engine][c
     }
 }
 
-TEST_CASE("Work asked for from the executor runs before the ask returns", "[engine][control]") {
-    // What keeps one control operation asking for another from waiting on a
-    // thread it is standing on. A capture that loaded a preset, or an editor
-    // that saved state on the way down, would otherwise queue behind itself and
-    // never be reached.
+TEST_CASE("Work asked for from the executor is queued behind what asked for it",
+          "[engine][control]") {
+    // The half that makes "one at a time" mean anything. An operation that has
+    // suspended a plugin and asks for another must not have the second run
+    // inside it: that second one would resume the plugin and let audio back in
+    // halfway through the first, which is the failure this executor exists to
+    // remove rather than to relocate.
     adapter::SerialControlThread executor;
 
     std::atomic<bool> nested{false};
-    std::atomic<bool> nestedRanFirst{false};
-    std::atomic<bool> finished{false};
+    std::atomic<bool> nestedRanInside{false};
+    std::promise<void> outerDone;
+    auto outerFinished = outerDone.get_future();
 
-    executor.run([&executor, &nested, &nestedRanFirst, &finished] {
-        executor.run([&nested] { nested = true; });
+    REQUIRE(executor.run([&](ExecutionState) {
+        CHECK(executor.run([&nested](ExecutionState) { nested = true; }));
 
-        // Read immediately after the inner ask returned: if it had been queued
-        // rather than run, nothing would have happened yet.
-        nestedRanFirst = nested.load();
-        finished = true;
-    });
+        // Read after the inner ask returned and before this one ends: nothing
+        // may have happened yet, because the queue is behind us.
+        nestedRanInside = nested.load();
+        outerDone.set_value();
+    }));
 
-    while (!finished)
-        std::this_thread::yield();
+    outerFinished.wait();
+    CHECK_FALSE(nestedRanInside);
 
+    std::promise<void> after;
+    auto arrived = after.get_future();
+    REQUIRE(executor.run([&after](ExecutionState) { after.set_value(); }));
+    arrived.wait();
+
+    // And it did run, in its turn, which is the other half: queued is not
+    // dropped.
     CHECK(nested);
-    CHECK(nestedRanFirst);
 }
 
 TEST_CASE("An executor knows whether this is its own thread", "[engine][control]") {
-    // What lets an implementation tell "run it now" from "queue it", and what a
-    // caller checks when it wants to know where its answer arrived.
     adapter::SerialControlThread executor;
 
     CHECK_FALSE(executor.isCurrent());
 
-    std::atomic<bool> insideSaysYes{false};
-    std::atomic<bool> finished{false};
+    std::promise<bool> inside;
+    auto answered = inside.get_future();
 
-    executor.run([&executor, &insideSaysYes, &finished] {
-        insideSaysYes = executor.isCurrent();
-        finished = true;
-    });
+    REQUIRE(executor.run(
+        [&executor, &inside](ExecutionState) { inside.set_value(executor.isCurrent()); }));
 
-    while (!finished)
-        std::this_thread::yield();
+    CHECK(answered.get());
+}
 
-    CHECK(insideSaysYes);
+TEST_CASE("Work that never ran is cancelled rather than dropped", "[engine][control]") {
+    // The promise a caller above this makes is exactly one answer, and an
+    // executor that let queued work go would leave that promise unkept by
+    // whoever made it: a capture waiting for a snapshot nobody is left to send.
+    // So accepted work is always called, and told which of the two it is.
+    std::promise<void> holdingOn;
+    std::shared_future<void> release = holdingOn.get_future();
+    std::promise<void> started;
+    auto running = started.get_future();
+
+    std::promise<ExecutionState> abandoned;
+    auto answered = abandoned.get_future();
+
+    auto executor = std::make_unique<adapter::SerialControlThread>();
+
+    // Holds the worker, so what follows is still queued when the executor is
+    // destroyed.
+    REQUIRE(executor->run([&started, release](ExecutionState) {
+        started.set_value();
+        release.wait();
+    }));
+
+    running.wait();
+
+    REQUIRE(executor->run([&abandoned](ExecutionState state) { abandoned.set_value(state); }));
+
+    // Destroyed from another thread, because the destructor waits for a worker
+    // this test is deliberately holding. Nothing here is a race: the destructor
+    // answers the queue before it starts waiting, so the cancellation below
+    // arrives while the first piece of work is still standing still.
+    std::thread destroyer([&executor] { executor.reset(); });
+
+    REQUIRE(answered.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+    CHECK(answered.get() == ExecutionState::Cancelled);
+
+    holdingOn.set_value();
+    destroyer.join();
+}
+
+TEST_CASE("An executor destroyed by its own work does not wait for itself", "[engine][control]") {
+    // A completion is entitled to close the thing that owns the executor -- a
+    // project closing from a callback is an ordinary outcome -- and that puts
+    // the last reference on the executor's own thread. A thread cannot wait for
+    // itself, so this test is one the binary either survives or does not.
+    auto executor = std::make_shared<adapter::SerialControlThread>();
+
+    std::promise<void> ran;
+    auto finished = ran.get_future();
+
+    REQUIRE(executor->run([executor, &ran](ExecutionState) mutable {
+        // The work holds the only other reference. Dropping the outer one here
+        // leaves this lambda owning the executor, and the lambda is destroyed
+        // on the executor's own thread once this returns.
+        ran.set_value();
+        executor.reset();
+    }));
+
+    executor.reset();
+    finished.wait();
+
+    // Nothing to assert but arriving here: a self-join would have taken the
+    // process with it.
+    SUCCEED();
 }

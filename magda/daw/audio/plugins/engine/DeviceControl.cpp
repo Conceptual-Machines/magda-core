@@ -47,8 +47,10 @@ DeviceControlPlane::DeviceControlPlane(std::shared_ptr<ControlExecutor> executor
 }
 
 LocalDeviceControlPlane::LocalDeviceControlPlane(std::shared_ptr<ControlExecutor> executor,
-                                                 DeviceLookup devices)
-    : DeviceControlPlane(std::move(executor)), devices_(std::move(devices)) {}
+                                                 std::weak_ptr<void> lifeline, DeviceLookup devices)
+    : DeviceControlPlane(std::move(executor)),
+      lifeline_(std::move(lifeline)),
+      devices_(std::move(devices)) {}
 
 void LocalDeviceControlPlane::captureState(magda::engine::DeviceKey key,
                                            CaptureCallback completed) {
@@ -66,10 +68,29 @@ void LocalDeviceControlPlane::captureState(magda::engine::DeviceKey key,
     // being inside one plugin at once, and one serial executor is what makes
     // that impossible for every control operation rather than for this one.
     //
-    // The lookup is copied rather than reached for through `this`: work outlives
-    // the call that queued it, and a plane destroyed in between would otherwise
-    // be read from a thread that is still running.
-    executor()->run([devices = devices_, key, completed = std::move(completed)]() mutable {
+    // Nothing about the plane is captured. The work outlives the call that
+    // queued it, so it carries what it needs by value: the lookup, and the weak
+    // lifeline that says whether the runtime the lookup reads is still there.
+    const auto accepted = executor()->run([lifeline = lifeline_, devices = devices_, key,
+                                           completed](ExecutionState state) mutable {
+        if (state == ExecutionState::Cancelled) {
+            // Owed an answer even here, and owed the truth about it: this is
+            // not the control thread and the devices are going away, so nothing
+            // is looked up and nothing is read.
+            completed(CaptureOutcome::failed("the control plane closed before this capture ran"));
+            return;
+        }
+
+        // Held for the length of the operation rather than checked at the start
+        // of it. A runtime that expires between the check and the lookup is the
+        // same dangling pointer as one that expired before either.
+        const auto alive = lifeline.lock();
+        if (!alive) {
+            completed(CaptureOutcome::failed("the runtime that owned " + describeKey(key) +
+                                             " is gone, so nothing was read"));
+            return;
+        }
+
         if (!devices) {
             completed(
                 CaptureOutcome::failed("this control plane was given no way to find a device"));
@@ -95,6 +116,13 @@ void LocalDeviceControlPlane::captureState(magda::engine::DeviceKey key,
 
         completed(CaptureOutcome::taken(std::move(*snapshot)));
     });
+
+    // Refused, which is a plane already shutting down: nothing will run the
+    // work and nothing will call the callback, so the promise of exactly one
+    // answer is this call's to keep. The one answer that does not arrive on the
+    // executor, because by now there is not one to arrive on.
+    if (!accepted)
+        completed(CaptureOutcome::failed("the control plane is closing and took no capture"));
 }
 
 bool commitCapturedState(const AssignmentRequest& request,

@@ -1,91 +1,108 @@
 #include "ControlExecutor.hpp"
 
 #include <utility>
+#include <vector>
 
 namespace magda::daw::audio::engine_adapter {
 
-void MessageThreadControlExecutor::run(Work work) {
+bool MessageThreadControlExecutor::run(Work work) {
     if (!work)
-        return;
+        return false;
 
-    if (isCurrent()) {
-        work();
-        return;
-    }
-
-    juce::MessageManager::callAsync(std::move(work));
+    // Posted even from the message thread itself. Running it here would let a
+    // nested operation into a plugin the outer one has open, and would put it
+    // ahead of everything already waiting (ControlExecutor.hpp).
+    return juce::MessageManager::callAsync(
+        [work = std::move(work)]() mutable { work(ExecutionState::Ran); });
 }
 
 bool MessageThreadControlExecutor::isCurrent() const {
     return juce::MessageManager::existsAndIsCurrentThread();
 }
 
-SerialControlThread::SerialControlThread() : thread_([this] { loop(); }) {}
+SerialControlThread::SerialControlThread() : shared_(std::make_shared<Shared>()) {
+    // The worker holds the state as well, so that this object can be destroyed
+    // by work running on the worker without taking the worker's world with it.
+    thread_ = std::thread([shared = shared_] {
+        for (;;) {
+            Work work;
+
+            {
+                std::unique_lock<std::mutex> held(shared->lock);
+                shared->wake.wait(
+                    held, [&shared] { return shared->stopping || !shared->queued.empty(); });
+
+                // Stopping wins over what is left: whatever is still queued has
+                // already been cancelled by the destructor, and running it now
+                // would be reaching for devices that are going away.
+                if (shared->stopping)
+                    return;
+
+                work = std::move(shared->queued.front());
+                shared->queued.pop_front();
+            }
+
+            // Outside the lock, because the work is what takes the time and
+            // because it is entitled to queue more of itself.
+            work(ExecutionState::Ran);
+        }
+    });
+}
 
 SerialControlThread::~SerialControlThread() {
-    {
-        const std::lock_guard<std::mutex> held(lock_);
-        stopping_ = true;
+    std::deque<Work> abandoned;
 
-        // Dropped rather than drained. Work that has not started is work whose
-        // answer nobody is left to receive: this executor is destroyed before
-        // the devices its work would reach, and running it now would be
-        // reaching for plugins that are about to go.
-        queued_.clear();
+    {
+        const std::lock_guard<std::mutex> held(shared_->lock);
+        shared_->stopping = true;
+        abandoned.swap(shared_->queued);
     }
 
-    wake_.notify_all();
+    shared_->wake.notify_all();
+
+    // Answered rather than dropped. Every one of these is an operation somebody
+    // is still waiting on, and an executor that let them go would leave a
+    // promise of exactly one answer unkept by whoever made it.
+    //
+    // Before the wait below, so that a caller destroying this executor knows
+    // that when the destructor returns, every operation it accepted has been
+    // accounted for.
+    for (auto& work : abandoned)
+        work(ExecutionState::Cancelled);
+
+    if (thread_.get_id() == std::this_thread::get_id()) {
+        // Destroyed by its own work, which is what a completion that closes the
+        // project it belongs to looks like from here. A thread cannot wait for
+        // itself, so it is let go instead: the loop's own copy of the shared
+        // state keeps it alive, and the loop stops the moment this work returns.
+        thread_.detach();
+        return;
+    }
 
     if (thread_.joinable())
         thread_.join();
 }
 
-void SerialControlThread::run(Work work) {
+bool SerialControlThread::run(Work work) {
     if (!work)
-        return;
-
-    // Already here: run it now rather than queue it behind ourselves, which is
-    // what an operation asked for from inside another one would otherwise wait
-    // forever for.
-    if (isCurrent()) {
-        work();
-        return;
-    }
+        return false;
 
     {
-        const std::lock_guard<std::mutex> held(lock_);
-        if (stopping_)
-            return;
+        const std::lock_guard<std::mutex> held(shared_->lock);
+        if (shared_->stopping)
+            return false;
 
-        queued_.push_back(std::move(work));
+        // Queued even when the caller is the worker itself. See the header: a
+        // nested operation run inline is a second transaction inside the first.
+        shared_->queued.push_back(std::move(work));
     }
 
-    wake_.notify_one();
+    shared_->wake.notify_one();
+    return true;
 }
 
 bool SerialControlThread::isCurrent() const {
     return std::this_thread::get_id() == thread_.get_id();
-}
-
-void SerialControlThread::loop() {
-    for (;;) {
-        Work work;
-
-        {
-            std::unique_lock<std::mutex> held(lock_);
-            wake_.wait(held, [this] { return stopping_ || !queued_.empty(); });
-
-            if (stopping_)
-                return;
-
-            work = std::move(queued_.front());
-            queued_.pop_front();
-        }
-
-        // Outside the lock, because the work is what takes the time and because
-        // it is entitled to queue more of itself.
-        work();
-    }
 }
 
 }  // namespace magda::daw::audio::engine_adapter

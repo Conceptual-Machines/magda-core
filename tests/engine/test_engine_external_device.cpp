@@ -2531,8 +2531,9 @@ TEST_CASE("A capture through the control plane answers with what the plugin hold
     REQUIRE(external != nullptr);
 
     const magda::engine::DeviceKey key{magda::ChainSegment::Fx, model.id};
+    const auto runtime = std::make_shared<int>(0);
     adapter::LocalDeviceControlPlane plane(
-        std::make_shared<adapter::SerialControlThread>(),
+        std::make_shared<adapter::SerialControlThread>(), runtime,
         [&](magda::engine::DeviceKey asked) { return asked == key ? external : nullptr; });
 
     const auto answered = capture(plane, key);
@@ -2549,8 +2550,9 @@ TEST_CASE("A key with no device bound is a failure rather than an empty state",
     // plugin has not arrived, against a plugin that answered with nothing. A
     // caller told the second would write that nothing into the project and lose
     // the patch the slot is about to load.
+    const auto runtime = std::make_shared<int>(0);
     adapter::LocalDeviceControlPlane plane(
-        std::make_shared<adapter::SerialControlThread>(),
+        std::make_shared<adapter::SerialControlThread>(), runtime,
         [](magda::engine::DeviceKey) -> adapter::EngineExternalDevice* { return nullptr; });
 
     const auto answered = capture(plane, {magda::ChainSegment::PostFx, 12});
@@ -2575,8 +2577,9 @@ TEST_CASE("A plugin that will not describe itself is a failure with a reason",
     auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
     REQUIRE(external != nullptr);
 
+    const auto runtime = std::make_shared<int>(0);
     adapter::LocalDeviceControlPlane plane(
-        std::make_shared<adapter::SerialControlThread>(),
+        std::make_shared<adapter::SerialControlThread>(), runtime,
         [external](magda::engine::DeviceKey) { return external; });
 
     const auto answered = capture(plane, {magda::ChainSegment::Fx, model.id});
@@ -2696,8 +2699,9 @@ TEST_CASE("A capture runs and answers on the plane's executor", "[engine][extern
     REQUIRE(external != nullptr);
 
     auto executor = std::make_shared<adapter::SerialControlThread>();
+    const auto runtime = std::make_shared<int>(0);
     adapter::LocalDeviceControlPlane plane(
-        executor, [external](magda::engine::DeviceKey) { return external; });
+        executor, runtime, [external](magda::engine::DeviceKey) { return external; });
 
     std::promise<bool> onTheExecutor;
     auto answered = onTheExecutor.get_future();
@@ -2715,13 +2719,13 @@ TEST_CASE("A capture runs and answers on the plane's executor", "[engine][extern
     CHECK(answered.get());
 }
 
-TEST_CASE("A capture asked for on the executor answers before it returns",
+TEST_CASE("A capture asked for on the executor is queued behind what asked for it",
           "[engine][external][control]") {
-    // The other half of the same contract, and the one a host actually meets: a
-    // save runs on the control thread, so the plugin is right here and there is
-    // nothing to wait for. A caller that assumed this of every capture would be
-    // assuming something only this case makes true, which is why the interface
-    // says so rather than leaving it to be discovered.
+    // Never inline, and that is the rule rather than a missed optimisation: an
+    // operation that has suspended a plugin and asks for a capture must not
+    // have the capture run inside it. It would resume the plugin and let audio
+    // back in halfway through the first transaction, which is what the executor
+    // is for (ControlExecutor.hpp).
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
     auto model = externalDevice();
     auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
@@ -2731,25 +2735,90 @@ TEST_CASE("A capture asked for on the executor answers before it returns",
     REQUIRE(external != nullptr);
 
     auto executor = std::make_shared<adapter::SerialControlThread>();
+    const auto runtime = std::make_shared<int>(0);
     adapter::LocalDeviceControlPlane plane(
-        executor, [external](magda::engine::DeviceKey) { return external; });
+        executor, runtime, [external](magda::engine::DeviceKey) { return external; });
 
-    std::promise<bool> done;
-    auto finished = done.get_future();
+    std::atomic<bool> answered{false};
+    std::promise<bool> answeredInside;
+    auto asked = answeredInside.get_future();
 
-    executor->run([&] {
-        bool answeredInline = false;
+    executor->run([&](adapter::ExecutionState) {
         plane.captureState(
             {magda::ChainSegment::Fx, model.id},
-            [&answeredInline](adapter::CaptureOutcome outcome) { answeredInline = outcome.ok(); });
+            [&answered](adapter::CaptureOutcome outcome) { answered = outcome.ok(); });
 
-        // Set after captureState returned, from the same call: if the answer
-        // had been queued behind this work rather than run inside it, nothing
-        // would have been written yet.
-        done.set_value(answeredInline);
+        // Read after captureState returned and while this work is still the one
+        // running: an answer here would be a second transaction inside this one.
+        answeredInside.set_value(answered.load());
     });
 
-    CHECK(finished.get());
+    CHECK_FALSE(asked.get());
+
+    // And it arrives in its turn, which is the other half.
+    std::promise<void> drained;
+    auto emptied = drained.get_future();
+    executor->run([&drained](adapter::ExecutionState) { drained.set_value(); });
+    emptied.wait();
+
+    CHECK(answered);
+}
+
+TEST_CASE("A capture queued before its runtime went is answered rather than run",
+          "[engine][external][control]") {
+    // The hazard of being genuinely asynchronous. Between queueing a capture
+    // and running it, the project can close -- and the lookup a plane was given
+    // is a function over the runtime that owned those devices, so calling it
+    // then is reaching into something that has been deleted rather than being
+    // told there is no device.
+    //
+    // So the work carries a weak lifeline, takes it before it looks anything
+    // up, and answers rather than reaching. The same shape the asynchronous
+    // load path uses for the same problem (PluginAssignments.hpp).
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
+    REQUIRE(external != nullptr);
+
+    auto executor = std::make_shared<adapter::SerialControlThread>();
+    auto runtime = std::make_shared<int>(0);
+
+    std::atomic<bool> lookedUp{false};
+    adapter::LocalDeviceControlPlane plane(executor, runtime,
+                                           [external, &lookedUp](magda::engine::DeviceKey) {
+                                               lookedUp = true;
+                                               return external;
+                                           });
+
+    // The worker is held while the capture is queued behind it, so the project
+    // can be closed in between the way it would be by a person doing it.
+    std::promise<void> holdingOn;
+    std::shared_future<void> release = holdingOn.get_future();
+    std::promise<void> started;
+    auto running = started.get_future();
+
+    executor->run([&started, release](adapter::ExecutionState) {
+        started.set_value();
+        release.wait();
+    });
+    running.wait();
+
+    std::promise<adapter::CaptureOutcome> answered;
+    auto answer = answered.get_future();
+    plane.captureState(
+        {magda::ChainSegment::Fx, model.id},
+        [&answered](adapter::CaptureOutcome outcome) { answered.set_value(std::move(outcome)); });
+
+    runtime.reset();
+    holdingOn.set_value();
+
+    const auto outcome = answer.get();
+    CHECK_FALSE(outcome.ok());
+    CHECK(outcome.failure().contains("is gone"));
+    CHECK_FALSE(lookedUp);
 }
 
 TEST_CASE("Two captures of one device do not overlap", "[engine][external][control]") {
@@ -2786,8 +2855,9 @@ TEST_CASE("Two captures of one device do not overlap", "[engine][external][contr
         --inside;
     };
 
+    const auto runtime = std::make_shared<int>(0);
     adapter::LocalDeviceControlPlane plane(
-        std::make_shared<adapter::SerialControlThread>(),
+        std::make_shared<adapter::SerialControlThread>(), runtime,
         [external](magda::engine::DeviceKey) { return external; });
 
     std::atomic<int> taken{0};

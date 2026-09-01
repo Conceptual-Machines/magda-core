@@ -149,16 +149,29 @@ class DeviceControlPlane {
     /**
      * @brief Ask the device at @p key what its plugin holds.
      *
-     * Asked from any thread. The work runs on the executor and @p completed is
-     * called there, exactly once, with a snapshot or with a reason there is
-     * none -- so a caller writing a project's model in that callback is on the
-     * thread it is entitled to write one from, whichever thread asked and
-     * whichever process answered.
+     * Asked from any thread, answered on the executor, always later than this
+     * returns. A caller writing a project's model in that callback is therefore
+     * on the thread it is entitled to write one from, whichever thread asked
+     * and whichever process answered.
      *
-     * It may be called before this returns, which is what a caller already on
-     * the executor gets: the plugin is right here and there is nothing to wait
-     * for. A caller that assumed otherwise would be assuming something only
-     * that case happens to make true.
+     * @p completed is called exactly once. Three things can happen to it:
+     *
+     * - the capture ran, and it carries a snapshot or a reason there is none;
+     * - the plane's executor went away before its turn, and it carries that as
+     *   a failure, on whichever thread destroyed the executor;
+     * - the executor would not take the work at all, which is a plane already
+     *   shutting down, and the failure is delivered on the calling thread
+     *   because there is no longer an executor to deliver it on.
+     *
+     * The last is the only answer that does not arrive on the executor, and it
+     * is the one case where there is none to arrive on. It is stated rather
+     * than left to be discovered, because a caller that writes a model in this
+     * callback has to know the one occasion it is not being handed the thread
+     * for it.
+     *
+     * The callback outlives the call. Whatever it captures must still be there
+     * when it runs, or must be held weakly and checked -- the plane keeps its
+     * own end of that with @p lifeline and cannot keep the caller's.
      */
     virtual void captureState(magda::engine::DeviceKey key, CaptureCallback completed) = 0;
 
@@ -194,11 +207,31 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
     /// answers from the same thread its runtime is edited from.
     using DeviceLookup = std::function<EngineExternalDevice*(magda::engine::DeviceKey)>;
 
-    LocalDeviceControlPlane(std::shared_ptr<ControlExecutor> executor, DeviceLookup devices);
+    /**
+     * @brief The plane for plugins in this process.
+     *
+     * @p lifeline is what the lookup belongs to: the runtime that owns the
+     * devices, held weakly. Work is queued and runs later, so between the two
+     * the project can be closed -- and a lookup is a function over a runtime,
+     * so calling one whose runtime has gone is reaching into a deleted object
+     * rather than being told there is no device.
+     *
+     * Locked on the executor for the length of the operation, which is more
+     * than a check: it is what stops the runtime being destroyed halfway
+     * through a capture rather than only before one. An expired lifeline is a
+     * failure with a reason, and the lookup is never called.
+     *
+     * The same shape the load path uses for the same problem, where an
+     * assignment is held weakly and a completion that finds it gone is refused
+     * (PluginAssignments.hpp).
+     */
+    LocalDeviceControlPlane(std::shared_ptr<ControlExecutor> executor, std::weak_ptr<void> lifeline,
+                            DeviceLookup devices);
 
     void captureState(magda::engine::DeviceKey key, CaptureCallback completed) override;
 
   private:
+    std::weak_ptr<void> lifeline_;
     DeviceLookup devices_;
 };
 
