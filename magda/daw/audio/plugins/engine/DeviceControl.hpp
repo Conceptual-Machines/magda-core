@@ -63,21 +63,47 @@ namespace magda::daw::audio::engine_adapter {
 class EngineExternalDevice;
 
 /**
- * @brief What a capture came back with.
+ * @brief What a capture came back with: a snapshot, or a reason there is none.
  *
- * One of the two, never both and never neither: a snapshot the caller may write
- * down, or a reason it has nothing to write. A failure is a string rather than
- * an enumeration because every one of them is something to tell a person and
- * nothing to branch on -- there is no device here, this plugin would not
- * describe itself, the answer did not come back in time.
+ * Exactly one of the two, and the type is what says so rather than a sentence
+ * in a comment. That matters most at the boundary this is being built for: an
+ * out-of-process implementation decodes one of these from bytes, and an
+ * aggregate that permitted both or neither would leave every decoder
+ * reconstructing an invariant nothing enforced -- with the both-present case
+ * reading as success and carrying a reason nobody would look at.
+ *
+ * A failure is a string rather than an enumeration because every one of them is
+ * something to tell a person and nothing to branch on: there is no device here,
+ * this plugin would not describe itself, the answer did not come back in time.
+ * A failure with nothing to say is refused the same way an empty snapshot is,
+ * and gets a generic reason instead of an empty one.
  */
-struct CaptureOutcome {
-    std::optional<magda::ExternalPluginSnapshot> snapshot;
-    juce::String failure;
+class CaptureOutcome {
+  public:
+    /// What the plugin held.
+    static CaptureOutcome taken(magda::ExternalPluginSnapshot snapshot);
+
+    /// Why it did not.
+    static CaptureOutcome failed(juce::String reason);
 
     bool ok() const {
-        return snapshot.has_value();
+        return snapshot_.has_value();
     }
+
+    /// The snapshot. Only when ok(); a caller that asks otherwise is asking for
+    /// state that was never read.
+    const magda::ExternalPluginSnapshot& snapshot() const;
+
+    /// Why there is none. Empty when ok().
+    const juce::String& failure() const {
+        return failure_;
+    }
+
+  private:
+    CaptureOutcome() = default;
+
+    std::optional<magda::ExternalPluginSnapshot> snapshot_;
+    juce::String failure_;
 };
 
 /**
@@ -97,6 +123,18 @@ class DeviceControlPlane {
 
     /**
      * @brief Ask the device at @p key what its plugin holds.
+     *
+     * Asked on the message thread, and that is a precondition rather than a
+     * convenience: a plugin's state is read with the plugin suspended, on the
+     * thread the host is allowed to talk to it from, and a save dispatched from
+     * a worker would be reaching into somebody else's code from the wrong one.
+     * An implementation is required to refuse rather than to marshal, so that
+     * a caller on the wrong thread is a finding here and not a rare crash in a
+     * plugin later.
+     *
+     * A host with no message thread at all -- an offline render, a test binary,
+     * anything headless -- has nothing to be off, and is not refused. What is
+     * refused is a caller that had one and was not on it.
      *
      * @p completed is called exactly once, on the message thread, with a
      * snapshot or with a reason there is none. It may be called before this
@@ -135,8 +173,20 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
 };
 
 /**
- * @brief Write @p snapshot into @p device, if it is still the device it was
- *        read from.
+ * @brief The device a key names now, to write onto.
+ *
+ * The same question CurrentDeviceLookup asks on the load path, asked for
+ * writing rather than for reading, and asked at the same moment: at completion
+ * rather than when the operation started. A model captured when the capture was
+ * requested would be a model whatever happened since has already left behind.
+ *
+ * Null for a key whose device is gone, which is a commit that does not happen.
+ */
+using MutableDeviceLookup = std::function<magda::DeviceInfo*(magda::engine::DeviceKey)>;
+
+/**
+ * @brief Write @p snapshot onto the device @p request was made for, if that is
+ *        still the device it was read from.
  *
  * The commit half, and the reason a capture is two steps with only data
  * between them. A snapshot is read from a plugin at one moment and written into
@@ -144,6 +194,13 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
  * plugin, or emptied, or the whole runtime can have gone: writing it down then
  * would put one plugin's patch onto another's device, which is the failure the
  * assignment table exists to make impossible.
+ *
+ * The device is resolved here, from @p request's own key through @p device,
+ * rather than passed in beside the token. A caller that handed over both would
+ * be free to hand over a model the token says nothing about -- the check would
+ * pass, the write would land somewhere else, and the boundary would be a
+ * gesture. Validating one thing and writing another is the failure this exists
+ * to prevent, so only one of them is the caller's to choose.
  *
  * @p request is what PluginAssignments::request() returned for the key when the
  * capture was asked for. Checked rather than trusted, and checked here rather
@@ -153,6 +210,7 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
  * @return whether anything was written.
  */
 bool commitCapturedState(const AssignmentRequest& request,
-                         const magda::ExternalPluginSnapshot& snapshot, magda::DeviceInfo& device);
+                         const magda::ExternalPluginSnapshot& snapshot,
+                         const MutableDeviceLookup& device);
 
 }  // namespace magda::daw::audio::engine_adapter

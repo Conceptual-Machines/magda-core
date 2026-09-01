@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
@@ -487,6 +488,37 @@ magda::engine::RenderContext contextFor(int channels = 2, int blockSize = 64) {
 
 /// A device whose parameters are the fork's list: the wrapper pair at zero and
 /// one, then the plugin's automatable parameters.
+/**
+ * @brief A message manager for the length of one test, where the binary has
+ *        none (#2270).
+ *
+ * This target is headless: nothing here has a message thread, which is the
+ * state the control plane is required not to refuse. The one case that is about
+ * being on the wrong thread needs a right one to exist first, and it must not
+ * leave it behind -- a manager that outlives the test is reported as a leaked
+ * object by whatever runs next, which is a complaint about this file rather
+ * than about the run.
+ *
+ * Only deleted if it was made here. A manager another test created is that
+ * test's, and deleting it would be answering a leak with a dangling singleton.
+ */
+struct ScopedMessageThread {
+    ScopedMessageThread() : mine_(juce::MessageManager::getInstanceWithoutCreating() == nullptr) {
+        juce::MessageManager::getInstance();
+    }
+
+    ~ScopedMessageThread() {
+        if (mine_)
+            juce::MessageManager::deleteInstance();
+    }
+
+    ScopedMessageThread(const ScopedMessageThread&) = delete;
+    ScopedMessageThread& operator=(const ScopedMessageThread&) = delete;
+
+  private:
+    bool mine_ = false;
+};
+
 magda::DeviceInfo externalDevice() {
     magda::DeviceInfo device;
     device.id = 7;
@@ -2511,9 +2543,9 @@ TEST_CASE("A capture through the control plane answers with what the plugin hold
     // still be true when it is not.
     REQUIRE(answered.has_value());
     REQUIRE(answered->ok());
-    CHECK(answered->failure.isEmpty());
+    CHECK(answered->failure().isEmpty());
 
-    magda::applyCapturedPluginState(model, *answered->snapshot);
+    magda::applyCapturedPluginState(model, answered->snapshot());
     CHECK(model.parameters[1].currentValue == Catch::Approx(0.4f));
 }
 
@@ -2533,11 +2565,11 @@ TEST_CASE("A key with no device bound is a failure rather than an empty state",
 
     REQUIRE(answered.has_value());
     CHECK_FALSE(answered->ok());
-    CHECK(answered->failure.contains("no plugin is bound"));
+    CHECK(answered->failure().contains("no plugin is bound"));
 
     // And it says which slot, because a host with a project's worth of devices
     // is holding a failure that has to name one of them.
-    CHECK(answered->failure.contains("12"));
+    CHECK(answered->failure().contains("12"));
 }
 
 TEST_CASE("A plugin that will not describe itself is a failure with a reason",
@@ -2563,7 +2595,7 @@ TEST_CASE("A plugin that will not describe itself is a failure with a reason",
 
     REQUIRE(answered.has_value());
     CHECK_FALSE(answered->ok());
-    CHECK(answered->failure.contains("could not describe itself"));
+    CHECK(answered->failure().contains("could not describe itself"));
 }
 
 TEST_CASE("A snapshot is written onto the assignment it was read from",
@@ -2578,7 +2610,9 @@ TEST_CASE("A snapshot is written onto the assignment it was read from",
     snapshot.pluginState = "what the plugin was holding";
 
     auto model = externalDevice();
-    CHECK(adapter::commitCapturedState(request, snapshot, model));
+    CHECK(adapter::commitCapturedState(request, snapshot, [&model](magda::engine::DeviceKey asked) {
+        return asked.deviceId == model.id ? &model : nullptr;
+    }));
     CHECK(model.pluginState == "what the plugin was holding");
 }
 
@@ -2601,7 +2635,8 @@ TEST_CASE("A snapshot read from an assignment that has been replaced is not writ
     auto model = externalDevice();
     model.pluginState = "what the slot holds now";
 
-    CHECK_FALSE(adapter::commitCapturedState(request, snapshot, model));
+    CHECK_FALSE(adapter::commitCapturedState(
+        request, snapshot, [&model](magda::engine::DeviceKey) { return &model; }));
     CHECK(model.pluginState == "what the slot holds now");
 }
 
@@ -2622,6 +2657,86 @@ TEST_CASE("A snapshot outliving the runtime that read it is not written",
     snapshot.pluginState = "read before the project closed";
 
     auto model = externalDevice();
-    CHECK_FALSE(adapter::commitCapturedState(request, snapshot, model));
+    CHECK_FALSE(adapter::commitCapturedState(
+        request, snapshot, [&model](magda::engine::DeviceKey) { return &model; }));
     CHECK(model.pluginState.isEmpty());
+}
+
+TEST_CASE("A snapshot is written onto the device its own token names",
+          "[engine][external][control]") {
+    // The half a token check does not do on its own. Validating one device and
+    // writing another would pass every test above it and still put one plugin's
+    // patch onto another's slot, so the device is resolved here from the
+    // request's own key rather than handed in beside it: what was checked and
+    // what is written are the same device by construction.
+    adapter::PluginAssignments assignments;
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, 7};
+    assignments.replaceAssignment(key);
+
+    const auto request = assignments.request(key);
+
+    magda::ExternalPluginSnapshot snapshot;
+    snapshot.pluginState = "what the plugin was holding";
+
+    auto onTheSlot = externalDevice();
+    auto somewhereElse = externalDevice();
+    somewhereElse.id = 9;
+
+    std::vector<magda::engine::DeviceKey> asked;
+    CHECK(adapter::commitCapturedState(
+        request, snapshot, [&](magda::engine::DeviceKey key) -> magda::DeviceInfo* {
+            asked.push_back(key);
+            return key.deviceId == onTheSlot.id ? &onTheSlot : &somewhereElse;
+        }));
+
+    REQUIRE(asked.size() == 1);
+    CHECK(asked.front() == key);
+    CHECK(onTheSlot.pluginState == "what the plugin was holding");
+    CHECK(somewhereElse.pluginState.isEmpty());
+}
+
+TEST_CASE("A capture asked for off the message thread is refused", "[engine][external][control]") {
+    // The precondition the endpoint states, enforced where it can be. Everything
+    // past it reaches into somebody else's code: a plugin suspended and asked to
+    // describe itself is a message-thread transaction in every host there is,
+    // and a save dispatched from a worker would be doing it from the wrong one.
+    //
+    // Refused rather than marshalled, and refused before the lookup runs: the
+    // finding is the caller's thread, and a plane that went looking for a device
+    // first would report whichever complaint it met on the way.
+    //
+    // A message manager has to exist for there to be a wrong thread at all. A
+    // headless host has none and is not refused, which is the case every other
+    // test in this file runs under, so this one makes the manager and holds the
+    // message thread on the thread it is running on.
+    const ScopedMessageThread messageThread;
+
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
+    REQUIRE(external != nullptr);
+
+    bool lookedForADevice = false;
+    adapter::LocalDeviceControlPlane plane([&](magda::engine::DeviceKey) {
+        lookedForADevice = true;
+        return external;
+    });
+
+    std::optional<adapter::CaptureOutcome> answered;
+    const auto ask = [&] {
+        plane.captureState(
+            {magda::ChainSegment::Fx, model.id},
+            [&answered](adapter::CaptureOutcome outcome) { answered = std::move(outcome); });
+    };
+
+    std::thread worker(ask);
+    worker.join();
+
+    REQUIRE(answered.has_value());
+    CHECK_FALSE(answered->ok());
+    CHECK(answered->failure().contains("off the message thread"));
+    CHECK_FALSE(lookedForADevice);
 }
