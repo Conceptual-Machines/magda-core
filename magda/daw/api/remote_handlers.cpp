@@ -492,6 +492,64 @@ HandlerResult devicesCatalog(MagdaApi& api, const juce::var&, const RequestConte
     return HandlerResult::ok(toJsonArray(items));
 }
 
+HandlerResult devicesAdd(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto catalogId = input["catalogId"].toString();
+    if (!api.devices().findCatalogEntry(catalogId).has_value())
+        return HandlerResult::fail(ErrorCode::NotFound, "no catalogue entry " + catalogId);
+
+    ChainNodePath parent;
+    if (const auto parentPath = input["parentPath"]; parentPath.isObject()) {
+        const auto resolved = toChainNodePath(devicePathFromJson(parentPath));
+        if (!resolved)
+            return HandlerResult::fail(ErrorCode::ValidationFailed, "parentPath does not resolve");
+        parent = *resolved;
+    } else if (has(input, "trackId")) {
+        const auto trackId = static_cast<TrackId>(static_cast<int>(input["trackId"]));
+        if (api.tracks().getTrack(trackId) == nullptr)
+            return notFound("track", trackId);
+        parent = ChainNodePath::trackLevel(trackId);
+    } else {
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "provide trackId (main FX chain) or parentPath (a chain)");
+    }
+
+    const auto id = api.devices().addDevice(parent, catalogId, readInt(input, "index", -1));
+    if (id == INVALID_DEVICE_ID)
+        return HandlerResult::fail(ErrorCode::Conflict, "device could not be added");
+
+    // The new device's address: a top-level id lives on the path root rather
+    // than as a step; a chain-hosted one extends the chain.
+    const auto devicePath = parent.getType() == ChainNodeType::Track
+                                ? ChainNodePath::topLevelDevice(parent.trackId, id)
+                                : parent.withDevice(id);
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", id);
+    object->setProperty("devicePath", toJson(makeDevicePathDto(devicePath)));
+    return HandlerResult::ok(juce::var(object));
+}
+
+HandlerResult devicesRemove(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = toChainNodePath(devicePathFromJson(input["devicePath"]));
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (api.devices().getDevice(*path) == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+    if (!api.devices().removeDevice(*path))
+        return HandlerResult::fail(ErrorCode::InternalError, "device removal failed");
+    return HandlerResult::ok(acceptedResult());
+}
+
+HandlerResult devicesMove(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = toChainNodePath(devicePathFromJson(input["devicePath"]));
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (api.devices().getDevice(*path) == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+    if (!api.devices().moveDevice(*path, readInt(input, "toIndex", -1)))
+        return HandlerResult::fail(ErrorCode::Conflict, "device move failed");
+    return HandlerResult::ok(acceptedResult());
+}
+
 HandlerResult devicesListParameters(MagdaApi& api, const juce::var& input, const RequestContext&) {
     const auto path = toChainNodePath(devicePathFromJson(input["devicePath"]));
     if (!path)

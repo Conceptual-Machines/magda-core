@@ -895,3 +895,56 @@ TEST_CASE("devices.setParameter converts display units to the model domain",
     REQUIRE(api.devices_.parameterWrites.size() == 1);
     REQUIRE(std::abs(std::get<2>(api.devices_.parameterWrites.front()) - 0.75f) < 1e-6f);
 }
+
+TEST_CASE("devices.add creates a device and returns its address", "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 1;
+    api.tracks_.tracks.push_back(track);
+    api.devices_.catalog.push_back({"internal.filter", "Filter", "", "", "", PluginFormat::Internal,
+                                    DeviceType::Effect, false});
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "devices.add", object({{"trackId", 1}, {"catalogId", "internal.filter"}}));
+
+    REQUIRE(response.ok);
+    const auto id = static_cast<int>(response.result["id"]);
+    REQUIRE(id != INVALID_DEVICE_ID);
+    // The returned address is the canonical top-level spelling.
+    REQUIRE(static_cast<int>(response.result["devicePath"]["topLevelDeviceId"]) == id);
+    REQUIRE(response.result["devicePath"]["section"].toString() == "fx");
+    REQUIRE(api.devices_.added.size() == 1);
+    REQUIRE(api.devices_.added.front().catalogId == "internal.filter");
+
+    const auto unknown =
+        run(service, "devices.add", object({{"trackId", 1}, {"catalogId", "no.such.device"}}));
+    REQUIRE_FALSE(unknown.ok);
+    REQUIRE(errorCodeOf(unknown) == "not_found");
+}
+
+TEST_CASE("devices.remove and devices.move act on resolvable paths only",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    auto move = pathInput(path);
+    move.getDynamicObject()->setProperty("toIndex", 2);
+    const auto moved = run(service, "devices.move", move);
+    REQUIRE(moved.ok);
+    REQUIRE(api.devices_.moved.size() == 1);
+
+    const auto removed = run(service, "devices.remove", pathInput(path));
+    REQUIRE(removed.ok);
+    REQUIRE(static_cast<bool>(removed.result["accepted"]));
+    REQUIRE(api.devices_.removed.size() == 1);
+
+    const auto missing =
+        run(service, "devices.remove", pathInput(ChainNodePath::topLevelDevice(1, 99)));
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE(errorCodeOf(missing) == "not_found");
+}

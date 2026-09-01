@@ -1637,6 +1637,46 @@ OperationRegistry::OperationRegistry() {
     // its `catalogId` from — so what this lists is exactly what can be asked for.
     add("devices.catalog", "List devices that can be added, by catalogue id", OperationAccess::Read,
         &handlers::devicesCatalog, emptyObjectSchema(), arraySchema(deviceCatalogEntrySchema()));
+    add("devices.add", "Add a device from the catalogue to a track's FX chain or a rack chain",
+        OperationAccess::Write, &handlers::devicesAdd, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "parentPath":{},
+                "catalogId":{"type":"string","minLength":1},
+                "index":{"type":"integer","minimum":-1}
+            },
+            "required":["catalogId"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{"id":{"type":"integer","minimum":0},"devicePath":{}},
+            "required":["id","devicePath"],"additionalProperties":false
+        })json"));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "parentPath", devicePathSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    add("devices.remove", "Remove a device", OperationAccess::Write, &handlers::devicesRemove,
+        operationInputSchema(R"json({
+            "type":"object","properties":{"devicePath":{}},
+            "required":["devicePath"],"additionalProperties":false
+        })json"),
+        okResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    add("devices.move", "Move a device within its chain", OperationAccess::Write,
+        &handlers::devicesMove, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "devicePath":{},
+                "toIndex":{"type":"integer","minimum":0}
+            },
+            "required":["devicePath","toIndex"],"additionalProperties":false
+        })json"),
+        okResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
     // Parameter discovery and direct control (#2274). Values are real units on
     // both sides — discovery reports what a knob shows and setParameter takes
     // the same number back — with `normalizedValue` alongside so a client can
@@ -1896,6 +1936,9 @@ OperationRegistry::OperationRegistry() {
         {"racks.create", Scope::Edit},
         {"racks.remove", Scope::Edit},
         {"racks.setBypassed", Scope::Edit},
+        {"devices.add", Scope::Edit},
+        {"devices.remove", Scope::Edit},
+        {"devices.move", Scope::Edit},
         {"devices.setParameter", Scope::Edit},
         {"devices.setParameterConfig", Scope::Edit},
         // Opening a plugin editor changes no project content, but it takes

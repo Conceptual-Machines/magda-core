@@ -43,6 +43,9 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("devices.listParameters") != nullptr);
     REQUIRE(registry.find("devices.setParameter") != nullptr);
     REQUIRE(registry.find("devices.setParameterConfig") != nullptr);
+    REQUIRE(registry.find("devices.add") != nullptr);
+    REQUIRE(registry.find("devices.remove") != nullptr);
+    REQUIRE(registry.find("devices.move") != nullptr);
     REQUIRE(registry.find("devices.openEditor") != nullptr);
     REQUIRE(registry.find("session.launchClip") != nullptr);
     REQUIRE(registry.find("automation.addPoint") != nullptr);
