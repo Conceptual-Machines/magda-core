@@ -139,6 +139,8 @@ class LatentDevice final : public EngineDevice {
     }
 
     void process(DeviceBlock& block) override {
+        ++blocksProcessed;
+
         const auto channels = std::min(static_cast<int>(block.audio.getNumChannels()), channels_);
 
         for (auto sample = 0; sample < block.block.numSamples; ++sample) {
