@@ -606,6 +606,7 @@ target_link_libraries(magda_base_devices
     PRIVATE
     magda_device_sdk
     MagdaAssets
+    magda::mutable
     faust::libfaust
 )
 target_compile_features(magda_tracktion_compat_devices PRIVATE cxx_std_20)

@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "processors/base/AutomatablePluginProcessor.hpp"
+#include "processors/base/MagdaDeviceProcessor.hpp"
 
 namespace magda {
 
@@ -52,8 +53,11 @@ class MutableElementsProcessor : public AutomatablePluginProcessor {
 
 /**
  * @brief Processor for the native Mutable Instruments Rings resonator.
+ *
+ * Rings is a MagdaDevice (#2299), so the chain holds the host's wrapper and
+ * the display metadata comes from the device's own slots.
  */
-class MutableRingsProcessor : public AutomatablePluginProcessor {
+class MutableRingsProcessor : public MagdaDeviceProcessor {
   public:
     MutableRingsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 };

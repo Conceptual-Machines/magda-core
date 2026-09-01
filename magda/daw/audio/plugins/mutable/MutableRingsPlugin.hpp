@@ -1,13 +1,12 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include <array>
 #include <memory>
 
-namespace magda::daw::audio {
+#include "core/ParameterUtils.hpp"
+#include "plugins/MagdaDevice.hpp"
 
-namespace te = tracktion::engine;
+namespace magda::daw::audio {
 
 //==============================================================================
 /**
@@ -22,10 +21,15 @@ namespace te = tracktion::engine;
  * Driven from MIDI via the internal exciter: each note-on sets the pitch and
  * fires a one-block strum. There is no note-off gate - resonators decay
  * naturally per the Damping control, exactly like the hardware.
+ *
+ * A MagdaDevice since #2299: one DSP hosted by whichever engine is running it.
+ * The slot ids, order and display ranges are the ones the retired host-native
+ * plugin used, because projects address the parameters by index and store
+ * their values in display units.
  */
-class MutableRingsPlugin : public te::Plugin {
+class MutableRingsPlugin : public MagdaDevice {
   public:
-    explicit MutableRingsPlugin(const te::PluginCreationInfo&);
+    MutableRingsPlugin();
     ~MutableRingsPlugin() override;
 
     //==============================================================================
@@ -48,49 +52,42 @@ class MutableRingsPlugin : public te::Plugin {
     }
     static const char* xmlTypeName;
 
-    juce::String getName() const override {
-        return getPluginName();
-    }
-    juce::String getPluginType() override {
-        return xmlTypeName;
-    }
-    juce::String getShortName(int) override {
-        return "Halo";
-    }
-    juce::String getSelectableDescription() override {
-        return getName();
-    }
-
     //==============================================================================
-    void initialise(const te::PluginInitialisationInfo&) override;
-    void deinitialise() override;
+    DeviceProperties properties() const override {
+        return {
+            .pluginId = xmlTypeName,
+            .name = getPluginName(),
+            .shortName = "Halo",
+            .takesMidiInput = true,
+            .takesAudioInput = false,
+            .isSynth = true,
+            .producesAudioWithoutInput = true,
+            .tailLengthSeconds = 4.0,  // long resonator/reverb tail
+        };
+    }
+
+    void prepare(const DevicePrepareContext& context) override;
     void reset() override;
-    void applyToBuffer(const te::PluginRenderContext&) override;
+    void process(DeviceProcessContext& context) override;
 
-    bool takesMidiInput() override {
-        return true;
+    int parameterCount() const override {
+        return kNumParams;
     }
-    bool takesAudioInput() override {
-        return false;
-    }
-    bool isSynth() override {
-        return true;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return true;
-    }
-    double getTailLength() const override {
-        return 4.0;  // long resonator/reverb tail
-    }
-
-    void restorePluginStateFromValueTree(const juce::ValueTree&) override;
+    ParameterInfo parameterInfo(int index) const override;
+    float parameterValue(int index) const override;
+    void setParameterValue(int index, float value) override;
 
   private:
+    /// The parameter's display-domain value, converted through the cached
+    /// domain rather than a freshly built ParameterInfo: this runs per block on
+    /// the audio thread, and a ParameterInfo carries strings that allocate.
+    float displayValue(int index) const;
+
     struct Impl;
     std::unique_ptr<Impl> impl_;
 
-    std::array<te::AutomatableParameter::Ptr, kNumParams> params_;
-    std::array<juce::CachedValue<float>, kNumParams> values_;
+    std::array<float, kNumParams> values_{};
+    std::array<ParameterUtils::ParameterDomain, kNumParams> domains_{};
 
     double sampleRate_ = 44100.0;
 

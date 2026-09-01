@@ -639,3 +639,36 @@ process = *(0.25), *(0.25);
     CHECK(faust->getDspSource().contains("*(0.25)"));
     CHECK(faust->getDspName() == juce::String("Saved patch"));
 }
+
+TEST_CASE("the Rings resonator renders through the engine's device op", "[engine][devices][2299]") {
+    // The first hand-written device to cross for #2299. What earns it a named
+    // case next to the generic sweep above is its shape: a MIDI-excited synth
+    // with no note-off gate, whose voice keeps ringing after the strum -- the
+    // sweep proves the factory builds it, not that MIDI reaches the exciter.
+    magda::DeviceInfo model;
+    model.pluginId = "magda_rings";
+
+    auto device = adapter::createEngineDevice(model);
+    REQUIRE(device != nullptr);
+
+    const auto context = contextFor();
+    device->prepare(context);
+
+    Block silent(context);
+    auto silentBlock = silent.deviceBlock();
+    device->process(silentBlock);
+    CHECK(peakOf(silent.buffer) == 0.0f);
+
+    Block struck(context);
+    struck.midi.addEvent(juce::MidiMessage::noteOn(1, 48, 1.0f), 0);
+    auto struckBlock = struck.deviceBlock();
+    device->process(struckBlock);
+    CHECK(peakOf(struck.buffer) > 0.0f);
+
+    // Rings has no gate: the resonator decays per its Damping control, so the
+    // block after the strum still carries the tail.
+    Block ringing(context);
+    auto ringingBlock = ringing.deviceBlock();
+    device->process(ringingBlock);
+    CHECK(peakOf(ringing.buffer) > 0.0f);
+}

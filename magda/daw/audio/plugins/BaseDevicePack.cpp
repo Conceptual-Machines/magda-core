@@ -507,14 +507,14 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .description = "Mutable Instruments Rings port: polyphonic resonator (modal / "
                                   "sympathetic / inharmonic / FM models) excited by MIDI.",
                    .createMode = InternalPluginCreateMode::FreshValueTree,
-                   .matchesPlugin = matches<MutableRingsPlugin>,
+                   .matchesPlugin = matchesDevice<MutableRingsPlugin>,
                    .createProcessor = makeProcessor<MutableRingsProcessor>,
                    .showInBrowser = true,
                    .isInstrument = true,
                    .tags = kMutableRingsTags,
                    .tagCount = static_cast<int>(std::size(kMutableRingsTags)),
                    .createInSession = createFreshValueTreePlugin,
-                   .createPlugin = createPlugin<MutableRingsPlugin>});
+                   .createDevice = createDevice<MutableRingsPlugin>});
     add(registry, {.pluginId = MutableCloudsPlugin::xmlTypeName,
                    .displayName = "Nimbus",
                    .browserCategory = "Texture",
