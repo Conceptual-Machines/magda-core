@@ -121,6 +121,8 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.endBeat = beat;
         segment.block.startSeconds = seconds;
         segment.block.endSeconds = seconds;
+        segment.block.startMonotonicBeat = monotonicBeat_;
+        segment.block.endMonotonicBeat = monotonicBeat_;
         segment.block.continuous = continuous_;
         segment.block.tempo = &tempo;
         segment.startSample = 0;
@@ -196,6 +198,14 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.endBeat = beatAfter(tempo, samplesSinceAnchor_ + samples);
         segment.block.startSeconds = secondsAfter(samplesSinceAnchor_);
         segment.block.endSeconds = secondsAfter(samplesSinceAnchor_ + samples);
+
+        // Accumulated from the segment rather than read off the cursor: this
+        // is the one quantity a wrap must not take back, and the cursor is
+        // about to be moved by one.
+        segment.block.startMonotonicBeat = monotonicBeat_;
+        monotonicBeat_ += segment.block.endBeat - segment.block.startBeat;
+        segment.block.endMonotonicBeat = monotonicBeat_;
+
         segment.block.continuous = continuous_;
         segment.block.tempo = &tempo;
         segment.startSample = offset;

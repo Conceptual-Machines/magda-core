@@ -81,6 +81,27 @@ struct BlockInfo {
     double endSeconds = 0.0;
 
     /**
+     * @brief The same stretch, counted in beats that only ever go forwards.
+     *
+     * The timeline beat is where the cursor is, and it goes backwards every
+     * time a loop wraps and every time somebody locates. That is right for
+     * placing material and wrong for scheduling anything against a future
+     * beat: a launch quantized to the next bar, resolved against a beat the
+     * loop is about to take back, fires at the wrong moment or twice.
+     *
+     * This is the third face of the same instant, alongside beats and seconds,
+     * and it is derived in the same one place they are. It counts musical time
+     * the transport has actually rolled through since the clock began, so it
+     * survives a wrap, a locate and a tempo edit, and it is the domain a
+     * queued launch names its position in (#2300).
+     *
+     * A stopped block does not advance it, for the same reason it does not
+     * advance the timeline.
+     */
+    double startMonotonicBeat = 0.0;
+    double endMonotonicBeat = 0.0;
+
+    /**
      * @brief Whether the timeline ran into this block out of the last one.
      *
      * False on the first block after the transport starts, after a locate, and

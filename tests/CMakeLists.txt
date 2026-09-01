@@ -360,6 +360,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_value_taps.cpp)
     list(APPEND TEST_SOURCES engine/test_tempo_map.cpp)
     list(APPEND TEST_SOURCES engine/test_transport_clock.cpp)
+    # The launcher's state machine (#2300): quantized launch and stop against
+    # monotonic beats, and the split a block straddling one reports.
+    list(APPEND TEST_SOURCES engine/test_launch_handle.cpp)
     list(APPEND TEST_SOURCES audio/test_click_generator.cpp)
     list(APPEND TEST_SOURCES audio/test_prefetch_stream.cpp)
     list(APPEND TEST_SOURCES audio/test_source_readers.cpp)
